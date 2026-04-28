@@ -6,7 +6,7 @@
     }
 
     const STORAGE_KEY = 'zaoyoe_admin_command_center_collapsed';
-    const VERSION = '20260426_ADMIN_PULSE_DOCK_V5';
+    const VERSION = '20260428_ADMIN_PULSE_DOCK_SWITCH_STEADY_1';
     const PANEL_OPEN_ANIMATION_MS = 260;
     const PANEL_CLOSE_ANIMATION_MS = 220;
     const MODULE_LABELS = Object.freeze({
@@ -1078,10 +1078,12 @@
     }
 
     function openPanel(pulseId = 'overview', triggerButton = null, options = {}) {
-        state.activePulseId = sanitizeText(pulseId, 80) || 'overview';
+        const nextPulseId = sanitizeText(pulseId, 80) || 'overview';
+        const wasPanelVisible = state.panelOpen && state.panelPhase !== 'closed';
+        state.activePulseId = nextPulseId;
         state.panelOpen = true;
         state.panelMotion = measurePanelMotion(triggerButton || getDockButtonByPulseId(getRoot(), state.activePulseId));
-        if (options.animate === false) {
+        if (options.animate === false || wasPanelVisible) {
             clearPanelPhaseTimer();
             state.panelPhase = 'open';
             render();

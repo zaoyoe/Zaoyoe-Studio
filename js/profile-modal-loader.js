@@ -6,10 +6,10 @@
     }
     global.__zaoyoeProfileModalBootstrapLoaded = true;
 
-    const VERSION = '20260427_PROFILE_SECURITY_PLACEHOLDER_SIZE_2';
+    const VERSION = '20260428_PROFILE_SECURITY_LIGHT_THEME_MOBILE_1';
     const PROFILE_TEMPLATE_SRC = 'js/profile-modal-template.js?v=20260423_PROFILE_MODAL_SECURITY_INDICATOR_1';
     const SECURITY_CARDS_SRC = 'security-cards.js?v=20260423_PROFILE_MODAL_SECURITY_INDICATOR_1';
-    const PROFILE_MODAL_STYLE_HREF = 'css/profile-modal.css?v=20260427_PROFILE_SECURITY_PLACEHOLDER_SIZE_2';
+    const PROFILE_MODAL_STYLE_HREF = 'css/profile-modal.css?v=20260428_PROFILE_SECURITY_LIGHT_THEME_MOBILE_1';
 
     let profileModalPromise = null;
 

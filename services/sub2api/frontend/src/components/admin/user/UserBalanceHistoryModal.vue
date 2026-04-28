@@ -1,62 +1,64 @@
 <template>
   <BaseDialog :show="show" :title="t('admin.users.balanceHistoryTitle')" width="wide" :close-on-click-outside="true" :z-index="40" @close="$emit('close')">
-    <div v-if="user" class="space-y-4">
+    <div v-if="user" class="space-y-3 sm:space-y-4">
       <!-- User header: two-row layout with full user info -->
-      <div class="rounded-xl bg-gray-50 p-4 dark:bg-dark-700">
+      <div class="rounded-xl bg-gray-50 p-3 dark:bg-dark-700 sm:p-4">
         <!-- Row 1: avatar + email/username/created_at (left) + current balance (right) -->
-        <div class="flex items-center gap-3">
-          <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full bg-primary-100 dark:bg-primary-900/30">
-            <span class="text-lg font-medium text-primary-700 dark:text-primary-300">
-              {{ user.email.charAt(0).toUpperCase() }}
-            </span>
-          </div>
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-2">
-              <p class="truncate font-medium text-gray-900 dark:text-white">{{ user.email }}</p>
-              <span
-                v-if="user.username"
-                class="flex-shrink-0 rounded bg-primary-50 px-1.5 py-0.5 text-xs text-primary-600 dark:bg-primary-900/20 dark:text-primary-400"
-              >
-                {{ user.username }}
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div class="flex min-w-0 items-center gap-3 sm:flex-1">
+            <div class="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-primary-100 dark:bg-primary-900/30 sm:h-10 sm:w-10">
+              <span class="text-base font-medium text-primary-700 dark:text-primary-300 sm:text-lg">
+                {{ user.email.charAt(0).toUpperCase() }}
               </span>
             </div>
-            <p class="text-xs text-gray-400 dark:text-dark-500">
-              {{ t('admin.users.createdAt') }}: {{ formatDateTime(user.created_at) }}
-            </p>
+            <div class="min-w-0 flex-1">
+              <div class="flex min-w-0 items-center gap-2">
+                <p class="truncate font-medium text-gray-900 dark:text-white">{{ user.email }}</p>
+                <span
+                  v-if="user.username"
+                  class="flex-shrink-0 rounded bg-primary-50 px-1.5 py-0.5 text-xs text-primary-600 dark:bg-primary-900/20 dark:text-primary-400"
+                >
+                  {{ user.username }}
+                </span>
+              </div>
+              <p class="text-xs text-gray-400 dark:text-dark-500">
+                {{ t('admin.users.createdAt') }}: {{ formatDateTime(user.created_at) }}
+              </p>
+            </div>
           </div>
           <!-- Current balance: prominent display on the right -->
-          <div class="flex-shrink-0 text-right">
+          <div class="flex-shrink-0 text-left sm:ml-auto sm:text-right">
             <p class="text-xs text-gray-500 dark:text-dark-400">{{ t('admin.users.currentBalance') }}</p>
-            <p class="text-xl font-bold text-gray-900 dark:text-white">
+            <p class="text-lg font-bold text-gray-900 dark:text-white sm:text-xl">
               ${{ user.balance?.toFixed(2) || '0.00' }}
             </p>
           </div>
         </div>
         <!-- Row 2: notes + total recharged -->
-        <div class="mt-2.5 flex items-center justify-between border-t border-gray-200/60 pt-2.5 dark:border-dark-600/60">
+        <div class="mt-2.5 flex flex-col gap-1.5 border-t border-gray-200/60 pt-2.5 dark:border-dark-600/60 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
           <p class="min-w-0 flex-1 truncate text-xs text-gray-500 dark:text-dark-400" :title="user.notes || ''">
             <template v-if="user.notes">{{ t('admin.users.notes') }}: {{ user.notes }}</template>
             <template v-else>&nbsp;</template>
           </p>
-          <p class="ml-4 flex-shrink-0 text-xs text-gray-500 dark:text-dark-400">
+          <p class="flex-shrink-0 text-xs text-gray-500 dark:text-dark-400 sm:ml-4">
             {{ t('admin.users.totalRecharged') }}: <span class="font-semibold text-emerald-600 dark:text-emerald-400">${{ totalRecharged.toFixed(2) }}</span>
           </p>
         </div>
       </div>
 
       <!-- Type filter + Action buttons -->
-      <div class="flex items-center gap-3">
+      <div class="grid grid-cols-2 gap-2 sm:flex sm:items-center sm:gap-3">
         <Select
           v-model="typeFilter"
           :options="typeOptions"
-          class="w-56"
+          class="col-span-2 w-full sm:col-span-1 sm:w-56"
           @change="loadHistory(1)"
         />
         <!-- Deposit button - matches menu style -->
         <button
           v-if="!hideActions"
           @click="emit('deposit')"
-          class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300 dark:hover:bg-dark-700"
+          class="flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300 dark:hover:bg-dark-700"
         >
           <Icon name="plus" size="sm" class="text-emerald-500" :stroke-width="2" />
           {{ t('admin.users.deposit') }}
@@ -65,7 +67,7 @@
         <button
           v-if="!hideActions"
           @click="emit('withdraw')"
-          class="flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300 dark:hover:bg-dark-700"
+          class="flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50 dark:border-dark-600 dark:bg-dark-800 dark:text-gray-300 dark:hover:bg-dark-700"
         >
           <svg class="h-4 w-4 text-amber-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4" />
@@ -75,7 +77,7 @@
       </div>
 
       <!-- Loading -->
-      <div v-if="loading" class="flex justify-center py-8">
+      <div v-if="loading" class="flex justify-center py-6 sm:py-8">
         <svg class="h-8 w-8 animate-spin text-primary-500" fill="none" viewBox="0 0 24 24">
           <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" />
           <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
@@ -88,15 +90,15 @@
       </div>
 
       <!-- History list -->
-      <div v-else class="max-h-[28rem] space-y-3 overflow-y-auto">
+      <div v-else class="max-h-[52dvh] space-y-2 overflow-y-auto sm:max-h-[28rem] sm:space-y-3">
         <div
           v-for="item in history"
           :key="item.id"
-          class="rounded-xl border border-gray-200 bg-white p-4 dark:border-dark-600 dark:bg-dark-800"
+          class="rounded-xl border border-gray-200 bg-white p-3 dark:border-dark-600 dark:bg-dark-800 sm:p-4"
         >
-          <div class="flex items-start justify-between">
+          <div class="flex items-start justify-between gap-3">
             <!-- Left: type icon + description -->
-            <div class="flex items-start gap-3">
+            <div class="flex min-w-0 items-start gap-3">
               <div
                 :class="[
                   'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg',
@@ -105,7 +107,7 @@
               >
                 <Icon :name="getIconName(item)" size="sm" :class="getIconColor(item)" />
               </div>
-              <div>
+              <div class="min-w-0">
                 <p class="text-sm font-medium text-gray-900 dark:text-white">
                   {{ getItemTitle(item) }}
                 </p>
@@ -123,7 +125,7 @@
               </div>
             </div>
             <!-- Right: value -->
-            <div class="text-right">
+            <div class="shrink-0 text-right">
               <p :class="['text-sm font-semibold', getValueColor(item)]">
                 {{ formatValue(item) }}
               </p>

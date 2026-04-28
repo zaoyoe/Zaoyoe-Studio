@@ -1,18 +1,18 @@
 <template>
   <BaseDialog :show="show" :title="t('admin.users.replaceGroupTitle')" width="narrow" @close="$emit('close')">
-    <div v-if="oldGroup" class="space-y-4">
+    <div v-if="oldGroup" class="space-y-3 sm:space-y-4">
       <!-- 提示信息 -->
-      <p class="text-sm text-gray-600 dark:text-gray-400">
+      <p class="text-sm leading-5 text-gray-600 dark:text-gray-400">
         {{ t('admin.users.replaceGroupHint', { old: oldGroup.name }) }}
       </p>
 
       <!-- 当前分组 -->
-      <div class="rounded-lg border border-gray-200 bg-gray-50 p-3 dark:border-dark-600 dark:bg-dark-800">
-        <div class="flex items-center gap-2">
-          <Icon name="shield" size="sm" class="text-purple-500" />
-          <span class="font-medium text-gray-900 dark:text-white">{{ oldGroup.name }}</span>
+      <div class="rounded-lg border border-gray-200 bg-gray-50 p-2.5 dark:border-dark-600 dark:bg-dark-800 sm:p-3">
+        <div class="flex min-w-0 items-center gap-2">
+          <Icon name="shield" size="sm" class="shrink-0 text-purple-500" />
+          <span class="min-w-0 truncate font-medium text-gray-900 dark:text-white">{{ oldGroup.name }}</span>
           <Icon name="arrowRight" size="sm" class="ml-auto text-gray-400" />
-          <span v-if="selectedGroupId" class="font-medium text-primary-600 dark:text-primary-400">
+          <span v-if="selectedGroupId" class="max-w-[40%] truncate font-medium text-primary-600 dark:text-primary-400">
             {{ availableGroups.find(g => g.id === selectedGroupId)?.name }}
           </span>
           <span v-else class="text-sm text-gray-400">?</span>
@@ -20,11 +20,11 @@
       </div>
 
       <!-- 可选分组列表 -->
-      <div v-if="availableGroups.length > 0" class="max-h-64 space-y-2 overflow-y-auto">
+      <div v-if="availableGroups.length > 0" class="max-h-[45dvh] space-y-2 overflow-y-auto sm:max-h-64">
         <label
           v-for="group in availableGroups"
           :key="group.id"
-          class="flex cursor-pointer items-center gap-3 rounded-lg border-2 p-3 transition-all"
+          class="flex cursor-pointer items-center gap-3 rounded-lg border-2 p-2.5 transition-all sm:p-3"
           :class="selectedGroupId === group.id
             ? 'border-primary-400 bg-primary-50/50 dark:border-primary-500 dark:bg-primary-900/20'
             : 'border-gray-200 hover:border-gray-300 dark:border-dark-600 dark:hover:border-dark-500'"
@@ -43,8 +43,8 @@
           >
             <div v-if="selectedGroupId === group.id" class="h-2 w-2 rounded-full bg-white"></div>
           </div>
-          <div class="flex-1">
-            <span class="font-medium text-gray-900 dark:text-white">{{ group.name }}</span>
+          <div class="min-w-0 flex-1">
+            <span class="block truncate font-medium text-gray-900 dark:text-white">{{ group.name }}</span>
             <span class="ml-2 text-xs text-gray-400">{{ group.platform }}</span>
           </div>
         </label>
@@ -57,7 +57,7 @@
     </div>
 
     <template #footer>
-      <div class="flex justify-end gap-3">
+      <div class="grid w-full grid-cols-2 gap-2 sm:flex sm:justify-end sm:gap-3">
         <button @click="$emit('close')" class="btn btn-secondary px-5">{{ t('common.cancel') }}</button>
         <button
           @click="handleReplace"

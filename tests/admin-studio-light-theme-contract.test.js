@@ -34,8 +34,8 @@ test('admin studio header exposes the transplanted theme toggle beside the site 
 
     assert.match(
         siteFilterSource,
-        /admin-site-filter-toolbar[\s\S]*id="adminThemeToggleBtn"[\s\S]*id="adminSiteSelector"/,
-        'admin studio should render the transplanted theme toggle to the left of the site selector'
+        /admin-site-filter-toolbar[\s\S]*id="adminSiteSelector"[\s\S]*id="adminThemeToggleBtn"/,
+        'admin studio should render the site selector to the left of the transplanted theme toggle'
     );
     assert.equal(
         siteFilterSource.includes('class="theme-toggle-btn admin-theme-toggle-btn"'),
@@ -454,6 +454,63 @@ test('admin studio product editor modal restores light-theme contrast', () => {
     );
 });
 
+test('admin studio import category folder icons stay visible in light theme', () => {
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    assert.equal(
+        stylesSource.includes('20260428_ADMIN_STUDIO_IMPORT_TREE_FOLDER_LIGHT_FIX_1'),
+        true,
+        'admin studio page styles should include the import tree folder light-theme visibility fix marker'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-shop #shop-view-import .tree-folder-icon'),
+        true,
+        'import category folder icons should receive an explicit light-theme color'
+    );
+    assert.equal(
+        stylesSource.includes('html:not([data-theme="dark"]) #module-shop #shop-view-import .tree-folder-icon'),
+        true,
+        'import category folder icons should stay visible for the default non-dark theme state'
+    );
+    assert.match(
+        stylesSource,
+        /#shop-view-import \.tree-folder-icon,\s*\nhtml:not\(\[data-theme="dark"\]\) #module-shop #shop-view-import \.tree-folder-icon \{\s*\n\s*color:\s*rgba\(71,\s*85,\s*105,\s*0\.82\) !important;/,
+        'import category folder icons should not inherit the dark-theme translucent white icon color'
+    );
+    assert.equal(
+        stylesSource.includes('#shop-view-import .tree-folder-icon--recycle-bin'),
+        true,
+        'the recycle bin icon should keep its dedicated danger color in the import tree'
+    );
+    assert.equal(
+        adminStudioHtml.includes('importTreeFolder=20260428_ADMIN_STUDIO_IMPORT_TREE_FOLDER_LIGHT_FIX_1'),
+        true,
+        'admin studio should bump the page stylesheet cache key for the import tree folder light-theme fix'
+    );
+});
+
+test('admin studio import target product name stays plain text in light theme', () => {
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    assert.equal(
+        stylesSource.includes('20260428_ADMIN_STUDIO_IMPORT_TARGET_BADGE_PLAIN_TEXT_1'),
+        true,
+        'admin studio styles should include the import target product plain-text marker'
+    );
+    assert.match(
+        stylesSource,
+        /html\[data-theme="light"\] #module-shop #shop-view-import \.import-main-header #selectedProductBadge\.product-badge,\s*\nhtml:not\(\[data-theme="dark"\]\) #module-shop #shop-view-import \.import-main-header #selectedProductBadge\.product-badge \{\s*\n\s*background:\s*transparent !important;/,
+        'the selected import product name should not render with the shared light-theme badge background'
+    );
+    assert.equal(
+        adminStudioHtml.includes('importTargetBadge=20260428_ADMIN_STUDIO_IMPORT_TARGET_BADGE_PLAIN_TEXT_1'),
+        true,
+        'admin studio should cache-bust the import target product plain-text update'
+    );
+});
+
 test('admin studio rich text yellow upgrades low-contrast legacy palette values', () => {
     const adminConfigSource = readRepoFile('admin-config.js');
     const studioStylesSource = readRepoFile('admin-studio.css');
@@ -663,6 +720,21 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'admin studio light theme should explicitly preserve the shared open-state panel transform in the final light-theme cascade'
     );
     assert.equal(
+        stylesSource.includes('20260428_ADMIN_STUDIO_MOBILE_COMMAND_DOCK_HIDDEN_1'),
+        true,
+        'admin studio styles should include the mobile command dock hidden layer'
+    );
+    assert.match(
+        stylesSource,
+        /20260428_ADMIN_STUDIO_MOBILE_COMMAND_DOCK_HIDDEN_1[\s\S]*?@media \(max-width: 768px\) \{[\s\S]*?--shop-admin-mobile-dock-safe-space:\s*0px;[\s\S]*?--users-admin-mobile-dock-safe-space:\s*0px;/,
+        'mobile command dock hidden layer should remove module bottom reservations that only existed for the dock'
+    );
+    assert.equal(
+        readRepoFile('admin-studio.html').includes('mobileCommandDock=20260428_ADMIN_STUDIO_MOBILE_COMMAND_DOCK_HIDDEN_1'),
+        true,
+        'admin studio should cache-bust the mobile command dock hidden layer'
+    );
+    assert.equal(
         stylesSource.includes('html[data-theme="light"] :is(\n    .batch-dropdown-menu,'),
         true,
         'admin studio light theme should limit the generic transform reset to menu surfaces instead of the command center panel itself'
@@ -681,6 +753,21 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         stylesSource.includes('.admin-command-center__panel,\n    .admin-command-center__dock-label,\n    .config-row'),
         true,
         'admin studio light theme should exclude the command center panel from the late card hover flattening cascade'
+    );
+    assert.equal(
+        stylesSource.includes('20260428_ADMIN_STUDIO_LIGHT_DOCK_PANEL_HOVER_EXCLUDE_1'),
+        true,
+        'admin studio styles should include the light dock panel hover exclusion marker'
+    );
+    assert.match(
+        stylesSource,
+        /\[class\*="__panel"\],\s*\n\s*\[class\*="-shell"\],\s*\n\s*\[class\*="__shell"\]\s*\n\):not\(\.admin-command-center__panel\):not\(\.admin-command-center__dock-label\):not\(button\)[\s\S]*?\{\s*\n\s*filter:\s*none !important;\s*\n\s*transform:\s*none !important;/,
+        'late generic hover transform resets should not match the command center panel in light mode'
+    );
+    assert.equal(
+        adminStudioHtml.includes('dockPanelHoverExclude=20260428_ADMIN_STUDIO_LIGHT_DOCK_PANEL_HOVER_EXCLUDE_1'),
+        true,
+        'admin studio should cache-bust the light dock panel hover exclusion'
     );
     assert.equal(
         stylesSource.includes('20260424_ADMIN_STUDIO_LIGHT_THEME_POLISH_1'),
@@ -808,6 +895,121 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'admin studio light theme should cover payments family charts, trend panels, tables, and anomaly cards'
     );
     assert.equal(
+        stylesSource.includes('20260428_ADMIN_STUDIO_PAYMENTS_LIGHT_THEME_DEEP_ADAPT_1'),
+        true,
+        'admin studio styles should include the deep light-theme adaptation layer for payment reconciliation'
+    );
+    assert.equal(
+        stylesSource.includes('--payments-light-surface: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.93));'),
+        true,
+        'payments light theme should define a dedicated readable surface token'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-payments :is(\n    .payments-toolbar-shell,'),
+        true,
+        'payments light theme should cover the toolbar and primary reconciliation surfaces'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-payments :is(.payments-anomaly-action-btn.mark_handled, .payments-anomaly-action-btn.approve_review)'),
+        true,
+        'payments light theme should restyle action buttons with light semantic tones'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-payments .payments-info-tooltip'),
+        true,
+        'payments light theme should restyle KPI tooltips away from dark popovers'
+    );
+    assert.equal(
+        adminStudioHtml.includes('paymentsLight=20260428_ADMIN_STUDIO_PAYMENTS_LIGHT_THEME_DEEP_ADAPT_1'),
+        true,
+        'admin studio should cache-bust the payment reconciliation light-theme update'
+    );
+    assert.equal(
+        stylesSource.includes('20260428_ADMIN_STUDIO_PAYMENTS_LIGHT_READABILITY_CLIP_FIX_1'),
+        true,
+        'admin studio styles should include the payment reconciliation readability and clipping fix'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-payments .payments-business-trend-inspector__series'),
+        true,
+        'payments business trend inspector series labels should be explicitly readable in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-payments .payments-business-trend-inspector__row.is-muted'),
+        true,
+        'payments business trend inspector muted rows should avoid low-opacity light theme text'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-payments .payments-manual::after'),
+        true,
+        'payments manual card should draw an inner-safe outline to avoid clipped rounded corners'
+    );
+    assert.equal(
+        adminStudioHtml.includes('paymentsReadability=20260428_ADMIN_STUDIO_PAYMENTS_LIGHT_READABILITY_CLIP_FIX_1'),
+        true,
+        'admin studio should cache-bust the payment reconciliation readability and clipping fix'
+    );
+    assert.equal(
+        adminStudioHtml.includes('<div class="chart-card glass-panel payments-card payments-card-wide payments-card--manual">\n                                <details class="payments-manual"'),
+        true,
+        'payment manual wrapper should have a scoped class for the clipping fix'
+    );
+    assert.equal(
+        stylesSource.includes('20260428_ADMIN_STUDIO_PAYMENTS_MOBILE_COMPACT_1'),
+        true,
+        'admin studio styles should include the compact mobile adaptation layer for payment reconciliation'
+    );
+    assert.equal(
+        stylesSource.includes('#module-payments .payments-date-menu .date-range-presets'),
+        true,
+        'payment reconciliation date popover presets should be tightened for mobile'
+    );
+    assert.equal(
+        stylesSource.includes('#module-payments .payments-kpi-card-visual .kpi-icon'),
+        true,
+        'payment reconciliation data icons should be explicitly tightened on mobile'
+    );
+    assert.equal(
+        adminStudioHtml.includes('paymentsMobile=20260428_ADMIN_STUDIO_PAYMENTS_MOBILE_COMPACT_1'),
+        true,
+        'admin studio should cache-bust the payment reconciliation mobile compact update'
+    );
+    assert.equal(
+        stylesSource.includes('20260428_ADMIN_STUDIO_PAYMENTS_MOBILE_CLIP_SCROLL_1'),
+        true,
+        'admin studio styles should include the payment reconciliation mobile clipping and table scrolling layer'
+    );
+    assert.match(
+        stylesSource,
+        /#module-payments\s*\{[\s\S]*--payments-admin-mobile-dock-safe-space: calc\(132px \+ env\(safe-area-inset-bottom, 0px\)\);[\s\S]*padding-bottom: var\(--payments-admin-mobile-dock-safe-space\) !important;[\s\S]*scroll-padding-bottom: var\(--payments-admin-mobile-dock-safe-space\);/,
+        'payment reconciliation should reserve bottom space for the mobile command dock'
+    );
+    assert.match(
+        stylesSource,
+        /#module-payments \.payments-business-trend-inspector__rows \{[\s\S]*display: grid !important;[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/,
+        'payment reconciliation trend inspector cards should use two compact mobile columns'
+    );
+    assert.match(
+        stylesSource,
+        /#module-payments :is\(\.payments-table-wrap, \.payments-business-table-wrap\) \{[\s\S]*overflow-x: auto !important;[\s\S]*-webkit-overflow-scrolling: touch;[\s\S]*touch-action: pan-x pan-y;/,
+        'payment reconciliation tables should follow the shop-style horizontal scrolling pattern on mobile'
+    );
+    assert.equal(
+        paymentsSource.includes('class="payments-order-card-primary"'),
+        true,
+        'payment reconciliation mobile order cards should expose a primary text block for clipped identity content'
+    );
+    assert.equal(
+        paymentsSource.includes('payments-order-card-field payments-order-card-field--match'),
+        true,
+        'payment reconciliation mobile order cards should expose a compact intent-match field'
+    );
+    assert.equal(
+        adminStudioHtml.includes('paymentsMobileClip=20260428_ADMIN_STUDIO_PAYMENTS_MOBILE_CLIP_SCROLL_1'),
+        true,
+        'admin studio should cache-bust the payment reconciliation mobile clipping and scroll update'
+    );
+    assert.equal(
         stylesSource.includes('html[data-theme="light"] #module-points :is('),
         true,
         'admin studio light theme should cover points management batch and catalog surfaces'
@@ -871,6 +1073,26 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         stylesSource.includes('html[data-theme="light"] .admin-main-content :is(\n    [class*="-card"],'),
         true,
         'admin studio light theme should broadly prevent card and panel hover transforms'
+    );
+    assert.equal(
+        stylesSource.includes('20260428_ADMIN_STUDIO_STATIC_CHILD_SURFACES_NO_HOVER_1'),
+        true,
+        'admin studio styles should include the final static child-surface hover lock layer'
+    );
+    assert.equal(
+        adminStudioHtml.includes('staticChildSurfaces=20260428_ADMIN_STUDIO_STATIC_CHILD_SURFACES_NO_HOVER_1'),
+        true,
+        'admin studio should cache-bust the static child-surface hover lock layer'
+    );
+    assert.equal(
+        stylesSource.includes('--admin-studio-static-child-surface-bg: rgba(255, 255, 255, 0.68);'),
+        true,
+        'static child surfaces should share a stable light background token'
+    );
+    assert.equal(
+        stylesSource.includes('transition: none !important;\n    will-change: auto !important;'),
+        true,
+        'static child surfaces should not animate into pressed hover states'
     );
     assert.equal(
         stylesSource.includes('html[data-theme="light"] .admin-main-content .admin-tab.active'),
@@ -1451,6 +1673,21 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'admin studio should cache-bust the centered light loading dots stylesheet update'
     );
     assert.equal(
+        stylesSource.includes('20260428_ADMIN_STUDIO_SPLIT_LOADING_DOTS_CENTER_1'),
+        true,
+        'admin studio styles should include the split chart loading dots centering layer'
+    );
+    assert.equal(
+        stylesSource.includes('.analytics-chart-detail-layout:has(> .analytics-detail-pane > .loading-text:only-child) > .analytics-chart-pane'),
+        true,
+        'split chart loading states should hide the empty canvas pane while centering the loader'
+    );
+    assert.equal(
+        adminStudioHtml.includes('splitLoadingDots=20260428_ADMIN_STUDIO_SPLIT_LOADING_DOTS_CENTER_1'),
+        true,
+        'admin studio should cache-bust the split chart loading dots centering update'
+    );
+    assert.equal(
         adminStudioHtml.includes('js/admin-analytics-panel-loaders.js?v=20260427_ANALYTICS_USER_TREND_LOADING_DOTS_1'),
         true,
         'admin studio should cache-bust the user trend loading dots runtime update'
@@ -1709,6 +1946,61 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         stylesSource.includes('html[data-theme="light"] #module-shop #shop-view-import .import-textarea.glass-input'),
         true,
         'shop import account textarea should not inherit the transparent glass input background in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('20260428_ADMIN_STUDIO_IMPORT_TEXTAREA_FLAT_SHADOW_1'),
+        true,
+        'shop import account textarea should include the flat no-shadow light-theme marker'
+    );
+    assert.match(
+        stylesSource,
+        /#shop-view-import \.import-textarea\.glass-input,\s*\nhtml:not\(\[data-theme="dark"\]\) #module-shop #shop-view-import \.import-textarea\.glass-input \{[\s\S]*?box-shadow:\s*none !important;/,
+        'shop import account textarea should not render a right-side outer shadow in light mode'
+    );
+    assert.match(
+        stylesSource,
+        /#shop-view-import \.import-textarea\.glass-input:is\(:hover, :focus, :focus-visible\),\s*\nhtml:not\(\[data-theme="dark"\]\) #module-shop #shop-view-import \.import-textarea\.glass-input:is\(:hover, :focus, :focus-visible\) \{[\s\S]*?box-shadow:\s*none !important;/,
+        'shop import account textarea should stay flat on hover and focus'
+    );
+    assert.equal(
+        adminStudioHtml.includes('importTextareaFlat=20260428_ADMIN_STUDIO_IMPORT_TEXTAREA_FLAT_SHADOW_1'),
+        true,
+        'admin studio should cache-bust the import textarea flat shadow update'
+    );
+    assert.equal(
+        stylesSource.includes('.shop-delivery-filter--search,\n    .glass-input,\n    .inventory-textarea,\n    .shop-delivery-field input\n) {\n    background: transparent !important;'),
+        false,
+        'shop transparent search-input rule should not include standalone editable textareas or strategy inputs'
+    );
+    assert.equal(
+        stylesSource.includes('20260428_ADMIN_STUDIO_DELIVERY_STRATEGY_INPUT_FRAME_1'),
+        true,
+        'API fulfillment strategy number inputs should include an explicit visible frame restoration'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-shop #shop-view-fulfillment .shop-delivery-strategy-grid .shop-delivery-field input[type="number"]'),
+        true,
+        'API fulfillment strategy number inputs should not look like plain text in light mode'
+    );
+    assert.equal(
+        adminStudioHtml.includes('deliveryStrategyInputs=20260428_ADMIN_STUDIO_DELIVERY_STRATEGY_INPUT_FRAME_1'),
+        true,
+        'admin studio should cache-bust the API fulfillment strategy input frame update'
+    );
+    assert.equal(
+        stylesSource.includes('20260428_ADMIN_STUDIO_INVENTORY_TEXTAREA_FRAME_1'),
+        true,
+        'inventory import textarea should include an explicit visible frame restoration'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #module-shop #shop-view-inventory #inventoryInput.inventory-textarea'),
+        true,
+        'inventory import textarea should keep a visible editable surface in light mode'
+    );
+    assert.equal(
+        adminStudioHtml.includes('inventoryTextarea=20260428_ADMIN_STUDIO_INVENTORY_TEXTAREA_FRAME_1'),
+        true,
+        'admin studio should cache-bust the inventory textarea frame update'
     );
     assert.equal(
         stylesSource.includes('html[data-theme="light"] #module-shop #shop-view-import .tree-category-header'),
@@ -2817,6 +3109,81 @@ test('admin studio analytics text panels expand instead of clipping in light the
         true,
         'admin studio should cache-bust the analytics clipping audit stylesheet update'
     );
+    assert.equal(
+        stylesSource.includes('20260428_ADMIN_STUDIO_BUSINESS_CENTER_SUBCARD_BORDER_SAFE_AREA_8'),
+        true,
+        'business center should include the subcard border safe-area fix'
+    );
+    assert.equal(
+        stylesSource.includes('.analytics-business-center-shell {\n    --admin-studio-business-center-shell-edge: rgba(70, 98, 132, 0.24);\n    box-sizing: border-box !important;\n    width: auto !important;\n    max-width: none !important;\n    margin-right: 10px !important;'),
+        true,
+        'business center shell should keep itself away from the right clipping boundary'
+    );
+    assert.equal(
+        stylesSource.includes('.analytics-business-center-shell__body {\n    box-sizing: border-box !important;\n    width: 100% !important;\n    padding: 2px 10px 3px 2px !important;\n    overflow: visible !important;'),
+        true,
+        'business center body should stop clipping the right edge of child cards'
+    );
+    assert.equal(
+        stylesSource.includes('html:not([data-theme="dark"]) .admin-main-content .analytics-business-center-shell__card::after {\n    content: "" !important;\n    position: absolute !important;\n    inset: 0 !important;\n    z-index: 3 !important;'),
+        true,
+        'business center child cards should redraw their borders inside the card edge in every admin module host'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .admin-main-content .analytics-business-center-shell__card > .analytics-business-center-shell__card-top,\nhtml:not([data-theme="dark"]) .admin-main-content .analytics-business-center-shell__card > .analytics-business-center-shell__card-top'),
+        true,
+        'business center child card tops should not depend on a specific module id to escape global titlebar rules'
+    );
+    assert.equal(
+        stylesSource.includes('.analytics-business-center-shell__hero::after'),
+        true,
+        'business center hero card should also redraw its internal edge'
+    );
+    assert.equal(
+        stylesSource.includes('margin: 0 0 12px !important;\n    padding: 0 !important;\n    border-radius: 0 !important;'),
+        true,
+        'business center card tops should follow operating focus plain card rows instead of titlebars'
+    );
+    assert.equal(
+        stylesSource.includes('background: var(--card-bg, rgba(255, 255, 255, 0.82)) !important;\n    background-image: none !important;'),
+        true,
+        'business center child cards should use the same plain surface as operating focus cards'
+    );
+    assert.equal(
+        stylesSource.includes('border: 0 !important;\n    border-bottom: 0 !important;\n    box-shadow: none !important;'),
+        true,
+        'business center card tops should not stack their own titlebar lines'
+    );
+    assert.equal(
+        stylesSource.includes('.analytics-business-center-shell__card > .analytics-business-center-shell__card-top::before {\n    content: none !important;\n    display: none !important;'),
+        true,
+        'business center card titlebars should not stack an extra backing pseudo layer'
+    );
+    assert.equal(
+        stylesSource.includes('inset -1px 0 0 var(--admin-studio-business-center-card-edge)'),
+        true,
+        'business center child cards should keep a visible internal right edge'
+    );
+    assert.equal(
+        adminStudioSource.includes('businessCenterBorder=20260428_ADMIN_STUDIO_BUSINESS_CENTER_SUBCARD_BORDER_SAFE_AREA_8'),
+        true,
+        'admin studio should cache-bust the business center border safe-area fix'
+    );
+    assert.equal(
+        stylesSource.includes('20260428_ADMIN_STUDIO_BUSINESS_CENTER_ROUTE_META_FLAT_2'),
+        true,
+        'business center route meta text should include the flat text override'
+    );
+    assert.equal(
+        stylesSource.includes(') .analytics-business-center-shell__card--warning .analytics-business-center-shell__card-meta {\n    background: transparent !important;\n    background-color: transparent !important;\n    background-image: none !important;\n    border: 0 !important;\n    border-color: transparent !important;\n    box-shadow: none !important;'),
+        true,
+        'business center route meta text should not inherit warning chip backgrounds'
+    );
+    assert.equal(
+        adminStudioSource.includes('businessCenterRouteMeta=20260428_ADMIN_STUDIO_BUSINESS_CENTER_ROUTE_META_FLAT_2'),
+        true,
+        'admin studio should cache-bust the business center route meta flat text fix'
+    );
 });
 
 test('admin studio growth breakdown uses the same compact item structure in light theme', () => {
@@ -2852,5 +3219,333 @@ test('admin studio growth breakdown uses the same compact item structure in ligh
         adminStudioSource.includes('growthBreakdown=20260427_ADMIN_STUDIO_GROWTH_BREAKDOWN_COMPACT_PARITY_1'),
         true,
         'admin studio should cache-bust the growth breakdown compact parity update'
+    );
+});
+
+test('admin studio shop module reserves mobile dock safe space and stacks narrow controls', () => {
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+    const adminStudioSource = readRepoFile('admin-studio.html');
+
+    assert.equal(
+        stylesSource.includes('20260428_ADMIN_STUDIO_SHOP_MOBILE_DOCK_SAFE_SPACE_10'),
+        true,
+        'shop module should include a mobile dock safe-space stylesheet layer'
+    );
+    assert.equal(
+        stylesSource.includes('20260428_ADMIN_STUDIO_MOBILE_MODULE_BOTTOM_BREATHING_SPACE_1'),
+        true,
+        'admin modules should include a shared mobile bottom breathing-space stylesheet layer'
+    );
+    assert.equal(
+        adminStudioSource.includes('<thead>\n                                    <tr>\n                                    <tr>'),
+        false,
+        'inventory table header should not contain a duplicate row that can destabilize column layout'
+    );
+    assert.match(
+        stylesSource,
+        /@media \(max-width: 768px\) \{[\s\S]*#module-shop\s*\{[\s\S]*--shop-admin-mobile-dock-safe-space: calc\(108px \+ env\(safe-area-inset-bottom, 0px\)\);[\s\S]*padding: 0 max\(12px, env\(safe-area-inset-left, 0px\)\) var\(--shop-admin-mobile-dock-safe-space\) max\(12px, env\(safe-area-inset-right, 0px\)\) !important;[\s\S]*scroll-padding-bottom: var\(--shop-admin-mobile-dock-safe-space\);/,
+        'shop module should reserve bottom space for the mobile dock and device safe area'
+    );
+    assert.match(
+        stylesSource,
+        /20260428_ADMIN_STUDIO_MOBILE_MODULE_BOTTOM_BREATHING_SPACE_1[\s\S]*@media \(max-width: 768px\) \{[\s\S]*:root\s*\{[\s\S]*--admin-studio-mobile-module-bottom-space: calc\(24px \+ env\(safe-area-inset-bottom, 0px\)\);[\s\S]*\.admin-main-content > :is\([\s\S]*#module-shop,[\s\S]*#module-payments,[\s\S]*#module-discounts,[\s\S]*#module-tickets[\s\S]*\) \{[\s\S]*padding-bottom: var\(--admin-studio-mobile-module-bottom-space\) !important;[\s\S]*scroll-padding-bottom: var\(--admin-studio-mobile-module-bottom-space\);/,
+        'admin modules should share a compact mobile bottom breathing space after the command dock safe-space reset'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop \.shop-view--active > :last-child \{[\s\S]*margin-bottom: 0 !important;/,
+        'shop subviews should not stack an extra final margin on top of the shared mobile bottom space'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop \.shop-tabs \{[\s\S]*justify-content: flex-start !important;[\s\S]*overflow-x: auto;[\s\S]*-webkit-overflow-scrolling: touch;/,
+        'shop tabs should become a mobile horizontal rail instead of overflowing the viewport'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop \.category-filters \{[\s\S]*flex-wrap: wrap !important;[\s\S]*overflow: visible;/,
+        'shop product category filters should wrap instead of clipping off the right edge'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop \.category-filters \.filter-tab \{[\s\S]*flex: 0 1 auto;[\s\S]*max-width: 100%;[\s\S]*overflow-wrap: anywhere;/,
+        'shop product category labels should fit narrow screens even when a label is long'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop \.shop-product-toolbar-row,[\s\S]*#module-shop \.shop-orders-search-bar,[\s\S]*#module-shop \.inv-filter-bar,[\s\S]*display: grid !important;[\s\S]*grid-template-columns: minmax\(0, 1fr\);/,
+        'shop product, order, and inventory toolbars should start from a one-column mobile stack'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-products \.shop-product-toolbar-row \{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\) !important;/,
+        'shop product toolbar should allow compact two-column action rows on mobile'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-products #productSelectControls \.shop-custom-select\.shop-product-toolbar-select,[\s\S]*#module-shop #shop-view-products #productSelectControls select\.shop-product-toolbar-select:not\(\.shop-native-select--hidden\) \{[\s\S]*flex: 0 0 var\(--shop-product-delivery-mobile-width\) !important;[\s\S]*max-width: var\(--shop-product-delivery-mobile-width\) !important;/,
+        'shop product delivery filter should shrink inside the mobile status controls row'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-products #productBatchActionMenu \{[\s\S]*left: auto !important;[\s\S]*right: 0 !important;[\s\S]*border: 0 !important;/,
+        'shop product batch menu should open leftward on mobile without the bright edge border'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-products \.shop-product-toolbar-actions,[\s\S]*#module-shop #shop-view-orders \.shop-orders-toolbar-actions,[\s\S]*#module-shop #shop-view-fulfillment \.shop-delivery-filter-actions \{[\s\S]*display: grid !important;[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\);/,
+        'shop product, order, and fulfillment action pairs should share two mobile columns'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-orders \.shop-orders-search-bar \{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\) !important;[\s\S]*gap: 8px !important;/,
+        'order refund and fulfillment filters should share a compact two-column mobile row'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-orders \.shop-orders-search-bar \.lookup-search-box \{[\s\S]*grid-column: 1 \/ -1;/,
+        'order search should keep a full-width mobile row around the compact filters'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-orders \.shop-orders-search-bar \.shop-orders-toolbar-actions \{[\s\S]*grid-column: 1 \/ -1;/,
+        'order query and export actions should share one full-width mobile row'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-orders \.shop-orders-search-bar \.shop-custom-select\.shop-orders-filter-select \.shop-custom-select__menu \{[\s\S]*width: min\(184px, calc\(100vw - 48px\)\) !important;[\s\S]*inline-size: min\(184px, calc\(100vw - 48px\)\) !important;/,
+        'order filter dropdown menus should open as narrow mobile popovers'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-orders \.shop-orders-search-bar \.shop-custom-select\.shop-orders-filter-select\[data-select-id="orderDeliveryStatusFilter"\] \.shop-custom-select__menu \{[\s\S]*right: 0;[\s\S]*width: min\(176px, calc\(100vw - 48px\)\) !important;/,
+        'order fulfillment dropdown should align and stay narrower than the filter column'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop \.shop-admin-products-grid,\s*\n\s*#module-shop \.shop-grid \{[\s\S]*grid-template-columns: minmax\(0, 1fr\) !important;/,
+        'shop product cards should use a one-column mobile grid'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop \.inventory-layout,\s*\n\s*#module-shop \.import-layout \{[\s\S]*grid-template-columns: minmax\(0, 1fr\) !important;[\s\S]*height: auto !important;/,
+        'shop import and inventory layouts should collapse to one mobile column without fixed viewport height'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory \.inventory-stats-row \{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\) !important;[\s\S]*gap: 8px !important;[\s\S]*margin-bottom: 14px !important;/,
+        'inventory stats should stay compact as two mobile columns'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory \.inv-stat-card \{[\s\S]*min-height: 86px;[\s\S]*padding: 12px 14px !important;/,
+        'inventory stat cards should reduce their mobile vertical bulk'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory \.inv-filter-bar \{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\) !important;[\s\S]*grid-auto-flow: row dense;[\s\S]*gap: 8px !important;/,
+        'inventory filters should use a compact two-column mobile layout'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory \.inv-filter-bar \.custom-dropdown-menu \{[\s\S]*width: min\(220px, calc\(100vw - 48px\)\) !important;[\s\S]*inline-size: min\(220px, calc\(100vw - 48px\)\) !important;[\s\S]*max-height: min\(300px, calc\(100vh - 260px\)\);/,
+        'inventory dropdown menus should use compact mobile popovers instead of viewport-wide panels'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory #statusDropdown \.custom-dropdown-menu \{[\s\S]*left: auto;[\s\S]*right: 0;[\s\S]*width: min\(176px, calc\(100vw - 48px\)\) !important;[\s\S]*inline-size: min\(176px, calc\(100vw - 48px\)\) !important;/,
+        'inventory status dropdown should right-align as a narrow compact mobile popover'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory #invDateFilterDropdown \.custom-dropdown-menu \{[\s\S]*left: auto;[\s\S]*right: 0;[\s\S]*width: min\(192px, calc\(100vw - 48px\)\) !important;/,
+        'inventory date dropdown should stay narrower than the full mobile filter column'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory \.inv-filter-bar \.custom-dropdown-item \{[\s\S]*min-height: 36px;[\s\S]*padding: 8px 10px;[\s\S]*overflow-wrap: anywhere;/,
+        'inventory dropdown options should stay compact and wrap long labels'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory #invDateFilterDropdown \{[\s\S]*order: 3;[\s\S]*grid-column: 1 \/ 2;[\s\S]*grid-row: 2;[\s\S]*width: 100% !important;/,
+        'inventory date filter should share a row with the compact selection button on mobile'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory \.inv-search-box \{[\s\S]*order: 5;[\s\S]*grid-column: 1 \/ -1;[\s\S]*width: 100% !important;/,
+        'inventory search should keep a full-width row below the compact date and selection controls'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory \.inv-filter-bar > #toggleSelectionBtn,[\s\S]*width: 42px !important;[\s\S]*height: 42px !important;[\s\S]*#module-shop #shop-view-inventory \.inv-filter-bar > #toggleSelectionBtn \{[\s\S]*order: 4;[\s\S]*grid-column: 2 \/ 3;[\s\S]*grid-row: 2;/,
+        'inventory manage controls should remain icon-sized and sit beside the mobile date filter'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory \.inv-filter-bar \.batch-action-wrapper \{[\s\S]*order: 4;[\s\S]*grid-column: 2 \/ 3;[\s\S]*grid-row: 2;[\s\S]*margin-left: 50px !important;/,
+        'inventory batch actions button should sit to the right of the mobile selection button'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory \.shop-table--inventory \{[\s\S]*min-width: 920px;/,
+        'inventory tables should keep a deliberate horizontal scroll width on mobile'
+    );
+    assert.equal(
+        stylesSource.includes('#module-shop #shop-view-inventory.shop-inventory-selection-mode .shop-table--inventory {\n        min-width: 984px;'),
+        true,
+        'inventory selection mode should reserve enough mobile table width for checkbox and buyer/order columns'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory \.shop-table--inventory \{[\s\S]*--shop-inventory-mobile-row-divider: rgba\(15, 23, 42, 0\.08\);[\s\S]*min-width: 920px;/,
+        'inventory mobile table should define a single row divider token'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory \.shop-table--inventory :is\(th, td\) \{[\s\S]*border-bottom: 0 !important;[\s\S]*overflow: hidden;/,
+        'inventory mobile table cells should not draw independent row dividers'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory \.shop-table--inventory thead tr,[\s\S]*#module-shop #shop-view-inventory \.shop-table--inventory tbody tr \{[\s\S]*border-bottom: 1px solid var\(--shop-inventory-mobile-row-divider\) !important;/,
+        'inventory mobile row dividers should be drawn by the full row for aligned buyer/order separators'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory\.shop-inventory-selection-mode :is\([\s\S]*\.inv-checkbox,[\s\S]*\.inv-checkbox-col input\[type="checkbox"\][\s\S]*\) \{[\s\S]*width: 44px !important;[\s\S]*height: 44px !important;[\s\S]*touch-action: manipulation;/,
+        'inventory selection checkboxes should expose a larger touch hit target than the visual box'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory \.shop-inventory-content-chip,[\s\S]*#module-shop #shop-view-inventory \.shop-inventory-created-at,[\s\S]*#module-shop #shop-view-inventory \.shop-inventory-buyer-email,[\s\S]*#module-shop #shop-view-inventory \.shop-inventory-buyer-order \{[\s\S]*max-width: 100%;[\s\S]*overflow: hidden;[\s\S]*text-overflow: ellipsis;[\s\S]*white-space: nowrap;/,
+        'inventory date and buyer/order text should stay clipped inside their mobile table cells'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-orders \.shop-table--orders \{[\s\S]*min-width: 960px;[\s\S]*table-layout: fixed;/,
+        'orders table should reserve enough mobile scroll width for time and product columns'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-orders \.shop-table--orders :is\(td\[data-label="订单时间"\], td\[data-label="商品"\]\) \{[\s\S]*white-space: nowrap !important;[\s\S]*text-overflow: ellipsis;/,
+        'orders time and product text should clip instead of overlapping in narrow viewports'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-fulfillment :is\([\s\S]*\.shop-delivery-header,[\s\S]*\.shop-delivery-subcard-header,[\s\S]*\.shop-delivery-strategy-actions,[\s\S]*\.shop-delivery-filter-banner[\s\S]*\) \{[\s\S]*display: grid !important;[\s\S]*grid-template-columns: minmax\(0, 1fr\) !important;/,
+        'API fulfillment headers and banners should collapse to a safe mobile grid'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-fulfillment \.shop-custom-select\.shop-delivery-filter \.shop-custom-select__menu \{[\s\S]*width: min\(220px, calc\(100vw - 48px\)\) !important;[\s\S]*inline-size: min\(220px, calc\(100vw - 48px\)\) !important;/,
+        'API fulfillment dropdown menus should use compact mobile popovers'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-fulfillment \.shop-delivery-empty,[\s\S]*#module-shop #shop-view-fulfillment \.shop-delivery-table-note \{[\s\S]*white-space: normal;[\s\S]*overflow-wrap: anywhere;[\s\S]*writing-mode: horizontal-tb;/,
+        'API fulfillment empty states and notes should wrap horizontally on mobile'
+    );
+    assert.equal(
+        stylesSource.includes('#module-shop :is(\n        #inventoryPagination,\n        #ordersPagination,\n        #deliveryTasksPagination,'),
+        true,
+        'shop pagination rows should be covered by the mobile wrapping safe-space layer'
+    );
+    assert.equal(
+        adminStudioSource.includes('shopMobileDockSafe=20260428_ADMIN_STUDIO_SHOP_MOBILE_DOCK_SAFE_SPACE_10'),
+        true,
+        'admin studio should cache-bust the shop mobile dock safe-space stylesheet update'
+    );
+    assert.equal(
+        adminStudioSource.includes('mobileModuleBottom=20260428_ADMIN_STUDIO_MOBILE_MODULE_BOTTOM_BREATHING_SPACE_1'),
+        true,
+        'admin studio should cache-bust the shared mobile module bottom breathing-space stylesheet update'
+    );
+});
+
+test('admin studio tickets module keeps table details and dialogs usable on mobile', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+    const ticketsSource = readRepoFile(path.join('js', 'admin-tickets.js'));
+
+    assert.equal(
+        stylesSource.includes('20260428_ADMIN_STUDIO_TICKETS_MOBILE_ADAPT_2'),
+        true,
+        'ticket styles should include the mobile adaptation marker'
+    );
+    assert.equal(
+        adminStudioSource.includes('class="glass-panel table-view users-table-panel admin-ticket-table-panel"'),
+        true,
+        'tickets list should expose a dedicated horizontal-scroll panel class'
+    );
+    assert.equal(
+        adminStudioSource.includes('class="admin-table users-table admin-ticket-table"'),
+        true,
+        'tickets list should expose a dedicated table class for mobile column sizing'
+    );
+    assert.match(
+        stylesSource,
+        /#module-tickets \.admin-ticket-table-panel \{[\s\S]*overflow-x: auto;[\s\S]*-webkit-overflow-scrolling: touch;/,
+        'tickets table panel should follow the shop-style horizontal scrolling pattern on mobile'
+    );
+    assert.match(
+        stylesSource,
+        /#module-tickets \.admin-ticket-table \{[\s\S]*min-width: 1280px;[\s\S]*margin-right: 18px;[\s\S]*table-layout: fixed;/,
+        'tickets table should keep a deliberate mobile scroll width instead of collapsing columns'
+    );
+    assert.match(
+        stylesSource,
+        /#module-tickets \.admin-ticket-table :is\(th:nth-child\(5\), td:nth-child\(5\)\) \{[\s\S]*width: 260px;/,
+        'tickets issue description column should reserve enough mobile table width'
+    );
+    assert.match(
+        stylesSource,
+        /#module-tickets \.admin-ticket-table :is\(th:nth-child\(7\), td:nth-child\(7\)\) \{[\s\S]*width: 240px;/,
+        'tickets action column should reserve enough room for action icons and processed text at the right edge'
+    );
+    assert.match(
+        stylesSource,
+        /#module-tickets \.admin-ticket-function-nav \{[\s\S]*justify-content: center !important;/,
+        'ticket function navigation should remain centered on mobile'
+    );
+    assert.match(
+        stylesSource,
+        /#module-tickets \.admin-ticket-overview-reminder-activity-stats \{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\) !important;[\s\S]*gap: 8px !important;/,
+        'ticket reminder activity stats should use compact two-column mobile tiles'
+    );
+    assert.match(
+        stylesSource,
+        /#module-tickets \.admin-ticket-overview-reminder-activity-stat \{[\s\S]*min-height: 62px !important;[\s\S]*padding: 8px 10px !important;/,
+        'ticket reminder activity stat cards should be visually compact on mobile'
+    );
+    assert.match(
+        stylesSource,
+        /\.admin-ticket-reply-modal > \.admin-ticket-reply-modal__panel,[\s\S]*\.admin-ticket-bulk-modal__panel,[\s\S]*\.admin-ticket-summary-job-modal__dialog \{[\s\S]*width: calc\(100vw - 20px\) !important;[\s\S]*padding: 14px !important;/,
+        'ticket dialogs should use compact mobile panel sizing'
+    );
+    assert.match(
+        stylesSource,
+        /\.admin-ticket-reply-modal__section,[\s\S]*\.admin-ticket-reply-modal__decision-card,[\s\S]*\.admin-ticket-summary-job-modal__section \{[\s\S]*padding: 12px !important;[\s\S]*margin-bottom: 10px !important;/,
+        'ticket dialog sections should reduce mobile spacing waste'
+    );
+    assert.equal(
+        ticketsSource.includes('syncTicketsTableScroller'),
+        true,
+        'tickets renderer should enable the shared horizontal scroll helper'
+    );
+    assert.equal(
+        ticketsSource.includes("metaCell.dataset.label = '工单号/时间';"),
+        true,
+        'tickets rows should keep semantic mobile cell labels'
+    );
+    assert.equal(
+        adminStudioSource.includes('ticketsMobile=20260428_ADMIN_STUDIO_TICKETS_MOBILE_ADAPT_2'),
+        true,
+        'admin studio should cache-bust the ticket mobile stylesheet update'
+    );
+    assert.equal(
+        adminStudioSource.includes('js/admin-tickets.js?v=20260428_TICKETS_MOBILE_TABLE_LABELS_1'),
+        true,
+        'admin studio should cache-bust the ticket row label and scroller update'
     );
 });

@@ -168,19 +168,10 @@
         if (!container) return;
 
         const currentOption = getSiteOption(currentFilter);
+        const currentShortLabel = currentOption.shortLabel || currentOption.label;
 
         container.innerHTML = `
             <div class="admin-site-filter-toolbar">
-                <button
-                    class="theme-toggle-btn admin-theme-toggle-btn"
-                    type="button"
-                    id="adminThemeToggleBtn"
-                    data-admin-action="toggle-theme"
-                    aria-label="切换亮暗主题"
-                    title="切换亮暗主题">
-                    <span class="theme-icon sun-icon" aria-hidden="true">☀️</span>
-                    <span class="theme-icon moon-icon" aria-hidden="true">🌙</span>
-                </button>
                 <div class="admin-site-selector" id="adminSiteSelector">
                     <button
                         class="site-selector-btn"
@@ -189,11 +180,8 @@
                         aria-haspopup="listbox"
                         aria-expanded="false"
                         aria-label="切换站点视角">
-                        <span class="site-selector-btn__mark site-selector-btn__mark--${currentFilter}" aria-hidden="true">
-                            <i class="${currentOption.icon}"></i>
-                        </span>
                         <span class="site-selector-btn__copy">
-                            <span class="site-selector-label">${currentOption.label}</span>
+                            <span class="site-selector-label">${currentShortLabel}</span>
                         </span>
                         <span class="site-selector-chevron" aria-hidden="true">
                             <i class="fas fa-chevron-down"></i>
@@ -223,6 +211,16 @@
                         }).join('')}
                     </div>
                 </div>
+                <button
+                    class="theme-toggle-btn admin-theme-toggle-btn"
+                    type="button"
+                    id="adminThemeToggleBtn"
+                    data-admin-action="toggle-theme"
+                    aria-label="切换亮暗主题"
+                    title="切换亮暗主题">
+                    <span class="theme-icon sun-icon" aria-hidden="true">☀️</span>
+                    <span class="theme-icon moon-icon" aria-hidden="true">🌙</span>
+                </button>
             </div>
         `;
 

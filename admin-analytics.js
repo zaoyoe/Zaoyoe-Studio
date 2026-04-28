@@ -51,6 +51,8 @@ const analyticsRuntime = {
     reloadRequestId: 0,
     reloadContextKey: '',
     reloadTabId: '',
+    refreshIndicatorBusyCount: 0,
+    refreshIndicatorActive: false,
     loadedTabsByContext: {},
     lastLoadedAt: 0,
     lastLoadedContextKey: '',

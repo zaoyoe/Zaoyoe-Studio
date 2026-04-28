@@ -49,7 +49,11 @@ test('prompts loading skeleton covers featured banner, nav, and richer gallery c
         '.prompt-card-skeleton-title',
         '.prompt-card-skeleton-title--wide',
         '.prompt-card-skeleton-meta',
-        '.prompt-card-skeleton-meta--wide'
+        '.prompt-card-skeleton-meta--wide',
+        '.nav-items.nav-items--skeleton .nav-item.nav-item--skeleton',
+        'grid-template-columns: repeat(4, minmax(0, 1fr));',
+        'column-gap: clamp(10px, 3vw, 16px);',
+        'width: min(100%, 92px);'
     ];
 
     for (const marker of cssMarkers) {

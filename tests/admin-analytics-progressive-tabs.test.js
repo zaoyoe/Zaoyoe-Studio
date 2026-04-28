@@ -13,8 +13,11 @@ function extractCaseBody(source, caseLabel) {
     const startMarker = `case '${caseLabel}':`;
     const startIndex = source.indexOf(startMarker);
     assert.notEqual(startIndex, -1, `missing ${startMarker}`);
-    const nextCaseIndex = source.indexOf('\n                case ', startIndex + startMarker.length);
-    const defaultIndex = source.indexOf('\n                default:', startIndex + startMarker.length);
+    const rest = source.slice(startIndex + startMarker.length);
+    const nextCaseMatch = rest.match(/\n\s+case\s+'/);
+    const defaultMatch = rest.match(/\n\s+default:/);
+    const nextCaseIndex = nextCaseMatch ? startIndex + startMarker.length + nextCaseMatch.index : -1;
+    const defaultIndex = defaultMatch ? startIndex + startMarker.length + defaultMatch.index : -1;
     const endCandidates = [nextCaseIndex, defaultIndex].filter((index) => index !== -1);
     const endIndex = endCandidates.length ? Math.min(...endCandidates) : source.length;
     return source.slice(startIndex, endIndex);
@@ -29,9 +32,12 @@ test('analytics lifecycle loads only the active tab phase set', () => {
         'function isAnalyticsTabLoaded(tabId = \'\', contextKey = getAnalyticsAIContextKey()) {',
         'function markAnalyticsTabLoaded(tabId = \'\', contextKey = getAnalyticsAIContextKey()) {',
         'function scheduleAnalyticsDeferredTaskPhases(options = {}) {',
+        'function settleAnalyticsRefreshContent(options = {}) {',
+        'function waitForAnalyticsRefreshContentSettled(options = {}) {',
         'options.ensureTabLoad !== false',
         'activeTabId: normalizedTabId',
         'stopIfStale: true',
+        'await settleAnalyticsRefreshContent({',
         'markAnalyticsTabLoaded(activeTabId, contextKey);'
     ];
 
@@ -43,6 +49,11 @@ test('analytics lifecycle loads only the active tab phase set', () => {
         mainAnalyticsSource.includes('loadedTabsByContext: {},'),
         true,
         'admin-analytics.js should track which analytics tabs are loaded for each context'
+    );
+    assert.equal(
+        mainAnalyticsSource.includes('refreshIndicatorBusyCount: 0,'),
+        true,
+        'admin-analytics.js should track refresh indicator busy depth'
     );
 
     const overviewCase = extractCaseBody(lifecycleSource, 'overview');
@@ -66,6 +77,32 @@ test('analytics lifecycle loads only the active tab phase set', () => {
     assert.equal(productCase.includes('loadProductOverview'), true);
     assert.equal(productCase.includes('loadGrowthSummary'), false);
     assert.equal(productCase.includes('loadVerifyServiceSummary'), false);
+});
+
+test('analytics refresh indicator follows the full split-module refresh lifecycle', () => {
+    const runtimeControlsSource = readRepoFile('js/admin-analytics-runtime-controls.js');
+    const lifecycleSource = readRepoFile('js/admin-analytics-lifecycle.js');
+
+    for (const marker of [
+        'function beginAnalyticsRefreshIndicator() {',
+        "scopeId === 'growth-center' || scopeId === 'commerce-center'",
+        "icon.classList.toggle('fa-spin', isBusy);",
+        "button.setAttribute('aria-busy', isBusy ? 'true' : 'false');",
+        'window.beginAnalyticsRefreshIndicator = beginAnalyticsRefreshIndicator;',
+        'window.syncAnalyticsRefreshIndicator = syncAnalyticsRefreshIndicator;'
+    ]) {
+        assert.equal(runtimeControlsSource.includes(marker), true, `runtime controls should contain ${marker}`);
+    }
+
+    for (const marker of [
+        'const releaseRefreshIndicator = typeof window.beginAnalyticsRefreshIndicator === \'function\'',
+        'await settleAnalyticsRefreshContent({',
+        'return waitForAnalyticsRefreshContentSettled({',
+        'ANALYTICS_REFRESH_PENDING_SELECTOR',
+        '.analytics-product-dashboard--skeleton'
+    ]) {
+        assert.equal(lifecycleSource.includes(marker), true, `lifecycle should contain ${marker}`);
+    }
 });
 
 test('analytics growth tab renders critical summary before deferred panels', () => {

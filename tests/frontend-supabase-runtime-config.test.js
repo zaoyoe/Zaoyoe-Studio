@@ -538,9 +538,9 @@ test('public pages wire wallet modal through the shared bootstrap loader', () =>
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260427_WALLET_THEME_DEFAULT_LIGHT_1';",
-        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260427_WALLET_THEME_DEFAULT_LIGHT_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260427_WALLET_THEME_DEFAULT_LIGHT_1';",
+        "const VERSION = '20260428_WALLET_MOBILE_NAV_STABLE_1';",
+        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260428_WALLET_MOBILE_NAV_STABLE_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260428_WALLET_MOBILE_NAV_STABLE_1';",
         'function ensureWalletModalReady() {',
         'function warmWalletModal(options = {}) {',
         "function openWalletModal(view = 'balance', context = {}) {",
@@ -1465,10 +1465,10 @@ test('public auth entry pages defer profile modal runtime through the shared pro
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260427_PROFILE_SECURITY_PLACEHOLDER_SIZE_2';",
+        "const VERSION = '20260428_PROFILE_SECURITY_LIGHT_THEME_MOBILE_1';",
         "const PROFILE_TEMPLATE_SRC = 'js/profile-modal-template.js?v=20260423_PROFILE_MODAL_SECURITY_INDICATOR_1';",
         "const SECURITY_CARDS_SRC = 'security-cards.js?v=20260423_PROFILE_MODAL_SECURITY_INDICATOR_1';",
-        "const PROFILE_MODAL_STYLE_HREF = 'css/profile-modal.css?v=20260427_PROFILE_SECURITY_PLACEHOLDER_SIZE_2';",
+        "const PROFILE_MODAL_STYLE_HREF = 'css/profile-modal.css?v=20260428_PROFILE_SECURITY_LIGHT_THEME_MOBILE_1';",
         'function ensureProfileModalStyles() {',
         'return ensureProfileModalStyles().then(() => true);',
         'function ensureProfileModalReady() {',
@@ -1489,8 +1489,8 @@ test('critical auth pages consume delegated profile modal and form bindings', ()
 
     assert.equal(verifySource.includes('js/profile-modal-loader.js'), true, 'verify.html should load the shared profile modal bootstrap');
     assert.equal(indexSource.includes('js/profile-modal-loader.js'), true, 'index.html should load the shared profile modal bootstrap');
-    assert.equal(indexSource.includes('./js/profile-modal-loader.js?v=20260427_PROFILE_SECURITY_PLACEHOLDER_SIZE_2'), true, 'index.html should load the latest profile modal bootstrap version');
-    assert.equal(verifySource.includes('js/profile-modal-loader.js?v=20260427_PROFILE_SECURITY_PLACEHOLDER_SIZE_2'), true, 'verify.html should load the latest profile modal bootstrap version');
+    assert.equal(indexSource.includes('./js/profile-modal-loader.js?v=20260428_PROFILE_SECURITY_LIGHT_THEME_MOBILE_1'), true, 'index.html should load the latest profile modal bootstrap version');
+    assert.equal(verifySource.includes('js/profile-modal-loader.js?v=20260428_PROFILE_SECURITY_LIGHT_THEME_MOBILE_1'), true, 'verify.html should load the latest profile modal bootstrap version');
     assert.equal(verifySource.includes('id="profileModal"'), false, 'verify.html should not embed a duplicated profile modal');
     assert.equal(indexSource.includes('id="profileModal"'), false, 'index.html should not embed a duplicated profile modal');
     assert.equal(verifySource.includes('onmousedown="closeModal(event)"'), false, 'verify.html should not inline modal close handlers');
@@ -7934,6 +7934,9 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
         'scrollbar-color: var(--wallet-scrollbar-thumb) transparent',
         'html[data-theme="light"] .wallet-modal',
         '[data-theme="light"] .wallet-sidebar .wallet-menu-item.active',
+        '/* 20260428_WALLET_MOBILE_NAV_STABLE_1 */',
+        'html[data-theme="light"] .wallet-sidebar .sidebar-indicator',
+        'html[data-theme="light"] .wallet-sidebar:focus-within .sidebar-indicator',
         '[data-theme="light"] .balance-card.compact-premium-card',
         '[data-theme="light"] .wallet-order-modal-body',
         '[data-theme="light"] .wallet-payment-qr-status {',
@@ -8552,7 +8555,7 @@ test('ticket admin surfaces user email in search and list rendering', () => {
     assert.equal(adminStudioSource.includes('js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2'), true, 'admin-studio.html should load the cache-busted ops alert report helper before admin config');
     assert.equal(adminStudioSource.includes('admin-config.js?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'), true, 'admin-studio.html should load the cache-busted admin config script for the visible rich-text yellow normalization fix');
     assert.equal(adminStudioSource.includes('admin-discounts.js?v=20260427_DISCOUNTS_BATCH_RESTORE_HINT_1'), true, 'admin-studio.html should load the cache-busted discount runtime for the P1 assets and ROI workspace');
-    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260421_TICKETS_OPS_ALERTS_HELPER_P2'), true, 'admin-studio.html should load the cache-busted ticket admin script');
+    assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260428_TICKETS_WORKSPACE_SCROLL_PRESERVE_1'), true, 'admin-studio.html should load the cache-busted ticket admin script');
     assert.equal(ticketsSource.includes("recordAnalyticsResolutionFeedback: function (ticket = {}, newStatus = '', result = {}, doRefund = false) {"), true, 'js/admin-tickets.js should record analytics resolution feedback after ticket handling succeeds');
     assert.equal(ticketsSource.includes('pageSize: 12,'), true, 'js/admin-tickets.js should paginate tickets 12 at a time');
     assert.equal(ticketsSource.includes("handleShellContext: async function (context = {}, options = {}) {"), true, 'js/admin-tickets.js should route ticket shell context through the module runtime');
@@ -10239,12 +10242,13 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         '#userGrowthCommerceImpact,',
         '#userValueCockpit {',
         '.analytics-user-commerce-impact__chips {',
-        'flex-wrap: nowrap;',
-        'scrollbar-width: none;',
+        '20260428_ADMIN_STUDIO_USER_COMMERCE_IMPACT_WRAP_1',
+        'grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));',
+        'overflow: visible;',
         '.analytics-user-commerce-impact__chip {',
-        'flex: 0 0 auto;',
-        'white-space: nowrap;',
-        'overflow-y: visible;',
+        'flex-wrap: wrap;',
+        'white-space: normal;',
+        'overflow-wrap: anywhere;',
         '.analytics-user-value-cockpit__stats {',
         'grid-auto-columns: minmax(190px, 1fr);',
         '.analytics-user-value-cockpit__grid {',
@@ -10306,6 +10310,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         'js/admin-analytics-derived-bundles.js?v=20260420_DERIVED_VARIANT_CACHE_1',
         'js/admin-analytics-runtime-controls.js?v=20260420_ANALYTICS_ONLINE_USERS_RPC_1',
         'js/admin-analytics-panel-loaders.js?v=20260427_ANALYTICS_USER_TREND_LOADING_DOTS_1',
+        'userCommerceImpact=20260428_ADMIN_STUDIO_USER_COMMERCE_IMPACT_WRAP_1',
         'js/admin-analytics-lifecycle.js?v=20260421_ANALYTICS_SITE_CHANGE_HELPER_P2',
         'js/admin-analytics-workbench.js?v=20260421_ANALYTICS_DESTINATION_ACTIVATE_FALLBACKS_P4',
         'js/admin-analytics-insight-cards.js?v=20260407_ANALYTICS_INSIGHT_CARDS_HELPERS_5',
@@ -10325,7 +10330,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         'admin-config.js?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1',
         'js/admin-payments.js?v=20260421_ADMIN_PAYMENTS_CONTEXT_HELPER_P2',
         'js/admin-workbench.js?v=20260422_OPS_ALERT_RESOLVED_COUNT_P13',
-        'js/admin-tickets.js?v=20260421_TICKETS_OPS_ALERTS_HELPER_P2',
+        'js/admin-tickets.js?v=20260428_TICKETS_WORKSPACE_SCROLL_PRESERVE_1',
         'js/admin-shop.js?v=20260427_SHOP_ORDER_USER_ID_LAYOUT_1',
         'data-tab="product"',
         'data-tab="ops"',
@@ -11787,7 +11792,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should load the latest guestbook runtime');
     assert.equal(shopSource.includes('js/shop-client.js?v=20260427_SHOP_PURCHASE_GUIDANCE_VISIBLE_YELLOW_1'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
-    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260427_WALLET_THEME_DEFAULT_LIGHT_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
+    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260428_WALLET_MOBILE_NAV_STABLE_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
 
 test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {
@@ -14274,10 +14279,10 @@ test('admin studio modules emit unified command feedback for recent processing r
     assert.equal(adminStudioScript.includes('工单聚焦入口缺少目标标识，请刷新当前卡片后重试。'), true, 'admin-studio.js should surface recoverable ticket focus failures');
 
     const versionMarkers = [
-        'css/admin-command-center.css?v=20260426_ADMIN_PULSE_DOCK_V5',
-        'js/admin-command-center.js?v=20260426_ADMIN_PULSE_DOCK_V5',
+        'css/admin-command-center.css?v=20260428_ADMIN_PULSE_DOCK_MOBILE_HIDDEN_1',
+        'js/admin-command-center.js?v=20260428_ADMIN_PULSE_DOCK_SWITCH_STEADY_1',
         'js/admin-payments.js?v=20260421_ADMIN_PAYMENTS_CONTEXT_HELPER_P2',
-        'js/admin-tickets.js?v=20260421_TICKETS_OPS_ALERTS_HELPER_P2',
+        'js/admin-tickets.js?v=20260428_TICKETS_WORKSPACE_SCROLL_PRESERVE_1',
         'js/admin-shop.js?v=20260427_SHOP_ORDER_USER_ID_LAYOUT_1',
         'admin-discounts.js?v=20260427_DISCOUNTS_BATCH_RESTORE_HINT_1',
         'js/admin-shell.js?v=20260426_ADMIN_SHELL_LOADING_DOTS_CENTER_P1',
@@ -14336,12 +14341,12 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
     }
 
     assert.equal(
-        readRepoFile('js/profile-modal-loader.js').includes('css/profile-modal.css?v=20260427_PROFILE_SECURITY_PLACEHOLDER_SIZE_2'),
+        readRepoFile('js/profile-modal-loader.js').includes('css/profile-modal.css?v=20260428_PROFILE_SECURITY_LIGHT_THEME_MOBILE_1'),
         true,
         'profile modal loader should cache-bust the light backdrop material'
     );
     assert.equal(
-        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260427_WALLET_THEME_DEFAULT_LIGHT_1'),
+        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260428_WALLET_MOBILE_NAV_STABLE_1'),
         true,
         'wallet modal loader should cache-bust the latest wallet surface stylesheet'
     );

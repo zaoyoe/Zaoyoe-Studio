@@ -1,5 +1,5 @@
 <template>
-  <div v-if="attributes.length > 0" class="space-y-4">
+  <div v-if="attributes.length > 0" class="space-y-3 sm:space-y-4">
     <div v-for="attr in attributes" :key="attr.id">
       <label class="input-label">
         {{ attr.name }}
@@ -46,7 +46,7 @@
         v-model="localValues[attr.id]"
         :required="attr.required"
         :placeholder="attr.placeholder"
-        rows="3"
+        rows="2"
         class="input"
         @input="emitChange"
       />
@@ -60,11 +60,11 @@
       />
 
       <!-- Multi-Select (Checkboxes) -->
-      <div v-else-if="attr.type === 'multi_select'" class="space-y-2">
+      <div v-else-if="attr.type === 'multi_select'" class="space-y-1.5">
         <label
           v-for="opt in attr.options"
           :key="opt.value"
-          class="flex items-center gap-2"
+          class="flex items-center gap-2 rounded-lg px-1 py-0.5"
         >
           <input
             type="checkbox"

@@ -42,6 +42,7 @@ Inspired by Framer.com design aesthetics
     /* Navigation sizing */
     --nav-vertical-padding: 8px;
     --nav-auth-slot-size: 44px;
+    --nav-height: calc(var(--nav-auth-slot-size) + var(--nav-vertical-padding) + var(--nav-vertical-padding) + 1px);
     --nav-dropdown-overlap: 1px;
 
     /* Border Radius */
@@ -467,12 +468,6 @@ a.nav-trigger.active {
     z-index: calc(var(--z-mobile-menu) + 1);
 }
 
-.nav-actions:has(.nav-hamburger.active) #authBtn {
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--transition-fast);
-}
-
 .nav-hamburger span {
     display: block;
     width: 24px;
@@ -505,14 +500,15 @@ a.nav-trigger.active {
 /* Mobile Menu Overlay - Solid Black */
 .mobile-menu {
     position: fixed;
-    top: 0;
+    top: var(--nav-height);
     left: 0;
     width: 100%;
-    height: 100%;
+    height: calc(100vh - var(--nav-height));
+    height: calc(100dvh - var(--nav-height));
     background-color: #000000;
     /* Force solid black as requested */
-    z-index: var(--z-mobile-menu);
-    padding: 100px var(--spacing-lg) calc(var(--spacing-xl) + env(safe-area-inset-bottom, 50px));
+    z-index: calc(var(--z-nav) - 1);
+    padding: var(--spacing-lg) var(--spacing-lg) calc(var(--spacing-xl) + env(safe-area-inset-bottom, 50px));
     overflow-y: auto;
     overscroll-behavior-y: contain;
     -webkit-overflow-scrolling: touch;
@@ -5051,6 +5047,21 @@ html[data-theme="light"] .framer-nav.scrolled {
     box-shadow: 0 4px 16px rgba(15, 23, 42, 0.035);
 }
 
+html.mobile-menu-open .framer-nav,
+body.mobile-menu-open .framer-nav,
+.framer-nav:has(.nav-hamburger.active) {
+    background-color: #000000 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    transition: none !important;
+}
+
+html[data-theme="light"].mobile-menu-open .framer-nav,
+html[data-theme="light"] body.mobile-menu-open .framer-nav,
+html[data-theme="light"] .framer-nav:has(.nav-hamburger.active) {
+    background-color: #ffffff !important;
+}
+
 html[data-theme="light"] .nav-logo svg path:nth-child(1),
 html[data-theme="light"] .nav-logo svg path:nth-child(3) {
     fill: #0f172a;
@@ -5106,7 +5117,7 @@ html[data-theme="light"] .nav-dropdown-portal a:hover {
 }
 
 html[data-theme="light"] .mobile-menu {
-    background-color: rgba(248, 250, 252, 0.98);
+    background-color: #ffffff;
 }
 
 html[data-theme="light"] .mobile-menu-link,

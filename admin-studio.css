@@ -3205,14 +3205,14 @@ button[data-action-feedback-state="failed"] {
     position: absolute;
     top: calc(100% + 8px);
     right: 0;
-    min-width: 160px;
-    background: rgba(255, 255, 255, 0.55);
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    border: 1px solid rgba(155, 93, 229, 0.15);
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.12);
-    border-radius: 12px;
-    padding: 6px;
+    min-width: 176px;
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(22px) saturate(170%);
+    -webkit-backdrop-filter: blur(22px) saturate(170%);
+    border: 1px solid rgba(15, 23, 42, 0.1);
+    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.14), 0 2px 10px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.74);
+    border-radius: 10px;
+    padding: 5px;
     z-index: 100;
     opacity: 0;
     visibility: hidden;
@@ -3236,13 +3236,15 @@ button[data-action-feedback-state="failed"] {
 .batch-menu-item {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
+    gap: 9px;
+    min-height: 34px;
+    padding: 7px 10px;
     border-radius: 6px;
     color: var(--text-main);
     cursor: pointer;
-    transition: background 0.2s ease;
-    font-size: 0.9rem;
+    transition: background 0.16s ease, box-shadow 0.16s ease, color 0.16s ease;
+    font-size: 0.84rem;
+    line-height: 1.25;
 }
 
 .batch-menu-container.is-busy .batch-dropdown-menu {
@@ -3277,9 +3279,8 @@ button[data-action-feedback-state="failed"] {
 
 /* Batch Menu Item Hover */
 .batch-menu-item:hover {
-    background: rgba(255, 255, 255, 0.08);
-    transform: translateY(-0.5px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    background: rgba(107, 158, 206, 0.1);
+    box-shadow: inset 0 0 0 1px rgba(107, 158, 206, 0.16);
     z-index: 1;
     position: relative;
     border-radius: 6px;
@@ -3287,9 +3288,8 @@ button[data-action-feedback-state="failed"] {
 
 /* Light Mode Overrides for Batch Menu */
 :root:not([data-theme="dark"]) .batch-menu-item:hover {
-    background: #f1f5f9;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-    /* Light shadow */
+    background: rgba(107, 158, 206, 0.1);
+    box-shadow: inset 0 0 0 1px rgba(107, 158, 206, 0.18), 0 4px 10px rgba(15, 23, 42, 0.06);
 }
 
 .batch-menu-item.danger:hover {
@@ -3313,8 +3313,8 @@ button[data-action-feedback-state="failed"] {
 
 .batch-menu-divider {
     height: 1px;
-    background: rgba(255, 255, 255, 0.08);
-    margin: 6px 0;
+    background: rgba(100, 116, 139, 0.16);
+    margin: 4px 2px;
 }
 
 @media (max-width: 768px) {
@@ -3336,12 +3336,13 @@ button[data-action-feedback-state="failed"] {
 
     .batch-dropdown-menu {
         position: fixed;
-        left: 12px;
-        right: 12px;
         top: auto;
+        right: 12px;
         bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+        left: 12px;
         width: auto;
         min-width: 0;
+        max-width: none;
         max-height: min(62vh, 420px);
         overflow-y: auto;
         overscroll-behavior: contain;
@@ -6366,10 +6367,11 @@ button[data-action-feedback-state="failed"] {
 }
 
 .admin-discount-toolbar-summary {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 10px;
-    margin: 0 0 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+    align-items: stretch;
+    gap: 8px;
+    margin: 0 0 18px;
 }
 
 .admin-discount-toolbar-summary[hidden] {
@@ -6408,27 +6410,53 @@ button[data-action-feedback-state="failed"] {
 }
 
 .admin-discount-toolbar-chip {
-    display: inline-flex;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
-    gap: 8px;
-    min-height: 32px;
-    padding: 6px 12px;
-    border-radius: 999px;
-    border: 1px solid rgba(148, 163, 184, 0.18);
-    background: rgba(15, 23, 42, 0.08);
+    gap: 10px;
+    min-height: 40px;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    background: rgba(248, 250, 252, 0.78);
     color: var(--text-secondary);
-    font-size: 0.78rem;
-    line-height: 1.4;
+    font-size: 0.8rem;
+    line-height: 1.25;
+    box-shadow: inset 0 -1px 0 rgba(15, 23, 42, 0.04);
 }
 
-.admin-discount-toolbar-chip strong {
+.admin-discount-toolbar-chip__label {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--text-secondary);
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.admin-discount-toolbar-chip__value {
     color: var(--text-main);
     font-weight: 700;
+    font-size: 0.88rem;
+    white-space: nowrap;
 }
 
 .admin-discount-toolbar-chip--accent {
-    border-color: rgba(96, 165, 250, 0.24);
-    background: rgba(59, 130, 246, 0.12);
+    border-color: rgba(96, 165, 250, 0.32);
+    background: rgba(219, 234, 254, 0.72);
+    box-shadow: inset 3px 0 0 rgba(96, 165, 250, 0.72);
+}
+
+[data-theme="dark"] .admin-discount-toolbar-chip {
+    border-color: rgba(148, 163, 184, 0.2);
+    background: rgba(15, 23, 42, 0.4);
+    box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+}
+
+[data-theme="dark"] .admin-discount-toolbar-chip--accent {
+    border-color: rgba(96, 165, 250, 0.34);
+    background: rgba(59, 130, 246, 0.16);
+    box-shadow: inset 3px 0 0 rgba(96, 165, 250, 0.78);
 }
 
 .admin-discount-code-cell {
@@ -6618,6 +6646,16 @@ button[data-action-feedback-state="failed"] {
     margin-bottom: 18px;
 }
 
+.admin-discount-detail-header__copy {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-start;
+    text-align: left;
+}
+
 .admin-discount-detail-header__eyebrow {
     font-size: 0.72rem;
     font-weight: 700;
@@ -6636,6 +6674,7 @@ button[data-action-feedback-state="failed"] {
 .admin-discount-detail-header__meta {
     display: flex;
     align-items: center;
+    justify-content: flex-start;
     gap: 8px;
     flex-wrap: wrap;
 }
@@ -21121,10 +21160,12 @@ input:checked+.toggle-slider:before {
     right: 0;
     margin-top: 8px;
     min-width: 160px;
-    background: #ffffff;
-    border: 1px solid rgba(0, 0, 0, 0.1);
+    background: rgba(255, 255, 255, 0.86);
+    backdrop-filter: blur(20px) saturate(165%);
+    -webkit-backdrop-filter: blur(20px) saturate(165%);
+    border: 1px solid rgba(15, 23, 42, 0.1);
     border-radius: 10px;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.14), 0 2px 10px rgba(15, 23, 42, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.74);
     opacity: 0;
     visibility: hidden;
     transform: translateY(-8px);
@@ -21147,17 +21188,20 @@ input:checked+.toggle-slider:before {
 #points-view-batches .batch-menu-item {
     display: flex;
     align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
+    gap: 9px;
+    min-height: 34px;
+    padding: 7px 10px;
     cursor: pointer;
     border-radius: 6px;
-    font-size: 0.9rem;
+    font-size: 0.84rem;
+    line-height: 1.25;
     color: var(--text-color);
-    transition: background 0.15s;
+    transition: background 0.16s ease, box-shadow 0.16s ease, color 0.16s ease;
 }
 
 #points-view-batches .batch-menu-item:hover {
-    background: rgba(0, 0, 0, 0.05);
+    background: rgba(107, 158, 206, 0.1);
+    box-shadow: inset 0 0 0 1px rgba(107, 158, 206, 0.16);
 }
 
 #points-view-batches .batch-menu-item.danger {
@@ -21527,14 +21571,15 @@ input:checked+.toggle-slider:before {
 
     /* Also fix batch menu popup */
     #points-view-batches .batch-menu-popup {
-        position: fixed;
-        left: 12px;
-        right: 12px;
-        top: auto;
+        position: absolute;
+        left: 0;
+        right: auto;
+        top: calc(100% + 8px);
         bottom: auto;
-        width: auto;
-        min-width: 0;
-        max-height: min(62vh, 420px);
+        width: max-content;
+        min-width: 160px;
+        max-width: calc(100vw - 32px);
+        max-height: min(34vh, 260px);
         overflow-y: auto;
         overscroll-behavior: contain;
         border-radius: 8px;
@@ -21542,7 +21587,8 @@ input:checked+.toggle-slider:before {
     }
 
     #points-view-batches .batch-menu-item {
-        min-height: 42px;
+        min-height: 34px;
+        padding: 7px 10px;
         white-space: normal;
     }
 
@@ -29667,16 +29713,14 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     line-height: 1.96;
 }
 
+/* 20260428_ADMIN_STUDIO_USER_COMMERCE_IMPACT_WRAP_1 */
 .analytics-user-commerce-impact__chips {
-    display: flex;
-    flex-wrap: nowrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));
     gap: 16px;
     align-items: stretch;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 12px 0 22px;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
+    overflow: visible;
+    padding: 0;
 }
 
 .analytics-user-commerce-impact__chips::-webkit-scrollbar {
@@ -29684,12 +29728,15 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .analytics-user-commerce-impact__chip {
-    display: inline-flex;
-    flex: 0 0 auto;
-    flex-direction: row;
-    align-items: center;
-    gap: 16px;
+    display: flex;
+    width: 100%;
     min-width: 0;
+    box-sizing: border-box;
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
     padding: 18px 22px;
     border-radius: 18px;
     background: rgba(107, 158, 206, 0.12);
@@ -29697,15 +29744,17 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     color: var(--text-main);
     font-size: 0.76rem;
     line-height: 1.4;
-    white-space: nowrap;
+    white-space: normal;
 }
 
 .analytics-user-commerce-impact__chip-main {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: nowrap;
-    white-space: nowrap;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
+    min-width: 0;
+    white-space: normal;
 }
 
 .analytics-user-commerce-impact__chip strong {
@@ -29723,8 +29772,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .analytics-user-commerce-impact__samples {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+    flex: 1 1 420px;
+    min-width: 0;
+    width: 100%;
     gap: 8px;
 }
 
@@ -29737,7 +29789,11 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     padding: 6px 10px;
     display: inline-flex;
     align-items: center;
+    justify-content: space-between;
     gap: 8px;
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
     cursor: pointer;
     transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
 }
@@ -29751,12 +29807,17 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .analytics-user-commerce-impact__sample strong {
+    min-width: 0;
     font-weight: 700;
+    overflow-wrap: anywhere;
+    white-space: normal;
 }
 
 .analytics-user-commerce-impact__sample span {
+    flex: 0 0 auto;
     color: var(--text-secondary);
     font-size: 0.74rem;
+    white-space: nowrap;
 }
 
 .analytics-user-value-cockpit {
@@ -38260,8 +38321,20 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .analytics-business-center-shell__card-meta {
+    display: inline-flex;
+    align-items: center;
+    padding: 0;
+    border-radius: 0;
+    background: none !important;
+    background-color: transparent !important;
+    border: 0 !important;
+    outline: 0 !important;
+    box-shadow: none;
     color: var(--text-secondary);
     font-size: 0.76rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
 }
 
 .analytics-business-center-shell__card-title {
@@ -46635,16 +46708,14 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 }
 
 .ops-alert-shift-report__head {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 0.72fr);
     align-items: flex-start;
     gap: 14px;
-    flex-wrap: wrap;
 }
 
 .ops-alert-shift-report__copy {
     min-width: 0;
-    flex: 1;
     display: flex;
     flex-direction: column;
     gap: 7px;
@@ -46686,13 +46757,17 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
 .ops-alert-shift-report__stats {
     display: flex;
     flex-wrap: wrap;
+    justify-content: flex-end;
+    justify-self: end;
     gap: 10px;
+    min-width: 0;
 }
 
 .ops-alert-shift-report__actions {
+    grid-column: 1 / -1;
     display: flex;
     flex-wrap: wrap;
-    justify-content: flex-end;
+    justify-content: flex-start;
     gap: 10px;
 }
 
@@ -47594,7 +47669,12 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     }
 
     .ops-alert-shift-report__head {
-        flex-direction: column;
+        grid-template-columns: 1fr;
+    }
+
+    .ops-alert-shift-report__stats {
+        justify-content: flex-start;
+        justify-self: stretch;
     }
 
     .ops-alert-shift-report__trend-bars {
@@ -48645,13 +48725,23 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     will-change: transform, box-shadow, background;
 }
 
+.btn-add-config:not(.btn-add-config--primary):not(.btn-add-config--danger) {
+    border-color: rgba(148, 163, 184, 0.38);
+}
+
 .btn-add-config i {
     transition: transform 0.18s ease, color 0.18s ease;
 }
 
 .btn-add-config:hover {
     background: rgba(107, 158, 206, 0.2);
-    transform: translateY(-1px);
+    transform: none;
+}
+
+.btn-add-config:not(.btn-add-config--primary):not(.btn-add-config--danger):hover,
+.btn-add-config:not(.btn-add-config--primary):not(.btn-add-config--danger):focus-visible {
+    border-color: rgba(139, 191, 236, 0.86);
+    border-style: dashed;
 }
 
 .btn-add-config:active,
@@ -52251,5 +52341,346 @@ html[data-theme="dark"] body .custom-modal-overlay .custom-modal .modal-footer {
     #shopRiskCaseComposerModal .admin-shop-risk-case-modal__overview,
     #shopRiskCaseComposerModal .admin-shop-risk-case-modal__actions {
         grid-template-columns: 1fr;
+    }
+}
+
+/* 20260428_ADMIN_DISCOUNTS_MOBILE_SCROLL_PARITY_2 */
+@media (max-width: 768px) {
+    #module-discounts {
+        padding-inline: max(12px, env(safe-area-inset-left, 0px)) max(12px, env(safe-area-inset-right, 0px)) !important;
+    }
+
+    #module-discounts .admin-toolbar,
+    #module-discounts .toolbar-left,
+    #module-discounts .search-bar,
+    #module-discounts .admin-discount-table-panel,
+    #module-discounts .admin-discount-table-scroll {
+        box-sizing: border-box;
+        max-width: 100%;
+        min-width: 0;
+    }
+
+    #module-discounts .admin-toolbar {
+        width: 100%;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+        padding-inline: 0 !important;
+    }
+
+    #module-discounts .toolbar-left {
+        align-items: stretch !important;
+        justify-content: flex-start !important;
+        margin-left: 0 !important;
+        padding-left: 0 !important;
+    }
+
+    #module-discounts .search-bar {
+        width: 100% !important;
+        margin-left: 0 !important;
+        margin-right: 0 !important;
+    }
+
+    #module-discounts .search-bar input {
+        width: 100% !important;
+    }
+
+    #module-discounts .admin-discount-table-panel {
+        overflow: hidden !important;
+    }
+
+    #module-discounts .admin-discount-table-scroll {
+        width: 100%;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        -webkit-overflow-scrolling: touch;
+        overscroll-behavior-x: contain;
+        scrollbar-gutter: stable;
+        touch-action: pan-x pan-y;
+    }
+
+    #module-discounts .users-table.discounts-table {
+        width: 1110px !important;
+        min-width: 1110px !important;
+        max-width: none !important;
+        table-layout: fixed;
+    }
+}
+
+/* 20260428_ADMIN_DISCOUNT_DETAIL_MOBILE_DIALOG_FRAME_4 */
+#discountDetailOverlay .admin-discount-detail-header > :first-child:not(.admin-discount-detail-header__actions),
+#discountDetailOverlay .admin-discount-detail-header__copy,
+.admin-discount-detail-header > :first-child:not(.admin-discount-detail-header__actions),
+.admin-discount-detail-header__copy {
+    display: flex !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    flex: 1 1 auto !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    justify-content: flex-start !important;
+    justify-self: start !important;
+    align-self: stretch !important;
+    text-align: left !important;
+}
+
+#discountDetailOverlay .admin-discount-detail-header > :first-child:not(.admin-discount-detail-header__actions) :is(
+    .admin-discount-detail-header__eyebrow,
+    .admin-discount-detail-header__title,
+    .admin-discount-detail-header__meta
+),
+#discountDetailOverlay .admin-discount-detail-header__copy :is(
+    .admin-discount-detail-header__eyebrow,
+    .admin-discount-detail-header__title,
+    .admin-discount-detail-header__meta
+) {
+    align-self: flex-start !important;
+    justify-content: flex-start !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    text-align: left !important;
+}
+
+#discountDetailOverlay .admin-discount-detail-header__meta,
+.admin-discount-detail-header__meta {
+    display: flex !important;
+    width: auto !important;
+    max-width: 100% !important;
+    justify-content: flex-start !important;
+    align-items: center !important;
+}
+
+@media (max-width: 640px) {
+    #discountDetailOverlay.admin-discount-detail-overlay,
+    .admin-discount-detail-overlay {
+        align-items: center !important;
+        justify-content: center !important;
+        padding:
+            max(30px, env(safe-area-inset-top, 0px))
+            max(14px, env(safe-area-inset-right, 0px))
+            max(30px, env(safe-area-inset-bottom, 0px))
+            max(14px, env(safe-area-inset-left, 0px)) !important;
+    }
+
+    #discountDetailOverlay .admin-discount-detail-dialog,
+    .admin-discount-detail-dialog {
+        width: min(620px, calc(100vw - 28px)) !important;
+        max-width: min(620px, calc(100vw - 28px)) !important;
+        max-height: calc(100dvh - 60px) !important;
+        min-height: 0 !important;
+        padding: 24px 14px max(24px, env(safe-area-inset-bottom, 0px)) !important;
+        border-radius: 22px !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        background-clip: padding-box !important;
+        clip-path: inset(0 round 22px);
+        contain: paint;
+        transform: translateZ(0);
+        box-shadow:
+            0 24px 56px rgba(15, 23, 42, 0.28),
+            0 0 0 1px rgba(255, 255, 255, 0.72) inset !important;
+    }
+
+    #discountDetailOverlay .admin-discount-detail-header,
+    .admin-discount-detail-header {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: stretch !important;
+        justify-content: flex-start !important;
+        gap: 12px !important;
+        margin: 0 0 16px !important;
+        padding: 18px 14px 16px !important;
+        border-radius: 18px !important;
+        text-align: left !important;
+    }
+
+    #discountDetailOverlay .admin-discount-detail-header > :first-child:not(.admin-discount-detail-header__actions),
+    #discountDetailOverlay .admin-discount-detail-header__copy,
+    .admin-discount-detail-header > :first-child:not(.admin-discount-detail-header__actions),
+    .admin-discount-detail-header__copy {
+        padding-right: 48px !important;
+    }
+
+    #discountDetailOverlay .admin-discount-detail-header__title,
+    .admin-discount-detail-header__title {
+        margin: 6px 0 7px !important;
+        font-size: 1.12rem !important;
+        line-height: 1.18 !important;
+        text-align: left !important;
+    }
+
+    #discountDetailOverlay .admin-discount-detail-header__actions,
+    .admin-discount-detail-header__actions {
+        width: 100% !important;
+        margin-top: 4px !important;
+    }
+
+    #discountDetailOverlay.admin-discount-detail-overlay .admin-studio-large-modal-close {
+        top: 40px !important;
+        right: 28px !important;
+    }
+}
+
+/* 20260428_ADMIN_STUDIO_LARGE_MODAL_MOBILE_BREATHING_2 */
+@media (max-width: 640px) {
+    :is(
+        #userModalOverlay,
+        #ticketSummaryJobDetailModal,
+        #ticketReplyModal,
+        #ticketBulkProcessModal,
+        #discountGenerateModal,
+        #discountDetailOverlay,
+        #discountRestoreOverlay,
+        #discountBatchRestoreOverlay,
+        #discountBatchRestoreResultOverlay,
+        #discountBatchRestoreHistoryOverlay,
+        #discountBatchRestoreHistoryRunDetailOverlay,
+        #shopRiskCaseComposerModal,
+        #opsAlertBatchMuteModal,
+        #cropModalOverlay,
+        #releaseReserveModal,
+        #importInventoryModal,
+        #productModal,
+        [data-shop-overlay-close="dynamic-modal"],
+        [data-points-overlay-close="delete-options"],
+        [data-points-overlay-close="codes"],
+        [data-points-overlay-close="batch-edit"],
+        [data-points-overlay-close="package-delete"],
+        [data-points-overlay-close="code-action"],
+        [data-points-overlay-close="batch-invalidate"]
+    ).admin-studio-large-modal-overlay {
+        box-sizing: border-box !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding:
+            max(30px, env(safe-area-inset-top, 0px))
+            max(14px, env(safe-area-inset-right, 0px))
+            max(30px, env(safe-area-inset-bottom, 0px))
+            max(14px, env(safe-area-inset-left, 0px)) !important;
+    }
+
+    :is(
+        #userModalOverlay,
+        #ticketSummaryJobDetailModal,
+        #ticketReplyModal,
+        #ticketBulkProcessModal,
+        #discountGenerateModal,
+        #discountDetailOverlay,
+        #discountRestoreOverlay,
+        #discountBatchRestoreOverlay,
+        #discountBatchRestoreResultOverlay,
+        #discountBatchRestoreHistoryOverlay,
+        #discountBatchRestoreHistoryRunDetailOverlay,
+        #shopRiskCaseComposerModal,
+        #opsAlertBatchMuteModal,
+        #cropModalOverlay,
+        #releaseReserveModal,
+        #importInventoryModal,
+        #productModal,
+        [data-shop-overlay-close="dynamic-modal"],
+        [data-points-overlay-close="delete-options"],
+        [data-points-overlay-close="codes"],
+        [data-points-overlay-close="batch-edit"],
+        [data-points-overlay-close="package-delete"],
+        [data-points-overlay-close="code-action"],
+        [data-points-overlay-close="batch-invalidate"]
+    ).admin-studio-large-modal-overlay .admin-studio-large-modal-panel {
+        box-sizing: border-box !important;
+        width: min(var(--admin-studio-large-modal-mobile-width, 960px), calc(100vw - 28px)) !important;
+        width: min(var(--admin-studio-large-modal-mobile-width, 960px), calc(100dvw - 28px)) !important;
+        max-width: calc(100vw - 28px) !important;
+        max-width: calc(100dvw - 28px) !important;
+        max-height: calc(100vh - 60px) !important;
+        max-height: calc(100dvh - 60px) !important;
+        height: auto !important;
+        min-width: 0 !important;
+        min-height: 0 !important;
+        border-radius: 22px !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        overscroll-behavior: contain;
+        background-clip: padding-box !important;
+        clip-path: inset(0 round 22px);
+        contain: paint;
+        transform: translateZ(0);
+    }
+
+    :is(
+        #userModalOverlay,
+        #ticketSummaryJobDetailModal,
+        #ticketReplyModal,
+        #ticketBulkProcessModal,
+        #discountGenerateModal,
+        #discountDetailOverlay,
+        #discountRestoreOverlay,
+        #discountBatchRestoreOverlay,
+        #discountBatchRestoreResultOverlay,
+        #discountBatchRestoreHistoryOverlay,
+        #discountBatchRestoreHistoryRunDetailOverlay,
+        #shopRiskCaseComposerModal,
+        #opsAlertBatchMuteModal,
+        #cropModalOverlay,
+        #releaseReserveModal,
+        #importInventoryModal,
+        #productModal,
+        [data-shop-overlay-close="dynamic-modal"],
+        [data-points-overlay-close="delete-options"],
+        [data-points-overlay-close="codes"],
+        [data-points-overlay-close="batch-edit"],
+        [data-points-overlay-close="package-delete"],
+        [data-points-overlay-close="code-action"],
+        [data-points-overlay-close="batch-invalidate"]
+    ).admin-studio-large-modal-overlay .admin-studio-large-modal-close {
+        top: 18px !important;
+        right: 18px !important;
+    }
+
+    #discountDetailOverlay.admin-studio-large-modal-overlay .admin-studio-large-modal-close {
+        top: 40px !important;
+        right: 28px !important;
+    }
+}
+
+/* 20260428_ADMIN_STUDIO_USER_MODAL_MOBILE_BREATHING_1 */
+@media (max-width: 640px) {
+    #userModalOverlay.user-modal-overlay,
+    #userModalOverlay.admin-studio-large-modal-overlay {
+        box-sizing: border-box !important;
+        align-items: center !important;
+        justify-content: center !important;
+        padding:
+            max(30px, env(safe-area-inset-top, 0px))
+            max(14px, env(safe-area-inset-right, 0px))
+            max(30px, env(safe-area-inset-bottom, 0px))
+            max(14px, env(safe-area-inset-left, 0px)) !important;
+    }
+
+    #userModalOverlay #userModal.user-modal,
+    #userModalOverlay.admin-studio-large-modal-overlay .admin-studio-large-modal-panel {
+        width: min(960px, calc(100vw - 28px)) !important;
+        width: min(960px, calc(100dvw - 28px)) !important;
+        max-width: calc(100vw - 28px) !important;
+        max-width: calc(100dvw - 28px) !important;
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: calc(100vh - 60px) !important;
+        max-height: calc(100dvh - 60px) !important;
+        border-radius: 22px !important;
+        overflow-x: hidden !important;
+        overflow-y: auto !important;
+        overscroll-behavior: contain;
+        background-clip: padding-box !important;
+        clip-path: inset(0 round 22px);
+        contain: paint;
+        transform: translateZ(0);
+    }
+
+    #userModalOverlay #userModal.user-modal .user-modal-header {
+        padding: 18px 20px 14px !important;
+    }
+
+    #userModalOverlay.admin-studio-large-modal-overlay .admin-studio-large-modal-close {
+        top: 18px !important;
+        right: 18px !important;
     }
 }

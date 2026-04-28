@@ -193,6 +193,9 @@
     right: 76px;
     width: min(430px, calc(100vw - 126px));
     max-height: calc(100vh - 112px);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
     overflow: hidden;
     border: 1px solid var(--command-line);
     border-radius: 8px;
@@ -293,9 +296,15 @@
 }
 
 .admin-command-center__panel-body {
-    max-height: calc(100vh - 224px);
-    overflow: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 16px;
+    scroll-padding-bottom: 20px;
+    scrollbar-gutter: stable;
 }
 
 .admin-command-center__summary {
@@ -671,5 +680,12 @@
     .admin-command-center__metrics,
     .admin-command-center__quick {
         grid-template-columns: 1fr;
+    }
+}
+
+/* 20260428_ADMIN_PULSE_DOCK_MOBILE_HIDDEN_1 */
+@media (max-width: 768px) {
+    .admin-command-center {
+        display: none;
     }
 }

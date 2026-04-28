@@ -1363,11 +1363,11 @@ function renderUsersTable() {
 
         tableHead.innerHTML = `
             ${checkboxHeader}
-            <th class="col-identity">用户 Identity</th>
-            <th class="col-assets">资产 Assets</th>
-            <th class="col-active">活跃 Active</th>
-            <th class="col-status">状态 Status</th>
-            <th class="col-tags">标签 Tags</th>
+            <th class="col-identity"><span class="users-table-head-main">用户</span><span class="users-table-head-sub">Identity</span></th>
+            <th class="col-assets"><span class="users-table-head-main">资产</span><span class="users-table-head-sub">Assets</span></th>
+            <th class="col-active"><span class="users-table-head-main">活跃</span><span class="users-table-head-sub">Active</span></th>
+            <th class="col-status"><span class="users-table-head-main">状态</span><span class="users-table-head-sub">Status</span></th>
+            <th class="col-tags"><span class="users-table-head-main">标签</span><span class="users-table-head-sub">Tags</span></th>
         `;
 
     }
@@ -1432,7 +1432,7 @@ function renderUsersTable() {
                 </label>
             </td>
             ` : ''}
-            <td>
+            <td class="col-identity">
                 <div class="user-cell">
                     ${u.avatar_url
                 ? `<img src="${u.avatar_url}" class="user-avatar-small" data-avatar-fallback-src="https://via.placeholder.com/40">`
@@ -1450,7 +1450,7 @@ function renderUsersTable() {
                     </div>
                 </div>
             </td>
-            <td>
+            <td class="col-assets">
                 <div class="assets-cell">
                     <div class="points-display">
                         <i class="fas fa-coins"></i>
@@ -1458,16 +1458,16 @@ function renderUsersTable() {
                     </div>
                 </div>
             </td>
-            <td>
+            <td class="col-active">
                 <div class="active-status">
                     <div class="status-dot ${statusClass}"></div>
                     <span>${timeAgo}</span>
                 </div>
             </td>
-            <td>
+            <td class="col-status">
                 ${statusBadgeHtml}
             </td>
-            <td>
+            <td class="col-tags">
                 <div class="user-tags-cell">
                     ${tagsHtml}
                 </div>

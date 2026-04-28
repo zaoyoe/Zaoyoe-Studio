@@ -3,11 +3,11 @@
     <TablePageLayout>
       <!-- Single Row: Search, Filters, and Actions -->
       <template #filters>
-        <div class="flex flex-wrap items-center gap-3">
+        <div class="flex flex-col gap-2 md:flex-row md:flex-wrap md:items-center md:gap-3">
           <!-- Left: Search + Active Filters -->
-          <div class="flex flex-1 flex-wrap items-center gap-3">
+          <div class="grid min-w-0 flex-1 grid-cols-1 gap-2 sm:grid-cols-2 md:flex md:flex-wrap md:items-center md:gap-3">
             <!-- Search Box -->
-            <div class="relative w-full md:w-64">
+            <div class="relative w-full sm:col-span-2 md:w-64">
               <Icon
                 name="search"
                 size="md"
@@ -23,7 +23,7 @@
             </div>
 
             <!-- Role Filter (visible when enabled) -->
-            <div v-if="visibleFilters.has('role')" class="w-full sm:w-32">
+            <div v-if="visibleFilters.has('role')" class="w-full md:w-32">
               <Select
                 v-model="filters.role"
                 :options="[
@@ -36,7 +36,7 @@
             </div>
 
             <!-- Status Filter (visible when enabled) -->
-            <div v-if="visibleFilters.has('status')" class="w-full sm:w-32">
+            <div v-if="visibleFilters.has('status')" class="w-full md:w-32">
               <Select
                 v-model="filters.status"
                 :options="[
@@ -49,7 +49,7 @@
             </div>
 
             <!-- Group Filter (visible when enabled) -->
-            <div v-if="visibleFilters.has('group')" class="w-full sm:w-44">
+            <div v-if="visibleFilters.has('group')" class="w-full md:w-44">
               <Select
                 v-model="filters.group"
                 :options="groupFilterOptions"
@@ -65,7 +65,7 @@
             <template v-for="(value, attrId) in activeAttributeFilters" :key="attrId">
               <div
                 v-if="visibleFilters.has(`attr_${attrId}`)"
-                class="relative w-full sm:w-36"
+                class="relative w-full md:w-36"
               >
                 <!-- Text/Email/URL/Textarea/Date type: styled input -->
                 <input
@@ -113,14 +113,14 @@
           </div>
 
           <!-- Right: Actions and Settings -->
-          <div class="flex flex-wrap items-center justify-end gap-2">
+          <div class="flex w-full flex-wrap items-center justify-between gap-2 md:w-auto md:justify-end">
             <!-- Mobile: Secondary buttons (icon only) -->
-            <div class="flex items-center gap-2 md:contents">
+            <div class="grid flex-1 grid-cols-4 gap-2 md:contents">
               <!-- Refresh Button -->
               <button
                 @click="loadUsers"
                 :disabled="loading"
-                class="btn btn-secondary px-2 md:px-3"
+                class="btn btn-secondary w-full min-w-0 px-2 md:w-auto md:px-3"
                 :title="t('common.refresh')"
               >
                 <Icon name="refresh" size="md" :class="loading ? 'animate-spin' : ''" />
@@ -129,7 +129,7 @@
               <div class="relative" ref="filterDropdownRef">
                 <button
                   @click="showFilterDropdown = !showFilterDropdown"
-                  class="btn btn-secondary px-2 md:px-3"
+                  class="btn btn-secondary w-full min-w-0 px-2 md:w-auto md:px-3"
                   :title="t('admin.users.filterSettings')"
                 >
                   <Icon name="filter" size="sm" class="md:mr-1.5" />
@@ -183,7 +183,7 @@
               <div class="relative" ref="columnDropdownRef">
                 <button
                   @click="showColumnDropdown = !showColumnDropdown"
-                  class="btn btn-secondary px-2 md:px-3"
+                  class="btn btn-secondary w-full min-w-0 px-2 md:w-auto md:px-3"
                   :title="t('admin.users.columnSettings')"
                 >
                   <svg class="h-4 w-4 md:mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="1.5">
@@ -216,7 +216,7 @@
               <!-- Attributes Config Button -->
               <button
                 @click="showAttributesModal = true"
-                class="btn btn-secondary px-2 md:px-3"
+                class="btn btn-secondary w-full min-w-0 px-2 md:w-auto md:px-3"
                 :title="t('admin.users.attributes.configButton')"
               >
                 <Icon name="cog" size="sm" class="md:mr-1.5" />
@@ -225,7 +225,7 @@
             </div>
 
             <!-- Create User Button (full width on mobile, auto width on desktop) -->
-            <button @click="showCreateModal = true" class="btn btn-primary flex-1 md:flex-initial">
+            <button @click="showCreateModal = true" class="btn btn-primary w-full md:w-auto">
               <Icon name="plus" size="md" class="mr-2" />
               {{ t('admin.users.createUser') }}
             </button>
@@ -244,18 +244,19 @@
           default-sort-key="created_at"
           default-sort-order="desc"
           :sort-storage-key="USER_SORT_STORAGE_KEY"
+          mobile-density="compact"
           @sort="handleSort"
         >
           <template #cell-email="{ value }">
-            <div class="flex items-center gap-2">
+            <div class="ml-auto flex min-w-0 items-center justify-end gap-2 md:ml-0 md:justify-start">
               <div
-                class="flex h-8 w-8 items-center justify-center rounded-full bg-primary-100 dark:bg-primary-900/30"
+                class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary-100 dark:bg-primary-900/30 md:h-8 md:w-8"
               >
-                <span class="text-sm font-medium text-primary-700 dark:text-primary-300">
+                <span class="text-xs font-medium text-primary-700 dark:text-primary-300 md:text-sm">
                   {{ value.charAt(0).toUpperCase() }}
                 </span>
               </div>
-              <span class="font-medium text-gray-900 dark:text-white">{{ value }}</span>
+              <span class="min-w-0 truncate font-medium text-gray-900 dark:text-white">{{ value }}</span>
             </div>
           </template>
 
@@ -456,14 +457,14 @@
           </template>
 
           <template #cell-actions="{ row }">
-            <div class="flex items-center gap-1">
+            <div class="grid grid-cols-3 gap-1 md:flex md:items-center">
               <!-- Edit Button -->
               <button
                 @click="handleEdit(row)"
-                class="flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
+                class="flex min-w-0 flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-primary-600 dark:hover:bg-dark-700 dark:hover:text-primary-400"
               >
                 <Icon name="edit" size="sm" />
-                <span class="text-xs">{{ t('common.edit') }}</span>
+                <span class="truncate text-xs">{{ t('common.edit') }}</span>
               </button>
 
               <!-- Toggle Status Button (not for admin) -->
@@ -471,7 +472,7 @@
                 v-if="row.role !== 'admin'"
                 @click="handleToggleStatus(row)"
                 :class="[
-                  'flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors',
+                  'flex min-w-0 flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors',
                   row.status === 'active'
                     ? 'hover:bg-orange-50 hover:text-orange-600 dark:hover:bg-orange-900/20 dark:hover:text-orange-400'
                     : 'hover:bg-green-50 hover:text-green-600 dark:hover:bg-green-900/20 dark:hover:text-green-400'
@@ -479,17 +480,17 @@
               >
                 <Icon v-if="row.status === 'active'" name="ban" size="sm" />
                 <Icon v-else name="checkCircle" size="sm" />
-                <span class="text-xs">{{ row.status === 'active' ? t('admin.users.disable') : t('admin.users.enable') }}</span>
+                <span class="truncate text-xs">{{ row.status === 'active' ? t('admin.users.disable') : t('admin.users.enable') }}</span>
               </button>
 
               <!-- More Actions Menu Trigger -->
               <button
                 @click="openActionMenu(row, $event)"
-                class="action-menu-trigger flex flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-dark-700 dark:hover:text-white"
+                class="action-menu-trigger flex min-w-0 flex-col items-center gap-0.5 rounded-lg p-1.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:hover:bg-dark-700 dark:hover:text-white"
                 :class="{ 'bg-gray-100 text-gray-900 dark:bg-dark-700 dark:text-white': activeMenuId === row.id }"
               >
                 <Icon name="more" size="sm" />
-                <span class="text-xs">{{ t('common.more') }}</span>
+                <span class="truncate text-xs">{{ t('common.more') }}</span>
               </button>
             </div>
           </template>

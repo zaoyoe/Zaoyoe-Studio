@@ -421,7 +421,7 @@ function loadCommandCenterRuntime() {
 test('AdminCommandCenter renders actionable dock and task-oriented pulse panels', () => {
     const { window, listeners, elements, commandSummaries } = loadCommandCenterRuntime();
 
-    assert.equal(window.AdminCommandCenter.version, '20260426_ADMIN_PULSE_DOCK_V5');
+    assert.equal(window.AdminCommandCenter.version, '20260428_ADMIN_PULSE_DOCK_SWITCH_STEADY_1');
     assert.match(elements.adminCommandCenter.innerHTML, /运营待处理/);
     assert.match(elements.adminCommandCenter.innerHTML, /待办总览/);
     assert.match(elements.adminCommandCenter.innerHTML, /11 项待处理/);
@@ -787,12 +787,79 @@ test('AdminCommandCenter source keeps dock engagement and panel launch phases wi
     assert.match(source, /state\.panelPhase = 'closing'/);
 });
 
+test('AdminCommandCenter switches dock pulses without replaying the open animation', () => {
+    const { elements } = loadCommandCenterRuntime();
+
+    elements.adminCommandCenter.listeners.click({
+        target: {
+            closest(selector) {
+                if (selector === '[data-admin-command-pulse]') {
+                    return {
+                        dataset: {
+                            adminCommandPulse: 'notifications'
+                        }
+                    };
+                }
+                return null;
+            }
+        }
+    });
+
+    assert.match(elements.adminCommandCenter.innerHTML, /admin-command-center__panel is-opening/);
+
+    elements.adminCommandCenter.listeners.click({
+        target: {
+            closest(selector) {
+                if (selector === '[data-admin-command-pulse]') {
+                    return {
+                        dataset: {
+                            adminCommandPulse: 'budget'
+                        }
+                    };
+                }
+                return null;
+            }
+        }
+    });
+
+    assert.match(elements.adminCommandCenter.innerHTML, /admin-command-center__panel is-open/);
+    assert.doesNotMatch(elements.adminCommandCenter.innerHTML, /admin-command-center__panel is-opening/);
+    assert.equal(elements.adminCommandCenter.innerHTML.includes('AI 配置与运行态'), true);
+});
+
 test('AdminCommandCenter CSS keeps clicked dock icons highlighted without extra lift', () => {
     const source = fs.readFileSync(commandCenterCssPath, 'utf8');
 
     assert.match(source, /admin-command-center__dock-btn\.is-engaged[\s\S]*?z-index:\s*2/);
     assert.match(source, /admin-command-center__dock-btn\.is-engaged \.admin-command-center__dock-icon[\s\S]*?--admin-command-dock-border/);
     assert.doesNotMatch(source, /admin-command-dock-engage-(rise|scale)/);
+});
+
+test('AdminCommandCenter CSS lets the panel body own vertical scrolling in narrow viewports', () => {
+    const source = fs.readFileSync(commandCenterCssPath, 'utf8');
+
+    assert.match(
+        source,
+        /\.admin-command-center__panel \{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;[\s\S]*?min-height:\s*0;/,
+        'panel should be a column flex shell so the body can use the remaining height'
+    );
+    assert.match(
+        source,
+        /\.admin-command-center__panel-body \{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-height:\s*0;[\s\S]*?max-height:\s*none;[\s\S]*?overflow-y:\s*auto;/,
+        'panel body should scroll within the available panel height instead of using a fixed viewport subtraction'
+    );
+    assert.match(source, /scroll-padding-bottom:\s*20px;/);
+    assert.doesNotMatch(source, /\.admin-command-center__panel-body \{[\s\S]*?max-height:\s*calc\(100vh - 224px\)/);
+});
+
+test('AdminCommandCenter CSS hides the dock on mobile viewports', () => {
+    const source = fs.readFileSync(commandCenterCssPath, 'utf8');
+
+    assert.match(
+        source,
+        /20260428_ADMIN_PULSE_DOCK_MOBILE_HIDDEN_1[\s\S]*?@media \(max-width: 768px\) \{[\s\S]*?\.admin-command-center \{[\s\S]*?display:\s*none;/,
+        'mobile admin studio should not render the floating command dock'
+    );
 });
 
 test('AdminCommandCenter quick settings action falls back to the shared settings helper when shell routing is unavailable', async () => {

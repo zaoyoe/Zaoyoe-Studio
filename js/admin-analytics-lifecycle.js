@@ -550,25 +550,121 @@ async function runAnalyticsTaskPhases(phases = [], options = {}) {
     return true;
 }
 
+const ANALYTICS_REFRESH_PENDING_SELECTOR = [
+    '.loading-text',
+    '.admin-module-loading-dots',
+    '.analytics-duty-board-skeleton',
+    '.analytics-product-dashboard--skeleton',
+    '.analytics-product-detail-panel--skeleton',
+    '.admin-skeleton-block'
+].join(',');
+
+function isAnalyticsRefreshPendingNodeHidden(node) {
+    if (!node || node.nodeType !== 1) {
+        return true;
+    }
+
+    if (node.hidden || node.getAttribute('aria-hidden') === 'true') {
+        return true;
+    }
+
+    const hiddenAncestor = node.closest('[hidden], [aria-hidden="true"]');
+    if (hiddenAncestor) {
+        return true;
+    }
+
+    const tab = node.closest('.analytics-tab-content');
+    if (tab && !tab.classList.contains('active')) {
+        return true;
+    }
+
+    return false;
+}
+
+function getAnalyticsRefreshContentRoots(activeTabId = getActiveAnalyticsTabId()) {
+    const roots = [];
+    const normalizedTabId = normalizeAnalyticsTabId(activeTabId);
+    const activeTab = document.getElementById(`analytics-tab-${normalizedTabId}`);
+    const shellSection = document.getElementById('analyticsBusinessCenterShell')?.closest?.('section');
+    const focusSection = document.getElementById('analyticsOperatingFocusWorkspace')?.closest?.('section');
+    const activeModule = document.querySelector('.module-container.active');
+
+    [activeTab, shellSection, focusSection, activeModule].forEach((root) => {
+        if (root && !roots.includes(root) && !isAnalyticsRefreshPendingNodeHidden(root)) {
+            roots.push(root);
+        }
+    });
+
+    return roots;
+}
+
+function hasAnalyticsRefreshPendingContent(activeTabId = getActiveAnalyticsTabId()) {
+    return getAnalyticsRefreshContentRoots(activeTabId).some((root) => {
+        const pendingNodes = [
+            ...(root.matches?.(ANALYTICS_REFRESH_PENDING_SELECTOR) ? [root] : []),
+            ...Array.from(root.querySelectorAll?.(ANALYTICS_REFRESH_PENDING_SELECTOR) || [])
+        ];
+        return pendingNodes.some((node) => !isAnalyticsRefreshPendingNodeHidden(node));
+    });
+}
+
+async function waitForAnalyticsRefreshContentSettled(options = {}) {
+    const timeoutMs = Math.max(1200, Number(options.timeoutMs || 18000) || 18000);
+    const activeTabId = normalizeAnalyticsTabId(options.activeTabId || getActiveAnalyticsTabId());
+    const startedAt = Date.now();
+
+    await waitForAnalyticsPaint(2);
+    while (hasAnalyticsRefreshPendingContent(activeTabId)) {
+        if (Date.now() - startedAt >= timeoutMs) {
+            return false;
+        }
+        await waitForAnalyticsPaint(1);
+    }
+
+    return true;
+}
+
 function scheduleAnalyticsDeferredTaskPhases(options = {}) {
     const phases = Array.isArray(options.phases) ? options.phases : [];
     if (!phases.length) {
-        return;
+        return Promise.resolve(true);
     }
 
-    window.setTimeout(() => {
-        void (async () => {
-            await waitForAnalyticsPaint(2);
-            await runAnalyticsTaskPhases(phases, {
-                requestId: options.requestId,
-                contextKey: options.contextKey,
-                activeTabId: options.activeTabId,
-                stopIfStale: true
+    return new Promise((resolve) => {
+        window.setTimeout(() => {
+            void (async () => {
+                await waitForAnalyticsPaint(2);
+                return runAnalyticsTaskPhases(phases, {
+                    requestId: options.requestId,
+                    contextKey: options.contextKey,
+                    activeTabId: options.activeTabId,
+                    stopIfStale: true
+                });
+            })().then(resolve).catch((error) => {
+                console.warn('[Analytics] Deferred analytics panels failed:', error);
+                resolve(false);
             });
-        })().catch((error) => {
-            console.warn('[Analytics] Deferred analytics panels failed:', error);
-        });
-    }, 0);
+        }, 0);
+    });
+}
+
+async function runAnalyticsDeferredTaskPhases(options = {}) {
+    const phases = Array.isArray(options.phases) ? options.phases : [];
+    if (!phases.length) {
+        return true;
+    }
+
+    return scheduleAnalyticsDeferredTaskPhases(options);
+}
+
+async function settleAnalyticsRefreshContent(options = {}) {
+    if (options.waitForDeferred !== false) {
+        await runAnalyticsDeferredTaskPhases(options);
+    }
+
+    return waitForAnalyticsRefreshContentSettled({
+        activeTabId: options.activeTabId
+    });
 }
 
 async function reloadAnalyticsDashboard() {
@@ -593,150 +689,157 @@ async function reloadAnalyticsDashboard() {
         return analyticsRuntime.reloadPromise;
     }
 
+    const releaseRefreshIndicator = typeof window.beginAnalyticsRefreshIndicator === 'function'
+        ? window.beginAnalyticsRefreshIndicator({ reason, activeTabId })
+        : null;
     const requestId = analyticsRuntime.reloadRequestId + 1;
     analyticsRuntime.reloadRequestId = requestId;
     analyticsRuntime.reloadContextKey = contextKey;
     analyticsRuntime.reloadTabId = activeTabId;
 
     const reloadPromise = (async () => {
-        resetAnalyticsDerivedContext(contextKey);
+        try {
+            resetAnalyticsDerivedContext(contextKey);
 
-        const taskFactories = {
-            updateOnlineUsers: () => updateOnlineUsers({ force }),
-            loadOverviewStats: () => loadOverviewStats(),
-            loadOverviewDutyBoard: () => loadOverviewDutyBoard(),
-            loadOverviewOperatingNavigator: () => loadOverviewOperatingNavigator(),
-            loadOverviewBusinessMix: () => loadOverviewBusinessMix(),
-            loadUserTrendChart: () => loadUserTrendChart(days),
-            loadChannelChart: () => loadChannelChart(days),
-            loadGeoDistribution: () => loadGeoDistribution(),
-            loadContentTrendChart: () => loadContentTrendChart(days),
-            loadTopContent: () => loadTopContent(days),
-            loadProductAlerts: () => loadProductAlerts(),
-            loadProductOverview: () => loadProductOverview(),
-            loadProductRankings: () => loadProductRankings(),
-            loadProductFunnel: () => loadProductFunnel(),
-            loadProductHealth: () => loadProductHealth(),
-            loadProductDetailPanel: () => loadProductDetailPanel(),
-            loadOperationsCockpit: () => loadOperationsCockpit(),
-            loadActivityHeatmap: () => loadActivityHeatmap(days),
-            loadTopContributors: () => loadTopContributors(),
-            loadCommunityChart: () => loadCommunityChart(days),
-            loadConversionFunnel: () => loadConversionFunnel(days),
-            loadRetentionCohort: () => loadRetentionCohort(cohortWeeks),
-            loadPointsFlow: () => loadPointsFlow(days),
-            loadPointsStats: () => loadPointsStats(days),
-            loadPointsDistribution: () => loadPointsDistribution(),
-            loadPointsLeaderboard: () => loadPointsLeaderboard(),
-            loadRedemptionFunnel: () => loadRedemptionFunnel(days),
-            loadVerifyServiceSummary: () => loadVerifyServiceSummary(),
-            loadGrowthSummary: () => loadGrowthSummary(),
-            loadEventFunnelPanels: () => loadEventFunnelPanels()
-        };
-        const phaseTaskConfig = (() => {
-            switch (activeTabId) {
-                case 'product':
-                    return {
-                        critical: [
-                            ['updateOnlineUsers', 'loadProductAlerts', 'loadProductOverview', 'loadProductRankings'],
-                            ['loadProductFunnel', 'loadProductHealth']
-                        ]
-                    };
-                case 'product-detail':
-                    return {
-                        critical: [
-                            ['loadProductDetailPanel']
-                        ]
-                    };
-                case 'ops':
-                    return {
-                        critical: [
-                            ['updateOnlineUsers', 'loadOverviewOperatingNavigator', 'loadOperationsCockpit']
-                        ]
-                    };
-                case 'content':
-                    return {
-                        critical: [
-                            ['updateOnlineUsers', 'loadTopContent', 'loadContentTrendChart'],
-                            ['loadActivityHeatmap', 'loadConversionFunnel']
-                        ]
-                    };
-                case 'growth':
-                    return {
-                        critical: [
-                            ['updateOnlineUsers', 'loadGrowthSummary']
-                        ],
-                        deferred: [
-                            ['loadUserTrendChart'],
-                            ['loadEventFunnelPanels'],
-                            ['loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort']
-                        ]
-                    };
-                case 'monetization':
-                    return {
-                        critical: [
-                            ['updateOnlineUsers', 'loadPointsFlow', 'loadPointsStats', 'loadEventFunnelPanels'],
-                            ['loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel']
-                        ]
-                    };
-                case 'verify':
-                    return {
-                        critical: [
-                            ['updateOnlineUsers', 'loadVerifyServiceSummary', 'loadEventFunnelPanels']
-                        ]
-                    };
-                case 'overview':
-                default:
-                    return {
-                        critical: [
-                            ['updateOnlineUsers', 'loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewOperatingNavigator', 'loadOverviewBusinessMix'],
-                            ['loadUserTrendChart', 'loadChannelChart', 'loadGeoDistribution']
-                        ]
-                    };
+            const taskFactories = {
+                updateOnlineUsers: () => updateOnlineUsers({ force }),
+                loadOverviewStats: () => loadOverviewStats(),
+                loadOverviewDutyBoard: () => loadOverviewDutyBoard(),
+                loadOverviewOperatingNavigator: () => loadOverviewOperatingNavigator(),
+                loadOverviewBusinessMix: () => loadOverviewBusinessMix(),
+                loadUserTrendChart: () => loadUserTrendChart(days),
+                loadChannelChart: () => loadChannelChart(days),
+                loadGeoDistribution: () => loadGeoDistribution(),
+                loadContentTrendChart: () => loadContentTrendChart(days),
+                loadTopContent: () => loadTopContent(days),
+                loadProductAlerts: () => loadProductAlerts(),
+                loadProductOverview: () => loadProductOverview(),
+                loadProductRankings: () => loadProductRankings(),
+                loadProductFunnel: () => loadProductFunnel(),
+                loadProductHealth: () => loadProductHealth(),
+                loadProductDetailPanel: () => loadProductDetailPanel(),
+                loadOperationsCockpit: () => loadOperationsCockpit(),
+                loadActivityHeatmap: () => loadActivityHeatmap(days),
+                loadTopContributors: () => loadTopContributors(),
+                loadCommunityChart: () => loadCommunityChart(days),
+                loadConversionFunnel: () => loadConversionFunnel(days),
+                loadRetentionCohort: () => loadRetentionCohort(cohortWeeks),
+                loadPointsFlow: () => loadPointsFlow(days),
+                loadPointsStats: () => loadPointsStats(days),
+                loadPointsDistribution: () => loadPointsDistribution(),
+                loadPointsLeaderboard: () => loadPointsLeaderboard(),
+                loadRedemptionFunnel: () => loadRedemptionFunnel(days),
+                loadVerifyServiceSummary: () => loadVerifyServiceSummary(),
+                loadGrowthSummary: () => loadGrowthSummary(),
+                loadEventFunnelPanels: () => loadEventFunnelPanels()
+            };
+            const phaseTaskConfig = (() => {
+                switch (activeTabId) {
+                    case 'product':
+                        return {
+                            critical: [
+                                ['updateOnlineUsers', 'loadProductAlerts', 'loadProductOverview', 'loadProductRankings'],
+                                ['loadProductFunnel', 'loadProductHealth']
+                            ]
+                        };
+                    case 'product-detail':
+                        return {
+                            critical: [
+                                ['loadProductDetailPanel']
+                            ]
+                        };
+                    case 'ops':
+                        return {
+                            critical: [
+                                ['updateOnlineUsers', 'loadOverviewOperatingNavigator', 'loadOperationsCockpit']
+                            ]
+                        };
+                    case 'content':
+                        return {
+                            critical: [
+                                ['updateOnlineUsers', 'loadTopContent', 'loadContentTrendChart'],
+                                ['loadActivityHeatmap', 'loadConversionFunnel']
+                            ]
+                        };
+                    case 'growth':
+                        return {
+                            critical: [
+                                ['updateOnlineUsers', 'loadGrowthSummary']
+                            ],
+                            deferred: [
+                                ['loadUserTrendChart'],
+                                ['loadEventFunnelPanels'],
+                                ['loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort']
+                            ]
+                        };
+                    case 'monetization':
+                        return {
+                            critical: [
+                                ['updateOnlineUsers', 'loadPointsFlow', 'loadPointsStats', 'loadEventFunnelPanels'],
+                                ['loadPointsDistribution', 'loadPointsLeaderboard', 'loadRedemptionFunnel']
+                            ]
+                        };
+                    case 'verify':
+                        return {
+                            critical: [
+                                ['updateOnlineUsers', 'loadVerifyServiceSummary', 'loadEventFunnelPanels']
+                            ]
+                        };
+                    case 'overview':
+                    default:
+                        return {
+                            critical: [
+                                ['updateOnlineUsers', 'loadOverviewStats', 'loadOverviewDutyBoard', 'loadOverviewOperatingNavigator', 'loadOverviewBusinessMix'],
+                                ['loadUserTrendChart', 'loadChannelChart', 'loadGeoDistribution']
+                            ]
+                        };
+                }
+            })();
+            const seenTaskIds = new Set();
+            const phaseTaskIds = Array.isArray(phaseTaskConfig) ? phaseTaskConfig : phaseTaskConfig.critical;
+            const deferredPhaseTaskIds = Array.isArray(phaseTaskConfig) ? [] : phaseTaskConfig.deferred;
+            const phases = buildAnalyticsTaskPhases(phaseTaskIds, taskFactories, seenTaskIds);
+            const deferredPhases = buildAnalyticsTaskPhases(deferredPhaseTaskIds, taskFactories, seenTaskIds);
+
+            await runAnalyticsTaskPhases(phases, {
+                requestId,
+                contextKey,
+                activeTabId,
+                stopIfStale: true
+            });
+
+            if (activeTabId === 'product-detail') {
+                window.settleAnalyticsProductDetailPendingState?.({
+                    activeTabId
+                });
             }
-        })();
-        const seenTaskIds = new Set();
-        const phaseTaskIds = Array.isArray(phaseTaskConfig) ? phaseTaskConfig : phaseTaskConfig.critical;
-        const deferredPhaseTaskIds = Array.isArray(phaseTaskConfig) ? [] : phaseTaskConfig.deferred;
-        const phases = buildAnalyticsTaskPhases(phaseTaskIds, taskFactories, seenTaskIds);
-        const deferredPhases = buildAnalyticsTaskPhases(deferredPhaseTaskIds, taskFactories, seenTaskIds);
 
-        await runAnalyticsTaskPhases(phases, {
-            requestId,
-            contextKey,
-            activeTabId,
-            stopIfStale: true
-        });
-
-        if (deferredPhases.length > 0) {
-            scheduleAnalyticsDeferredTaskPhases({
+            await settleAnalyticsRefreshContent({
                 phases: deferredPhases,
                 requestId,
                 contextKey,
                 activeTabId
             });
+
+            updateLastUpdateTime();
+
+            if (requestId === analyticsRuntime.reloadRequestId) {
+                analyticsRuntime.lastLoadedAt = Date.now();
+                analyticsRuntime.lastLoadedContextKey = contextKey;
+                analyticsRuntime.lastReloadReason = reason;
+                markAnalyticsTabLoaded(activeTabId, contextKey);
+            }
+
+            if (typeof window.emitAnalyticsCommandCenterInventorySummaryUpdate === 'function') {
+                window.emitAnalyticsCommandCenterInventorySummaryUpdate();
+            }
+
+            return true;
+        } finally {
+            if (typeof releaseRefreshIndicator === 'function') {
+                releaseRefreshIndicator();
+            }
         }
-
-        if (activeTabId === 'product-detail') {
-            window.settleAnalyticsProductDetailPendingState?.({
-                activeTabId
-            });
-        }
-
-        updateLastUpdateTime();
-
-        if (requestId === analyticsRuntime.reloadRequestId) {
-            analyticsRuntime.lastLoadedAt = Date.now();
-            analyticsRuntime.lastLoadedContextKey = contextKey;
-            analyticsRuntime.lastReloadReason = reason;
-            markAnalyticsTabLoaded(activeTabId, contextKey);
-        }
-
-        if (typeof window.emitAnalyticsCommandCenterInventorySummaryUpdate === 'function') {
-            window.emitAnalyticsCommandCenterInventorySummaryUpdate();
-        }
-
-        return true;
     })();
 
     analyticsRuntime.reloadPromise = reloadPromise;

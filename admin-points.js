@@ -2478,7 +2478,7 @@ function renderBatches() {
         const pointsPerCode = Math.max(0, Number(batch.custom_points_amount) || Number(pkg?.points_amount) || 0);
         const isSelected = selectedBatchIds.has(batch.id);
         const checkboxCell = batchSelectMode ? `
-            <td class="checkbox-col" data-points-action="batch-row-stop">
+            <td class="checkbox-col" data-label="选择" data-points-action="batch-row-stop">
                 <label class="custom-checkbox">
                     <input type="checkbox" ${isSelected ? 'checked' : ''} data-points-change="toggle-selection" data-batch-id="${encodeURIComponent(batch.id)}">
                     <span class="checkmark"></span>
@@ -2489,29 +2489,29 @@ function renderBatches() {
         return `
             <tr data-batch-id="${batch.id}" class="points-batch-row ${isSelected ? 'selected' : ''}" data-points-action="view-batch-codes">
                 ${checkboxCell}
-                <td>
+                <td data-label="批次名称">
                     <div class="points-batch-name-cell">
                         <strong>${escapePointsHtml(batch.name || '-')}</strong>
                         <div class="points-batch-risk-row">${riskBadges}</div>
                         <span class="points-batch-meta-text">创建于 ${escapePointsHtml(createdAt)}${expiryMeta ? ` · ${escapePointsHtml(expiryMeta)}` : ''}</span>
                     </div>
                 </td>
-                <td>
+                <td data-label="套餐">
                     <div class="points-batch-package-cell">
                         <strong>${escapePointsHtml(packageLabel)}</strong>
                         <span>${pointsPerCode > 0 ? `${escapePointsHtml(pointsPerCode)} 分 / 码` : '面额未设置'}</span>
                     </div>
                 </td>
-                <td><span class="channel-badge ${batch.channel}">${channelLabels[batch.channel] || batch.channel}</span></td>
-                <td>${batch.total_count}</td>
-                <td>
+                <td data-label="渠道"><span class="channel-badge ${batch.channel}">${channelLabels[batch.channel] || batch.channel}</span></td>
+                <td data-label="总数">${batch.total_count}</td>
+                <td data-label="已用">
                     <div class="usage-cell">
                         <span>${batch.used_count}</span>
                         <div class="usage-bar"><div class="usage-fill" data-usage-fill-width="${usedPercent}%"></div></div>
                     </div>
                 </td>
-                <td>${createdAt}</td>
-                <td class="actions-cell" data-points-action="batch-row-stop">
+                <td data-label="创建时间">${createdAt}</td>
+                <td class="actions-cell" data-label="操作" data-points-action="batch-row-stop">
                     <div class="points-batch-actions">
                         <button class="btn-icon" type="button" data-points-action="open-batch-edit" data-batch-id="${encodeURIComponent(batch.id)}" title="编辑批次">
                             <i class="fas fa-edit"></i>
@@ -3159,23 +3159,23 @@ function renderPointsPackageCatalogTable(rows = getPointsCatalogRows()) {
 
         return `
             <tr class="points-package-row ${isSelected ? 'is-selected' : ''}" data-package-id="${pkg.id}">
-                <td>
+                <td data-label="套餐">
                     <div class="points-package-name">
                         <strong>${pkg.name || '-'}</strong>
                         ${secondaryName ? `<span class="points-package-name__secondary">${secondaryName}</span>` : ''}
                     </div>
                 </td>
-                <td>
+                <td data-label="积分结构">
                     <div class="points-package-balance">
                         <strong>${formatPointAmount(totalPoints)} 积分</strong>
                         <span>基础 ${formatPointAmount(pkg.points_amount || 0)} / 赠送 ${formatPointAmount(pkg.bonus_points || 0)}</span>
                     </div>
                 </td>
-                <td>${formatPointsPackagePrice(pkg.price_cny)}</td>
-                <td><span class="points-package-status ${statusClass}">${pkg.is_active === false ? '停用' : '启用'}</span></td>
-                <td>${formatPointsPackageMetricCell(metrics.cn)}</td>
-                <td>${formatPointsPackageMetricCell(metrics.intl)}</td>
-                <td class="points-package-actions">
+                <td data-label="价格">${formatPointsPackagePrice(pkg.price_cny)}</td>
+                <td data-label="状态"><span class="points-package-status ${statusClass}">${pkg.is_active === false ? '停用' : '启用'}</span></td>
+                <td data-label="CN 数据">${formatPointsPackageMetricCell(metrics.cn)}</td>
+                <td data-label="INTL 数据">${formatPointsPackageMetricCell(metrics.intl)}</td>
+                <td class="points-package-actions" data-label="操作">
                     <button class="btn-icon" type="button" data-points-action="duplicate-package" data-package-id="${encodeURIComponent(pkg.id)}" title="复制为新套餐">
                         <i class="fas fa-clone"></i>
                     </button>
@@ -3186,6 +3186,8 @@ function renderPointsPackageCatalogTable(rows = getPointsCatalogRows()) {
             </tr>
         `;
     }).join('');
+
+    enableHorizontalScroll(document.querySelector('#points-view-catalog .points-catalog-table-shell'));
 }
 
 function renderPointsPackageCatalog(payload = {}) {
@@ -3972,11 +3974,11 @@ function buildPointsBatchCodesTableSection(codes = pointsBatchCodesUiState.codes
         const isFocused = String(pointsBatchCodesUiState.focusCode || '') === String(c.code || '');
 
         return `<tr class="code-row ${escapePointsHtml(c.status || '')} ${isFocused ? 'points-batch-code-row--focused' : ''}" data-code-key="${encodeURIComponent(c.code || '')}">
-            <td class="code-cell">${escapePointsHtml(c.code || '-')}</td>
-            <td>${statusMap[c.status] || escapePointsHtml(c.status || '-')}</td>
-            <td>${expiryText}</td>
-            <td>${detailHtml}</td>
-            <td class="actions-cell">
+            <td class="code-cell" data-label="兑换码">${escapePointsHtml(c.code || '-')}</td>
+            <td data-label="状态">${statusMap[c.status] || escapePointsHtml(c.status || '-')}</td>
+            <td data-label="有效期">${expiryText}</td>
+            <td data-label="详情">${detailHtml}</td>
+            <td class="actions-cell" data-label="操作">
                 <div class="points-batch-codes-row-tools">${rowActions}</div>
             </td>
         </tr>`;
@@ -5254,7 +5256,7 @@ async function viewBatchCodes(batchId) {
 
     document.querySelector('.codes-modal-overlay')?.remove();
     const loadingHtml = `
-        <div class="codes-modal-overlay" data-points-overlay-close="codes">
+        <div class="codes-modal-overlay codes-modal-overlay--batch" data-points-overlay-close="codes">
             <div class="codes-modal codes-modal--batch">
                 <div class="codes-modal-header codes-modal-header--batch">
                     <div class="codes-modal-header__copy">

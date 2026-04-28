@@ -11,7 +11,7 @@ test('shop-related admin selects are marked for custom rendering instead of nati
     const adminHtml = readRepoFile('admin-studio.html');
 
     const markers = [
-        'id="productDeliveryFilter" class="config-input shop-product-toolbar-select"\n                                data-shop-custom-select="true"',
+        'id="productDeliveryFilter" class="config-input shop-product-toolbar-select"\n                                    data-shop-custom-select="true"',
         'id="releaseProductSelect"\n                                data-shop-custom-select="true"',
         'id="importProductSelect"\n                                data-shop-custom-select="true"',
         'id="orderRefundStatusFilter" class="config-input shop-orders-filter-select"\n                                data-shop-custom-select="true"',
@@ -42,7 +42,9 @@ test('shop admin runtime exposes custom select enhancement and homepage sync hoo
         'createShopCustomSelectWrapper: function (select)',
         'syncShopCustomSelect: function (selectOrId)',
         'enhanceShopCustomSelects: function (root = document)',
+        'bindProductDeliveryFilterPlacement: function ()',
         'this.enhanceShopCustomSelects();',
+        'this.bindProductDeliveryFilterPlacement();',
         "window.ShopAdmin?.scheduleShopCustomSelectSync?.(el);"
     ];
 
@@ -56,7 +58,8 @@ test('shop admin runtime exposes custom select enhancement and homepage sync hoo
         '.shop-custom-select__trigger',
         '.shop-custom-select__menu',
         '.shop-custom-select__option',
-        '.shop-custom-select.is-open .shop-custom-select__menu'
+        '.shop-custom-select.is-open .shop-custom-select__menu',
+        '.shop-product-delivery-filter-slot'
     ];
 
     for (const marker of styleMarkers) {

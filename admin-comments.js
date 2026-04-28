@@ -2530,6 +2530,9 @@ function ensureCommentDetailDrawer() {
                     <div class="comment-detail-drawer__eyebrow">Comment V2</div>
                     <h3 class="comment-detail-drawer__title" id="commentDetailDrawerTitle">评论详情</h3>
                 </div>
+                <button type="button" class="comment-detail-drawer__close" data-comments-action="close-detail-drawer" aria-label="关闭评论详情" title="关闭评论详情">
+                    <i class="fas fa-times" aria-hidden="true"></i>
+                </button>
             </div>
             <div class="comment-detail-drawer__body" id="commentDetailDrawerBody"></div>
         </aside>

@@ -4504,6 +4504,18 @@ function bindAdminStudioDelegatedControls() {
 
     document.addEventListener('click', (event) => {
         const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        const closeButton = target?.closest?.('[data-admin-large-modal-close]');
+        if (!(closeButton instanceof HTMLElement)) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        closeAdminStudioLargeModalFromButton(closeButton);
+    });
+
+    document.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
         if (!target) {
             return;
         }
@@ -4553,62 +4565,199 @@ function bindAdminStudioDelegatedControls() {
             return;
         }
 
-        switch (overlay.dataset.adminOverlayClose) {
-            case 'discount-generate-modal':
-                window.AdminDiscounts?.closeGenerateModal?.();
-                break;
-            case 'discount-detail-modal':
-                window.AdminDiscounts?.closeDetailModal?.();
-                break;
-            case 'discount-restore-modal':
-                window.AdminDiscounts?.closeRestoreModal?.();
-                break;
-            case 'discount-batch-restore-modal':
-                window.AdminDiscounts?.closeBatchRestoreModal?.();
-                break;
-            case 'discount-batch-restore-result-modal':
-                window.AdminDiscounts?.closeBatchRestoreResultModal?.();
-                break;
-            case 'discount-batch-restore-history-modal':
-                window.AdminDiscounts?.closeBatchRestoreHistoryModal?.();
-                break;
-            case 'discount-batch-restore-history-run-detail-modal':
-                window.AdminDiscounts?.closeBatchRestoreHistoryRunDetail?.();
-                break;
-            case 'ticket-reply-modal':
-                window.AdminTickets?.closeReplyModal?.();
-                break;
-            case 'ticket-bulk-process-modal':
-                window.AdminTickets?.closeBulkProcessModal?.();
-                break;
-            case 'ticket-summary-job-detail-modal':
-                window.AdminTickets?.closeReminderSummaryJobDetail?.();
-                break;
-            case 'shop-risk-case-modal':
-                window.closeShopRiskCaseComposer?.();
-                break;
-            case 'ops-alert-batch-mute-modal':
-                window.closeOpsAlertBatchMuteModal?.();
-                break;
-            case 'delete-confirm-modal':
-                hideDeleteConfirmation();
-                break;
-            case 'crop-modal':
-                closeCropModal();
-                break;
-            case 'user-modal':
-                window.closeUserModal?.();
-                break;
-            case 'inventory-release-modal':
-                window.ShopAdmin?.closeReleaseModal?.();
-                break;
-            case 'inventory-import-modal':
-                window.ShopAdmin?.closeImportModal?.();
-                break;
-            default:
-                break;
-        }
+        closeAdminStudioOverlayByKey(overlay.dataset.adminOverlayClose);
     });
+}
+
+const ADMIN_STUDIO_LARGE_MODAL_CLOSE_RULES = [
+    { overlay: '[data-admin-overlay-close="user-modal"]', panel: '#userModal' },
+    { overlay: '[data-admin-overlay-close="ticket-summary-job-detail-modal"]', panel: '.admin-ticket-summary-job-modal__dialog' },
+    { overlay: '[data-admin-overlay-close="ticket-reply-modal"]', panel: '.admin-ticket-reply-modal__panel' },
+    { overlay: '[data-admin-overlay-close="ticket-bulk-process-modal"]', panel: '.admin-ticket-bulk-modal__panel' },
+    { overlay: '[data-admin-overlay-close="discount-generate-modal"]', panel: '.admin-discount-form-modal__dialog' },
+    { overlay: '[data-admin-overlay-close="discount-detail-modal"]', panel: '.admin-discount-detail-dialog' },
+    { overlay: '[data-admin-overlay-close="discount-restore-modal"]', panel: '.admin-discount-restore-dialog' },
+    { overlay: '[data-admin-overlay-close="discount-batch-restore-modal"]', panel: '.admin-discount-restore-dialog' },
+    { overlay: '[data-admin-overlay-close="discount-batch-restore-result-modal"]', panel: '.admin-discount-restore-dialog' },
+    { overlay: '[data-admin-overlay-close="discount-batch-restore-history-modal"]', panel: '.admin-discount-restore-dialog' },
+    { overlay: '[data-admin-overlay-close="discount-batch-restore-history-run-detail-modal"]', panel: '.admin-discount-restore-dialog' },
+    { overlay: '[data-admin-overlay-close="shop-risk-case-modal"]', panel: '.admin-shop-risk-case-modal__dialog' },
+    { overlay: '[data-admin-overlay-close="ops-alert-batch-mute-modal"]', panel: '.admin-shop-risk-case-modal__dialog' },
+    { overlay: '[data-admin-overlay-close="crop-modal"]', panel: '.crop-modal' },
+    { overlay: '[data-admin-overlay-close="inventory-release-modal"]', panel: '.admin-studio-inline-style-attr-122' },
+    { overlay: '[data-admin-overlay-close="inventory-import-modal"]', panel: '.admin-studio-inline-style-attr-131' },
+    { overlay: '[data-shop-overlay-close="product-modal"]', panel: '.premium-modal-layout' },
+    { overlay: '[data-shop-overlay-close="dynamic-modal"]', panel: '.shop-order-content-modal' },
+    { overlay: '[data-shop-overlay-close="dynamic-modal"]', panel: '.shop-refund-modal' },
+    { overlay: '[data-shop-overlay-close="dynamic-modal"]', panel: '.shop-inventory-detail-modal' },
+    { overlay: '[data-shop-overlay-close="dynamic-modal"]', panel: '.shop-inventory-fault-modal' },
+    { overlay: '[data-points-overlay-close="delete-options"]', panel: '.points-delete-options-modal' },
+    { overlay: '[data-points-overlay-close="codes"]', panel: '.codes-modal' },
+    { overlay: '[data-points-overlay-close="batch-edit"]', panel: '.edit-modal--batch' },
+    { overlay: '[data-points-overlay-close="package-delete"]', panel: '.edit-modal--package-delete' },
+    { overlay: '[data-points-overlay-close="code-action"]', panel: '.edit-modal--code-action' },
+    { overlay: '[data-points-overlay-close="batch-invalidate"]', panel: '.edit-modal--batch-invalidate' }
+];
+
+function closeAdminStudioOverlayByKey(key = '') {
+    switch (key) {
+        case 'discount-generate-modal':
+            window.AdminDiscounts?.closeGenerateModal?.();
+            break;
+        case 'discount-detail-modal':
+            window.AdminDiscounts?.closeDetailModal?.();
+            break;
+        case 'discount-restore-modal':
+            window.AdminDiscounts?.closeRestoreModal?.();
+            break;
+        case 'discount-batch-restore-modal':
+            window.AdminDiscounts?.closeBatchRestoreModal?.();
+            break;
+        case 'discount-batch-restore-result-modal':
+            window.AdminDiscounts?.closeBatchRestoreResultModal?.();
+            break;
+        case 'discount-batch-restore-history-modal':
+            window.AdminDiscounts?.closeBatchRestoreHistoryModal?.();
+            break;
+        case 'discount-batch-restore-history-run-detail-modal':
+            window.AdminDiscounts?.closeBatchRestoreHistoryRunDetail?.();
+            break;
+        case 'ticket-reply-modal':
+            window.AdminTickets?.closeReplyModal?.();
+            break;
+        case 'ticket-bulk-process-modal':
+            window.AdminTickets?.closeBulkProcessModal?.();
+            break;
+        case 'ticket-summary-job-detail-modal':
+            window.AdminTickets?.closeReminderSummaryJobDetail?.();
+            break;
+        case 'shop-risk-case-modal':
+            window.closeShopRiskCaseComposer?.();
+            break;
+        case 'ops-alert-batch-mute-modal':
+            window.closeOpsAlertBatchMuteModal?.();
+            break;
+        case 'delete-confirm-modal':
+            hideDeleteConfirmation();
+            break;
+        case 'crop-modal':
+            closeCropModal();
+            break;
+        case 'user-modal':
+            window.closeUserModal?.();
+            break;
+        case 'inventory-release-modal':
+            window.ShopAdmin?.closeReleaseModal?.();
+            break;
+        case 'inventory-import-modal':
+            window.ShopAdmin?.closeImportModal?.();
+            break;
+        default:
+            break;
+    }
+}
+
+function closeAdminStudioLargeModalFromButton(closeButton) {
+    const overlay = closeButton.closest('[data-admin-overlay-close], [data-shop-overlay-close], [data-points-overlay-close]');
+    if (!(overlay instanceof HTMLElement)) {
+        return;
+    }
+
+    if (overlay.hasAttribute('data-admin-overlay-close')) {
+        closeAdminStudioOverlayByKey(overlay.dataset.adminOverlayClose || '');
+        return;
+    }
+
+    if (overlay.hasAttribute('data-shop-overlay-close')) {
+        if (overlay.dataset.shopOverlayClose === 'product-modal') {
+            window.ShopAdmin?.hideProductModal?.();
+            return;
+        }
+        if (overlay.dataset.shopOverlayClose === 'dynamic-modal') {
+            window.ShopAdmin?.closeDynamicModal?.(overlay.dataset.modalId);
+            return;
+        }
+    }
+
+    if (overlay.hasAttribute('data-points-overlay-close')) {
+        const existingCloseButton = overlay.querySelector(':is([data-points-action="close-delete-options"], [data-points-action="close-codes-modal"], [data-points-action="close-batch-edit"], [data-points-action="close-package-delete-modal"], [data-points-action="close-code-action-modal"], [data-points-action="close-batch-invalidate-modal"])');
+        if (existingCloseButton instanceof HTMLElement && existingCloseButton !== closeButton) {
+            existingCloseButton.click();
+            return;
+        }
+        if (overlay.dataset.pointsOverlayClose === 'codes') {
+            window.closeCodesModal?.();
+            return;
+        }
+    }
+
+    overlay.classList.remove('active', 'is-visible');
+    overlay.setAttribute('aria-hidden', 'true');
+}
+
+function collectAdminStudioLargeModalOverlays(root, selector) {
+    const overlays = [];
+    if (root instanceof Element && root.matches(selector)) {
+        overlays.push(root);
+    }
+    if (typeof root?.querySelectorAll === 'function') {
+        root.querySelectorAll(selector).forEach((overlay) => overlays.push(overlay));
+    }
+    return overlays;
+}
+
+function ensureAdminStudioLargeModalCloseButton(panel) {
+    if (!(panel instanceof HTMLElement)) {
+        return;
+    }
+
+    panel.classList.add('admin-studio-large-modal-panel');
+    const overlay = panel.closest('[data-admin-overlay-close], [data-shop-overlay-close], [data-points-overlay-close]');
+    if (overlay instanceof HTMLElement) {
+        overlay.classList.add('admin-studio-large-modal-overlay');
+    }
+
+    if (panel.querySelector(':scope > [data-admin-large-modal-close]')) {
+        return;
+    }
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'admin-studio-large-modal-close';
+    button.setAttribute('data-admin-large-modal-close', 'true');
+    button.setAttribute('aria-label', '关闭弹窗');
+    button.setAttribute('title', '关闭弹窗');
+    button.innerHTML = '<i class="fas fa-times" aria-hidden="true"></i>';
+    panel.appendChild(button);
+}
+
+function enhanceAdminStudioLargeModalCloseButtons(root = document) {
+    ADMIN_STUDIO_LARGE_MODAL_CLOSE_RULES.forEach((rule) => {
+        collectAdminStudioLargeModalOverlays(root, rule.overlay).forEach((overlay) => {
+            const panel = overlay.querySelector(rule.panel);
+            ensureAdminStudioLargeModalCloseButton(panel);
+        });
+    });
+}
+
+function initAdminStudioLargeModalCloseEnhancer() {
+    enhanceAdminStudioLargeModalCloseButtons(document);
+
+    const observer = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            mutation.addedNodes.forEach((node) => {
+                if (node instanceof Element) {
+                    enhanceAdminStudioLargeModalCloseButtons(node);
+                }
+            });
+            if (mutation.type === 'childList' && mutation.target instanceof Element) {
+                enhanceAdminStudioLargeModalCloseButtons(mutation.target);
+            }
+        });
+    });
+
+    observer.observe(document.body, { childList: true, subtree: true });
+    window.refreshAdminStudioLargeModalCloseButtons = enhanceAdminStudioLargeModalCloseButtons;
 }
 
 // ========================================
@@ -11776,6 +11925,7 @@ function scheduleAdminStudioBoot() {
 
 window.__adminStudioRuntimeReady = true;
 bindAdminStudioDelegatedControls();
+initAdminStudioLargeModalCloseEnhancer();
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', scheduleAdminStudioBoot, { once: true });

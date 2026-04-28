@@ -6,9 +6,9 @@
     }
     global.__zaoyoeWalletModalBootstrapLoaded = true;
 
-    const VERSION = '20260427_WALLET_THEME_DEFAULT_LIGHT_1';
-    const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260427_WALLET_THEME_DEFAULT_LIGHT_1';
-    const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260427_WALLET_THEME_DEFAULT_LIGHT_1';
+    const VERSION = '20260428_WALLET_MOBILE_NAV_STABLE_1';
+    const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260428_WALLET_MOBILE_NAV_STABLE_1';
+    const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260428_WALLET_MOBILE_NAV_STABLE_1';
     const POLL_INTERVAL_MS = 100;
     const MAX_WAIT_MS = 10000;
 

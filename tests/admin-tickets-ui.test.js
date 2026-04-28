@@ -91,6 +91,8 @@ function loadAdminTicketsRuntime(options = {}) {
     const querySelectors = new Map(Object.entries(options.querySelectors || {}));
     const toasts = [];
     let confirmCalls = [];
+    let viewportScrollX = Number(options.scrollX || 0);
+    let viewportScrollY = Number(options.scrollY || 0);
 
     const document = {
         getElementById(id) {
@@ -136,6 +138,33 @@ function loadAdminTicketsRuntime(options = {}) {
             return 1;
         },
         clearTimeout() {},
+        get scrollX() {
+            return viewportScrollX;
+        },
+        set scrollX(value) {
+            viewportScrollX = Number(value) || 0;
+        },
+        get scrollY() {
+            return viewportScrollY;
+        },
+        set scrollY(value) {
+            viewportScrollY = Number(value) || 0;
+        },
+        get pageXOffset() {
+            return viewportScrollX;
+        },
+        get pageYOffset() {
+            return viewportScrollY;
+        },
+        scrollTo(leftOrOptions, topValue) {
+            if (leftOrOptions && typeof leftOrOptions === 'object') {
+                viewportScrollX = Number(leftOrOptions.left || 0);
+                viewportScrollY = Number(leftOrOptions.top || 0);
+                return;
+            }
+            viewportScrollX = Number(leftOrOptions || 0);
+            viewportScrollY = Number(topValue || 0);
+        },
         showToast(message, type) {
             toasts.push({ message, type });
         },
@@ -697,6 +726,37 @@ test('admin tickets workspace navigation merges queue and batch into a single pr
     assert.equal(AdminTickets.activeReminderSummaryJobId, 'summary-nav-job-1');
     assert.equal(historyRequest?.jobId, 'summary-nav-job-1');
     assert.equal(historyRequest?.options?.force, true);
+});
+
+test('admin tickets workspace tab switches preserve page scroll when auto-scroll is disabled', () => {
+    const moduleElement = createElementStub({ dataset: { ticketWorkspace: 'overview' } });
+    const queueTab = createElementStub({ dataset: { ticketWorkspace: 'queue' } });
+    const overviewTab = createElementStub({ dataset: { ticketWorkspace: 'overview' } });
+    const summaryTab = createElementStub({ dataset: { ticketWorkspace: 'summary' } });
+    const { AdminTickets, window } = loadAdminTicketsRuntime({
+        scrollY: 420,
+        elements: {
+            'module-tickets': moduleElement,
+            ticketWorkspaceQueueTab: queueTab,
+            ticketWorkspaceOverviewTab: overviewTab,
+            ticketWorkspaceSummaryTab: summaryTab,
+            ticketsWorkspaceTitle: createElementStub(),
+            ticketsWorkspaceSubtitle: createElementStub()
+        }
+    });
+
+    AdminTickets.syncReminderWorkspacePresentation = () => {
+        window.scrollY = 513;
+    };
+
+    const view = AdminTickets.setWorkspaceView('summary', {
+        scroll: false,
+        highlight: false
+    });
+
+    assert.equal(view, 'summary');
+    assert.equal(moduleElement.dataset.ticketWorkspace, 'summary');
+    assert.equal(window.scrollY, 420);
 });
 
 test('admin tickets renderOverview splits reminder status and summary tracking by workspace', () => {

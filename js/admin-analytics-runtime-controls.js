@@ -386,6 +386,64 @@ function updateAutoRefreshInterval(ms) {
     showToast(`自动刷新间隔已更新为 ${intervalText}`, 'success');
 }
 
+function getAnalyticsRefreshButtonIcons() {
+    return Array.from(document.querySelectorAll(
+        '[data-admin-action="analytics-refresh-data"] i.fa-sync-alt, .btn-icon-sm i.fa-redo'
+    ));
+}
+
+function getAnalyticsRefreshIndicatorScopeId() {
+    if (typeof getActiveAnalyticsSidebarModuleId === 'function') {
+        return String(getActiveAnalyticsSidebarModuleId() || '').trim().toLowerCase();
+    }
+
+    const activeModuleId = String(document.querySelector('.module-container.active')?.id || '')
+        .replace(/^module-/, '')
+        .trim()
+        .toLowerCase();
+    return activeModuleId;
+}
+
+function isAnalyticsRefreshIndicatorScopeActive() {
+    const scopeId = getAnalyticsRefreshIndicatorScopeId();
+    return scopeId === 'growth-center' || scopeId === 'commerce-center';
+}
+
+function syncAnalyticsRefreshIndicator() {
+    const isBusy = Number(analyticsRuntime.refreshIndicatorBusyCount || 0) > 0
+        && isAnalyticsModuleVisible()
+        && isAnalyticsRefreshIndicatorScopeActive();
+    analyticsRuntime.refreshIndicatorActive = isBusy;
+
+    getAnalyticsRefreshButtonIcons().forEach((icon) => {
+        icon.classList.toggle('fa-spin', isBusy);
+        const button = icon.closest('button');
+        if (button) {
+            button.classList.toggle('is-loading', isBusy);
+            button.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+        }
+    });
+}
+
+function beginAnalyticsRefreshIndicator() {
+    if (!isAnalyticsModuleVisible() || !isAnalyticsRefreshIndicatorScopeActive()) {
+        return () => {};
+    }
+
+    analyticsRuntime.refreshIndicatorBusyCount = Number(analyticsRuntime.refreshIndicatorBusyCount || 0) + 1;
+    syncAnalyticsRefreshIndicator();
+
+    let released = false;
+    return () => {
+        if (released) {
+            return;
+        }
+        released = true;
+        analyticsRuntime.refreshIndicatorBusyCount = Math.max(0, Number(analyticsRuntime.refreshIndicatorBusyCount || 0) - 1);
+        syncAnalyticsRefreshIndicator();
+    };
+}
+
 function startAutoRefresh() {
     if (autoRefreshInterval || !isAnalyticsModuleVisible()) return;
 
@@ -495,9 +553,6 @@ async function refreshAllAnalytics(options = {}) {
         return;
     }
 
-    const refreshIcons = document.querySelectorAll('.toolbar-icon-btn i.fa-sync-alt, .btn-icon-sm i.fa-redo');
-    refreshIcons.forEach((icon) => icon.classList.add('fa-spin'));
-
     try {
         if (reason !== 'auto-refresh') {
             resetAnalyticsAICache();
@@ -517,9 +572,7 @@ async function refreshAllAnalytics(options = {}) {
             showToast('刷新失败', 'error');
         }
     } finally {
-        setTimeout(() => {
-            refreshIcons.forEach((icon) => icon.classList.remove('fa-spin'));
-        }, 500);
+        syncAnalyticsRefreshIndicator();
     }
 }
 
@@ -712,5 +765,7 @@ window.selectDropdownOption = selectDropdownOption;
 window.refreshAllAnalytics = refreshAllAnalytics;
 window.viewPromptContext = viewPromptContext;
 window.ensureAnalyticsAutoRefreshState = ensureAnalyticsAutoRefreshState;
+window.beginAnalyticsRefreshIndicator = beginAnalyticsRefreshIndicator;
+window.syncAnalyticsRefreshIndicator = syncAnalyticsRefreshIndicator;
 window.updateOnlineUsers = updateOnlineUsers;
 window.updateLastUpdateTime = updateLastUpdateTime;
