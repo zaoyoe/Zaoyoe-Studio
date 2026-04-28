@@ -1,7 +1,7 @@
 (function (global) {
     'use strict';
 
-    const VERSION = '20260423_FRAMER_NAV_RUNTIME_DROPDOWN_CURSOR_RUNTIME_4';
+    const VERSION = '20260428_IOS_SAFARI_THEME_CHROME_2';
     const MOBILE_MENU_LOCK_CLASS = 'mobile-menu-open';
     const runtimeState = {
         cachedData: {
@@ -12,6 +12,11 @@
 
     global.toggleMobileThemeColor = function (isActive) {
         let metaTheme = document.querySelector('meta[name="theme-color"]');
+        const currentTheme = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+        const currentThemeColor = typeof global.getSiteThemeChromeColor === 'function'
+            ? global.getSiteThemeChromeColor(currentTheme)
+            : (currentTheme === 'light' ? '#ffffff' : '#000000');
+
         if (isActive) {
             if (!metaTheme) {
                 metaTheme = document.createElement('meta');
@@ -21,7 +26,13 @@
             } else if (!metaTheme.hasAttribute('data-original-content')) {
                 metaTheme.setAttribute('data-original-content', metaTheme.content);
             }
-            metaTheme.content = '#000000';
+
+            metaTheme.setAttribute('data-mobile-theme-lock', 'true');
+            if (typeof global.applySiteThemeChrome === 'function') {
+                global.applySiteThemeChrome(currentTheme, { forceRepaint: true });
+            } else {
+                metaTheme.content = currentThemeColor;
+            }
             return;
         }
 
@@ -31,9 +42,16 @@
 
         if (metaTheme.hasAttribute('data-injected-by-menu')) {
             metaTheme.remove();
-        } else if (metaTheme.hasAttribute('data-original-content')) {
-            metaTheme.content = metaTheme.getAttribute('data-original-content');
-            metaTheme.removeAttribute('data-original-content');
+        } else {
+            metaTheme.removeAttribute('data-mobile-theme-lock');
+            if (metaTheme.hasAttribute('data-original-content')) {
+                metaTheme.content = metaTheme.getAttribute('data-original-content');
+                metaTheme.removeAttribute('data-original-content');
+            }
+        }
+
+        if (typeof global.applySiteThemeChrome === 'function') {
+            global.applySiteThemeChrome(currentTheme, { forceRepaint: true });
         }
     };
 

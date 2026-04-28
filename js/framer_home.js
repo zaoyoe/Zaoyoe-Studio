@@ -4,9 +4,14 @@
  * ==========================================
  */
 
-// Utility: Force Safari address bar to solid black when mobile menu is open
+// Utility: keep Safari's top chrome aligned with the active mobile menu theme.
 window.toggleMobileThemeColor = function (isActive) {
   let metaTheme = document.querySelector('meta[name="theme-color"]');
+  const currentTheme = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+  const currentThemeColor = typeof window.getSiteThemeChromeColor === 'function'
+    ? window.getSiteThemeChromeColor(currentTheme)
+    : (currentTheme === 'light' ? '#ffffff' : '#000000');
+
   if (isActive) {
     if (!metaTheme) {
       metaTheme = document.createElement('meta');
@@ -16,16 +21,30 @@ window.toggleMobileThemeColor = function (isActive) {
     } else if (!metaTheme.hasAttribute('data-original-content')) {
       metaTheme.setAttribute('data-original-content', metaTheme.content);
     }
-    metaTheme.content = '#000000';
-  } else {
-    if (metaTheme) {
-      if (metaTheme.hasAttribute('data-injected-by-menu')) {
-        metaTheme.remove();
-      } else if (metaTheme.hasAttribute('data-original-content')) {
-        metaTheme.content = metaTheme.getAttribute('data-original-content');
-        metaTheme.removeAttribute('data-original-content'); // cleanup
-      }
+
+    metaTheme.setAttribute('data-mobile-theme-lock', 'true');
+    if (typeof window.applySiteThemeChrome === 'function') {
+      window.applySiteThemeChrome(currentTheme, { forceRepaint: true });
+    } else {
+      metaTheme.content = currentThemeColor;
     }
+    return;
+  }
+
+  if (!metaTheme) return;
+
+  if (metaTheme.hasAttribute('data-injected-by-menu')) {
+    metaTheme.remove();
+  } else {
+    metaTheme.removeAttribute('data-mobile-theme-lock');
+    if (metaTheme.hasAttribute('data-original-content')) {
+      metaTheme.content = metaTheme.getAttribute('data-original-content');
+      metaTheme.removeAttribute('data-original-content'); // cleanup
+    }
+  }
+
+  if (typeof window.applySiteThemeChrome === 'function') {
+    window.applySiteThemeChrome(currentTheme, { forceRepaint: true });
   }
 };
 
