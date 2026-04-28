@@ -140,7 +140,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /css\/shop-page\.css\?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1/,
+        /css\/shop-page\.css\?v=20260428_PUBLIC_TOUCH_PAN_LOCK_1/,
         'shop.html should bust the shop stylesheet cache after updating purchase guidance light-theme color visibility'
     );
     assert.match(

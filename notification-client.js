@@ -88,6 +88,9 @@
     let currentNotificationReadFilter = restoredNotificationFilterState.readFilter;
     let pinnedNotificationIds = loadPinnedNotificationIds();
     const MAX_COLLAPSED = 3;
+    const NOTIFICATION_CHROME_REPAINT_FALLBACK_MS = 96;
+    const NOTIFICATION_CHROME_REPAINT_LATE_MS = 220;
+    let notificationChromeRepaintTimerIds = [];
     let currentNotificationViewer = {
         isAdmin: false
     };
@@ -644,12 +647,107 @@
         }
     };
 
+    function refreshSafariChromeAfterNotificationClose() {
+        const theme = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+
+        if (typeof window.syntheticThemeChromeMenuTap === 'function') {
+            window.syntheticThemeChromeMenuTap(theme);
+            return;
+        }
+
+        window.applySiteThemeChrome?.(theme, { forceRepaint: true });
+    }
+
+    function clearScheduledNotificationChromeRefresh() {
+        notificationChromeRepaintTimerIds.forEach((timerId) => {
+            window.clearTimeout(timerId);
+        });
+        notificationChromeRepaintTimerIds = [];
+    }
+
+    function refreshSafariChromeIfNotificationClosed() {
+        const drawer = document.getElementById('notifDrawer');
+        const backdrop = document.getElementById('notifBackdrop');
+
+        if (drawer?.classList.contains('active') || backdrop?.classList.contains('active')) {
+            return;
+        }
+
+        refreshSafariChromeAfterNotificationClose();
+    }
+
+    function scheduleSafariChromeRefreshAfterNotificationClose() {
+        clearScheduledNotificationChromeRefresh();
+        const scheduleFrame = typeof window.requestAnimationFrame === 'function'
+            ? window.requestAnimationFrame.bind(window)
+            : (callback) => window.setTimeout(callback, 0);
+
+        scheduleFrame(refreshSafariChromeIfNotificationClosed);
+        notificationChromeRepaintTimerIds = [
+            window.setTimeout(refreshSafariChromeIfNotificationClosed, NOTIFICATION_CHROME_REPAINT_FALLBACK_MS),
+            window.setTimeout(refreshSafariChromeIfNotificationClosed, NOTIFICATION_CHROME_REPAINT_LATE_MS)
+        ];
+    }
+
+    function detachNotificationBackdropFromChrome(backdrop, restoreDelay = NOTIFICATION_CHROME_REPAINT_LATE_MS + 80) {
+        backdrop.style.setProperty('transition', 'none', 'important');
+        backdrop.style.setProperty('opacity', '0', 'important');
+        backdrop.style.setProperty('visibility', 'hidden', 'important');
+        backdrop.style.setProperty('backdrop-filter', 'none', 'important');
+        backdrop.style.setProperty('-webkit-backdrop-filter', 'none', 'important');
+        void backdrop.offsetHeight;
+
+        window.setTimeout(() => {
+            backdrop.style.removeProperty('transition');
+            backdrop.style.removeProperty('opacity');
+            backdrop.style.removeProperty('visibility');
+            backdrop.style.removeProperty('backdrop-filter');
+            backdrop.style.removeProperty('-webkit-backdrop-filter');
+        }, restoreDelay);
+    }
+
+    function detachNotificationDrawerFromChrome(drawer, restoreDelay = NOTIFICATION_CHROME_REPAINT_LATE_MS + 80) {
+        drawer.style.setProperty('transition', 'none', 'important');
+        drawer.style.setProperty('opacity', '0', 'important');
+        drawer.style.setProperty('visibility', 'hidden', 'important');
+        drawer.style.setProperty('pointer-events', 'none', 'important');
+        drawer.style.setProperty('transform', 'translate3d(0, -110%, 0)', 'important');
+        drawer.style.setProperty('top', '-110%', 'important');
+        void drawer.offsetHeight;
+
+        window.setTimeout(() => {
+            drawer.style.removeProperty('transition');
+            drawer.style.removeProperty('opacity');
+            drawer.style.removeProperty('visibility');
+            drawer.style.removeProperty('pointer-events');
+            drawer.style.removeProperty('transform');
+            drawer.style.removeProperty('top');
+        }, restoreDelay);
+    }
+
+    function detachNotificationChromeLayers(drawer, backdrop) {
+        if (backdrop) {
+            detachNotificationBackdropFromChrome(backdrop);
+        }
+        if (drawer) {
+            detachNotificationDrawerFromChrome(drawer);
+        }
+    }
+
     function closeDrawer() {
         const drawer = document.getElementById('notifDrawer');
         const backdrop = document.getElementById('notifBackdrop');
+        const wasOpen = drawer?.classList.contains('active') || backdrop?.classList.contains('active');
+        if (wasOpen) {
+            detachNotificationChromeLayers(drawer, backdrop);
+        }
         if (drawer) drawer.classList.remove('active');
         if (backdrop) backdrop.classList.remove('active');
         unlockNotificationBackgroundScroll();
+
+        if (wasOpen) {
+            scheduleSafariChromeRefreshAfterNotificationClose();
+        }
     }
 
     // Core Functions
@@ -711,8 +809,16 @@
             unreadCount = notifications.filter(n => !n.is_read).length;
 
             updateBadge();
+            renderOpenNotificationDrawer();
         } catch (err) {
             console.error('Failed to load notifications:', err);
+        }
+    }
+
+    function renderOpenNotificationDrawer() {
+        const drawer = document.getElementById('notifDrawer');
+        if (drawer?.classList.contains('active')) {
+            renderNotifications();
         }
     }
 

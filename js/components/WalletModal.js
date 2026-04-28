@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260428_WALLET_MOBILE_NAV_STABLE_1';
+    const walletCssHref = 'css/wallet.css?v=20260428_WALLET_RECORDS_BOTTOM_EDGE_1';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -85,6 +85,19 @@
 
     function isWalletModalCompactMobile() {
         return window.matchMedia('(max-width: 600px)').matches;
+    }
+
+    function getWalletModalScrollElements() {
+        const { layout, content, scroller } = getWalletModalElements();
+        return Array.from(new Set([scroller, content, layout].filter(Boolean)));
+    }
+
+    function getWalletRechargeScrollCueScroller() {
+        const candidates = getWalletModalScrollElements();
+        return candidates.find(el => el.scrollTop > 2)
+            || candidates.find(el => (el.scrollHeight - el.clientHeight) > 2)
+            || candidates[0]
+            || null;
     }
 
     function setInlineStyles(target, styles) {
@@ -272,31 +285,31 @@
     }
 
     function updateWalletRechargeScrollCue() {
-        const { overlay, scroller } = getWalletModalElements();
+        const { overlay } = getWalletModalElements();
+        const scrollHost = getWalletRechargeScrollCueScroller();
         const cue = overlay?.querySelector('.wallet-recharge-scroll-cue');
         const rechargeView = overlay?.querySelector('#view-recharge');
 
         if (!cue) return;
 
-        if (!overlay || !scroller || !rechargeView || !overlay.classList.contains('active')) {
+        if (!overlay || !scrollHost || !rechargeView || !overlay.classList.contains('active')) {
             cue.classList.remove('visible');
             return;
         }
 
         const isRechargeActive = rechargeView.classList.contains('active');
-        const isCompactMobile = isWalletModalCompactMobile();
-        if (!isRechargeActive || !isCompactMobile) {
+        if (!isRechargeActive) {
             cue.classList.remove('visible');
             return;
         }
 
-        const overflowAmount = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
-        if (overflowAmount < 32) {
+        const overflowAmount = Math.max(0, scrollHost.scrollHeight - scrollHost.clientHeight);
+        if (overflowAmount < 8) {
             cue.classList.remove('visible');
             return;
         }
 
-        const nearTop = scroller.scrollTop <= 18;
+        const nearTop = scrollHost.scrollTop <= 2;
         const keyboardActive = overlay.classList.contains('keyboard-active') || overlay.classList.contains('ios-focus-lock');
 
         cue.classList.toggle('visible', nearTop && !keyboardActive);
@@ -832,20 +845,108 @@
         inputs.forEach((input) => bindWalletModalInputBehavior(input));
     }
 
+    function bindWalletHorizontalPanGuard(host, {
+        dataKey = 'walletHorizontalPanGuard',
+        shouldStart = () => true
+    } = {}) {
+        if (!host || host.dataset[dataKey] === '1') return;
+
+        let startX = 0;
+        let startY = 0;
+        let touchActive = false;
+        let horizontalLocked = false;
+
+        host.addEventListener('touchstart', (event) => {
+            touchActive = isWalletModalCompactMobile()
+                && event.touches.length === 1
+                && shouldStart(event);
+            horizontalLocked = false;
+
+            if (!touchActive) return;
+
+            const touch = event.touches[0];
+            startX = touch.clientX;
+            startY = touch.clientY;
+        }, { passive: true });
+
+        host.addEventListener('touchmove', (event) => {
+            if (!touchActive || !isWalletModalCompactMobile() || event.touches.length !== 1) return;
+
+            const touch = event.touches[0];
+            const deltaX = touch.clientX - startX;
+            const deltaY = touch.clientY - startY;
+
+            if (!horizontalLocked) {
+                const absX = Math.abs(deltaX);
+                const absY = Math.abs(deltaY);
+                horizontalLocked = absX > 8 && absX > absY * 1.2;
+            }
+
+            if (horizontalLocked && event.cancelable) {
+                event.preventDefault();
+            }
+        }, { passive: false });
+
+        const resetTouch = () => {
+            touchActive = false;
+            horizontalLocked = false;
+        };
+
+        host.addEventListener('touchend', resetTouch, { passive: true });
+        host.addEventListener('touchcancel', resetTouch, { passive: true });
+        host.dataset[dataKey] = '1';
+    }
+
+    function bindWalletContentTouchLock(overlay) {
+        const content = overlay?.querySelector('.wallet-content');
+        bindWalletHorizontalPanGuard(content, {
+            dataKey: 'walletContentTouchLock',
+            shouldStart: (event) => {
+                const target = event.target?.closest ? event.target : event.target?.parentElement;
+                return !target?.closest?.('input, textarea, select, [contenteditable="true"], [data-wallet-allow-horizontal-pan]');
+            }
+        });
+    }
+
+    function bindWalletRecordsTouchLock(overlay) {
+        const ordersView = overlay?.querySelector('#view-orders');
+        const isRecordsListTouch = (event) => {
+            const target = event.target?.closest ? event.target : event.target?.parentElement;
+            return Boolean(target?.closest?.('.orders-container'));
+        };
+
+        bindWalletHorizontalPanGuard(ordersView, {
+            dataKey: 'walletRecordsTouchLock',
+            shouldStart: isRecordsListTouch
+        });
+    }
+
     function attachWalletModalViewportHandlers() {
         detachWalletModalViewportHandlers();
         bindWalletModalInputs();
         captureWalletModalOverlayBaseHeight(true);
         requestWalletRechargeScrollCueUpdate();
 
+        const scrollElements = getWalletModalScrollElements();
+        const handleContentScroll = () => {
+            requestWalletRechargeScrollCueUpdate();
+        };
+
+        scrollElements.forEach(el => el.addEventListener('scroll', handleContentScroll, { passive: true }));
+
         if (!isWalletModalIOSMode()) {
             scheduleWalletModalLayout();
+            window.addEventListener('resize', handleContentScroll, { passive: true });
+            walletModalState.viewportCleanup = () => {
+                window.removeEventListener('resize', handleContentScroll);
+                scrollElements.forEach(el => el.removeEventListener('scroll', handleContentScroll));
+                walletModalState.viewportCleanup = null;
+            };
             return;
         }
 
         freezeWalletModalPage();
         const vv = window.visualViewport;
-        const { scroller } = getWalletModalElements();
         const handleViewportChange = () => {
             requestWalletModalViewportSync();
         };
@@ -854,22 +955,17 @@
             stabilizeWalletModalViewport();
         };
 
-        const handleContentScroll = () => {
-            requestWalletRechargeScrollCueUpdate();
-        };
-
         vv?.addEventListener('resize', handleViewportChange, { passive: true });
         vv?.addEventListener('scroll', handleViewportChange, { passive: true });
         window.addEventListener('scroll', handleRootScroll, { passive: true });
         window.addEventListener('resize', handleViewportChange, { passive: true });
-        scroller?.addEventListener('scroll', handleContentScroll, { passive: true });
 
         walletModalState.viewportCleanup = () => {
             vv?.removeEventListener('resize', handleViewportChange);
             vv?.removeEventListener('scroll', handleViewportChange);
             window.removeEventListener('scroll', handleRootScroll);
             window.removeEventListener('resize', handleViewportChange);
-            scroller?.removeEventListener('scroll', handleContentScroll);
+            scrollElements.forEach(el => el.removeEventListener('scroll', handleContentScroll));
             walletModalState.viewportCleanup = null;
         };
 
@@ -998,6 +1094,8 @@
             }
 
             overlay.dataset.walletDelegatesBound = '1';
+            bindWalletContentTouchLock(overlay);
+            bindWalletRecordsTouchLock(overlay);
 
             overlay.addEventListener('click', (event) => {
                 const actionEl = event.target.closest('[data-wallet-action]');
@@ -2962,7 +3060,13 @@
                             <div class="wallet-view" id="view-recharge">
                                 <h3 class="view-title">${this.renderWalletInlineIcon('fa-bolt', '#fbbf24', 'wallet-inline-icon--title')}${window.i18n?.t('wallet.rechargePackages') || '充值套餐'}</h3>
                                 <div class="packages-container" id="wallet-packages">
-                                    <div class="loading-text">${window.i18n?.t('common.loading') || '加载中...'}</div>
+                                    <div class="wallet-recharge-package-loading" role="status" aria-live="polite" aria-label="${this.escapeAttribute(window.i18n?.t('common.loading') || '加载中...')}">
+                                        <span class="wallet-pending-dots wallet-recharge-package-loading-dots" aria-hidden="true">
+                                            <span></span>
+                                            <span></span>
+                                            <span></span>
+                                        </span>
+                                    </div>
                                 </div>
 
                                 <div class="custom-recharge-section" id="wallet-custom-recharge-section" hidden>
@@ -2988,7 +3092,7 @@
                                 </div>
                                 
                                 <!-- Payment Order Query Section -->
-                                <div class="afdian-section" id="wallet-order-query-section">
+                                <div class="afdian-section" id="wallet-order-query-section" hidden>
                                     <div class="afdian-header">
                                         <span class="afdian-icon" aria-hidden="true">
                                             <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -3294,26 +3398,32 @@
                 return;
             }
 
+            const isCompactMobile = isWalletModalCompactMobile();
+            if (isCompactMobile) {
+                indicator.classList.remove('sidebar-indicator--settling');
+                setInlineStyles(indicator, {
+                    left: '',
+                    top: '',
+                    width: '',
+                    height: '',
+                    opacity: '0'
+                });
+                sidebar.classList.remove('wallet-sidebar--indicator-ready');
+                return;
+            }
+
             const left = activeItem.offsetLeft;
             const top = activeItem.offsetTop;
             const width = activeItem.offsetWidth;
             const height = activeItem.offsetHeight;
-            const isCompactMobile = isWalletModalCompactMobile();
-            const minReadyWidth = isCompactMobile ? 48 : 1;
-            const minReadyHeight = isCompactMobile ? 48 : 1;
+            const minReadyWidth = 1;
+            const minReadyHeight = 1;
 
             if (width < minReadyWidth || height < minReadyHeight) {
                 setInlineStyles(indicator, {
                     opacity: '0'
                 });
                 sidebar.classList.remove('wallet-sidebar--indicator-ready');
-                if (isCompactMobile && indicator.dataset.walletPendingRetry !== '1') {
-                    indicator.dataset.walletPendingRetry = '1';
-                    requestAnimationFrame(() => {
-                        delete indicator.dataset.walletPendingRetry;
-                        this.updateIndicatorPosition(activeItem);
-                    });
-                }
                 return;
             }
 
@@ -4407,10 +4517,44 @@
                 this.paymentRuntimeConfig = this.normalizePaymentRuntimeConfig(payload?.runtime);
             } catch (runtimeError) {
                 console.warn('[WalletModal] Failed to load payment runtime config:', runtimeError);
+                await this.recoverPaymentConfigsFromSystemConfig();
                 this.paymentRuntimeConfig = this.getDefaultPaymentRuntimeConfig();
             }
 
             return this.paymentRuntimeConfig;
+        },
+
+        async loadSystemConfigValue(configKey) {
+            const normalizedKey = String(configKey || '').trim();
+            if (!normalizedKey || !window.supabaseClient?.rpc) {
+                return null;
+            }
+
+            const { data, error } = await window.supabaseClient.rpc('get_system_config', {
+                p_key: normalizedKey
+            });
+
+            if (error) throw error;
+            return data || null;
+        },
+
+        async recoverPaymentConfigsFromSystemConfig() {
+            const [paymentChannelsResult, rechargeOptionsResult] = await Promise.allSettled([
+                this.loadSystemConfigValue('payment_channels'),
+                this.loadSystemConfigValue('recharge_options')
+            ]);
+
+            if (paymentChannelsResult.status === 'fulfilled' && paymentChannelsResult.value) {
+                this.paymentChannelsConfig = this.normalizePaymentChannelsConfig(paymentChannelsResult.value);
+            } else if (paymentChannelsResult.status === 'rejected') {
+                console.warn('[WalletModal] Failed to recover payment channels config:', paymentChannelsResult.reason);
+            }
+
+            if (rechargeOptionsResult.status === 'fulfilled' && rechargeOptionsResult.value) {
+                this.rechargeOptionsConfig = this.normalizeRechargeOptionsConfig(rechargeOptionsResult.value);
+            } else if (rechargeOptionsResult.status === 'rejected') {
+                console.warn('[WalletModal] Failed to recover recharge options config:', rechargeOptionsResult.reason);
+            }
         },
 
         getMockPaymentAvailability({
@@ -4463,8 +4607,10 @@
 
             if (!section) return;
 
+            const customRechargeVisible = !document.getElementById('wallet-custom-recharge-section')?.hidden;
             const queryEnabled = activeProvider?.key === 'afdian'
-                && activeProvider?.order_query_enabled === true;
+                && activeProvider?.order_query_enabled === true
+                && !customRechargeVisible;
             section.toggleAttribute('hidden', !queryEnabled);
 
             if (!queryEnabled) {
@@ -4844,8 +4990,10 @@
 
             const pointsUnit = window.i18n?.t('wallet.pointsUnit') || '积分';
 
-            container.innerHTML = members.map((member) => {
+            container.innerHTML = members.map((member, index) => {
                 const memberId = String(member.user_id || member.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const memberDomId = String(memberId || `member-${index}`).replace(/[^A-Za-z0-9_-]/g, '-') || `member-${index}`;
+                const detailsId = `affiliate-member-details-${memberDomId}`;
                 const displayName = String(member.display_name || member.username || member.masked_email || '新用户').trim();
                 const maskedEmail = String(member.masked_email || '').trim();
                 const registeredAt = this.formatOrderDateTime(member.registered_at);
@@ -4875,7 +5023,7 @@
 
                 return `
                     <article class="affiliate-member-card" data-member-id="${this.escapeHtml(memberId)}">
-                        <button class="affiliate-member-summary" type="button" aria-expanded="false"${this.buildDataAttributes({ 'wallet-action': 'toggle-affiliate-member-details' })}>
+                        <div class="affiliate-member-summary">
                             <div class="affiliate-member-summary-main">
                                 <div class="affiliate-member-head">
                                     <div class="affiliate-member-avatar">
@@ -4899,13 +5047,13 @@
                             </div>
                             <div class="affiliate-member-summary-side">
                                 <span class="${badgeClass}">${stageMeta.label}</span>
-                                <span class="affiliate-member-chevron" aria-hidden="true">
+                                <button class="affiliate-member-chevron affiliate-member-toggle" type="button" aria-expanded="false" aria-controls="${this.escapeAttribute(detailsId)}" aria-label="展开 ${this.escapeAttribute(displayName)} 的邀请旅程"${this.buildDataAttributes({ 'wallet-action': 'toggle-affiliate-member-details' })}>
                                     <i class="fas fa-chevron-down"></i>
-                                </span>
+                                </button>
                             </div>
-                        </button>
+                        </div>
 
-                        <div class="affiliate-member-details" hidden>
+                        <div class="affiliate-member-details" id="${this.escapeAttribute(detailsId)}" hidden>
                             <div class="affiliate-stage-track">
                                 <div class="affiliate-stage-node affiliate-stage-node-done">
                                     <span class="affiliate-stage-dot"></span>
@@ -4961,25 +5109,35 @@
             if (!card || !list) return;
 
             const details = card.querySelector('.affiliate-member-details');
-            const button = card.querySelector('.affiliate-member-summary');
+            const button = card.querySelector('.affiliate-member-toggle');
             const shouldExpand = !card.classList.contains('expanded');
 
             list.querySelectorAll('.affiliate-member-card.expanded').forEach((openCard) => {
                 openCard.classList.remove('expanded');
                 openCard.querySelector('.affiliate-member-details')?.setAttribute('hidden', 'hidden');
-                openCard.querySelector('.affiliate-member-summary')?.setAttribute('aria-expanded', 'false');
+                const openButton = openCard.querySelector('.affiliate-member-toggle');
+                openButton?.setAttribute('aria-expanded', 'false');
+                if (openButton?.getAttribute('aria-label')?.startsWith('收起 ')) {
+                    openButton.setAttribute('aria-label', openButton.getAttribute('aria-label').replace(/^收起 /, '展开 '));
+                }
             });
 
             if (shouldExpand) {
                 card.classList.add('expanded');
                 details?.removeAttribute('hidden');
                 button?.setAttribute('aria-expanded', 'true');
+                if (button?.getAttribute('aria-label')?.startsWith('展开 ')) {
+                    button.setAttribute('aria-label', button.getAttribute('aria-label').replace(/^展开 /, '收起 '));
+                }
                 return;
             }
 
             card.classList.remove('expanded');
             details?.setAttribute('hidden', 'hidden');
             button?.setAttribute('aria-expanded', 'false');
+            if (button?.getAttribute('aria-label')?.startsWith('收起 ')) {
+                button.setAttribute('aria-label', button.getAttribute('aria-label').replace(/^收起 /, '展开 '));
+            }
         },
 
         renderAffiliateDescription(stats = this.affiliateStats || {}) {

@@ -55,6 +55,9 @@
         token: 0,
         cleanupTimerId: 0
     };
+    const submitState = {
+        stabilizeTimerId: 0
+    };
 
     function isIOSMobile() {
         return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -602,6 +605,39 @@
         const { overlay } = getSheetElements();
         if (!overlay) return;
         overlay.classList.toggle('auth-sheet-input-active', !!portalState.activeId || !!getActiveAuthInput());
+    }
+
+    function stabilizeAuthSheetForSubmit(options = {}) {
+        const { overlay } = getSheetElements();
+        if (!overlay) return;
+
+        if (submitState.stabilizeTimerId) {
+            window.clearTimeout(submitState.stabilizeTimerId);
+            submitState.stabilizeTimerId = 0;
+        }
+
+        overlay.classList.add('auth-sheet-submit-active');
+        deactivateActivePortaledInput({ blur: true });
+        getActiveAuthInput()?.blur();
+        syncAuthInputActiveState();
+
+        if (options.persist === true) {
+            return;
+        }
+
+        submitState.stabilizeTimerId = window.setTimeout(() => {
+            overlay.classList.remove('auth-sheet-submit-active');
+            submitState.stabilizeTimerId = 0;
+        }, 360);
+    }
+
+    function clearAuthSheetSubmitState() {
+        const { overlay } = getSheetElements();
+        if (submitState.stabilizeTimerId) {
+            window.clearTimeout(submitState.stabilizeTimerId);
+            submitState.stabilizeTimerId = 0;
+        }
+        overlay?.classList.remove('auth-sheet-submit-active', 'auth-sheet-submitting');
     }
 
     function getProxyForInputId(inputId) {
@@ -1165,6 +1201,9 @@
         if (!button) return;
 
         if (isLoading) {
+            stabilizeAuthSheetForSubmit({ persist: true });
+            document.getElementById('loginModal')?.classList.add('auth-sheet-submitting');
+
             if (!button.dataset.originalHtml) {
                 button.dataset.originalHtml = button.innerHTML;
             }
@@ -1178,6 +1217,7 @@
                 delete button.dataset.originalHtml;
             }
             button.disabled = false;
+            clearAuthSheetSubmitState();
         }
     }
 
@@ -1396,6 +1436,12 @@
             const proxyTrigger = event.target.closest('[data-auth-proxy-for]');
             if (proxyTrigger) {
                 activatePortaledInputById(proxyTrigger.dataset.authProxyFor);
+                return;
+            }
+
+            const submitTrigger = event.target.closest('[data-auth-submit]');
+            if (submitTrigger && overlay.contains(submitTrigger) && !submitTrigger.disabled) {
+                stabilizeAuthSheetForSubmit();
                 return;
             }
 

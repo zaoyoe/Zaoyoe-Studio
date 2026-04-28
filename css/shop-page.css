@@ -1889,6 +1889,8 @@
             transform: translateX(calc(100% + 24px));
             opacity: 0;
             pointer-events: none;
+            max-width: 100%;
+            overflow: hidden;
             transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.26s ease;
         }
 
@@ -2000,12 +2002,19 @@
             flex: 1;
             padding: 0 22px 0;
             overflow-y: auto;
+            overflow-x: hidden;
+            overscroll-behavior: contain;
+            overscroll-behavior-x: none;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
         }
 
         .shop-cart-list {
             display: flex;
             flex-direction: column;
             gap: 14px;
+            min-width: 0;
+            max-width: 100%;
         }
 
         .shop-cart-list[hidden],
@@ -2019,6 +2028,9 @@
             background: rgba(255, 255, 255, 0.05);
             border: 1px solid rgba(255, 255, 255, 0.08);
             transform-origin: center;
+            min-width: 0;
+            max-width: 100%;
+            overflow: hidden;
         }
 
         .shop-cart-item__top,
@@ -2298,9 +2310,14 @@
             font-size: 13px;
             line-height: 1.6;
             max-height: min(24vh, 220px);
-            overflow: auto;
+            overflow-y: auto;
+            overflow-x: hidden;
             overscroll-behavior: contain;
+            overscroll-behavior-x: none;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
             word-break: break-word;
+            overflow-wrap: anywhere;
             transform-origin: top center;
             animation: shop-cart-disclosure-enter 0.26s cubic-bezier(0.16, 1, 0.3, 1);
         }
@@ -2666,6 +2683,11 @@
             max-height: min(42vh, 360px);
             padding-right: 4px;
             overflow-y: auto;
+            overflow-x: hidden;
+            overscroll-behavior: contain;
+            overscroll-behavior-x: none;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
         }
 
         .shop-cart-checkout__item {
@@ -2673,6 +2695,9 @@
             border-radius: 18px;
             background: rgba(255, 255, 255, 0.04);
             border: 1px solid rgba(255, 255, 255, 0.08);
+            min-width: 0;
+            max-width: 100%;
+            overflow: hidden;
         }
 
         .shop-cart-checkout__item-meta {
@@ -4090,16 +4115,23 @@
             min-height: 0;
             flex: 1;
             overflow-y: auto;
+            overflow-x: hidden;
             overscroll-behavior: contain;
+            overscroll-behavior-x: none;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
             padding-right: 8px;
             margin-right: -8px;
             padding-bottom: 4px;
         }
 
+        /* 20260428_PUBLIC_TOUCH_PAN_LOCK_1 */
         #shopSuccessModal .shop-success-content-shell,
         #shopSuccessModal.has-usage-instructions .shop-success-content-shell {
             max-height: none !important;
             overflow: visible !important;
+            min-width: 0;
+            max-width: 100%;
         }
 
         #shopSuccessModal .shop-success-content-shell--plain {
@@ -4112,6 +4144,8 @@
             word-break: normal !important;
             max-height: none !important;
             overflow: visible !important;
+            min-width: 0;
+            max-width: 100%;
         }
 
         #shopSuccessModal .shop-success-content {
@@ -4120,6 +4154,9 @@
             color: inherit !important;
             white-space: normal !important;
             overflow: visible !important;
+            min-width: 0;
+            max-width: 100%;
+            overflow-wrap: anywhere;
         }
 
         .shop-success-actions {
@@ -4194,6 +4231,9 @@
             user-select: text !important;
             -webkit-touch-callout: default !important;
             min-height: 0;
+            min-width: 0;
+            max-width: 100%;
+            overflow-wrap: anywhere;
         }
 
         .shop-success-usage-card,
@@ -4266,7 +4306,11 @@
         #shopPurchaseModal .shop-success-usage-card {
             max-height: min(32vh, 220px);
             overflow-y: auto;
+            overflow-x: hidden;
             overscroll-behavior: contain;
+            overscroll-behavior-x: none;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
         }
 
         #shopPurchaseModal .shop-success-usage-card::-webkit-scrollbar {
@@ -4394,6 +4438,11 @@
                 min-height: 96px;
                 max-height: none;
                 overflow-y: auto;
+                overflow-x: hidden;
+                overscroll-behavior: contain;
+                overscroll-behavior-x: none;
+                -webkit-overflow-scrolling: touch;
+                touch-action: pan-y;
             }
 
             #shopPurchaseModal .shop-purchase-stage-action {
@@ -4439,12 +4488,17 @@
             #shopSuccessModal .shop-success-scroll {
                 flex: 0 1 auto;
                 overflow-y: auto;
+                overflow-x: hidden;
                 gap: 18px;
                 min-height: 0;
                 max-height: calc(100dvh - 244px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
                 padding-right: 4px;
                 margin-right: -4px;
                 padding-bottom: 0;
+                overscroll-behavior: contain;
+                overscroll-behavior-x: none;
+                -webkit-overflow-scrolling: touch;
+                touch-action: pan-y;
             }
 
             #shopSuccessModal .shop-success-content-shell {
@@ -4738,11 +4792,15 @@
         #shopSuccessModal.has-usage-instructions .shop-success-scroll {
             flex: 1;
             overflow-y: auto;
+            overflow-x: hidden;
             min-height: 0;
             padding-right: 6px;
             margin-right: -6px;
             padding-bottom: 0;
             overscroll-behavior: contain;
+            overscroll-behavior-x: none;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
         }
 
         #shopSuccessModal.has-usage-instructions .shop-success-content-shell {
@@ -4879,7 +4937,9 @@
         #shopSuccessModal.has-usage-instructions .shop-success-usage-card {
             max-height: min(42vh, var(--shop-success-usage-max-height));
             overflow-y: auto;
+            overflow-x: hidden;
             overscroll-behavior: contain;
+            overscroll-behavior-x: none;
             -webkit-overflow-scrolling: touch;
             touch-action: pan-y;
             scrollbar-width: thin;

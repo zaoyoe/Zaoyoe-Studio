@@ -14,6 +14,8 @@ test('wallet recharge UI exposes pending feedback hooks for package and custom r
     assert.match(script, /setRechargeActionPendingState\(state = null\)/);
     assert.match(script, /buildRechargePendingMarkup\(label = '处理中', options = \{\}\)/);
     assert.match(script, /wallet-pending-dots/);
+    assert.match(script, /wallet-recharge-package-loading/);
+    assert.match(script, /wallet-recharge-package-loading-dots/);
     assert.match(script, /dotsOnly/);
     assert.match(script, /type="button" class="package-item"/);
     assert.match(script, /data-wallet-package-price/);
@@ -53,6 +55,9 @@ test('wallet recharge styles include visible processing states', () => {
     assert.match(styles, /\.package-item\.is-dimmed/);
     assert.match(styles, /\.custom-recharge-btn\.is-processing/);
     assert.match(styles, /\.wallet-pending-dots/);
+    assert.match(styles, /\.wallet-recharge-package-loading/);
+    assert.match(styles, /grid-column:\s*1 \/ -1/);
+    assert.match(styles, /justify-content:\s*center/);
     assert.match(styles, /@keyframes walletPendingDots/);
     assert.doesNotMatch(styles, /@keyframes walletSpinnerRotate/);
     assert.match(styles, /\.wallet-payment-qr-modal/);
@@ -61,11 +66,34 @@ test('wallet recharge styles include visible processing states', () => {
     assert.match(styles, /\.wallet-payment-qr-status\.is-success/);
 });
 
+test('wallet recharge scroll cue follows the active scroll host and hides after scrolling', () => {
+    const script = fs.readFileSync(walletScriptPath, 'utf8');
+    const styles = fs.readFileSync(walletStylesPath, 'utf8');
+
+    assert.match(script, /function getWalletModalScrollElements\(\)/);
+    assert.match(script, /function getWalletRechargeScrollCueScroller\(\)/);
+    assert.match(script, /candidates\.find\(el => el\.scrollTop > 2\)/);
+    assert.match(script, /const scrollHost = getWalletRechargeScrollCueScroller\(\)/);
+    assert.match(script, /if \(overflowAmount < 8\)/);
+    assert.match(script, /const nearTop = scrollHost\.scrollTop <= 2/);
+    assert.match(script, /scrollElements\.forEach\(el => el\.addEventListener\('scroll', handleContentScroll, \{ passive: true \}\)\)/);
+    assert.doesNotMatch(script, /!isRechargeActive \|\| !isCompactMobile/);
+
+    assert.match(styles, /\.wallet-recharge-scroll-cue \{\s*display: flex;/);
+    assert.match(styles, /@media \(min-width: 601px\)[\s\S]*\.wallet-recharge-scroll-cue \{[\s\S]*left: 160px;/);
+});
+
 test('wallet payment order query section is driven by provider config instead of a hardcoded afdian-only branch', () => {
     const script = fs.readFileSync(walletScriptPath, 'utf8');
 
     assert.match(script, /order_query_enabled:\s*true/);
     assert.match(script, /order_query_title:\s*'订单号认领'/);
     assert.match(script, /const queryEnabled = activeProvider\?\.key === 'afdian'[\s\S]*activeProvider\?\.order_query_enabled === true/);
+    assert.match(script, /recoverPaymentConfigsFromSystemConfig\(\)/);
+    assert.match(script, /loadSystemConfigValue\('payment_channels'\)/);
+    assert.match(script, /loadSystemConfigValue\('recharge_options'\)/);
+    assert.match(script, /id="wallet-order-query-section" hidden/);
+    assert.match(script, /const customRechargeVisible = !document\.getElementById\('wallet-custom-recharge-section'\)\?\.hidden/);
+    assert.match(script, /&& !customRechargeVisible/);
     assert.doesNotMatch(script, /const shouldShowAfdianQuery = activeProvider === 'afdian';/);
 });
