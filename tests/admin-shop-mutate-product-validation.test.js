@@ -81,16 +81,22 @@ function createShopProductsTableMock(state) {
     return {
         insert(payload) {
             state.insertPayload = payload;
+            state.insertPayloads.push(payload);
             return this;
         },
         upsert(payload) {
             state.upsertPayload = payload;
+            state.upsertPayloads.push(payload);
             return this;
         },
         select() {
             return this;
         },
         limit() {
+            if (Array.isArray(state.writeResults) && state.writeResults.length) {
+                return Promise.resolve(state.writeResults.shift());
+            }
+
             return Promise.resolve({
                 data: [{
                     id: 'prod_saved',
@@ -112,6 +118,8 @@ async function withShopMutateHandler(initialState, callback) {
         auditCalls: [],
         tableReads: [],
         inventoryRows: [],
+        insertPayloads: [],
+        upsertPayloads: [],
         ...initialState
     };
 
@@ -261,5 +269,64 @@ test('shop mutate upsert blocks invalid API product payload before writing', asy
         assert.equal(state.insertPayload, undefined);
         assert.equal(state.upsertPayload, undefined);
         assert.equal(state.auditCalls.length, 0);
+    });
+});
+
+test('shop mutate upsert retries with legacy guidance payload when bilingual columns are missing', async () => {
+    await withShopMutateHandler({
+        writeResults: [
+            {
+                data: null,
+                error: {
+                    message: "Could not find the 'purchase_notes_zh' column of 'shop_products' in the schema cache"
+                }
+            },
+            {
+                data: [{
+                    id: 'prod_saved',
+                    name: 'Guided Product',
+                    category: 'cards',
+                    is_active: true
+                }],
+                error: null
+            }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                payload: {
+                    name: 'Guided Product',
+                    category: 'cards',
+                    price_points: 2,
+                    show_purchase_notes: true,
+                    purchase_notes_zh: '购买前请确认账号地区',
+                    purchase_notes_en: 'Please confirm the account region before purchase.',
+                    show_usage_instructions: true,
+                    usage_instructions_zh: '兑换后查看使用说明',
+                    usage_instructions_en: 'Check instructions after redemption.'
+                }
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.compatibilityFallback, true);
+        assert.deepEqual(payload.compatibilityRemovedFields.sort(), [
+            'purchase_notes_en',
+            'purchase_notes_zh'
+        ]);
+        assert.equal(state.insertPayloads.length, 2);
+        assert.equal(state.insertPayloads[0].purchase_notes_zh, '购买前请确认账号地区');
+        assert.equal(state.insertPayloads[1].purchase_notes, '购买前请确认账号地区');
+        assert.equal(Object.hasOwn(state.insertPayloads[1], 'purchase_notes_zh'), false);
+        assert.equal(Object.hasOwn(state.insertPayloads[1], 'purchase_notes_en'), false);
+        assert.equal(state.auditCalls.length, 1);
     });
 });

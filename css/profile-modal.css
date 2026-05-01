@@ -50,37 +50,57 @@
     transition: opacity 0.3s ease, visibility 0s linear 0s;
 }
 
+#profileModal,
+#profileModal .profile-modal-scroll,
+#profileModal .modal-content.profile-modal {
+    scrollbar-width: none !important;
+    -ms-overflow-style: none;
+}
+
 #profileModal::-webkit-scrollbar,
 #profileModal .profile-modal-scroll::-webkit-scrollbar,
 #profileModal .modal-content.profile-modal::-webkit-scrollbar {
-    width: 6px;
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
 }
 
 #profileModal::-webkit-scrollbar-track,
+#profileModal::-webkit-scrollbar-corner,
 #profileModal .profile-modal-scroll::-webkit-scrollbar-track,
-#profileModal .modal-content.profile-modal::-webkit-scrollbar-track {
-    background: transparent;
+#profileModal .profile-modal-scroll::-webkit-scrollbar-corner,
+#profileModal .modal-content.profile-modal::-webkit-scrollbar-track,
+#profileModal .modal-content.profile-modal::-webkit-scrollbar-corner {
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
 }
 
 #profileModal::-webkit-scrollbar-thumb,
 #profileModal .profile-modal-scroll::-webkit-scrollbar-thumb,
 #profileModal .modal-content.profile-modal::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.15);
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
     border-radius: 999px;
 }
 
 #profileModal::-webkit-scrollbar-thumb:hover,
 #profileModal .profile-modal-scroll::-webkit-scrollbar-thumb:hover,
 #profileModal .modal-content.profile-modal::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.24);
+    background: transparent !important;
 }
 
 #profileModal .modal-content.profile-modal {
     width: min(400px, 90vw);
     max-width: 90vw;
+    box-sizing: border-box;
     display: flex;
     flex-direction: column;
     position: relative;
+    margin: auto;
     padding: 0 !important;
     text-align: center;
     color: white;
@@ -114,6 +134,7 @@
 
 #profileModal .profile-modal-scroll {
     width: 100%;
+    box-sizing: border-box;
     flex: 1 1 auto;
     min-height: 0;
     position: relative;
@@ -125,7 +146,9 @@
     overflow-x: hidden !important;
     -webkit-overflow-scrolling: touch;
     touch-action: pan-y;
-    scrollbar-gutter: stable both-edges;
+    scrollbar-width: none !important;
+    -ms-overflow-style: none;
+    scrollbar-gutter: auto;
 }
 
 #profileModal .profile-mobile-topbar {
@@ -141,6 +164,7 @@
 
 #profileModal .profile-mobile-topbar-shell {
     position: relative;
+    box-sizing: border-box;
     height: 100%;
     display: flex;
     align-items: flex-end;
@@ -281,6 +305,7 @@
 #profileModal .profile-mobile-hero-card,
 #profileModal .profile-mobile-card,
 #profileModal .mobile-security-section {
+    box-sizing: border-box;
     width: 100%;
     max-width: 100%;
     border: 1px solid rgba(255, 255, 255, 0.06);
@@ -307,8 +332,15 @@
 #profileModal .profile-mobile-hero-avatar {
     grid-area: avatar;
     grid-row: 1 / span 2;
+    position: relative;
+    box-sizing: border-box;
     width: 72px;
     height: 72px;
+    min-width: 72px;
+    max-width: 72px;
+    min-height: 72px;
+    max-height: 72px;
+    flex: 0 0 72px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -322,16 +354,31 @@
         0 6px 14px rgba(0, 0, 0, 0.06);
     overflow: visible;
     appearance: none;
+    line-height: 0;
     justify-self: start;
     align-self: center;
+    isolation: isolate;
+}
+
+#profileModal #profileModalAvatarMobile.auth-display-none {
+    display: none !important;
 }
 
 #profileModal #profileModalAvatarMobile {
     width: 100%;
     height: 100%;
+    max-width: 100%;
+    max-height: 100%;
+    min-width: 0;
+    min-height: 0;
     object-fit: cover;
     display: block;
     border-radius: 50%;
+    overflow: hidden;
+    color: transparent;
+    font-size: 0;
+    line-height: 0;
+    z-index: 1;
 }
 
 #profileModal .profile-mobile-hero-avatar-fallback {
@@ -343,6 +390,7 @@
     font-weight: 600;
     letter-spacing: -0.4px;
     border-radius: 50%;
+    z-index: 0;
 }
 
 #profileModal .profile-mobile-hero-avatar-editmark {
@@ -935,6 +983,8 @@
     }
 
     #profileModal .profile-modal-scroll {
+        width: 100%;
+        margin: 0;
         min-height: 0 !important;
         padding: 0 !important;
         scroll-padding-top: 0 !important;
@@ -1043,6 +1093,11 @@
     #profileModal .profile-mobile-hero-avatar {
         width: 76px;
         height: 76px;
+        min-width: 76px;
+        max-width: 76px;
+        min-height: 76px;
+        max-height: 76px;
+        flex-basis: 76px;
     }
 
     #profileModal .profile-mobile-hero-main {
@@ -1365,9 +1420,24 @@
     #profileModal .modal-content.profile-modal {
         width: 95% !important;
         max-width: 480px !important;
-        max-height: min(90svh, calc(100% - 128px)) !important;
+        height: min(82svh, calc(var(--profile-modal-overlay-height, 100dvh) - 56px)) !important;
+        max-height: calc(var(--profile-modal-overlay-height, 100dvh) - 48px) !important;
         margin: 0 auto !important;
         padding: 0 !important;
+    }
+
+    #profileModal.active:not(.keyboard-active):not(.ios-focus-lock) {
+        align-items: center !important;
+        justify-content: center !important;
+    }
+
+    #profileModal.active:not(.keyboard-active):not(.ios-focus-lock) .modal-content.profile-modal,
+    #profileModal.active:not(.keyboard-active):not(.ios-focus-lock):focus-within .modal-content.profile-modal {
+        top: 0 !important;
+        height: min(82svh, calc(var(--profile-modal-overlay-height, 100dvh) - 56px)) !important;
+        min-height: 0 !important;
+        max-height: calc(var(--profile-modal-overlay-height, 100dvh) - 48px) !important;
+        margin: auto !important;
     }
 
     #profileModal .profile-modal-scroll {
@@ -1814,7 +1884,7 @@ html:not([data-theme="dark"]) #profileModal {
     color: #b91c1c;
 }
 
-/* 20260428_PROFILE_SECURITY_LIGHT_THEME_MOBILE_1
+/* 20260501_PROFILE_MODAL_MOBILE_HEIGHT_1
    Keep shop/profile security on the same light contract as the homepage when
    the page is any non-dark public theme state. */
 html:not([data-theme="dark"]) #profileModal::-webkit-scrollbar-thumb,
@@ -2105,7 +2175,7 @@ html:not([data-theme="dark"]) #profileModal :is(
     color: #b91c1c;
 }
 
-/* 20260428_PROFILE_SECURITY_LIGHT_THEME_MOBILE_1 */
+/* 20260501_PROFILE_MODAL_MOBILE_HEIGHT_1 */
 @media (max-width: 768px) {
     html:not([data-theme="dark"]) #profileModal .mobile-security-section {
         background: rgba(255, 255, 255, 0.98) !important;

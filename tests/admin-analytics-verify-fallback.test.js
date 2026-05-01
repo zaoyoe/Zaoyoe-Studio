@@ -6,6 +6,7 @@ const vm = require('node:vm');
 
 const analyticsSource = fs.readFileSync(path.resolve(__dirname, '../admin-analytics.js'), 'utf8');
 const panelLoaderSource = fs.readFileSync(path.resolve(__dirname, '../js/admin-analytics-panel-loaders.js'), 'utf8');
+const adminStudioHtml = fs.readFileSync(path.resolve(__dirname, '../admin-studio.html'), 'utf8');
 
 function loadAnalyticsRuntime() {
     const context = {
@@ -77,5 +78,35 @@ test('analytics panel loaders retry geo distribution directly when the bundle se
         panelLoaderSource.includes('兼容口径：验证任务摘要'),
         true,
         'verify event funnel should surface an explicit compatibility label when real events are unavailable'
+    );
+});
+
+test('verify summary panels expose a deterministic stale-loading fallback', () => {
+    for (const marker of [
+        'function renderVerifyServiceSummaryUnavailableState(message = \'\') {',
+        'verifyStatusList',
+        'verifyRecentList',
+        'verifyFailureList',
+        'verifyActionRecommendations',
+        'window.renderVerifyServiceSummaryUnavailableState = renderVerifyServiceSummaryUnavailableState;',
+        'renderVerifyServiceSummaryUnavailableState(\'验证服务摘要加载失败，请稍后刷新或打开 Verify Monitor。\');'
+    ]) {
+        assert.equal(panelLoaderSource.includes(marker), true, `panel loaders should contain ${marker}`);
+    }
+
+    assert.equal(
+        adminStudioHtml.includes('verifyStaleFallback=20260430_ADMIN_STUDIO_VERIFY_STALE_FALLBACK_1'),
+        true,
+        'admin-studio.html should bust cached verify panel-loader runtime after adding the stale-loading fallback'
+    );
+    assert.equal(
+        adminStudioHtml.includes('staleLoadingFallback=20260430_ADMIN_STUDIO_ANALYTICS_STALE_LOADING_FALLBACK_1'),
+        true,
+        'admin-studio.html should bust cached lifecycle runtime after adding the stale-loading fallback'
+    );
+    assert.equal(
+        adminStudioHtml.includes('mobileSettleTimeout=20260430_ADMIN_STUDIO_ANALYTICS_MOBILE_SETTLE_TIMEOUT_1'),
+        true,
+        'admin-studio.html should bust cached lifecycle runtime after tuning mobile stale-loading settle time'
     );
 });

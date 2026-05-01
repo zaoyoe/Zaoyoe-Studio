@@ -6,13 +6,16 @@
     }
     global.__zaoyoeEngagementRuntimeBootstrapLoaded = true;
 
-    const VERSION = '20260428_NOTIFICATION_FIRST_OPEN_SYNC_1';
+    const VERSION = '20260501_ENGAGEMENT_ANNOUNCEMENT_DARK_CARD_AUTH_BACKDROP_1';
     const NOTIFICATION_SRC = 'notification-client.js?v=20260428_NOTIFICATION_FIRST_OPEN_SYNC_1';
-    const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=20260410_ANNOUNCEMENT_BACKDROP_DISMISS_FIX_1';
-    const IDLE_TIMEOUT_MS = 1800;
+    const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=20260501_ANNOUNCEMENT_DARK_CARD_AUTH_BACKDROP_1';
+    const NOTIFICATION_IDLE_TIMEOUT_MS = 1800;
+    const ANNOUNCEMENT_BOOT_DELAY_MS = 0;
 
-    let warmPromise = null;
-    let idleWarmScheduled = false;
+    let notificationWarmPromise = null;
+    let announcementWarmPromise = null;
+    let notificationIdleWarmScheduled = false;
+    let announcementIdleWarmScheduled = false;
     let notificationInitScheduled = false;
 
     function getBootstrapScript() {
@@ -79,53 +82,100 @@
         }, 180);
     }
 
-    function ensureEngagementRuntime() {
+    function activateEngagementStyles() {
         if (typeof global.activateDeferredStyleGroup === 'function') {
             global.activateDeferredStyleGroup('homepage-engagement');
             global.activateDeferredStyleGroup('public-engagement');
         }
-
-        if (!warmPromise) {
-            const tasks = [];
-
-            if (shouldLoadNotification) {
-                tasks.push(
-                    loadScript(NOTIFICATION_SRC).then(() => {
-                        scheduleNotificationInit();
-                    })
-                );
-            }
-
-            if (shouldLoadAnnouncement) {
-                tasks.push(loadScript(ANNOUNCEMENT_SRC));
-            }
-
-            warmPromise = Promise.all(tasks);
-        }
-
-        return warmPromise;
     }
 
-    function warmOnIdle() {
-        if (idleWarmScheduled) {
+    function ensureNotificationRuntime() {
+        activateEngagementStyles();
+
+        if (!shouldLoadNotification) {
+            return Promise.resolve();
+        }
+
+        if (!notificationWarmPromise) {
+            notificationWarmPromise = loadScript(NOTIFICATION_SRC).then(() => {
+                scheduleNotificationInit();
+            });
+        }
+
+        return notificationWarmPromise;
+    }
+
+    function ensureAnnouncementRuntime() {
+        activateEngagementStyles();
+
+        if (!shouldLoadAnnouncement) {
+            return Promise.resolve();
+        }
+
+        if (!announcementWarmPromise) {
+            announcementWarmPromise = loadScript(ANNOUNCEMENT_SRC);
+        }
+
+        return announcementWarmPromise;
+    }
+
+    function ensureEngagementRuntime(options = {}) {
+        const includeAnnouncement = options.includeAnnouncement !== false;
+        const tasks = [];
+
+        if (shouldLoadNotification) {
+            tasks.push(ensureNotificationRuntime());
+        }
+
+        if (shouldLoadAnnouncement && includeAnnouncement) {
+            tasks.push(ensureAnnouncementRuntime());
+        }
+
+        return Promise.all(tasks);
+    }
+
+    function scheduleIdleWarm(callback, timeoutMs) {
+        if (typeof global.requestIdleCallback === 'function') {
+            global.requestIdleCallback(callback, { timeout: timeoutMs });
             return;
         }
-        idleWarmScheduled = true;
+
+        global.setTimeout(callback, timeoutMs);
+    }
+
+    function warmNotificationOnIdle() {
+        if (notificationIdleWarmScheduled) {
+            return;
+        }
+        notificationIdleWarmScheduled = true;
 
         const run = () => {
-            void ensureEngagementRuntime();
+            void ensureNotificationRuntime();
         };
 
-        if (typeof global.requestIdleCallback === 'function') {
-            global.requestIdleCallback(run, { timeout: IDLE_TIMEOUT_MS });
+        scheduleIdleWarm(run, NOTIFICATION_IDLE_TIMEOUT_MS);
+    }
+
+    function warmAnnouncementEagerly() {
+        if (announcementIdleWarmScheduled || !shouldLoadAnnouncement) {
+            return;
+        }
+        announcementIdleWarmScheduled = true;
+
+        const run = () => {
+            void ensureAnnouncementRuntime();
+        };
+
+        if (ANNOUNCEMENT_BOOT_DELAY_MS > 0) {
+            global.setTimeout(run, ANNOUNCEMENT_BOOT_DELAY_MS);
             return;
         }
 
-        global.setTimeout(run, 900);
+        run();
     }
 
     function warmOnInteraction() {
-        void ensureEngagementRuntime();
+        void ensureEngagementRuntime({ includeAnnouncement: false });
     }
 
     ['pointerdown', 'keydown', 'touchstart', 'focusin'].forEach((eventName) => {
@@ -133,17 +183,34 @@
     });
 
     if (document.readyState === 'complete') {
-        warmOnIdle();
+        warmNotificationOnIdle();
+        warmAnnouncementEagerly();
     } else {
-        global.addEventListener('load', warmOnIdle, { once: true });
+        global.addEventListener('load', () => {
+            warmNotificationOnIdle();
+        }, { once: true });
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => {
+                warmAnnouncementEagerly();
+            }, { once: true });
+        } else {
+            warmAnnouncementEagerly();
+        }
     }
+
+    warmAnnouncementEagerly();
 
     global.ZaoyoeEngagementRuntimeBootstrap = Object.freeze({
         version: VERSION,
         warm: ensureEngagementRuntime,
+        warmNotifications: ensureNotificationRuntime,
+        warmAnnouncement: ensureAnnouncementRuntime,
         config: Object.freeze({
             notification: shouldLoadNotification,
-            announcement: shouldLoadAnnouncement
+            announcement: shouldLoadAnnouncement,
+            notificationIdleTimeoutMs: NOTIFICATION_IDLE_TIMEOUT_MS,
+            announcementBootDelayMs: ANNOUNCEMENT_BOOT_DELAY_MS
         })
     });
 }(typeof window !== 'undefined' ? window : globalThis));

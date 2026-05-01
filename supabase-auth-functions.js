@@ -919,6 +919,9 @@ async function ensureSupabaseAuthWalletModalRuntime(options = {}) {
 }
 
 let walletWarmPrefetchHandle = null;
+let profileModalWarmHandle = null;
+let profileModalBootstrapScriptPromise = null;
+const PROFILE_MODAL_BOOTSTRAP_SRC = 'js/profile-modal-loader.js?v=20260501_PROFILE_MODAL_MOBILE_HEIGHT_1';
 
 function scheduleSupabaseAuthWalletWarmPrefetch(reason = 'auth-ready') {
     if (walletWarmPrefetchHandle) {
@@ -957,22 +960,124 @@ async function openSupabaseAuthWalletView(view = 'balance', context = {}) {
     return walletModal;
 }
 
-async function ensureProfileModalRuntime() {
-    if (document.getElementById('profileModal') && typeof window.switchProfileSecurityPanel === 'function') {
+function findScriptByFilename(src) {
+    const filename = String(src || '').split('?')[0].split('/').pop();
+    if (!filename) return null;
+
+    return Array.from(document.querySelectorAll('script[src]')).find((node) => {
+        const rawSrc = node.getAttribute('src') || node.src || '';
+        return rawSrc.split('?')[0].split('/').pop() === filename;
+    }) || null;
+}
+
+function loadProfileModalBootstrapScript() {
+    if (window.ZaoyoeProfileModalBootstrap) {
+        return Promise.resolve(window.ZaoyoeProfileModalBootstrap);
+    }
+
+    if (profileModalBootstrapScriptPromise) {
+        return profileModalBootstrapScriptPromise;
+    }
+
+    const existing = findScriptByFilename(PROFILE_MODAL_BOOTSTRAP_SRC);
+    if (existing?.dataset.loaded === '1' || existing?.readyState === 'complete') {
+        return Promise.resolve(window.ZaoyoeProfileModalBootstrap || null);
+    }
+
+    profileModalBootstrapScriptPromise = new Promise((resolve, reject) => {
+        const script = existing || document.createElement('script');
+        const finish = () => {
+            script.dataset.loaded = '1';
+            resolve(window.ZaoyoeProfileModalBootstrap || null);
+        };
+        const fail = () => {
+            profileModalBootstrapScriptPromise = null;
+            reject(new Error(`Failed to load ${PROFILE_MODAL_BOOTSTRAP_SRC}`));
+        };
+
+        script.addEventListener('load', finish, { once: true });
+        script.addEventListener('error', fail, { once: true });
+
+        if (!existing) {
+            script.src = PROFILE_MODAL_BOOTSTRAP_SRC;
+            script.async = false;
+            (document.body || document.head || document.documentElement).appendChild(script);
+        }
+    });
+
+    return profileModalBootstrapScriptPromise;
+}
+
+async function getProfileModalBootstrap() {
+    if (window.ZaoyoeProfileModalBootstrap) {
+        return window.ZaoyoeProfileModalBootstrap;
+    }
+
+    try {
+        await loadProfileModalBootstrapScript();
+    } catch (error) {
+        console.warn('⚠️ Failed to load profile modal bootstrap:', error?.message || error);
+    }
+
+    return window.ZaoyoeProfileModalBootstrap || null;
+}
+
+async function ensureProfileModalRuntime(options = {}) {
+    const useFastMount = options.fast !== false;
+    const modalAlreadyMounted = document.getElementById('profileModal');
+    if (modalAlreadyMounted) {
+        if (typeof window.switchProfileSecurityPanel !== 'function') {
+            const existingLoader = window.ZaoyoeProfileModalBootstrap;
+            void existingLoader?.ensure?.().catch((error) => {
+                console.warn('⚠️ Failed to finish profile modal runtime:', error?.message || error);
+            });
+        }
         return true;
     }
 
-    const loader = window.ZaoyoeProfileModalBootstrap;
+    const loader = await getProfileModalBootstrap();
     if (!loader || typeof loader.ensure !== 'function') {
         return false;
     }
 
     try {
+        if (useFastMount && typeof loader.mount === 'function') {
+            await loader.mount();
+            return !!document.getElementById('profileModal');
+        }
+
         await loader.ensure();
-        return true;
+        return !!document.getElementById('profileModal');
     } catch (error) {
         console.warn('⚠️ Failed to load profile modal runtime:', error?.message || error);
         return false;
+    }
+}
+
+function scheduleSupabaseAuthProfileModalWarmup(reason = 'auth-ready') {
+    if (profileModalWarmHandle) {
+        return;
+    }
+
+    const runWarmup = () => {
+        profileModalWarmHandle = null;
+
+        const warmTask = getProfileModalBootstrap().then((loader) => {
+            if (typeof loader?.warm === 'function') {
+                return loader.warm({ reason });
+            }
+            return ensureProfileModalRuntime({ fast: true });
+        });
+
+        void warmTask.catch((error) => {
+            console.warn(`⚠️ Profile modal warmup failed (${reason}):`, error?.message || error);
+        });
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+        profileModalWarmHandle = window.requestIdleCallback(runWarmup, { timeout: 1200 });
+    } else {
+        profileModalWarmHandle = window.setTimeout(runWarmup, 180);
     }
 }
 
@@ -1033,6 +1138,7 @@ async function handleAuthClick(event) {
 
                 // Pre-fetch wallet data so 'My Orders' opens instantly
                 scheduleSupabaseAuthWalletWarmPrefetch('dropdown-open');
+                scheduleSupabaseAuthProfileModalWarmup('dropdown-open');
             }
         }
 
@@ -1165,6 +1271,7 @@ async function checkAuthState(options = {}) {
         if (allowSoftNull && hasCachedIdentity(cachedProfile)) {
             console.log('⚡ Session pending, keep cached logged-in UI');
             updateUserUI(cachedProfile, { animateAvatar: false, preferImmediateAvatar: true });
+            scheduleSupabaseAuthProfileModalWarmup('cached-session-pending');
             setTimeout(() => {
                 checkAuthState({ allowSoftNull: false });
             }, 900);
@@ -1256,6 +1363,7 @@ async function checkAuthState(options = {}) {
         nickname: resolvedNickname,
         avatarUrl: avatarUrl
     }, { animateAvatar: false });
+    scheduleSupabaseAuthProfileModalWarmup('auth-ready');
 
     // 🔒 启动会话超时监控
     startSessionTimeoutMonitor();
@@ -1673,6 +1781,20 @@ function updateUserUI(user, options = {}) {
     const userDropdown = document.getElementById('userDropdown');
     const enterStudioBtn = document.getElementById('enterStudioBtn');
     const authBtn = document.getElementById('authBtn');
+    const hasAuthNavMarkup = !!(authBtn || defaultIcon || navAvatar || btnText);
+
+    if (user && !hasAuthNavMarkup) {
+        window.__ZAOYOE_PENDING_AUTH_USER__ = {
+            user,
+            options: {
+                ...options,
+                preferImmediateAvatar: true
+            },
+            updatedAt: Date.now()
+        };
+    } else if (!user) {
+        window.__ZAOYOE_PENDING_AUTH_USER__ = null;
+    }
 
     if (user) {
         console.log('👤 updateUserUI: 用户已登录', user);
@@ -1707,30 +1829,44 @@ function updateUserUI(user, options = {}) {
             if (currentRaw && normalizeAvatarUrl(currentRaw) === normalizeAvatarUrl(preferredAvatarUrl) && hasVisibleAvatar) {
                 // Already showing the correct image
             } else {
-                // Keep the current state (either old avatar or default icon) visible
-                // and load the new avatar silently in the background
-                const preloader = new Image();
-                preloader.onload = () => {
-                    navAvatar.src = preferredAvatarUrl;
+                const revealAvatar = (url) => {
+                    navAvatar.onerror = function () {
+                        const failedBase = normalizeAvatarUrl(this.src || '');
+                        const fallbackBase = normalizeAvatarUrl(fallbackUrl);
+                        if (failedBase === fallbackBase) return;
+
+                        if (!/googleusercontent\.com/i.test(url) || !hasVisibleAvatar) {
+                            navAvatar.src = fallbackUrl;
+                            setAuthAvatarVisualState(navAvatar, true);
+                            setAuthDisplayState(defaultIcon, true, 'inline');
+                        }
+                    };
+                    navAvatar.src = url;
                     setAuthAvatarVisualState(navAvatar, true);
                     setAuthDisplayState(defaultIcon, true, 'inline');
+                };
 
-                    if (animateAvatar) {
-                        navAvatar.classList.remove('animate-in');
-                        void navAvatar.offsetWidth; // Force reflow
-                        navAvatar.classList.add('animate-in');
-                    }
-                };
-                preloader.onerror = () => {
-                    console.warn(`⚠️ Failed to load avatar from: ${preferredAvatarUrl}, falling back to generator.`);
-                    // Only fallback to generator if it's not a google URL failure, or we must
-                    if (!/googleusercontent\.com/i.test(preferredAvatarUrl) || !hasVisibleAvatar) {
-                        navAvatar.src = fallbackUrl;
-                        setAuthAvatarVisualState(navAvatar, true);
-                        setAuthDisplayState(defaultIcon, true, 'inline');
-                    }
-                };
-                preloader.src = preferredAvatarUrl;
+                if (preferImmediateAvatar || !hasVisibleAvatar) {
+                    revealAvatar(preferredAvatarUrl);
+                } else {
+                    // Keep the current avatar visible while the fresh URL is verified.
+                    const preloader = new Image();
+                    preloader.onload = () => revealAvatar(preferredAvatarUrl);
+                    preloader.onerror = () => {
+                        console.warn(`⚠️ Failed to load avatar from: ${preferredAvatarUrl}, falling back to generator.`);
+                        // Only fallback to generator if it's not a google URL failure, or we must.
+                        if (!/googleusercontent\.com/i.test(preferredAvatarUrl) || !hasVisibleAvatar) {
+                            revealAvatar(fallbackUrl);
+                        }
+                    };
+                    preloader.src = preferredAvatarUrl;
+                }
+
+                if (animateAvatar) {
+                    navAvatar.classList.remove('animate-in');
+                    void navAvatar.offsetWidth; // Force reflow
+                    navAvatar.classList.add('animate-in');
+                }
             }
         } else if (defaultIcon) {
             setAuthDisplayState(defaultIcon, true, 'inline');
@@ -1755,7 +1891,8 @@ function updateUserUI(user, options = {}) {
         });
         setProfileModalAvatar(
             user.avatarUrl,
-            user.email || user.username || user.nickname || 'User'
+            user.email || user.username || user.nickname || 'User',
+            { preferImmediate: preferImmediateAvatar }
         );
         const userForCache = { ...user };
         const cacheAvatar = isUsableAvatarUrl(userForCache.avatarUrl) ? String(userForCache.avatarUrl).trim() : '';
@@ -2951,19 +3088,26 @@ function handleProfileModalAction(event) {
             openProfileWalletView(actionTrigger.dataset.walletView || 'balance', event);
             break;
         case 'switch-security-panel':
-            switchProfileSecurityPanel(actionTrigger.dataset.securityPanel || 'change-password', event);
+            if (typeof window.switchProfileSecurityPanel === 'function') {
+                window.switchProfileSecurityPanel(actionTrigger.dataset.securityPanel || 'change-password', event);
+            } else {
+                const targetPanel = actionTrigger.dataset.securityPanel || 'change-password';
+                void ensureProfileModalRuntime({ fast: false }).then(() => {
+                    window.switchProfileSecurityPanel?.(targetPanel);
+                });
+            }
             break;
         case 'change-password':
-            void changePassword();
+            finishProfileSecurityAction('changePassword', window.changePassword);
             break;
         case 'send-phone-code':
-            sendPhoneVerificationCode();
+            finishProfileSecurityAction('sendPhoneVerificationCode', window.sendPhoneVerificationCode);
             break;
         case 'bind-phone':
-            bindPhone();
+            finishProfileSecurityAction('bindPhone', window.bindPhone);
             break;
         case 'delete-account':
-            void deleteAccount();
+            finishProfileSecurityAction('deleteAccount', window.deleteAccount);
             break;
         default:
             break;
@@ -2986,6 +3130,20 @@ function handleProfileModalChange(event) {
     if (changeType === 'avatar-upload') {
         void handleAvatarUpload(event);
     }
+}
+
+function finishProfileSecurityAction(actionName, callback) {
+    if (typeof callback === 'function') {
+        callback();
+        return;
+    }
+
+    void ensureProfileModalRuntime({ fast: false }).then(() => {
+        const action = window[actionName];
+        if (typeof action === 'function') {
+            action();
+        }
+    });
 }
 
 function initializeManagedProfileInteractions() {
@@ -3062,6 +3220,7 @@ async function initializeAuthPageBoot() {
             const user = JSON.parse(cachedProfile);
             console.log('⚡ Instant restore from cached profile:', user.nickname);
             updateUserUI(user);
+            scheduleSupabaseAuthProfileModalWarmup('cached-profile');
         } catch (e) {
             console.warn('Failed to parse cached profile:', e);
         }
@@ -3073,12 +3232,12 @@ async function initializeAuthPageBoot() {
         await new Promise(resolve => setTimeout(resolve, 500));
     }
 
-    // 初始化 Google Identity Services
-    try {
-        await ensureGoogleInlineButtonReady();
-    } catch (err) {
+    // Warm Google Identity Services in the background so it does not block nav avatar restore.
+    const googleIdentityWarmup = ensureGoogleInlineButtonReady().catch((err) => {
         console.warn('⚠️ Google identity preload failed:', err?.message || err);
-    }
+        return false;
+    });
+    void googleIdentityWarmup;
 
     restoreRememberedLoginState();
 
@@ -3224,6 +3383,7 @@ async function initializeAuthPageBoot() {
                 checkAuthState();
                 flushPendingAuthOrigin(session.user.id);
                 scheduleSupabaseAuthWalletWarmPrefetch('initial-session');
+                scheduleSupabaseAuthProfileModalWarmup('initial-session');
             } else if (window._localJwtRestored) {
                 console.log('🔔 INITIAL_SESSION is null, but local JWT already restored. Ignored.');
             }
@@ -3250,6 +3410,7 @@ async function initializeAuthPageBoot() {
                         });
                     }
                     scheduleSupabaseAuthWalletWarmPrefetch('signed-in');
+                    scheduleSupabaseAuthProfileModalWarmup('signed-in');
                 }
             } else if (event === 'SIGNED_OUT') {
                 // 🛡️ Guard: Suppress SIGNED_OUT during initialization period.
@@ -4159,6 +4320,12 @@ function switchProfileTab(tabName) {
             const overlay = document.getElementById('profileModal');
             const targetPanel = overlay?.dataset.securityPanel || 'change-password';
             window.switchProfileSecurityPanel(targetPanel);
+        } else {
+            const overlay = document.getElementById('profileModal');
+            const targetPanel = overlay?.dataset.securityPanel || 'change-password';
+            void ensureProfileModalRuntime({ fast: false }).then(() => {
+                window.switchProfileSecurityPanel?.(targetPanel);
+            });
         }
 
         if (profileBack) {

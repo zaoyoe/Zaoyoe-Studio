@@ -54,6 +54,7 @@ const settingsCodexConfigHandler = require('../server/api-handlers/admin/setting
 const settingsDiscountTriggerOptionsHandler = require('../server/api-handlers/admin/settings/discount-trigger-options');
 const settingsGeminiKeyHandler = require('../server/api-handlers/admin/settings/gemini-key');
 const settingsAdminAuditMonitorHandler = require('../server/api-handlers/admin/settings/admin-audit-monitor');
+const settingsAnnouncementsHandler = require('../server/api-handlers/admin/settings/announcements');
 const settingsOpsAlertHealthHandler = require('../server/api-handlers/admin/settings/ops-alert-health');
 const settingsOpsAlertsHandler = require('../server/api-handlers/admin/settings/ops-alerts');
 const settingsOpsAlertMonitorHandler = require('../server/api-handlers/admin/settings/ops-alert-monitor');
@@ -113,6 +114,7 @@ const ROUTE_HANDLERS = {
     'prompts/manage': promptsManageHandler,
     'access/session': accessSessionHandler,
     'settings/admin-audit-monitor': settingsAdminAuditMonitorHandler,
+    'settings/announcements': settingsAnnouncementsHandler,
     'settings/codex-config': settingsCodexConfigHandler,
     'settings/discount-trigger-options': settingsDiscountTriggerOptionsHandler,
     'settings/gemini-key': settingsGeminiKeyHandler,

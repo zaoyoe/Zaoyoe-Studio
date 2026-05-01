@@ -8,6 +8,7 @@ const {
     buildRangeWindow,
     normalizePositiveInteger,
     loadProductAnalyticsDataset,
+    buildProductMetricEntries,
     buildProductSummaryPayload,
     buildProductTrendPayload,
     buildProductSiteComparisonPayload,
@@ -15,6 +16,7 @@ const {
     buildProductOperatingMatrixPayload,
     buildProductRankPayloads,
     buildProductHealthPayloads,
+    buildProductFunnelPayload,
     buildProductBundleSuccess,
     buildProductBundleFailure
 } = require('./_product-analytics-builders');
@@ -54,18 +56,37 @@ module.exports = async function analyticsProductDashboardBundleHandler(req, res)
             datasetError = error;
         }
 
+        const metricEntries = dataset
+            ? buildProductMetricEntries({
+                ...dataset,
+                site
+            })
+            : null;
+        const entriesBySite = site !== 'all' && metricEntries
+            ? { [site]: metricEntries }
+            : null;
         const rankPayloads = dataset
             ? buildProductRankPayloads({
                 ...dataset,
                 site,
-                limit
+                limit,
+                entries: metricEntries
             })
             : null;
         const healthPayloads = dataset
             ? buildProductHealthPayloads({
                 ...dataset,
                 site,
-                limit
+                limit,
+                entries: metricEntries
+            })
+            : null;
+        const funnelPayload = dataset
+            ? buildProductFunnelPayload({
+                ...dataset,
+                site,
+                limit,
+                entries: metricEntries
             })
             : null;
 
@@ -73,7 +94,8 @@ module.exports = async function analyticsProductDashboardBundleHandler(req, res)
             summary: buildProductBundleSuccess(
                 buildProductSummaryPayload({
                     ...dataset,
-                    site
+                    site,
+                    entries: metricEntries
                 }),
                 { source: 'shop_products + shop_orders + shop_inventory + user_events' }
             ),
@@ -89,21 +111,24 @@ module.exports = async function analyticsProductDashboardBundleHandler(req, res)
             siteComparison: buildProductBundleSuccess(
                 buildProductSiteComparisonPayload({
                     ...dataset,
-                    activeSite: site
+                    activeSite: site,
+                    entriesBySite
                 }),
                 { source: 'shop_products + shop_orders + shop_inventory + user_events' }
             ),
             categoryBreakdown: buildProductBundleSuccess(
                 buildProductCategoryBreakdownPayload({
                     ...dataset,
-                    site
+                    site,
+                    entries: metricEntries
                 }),
                 { source: 'shop_products + shop_orders + shop_inventory + user_events' }
             ),
             productMatrix: buildProductBundleSuccess(
                 buildProductOperatingMatrixPayload({
                     ...dataset,
-                    site
+                    site,
+                    entries: metricEntries
                 }),
                 { source: 'shop_products + shop_orders + shop_inventory + user_events' }
             ),
@@ -118,7 +143,10 @@ module.exports = async function analyticsProductDashboardBundleHandler(req, res)
             soldOutProducts: buildProductBundleSuccess(healthPayloads.soldOutProducts, { source: 'shop_products + shop_orders' }),
             deliveryRiskProducts: buildProductBundleSuccess(healthPayloads.deliveryRiskProducts, { source: 'shop_orders' }),
             refundRiskProducts: buildProductBundleSuccess(healthPayloads.refundRiskProducts, { source: 'shop_orders' }),
-            inventoryTurnoverHints: buildProductBundleSuccess(healthPayloads.inventoryTurnoverHints, { source: 'shop_products + shop_orders + shop_inventory' })
+            inventoryTurnoverHints: buildProductBundleSuccess(healthPayloads.inventoryTurnoverHints, { source: 'shop_products + shop_orders + shop_inventory' }),
+            funnelSummary: buildProductBundleSuccess(funnelPayload.summary, { source: 'user_events + shop_orders' }),
+            funnelSiteComparison: buildProductBundleSuccess(funnelPayload.siteComparison, { source: 'user_events + shop_orders' }),
+            funnelProductRows: buildProductBundleSuccess(funnelPayload.productRows, { source: 'shop_products + user_events + shop_orders' })
         } : {
             summary: buildProductBundleFailure(datasetError, 'Failed to load product analytics summary'),
             trend: buildProductBundleFailure(datasetError, 'Failed to load product analytics trend'),
@@ -136,7 +164,10 @@ module.exports = async function analyticsProductDashboardBundleHandler(req, res)
             soldOutProducts: buildProductBundleFailure(datasetError, 'Failed to load sold-out product health'),
             deliveryRiskProducts: buildProductBundleFailure(datasetError, 'Failed to load delivery risk product health'),
             refundRiskProducts: buildProductBundleFailure(datasetError, 'Failed to load refund risk product health'),
-            inventoryTurnoverHints: buildProductBundleFailure(datasetError, 'Failed to load inventory turnover hints')
+            inventoryTurnoverHints: buildProductBundleFailure(datasetError, 'Failed to load inventory turnover hints'),
+            funnelSummary: buildProductBundleFailure(datasetError, 'Failed to load product funnel summary'),
+            funnelSiteComparison: buildProductBundleFailure(datasetError, 'Failed to load product funnel site comparison'),
+            funnelProductRows: buildProductBundleFailure(datasetError, 'Failed to load product funnel product comparison')
         };
 
         return sendJson(res, 200, {

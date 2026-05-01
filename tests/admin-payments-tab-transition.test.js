@@ -144,6 +144,8 @@ function createStorage(initial = {}) {
 function createAdminPaymentsRuntime(fetchImpl, options = {}) {
     const source = fs.readFileSync(adminPaymentsPath, 'utf8');
     const elements = {};
+    const timingMarks = [];
+    const timingMeasures = [];
 
     function registerElement(id, classes = [], dataset = {}) {
         const element = new FakeElement({ id, classes, dataset });
@@ -255,6 +257,14 @@ function createAdminPaymentsRuntime(fetchImpl, options = {}) {
             return 1;
         },
         clearInterval() {},
+        AdminStudioTiming: options.captureTiming ? {
+            mark(name, detail = {}) {
+                timingMarks.push({ name, detail: { ...detail } });
+            },
+            measure(name, startName, endName, detail = {}) {
+                timingMeasures.push({ name, startName, endName, detail: { ...detail } });
+            }
+        } : null,
         getComputedStyle() {
             return { display: 'block' };
         }
@@ -295,7 +305,9 @@ function createAdminPaymentsRuntime(fetchImpl, options = {}) {
 
     return {
         window,
-        elements
+        elements,
+        timingMarks,
+        timingMeasures
     };
 }
 
@@ -741,6 +753,204 @@ test('payments overview warm-load keeps full ops tab data on demand', async () =
     assert.match(elements['paymentsOrdersTable'].innerHTML, /ORD-PREFETCH-1/);
 });
 
+test('payments overview initialization resolves after core while staged scopes keep loading', async () => {
+    const fetchCalls = [];
+    let releaseOverviewDeferred;
+    const overviewDeferred = new Promise((resolve) => {
+        releaseOverviewDeferred = resolve;
+    });
+
+    const fetchImpl = async (url) => {
+        const parsedUrl = new URL(url, 'https://example.com');
+        fetchCalls.push(`${parsedUrl.pathname}?${parsedUrl.searchParams.toString()}`);
+        const view = parsedUrl.searchParams.get('view') || 'overview';
+        const scope = parsedUrl.searchParams.get('scope') || 'full';
+
+        if (view === 'overview' && scope === 'core') {
+            return createJsonResponse({
+                success: true,
+                overview_scope: 'core',
+                overview: {
+                    total_orders: 2,
+                    paid_orders: 2,
+                    paid_rate: 100,
+                    total_amount: 128,
+                    total_points: 1280
+                },
+                anomaly_summary: {
+                    review_orders: 0,
+                    failed_orders: 0,
+                    unclaimed_paid_orders: 0
+                },
+                session_summary: {
+                    total_sessions: 2,
+                    match_rate: 100
+                },
+                query_summary: {
+                    total_attempts: 0,
+                    failed_attempts: 0
+                }
+            });
+        }
+
+        if (view === 'overview' && (scope === 'secondary' || scope === 'ops')) {
+            await overviewDeferred;
+            return createJsonResponse({
+                success: true,
+                overview_scope: scope,
+                anomaly_summary: {
+                    review_orders: 0,
+                    failed_orders: 0,
+                    duplicate_webhook_orders: 0,
+                    session_anomalies: 0,
+                    query_failures: 0,
+                    refund_failures: 0,
+                    refund_reclaim_failures: 0,
+                    refund_compensation_failures: 0
+                },
+                provider_stats: [],
+                trend_24h: [],
+                refund_alert_topics: [],
+                refund_alert_items: [],
+                ops_alert_summary: {
+                    total: 0,
+                    pending: 0,
+                    retry: 0,
+                    processing: 0,
+                    dead_letter: 0,
+                    handled: 0,
+                    ignored: 0
+                },
+                ops_alert_items: []
+            });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+    };
+
+    const { window, elements } = createAdminPaymentsRuntime(fetchImpl);
+    let initResolved = false;
+    const initPromise = window.AdminPayments.init().then(() => {
+        initResolved = true;
+    });
+    const fastResult = await Promise.race([
+        initPromise.then(() => 'resolved'),
+        flushMicrotasks(40).then(() => 'pending')
+    ]);
+
+    assert.equal(fastResult, 'resolved', 'overview init should resolve after the core scope paints');
+    assert.equal(initResolved, true, 'overview init should not wait for deferred scopes');
+    assert.equal(
+        fetchCalls.some((call) => call.includes('scope=secondary')),
+        true,
+        'overview should still start the secondary overlay request'
+    );
+    assert.equal(
+        fetchCalls.some((call) => call.includes('scope=ops')),
+        true,
+        'overview should still start the ops overlay request'
+    );
+    assert.match(elements['paymentsToolbarHighlights'].innerHTML, /异常补充中/);
+
+    releaseOverviewDeferred();
+    await initPromise;
+    await flushMicrotasks(10);
+
+    assert.match(elements['paymentsToolbarHighlights'].innerHTML, /异常 0/);
+});
+
+test('payments command center prime uses overview core and ops scopes without full init', async () => {
+    const fetchCalls = [];
+    const fetchImpl = async (url) => {
+        const parsedUrl = new URL(url, 'https://example.com');
+        fetchCalls.push(`${parsedUrl.pathname}?${parsedUrl.searchParams.toString()}`);
+        const view = parsedUrl.searchParams.get('view') || 'overview';
+        const scope = parsedUrl.searchParams.get('scope') || 'full';
+        const prefetch = parsedUrl.searchParams.get('prefetch') || '';
+
+        if (view === 'overview' && scope === 'core' && prefetch === '1') {
+            return createJsonResponse({
+                success: true,
+                overview_scope: 'core',
+                overview: {
+                    paid_rate: 96.5
+                },
+                anomaly_summary: {
+                    review_orders: 2,
+                    failed_orders: 1
+                },
+                ops_alert_summary: null,
+                ops_alert_items: null
+            });
+        }
+
+        if (view === 'overview' && scope === 'ops' && prefetch === '1') {
+            return createJsonResponse({
+                success: true,
+                overview_scope: 'ops',
+                ops_alert_summary: {
+                    pending: 1,
+                    retry: 3,
+                    processing: 0,
+                    dead_letter: 1,
+                    actionable_count: 5
+                },
+                ops_alert_items: [
+                    {
+                        id: 'ops-1',
+                        queue_status: 'retry',
+                        title: '回调等待重试',
+                        created_at: '2026-04-18T12:00:00.000Z'
+                    }
+                ]
+            });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+    };
+
+    const { window, timingMarks, timingMeasures } = createAdminPaymentsRuntime(fetchImpl, { captureTiming: true });
+    const summary = await window.AdminPayments.primeCommandCenterSummary();
+    await flushMicrotasks();
+
+    assert.deepEqual(fetchCalls, [
+        '/api/admin/payments/summary?view=overview&prefetch=1&scope=core&days=30',
+        '/api/admin/payments/summary?view=overview&prefetch=1&scope=ops&days=30'
+    ]);
+    assert.equal(summary.ready, true);
+    assert.equal(summary.paidRate, 96.5);
+    assert.equal(summary.reviewOrders, 2);
+    assert.equal(summary.failedOrders, 1);
+    assert.equal(summary.retryCount, 3);
+    assert.equal(summary.deadLetterCount, 1);
+    assert.equal(summary.actionableCount, 8);
+    assert.equal(summary.recentItems[0]?.copy, '回调等待重试');
+    assert.equal(
+        timingMarks.some((entry) => entry.name === 'payments:command-prime:start'),
+        true,
+        'payments prime should mark command summary start'
+    );
+    assert.equal(
+        timingMarks.some((entry) => entry.name === 'payments:command-prime:end' && entry.detail.fulfilledCount === 2),
+        true,
+        'payments prime should mark command summary completion'
+    );
+    assert.equal(
+        timingMeasures.some((entry) => entry.name === 'payments:command-prime'),
+        true,
+        'payments prime should measure command summary duration'
+    );
+
+    const cachedSummary = await window.AdminPayments.primeCommandCenterSummary();
+    assert.equal(cachedSummary.actionableCount, 8);
+    assert.equal(fetchCalls.length, 2);
+    assert.equal(
+        timingMarks.some((entry) => entry.name === 'payments:command-prime:cache-hit'),
+        true,
+        'cached payments prime should mark a cache hit'
+    );
+});
+
 test('payments overview keeps callback topic count after visiting finance tab', async () => {
     const fetchImpl = async (url) => {
         const parsedUrl = new URL(url, 'https://example.com');
@@ -853,6 +1063,7 @@ test('payments overview keeps callback topic count after visiting finance tab', 
 
     const { window, elements } = createAdminPaymentsRuntime(fetchImpl);
     await window.AdminPayments.init();
+    await flushMicrotasks(10);
 
     assert.match(elements['paymentsToolbarHighlights'].innerHTML, /异常 19/);
     assert.match(elements['paymentsOverviewGrid'].innerHTML, /回调专题/);
@@ -992,6 +1203,7 @@ test('payments overview uses zero active ops topics over stale callback aggregat
 
     const { window, elements } = createAdminPaymentsRuntime(fetchImpl);
     await window.AdminPayments.init();
+    await flushMicrotasks(10);
 
     assert.match(elements['paymentsToolbarHighlights'].innerHTML, /异常 19/);
     assert.match(elements['paymentsOverviewGrid'].innerHTML, /回调专题/);
@@ -1101,6 +1313,7 @@ test('payments overview refresh does not flash stale refund anomaly aggregate wh
 
     releaseOpsDeferred();
     await initPromise;
+    await flushMicrotasks(10);
 
     assert.match(elements['paymentsToolbarHighlights'].innerHTML, /异常 0/);
     assert.doesNotMatch(elements['paymentsToolbarHighlights'].innerHTML, /异常 8/);

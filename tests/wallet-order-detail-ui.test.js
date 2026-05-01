@@ -52,6 +52,9 @@ test('wallet shop order detail uses dots loading and explicit product guidance c
     assert.match(script, /js-wallet-open-shop-product/);
     assert.match(script, /\/shop\.html\?productId=\$\{encodeURIComponent\(normalizedProductId\)\}/);
     assert.match(script, /wallet-order-guidance-toggle js-wallet-toggle-guidance/);
+    assert.match(script, /tone:\s*'notice'/);
+    assert.match(script, /tone:\s*'usage'/);
+    assert.match(script, /wallet-order-guidance-toggle--\$\{this\.escapeAttribute\(item\.tone \|\| item\.key\)\}/);
     assert.match(script, /wallet-order-guidance-panel js-wallet-guidance-panel/);
     assert.doesNotMatch(script, /product-dot product-dot--info/);
     assert.match(styles, /\.wallet-order-detail-toolbar\s*\{[\s\S]*justify-content:\s*space-between;/);
@@ -66,11 +69,39 @@ test('wallet shop order detail uses dots loading and explicit product guidance c
     assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
     assert.match(script, /wallet\.submitTicket'[\s\S]*提交工单/);
     assert.match(styles, /\.wallet-order-guidance-toggle\s*\{/);
+    assert.match(styles, /\.wallet-order-guidance-toggle--notice\s*\{[\s\S]*rgba\(255,\s*214,\s*102,\s*0\.12\)/);
+    assert.match(styles, /\.wallet-order-guidance-toggle--usage\s*\{[\s\S]*rgba\(114,\s*229,\s*208,\s*0\.12\)/);
+    assert.match(styles, /\.wallet-order-guidance-toggle--notice\[aria-expanded="true"\]\s*\{[\s\S]*inset 0 0 0 1px rgba\(255,\s*214,\s*102,\s*0\.16\)/);
+    assert.match(styles, /\.wallet-order-guidance-toggle--usage\[aria-expanded="true"\]\s*\{[\s\S]*inset 0 0 0 1px rgba\(114,\s*229,\s*208,\s*0\.16\)/);
+    assert.match(styles, /\.wallet-order-guidance-toggle--notice:active,[\s\S]*\.wallet-order-guidance-toggle--usage:active\s*\{[\s\S]*scale\(0\.98\)/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) \.wallet-order-guidance-toggle--notice\s*\{[\s\S]*rgba\(245,\s*158,\s*11,\s*0\.08\)/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) \.wallet-order-guidance-toggle--usage\s*\{[\s\S]*rgba\(16,\s*185,\s*129,\s*0\.08\)/);
+    assert.match(styles, /\.wallet-order-action-btn:hover,[\s\S]*\.wallet-order-action-btn:focus-visible\s*\{[\s\S]*transform:\s*translateY\(-1px\);/);
+    assert.match(styles, /\.wallet-order-action-btn-copy:hover,[\s\S]*\.wallet-order-action-btn-copy:focus-visible\s*\{[\s\S]*rgba\(148,\s*163,\s*184,\s*0\.1\)/);
+    assert.match(styles, /\.wallet-order-action-btn-danger:hover,[\s\S]*\.wallet-order-action-btn-danger:focus-visible\s*\{[\s\S]*rgba\(239,\s*68,\s*68,\s*0\.12\)/);
     assert.match(styles, /\.wallet-order-guidance-panel\[hidden\]\s*\{[\s\S]*display:\s*none !important;/);
     assert.doesNotMatch(script, /fa-box-open[\s\S]{0,500}wallet-order-close-btn js-wallet-order-close[\s\S]{0,500}wallet-order-modal-body/);
-    assert.match(shopHandler, /show_purchase_notes,\s*purchase_notes,\s*show_usage_instructions,\s*usage_instructions/);
+    assert.match(shopHandler, /purchase_notes_zh',\s*'purchase_notes_en/);
+    assert.match(shopHandler, /usage_instructions_zh',\s*'usage_instructions_en/);
     assert.match(shopHandler, /purchase_notes:\s*purchaseNotes \|\| null/);
     assert.match(shopHandler, /has_purchase_notes:\s*purchaseNotes\.length > 0/);
+});
+
+test('wallet shop order content cards wrap long card secrets inside adaptive boxes', () => {
+    const styles = fs.readFileSync(walletStylesPath, 'utf8');
+
+    assert.match(styles, /\.wallet-content-grid\s*\{[\s\S]*max-width:\s*100%;[\s\S]*min-width:\s*0;/);
+    assert.match(styles, /\.wallet-content-grid--stacked\s*\{[\s\S]*grid-template-columns:\s*minmax\(0,\s*1fr\);/);
+    assert.match(styles, /\.wallet-copy-card--compact,[\s\S]*\.wallet-copy-card--link\s*\{[\s\S]*height:\s*auto;/);
+    assert.match(styles, /\.wallet-copy-card--compact,[\s\S]*\.wallet-copy-card--link\s*\{[\s\S]*min-width:\s*0;[\s\S]*max-width:\s*100%;/);
+    assert.match(styles, /\.wallet-copy-card--compact\s*\{[\s\S]*width:\s*100%;/);
+    assert.match(styles, /\.wallet-copy-card--compact:hover\s*\{[\s\S]*transform:\s*translateY\(-1px\);/);
+    assert.match(styles, /\.wallet-copy-card--compact:hover\s*\{[\s\S]*border-color:\s*rgba\(148,\s*163,\s*184,\s*0\.26\);/);
+    assert.match(styles, /\.wallet-copy-card--compact:active\s*\{[\s\S]*transform:\s*translateY\(0\);/);
+    assert.match(styles, /\.item-content-box--plain\s*\{[\s\S]*min-width:\s*0;[\s\S]*max-width:\s*100%;/);
+    assert.match(styles, /\.wallet-copy-card--compact \.item-text,[\s\S]*\.wallet-copy-card--link \.item-text\s*\{[\s\S]*white-space:\s*pre-wrap;/);
+    assert.match(styles, /\.wallet-copy-card--compact \.item-text,[\s\S]*\.wallet-copy-card--link \.item-text\s*\{[\s\S]*overflow-wrap:\s*anywhere;/);
+    assert.match(styles, /@media \(max-width: 640px\)[\s\S]*\.wallet-content-grid--stacked \.wallet-copy-card--compact\s*\{[\s\S]*justify-self:\s*stretch;[\s\S]*width:\s*100%;[\s\S]*min-width:\s*0;/);
 });
 
 test('wallet prompt, redeem, and shop details expose clickable names with green status checks', () => {

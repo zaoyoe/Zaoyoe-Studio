@@ -55,7 +55,113 @@ const AdminGrowthCenter = {
     },
 
     normalizeLoadMode(value = '') {
-        return this.safeText(value, 40).toLowerCase() === 'summary' ? 'summary' : 'full';
+        const normalized = this.safeText(value, 40).toLowerCase();
+        if (normalized === 'summary' || normalized === 'details') {
+            return normalized;
+        }
+        return 'full';
+    },
+
+    isPlainObject(value) {
+        return value && typeof value === 'object' && !Array.isArray(value);
+    },
+
+    getAssetSortTimestamp(value = '') {
+        const parsed = Date.parse(this.safeText(value, 80));
+        return Number.isFinite(parsed) ? parsed : 0;
+    },
+
+    getAssetMergeKey(item = {}) {
+        return [
+            this.safeText(item?.type || 'asset', 80),
+            this.safeText(item?.destination_id || item?.id || item?.label, 160)
+        ].join(':');
+    },
+
+    mergeAssetFamilies(currentFamilies = [], incomingFamilies = []) {
+        const rows = (Array.isArray(currentFamilies) ? currentFamilies : []).map((family) => ({
+            ...family,
+            summary: this.isPlainObject(family?.summary) ? { ...family.summary } : {}
+        }));
+        const indexByKey = new Map(rows.map((family, index) => [this.safeText(family?.key, 80), index]));
+
+        (Array.isArray(incomingFamilies) ? incomingFamilies : []).forEach((family) => {
+            const key = this.safeText(family?.key, 80);
+            if (!key) {
+                return;
+            }
+            const existingIndex = indexByKey.get(key);
+            const incomingSummary = this.isPlainObject(family?.summary) ? family.summary : {};
+            if (existingIndex === undefined) {
+                indexByKey.set(key, rows.length);
+                rows.push({
+                    ...family,
+                    summary: { ...incomingSummary }
+                });
+                return;
+            }
+
+            const existing = rows[existingIndex] || {};
+            rows[existingIndex] = {
+                ...existing,
+                ...family,
+                label: family?.label || existing.label,
+                primary_action: family?.primary_action || existing.primary_action,
+                summary: {
+                    ...(this.isPlainObject(existing.summary) ? existing.summary : {}),
+                    ...incomingSummary
+                }
+            };
+        });
+
+        return rows;
+    },
+
+    mergeUnifiedAssetDetails(currentItems = [], incomingItems = [], mode = '') {
+        const incomingRows = Array.isArray(incomingItems) ? incomingItems : [];
+        if (!incomingRows.length) {
+            return Array.isArray(currentItems) ? currentItems.slice(0, 10) : [];
+        }
+
+        const normalizedMode = this.safeText(mode, 80).toLowerCase();
+        const baseRows = normalizedMode === 'discount_patch'
+            ? (Array.isArray(currentItems) ? currentItems : []).filter((item) => this.safeText(item?.type, 80) !== 'discount')
+            : (Array.isArray(currentItems) ? currentItems : []).filter((item) => {
+                const itemKey = this.getAssetMergeKey(item);
+                return !incomingRows.some((incoming) => this.getAssetMergeKey(incoming) === itemKey);
+            });
+
+        return [...baseRows, ...incomingRows]
+            .sort((left, right) => this.getAssetSortTimestamp(right?.recent_activity_at) - this.getAssetSortTimestamp(left?.recent_activity_at))
+            .slice(0, 10);
+    },
+
+    mergeDetailsPayload(payload = {}) {
+        if (this.safeText(payload?.load_mode, 40).toLowerCase() !== 'details') {
+            return payload;
+        }
+
+        const previous = this.isPlainObject(this.state.payload) ? this.state.payload : {};
+        return {
+            ...previous,
+            generated_at: payload?.generated_at || previous.generated_at,
+            site_context: payload?.site_context || previous.site_context,
+            load_mode: 'full',
+            details_pending: false,
+            summary: {
+                ...(this.isPlainObject(previous.summary) ? previous.summary : {}),
+                ...(this.isPlainObject(payload?.summary) ? payload.summary : {})
+            },
+            asset_families: this.mergeAssetFamilies(previous.asset_families, payload?.asset_families),
+            unified_assets: this.mergeUnifiedAssetDetails(
+                previous.unified_assets,
+                payload?.unified_assets,
+                payload?.unified_assets_mode
+            ),
+            workflows: Array.isArray(payload?.workflows)
+                ? payload.workflows
+                : (Array.isArray(previous.workflows) ? previous.workflows : [])
+        };
     },
 
     hasFullCacheForSite(site = this.getReadSite()) {
@@ -67,6 +173,7 @@ const AdminGrowthCenter = {
     async fetchPayload({ force = false, mode = 'full' } = {}) {
         const site = this.getReadSite();
         const loadMode = this.normalizeLoadMode(mode);
+        const requestMode = loadMode === 'details' && (!this.state.payload || this.state.loadedSite !== site) ? 'full' : loadMode;
         if (!force && this.state.payload && this.state.loadedSite === site) {
             if (loadMode === 'summary' || this.state.detailsLoaded === true) {
                 return this.state.payload;
@@ -79,7 +186,7 @@ const AdminGrowthCenter = {
 
         const response = await (window.AdminApi?.fetch || fetch)(this.buildUrl('marketing/assets-center', {
             site,
-            mode: loadMode
+            mode: requestMode
         }), {
             credentials: 'include'
         });
@@ -96,11 +203,11 @@ const AdminGrowthCenter = {
         }
 
         this.state.loadedSite = site;
-        this.state.payload = payload;
-        this.state.detailsLoaded = payload?.details_pending !== true && loadMode === 'full';
+        this.state.payload = requestMode === 'details' ? this.mergeDetailsPayload(payload) : payload;
+        this.state.detailsLoaded = this.state.payload?.details_pending !== true && (requestMode === 'details' || requestMode === 'full');
         this.state.error = '';
         this.state.detailError = '';
-        return payload;
+        return this.state.payload;
     },
 
     formatDate(value, { includeTime = true } = {}) {
@@ -243,6 +350,22 @@ const AdminGrowthCenter = {
         `;
     },
 
+    resolveWorkflowRailTone(workflow = {}) {
+        const dueCount = Number(workflow?.due_count || 0);
+        if (Number.isFinite(dueCount) && dueCount > 0) return 'warning';
+
+        const status = this.safeText(workflow?.status || '', 32).toLowerCase();
+        if (status === 'paused') return 'muted';
+
+        const key = this.safeText(workflow?.workflow_key || '', 80).toLowerCase();
+        const family = this.safeText(workflow?.asset_family || '', 80).toLowerCase();
+        if (key.includes('observation') || key.includes('risk')) return 'sky';
+        if (key.includes('archive') || key.includes('retired')) return 'indigo';
+        if (key.includes('recap') || family.includes('combined')) return 'amber';
+        if (key.includes('lifecycle') || key.includes('discount') || family.includes('discount')) return 'emerald';
+        return 'blue';
+    },
+
     renderWorkflows(workflows = []) {
         const rows = Array.isArray(workflows) ? workflows : [];
         if (!rows.length) {
@@ -251,14 +374,18 @@ const AdminGrowthCenter = {
 
         return `
             <div class="marketing-asset-center__workflow-grid">
-                ${rows.map((workflow) => `
-                    <div class="marketing-asset-center__workflow-card${workflow?.status === 'paused' ? ' is-paused' : ''}">
+                ${rows.map((workflow) => {
+                    const dueCount = Number(workflow?.due_count || 0);
+                    const safeDueCount = Number.isFinite(dueCount) ? Math.max(0, dueCount) : 0;
+                    const workflowTone = this.resolveWorkflowRailTone(workflow);
+                    return `
+                    <div class="marketing-asset-center__workflow-card marketing-asset-center__workflow-card--${this.escapeHtml(workflowTone)}${workflow?.status === 'paused' ? ' is-paused' : ''}" data-workflow-tone="${this.escapeHtml(workflowTone)}">
                         <div class="marketing-asset-center__workflow-top">
                             <div>
                                 <div class="marketing-asset-center__workflow-title">${this.escapeHtml(workflow?.workflow_name || '营销工作流')}</div>
                                 <div class="marketing-asset-center__workflow-meta">${this.escapeHtml(workflow?.schedule_label || '手动执行')} · ${this.escapeHtml(workflow?.asset_family || 'combined')}</div>
                             </div>
-                            <span class="marketing-asset-center__workflow-due${workflow?.due_count > 0 ? ' is-due' : ''}">${this.escapeHtml(String(workflow?.due_count || 0))} 待处理</span>
+                            <span class="marketing-asset-center__workflow-due${safeDueCount > 0 ? ' is-due' : ''}">${this.escapeHtml(String(safeDueCount))} 待处理</span>
                         </div>
                         <div class="marketing-asset-center__workflow-summary">
                             ${this.escapeHtml(workflow?.latest_run?.summary || workflow?.last_run_summary || '还没有执行记录')}
@@ -276,7 +403,8 @@ const AdminGrowthCenter = {
                             </button>
                         </div>
                     </div>
-                `).join('')}
+                `;
+                }).join('')}
             </div>
         `;
     },
@@ -434,7 +562,7 @@ const AdminGrowthCenter = {
                 }
 
                 try {
-                    await this.fetchPayload({ force, mode: 'full' });
+                    await this.fetchPayload({ force, mode: 'details' });
                 } catch (error) {
                     if (requestId !== this.state.requestId) {
                         return;

@@ -6,23 +6,18 @@
     }
     global.__zaoyoeChatWidgetBootstrapLoaded = true;
 
-    const VERSION = '20260426_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_LOADER_12';
+    const VERSION = '20260501_CHAT_WIDGET_INTENT_LOAD_1';
     const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';
     const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';
     const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260426_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_12';
     const POLL_INTERVAL_MS = 125;
     const MAX_WAIT_MS = 10000;
-    const IDLE_WARMUP_TIMEOUT_MS = 2500;
-    const WARMUP_EVENT_NAMES = ['pointerdown', 'keydown', 'touchstart', 'scroll'];
 
     let pollTimer = null;
     let startedAt = 0;
     let widgetWarmPromise = null;
     let pendingOpen = false;
     let placeholderFab = null;
-    let idleWarmupTimer = null;
-    let idleWarmupHandle = null;
-    const cleanupWarmupListeners = [];
 
     function ensureChatWidgetStyles() {
         if (typeof global.activateDeferredStyleGroup === 'function') {
@@ -65,28 +60,6 @@
         if (pollTimer) {
             clearInterval(pollTimer);
             pollTimer = null;
-        }
-    }
-
-    function clearIdleWarmup() {
-        if (idleWarmupTimer) {
-            clearTimeout(idleWarmupTimer);
-            idleWarmupTimer = null;
-        }
-        if (typeof global.cancelIdleCallback === 'function' && idleWarmupHandle) {
-            global.cancelIdleCallback(idleWarmupHandle);
-            idleWarmupHandle = null;
-        }
-    }
-
-    function teardownWarmupListeners() {
-        while (cleanupWarmupListeners.length > 0) {
-            const dispose = cleanupWarmupListeners.pop();
-            try {
-                dispose();
-            } catch (_error) {
-                // Ignore listener cleanup failures.
-            }
         }
     }
 
@@ -228,8 +201,6 @@
         try {
             global.chatWidget = new ChatWidgetCtor(global.supabaseClient);
             stopPolling();
-            teardownWarmupListeners();
-            clearIdleWarmup();
             openWidgetIfPending();
             return true;
         } catch (error) {
@@ -246,8 +217,6 @@
         }
 
         ensureChatWidgetStyles();
-        clearIdleWarmup();
-        teardownWarmupListeners();
         createPlaceholderFab();
 
         return warmWidgetResources().then(() => {
@@ -285,50 +254,23 @@
 
         fab.dataset.chatWidgetPlaceholderBound = '1';
         const openOnIntent = (event) => {
-            if (event?.type === 'keydown') {
-                const key = String(event.key || '');
-                if (key !== 'Enter' && key !== ' ') {
-                    return;
-                }
+            if (!isPlaceholderOpenIntent(event)) {
+                return;
             }
 
             event?.preventDefault?.();
             void ensureChatWidgetReady({ open: true });
         };
-
-        fab.addEventListener('click', openOnIntent);
-        fab.addEventListener('keydown', openOnIntent);
-    }
-
-    function scheduleIdleWarmup() {
-        clearIdleWarmup();
-
-        if (typeof global.requestIdleCallback === 'function') {
-            idleWarmupHandle = global.requestIdleCallback(() => {
-                idleWarmupHandle = null;
-                void ensureChatWidgetReady({ open: false });
-            }, { timeout: IDLE_WARMUP_TIMEOUT_MS });
-            return;
-        }
-
-        idleWarmupTimer = global.setTimeout(() => {
-            idleWarmupTimer = null;
+        const prewarmOnIntent = () => {
             void ensureChatWidgetReady({ open: false });
-        }, IDLE_WARMUP_TIMEOUT_MS);
-    }
-
-    function registerWarmupListeners() {
-        const warmHandler = (event) => {
-            void ensureChatWidgetReady({ open: isPlaceholderOpenIntent(event) });
         };
 
-        WARMUP_EVENT_NAMES.forEach((eventName) => {
-            const listenerOptions = { passive: true, once: true };
-            global.addEventListener(eventName, warmHandler, listenerOptions);
-            cleanupWarmupListeners.push(() => {
-                global.removeEventListener(eventName, warmHandler, listenerOptions);
-            });
-        });
+        fab.addEventListener('pointerdown', openOnIntent);
+        fab.addEventListener('touchstart', openOnIntent);
+        fab.addEventListener('click', openOnIntent);
+        fab.addEventListener('keydown', openOnIntent);
+        fab.addEventListener('pointerenter', prewarmOnIntent, { once: true, passive: true });
+        fab.addEventListener('focus', prewarmOnIntent, { once: true });
     }
 
     function startChatWidgetBootstrap() {
@@ -339,8 +281,6 @@
         ensureChatWidgetStyles();
         createPlaceholderFab();
         bindPlaceholderEvents();
-        registerWarmupListeners();
-        scheduleIdleWarmup();
     }
 
     if (document.readyState === 'loading') {

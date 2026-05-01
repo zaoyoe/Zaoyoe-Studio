@@ -5256,6 +5256,8 @@ body.wallet-modal-lock {
 .wallet-content-grid {
     gap: 8px;
     width: 100%;
+    max-width: 100%;
+    min-width: 0;
 }
 
 .wallet-content-grid--double {
@@ -5264,8 +5266,8 @@ body.wallet-modal-lock {
 }
 
 .wallet-content-grid--stacked {
-    display: flex;
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
 }
 
 .wallet-order-content-section--pending {
@@ -5282,14 +5284,35 @@ body.wallet-modal-lock {
 .wallet-copy-card--link {
     margin-bottom: 0 !important;
     cursor: pointer;
-    transition: all 0.2s;
+    transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
     display: flex;
-    align-items: center;
+    align-items: stretch;
     justify-content: center;
+    box-sizing: border-box;
+    height: auto;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .wallet-copy-card--compact {
+    width: 100%;
     padding: 10px 6px !important;
+}
+
+.wallet-copy-card--compact:hover {
+    transform: translateY(-1px);
+    background: rgba(255, 255, 255, 0.075);
+    border-color: rgba(148, 163, 184, 0.26);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        0 12px 24px rgba(15, 23, 42, 0.12);
+}
+
+.wallet-copy-card--compact:active {
+    transform: translateY(0);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        0 8px 18px rgba(15, 23, 42, 0.1);
 }
 
 .wallet-copy-card--link {
@@ -5314,14 +5337,31 @@ body.wallet-modal-lock {
 .item-content-box--plain {
     padding: 0 !important;
     width: 100%;
+    min-width: 0;
+    max-width: 100%;
     background: transparent !important;
     border-radius: 0 !important;
+}
+
+.wallet-content-grid--stacked .wallet-copy-card--compact {
+    justify-self: center;
+    width: fit-content;
+    min-width: min(100%, 300px);
+}
+
+.wallet-copy-card--compact .item-text,
+.wallet-copy-card--link .item-text {
+    display: block;
+    max-width: 100%;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
 }
 
 .item-text--center {
     text-align: center;
     font-size: 13px;
-    letter-spacing: 0.5px;
+    letter-spacing: 0;
     line-height: 1.3;
 }
 
@@ -5382,7 +5422,7 @@ body.wallet-modal-lock {
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
-    transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    transition: transform 0.18s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .wallet-order-guidance-toggle:hover,
@@ -5390,6 +5430,53 @@ body.wallet-modal-lock {
     background: rgba(107, 158, 206, 0.16);
     border-color: rgba(107, 158, 206, 0.42);
     color: #dbeafe;
+}
+
+.wallet-order-guidance-toggle--notice {
+    background: rgba(255, 214, 102, 0.12);
+    border-color: rgba(255, 214, 102, 0.18);
+    color: #ffd78f;
+}
+
+.wallet-order-guidance-toggle--usage {
+    background: rgba(114, 229, 208, 0.12);
+    border-color: rgba(114, 229, 208, 0.16);
+    color: #b7fff2;
+}
+
+.wallet-order-guidance-toggle--notice:hover,
+.wallet-order-guidance-toggle--notice[aria-expanded="true"] {
+    transform: translateY(-1px);
+    background: rgba(255, 214, 102, 0.18);
+    border-color: rgba(255, 214, 102, 0.28);
+    color: #ffe6ad;
+    box-shadow: 0 10px 18px rgba(255, 214, 102, 0.08);
+}
+
+.wallet-order-guidance-toggle--notice[aria-expanded="true"] {
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 214, 102, 0.16),
+        0 10px 18px rgba(255, 214, 102, 0.1);
+}
+
+.wallet-order-guidance-toggle--usage:hover,
+.wallet-order-guidance-toggle--usage[aria-expanded="true"] {
+    transform: translateY(-1px);
+    background: rgba(114, 229, 208, 0.18);
+    border-color: rgba(114, 229, 208, 0.26);
+    color: #d8fff8;
+    box-shadow: 0 10px 18px rgba(114, 229, 208, 0.08);
+}
+
+.wallet-order-guidance-toggle--usage[aria-expanded="true"] {
+    box-shadow:
+        inset 0 0 0 1px rgba(114, 229, 208, 0.16),
+        0 10px 18px rgba(114, 229, 208, 0.1);
+}
+
+.wallet-order-guidance-toggle--notice:active,
+.wallet-order-guidance-toggle--usage:active {
+    transform: translateY(0) scale(0.98);
 }
 
 .wallet-order-guidance-panels {
@@ -5424,17 +5511,29 @@ body.wallet-modal-lock {
 
 .wallet-order-action-btn {
     background: transparent;
-    border: none;
+    border: 1px solid transparent;
+    box-sizing: border-box;
     font-size: 18px;
     width: 32px;
     height: 32px;
-    border-radius: 6px;
+    border-radius: 8px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
     display: inline-flex;
     align-items: center;
     justify-content: center;
     padding: 0;
+}
+
+.wallet-order-action-btn:hover,
+.wallet-order-action-btn:focus-visible {
+    transform: translateY(-1px);
+    outline: none;
+}
+
+.wallet-order-action-btn:active {
+    transform: translateY(0);
+    box-shadow: none;
 }
 
 .wallet-order-action-btn-copy {
@@ -5447,6 +5546,30 @@ body.wallet-modal-lock {
 
 .wallet-order-action-btn-danger {
     color: #ef4444;
+}
+
+.wallet-order-action-btn-copy:hover,
+.wallet-order-action-btn-copy:focus-visible {
+    background: rgba(148, 163, 184, 0.1);
+    border-color: rgba(107, 158, 206, 0.16);
+    color: #7faad3;
+    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.12);
+}
+
+.wallet-order-action-btn-neutral:hover,
+.wallet-order-action-btn-neutral:focus-visible {
+    background: rgba(148, 163, 184, 0.12);
+    border-color: rgba(148, 163, 184, 0.22);
+    color: #cbd5e1;
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.16);
+}
+
+.wallet-order-action-btn-danger:hover,
+.wallet-order-action-btn-danger:focus-visible {
+    background: rgba(239, 68, 68, 0.12);
+    border-color: rgba(239, 68, 68, 0.24);
+    color: #f87171;
+    box-shadow: 0 10px 22px rgba(239, 68, 68, 0.14);
 }
 
 .content-section--tight {
@@ -5579,6 +5702,20 @@ body.wallet-modal-lock {
 
     .wallet-order-guidance-toggle {
         padding: 0 10px;
+    }
+
+    .wallet-content-grid--stacked .wallet-copy-card--compact {
+        justify-self: stretch;
+        width: 100%;
+        min-width: 0;
+    }
+
+    .wallet-copy-card--compact {
+        padding: 12px 10px !important;
+    }
+
+    .wallet-copy-card--compact .item-text {
+        line-height: 1.45;
     }
 
     .wallet-order-product-name {
@@ -6418,8 +6555,95 @@ html:not([data-theme="dark"]) .wallet-order-guidance-content a * {
     color: #1d4ed8;
 }
 
+[data-theme="light"] .wallet-order-guidance-toggle--notice,
+html:not([data-theme="dark"]) .wallet-order-guidance-toggle--notice {
+    background: rgba(245, 158, 11, 0.08);
+    border-color: rgba(245, 158, 11, 0.18);
+    color: #92400e;
+}
+
+[data-theme="light"] .wallet-order-guidance-toggle--usage,
+html:not([data-theme="dark"]) .wallet-order-guidance-toggle--usage {
+    background: rgba(16, 185, 129, 0.08);
+    border-color: rgba(16, 185, 129, 0.16);
+    color: #047857;
+}
+
+[data-theme="light"] .wallet-order-guidance-toggle--notice:hover,
+[data-theme="light"] .wallet-order-guidance-toggle--notice[aria-expanded="true"],
+html:not([data-theme="dark"]) .wallet-order-guidance-toggle--notice:hover,
+html:not([data-theme="dark"]) .wallet-order-guidance-toggle--notice[aria-expanded="true"] {
+    background: rgba(245, 158, 11, 0.12);
+    border-color: rgba(245, 158, 11, 0.26);
+    color: #92400e;
+    box-shadow: 0 8px 18px rgba(245, 158, 11, 0.1);
+}
+
+[data-theme="light"] .wallet-order-guidance-toggle--notice[aria-expanded="true"],
+html:not([data-theme="dark"]) .wallet-order-guidance-toggle--notice[aria-expanded="true"] {
+    box-shadow:
+        inset 0 0 0 1px rgba(245, 158, 11, 0.14),
+        0 8px 18px rgba(245, 158, 11, 0.1);
+}
+
+[data-theme="light"] .wallet-order-guidance-toggle--usage:hover,
+[data-theme="light"] .wallet-order-guidance-toggle--usage[aria-expanded="true"],
+html:not([data-theme="dark"]) .wallet-order-guidance-toggle--usage:hover,
+html:not([data-theme="dark"]) .wallet-order-guidance-toggle--usage[aria-expanded="true"] {
+    background: rgba(16, 185, 129, 0.12);
+    border-color: rgba(16, 185, 129, 0.24);
+    color: #047857;
+    box-shadow: 0 8px 18px rgba(16, 185, 129, 0.09);
+}
+
+[data-theme="light"] .wallet-order-guidance-toggle--usage[aria-expanded="true"],
+html:not([data-theme="dark"]) .wallet-order-guidance-toggle--usage[aria-expanded="true"] {
+    box-shadow:
+        inset 0 0 0 1px rgba(16, 185, 129, 0.14),
+        0 8px 18px rgba(16, 185, 129, 0.09);
+}
+
+[data-theme="light"] .wallet-copy-card--compact:hover,
+html:not([data-theme="dark"]) .wallet-copy-card--compact:hover {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.98) 100%);
+    border-color: rgba(100, 116, 139, 0.2);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.88),
+        0 12px 24px rgba(15, 23, 42, 0.08);
+}
+
 [data-theme="light"] .wallet-order-action-btn-neutral {
     color: #64748b;
+}
+
+[data-theme="light"] .wallet-order-action-btn-copy:hover,
+[data-theme="light"] .wallet-order-action-btn-copy:focus-visible,
+html:not([data-theme="dark"]) .wallet-order-action-btn-copy:hover,
+html:not([data-theme="dark"]) .wallet-order-action-btn-copy:focus-visible {
+    background: rgba(100, 116, 139, 0.07);
+    border-color: rgba(100, 116, 139, 0.14);
+    color: #4f7da8;
+    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.06);
+}
+
+[data-theme="light"] .wallet-order-action-btn-neutral:hover,
+[data-theme="light"] .wallet-order-action-btn-neutral:focus-visible,
+html:not([data-theme="dark"]) .wallet-order-action-btn-neutral:hover,
+html:not([data-theme="dark"]) .wallet-order-action-btn-neutral:focus-visible {
+    background: rgba(100, 116, 139, 0.1);
+    border-color: rgba(100, 116, 139, 0.18);
+    color: #475569;
+    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);
+}
+
+[data-theme="light"] .wallet-order-action-btn-danger:hover,
+[data-theme="light"] .wallet-order-action-btn-danger:focus-visible,
+html:not([data-theme="dark"]) .wallet-order-action-btn-danger:hover,
+html:not([data-theme="dark"]) .wallet-order-action-btn-danger:focus-visible {
+    background: rgba(239, 68, 68, 0.1);
+    border-color: rgba(239, 68, 68, 0.18);
+    color: #dc2626;
+    box-shadow: 0 10px 20px rgba(220, 38, 38, 0.1);
 }
 
 [data-theme="light"] .wallet-payment-qr-status.is-success {

@@ -1,10 +1,22 @@
 .public-scrollbar-auto-hide {
+    /* 20260430_PUBLIC_SCROLLBAR_FULL_HIDE_1
+       Keep native rails out of the visual and layout surface on public pages. */
     --public-scrollbar-thumb-visible: rgba(255, 255, 255, 0.18);
     --public-scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
-    scrollbar-width: thin;
+    scrollbar-width: none !important;
     scrollbar-color: transparent transparent !important;
+    scrollbar-gutter: auto !important;
+    -ms-overflow-style: none;
 }
 
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--root,
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--no-gutter {
+    scrollbar-width: none !important;
+    scrollbar-gutter: auto !important;
+    -ms-overflow-style: none;
+}
+
+html[data-theme="light"].public-scrollbar-auto-hide,
 html[data-theme="light"] .public-scrollbar-auto-hide {
     --public-scrollbar-thumb-visible: rgba(15, 23, 42, 0.2);
     --public-scrollbar-thumb-hover: rgba(15, 23, 42, 0.34);
@@ -12,12 +24,36 @@ html[data-theme="light"] .public-scrollbar-auto-hide {
 
 .public-scrollbar-auto-hide.public-scrollbar-auto-hide--visible,
 .public-scrollbar-auto-hide:focus-within {
-    scrollbar-color: var(--public-scrollbar-thumb-visible) transparent !important;
+    scrollbar-color: transparent transparent !important;
 }
 
 .public-scrollbar-auto-hide::-webkit-scrollbar-track,
 .public-scrollbar-auto-hide::-webkit-scrollbar-corner {
     background: transparent !important;
+}
+
+.public-scrollbar-auto-hide::-webkit-scrollbar,
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--root::-webkit-scrollbar,
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--no-gutter::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
+}
+
+.public-scrollbar-auto-hide::-webkit-scrollbar-track,
+.public-scrollbar-auto-hide::-webkit-scrollbar-thumb,
+.public-scrollbar-auto-hide::-webkit-scrollbar-corner,
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--root::-webkit-scrollbar-track,
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--root::-webkit-scrollbar-thumb,
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--root::-webkit-scrollbar-corner,
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--no-gutter::-webkit-scrollbar-track,
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--no-gutter::-webkit-scrollbar-thumb,
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--no-gutter::-webkit-scrollbar-corner {
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
 }
 
 .public-scrollbar-auto-hide::-webkit-scrollbar-thumb {
@@ -28,10 +64,50 @@ html[data-theme="light"] .public-scrollbar-auto-hide {
 
 .public-scrollbar-auto-hide.public-scrollbar-auto-hide--visible::-webkit-scrollbar-thumb,
 .public-scrollbar-auto-hide:focus-within::-webkit-scrollbar-thumb {
-    background: var(--public-scrollbar-thumb-visible) !important;
+    background: transparent !important;
+    border: 0 !important;
+}
+
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--root:focus-within,
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--no-gutter:focus-within {
+    scrollbar-color: transparent transparent !important;
+}
+
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--root:focus-within::-webkit-scrollbar-thumb,
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--no-gutter:focus-within::-webkit-scrollbar-thumb {
+    background: transparent !important;
+}
+
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--root.public-scrollbar-auto-hide--visible:focus-within {
+    scrollbar-color: transparent transparent !important;
+}
+
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--root.public-scrollbar-auto-hide--visible:focus-within::-webkit-scrollbar-thumb {
+    background: transparent !important;
+}
+
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--no-gutter.public-scrollbar-auto-hide--visible,
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--no-gutter.public-scrollbar-auto-hide--visible:focus-within {
+    scrollbar-color: transparent transparent !important;
+}
+
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--no-gutter.public-scrollbar-auto-hide--visible::-webkit-scrollbar-thumb,
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--no-gutter.public-scrollbar-auto-hide--visible:focus-within::-webkit-scrollbar-thumb {
+    background: transparent !important;
 }
 
 .public-scrollbar-auto-hide.public-scrollbar-auto-hide--visible::-webkit-scrollbar-thumb:hover,
 .public-scrollbar-auto-hide:focus-within::-webkit-scrollbar-thumb:hover {
-    background: var(--public-scrollbar-thumb-hover) !important;
+    background: transparent !important;
+}
+
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--root:focus-within::-webkit-scrollbar-thumb:hover,
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--no-gutter:focus-within::-webkit-scrollbar-thumb:hover,
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--no-gutter.public-scrollbar-auto-hide--visible::-webkit-scrollbar-thumb:hover,
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--no-gutter.public-scrollbar-auto-hide--visible:focus-within::-webkit-scrollbar-thumb:hover {
+    background: transparent !important;
+}
+
+.public-scrollbar-auto-hide.public-scrollbar-auto-hide--root.public-scrollbar-auto-hide--visible:focus-within::-webkit-scrollbar-thumb:hover {
+    background: transparent !important;
 }

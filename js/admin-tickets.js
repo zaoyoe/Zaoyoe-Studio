@@ -1516,13 +1516,13 @@ const AdminTickets = {
 
             return `
                 <tr class="admin-table-skeleton-row admin-ticket-table-skeleton-row" aria-hidden="true" data-skeleton-index="${index}">
-                    ${includeSelection ? `
-                        <td class="admin-ticket-selection-cell">
+                    <td class="admin-ticket-selection-cell">
+                        ${includeSelection ? `
                             <div class="admin-table-skeleton-cell">
                                 <span class="admin-skeleton-block admin-skeleton-block--checkbox"></span>
                             </div>
-                        </td>
-                    ` : ''}
+                        ` : ''}
+                    </td>
                     <td class="admin-ticket-nowrap-cell">
                         <div class="admin-ticket-meta-id admin-ticket-meta-id--skeleton">
                             <span class="admin-skeleton-block admin-skeleton-block--title" style="width:${inferLineWidth(descriptor.idText, idWidths[index % idWidths.length], { min: 70, max: 112, scale: 9.6 })}px"></span>
@@ -6467,6 +6467,109 @@ const AdminTickets = {
         this.syncSelectionControls();
     },
 
+    beginTicketBatchMenuActionFeedback: function (actionEl, options = {}) {
+        const menuItem = actionEl?.closest?.('.batch-menu-item')
+            || (actionEl?.classList?.contains?.('batch-menu-item') ? actionEl : null);
+        if (!menuItem) {
+            return () => {};
+        }
+
+        const menuContainer = document.getElementById('ticketsBatchMenuContainer');
+        const dropdownMenu = document.getElementById('ticketsBatchDropdownMenu');
+        const trigger = document.getElementById('ticketsBatchMenuTrigger');
+        const menuItems = Array.from(document.querySelectorAll('#ticketsBatchDropdownMenu .batch-menu-item'));
+        const iconEl = menuItem.querySelector?.('i');
+        const labelEl = menuItem.querySelector?.('span');
+        const snapshot = {
+            iconClass: iconEl?.className || '',
+            labelText: labelEl?.textContent || menuItem.textContent || '',
+            triggerDisabled: trigger?.disabled === true
+        };
+        const restoreDelayMs = Number.isFinite(Number(options.restoreDelayMs))
+            ? Number(options.restoreDelayMs)
+            : 900;
+
+        this.batchMenuOpen = true;
+        menuContainer?.classList.add('open', 'is-busy');
+        dropdownMenu?.classList.add('open');
+        if (trigger) {
+            trigger.disabled = true;
+            trigger.classList.add('is-busy');
+            trigger.setAttribute('aria-expanded', 'true');
+        }
+
+        menuItems.forEach((item) => {
+            const isCurrent = item === menuItem;
+            item.classList.toggle('is-pending', isCurrent);
+            item.setAttribute('aria-busy', isCurrent ? 'true' : 'false');
+            if (isCurrent) {
+                item.removeAttribute?.('aria-disabled');
+                return;
+            }
+            item.classList.add('is-disabled');
+            item.setAttribute('aria-disabled', 'true');
+        });
+
+        if (iconEl) {
+            iconEl.className = 'fas fa-spinner fa-spin';
+        }
+        if (labelEl) {
+            labelEl.textContent = this.safeText(options.loadingText, '处理中...');
+        }
+
+        const cleanup = ({ closeMenu = true } = {}) => {
+            menuItems.forEach((item) => {
+                item.classList.remove('is-pending', 'is-disabled');
+                item.removeAttribute?.('aria-busy');
+                item.removeAttribute?.('aria-disabled');
+            });
+
+            if (iconEl) {
+                iconEl.className = snapshot.iconClass;
+            }
+            if (labelEl) {
+                labelEl.textContent = snapshot.labelText;
+            }
+            if (trigger) {
+                trigger.disabled = snapshot.triggerDisabled;
+                trigger.classList.remove('is-busy');
+            }
+            menuContainer?.classList.remove('is-busy');
+
+            if (closeMenu) {
+                this.closeBatchMenu();
+            } else {
+                this.syncSelectionControls();
+            }
+        };
+
+        return ({ state = 'restore', text = '', closeMenu = true } = {}) => {
+            const normalizedState = ['saved', 'failed'].includes(state) ? state : 'restore';
+            if (normalizedState === 'restore') {
+                cleanup({ closeMenu });
+                return;
+            }
+
+            if (iconEl) {
+                iconEl.className = normalizedState === 'failed'
+                    ? 'fas fa-exclamation-triangle'
+                    : 'fas fa-check';
+            }
+            if (labelEl) {
+                labelEl.textContent = this.safeText(
+                    text,
+                    normalizedState === 'failed' ? '操作失败' : '已完成'
+                );
+            }
+            menuItem.classList.remove('is-disabled');
+            menuItem.removeAttribute?.('aria-disabled');
+            menuItem.classList.toggle('is-pending', normalizedState !== 'failed');
+            menuItem.setAttribute('aria-busy', 'false');
+
+            window.setTimeout(() => cleanup({ closeMenu }), Math.max(0, restoreDelayMs));
+        };
+    },
+
     selectAllCurrentPage: function () {
         this.toggleSelectAllPage(true);
         this.closeBatchMenu();
@@ -7955,13 +8058,15 @@ const AdminTickets = {
         return this.applyFilters();
     },
 
-    submitBulkAssignment: async function (operation = 'assign_self') {
-        this.closeBatchMenu();
+    submitBulkAssignment: async function (operation = 'assign_self', actionEl = null) {
+        if (!actionEl) {
+            this.closeBatchMenu();
+        }
         const normalizedOperation = this.safeText(operation).trim().toLowerCase();
         const ticketIds = this.normalizeSelectedTicketIds(this.selectedTicketIds);
         if (!ticketIds.length) {
             this.notify('请先选择待处理工单', 'warning');
-            return;
+            return null;
         }
 
         const selectedTickets = (Array.isArray(this.filteredTickets) ? this.filteredTickets : [])
@@ -7969,12 +8074,16 @@ const AdminTickets = {
         const pendingTicketIds = this.normalizeSelectedTicketIds(selectedTickets.filter((ticket) => this.isTicketSelectable(ticket)).map((ticket) => ticket?.id));
         if (!pendingTicketIds.length) {
             this.notify('当前选择中没有可指派的待处理工单', 'warning');
-            return;
+            return null;
         }
 
         if (normalizedOperation === 'clear' && !this.requestConfirmation(`确认取消这 ${pendingTicketIds.length} 个工单的负责人吗？`)) {
-            return;
+            return null;
         }
+
+        const finishInteraction = this.beginTicketBatchMenuActionFeedback(actionEl, {
+            loadingText: normalizedOperation === 'clear' ? '取消中...' : '指派中...'
+        });
 
         try {
             const headers = await this.getAdminAuthHeaders();
@@ -8010,10 +8119,18 @@ const AdminTickets = {
                     assignee: this.quickFilters.assignee
                 }
             });
+            finishInteraction({
+                state: 'saved',
+                text: normalizedOperation === 'clear' ? '已取消指派' : '已指派给我',
+                closeMenu: true
+            });
+            return true;
         } catch (error) {
             const failureMessage = `批量处理失败: ${this.safeText(error?.message, '未知错误')}`;
             this.notify(failureMessage, 'error');
             this.emitCommandFeedback(failureMessage, 'failed', { source: 'tickets-batch' });
+            finishInteraction({ state: 'failed', text: '处理失败', closeMenu: true });
+            return false;
         }
     },
 

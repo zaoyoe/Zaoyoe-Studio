@@ -3,6 +3,9 @@ const {
     requireAdmin,
     sendJson
 } = require('../../../../api/_lib/admin');
+const {
+    getPointsCatalogBaseData
+} = require('./_catalog-base');
 
 const BATCH_SELECT_FIELDS = [
     'id',
@@ -35,12 +38,6 @@ const CODE_SELECT_FIELDS = [
     'expires_at'
 ].join(', ');
 
-const PACKAGE_SELECT_FIELDS = [
-    'id',
-    'name',
-    'points_amount'
-].join(', ');
-
 function getSearchParams(req) {
     const url = new URL(req.url || '', 'http://localhost');
     return url.searchParams;
@@ -71,7 +68,7 @@ async function loadPackagesByIds(supabase, packageIds = []) {
 
     const { data, error } = await supabase
         .from('points_packages')
-        .select(PACKAGE_SELECT_FIELDS)
+        .select('id, name, points_amount')
         .in('id', ids);
 
     if (error) throw error;
@@ -105,19 +102,21 @@ async function loadProfilesByIds(supabase, profileIds = []) {
 }
 
 async function loadBatchRows(supabase, site) {
-    let query = supabase
-        .from('redemption_batches')
-        .select(BATCH_SELECT_FIELDS);
-
-    if (site !== 'all') {
-        query = query.eq('site', site);
-    }
-
-    const { data, error } = await query.order('created_at', { ascending: false });
-    if (error) throw error;
-
-    const rows = data || [];
-    const packageMap = await loadPackagesByIds(supabase, rows.map((row) => row.package_id));
+    const { packages, batches } = await getPointsCatalogBaseData(supabase, { site });
+    const packageMap = new Map(
+        (Array.isArray(packages) ? packages : []).map((row) => [normalizeString(row?.id), {
+            id: row?.id,
+            name: row?.name,
+            points_amount: row?.points_amount
+        }])
+    );
+    const rows = (Array.isArray(batches) ? batches : [])
+        .filter((row) => site === 'all' || normalizeSite(row?.site) === site)
+        .sort((left, right) => {
+            const leftTime = Date.parse(left?.created_at || '');
+            const rightTime = Date.parse(right?.created_at || '');
+            return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+        });
 
     return rows.map((row) => ({
         ...row,

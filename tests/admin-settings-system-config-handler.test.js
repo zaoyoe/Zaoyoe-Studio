@@ -280,7 +280,15 @@ test('system config handler notifies other admins when announcement settings cha
                     announcement_enabled: true,
                     announcement_content: '<p>今晚 23:00 维护</p>',
                     announcement_type: 'modal',
-                    announcement_pages: ['shop', 'verify']
+                    announcement_pages: ['all'],
+                    announcement_page_overrides: {
+                        shop: {
+                            content: '<p>商城专属公告</p>'
+                        },
+                        verify: {
+                            content: '<p>验证页专属公告</p>'
+                        }
+                    }
                 }
             }
         }, res);
@@ -291,5 +299,6 @@ test('system config handler notifies other admins when announcement settings cha
         assert.equal(state.notifications[0].scope, 'admin_personal');
         assert.equal(state.notifications[0].category, 'announcement');
         assert.equal(state.notifications[0].type, 'info');
+        assert.match(state.notifications[0].content, /专属页面：商城 \/ 验证/);
     });
 });

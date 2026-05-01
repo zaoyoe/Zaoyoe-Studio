@@ -9,6 +9,9 @@ const {
 const {
     deductPointsForService
 } = require('../../../../api/_lib/payments/rpc');
+const {
+    clearPointsCatalogBaseCache
+} = require('./_catalog-base');
 
 const BATCH_SELECT_FIELDS = [
     'id',
@@ -1029,6 +1032,7 @@ module.exports = async (req, res) => {
                 });
         }
 
+        clearPointsCatalogBaseCache();
         return sendJson(res, 200, payload);
     } catch (error) {
         return sendJson(res, error.statusCode || 500, {

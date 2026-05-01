@@ -33,15 +33,19 @@ function createMockResponse() {
 
 async function withPointsCatalogHandler(options, callback) {
     const handlerPath = path.resolve(__dirname, '../server/api-handlers/admin/points/catalog.js');
+    const sharedBasePath = path.resolve(__dirname, '../server/api-handlers/admin/points/_catalog-base.js');
     const originalLoad = Module._load;
     const state = {
         requireAdminCalls: [],
+        tableRequests: [],
         packageOrderFields: [],
+        batchOrderFields: [],
         packageRows: options.packageRows || [],
         batchRows: options.batchRows || []
     };
 
     delete require.cache[handlerPath];
+    delete require.cache[sharedBasePath];
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../../../../api/_lib/admin') {
             return {
@@ -50,6 +54,7 @@ async function withPointsCatalogHandler(options, callback) {
                     return {
                         supabase: {
                             from(table) {
+                                state.tableRequests.push(table);
                                 if (table === 'points_packages') {
                                     return {
                                         select() {
@@ -70,11 +75,18 @@ async function withPointsCatalogHandler(options, callback) {
 
                                 if (table === 'redemption_batches') {
                                     return {
-                                        async select() {
-                                            return {
+                                        select() {
+                                            return this;
+                                        },
+                                        order(field) {
+                                            state.batchOrderFields.push(field);
+                                            return this;
+                                        },
+                                        then(resolve) {
+                                            return Promise.resolve(resolve({
                                                 data: state.batchRows,
                                                 error: null
-                                            };
+                                            }));
                                         }
                                     };
                                 }
@@ -106,6 +118,7 @@ async function withPointsCatalogHandler(options, callback) {
         return await callback({ handler, state });
     } finally {
         delete require.cache[handlerPath];
+        delete require.cache[sharedBasePath];
     }
 }
 
@@ -166,5 +179,44 @@ test('points catalog handler returns package catalog rows with cn/intl metrics a
             total: { batch_count: 2, generated_count: 15, used_count: 5 }
         });
         assert.equal(res.json().packages[0]?.total_points, 120);
+    });
+});
+
+test('points catalog handler reuses the shared base rows inside the short warm cache', async () => {
+    await withPointsCatalogHandler({
+        packageRows: [
+            {
+                id: 'pkg-1',
+                name: 'Starter',
+                points_amount: 100,
+                bonus_points: 20,
+                is_active: true,
+                sort_order: 1
+            }
+        ],
+        batchRows: [
+            { id: 'batch-cn-1', package_id: 'pkg-1', total_count: 10, used_count: 4, site: 'cn' }
+        ]
+    }, async ({ handler, state }) => {
+        const firstRes = createMockResponse();
+        await handler({
+            method: 'GET',
+            url: '/api/admin/points/catalog?site=cn',
+            headers: {}
+        }, firstRes);
+
+        const secondRes = createMockResponse();
+        await handler({
+            method: 'GET',
+            url: '/api/admin/points/catalog?site=cn',
+            headers: {}
+        }, secondRes);
+
+        assert.equal(firstRes.statusCode, 200);
+        assert.equal(secondRes.statusCode, 200);
+        assert.equal(state.tableRequests.filter((table) => table === 'points_packages').length, 1);
+        assert.equal(state.tableRequests.filter((table) => table === 'redemption_batches').length, 1);
+        assert.deepEqual(state.packageOrderFields, ['sort_order', 'points_amount']);
+        assert.deepEqual(state.batchOrderFields, ['created_at']);
     });
 });

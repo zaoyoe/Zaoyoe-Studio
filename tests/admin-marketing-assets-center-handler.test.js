@@ -176,8 +176,14 @@ function createSupabaseStub(state) {
     };
 }
 
+function countTableRequests(state, table) {
+    return (state.tableRequests || []).filter((requestedTable) => requestedTable === table).length;
+}
+
 async function withMarketingAssetsHandler(initialState, callback) {
     const handlerPath = path.resolve(__dirname, '../server/api-handlers/admin/marketing/assets-center.js');
+    const catalogHandlerPath = path.resolve(__dirname, '../server/api-handlers/admin/points/catalog.js');
+    const sharedBasePath = path.resolve(__dirname, '../server/api-handlers/admin/points/_catalog-base.js');
     const originalLoad = Module._load;
     const state = {
         requireAdminCalls: [],
@@ -186,6 +192,8 @@ async function withMarketingAssetsHandler(initialState, callback) {
     };
 
     delete require.cache[handlerPath];
+    delete require.cache[catalogHandlerPath];
+    delete require.cache[sharedBasePath];
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../../../../api/_lib/admin') {
             return {
@@ -213,17 +221,21 @@ async function withMarketingAssetsHandler(initialState, callback) {
         return originalLoad.call(this, request, parent, isMain);
     };
 
+    let catalogHandler;
     let handler;
     try {
         handler = require(handlerPath);
+        catalogHandler = require(catalogHandlerPath);
     } finally {
         Module._load = originalLoad;
     }
 
     try {
-        return await callback({ handler, state });
+        return await callback({ catalogHandler, handler, state });
     } finally {
         delete require.cache[handlerPath];
+        delete require.cache[catalogHandlerPath];
+        delete require.cache[sharedBasePath];
     }
 }
 
@@ -400,6 +412,179 @@ test('marketing assets center summary mode skips detail table scans for faster f
         assert.equal(state.tableRequests.includes('shop_orders'), false);
         assert.equal(state.tableRequests.includes('discount_user_assets'), false);
         assert.equal(state.tableRequests.includes('marketing_asset_workflow_runs'), false);
+    });
+});
+
+test('marketing assets center reuses points catalog base rows warmed by the points catalog', async () => {
+    await withMarketingAssetsHandler({
+        discountRows: [
+            {
+                id: 'discount_1',
+                code: 'SPRING20',
+                created_at: '2099-04-09T08:00:00.000Z',
+                applicable_site: 'cn',
+                is_active: true,
+                lifecycle_status: 'active',
+                distribution_mode: 'general_code'
+            }
+        ],
+        pointsPackages: [
+            {
+                id: 'package_1',
+                name: '积分礼包',
+                points_amount: 100,
+                bonus_points: 20,
+                price_cny: 12,
+                is_active: true,
+                sort_order: 1,
+                created_at: '2099-04-01T08:00:00.000Z'
+            }
+        ],
+        redemptionBatches: [
+            {
+                id: 'batch_1',
+                package_id: 'package_1',
+                total_count: 10,
+                used_count: 3,
+                status: 'active',
+                site: 'cn',
+                created_at: '2099-04-08T08:00:00.000Z'
+            }
+        ],
+        workflowRows: []
+    }, async ({ catalogHandler, handler, state }) => {
+        const catalogRes = createMockResponse();
+        await catalogHandler({ method: 'GET', headers: {}, url: '/api/admin/points/catalog?site=cn' }, catalogRes);
+
+        const assetsRes = createMockResponse();
+        await handler({ method: 'GET', headers: {}, url: '/api/admin/marketing/assets-center?site=cn&mode=summary' }, assetsRes);
+
+        assert.equal(catalogRes.statusCode, 200);
+        assert.equal(assetsRes.statusCode, 200);
+        assert.equal(assetsRes.json().summary.package_count, 1);
+        assert.equal(countTableRequests(state, 'points_packages'), 1);
+        assert.equal(countTableRequests(state, 'redemption_batches'), 1);
+        assert.equal(countTableRequests(state, 'discount_codes'), 1);
+        assert.equal(countTableRequests(state, 'marketing_asset_workflows'), 1);
+    });
+});
+
+test('marketing assets center returns a detail overlay without rereading base rows', async () => {
+    await withMarketingAssetsHandler({
+        discountRows: [
+            {
+                id: 'discount_1',
+                code: 'SPRING20',
+                created_at: '2099-04-09T08:00:00.000Z',
+                applicable_site: 'cn',
+                is_active: true,
+                lifecycle_status: 'scheduled',
+                status_reason: 'scheduled_start',
+                starts_at: '2000-01-01T00:00:00.000Z',
+                expires_at: '2099-05-01T00:00:00.000Z',
+                distribution_mode: 'public_claim'
+            }
+        ],
+        orderRows: [
+            {
+                id: 'order_1',
+                discount_code: 'SPRING20',
+                price_paid: 180,
+                discount_amount: 20,
+                refund_status: null,
+                created_at: '2099-04-09T10:00:00.000Z',
+                site: 'cn'
+            }
+        ],
+        assetRows: [
+            {
+                id: 'asset_1',
+                discount_id: 'discount_1',
+                asset_status: 'available',
+                assigned_at: '2099-04-09T09:00:00.000Z'
+            }
+        ],
+        pointsPackages: [
+            {
+                id: 'package_1',
+                name: '积分礼包',
+                points_amount: 100,
+                bonus_points: 20,
+                price_cny: 12,
+                is_active: true,
+                sort_order: 1,
+                created_at: '2099-04-01T08:00:00.000Z'
+            }
+        ],
+        redemptionBatches: [
+            {
+                id: 'batch_1',
+                package_id: 'package_1',
+                total_count: 10,
+                used_count: 3,
+                status: 'active',
+                site: 'cn',
+                created_at: '2099-04-08T08:00:00.000Z'
+            }
+        ],
+        workflowRows: [
+            {
+                id: 'workflow_1',
+                workflow_key: 'discount_lifecycle_sync',
+                workflow_name: '优惠券生命周期同步',
+                asset_family: 'discount',
+                status: 'active',
+                schedule_label: '建议每小时执行',
+                sort_order: 1,
+                config: { interval_hours: 1 },
+                last_run_at: null,
+                last_run_status: null,
+                last_run_summary: null,
+                next_run_at: null
+            }
+        ],
+        workflowRunRows: [
+            {
+                id: 'run_1',
+                workflow_id: 'workflow_1',
+                workflow_key: 'discount_lifecycle_sync',
+                started_at: '2099-04-09T10:00:00.000Z',
+                run_status: 'success',
+                summary: 'done'
+            }
+        ]
+    }, async ({ handler, state }) => {
+        const summaryRes = createMockResponse();
+        await handler({ method: 'GET', headers: {}, url: '/api/admin/marketing/assets-center?site=cn&mode=summary' }, summaryRes);
+
+        assert.equal(summaryRes.statusCode, 200);
+        assert.equal(summaryRes.json().details_pending, true);
+        assert.equal(countTableRequests(state, 'discount_user_assets'), 0);
+        assert.equal(countTableRequests(state, 'shop_orders'), 0);
+        assert.equal(countTableRequests(state, 'marketing_asset_workflow_runs'), 0);
+
+        const detailsRes = createMockResponse();
+        await handler({ method: 'GET', headers: {}, url: '/api/admin/marketing/assets-center?site=cn&mode=details' }, detailsRes);
+
+        const detailsPayload = detailsRes.json();
+        assert.equal(detailsRes.statusCode, 200);
+        assert.equal(detailsPayload.load_mode, 'details');
+        assert.equal(detailsPayload.details_pending, false);
+        assert.equal(detailsPayload.summary.issued_asset_count, 1);
+        assert.equal(detailsPayload.summary.recent_revenue_net, 180);
+        assert.equal(Object.prototype.hasOwnProperty.call(detailsPayload.summary, 'package_count'), false);
+        assert.equal(detailsPayload.asset_families.length, 1);
+        assert.equal(detailsPayload.asset_families[0].key, 'discount');
+        assert.equal(detailsPayload.unified_assets_mode, 'discount_patch');
+        assert.equal(detailsPayload.unified_assets.every((item) => item.type === 'discount'), true);
+        assert.equal(detailsPayload.workflows[0].latest_run.summary, 'done');
+        assert.equal(countTableRequests(state, 'discount_codes'), 1);
+        assert.equal(countTableRequests(state, 'points_packages'), 1);
+        assert.equal(countTableRequests(state, 'redemption_batches'), 1);
+        assert.equal(countTableRequests(state, 'marketing_asset_workflows'), 1);
+        assert.equal(countTableRequests(state, 'discount_user_assets'), 1);
+        assert.equal(countTableRequests(state, 'shop_orders'), 1);
+        assert.equal(countTableRequests(state, 'marketing_asset_workflow_runs'), 1);
     });
 });
 

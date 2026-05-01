@@ -550,7 +550,7 @@ async function refreshAllAnalytics(options = {}) {
 
     if (!isAnalyticsModuleVisible()) {
         stopAutoRefresh();
-        return;
+        return null;
     }
 
     try {
@@ -558,19 +558,25 @@ async function refreshAllAnalytics(options = {}) {
             resetAnalyticsAICache();
         }
 
-        await reloadAnalyticsDashboard({
+        const refreshCompleted = await reloadAnalyticsDashboard({
             reason,
             force: reason === 'manual-refresh'
         });
 
         if (!silent && typeof showToast === 'function') {
-            showToast('数据已刷新', 'success');
+            if (refreshCompleted === false) {
+                showToast('部分数据仍在加载，稍后会自动补齐', 'warning');
+            } else {
+                showToast('数据已刷新', 'success');
+            }
         }
+        return refreshCompleted !== false;
     } catch (error) {
         console.error('[Analytics] Refresh error:', error);
         if (!silent && typeof showToast === 'function') {
             showToast('刷新失败', 'error');
         }
+        return false;
     } finally {
         syncAnalyticsRefreshIndicator();
     }

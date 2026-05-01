@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260428_WALLET_RECORDS_BOTTOM_EDGE_1';
+    const walletCssHref = 'css/wallet.css?v=20260430_WALLET_GUIDANCE_BILINGUAL_1';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -1081,6 +1081,166 @@
             }
         },
 
+        tr(key, fallback = '', params = {}) {
+            const translated = window.i18n?.t?.(key) || fallback || '';
+            return String(translated).replace(/\{(\w+)\}/g, (match, name) => (
+                params[name] === undefined || params[name] === null ? match : String(params[name])
+            ));
+        },
+
+        isEnglishLanguage() {
+            return window.i18n?.isEnglish?.() || window.i18n?.getCurrentLanguage?.() === 'en';
+        },
+
+        containsCjkText(value = '') {
+            return /[\u3400-\u9fff\uf900-\ufaff]/.test(String(value || ''));
+        },
+
+        formatPointsWithUnit(value) {
+            return `${this.formatPoints(value)} ${this.tr('wallet.pointsUnit', '积分')}`;
+        },
+
+        getLocalizedProductNameFromPayload(source = {}, fallback = '') {
+            const payload = source && typeof source === 'object' ? source : {};
+            const product = payload.shop_product || payload.shop_products || payload.product || {};
+            const englishCandidates = [
+                payload.snapshot_product_name_en,
+                payload.product_name_en,
+                payload.name_en,
+                product.name_en,
+                Array.isArray(payload.shop_order_items) ? payload.shop_order_items.find((item) => item?.name_en)?.name_en : ''
+            ];
+            const defaultCandidates = [
+                payload.snapshot_product_name,
+                payload.product_name,
+                payload.name,
+                product.name,
+                Array.isArray(payload.shop_order_items) ? payload.shop_order_items.find((item) => item?.snapshot_product_name)?.snapshot_product_name : ''
+            ];
+
+            if (this.isEnglishLanguage()) {
+                const englishName = englishCandidates.find((value) => String(value || '').trim());
+                if (englishName) return String(englishName).trim();
+            }
+
+            const defaultName = defaultCandidates.find((value) => String(value || '').trim());
+            return defaultName ? String(defaultName).trim() : fallback;
+        },
+
+        getLocalizedDiscountBenefitLabel(asset = {}) {
+            const discountType = String(asset?.discount_type || '').trim().toLowerCase();
+            const discountValue = Number(asset?.discount_value);
+            const explicitLabel = String(asset?.benefit_label || '').trim();
+            const isEnglish = this.isEnglishLanguage();
+
+            if (discountType === 'percent' && Number.isFinite(discountValue) && discountValue > 0) {
+                const offPercent = Math.max(0, Math.min(100, Number((100 - discountValue).toFixed(2))));
+                if (isEnglish) {
+                    return this.tr('wallet.percentOff', '{value}% off', { value: this.formatPoints(offPercent) });
+                }
+                return explicitLabel || `${this.formatPoints(discountValue / 10)}折`;
+            }
+
+            if (discountType === 'fixed' && Number.isFinite(discountValue) && discountValue > 0) {
+                if (isEnglish) {
+                    return this.tr('wallet.fixedOff', '{value} {unit} off', {
+                        value: this.formatPoints(discountValue),
+                        unit: this.tr('wallet.pointsUnit', '积分')
+                    });
+                }
+                return explicitLabel || `立减 ${this.formatPoints(discountValue)} 积分`;
+            }
+
+            if (isEnglish && this.containsCjkText(explicitLabel)) {
+                return String(asset?.code || '').trim() || this.tr('wallet.cardFallback', 'Coupon');
+            }
+
+            return explicitLabel || String(asset?.code || '').trim() || this.tr('wallet.cardFallback', '卡券');
+        },
+
+        getLocalizedDiscountScopeLabel(asset = {}) {
+            const scopeType = String(asset?.scope_type || '').trim().toLowerCase();
+            const category = String(asset?.scope_category || asset?.category || '').trim();
+            const productName = this.getLocalizedProductNameFromPayload(asset?.scope_product || {}, '');
+
+            if (scopeType === 'product') {
+                return productName
+                    ? this.tr('wallet.specificProduct', '指定商品 · {product}', { product: productName })
+                    : this.tr('wallet.specificProductOnly', '指定商品');
+            }
+            if (scopeType === 'category') {
+                return category
+                    ? this.tr('wallet.categoryOnly', '分类 · {category}', { category })
+                    : this.tr('wallet.categoryLimited', '指定分类');
+            }
+            return this.tr('wallet.allProducts', '全场可用');
+        },
+
+        getLocalizedDiscountSourceLabel(asset = {}) {
+            const explicitLabel = String(asset?.source_label || '').trim();
+            if (explicitLabel && (!this.isEnglishLanguage() || !this.containsCjkText(explicitLabel))) {
+                return explicitLabel;
+            }
+
+            const sourceChannel = String(asset?.source_channel || asset?.source_type || '').trim().toLowerCase();
+            const distributionMode = String(asset?.distribution_mode || '').trim().toLowerCase();
+
+            if (sourceChannel.includes('checkin')) return this.tr('wallet.checkinCoupon', '签到卡券');
+            if (sourceChannel.includes('affiliate') || sourceChannel.includes('invite')) return this.tr('wallet.affiliateReward', '推广奖励');
+            if (sourceChannel.includes('wallet') || sourceChannel.includes('recharge')) return this.tr('wallet.rechargeCoupon', '充值赠券');
+            if (sourceChannel.includes('claim')) return this.tr('wallet.publicClaim', '公开领取');
+            if (sourceChannel.includes('manual') || sourceChannel.includes('admin')) return this.tr('wallet.adminIssued', '后台发放');
+            if (distributionMode === 'public_claim') return this.tr('wallet.publicClaim', '公开领取');
+            if (distributionMode === 'user_assigned') return this.tr('wallet.assignedCoupon', '定向发放');
+            return this.tr('wallet.couponAsset', '卡券资产');
+        },
+
+        getLocalizedDiscountStatusLabel(asset = {}, tabId = this.discountAssetsActiveTab) {
+            const explicitLabel = String(asset?.status_label || '').trim();
+            if (explicitLabel && (!this.isEnglishLanguage() || !this.containsCjkText(explicitLabel))) {
+                return explicitLabel;
+            }
+
+            const tone = String(asset?.status_tone || '').trim().toLowerCase();
+            const group = String(asset?.status_group || tabId || '').trim().toLowerCase();
+            if (tone === 'used' || group === 'used') return this.tr('wallet.used', '已使用');
+            if (tone === 'inactive' || group === 'inactive') {
+                const lifecycle = String(asset?.lifecycle_key || '').trim().toLowerCase();
+                if (lifecycle.includes('expire')) return this.tr('wallet.expired', '已过期');
+                if (lifecycle.includes('revoke') || lifecycle.includes('disable')) return this.tr('wallet.revoked', '已停用');
+                if (lifecycle.includes('scheduled') || lifecycle.includes('not_started')) return this.tr('wallet.scheduled', '待生效');
+                return this.tr('wallet.inactive', '已失效');
+            }
+            return this.tr('wallet.available', '可用');
+        },
+
+        getLocalizedDiscountStatusDetail(asset = {}, tabId = this.discountAssetsActiveTab) {
+            const explicitDetail = String(asset?.status_detail || asset?.scoped_product_message || '').trim();
+            if (explicitDetail && (!this.isEnglishLanguage() || !this.containsCjkText(explicitDetail))) {
+                return explicitDetail;
+            }
+
+            if (tabId === 'used') {
+                const productName = this.getLocalizedProductNameFromPayload(asset?.related_order || {}, '');
+                return productName
+                    ? this.tr('wallet.usedInProduct', '已用于 {product}', { product: productName })
+                    : this.tr('wallet.usedInStoreOrder', '已用于商城订单');
+            }
+
+            if (tabId === 'inactive' || String(asset?.status_tone || '').trim() === 'inactive') {
+                if (asset?.effective_expires_at || asset?.expires_at) {
+                    return this.tr('wallet.couponExpired', '该卡券已过期');
+                }
+                return this.tr('wallet.unavailable', '暂不可用');
+            }
+
+            if (asset?.scope_type === 'product') {
+                return this.tr('wallet.openProductToUse', '打开指定商品后可使用');
+            }
+
+            return this.tr('wallet.chooseAtCheckout', '下单时可直接选择');
+        },
+
         buildDataAttributes(attributes = {}) {
             return Object.entries(attributes)
                 .filter(([, value]) => value !== undefined && value !== null && value !== false)
@@ -1458,7 +1618,7 @@
                 return {
                     rewardType: 'registration_reward',
                     sourceKind: 'recharge',
-                    label: '邀请首充奖励',
+                    label: this.tr('wallet.inviteFirstRechargeReward', '邀请首充奖励'),
                     icon: 'fa-gift',
                     color: '#34d399'
                 };
@@ -1468,7 +1628,7 @@
                 return {
                     rewardType: 'registration_reward',
                     sourceKind: 'purchase',
-                    label: '邀请消费奖励',
+                    label: this.tr('wallet.invitePurchaseReward', '邀请消费奖励'),
                     icon: 'fa-seedling',
                     color: '#f59e0b'
                 };
@@ -1478,7 +1638,7 @@
                 return {
                     rewardType: 'registration_reward',
                     sourceKind: 'register',
-                    label: '邀请注册奖励',
+                    label: this.tr('wallet.inviteRegisterReward', '邀请注册奖励'),
                     icon: 'fa-user-check',
                     color: '#8b5cf6'
                 };
@@ -1487,7 +1647,7 @@
             return {
                 rewardType: 'commission',
                 sourceKind: 'purchase',
-                label: '推广返佣',
+                label: this.tr('wallet.affiliateCommission', '推广返佣'),
                 icon: 'fa-share-alt',
                 color: '#38bdf8'
             };
@@ -1504,15 +1664,15 @@
             }
 
             if (rawReason === 'makeup_checkin_cost') {
-                return '补签扣分';
+                return this.tr('wallet.makeupCheckinCost', '补签扣分');
             }
 
             if (rawReason === 'signup_bonus') {
-                return '注册奖励';
+                return this.tr('wallet.signupBonus', '注册奖励');
             }
 
             if (rawReason === 'custom_recharge') {
-                return '自定义充值';
+                return this.tr('wallet.customRecharge', '自定义充值');
             }
 
             if (rawReason.startsWith('模拟充值:')) {
@@ -1549,19 +1709,19 @@
             }
 
             if (rawReason === 'makeup_checkin_cost') {
-                return '补签扣分';
+                return this.tr('wallet.makeupCheckinCost', '补签扣分');
             }
 
             if (rawReason === 'signup_bonus') {
-                return '注册奖励';
+                return this.tr('wallet.signupBonus', '注册奖励');
             }
 
             if (rawReason === 'custom_recharge') {
-                return '自定义充值';
+                return this.tr('wallet.customRecharge', '自定义充值');
             }
 
             if (rawReason.startsWith('模拟充值:') || rawReason.startsWith('模拟充值：')) {
-                return '模拟充值';
+                return this.tr('wallet.mockPayment', '模拟充值');
             }
 
             if (rawReason.startsWith('admin_manual')) {
@@ -1827,7 +1987,7 @@
         openPaymentCheckoutUrl(checkoutUrl, options = {}) {
             const url = String(checkoutUrl || '').trim();
             if (!url) {
-                throw new Error('缺少支付链接');
+                throw new Error(this.tr('wallet.missingPaymentLink', '缺少支付链接'));
             }
 
             const useSameTab = options.sameTab === true || this.isMobilePaymentBrowser();
@@ -1850,14 +2010,15 @@
             return 'same-tab-fallback';
         },
 
-        resolveFriendlyRechargeErrorMessage(error, fallback = '充值发起失败，请稍后重试。') {
+        resolveFriendlyRechargeErrorMessage(error, fallback = '') {
+            const fallbackMessage = fallback || this.tr('wallet.rechargeStartFailed', '充值发起失败，请稍后重试。');
             const rawMessage = String(error?.message || '').trim();
             if (!rawMessage) {
-                return fallback;
+                return fallbackMessage;
             }
 
             if (/fetch failed|failed to fetch|networkerror|network request failed/i.test(rawMessage)) {
-                return fallback;
+                return fallbackMessage;
             }
 
             if (
@@ -1866,12 +2027,12 @@
                 return rawMessage;
             }
 
-            return rawMessage.length > 80 ? fallback : rawMessage;
+            return rawMessage.length > 80 ? fallbackMessage : rawMessage;
         },
 
         buildHostedPaymentQrStatusMarkup(message = '', options = {}) {
             const loading = !!options.loading;
-            const safeMessage = this.escapeHtml(String(message || '').trim() || '请使用支付宝扫码支付。');
+            const safeMessage = this.escapeHtml(String(message || '').trim() || this.tr('wallet.scanAlipayToPay', '请使用支付宝扫码支付。'));
             if (!loading) {
                 return safeMessage;
             }
@@ -1938,7 +2099,7 @@
             if (actionsEl) {
                 actionsEl.hidden = actionsEl.dataset.hasActions !== 'true';
             }
-            this.updateHostedPaymentQrStatus(detailOverlay, '请使用支付宝扫码支付。', 'info');
+            this.updateHostedPaymentQrStatus(detailOverlay, this.tr('wallet.scanAlipayToPay', '请使用支付宝扫码支付。'), 'info');
         },
 
         animateHostedPaymentQrEntry(detailOverlay) {
@@ -2075,7 +2236,7 @@
             if (!checkoutSessionId) {
                 this.updateHostedPaymentQrStatus(
                     detailOverlay,
-                    '请使用支付宝扫码支付。',
+                    this.tr('wallet.scanAlipayToPay', '请使用支付宝扫码支付。'),
                     'info'
                 );
                 return;
@@ -2136,7 +2297,7 @@
                     stop();
                     this.updateHostedPaymentQrStatus(
                         detailOverlay,
-                        '暂未自动同步到支付结果。若你已完成付款，请稍后刷新钱包或在订单记录中查看，或联系人工客服。',
+                        this.tr('wallet.paymentSyncTimeout', '暂未自动同步到支付结果。若你已完成付款，请稍后刷新钱包或在订单记录中查看，或联系人工客服。'),
                         'info'
                     );
                     if (typeof options.onTimeout === 'function') {
@@ -2148,7 +2309,7 @@
                 try {
                     this.updateHostedPaymentQrStatus(
                         detailOverlay,
-                        '请支付并保持此页面，正在等待支付结果同步',
+                        this.tr('wallet.paymentWaiting', '请支付并保持此页面，正在等待支付结果同步'),
                         'info',
                         { loading: true }
                     );
@@ -2180,7 +2341,7 @@
                         stop();
                         this.updateHostedPaymentQrStatus(
                             detailOverlay,
-                            statusResult.message || '支付未成功，请重新发起支付。',
+                            statusResult.message || this.tr('wallet.paymentFailedRetry', '支付未成功，请重新发起支付。'),
                             'error'
                         );
                         if (typeof options.onFailed === 'function') {
@@ -2192,7 +2353,7 @@
                     if (paymentState === 'review') {
                         this.updateHostedPaymentQrStatus(
                             detailOverlay,
-                            statusResult.message || '支付已提交，正在等待平台确认，请稍后。',
+                            statusResult.message || this.tr('wallet.paymentSubmittedReview', '支付已提交，正在等待平台确认，请稍后。'),
                             'info'
                         );
                         scheduleNext(intervalMs);
@@ -2201,7 +2362,7 @@
 
                     this.updateHostedPaymentQrStatus(
                         detailOverlay,
-                        '请支付并保持此页面，正在等待支付结果同步',
+                        this.tr('wallet.paymentWaiting', '请支付并保持此页面，正在等待支付结果同步'),
                         'info',
                         { loading: true }
                     );
@@ -2211,7 +2372,7 @@
                     }
                     this.updateHostedPaymentQrStatus(
                         detailOverlay,
-                        '请支付并保持此页面，正在等待支付结果同步',
+                        this.tr('wallet.paymentWaiting', '请支付并保持此页面，正在等待支付结果同步'),
                         'info',
                         { loading: true }
                     );
@@ -2224,7 +2385,7 @@
             this.resetHostedPaymentQrPresentation(detailOverlay);
             this.updateHostedPaymentQrStatus(
                 detailOverlay,
-                '请使用支付宝扫码支付。',
+                this.tr('wallet.scanAlipayToPay', '请使用支付宝扫码支付。'),
                 'info'
             );
             scheduleNext(initialDelayMs);
@@ -2247,7 +2408,7 @@
                 return false;
             }
 
-            const modalTitle = String(options.title || paymentResult?.package_name || paymentResult?.display_name || '充值').trim() || '充值';
+            const modalTitle = String(options.title || paymentResult?.package_name || paymentResult?.display_name || this.tr('wallet.recharge', '充值')).trim() || this.tr('wallet.recharge', '充值');
             const displayName = String(paymentResult?.display_name || '易支付').trim() || '易支付';
             const paidAmount = Number(paymentResult?.paid_amount || 0) || 0;
             const pointsAmount = Number(paymentResult?.points_amount || 0) || 0;
@@ -2259,7 +2420,7 @@
                 paidAmount > 0
                     ? `
                         <div class="detail-row">
-                            <span class="detail-label">应付金额</span>
+                            <span class="detail-label">${this.tr('wallet.payableAmount', '应付金额')}</span>
                             <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#fbbf24')}">¥${this.formatCny(paidAmount)}</span>
                         </div>
                     `
@@ -2267,14 +2428,14 @@
                 pointsAmount > 0
                     ? `
                         <div class="detail-row">
-                            <span class="detail-label">到账积分</span>
+                            <span class="detail-label">${this.tr('wallet.pointsToReceive', '到账积分')}</span>
                             <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#22c55e')}">${this.formatPoints(pointsAmount)}</span>
                         </div>
                     `
                     : '',
                 `
                     <div class="detail-row">
-                        <span class="detail-label">支付通道</span>
+                        <span class="detail-label">${this.tr('wallet.paymentChannel', '支付通道')}</span>
                         <span class="detail-val">${this.escapeHtml(displayName)}</span>
                     </div>
                 `
@@ -2289,31 +2450,31 @@
                             <span class="wallet-payment-qr-title-icon">${this.renderWalletInlineIcon('fa-qrcode', '#fbbf24')}</span>
                             <span class="wallet-payment-qr-title-copy">
                                 <strong>${this.escapeHtml(modalTitle)}</strong>
-                                <small>请使用支付宝扫码支付</small>
+                                <small>${this.tr('wallet.scanAlipayToPay', '请使用支付宝扫码支付')}</small>
                             </span>
                         </div>
                     </div>
                     <div class="wallet-order-modal-body wallet-order-modal-body--fade">
                         <div class="wallet-payment-qr-panel">
-                            <div class="wallet-payment-qr-status js-wallet-payment-qr-status is-info">请使用支付宝扫码支付。</div>
+                            <div class="wallet-payment-qr-status js-wallet-payment-qr-status is-info">${this.tr('wallet.scanAlipayToPay', '请使用支付宝扫码支付。')}</div>
                             ${qrcodeImgUrl
                                 ? `
                                     <div class="wallet-payment-qr-card js-wallet-payment-qr-visual">
-                                        <img src="${this.escapeAttribute(qrcodeImgUrl)}" alt="支付宝付款码" class="wallet-payment-qr-image js-wallet-payment-qr-image" loading="eager" decoding="async" referrerpolicy="no-referrer">
+                                        <img src="${this.escapeAttribute(qrcodeImgUrl)}" alt="${this.escapeAttribute(this.tr('wallet.paymentQrAlt', '支付宝付款码'))}" class="wallet-payment-qr-image js-wallet-payment-qr-image" loading="eager" decoding="async" referrerpolicy="no-referrer">
                                         <div class="wallet-payment-qr-success js-wallet-payment-qr-success" hidden>
                                             <div class="wallet-payment-qr-success-mark" aria-hidden="true">
                                                 <svg viewBox="0 0 24 24" fill="none">
                                                     <path d="M5 12.5L9.2 16.7L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path>
                                                 </svg>
                                             </div>
-                                            <div class="wallet-payment-qr-success-title">支付成功</div>
+                                            <div class="wallet-payment-qr-success-title">${this.tr('wallet.paymentSuccess', '支付成功')}</div>
                                         </div>
                                     </div>
                                 `
                                 : `
                                     <div class="wallet-payment-qr-card js-wallet-payment-qr-visual">
                                         <div class="wallet-payment-qr-fallback js-wallet-payment-qr-fallback">
-                                        当前通道没有返回二维码图片，请使用下方按钮打开支付页继续付款。
+                                        ${this.tr('wallet.paymentQrFallback', '当前通道没有返回二维码图片，请使用下方按钮打开支付页继续付款。')}
                                         </div>
                                         <div class="wallet-payment-qr-success js-wallet-payment-qr-success" hidden>
                                             <div class="wallet-payment-qr-success-mark" aria-hidden="true">
@@ -2321,7 +2482,7 @@
                                                     <path d="M5 12.5L9.2 16.7L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path>
                                                 </svg>
                                             </div>
-                                            <div class="wallet-payment-qr-success-title">支付成功</div>
+                                            <div class="wallet-payment-qr-success-title">${this.tr('wallet.paymentSuccess', '支付成功')}</div>
                                         </div>
                                     </div>
                                 `}
@@ -2330,10 +2491,10 @@
                             </div>
                             <div class="modal-actions wallet-modal-actions--compact js-wallet-payment-qr-actions"${hasActions ? ' data-has-actions="true"' : ' data-has-actions="false" hidden'}>
                                 ${copyValue
-                                    ? `<button class="action-btn secondary wallet-action-btn--grow js-wallet-copy-payment-qr" type="button">复制付款链接</button>`
+                                    ? `<button class="action-btn secondary wallet-action-btn--grow js-wallet-copy-payment-qr" type="button">${this.tr('wallet.copyPaymentLink', '复制付款链接')}</button>`
                                     : ''}
                                 ${showOpenAction
-                                    ? `<button class="action-btn primary wallet-action-btn--grow js-wallet-open-payment-qr" type="button">打开支付页</button>`
+                                    ? `<button class="action-btn primary wallet-action-btn--grow js-wallet-open-payment-qr" type="button">${this.tr('wallet.openPaymentPage', '打开支付页')}</button>`
                                     : ''}
                             </div>
                         </div>
@@ -2389,33 +2550,48 @@
             const normalizedPoints = this.normalizePointValue(numericValue, 0);
             const estimatedPaidAmount = Math.ceil((normalizedPoints / pointsPerCny) * 100) / 100;
             const inputMode = Math.abs(pointsPerCny - 1) < 0.0001 ? 'unified' : 'points';
-            const inputLabel = inputMode === 'unified' ? '充值金额' : '充值积分';
+            const inputLabel = inputMode === 'unified'
+                ? this.tr('wallet.rechargeAmount', '充值金额')
+                : this.tr('wallet.rechargePoints', '充值积分');
 
             if (!normalizedRaw) {
+                if (!this.isEnglishLanguage()) {
+                    return {
+                        ok: false,
+                        errorMessage: `请输入${inputLabel}`
+                    };
+                }
                 return {
                     ok: false,
-                    errorMessage: `请输入${inputLabel}`
+                    errorMessage: this.tr('wallet.enterValue', '请输入{label}', { label: inputLabel })
                 };
             }
 
             if (!Number.isFinite(numericValue) || numericValue <= 0) {
                 return {
                     ok: false,
-                    errorMessage: `请输入大于 0 的${inputLabel}`
+                    errorMessage: this.tr('wallet.enterPositiveValue', '请输入大于 0 的{label}', { label: inputLabel })
                 };
             }
 
             if (normalizedPoints < minPoints || normalizedPoints > maxPoints) {
                 return {
                     ok: false,
-                    errorMessage: `请输入 ${this.formatPoints(minPoints)} 到 ${this.formatPoints(maxPoints)} 之间的${inputLabel}`
+                    errorMessage: this.tr('wallet.enterRangeValue', '请输入 {min} 到 {max} 之间的{label}', {
+                        min: this.formatPoints(minPoints),
+                        max: this.formatPoints(maxPoints),
+                        label: inputLabel
+                    })
                 };
             }
 
             if (!this.isPointStepAligned(normalizedPoints, stepPoints)) {
                 return {
                     ok: false,
-                    errorMessage: `请输入 ${this.formatPoints(stepPoints)} 的整数倍${inputLabel}`
+                    errorMessage: this.tr('wallet.enterStepValue', '请输入 {step} 的整数倍{label}', {
+                        step: this.formatPoints(stepPoints),
+                        label: inputLabel
+                    })
                 };
             }
 
@@ -3072,7 +3248,7 @@
                                 <div class="custom-recharge-section" id="wallet-custom-recharge-section" hidden>
                                     <div class="custom-recharge-header">
                                         <div>
-                                            <div class="custom-recharge-title">自定义充值</div>
+                                            <div class="custom-recharge-title">${this.tr('wallet.customRecharge', '自定义充值')}</div>
                                             <div class="custom-recharge-subtitle" id="wallet-custom-recharge-subtitle" hidden></div>
                                         </div>
                                         <span class="custom-recharge-badge" id="wallet-custom-recharge-badge" hidden></span>
@@ -3126,13 +3302,13 @@
                             <div class="wallet-view" id="view-checkin">
                                 <div class="checkin-dashboard">
                                     <div class="checkin-header">
-                                        <div class="checkin-month-title" id="checkin-month-title">--月打卡</div>
-                                        <div class="checkin-streak">已连续 <strong id="checkin-streak-count">0</strong> 天</div>
+                                        <div class="checkin-month-title" id="checkin-month-title">${this.tr('wallet.monthCheckinTitle', '{month}月打卡', { month: '--' })}</div>
+                                        <div class="checkin-streak">${this.tr('wallet.streakDays', '已连续 {count} 天', { count: '<strong id="checkin-streak-count">0</strong>' })}</div>
                                     </div>
                                     
                                     <!-- Mystery Rewards Progress -->
                                     <div class="mystery-progress-wrapper" id="mystery-progress-box" hidden>
-                                        <div class="mystery-progress-label">本周神秘盲盒进度</div>
+                                        <div class="mystery-progress-label">${this.tr('wallet.mysteryProgress', '本周神秘盲盒进度')}</div>
                                         <div class="mystery-progress-bar">
                                             <div class="mystery-progress-fill" id="mystery-progress-fill"></div>
                                         </div>
@@ -3141,11 +3317,11 @@
                                     <!-- Calendar Grid -->
                                     <div class="calendar-wrapper">
                                         <div class="calendar-weekdays">
-                                            <span>日</span><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span>
+                                            <span>${this.tr('wallet.weekdaysSun', '日')}</span><span>${this.tr('wallet.weekdaysMon', '一')}</span><span>${this.tr('wallet.weekdaysTue', '二')}</span><span>${this.tr('wallet.weekdaysWed', '三')}</span><span>${this.tr('wallet.weekdaysThu', '四')}</span><span>${this.tr('wallet.weekdaysFri', '五')}</span><span>${this.tr('wallet.weekdaysSat', '六')}</span>
                                         </div>
                                         <div class="calendar-grid" id="calendar-grid">
                                             <!-- Dynamically generated days go here -->
-                                            <div class="loading-calendar">加载中...</div>
+                                            <div class="loading-calendar">${this.tr('wallet.calendarLoading', '加载中...')}</div>
                                         </div>
                                     </div>
                                     
@@ -3217,24 +3393,24 @@
                                 <div class="wallet-affiliate-shell">
                                     <div class="wallet-affiliate-stats">
                                         <div class="affiliate-stat-card affiliate-stat-card-gold">
-                                            <div class="affiliate-stat-label"><i class="fas fa-coins"></i> 累计推广奖励</div>
+                                            <div class="affiliate-stat-label"><i class="fas fa-coins"></i> ${this.tr('wallet.affiliateRewardTotal', '累计推广奖励')}</div>
                                             <div class="affiliate-stat-value" id="affiliate-commission">0</div>
-                                            <div class="affiliate-stat-meta" id="affiliate-reward-breakdown">返佣 0 · 拉新 0</div>
+                                            <div class="affiliate-stat-meta" id="affiliate-reward-breakdown">${this.tr('wallet.rewardBreakdown', '返佣 {commission} · 拉新 {registration}', { commission: 0, registration: 0 })}</div>
                                         </div>
                                         <div class="affiliate-stat-card affiliate-stat-card-blue">
-                                            <div class="affiliate-stat-label"><i class="fas fa-user-plus"></i> 成功邀请人数</div>
+                                            <div class="affiliate-stat-label"><i class="fas fa-user-plus"></i> ${this.tr('wallet.successfulInvites', '成功邀请人数')}</div>
                                             <div class="affiliate-stat-value" id="affiliate-count">0</div>
-                                            <div class="affiliate-stat-meta" id="affiliate-count-meta">已消费 0 人</div>
+                                            <div class="affiliate-stat-meta" id="affiliate-count-meta">${this.tr('wallet.consumedPeople', '已消费 {count} 人', { count: 0 })}</div>
                                         </div>
                                         <div class="affiliate-stat-card affiliate-stat-card-teal">
-                                            <div class="affiliate-stat-label"><i class="fas fa-bolt"></i> 已完成首充</div>
+                                            <div class="affiliate-stat-label"><i class="fas fa-bolt"></i> ${this.tr('wallet.firstRechargeDone', '已完成首充')}</div>
                                             <div class="affiliate-stat-value" id="affiliate-recharge-count">0</div>
-                                            <div class="affiliate-stat-meta" id="affiliate-recharge-meta">待激活 0 人</div>
+                                            <div class="affiliate-stat-meta" id="affiliate-recharge-meta">${this.tr('wallet.pendingPeople', '待激活 {count} 人', { count: 0 })}</div>
                                         </div>
                                         <div class="affiliate-stat-card affiliate-stat-card-rose">
-                                            <div class="affiliate-stat-label"><i class="fas fa-chart-line"></i> 累计贡献消费</div>
+                                            <div class="affiliate-stat-label"><i class="fas fa-chart-line"></i> ${this.tr('wallet.totalInviteeSpend', '累计贡献消费')}</div>
                                             <div class="affiliate-stat-value" id="affiliate-spend-total">0</div>
-                                            <div class="affiliate-stat-meta" id="affiliate-spend-meta">持续返佣 0 积分</div>
+                                            <div class="affiliate-stat-meta" id="affiliate-spend-meta">${this.tr('wallet.ongoingCommission', '持续返佣 {amount} {unit}', { amount: 0, unit: this.tr('wallet.pointsUnit', '积分') })}</div>
                                         </div>
                                     </div>
 
@@ -3250,7 +3426,7 @@
                                                         加载中...
                                                     </p>
                                                 </div>
-                                                <span class="affiliate-reward-guide" id="affiliate-reward-guide">奖励说明</span>
+                                                <span class="affiliate-reward-guide" id="affiliate-reward-guide">${this.tr('wallet.rewardGuide', '奖励说明')}</span>
                                             </div>
 
                                             <div class="wallet-affiliate-link-row">
@@ -3270,13 +3446,13 @@
                                                 <div>
                                                     <h3>
                                                         ${this.renderWalletInlineIcon('fa-road', '#8ab4ff')}
-                                                        邀请旅程
+                                                        ${this.tr('wallet.inviteJourney', '邀请旅程')}
                                                     </h3>
                                                 </div>
                                                 <div class="affiliate-stage-summary" id="affiliate-stage-summary">
-                                                    <span class="affiliate-stage-pill">注册 0</span>
-                                                    <span class="affiliate-stage-pill">首充 0</span>
-                                                    <span class="affiliate-stage-pill">消费 0</span>
+                                                    <span class="affiliate-stage-pill">${this.tr('wallet.registered', '注册 {count}', { count: 0 })}</span>
+                                                    <span class="affiliate-stage-pill">${this.tr('wallet.firstRecharge', '首充 {count}', { count: 0 })}</span>
+                                                    <span class="affiliate-stage-pill">${this.tr('wallet.purchased', '消费 {count}', { count: 0 })}</span>
                                                 </div>
                                             </div>
 
@@ -3535,12 +3711,12 @@
                         <div class="wallet-discount-assets-head">
                             <div>
                                 <h3 class="view-title">${this.renderWalletInlineIcon('fa-ticket-alt', '#f472b6', 'wallet-inline-icon--title')}${window.i18n?.t('wallet.cards') || '卡券'}</h3>
-                                <p class="wallet-discount-assets-subtitle">这里展示已经到账、后续下单时可直接选择使用的优惠券。</p>
+                                <p class="wallet-discount-assets-subtitle">${this.tr('wallet.cardsSubtitle', '这里展示已经到账、后续下单时可直接选择使用的优惠券。')}</p>
                             </div>
-                            <button type="button" class="wallet-discount-assets-refresh"${this.buildDataAttributes({ 'wallet-action': 'refresh-discount-assets' })}>刷新</button>
+                            <button type="button" class="wallet-discount-assets-refresh"${this.buildDataAttributes({ 'wallet-action': 'refresh-discount-assets' })}>${this.tr('wallet.refresh', '刷新')}</button>
                         </div>
                         <div class="wallet-discount-assets-body" id="wallet-discount-assets">
-                            <div class="loading-text">卡券信息准备中...</div>
+                            <div class="loading-text">${this.tr('wallet.cardsPreparing', '卡券信息准备中...')}</div>
                         </div>
                     </div>
                 </div>
@@ -3572,25 +3748,25 @@
         getDiscountAssetsEmptyState(tabId = this.discountAssetsActiveTab) {
             if (tabId === 'used') {
                 return {
-                    title: '还没有使用过卡券',
-                    copy: '后续在商城下单并用券后，会在这里留下使用记录。',
+                    title: this.tr('wallet.noUsedCardsTitle', '还没有使用过卡券'),
+                    copy: this.tr('wallet.noUsedCardsCopy', '后续在商城下单并用券后，会在这里留下使用记录。'),
                     action: 'jump-discount-assets-orders',
                     actionLabel: window.i18n?.t('wallet.records') || '记录'
                 };
             }
             if (tabId === 'inactive') {
                 return {
-                    title: '当前没有失效卡券',
-                    copy: '过期、停用或暂未生效的卡券会在这里统一展示。',
+                    title: this.tr('wallet.noInactiveCardsTitle', '当前没有失效卡券'),
+                    copy: this.tr('wallet.noInactiveCardsCopy', '过期、停用或暂未生效的卡券会在这里统一展示。'),
                     action: 'open-discount-assets-shop',
-                    actionLabel: '去商城'
+                    actionLabel: this.tr('wallet.goShop', '去商城')
                 };
             }
             return {
-                title: '当前没有可用卡券',
-                copy: '你可以继续去商城下单，或等待签到、推广、充值等活动发券。',
+                title: this.tr('wallet.noAvailableCardsTitle', '当前没有可用卡券'),
+                copy: this.tr('wallet.noAvailableCardsCopy', '你可以继续去商城下单，或等待签到、推广、充值等活动发券。'),
                 action: 'open-discount-assets-shop',
-                actionLabel: '去商城'
+                actionLabel: this.tr('wallet.goShop', '去商城')
             };
         },
 
@@ -3614,7 +3790,7 @@
             if (hasActiveScopedProduct) {
                 return {
                     action: 'open-discount-assets-product',
-                    label: '查看商品',
+                    label: this.tr('wallet.viewProduct', '查看商品'),
                     attrs: this.buildDataAttributes({
                         'wallet-action': 'open-discount-assets-product',
                         'wallet-discount-asset-id': this.encodeActionValue(asset.asset_id || asset.id || ''),
@@ -3626,7 +3802,7 @@
 
             return {
                 action: 'open-discount-assets-shop',
-                label: '去商城',
+                label: this.tr('wallet.goShop', '去商城'),
                 attrs: this.buildDataAttributes({ 'wallet-action': 'open-discount-assets-shop' })
             };
         },
@@ -3684,8 +3860,10 @@
             }
         },
 
-        renderDiscountAssetBenefitMarkup(label) {
-            const rawLabel = String(label || '').trim() || '卡券';
+        renderDiscountAssetBenefitMarkup(assetOrLabel) {
+            const rawLabel = typeof assetOrLabel === 'object' && assetOrLabel
+                ? this.getLocalizedDiscountBenefitLabel(assetOrLabel)
+                : (String(assetOrLabel || '').trim() || this.tr('wallet.cardFallback', '卡券'));
             const discountMatch = rawLabel.match(/^(\d+(?:\.\d+)?)(?:\s*)(折)$/);
             const fixedMatch = rawLabel.match(/^立减\s*(\d+(?:\.\d+)?)\s*(积分)$/);
 
@@ -3715,23 +3893,24 @@
 
         formatDiscountAssetStackingLabel(asset = {}) {
             const explicitLabel = String(asset.stacking_label || '').trim();
-            if (explicitLabel === '可并行权益') {
-                return '可叠加';
+            if (explicitLabel && (!this.isEnglishLanguage() || !this.containsCjkText(explicitLabel))) {
+                return explicitLabel === '可并行权益'
+                    ? this.tr('wallet.stackable', '可叠加')
+                    : explicitLabel;
             }
-            if (explicitLabel) {
-                return explicitLabel;
-            }
-            return asset?.is_exclusive === false ? '可叠加' : '排他券';
+            return asset?.is_exclusive === false
+                ? this.tr('wallet.stackable', '可叠加')
+                : this.tr('wallet.exclusiveCouponShort', '排他券');
         },
 
         formatDiscountAssetStackingSummary(asset = {}) {
             const explicitSummary = String(asset.stacking_summary || '').trim();
-            if (explicitSummary) {
+            if (explicitSummary && (!this.isEnglishLanguage() || !this.containsCjkText(explicitSummary))) {
                 return explicitSummary;
             }
             return asset?.is_exclusive === false
-                ? '可与其它优惠券叠加'
-                : '不可与其它优惠券叠加';
+                ? this.tr('wallet.stackableSummary', '可与其它优惠券叠加')
+                : this.tr('wallet.exclusiveSummary', '不可与其它优惠券叠加');
         },
 
         renderDiscountAssetCard(asset = {}, tabId = this.discountAssetsActiveTab) {
@@ -3739,40 +3918,48 @@
             const isExpanded = this.discountAssetsExpandedKey === assetKey;
             const assetId = String(asset.asset_id || asset.id || '').trim();
             const isRemovingAsset = assetId && this.discountAssetsRemovingId === assetId;
-            const benefitMarkup = this.renderDiscountAssetBenefitMarkup(asset.benefit_label || asset.code || '卡券');
+            const benefitMarkup = this.renderDiscountAssetBenefitMarkup(asset);
             const codeLabel = this.escapeHtml(asset.code || '--');
-            const scopeLabel = this.escapeHtml(asset.scope_label || '全场可用');
+            const scopeLabel = this.escapeHtml(this.getLocalizedDiscountScopeLabel(asset));
             const stackingLabel = this.escapeHtml(this.formatDiscountAssetStackingLabel(asset));
             const stackingSummary = this.escapeHtml(this.formatDiscountAssetStackingSummary(asset));
             const stackingChipClass = asset?.is_exclusive === false
                 ? 'wallet-discount-assets-card-chip wallet-discount-assets-card-chip--stackable'
                 : 'wallet-discount-assets-card-chip wallet-discount-assets-card-chip--exclusive';
-            const sourceLabel = this.escapeHtml(asset.source_label || '卡券资产');
-            const rawStatusLabel = String(asset.status_label || '可用').trim() || '可用';
+            const sourceLabel = this.escapeHtml(this.getLocalizedDiscountSourceLabel(asset));
+            const rawStatusLabel = this.getLocalizedDiscountStatusLabel(asset, tabId);
             const statusLabel = this.escapeHtml(rawStatusLabel);
-            const rawStatusDetail = String(asset.status_detail || '当前下单可直接使用').trim() || '当前下单可直接使用';
+            const rawStatusDetail = this.getLocalizedDiscountStatusDetail(asset, tabId);
             const statusDetail = this.escapeHtml(rawStatusDetail);
             const expiryText = asset.effective_expires_at
                 ? this.escapeHtml(this.formatOrderDateTime(asset.effective_expires_at))
-                : '长期有效';
+                : this.tr('wallet.longTermValid', '长期有效');
             const campaignTag = asset.campaign_tag
                 ? `<span class="wallet-discount-assets-tag">${this.escapeHtml(asset.campaign_tag)}</span>`
                 : '';
             const scopeProduct = asset?.scope_product && typeof asset.scope_product === 'object'
                 ? asset.scope_product
                 : null;
-            const scopeProductName = scopeProduct?.display_name || scopeProduct?.name || scopeProduct?.name_en || '';
+            const scopeProductName = this.getLocalizedProductNameFromPayload(scopeProduct || {}, '');
             const scopeProductLabel = asset.scope_type === 'product'
                 ? this.escapeHtml(scopeProductName
-                    ? (scopeProduct?.is_active === false ? `${scopeProductName}（暂不可见）` : scopeProductName)
-                    : '该商品当前暂不可见')
+                    ? (scopeProduct?.is_active === false
+                        ? `${scopeProductName} (${this.tr('wallet.productCurrentlyHidden', '该商品当前暂不可见')})`
+                        : scopeProductName)
+                    : this.tr('wallet.productCurrentlyHidden', '该商品当前暂不可见'))
                 : '';
             const relatedOrder = asset.related_order || null;
+            const relatedOrderName = relatedOrder
+                ? this.getLocalizedProductNameFromPayload(relatedOrder, this.tr('wallet.shopOrder', '商城订单'))
+                : '';
             const relatedOrderMarkup = relatedOrder
                 ? `
                     <div class="wallet-discount-assets-card-line wallet-discount-assets-card-line--wide">
-                        <span>关联订单</span>
-                        <strong>${this.escapeHtml(relatedOrder.snapshot_product_name || '商城订单')}${Number(relatedOrder.discount_amount || 0) > 0 ? ` · 节省 ${this.formatPoints(relatedOrder.discount_amount)} 积分` : ''}</strong>
+                        <span>${this.tr('wallet.relatedOrder', '关联订单')}</span>
+                        <strong>${this.escapeHtml(relatedOrderName)}${Number(relatedOrder.discount_amount || 0) > 0 ? ` · ${this.tr('wallet.savedPoints', '节省 {amount} {unit}', {
+                            amount: this.formatPoints(relatedOrder.discount_amount),
+                            unit: this.tr('wallet.pointsUnit', '积分')
+                        })}` : ''}</strong>
                     </div>
                 `
                 : '';
@@ -3786,13 +3973,13 @@
                         : tabId === 'inactive'
                             ? 'wallet-discount-assets-status--inactive'
                             : 'wallet-discount-assets-status--available';
-            const showStatusBadge = rawStatusLabel !== '可用';
+            const showStatusBadge = rawStatusLabel !== this.tr('wallet.available', '可用');
             const primaryAction = this.getDiscountAssetPrimaryAction(asset, tabId);
             const scopeProductMarkup = asset.scope_type === 'product'
                 ? `
                     <div class="wallet-discount-assets-card-line wallet-discount-assets-card-line--wide wallet-discount-assets-card-line--scope">
                         <div class="wallet-discount-assets-card-line-content">
-                            <span>适用商品</span>
+                            <span>${this.tr('wallet.applicableProduct', '适用商品')}</span>
                             <strong>${scopeProductLabel}</strong>
                         </div>
                     </div>
@@ -3816,7 +4003,7 @@
                         })}
                         ${isRemovingAsset ? 'disabled' : ''}
                     >
-                        ${isRemovingAsset ? '删除中...' : '删除'}
+                        ${isRemovingAsset ? this.tr('wallet.deleting', '删除中...') : this.tr('wallet.delete', '删除')}
                     </button>
                 `
                 : '';
@@ -3869,11 +4056,11 @@
                             <div class="wallet-discount-assets-card-body">
                                 <div class="wallet-discount-assets-card-grid">
                                     <div class="wallet-discount-assets-card-line">
-                                        <span>来源</span>
+                                        <span>${this.tr('wallet.source', '来源')}</span>
                                         <strong>${sourceLabel}</strong>
                                     </div>
                                     <div class="wallet-discount-assets-card-line">
-                                        <span>有效期</span>
+                                        <span>${this.tr('wallet.validity', '有效期')}</span>
                                         <strong>${expiryText}</strong>
                                     </div>
                                     <div class="wallet-discount-assets-card-line wallet-discount-assets-card-line--wide">
@@ -3900,16 +4087,16 @@
             }
 
             if (this.discountAssetsLoading) {
-                container.innerHTML = `<div class="loading-text">正在同步你的卡券...</div>`;
+                container.innerHTML = `<div class="loading-text">${this.tr('wallet.cardsSyncing', '正在同步你的卡券...')}</div>`;
                 return;
             }
 
             if (this.discountAssetsLoadError) {
                 container.innerHTML = `
                     <div class="wallet-discount-assets-empty">
-                        <div class="wallet-discount-assets-empty-title">卡券加载失败</div>
+                        <div class="wallet-discount-assets-empty-title">${this.tr('wallet.cardsLoadFailed', '卡券加载失败')}</div>
                         <div class="wallet-discount-assets-empty-copy">${this.escapeHtml(this.discountAssetsLoadError)}</div>
-                        <button type="button" class="wallet-discount-assets-empty-action"${this.buildDataAttributes({ 'wallet-action': 'refresh-discount-assets' })}>重新加载</button>
+                        <button type="button" class="wallet-discount-assets-empty-action"${this.buildDataAttributes({ 'wallet-action': 'refresh-discount-assets' })}>${this.tr('wallet.reload', '重新加载')}</button>
                     </div>
                 `;
                 return;
@@ -3918,8 +4105,8 @@
             if (!this.discountAssetsLoaded) {
                 container.innerHTML = `
                     <div class="wallet-discount-assets-empty">
-                        <div class="wallet-discount-assets-empty-title">已到账的优惠券会收进这里</div>
-                        <div class="wallet-discount-assets-empty-copy">切到这个页签后，系统会自动同步你在当前站点可见的卡券资产。</div>
+                        <div class="wallet-discount-assets-empty-title">${this.tr('wallet.cardsNotLoadedTitle', '已到账的优惠券会收进这里')}</div>
+                        <div class="wallet-discount-assets-empty-copy">${this.tr('wallet.cardsNotLoadedCopy', '切到这个页签后，系统会自动同步你在当前站点可见的卡券资产。')}</div>
                     </div>
                 `;
                 return;
@@ -3932,13 +4119,15 @@
             const summaryFilter = this.discountAssetsSummaryFilter === 'expiring' ? 'expiring' : 'available';
             const listItems = summaryFilter === 'expiring' ? expiringAssets : availableAssets;
             const sectionId = summaryFilter === 'expiring' ? 'expiring' : 'available';
-            const sectionTitle = summaryFilter === 'expiring' ? '即将过期' : '当前可用';
+            const sectionTitle = summaryFilter === 'expiring'
+                ? this.tr('wallet.expiringSoon', '即将过期')
+                : this.tr('wallet.availableNow', '当前可用');
             const emptyState = summaryFilter === 'expiring'
                 ? {
-                    title: '当前没有即将过期卡券',
-                    copy: '进入即将过期前 72 小时的卡券会展示在这里。',
+                    title: this.tr('wallet.noExpiringCardsTitle', '当前没有即将过期卡券'),
+                    copy: this.tr('wallet.noExpiringCardsCopy', '进入即将过期前 72 小时的卡券会展示在这里。'),
                     action: 'select-discount-assets-summary-filter',
-                    actionLabel: '查看当前可用',
+                    actionLabel: this.tr('wallet.viewAvailableCards', '查看当前可用'),
                     actionValue: 'available'
                 }
                 : this.getDiscountAssetsEmptyState('available');
@@ -3954,7 +4143,7 @@
                         class="wallet-discount-assets-summary-card wallet-discount-assets-summary-card--primary wallet-discount-assets-summary-card--interactive${summaryFilter === 'available' ? ' active' : ''}"
                         ${this.buildDataAttributes({ 'wallet-action': 'select-discount-assets-summary-filter', 'wallet-summary-filter': 'available' })}
                     >
-                        <span>当前可用</span>
+                        <span>${this.tr('wallet.availableNow', '当前可用')}</span>
                         <strong>${this.formatPoints(summary.available_count || 0)}</strong>
                     </button>
                     <button
@@ -3962,11 +4151,11 @@
                         class="wallet-discount-assets-summary-card wallet-discount-assets-summary-card--interactive${summaryFilter === 'expiring' ? ' active' : ''}"
                         ${this.buildDataAttributes({ 'wallet-action': 'select-discount-assets-summary-filter', 'wallet-summary-filter': 'expiring' })}
                     >
-                        <span>即将过期</span>
+                        <span>${this.tr('wallet.expiringSoon', '即将过期')}</span>
                         <strong>${this.formatPoints(summary.expiring_soon_count || 0)}</strong>
                     </button>
                     <div class="wallet-discount-assets-summary-card">
-                        <span>累计省下</span>
+                        <span>${this.tr('wallet.savedTotal', '累计省下')}</span>
                         <strong>${this.formatPoints(summary.saved_amount_total || 0)} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</strong>
                     </div>
                 </div>
@@ -4083,7 +4272,7 @@
             }
 
             const confirmLabel = matchedAsset.benefit_label || matchedAsset.code || '这张卡券';
-            if (!confirm(`确定要删除 ${confirmLabel} 吗？\n\n删除后将不能恢复使用。`)) {
+            if (!confirm(this.tr('wallet.confirmDeleteCard', '确定要删除 {label} 吗？\n\n删除后将不能恢复使用。', { label: confirmLabel }))) {
                 return;
             }
 
@@ -4110,7 +4299,7 @@
                 const payload = await response.json().catch(() => ({}));
 
                 if (!response.ok || payload?.success === false) {
-                    throw new Error(payload?.message || '删除卡券失败');
+                    throw new Error(payload?.message || this.tr('wallet.deleteCardFailed', '删除卡券失败'));
                 }
 
                 window.PointsService?.invalidateWalletDiscountAssets?.({
@@ -4121,10 +4310,10 @@
                 }
 
                 await this.loadDiscountAssets(true);
-                this.showToast(payload?.message || '卡券已删除', 'success');
+                this.showToast(payload?.message || this.tr('wallet.cardDeleted', '卡券已删除'), 'success');
             } catch (error) {
                 console.error('[WalletModal] Remove discount asset failed:', error);
-                this.showToast(error?.message || '删除卡券失败', 'error');
+                this.showToast(error?.message || this.tr('wallet.deleteCardFailed', '删除卡券失败'), 'error');
             } finally {
                 this.discountAssetsRemovingId = '';
                 if (!this.discountAssetsLoading) {
@@ -4273,19 +4462,19 @@
             const providers = {
                 mock: {
                     enabled: true,
-                    display_name: '模拟支付',
-                    description: '仅建议在正式支付接入前短期使用，开启后将直接到账积分。'
+                    display_name: this.tr('wallet.mockPayment', '模拟支付'),
+                    description: this.tr('wallet.mockPaymentDescription', '仅建议在正式支付接入前短期使用，开启后将直接到账积分。')
                 },
                 afdian: {
                     enabled: true,
                     display_name: '爱发电',
                     checkout_url: window.PAYMENT_AFDIAN_URL || 'https://afdian.com/a/zaoyoe',
-                    package_hint: '请在爱发电完成支付后，返回这里输入订单号领取兑换码。',
-                    custom_amount_hint: '钱包会先生成本次应付金额，请按报价完成支付后返回这里输入订单号领取兑换码。',
+                    package_hint: this.tr('wallet.afdianPackageHint', '请在爱发电完成支付后，返回这里输入订单号领取兑换码。'),
+                    custom_amount_hint: this.tr('wallet.customAmountPaymentHint', '钱包会先生成本次应付金额，请按报价完成支付后返回这里输入订单号领取兑换码。'),
                     order_query_enabled: true,
                     order_query_title: '订单号认领',
-                    order_query_hint: '完成支付后，可在这里输入订单号查询兑换结果。',
-                    order_query_placeholder: '输入支付平台订单号'
+                    order_query_hint: this.tr('wallet.paymentOrderQueryHint', '完成支付后，可在这里输入订单号查询兑换结果。'),
+                    order_query_placeholder: this.tr('wallet.paymentOrderNo', '输入支付平台订单号')
                 },
                 zpay: {
                     enabled: false,
@@ -4296,8 +4485,8 @@
                     channel_ids: '',
                     return_url: currentOrigin,
                     notify_url: buildDefaultPaymentWebhookUrl('zpay'),
-                    package_hint: '易支付订单创建后会直接拉起收银台完成支付。',
-                    custom_amount_hint: '易支付会按当前报价创建订单并直接拉起收银台。',
+                    package_hint: this.tr('wallet.zpayPackageHint', '易支付订单创建后会直接拉起收银台完成支付。'),
+                    custom_amount_hint: this.tr('wallet.zpayCustomAmountHint', '易支付会按当前报价创建订单并直接拉起收银台。'),
                     order_query_enabled: false,
                     order_query_title: '',
                     order_query_hint: '',
@@ -4311,14 +4500,15 @@
                     merchant_id: '',
                     return_url: currentOrigin,
                     notify_url: buildDefaultPaymentWebhookUrl('hupijiao'),
-                    package_hint: '虎皮椒通道已启用，完成支付后请按页面提示处理。',
-                    custom_amount_hint: '虎皮椒通道已启用。自定义金额真实支付能力接入后，这里会直接拉起支付。',
+                    package_hint: this.tr('wallet.hupijiaoPackageHint', '虎皮椒通道已启用，完成支付后请按页面提示处理。'),
+                    custom_amount_hint: this.tr('wallet.hupijiaoCustomAmountHint', '虎皮椒通道已启用。自定义金额真实支付能力接入后，这里会直接拉起支付。'),
                     order_query_enabled: false,
                     order_query_title: '',
                     order_query_hint: '',
                     order_query_placeholder: ''
                 }
             };
+            providers.afdian.order_query_title = this.tr('wallet.orderClaimTitle', providers.afdian.order_query_title);
             const activeProvider = rechargeOptions.mock_payment_enabled
                 ? 'mock'
                 : resolvePreferredActiveProviderKey(providers, 'afdian');
@@ -4574,7 +4764,7 @@
                 configured,
                 allowed: configured && normalizedRuntime.mock_payment.allowed === true,
                 blocked: configured && normalizedRuntime.mock_payment.allowed !== true,
-                message: normalizedRuntime.mock_payment.message || '当前环境已禁用模拟支付，请切换到真实支付通道。',
+                message: normalizedRuntime.mock_payment.message || this.tr('wallet.mockPaymentDisabled', '当前环境已禁用模拟支付，请切换到真实支付通道。'),
                 reason: normalizedRuntime.mock_payment.reason || 'unknown'
             };
         },
@@ -4651,8 +4841,8 @@
             const isSimulationBlocked = activeProvider.key === 'mock' && mockPayment.blocked;
             const pointsPerCny = Math.max(0.01, Number(normalizedConfig.custom_amount_points_per_cny) || 1);
             const inputPlaceholder = Math.abs(pointsPerCny - 1) < 0.0001
-                ? '请输入充值金额'
-                : '请输入充值积分';
+                ? this.tr('wallet.customRechargeAmountPlaceholder', '请输入充值金额')
+                : this.tr('wallet.customRechargePointsPlaceholder', '请输入充值积分');
 
             section.toggleAttribute('hidden', !isFeatureEnabled);
 
@@ -4668,8 +4858,8 @@
             if (button) {
                 button.disabled = !isFeatureEnabled || isSimulationBlocked;
                 button.textContent = isSimulationBlocked
-                    ? '当前环境不可用'
-                    : '充值';
+                    ? this.tr('wallet.unavailableNow', '当前环境不可用')
+                    : this.tr('wallet.rechargeNow', '充值');
             }
 
             if (subtitle) {
@@ -4680,10 +4870,10 @@
             if (badge) {
                 if (isSimulationBlocked) {
                     badge.hidden = false;
-                    badge.textContent = '模拟支付受限';
+                    badge.textContent = this.tr('wallet.mockPaymentRestricted', '模拟支付受限');
                 } else if (isSimulationEnabled) {
                     badge.hidden = false;
-                    badge.textContent = '模拟支付';
+                    badge.textContent = this.tr('wallet.mockPayment', '模拟支付');
                 } else {
                     badge.textContent = '';
                     badge.hidden = true;
@@ -4711,20 +4901,20 @@
                 templates: [
                     {
                         id: 'midnight',
-                        name: '星幕邀请函',
-                        description: '深色高级感，适合作为默认分享海报。',
+                        name: this.tr('wallet.posterTemplateMidnightName', '星幕邀请函'),
+                        description: this.tr('wallet.posterTemplateMidnightDesc', '深色高级感，适合作为默认分享海报。'),
                         custom_background_url: ''
                     },
                     {
                         id: 'sunset',
-                        name: '暖金品牌卡',
-                        description: '暖色氛围更强，适合活动档期与节庆传播。',
+                        name: this.tr('wallet.posterTemplateSunsetName', '暖金品牌卡'),
+                        description: this.tr('wallet.posterTemplateSunsetDesc', '暖色氛围更强，适合活动档期与节庆传播。'),
                         custom_background_url: ''
                     },
                     {
                         id: 'crystal',
-                        name: '清透极简版',
-                        description: '浅色留白更多，适合搭配自定义品牌底图。',
+                        name: this.tr('wallet.posterTemplateCrystalName', '清透极简版'),
+                        description: this.tr('wallet.posterTemplateCrystalDesc', '浅色留白更多，适合搭配自定义品牌底图。'),
                         custom_background_url: ''
                     }
                 ]
@@ -4879,13 +5069,15 @@
 
             if (!customTemplate) {
                 return [
-                    safeRegistrationRewardPoints > 0 ? `拉新奖励 ${this.formatPoints(safeRegistrationRewardPoints)} 积分` : '',
-                    `商城返佣 ${this.formatAffiliatePercent(safeCommissionRateShop)}`
+                    safeRegistrationRewardPoints > 0
+                        ? this.tr('wallet.signupReward', '拉新奖励 {value}', { value: this.formatPointsWithUnit(safeRegistrationRewardPoints) })
+                        : '',
+                    this.tr('wallet.shopCommissionRate', '商城返佣：{rate}', { rate: this.formatAffiliatePercent(safeCommissionRateShop) })
                 ].filter(Boolean).join(' · ');
             }
 
             return customTemplate
-                .replace(/\{registration_reward_text\}/g, safeRegistrationRewardPoints > 0 ? `${this.formatPoints(safeRegistrationRewardPoints)} 积分` : '未开启')
+                .replace(/\{registration_reward_text\}/g, safeRegistrationRewardPoints > 0 ? this.formatPointsWithUnit(safeRegistrationRewardPoints) : this.tr('wallet.notEnabled', '未开启'))
                 .replace(/\{registration_reward\}/g, this.formatPoints(safeRegistrationRewardPoints))
                 .replace(/\{shop_commission\}/g, this.formatAffiliatePercent(safeCommissionRateShop))
                 .replace(/\{shop_commission_rate\}/g, this.formatAffiliatePercent(safeCommissionRateShop))
@@ -4903,16 +5095,22 @@
             const requiresPurchase = stats.registration_reward_requires_purchase !== false && String(stats.registration_reward_requires_purchase) !== 'false';
             const rewardNotice = typeof stats.reward_notice === 'string' && stats.reward_notice.trim()
                 ? stats.reward_notice.trim()
-                : '奖励按平台风控规则自动结算，异常账号、作弊注册与退款订单不计入奖励。';
+                : this.tr('wallet.rewardRulesDefault', '奖励按平台风控规则自动结算，异常账号、作弊注册与退款订单不计入奖励。');
             const legalDisclaimer = typeof stats.legal_disclaimer === 'string' && stats.legal_disclaimer.trim()
                 ? stats.legal_disclaimer.trim()
-                : '活动最终解释权归平台所有';
+                : this.tr('wallet.legalDisclaimerDefault', '活动最终解释权归平台所有');
 
             const lines = [
-                `固定拉新奖励：${safeRegistrationReward > 0 ? `${this.formatPoints(safeRegistrationReward)} 积分` : '当前未开启'}`,
-                `触发条件：好友${requiresPurchase ? '完成首笔充值或消费后激活' : '完成注册后立即发放'}`,
-                `商城消费返佣：${this.formatAffiliatePercent(safeCommissionRateShop)}`,
-                `分销资源返佣：${this.formatAffiliatePercent(safeCommissionRateAgent)}`,
+                this.tr('wallet.fixedSignupReward', '固定拉新奖励：{value}', {
+                    value: safeRegistrationReward > 0 ? this.formatPointsWithUnit(safeRegistrationReward) : this.tr('wallet.notEnabled', '当前未开启')
+                }),
+                this.tr('wallet.triggerCondition', '触发条件：好友{condition}', {
+                    condition: requiresPurchase
+                        ? this.tr('wallet.triggerFirstPayment', '完成首笔充值或消费后激活')
+                        : this.tr('wallet.triggerRegister', '完成注册后立即发放')
+                }),
+                this.tr('wallet.shopCommissionRate', '商城消费返佣：{rate}', { rate: this.formatAffiliatePercent(safeCommissionRateShop) }),
+                this.tr('wallet.agentCommissionRate', '分销资源返佣：{rate}', { rate: this.formatAffiliatePercent(safeCommissionRateAgent) }),
                 rewardNotice,
                 legalDisclaimer
             ];
@@ -4927,35 +5125,37 @@
 
             if (stageStep >= 3) {
                 return {
-                    label: '已消费',
-                    hint: '已完成首笔消费，持续返佣已开始',
+                    label: this.tr('wallet.stageConsumedLabel', '已消费'),
+                    hint: this.tr('wallet.stageConsumedHint', '已完成首笔消费，持续返佣已开始'),
                     tone: 'success',
                     rewardText: grantedReward > 0
-                        ? `拉新奖励 +${this.formatPoints(grantedReward)} 积分`
-                        : '已进入持续返佣阶段'
+                        ? this.tr('wallet.signupRewardPlus', '拉新奖励 +{points} {unit}', { points: this.formatPoints(grantedReward), unit: this.tr('wallet.pointsUnit', '积分') })
+                        : this.tr('wallet.stageConsumedReward', '已进入持续返佣阶段')
                 };
             }
 
             if (stageStep >= 2) {
                 return {
-                    label: '已首充',
-                    hint: '已完成首充，等待首笔消费继续贡献返佣',
+                    label: this.tr('wallet.stageRechargedLabel', '已首充'),
+                    hint: this.tr('wallet.stageRechargedHint', '已完成首充，等待首笔消费继续贡献返佣'),
                     tone: 'active',
                     rewardText: grantedReward > 0
-                        ? `拉新奖励 +${this.formatPoints(grantedReward)} 积分`
-                        : (pendingReward > 0 ? `奖励待处理 ${this.formatPoints(pendingReward)} 积分` : '已进入激活阶段')
+                        ? this.tr('wallet.signupRewardPlus', '拉新奖励 +{points} {unit}', { points: this.formatPoints(grantedReward), unit: this.tr('wallet.pointsUnit', '积分') })
+                        : (pendingReward > 0
+                            ? this.tr('wallet.rewardPending', '奖励待处理 {points} {unit}', { points: this.formatPoints(pendingReward), unit: this.tr('wallet.pointsUnit', '积分') })
+                            : this.tr('wallet.stageActivatedReward', '已进入激活阶段'))
                 };
             }
 
             return {
-                label: '已注册',
+                label: this.tr('wallet.stageRegisteredLabel', '已注册'),
                 hint: pendingReward > 0
-                    ? `等待首充激活 ${this.formatPoints(pendingReward)} 积分拉新奖励`
-                    : '等待后续首充或消费',
+                    ? this.tr('wallet.pendingActivationReward', '等待首充激活 {points} {unit}', { points: this.formatPoints(pendingReward), unit: this.tr('wallet.pointsUnit', '积分') })
+                    : this.tr('wallet.stageRegisteredHint', '等待后续首充或消费'),
                 tone: 'pending',
                 rewardText: pendingReward > 0
-                    ? `待激活 ${this.formatPoints(pendingReward)} 积分`
-                    : '当前无额外拉新奖励'
+                    ? this.tr('wallet.rewardPending', '待激活 {points} {unit}', { points: this.formatPoints(pendingReward), unit: this.tr('wallet.pointsUnit', '积分') })
+                    : this.tr('wallet.noSignupReward', '当前无额外拉新奖励')
             };
         },
 
@@ -4971,9 +5171,9 @@
 
             if (summaryEl) {
                 summaryEl.innerHTML = `
-                    <span class="affiliate-stage-pill">注册 ${invitedCount}</span>
-                    <span class="affiliate-stage-pill">首充 ${rechargeCount}</span>
-                    <span class="affiliate-stage-pill">消费 ${consumedCount}</span>
+                    <span class="affiliate-stage-pill">${this.tr('wallet.registered', '注册 {count}', { count: invitedCount })}</span>
+                    <span class="affiliate-stage-pill">${this.tr('wallet.firstRecharge', '首充 {count}', { count: rechargeCount })}</span>
+                    <span class="affiliate-stage-pill">${this.tr('wallet.purchased', '消费 {count}', { count: consumedCount })}</span>
                 `;
             }
 
@@ -4981,24 +5181,27 @@
                 container.innerHTML = `
                     <div class="affiliate-empty-state">
                         <div class="affiliate-empty-icon"><i class="fas fa-users"></i></div>
-                        <div class="affiliate-empty-title">还没有邀请记录</div>
-                        <div class="affiliate-empty-copy">分享上面的专属链接后，这里会按“注册 → 首充 → 消费”的旅程自动更新。</div>
+                        <div class="affiliate-empty-title">${this.tr('wallet.noInvitesTitle', '还没有邀请记录')}</div>
+                        <div class="affiliate-empty-copy">${this.tr('wallet.noInvitesCopy', '分享上面的专属链接后，这里会按“注册 → 首充 → 消费”的旅程自动更新。')}</div>
                     </div>
                 `;
                 return;
             }
 
             const pointsUnit = window.i18n?.t('wallet.pointsUnit') || '积分';
+            const notCompletedText = this.tr('wallet.notCompleted', '未完成');
+            const notEnabledText = this.tr('wallet.notEnabled', '未开启');
+            const newInviteeText = this.tr('wallet.newInvitee', '新邀请用户');
 
             container.innerHTML = members.map((member, index) => {
                 const memberId = String(member.user_id || member.id || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
                 const memberDomId = String(memberId || `member-${index}`).replace(/[^A-Za-z0-9_-]/g, '-') || `member-${index}`;
                 const detailsId = `affiliate-member-details-${memberDomId}`;
-                const displayName = String(member.display_name || member.username || member.masked_email || '新用户').trim();
+                const displayName = String(member.display_name || member.username || member.masked_email || this.tr('wallet.inviteUser', '新用户')).trim();
                 const maskedEmail = String(member.masked_email || '').trim();
                 const registeredAt = this.formatOrderDateTime(member.registered_at);
-                const firstRechargeAt = member.first_recharge_at ? this.formatOrderDateTime(member.first_recharge_at) : '未完成';
-                const firstPurchaseAt = member.first_purchase_at ? this.formatOrderDateTime(member.first_purchase_at) : '未完成';
+                const firstRechargeAt = member.first_recharge_at ? this.formatOrderDateTime(member.first_recharge_at) : notCompletedText;
+                const firstPurchaseAt = member.first_purchase_at ? this.formatOrderDateTime(member.first_purchase_at) : notCompletedText;
                 const stageMeta = this.getAffiliateStageMeta(member);
                 const totalSpend = this.formatPoints(member.total_spend || 0);
                 const commissionEarned = this.formatPoints(member.commission_earned || 0);
@@ -5006,20 +5209,24 @@
                 const pendingReward = this.normalizePointValue(member.registration_reward_pending || 0);
                 const rewardText = registrationRewardGranted > 0
                     ? `${this.formatPoints(registrationRewardGranted)} ${pointsUnit}`
-                    : (pendingReward > 0 ? `待激活 ${this.formatPoints(pendingReward)} ${pointsUnit}` : '未开启');
+                    : (pendingReward > 0
+                        ? this.tr('wallet.rewardPending', '待激活 {points} {unit}', { points: this.formatPoints(pendingReward), unit: pointsUnit })
+                        : notEnabledText);
                 const lastOrderName = String(member.last_order_name || '').trim();
                 const lastOrderAmount = Number(member.last_order_amount);
                 const latestLabel = lastOrderName
                     ? `${this.escapeHtml(lastOrderName)}${Number.isFinite(lastOrderAmount) ? ` · ${this.formatPoints(lastOrderAmount)} ${pointsUnit}` : ''}`
-                    : `注册于 ${this.escapeHtml(registeredAt)}`;
+                    : this.tr('wallet.registeredAt', '注册于 {date}', { date: this.escapeHtml(registeredAt) });
                 const badgeClass = `affiliate-member-badge affiliate-member-badge-${stageMeta.tone}`;
                 const avatarLabel = this.escapeHtml(displayName.charAt(0).toUpperCase() || 'U');
-                const secondaryLine = [maskedEmail, `注册于 ${registeredAt}`].filter(Boolean).join(' · ');
+                const secondaryLine = [maskedEmail, this.tr('wallet.registeredAt', '注册于 {date}', { date: registeredAt })].filter(Boolean).join(' · ');
                 const quickContribution = `${totalSpend} ${pointsUnit}`;
                 const quickCommission = `${commissionEarned} ${pointsUnit}`;
                 const quickReward = registrationRewardGranted > 0
                     ? `${this.formatPoints(registrationRewardGranted)} ${pointsUnit}`
-                    : (pendingReward > 0 ? `待激活 ${this.formatPoints(pendingReward)} ${pointsUnit}` : '未开启');
+                    : (pendingReward > 0
+                        ? this.tr('wallet.rewardPending', '待激活 {points} {unit}', { points: this.formatPoints(pendingReward), unit: pointsUnit })
+                        : notEnabledText);
 
                 return `
                     <article class="affiliate-member-card" data-member-id="${this.escapeHtml(memberId)}">
@@ -5035,19 +5242,19 @@
                                         <div class="affiliate-member-name-row">
                                             <div class="affiliate-member-name">${this.escapeHtml(displayName)}</div>
                                         </div>
-                                        <div class="affiliate-member-sub">${this.escapeHtml(secondaryLine || '新邀请用户')}</div>
+                                        <div class="affiliate-member-sub">${this.escapeHtml(secondaryLine || newInviteeText)}</div>
                                         <div class="affiliate-member-note">${this.escapeHtml(stageMeta.hint)}</div>
                                     </div>
                                 </div>
                                 <div class="affiliate-member-quick-metrics">
-                                    <span class="affiliate-member-chip">贡献 ${quickContribution}</span>
-                                    <span class="affiliate-member-chip">返佣 ${quickCommission}</span>
-                                    <span class="affiliate-member-chip">拉新 ${this.escapeHtml(quickReward)}</span>
+                                    <span class="affiliate-member-chip">${this.tr('wallet.contribution', '贡献 {value}', { value: quickContribution })}</span>
+                                    <span class="affiliate-member-chip">${this.tr('wallet.commission', '返佣 {value}', { value: quickCommission })}</span>
+                                    <span class="affiliate-member-chip">${this.tr('wallet.signupReward', '拉新 {value}', { value: this.escapeHtml(quickReward) })}</span>
                                 </div>
                             </div>
                             <div class="affiliate-member-summary-side">
                                 <span class="${badgeClass}">${stageMeta.label}</span>
-                                <button class="affiliate-member-chevron affiliate-member-toggle" type="button" aria-expanded="false" aria-controls="${this.escapeAttribute(detailsId)}" aria-label="展开 ${this.escapeAttribute(displayName)} 的邀请旅程"${this.buildDataAttributes({ 'wallet-action': 'toggle-affiliate-member-details' })}>
+                                <button class="affiliate-member-chevron affiliate-member-toggle" type="button" aria-expanded="false" aria-controls="${this.escapeAttribute(detailsId)}" aria-label="${this.tr('wallet.expandJourney', '展开 {name} 的邀请旅程', { name: this.escapeAttribute(displayName) })}"${this.buildDataAttributes({ 'wallet-action': 'toggle-affiliate-member-details' })}>
                                     <i class="fas fa-chevron-down"></i>
                                 </button>
                             </div>
@@ -5058,21 +5265,21 @@
                                 <div class="affiliate-stage-node affiliate-stage-node-done">
                                     <span class="affiliate-stage-dot"></span>
                                     <div class="affiliate-stage-copy">
-                                        <strong>注册</strong>
+                                        <strong>${this.tr('wallet.registeredStage', '注册')}</strong>
                                         <span>${this.escapeHtml(registeredAt)}</span>
                                     </div>
                                 </div>
                                 <div class="affiliate-stage-node ${member.first_recharge_at ? 'affiliate-stage-node-done' : 'affiliate-stage-node-todo'}">
                                     <span class="affiliate-stage-dot"></span>
                                     <div class="affiliate-stage-copy">
-                                        <strong>首充</strong>
+                                        <strong>${this.tr('wallet.firstRechargeStage', '首充')}</strong>
                                         <span>${this.escapeHtml(firstRechargeAt)}</span>
                                     </div>
                                 </div>
                                 <div class="affiliate-stage-node ${member.first_purchase_at ? 'affiliate-stage-node-done' : 'affiliate-stage-node-todo'}">
                                     <span class="affiliate-stage-dot"></span>
                                     <div class="affiliate-stage-copy">
-                                        <strong>消费</strong>
+                                        <strong>${this.tr('wallet.purchaseStage', '消费')}</strong>
                                         <span>${this.escapeHtml(firstPurchaseAt)}</span>
                                     </div>
                                 </div>
@@ -5080,19 +5287,19 @@
 
                             <div class="affiliate-member-metrics">
                                 <div class="affiliate-member-metric">
-                                    <span>累计贡献</span>
+                                    <span>${this.tr('wallet.totalContribution', '累计贡献')}</span>
                                     <strong>${totalSpend} ${pointsUnit}</strong>
                                 </div>
                                 <div class="affiliate-member-metric">
-                                    <span>返佣贡献</span>
+                                    <span>${this.tr('wallet.commissionContribution', '返佣贡献')}</span>
                                     <strong>${commissionEarned} ${pointsUnit}</strong>
                                 </div>
                                 <div class="affiliate-member-metric">
-                                    <span>拉新奖励</span>
+                                    <span>${this.tr('wallet.signupReward', '拉新奖励')}</span>
                                     <strong>${this.escapeHtml(rewardText)}</strong>
                                 </div>
                                 <div class="affiliate-member-metric">
-                                    <span>${lastOrderName ? '最近订单' : '最近动态'}</span>
+                                    <span>${lastOrderName ? this.tr('wallet.latestOrder', '最近订单') : this.tr('wallet.latestActivity', '最近动态')}</span>
                                     <strong>${latestLabel}</strong>
                                 </div>
                             </div>
@@ -5117,8 +5324,9 @@
                 openCard.querySelector('.affiliate-member-details')?.setAttribute('hidden', 'hidden');
                 const openButton = openCard.querySelector('.affiliate-member-toggle');
                 openButton?.setAttribute('aria-expanded', 'false');
-                if (openButton?.getAttribute('aria-label')?.startsWith('收起 ')) {
-                    openButton.setAttribute('aria-label', openButton.getAttribute('aria-label').replace(/^收起 /, '展开 '));
+                const openName = openCard.querySelector('.affiliate-member-name')?.textContent?.trim() || '';
+                if (openButton && openName) {
+                    openButton.setAttribute('aria-label', this.tr('wallet.expandJourney', '展开 {name} 的邀请旅程', { name: openName }));
                 }
             });
 
@@ -5126,8 +5334,9 @@
                 card.classList.add('expanded');
                 details?.removeAttribute('hidden');
                 button?.setAttribute('aria-expanded', 'true');
-                if (button?.getAttribute('aria-label')?.startsWith('展开 ')) {
-                    button.setAttribute('aria-label', button.getAttribute('aria-label').replace(/^展开 /, '收起 '));
+                const displayName = card.querySelector('.affiliate-member-name')?.textContent?.trim() || '';
+                if (button && displayName) {
+                    button.setAttribute('aria-label', this.tr('wallet.collapseJourney', '收起 {name} 的邀请旅程', { name: displayName }));
                 }
                 return;
             }
@@ -5135,8 +5344,9 @@
             card.classList.remove('expanded');
             details?.setAttribute('hidden', 'hidden');
             button?.setAttribute('aria-expanded', 'false');
-            if (button?.getAttribute('aria-label')?.startsWith('收起 ')) {
-                button.setAttribute('aria-label', button.getAttribute('aria-label').replace(/^收起 /, '展开 '));
+            const displayName = card.querySelector('.affiliate-member-name')?.textContent?.trim() || '';
+            if (button && displayName) {
+                button.setAttribute('aria-label', this.tr('wallet.expandJourney', '展开 {name} 的邀请旅程', { name: displayName }));
             }
         },
 
@@ -5151,10 +5361,15 @@
             const safeRegistrationReward = Number.isFinite(parsedRegistrationReward) ? parsedRegistrationReward : 0;
             const requiresPurchase = stats.registration_reward_requires_purchase !== false && String(stats.registration_reward_requires_purchase) !== 'false';
             const ratePercent = `${(safeCommissionRate * 100).toFixed(0)}%`;
-            const legalDisclaimer = typeof stats.legal_disclaimer === 'string' && stats.legal_disclaimer.trim()
+            const rawLegalDisclaimer = typeof stats.legal_disclaimer === 'string' && stats.legal_disclaimer.trim()
                 ? stats.legal_disclaimer.trim()
-                : '活动最终解释权归平台所有';
-            const rewardTriggerText = requiresPurchase ? '完成首笔充值或消费' : '完成注册';
+                : '';
+            const legalDisclaimer = rawLegalDisclaimer && (!this.isEnglishLanguage() || !this.containsCjkText(rawLegalDisclaimer))
+                ? rawLegalDisclaimer
+                : this.tr('wallet.legalDisclaimerDefault', '活动最终解释权归平台所有');
+            const rewardTriggerText = requiresPurchase
+                ? this.tr('wallet.triggerFirstPayment', '完成首笔充值或消费')
+                : this.tr('wallet.triggerRegister', '完成注册');
             const guideText = this.getAffiliateRewardExplanation(stats);
             const rewardPointsText = this.formatPoints(safeRegistrationReward);
 
@@ -5165,11 +5380,18 @@
             }
 
             if (safeRegistrationReward > 0) {
-                descEl.innerHTML = `分享专属链接邀请新用户。当好友注册并<strong>${rewardTriggerText}</strong>后，您将获得 <strong class="wallet-affiliate-highlight wallet-affiliate-highlight--reward">${rewardPointsText} 积分</strong> 专属拉新奖励；此外，好友后续所有商城订单还会持续按 <strong class="wallet-affiliate-highlight wallet-affiliate-highlight--commission">${ratePercent}</strong> 自动返佣。<span class="affiliate-legal-note">${this.escapeHtml(legalDisclaimer)}</span>`;
+                descEl.innerHTML = `${this.tr('wallet.inviteDescWithReward', '分享专属链接邀请新用户。当好友注册并<strong>{trigger}</strong>后，您将获得 <strong class="wallet-affiliate-highlight wallet-affiliate-highlight--reward">{points} {unit}</strong> 专属拉新奖励；此外，好友后续所有商城订单还会持续按 <strong class="wallet-affiliate-highlight wallet-affiliate-highlight--commission">{rate}</strong> 自动返佣。', {
+                    trigger: this.escapeHtml(rewardTriggerText),
+                    points: this.escapeHtml(rewardPointsText),
+                    unit: this.escapeHtml(this.tr('wallet.pointsUnit', '积分')),
+                    rate: this.escapeHtml(ratePercent)
+                })}<span class="affiliate-legal-note">${this.escapeHtml(legalDisclaimer)}</span>`;
                 return;
             }
 
-            descEl.innerHTML = `分享下方链接给好友。当好友注册并在商城完成消费时，系统会自动将订单金额的 <strong class="wallet-affiliate-highlight wallet-affiliate-highlight--commission">${ratePercent}</strong> 作为奖励发放至您的积分钱包。<span class="affiliate-legal-note">${this.escapeHtml(legalDisclaimer)}</span>`;
+            descEl.innerHTML = `${this.tr('wallet.inviteDescCommissionOnly', '分享下方链接给好友。当好友注册并在商城完成消费时，系统会自动将订单金额的 <strong class="wallet-affiliate-highlight wallet-affiliate-highlight--commission">{rate}</strong> 作为奖励发放至您的积分钱包。', {
+                rate: this.escapeHtml(ratePercent)
+            })}<span class="affiliate-legal-note">${this.escapeHtml(legalDisclaimer)}</span>`;
         },
 
         /**
@@ -5240,7 +5462,10 @@
                     }
 
                     if (rewardBreakdownEl) {
-                        rewardBreakdownEl.textContent = `返佣 ${this.formatPoints(Number.isFinite(totalOrderCommission) ? totalOrderCommission : 0)} · 拉新 ${this.formatPoints(Number.isFinite(totalRegistrationRewards) ? totalRegistrationRewards : 0)}`;
+                        rewardBreakdownEl.textContent = this.tr('wallet.rewardBreakdown', '返佣 {commission} · 拉新 {registration}', {
+                            commission: this.formatPoints(Number.isFinite(totalOrderCommission) ? totalOrderCommission : 0),
+                            registration: this.formatPoints(Number.isFinite(totalRegistrationRewards) ? totalRegistrationRewards : 0)
+                        });
                     }
 
                     if (countEl) {
@@ -5248,7 +5473,9 @@
                     }
 
                     if (countMetaEl) {
-                        countMetaEl.textContent = `已消费 ${Number.isFinite(consumedCount) ? consumedCount : 0} 人`;
+                        countMetaEl.textContent = this.tr('wallet.consumedPeople', '已消费 {count} 人', {
+                            count: Number.isFinite(consumedCount) ? consumedCount : 0
+                        });
                     }
 
                     if (rechargeCountEl) {
@@ -5256,7 +5483,9 @@
                     }
 
                     if (rechargeMetaEl) {
-                        rechargeMetaEl.textContent = `待激活 ${Number.isFinite(pendingRewardCount) ? pendingRewardCount : 0} 人`;
+                        rechargeMetaEl.textContent = this.tr('wallet.pendingPeople', '待激活 {count} 人', {
+                            count: Number.isFinite(pendingRewardCount) ? pendingRewardCount : 0
+                        });
                     }
 
                     if (spendTotalEl) {
@@ -5266,7 +5495,10 @@
                     }
 
                     if (spendMetaEl) {
-                        spendMetaEl.textContent = `持续返佣 ${this.formatPoints(Number.isFinite(totalOrderCommission) ? totalOrderCommission : 0)} 积分`;
+                        spendMetaEl.textContent = this.tr('wallet.ongoingCommission', '持续返佣 {amount} {unit}', {
+                            amount: this.formatPoints(Number.isFinite(totalOrderCommission) ? totalOrderCommission : 0),
+                            unit: this.tr('wallet.pointsUnit', '积分')
+                        });
                     }
 
                     this.affiliateStats = stats;
@@ -5308,10 +5540,10 @@
                 const descEl = document.getElementById('affiliate-desc-text');
                 const membersEl = document.getElementById('affiliate-members');
                 if (descEl) {
-                    descEl.textContent = '推广信息加载失败，请稍后重试。';
+                    descEl.textContent = this.tr('wallet.affiliateInfoLoadFailed', '推广信息加载失败，请稍后重试。');
                 }
                 if (membersEl) {
-                    membersEl.innerHTML = '<div class="empty-text">推广旅程加载失败</div>';
+                    membersEl.innerHTML = `<div class="empty-text">${this.tr('wallet.affiliateJourneyLoadFailed', '推广旅程加载失败')}</div>`;
                 }
             }
         },
@@ -5807,7 +6039,7 @@
 
             } catch (err) {
                 console.error('[WalletModal] ❌ Load data failed:', err);
-                this.showToast('数据加载失败', 'error');
+                this.showToast(this.tr('wallet.dataLoadFailed', '数据加载失败'), 'error');
             }
         },
 
@@ -5869,7 +6101,7 @@
             const packageData = Array.isArray(this._packagesCache)
                 ? this._packagesCache.find(pkg => String(pkg.id) === String(packageId))
                 : null;
-            const displayName = packageData?.name || packageName || '充值套餐';
+            const displayName = packageData?.name || packageName || this.tr('wallet.rechargePackage', '充值套餐');
             const isMockFlow = providerKey === 'mock';
             const openContext = this.lastOpenContext && typeof this.lastOpenContext === 'object'
                 ? this.lastOpenContext
@@ -5877,7 +6109,7 @@
 
             try {
                 if (providerKey === 'mock' && !mockPayment.allowed) {
-                    throw new Error(mockPayment.message || '当前环境已禁用模拟支付，请切换到真实支付通道。');
+                    throw new Error(mockPayment.message || this.tr('wallet.mockPaymentDisabled', '当前环境已禁用模拟支付，请切换到真实支付通道。'));
                 }
 
                 trackWalletAnalyticsEvent('recharge_click', {
@@ -5896,10 +6128,12 @@
                 this.setRechargeActionPendingState({
                     kind: 'package',
                     packageId,
-                    controlLabel: isMockFlow ? '模拟支付中' : '处理中',
+                    controlLabel: isMockFlow
+                        ? this.tr('wallet.mockPaymentProcessing', '模拟支付中')
+                        : this.tr('wallet.processingShort', '处理中'),
                     message: isMockFlow
-                        ? `正在处理「${displayName}」的模拟支付...`
-                        : `正在为「${displayName}」创建支付请求...`
+                        ? this.tr('wallet.processingMockPayment', '正在处理 {name} 的模拟支付...', { name: `「${displayName}」` })
+                        : this.tr('wallet.creatingPaymentRequest', '正在为 {name} 创建支付请求...', { name: `「${displayName}」` })
                 });
 
                 const paymentResult = await PointsService.createPaymentRequest({
@@ -5930,7 +6164,10 @@
                             ? `recharge_success:${String(paymentResult.checkout_session_id).trim()}`
                             : ''
                     });
-                    this.showToast(paymentResult.message || `✅ 已为你完成「${displayName}」`, 'success');
+                    this.showToast(
+                        paymentResult.message || `✅ ${this.tr('wallet.packageRechargeSuccess', '已为你完成「{name}」', { name: displayName })}`,
+                        'success'
+                    );
 
                     this.invalidateOrderRecordsCache();
                     this.loadOrders({
@@ -5944,13 +6181,18 @@
 
                 if (paymentResult.mode === 'redirect') {
                     if (!paymentResult.checkout_url) {
-                        throw new Error(`${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}尚未配置支付链接`);
+                        throw new Error(this.tr('wallet.paymentLinkMissing', '{provider}支付链接未配置', {
+                            provider: paymentResult.display_name || activeProvider.display_name || this.tr('wallet.paymentChannel', '当前支付通道')
+                        }));
                     }
 
                     const qrModalShown = this.tryPresentHostedPaymentQrModal(paymentResult, {
                         title: displayName,
                         onCompleted: async (statusResult = {}) => {
-                            this.showToast(statusResult.message || `✅ 已为你完成「${displayName}」`, 'success');
+                            this.showToast(
+                                statusResult.message || `✅ ${this.tr('wallet.packageRechargeSuccess', '已为你完成「{name}」', { name: displayName })}`,
+                                'success'
+                            );
                             this.invalidateOrderRecordsCache();
                             this.loadOrders({
                                 searchQuery: this.orderSearchActiveQuery || this.orderSearchQuery,
@@ -5968,17 +6210,19 @@
                     this.openPaymentCheckoutUrl(paymentResult.checkout_url);
                     this.showToast(
                         paymentResult.message
-                            || `${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}已准备就绪，请完成支付后按页面提示继续操作。`,
+                            || this.tr('wallet.paymentReady', '{provider}已准备就绪，请完成支付并按页面提示操作。', {
+                                provider: paymentResult.display_name || activeProvider.display_name || this.tr('wallet.paymentChannel', '当前支付通道')
+                            }),
                         'success'
                     );
                     return;
                 }
 
-                throw new Error(paymentResult.message || '当前支付通道暂未完成接入');
+                throw new Error(paymentResult.message || this.tr('wallet.paymentChannelIncomplete', '当前支付通道暂未完成接入'));
 
             } catch (err) {
                 console.error('[WalletModal] Purchase failed:', err);
-                this.showToast(this.resolveFriendlyRechargeErrorMessage(err, '充值发起失败，请稍后重试。'), 'error');
+                this.showToast(this.resolveFriendlyRechargeErrorMessage(err, this.tr('wallet.rechargeStartFailed', '充值发起失败，请稍后重试。')), 'error');
             } finally {
                 if (overlay) overlay.classList.remove('loading');
                 this.setRechargeActionPendingState(null);
@@ -6010,7 +6254,7 @@
             const customRechargeRequest = this.resolveCustomRechargeRequest(rawValue, rechargeOptions);
 
             if (!customRechargeRequest.ok) {
-                this.showToast(customRechargeRequest.errorMessage || '请输入有效的充值积分或金额', 'error');
+                this.showToast(customRechargeRequest.errorMessage || this.tr('wallet.invalidRechargeValue', '请输入有效的充值积分或金额'), 'error');
                 if (input) input.focus();
                 return;
             }
@@ -6019,12 +6263,20 @@
             const quotedAmountCny = customRechargeRequest.estimatedPaidAmount;
             const inputMode = customRechargeRequest.inputMode || 'points';
             const pendingMessage = providerKey === 'mock'
-                ? `正在处理 ${this.formatPoints(normalizedAmount)} 积分（约 ¥${this.formatCny(quotedAmountCny)}）的模拟充值...`
-                : `正在为 ${this.formatPoints(normalizedAmount)} 积分（约 ¥${this.formatCny(quotedAmountCny)}）创建支付请求...`;
+                ? this.tr('wallet.processingCustomMock', '正在处理 {points} {unit}（约 ¥{amount}）的模拟充值...', {
+                    points: this.formatPoints(normalizedAmount),
+                    unit: this.tr('wallet.pointsUnit', '积分'),
+                    amount: this.formatCny(quotedAmountCny)
+                })
+                : this.tr('wallet.creatingCustomPayment', '正在为 {points} {unit}（约 ¥{amount}）创建支付请求...', {
+                    points: this.formatPoints(normalizedAmount),
+                    unit: this.tr('wallet.pointsUnit', '积分'),
+                    amount: this.formatCny(quotedAmountCny)
+                });
 
             try {
                 if (providerKey === 'mock' && !mockPayment.allowed) {
-                    throw new Error(mockPayment.message || '当前环境已禁用模拟支付，请切换到真实支付通道。');
+                    throw new Error(mockPayment.message || this.tr('wallet.mockPaymentDisabled', '当前环境已禁用模拟支付，请切换到真实支付通道。'));
                 }
 
                 trackWalletAnalyticsEvent('recharge_click', {
@@ -6045,7 +6297,9 @@
 
                 this.setRechargeActionPendingState({
                     kind: 'custom',
-                    controlLabel: providerKey === 'mock' ? '模拟处理中' : '处理中',
+                    controlLabel: providerKey === 'mock'
+                        ? this.tr('wallet.mockPaymentProcessing', '模拟处理中')
+                        : this.tr('wallet.processingShort', '处理中'),
                     message: pendingMessage
                 });
 
@@ -6056,18 +6310,24 @@
 
                 if (paymentResult.mode === 'redirect') {
                     if (!paymentResult.checkout_url) {
-                        throw new Error(`${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}尚未配置支付链接`);
+                        throw new Error(this.tr('wallet.paymentLinkMissing', '{provider}支付链接未配置', {
+                            provider: paymentResult.display_name || activeProvider.display_name || this.tr('wallet.paymentChannel', '当前支付通道')
+                        }));
                     }
 
                     const qrModalShown = this.tryPresentHostedPaymentQrModal(paymentResult, {
-                        title: '自定义充值',
+                        title: this.tr('wallet.customRecharge', '自定义充值'),
                         onCompleted: async (statusResult = {}) => {
                             if (input) {
                                 input.value = '';
                             }
                             this.showToast(
                                 statusResult.message
-                                    || `✅ 自定义充值成功！ +${this.formatPoints(statusResult.points_amount || normalizedAmount)} 积分（¥${this.formatCny(statusResult.paid_amount ?? paymentResult.paid_amount ?? quotedAmountCny)}）`,
+                                    || `✅ ${this.tr('wallet.customRechargeSuccess', '自定义充值成功！ +{points} {unit}（¥{amount}）', {
+                                        points: this.formatPoints(statusResult.points_amount || normalizedAmount),
+                                        unit: this.tr('wallet.pointsUnit', '积分'),
+                                        amount: this.formatCny(statusResult.paid_amount ?? paymentResult.paid_amount ?? quotedAmountCny)
+                                    })}`,
                                 'success'
                             );
                             this.invalidateOrderRecordsCache();
@@ -6090,14 +6350,17 @@
 
                     this.showToast(
                         paymentResult.message
-                            || `${paymentResult.display_name || activeProvider.display_name || '当前支付通道'}已准备就绪，请按 ¥${Number(paymentResult.paid_amount || 0).toFixed(2)} 完成支付后再返回查询订单。`,
+                            || this.tr('wallet.paymentReadyWithAmount', '{provider}已准备就绪，请按 ¥{amount} 完成支付后再返回查询订单。', {
+                                provider: paymentResult.display_name || activeProvider.display_name || this.tr('wallet.paymentChannel', '当前支付通道'),
+                                amount: Number(paymentResult.paid_amount || 0).toFixed(2)
+                            }),
                         'success'
                     );
                     return;
                 }
 
                 if (paymentResult.mode !== 'completed') {
-                    throw new Error(paymentResult.message || '当前支付通道暂未完成接入');
+                    throw new Error(paymentResult.message || this.tr('wallet.paymentChannelIncomplete', '当前支付通道暂未完成接入'));
                 }
 
                 if (input) {
@@ -6129,7 +6392,11 @@
 
                 this.showToast(
                     paymentResult.message
-                        || `✅ 自定义充值成功！ +${this.formatPoints(normalizedAmount)} 积分（¥${this.formatCny(paymentResult.paid_amount ?? quotedAmountCny)}）`,
+                        || `✅ ${this.tr('wallet.customRechargeSuccess', '自定义充值成功！ +{points} {unit}（¥{amount}）', {
+                            points: this.formatPoints(normalizedAmount),
+                            unit: this.tr('wallet.pointsUnit', '积分'),
+                            amount: this.formatCny(paymentResult.paid_amount ?? quotedAmountCny)
+                        })}`,
                     'success'
                 );
 
@@ -6142,7 +6409,7 @@
                 this.loadData().catch(e => console.error('Wallet reload after custom recharge failed:', e));
             } catch (err) {
                 console.error('[WalletModal] Custom recharge failed:', err);
-                this.showToast(this.resolveFriendlyRechargeErrorMessage(err, '自定义充值发起失败，请稍后重试。'), 'error');
+                this.showToast(this.resolveFriendlyRechargeErrorMessage(err, this.tr('wallet.rechargeStartFailed', '自定义充值发起失败，请稍后重试。')), 'error');
             } finally {
                 if (overlay) overlay.classList.remove('loading');
                 this.setRechargeActionPendingState(null);
@@ -6316,7 +6583,7 @@
 
                 // Update month title
                 const titleEl = document.getElementById('checkin-month-title');
-                if (titleEl) titleEl.textContent = `${month}月打卡`;
+                if (titleEl) titleEl.textContent = this.tr('wallet.monthCheckinTitle', '{month}月打卡', { month });
 
                 const [checkinResult] = await Promise.all([
                     window.supabaseClient.rpc('fn_get_checkin_data', {
@@ -6351,7 +6618,7 @@
             } catch (err) {
                 console.error('[WalletModal] Error loading check-in data:', err);
                 const grid = document.getElementById('calendar-grid');
-                if (grid) grid.innerHTML = `<div class="loading-calendar loading-calendar--error">加载失败</div>`;
+                if (grid) grid.innerHTML = `<div class="loading-calendar loading-calendar--error">${this.tr('wallet.calendarLoadFailed', '加载失败')}</div>`;
             }
         },
 
@@ -6434,10 +6701,10 @@
                 } else if (isToday) {
                     dayClass += ' today';
                     actionAttrs = this.buildDataAttributes({ 'wallet-action': 'daily-checkin-v2' });
-                    innerHtml = `<span class="today-text">今日</span>`;
+                    innerHtml = `<span class="today-text">${this.tr('wallet.todayShort', '今日')}</span>`;
                 } else if (isPast) {
                     dayClass += ' missed';
-                    innerHtml += `<div class="makeup-badge">补</div>`;
+                    innerHtml += `<div class="makeup-badge">${this.tr('wallet.makeupShort', '补')}</div>`;
                     actionAttrs = this.buildDataAttributes({
                         'wallet-action': 'makeup-checkin',
                         'wallet-date-value': this.encodeActionValue(dateStr)
@@ -6448,7 +6715,7 @@
 
                 if (isGiftDay && !isChecked) {
                     innerHtml += `
-                    <div class="mystery-gift-container" title="连续签到7天神秘盲盒">
+                    <div class="mystery-gift-container" title="${this.escapeAttribute(this.tr('wallet.mysteryGiftTitle', '连续签到7天神秘盲盒'))}">
                         <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
                             <path d="M22 17.5C22 19.433 20.433 21 18.5 21H5.5C3.567 21 2 19.433 2 17.5V11H22V17.5ZM2 8.5C2 7.119 3.119 6 4.5 6H7.132C7.045 5.688 7 5.352 7 5C7 3.343 8.343 2 10 2C10.978 2 11.846 2.47 12.399 3.208L12 3.159L11.601 3.208C12.154 2.47 13.022 2 14 2C15.657 2 17 3.343 17 5C17 5.352 16.955 5.688 16.868 6H19.5C20.881 6 22 7.119 22 8.5V9H2V8.5ZM13 11V21H11V11H13ZM13 6V9H11V6H13Z" />
                         </svg>
@@ -6476,9 +6743,9 @@
             try {
                 const { data: { session } } = await window.supabaseClient.auth.getSession();
                 if (!session?.user) {
-                    this.showToast('请先登录', 'error');
+                    this.showToast(this.tr('wallet.pleaseLogin', '请先登录'), 'error');
                     this.isCheckingIn = false;
-                    if (gridToday) gridToday.innerHTML = `<span class="today-text">今日</span>`;
+                    if (gridToday) gridToday.innerHTML = `<span class="today-text">${this.tr('wallet.todayShort', '今日')}</span>`;
                     return;
                 }
 
@@ -6504,11 +6771,11 @@
                 const data = await response.json().catch(() => ({}));
 
                 if (!response.ok) {
-                    throw new Error(data?.message || '签到失败');
+                    throw new Error(data?.message || this.tr('wallet.checkinFailed', '签到失败'));
                 }
 
                 if (data?.already_checked) {
-                    this.showToast('今日已签到过了', 'info');
+                    this.showToast(this.tr('wallet.alreadyCheckedToday', '今日已签到过了'), 'info');
                     this.loadCheckinData(); // refresh grid
                 } else if (data?.success) {
                     trackWalletAnalyticsEvent('checkin_success', {
@@ -6533,12 +6800,17 @@
                     this.playConfetti();
 
                     // Show message combining base and bonus (if any)
-                    let msg = `💰 签到奖励 +${this.formatPoints(data.points)} 积分`;
-                    if (data.message && data.message !== '签到成功') {
+                    let msg = `💰 ${this.tr('wallet.checkinReward', '签到奖励 +{points} {unit}', {
+                        points: this.formatPoints(data.points),
+                        unit: this.tr('wallet.pointsUnit', '积分')
+                    })}`;
+                    if (data.message && data.message !== '签到成功' && (!this.isEnglishLanguage() || !this.containsCjkText(data.message))) {
                         msg += `\\n${data.message}`; // Append the bonus message
                     }
                     if (Number(data?.linked_discount_summary?.issued_count || 0) > 0) {
-                        msg += `\\n🎟 已发放 ${this.formatPoints(data.linked_discount_summary.issued_count)} 张卡券`;
+                        msg += `\\n🎟 ${this.tr('wallet.issuedCoupons', '已发放 {count} 张卡券', {
+                            count: this.formatPoints(data.linked_discount_summary.issued_count)
+                        })}`;
                         this.resetDiscountAssetsState();
                     }
                     this.showToast(msg, 'success');
@@ -6559,13 +6831,13 @@
                         this.loadData().catch(() => { });
                     }, 1000);
                 } else {
-                    throw new Error(data?.message || '签到失败');
+                    throw new Error(data?.message || this.tr('wallet.checkinFailed', '签到失败'));
                 }
             } catch (e) {
                 console.error('[WalletModal] Check-in V2 failed:', e);
-                this.showToast('❌ ' + (e.message || '签到失败'), 'error');
+                this.showToast('❌ ' + (e.message || this.tr('wallet.checkinFailed', '签到失败')), 'error');
                 if (gridToday) {
-                    gridToday.innerHTML = `<span class="today-text">今日</span>`;
+                    gridToday.innerHTML = `<span class="today-text">${this.tr('wallet.todayShort', '今日')}</span>`;
                 }
             } finally {
                 this.isCheckingIn = false;
@@ -6579,8 +6851,12 @@
             const checkinConfig = await this.loadCheckinConfig(true);
             const makeupCost = Math.max(0, Number(checkinConfig?.makeup_cost_points) || 0);
             const confirmMessage = makeupCost > 0
-                ? `确认要补签 ${dateStr} 吗？\\n这将扣除 ${makeupCost} 积分`
-                : `确认要补签 ${dateStr} 吗？\\n当前补签不扣除积分`;
+                ? this.tr('wallet.confirmMakeup', '确认要补签 {date} 吗？\\n这将扣除 {cost} {unit}', {
+                    date: dateStr,
+                    cost: this.formatPoints(makeupCost),
+                    unit: this.tr('wallet.pointsUnit', '积分')
+                })
+                : this.tr('wallet.confirmMakeupFree', '确认要补签 {date} 吗？\\n当前补签不扣除积分', { date: dateStr });
 
             if (!confirm(confirmMessage)) {
                 return;
@@ -6592,7 +6868,7 @@
         async executeMakeup(dateStr, method) {
             try {
                 const { data: { session } } = await window.supabaseClient.auth.getSession();
-                if (!session?.user) return this.showToast('请先登录', 'error');
+                if (!session?.user) return this.showToast(this.tr('wallet.pleaseLogin', '请先登录'), 'error');
 
                 const { data, error } = await window.supabaseClient.rpc('fn_makeup_checkin', {
                     p_user_id: session.user.id,
@@ -6604,7 +6880,10 @@
                 if (error) throw error;
 
                 if (data.success) {
-                    this.showToast(`✅ 补签成功! 扣除 ${this.formatPoints(data.cost)} 积分`, 'success');
+                    this.showToast(`✅ ${this.tr('wallet.makeupSuccess', '补签成功! 扣除 {cost} {unit}', {
+                        cost: this.formatPoints(data.cost),
+                        unit: this.tr('wallet.pointsUnit', '积分')
+                    })}`, 'success');
 
                     // Update balance display
                     if (data.new_balance !== undefined) {
@@ -6629,7 +6908,7 @@
                 }
             } catch (e) {
                 console.error('[WalletModal] Makeup failed:', e);
-                this.showToast(`补签失败: ${e.message}`, 'error');
+                this.showToast(`${this.tr('wallet.makeupFailed', '补签失败')}: ${e.message}`, 'error');
             }
         },
 
@@ -7028,13 +7307,13 @@
                     reason = window.i18n?.t('wallet.dailyCheckin') || '每日签到';
                 }
                 else if (reason === 'makeup_checkin_cost') {
-                    reason = '补签扣分';
+                    reason = this.tr('wallet.makeupCheckinCost', '补签扣分');
                 }
                 else if (reason === 'signup_bonus') {
-                    reason = '注册奖励';
+                    reason = this.tr('wallet.signupBonus', '注册奖励');
                 }
                 else if (reason === 'custom_recharge') {
-                    reason = '自定义充值';
+                    reason = this.tr('wallet.customRecharge', '自定义充值');
                 }
 
                 return `
@@ -7050,11 +7329,11 @@
                         </div>
                         <div class="history-details"${this.buildDataAttributes({ 'wallet-action': 'history-details' })}>
                              <div class="detail-row">
-                                <span>订单号</span>
+                                <span>${this.tr('wallet.orderNo', '订单号')}</span>
                                 <span class="detail-val mono copyable"${this.buildDataAttributes({
                                     'wallet-action': 'copy-value',
                                     'wallet-copy-value': this.encodeActionValue(item.id)
-                                })} title="点击复制订单号">${item.id}</span>
+                                })} title="${this.escapeAttribute(this.tr('wallet.copyOrderNo', '点击复制订单号'))}">${item.id}</span>
                              </div>
                         </div>
                     </div>
@@ -7968,15 +8247,15 @@
                         icon = '⚡';
                     } else if (entry.reason === 'makeup_checkin_cost') {
                         transactionType = 'recharge';
-                        displayName = '补签扣分';
+                        displayName = this.tr('wallet.makeupCheckinCost', '补签扣分');
                         icon = '📅';
                     } else if (entry.reason === 'signup_bonus') {
                         transactionType = 'recharge';
-                        displayName = '注册奖励';
+                        displayName = this.tr('wallet.signupBonus', '注册奖励');
                         icon = '🎁';
                     } else if (entry.reason === 'custom_recharge') {
                         transactionType = 'recharge';
-                        displayName = '自定义充值';
+                        displayName = this.tr('wallet.customRecharge', '自定义充值');
                         icon = '⚡';
                     } else if (entry.reason && (entry.reason.startsWith('模拟充值') || entry.reason === 'package_purchase' || entry.reason === 'afdian_recharge')) {
                         transactionType = 'recharge';
@@ -7984,7 +8263,7 @@
                         icon = '⚡';
                     } else if (entry.reason === 'redeem_code' || (entry.reason && entry.reason.includes('兑换码'))) {
                         transactionType = 'redeem';
-                        displayName = '兑换码兑换';
+                        displayName = this.tr('wallet.redeemCodeExchange', '兑换码兑换');
                         icon = '🎟️';
                     } else if (entry.reason && entry.reason.startsWith('admin_manual')) {
                         transactionType = 'recharge';
@@ -7996,7 +8275,7 @@
                         icon = '👤';
                     } else if (entryAmount > 0) {
                         transactionType = 'recharge';
-                        displayName = entry.reason || '积分充值';
+                        displayName = entry.reason || this.tr('wallet.pointsRecharge', '积分充值');
                         icon = '⚡';
                     }
 
@@ -8155,7 +8434,7 @@
                         'wallet-reason': this.encodeActionValue(order.rawReason || '')
                     });
                 } else if (order.transactionType === 'shop') {
-                    displayName = order.snapshot_product_name || unknownProductText;
+                    displayName = this.getLocalizedProductNameFromPayload(order, unknownProductText);
                     const count = order.item_count || (order.shop_order_items ? order.shop_order_items.length : 1);
                     if (count > 1) {
                         displayName = isEnglish ? `${displayName} +${count - 1} ${itemsText}` : `${displayName} 等 ${count} ${itemsText}`;
@@ -8284,7 +8563,7 @@
                 ? this.formatOrderDateTime(previewOrder.created_at)
                 : (window.i18n?.t('wallet.loading') || '加载中...');
             const totalPrice = Math.abs(this.normalizePointValue(previewOrder?.total_price ?? previewOrder?.price_paid ?? 0));
-            const productName = String(previewOrder?.snapshot_product_name || '').trim()
+            const productName = this.getLocalizedProductNameFromPayload(previewOrder || {}, '')
                 || (window.i18n?.t('wallet.unknownProduct') || '未知商品');
             const pointsUnit = window.i18n?.t('wallet.pointsUnit') || '积分';
             const loadingLabel = window.i18n?.t('wallet.loading') || '加载中...';
@@ -8976,7 +9255,7 @@
                     ? detail.items.map((item) => {
                         const rawContent = String(item?.content || '');
                         return {
-                            name: item?.name || order.snapshot_product_name || '',
+                            name: this.getLocalizedProductNameFromPayload(item, this.getLocalizedProductNameFromPayload(order, '')),
                             content: rawContent.trim() ? rawContent : contentFallback,
                             price: Number(item?.price ?? 0) || 0
                         };
@@ -8985,7 +9264,7 @@
 
                 const dateStr = this.formatOrderDateTime(order.created_at);
                 const totalPrice = order.total_price != null ? order.total_price : order.price_paid;
-                const productName = items.length > 0 ? items[0].name : (order.snapshot_product_name || '');
+                const productName = items.length > 0 ? items[0].name : this.getLocalizedProductNameFromPayload(order, '');
                 const productId = String(order.product_id || '').trim();
                 const purchaseNotes = typeof detail?.guidance?.purchase_notes === 'string'
                     ? detail.guidance.purchase_notes.trim()
@@ -8997,6 +9276,7 @@
                     purchaseNotes
                         ? {
                             key: 'notes',
+                            tone: 'notice',
                             label: window.i18n?.t('shop.purchaseNotes') || '注意事项',
                             content: purchaseNotes
                         }
@@ -9004,6 +9284,7 @@
                     usageInstructions
                         ? {
                             key: 'usage',
+                            tone: 'usage',
                             label: window.i18n?.t('shop.usageInstructions') || '使用说明',
                             content: usageInstructions
                         }
@@ -9011,9 +9292,9 @@
                 ].filter(Boolean);
                 const guidanceTogglesMarkup = guidanceItems.length
                     ? `
-                            <div class="wallet-order-guidance-toggles" aria-label="订单说明">
+                            <div class="wallet-order-guidance-toggles" aria-label="${this.escapeAttribute(window.i18n?.t('wallet.orderDetails') || '订单说明')}">
                                 ${guidanceItems.map((item) => `
-                                    <button class="wallet-order-guidance-toggle js-wallet-toggle-guidance" type="button" data-wallet-guidance-panel="${this.escapeAttribute(item.key)}" aria-expanded="false">
+                                    <button class="wallet-order-guidance-toggle js-wallet-toggle-guidance wallet-order-guidance-toggle--${this.escapeAttribute(item.tone || item.key)}" type="button" data-wallet-guidance-panel="${this.escapeAttribute(item.key)}" aria-expanded="false">
                                         ${this.escapeHtml(item.label)}
                                     </button>
                                 `).join('')}

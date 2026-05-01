@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { createPublicVerifyHandlers } = require('../server/api-handlers/public/verify');
-const { fetchUpstreamJobStatus } = require('../server/api-handlers/_verify-job-runtime');
+const { buildClientStatusMessage, fetchUpstreamJobStatus } = require('../server/api-handlers/_verify-job-runtime');
 
 function createResponseRecorder() {
     return {
@@ -29,6 +29,29 @@ function sendJson(res, status, payload) {
     res.end(JSON.stringify(payload));
     return payload;
 }
+
+test('verify status message keeps actionable failed-task guidance', () => {
+    assert.equal(
+        buildClientStatusMessage({
+            status: 'failed',
+            message: '请删除或者关闭付款资料后重试',
+            error: ''
+        }),
+        '请删除或者关闭付款资料后重试'
+    );
+    assert.equal(
+        buildClientStatusMessage({
+            status: 'failed',
+            message: '任务失败',
+            error: 'payment_profile_conflict'
+        }),
+        'payment_profile_conflict'
+    );
+    assert.equal(
+        buildClientStatusMessage({ status: 'failed' }),
+        '任务失败'
+    );
+});
 
 test('public verify submit handler returns queued task metadata for authenticated users', async () => {
     const handlers = createPublicVerifyHandlers({

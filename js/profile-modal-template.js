@@ -27,7 +27,8 @@
                                 <section class="profile-mobile-hero-card">
                                     <button type="button" class="profile-mobile-hero-avatar" data-profile-action="trigger-avatar-upload"
                                         aria-label="更换头像" data-i18n-title="profile.changeAvatar">
-                                        <img id="profileModalAvatarMobile" src="" alt="Avatar">
+                                        <img id="profileModalAvatarMobile" class="auth-display-none" alt="" aria-hidden="true"
+                                            decoding="async">
                                         <span id="profileModalAvatarMobileFallback"
                                             class="profile-mobile-hero-avatar-fallback">U</span>
                                         <span class="profile-mobile-hero-avatar-editmark" aria-hidden="true"></span>

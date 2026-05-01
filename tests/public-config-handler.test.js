@@ -29,6 +29,40 @@ test('public notifications config handler returns sanitized announcement config 
             getOptionalSupabaseAdmin() {
                 return {
                     from(table) {
+                        if (table === 'announcement_rules') {
+                            return {
+                                select() { return this; },
+                                eq() { return this; },
+                                order() { return this; },
+                                async limit() {
+                                    return {
+                                        data: [{
+                                            id: 'rule-1',
+                                            title: '商城公告',
+                                            enabled: true,
+                                            status: 'approved',
+                                            content: '<p>shop rule</p>',
+                                            type: 'toast',
+                                            color: 'blue',
+                                            size: 'medium',
+                                            decoration: 'snow',
+                                            pages: ['shop'],
+                                            page_overrides: {
+                                                verify: {
+                                                    content: '<p>verify rule</p>',
+                                                    updated_at: '2026-04-12T01:23:45.000Z'
+                                                }
+                                            },
+                                            priority: 8,
+                                            starts_at: '2026-01-01T00:00:00.000Z',
+                                            ends_at: '2027-01-01T00:00:00.000Z',
+                                            updated_at: '2026-04-12T01:23:45.000Z'
+                                        }],
+                                        error: null
+                                    };
+                                }
+                            };
+                        }
                         assert.equal(table, 'system_config');
                         return {
                             select() { return this; },
@@ -44,6 +78,12 @@ test('public notifications config handler returns sanitized announcement config 
                                             announcement_size: 'medium',
                                             announcement_decoration: 'fireworks',
                                             announcement_pages: ['homepage', 'guestbook'],
+                                            announcement_page_overrides: {
+                                                shop: {
+                                                    content: '<p>shop only</p>',
+                                                    updated_at: '2026-04-11T01:23:45.000Z'
+                                                }
+                                            },
                                             announcement_updated_at: '2026-04-10T01:23:45.000Z'
                                         }
                                     },
@@ -73,6 +113,99 @@ test('public notifications config handler returns sanitized announcement config 
     assert.equal(payload.config.announcement_enabled, true);
     assert.equal(payload.config.announcement_type, 'modal');
     assert.equal(payload.config.announcement_content, '<a href="https://zaoyoe.com">zaoyoe</a>');
+    assert.deepEqual(payload.config.announcement_page_overrides, {
+        shop: {
+            enabled: true,
+            content: '<p>shop only</p>',
+            updated_at: '2026-04-11T01:23:45.000Z'
+        }
+    });
+    assert.deepEqual(payload.config.announcement_rules, [{
+        id: 'rule-1',
+        title: '商城公告',
+        announcement_enabled: true,
+        announcement_content: '<p>shop rule</p>',
+        announcement_type: 'toast',
+        announcement_color: 'blue',
+        announcement_size: 'medium',
+        announcement_decoration: 'snow',
+        announcement_pages: ['shop'],
+        announcement_page_overrides: {
+            verify: {
+                enabled: true,
+                content: '<p>verify rule</p>',
+                updated_at: '2026-04-12T01:23:45.000Z'
+            }
+        },
+        priority: 8,
+        status: 'approved',
+        starts_at: '2026-01-01T00:00:00.000Z',
+        ends_at: '2027-01-01T00:00:00.000Z',
+        announcement_updated_at: '2026-04-12T01:23:45.000Z'
+    }]);
+});
+
+test('public announcement event handler records read statistics without requiring auth', async () => {
+    let capturedPayload = null;
+    const handlers = createPublicConfigHandlers({
+        admin: {
+            getOptionalSupabaseAdmin() {
+                return {
+                    from(table) {
+                        assert.equal(table, 'announcement_reads');
+                        return {
+                            async upsert(payload, options) {
+                                capturedPayload = { payload, options };
+                                return { error: null };
+                            }
+                        };
+                    }
+                };
+            },
+            async parseJsonBody() {
+                return {
+                    announcement_id: 'rule-1',
+                    reader_key: 'reader-1',
+                    page: 'homepage',
+                    event_type: 'read',
+                    ack_key: 'ack-1'
+                };
+            },
+            sendJson(res, status, payload) {
+                res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                res.end(JSON.stringify(payload));
+                return payload;
+            }
+        }
+    });
+
+    const res = createResponseRecorder();
+    await handlers['announcement-event']({
+        method: 'POST',
+        headers: {
+            'user-agent': 'node-test'
+        }
+    }, res);
+    const payload = JSON.parse(String(res.body || '{}'));
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(payload.recorded, true);
+    assert.deepEqual(capturedPayload, {
+        payload: {
+            announcement_id: 'rule-1',
+            reader_key: 'reader-1',
+            page: 'index',
+            event_type: 'read',
+            ack_key: 'ack-1',
+            user_agent: 'node-test',
+            metadata: {}
+        },
+        options: {
+            onConflict: 'announcement_id,reader_key,page,event_type',
+            ignoreDuplicates: true
+        }
+    });
 });
 
 test('public notifications config handler rejects unsupported methods', async () => {

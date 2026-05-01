@@ -155,7 +155,7 @@ test('gallery preview grid exposes click-to-preview affordances and delegated cr
     const adminCss = readRepoFile('admin-studio.css');
 
     assert.equal(
-        adminSource.includes('renderPreviewGridItems(\n                currentEditingPromptImageUrls.map((url) => ({ url })),'),
+        adminSource.includes('currentEditingPromptImageAssets.map((asset) => ({ url: getPromptImageAssetOriginalUrl(asset), asset })),'),
         true,
         'edit prompt should reuse the shared preview grid renderer for existing images'
     );

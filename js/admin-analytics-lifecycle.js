@@ -157,6 +157,29 @@ function markAnalyticsTabLoaded(tabId = '', contextKey = getAnalyticsAIContextKe
     analyticsRuntime.loadedTabsByContext[normalizedContextKey] = Array.from(loadedTabs);
 }
 
+function getAnalyticsTimingDetail(activeTabId = '', contextKey = '', extra = {}) {
+    const normalizedTabId = normalizeAnalyticsTabId(activeTabId);
+    const scopeConfig = getAnalyticsScopeConfigForTab(normalizedTabId);
+    return {
+        tabId: normalizedTabId,
+        scopeId: scopeConfig.scopeId,
+        contextKey: String(contextKey || '').slice(0, 160),
+        ...extra
+    };
+}
+
+function markAnalyticsTiming(name = '', detail = {}) {
+    if (typeof window.AdminStudioTiming?.mark === 'function') {
+        window.AdminStudioTiming.mark(`analytics:${name}`, detail);
+    }
+}
+
+function measureAnalyticsTiming(name = '', startName = '', endName = '', detail = {}) {
+    if (typeof window.AdminStudioTiming?.measure === 'function') {
+        window.AdminStudioTiming.measure(`analytics:${name}`, `analytics:${startName}`, `analytics:${endName}`, detail);
+    }
+}
+
 function isAnalyticsTabLoaded(tabId = '', contextKey = getAnalyticsAIContextKey()) {
     return getAnalyticsLoadedTabSet(contextKey).has(normalizeAnalyticsTabId(tabId));
 }
@@ -526,6 +549,7 @@ async function runAnalyticsTaskPhases(phases = [], options = {}) {
     const contextKey = String(options.contextKey || '').trim();
     const activeTabId = normalizeAnalyticsTabId(options.activeTabId || '');
     const stopIfStale = options.stopIfStale === true;
+    let completedWithoutRejectedTasks = true;
 
     for (let index = 0; index < phases.length; index += 1) {
         if (
@@ -540,14 +564,20 @@ async function runAnalyticsTaskPhases(phases = [], options = {}) {
         }
 
         const phasePromises = phases[index].map((runTask) => Promise.resolve().then(runTask));
-        await Promise.allSettled(phasePromises);
+        const phaseResults = await Promise.allSettled(phasePromises);
+        phaseResults
+            .filter((result) => result.status === 'rejected')
+            .forEach((result) => {
+                completedWithoutRejectedTasks = false;
+                console.warn('[Analytics] Panel task failed during refresh:', result.reason);
+            });
         updateLastUpdateTime();
         if (index < phases.length - 1) {
             await waitForAnalyticsPaint(2);
         }
     }
 
-    return true;
+    return completedWithoutRejectedTasks;
 }
 
 const ANALYTICS_REFRESH_PENDING_SELECTOR = [
@@ -557,6 +587,13 @@ const ANALYTICS_REFRESH_PENDING_SELECTOR = [
     '.analytics-product-dashboard--skeleton',
     '.analytics-product-detail-panel--skeleton',
     '.admin-skeleton-block'
+].join(',');
+const ANALYTICS_VERIFY_STALE_CONTAINER_SELECTOR = [
+    '#verifyStatusList',
+    '#verifyRecentList',
+    '#verifyFailureList',
+    '#verifyActionRecommendations',
+    '#verifyEventFunnel'
 ].join(',');
 
 function isAnalyticsRefreshPendingNodeHidden(node) {
@@ -608,8 +645,162 @@ function hasAnalyticsRefreshPendingContent(activeTabId = getActiveAnalyticsTabId
     });
 }
 
+function getAnalyticsVisibleRefreshPendingNodes(activeTabId = getActiveAnalyticsTabId()) {
+    const nodes = [];
+    getAnalyticsRefreshContentRoots(activeTabId).forEach((root) => {
+        [
+            ...(root.matches?.(ANALYTICS_REFRESH_PENDING_SELECTOR) ? [root] : []),
+            ...Array.from(root.querySelectorAll?.(ANALYTICS_REFRESH_PENDING_SELECTOR) || [])
+        ].forEach((node) => {
+            if (!isAnalyticsRefreshPendingNodeHidden(node) && !nodes.includes(node)) {
+                nodes.push(node);
+            }
+        });
+    });
+    return nodes;
+}
+
+function renderAnalyticsDelayedRefreshState(message = '当前分区数据仍在加载，稍后会自动补齐。') {
+    return `<div class="loading-text admin-module-loading-host admin-module-loading-host--soft" role="status" aria-live="polite">
+        <span class="admin-module-loading-dots admin-module-loading-dots--inline" aria-hidden="true">
+            <span></span><span></span><span></span>
+        </span>
+        <span>${message}</span>
+    </div>`;
+}
+
+function renderAnalyticsStaleRefreshFallback(message = '当前分区数据仍在加载，稍后会自动补齐。', iconClass = 'fas fa-rotate', options = {}) {
+    if (options?.variant !== 'error') {
+        return renderAnalyticsDelayedRefreshState(message);
+    }
+
+    if (typeof renderHintState === 'function') {
+        return renderHintState(iconClass, message, 'error');
+    }
+    return `<div class="error-state"><i class="${iconClass}"></i><span>${message}</span></div>`;
+}
+
+function hasAnalyticsPendingDescendant(container) {
+    if (!container || container.nodeType !== 1) {
+        return false;
+    }
+
+    const pendingNodes = [
+        ...(container.matches?.(ANALYTICS_REFRESH_PENDING_SELECTOR) ? [container] : []),
+        ...Array.from(container.querySelectorAll?.(ANALYTICS_REFRESH_PENDING_SELECTOR) || [])
+    ];
+    return pendingNodes.some((node) => !isAnalyticsRefreshPendingNodeHidden(node));
+}
+
+function isAnalyticsCompactMobileViewport() {
+    if (typeof window === 'undefined') {
+        return false;
+    }
+    return Boolean(
+        window.matchMedia?.('(max-width: 768px)')?.matches
+        || Number(window.innerWidth || 0) <= 768
+    );
+}
+
+function getAnalyticsRefreshContentSettleTimeoutMs(options = {}) {
+    const explicitTimeoutMs = Number(options.timeoutMs);
+    if (Number.isFinite(explicitTimeoutMs) && explicitTimeoutMs > 0) {
+        return Math.max(1200, explicitTimeoutMs);
+    }
+
+    return isAnalyticsCompactMobileViewport() ? 45000 : 18000;
+}
+
+function clearVerifyAnalyticsStaleRefreshContent() {
+    const summaryContainerIds = [
+        'verifyStatusList',
+        'verifyRecentList',
+        'verifyFailureList',
+        'verifyActionRecommendations'
+    ];
+    const hasPendingSummaryContainer = summaryContainerIds.some((containerId) => (
+        hasAnalyticsPendingDescendant(document.getElementById(containerId))
+    ));
+    let cleared = false;
+
+    if (hasPendingSummaryContainer) {
+        if (typeof window.renderVerifyServiceSummaryUnavailableState === 'function') {
+            window.renderVerifyServiceSummaryUnavailableState('验证承接数据暂未返回，请稍后刷新或打开 Verify Monitor。');
+        } else {
+            summaryContainerIds.forEach((containerId) => {
+                const container = document.getElementById(containerId);
+                if (hasAnalyticsPendingDescendant(container)) {
+                    container.innerHTML = renderAnalyticsStaleRefreshFallback(
+                        '验证承接数据暂未返回，请稍后刷新或打开 Verify Monitor。',
+                        'fas fa-shield-halved',
+                        { variant: 'error' }
+                    );
+                }
+            });
+        }
+        cleared = true;
+    }
+
+    const verifyEventFunnel = document.getElementById('verifyEventFunnel');
+    if (hasAnalyticsPendingDescendant(verifyEventFunnel)) {
+        verifyEventFunnel.innerHTML = renderAnalyticsStaleRefreshFallback(
+            '真实验证事件暂未返回，请稍后刷新。',
+            'fas fa-shuffle',
+            { variant: 'error' }
+        );
+        cleared = true;
+    }
+
+    return cleared;
+}
+
+function clearGenericAnalyticsStaleRefreshContent(activeTabId = getActiveAnalyticsTabId()) {
+    const processedTargets = new Set();
+    let cleared = false;
+
+    getAnalyticsVisibleRefreshPendingNodes(activeTabId).forEach((node) => {
+        const verifyTarget = node.closest?.(ANALYTICS_VERIFY_STALE_CONTAINER_SELECTOR);
+        if (verifyTarget) {
+            if (!processedTargets.has(verifyTarget)) {
+                processedTargets.add(verifyTarget);
+                cleared = clearVerifyAnalyticsStaleRefreshContent() || cleared;
+            }
+            return;
+        }
+
+        const target = node.closest?.(
+            '.chart-body, .analytics-compact-list, .analytics-business-center-shell, .analytics-operating-focus, .analytics-product-dashboard, .analytics-product-detail-panel'
+        ) || node.parentElement;
+        if (!target || processedTargets.has(target) || isAnalyticsRefreshPendingNodeHidden(target)) {
+            return;
+        }
+
+        processedTargets.add(target);
+        target.innerHTML = renderAnalyticsStaleRefreshFallback();
+        cleared = true;
+    });
+
+    return cleared;
+}
+
+function clearAnalyticsStaleRefreshContent(activeTabId = getActiveAnalyticsTabId()) {
+    const normalizedTabId = normalizeAnalyticsTabId(activeTabId);
+    if (!hasAnalyticsRefreshPendingContent(normalizedTabId)) {
+        return false;
+    }
+
+    console.warn(`[Analytics] Refresh settled while visible ${normalizedTabId} panels were still pending; keeping a delayed loading state.`);
+    markAnalyticsTiming(`${normalizedTabId}:delayed-content`, getAnalyticsTimingDetail(normalizedTabId, getAnalyticsAIContextKey()));
+
+    const clearedVerifyContent = normalizedTabId === 'verify'
+        ? clearVerifyAnalyticsStaleRefreshContent()
+        : false;
+    const clearedGenericContent = clearGenericAnalyticsStaleRefreshContent(normalizedTabId);
+    return clearedVerifyContent || clearedGenericContent;
+}
+
 async function waitForAnalyticsRefreshContentSettled(options = {}) {
-    const timeoutMs = Math.max(1200, Number(options.timeoutMs || 18000) || 18000);
+    const timeoutMs = getAnalyticsRefreshContentSettleTimeoutMs(options);
     const activeTabId = normalizeAnalyticsTabId(options.activeTabId || getActiveAnalyticsTabId());
     const startedAt = Date.now();
 
@@ -658,10 +849,13 @@ async function runAnalyticsDeferredTaskPhases(options = {}) {
 }
 
 async function settleAnalyticsRefreshContent(options = {}) {
-    if (options.waitForDeferred !== false) {
-        await runAnalyticsDeferredTaskPhases(options);
+    if (options.waitForDeferred === false) {
+        void runAnalyticsDeferredTaskPhases(options);
+        await waitForAnalyticsPaint(2);
+        return true;
     }
 
+    await runAnalyticsDeferredTaskPhases(options);
     return waitForAnalyticsRefreshContentSettled({
         activeTabId: options.activeTabId
     });
@@ -696,6 +890,11 @@ async function reloadAnalyticsDashboard() {
     analyticsRuntime.reloadRequestId = requestId;
     analyticsRuntime.reloadContextKey = contextKey;
     analyticsRuntime.reloadTabId = activeTabId;
+    markAnalyticsTiming(`${activeTabId}:reload:start`, getAnalyticsTimingDetail(activeTabId, contextKey, {
+        requestId,
+        reason,
+        force
+    }));
 
     const reloadPromise = (async () => {
         try {
@@ -770,7 +969,8 @@ async function reloadAnalyticsDashboard() {
                                 ['loadUserTrendChart'],
                                 ['loadEventFunnelPanels'],
                                 ['loadTopContributors', 'loadCommunityChart', 'loadRetentionCohort']
-                            ]
+                            ],
+                            waitForDeferred: false
                         };
                     case 'monetization':
                         return {
@@ -801,12 +1001,22 @@ async function reloadAnalyticsDashboard() {
             const phases = buildAnalyticsTaskPhases(phaseTaskIds, taskFactories, seenTaskIds);
             const deferredPhases = buildAnalyticsTaskPhases(deferredPhaseTaskIds, taskFactories, seenTaskIds);
 
-            await runAnalyticsTaskPhases(phases, {
+            const criticalPhasesCompleted = await runAnalyticsTaskPhases(phases, {
                 requestId,
                 contextKey,
                 activeTabId,
                 stopIfStale: true
             });
+            markAnalyticsTiming(`${activeTabId}:critical:end`, getAnalyticsTimingDetail(activeTabId, contextKey, {
+                requestId,
+                ok: criticalPhasesCompleted
+            }));
+            measureAnalyticsTiming(
+                `${activeTabId}:critical`,
+                `${activeTabId}:reload:start`,
+                `${activeTabId}:critical:end`,
+                getAnalyticsTimingDetail(activeTabId, contextKey, { requestId })
+            );
 
             if (activeTabId === 'product-detail') {
                 window.settleAnalyticsProductDetailPendingState?.({
@@ -814,16 +1024,30 @@ async function reloadAnalyticsDashboard() {
                 });
             }
 
-            await settleAnalyticsRefreshContent({
+            const contentSettled = await settleAnalyticsRefreshContent({
                 phases: deferredPhases,
                 requestId,
                 contextKey,
-                activeTabId
+                activeTabId,
+                waitForDeferred: phaseTaskConfig.waitForDeferred !== false
             });
+            markAnalyticsTiming(`${activeTabId}:content:settled`, getAnalyticsTimingDetail(activeTabId, contextKey, {
+                requestId,
+                ok: contentSettled
+            }));
+            measureAnalyticsTiming(
+                `${activeTabId}:visible-settle`,
+                `${activeTabId}:reload:start`,
+                `${activeTabId}:content:settled`,
+                getAnalyticsTimingDetail(activeTabId, contextKey, { requestId })
+            );
+            if (!contentSettled) {
+                clearAnalyticsStaleRefreshContent(activeTabId);
+            }
 
             updateLastUpdateTime();
 
-            if (requestId === analyticsRuntime.reloadRequestId) {
+            if (requestId === analyticsRuntime.reloadRequestId && criticalPhasesCompleted && contentSettled) {
                 analyticsRuntime.lastLoadedAt = Date.now();
                 analyticsRuntime.lastLoadedContextKey = contextKey;
                 analyticsRuntime.lastReloadReason = reason;
@@ -834,7 +1058,7 @@ async function reloadAnalyticsDashboard() {
                 window.emitAnalyticsCommandCenterInventorySummaryUpdate();
             }
 
-            return true;
+            return criticalPhasesCompleted && contentSettled;
         } finally {
             if (typeof releaseRefreshIndicator === 'function') {
                 releaseRefreshIndicator();
@@ -982,8 +1206,9 @@ function dismissAllAlerts() {
 
 const originalAnalyticsRefresh = refreshAllAnalytics;
 refreshAllAnalytics = async function (...args) {
-    await originalAnalyticsRefresh(...args);
+    const result = await originalAnalyticsRefresh(...args);
     setTimeout(checkForAnomalies, 500);
+    return result;
 };
 
 if (typeof window !== 'undefined') {
@@ -995,6 +1220,7 @@ window.initAnalyticsModule = initAnalyticsModule;
 window.handleAdminAnalyticsSiteChange = handleAdminAnalyticsSiteChange;
 window.toggleAnalyticsAdvancedTools = toggleAnalyticsAdvancedTools;
 window.reloadAnalyticsDashboard = reloadAnalyticsDashboard;
+window.clearAnalyticsStaleRefreshContent = clearAnalyticsStaleRefreshContent;
 window.teardownAnalyticsModule = teardownAnalyticsModule;
 window.refreshAllAnalytics = refreshAllAnalytics;
 window.dismissAllAlerts = dismissAllAlerts;

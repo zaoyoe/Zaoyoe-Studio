@@ -82,6 +82,9 @@ html {
     max-width: 100%;
     overflow-x: hidden;
     overscroll-behavior-x: none;
+    scrollbar-width: none;
+    scrollbar-gutter: auto;
+    -ms-overflow-style: none;
 }
 
 body {
@@ -93,8 +96,34 @@ body {
     width: 100%;
     max-width: 100%;
     overflow-x: hidden;
+    scrollbar-width: none;
+    scrollbar-gutter: auto;
+    -ms-overflow-style: none;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+}
+
+/* 20260430_HOME_ROOT_SCROLLBAR_FULL_HIDE_1
+   Keep the document scrollbar from taking layout width before the deferred
+   public scrollbar helper hydrates during cross-page navigation. */
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
+}
+
+html::-webkit-scrollbar-track,
+html::-webkit-scrollbar-thumb,
+html::-webkit-scrollbar-corner,
+body::-webkit-scrollbar-track,
+body::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-corner {
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
 }
 
 body.home-page {
@@ -128,8 +157,7 @@ body.mobile-menu-open {
     font-family: var(--font-display);
     font-size: clamp(48px, 10vw, 110px);
     font-weight: 500;
-    letter-spacing: -0.05em;
-    /* -5% negative letter spacing */
+    letter-spacing: 0;
     line-height: 1.1;
     margin: 0;
     /* Use padding-top on parent instead, margin-top here for fine-tuning */
@@ -971,8 +999,14 @@ body.mobile-menu-open .chat-widget-fab {
     top: 50%;
     width: var(--hero-prism-cube-size, 160px);
     height: var(--hero-prism-cube-size, 160px);
+    scale: 0.58;
+    transform-origin: center center;
     transform-style: preserve-3d;
-    animation: hero-prismchrono-spin var(--hero-prism-cube-speed, 8.8s) linear infinite;
+    will-change: transform, scale;
+    /* 20260501_HOME_PRISM_CUBE_INTRO_2: scale only; opacity would flatten preserve-3d into thin planes. */
+    animation:
+        hero-prismchrono-spin var(--hero-prism-cube-speed, 8.8s) linear infinite,
+        hero-prismchrono-cube-intro 720ms cubic-bezier(0.22, 1, 0.36, 1) var(--hero-prism-cube-intro-delay, 0ms) both;
 }
 
 .hero-prismchrono-field span:nth-of-type(1) {
@@ -981,6 +1015,7 @@ body.mobile-menu-open .chat-widget-fab {
     --hero-prism-cube-y: -96px;
     --hero-prism-cube-z: 0px;
     --hero-prism-cube-speed: 18.8s;
+    --hero-prism-cube-intro-delay: 70ms;
 }
 
 .hero-prismchrono-field span:nth-of-type(2) {
@@ -989,7 +1024,8 @@ body.mobile-menu-open .chat-widget-fab {
     --hero-prism-cube-y: -252px;
     --hero-prism-cube-z: -68px;
     --hero-prism-cube-speed: 12.8s;
-    animation-direction: reverse;
+    --hero-prism-cube-intro-delay: 0ms;
+    animation-direction: reverse, normal;
 }
 
 .hero-prismchrono-field span:nth-of-type(3) {
@@ -998,6 +1034,7 @@ body.mobile-menu-open .chat-widget-fab {
     --hero-prism-cube-y: 214px;
     --hero-prism-cube-z: 88px;
     --hero-prism-cube-speed: 13.6s;
+    --hero-prism-cube-intro-delay: 140ms;
 }
 
 .hero-prismchrono-field span b {
@@ -1077,6 +1114,16 @@ body.mobile-menu-open .chat-widget-fab {
 
     100% {
         transform: translate(-50%, -50%) translate(var(--hero-prism-cube-x, 0), var(--hero-prism-cube-y, 0)) translateZ(var(--hero-prism-cube-z, 0px)) rotateX(58deg) rotateY(360deg) rotateZ(18deg);
+    }
+}
+
+@keyframes hero-prismchrono-cube-intro {
+    from {
+        scale: 0.58;
+    }
+
+    to {
+        scale: 1;
     }
 }
 
@@ -1176,6 +1223,7 @@ html[lang^="en"] .hero-subtitle {
     transform: translateY(-50%);
     width: 36px;
     height: 20px;
+    /* 20260501_HOME_PROGRESS_THUMB_TRANSPARENT_1: keep the thumb transparent; runtime/static covered ticks disappear instead. */
     background: transparent;
     border: 1px solid rgba(255, 255, 255, 0.3);
     border-radius: 4px;
@@ -1229,6 +1277,47 @@ html[lang^="en"] .hero-subtitle {
     width: fit-content;
     position: relative;
     z-index: 3;
+}
+
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .hero-progress-thumb {
+    left: calc(50% - 18px);
+}
+
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .hero-carousel {
+    overflow: hidden;
+}
+
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .hero-carousel-track {
+    display: grid;
+    grid-template-columns: repeat(5, 180px);
+    justify-content: center;
+    gap: 96px;
+    width: 100%;
+    padding: 0;
+}
+
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card-ui {
+    opacity: 0.7;
+}
+
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card:nth-child(1) .home-entry-card-icon {
+    color: #f472b6;
+}
+
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card:nth-child(2) .home-entry-card-icon {
+    color: #5ed8f8;
+}
+
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card:nth-child(3) .home-entry-card-icon {
+    color: #4ade80;
+}
+
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card:nth-child(4) .home-entry-card-icon {
+    color: #667eea;
+}
+
+.hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card:nth-child(5) .home-entry-card-icon {
+    color: #f59e0b;
 }
 
 .entry-card {
@@ -1665,10 +1754,16 @@ html[lang^="en"] .hero-subtitle {
 
 /* ========== Footer =========== */
 .framer-footer {
+    display: block;
     border-top: 1px solid var(--border-subtle);
     padding: var(--spacing-2xl) var(--spacing-lg) var(--spacing-lg);
     max-width: 1400px;
     margin: 0 auto;
+}
+
+body.home-page .framer-footer {
+    /* Match the critical footer guard specificity so deferred styles can restore it. */
+    display: block;
 }
 
 .footer-grid {
@@ -1789,7 +1884,7 @@ html[lang^="en"] .hero-subtitle {
     /* Typography adjustments */
     .hero-title {
         /* Removed fixed font-size to let clamp() work smoothly */
-        letter-spacing: -2.4px;
+        letter-spacing: 0;
     }
 
     .section-title {
@@ -1826,6 +1921,11 @@ html[lang^="en"] .hero-subtitle {
     .hero-carousel-track {
         gap: 16px;
         padding: 0 calc(50vw - 70px);
+    }
+
+    .hero-section[data-home-static-hero="1"]:not([data-render-signature]) .hero-carousel-track {
+        grid-template-columns: repeat(5, 140px);
+        gap: 16px;
     }
 
     .entry-card {
@@ -3772,7 +3872,7 @@ html[lang^="en"] .hero-subtitle {
 
 #guestbook-section .home-guestbook-card--l1 {
     top: 56px;
-    left: -42px;
+    left: 72px;
     width: 212px;
     z-index: 1;
     --card-rotate-start: -11;
@@ -3784,7 +3884,7 @@ html[lang^="en"] .hero-subtitle {
 
 #guestbook-section .home-guestbook-card--l2 {
     top: 344px;
-    left: 24px;
+    left: 132px;
     width: 260px;
     z-index: 3;
     --card-rotate-start: 8;
@@ -3795,7 +3895,7 @@ html[lang^="en"] .hero-subtitle {
 }
 
 #guestbook-section .home-guestbook-card--l3 {
-    left: 16px;
+    left: 120px;
     bottom: 26px;
     width: 220px;
     z-index: 2;
@@ -3808,7 +3908,7 @@ html[lang^="en"] .hero-subtitle {
 
 #guestbook-section .home-guestbook-card--r1 {
     top: 92px;
-    right: 42px;
+    right: 126px;
     width: 180px;
     z-index: 2;
     --card-rotate-start: 6;
@@ -3820,7 +3920,7 @@ html[lang^="en"] .hero-subtitle {
 
 #guestbook-section .home-guestbook-card--r2 {
     top: 286px;
-    right: -34px;
+    right: 78px;
     width: 238px;
     z-index: 4;
     --card-rotate-start: -9;
@@ -3831,7 +3931,7 @@ html[lang^="en"] .hero-subtitle {
 }
 
 #guestbook-section .home-guestbook-card--r3 {
-    right: -14px;
+    right: 96px;
     bottom: 42px;
     width: 210px;
     z-index: 1;
@@ -3860,42 +3960,42 @@ html[lang^="en"] .hero-subtitle {
     }
 
     #guestbook-section .home-guestbook-card--l1 {
-        left: -28px;
+        left: 68px;
         top: 64px;
         width: 184px;
         --card-fly-distance: 356px;
     }
 
     #guestbook-section .home-guestbook-card--l2 {
-        left: 20px;
+        left: 104px;
         top: 312px;
         width: 226px;
         --card-fly-distance: 286px;
     }
 
     #guestbook-section .home-guestbook-card--l3 {
-        left: 4px;
+        left: 86px;
         bottom: 34px;
         width: 196px;
         --card-fly-distance: 382px;
     }
 
     #guestbook-section .home-guestbook-card--r1 {
-        right: 34px;
+        right: 104px;
         top: 118px;
         width: 160px;
         --card-fly-distance: 278px;
     }
 
     #guestbook-section .home-guestbook-card--r2 {
-        right: -30px;
+        right: 64px;
         top: 284px;
         width: 212px;
         --card-fly-distance: 340px;
     }
 
     #guestbook-section .home-guestbook-card--r3 {
-        right: 0;
+        right: 82px;
         bottom: 44px;
         width: 182px;
         --card-fly-distance: 266px;
@@ -3941,42 +4041,42 @@ html[lang^="en"] .hero-subtitle {
     }
 
     #guestbook-section .home-guestbook-card--l1 {
-        left: -18px;
+        left: 42px;
         top: 60px;
         width: 166px;
         --card-fly-distance: 280px;
     }
 
     #guestbook-section .home-guestbook-card--l2 {
-        left: 10px;
+        left: 64px;
         top: 286px;
         width: 208px;
         --card-fly-distance: 220px;
     }
 
     #guestbook-section .home-guestbook-card--l3 {
-        left: -4px;
+        left: 52px;
         bottom: 30px;
         width: 170px;
         --card-fly-distance: 300px;
     }
 
     #guestbook-section .home-guestbook-card--r1 {
-        right: 14px;
+        right: 56px;
         top: 94px;
         width: 146px;
         --card-fly-distance: 220px;
     }
 
     #guestbook-section .home-guestbook-card--r2 {
-        right: -16px;
+        right: 40px;
         top: 252px;
         width: 192px;
         --card-fly-distance: 260px;
     }
 
     #guestbook-section .home-guestbook-card--r3 {
-        right: -4px;
+        right: 48px;
         bottom: 42px;
         width: 162px;
         --card-fly-distance: 212px;
@@ -4034,42 +4134,42 @@ html[lang^="en"] .hero-subtitle {
     }
 
     #guestbook-section .home-guestbook-card--l1 {
-        left: -6px;
+        left: 24px;
         top: 46px;
         width: 174px;
         --card-fly-distance: 210px;
     }
 
     #guestbook-section .home-guestbook-card--l2 {
-        left: 16px;
+        left: 42px;
         top: 248px;
         width: 220px;
         --card-fly-distance: 164px;
     }
 
     #guestbook-section .home-guestbook-card--l3 {
-        left: 0;
+        left: 30px;
         bottom: 28px;
         width: 180px;
         --card-fly-distance: 224px;
     }
 
     #guestbook-section .home-guestbook-card--r1 {
-        right: 14px;
+        right: 36px;
         top: 74px;
         width: 156px;
         --card-fly-distance: 176px;
     }
 
     #guestbook-section .home-guestbook-card--r2 {
-        right: -10px;
+        right: 20px;
         top: 228px;
         width: 206px;
         --card-fly-distance: 214px;
     }
 
     #guestbook-section .home-guestbook-card--r3 {
-        right: 8px;
+        right: 32px;
         bottom: 44px;
         width: 174px;
         --card-fly-distance: 168px;

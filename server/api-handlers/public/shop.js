@@ -1422,20 +1422,112 @@ function createShopHandlers({
         return typeof value === 'string' ? value.trim() : '';
     }
 
-    function buildProductGuidancePayload(product = {}) {
+    function containsGuidanceCjkText(value) {
+        return /[\u3400-\u9fff\uf900-\ufaff]/.test(String(value || ''));
+    }
+
+    function normalizeGuidanceSite(value = 'cn') {
+        const normalized = String(value || 'cn').trim().toLowerCase();
+        return normalized === 'intl' || normalized === 'en' ? 'intl' : 'cn';
+    }
+
+    function resolveLocalizedGuidanceText(product = {}, baseField = '', guidanceSite = 'cn') {
+        const siteKey = normalizeGuidanceSite(guidanceSite);
+        const legacyText = normalizeGuidanceText(product?.[baseField]);
+        const zhText = normalizeGuidanceText(product?.[`${baseField}_zh`]);
+        const enText = normalizeGuidanceText(product?.[`${baseField}_en`]);
+
+        if (siteKey === 'intl') {
+            const candidate = enText || legacyText;
+            return containsGuidanceCjkText(candidate) ? '' : candidate;
+        }
+
+        return zhText || legacyText || enText;
+    }
+
+    function hasProductGuidanceSourceText(product = {}, baseField = '') {
+        return [
+            product?.[baseField],
+            product?.[`${baseField}_zh`],
+            product?.[`${baseField}_en`]
+        ].some((value) => normalizeGuidanceText(value).length > 0);
+    }
+
+    function getProductGuidanceSelectClause({ includeIdentity = false, bilingual = true, purchaseNotes = true } = {}) {
+        const fields = includeIdentity ? ['id', 'is_active'] : [];
+        if (purchaseNotes) {
+            fields.push(
+                'show_purchase_notes',
+                'purchase_notes',
+                ...(bilingual ? ['purchase_notes_zh', 'purchase_notes_en'] : [])
+            );
+        }
+        fields.push(
+            'show_usage_instructions',
+            'usage_instructions',
+            ...(bilingual ? ['usage_instructions_zh', 'usage_instructions_en'] : [])
+        );
+        return fields.join(', ');
+    }
+
+    async function loadProductGuidanceRow(dataSupabase, normalizedProductId, { includeIdentity = false } = {}) {
+        const selectAttempts = [
+            getProductGuidanceSelectClause({ includeIdentity, bilingual: true, purchaseNotes: true }),
+            getProductGuidanceSelectClause({ includeIdentity, bilingual: false, purchaseNotes: true }),
+            getProductGuidanceSelectClause({ includeIdentity, bilingual: false, purchaseNotes: false })
+        ];
+
+        let lastError = null;
+        for (const selectClause of selectAttempts) {
+            const query = dataSupabase
+                .from('shop_products')
+                .select(selectClause)
+                .eq('id', normalizedProductId);
+            const { data, error } = includeIdentity
+                ? await query.single()
+                : await query.maybeSingle();
+
+            if (!error) {
+                return { data, error: null };
+            }
+
+            lastError = error;
+            const isGuidanceColumnMissing = [
+                'purchase_notes',
+                'show_purchase_notes',
+                'purchase_notes_zh',
+                'purchase_notes_en',
+                'usage_instructions_zh',
+                'usage_instructions_en'
+            ].some((field) => isMissingColumnError(error, field));
+            if (!isGuidanceColumnMissing) {
+                return { data: null, error };
+            }
+        }
+
+        return { data: null, error: lastError };
+    }
+
+    function buildProductGuidancePayload(product = {}, guidanceSite = 'cn') {
+        const showPurchaseNotes = product?.show_purchase_notes === true;
+        const showUsageInstructions = product?.show_usage_instructions === true;
         const purchaseNotes = product?.show_purchase_notes
-            ? normalizeGuidanceText(product?.purchase_notes)
+            ? resolveLocalizedGuidanceText(product, 'purchase_notes', guidanceSite)
             : '';
         const usageInstructions = product?.show_usage_instructions
-            ? normalizeGuidanceText(product?.usage_instructions)
+            ? resolveLocalizedGuidanceText(product, 'usage_instructions', guidanceSite)
             : '';
 
         return {
             product_id: String(product?.id || '').trim() || null,
+            show_purchase_notes: showPurchaseNotes,
+            show_usage_instructions: showUsageInstructions,
             purchase_notes: purchaseNotes,
             usage_instructions: usageInstructions,
-            has_purchase_notes: purchaseNotes.length > 0,
-            has_usage_instructions: usageInstructions.length > 0
+            has_purchase_notes: showPurchaseNotes && hasProductGuidanceSourceText(product, 'purchase_notes'),
+            has_usage_instructions: showUsageInstructions && hasProductGuidanceSourceText(product, 'usage_instructions'),
+            purchase_notes_needs_translation: showPurchaseNotes && !purchaseNotes && hasProductGuidanceSourceText(product, 'purchase_notes'),
+            usage_instructions_needs_translation: showUsageInstructions && !usageInstructions && hasProductGuidanceSourceText(product, 'usage_instructions')
         };
     }
 
@@ -1693,7 +1785,7 @@ function createShopHandlers({
         return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
     }
 
-    async function loadShopOrderDetail(dataSupabase, { orderId = '', userId = '' } = {}) {
+    async function loadShopOrderDetail(dataSupabase, { orderId = '', userId = '', site = 'cn' } = {}) {
         const normalizedOrderId = String(orderId || '').trim();
         const normalizedUserId = String(userId || '').trim();
 
@@ -1742,40 +1834,19 @@ function createShopHandlers({
                 return { purchaseNotes, usageInstructions };
             }
 
-            let productGuidanceRow = null;
-            const { data: guidanceData, error: productGuidanceError } = await dataSupabase
-                .from('shop_products')
-                .select('show_purchase_notes, purchase_notes, show_usage_instructions, usage_instructions')
-                .eq('id', normalizedProductId)
-                .maybeSingle();
-
+            const { data: productGuidanceRow, error: productGuidanceError } = await loadProductGuidanceRow(
+                dataSupabase,
+                normalizedProductId
+            );
             if (productGuidanceError) {
-                if (
-                    isMissingColumnError(productGuidanceError, 'purchase_notes')
-                    || isMissingColumnError(productGuidanceError, 'show_purchase_notes')
-                ) {
-                    const { data: legacyGuidanceData, error: legacyGuidanceError } = await dataSupabase
-                        .from('shop_products')
-                        .select('show_usage_instructions, usage_instructions')
-                        .eq('id', normalizedProductId)
-                        .maybeSingle();
-
-                    if (legacyGuidanceError) {
-                        throw legacyGuidanceError;
-                    }
-                    productGuidanceRow = legacyGuidanceData;
-                } else {
-                    throw productGuidanceError;
-                }
-            } else {
-                productGuidanceRow = guidanceData;
+                throw productGuidanceError;
             }
 
             purchaseNotes = productGuidanceRow?.show_purchase_notes
-                ? normalizeGuidanceText(productGuidanceRow?.purchase_notes)
+                ? resolveLocalizedGuidanceText(productGuidanceRow, 'purchase_notes', site)
                 : '';
             usageInstructions = productGuidanceRow?.show_usage_instructions
-                ? normalizeGuidanceText(productGuidanceRow?.usage_instructions)
+                ? resolveLocalizedGuidanceText(productGuidanceRow, 'usage_instructions', site)
                 : '';
 
             return { purchaseNotes, usageInstructions };
@@ -1861,7 +1932,7 @@ function createShopHandlers({
         };
     }
 
-    async function loadProductGuidance(dataSupabase, { productId = '' } = {}) {
+    async function loadProductGuidance(dataSupabase, { productId = '', site = 'cn' } = {}) {
         const normalizedProductId = String(productId || '').trim();
         if (!isUuid(normalizedProductId)) {
             const error = new Error('商品标识格式不正确');
@@ -1869,11 +1940,9 @@ function createShopHandlers({
             throw error;
         }
 
-        const { data, error } = await dataSupabase
-            .from('shop_products')
-            .select('id, is_active, show_purchase_notes, purchase_notes, show_usage_instructions, usage_instructions')
-            .eq('id', normalizedProductId)
-            .single();
+        const { data, error } = await loadProductGuidanceRow(dataSupabase, normalizedProductId, {
+            includeIdentity: true
+        });
 
         if (error || !data) {
             const notFoundError = new Error(error?.message || '商品不存在');
@@ -1887,7 +1956,7 @@ function createShopHandlers({
             throw inactiveError;
         }
 
-        return buildProductGuidancePayload(data);
+        return buildProductGuidancePayload(data, site);
     }
 
     return {
@@ -2584,6 +2653,7 @@ function createShopHandlers({
                 const { supabase, adminSupabase: requestAdminSupabase, user } = await requireAuthenticatedUser(req);
                 const body = await parseJsonBody(req);
                 const orderId = normalizeOrderDetailId(body);
+                const currentSite = requireSupportedSite(body?.site || 'cn', { fieldName: 'site' });
 
                 if (!isUuid(orderId)) {
                     return sendJson(res, 400, {
@@ -2610,7 +2680,8 @@ function createShopHandlers({
 
                 const data = await loadShopOrderDetail(requestAdminSupabase || supabase, {
                     orderId,
-                    userId: user.id
+                    userId: user.id,
+                    site: currentSite
                 });
 
                 return sendJson(res, 200, {
@@ -2654,6 +2725,7 @@ function createShopHandlers({
             try {
                 const body = await parseJsonBody(req);
                 const productId = String(body?.productId || body?.product_id || '').trim();
+                const currentSite = requireSupportedSite(body?.site || 'cn', { fieldName: 'site' });
                 const dataSupabase = adminSupabase;
                 if (!dataSupabase) {
                     return sendJson(res, 503, {
@@ -2663,7 +2735,8 @@ function createShopHandlers({
                 }
 
                 const data = await loadProductGuidance(dataSupabase, {
-                    productId
+                    productId,
+                    site: currentSite
                 });
 
                 return sendJson(res, 200, {
@@ -2806,14 +2879,13 @@ function createShopHandlers({
                     }
                 }
                 let guidanceData = null;
-                if (!normalizeGuidanceText(responseData.usage_instructions)) {
-                    try {
-                        guidanceData = await loadProductGuidance(requestAdminSupabase || adminSupabase || supabase, {
-                            productId: payload.productId
-                        });
-                    } catch (guidanceError) {
-                        guidanceData = null;
-                    }
+                try {
+                    guidanceData = await loadProductGuidance(requestAdminSupabase || adminSupabase || supabase, {
+                        productId: payload.productId,
+                        site: payload.site
+                    });
+                } catch (guidanceError) {
+                    guidanceData = null;
                 }
                 const pricingWaterfall = buildPricingWaterfall({
                     ...responseData,
@@ -2837,8 +2909,8 @@ function createShopHandlers({
                     data: {
                         ...responseData,
                         benefit_label: benefitLabel,
-                        usage_instructions: normalizeGuidanceText(responseData.usage_instructions) || guidanceData?.usage_instructions || null,
-                        show_usage_instructions: responseData.show_usage_instructions ?? guidanceData?.has_usage_instructions ?? false,
+                        usage_instructions: guidanceData?.usage_instructions || normalizeGuidanceText(responseData.usage_instructions) || null,
+                        show_usage_instructions: guidanceData?.has_usage_instructions ?? responseData.show_usage_instructions ?? false,
                         pricing_waterfall: pricingWaterfall.rows,
                         stacking_policy: pricingWaterfall.stacking_policy
                     }

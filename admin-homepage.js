@@ -47,6 +47,23 @@ const HomepageAdmin = (() => {
     const HOMEPAGE_OVERVIEW_SECTION = 'overview';
     const HOMEPAGE_DEFAULT_SECTION = HOMEPAGE_MANAGED_SECTIONS[0] || 'hero';
     const HOMEPAGE_TAB_SECTIONS = Object.freeze([HOMEPAGE_OVERVIEW_SECTION, ...HOMEPAGE_MANAGED_SECTIONS]);
+    const HOMEPAGE_SECTION_LOCALIZED_FIELDS = Object.freeze({
+        hero: ['title', 'subtitle'],
+        prompts: ['section_title', 'section_subtitle'],
+        shop: ['section_title', 'section_subtitle'],
+        gongyi: [
+            'brand_subtitle',
+            'cta_text',
+            'feature_1_title',
+            'feature_1_description',
+            'feature_2_title',
+            'feature_2_description',
+            'feature_3_title',
+            'feature_3_description'
+        ],
+        verify: ['section_title', 'section_subtitle'],
+        guestbook: ['section_title', 'section_subtitle']
+    });
 
     function normalizeHomepageAdminSection(section, fallback = currentSection || HOMEPAGE_DEFAULT_SECTION) {
         const normalized = String(section || '').trim().toLowerCase();
@@ -75,6 +92,44 @@ const HomepageAdmin = (() => {
         if (normalized === 'intl') return 'INTL 站';
         if (normalized === 'all') return '全部站点';
         return 'CN 站';
+    }
+
+    function getHomepageSiteLocaleSuffix(site) {
+        return normalizeHomepageSite(site) === 'intl' ? 'en' : 'zh';
+    }
+
+    function ensureHomepageLocalizedFallback(content, fieldBase, site) {
+        if (!content || typeof content !== 'object') {
+            return;
+        }
+        const value = String(content[fieldBase] || '').trim();
+        if (!value) {
+            return;
+        }
+        const localeField = `${fieldBase}_${getHomepageSiteLocaleSuffix(site)}`;
+        content[localeField] = value;
+    }
+
+    function ensureHomepageSectionLocalizedFallbacks(section, content, site) {
+        const fields = HOMEPAGE_SECTION_LOCALIZED_FIELDS[section] || [];
+        fields.forEach((fieldBase) => ensureHomepageLocalizedFallback(content, fieldBase, site));
+        if (section === 'guestbook') {
+            ensureHomepageLocalizedListFallbacks(content.featured_items, ['content', 'username', 'reason'], site);
+            ensureHomepageLocalizedListFallbacks(content.fallback_items, ['content', 'author'], site);
+        }
+        return content;
+    }
+
+    function ensureHomepageLocalizedListFallbacks(items, fieldBases, site) {
+        if (!Array.isArray(items)) {
+            return;
+        }
+        items.forEach((item) => {
+            if (!item || typeof item !== 'object') {
+                return;
+            }
+            fieldBases.forEach((fieldBase) => ensureHomepageLocalizedFallback(item, fieldBase, site));
+        });
     }
 
     function getHomepagePrefetchCacheKey(site = getHomepageReadSite()) {
@@ -3694,6 +3749,7 @@ const HomepageAdmin = (() => {
                 break;
         }
 
+        ensureHomepageSectionLocalizedFallbacks(section, content, writableSite);
         cfg.content = content;
 
         // Save draft

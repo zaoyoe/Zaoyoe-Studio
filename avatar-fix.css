@@ -44,6 +44,15 @@
     display: none !important;
 }
 
+#navUserAvatar.show,
+.nav-user-avatar.show,
+.login-trigger-btn.logged-in #navUserAvatar.show,
+.login-trigger-btn.logged-in .nav-user-avatar.show {
+    display: inline-block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
 /* Keep the auth slot size stable so logout does not reflow the nav */
 #auth-container {
     width: var(--nav-auth-slot-size, 44px) !important;

@@ -1095,6 +1095,31 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'static child surfaces should not animate into pressed hover states'
     );
     assert.equal(
+        stylesSource.includes('20260430_ADMIN_STUDIO_LIGHT_LAYOUT_SHELL_TRANSPARENT_1'),
+        true,
+        'admin studio should include a final transparent guard for internal layout shells'
+    );
+    assert.equal(
+        adminStudioHtml.includes('layoutShellTransparent=20260430_ADMIN_STUDIO_LIGHT_LAYOUT_SHELL_TRANSPARENT_1'),
+        true,
+        'admin studio should cache-bust the internal layout shell transparent guard'
+    );
+    assert.equal(
+        stylesSource.includes('[class$="__top"],\n    [class*="__top "],\n    [class$="__actions"],\n    [class*="__actions "],\n    [class$="__chips"],'),
+        true,
+        'layout shell transparent guard should cover top/action/chip containers that otherwise leak white rectangles'
+    );
+    assert.equal(
+        stylesSource.includes('[class$="__stats"],\n    [class*="__stats "],\n    [class$="__items"],\n    [class*="__items "]'),
+        true,
+        'layout shell transparent guard should cover stats and items grid containers'
+    );
+    assert.equal(
+        stylesSource.includes('background: transparent !important;\n    background-color: transparent !important;\n    background-image: none !important;\n    border-color: transparent !important;'),
+        true,
+        'layout shell transparent guard should remove inherited light surface fills'
+    );
+    assert.equal(
         stylesSource.includes('html[data-theme="light"] .admin-main-content .admin-tab.active'),
         true,
         'admin studio light theme should flatten module navigation tabs instead of rendering them as floating cards'
@@ -1190,9 +1215,79 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'user detail modal recharge rows should have status-specific rail tokens'
     );
     assert.equal(
+        stylesSource.includes('20260430_ADMIN_STUDIO_CARD_RAIL_REAL_BORDER_1'),
+        true,
+        'user detail modal list rails should use the single-rail cleanup layer'
+    );
+    assert.equal(
+        stylesSource.includes('border-left-width: var(--users-modal-rail-width, 2px) !important;'),
+        true,
+        'user detail modal list cards should render one thin real border rail'
+    );
+    assert.equal(
+        stylesSource.includes('border-left-color: var(--users-modal-rail, rgba(148, 163, 184, 0.72)) !important;'),
+        true,
+        'user detail modal list cards should color the actual left border so rounded corners inherit the rail'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .user-modal :is(.data-list-item, .users-note-item, .users-audit-item)::before,\nhtml:not([data-theme="dark"]) .user-modal :is(.data-list-item, .users-note-item, .users-audit-item)::before {\n    content: none !important;\n    display: none !important;'),
+        true,
+        'user detail modal list cards should disable the old pseudo-element rail'
+    );
+    assert.equal(
         stylesSource.includes('.user-overview-card--warning'),
         true,
         'user detail modal overview cards should keep semantic borders in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('20260430_ADMIN_STUDIO_USER_MODAL_COMMERCE_TRACE_LIGHT_1'),
+        true,
+        'user detail commerce trace should include a dedicated light-theme layer'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .user-modal .users-commerce-trace,'),
+        true,
+        'user detail commerce trace should restyle its card surface in explicit light mode'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .user-modal .users-commerce-trace__chip strong,'),
+        true,
+        'user detail commerce trace chips should keep readable labels in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .user-modal .users-commerce-trace__feedback-status--warning,'),
+        true,
+        'user detail commerce trace feedback status chips should be adapted for light mode'
+    );
+    assert.equal(
+        readRepoFile('admin-studio.html').includes('userCommerceTraceLight=20260430_ADMIN_STUDIO_USER_MODAL_COMMERCE_TRACE_LIGHT_1'),
+        true,
+        'admin studio should cache-bust the commerce trace light-theme CSS layer'
+    );
+    assert.equal(
+        stylesSource.includes('20260430_ADMIN_STUDIO_USER_BATCH_MODAL_LIGHT_1'),
+        true,
+        'user batch modals should include a dedicated light-theme layer'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] :is(.users-batch-tag-modal, .users-batch-renew-modal, .users-batch-expiry-modal),'),
+        true,
+        'user batch modals should restyle their surfaces in explicit light mode'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .user-modal .users-tab-refresh-overlay,'),
+        true,
+        'user detail tab refresh overlays should be adapted for light mode'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .user-modal .users-tab-inline-banner--success,'),
+        true,
+        'user detail tab inline banners should keep readable semantic colors in light mode'
+    );
+    assert.equal(
+        readRepoFile('admin-studio.html').includes('userBatchModalLight=20260430_ADMIN_STUDIO_USER_BATCH_MODAL_LIGHT_1'),
+        true,
+        'admin studio should cache-bust the user batch modal light-theme CSS layer'
     );
     assert.equal(
         stylesSource.includes('html[data-theme="light"] :is(\n    .modal-loading--skeleton,'),
@@ -1268,6 +1363,16 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         stylesSource.includes('.analytics-operating-focus__action-card,\n    .analytics-product-alert-card,'),
         true,
         'product and operating focus cards should keep focus styling without hover lift'
+    );
+    assert.equal(
+        stylesSource.includes('border-left-color: rgba(var(--admin-studio-product-alert-rgb), 0.78) !important;'),
+        true,
+        'product alert cards should color the actual left border rail'
+    );
+    assert.equal(
+        stylesSource.includes('border-left-color: rgba(var(--admin-studio-product-health-rgb), 0.72) !important;'),
+        true,
+        'product health cards should color the actual left border rail'
     );
     assert.equal(
         stylesSource.includes('20260424_ADMIN_STUDIO_LIGHT_THEME_ANALYTICS_SCOPE_FIX_1'),
@@ -1440,19 +1545,139 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'user value cockpit metric and sample panels should regain card depth in light mode'
     );
     assert.equal(
+        stylesSource.includes('20260430_ADMIN_STUDIO_ANALYTICS_LIGHT_PILL_PARITY_1'),
+        true,
+        'admin studio styles should include the analytics light pill parity layer'
+    );
+    assert.equal(
+        stylesSource.includes('    .analytics-user-commerce-impact__sample,\n    .analytics-user-value-cockpit__sample,\n    .analytics-product-token--user:not(.analytics-product-token--static)'),
+        true,
+        'analytics user sample pills should share visible light-theme capsule chrome'
+    );
+    assert.equal(
+        stylesSource.includes('border: 1px solid var(--admin-studio-analytics-light-pill-border) !important;'),
+        true,
+        'analytics light sample pills should keep a real capsule border'
+    );
+    assert.equal(
+        readRepoFile('admin-studio.html').includes('analyticsLightPills=20260430_ADMIN_STUDIO_ANALYTICS_LIGHT_PILL_PARITY_1'),
+        true,
+        'admin studio page stylesheet should be cache-busted for the light pill parity layer'
+    );
+    assert.equal(
+        stylesSource.includes('20260430_ADMIN_STUDIO_PRODUCT_DETAIL_CONTROL_LIGHT_1'),
+        true,
+        'admin studio styles should include the product detail control panel light-theme layer'
+    );
+    assert.equal(
+        stylesSource.includes('html:not([data-theme="dark"]) .admin-main-content :is(#module-analytics, #module-business-overview, #module-growth-center, #module-commerce-center) .analytics-product-detail__surface--controls'),
+        true,
+        'product detail control panels should be covered in the default non-dark admin theme'
+    );
+    assert.equal(
+        stylesSource.includes('    .analytics-product-detail__selector-trigger,\n    .analytics-product-detail__selector-menu,\n    .analytics-product-detail__selector-option,'),
+        true,
+        'product detail selector controls should not keep dark surfaces in light mode'
+    );
+    assert.equal(
+        stylesSource.includes('    .analytics-product-detail__actions .btn-sm.btn-secondary\n)'),
+        true,
+        'product detail quick action buttons should share the light control surface treatment'
+    );
+    assert.equal(
+        adminStudioHtml.includes('productDetailControlLight=20260430_ADMIN_STUDIO_PRODUCT_DETAIL_CONTROL_LIGHT_1'),
+        true,
+        'admin studio page stylesheet should be cache-busted for the product detail control light layer'
+    );
+    assert.equal(
+        stylesSource.includes('20260430_ADMIN_STUDIO_USER_VALUE_CARD_TITLEBARS_1'),
+        true,
+        'admin studio styles should include the user value card titlebar light fallback layer'
+    );
+    assert.equal(
+        stylesSource.includes('.analytics-user-value-cockpit .analytics-product-detail-card > .analytics-product-detail-card__head'),
+        true,
+        'user value detail cards should keep colored titlebars after product detail light control overrides'
+    );
+    assert.equal(
+        adminStudioHtml.includes('userValueCardTitlebars=20260430_ADMIN_STUDIO_USER_VALUE_CARD_TITLEBARS_1'),
+        true,
+        'admin studio page stylesheet should be cache-busted for the user value card titlebar layer'
+    );
+    assert.equal(
+        stylesSource.includes('20260430_ADMIN_STUDIO_ANALYTICS_TITLEBAR_TRANSPARENT_FALLBACK_1'),
+        true,
+        'admin studio styles should include a final analytics titlebar fallback after transparent shell overrides'
+    );
+    assert.equal(
+        stylesSource.includes('.analytics-product-alert-card > .analytics-product-alert-card__top'),
+        true,
+        'product alert top bars should regain titlebar color after layout shell transparent overrides'
+    );
+    assert.equal(
+        stylesSource.includes('.analytics-product-detail__surface > .analytics-product-detail__surface-head'),
+        true,
+        'product detail surface heads should regain titlebar color after product detail control overrides'
+    );
+    assert.equal(
+        stylesSource.includes('> span:not(.analytics-status-chip):not([class*="chip"])'),
+        true,
+        'bare titlebar subtitles should be recolored without overriding status chip text'
+    );
+    assert.equal(
+        adminStudioHtml.includes('analyticsTitlebarFallback=20260430_ADMIN_STUDIO_ANALYTICS_TITLEBAR_TRANSPARENT_FALLBACK_1'),
+        true,
+        'admin studio page stylesheet should be cache-busted for the final analytics titlebar fallback'
+    );
+    assert.equal(
         stylesSource.includes('20260427_ADMIN_STUDIO_ANALYTICS_MAIN_ACTION_HOVER_PARITY_1'),
         true,
         'business center main actions should share the same light hover treatment as watch actions'
     );
     assert.equal(
-        stylesSource.includes('.analytics-business-center-shell__primary,\n    .analytics-business-center-shell__watch-action'),
+        stylesSource.includes('20260430_ADMIN_STUDIO_BUSINESS_CENTER_ENTRY_HOVER_PARITY_1'),
         true,
-        'business center primary and watch action buttons should be covered by the same hover parity selector'
+        'business center entry chips should include the light hover parity layer'
+    );
+    assert.equal(
+        stylesSource.includes('.analytics-business-center-shell__primary,\n    .analytics-business-center-shell__watch-action,\n    .analytics-business-center-shell__entry-chip'),
+        true,
+        'business center primary, watch, and entry chip buttons should be covered by the same hover parity selector'
     );
     assert.equal(
         stylesSource.includes('background: var(--admin-studio-subtle-block-bg-hover, rgba(118, 157, 202, 0.1)) !important;'),
         true,
         'business center hover parity should reuse the existing watch-action hover material'
+    );
+    assert.equal(
+        readRepoFile('admin-studio.html').includes('businessCenterEntryHover=20260430_ADMIN_STUDIO_BUSINESS_CENTER_ENTRY_HOVER_PARITY_1'),
+        true,
+        'admin studio page stylesheet should be cache-busted for business center entry chip hover parity'
+    );
+    assert.equal(
+        stylesSource.includes('20260430_ADMIN_STUDIO_CLICKABLE_SURFACE_HOVER_PARITY_1'),
+        true,
+        'admin studio styles should include the generic clickable surface hover parity layer'
+    );
+    assert.equal(
+        stylesSource.includes('button[data-admin-action][class*="card"],\n    button[data-admin-action][class*="chip"],'),
+        true,
+        'clickable card and chip buttons should receive the shared hover material'
+    );
+    assert.equal(
+        stylesSource.includes('button[data-admin-action][class*="card"]'),
+        true,
+        'card-like action buttons, including operating focus destination cards, should be covered by the clickable surface hover selector'
+    );
+    assert.equal(
+        stylesSource.includes(':not(:disabled):not([disabled]):not([data-analytics-destination="points"]):is(:hover, :focus-visible)'),
+        true,
+        'clickable surface hover parity should skip disabled controls and preserve the points-specific hover treatment'
+    );
+    assert.equal(
+        readRepoFile('admin-studio.html').includes('interactiveSurfaceHover=20260430_ADMIN_STUDIO_CLICKABLE_SURFACE_HOVER_PARITY_1'),
+        true,
+        'admin studio page stylesheet should be cache-busted for generic clickable surface hover parity'
     );
     assert.equal(
         stylesSource.includes('20260427_ADMIN_STUDIO_ANALYTICS_POINTS_LEDGER_ACTION_ORANGE_1'),
@@ -2003,6 +2228,26 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'admin studio should cache-bust the inventory textarea frame update'
     );
     assert.equal(
+        stylesSource.includes('20260430_ADMIN_STUDIO_INVENTORY_DETAIL_LIGHT_MODAL_1'),
+        true,
+        'inventory detail modal should include a body-mounted light-theme readability layer'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .shop-inventory-detail-modal,\nhtml:not([data-theme="dark"]) .shop-inventory-detail-modal'),
+        true,
+        'inventory detail modal should restore its light surface outside the shop module scope'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .shop-inventory-detail-code,\nhtml:not([data-theme="dark"]) .shop-inventory-detail-code'),
+        true,
+        'inventory detail account content should get an explicit readable light-mode code surface'
+    );
+    assert.equal(
+        adminStudioHtml.includes('inventoryDetailLight=20260430_ADMIN_STUDIO_INVENTORY_DETAIL_LIGHT_MODAL_1'),
+        true,
+        'admin studio should cache-bust the inventory detail light modal update'
+    );
+    assert.equal(
         stylesSource.includes('html[data-theme="light"] #module-shop #shop-view-import .tree-category-header'),
         true,
         'shop import category tree rows should get explicit light-mode surfaces and borders'
@@ -2036,6 +2281,16 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         stylesSource.includes('20260424_ADMIN_STUDIO_LIGHT_THEME_POINTS_BATCH_MODALS_1'),
         true,
         'admin studio styles should include the points batch modal light theme layer'
+    );
+    assert.equal(
+        stylesSource.includes('border-left-color: var(--points-batch-summary-rail) !important;'),
+        true,
+        'points batch summary cards should color the actual left border rail'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .codes-modal--batch .points-batch-codes-summary-card::before,\nhtml:not([data-theme="dark"]) .codes-modal--batch .points-batch-codes-summary-card::before {\n    content: none !important;\n    display: none !important;'),
+        true,
+        'points batch summary cards should not use a pseudo-element rail'
     );
     assert.equal(
         stylesSource.includes('20260424_ADMIN_STUDIO_LIGHT_THEME_SUBTLE_PLACEHOLDERS_1'),
@@ -2463,6 +2718,16 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'Google One fact cards should no longer gain a hover inset shadow'
     );
     assert.equal(
+        stylesSource.includes('border-left-color: var(--verify-monitor-fact-rail);'),
+        true,
+        'Google One fact cards should color the actual left border rail'
+    );
+    assert.equal(
+        stylesSource.includes('#module-settings #settings-view-google-one #verifyMonitorFactsGrid .verify-monitor-fact-card::before {\n    content: none;\n    display: none;'),
+        true,
+        'Google One fact cards should not use a pseudo-element rail'
+    );
+    assert.equal(
         readRepoFile('admin-studio.html').includes('settingsHover=20260427_ADMIN_STUDIO_SETTINGS_STATIC_HOVER_AUDIT_1'),
         true,
         'admin studio should cache-bust the settings-wide hover audit stylesheet'
@@ -2745,6 +3010,21 @@ test('admin studio homepage content has complete light-theme coverage', () => {
         'homepage theme pack cards should use a full-width wrapping grid instead of a narrow column'
     );
     assert.equal(
+        stylesSource.includes('20260430_HOMEPAGE_OPS_CARD_LIST_GRID_1'),
+        true,
+        'homepage ops experiment, recommendation, and alert cards should use adaptive card grids'
+    );
+    assert.equal(
+        stylesSource.includes('grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));'),
+        true,
+        'homepage experiment cards should fill wide rows without becoming cramped'
+    );
+    assert.equal(
+        stylesSource.includes('grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));'),
+        true,
+        'homepage recommendation and alert cards should fill wide rows with readable card widths'
+    );
+    assert.equal(
         stylesSource.includes('.hp-section-view[data-hp-view="ticker"] .hp-toggle-group,'),
         true,
         'homepage ticker nested toggle group should be covered in light mode'
@@ -2838,6 +3118,11 @@ test('admin studio homepage content has complete light-theme coverage', () => {
         adminStudioSource.includes('css/admin-studio-page.css?v=20260427_ADMIN_SITE_SWITCHER_ACTIVE_HOVER_LOCK_1'),
         true,
         'admin studio should cache-bust the completed homepage light theme stylesheet'
+    );
+    assert.equal(
+        adminStudioSource.includes('homepageOpsCardGrid=20260430_HOMEPAGE_OPS_CARD_LIST_GRID_1'),
+        true,
+        'admin studio should cache-bust the adaptive homepage ops card grid stylesheet update'
     );
 });
 
@@ -3100,9 +3385,34 @@ test('admin studio analytics text panels expand instead of clipping in light the
         'compact analytics stacks should stop using internal scroll clipping for these panels'
     );
     assert.equal(
-        stylesSource.includes('border-left: 4px solid rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.42) !important;'),
+        stylesSource.includes('border-left: 2px solid var(--analytics-distribution-indicator, rgba(var(--admin-studio-module-card-edge-rgb), 0.64)) !important;'),
         true,
-        'growth action cards should gain a visible light-theme module rail'
+        'growth action cards should color the actual left border rail'
+    );
+    assert.equal(
+        stylesSource.includes('20260430_ADMIN_STUDIO_WORKFLOW_CARD_RAIL_VISIBILITY_1'),
+        true,
+        'marketing workflow cards should include a visible rail color override'
+    );
+    assert.equal(
+        stylesSource.includes('--admin-studio-workflow-rail-alpha: 0.86;'),
+        true,
+        'marketing workflow cards should raise the default rail contrast above the gray card edge'
+    );
+    assert.equal(
+        stylesSource.includes('.marketing-asset-center__workflow-card--warning'),
+        true,
+        'marketing workflow cards with pending work should receive a warning rail tone'
+    );
+    assert.equal(
+        adminStudioSource.includes('workflowRails=20260430_ADMIN_STUDIO_WORKFLOW_CARD_RAIL_VISIBILITY_1'),
+        true,
+        'admin studio should cache-bust the visible marketing workflow rail update'
+    );
+    assert.equal(
+        stylesSource.includes(')::before {\n    content: none !important;\n    display: none !important;\n}\n\nhtml[data-theme="light"] :is(#module-analytics, #module-business-overview, #module-growth-center, #module-commerce-center) :is('),
+        true,
+        'growth and analytics module cards should disable the old pseudo-element rail'
     );
     assert.equal(
         adminStudioSource.includes('analyticsClip=20260427_ADMIN_STUDIO_ANALYTICS_CONTENT_CLIP_AUDIT_1'),
@@ -3538,14 +3848,80 @@ test('admin studio tickets module keeps table details and dialogs usable on mobi
         true,
         'tickets rows should keep semantic mobile cell labels'
     );
+    assert.match(
+        ticketsSource,
+        /<td class="admin-ticket-selection-cell">\s*\$\{includeSelection \? `[\s\S]*admin-skeleton-block--checkbox[\s\S]*` : ''\}\s*<\/td>/,
+        'ticket skeleton rows should always reserve the selection cell so body columns match the header'
+    );
     assert.equal(
         adminStudioSource.includes('ticketsMobile=20260428_ADMIN_STUDIO_TICKETS_MOBILE_ADAPT_2'),
         true,
         'admin studio should cache-bust the ticket mobile stylesheet update'
     );
     assert.equal(
+        stylesSource.includes('20260430_ADMIN_STUDIO_TICKETS_MOBILE_QUEUE_DENSE_ALIGN_3'),
+        true,
+        'ticket styles should include the dense mobile queue alignment marker'
+    );
+    assert.match(
+        stylesSource,
+        /20260430_ADMIN_STUDIO_TICKETS_MOBILE_QUEUE_DENSE_ALIGN_3[\s\S]*#module-tickets \.filter-dropdowns,[\s\S]*#module-tickets \.admin-ticket-quick-filters \{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\) !important;/,
+        'ticket status and quick filters should stay two-up on phone widths that can fit them'
+    );
+    assert.match(
+        stylesSource,
+        /20260430_ADMIN_STUDIO_TICKETS_MOBILE_QUEUE_DENSE_ALIGN_3[\s\S]*#module-tickets \.admin-ticket-table-panel \{[\s\S]*overflow-x: auto !important;[\s\S]*-webkit-overflow-scrolling: touch !important;/,
+        'ticket mobile table should keep horizontal scrolling so all business columns remain available'
+    );
+    assert.match(
+        stylesSource,
+        /20260430_ADMIN_STUDIO_TICKETS_MOBILE_QUEUE_DENSE_ALIGN_3[\s\S]*#module-tickets \.admin-ticket-table,[\s\S]*#module-tickets:not\(\[data-ticket-select-mode="true"\]\) \.admin-ticket-table,[\s\S]*#module-tickets\[data-ticket-select-mode="true"\] \.admin-ticket-table \{[\s\S]*width: 1280px !important;[\s\S]*min-width: 1280px !important;/,
+        'ticket mobile table should keep a deliberate scroll width instead of collapsing to two columns'
+    );
+    assert.match(
+        stylesSource,
+        /20260430_ADMIN_STUDIO_TICKETS_MOBILE_QUEUE_DENSE_ALIGN_3[\s\S]*#module-tickets \.admin-ticket-table :is\([\s\S]*th:nth-child\(2\),[\s\S]*td:nth-child\(7\)[\s\S]*\),[\s\S]*#module-tickets\[data-ticket-select-mode="true"\] \.admin-ticket-table :is\(th:nth-child\(1\), td:nth-child\(1\)\) \{[\s\S]*display: table-cell !important;/,
+        'ticket mobile table should keep every business column rendered after the skeleton alignment fix'
+    );
+    assert.match(
+        stylesSource,
+        /20260430_ADMIN_STUDIO_TICKETS_MOBILE_QUEUE_DENSE_ALIGN_3[\s\S]*#module-tickets \.admin-ticket-table :is\(th:nth-child\(6\), td:nth-child\(6\)\) \{[\s\S]*width: 180px !important;[\s\S]*text-align: left !important;/,
+        'ticket category/status cells should keep a dedicated mobile column aligned with their header'
+    );
+    assert.match(
+        stylesSource,
+        /20260430_ADMIN_STUDIO_TICKETS_MOBILE_QUEUE_DENSE_ALIGN_3[\s\S]*#module-tickets \.admin-ticket-table :is\(th:nth-child\(7\), td:nth-child\(7\)\) \{[\s\S]*width: 240px !important;[\s\S]*text-align: left !important;/,
+        'ticket action cells should keep a dedicated mobile column aligned with their header'
+    );
+    assert.equal(
+        adminStudioSource.includes('ticketsMobileDense=20260430_ADMIN_STUDIO_TICKETS_MOBILE_QUEUE_DENSE_ALIGN_3'),
+        true,
+        'admin studio should cache-bust the dense ticket mobile queue alignment update'
+    );
+    assert.equal(
         adminStudioSource.includes('js/admin-tickets.js?v=20260428_TICKETS_MOBILE_TABLE_LABELS_1'),
         true,
         'admin studio should cache-bust the ticket row label and scroller update'
+    );
+});
+
+test('points generated result meta pills stay readable in light theme', () => {
+    const adminStudioSource = readRepoFile('admin-studio.html');
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+
+    assert.equal(
+        stylesSource.includes('20260430_ADMIN_STUDIO_POINTS_GENERATED_RESULT_LIGHT_PILLS_1'),
+        true,
+        'points generated result styles should include the light-theme meta pill marker'
+    );
+    assert.match(
+        stylesSource,
+        /html\[data-theme="light"\] #module-points #generatedCodesResult \.points-generated-result__meta span,[\s\S]*html:not\(\[data-theme="dark"\]\) #module-points #generatedCodesResult \.points-generated-result__meta span \{[\s\S]*background: rgba\(241, 245, 249, 0\.94\) !important;[\s\S]*border-color: rgba\(70, 98, 132, 0\.24\) !important;[\s\S]*color: #1e293b !important;[\s\S]*-webkit-text-fill-color: #1e293b !important;/,
+        'generated success meta pills should override dark-theme text and capsule chrome in light mode'
+    );
+    assert.equal(
+        adminStudioSource.includes('pointsGeneratedResultPills=20260430_ADMIN_STUDIO_POINTS_GENERATED_RESULT_LIGHT_PILLS_1'),
+        true,
+        'admin studio should cache-bust the points generated result light pill update'
     );
 });

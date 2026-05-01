@@ -36,6 +36,8 @@
         tabPrefetchMode: '',
         tabPrefetchTaskKey: '',
         tabPrefetchPromise: null,
+        commandCenterPrimeKey: '',
+        commandCenterPrimePromise: null,
         issueSummaryFocus: '',
         workbenchContext: null,
         pagination: {
@@ -3150,21 +3152,31 @@
         `).join('');
     }
 
-    function buildPaymentsProviderRowSkeleton() {
+    function buildPaymentsProviderRowSkeleton(index = 0, options = {}) {
+        const isOverview = options.variant === 'overview';
+        const isExpanded = isOverview && index % 2 === 1;
+        const titleWidth = isExpanded ? 'admin-skeleton-w-40' : 'admin-skeleton-w-30';
+        const metaWidth = isOverview
+            ? (isExpanded ? 'admin-skeleton-w-60' : 'admin-skeleton-w-70')
+            : 'admin-skeleton-w-80';
+        const extraPillCount = isOverview ? (isExpanded ? 4 : 3) : 4;
+        const badgeCount = isOverview ? (isExpanded ? 4 : 2) : 3;
+
         return `
-            <div class="payments-provider-row payments-skeleton-card" aria-hidden="true">
+            <div class="payments-provider-row payments-provider-row--skeleton payments-skeleton-card" aria-hidden="true">
                 <div class="payments-provider-copy payments-skeleton-stack">
                     <div class="payments-provider-name payments-skeleton-inline">
                         <span class="admin-skeleton-block payments-skeleton-inline-icon"></span>
-                        ${buildPaymentsSkeletonBlock('title', 'admin-skeleton-w-30')}
+                        ${buildPaymentsSkeletonBlock('title', titleWidth)}
                     </div>
-                    ${buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-80')}
+                    ${buildPaymentsSkeletonBlock('line', metaWidth)}
+                    ${isExpanded ? buildPaymentsSkeletonBlock('line', 'admin-skeleton-w-50') : ''}
                     <div class="payments-provider-extra payments-skeleton-inline">
-                        ${buildPaymentsSkeletonPills(4)}
+                        ${buildPaymentsSkeletonPills(extraPillCount)}
                     </div>
                 </div>
                 <div class="payments-provider-badges payments-skeleton-inline">
-                    ${buildPaymentsSkeletonPills(3)}
+                    ${buildPaymentsSkeletonPills(badgeCount)}
                 </div>
             </div>
         `;
@@ -3348,22 +3360,18 @@
     }
 
     function buildPaymentsTrendSkeleton() {
-        const barClasses = [
+        const markerClasses = [
             'payments-trend-skeleton-bar--sm',
             'payments-trend-skeleton-bar--md',
             'payments-trend-skeleton-bar--lg',
-            'payments-trend-skeleton-bar--xl',
-            'payments-trend-skeleton-bar--lg',
-            'payments-trend-skeleton-bar--md',
-            'payments-trend-skeleton-bar--sm',
-            'payments-trend-skeleton-bar--lg'
+            'payments-trend-skeleton-bar--md'
         ];
 
         return `
             <div class="payments-trend-skeleton" aria-hidden="true">
                 ${Array.from({ length: 24 }, (_, index) => `
                     <div class="payments-trend-skeleton-column">
-                        <span class="admin-skeleton-block payments-trend-skeleton-bar ${barClasses[index % barClasses.length]}"></span>
+                        <span class="admin-skeleton-block payments-trend-skeleton-bar ${markerClasses[index % markerClasses.length]}"></span>
                         ${index % 4 === 0 || index === 23
                             ? buildPaymentsSkeletonBlock('line', index === 23 ? 'admin-skeleton-w-30' : 'admin-skeleton-w-20', 'payments-trend-skeleton-label')
                             : '<span class="payments-trend-skeleton-label payments-trend-skeleton-label--empty" aria-hidden="true"></span>'}
@@ -3482,7 +3490,7 @@
             refundTarget.innerHTML = '';
         }
         if (providerStats) {
-            providerStats.innerHTML = Array.from({ length: 3 }, () => buildPaymentsProviderRowSkeleton()).join('');
+            providerStats.innerHTML = Array.from({ length: 2 }, (_, index) => buildPaymentsProviderRowSkeleton(index, { variant: 'overview' })).join('');
         }
         if (trendChart) {
             trendChart.innerHTML = buildPaymentsTrendSkeleton();
@@ -3492,13 +3500,26 @@
         }
     }
 
-    function applyOverviewSecondaryPayload(payload, requestToken) {
+    function isCurrentOverviewDeferredRequest(requestToken, cacheKey = '') {
         if (requestToken !== state.requestToken) {
+            return false;
+        }
+        if (cacheKey && cacheKey !== getCurrentCacheKey()) {
+            return false;
+        }
+        return true;
+    }
+
+    function applyOverviewSecondaryPayload(payload, requestToken, options = {}) {
+        if (!isCurrentOverviewDeferredRequest(requestToken, options.cacheKey)) {
             return false;
         }
 
         mergeSummaryPayload(payload, { sourceTab: 'overview' });
         state.overviewSecondaryLoaded = true;
+        if (state.activeTab !== 'overview') {
+            return true;
+        }
         syncOverviewStage();
 
         const data = state.summary;
@@ -3513,18 +3534,66 @@
         return true;
     }
 
-    function applyOverviewOpsPayload(payload, requestToken) {
-        if (requestToken !== state.requestToken) {
+    function applyOverviewOpsPayload(payload, requestToken, options = {}) {
+        if (!isCurrentOverviewDeferredRequest(requestToken, options.cacheKey)) {
             return false;
         }
 
         mergeSummaryPayload(payload, { sourceTab: 'overview' });
         state.overviewOpsLoaded = true;
+        if (state.activeTab !== 'overview') {
+            return true;
+        }
         syncOverviewStage();
 
         renderAnalyticsIssueSummary(state.summary, state.workbenchContext);
         updateOverviewLoadingMeta();
         return true;
+    }
+
+    async function loadOverviewDeferredScopes(requestToken, cacheKey = getCurrentCacheKey()) {
+        const secondaryQuery = buildSummaryQuery('overview', { scope: 'secondary' });
+        const opsQuery = buildSummaryQuery('overview', { scope: 'ops' });
+        const results = await Promise.allSettled([
+            fetchAdminJson(`/api/admin/payments/summary?${secondaryQuery.toString()}`)
+                .then((payload) => applyOverviewSecondaryPayload(payload, requestToken, { cacheKey })),
+            fetchAdminJson(`/api/admin/payments/summary?${opsQuery.toString()}`)
+                .then((payload) => applyOverviewOpsPayload(payload, requestToken, { cacheKey }))
+        ]);
+
+        if (!isCurrentOverviewDeferredRequest(requestToken, cacheKey)) {
+            return false;
+        }
+
+        const failedResult = results.find((result) => result.status === 'rejected');
+        if (failedResult?.reason) {
+            console.warn('[AdminPayments] overview deferred scope failed:', failedResult.reason);
+            if (state.activeTab === 'overview') {
+                renderAccessState(
+                    getFriendlyErrorMessage(failedResult.reason, '支付总览首屏已加载，但部分趋势或告警刷新失败，请稍后重试。'),
+                    'warning',
+                    { preserveBody: true }
+                );
+                setToolbarMeta('首屏已加载，部分详情刷新失败', 'warning');
+            }
+            return false;
+        }
+
+        if (state.overviewSecondaryLoaded && state.overviewOpsLoaded) {
+            state.viewCache.overview = cacheKey;
+            if (state.activeTab === 'overview') {
+                syncOverviewStage();
+                updateToolbarHighlights(state.summary);
+                renderOverviewCards(state.summary);
+                updateOverviewBanner(state.summary);
+                renderAnalyticsIssueSummary(state.summary, state.workbenchContext);
+            }
+            updateLastSynced(new Date());
+            scheduleTabPrefetch(state.activeTab);
+            return true;
+        }
+
+        return false;
     }
 
     function hasRenderedContentForTab(tabId = state.activeTab) {
@@ -6010,31 +6079,8 @@
             renderOverviewCards(coreData);
             updateOverviewBanner(coreData);
             updateOverviewLoadingMeta();
-
-            const [secondaryResult, opsResult] = await Promise.allSettled([
-                fetchAdminJson(`/api/admin/payments/summary?${buildSummaryQuery('overview', { scope: 'secondary' }).toString()}`)
-                    .then((payload) => applyOverviewSecondaryPayload(payload, requestToken)),
-                fetchAdminJson(`/api/admin/payments/summary?${buildSummaryQuery('overview', { scope: 'ops' }).toString()}`)
-                    .then((payload) => applyOverviewOpsPayload(payload, requestToken))
-            ]);
-
-            if (requestToken !== state.requestToken) {
-                return false;
-            }
-
-            const failedResult = [secondaryResult, opsResult].find((result) => result.status === 'rejected');
-            if (failedResult?.reason) {
-                throw failedResult.reason;
-            }
-
-            syncOverviewStage();
-            updateToolbarHighlights(state.summary);
-            renderOverviewCards(state.summary);
-            updateOverviewBanner(state.summary);
-            renderAnalyticsIssueSummary(state.summary, state.workbenchContext);
-            state.viewCache[requestedTab] = getCurrentCacheKey();
             updateLastSynced(new Date());
-            scheduleTabPrefetch(state.activeTab);
+            void loadOverviewDeferredScopes(requestToken, getCurrentCacheKey());
             return true;
         }
 
@@ -6352,7 +6398,7 @@
     async function reload() {
         if (!(await ensureAdminAccess())) {
             renderAccessState('当前账号没有支付对账权限，请使用管理员账号登录后再试。', 'error');
-            return;
+            return false;
         }
 
         const requestedTab = String(state.activeTab || 'overview').trim().toLowerCase() || 'overview';
@@ -6370,7 +6416,7 @@
             setLoading(true);
             const applied = await loadSummary(requestToken, requestedTab);
             if (!applied || requestToken !== state.requestToken) {
-                return;
+                return null;
             }
 
             const currentActiveTab = String(state.activeTab || 'overview').trim().toLowerCase() || 'overview';
@@ -6389,7 +6435,7 @@
                             renderCleanupPreviewFallback(getFriendlyErrorMessage(cleanupError, '测试数据扫描失败，但不影响支付对账查看。'));
                         }
                     }
-                    return;
+                    return true;
                 }
 
                 return reload();
@@ -6403,15 +6449,16 @@
                     renderCleanupPreviewFallback(getFriendlyErrorMessage(cleanupError, '测试数据扫描失败，但不影响支付对账查看。'));
                 }
             }
+            return true;
         } catch (error) {
             if (requestToken !== state.requestToken) {
-                return;
+                return null;
             }
 
             console.error('[AdminPayments] Failed to load dashboard:', error);
             if (error.statusCode === 403) {
                 renderAccessState(getFriendlyErrorMessage(error, '当前账号没有支付对账权限，请使用管理员账号登录后再试。'), 'error');
-                return;
+                return false;
             }
 
             if (state.summary) {
@@ -6431,10 +6478,11 @@
                     ? '首屏已加载，部分详情刷新失败'
                     : (state.lastSyncedAt ? `上次成功 ${formatToolbarTime(state.lastSyncedAt)}` : '刚刚刷新失败');
                 setToolbarMeta(fallbackTime, 'warning');
-                return;
+                return false;
             }
 
             renderAccessState(getFriendlyErrorMessage(error, '支付对账加载失败，请稍后重试。'), 'warning');
+            return false;
         } finally {
             if (requestToken === state.requestToken) {
                 setLoading(false);
@@ -6443,19 +6491,140 @@
         }
     }
 
-    async function primePaymentsCommandCenterSummary(options = {}) {
-        const shouldForce = options?.force === true;
+    async function loadPaymentsCommandCenterPrimeSummary(options = {}) {
+        const shouldForce = options.force === true;
+        const cacheKey = getCurrentCacheKey();
+        const hasCommandSummary = Boolean(state.summary?.overview || state.summary?.anomaly_summary);
+        const hasOpsSummary = state.summary?.ops_alert_summary && typeof state.summary.ops_alert_summary === 'object';
+        const taskKey = `${cacheKey}:${shouldForce ? 'force' : 'warm'}:${hasCommandSummary ? 'core-ready' : 'core-missing'}:${hasOpsSummary ? 'ops-ready' : 'ops-missing'}`;
 
-        if (!state.initialized || !state.summary) {
-            await init();
+        if (!shouldForce && hasCommandSummary && hasOpsSummary) {
+            window.AdminStudioTiming?.mark?.('payments:command-prime:cache-hit', {
+                cacheKey,
+                hasCommandSummary,
+                hasOpsSummary
+            });
             return getPaymentsCommandCenterSummary();
         }
 
-        if (shouldForce) {
-            await reload();
+        if (!shouldForce && state.commandCenterPrimePromise && state.commandCenterPrimeKey === taskKey) {
+            window.AdminStudioTiming?.mark?.('payments:command-prime:coalesced', {
+                cacheKey,
+                hasCommandSummary,
+                hasOpsSummary
+            });
+            return state.commandCenterPrimePromise;
         }
 
-        return getPaymentsCommandCenterSummary();
+        const run = async () => {
+            const timingDetail = {
+                cacheKey,
+                force: shouldForce,
+                hasCommandSummary,
+                hasOpsSummary
+            };
+            let accessGranted = false;
+            let requestCount = 0;
+            let fulfilledCount = 0;
+            let rejectedCount = 0;
+            window.AdminStudioTiming?.mark?.('payments:command-prime:start', timingDetail);
+
+            try {
+                accessGranted = await ensureAdminAccess();
+                if (!accessGranted) {
+                    return getPaymentsCommandCenterSummary();
+                }
+
+                const requestCacheKey = getCurrentCacheKey();
+                const requests = [];
+
+                if (shouldForce || !hasCommandSummary) {
+                    const coreQuery = buildSummaryQuery('overview', { scope: 'core', prefetch: true });
+                    requests.push(
+                        fetchAdminJson(`/api/admin/payments/summary?${coreQuery.toString()}`)
+                            .then((payload) => {
+                                if (requestCacheKey === getCurrentCacheKey()) {
+                                    mergeSummaryPayload(payload, { sourceTab: 'overview', replace: !state.summary });
+                                }
+                            })
+                    );
+                }
+
+                if (shouldForce || !hasOpsSummary) {
+                    const opsQuery = buildSummaryQuery('overview', { scope: 'ops', prefetch: true });
+                    requests.push(
+                        fetchAdminJson(`/api/admin/payments/summary?${opsQuery.toString()}`)
+                            .then((payload) => {
+                                if (requestCacheKey === getCurrentCacheKey()) {
+                                    mergeSummaryPayload(payload, { sourceTab: 'overview' });
+                                }
+                            })
+                    );
+                }
+
+                requestCount = requests.length;
+                const results = requests.length
+                    ? await Promise.allSettled(requests)
+                    : [];
+                const failedResult = results.find((result) => result.status === 'rejected');
+                const hasFulfilledResult = results.some((result) => result.status === 'fulfilled');
+                fulfilledCount = results.filter((result) => result.status === 'fulfilled').length;
+                rejectedCount = results.filter((result) => result.status === 'rejected').length;
+
+                if (failedResult?.reason && !hasFulfilledResult && !state.summary) {
+                    throw failedResult.reason;
+                }
+
+                if (failedResult?.reason) {
+                    console.warn('[AdminPayments] Command center summary prime partially failed:', failedResult.reason);
+                }
+
+                if (hasFulfilledResult) {
+                    state.lastSyncedAt = new Date().toISOString();
+                    emitPaymentsCommandCenterSummaryUpdate();
+                }
+
+                return getPaymentsCommandCenterSummary();
+            } finally {
+                window.AdminStudioTiming?.mark?.('payments:command-prime:end', {
+                    ...timingDetail,
+                    accessGranted,
+                    requestCount,
+                    fulfilledCount,
+                    rejectedCount
+                });
+                window.AdminStudioTiming?.measure?.(
+                    'payments:command-prime',
+                    'payments:command-prime:start',
+                    'payments:command-prime:end',
+                    timingDetail
+                );
+            }
+        };
+
+        state.commandCenterPrimeKey = taskKey;
+        state.commandCenterPrimePromise = run().finally(() => {
+            if (state.commandCenterPrimeKey === taskKey) {
+                state.commandCenterPrimeKey = '';
+                state.commandCenterPrimePromise = null;
+            }
+        });
+        return state.commandCenterPrimePromise;
+    }
+
+    async function primePaymentsCommandCenterSummary(options = {}) {
+        const shouldForce = options?.force === true;
+
+        if (!shouldForce && state.summary?.overview && state.summary?.ops_alert_summary) {
+            window.AdminStudioTiming?.mark?.('payments:command-prime:cache-hit', {
+                cacheKey: getCurrentCacheKey(),
+                hasCommandSummary: true,
+                hasOpsSummary: true
+            });
+            return getPaymentsCommandCenterSummary();
+        }
+
+        return loadPaymentsCommandCenterPrimeSummary({ force: shouldForce });
     }
 
     async function previewCleanup() {
@@ -6763,9 +6932,11 @@
                 exportAsExcel(payload);
             }
             window.showToast?.(`${String(format).toUpperCase()} 导出成功`, 'success');
+            return true;
         } catch (error) {
             console.error('[AdminPayments] Failed to export data:', error);
             window.showToast?.(getFriendlyErrorMessage(error, '支付对账导出失败，请稍后重试。'), 'error');
+            return false;
         }
     }
 

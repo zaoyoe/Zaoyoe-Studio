@@ -1,5 +1,5 @@
 /**
- * Announcement Loader - Standalone script for pages other than prompts.html
+ * Announcement Loader - Shared script for public pages
  * This script loads system announcements with full support for banners, modals, and toasts.
  * Version: 2026041005
  */
@@ -13,7 +13,10 @@
     let announcementOverflowRestore = null;
     const acknowledgedAnnouncementKeys = new Set();
     const dismissedAnnouncementKeys = new Set();
+    const recordedAnnouncementEventKeys = new Set();
+    let announcementConfigWarmPromise = null;
     const ANNOUNCEMENT_ACK_STORAGE_PREFIX = 'announcement_acked_v2_';
+    const ANNOUNCEMENT_READER_STORAGE_KEY = 'announcement_reader_v1';
     let announcementBootstrapStarted = false;
 
     function isLocalAnnouncementTestingHost() {
@@ -184,6 +187,68 @@
         return targets.length ? targets : ['all'];
     }
 
+    function normalizeAnnouncementPageOverrides(value) {
+        const source = value && typeof value === 'object' && !Array.isArray(value)
+            ? value
+            : {};
+        const overrides = {};
+
+        Object.entries(source).forEach(([rawPage, rawConfig]) => {
+            const page = normalizeAnnouncementPageId(rawPage);
+            if (!page || page === 'all') {
+                return;
+            }
+
+            const config = rawConfig && typeof rawConfig === 'object' && !Array.isArray(rawConfig)
+                ? rawConfig
+                : { content: rawConfig };
+            const content = String(config.content ?? config.announcement_content ?? '');
+            if (!content.trim() && config.enabled !== false) {
+                return;
+            }
+
+            overrides[page] = {
+                enabled: config.enabled !== false,
+                content,
+                updated_at: String(config.updated_at || config.announcement_updated_at || '').trim()
+            };
+        });
+
+        return overrides;
+    }
+
+    function normalizeAnnouncementRule(ruleValue = {}) {
+        const rule = ruleValue && typeof ruleValue === 'object' && !Array.isArray(ruleValue)
+            ? ruleValue
+            : {};
+        const priority = Number(rule.priority || 0);
+        const status = String(rule.status || 'draft').trim().toLowerCase() || 'draft';
+
+        return {
+            announcement_id: String(rule.announcement_id || rule.id || '').trim(),
+            announcement_title: String(rule.announcement_title || rule.title || '站内公告').trim() || '站内公告',
+            announcement_enabled: rule.announcement_enabled === true || rule.enabled === true,
+            announcement_content: String(rule.announcement_content ?? rule.content ?? ''),
+            announcement_type: String(rule.announcement_type || rule.type || 'banner').trim().toLowerCase() || 'banner',
+            announcement_color: String(rule.announcement_color || rule.color || 'purple').trim().toLowerCase() || 'purple',
+            announcement_size: String(rule.announcement_size || rule.size || 'medium').trim().toLowerCase() || 'medium',
+            announcement_decoration: String(rule.announcement_decoration || rule.decoration || 'none').trim().toLowerCase() || 'none',
+            announcement_pages: normalizeAnnouncementPageTargets(rule.announcement_pages ?? rule.pages),
+            announcement_page_overrides: normalizeAnnouncementPageOverrides(rule.announcement_page_overrides ?? rule.page_overrides),
+            announcement_updated_at: String(rule.announcement_updated_at || rule.updated_at || '').trim(),
+            priority: Number.isFinite(priority) ? priority : 0,
+            status,
+            starts_at: String(rule.starts_at || '').trim(),
+            ends_at: String(rule.ends_at || '').trim()
+        };
+    }
+
+    function normalizeAnnouncementRules(value = []) {
+        return (Array.isArray(value) ? value : [])
+            .map(normalizeAnnouncementRule)
+            .filter((rule) => rule.announcement_id || rule.announcement_content || Object.keys(rule.announcement_page_overrides || {}).length);
+    }
+
     function normalizeAnnouncementConfig(configValue = {}) {
         const config = configValue && typeof configValue === 'object' && !Array.isArray(configValue)
             ? configValue
@@ -197,13 +262,104 @@
             announcement_size: String(config.announcement_size || 'medium').trim().toLowerCase() || 'medium',
             announcement_decoration: String(config.announcement_decoration || 'none').trim().toLowerCase() || 'none',
             announcement_pages: normalizeAnnouncementPageTargets(config.announcement_pages),
-            announcement_updated_at: String(config.announcement_updated_at || '').trim()
+            announcement_page_overrides: normalizeAnnouncementPageOverrides(config.announcement_page_overrides),
+            announcement_updated_at: String(config.announcement_updated_at || '').trim(),
+            announcement_rules: normalizeAnnouncementRules(config.announcement_rules)
         };
+    }
+
+    function isAnnouncementWithinSchedule(config = {}, now = new Date()) {
+        const startsAt = config.starts_at ? new Date(config.starts_at) : null;
+        const endsAt = config.ends_at ? new Date(config.ends_at) : null;
+
+        if (startsAt && !Number.isNaN(startsAt.getTime()) && startsAt > now) {
+            return false;
+        }
+        if (endsAt && !Number.isNaN(endsAt.getTime()) && endsAt <= now) {
+            return false;
+        }
+        return true;
+    }
+
+    function resolveSingleAnnouncementConfigForPage(config = {}, currentPage = '') {
+        const normalizedPage = normalizeAnnouncementPageId(currentPage);
+        if (!config.announcement_enabled || !normalizedPage) {
+            return null;
+        }
+
+        const pageOverride = config.announcement_page_overrides?.[normalizedPage];
+        if (pageOverride) {
+            if (pageOverride.enabled === false) {
+                return null;
+            }
+            if (pageOverride.content) {
+                return {
+                    ...config,
+                    announcement_content: pageOverride.content,
+                    announcement_pages: [normalizedPage],
+                    announcement_scope: normalizedPage,
+                    announcement_updated_at: pageOverride.updated_at || config.announcement_updated_at || ''
+                };
+            }
+        }
+
+        const targetPages = normalizeAnnouncementPageTargets(config.announcement_pages);
+        if (!targetPages.includes('all') && !targetPages.includes(normalizedPage)) {
+            return null;
+        }
+
+        if (!config.announcement_content) {
+            return null;
+        }
+
+        return {
+            ...config,
+            announcement_scope: targetPages.includes('all') ? 'all' : normalizedPage
+        };
+    }
+
+    function resolveAnnouncementConfigForPage(config = {}, currentPage = '') {
+        const normalizedPage = normalizeAnnouncementPageId(currentPage);
+        if (!normalizedPage) {
+            return null;
+        }
+
+        const now = new Date();
+        const ruleMatches = (Array.isArray(config.announcement_rules) ? config.announcement_rules : [])
+            .filter((rule) => rule.status === 'approved' && isAnnouncementWithinSchedule(rule, now))
+            .map((rule) => {
+                const resolved = resolveSingleAnnouncementConfigForPage(rule, normalizedPage);
+                if (!resolved) {
+                    return null;
+                }
+                return {
+                    ...resolved,
+                    announcement_id: rule.announcement_id,
+                    announcement_title: rule.announcement_title,
+                    announcement_rule: true,
+                    priority: rule.priority
+                };
+            })
+            .filter(Boolean)
+            .sort((left, right) => {
+                const priorityDelta = Number(right.priority || 0) - Number(left.priority || 0);
+                if (priorityDelta !== 0) {
+                    return priorityDelta;
+                }
+                return String(right.announcement_updated_at || '').localeCompare(String(left.announcement_updated_at || ''));
+            });
+
+        if (ruleMatches.length) {
+            return ruleMatches[0];
+        }
+
+        return resolveSingleAnnouncementConfigForPage(config, normalizedPage);
     }
 
     function buildAnnouncementAckKey(config = {}, currentPage = '') {
         const normalizedPage = normalizeAnnouncementPageId(currentPage) || 'unknown';
-        const contentForHash = `${config.announcement_content || ''}|${config.announcement_updated_at || ''}|${normalizedPage}`;
+        const normalizedScope = normalizeAnnouncementPageId(config.announcement_scope) || 'all';
+        const contentForHash = `${config.announcement_id || ''}|${config.announcement_content || ''}|${config.announcement_updated_at || ''}|${normalizedPage}|${normalizedScope}`;
         let hash = 0;
         for (let i = 0; i < contentForHash.length; i += 1) {
             const char = contentForHash.charCodeAt(i);
@@ -211,6 +367,73 @@
             hash &= hash;
         }
         return `${ANNOUNCEMENT_ACK_STORAGE_PREFIX}${normalizedPage}_${Math.abs(hash).toString(36)}`;
+    }
+
+    function getAnnouncementReaderKey() {
+        const fallback = `session_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+        if (!window.localStorage) {
+            return fallback;
+        }
+
+        try {
+            const existing = String(localStorage.getItem(ANNOUNCEMENT_READER_STORAGE_KEY) || '').trim();
+            if (existing) {
+                return existing;
+            }
+
+            const nextKey = `anon_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
+            localStorage.setItem(ANNOUNCEMENT_READER_STORAGE_KEY, nextKey);
+            return nextKey;
+        } catch (error) {
+            console.warn('📢 [Loader] 公告访客标识写入失败:', error);
+            return fallback;
+        }
+    }
+
+    async function recordAnnouncementEvent(config = {}, currentPage = '', ackKey = '', eventType = 'read') {
+        const announcementId = String(config.announcement_id || '').trim();
+        if (!announcementId) {
+            return;
+        }
+
+        const normalizedPage = normalizeAnnouncementPageId(currentPage) || 'unknown';
+        const normalizedEventType = String(eventType || '').trim().toLowerCase();
+        if (!['view', 'read', 'dismiss'].includes(normalizedEventType)) {
+            return;
+        }
+
+        const eventKey = `${announcementId}:${normalizedPage}:${normalizedEventType}:${ackKey}`;
+        if (recordedAnnouncementEventKeys.has(eventKey)) {
+            return;
+        }
+        recordedAnnouncementEventKeys.add(eventKey);
+
+        try {
+            const response = await fetch('/api/public?scope=config&route=announcement-event', {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    announcement_id: announcementId,
+                    reader_key: getAnnouncementReaderKey(),
+                    page: normalizedPage,
+                    event_type: normalizedEventType,
+                    ack_key: ackKey,
+                    metadata: {
+                        scope: normalizeAnnouncementPageId(config.announcement_scope) || 'all'
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                recordedAnnouncementEventKeys.delete(eventKey);
+            }
+        } catch (error) {
+            recordedAnnouncementEventKeys.delete(eventKey);
+            console.warn('📢 [Loader] 公告阅读事件上报失败:', error);
+        }
     }
 
     async function fetchAnnouncementConfigFromPublicApi() {
@@ -256,6 +479,16 @@
         }
     }
 
+    function warmAnnouncementConfig() {
+        if (!announcementConfigWarmPromise) {
+            announcementConfigWarmPromise = fetchAnnouncementConfig()
+                .finally(() => {
+                    announcementConfigWarmPromise = null;
+                });
+        }
+        return announcementConfigWarmPromise;
+    }
+
     // Get current page ID for announcement targeting
     function getCurrentPageId() {
         const path = window.location.pathname.toLowerCase();
@@ -272,29 +505,28 @@
         console.log('📢 [Loader] loadAnnouncement() 开始执行...');
 
         try {
-            const config = await fetchAnnouncementConfig();
+            const config = await warmAnnouncementConfig();
 
             if (!config) {
                 console.warn('📢 [Loader] notifications 配置不存在');
                 return;
             }
 
-            // Check if current page is in target pages
-            const targetPages = normalizeAnnouncementPageTargets(config.announcement_pages);
             const currentPage = normalizeAnnouncementPageId(getCurrentPageId());
-            console.log('📢 [Loader] 目标页面:', targetPages, '当前页面:', currentPage);
+            const pageConfig = resolveAnnouncementConfigForPage(config, currentPage);
+            console.log('📢 [Loader] 目标页面:', normalizeAnnouncementPageTargets(config.announcement_pages), '当前页面:', currentPage);
 
-            if (!targetPages.includes('all') && !targetPages.includes(currentPage)) {
+            if (!pageConfig) {
                 console.log('📢 [Loader] 当前页面不在公告目标页面中，跳过显示');
                 return;
             }
 
-            if (config.announcement_enabled && config.announcement_content) {
-                const type = config.announcement_type || 'banner';
-                const color = config.announcement_color || 'purple';
-                const size = config.announcement_size || 'medium';
-                const content = config.announcement_content.replace(/\n/g, '<br>');
-                const ackKey = buildAnnouncementAckKey(config, currentPage);
+            if (pageConfig.announcement_enabled && pageConfig.announcement_content) {
+                const type = pageConfig.announcement_type || 'banner';
+                const color = pageConfig.announcement_color || 'purple';
+                const size = pageConfig.announcement_size || 'medium';
+                const content = pageConfig.announcement_content.replace(/\n/g, '<br>');
+                const ackKey = buildAnnouncementAckKey(pageConfig, currentPage);
 
                 if (acknowledgedAnnouncementKeys.has(ackKey)) {
                     console.log('📢 [Loader] 当前会话已确认该公告');
@@ -316,8 +548,12 @@
                     return;
                 }
 
-                const decoration = config.announcement_decoration || 'none';
-                showAnnouncement(type, color, size, content, ackKey, decoration);
+                const decoration = pageConfig.announcement_decoration || 'none';
+                showAnnouncement(type, color, size, content, ackKey, decoration, {
+                    announcementConfig: pageConfig,
+                    currentPage
+                });
+                void recordAnnouncementEvent(pageConfig, currentPage, ackKey, 'view');
                 console.log('📢 [Loader] 公告已显示:', type, color, size);
             }
         } catch (err) {
@@ -341,20 +577,22 @@
         announcementBootstrapStarted = true;
         clearLocalAnnouncementAckCache();
 
-        scheduleAnnouncementLoad(900);
-        scheduleAnnouncementLoad(2200);
+        void warmAnnouncementConfig();
+        scheduleAnnouncementLoad(0);
+        scheduleAnnouncementLoad(650);
+        scheduleAnnouncementLoad(1800);
         scheduleAnnouncementLoad(4200);
 
         window.addEventListener('load', () => {
-            scheduleAnnouncementLoad(200);
+            scheduleAnnouncementLoad(0);
         }, { once: true });
 
         window.addEventListener('pageshow', () => {
-            scheduleAnnouncementLoad(160);
+            scheduleAnnouncementLoad(0);
         });
     }
 
-    function showAnnouncement(type, color, size, content, ackKey, decoration) {
+    function showAnnouncement(type, color, size, content, ackKey, decoration, context = {}) {
         if (currentAnnouncementElement && currentAnnouncementAckKey === ackKey) {
             return;
         }
@@ -366,11 +604,11 @@
         currentAnnouncementAckKey = ackKey || '';
 
         if (type === 'banner') {
-            showBannerAnnouncement(color, size, content, ackKey, decoration);
+            showBannerAnnouncement(color, size, content, ackKey, decoration, context);
         } else if (type === 'modal') {
-            showModalAnnouncement(color, size, content, ackKey, decoration);
+            showModalAnnouncement(color, size, content, ackKey, decoration, context);
         } else if (type === 'toast') {
-            showToastAnnouncement(color, size, content, ackKey, decoration);
+            showToastAnnouncement(color, size, content, ackKey, decoration, context);
         }
     }
 
@@ -382,14 +620,15 @@
         style.id = 'announcement-loader-styles';
         style.textContent = `
             /* Announcement Modal */
-            .announcement-overlay {
+            .zaoyoe-announcement-overlay {
                 position: fixed;
                 top: 0;
                 left: 0;
                 right: 0;
                 bottom: 0;
-                background: rgba(0, 0, 0, 0.6);
-                backdrop-filter: blur(8px);
+                background: rgba(34, 41, 52, 0.48);
+                backdrop-filter: blur(12px) saturate(106%);
+                -webkit-backdrop-filter: blur(12px) saturate(106%);
                 z-index: 99999;
                 display: flex;
                 align-items: center;
@@ -397,20 +636,26 @@
                 animation: fadeIn 0.3s ease;
             }
             
-            .announcement-modal {
-                /* 半透明背景，让粒子能透过 */
+            .zaoyoe-announcement-modal {
+                --announcement-snow-particle-color: rgba(191, 219, 254, 0.88);
+                --announcement-snow-dust-color: rgba(147, 197, 253, 0.76);
+                --announcement-snow-soft-color: rgba(125, 211, 252, 0.72);
+                --announcement-snow-crystal-color: rgba(191, 219, 254, 0.92);
                 background: rgba(30, 41, 59, 0.85);
+                backdrop-filter: blur(18px) saturate(115%);
+                -webkit-backdrop-filter: blur(18px) saturate(115%);
                 border: 1px solid rgba(255, 255, 255, 0.1);
                 border-radius: 24px;
                 width: 90%;
                 max-width: 480px;
+                color: #fff;
                 box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
                 animation: modalPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
                 overflow: hidden;
                 position: relative;
             }
             
-            .announcement-header {
+            .zaoyoe-announcement-header {
                 padding: 20px 24px 16px;
                 display: flex;
                 align-items: center;
@@ -421,28 +666,28 @@
                 z-index: 10;
             }
             
-            .announcement-header i {
+            .zaoyoe-announcement-header i {
                 font-size: 1.3rem;
                 color: #6b9ece;
             }
             
-            .announcement-title {
+            .zaoyoe-announcement-title {
                 font-size: 1.15rem;
                 font-weight: 600;
                 color: #fff;
             }
             
-            .announcement-body {
+            .zaoyoe-announcement-body {
                 padding: 16px 24px 24px;
                 position: relative;
                 z-index: 10;
             }
             
             /* 磨砂玻璃效果 - 内容区域 */
-            .announcement-text {
+            .zaoyoe-announcement-text {
                 background: rgba(30, 41, 59, 0.35);
-                backdrop-filter: blur(8px);
-                -webkit-backdrop-filter: blur(8px);
+                backdrop-filter: blur(14px) saturate(125%);
+                -webkit-backdrop-filter: blur(14px) saturate(125%);
                 border: 1px solid rgba(255, 255, 255, 0.15);
                 border-radius: 12px;
                 padding: 16px;
@@ -455,12 +700,12 @@
                     inset 0 1px 0 rgba(255, 255, 255, 0.1);
             }
             
-            .announcement-text a {
+            .zaoyoe-announcement-text a {
                 color: #6b9ece;
                 text-decoration: underline;
             }
             
-            .announcement-footer {
+            .zaoyoe-announcement-footer {
                 padding: 16px 24px 20px;
                 display: flex;
                 justify-content: center;
@@ -469,11 +714,11 @@
             }
             
             /* 磨砂玻璃按钮 */
-            .announcement-ack-btn {
+            .zaoyoe-announcement-ack-btn {
                 padding: 10px 36px;
                 background: rgba(255, 255, 255, 0.15);
-                backdrop-filter: blur(8px);
-                -webkit-backdrop-filter: blur(8px);
+                backdrop-filter: blur(14px) saturate(125%);
+                -webkit-backdrop-filter: blur(14px) saturate(125%);
                 border: 1px solid rgba(255, 255, 255, 0.25);
                 border-radius: 12px;
                 color: #fff;
@@ -484,14 +729,61 @@
                 box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
             }
             
-            .announcement-ack-btn:hover {
+            .zaoyoe-announcement-ack-btn:hover {
                 background: rgba(255, 255, 255, 0.25);
                 transform: translateY(-2px);
                 box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             }
+
+            [data-theme="dark"] .zaoyoe-announcement-overlay {
+                background: rgba(7, 9, 12, 0.28);
+                backdrop-filter: blur(14px) saturate(108%);
+                -webkit-backdrop-filter: blur(14px) saturate(108%);
+            }
+
+            [data-theme="dark"] .zaoyoe-announcement-modal {
+                --announcement-snow-particle-color: rgba(191, 219, 254, 0.88);
+                --announcement-snow-dust-color: rgba(147, 197, 253, 0.76);
+                --announcement-snow-soft-color: rgba(125, 211, 252, 0.72);
+                --announcement-snow-crystal-color: rgba(191, 219, 254, 0.92);
+                background: rgba(30, 41, 59, 0.85);
+                backdrop-filter: blur(18px) saturate(115%);
+                -webkit-backdrop-filter: blur(18px) saturate(115%);
+                border-color: rgba(255, 255, 255, 0.1);
+                color: #fff;
+                box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+            }
+
+            [data-theme="dark"] .zaoyoe-announcement-header {
+                border-bottom-color: rgba(255, 255, 255, 0.06);
+            }
+
+            [data-theme="dark"] .zaoyoe-announcement-title {
+                color: #fff;
+            }
+
+            [data-theme="dark"] .zaoyoe-announcement-text {
+                background: rgba(30, 41, 59, 0.35);
+                border-color: rgba(255, 255, 255, 0.15);
+                color: rgba(255, 255, 255, 0.9);
+                box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+            }
+
+            [data-theme="dark"] .zaoyoe-announcement-ack-btn {
+                background: rgba(255, 255, 255, 0.15);
+                border-color: rgba(255, 255, 255, 0.25);
+                color: #fff;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            }
+
+            [data-theme="dark"] .zaoyoe-announcement-ack-btn:hover {
+                background: rgba(255, 255, 255, 0.25);
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            }
             
             /* Banner Style */
-            .announcement-banner {
+            .zaoyoe-announcement-banner {
                 position: fixed;
                 top: 0;
                 left: 0;
@@ -510,14 +802,14 @@
                 overflow: hidden;
             }
             
-            .announcement-banner .announcement-text {
+            .zaoyoe-announcement-banner .zaoyoe-announcement-text {
                 color: rgba(255, 255, 255, 0.9);
                 font-size: 0.9rem;
                 position: relative;
                 z-index: 10;
             }
             
-            .announcement-banner .announcement-close {
+            .zaoyoe-announcement-banner .zaoyoe-announcement-close {
                 background: rgba(255, 255, 255, 0.1);
                 border: none;
                 color: #fff;
@@ -535,7 +827,7 @@
             }
             
             /* Toast Style */
-            .announcement-toast {
+            .zaoyoe-announcement-toast {
                 position: fixed;
                 bottom: 24px;
                 right: 24px;
@@ -644,32 +936,32 @@
             }
 
             @media (max-width: 768px) {
-                .announcement-modal {
+                .zaoyoe-announcement-modal {
                     width: 95%;
                 }
 
-                .announcement-modal .announcement-header {
+                .zaoyoe-announcement-modal .zaoyoe-announcement-header {
                     padding-top: 21px;
                     padding-bottom: 17px;
                 }
 
-                .announcement-modal .announcement-body {
+                .zaoyoe-announcement-modal .zaoyoe-announcement-body {
                     padding-top: 17px;
                     padding-bottom: 25px;
                 }
 
-                .announcement-modal .announcement-text {
+                .zaoyoe-announcement-modal .zaoyoe-announcement-text {
                     padding-top: 17px;
                     padding-bottom: 17px;
                     max-height: 317px;
                 }
 
-                .announcement-modal .announcement-footer {
+                .zaoyoe-announcement-modal .zaoyoe-announcement-footer {
                     padding-top: 17px;
                     padding-bottom: 21px;
                 }
 
-                .announcement-modal .announcement-ack-btn {
+                .zaoyoe-announcement-modal .zaoyoe-announcement-ack-btn {
                     padding-top: 11px;
                     padding-bottom: 11px;
                 }
@@ -712,6 +1004,34 @@
             .decoration-particles.snow .decoration-particle {
                 animation-name: particle-fall;
                 animation-duration: 10s;
+            }
+
+            .decoration-particles.snow .announcement-particle--snow-dust,
+            .decoration-particles.snow .announcement-particle--snow-soft,
+            .decoration-particles.snow .announcement-particle--snow-crystal {
+                color: var(--announcement-particle-color, rgba(255, 255, 255, 0.9));
+            }
+
+            .announcement-particle-snow-dot,
+            .announcement-particle-snow-soft {
+                display: block;
+                width: 100%;
+                height: 100%;
+                border-radius: 999px;
+                background: currentColor;
+            }
+
+            .announcement-particle-snow-dot {
+                box-shadow: 0 0 5px rgba(96, 165, 250, 0.38);
+            }
+
+            .announcement-particle-snow-soft {
+                background: radial-gradient(circle, rgba(191, 219, 254, 0.95) 0%, rgba(125, 211, 252, 0.48) 42%, rgba(125, 211, 252, 0) 74%);
+                box-shadow: 0 0 10px rgba(125, 211, 252, 0.35);
+            }
+
+            .announcement-particle-svg--snow-crystal {
+                filter: drop-shadow(0 0 4px rgba(96, 165, 250, 0.42));
             }
             
             .decoration-particles.sakura .decoration-particle {
@@ -1103,8 +1423,32 @@
                 particles += `<span class="decoration-particle" data-announcement-particle="1" data-left="${left.toFixed(2)}" data-delay="${delay.toFixed(2)}" data-duration="${duration.toFixed(2)}" data-drift-x="${driftOffset.toFixed(2)}" data-size="${finalFontSize.toFixed(0)}" data-opacity="${opacity.toFixed(2)}" data-blur="${blur.toFixed(1)}" data-color="${color}">${content}</span>`;
                 continue;
             } else if (theme === 'snow') {
-                content = `<svg viewBox="0 0 24 24" fill="none" class="announcement-particle-svg"><path d="M12,2L12,22 M2,12L22,12 M19.07,4.93L4.93,19.07 M19.07,19.07L4.93,4.93" class="announcement-particle-svg--stroke"/></svg>`;
-                particles += `<span class="decoration-particle" data-announcement-particle="1" data-left="${left.toFixed(2)}" data-delay="${delay.toFixed(2)}" data-duration="${duration.toFixed(2)}" data-drift-x="${driftOffset.toFixed(2)}" data-size="${finalFontSize.toFixed(0)}" data-opacity="${opacity.toFixed(2)}" data-blur="${blur.toFixed(1)}" data-color="rgba(255,255,255,0.9)">${content}</span>`;
+                const snowVariant = Math.random();
+                let snowClass = 'announcement-particle--snow-crystal';
+                let snowSize = finalFontSize;
+                let snowOpacity = opacity;
+                let snowBlur = blur;
+                let snowColor = 'var(--announcement-snow-crystal-color, rgba(96,165,250,0.7))';
+
+                if (snowVariant < 0.35) {
+                    snowClass = 'announcement-particle--snow-dust';
+                    snowSize = 2 + Math.random() * 2.5;
+                    snowOpacity = 0.45 + Math.random() * 0.3;
+                    snowBlur = 0.2 + Math.random() * 0.9;
+                    snowColor = 'var(--announcement-snow-dust-color, rgba(147,197,253,0.58))';
+                    content = '<span class="announcement-particle-snow-dot"></span>';
+                } else if (snowVariant < 0.68) {
+                    snowClass = 'announcement-particle--snow-soft';
+                    snowSize = 5 + Math.random() * 5;
+                    snowOpacity = 0.4 + Math.random() * 0.35;
+                    snowBlur = 0.2 + Math.random() * 0.7;
+                    snowColor = 'var(--announcement-snow-soft-color, rgba(125,211,252,0.5))';
+                    content = '<span class="announcement-particle-snow-soft"></span>';
+                } else {
+                    content = `<svg viewBox="0 0 24 24" fill="none" class="announcement-particle-svg announcement-particle-svg--snow-crystal"><path d="M12,2L12,22 M2,12L22,12 M19.07,4.93L4.93,19.07 M19.07,19.07L4.93,4.93" class="announcement-particle-svg--stroke"/></svg>`;
+                }
+
+                particles += `<span class="decoration-particle ${snowClass}" data-announcement-particle="1" data-left="${left.toFixed(2)}" data-delay="${delay.toFixed(2)}" data-duration="${duration.toFixed(2)}" data-drift-x="${driftOffset.toFixed(2)}" data-size="${snowSize.toFixed(1)}" data-opacity="${snowOpacity.toFixed(2)}" data-blur="${snowBlur.toFixed(1)}" data-color="${snowColor}">${content}</span>`;
                 continue;
             }
 
@@ -1145,34 +1489,40 @@
     }
 
     function bindAnnouncementActions(element, ackKey, options = {}) {
-        const { dismissOnBackdrop = false } = options;
+        const {
+            dismissOnBackdrop = false,
+            announcementConfig = null,
+            currentPage = ''
+        } = options;
         element.querySelector('[data-announcement-action="acknowledge"]')?.addEventListener('click', () => {
+            void recordAnnouncementEvent(announcementConfig, currentPage, ackKey, 'read');
             dismissAnnouncement(element, ackKey, true);
         });
 
         if (dismissOnBackdrop) {
             element.addEventListener('click', (event) => {
                 if (event.target === element) {
+                    void recordAnnouncementEvent(announcementConfig, currentPage, ackKey, 'dismiss');
                     dismissAnnouncement(element, ackKey, false);
                 }
             });
         }
     }
 
-    function showBannerAnnouncement(color, size, content, ackKey, decoration) {
+    function showBannerAnnouncement(color, size, content, ackKey, decoration, context = {}) {
         injectAnnouncementStyles();
 
         const decorationHTML = generateDecorationHTML(decoration);
         const banner = document.createElement('div');
-        banner.className = 'announcement-banner';
+        banner.className = 'zaoyoe-announcement-banner';
         banner.innerHTML = `
             ${decorationHTML}
             <i class="fas fa-bullhorn announcement-banner-icon"></i>
-            <span class="announcement-text">${content}</span>
-            <button class="announcement-close" data-announcement-action="acknowledge">已读</button>
+            <span class="zaoyoe-announcement-text">${content}</span>
+            <button class="zaoyoe-announcement-close" data-announcement-action="acknowledge">已读</button>
         `;
         hydrateDecorationParticleStyles(banner);
-        bindAnnouncementActions(banner, ackKey);
+        bindAnnouncementActions(banner, ackKey, context);
         document.body.appendChild(banner);
         currentAnnouncementElement = banner;
 
@@ -1180,62 +1530,62 @@
         startParticlesIfNeeded(banner, decoration);
     }
 
-    function showModalAnnouncement(color, size, content, ackKey, decoration) {
+    function showModalAnnouncement(color, size, content, ackKey, decoration, context = {}) {
         injectAnnouncementStyles();
 
         const decorationHTML = generateDecorationHTML(decoration);
         const overlay = document.createElement('div');
-        overlay.className = 'announcement-overlay';
+        overlay.className = 'zaoyoe-announcement-overlay';
         overlay.innerHTML = `
-            <div class="announcement-modal">
+            <div class="zaoyoe-announcement-modal">
                 ${decorationHTML}
-                <div class="announcement-header">
+                <div class="zaoyoe-announcement-header">
                     <i class="fas fa-bullhorn"></i>
-                    <span class="announcement-title">站内公告</span>
+                    <span class="zaoyoe-announcement-title">站内公告</span>
                 </div>
-                <div class="announcement-body">
-                    <div class="announcement-text">${content}</div>
+                <div class="zaoyoe-announcement-body">
+                    <div class="zaoyoe-announcement-text">${content}</div>
                 </div>
-                <div class="announcement-footer">
-                    <button class="announcement-ack-btn" data-announcement-action="acknowledge">已读</button>
+                <div class="zaoyoe-announcement-footer">
+                    <button class="zaoyoe-announcement-ack-btn" data-announcement-action="acknowledge">已读</button>
                 </div>
             </div>
         `;
         hydrateDecorationParticleStyles(overlay);
-        bindAnnouncementActions(overlay, ackKey, { dismissOnBackdrop: true });
+        bindAnnouncementActions(overlay, ackKey, { ...context, dismissOnBackdrop: true });
 
         document.body.appendChild(overlay);
         currentAnnouncementElement = overlay;
         lockAnnouncementBackground(overlay);
 
         // Start physics particles for rain theme
-        const modal = overlay.querySelector('.announcement-modal');
+        const modal = overlay.querySelector('.zaoyoe-announcement-modal');
         if (modal) {
             startParticlesIfNeeded(modal, decoration);
         }
     }
 
-    function showToastAnnouncement(color, size, content, ackKey, decoration) {
+    function showToastAnnouncement(color, size, content, ackKey, decoration, context = {}) {
         injectAnnouncementStyles();
 
         const decorationHTML = generateDecorationHTML(decoration);
         const toast = document.createElement('div');
-        toast.className = 'announcement-toast';
+        toast.className = 'zaoyoe-announcement-toast';
         toast.innerHTML = `
             ${decorationHTML}
-            <div class="announcement-header">
+            <div class="zaoyoe-announcement-header">
                 <i class="fas fa-bullhorn"></i>
-                <span class="announcement-title">站内公告</span>
+                <span class="zaoyoe-announcement-title">站内公告</span>
             </div>
-            <div class="announcement-body">
-                <div class="announcement-text">${content}</div>
+            <div class="zaoyoe-announcement-body">
+                <div class="zaoyoe-announcement-text">${content}</div>
             </div>
-            <div class="announcement-footer">
-                <button class="announcement-ack-btn" data-announcement-action="acknowledge">已读</button>
+            <div class="zaoyoe-announcement-footer">
+                <button class="zaoyoe-announcement-ack-btn" data-announcement-action="acknowledge">已读</button>
             </div>
         `;
         hydrateDecorationParticleStyles(toast);
-        bindAnnouncementActions(toast, ackKey);
+        bindAnnouncementActions(toast, ackKey, context);
 
         document.body.appendChild(toast);
         currentAnnouncementElement = toast;
@@ -1618,10 +1968,27 @@
         }
     }
 
-    // Initialize when DOM is ready
+    function startAnnouncementWhenBodyReady() {
+        if (document.body) {
+            startAnnouncementBootstrap();
+            return;
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', startAnnouncementBootstrap, { once: true });
+            return;
+        }
+
+        window.setTimeout(startAnnouncementWhenBodyReady, 16);
+    }
+
+    void warmAnnouncementConfig();
+    startAnnouncementWhenBodyReady();
+
+    // Initialize again when DOM is ready as a safety net for late body insertion.
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', startAnnouncementBootstrap, { once: true });
-    } else {
+    } else if (document.body) {
         startAnnouncementBootstrap();
     }
 

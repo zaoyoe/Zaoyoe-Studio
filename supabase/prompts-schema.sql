@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS prompts (
     description TEXT,
     prompt_text TEXT,
     images TEXT[] DEFAULT '{}',
+    image_assets JSONB DEFAULT '[]'::jsonb,
     dominant_colors TEXT[] DEFAULT '{}',
     ai_tags JSONB,
     quality_score FLOAT,

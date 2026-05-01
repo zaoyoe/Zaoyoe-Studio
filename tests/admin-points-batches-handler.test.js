@@ -55,7 +55,7 @@ function createReadSupabase(state) {
         return state.tables[table] || [];
     }
 
-    function createQuery(table, filters = [], maybeSingleMode = false, singleMode = false) {
+    function createQuery(table, filters = [], maybeSingleMode = false, singleMode = false, orders = []) {
         return {
             eq(field, value) {
                 filters.push({ kind: 'eq', field, value });
@@ -66,31 +66,30 @@ function createReadSupabase(state) {
                 return this;
             },
             order(field, options = {}) {
-                const rows = [...applyFilters(getTable(table), filters)];
-                rows.sort((left, right) => {
-                    const leftValue = left?.[field];
-                    const rightValue = right?.[field];
-                    const leftTime = Date.parse(leftValue);
-                    const rightTime = Date.parse(rightValue);
-                    const delta = Number.isFinite(leftTime) && Number.isFinite(rightTime)
-                        ? leftTime - rightTime
-                        : normalizeComparable(leftValue).localeCompare(normalizeComparable(rightValue));
-                    return options.ascending === false ? -delta : delta;
-                });
-                return Promise.resolve({
-                    data: clone(rows),
-                    error: null
-                });
+                orders.push({ field, ascending: options.ascending !== false });
+                return this;
             },
             maybeSingle() {
-                return createQuery(table, filters, true, false);
+                return createQuery(table, filters, true, false, orders);
             },
             single() {
-                return createQuery(table, filters, false, true);
+                return createQuery(table, filters, false, true, orders);
             },
             then(resolve, reject) {
                 try {
-                    const rows = applyFilters(getTable(table), filters);
+                    const rows = [...applyFilters(getTable(table), filters)];
+                    orders.forEach((order) => {
+                        rows.sort((left, right) => {
+                            const leftValue = left?.[order.field];
+                            const rightValue = right?.[order.field];
+                            const leftTime = Date.parse(leftValue);
+                            const rightTime = Date.parse(rightValue);
+                            const delta = Number.isFinite(leftTime) && Number.isFinite(rightTime)
+                                ? leftTime - rightTime
+                                : normalizeComparable(leftValue).localeCompare(normalizeComparable(rightValue));
+                            return order.ascending === false ? -delta : delta;
+                        });
+                    });
                     if (singleMode) {
                         if (!rows.length) {
                             resolve({ data: null, error: { code: 'PGRST116', message: 'not found' } });
@@ -119,6 +118,7 @@ function createReadSupabase(state) {
 
     return {
         from(table) {
+            state.tableRequests.push(table);
             return {
                 select() {
                     return createQuery(table);
@@ -130,9 +130,11 @@ function createReadSupabase(state) {
 
 async function withPointsBatchesHandler(options, callback) {
     const handlerPath = path.resolve(__dirname, '../server/api-handlers/admin/points/batches.js');
+    const sharedBasePath = path.resolve(__dirname, '../server/api-handlers/admin/points/_catalog-base.js');
     const originalLoad = Module._load;
     const state = {
         requireAdminCalls: [],
+        tableRequests: [],
         tables: {
             redemption_batches: clone(options?.tables?.redemption_batches || []),
             redemption_codes: clone(options?.tables?.redemption_codes || []),
@@ -142,6 +144,7 @@ async function withPointsBatchesHandler(options, callback) {
     };
 
     delete require.cache[handlerPath];
+    delete require.cache[sharedBasePath];
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../../../../api/_lib/admin') {
             return {
@@ -179,6 +182,7 @@ async function withPointsBatchesHandler(options, callback) {
         return await callback({ handler, state });
     } finally {
         delete require.cache[handlerPath];
+        delete require.cache[sharedBasePath];
     }
 }
 
@@ -202,6 +206,8 @@ test('points batches handler lists site-scoped batches with attached package sum
         assert.equal(res.json().batches.length, 1);
         assert.equal(res.json().batches[0]?.name, 'CN Batch');
         assert.equal(res.json().batches[0]?.points_packages?.name, 'Starter');
+        assert.equal(state.tableRequests.filter((table) => table === 'redemption_batches').length, 1);
+        assert.equal(state.tableRequests.filter((table) => table === 'points_packages').length, 1);
     });
 });
 

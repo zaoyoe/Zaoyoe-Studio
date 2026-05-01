@@ -117,6 +117,23 @@
         return /googleusercontent\.com|lh3\.googleusercontent\.com/i.test(String(url || ''));
     }
 
+    function escapeSvgText(value) {
+        return String(value || '').replace(/[&<>"']/g, (char) => ({
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&apos;'
+        }[char]));
+    }
+
+    function getInstantFallbackAvatarUrl(seed) {
+        const raw = String(seed || 'User').trim();
+        const initial = escapeSvgText((Array.from(raw)[0] || 'U').toUpperCase());
+        const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="32" fill="#6b9ece"/><text x="50%" y="53%" dominant-baseline="middle" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="28" font-weight="700" fill="#fff">${initial}</text></svg>`;
+        return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+    }
+
     function readCachedProfile() {
         try {
             const raw = localStorage.getItem('cached_user_profile');
@@ -139,7 +156,8 @@
 
     function buildAuthButtonHTML(profile) {
         const isLoggedIn = !!profile;
-        const avatarUrl = profile?.avatarUrl || '';
+        const avatarSeed = profile?.email || profile?.username || profile?.nickname || 'User';
+        const avatarUrl = profile?.avatarUrl || (isLoggedIn ? getInstantFallbackAvatarUrl(avatarSeed) : '');
         const hasAvatar = !!(isLoggedIn && avatarUrl);
         const label = isLoggedIn ? 'Open account menu' : 'Open sign in panel';
 
@@ -150,7 +168,7 @@
                         <path fill="currentColor" d="M12 12.25c2.35 0 4.25-1.9 4.25-4.25S14.35 3.75 12 3.75 7.75 5.65 7.75 8s1.9 4.25 4.25 4.25Zm0 2c-3.32 0-6.25 2.03-7.5 5.07-.24.58.2 1.18.82 1.18h13.36c.62 0 1.06-.6.82-1.18-1.25-3.04-4.18-5.07-7.5-5.07Z"></path>
                     </svg>
                 </span>
-                <img id="navUserAvatar" class="nav-user-avatar${hasAvatar ? ' show' : ' auth-display-none'}" src="${avatarUrl}" alt="Avatar">
+                <img id="navUserAvatar" class="nav-user-avatar${hasAvatar ? ' show' : ' auth-display-none'}" src="${avatarUrl}" alt="Avatar" loading="eager" decoding="sync" fetchpriority="high">
                 <span id="authBtnText" class="auth-display-none">Sign In</span>
                 <span id="avatarUnreadBadge" class="avatar-unread-badge"></span>
             </button>
@@ -498,6 +516,28 @@
 
         if (!document.getElementById('loginModal')) {
             document.body.insertAdjacentHTML('beforeend', buildAuthSheetHTML());
+        }
+
+        const pendingAuthUser = window.__ZAOYOE_PENDING_AUTH_USER__;
+        if (pendingAuthUser?.user && typeof window.updateUserUI === 'function') {
+            window.updateUserUI(pendingAuthUser.user, {
+                ...(pendingAuthUser.options || {}),
+                preferImmediateAvatar: true
+            });
+            window.__ZAOYOE_PENDING_AUTH_USER__ = null;
+        } else if (cachedProfile && typeof window.updateUserUI === 'function') {
+            window.updateUserUI(cachedProfile, {
+                animateAvatar: false,
+                preferImmediateAvatar: true
+            });
+        }
+
+        if (typeof window.dispatchEvent === 'function' && typeof CustomEvent === 'function') {
+            window.dispatchEvent(new CustomEvent('zaoyoe:auth-markup-ready', {
+                detail: {
+                    hasCachedProfile: !!cachedProfile
+                }
+            }));
         }
 
         if (window.i18n?.applyTranslations) {
@@ -1274,6 +1314,7 @@
         authBtn.setAttribute('aria-expanded', 'true');
 
         void ensureInjectedAuthWalletModal({ prefetch: true });
+        void window.ZaoyoeProfileModalBootstrap?.warm?.({ reason: 'dropdown-open' });
     }
 
     function closeDropdown() {
@@ -1651,6 +1692,7 @@
             closeDropdown();
 
             if (action === 'profile') {
+                void window.ZaoyoeProfileModalBootstrap?.warm?.({ reason: 'profile-click' });
                 window.openProfileModal?.(event);
             } else if (action === 'wallet') {
                 void openInjectedAuthWalletView('balance', {
@@ -1782,7 +1824,7 @@
 
     function initTheme() {
         const savedTheme = localStorage.getItem('theme');
-        const theme = savedTheme === 'light' ? 'light' : 'dark';
+        const theme = savedTheme === 'dark' ? 'dark' : 'light';
         document.documentElement.setAttribute('data-theme', theme);
         window.applySiteThemeChrome?.(theme);
     }

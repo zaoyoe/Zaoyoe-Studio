@@ -386,9 +386,11 @@ async function exportAnalyticsData(format) {
         if (typeof showToast === 'function') {
             showToast(`${format.toUpperCase()} 导出成功！`, 'success');
         }
+        return true;
     } catch (err) {
         console.error('[Analytics] Export error:', err);
         alert('导出失败: ' + err.message);
+        return false;
     }
 }
 

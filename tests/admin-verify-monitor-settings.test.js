@@ -37,6 +37,9 @@ function createState(overrides = {}) {
         user: { id: 'admin-user-1', email: 'admin@example.com' },
         requireAdminCalls: [],
         verificationLogs: [],
+        pointsLedger: [],
+        profiles: [],
+        authUsers: [],
         opsAlertJobs: [],
         opsAlertCases: [],
         opsAlertCaseEvents: [],
@@ -47,12 +50,24 @@ function createState(overrides = {}) {
 function createSupabaseStub(state) {
     const tableMap = {
         verification_logs: 'verificationLogs',
+        points_ledger: 'pointsLedger',
+        profiles: 'profiles',
         ops_alert_jobs: 'opsAlertJobs',
         ops_alert_cases: 'opsAlertCases',
         ops_alert_case_events: 'opsAlertCaseEvents'
     };
 
     return {
+        auth: {
+            admin: {
+                async getUserById(userId) {
+                    const user = (state.authUsers || []).find((item) => String(item?.id || '') === String(userId || '')) || null;
+                    return user
+                        ? { data: { user }, error: null }
+                        : { data: { user: null }, error: { message: 'User not found' } };
+                }
+            }
+        },
         from(table) {
             const stateKey = tableMap[table];
             if (!stateKey) {
@@ -116,6 +131,9 @@ function createSupabaseStub(state) {
                 },
                 async limit(limitValue) {
                     return executeRange(0, limitValue - 1);
+                },
+                then(resolve, reject) {
+                    return Promise.resolve(executeRange(0, Number.MAX_SAFE_INTEGER)).then(resolve, reject);
                 }
             };
 
@@ -166,7 +184,7 @@ async function withHandler(stateOverrides, callback) {
 function buildLog(message, overrides = {}) {
     return {
         id: overrides.id || 'log-1',
-        user_id: overrides.user_id || 'user-1',
+        user_id: Object.prototype.hasOwnProperty.call(overrides, 'user_id') ? overrides.user_id : 'user-1',
         verification_id: overrides.verification_id || 'job-1',
         status: overrides.status || 'queued',
         message: JSON.stringify({
@@ -338,6 +356,56 @@ test('verify monitor settings handler returns recent tasks, recent failures, and
     });
 });
 
+test('verify monitor settings handler recovers submitter identity from points ledger references', async () => {
+    const userId = '2e69a374-1111-4111-8111-111111111111';
+    await withHandler({
+        verificationLogs: [
+            buildLog({
+                job_id: '26576',
+                task_type: 'extract'
+            }, {
+                id: 'log-legacy-success',
+                user_id: '',
+                verification_id: '26576',
+                status: 'success',
+                email: 'verenasheridan@gmail.com',
+                stage_label: '验证完成',
+                created_at: '2026-04-30T02:32:00.000Z'
+            })
+        ],
+        pointsLedger: [
+            {
+                id: 'ledger-verify-26576',
+                user_id: userId,
+                reference_id: '26576',
+                created_at: '2026-04-30T02:33:00.000Z'
+            }
+        ],
+        profiles: [
+            {
+                id: userId,
+                email: 'site-owner@example.com',
+                username: 'site-owner',
+                display_name: '站内用户'
+            }
+        ]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.recent_tasks[0].verification_id, '26576');
+        assert.equal(payload.recent_tasks[0].user_id, userId);
+        assert.equal(payload.recent_tasks[0].submitter_email, 'site-owner@example.com');
+        assert.equal(payload.recent_tasks[0].submitter_display_name, '站内用户');
+        assert.equal(payload.recent_tasks[0].email, 'verenasheridan@gmail.com');
+        assert.equal(payload.recent_tasks[0].task_type, 'extract');
+    });
+});
+
 test('verify monitor settings handler paginates recent tasks and failures from query params', async () => {
     await withHandler({
         verificationLogs: [
@@ -372,6 +440,37 @@ test('verify monitor settings handler paginates recent tasks and failures from q
         assert.equal(payload.recent_failure_pagination.page_size, 1);
         assert.equal(payload.recent_failure_pagination.total_items, 2);
         assert.equal(payload.recent_failure_pagination.total_pages, 2);
+    });
+});
+
+test('verify monitor settings handler surfaces actionable failed-task guidance', async () => {
+    const guidance = '请删除或者关闭付款资料后重试';
+    await withHandler({
+        verificationLogs: [
+            buildLog({
+                job_id: 'job-payment-profile',
+                error_message: '任务失败',
+                message: guidance,
+                error_code: 'payment_profile_conflict'
+            }, {
+                id: 'log-payment-profile',
+                verification_id: 'job-payment-profile',
+                status: 'failed',
+                created_at: '2026-03-25T10:30:00.000Z'
+            })
+        ]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.recent_failures[0].error_message, guidance);
+        assert.equal(payload.recent_failures[0].summary, guidance);
+        assert.equal(payload.recent_tasks[0].summary, guidance);
+        assert.equal(payload.facts.top_failure_reasons[0].key, 'payment_profile_conflict');
     });
 });
 

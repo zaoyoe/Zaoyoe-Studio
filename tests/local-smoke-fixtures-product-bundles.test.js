@@ -190,6 +190,8 @@ test('local smoke fixtures intercept product analytics bundle routes without fal
     assert.equal(dashboardPayload.success, true);
     assert.equal(dashboardPayload.segments.summary.ok, true);
     assert.equal(Array.isArray(dashboardPayload.segments.productMatrix.payload.items), true);
+    assert.equal(dashboardPayload.segments.funnelSummary.ok, true);
+    assert.equal(Array.isArray(dashboardPayload.segments.funnelProductRows.payload), true);
 
     const funnelResponse = await window.fetch('http://127.0.0.1:8000/api/admin?route=analytics/product-funnel-bundle&site=all&limit=6');
     const funnelPayload = await funnelResponse.json();

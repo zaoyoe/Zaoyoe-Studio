@@ -79,6 +79,131 @@ function inferShopSourcePageKeyFromUrl(urlObj) {
     return normalizeShopTrackingText(pathname.split('/').pop()?.replace(/\.html?$/i, '') || '', 80);
 }
 
+function getShopResponsiveImageVariantUrl(url, variant = '') {
+    const normalizedVariant = String(variant || '').trim();
+    const trimmed = String(url || '').trim();
+    if (!normalizedVariant || !trimmed) {
+        return '';
+    }
+
+    const manifest = window.__SHOP_IMAGE_VARIANTS__ || null;
+    const variants = manifest?.variants?.[normalizedVariant];
+    if (variants && typeof variants === 'object') {
+        const manifestUrl = String(variants[trimmed] || '').trim();
+        if (manifestUrl) {
+            return manifestUrl;
+        }
+    }
+
+    return getShopResponsiveR2CardVariantUrl(trimmed, normalizedVariant);
+}
+
+function getShopResponsiveR2CardVariantUrl(url, variant = '') {
+    if (String(variant || '').trim() !== 'card') {
+        return '';
+    }
+
+    try {
+        const parsed = new URL(String(url || '').trim(), window.location.origin);
+        if (parsed.hostname !== 'cdn.zaoyoe.com' && !parsed.hostname.endsWith('.r2.dev')) {
+            return '';
+        }
+
+        const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+        if (parts.length !== 2 || parts[0] !== 'products') {
+            return '';
+        }
+
+        const basename = decodeURIComponent(parts[1] || '').replace(/\.[^.]+$/, '');
+        if (!basename) {
+            return '';
+        }
+
+        return `${parsed.origin}/products/card/${encodeURIComponent(basename)}.webp`;
+    } catch (error) {
+        return '';
+    }
+}
+
+function normalizeShopProductImageAsset(value) {
+    if (Array.isArray(value)) {
+        return value.map(normalizeShopProductImageAsset).find(Boolean) || null;
+    }
+
+    if (typeof value === 'string') {
+        const original = value.trim();
+        return original ? { original } : null;
+    }
+
+    if (!value || typeof value !== 'object') {
+        return null;
+    }
+
+    const variants = value.variants && typeof value.variants === 'object' && !Array.isArray(value.variants)
+        ? value.variants
+        : {};
+    const asset = {};
+
+    for (const key of ['original', 'thumb', 'card', 'home', 'detail']) {
+        const url = String(value[key] || variants[key] || '').trim();
+        if (url) {
+            asset[key] = url;
+        }
+    }
+
+    const fallbackOriginal = String(value.url || value.src || value.image || value.icon_url || '').trim();
+    if (!asset.original && fallbackOriginal) {
+        asset.original = fallbackOriginal;
+    }
+
+    return asset.original || asset.thumb || asset.card || asset.home || asset.detail ? asset : null;
+}
+
+function buildShopProductImageAssetFromUrl(url) {
+    const original = String(url || '').trim();
+    if (!original || original.startsWith('fa')) {
+        return null;
+    }
+
+    const asset = { original };
+    const card = getShopResponsiveImageVariantUrl(original, 'card');
+    if (card && card !== original) {
+        asset.card = card;
+    }
+    return asset;
+}
+
+function getShopProductImageAsset(productOrAsset = {}) {
+    const explicitAsset = normalizeShopProductImageAsset(
+        productOrAsset?.image_assets ?? productOrAsset?.imageAssets ?? productOrAsset
+    );
+    if (explicitAsset) {
+        return explicitAsset;
+    }
+
+    return buildShopProductImageAssetFromUrl(productOrAsset?.icon_url);
+}
+
+function getShopProductImageAssetUrl(value, variant = 'original') {
+    const asset = normalizeShopProductImageAsset(value);
+    if (!asset) {
+        return typeof value === 'string' ? value.trim() : '';
+    }
+
+    const normalizedVariant = String(variant || 'original').trim() || 'original';
+    return String(asset[normalizedVariant] || asset.original || asset.card || asset.thumb || asset.home || asset.detail || '').trim();
+}
+
+function getShopProductImageAssetExplicitVariantUrl(value, variant = '') {
+    const normalizedVariant = String(variant || '').trim();
+    if (!normalizedVariant || normalizedVariant === 'original') {
+        return '';
+    }
+
+    const asset = normalizeShopProductImageAsset(value);
+    return String(asset?.[normalizedVariant] || '').trim();
+}
+
 function readShopPromptIdFromUrl(urlObj) {
     if (!urlObj?.searchParams) {
         return '';
@@ -192,7 +317,7 @@ const SHOP_PRODUCT_SKELETON_COUNT = 5;
 const SHOP_CARD_BREATHE_MAX_DELAY_S = 4;
 const SHOP_CARD_BREATHE_ACTIVATE_DELAY_MS = 850;
 const SHOP_CARD_ENTER_SETTLE_FALLBACK_BUFFER_MS = 180;
-const SHOP_PREFETCH_SCHEMA_VERSION = '20260423_PRODUCT_DESCRIPTION_VISIBILITY_1';
+const SHOP_PREFETCH_SCHEMA_VERSION = '20260430_SHOP_GUIDANCE_BILINGUAL_1';
 const SHOP_PURCHASE_PREFILL_SCHEMA_VERSION = '20260415_SHOP_PURCHASE_PREFILL_1';
 const SHOP_PURCHASE_PREFILL_STORAGE_KEY = 'shop_purchase_prefill';
 const SHOP_DISCOUNT_ASSETS_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -234,6 +359,7 @@ const ShopClient = {
     currentAgentId: null,
     currentAgentName: null,
     successUsageWheelCleanup: null,
+    purchaseNotesHeightAnimationTimer: null,
     purchaseModalKeyboardViewportCleanup: null,
     purchaseModalKeyboardViewportRafId: null,
     purchaseModalKeyboardBaseViewportHeight: 0,
@@ -455,18 +581,101 @@ const ShopClient = {
         return this.getCurrentLanguage() === 'en';
     },
 
+    trShop: function (key, fallback = '', params = {}) {
+        const translated = window.i18n?.t?.(`shop.${key}`) || fallback || '';
+        return String(translated).replace(/\{(\w+)\}/g, (match, name) => (
+            params[name] === undefined || params[name] === null ? match : String(params[name])
+        ));
+    },
+
+    getGuidanceSiteForCurrentLanguage: function () {
+        return this.isEnglishShopLocale() ? 'intl' : 'cn';
+    },
+
+    getMissingProductGuidanceTranslationText: function (baseField) {
+        if (!this.isEnglishShopLocale()) {
+            return '';
+        }
+
+        return baseField === 'usage_instructions'
+            ? 'Usage instructions are being translated. Please switch to Chinese or contact support if you need them now.'
+            : 'Purchase notes are being translated. Please switch to Chinese or contact support if you need them now.';
+    },
+
+    containsCjkText: function (value) {
+        return /[\u3400-\u9fff\uf900-\ufaff]/.test(String(value || ''));
+    },
+
+    resolveShopDataText: function (value, fallback = '') {
+        const normalized = String(value || '').trim();
+        if (this.isEnglishShopLocale() && this.containsCjkText(normalized)) {
+            return fallback;
+        }
+        return normalized || fallback;
+    },
+
+    getProductCategoryLabelMap: function () {
+        return {
+            '公益站': 'Community Access',
+            '虚拟卡': 'Virtual Card',
+            '账号': 'Account',
+            '账户': 'Account',
+            '其他': 'Other',
+            '其它': 'Other'
+        };
+    },
+
     getLocalizedProductName: function (product) {
         if (!product) return '';
         const isEn = this.isEnglishShopLocale();
-        return (isEn && product.name_en) ? product.name_en : (product.name || '');
+        if (isEn && product.name_en) {
+            return this.resolveShopDataText(product.name_en, window.i18n?.t('shop.unknownProduct') || 'Product');
+        }
+        return this.resolveShopDataText(product.name, isEn ? (window.i18n?.t('shop.unknownProduct') || 'Product') : '');
     },
 
     getLocalizedProductDescription: function (product) {
         if (!product) return '';
         const isEn = this.isEnglishShopLocale();
-        return (isEn && product.description_en)
-            ? product.description_en
-            : (product.description || (window.i18n?.t('shop.noDescription') || '暂无描述'));
+        const fallback = window.i18n?.t('shop.noDescription') || (isEn ? 'No description' : '暂无描述');
+        if (isEn && product.description_en) {
+            return this.resolveShopDataText(product.description_en, fallback);
+        }
+        return this.resolveShopDataText(product.description, fallback);
+    },
+
+    getLocalizedProductGuidanceText: function (product, baseField) {
+        if (!product || !baseField) return '';
+        const legacyText = String(product?.[baseField] || '').trim();
+        const zhText = String(product?.[`${baseField}_zh`] || '').trim();
+        const enText = String(product?.[`${baseField}_en`] || '').trim();
+
+        if (this.isEnglishShopLocale()) {
+            const localizedText = this.resolveShopDataText(enText || legacyText, '');
+            const showField = `show_${baseField}`;
+            if (localizedText) {
+                return localizedText;
+            }
+            if (product?.[showField] === true && (zhText || legacyText || enText)) {
+                return this.getMissingProductGuidanceTranslationText(baseField);
+            }
+            return '';
+        }
+
+        return zhText || legacyText || enText;
+    },
+
+    getLocalizedProductCategoryLabel: function (category) {
+        const normalized = String(category?.name || category || '').trim();
+        if (!normalized) return '';
+        if (this.isEnglishShopLocale()) {
+            const explicitEnglish = String(category?.name_en || '').trim();
+            if (explicitEnglish) {
+                return this.resolveShopDataText(explicitEnglish, normalized);
+            }
+            return this.getProductCategoryLabelMap()[normalized] || normalized;
+        }
+        return normalized;
     },
 
     shouldShowProductCardDescription: function (product) {
@@ -476,7 +685,10 @@ const ShopClient = {
     formatShopPoints: function (value) {
         const numericValue = Number(value || 0) || 0;
         const formattedValue = this.formatShopPointValue(numericValue);
-        return `${formattedValue} ${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}`;
+        const pointsLabel = this.isEnglishShopLocale()
+            ? (window.i18n?.t('shop.points') || 'Points')
+            : (window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分');
+        return `${formattedValue} ${pointsLabel}`;
     },
 
     formatShopPointValue: function (value, { maximumFractionDigits = 2 } = {}) {
@@ -504,7 +716,7 @@ const ShopClient = {
             || item?.preview?.benefit_label
             || ''
         ).trim();
-        if (explicitLabel) {
+        if (explicitLabel && (!this.isEnglishShopLocale() || !this.containsCjkText(explicitLabel))) {
             return explicitLabel;
         }
 
@@ -525,6 +737,10 @@ const ShopClient = {
         }
 
         if (discountType === 'percent') {
+            if (this.isEnglishShopLocale()) {
+                const offPercent = Math.max(0, Math.min(100, Number((100 - discountValue).toFixed(2))));
+                return this.trShop('percentOff', '{percent}% off', { percent: this.formatShopPointValue(offPercent) });
+            }
             const folded = discountValue / 10;
             const display = Number.isInteger(folded)
                 ? String(folded)
@@ -533,7 +749,12 @@ const ShopClient = {
         }
 
         if (discountType === 'fixed') {
-            return `立减 ${this.formatShopPointValue(discountValue)} ${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}`;
+            const pointsLabel = this.isEnglishShopLocale()
+                ? (window.i18n?.t('shop.points') || 'Points')
+                : (window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分');
+            return this.isEnglishShopLocale()
+                ? this.trShop('fixedOff', '{amount} {unit} off', { amount: this.formatShopPointValue(discountValue), unit: pointsLabel })
+                : `立减 ${this.formatShopPointValue(discountValue)} ${pointsLabel}`;
         }
 
         return '';
@@ -668,15 +889,17 @@ const ShopClient = {
             return null;
         }
 
+        const computedBenefitLabel = hasPricingConfig
+            ? this.getDiscountBenefitLabel({
+                ...selection,
+                discount_type: discountType,
+                discount_value: discountValue
+            })
+            : '';
         const benefitLabel = String(
-            selection.benefitLabel
+            computedBenefitLabel
+            || selection.benefitLabel
             || selection.benefit_label
-            || (hasPricingConfig
-                ? this.getDiscountBenefitLabel({
-                    discount_type: discountType,
-                    discount_value: discountValue
-                })
-                : '')
             || code
         ).trim();
         const discountAmount = Number(
@@ -771,7 +994,7 @@ const ShopClient = {
                 : null,
             benefitLabel: normalizedSelections.length === 1
                 ? (firstSelection.benefitLabel || null)
-                : `已叠加 ${normalizedSelections.length} 张券`,
+                : this.trShop('stackedCoupons', '已叠加 {count} 张券', { count: normalizedSelections.length }),
             quantity: Math.max(
                 1,
                 Math.trunc(Number(
@@ -870,13 +1093,14 @@ const ShopClient = {
             ? pricing.finalTotal
             : (Number.isFinite(storedFinalTotal) ? Math.max(0, Number(storedFinalTotal.toFixed(2))) : subtotal);
         const benefitLabel = String(
-            discount.benefitLabel
-            || discount.benefit_label
-            || discount.preview?.benefit_label
-            || this.getDiscountBenefitLabel({
+            this.getDiscountBenefitLabel({
+                ...discount,
                 discount_type: discountType,
                 discount_value: discountValue
             })
+            || discount.benefitLabel
+            || discount.benefit_label
+            || discount.preview?.benefit_label
             || code
         ).trim();
 
@@ -1263,9 +1487,9 @@ const ShopClient = {
             qtyRules: qtyRulesStr,
             maxPurchaseQuantity: String(maxPurchaseQuantity),
             showPurchaseNotes: product?.show_purchase_notes === true,
-            purchaseNotes: product?.purchase_notes || '',
+            purchaseNotes: this.getLocalizedProductGuidanceText(product, 'purchase_notes'),
             showUsageInstructions: product?.show_usage_instructions === true,
-            usageInstructions: product?.usage_instructions || ''
+            usageInstructions: this.getLocalizedProductGuidanceText(product, 'usage_instructions')
         };
     },
 
@@ -1567,14 +1791,19 @@ const ShopClient = {
             description_en: product.description_en || '',
             show_product_description: product.show_product_description !== false,
             icon_url: product.icon_url || '',
+            image_assets: normalizeShopProductImageAsset(product.image_assets || product.imageAssets) || {},
             category: product.category || '',
             stock_count: Number(product.stock_count || 0) || 0,
             max_purchase_quantity: this.normalizePurchaseQuantityCap(product.max_purchase_quantity),
             quantity_rules: Array.isArray(product.quantity_rules) ? product.quantity_rules : [],
             show_purchase_notes: product.show_purchase_notes === true,
             purchase_notes: product.purchase_notes || '',
+            purchase_notes_zh: product.purchase_notes_zh || '',
+            purchase_notes_en: product.purchase_notes_en || '',
             show_usage_instructions: product.show_usage_instructions === true,
             usage_instructions: product.usage_instructions || '',
+            usage_instructions_zh: product.usage_instructions_zh || '',
+            usage_instructions_en: product.usage_instructions_en || '',
             flash_sale_price: product.flash_sale_price ?? null,
             flash_sale_end: product.flash_sale_end || null,
             resolved_unit_price: resolvedUnitPrice == null ? null : Number(resolvedUnitPrice),
@@ -1747,8 +1976,8 @@ const ShopClient = {
                     finalTotal
                 }
                 : null;
-            const hasPurchaseNotes = product.show_purchase_notes === true && String(product.purchase_notes || '').trim().length > 0;
-            const hasUsageInstructions = product.show_usage_instructions === true && String(product.usage_instructions || '').trim().length > 0;
+            const hasPurchaseNotes = product.show_purchase_notes === true && this.getLocalizedProductGuidanceText(product, 'purchase_notes').length > 0;
+            const hasUsageInstructions = product.show_usage_instructions === true && this.getLocalizedProductGuidanceText(product, 'usage_instructions').length > 0;
 
             entries.push({
                 productId,
@@ -2053,14 +2282,19 @@ const ShopClient = {
     },
 
     buildCartIconMarkup: function (product, { imageClass = 'shop-cart-item__thumb', iconClass = 'shop-cart-item__icon' } = {}) {
-        const safeIconSource = this.escapeAttribute(product?.icon_url || '');
+        const imageAsset = getShopProductImageAsset(product);
+        const imageSource = getShopProductImageAssetUrl(imageAsset, 'card')
+            || getShopProductImageAssetUrl(imageAsset, 'thumb')
+            || getShopProductImageAssetUrl(imageAsset, 'original')
+            || String(product?.icon_url || '');
+        const safeIconSource = this.escapeAttribute(imageSource);
         const safeAlt = this.escapeAttribute(this.getLocalizedProductName(product) || (window.i18n?.t('shop.productImage') || '商品封面'));
 
         if (product?.icon_url?.startsWith('fa')) {
-            return `<div class="${iconClass}" aria-hidden="true"><i class="${safeIconSource}"></i></div>`;
+            return `<div class="${iconClass}" aria-hidden="true"><i class="${this.escapeAttribute(product.icon_url)}"></i></div>`;
         }
 
-        if (this.isShopImageSource(product?.icon_url)) {
+        if (this.isShopImageSource(imageSource)) {
             return `<img src="${safeIconSource}" class="${imageClass}" alt="${safeAlt}" loading="lazy" decoding="async">`;
         }
 
@@ -2070,8 +2304,8 @@ const ShopClient = {
     buildCartItemMarkup: function (entry) {
         const copy = this.getCartCopy();
         const isEn = this.isEnglishShopLocale();
-        const noteText = entry.hasPurchaseNotes ? String(entry.product?.purchase_notes || '').trim() : '';
-        const usageText = entry.hasUsageInstructions ? String(entry.product?.usage_instructions || '').trim() : '';
+        const noteText = entry.hasPurchaseNotes ? this.getLocalizedProductGuidanceText(entry.product, 'purchase_notes') : '';
+        const usageText = entry.hasUsageInstructions ? this.getLocalizedProductGuidanceText(entry.product, 'usage_instructions') : '';
         const disclosureState = this.getCartItemDisclosureState(entry.productId);
         const isCartBusy = this.cartCheckoutProcessing === true;
         const notePanelId = noteText ? this.buildCartItemDisclosureDomId(entry.productId, 'notes') : '';
@@ -2659,8 +2893,8 @@ const ShopClient = {
             entry.unitPrice,
             Array.isArray(entry.product?.quantity_rules) ? entry.product.quantity_rules : [],
             purchaseQuantityCap,
-            entry.hasPurchaseNotes ? (entry.product?.purchase_notes || '') : '',
-            entry.hasUsageInstructions ? (entry.product?.usage_instructions || '') : '',
+            entry.hasPurchaseNotes ? this.getLocalizedProductGuidanceText(entry.product, 'purchase_notes') : '',
+            entry.hasUsageInstructions ? this.getLocalizedProductGuidanceText(entry.product, 'usage_instructions') : '',
             {
                 category: entry.product?.category || '',
                 sourceContext,
@@ -2725,8 +2959,11 @@ const ShopClient = {
             this.setElementHidden(discountRowEl, discountAmount <= 0);
         }
         if (discountLabelEl) {
+            const discountCountLabel = selectedDiscountCodes.length > 1
+                ? ` ${this.trShop('couponCount', '（{count} 张）', { count: selectedDiscountCodes.length })}`
+                : '';
             discountLabelEl.textContent = discountCode
-                ? `${discountLabel}${selectedDiscountCodes.length > 1 ? `（${selectedDiscountCodes.length} 张）` : ''} ${discountCode}${discountBenefitLabel ? ` · ${discountBenefitLabel}` : ''}`
+                ? `${discountLabel}${discountCountLabel} ${discountCode}${discountBenefitLabel ? ` · ${discountBenefitLabel}` : ''}`
                 : discountLabel;
         }
         if (discountAmountEl) {
@@ -2804,9 +3041,9 @@ const ShopClient = {
             is_exclusive: true,
             stack_priority: 100,
             pricing_apply_stage: 'order_discount',
-            exclusivity_label: '排他券',
-            apply_stage_label: '订单优惠阶段',
-            summary: '优惠会按价格瀑布顺序结算；排他券单独生效，可并行权益会继续向下叠加。'
+            exclusivity_label: this.trShop('exclusiveCoupon', '排他券'),
+            apply_stage_label: this.trShop('orderDiscountStage', '订单优惠阶段'),
+            summary: this.trShop('priceWaterfallSummary', '优惠会按价格瀑布顺序结算；排他券单独生效，可并行权益会继续向下叠加。')
         };
     },
 
@@ -2829,16 +3066,18 @@ const ShopClient = {
         const rows = [
             {
                 key: 'unit_price',
-                label: '站点结算单价',
+                label: this.trShop('siteUnitPrice', '站点结算单价'),
                 amount: unitPrice,
                 detail: `${unitPrice} x ${quantity}`,
                 tone: 'base'
             },
             {
                 key: 'subtotal',
-                label: '商品小计',
+                label: this.trShop('productSubtotal', '商品小计'),
                 amount: subtotal,
-                detail: quantity > 1 ? `数量 ${quantity}` : '单件结算',
+                detail: quantity > 1
+                    ? this.trShop('quantity', '数量 {count}', { count: quantity })
+                    : this.trShop('singleItem', '单件结算'),
                 tone: 'subtotal'
             }
         ];
@@ -2847,22 +3086,24 @@ const ShopClient = {
             rows.push({
                 key: 'discount',
                 label: selectedDiscounts.length > 1
-                    ? `已叠加 ${selectedDiscounts.length} 张卡券`
-                    : (code ? `优惠券 ${code}` : '优惠券抵扣'),
+                    ? this.trShop('stackedCoupons', '已叠加 {count} 张卡券', { count: selectedDiscounts.length })
+                    : (code ? `${this.trShop('coupon', '优惠券')} ${code}` : this.trShop('discount', '优惠券抵扣')),
                 amount: discountAmount,
                 display_amount: -discountAmount,
-                detail: `${stackingPolicy.apply_stage_label || '订单优惠阶段'} · ${stackingPolicy.exclusivity_label || '排他券'} · 优先级 ${stackingPolicy.stack_priority || 100}`,
+                detail: `${stackingPolicy.apply_stage_label || this.trShop('orderDiscountStage', '订单优惠阶段')} · ${stackingPolicy.exclusivity_label || this.trShop('exclusiveCoupon', '排他券')} · ${this.trShop('priority', '优先级 {value}', { value: stackingPolicy.stack_priority || 100 })}`,
                 tone: 'discount'
             });
         }
 
         rows.push({
             key: 'total',
-            label: '实付积分',
+            label: this.trShop('pointsDue', '实付积分'),
             amount: finalTotal,
             detail: discountAmount > 0
-                ? (selectedDiscounts.length > 1 ? `已包含 ${selectedDiscounts.length} 张卡券抵扣` : '已包含优惠抵扣')
-                : '未使用优惠',
+                ? (selectedDiscounts.length > 1
+                    ? this.trShop('discountsIncluded', '已包含 {count} 张卡券抵扣', { count: selectedDiscounts.length })
+                    : this.trShop('discountIncluded', '已包含优惠抵扣'))
+                : this.trShop('noDiscountUsed', '未使用优惠'),
             tone: 'total'
         });
 
@@ -2907,21 +3148,55 @@ const ShopClient = {
                 ...this.currentPurchase.stackingPolicy
             }
             : fallback.stackingPolicy;
+        const isEn = this.isEnglishShopLocale();
+        const exclusivityLabel = isEn && this.containsCjkText(stackingPolicy.exclusivity_label)
+            ? (stackingPolicy.is_exclusive === false ? this.trShop('stackableCoupon', 'Stackable') : this.trShop('exclusiveCoupon', 'Exclusive coupon'))
+            : (stackingPolicy.exclusivity_label || this.trShop('exclusiveCoupon', '排他券'));
+        const applyStageLabel = isEn && this.containsCjkText(stackingPolicy.apply_stage_label)
+            ? this.trShop('orderDiscountStage', 'Order discount stage')
+            : (stackingPolicy.apply_stage_label || this.trShop('orderDiscountStage', '订单优惠阶段'));
+        const summaryText = isEn && this.containsCjkText(stackingPolicy.summary)
+            ? this.trShop('priceWaterfallSummary', 'Coupons are applied in pricing waterfall order. Exclusive coupons apply alone; stackable benefits continue downward.')
+            : (stackingPolicy.summary || this.trShop('priceWaterfallCurrentSummary', '当前按价格瀑布顺序结算。'));
+        const localizeWaterfallRow = (row = {}) => {
+            if (!isEn) {
+                return row;
+            }
+            const key = String(row?.key || '').trim();
+            const localized = { ...row };
+            if (this.containsCjkText(localized.label)) {
+                if (key === 'unit_price') localized.label = this.trShop('siteUnitPrice', 'Site unit price');
+                if (key === 'subtotal') localized.label = this.trShop('productSubtotal', 'Product subtotal');
+                if (key === 'discount') localized.label = this.trShop('discount', 'Discount');
+                if (key === 'total') localized.label = this.trShop('pointsDue', 'Points due');
+            }
+            if (this.containsCjkText(localized.detail)) {
+                if (key === 'discount') {
+                    localized.detail = `${applyStageLabel} · ${exclusivityLabel} · ${this.trShop('priority', 'Priority {value}', { value: stackingPolicy.stack_priority || 100 })}`;
+                } else if (key === 'total') {
+                    localized.detail = this.trShop('discountIncluded', 'Discount included');
+                } else {
+                    localized.detail = '';
+                }
+            }
+            return localized;
+        };
 
         container.innerHTML = `
             <div class="shop-price-waterfall">
                 <div class="shop-price-waterfall__header">
-                    <div class="shop-price-waterfall__title">价格瀑布</div>
+                    <div class="shop-price-waterfall__title">${this.trShop('priceWaterfall', '价格瀑布')}</div>
                     <div class="shop-price-waterfall__policy">
-                        <span class="shop-price-waterfall__policy-chip">${this.escapeHtml(stackingPolicy.exclusivity_label || '排他券')}</span>
-                        <span class="shop-price-waterfall__policy-chip">${this.escapeHtml(stackingPolicy.apply_stage_label || '订单优惠阶段')}</span>
-                        <span class="shop-price-waterfall__policy-chip">优先级 ${this.escapeHtml(String(stackingPolicy.stack_priority || 100))}</span>
+                        <span class="shop-price-waterfall__policy-chip">${this.escapeHtml(exclusivityLabel)}</span>
+                        <span class="shop-price-waterfall__policy-chip">${this.escapeHtml(applyStageLabel)}</span>
+                        <span class="shop-price-waterfall__policy-chip">${this.escapeHtml(this.trShop('priority', '优先级 {value}', { value: stackingPolicy.stack_priority || 100 }))}</span>
                     </div>
                 </div>
                 <div class="shop-price-waterfall__rows">
                     ${waterfallRows.map((row) => {
+                        const localizedRow = localizeWaterfallRow(row);
                         const tone = String(row?.tone || '').trim().toLowerCase() || 'base';
-                        const rawAmount = Number(row?.display_amount ?? row?.amount);
+                        const rawAmount = Number(localizedRow?.display_amount ?? localizedRow?.amount);
                         const amount = Number.isFinite(rawAmount) ? rawAmount : 0;
                         const prefix = amount > 0 && tone !== 'total' ? '+' : '';
                         const displayAmount = `${prefix}${this.formatShopPointValue(amount)}`;
@@ -2929,15 +3204,15 @@ const ShopClient = {
                         return `
                             <div class="shop-price-waterfall__row shop-price-waterfall__row--${this.escapeHtml(tone)}">
                                 <div class="shop-price-waterfall__row-copy">
-                                    <strong>${this.escapeHtml(row?.label || '价格项')}</strong>
-                                    ${row?.detail ? `<span>${this.escapeHtml(row.detail)}</span>` : ''}
+                                    <strong>${this.escapeHtml(localizedRow?.label || this.trShop('priceItem', '价格项'))}</strong>
+                                    ${localizedRow?.detail ? `<span>${this.escapeHtml(localizedRow.detail)}</span>` : ''}
                                 </div>
                                 <div class="shop-price-waterfall__row-value">${this.escapeHtml(displayAmount)}</div>
                             </div>
                         `;
                     }).join('')}
                 </div>
-                <div class="shop-price-waterfall__footer">${this.escapeHtml(stackingPolicy.summary || '当前按价格瀑布顺序结算。')}</div>
+                <div class="shop-price-waterfall__footer">${this.escapeHtml(summaryText)}</div>
             </div>
         `;
     },
@@ -3025,7 +3300,7 @@ const ShopClient = {
         if (normalizedSelections.length === 1) {
             return normalizedSelections[0].benefitLabel || normalizedSelections[0].code || '';
         }
-        return `已叠加 ${normalizedSelections.length} 张券`;
+        return this.trShop('stackedCoupons', '已叠加 {count} 张券', { count: normalizedSelections.length });
     },
 
     syncCurrentPurchaseDiscountSelectionState: function (selectedDiscounts = null) {
@@ -3065,17 +3340,36 @@ const ShopClient = {
     },
 
     setDiscountAppliedMessage: function ({ discountAmount = 0, finalTotal = null, benefitLabel = '', selectionCount = 0 } = {}) {
-        const pointsLabel = window.i18n?.t('shop.points') || '积分';
+        const pointsLabel = window.i18n?.t('shop.points') || (this.isEnglishShopLocale() ? 'Points' : '积分');
         const normalizedDiscountAmount = Number(discountAmount);
         const normalizedFinalTotal = Number(finalTotal);
         const normalizedSelectionCount = Math.max(0, Number(selectionCount || 0) || 0);
         const normalizedBenefitLabel = String(benefitLabel || '').trim()
-            || (normalizedSelectionCount > 1 ? `已叠加 ${normalizedSelectionCount} 张券` : '');
-        const messageText = normalizedBenefitLabel && Number.isFinite(normalizedFinalTotal)
-            ? `已应用 ${normalizedBenefitLabel}，当前实付 ${this.formatShopPointValue(normalizedFinalTotal)} ${pointsLabel}${Number.isFinite(normalizedDiscountAmount) && normalizedDiscountAmount > 0 ? `，已优惠 ${this.formatShopPointValue(normalizedDiscountAmount)} ${pointsLabel}` : ''}`
-            : normalizedBenefitLabel
-                ? `已应用 ${normalizedBenefitLabel}${Number.isFinite(normalizedDiscountAmount) && normalizedDiscountAmount > 0 ? `，已优惠 ${this.formatShopPointValue(normalizedDiscountAmount)} ${pointsLabel}` : ''}`
-                : `${window.i18n?.t('shop.discountApplied') || '已抵扣'} ${this.formatShopPointValue(normalizedDiscountAmount)} ${pointsLabel}`;
+            || (normalizedSelectionCount > 1 ? this.trShop('stackedCoupons', '已叠加 {count} 张券', { count: normalizedSelectionCount }) : '');
+        const savedText = Number.isFinite(normalizedDiscountAmount) && normalizedDiscountAmount > 0
+            ? this.trShop('savedSuffix', '，已优惠 {amount} {unit}', {
+                amount: this.formatShopPointValue(normalizedDiscountAmount),
+                unit: pointsLabel
+            })
+            : '';
+        let messageText = '';
+        if (normalizedBenefitLabel && Number.isFinite(normalizedFinalTotal)) {
+            messageText = this.isEnglishShopLocale()
+                ? this.trShop('discountAppliedWithTotal', '{benefit} applied. Current total {total} {unit}{saved}', {
+                    benefit: normalizedBenefitLabel,
+                    total: this.formatShopPointValue(normalizedFinalTotal),
+                    unit: pointsLabel,
+                    saved: savedText
+                })
+                : `已应用 ${normalizedBenefitLabel}，当前实付 ${this.formatShopPointValue(normalizedFinalTotal)} ${pointsLabel}${Number.isFinite(normalizedDiscountAmount) && normalizedDiscountAmount > 0 ? `，已优惠 ${this.formatShopPointValue(normalizedDiscountAmount)} ${pointsLabel}` : ''}`;
+        } else if (normalizedBenefitLabel) {
+            messageText = this.trShop('discountAppliedSaved', '已应用 {benefit}{saved}', {
+                benefit: normalizedBenefitLabel,
+                saved: savedText
+            });
+        } else {
+            messageText = `${window.i18n?.t('shop.discountApplied') || '已抵扣'} ${this.formatShopPointValue(normalizedDiscountAmount)} ${pointsLabel}`;
+        }
         this.setDiscountMessage(
             `<i class="fas fa-check-circle" aria-hidden="true"></i><span>${this.escapeHtml(messageText)}</span>`,
             { variant: 'success', html: true }
@@ -3104,37 +3398,39 @@ const ShopClient = {
 
     formatDiscountSourceLabel: function (item = {}) {
         const explicitLabel = String(item?.source_label || '').trim();
-        if (explicitLabel) {
+        if (explicitLabel && (!this.isEnglishShopLocale() || !this.containsCjkText(explicitLabel))) {
             return explicitLabel;
         }
 
         const sourceChannel = String(item?.source_channel || '').trim().toLowerCase();
         const distributionMode = String(item?.distribution_mode || '').trim().toLowerCase();
 
-        if (sourceChannel.includes('wallet') || sourceChannel.includes('recharge')) return '充值赠券';
-        if (sourceChannel.includes('checkin')) return '签到奖励';
-        if (sourceChannel.includes('affiliate') || sourceChannel.includes('invite')) return '推广奖励';
-        if (sourceChannel.includes('claim')) return '公开领取';
-        if (sourceChannel.includes('manual') || sourceChannel.includes('admin')) return '后台发放';
-        if (sourceChannel.includes('shop_wallet')) return '卡包跳转';
-        if (distributionMode === 'public_claim') return '公开领取';
-        if (distributionMode === 'user_assigned') return '定向发放';
-        if (distributionMode === 'general_code') return '暗码兑换';
+        if (sourceChannel.includes('wallet') || sourceChannel.includes('recharge')) return this.trShop('rechargeCoupon', '充值赠券');
+        if (sourceChannel.includes('checkin')) return this.trShop('checkinReward', '签到奖励');
+        if (sourceChannel.includes('affiliate') || sourceChannel.includes('invite')) return this.trShop('affiliateReward', '推广奖励');
+        if (sourceChannel.includes('claim')) return this.trShop('publicClaim', '公开领取');
+        if (sourceChannel.includes('manual') || sourceChannel.includes('admin')) return this.trShop('adminIssued', '后台发放');
+        if (sourceChannel.includes('shop_wallet')) return this.trShop('walletCoupon', '卡包跳转');
+        if (distributionMode === 'public_claim') return this.trShop('publicClaim', '公开领取');
+        if (distributionMode === 'user_assigned') return this.trShop('assignedCoupon', '定向发放');
+        if (distributionMode === 'general_code') return this.trShop('generalCode', '暗码兑换');
         return '';
     },
 
     formatDiscountStackingLabel: function (item = {}) {
-        return item?.is_exclusive === false ? '可叠加' : '排他券';
+        return item?.is_exclusive === false
+            ? this.trShop('stackableCoupon', '可叠加')
+            : this.trShop('exclusiveCoupon', '排他券');
     },
 
     formatDiscountStackingSummary: function (item = {}) {
         const explicitSummary = String(item?.stacking_summary || '').trim();
-        if (explicitSummary) {
+        if (explicitSummary && (!this.isEnglishShopLocale() || !this.containsCjkText(explicitSummary))) {
             return explicitSummary;
         }
         return item?.is_exclusive === false
-            ? '可与其它优惠券叠加'
-            : '不可与其它优惠券叠加';
+            ? this.trShop('stackableSummary', '可与其它优惠券叠加')
+            : this.trShop('exclusiveSummary', '不可与其它优惠券叠加');
     },
 
     getDiscountStackingBadgeClassName: function (item = {}) {
@@ -3210,11 +3506,11 @@ const ShopClient = {
             }
 
             const label = String(
-                cachedProduct?.name
-                || cachedProduct?.name_en
+                this.getLocalizedProductName(cachedProduct)
+                || (this.isEnglishShopLocale() ? cachedProduct?.name_en : '')
                 || fallbackName
                 || ''
-            ).trim() || '指定商品';
+            ).trim() || this.trShop('specificProduct', '指定商品');
 
             seenProductIds.add(normalizedProductId);
             targetProducts.push({
@@ -3229,7 +3525,11 @@ const ShopClient = {
                 : null;
             pushProduct(
                 scopeProduct?.id || item?.scope_product_id,
-                scopeProduct?.display_name || scopeProduct?.name || scopeProduct?.name_en || '指定商品'
+                (this.isEnglishShopLocale() ? scopeProduct?.name_en : '')
+                    || scopeProduct?.display_name
+                    || scopeProduct?.name
+                    || scopeProduct?.name_en
+                    || this.trShop('specificProduct', '指定商品')
             );
             return targetProducts;
         }
@@ -3247,7 +3547,7 @@ const ShopClient = {
                 ))
                 .slice(0, 4)
                 .forEach((product) => {
-                    pushProduct(product?.id, product?.name || product?.name_en || scopeCategory);
+                    pushProduct(product?.id, this.getLocalizedProductName(product) || product?.name || product?.name_en || scopeCategory);
                 });
         }
 
@@ -3293,20 +3593,24 @@ const ShopClient = {
 
         if (/不允许全额抵扣/u.test(rawMessage)) {
             return short
-                ? '抵后会变成 0，不支持全额抵扣'
-                : '当前价格会被抵到 0，这张券不支持全额抵扣';
+                ? this.trShop('fixedCouponZeroShort', '抵后会变成 0，不支持全额抵扣')
+                : this.trShop('fixedCouponZeroLong', '当前价格会被抵到 0，这张券不支持全额抵扣');
         }
 
         if (/暂无可优惠金额/u.test(rawMessage)) {
             return short
-                ? '当前商品没有可优惠金额'
-                : '当前商品没有可优惠金额，暂时无法使用这张券';
+                ? this.trShop('noDiscountableAmountShort', '当前商品没有可优惠金额')
+                : this.trShop('noDiscountableAmountLong', '当前商品没有可优惠金额，暂时无法使用这张券');
         }
 
         if (/不能与其他卡券叠加/u.test(rawMessage)) {
             return short
-                ? '需要单独使用，不能叠加'
-                : '这张券需要单独使用，不能与其他卡券叠加';
+                ? this.trShop('exclusiveRequiredShort', '需要单独使用，不能叠加')
+                : this.trShop('exclusiveRequiredLong', '这张券需要单独使用，不能与其他卡券叠加');
+        }
+
+        if (this.isEnglishShopLocale() && this.containsCjkText(rawMessage)) {
+            return this.trShop('currentProductUnavailable', '当前商品不可用');
         }
 
         return rawMessage.replace(/^指定商品当前不可用[:：]?\s*/u, '');
@@ -3317,6 +3621,9 @@ const ShopClient = {
             ? targetProducts
             : this.getDiscountTargetProducts(item);
         const scopeLabel = String(item?.scope_label || '').trim();
+        const localizedScopeLabel = this.isEnglishShopLocale() && this.containsCjkText(scopeLabel)
+            ? this.trShop('specificProduct', 'Specific product')
+            : scopeLabel;
 
         if (!normalizedTargetProducts.length && (!scopeLabel || scopeLabel === '全场可用')) {
             return '';
@@ -3325,8 +3632,8 @@ const ShopClient = {
         if (!normalizedTargetProducts.length) {
             return `
                 <div class="shop-discount-asset-card__targets shop-discount-asset-card__targets--static">
-                    <span class="shop-discount-asset-card__targets-label">适用范围</span>
-                    <div class="shop-discount-asset-card__scope">${this.escapeHtml(scopeLabel)}</div>
+                    <span class="shop-discount-asset-card__targets-label">${this.trShop('applicableScope', '适用范围')}</span>
+                    <div class="shop-discount-asset-card__scope">${this.escapeHtml(localizedScopeLabel)}</div>
                 </div>
             `;
         }
@@ -3334,7 +3641,7 @@ const ShopClient = {
         return `
             <div class="shop-discount-asset-card__targets">
                 <div class="shop-discount-asset-card__targets-head">
-                    <span class="shop-discount-asset-card__targets-label">可用商品</span>
+                    <span class="shop-discount-asset-card__targets-label">${this.trShop('availableProducts', '可用商品')}</span>
                     <span class="shop-discount-asset-card__targets-count">${this.escapeHtml(String(normalizedTargetProducts.length))}</span>
                 </div>
                 <div class="shop-discount-asset-card__targets-list">
@@ -3346,7 +3653,7 @@ const ShopClient = {
                             data-target-product-id="${this.escapeAttribute(product.id)}"
                         >
                             <span class="shop-discount-asset-card__target-name">${this.escapeHtml(product.label)}</span>
-                            <span class="shop-discount-asset-card__target-action">查看商品</span>
+                            <span class="shop-discount-asset-card__target-action">${this.trShop('openProduct', '查看商品')}</span>
                         </button>
                     `).join('')}
                 </div>
@@ -3366,9 +3673,11 @@ const ShopClient = {
         const isCollapsibleUnavailableCard = isUnavailableCard && hasProductTargets;
         const expiryLabel = this.formatDiscountExpiryLabel(item, { includePrefix: true });
         const label = claimable
-            ? (claimPending ? '领取中' : (item.can_claim ? '立即领取' : '已达上限'))
+            ? (claimPending
+                ? this.trShop('claiming', '领取中')
+                : (item.can_claim ? this.trShop('claimNow', '立即领取') : this.trShop('claimLimitReached', '已达上限')))
             : (item.available
-                ? (selected ? '已选中' : '点击使用')
+                ? (selected ? this.trShop('selected', '已选中') : this.trShop('tapToUse', '点击使用'))
                 : expiryLabel);
         const benefitLabel = this.getDiscountBenefitLabel(item);
         const stackingLabel = this.formatDiscountStackingLabel(item);
@@ -3386,16 +3695,29 @@ const ShopClient = {
         const metaParts = [];
         if (!isUnavailableCard) {
             if (Number.isFinite(effectiveFinalTotal) && effectiveFinalTotal >= 0) {
-                metaParts.push(`${Number.isFinite(previewFinalTotal) ? '实付' : '折后'} ${this.formatShopPointValue(effectiveFinalTotal)}`);
+                metaParts.push(this.trShop('discountedTotal', '{label} {amount}', {
+                    label: Number.isFinite(previewFinalTotal)
+                        ? this.trShop('payNow', '实付')
+                        : this.trShop('discountedPrice', '折后'),
+                    amount: this.formatShopPointValue(effectiveFinalTotal)
+                }));
             }
             if (Number.isFinite(previewDiscountAmount) && previewDiscountAmount > 0) {
-                metaParts.push(`已优惠 ${this.formatShopPointValue(previewDiscountAmount)}`);
+                metaParts.push(this.trShop('savedAmount', '已优惠 {amount}', { amount: this.formatShopPointValue(previewDiscountAmount) }));
             }
         }
         if (isUnavailableCard) {
-            metaParts.push(`有效期 ${this.formatDiscountExpiryLabel(item, { includePrefix: false })}`);
+            if (this.isEnglishShopLocale()) {
+                metaParts.push(this.trShop('validityInline', 'Valid until {date}', {
+                    date: this.formatDiscountExpiryLabel(item, { includePrefix: false })
+                }));
+            } else {
+                metaParts.push(`有效期 ${this.formatDiscountExpiryLabel(item, { includePrefix: false })}`);
+            }
         } else if (item.claim_expires_at) {
-            metaParts.push(`领取至 ${new Date(item.claim_expires_at).toLocaleString()}`);
+            metaParts.push(this.trShop('claimUntil', '领取至 {date}', {
+                date: new Date(item.claim_expires_at).toLocaleString()
+            }));
         } else if (item.expires_at || item.effective_expires_at) {
             metaParts.push(this.formatDiscountExpiryLabel(item, { includePrefix: true }));
         }
@@ -3408,7 +3730,10 @@ const ShopClient = {
         }
         const rawHint = String(item.message || '').trim();
         const hintText = isUnavailableCard ? unavailableDetailReason : rawHint;
-        const shouldRenderHint = hintText && !/^(?:优惠码可用|当前可用)$/u.test(hintText);
+        const localizedHintText = this.isEnglishShopLocale() && this.containsCjkText(hintText)
+            ? ''
+            : hintText;
+        const shouldRenderHint = localizedHintText && !/^(?:优惠码可用|当前可用)$/u.test(localizedHintText);
         const isInteractiveCard = claimable || item.available !== false;
         const cardTag = isInteractiveCard ? 'button' : 'div';
         const cardClassName = `shop-discount-asset-card${selected ? ' is-selected' : ''}${item.available === false && !claimable ? ' is-disabled' : ''}${hasProductTargets ? ' has-product-targets' : ''}`;
@@ -3426,7 +3751,7 @@ const ShopClient = {
         const topMarkup = `
             <div class="shop-discount-asset-card__top">
                 <div class="shop-discount-asset-card__identity">
-                    <strong>${this.escapeHtml(item.code || '优惠券')}</strong>
+                    <strong>${this.escapeHtml(item.code || this.trShop('coupon', '优惠券'))}</strong>
                     ${benefitLabel ? `<span class="shop-discount-asset-card__benefit">${this.escapeHtml(benefitLabel)}</span>` : ''}
                     ${stackingLabel ? `<span class="${this.getDiscountStackingBadgeClassName(item)}">${this.escapeHtml(stackingLabel)}</span>` : ''}
                 </div>
@@ -3442,8 +3767,8 @@ const ShopClient = {
         const summaryReasonMarkup = isCollapsibleUnavailableCard && unavailableSummaryReason
             ? `<div class="shop-discount-asset-card__summary-reason">${this.escapeHtml(unavailableSummaryReason)}</div>`
             : '';
-        const metaMarkup = `<div class="shop-discount-asset-card__meta">${this.escapeHtml(metaParts.join(' · ') || hintText || '可在当前商品结算时使用')}</div>`;
-        const hintMarkup = shouldRenderHint ? `<div class="shop-discount-asset-card__hint">${this.escapeHtml(hintText)}</div>` : '';
+        const metaMarkup = `<div class="shop-discount-asset-card__meta">${this.escapeHtml(metaParts.join(' · ') || localizedHintText || this.trShop('availableForCurrentProduct', '可在当前商品结算时使用'))}</div>`;
+        const hintMarkup = shouldRenderHint ? `<div class="shop-discount-asset-card__hint">${this.escapeHtml(localizedHintText)}</div>` : '';
 
         if (isCollapsibleUnavailableCard) {
             return `
@@ -3595,8 +3920,8 @@ const ShopClient = {
 
         if ((!ownedItems.length && !claimableItems.length) || shouldWaitForLiveAvailableItems) {
             container.innerHTML = discountAssetsLoading
-                ? '<div class="shop-discount-assets-empty">正在同步当前商品可用卡券...</div>'
-                : '<div class="shop-discount-assets-empty">当前没有可直接选择的卡券，仍可继续输入暗码。</div>';
+                ? `<div class="shop-discount-assets-empty">${this.trShop('syncingCurrentCoupons', '正在同步当前商品可用卡券...')}</div>`
+                : `<div class="shop-discount-assets-empty">${this.trShop('noSelectableCoupons', '当前没有可直接选择的卡券，仍可继续输入暗码。')}</div>`;
             return;
         }
 
@@ -3604,7 +3929,7 @@ const ShopClient = {
             <div class="shop-discount-assets-shell">
                 ${currentlyAvailableItems.length ? `
                     <div class="shop-discount-assets-group">
-                        <div class="shop-discount-assets-group__title">当前商品可用</div>
+                        <div class="shop-discount-assets-group__title">${this.trShop('currentProductAvailable', '当前商品可用')}</div>
                         <div class="shop-discount-assets-grid">
                             ${currentlyAvailableItems.map((item) => this.buildDiscountAssetCardMarkup(item, {
                                 selected: selectedAssetIds.has(String(item?.asset_id || '').trim())
@@ -3614,7 +3939,7 @@ const ShopClient = {
                 ` : ''}
                 ${currentlyUnavailableItems.length ? `
                     <div class="shop-discount-assets-group">
-                        <div class="shop-discount-assets-group__title">当前商品不可用</div>
+                        <div class="shop-discount-assets-group__title">${this.trShop('currentProductUnavailable', '当前商品不可用')}</div>
                         <div class="shop-discount-assets-grid">
                             ${currentlyUnavailableItems.map((item) => this.buildDiscountAssetCardMarkup(item, {
                                 selected: selectedAssetIds.has(String(item?.asset_id || '').trim())
@@ -3624,7 +3949,7 @@ const ShopClient = {
                 ` : ''}
                 ${claimableItems.length ? `
                     <div class="shop-discount-assets-group">
-                        <div class="shop-discount-assets-group__title">可领取优惠</div>
+                        <div class="shop-discount-assets-group__title">${this.trShop('claimableDiscounts', '可领取优惠')}</div>
                         <div class="shop-discount-assets-grid">
                             ${claimableItems.map((item) => this.buildDiscountAssetCardMarkup(item, {
                                 claimable: true,
@@ -3711,15 +4036,22 @@ const ShopClient = {
             };
         }
 
-        const normalizeGuidancePayload = (data = {}) => ({
-            loaded: true,
-            purchaseNotes: typeof data?.purchase_notes === 'string'
+        const normalizeGuidancePayload = (data = {}) => {
+            const purchaseNotes = typeof data?.purchase_notes === 'string'
                 ? data.purchase_notes.trim()
-                : '',
-            usageInstructions: typeof data?.usage_instructions === 'string'
+                : '';
+            const usageInstructions = typeof data?.usage_instructions === 'string'
                 ? data.usage_instructions.trim()
-                : ''
-        });
+                : '';
+            const hasPurchaseNotes = data?.has_purchase_notes === true || data?.show_purchase_notes === true;
+            const hasUsageInstructions = data?.has_usage_instructions === true || data?.show_usage_instructions === true;
+
+            return {
+                loaded: true,
+                purchaseNotes: purchaseNotes || (hasPurchaseNotes ? this.getMissingProductGuidanceTranslationText('purchase_notes') : ''),
+                usageInstructions: usageInstructions || (hasUsageInstructions ? this.getMissingProductGuidanceTranslationText('usage_instructions') : '')
+            };
+        };
 
         try {
             const token = await this.getAccessToken().catch(() => '');
@@ -3734,7 +4066,7 @@ const ShopClient = {
                 headers,
                 body: JSON.stringify({
                     productId: normalizedProductId,
-                    site: window.SiteConfig?.site || 'cn'
+                    site: this.getGuidanceSiteForCurrentLanguage()
                 })
             });
             const payload = await response.json().catch(() => ({}));
@@ -3750,20 +4082,41 @@ const ShopClient = {
 
         try {
             const client = window.supabaseClient || supabaseClient;
-            const { data, error } = await client
+            const guidanceSelect = 'show_purchase_notes, purchase_notes, purchase_notes_zh, purchase_notes_en, show_usage_instructions, usage_instructions, usage_instructions_zh, usage_instructions_en';
+            let { data, error } = await client
                 .from('shop_products')
-                .select('show_purchase_notes, purchase_notes, show_usage_instructions, usage_instructions')
+                .select(guidanceSelect)
                 .eq('id', normalizedProductId)
                 .eq('is_active', true)
                 .single();
 
             if (error) {
-                throw error;
+                const message = String(error?.message || '').toLowerCase();
+                const missingBilingualGuidanceColumn = [
+                    'purchase_notes_zh',
+                    'purchase_notes_en',
+                    'usage_instructions_zh',
+                    'usage_instructions_en'
+                ].some((field) => message.includes(field));
+                if (!missingBilingualGuidanceColumn) {
+                    throw error;
+                }
+                const legacyResult = await client
+                    .from('shop_products')
+                    .select('show_purchase_notes, purchase_notes, show_usage_instructions, usage_instructions')
+                    .eq('id', normalizedProductId)
+                    .eq('is_active', true)
+                    .single();
+                data = legacyResult.data;
+                error = legacyResult.error;
+                if (error) {
+                    throw error;
+                }
             }
 
             return normalizeGuidancePayload({
-                purchase_notes: data?.show_purchase_notes ? data?.purchase_notes : '',
-                usage_instructions: data?.show_usage_instructions ? data?.usage_instructions : ''
+                purchase_notes: data?.show_purchase_notes ? this.getLocalizedProductGuidanceText(data, 'purchase_notes') : '',
+                usage_instructions: data?.show_usage_instructions ? this.getLocalizedProductGuidanceText(data, 'usage_instructions') : ''
             });
         } catch (error) {
             console.warn('Failed to load latest product guidance:', error);
@@ -3883,11 +4236,14 @@ const ShopClient = {
             }
 
             const fallbackMessage = selectedDiscounts.some((selection) => selection.assetId)
-                ? '已选卡券在当前数量下不可用，已取消使用'
-                : '优惠码在当前数量下不可用，已取消使用';
+                ? this.trShop('selectedCouponUnavailable', '已选卡券在当前数量下不可用，已取消使用')
+                : this.trShop('discountCodeUnavailable', '优惠码在当前数量下不可用，已取消使用');
+            const displayMessage = this.isEnglishShopLocale() && this.containsCjkText(error?.message)
+                ? fallbackMessage
+                : (error.message || fallbackMessage);
             this.resetDiscountState({ clearMessage: false });
             this.setDiscountMessage(
-                `<i class="fas fa-exclamation-triangle" aria-hidden="true"></i><span>${this.escapeHtml(error.message || fallbackMessage)}</span>`,
+                `<i class="fas fa-exclamation-triangle" aria-hidden="true"></i><span>${this.escapeHtml(displayMessage)}</span>`,
                 { variant: silent ? 'warning' : 'error', html: true }
             );
         }
@@ -3917,7 +4273,12 @@ const ShopClient = {
             this.currentPurchase.discountAssetsLoading = false;
             this.renderPurchaseDiscountAssets();
             if (!silent) {
-                this.setDiscountMessage(error.message || '优惠券列表加载失败', { variant: 'error' });
+                this.setDiscountMessage(
+                    (this.isEnglishShopLocale() && this.containsCjkText(error?.message))
+                        ? this.trShop('couponListLoadFailed', '优惠券列表加载失败')
+                        : (error.message || this.trShop('couponListLoadFailed', '优惠券列表加载失败')),
+                    { variant: 'error' }
+                );
             }
         }
     },
@@ -3929,8 +4290,14 @@ const ShopClient = {
 
     buildExclusiveReplacementMessage: function ({ conflictMessage = '', replacementCode = '' } = {}) {
         const normalizedConflictMessage = String(conflictMessage || '').trim().replace(/[。.!！]+$/u, '');
-        const normalizedReplacementCode = String(replacementCode || '').trim().toUpperCase() || '当前券';
-        return `${normalizedConflictMessage || '所选卡券为排他券，不能与其他卡券叠加'}。已改为仅应用你刚选择的优惠券 ${normalizedReplacementCode}。`;
+        const normalizedReplacementCode = String(replacementCode || '').trim().toUpperCase() || this.trShop('currentCoupon', '当前券');
+        const conflictText = this.isEnglishShopLocale() && this.containsCjkText(normalizedConflictMessage)
+            ? ''
+            : normalizedConflictMessage;
+        return this.trShop('exclusiveReplacementMessage', '{message}。已改为仅应用你刚选择的优惠券 {code}。', {
+            message: conflictText || this.trShop('exclusiveConflict', '所选卡券为排他券，不能与其他卡券叠加'),
+            code: normalizedReplacementCode
+        });
     },
 
     applyExclusiveReplacementSelection: async function (selection = {}, { conflictMessage = '' } = {}) {
@@ -3951,7 +4318,7 @@ const ShopClient = {
         };
 
         if (!replacementSelection.assetId && !replacementSelection.code) {
-            throw new Error('缺少要应用的卡券');
+            throw new Error(this.trShop('missingCouponToApply', '缺少要应用的卡券'));
         }
 
         const validationPayload = await this.validateDiscountSelectionsWithServer([replacementSelection], {
@@ -3965,9 +4332,9 @@ const ShopClient = {
             fallbackCode: replacementSelection.code || ''
         });
         this.setDiscountMessage(
-            `<i class="fas fa-exclamation-circle" aria-hidden="true"></i><span>${this.escapeHtml(this.buildExclusiveReplacementMessage({
+                `<i class="fas fa-exclamation-circle" aria-hidden="true"></i><span>${this.escapeHtml(this.buildExclusiveReplacementMessage({
                 conflictMessage,
-                replacementCode: replacementSelection.code || replacementSelection.assetId || '当前券'
+                replacementCode: replacementSelection.code || replacementSelection.assetId || this.trShop('currentCoupon', '当前券')
             }))}</span>`,
             { variant: 'warning', html: true }
         );
@@ -4014,8 +4381,11 @@ const ShopClient = {
                     error = replacementError;
                 }
             }
+            const displayMessage = this.isEnglishShopLocale() && this.containsCjkText(error?.message)
+                ? this.trShop('currentCouponUnavailable', '当前卡券不可用')
+                : (error.message || this.trShop('currentCouponUnavailable', '当前卡券不可用'));
             this.setDiscountMessage(
-                `<i class="fas fa-times-circle" aria-hidden="true"></i><span>${this.escapeHtml(error.message || '当前卡券不可用')}</span>`,
+                `<i class="fas fa-times-circle" aria-hidden="true"></i><span>${this.escapeHtml(displayMessage)}</span>`,
                 { variant: 'error', html: true }
             );
         } finally {
@@ -4037,7 +4407,7 @@ const ShopClient = {
         }
         if (this.pendingClaimDiscountIds.has(normalizedDiscountId)) {
             this.setDiscountMessage(
-                `<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>正在为你领取这张券，请稍候</span>`,
+                `<i class="fas fa-spinner fa-spin" aria-hidden="true"></i><span>${this.escapeHtml(this.trShop('claimingCoupon', '正在为你领取这张券，请稍候'))}</span>`,
                 { variant: 'info', html: true }
             );
             return;
@@ -4050,15 +4420,23 @@ const ShopClient = {
             await this.refreshPurchaseDiscountAssets({ silent: true });
             const claimMessage = String(payload?.message || '').trim()
                 || (payload?.already_claimed
-                    ? '你已领取过该券，可直接使用'
-                    : '领取成功，已加入你的卡券包');
+                    ? this.trShop('alreadyClaimedCoupon', '你已领取过该券，可直接使用')
+                    : this.trShop('couponClaimed', '领取成功，已加入你的卡券包'));
+            const displayMessage = this.isEnglishShopLocale() && this.containsCjkText(claimMessage)
+                ? (payload?.already_claimed
+                    ? this.trShop('alreadyClaimedCoupon', '你已领取过该券，可直接使用')
+                    : this.trShop('couponClaimed', '领取成功，已加入你的卡券包'))
+                : claimMessage;
             this.setDiscountMessage(
-                `<i class="fas fa-check-circle" aria-hidden="true"></i><span>${this.escapeHtml(claimMessage)}</span>`,
+                `<i class="fas fa-check-circle" aria-hidden="true"></i><span>${this.escapeHtml(displayMessage)}</span>`,
                 { variant: 'success', html: true }
             );
         } catch (error) {
+            const displayMessage = this.isEnglishShopLocale() && this.containsCjkText(error?.message)
+                ? this.trShop('claimFailed', '领取失败')
+                : (error.message || this.trShop('claimFailed', '领取失败'));
             this.setDiscountMessage(
-                `<i class="fas fa-times-circle" aria-hidden="true"></i><span>${this.escapeHtml(error.message || '领取失败')}</span>`,
+                `<i class="fas fa-times-circle" aria-hidden="true"></i><span>${this.escapeHtml(displayMessage)}</span>`,
                 { variant: 'error', html: true }
             );
         } finally {
@@ -4231,18 +4609,17 @@ const ShopClient = {
         const filtersContainer = document.getElementById('shopCategoryFilters');
 
         if (container) {
-            // Slow-load hint: keep the request alive, but avoid showing a false failure state
+            // Slow-load guard: keep the skeleton in place until products, empty state, or an error can render.
             const fallbackTimer = setTimeout(() => {
                 const hasRenderedProducts = container.querySelectorAll('.shop-card[data-product-id]').length > 0;
                 if (hasRenderedProducts) return;
 
                 console.warn('🛍️ Shop loading is taking longer than expected');
-                container.innerHTML = this.buildShopStatusMessage(
-                    window.i18n?.isEnglish?.()
-                        ? 'Still loading, this may take a little longer...'
-                        : '正在继续加载，请稍候...',
-                    { variant: 'muted', fullSpan: true, iconClass: 'fas fa-spinner fa-spin' }
-                );
+                const hasPendingSkeleton = this.getExistingProductSkeletonCount(container) > 0;
+                const hasTerminalState = !!container.querySelector('.shop-empty-state, .shop-status-message--error');
+                if (!hasPendingSkeleton && !hasTerminalState) {
+                    this.renderProductSkeletons();
+                }
             }, 5000);
 
             try {
@@ -4613,6 +4990,12 @@ const ShopClient = {
                 return;
             }
 
+            if (event.target instanceof Element && event.target.closest('#purchaseNotesToggle')) {
+                event.preventDefault?.();
+                this.togglePurchaseNotesVisibility();
+                return;
+            }
+
             const discountAccordionSummary = event.target instanceof Element
                 ? event.target.closest('.shop-discount-asset-card__summary')
                 : null;
@@ -4915,10 +5298,19 @@ const ShopClient = {
     },
 
     getOptimizedShopImageUrl: function (url, options = {}) {
-        const trimmed = String(url || '').trim();
+        const explicitVariantUrl = getShopProductImageAssetExplicitVariantUrl(url, options.variant || '');
+        if (explicitVariantUrl && options.variant) {
+            return explicitVariantUrl;
+        }
+
+        const trimmed = getShopProductImageAssetUrl(url, 'original');
         if (!trimmed) return '';
 
-        const { format = 'avif' } = options;
+        const { format = 'avif', variant = '' } = options;
+        const variantUrl = getShopResponsiveImageVariantUrl(trimmed, variant);
+        if (variantUrl) {
+            return variantUrl;
+        }
 
         if (trimmed.startsWith('data:image/') || trimmed.startsWith('/')) {
             return trimmed;
@@ -4959,11 +5351,12 @@ const ShopClient = {
 
     warmShopCardLeadImages: function (products = []) {
         const leadProducts = (Array.isArray(products) ? products : [])
-            .filter((product) => this.isShopImageSource(product?.icon_url))
+            .filter((product) => this.isShopImageSource(getShopProductImageAssetUrl(getShopProductImageAsset(product), 'original') || product?.icon_url))
             .slice(0, SHOP_GRID_EAGER_IMAGE_COUNT);
 
         leadProducts.forEach((product) => {
-            const optimizedUrl = this.getOptimizedShopImageUrl(product?.icon_url);
+            const imageAsset = getShopProductImageAsset(product);
+            const optimizedUrl = this.getOptimizedShopImageUrl(imageAsset || product?.icon_url, { variant: 'card' });
             if (!optimizedUrl || optimizedUrl.startsWith('data:') || shopCardImageWarmCache.has(optimizedUrl)) {
                 return;
             }
@@ -4981,10 +5374,11 @@ const ShopClient = {
     setShopCardImageSource: function (cardImage, originalUrl) {
         if (!(cardImage instanceof HTMLImageElement) || !originalUrl) return;
 
-        const primaryUrl = this.getOptimizedShopImageUrl(originalUrl);
-        const transformFallbackUrl = this.getOptimizedShopImageUrl(originalUrl, { format: '' });
+        const primaryUrl = this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' });
+        const originalSrc = getShopProductImageAssetUrl(originalUrl, 'original');
+        const transformFallbackUrl = this.getOptimizedShopImageUrl(originalSrc, { format: '' });
 
-        cardImage.dataset.originalSrc = originalUrl;
+        cardImage.dataset.originalSrc = originalSrc;
         cardImage.dataset.transformFallbackSrc = transformFallbackUrl !== primaryUrl ? transformFallbackUrl : '';
         cardImage.dataset.fallbackStage = '';
         cardImage.src = primaryUrl;
@@ -5195,7 +5589,10 @@ const ShopClient = {
                 ...(cachedProduct || {}),
                 ...providedProduct,
                 id: String(providedProduct.id || providedProduct.product_id || cachedProduct?.id || normalizedProductId || '').trim(),
-                icon_url: providedProduct.icon_url || cachedProduct?.icon_url || ''
+                icon_url: providedProduct.icon_url || cachedProduct?.icon_url || '',
+                image_assets: normalizeShopProductImageAsset(providedProduct.image_assets || providedProduct.imageAssets)
+                    || normalizeShopProductImageAsset(cachedProduct?.image_assets || cachedProduct?.imageAssets)
+                    || {}
             }
             : (cachedProduct || null);
         const productSnapshot = resolvedProduct
@@ -5218,10 +5615,16 @@ const ShopClient = {
                 .map((segment) => String(segment || '').trim())
                 .filter(Boolean);
         const resolvedPurchaseNotes = productSnapshot?.show_purchase_notes === true
-            ? String(productSnapshot.purchase_notes || '').trim()
+            ? this.getLocalizedProductGuidanceText(productSnapshot, 'purchase_notes')
+            : '';
+        const resolvedUsageInstructions = productSnapshot?.show_usage_instructions === true
+            ? this.getLocalizedProductGuidanceText(productSnapshot, 'usage_instructions')
             : '';
         const fallbackPurchaseNotes = String(this.currentPurchase?.productId || '').trim() === normalizedProductId
             ? String(this.currentPurchase?.purchaseNotes || '').trim()
+            : '';
+        const fallbackUsageInstructions = String(this.currentPurchase?.productId || '').trim() === normalizedProductId
+            ? String(this.currentPurchase?.usageInstructions || '').trim()
             : '';
 
         return {
@@ -5232,7 +5635,7 @@ const ShopClient = {
             quantity: Math.max(1, Number(quantity || 0) || 1),
             contentSegments: normalizedContentSegments,
             purchaseNotes: String(purchaseNotes || resolvedPurchaseNotes || fallbackPurchaseNotes).trim(),
-            usageInstructions: String(usageInstructions || '').trim(),
+            usageInstructions: String(usageInstructions || resolvedUsageInstructions || fallbackUsageInstructions).trim(),
             product: productSnapshot || null
         };
     },
@@ -5286,7 +5689,12 @@ const ShopClient = {
         const contentPanelId = `shop-success-content-panel-${index}`;
         const notesPanelId = `shop-success-notes-panel-${index}`;
         const usagePanelId = `shop-success-usage-panel-${index}`;
-        const quantityLabel = normalizedItem.quantity > 1 ? `数量 ${normalizedItem.quantity}` : '';
+        const quantityLabel = normalizedItem.quantity > 1
+            ? this.trShop('quantity', '数量 {count}', { count: normalizedItem.quantity })
+            : '';
+        const orderNoLabel = this.trShop('orderNo', window.i18n?.t('wallet.orderNo') || '订单号');
+        const copyOrderNoLabel = this.trShop('copyOrderNo', window.i18n?.t('wallet.copyOrderNo') || '点击复制订单号');
+        const copyOrderNoWithId = this.trShop('copyOrderNoWithId', '复制订单号 {id}', { id: fullOrderId });
         const encodedItemContent = encodeURIComponent(contentSegments.join('\n'));
         const fullOrderId = String(normalizedItem.orderId || '').trim();
         const formattedCreatedAt = this.formatSuccessOrderTimestamp(normalizedItem.createdAt);
@@ -5345,10 +5753,10 @@ const ShopClient = {
                                                     class="shop-success-item__order-id"
                                                     data-shop-success-action="copy-order-id"
                                                     data-shop-copy-content="${encodeURIComponent(fullOrderId)}"
-                                                    aria-label="复制订单号 ${this.escapeAttribute(fullOrderId)}"
-                                                    title="点击复制订单号"
+                                                    aria-label="${this.escapeAttribute(copyOrderNoWithId)}"
+                                                    title="${this.escapeAttribute(copyOrderNoLabel)}"
                                                 >
-                                                    <span class="shop-success-item__submeta-label">订单号</span>
+                                                    <span class="shop-success-item__submeta-label">${this.escapeHtml(orderNoLabel)}</span>
                                                     <span class="shop-success-item__submeta-value">${this.escapeHtml(fullOrderId)}</span>
                                                 </button>
                                             </div>
@@ -5703,7 +6111,7 @@ const ShopClient = {
 
         this.pendingProductSpotlight = null;
         this.clearPendingProductSpotlightUrl();
-        this.showShopToast('这张卡券对应的商品当前暂不可见，请先浏览商城其他商品。', 'error');
+        this.showShopToast(this.trShop('couponProductHidden', '这张卡券对应的商品当前暂不可见，请先浏览商城其他商品。'), 'error');
     },
 
     promptLoginForPurchase: function (message) {
@@ -5870,23 +6278,19 @@ const ShopClient = {
             '--shop-card-filter-delay': null
         });
 
+        const productImageAsset = getShopProductImageAsset(product);
+        const productImageOriginalUrl = getShopProductImageAssetUrl(productImageAsset, 'original') || String(product.icon_url || '');
         const safeIconClass = this.escapeAttribute(product.icon_url || '');
-        const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
-        const displayName = (currentLang === 'en' && product.name_en) ? product.name_en : product.name;
+        const displayName = this.getLocalizedProductName(product);
+        const displayCategory = this.getLocalizedProductCategoryLabel(product.category);
         const showDescriptionOnCard = this.shouldShowProductCardDescription(product);
-        const displayDesc = showDescriptionOnCard
-            ? (
-                (currentLang === 'en' && product.description_en)
-                    ? product.description_en
-                    : (product.description || (window.i18n?.t('shop.noDescription') || '暂无描述'))
-            )
-            : '';
+        const displayDesc = showDescriptionOnCard ? this.getLocalizedProductDescription(product) : '';
         const descriptionMarkup = showDescriptionOnCard
             ? `<p class="shop-card-desc">${this.escapeHtml(displayDesc)}</p>`
             : '<p class="shop-card-desc shop-card-desc--placeholder" aria-hidden="true"></p>';
         const safeCardImageAlt = this.escapeAttribute(displayName || (window.i18n?.t('shop.productImage') || '商品封面'));
-        const safeIconUrl = this.escapeAttribute(product.icon_url || '');
-        const hasCoverImage = this.isShopImageSource(product.icon_url);
+        const safeIconUrl = this.escapeAttribute(productImageOriginalUrl);
+        const hasCoverImage = this.isShopImageSource(productImageOriginalUrl);
         const shouldLoadImageEagerly = index < SHOP_GRID_EAGER_IMAGE_COUNT;
         const iconHtml = product.icon_url?.startsWith('fa')
             ? `<i class="${safeIconClass} shop-card-icon shop-card-icon--font" aria-hidden="true"></i>`
@@ -5897,7 +6301,7 @@ const ShopClient = {
         const stockCount = product.stock_count || 0;
         const noStock = stockCount <= 0;
         const stockLabel = noStock
-            ? (window.i18n?.t('shop.noStock') || '无货')
+            ? (window.i18n?.t('shop.outOfStock') || '售罄')
             : `${window.i18n?.t('shop.stock') || '库存'}: ${stockCount}`;
         const cartTriggerAriaLabel = noStock
             ? (window.i18n?.t('shop.outOfStock') || '售罄')
@@ -5969,9 +6373,9 @@ const ShopClient = {
                 productImage.fetchPriority = shouldLoadImageEagerly ? 'high' : 'auto';
             }
             productImage.addEventListener('error', () => {
-                this.handleShopCardImageError(productImage, product.icon_url);
+                this.handleShopCardImageError(productImage, productImageAsset || productImageOriginalUrl);
             });
-            this.setShopCardImageSource(productImage, product.icon_url);
+            this.setShopCardImageSource(productImage, productImageAsset || productImageOriginalUrl);
         }
 
         const cartTriggerButton = el.querySelector('.shop-card-cart-trigger[data-shop-action="add-product-to-cart"]');
@@ -6339,6 +6743,7 @@ const ShopClient = {
                     movingCards,
                     enteringCards,
                     cleanupDurationMs: 0,
+                    finalCards: cardElements,
                     overlay: moveOverlayNode ? [moveOverlayNode] : []
                 };
             }
@@ -6758,7 +7163,7 @@ const ShopClient = {
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = this.currentCategory === cat.name ? 'filter-tab active' : 'filter-tab';
-                btn.textContent = cat.name;
+                btn.textContent = this.getLocalizedProductCategoryLabel(cat);
                 btn.dataset.shopCategory = cat.name;
                 container.appendChild(btn);
             });
@@ -7383,6 +7788,7 @@ const ShopClient = {
             discountPreviewRevision: 0,
             stage: 'configure',
             purchaseNotes: typeof purchaseNotes === 'string' ? purchaseNotes.trim() : '',
+            purchaseNotesExpanded: false,
             usageInstructions: typeof usageInstructions === 'string' ? usageInstructions.trim() : '',
             sourcePage: normalizeShopTrackingText(sourceContext.sourcePage || '', 80) || null,
             sourceChannel: normalizeShopTrackingText(sourceContext.sourceChannel || '', 80) || null,
@@ -7508,10 +7914,12 @@ const ShopClient = {
         const activeInput = this.getActivePurchaseModalInput();
         activeInput?.blur();
         this.clearPurchaseNotesWheelIsolation();
+        this.clearPurchaseNotesHeightAnimation();
         this.detachPurchaseModalKeyboardDock();
         this.resetPurchaseModalKeyboardDockState();
         modal.classList.remove('active');
         modal.classList.remove('has-purchase-notes');
+        modal.classList.remove('has-purchase-notes-expanded');
         // Unlock background scroll on mobile Safari
         if (window.iOSScrollLock) window.iOSScrollLock.unlock();
         this.purchaseModalOwnsFullScrollLock = false;
@@ -7662,7 +8070,11 @@ const ShopClient = {
             const responseData = response?.data && typeof response.data === 'object' ? response.data : {};
             const displayName = entry?.displayName || this.getLocalizedProductName(entry?.product) || (window.i18n?.t('shop.unknownProduct') || '商品');
             const rawContent = String(responseData.content || '').trim();
-            const rawUsageInstructions = String(responseData.usage_instructions || entry?.product?.usage_instructions || '').trim();
+            const rawUsageInstructions = String(
+                responseData.usage_instructions
+                || this.getLocalizedProductGuidanceText(entry?.product, 'usage_instructions')
+                || ''
+            ).trim();
             const orderId = String(responseData.order_id || '').trim();
 
             if (orderId) {
@@ -7679,7 +8091,9 @@ const ShopClient = {
                 createdAt: String(responseData.created_at || '').trim() || new Date().toISOString(),
                 quantity: Number(entry?.quantity || 0) || 1,
                 content: rawContent,
-                purchaseNotes: entry?.product?.show_purchase_notes === true ? (entry?.product?.purchase_notes || '') : '',
+                purchaseNotes: entry?.product?.show_purchase_notes === true
+                    ? this.getLocalizedProductGuidanceText(entry?.product, 'purchase_notes')
+                    : '',
                 usageInstructions: rawUsageInstructions,
                 product: entry?.product || null
             }));
@@ -8146,38 +8560,139 @@ const ShopClient = {
         }
     },
 
+    clearPurchaseNotesHeightAnimation: function () {
+        if (this.purchaseNotesHeightAnimationTimer) {
+            clearTimeout(this.purchaseNotesHeightAnimationTimer);
+            this.purchaseNotesHeightAnimationTimer = null;
+        }
+
+        const { card } = this.getPurchaseModalElements();
+        if (!card) return;
+        card.classList.remove('shop-purchase-notes-height-animating');
+        card.style.removeProperty('height');
+        card.style.removeProperty('overflow');
+    },
+
+    animatePurchaseModalHeightChange: function (mutate) {
+        const runMutation = typeof mutate === 'function' ? mutate : () => {};
+        const { overlay, card } = this.getPurchaseModalElements();
+        const prefersReducedMotion = typeof window.matchMedia === 'function'
+            && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        if (
+            !overlay
+            || !card
+            || !overlay.classList.contains('active')
+            || card.classList.contains('shop-purchase-height-locked')
+            || prefersReducedMotion
+        ) {
+            runMutation();
+            return;
+        }
+
+        this.clearPurchaseNotesHeightAnimation();
+
+        const startHeight = Math.round(card.getBoundingClientRect().height || card.offsetHeight || 0);
+        if (startHeight <= 0) {
+            runMutation();
+            return;
+        }
+
+        card.style.height = `${startHeight}px`;
+        card.style.overflow = 'hidden';
+        card.classList.add('shop-purchase-notes-height-animating');
+
+        runMutation();
+
+        card.style.height = 'auto';
+        const targetHeight = Math.round(card.getBoundingClientRect().height || card.offsetHeight || 0);
+
+        if (targetHeight <= 0 || Math.abs(targetHeight - startHeight) < 2) {
+            this.clearPurchaseNotesHeightAnimation();
+            return;
+        }
+
+        card.style.height = `${startHeight}px`;
+        void card.offsetHeight;
+
+        requestAnimationFrame(() => {
+            if (!card.classList.contains('shop-purchase-notes-height-animating')) return;
+            card.style.height = `${targetHeight}px`;
+        });
+
+        this.purchaseNotesHeightAnimationTimer = setTimeout(() => {
+            this.clearPurchaseNotesHeightAnimation();
+        }, 280);
+    },
+
+    togglePurchaseNotesVisibility: function () {
+        if (!this.currentPurchase) return;
+        const hasPurchaseNotes = String(this.currentPurchase.purchaseNotes || '').trim().length > 0;
+        if (!hasPurchaseNotes) return;
+
+        const nextExpanded = this.currentPurchase.purchaseNotesExpanded !== true;
+        this.animatePurchaseModalHeightChange(() => {
+            this.currentPurchase.purchaseNotesExpanded = nextExpanded;
+            this.renderPurchaseNotes();
+        });
+    },
+
     renderPurchaseNotes: function () {
         const modal = document.getElementById('shopPurchaseModal');
         const notesBox = document.getElementById('purchaseNotesBox');
+        const notesCard = document.getElementById('purchaseNotesCard');
         const notesContent = document.getElementById('purchaseNotesContent');
         const notesTitle = document.getElementById('purchaseNotesTitle');
+        const notesToggle = document.getElementById('purchaseNotesToggle');
         const normalizedPurchaseNotes = typeof this.currentPurchase?.purchaseNotes === 'string'
             ? this.currentPurchase.purchaseNotes.trim()
             : '';
         const hasPurchaseNotes = normalizedPurchaseNotes.length > 0;
+        const isExpanded = hasPurchaseNotes && this.currentPurchase?.purchaseNotesExpanded === true;
+        const titleText = window.i18n?.t('shop.purchaseNotes') || '注意事项';
+        const expandLabel = window.i18n?.t('shop.showPurchaseNotes') || '展开';
+        const collapseLabel = window.i18n?.t('shop.hidePurchaseNotes') || '收起';
 
         this.clearPurchaseNotesWheelIsolation();
 
         if (modal) {
             modal.classList.toggle('has-purchase-notes', hasPurchaseNotes);
+            modal.classList.toggle('has-purchase-notes-expanded', isExpanded);
         }
 
         if (!notesBox || !notesContent) return;
 
+        notesBox.classList.toggle('is-expanded', isExpanded);
+
+        if (notesTitle) {
+            notesTitle.textContent = titleText;
+        }
+
+        if (notesToggle && typeof notesToggle.setAttribute === 'function') {
+            if ('disabled' in notesToggle) {
+                notesToggle.disabled = !hasPurchaseNotes;
+            }
+            notesToggle.classList.toggle('is-active', isExpanded);
+            notesToggle.setAttribute('aria-expanded', isExpanded ? 'true' : 'false');
+            notesToggle.setAttribute('aria-pressed', isExpanded ? 'true' : 'false');
+            notesToggle.setAttribute('aria-label', isExpanded ? collapseLabel : expandLabel);
+        }
+
         if (hasPurchaseNotes) {
             const renderedNotes = this.renderStoredRichText(normalizedPurchaseNotes);
             notesContent.innerHTML = renderedNotes;
-            if (notesTitle) {
-                notesTitle.textContent = window.i18n?.t('shop.purchaseNotes') || '注意事项';
-            }
+            this.setElementHidden(notesCard, !isExpanded);
             this.setElementHidden(notesBox, false);
-            this.bindPurchaseNotesWheelIsolation();
-        } else {
-            this.setElementHidden(notesBox, true);
-            notesContent.innerHTML = '';
-            if (notesTitle) {
-                notesTitle.textContent = window.i18n?.t('shop.purchaseNotes') || '注意事项';
+            if (isExpanded) {
+                this.bindPurchaseNotesWheelIsolation();
             }
+        } else {
+            if (this.currentPurchase) {
+                this.currentPurchase.purchaseNotesExpanded = false;
+            }
+            this.setElementHidden(notesBox, true);
+            this.setElementHidden(notesCard, true);
+            notesContent.innerHTML = '';
         }
     },
 
@@ -8524,7 +9039,7 @@ const ShopClient = {
                 .from('shop_orders')
                 .select(`
     *,
-    shop_products(name, icon_url)
+    shop_products(name, name_en, icon_url)
         `)
                 .eq('user_id', user.id)
                 .eq('site', window.SiteConfig?.site || 'cn')
@@ -8542,8 +9057,13 @@ const ShopClient = {
                 const item = document.createElement('div');
                 item.className = 'glass-box shop-order-history-item';
 
-                const date = new Date(order.created_at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+                const date = new Date(order.created_at).toLocaleString(this.isEnglishShopLocale() ? 'en-US' : 'zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
                 const icon = order.shop_products?.icon_url || 'fas fa-box';
+                const displayName = this.getLocalizedProductName(order.shop_products)
+                    || (window.i18n?.t('shop.unknownProduct') || '未知商品');
+                const pointsLabel = this.isEnglishShopLocale()
+                    ? (window.i18n?.t('shop.points') || 'Points')
+                    : (window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分');
                 const safeIcon = this.escapeAttribute(icon);
                 const iconHtml = icon.startsWith('http')
                     ? `<img src="${safeIcon}" class="shop-order-history-icon shop-order-history-icon--image" alt="">`
@@ -8553,10 +9073,10 @@ const ShopClient = {
                     <div class="shop-order-history-main">
                         <div class="shop-order-history-header">
                             ${iconHtml}
-                            <span class="shop-order-history-name">${this.escapeHtml(order.shop_products?.name || (window.i18n?.t('shop.unknownProduct') || '未知商品'))}</span>
+                            <span class="shop-order-history-name">${this.escapeHtml(displayName)}</span>
                         </div>
                         <div class="shop-order-history-meta">
-                            ${date} · <span class="shop-order-history-points">-${this.formatShopPointValue(order.price_paid)} ${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span>
+                            ${date} · <span class="shop-order-history-points">-${this.formatShopPointValue(order.price_paid)} ${pointsLabel}</span>
                         </div>
                     </div>
                     <button type="button" data-shop-order-id="${order.id}" data-shop-order-content="${encodeURIComponent(order.content_delivered || '')}"
@@ -8630,7 +9150,7 @@ const ShopClient = {
         const serializedItems = String(contentBox.dataset.successItems || '').trim();
         const productName = this.currentPurchase?.productName || (window.i18n?.t('shop.unknownProduct') || '商品');
         const orderId = this.currentPurchase?.orderId || '';
-        const timestamp = this.formatSuccessOrderTimestamp(this.currentPurchase?.createdAt) || new Date().toLocaleString('zh-CN');
+        const timestamp = this.formatSuccessOrderTimestamp(this.currentPurchase?.createdAt) || new Date().toLocaleString(this.isEnglishShopLocale() ? 'en-US' : 'zh-CN');
         let exportItems = [];
 
         if (serializedItems) {

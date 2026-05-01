@@ -1,0 +1,168 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+const vm = require('node:vm');
+
+const homepageShared = require('../server/api-handlers/admin/homepage/_shared');
+const homepageContractPath = path.resolve(__dirname, '../js/homepage-contract.js');
+const adminHomepagePath = path.resolve(__dirname, '../admin-homepage.js');
+const framerHomePath = path.resolve(__dirname, '../js/framer_home.js');
+const prefetchHomePath = path.resolve(__dirname, '../js/prefetch-home.js');
+const promptsPoetryPath = path.resolve(__dirname, '../prompts-poetry.js');
+const shopClientPath = path.resolve(__dirname, '../js/shop-client.js');
+
+function loadBrowserHomepageContract() {
+    const source = fs.readFileSync(homepageContractPath, 'utf8');
+    const sandbox = { window: {} };
+    vm.runInNewContext(source, sandbox, { filename: homepageContractPath });
+    return sandbox.window.HomepageContract;
+}
+
+test('homepage shared normalizer preserves hero bilingual fields for health checks', () => {
+    const row = homepageShared.buildHomepageRowRecord({
+        site: 'cn',
+        section: 'hero',
+        is_visible: true,
+        display_order: 1,
+        content: {
+            title: '早鸟工作室',
+            title_zh: '早鸟工作室',
+            title_en: 'Zaoyoe Studio',
+            subtitle: '创意 · 效率 · 无限可能',
+            subtitle_zh: '创意 · 效率 · 无限可能',
+            subtitle_en: 'Creativity, efficiency, infinite possibilities'
+        }
+    });
+
+    assert.equal(row.content.title_zh, '早鸟工作室');
+    assert.equal(row.content.title_en, 'Zaoyoe Studio');
+    assert.equal(row.content.subtitle_en, 'Creativity, efficiency, infinite possibilities');
+
+    const result = homepageShared.validateHomepageRow('hero', row);
+    assert.equal(result.warnings.includes('Hero 标题未补齐双语字段'), false);
+});
+
+test('homepage browser contract preserves localized section title pairs', () => {
+    const contract = loadBrowserHomepageContract();
+
+    const content = contract.normalizeContent('prompts', {
+        section_title: '提示词图库',
+        section_title_zh: '提示词图库',
+        section_title_en: 'Prompt Gallery',
+        section_subtitle: '中文灵感池',
+        section_subtitle_zh: '中文灵感池',
+        section_subtitle_en: 'A pool of ideas'
+    });
+
+    assert.equal(content.section_title_zh, '提示词图库');
+    assert.equal(content.section_title_en, 'Prompt Gallery');
+    assert.equal(content.section_subtitle_en, 'A pool of ideas');
+
+    const guestbook = contract.normalizeContent('guestbook', {
+        section_title: '留言板',
+        fallback_items: [{
+            content: '中文兜底',
+            content_en: 'English fallback',
+            author: '早鸟社区',
+            author_en: 'Zaoyoe Community'
+        }]
+    });
+    assert.equal(guestbook.fallback_items[0].content_en, 'English fallback');
+    assert.equal(guestbook.fallback_items[0].author_en, 'Zaoyoe Community');
+});
+
+test('homepage admin save path seeds the current site localized fallback', () => {
+    const source = fs.readFileSync(adminHomepagePath, 'utf8');
+
+    assert.match(source, /hero:\s*\['title', 'subtitle'\]/);
+    assert.match(source, /function ensureHomepageSectionLocalizedFallbacks\(section, content, site\)/);
+    assert.match(source, /ensureHomepageLocalizedListFallbacks\(content\.fallback_items, \['content', 'author'\], site\)/);
+    assert.match(source, /ensureHomepageSectionLocalizedFallbacks\(section, content, writableSite\);/);
+});
+
+test('homepage hero runtime avoids Chinese title fallback in English language mode', () => {
+    const framerSource = fs.readFileSync(framerHomePath, 'utf8');
+    const prefetchSource = fs.readFileSync(prefetchHomePath, 'utf8');
+
+    assert.match(framerSource, /function resolveHomepageLocalizedText\(value, i18nKey, fallbackByLanguage = \{\}\)/);
+    assert.match(framerSource, /function resolveHomepageLocalizedTextList\(value, fallbackItems = \[\]\)/);
+    assert.match(framerSource, /function resolveHomepageHeroText\(value, i18nKey, fallbackByLanguage = \{\}\)/);
+    assert.match(framerSource, /getHomepageRuntimeLanguage\(\) === 'en' && containsHomeCjkText\(normalized\)/);
+    assert.match(framerSource, /text: resolveHomepageLocalizedText\(this\.getLocalizedField\(item, 'text'\) \|\| item\?\.text, entryFallback\.i18nKey/);
+    assert.match(framerSource, /resolveHomepageLocalizedText\(this\.getLocalizedField\(config, 'section_title'\), 'home\.prompts\.title'/);
+    assert.match(framerSource, /resolveHomepageLocalizedText\(this\.getLocalizedField\(config, 'section_title'\), 'home\.shop\.title'/);
+    assert.match(framerSource, /resolveHomepageLocalizedText\(this\.getLocalizedField\(config, 'section_title'\), 'home\.verify\.title'/);
+    assert.match(framerSource, /resolveHomepageLocalizedText\(this\.getLocalizedField\(config, 'section_title'\), 'home\.guestbook\.title'/);
+    assert.match(framerSource, /features: resolveHomepageLocalizedTextList\(config\.features, defaultFeatures\)/);
+    assert.match(framerSource, /ctaText: resolveHomepageLocalizedText\(experimentCtaText \|\| config\.cta_text, 'home\.verify\.cta'/);
+    assert.match(framerSource, /en: 'Supported AI Models'/);
+    assert.match(framerSource, /emailLabel: copy\('verify\.emailLabel', \{ zh: 'Gmail 地址', en: 'Gmail Address' \}\)/);
+    assert.match(framerSource, /submitTask: copy\(\{ zh: '提交任务', en: 'Submit Task' \}\)/);
+    assert.match(framerSource, /language: getHomepageRuntimeLanguage\(\)/);
+    assert.match(framerSource, /HOMEPAGE_HERO_TEXT_CACHE_VERSION/);
+
+    assert.match(prefetchSource, /function resolveLocalizedText\(value, i18nKey, fallbackByLanguage = \{\}\)/);
+    assert.match(prefetchSource, /function resolveLocalizedTextList\(value, fallbackItems = \[\]\)/);
+    assert.match(prefetchSource, /function resolveHeroText\(value, i18nKey, fallbackByLanguage = \{\}\)/);
+    assert.match(prefetchSource, /getCurrentLanguage\(\) === 'en' && containsCjkText\(normalized\)/);
+    assert.match(prefetchSource, /text: resolveLocalizedText\(getLocalizedField\(item, 'text'\) \|\| item\?\.text, entryFallback\.i18nKey/);
+    assert.match(prefetchSource, /resolveLocalizedText\(getLocalizedField\(config, 'section_title'\), 'home\.verify\.title'/);
+    assert.match(prefetchSource, /features: resolveLocalizedTextList\(config\.features, defaultFeatures\)/);
+    assert.match(prefetchSource, /ctaText: resolveLocalizedText\(experimentCtaText \|\| config\.cta_text, 'home\.verify\.cta'/);
+    assert.match(prefetchSource, /data\?\.language && data\.language !== getCurrentLanguage\(\)/);
+    assert.match(prefetchSource, /language: getCurrentLanguage\(\)/);
+});
+
+test('public pages localize static seo metadata and hidden headings', () => {
+    const htmlExpectations = [
+        ['index.html', 'seo.index'],
+        ['prompts.html', 'seo.prompts'],
+        ['shop.html', 'seo.shop'],
+        ['verify.html', 'seo.verify'],
+        ['guestbook.html', 'seo.guestbook']
+    ];
+
+    htmlExpectations.forEach(([file, key]) => {
+        const source = fs.readFileSync(path.resolve(__dirname, `../${file}`), 'utf8');
+        assert.match(source, new RegExp(`data-i18n="${key}\\.title"`));
+        assert.match(source, new RegExp(`data-i18n="${key}\\.description" data-i18n-attr="content"`));
+        assert.match(source, new RegExp(`class="visually-hidden-h1" data-i18n="${key}\\.h1"`));
+    });
+
+    const en = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../lang/en.json'), 'utf8'));
+    const zh = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../lang/zh.json'), 'utf8'));
+    assert.equal(en.seo.index.title, 'Zaoyoe Studio - Creativity, Efficiency, Endless Possibilities');
+    assert.equal(zh.seo.index.title, '早鸟工作室 - 创意·效率·无限可能');
+});
+
+test('public runtime blocks Chinese business-data fallbacks in English language mode', () => {
+    const framerSource = fs.readFileSync(framerHomePath, 'utf8');
+    const prefetchSource = fs.readFileSync(prefetchHomePath, 'utf8');
+    const promptsSource = fs.readFileSync(promptsPoetryPath, 'utf8');
+    const shopSource = fs.readFileSync(shopClientPath, 'utf8');
+
+    assert.match(framerSource, /function resolveHomepageDataText\(value, fallbackByLanguage = \{\}\)/);
+    assert.match(framerSource, /getHomepageRuntimeLanguage\(\) === 'en' && containsHomeCjkText\(normalized\)/);
+    assert.match(framerSource, /const promptTitle = getHomepageLocalizedDataField\(prompt, 'title'/);
+    assert.match(framerSource, /const productName = getHomepageLocalizedDataField\(product, 'name'/);
+    assert.match(framerSource, /function getHomepageProductCategoryLabel\(category\)/);
+    assert.match(framerSource, /'公益站': 'Community Access'/);
+    assert.match(framerSource, /sanitizeTickerItems\(config\.product_categories, \{ allowCjk: true \}\)/);
+    assert.match(framerSource, /filterHomepageDataTextList\(langTags\)\.forEach/);
+    assert.match(framerSource, /getHomepageRuntimeLanguage\(\) !== 'en' \|\| Boolean\(getHomepageLocalizedDataField\(item, 'content'/);
+
+    assert.match(prefetchSource, /function resolveDataText\(value, fallbackByLanguage = \{\}\)/);
+    assert.match(prefetchSource, /getCurrentLanguage\(\) === 'en' && containsCjkText\(normalized\)/);
+    assert.match(prefetchSource, /sanitizeTickerItems\(config\.product_categories, \{ allowCjk: true \}\)/);
+    assert.match(prefetchSource, /getCurrentLanguage\(\) !== 'en' \|\| Boolean\(getLocalizedDataField\(item, 'content'/);
+
+    assert.match(promptsSource, /function resolvePromptLocalizedDataText\(value, field\)/);
+    assert.match(promptsSource, /lang !== 'en' && item\[otherLangKey\]/);
+
+    assert.match(shopSource, /resolveShopDataText: function \(value, fallback = ''\)/);
+    assert.match(shopSource, /this\.isEnglishShopLocale\(\) && this\.containsCjkText\(normalized\)/);
+    assert.match(shopSource, /'虚拟卡': 'Virtual Card'/);
+    assert.doesNotMatch(shopSource, /containsCjkText\(cat\?\.name\)/);
+    assert.match(shopSource, /const displayName = this\.getLocalizedProductName\(product\)/);
+});

@@ -96,8 +96,8 @@ test('comments workflow actions refresh stats only after the list request is que
 test('comments side-effect refresh helpers keep list-first ordering for lightweight updates', () => {
     const source = readRepoFile('admin-comments.js');
     const refreshUserSegment = getSegment(source, 'function refreshCommentsForUserStatus(userId)', 'function getCommentById(commentId)');
-    const batchDeleteSegment = getSegment(source, 'async function batchDeleteComments(actionEl = null)', 'async function deleteComment(id, type, recordType = \'\')');
-    const deleteSegment = getSegment(source, 'async function deleteComment(id, type, recordType = \'\')', 'function viewCommentContext(contextUrl)');
+    const batchDeleteSegment = getSegment(source, 'async function batchDeleteComments(actionEl = null)', 'async function deleteComment(id, type, recordType = \'\', actionEl = null)');
+    const deleteSegment = getSegment(source, 'async function deleteComment(id, type, recordType = \'\', actionEl = null)', 'function viewCommentContext(contextUrl)');
 
     assertOrder(
         refreshUserSegment,
@@ -116,5 +116,72 @@ test('comments side-effect refresh helpers keep list-first ordering for lightwei
         'loadComments(currentCommentView, {',
         'loadCommentStats(currentCommentView, { showLoading: false });',
         'single-comment deletes should refresh the list before the stats request'
+    );
+});
+
+test('comments card moderation buttons provide inline action feedback', () => {
+    const source = readRepoFile('admin-comments.js');
+    const deleteDelegateSegment = getSegment(source, "case 'delete-comment':", "case 'block-user':");
+
+    assert.match(
+        source,
+        /function beginAdminCommentsActionButtonFeedback\(actionEl,\s*options = \{\}\)/,
+        'comments runtime should expose a compact per-button feedback helper'
+    );
+    assert.match(
+        source,
+        /data-comments-action="delete-comment"[\s\S]{0,220}aria-label="删除评论"/,
+        'comment card delete buttons should be labelled for inline feedback and assistive tech'
+    );
+    assert.match(
+        source,
+        /async function deleteComment\(id,\s*type,\s*recordType = '',\s*actionEl = null\)[\s\S]{0,520}beginAdminCommentsActionButtonFeedback\(actionEl,\s*\{[\s\S]{0,120}loadingText: '删除中\.\.\.'/,
+        'single comment delete should switch the clicked icon button into a deleting state'
+    );
+    assert.equal(
+        deleteDelegateSegment.includes('actionEl'),
+        true,
+        'delete action delegation should pass the clicked button into deleteComment'
+    );
+    assert.match(
+        source,
+        /window\.togglePin = async function \(id,\s*currentStatus,\s*promptId,\s*actionEl = null\)[\s\S]{0,620}loadingText: currentStatus \? '取消中\.\.\.' : '置顶中\.\.\.'/,
+        'pin/unpin should show inline button feedback while the request is in flight'
+    );
+    assert.match(
+        source,
+        /window\.blockUser = async function \(userId,\s*scope,\s*days,\s*actionEl = null\)[\s\S]{0,620}loadingText: '封禁中\.\.\.'/,
+        'block user menu actions should show inline busy feedback'
+    );
+    assert.match(
+        source,
+        /window\.unblockUser = async function \(userId,\s*scope,\s*actionEl = null\)[\s\S]{0,620}loadingText: '解封中\.\.\.'/,
+        'unblock user menu actions should show inline busy feedback'
+    );
+});
+
+test('comments export menu options show progress feedback while exporting filtered data', () => {
+    const source = readRepoFile('admin-comments.js');
+    const styles = readRepoFile('admin-sidebar.css');
+
+    assert.match(
+        source,
+        /function beginAdminCommentsMenuOptionFeedback\(actionEl,\s*options = \{\}\)/,
+        'comments runtime should expose a menu-option feedback helper for export actions'
+    );
+    assert.match(
+        source,
+        /async function exportData\(format,\s*actionEl = null\)[\s\S]{0,240}beginAdminCommentsMenuOptionFeedback\(actionEl,\s*\{[\s\S]{0,120}loadingText: '导出中\.\.\.'/,
+        'comments export should switch the clicked export option into a loading state'
+    );
+    assert.match(
+        source,
+        /finishMenuFeedback\(\{\s*state: 'saved',\s*text: '已导出'\s*\}\)/,
+        'comments export should show completion feedback before restoring the menu option'
+    );
+    assert.match(
+        styles,
+        /\.filter-option\[data-comments-action-feedback-state="loading"\]/,
+        'comments export menu feedback should have a visible loading style'
     );
 });

@@ -9,6 +9,12 @@
     const VERSION = '20260428_ADMIN_PULSE_DOCK_SWITCH_STEADY_1';
     const PANEL_OPEN_ANIMATION_MS = 260;
     const PANEL_CLOSE_ANIMATION_MS = 220;
+    const COMMAND_CENTER_IMMEDIATE_PRIME_KEYS = Object.freeze(['notifications', 'inventory']);
+    const COMMAND_CENTER_DEFERRED_PRIME_STAGES = Object.freeze([
+        { key: 'payments', delayMs: 650 },
+        { key: 'ai', delayMs: 1300 },
+        { key: 'security', delayMs: 2100 }
+    ]);
     const MODULE_LABELS = Object.freeze({
         gallery: 'Gallery',
         comments: '评论',
@@ -128,6 +134,8 @@
         panelMotion: createDefaultPanelMotion(),
         panelPhaseTimerId: 0,
         panelPhaseToken: 0,
+        pulsePrimeTimerIds: [],
+        pulsePrimeToken: 0,
         actionToast: '选择一个待处理入口，直接回到对应页面处理。',
         collapsed: false,
         dockPointer: {
@@ -676,50 +684,151 @@
         }
     }
 
+    function markCommandCenterTiming(name = '', detail = {}) {
+        if (typeof window.AdminStudioTiming?.mark === 'function') {
+            window.AdminStudioTiming.mark(`command-center:${name}`, detail);
+        }
+    }
+
+    function markCommandCenterTimingOnce(name = '', detail = {}) {
+        if (typeof window.AdminStudioTiming?.markOnce === 'function') {
+            window.AdminStudioTiming.markOnce(`command-center:${name}`, detail);
+            return;
+        }
+        markCommandCenterTiming(name, detail);
+    }
+
+    function measureCommandCenterTiming(name = '', startName = '', endName = '', detail = {}) {
+        if (typeof window.AdminStudioTiming?.measure === 'function') {
+            window.AdminStudioTiming.measure(
+                `command-center:${name}`,
+                `command-center:${startName}`,
+                `command-center:${endName}`,
+                detail
+            );
+        }
+    }
+
+    function runPulseSummaryPrime(key = '', options = {}, loadSummary, applySummary) {
+        const normalizedKey = sanitizeText(key, 40).toLowerCase();
+        const force = options.force === true;
+        const detail = {
+            key: normalizedKey,
+            force,
+            site: state.site
+        };
+        const startName = `prime:${normalizedKey}:start`;
+        const endName = `prime:${normalizedKey}:end`;
+        markCommandCenterTiming(startName, detail);
+
+        let taskPromise;
+        try {
+            taskPromise = Promise.resolve(loadSummary({ force }));
+        } catch (error) {
+            taskPromise = Promise.reject(error);
+        }
+
+        return taskPromise
+            .then((summary) => applySummary(summary))
+            .catch((error) => {
+                console.warn(`[AdminCommandCenter] Failed to prime ${normalizedKey} summary:`, error);
+            })
+            .finally(() => {
+                markCommandCenterTiming(endName, detail);
+                measureCommandCenterTiming(`prime:${normalizedKey}`, startName, endName, detail);
+            });
+    }
+
+    function primePulseSummaryByKey(key = '', options = {}) {
+        const normalizedKey = sanitizeText(key, 40).toLowerCase();
+        const force = options.force === true;
+
+        if (normalizedKey === 'notifications' && typeof window.primeAdminChatCommandCenterSummary === 'function') {
+            return runPulseSummaryPrime(
+                normalizedKey,
+                { force },
+                (primeOptions) => window.primeAdminChatCommandCenterSummary(primeOptions),
+                applyNotificationsSummary
+            );
+        }
+
+        if (normalizedKey === 'payments' && typeof window.AdminPayments?.primeCommandCenterSummary === 'function') {
+            return runPulseSummaryPrime(
+                normalizedKey,
+                { force },
+                (primeOptions) => window.AdminPayments.primeCommandCenterSummary(primeOptions),
+                applyPaymentsSummary
+            );
+        }
+
+        if (normalizedKey === 'inventory' && typeof window.primeAnalyticsCommandCenterInventorySummary === 'function') {
+            return runPulseSummaryPrime(
+                normalizedKey,
+                { force },
+                (primeOptions) => window.primeAnalyticsCommandCenterInventorySummary(primeOptions),
+                applyInventorySummary
+            );
+        }
+
+        if (normalizedKey === 'ai' && typeof window.AdminAI?.primeCommandCenterSummary === 'function') {
+            return runPulseSummaryPrime(
+                normalizedKey,
+                { force },
+                (primeOptions) => window.AdminAI.primeCommandCenterSummary(primeOptions),
+                applyAISummary
+            );
+        }
+
+        if (normalizedKey === 'security' && typeof window.primeAdminAuditMonitorCommandCenterSummary === 'function') {
+            return runPulseSummaryPrime(
+                normalizedKey,
+                { force },
+                (primeOptions) => window.primeAdminAuditMonitorCommandCenterSummary(primeOptions),
+                applySecuritySummary
+            );
+        }
+
+        return null;
+    }
+
     async function primePulseSummaries(options = {}) {
-        const tasks = [];
-
-        if (typeof window.primeAdminChatCommandCenterSummary === 'function') {
-            tasks.push(Promise.resolve(window.primeAdminChatCommandCenterSummary({ force: options.force === true }))
-                .then((summary) => applyNotificationsSummary(summary))
-                .catch((error) => {
-                    console.warn('[AdminCommandCenter] Failed to prime notifications summary:', error);
-                }));
-        }
-
-        if (typeof window.AdminPayments?.primeCommandCenterSummary === 'function') {
-            tasks.push(Promise.resolve(window.AdminPayments.primeCommandCenterSummary({ force: options.force === true }))
-                .then((summary) => applyPaymentsSummary(summary))
-                .catch((error) => {
-                    console.warn('[AdminCommandCenter] Failed to prime payments summary:', error);
-                }));
-        }
-
-        if (typeof window.primeAnalyticsCommandCenterInventorySummary === 'function') {
-            tasks.push(Promise.resolve(window.primeAnalyticsCommandCenterInventorySummary({ force: options.force === true }))
-                .then((summary) => applyInventorySummary(summary))
-                .catch((error) => {
-                    console.warn('[AdminCommandCenter] Failed to prime inventory summary:', error);
-                }));
-        }
-
-        if (typeof window.AdminAI?.primeCommandCenterSummary === 'function') {
-            tasks.push(Promise.resolve(window.AdminAI.primeCommandCenterSummary({ force: options.force === true }))
-                .then((summary) => applyAISummary(summary))
-                .catch((error) => {
-                    console.warn('[AdminCommandCenter] Failed to prime AI summary:', error);
-                }));
-        }
-
-        if (typeof window.primeAdminAuditMonitorCommandCenterSummary === 'function') {
-            tasks.push(Promise.resolve(window.primeAdminAuditMonitorCommandCenterSummary({ force: options.force === true }))
-                .then((summary) => applySecuritySummary(summary))
-                .catch((error) => {
-                    console.warn('[AdminCommandCenter] Failed to prime security summary:', error);
-                }));
-        }
-
+        const keys = Array.isArray(options.keys) && options.keys.length
+            ? options.keys
+            : COMMAND_CENTER_IMMEDIATE_PRIME_KEYS;
+        const tasks = keys
+            .map((key) => primePulseSummaryByKey(key, options))
+            .filter(Boolean);
         return Promise.allSettled(tasks);
+    }
+
+    function clearDeferredPulseSummaryPrimes() {
+        state.pulsePrimeTimerIds.forEach((timerId) => cancelCommandCenterTask(timerId));
+        state.pulsePrimeTimerIds = [];
+        state.pulsePrimeToken += 1;
+    }
+
+    function scheduleDeferredPulseSummaries(options = {}) {
+        clearDeferredPulseSummaryPrimes();
+        const token = state.pulsePrimeToken;
+        COMMAND_CENTER_DEFERRED_PRIME_STAGES.forEach((stage) => {
+            markCommandCenterTiming(`prime:${stage.key}:scheduled`, {
+                key: stage.key,
+                delayMs: stage.delayMs,
+                site: state.site,
+                force: options.force === true
+            });
+            let timerId = 0;
+            timerId = scheduleCommandCenterTask(() => {
+                if (state.pulsePrimeToken !== token) {
+                    return;
+                }
+                state.pulsePrimeTimerIds = state.pulsePrimeTimerIds.filter((id) => id !== timerId);
+                void primePulseSummaryByKey(stage.key, options);
+            }, stage.delayMs);
+            if (timerId) {
+                state.pulsePrimeTimerIds.push(timerId);
+            }
+        });
     }
 
     function formatCountMetric(summary = {}, value = 0, unit = '条') {
@@ -2850,6 +2959,7 @@
             syncPulseSummaries();
             render();
             void primePulseSummaries({ force: true });
+            scheduleDeferredPulseSummaries({ force: true });
         });
 
         window.addEventListener('admin-site-changed', (event) => {
@@ -2857,6 +2967,7 @@
             syncPulseSummaries();
             render();
             void primePulseSummaries({ force: true });
+            scheduleDeferredPulseSummaries({ force: true });
         });
 
         window.addEventListener('admin-ai-budget', (event) => {
@@ -2909,7 +3020,12 @@
         syncPulseSummaries();
         bindEvents();
         render();
+        markCommandCenterTimingOnce('first-render', {
+            activeModuleId: state.activeModuleId,
+            site: state.site
+        });
         void primePulseSummaries();
+        scheduleDeferredPulseSummaries();
     }
 
     window.AdminCommandCenter = {

@@ -6,6 +6,7 @@ const {
 const {
     buildRangeWindow,
     loadProductAnalyticsDataset,
+    buildProductMetricEntries,
     buildProductSummaryPayload,
     buildProductTrendPayload,
     buildProductSiteComparisonPayload,
@@ -49,11 +50,22 @@ module.exports = async function analyticsProductSummaryBundleHandler(req, res) {
             datasetError = error;
         }
 
+        const metricEntries = dataset
+            ? buildProductMetricEntries({
+                ...dataset,
+                site
+            })
+            : null;
+        const entriesBySite = site !== 'all' && metricEntries
+            ? { [site]: metricEntries }
+            : null;
+
         const segments = dataset ? {
             summary: buildProductBundleSuccess(
                 buildProductSummaryPayload({
                     ...dataset,
-                    site
+                    site,
+                    entries: metricEntries
                 }),
                 { source: 'shop_products + shop_orders + shop_inventory + user_events' }
             ),
@@ -69,21 +81,24 @@ module.exports = async function analyticsProductSummaryBundleHandler(req, res) {
             siteComparison: buildProductBundleSuccess(
                 buildProductSiteComparisonPayload({
                     ...dataset,
-                    activeSite: site
+                    activeSite: site,
+                    entriesBySite
                 }),
                 { source: 'shop_products + shop_orders + shop_inventory + user_events' }
             ),
             categoryBreakdown: buildProductBundleSuccess(
                 buildProductCategoryBreakdownPayload({
                     ...dataset,
-                    site
+                    site,
+                    entries: metricEntries
                 }),
                 { source: 'shop_products + shop_orders + shop_inventory + user_events' }
             ),
             productMatrix: buildProductBundleSuccess(
                 buildProductOperatingMatrixPayload({
                     ...dataset,
-                    site
+                    site,
+                    entries: metricEntries
                 }),
                 { source: 'shop_products + shop_orders + shop_inventory + user_events' }
             )

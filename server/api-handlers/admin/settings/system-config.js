@@ -115,6 +115,35 @@ function normalizeAnnouncementPages(value) {
     return pages;
 }
 
+function normalizeAnnouncementPageOverrides(value) {
+    const source = value && typeof value === 'object' && !Array.isArray(value)
+        ? value
+        : {};
+    const overrides = {};
+
+    Object.entries(source).forEach(([rawPage, rawConfig]) => {
+        const page = normalizeAnnouncementPages([rawPage])[0];
+        if (!page || page === 'all') {
+            return;
+        }
+
+        const config = rawConfig && typeof rawConfig === 'object' && !Array.isArray(rawConfig)
+            ? rawConfig
+            : { content: rawConfig };
+        const content = sanitizeText(config.content ?? config.announcement_content ?? '', 12000);
+        if (!content && config.enabled !== false) {
+            return;
+        }
+
+        overrides[page] = {
+            enabled: config.enabled !== false,
+            content
+        };
+    });
+
+    return overrides;
+}
+
 function normalizeAnnouncementState(configValue = {}) {
     const config = configValue && typeof configValue === 'object' && !Array.isArray(configValue)
         ? configValue
@@ -124,7 +153,8 @@ function normalizeAnnouncementState(configValue = {}) {
         enabled: config.announcement_enabled === true,
         content: sanitizeText(config.announcement_content, 12000),
         type: sanitizeText(config.announcement_type, 80).toLowerCase() || 'banner',
-        pages: normalizeAnnouncementPages(config.announcement_pages)
+        pages: normalizeAnnouncementPages(config.announcement_pages),
+        pageOverrides: normalizeAnnouncementPageOverrides(config.announcement_page_overrides)
     };
 }
 
@@ -135,7 +165,8 @@ function hasAnnouncementStateChanged(previousConfig = {}, nextConfig = {}) {
     return previousState.enabled !== nextState.enabled
         || previousState.content !== nextState.content
         || previousState.type !== nextState.type
-        || JSON.stringify(previousState.pages) !== JSON.stringify(nextState.pages);
+        || JSON.stringify(previousState.pages) !== JSON.stringify(nextState.pages)
+        || JSON.stringify(previousState.pageOverrides) !== JSON.stringify(nextState.pageOverrides);
 }
 
 function getAnnouncementTypeLabel(type = 'banner') {
@@ -201,6 +232,8 @@ async function notifyActiveAdminsAboutAnnouncementChange(supabase, user, previou
     const nextState = normalizeAnnouncementState(nextConfig);
     const announcementTypeLabel = getAnnouncementTypeLabel(nextState.type);
     const pageLabels = getAnnouncementPageLabels(nextState.pages);
+    const overridePages = Object.keys(nextState.pageOverrides || {});
+    const overridePageLabels = overridePages.length ? getAnnouncementPageLabels(overridePages) : [];
     const previewText = extractAnnouncementPreviewText(nextState.content);
 
     let title = '站内公告已更新';
@@ -222,6 +255,9 @@ async function notifyActiveAdminsAboutAnnouncementChange(supabase, user, previou
         `展示形态：${announcementTypeLabel}`,
         `显示页面：${pageLabels.join(' / ')}`
     ];
+    if (overridePageLabels.length) {
+        lines.push(`专属页面：${overridePageLabels.join(' / ')}`);
+    }
     if (previewText) {
         lines.push(`公告摘要：${previewText}`);
     }

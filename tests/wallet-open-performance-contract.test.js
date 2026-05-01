@@ -12,9 +12,9 @@ test('wallet loader and auth runtime prewarm the balance overview before modal o
     const authSource = readRepoFile('supabase-auth-functions.js');
 
     const loaderMarkers = [
-        "const VERSION = '20260428_WALLET_RECORDS_BOTTOM_EDGE_1';",
-        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260428_WALLET_RECORDS_BOTTOM_EDGE_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260428_WALLET_RECORDS_BOTTOM_EDGE_1';",
+        "const VERSION = '20260430_WALLET_GUIDANCE_BILINGUAL_1';",
+        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260430_WALLET_GUIDANCE_BILINGUAL_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260430_WALLET_GUIDANCE_BILINGUAL_1';",
         'function ensurePointsServiceReady() {',
         'function warmWalletOverview(options = {}) {',
         'warmOverview: warmWalletOverview'

@@ -21071,16 +21071,16 @@ async function deleteOpsAlertSecret(secretName) {
     const deletionContext = buildLocalOpsAlertSecretDeletionSubmissionContext(secretName, opsAlertSecretStatus || getDefaultOpsAlertSecretStatus());
     if (!deletionContext.isValid) {
         showToast(deletionContext.invalidMessage, 'warning');
-        return false;
+        return null;
     }
 
     if (deletionContext.isEnvironmentManaged) {
         showToast(deletionContext.envMessage, 'warning');
-        return false;
+        return null;
     }
 
     if (!confirm(deletionContext.confirmMessage)) {
-        return false;
+        return null;
     }
 
     try {
@@ -21426,9 +21426,17 @@ const handleOpsAlertPaymentGatewaySummaryScheduleModeChange = createOpsAlertSect
 
 async function deleteChannel(index) {
     const channels = [...getSavedChannelListConfig()];
-    channels.splice(index, 1);
-    await saveConfig('channels', channels);
-    renderChannelsConfig();
+    const normalizedIndex = Number(index);
+    if (!Number.isInteger(normalizedIndex) || normalizedIndex < 0 || normalizedIndex >= channels.length) {
+        return false;
+    }
+
+    channels.splice(normalizedIndex, 1);
+    const saved = await saveConfig('channels', channels);
+    if (saved) {
+        renderChannelsConfig();
+    }
+    return saved;
 }
 
 async function addChannel() {
@@ -21499,7 +21507,7 @@ function renderSecurityConfig() {
 
 async function saveIpBlacklist() {
     const textarea = document.getElementById('cfgIpBlacklist');
-    if (!textarea) return;
+    if (!textarea) return false;
 
     const lines = textarea.value.split('\n').map(l => l.trim()).filter(l => l);
     const config = systemConfigCache['security'] || {};
@@ -21511,6 +21519,8 @@ async function saveIpBlacklist() {
     if (indicator && success) {
         showAdminConfigSaveIndicator(indicator, '✓ 已保存', 2000);
     }
+
+    return success;
 }
 
 function setupSecurityEventListeners() {
@@ -21560,7 +21570,9 @@ async function saveLoginSecuritySettings() {
             showConfigSavedToast('登录安全设置已保存', {
                 source: 'settings-security'
             });
+            return true;
         }
+        return false;
     } catch (err) {
         console.error('保存登录安全设置失败:', err);
         if (typeof showToast === 'function') {
@@ -21569,6 +21581,7 @@ async function saveLoginSecuritySettings() {
         emitAdminConfigCommandFeedback(`登录安全设置保存失败: ${err.message}`, 'failed', {
             source: 'settings-security'
         });
+        return false;
     }
 }
 
@@ -21624,7 +21637,7 @@ async function refreshLockedAccounts(options = {}) {
     const unlockAllBtn = document.getElementById('unlockAllBtn');
     const emptyMsg = document.getElementById('noLockedAccountsMsg');
 
-    if (!listEl) return;
+    if (!listEl) return false;
 
     setLockedAccountsRefreshButtonState(true);
 
@@ -21692,12 +21705,14 @@ async function refreshLockedAccounts(options = {}) {
                 1800
             );
         }
+        return true;
 
     } catch (err) {
         console.error('加载锁定账户失败:', err);
         if (typeof showToast === 'function') {
             showToast('加载失败: ' + err.message, 'error');
         }
+        return false;
     } finally {
         setLockedAccountsRefreshButtonState(false);
     }
@@ -21714,18 +21729,20 @@ async function unlockAccount(userId) {
 
         // Refresh list
         await refreshLockedAccounts({ silent: true });
+        return true;
 
     } catch (err) {
         console.error('解锁账户失败:', err);
         if (typeof showToast === 'function') {
             showToast('解锁失败: ' + err.message, 'error');
         }
+        return false;
     }
 }
 
 // Unlock all accounts
 async function unlockAllAccounts() {
-    if (!confirm('确定要解锁所有账户吗？')) return;
+    if (!confirm('确定要解锁所有账户吗？')) return null;
 
     try {
         const payload = await mutateSecurityLocks('unlock_all');
@@ -21736,12 +21753,14 @@ async function unlockAllAccounts() {
 
         // Refresh list
         await refreshLockedAccounts({ silent: true });
+        return true;
 
     } catch (err) {
         console.error('批量解锁失败:', err);
         if (typeof showToast === 'function') {
             showToast('解锁失败: ' + err.message, 'error');
         }
+        return false;
     }
 }
 
@@ -21761,6 +21780,1458 @@ window.unlockAllAccounts = unlockAllAccounts;
 // ============================================
 // NOTIFICATIONS SETTINGS
 // ============================================
+
+let announcementSaveInFlight = false;
+const ANNOUNCEMENT_DEFAULT_SCOPE = 'all';
+const ANNOUNCEMENT_PAGE_SCOPES = Object.freeze(['prompts', 'index', 'shop', 'verify', 'guestbook']);
+const ANNOUNCEMENT_SCOPE_LABELS = Object.freeze({
+    all: '默认公告',
+    prompts: '图库专属',
+    index: '主页专属',
+    shop: '商城专属',
+    verify: '验证专属',
+    guestbook: '留言专属'
+});
+let activeAnnouncementScope = ANNOUNCEMENT_DEFAULT_SCOPE;
+let announcementContentDrafts = {
+    all: '',
+    pages: {}
+};
+const ANNOUNCEMENT_WORKFLOW_STATUS_META = Object.freeze({
+    draft: { label: '草稿', tone: 'draft' },
+    pending_review: { label: '待审核', tone: 'pending' },
+    approved: { label: '已通过', tone: 'approved' },
+    rejected: { label: '已拒绝', tone: 'rejected' },
+    archived: { label: '已归档', tone: 'archived' }
+});
+const ANNOUNCEMENT_WORKFLOW_ACTION_LABELS = Object.freeze({
+    create: '创建',
+    update: '编辑',
+    submit_review: '提交审核',
+    approve: '审核通过',
+    reject: '审核拒绝',
+    archive: '归档',
+    restore_draft: '恢复草稿'
+});
+const ANNOUNCEMENT_WORKFLOW_ACTION_FEEDBACK_LABELS = Object.freeze({
+    submit_review: { loading: '提交中...', saved: '已提交', failed: '提交失败' },
+    approve: { loading: '通过中...', saved: '已通过', failed: '通过失败' },
+    reject: { loading: '拒绝中...', saved: '已拒绝', failed: '拒绝失败' },
+    archive: { loading: '归档中...', saved: '已归档', failed: '归档失败' }
+});
+const ANNOUNCEMENT_CUSTOM_SELECT_LABELS = Object.freeze({
+    announcementRuleTimeFilter: {
+        all: '全部时间',
+        active: '当前时段',
+        scheduled: '待发布',
+        expired: '已结束',
+        unscheduled: '无定时'
+    },
+    announcementRuleSort: {
+        updated_desc: '最近更新',
+        priority_desc: '优先级高',
+        starts_asc: '开始时间近',
+        reads_desc: '已读最多'
+    }
+});
+let announcementRulesState = {
+    items: [],
+    history: [],
+    stats: {},
+    selectedId: '',
+    loading: false,
+    loaded: false,
+    unavailable: false,
+    errorMessage: '',
+    loadPromise: null,
+    filters: {
+        query: '',
+        status: 'all',
+        time: 'all',
+        sort: 'updated_desc'
+    }
+};
+
+function hasMeaningfulAnnouncementContent(content = '') {
+    return String(content || '')
+        .replace(/<br\s*\/?>/gi, ' ')
+        .replace(/<\/(div|p|li)>/gi, ' ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/\s+/g, ' ')
+        .trim().length > 0;
+}
+
+function isAnnouncementPageScope(scope) {
+    return ANNOUNCEMENT_PAGE_SCOPES.includes(normalizeAnnouncementPageValue(scope));
+}
+
+function normalizeAnnouncementPageList(value) {
+    const rawPages = Array.isArray(value) ? value : [value];
+    const pages = [];
+
+    rawPages.forEach((entry) => {
+        const normalized = normalizeAnnouncementPageValue(entry);
+        if (normalized && !pages.includes(normalized)) {
+            pages.push(normalized);
+        }
+    });
+
+    return pages.length ? pages : ['all'];
+}
+
+function normalizeAnnouncementPageOverrides(config = {}) {
+    const rawOverrides = config && typeof config === 'object' && !Array.isArray(config)
+        ? config.announcement_page_overrides
+        : null;
+    const overrides = {};
+
+    if (!rawOverrides || typeof rawOverrides !== 'object' || Array.isArray(rawOverrides)) {
+        return overrides;
+    }
+
+    Object.entries(rawOverrides).forEach(([rawPage, rawValue]) => {
+        const page = normalizeAnnouncementPageValue(rawPage);
+        if (!isAnnouncementPageScope(page)) {
+            return;
+        }
+
+        const value = rawValue && typeof rawValue === 'object' && !Array.isArray(rawValue)
+            ? rawValue
+            : { content: rawValue };
+        const content = String(value.content ?? value.announcement_content ?? '');
+        if (!hasMeaningfulAnnouncementContent(content) && value.enabled !== false) {
+            return;
+        }
+
+        overrides[page] = {
+            content,
+            enabled: value.enabled !== false,
+            updated_at: String(value.updated_at || value.announcement_updated_at || '')
+        };
+    });
+
+    return overrides;
+}
+
+function buildAnnouncementDraftsFromConfig(config = {}) {
+    const baseContent = String(config.announcement_content || '');
+    const overrides = normalizeAnnouncementPageOverrides(config);
+    const draftState = {
+        all: baseContent,
+        pages: {}
+    };
+
+    Object.entries(overrides).forEach(([page, override]) => {
+        if (override.enabled !== false && hasMeaningfulAnnouncementContent(override.content)) {
+            draftState.pages[page] = override.content;
+        }
+    });
+
+    const savedPages = normalizeAnnouncementPageList(config.announcement_pages || ['all']);
+    if (!Object.keys(overrides).length && baseContent && !savedPages.includes('all')) {
+        draftState.all = '';
+        savedPages.forEach((page) => {
+            if (isAnnouncementPageScope(page)) {
+                draftState.pages[page] = baseContent;
+            }
+        });
+    }
+
+    return draftState;
+}
+
+function getAnnouncementContentEditor() {
+    return document.getElementById('cfgAnnouncementContent');
+}
+
+function getAnnouncementEditorContent() {
+    const contentEl = getAnnouncementContentEditor();
+    if (!contentEl) {
+        return '';
+    }
+    return contentEl.innerHTML || contentEl.value || '';
+}
+
+function setAnnouncementEditorContent(content = '', options = {}) {
+    const contentEl = getAnnouncementContentEditor();
+    if (!contentEl) return;
+
+    contentEl.innerHTML = String(content || '');
+    const isFallback = options.fallback === true;
+    contentEl.dataset.announcementFallback = isFallback ? '1' : '0';
+    contentEl.classList.toggle('is-announcement-fallback', isFallback);
+}
+
+function hasAnnouncementScopeOverride(scope) {
+    const page = normalizeAnnouncementPageValue(scope);
+    return isAnnouncementPageScope(page)
+        && Object.prototype.hasOwnProperty.call(announcementContentDrafts.pages || {}, page)
+        && hasMeaningfulAnnouncementContent(announcementContentDrafts.pages[page]);
+}
+
+function getAnnouncementScopeContent(scope) {
+    const normalizedScope = normalizeAnnouncementPageValue(scope) || ANNOUNCEMENT_DEFAULT_SCOPE;
+    if (normalizedScope === ANNOUNCEMENT_DEFAULT_SCOPE) {
+        return announcementContentDrafts.all || '';
+    }
+    return hasAnnouncementScopeOverride(normalizedScope)
+        ? announcementContentDrafts.pages[normalizedScope]
+        : announcementContentDrafts.all || '';
+}
+
+function persistActiveAnnouncementDraftFromEditor(options = {}) {
+    const scope = normalizeAnnouncementPageValue(activeAnnouncementScope) || ANNOUNCEMENT_DEFAULT_SCOPE;
+    const contentEl = getAnnouncementContentEditor();
+    if (!contentEl) return;
+
+    const content = getAnnouncementEditorContent();
+    if (scope === ANNOUNCEMENT_DEFAULT_SCOPE) {
+        announcementContentDrafts.all = content;
+        return;
+    }
+
+    const isFallback = contentEl.dataset.announcementFallback === '1';
+    if (isFallback && options.forcePageOverride !== true && content === (announcementContentDrafts.all || '')) {
+        return;
+    }
+
+    announcementContentDrafts.pages[scope] = content;
+    contentEl.dataset.announcementFallback = '0';
+    contentEl.classList.remove('is-announcement-fallback');
+}
+
+function computeAnnouncementTargetPages(defaultContent = announcementContentDrafts.all, pageDrafts = announcementContentDrafts.pages) {
+    if (hasMeaningfulAnnouncementContent(defaultContent)) {
+        return ['all'];
+    }
+
+    const pageTargets = ANNOUNCEMENT_PAGE_SCOPES.filter((page) => hasMeaningfulAnnouncementContent(pageDrafts?.[page]));
+    return pageTargets.length ? pageTargets : ['all'];
+}
+
+function buildAnnouncementPageOverridesForSave(previousConfig = {}, updatedAt = new Date().toISOString()) {
+    const previousOverrides = normalizeAnnouncementPageOverrides(previousConfig);
+    const defaultContent = announcementContentDrafts.all || '';
+    const nextOverrides = {};
+
+    ANNOUNCEMENT_PAGE_SCOPES.forEach((page) => {
+        const content = String(announcementContentDrafts.pages?.[page] || '');
+        if (!hasMeaningfulAnnouncementContent(content) || content === defaultContent) {
+            return;
+        }
+
+        const previous = previousOverrides[page];
+        nextOverrides[page] = {
+            content,
+            updated_at: previous?.content === content && previous?.updated_at
+                ? previous.updated_at
+                : updatedAt
+        };
+    });
+
+    return nextOverrides;
+}
+
+function updateAnnouncementScopeHint() {
+    const hint = document.getElementById('announcementScopeHint');
+    if (!hint) return;
+
+    const scope = normalizeAnnouncementPageValue(activeAnnouncementScope) || ANNOUNCEMENT_DEFAULT_SCOPE;
+    const label = ANNOUNCEMENT_SCOPE_LABELS[scope] || '当前页面';
+    if (scope === ANNOUNCEMENT_DEFAULT_SCOPE) {
+        hint.textContent = '默认公告';
+        return;
+    }
+
+    hint.textContent = hasAnnouncementScopeOverride(scope)
+        ? `${label} · 已单独配置`
+        : `${label} · 使用默认`;
+}
+
+function updateAnnouncementScopeActions() {
+    const isDefaultScope = activeAnnouncementScope === ANNOUNCEMENT_DEFAULT_SCOPE;
+    const copyBtn = document.querySelector('[data-admin-action="settings-copy-default-announcement"]');
+    const clearBtn = document.querySelector('[data-admin-action="settings-clear-page-announcement"]');
+
+    if (copyBtn) {
+        copyBtn.disabled = isDefaultScope || !hasMeaningfulAnnouncementContent(announcementContentDrafts.all);
+    }
+    if (clearBtn) {
+        clearBtn.disabled = isDefaultScope || !hasAnnouncementScopeOverride(activeAnnouncementScope);
+    }
+}
+
+function updateAnnouncementScopeButtons() {
+    const selector = document.getElementById('pageTargetSelector');
+    if (!selector) return;
+
+    selector.querySelectorAll('.page-btn[data-page]').forEach((btn) => {
+        const page = normalizeAnnouncementPageValue(btn.dataset.page);
+        const isActive = page === activeAnnouncementScope;
+        btn.classList.toggle('active', isActive);
+        btn.classList.toggle('has-override', page !== ANNOUNCEMENT_DEFAULT_SCOPE && hasAnnouncementScopeOverride(page));
+        if (page !== ANNOUNCEMENT_DEFAULT_SCOPE) {
+            const label = ANNOUNCEMENT_SCOPE_LABELS[page] || '页面';
+            btn.title = hasAnnouncementScopeOverride(page) ? `${label}，已单独配置` : `${label}，使用默认公告`;
+        }
+    });
+}
+
+function renderActiveAnnouncementScope() {
+    const scope = normalizeAnnouncementPageValue(activeAnnouncementScope) || ANNOUNCEMENT_DEFAULT_SCOPE;
+    const fallback = scope !== ANNOUNCEMENT_DEFAULT_SCOPE && !hasAnnouncementScopeOverride(scope);
+    setAnnouncementEditorContent(getAnnouncementScopeContent(scope), { fallback });
+    updateAnnouncementScopeButtons();
+    updateAnnouncementScopeHint();
+    updateAnnouncementScopeActions();
+    updateAnnouncementPreview();
+}
+
+function resolveAnnouncementSaveButton(triggerEl = null) {
+    if (triggerEl?.nodeType === 1 && triggerEl.tagName === 'BUTTON') {
+        return triggerEl;
+    }
+
+    return document.querySelector('[data-admin-action="settings-save-announcement"]')
+        || document.querySelector('.editor-actions .btn-primary');
+}
+
+function setAnnouncementSaveButtonFeedback(saveBtn, state, text) {
+    if (!saveBtn) return;
+
+    const feedback = window.AdminStudioActionFeedback;
+    if (state === 'loading' && typeof feedback?.setLoading === 'function') {
+        feedback.setLoading(saveBtn, { loadingText: text });
+        return;
+    }
+    if (state === 'saved' && typeof feedback?.finish === 'function') {
+        feedback.finish(saveBtn, { successText: text, hideIcon: true });
+        return;
+    }
+    if (state === 'failed' && typeof feedback?.fail === 'function') {
+        feedback.fail(saveBtn, { errorText: text });
+    }
+}
+
+function normalizeAnnouncementWorkflowStatus(status) {
+    const normalized = String(status || '').trim().toLowerCase();
+    return ANNOUNCEMENT_WORKFLOW_STATUS_META[normalized] ? normalized : 'draft';
+}
+
+function getAnnouncementWorkflowStatusMeta(status) {
+    return ANNOUNCEMENT_WORKFLOW_STATUS_META[normalizeAnnouncementWorkflowStatus(status)];
+}
+
+function formatAnnouncementDateTime(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString('zh-CN', {
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function formatAnnouncementHistoryDateTime(value) {
+    if (!value) return '—';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '—';
+    return date.toLocaleString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+function formatAnnouncementHistoryDuration(startValue, endValue) {
+    const startDate = new Date(startValue);
+    const endDate = new Date(endValue);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+        return '';
+    }
+
+    const totalMinutes = Math.max(0, Math.round((endDate.getTime() - startDate.getTime()) / 60000));
+    if (totalMinutes < 1) return '刚刚';
+    const days = Math.floor(totalMinutes / 1440);
+    const hours = Math.floor((totalMinutes % 1440) / 60);
+    const minutes = totalMinutes % 60;
+    const parts = [];
+    if (days) parts.push(`${days}天`);
+    if (hours) parts.push(`${hours}小时`);
+    if (minutes || !parts.length) parts.push(`${minutes}分钟`);
+    return parts.slice(0, 2).join('');
+}
+
+function toAnnouncementDateTimeLocalValue(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const localDate = new Date(date.getTime() - (date.getTimezoneOffset() * 60000));
+    return localDate.toISOString().slice(0, 16);
+}
+
+function readAnnouncementDateTimeInput(id) {
+    const value = String(document.getElementById(id)?.value || '').trim();
+    if (!value) return null;
+    const date = new Date(value);
+    return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function getAnnouncementFloatingControl(selector, dataKey, id) {
+    const normalizedId = String(id || '').trim();
+    if (!normalizedId) return null;
+    return Array.from(document.querySelectorAll(selector))
+        .find((control) => String(control.dataset?.[dataKey] || '') === normalizedId) || null;
+}
+
+function closeAnnouncementCustomSelectControl(control) {
+    if (!control) return;
+    control.classList.remove('is-open');
+    const menu = control.querySelector('.announcement-custom-select__menu');
+    const button = control.querySelector('.announcement-custom-select__button');
+    if (menu) menu.hidden = true;
+    if (button) button.setAttribute('aria-expanded', 'false');
+}
+
+function closeAnnouncementDateTimeControl(control) {
+    if (!control) return;
+    control.classList.remove('is-open');
+    const popover = control.querySelector('.announcement-datetime-popover');
+    const button = control.querySelector('.announcement-datetime-control__button');
+    if (popover) popover.hidden = true;
+    if (button) button.setAttribute('aria-expanded', 'false');
+}
+
+function closeAnnouncementFloatingControls(exceptControl = null) {
+    document.querySelectorAll('.announcement-custom-select.is-open').forEach((control) => {
+        if (control !== exceptControl) {
+            closeAnnouncementCustomSelectControl(control);
+        }
+    });
+    document.querySelectorAll('.announcement-datetime-control.is-open').forEach((control) => {
+        if (control !== exceptControl) {
+            closeAnnouncementDateTimeControl(control);
+        }
+    });
+}
+
+function getAnnouncementCustomSelectOptionLabel(selectId, value) {
+    const normalizedId = String(selectId || '').trim();
+    const normalizedValue = String(value || '').trim();
+    const labels = ANNOUNCEMENT_CUSTOM_SELECT_LABELS[normalizedId] || {};
+    if (labels[normalizedValue]) {
+        return labels[normalizedValue];
+    }
+
+    const control = getAnnouncementFloatingControl(
+        '[data-announcement-custom-select]',
+        'announcementCustomSelect',
+        normalizedId
+    );
+    const option = control?.querySelector(`[data-announcement-select-value="${normalizedValue}"]`);
+    return option?.textContent?.trim() || normalizedValue || '未选择';
+}
+
+function setAnnouncementCustomSelectValue(selectId, value, options = {}) {
+    const normalizedId = String(selectId || '').trim();
+    const normalizedValue = String(value || '').trim();
+    const input = document.getElementById(normalizedId);
+    const control = getAnnouncementFloatingControl(
+        '[data-announcement-custom-select]',
+        'announcementCustomSelect',
+        normalizedId
+    );
+    const label = document.querySelector(`[data-announcement-select-label-for="${normalizedId}"]`);
+
+    if (input) input.value = normalizedValue;
+    if (label) label.textContent = getAnnouncementCustomSelectOptionLabel(normalizedId, normalizedValue);
+
+    control?.querySelectorAll('[data-announcement-select-value]').forEach((button) => {
+        const selected = String(button.dataset.announcementSelectValue || '') === normalizedValue;
+        button.classList.toggle('is-selected', selected);
+        button.setAttribute('aria-selected', selected ? 'true' : 'false');
+    });
+
+    if (!options.silent) {
+        handleAnnouncementRuleFilterChange();
+    }
+}
+
+function toggleAnnouncementCustomSelect(selectId) {
+    const control = getAnnouncementFloatingControl(
+        '[data-announcement-custom-select]',
+        'announcementCustomSelect',
+        selectId
+    );
+    const menu = control?.querySelector('.announcement-custom-select__menu');
+    const button = control?.querySelector('.announcement-custom-select__button');
+    if (!control || !menu) return;
+
+    const shouldOpen = menu.hidden;
+    closeAnnouncementFloatingControls(control);
+    if (!shouldOpen) {
+        closeAnnouncementCustomSelectControl(control);
+        return;
+    }
+
+    setAnnouncementCustomSelectValue(selectId, document.getElementById(selectId)?.value || '', { silent: true });
+    control.classList.add('is-open');
+    menu.hidden = false;
+    if (button) button.setAttribute('aria-expanded', 'true');
+}
+
+function selectAnnouncementCustomSelectOption(selectId, value) {
+    const control = getAnnouncementFloatingControl(
+        '[data-announcement-custom-select]',
+        'announcementCustomSelect',
+        selectId
+    );
+    setAnnouncementCustomSelectValue(selectId, value);
+    closeAnnouncementCustomSelectControl(control);
+}
+
+function getAnnouncementDateTimeParts(value) {
+    const normalizedValue = String(value || '').trim();
+    const match = normalizedValue.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    if (match) {
+        return {
+            year: match[1],
+            month: match[2],
+            day: match[3],
+            hour: match[4],
+            minute: match[5]
+        };
+    }
+
+    const date = normalizedValue ? new Date(normalizedValue) : new Date();
+    if (Number.isNaN(date.getTime())) return null;
+    return {
+        year: String(date.getFullYear()),
+        month: String(date.getMonth() + 1).padStart(2, '0'),
+        day: String(date.getDate()).padStart(2, '0'),
+        hour: String(date.getHours()).padStart(2, '0'),
+        minute: String(date.getMinutes()).padStart(2, '0')
+    };
+}
+
+function formatAnnouncementDateTimeLocalLabel(value) {
+    if (!String(value || '').trim()) return '未设置';
+    const parts = getAnnouncementDateTimeParts(value);
+    if (!parts) return '未设置';
+    return `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+function setAnnouncementDateTimeValue(id, value = '') {
+    const normalizedId = String(id || '').trim();
+    const input = document.getElementById(normalizedId);
+    const normalizedValue = String(value || '').trim().slice(0, 16);
+    const label = document.querySelector(`[data-announcement-datetime-label-for="${normalizedId}"]`);
+
+    if (input) input.value = normalizedValue;
+    if (label) label.textContent = formatAnnouncementDateTimeLocalLabel(normalizedValue);
+}
+
+function normalizeAnnouncementDateField(value) {
+    const rawValue = String(value || '').trim();
+    const digits = rawValue.replace(/\D/g, '');
+    let year = '';
+    let month = '';
+    let day = '';
+
+    if (/^\d{8}$/.test(digits)) {
+        year = digits.slice(0, 4);
+        month = digits.slice(4, 6);
+        day = digits.slice(6, 8);
+    } else {
+        const parts = rawValue.split(/[^\d]+/).filter(Boolean);
+        if (parts.length >= 3) {
+            [year, month, day] = parts;
+        }
+    }
+
+    if (!/^\d{4}$/.test(year)) return null;
+    const monthNumber = Number(month);
+    const dayNumber = Number(day);
+    const date = new Date(Number(year), monthNumber - 1, dayNumber);
+    if (
+        !Number.isInteger(monthNumber)
+        || !Number.isInteger(dayNumber)
+        || monthNumber < 1
+        || monthNumber > 12
+        || dayNumber < 1
+        || date.getFullYear() !== Number(year)
+        || date.getMonth() !== monthNumber - 1
+        || date.getDate() !== dayNumber
+    ) {
+        return null;
+    }
+
+    const paddedMonth = String(monthNumber).padStart(2, '0');
+    const paddedDay = String(dayNumber).padStart(2, '0');
+    return {
+        display: `${year}/${paddedMonth}/${paddedDay}`,
+        value: `${year}-${paddedMonth}-${paddedDay}`
+    };
+}
+
+function normalizeAnnouncementTimeField(value, max) {
+    const rawValue = String(value || '').trim();
+    if (!/^\d{1,2}$/.test(rawValue)) return null;
+    const numberValue = Number(rawValue);
+    if (!Number.isInteger(numberValue) || numberValue < 0 || numberValue > max) return null;
+    return String(numberValue).padStart(2, '0');
+}
+
+function hydrateAnnouncementDateTimePopover(id) {
+    const control = getAnnouncementFloatingControl(
+        '[data-announcement-datetime-control]',
+        'announcementDatetimeControl',
+        id
+    );
+    const input = document.getElementById(id);
+    const parts = getAnnouncementDateTimeParts(input?.value || '');
+    if (!control || !parts) return;
+
+    const dateInput = control.querySelector('[data-announcement-datetime-date]');
+    const hourInput = control.querySelector('[data-announcement-datetime-hour]');
+    const minuteInput = control.querySelector('[data-announcement-datetime-minute]');
+    if (dateInput) dateInput.value = `${parts.year}/${parts.month}/${parts.day}`;
+    if (hourInput) hourInput.value = parts.hour;
+    if (minuteInput) minuteInput.value = parts.minute;
+}
+
+function toggleAnnouncementDateTimePicker(id) {
+    const control = getAnnouncementFloatingControl(
+        '[data-announcement-datetime-control]',
+        'announcementDatetimeControl',
+        id
+    );
+    const popover = control?.querySelector('.announcement-datetime-popover');
+    const button = control?.querySelector('.announcement-datetime-control__button');
+    if (!control || !popover) return;
+
+    const shouldOpen = popover.hidden;
+    closeAnnouncementFloatingControls(control);
+    if (!shouldOpen) {
+        closeAnnouncementDateTimeControl(control);
+        return;
+    }
+
+    hydrateAnnouncementDateTimePopover(id);
+    control.classList.add('is-open');
+    popover.hidden = false;
+    if (button) button.setAttribute('aria-expanded', 'true');
+    window.setTimeout(() => {
+        control.querySelector('[data-announcement-datetime-date]')?.focus();
+    }, 0);
+}
+
+function showAnnouncementDateTimeError(message, target = null) {
+    if (typeof showToast === 'function') {
+        showToast(message, 'error');
+    }
+    target?.focus?.();
+}
+
+function confirmAnnouncementDateTimePicker(id) {
+    const control = getAnnouncementFloatingControl(
+        '[data-announcement-datetime-control]',
+        'announcementDatetimeControl',
+        id
+    );
+    if (!control) return;
+
+    const dateInput = control.querySelector('[data-announcement-datetime-date]');
+    const hourInput = control.querySelector('[data-announcement-datetime-hour]');
+    const minuteInput = control.querySelector('[data-announcement-datetime-minute]');
+    const dateParts = normalizeAnnouncementDateField(dateInput?.value || '');
+    if (!dateParts) {
+        showAnnouncementDateTimeError('日期格式请使用 YYYY/MM/DD。', dateInput);
+        return;
+    }
+
+    const hour = normalizeAnnouncementTimeField(hourInput?.value || '', 23);
+    if (!hour) {
+        showAnnouncementDateTimeError('小时需要填写 0-23。', hourInput);
+        return;
+    }
+
+    const minute = normalizeAnnouncementTimeField(minuteInput?.value || '', 59);
+    if (!minute) {
+        showAnnouncementDateTimeError('分钟需要填写 0-59。', minuteInput);
+        return;
+    }
+
+    if (dateInput) dateInput.value = dateParts.display;
+    if (hourInput) hourInput.value = hour;
+    if (minuteInput) minuteInput.value = minute;
+    setAnnouncementDateTimeValue(id, `${dateParts.value}T${hour}:${minute}`);
+    closeAnnouncementDateTimeControl(control);
+}
+
+function clearAnnouncementDateTimePicker(id) {
+    const control = getAnnouncementFloatingControl(
+        '[data-announcement-datetime-control]',
+        'announcementDatetimeControl',
+        id
+    );
+    setAnnouncementDateTimeValue(id, '');
+    closeAnnouncementDateTimeControl(control);
+}
+
+function normalizeAnnouncementRuleItem(row = {}) {
+    const priority = Number(row.priority || 0);
+    return {
+        id: String(row.id || '').trim(),
+        title: String(row.title || '未命名公告').trim() || '未命名公告',
+        content: String(row.content || ''),
+        type: String(row.type || 'banner').trim().toLowerCase() || 'banner',
+        color: String(row.color || 'purple').trim().toLowerCase() || 'purple',
+        size: String(row.size || 'medium').trim().toLowerCase() || 'medium',
+        decoration: String(row.decoration || 'none').trim().toLowerCase() || 'none',
+        pages: normalizeAnnouncementPageList(row.pages || ['all']),
+        page_overrides: row.page_overrides && typeof row.page_overrides === 'object' && !Array.isArray(row.page_overrides)
+            ? row.page_overrides
+            : {},
+        enabled: row.enabled === true,
+        priority: Number.isFinite(priority) ? priority : 0,
+        status: normalizeAnnouncementWorkflowStatus(row.status),
+        starts_at: row.starts_at || null,
+        ends_at: row.ends_at || null,
+        updated_at: row.updated_at || null,
+        created_at: row.created_at || null,
+        submitted_at: row.submitted_at || null,
+        approved_at: row.approved_at || null,
+        rejected_at: row.rejected_at || null,
+        archived_at: row.archived_at || null,
+        rejection_reason: row.rejection_reason || ''
+    };
+}
+
+function getSelectedAnnouncementRule() {
+    const selectedId = String(announcementRulesState.selectedId || '').trim();
+    return announcementRulesState.items.find((item) => item.id === selectedId) || null;
+}
+
+function isAnnouncementWorkflowUnavailableError(error = {}) {
+    const message = String(error.message || error.payload?.message || '').trim();
+    return Number(error.status || error.statusCode || 0) === 503
+        || /workflow tables are not migrated|announcement workflow tables/i.test(message)
+        || /could not find the table .*announcement_(rules|history|reads)/i.test(message)
+        || /relation .*announcement_(rules|history|reads).* does not exist/i.test(message)
+        || (/schema cache/i.test(message) && /announcement_(rules|history|reads)/i.test(message));
+}
+
+async function requestAnnouncementRulesApi(method = 'GET', body = null) {
+    const response = await (window.AdminApi?.fetch || fetch)('/api/admin/settings/announcements', {
+        method,
+        credentials: 'include',
+        headers: await getAdminConfigApiHeaders(),
+        ...(body ? { body: JSON.stringify(body) } : {})
+    });
+
+    let payload = {};
+    try {
+        payload = await response.json();
+    } catch (_) {
+        payload = {};
+    }
+
+    if (!response.ok || payload?.success === false) {
+        const error = new Error(payload?.message || `Announcement request failed (${response.status})`);
+        error.status = response.status;
+        error.payload = payload;
+        throw error;
+    }
+
+    return payload;
+}
+
+function applyAnnouncementRulesPayload(payload = {}, options = {}) {
+    const previousSelectedId = String(options.selectedId || payload.announcement?.id || announcementRulesState.selectedId || '').trim();
+    const items = (Array.isArray(payload.items) ? payload.items : []).map(normalizeAnnouncementRuleItem);
+    const selectedExists = previousSelectedId && items.some((item) => item.id === previousSelectedId);
+
+    announcementRulesState.items = items;
+    announcementRulesState.history = Array.isArray(payload.history) ? payload.history : [];
+    announcementRulesState.stats = payload.stats && typeof payload.stats === 'object' && !Array.isArray(payload.stats)
+        ? payload.stats
+        : {};
+    announcementRulesState.selectedId = selectedExists
+        ? previousSelectedId
+        : (items[0]?.id || '');
+    announcementRulesState.loaded = true;
+    announcementRulesState.loading = false;
+    announcementRulesState.unavailable = false;
+    announcementRulesState.errorMessage = '';
+    announcementRulesState.loadPromise = null;
+
+    renderAnnouncementRulesPanel();
+
+    if (options.hydrate !== false && announcementRulesState.selectedId) {
+        hydrateSelectedAnnouncementRuleIntoEditor();
+    }
+}
+
+async function loadAnnouncementRules(force = false) {
+    if (!force && (announcementRulesState.loaded || announcementRulesState.unavailable)) {
+        renderAnnouncementRulesPanel();
+        return announcementRulesState;
+    }
+
+    if (announcementRulesState.loadPromise && !force) {
+        return announcementRulesState.loadPromise;
+    }
+
+    announcementRulesState.loading = true;
+    announcementRulesState.errorMessage = '';
+    renderAnnouncementRulesPanel();
+
+    announcementRulesState.loadPromise = (async () => {
+        try {
+            const payload = await requestAnnouncementRulesApi('GET');
+            applyAnnouncementRulesPayload(payload, { hydrate: true });
+            return announcementRulesState;
+        } catch (error) {
+            announcementRulesState.loading = false;
+            announcementRulesState.loadPromise = null;
+            if (isAnnouncementWorkflowUnavailableError(error)) {
+                announcementRulesState.unavailable = true;
+                announcementRulesState.errorMessage = '公告审核、历史和阅读统计表还没有创建。请先执行公告迁移 SQL，执行后刷新页面。';
+            } else {
+                announcementRulesState.errorMessage = error.message || '公告规则加载失败';
+            }
+            renderAnnouncementRulesPanel();
+            return announcementRulesState;
+        }
+    })();
+
+    return announcementRulesState.loadPromise;
+}
+
+function getAnnouncementRuleStatusText(rule = null) {
+    if (!rule) {
+        return '新草稿';
+    }
+    const statusMeta = getAnnouncementWorkflowStatusMeta(rule.status);
+    const scheduleParts = [
+        rule.starts_at ? `开始 ${formatAnnouncementDateTime(rule.starts_at)}` : '',
+        rule.ends_at ? `结束 ${formatAnnouncementDateTime(rule.ends_at)}` : ''
+    ].filter(Boolean);
+    return [
+        statusMeta.label,
+        `优先级 ${Number(rule.priority || 0)}`,
+        scheduleParts.join(' / '),
+        rule.enabled ? '已启用' : '未启用'
+    ].filter(Boolean).join(' · ');
+}
+
+function getAnnouncementRuleScheduleState(rule = {}, now = new Date()) {
+    const startsAt = rule.starts_at ? new Date(rule.starts_at) : null;
+    const endsAt = rule.ends_at ? new Date(rule.ends_at) : null;
+    const hasValidStart = startsAt && !Number.isNaN(startsAt.getTime());
+    const hasValidEnd = endsAt && !Number.isNaN(endsAt.getTime());
+
+    if (hasValidEnd && endsAt <= now) {
+        return 'expired';
+    }
+    if (hasValidStart && startsAt > now) {
+        return 'scheduled';
+    }
+    if (hasValidStart || hasValidEnd) {
+        return 'active';
+    }
+    return 'unscheduled';
+}
+
+function getAnnouncementRuleScheduleLabel(rule = {}) {
+    const state = getAnnouncementRuleScheduleState(rule);
+    const labels = {
+        active: '当前时段',
+        scheduled: '待发布',
+        expired: '已结束',
+        unscheduled: '无定时'
+    };
+    return labels[state] || '无定时';
+}
+
+function getAnnouncementRuleSearchText(rule = {}) {
+    return [
+        rule.title,
+        rule.content,
+        normalizeAnnouncementPageList(rule.pages).join(' '),
+        getAnnouncementWorkflowStatusMeta(rule.status).label,
+        getAnnouncementRuleScheduleLabel(rule)
+    ].join(' ').toLowerCase();
+}
+
+function getFilteredAnnouncementRules() {
+    const filters = announcementRulesState.filters || {};
+    const query = String(filters.query || '').trim().toLowerCase();
+    const status = String(filters.status || 'all').trim().toLowerCase();
+    const time = String(filters.time || 'all').trim().toLowerCase();
+    const sort = String(filters.sort || 'updated_desc').trim().toLowerCase();
+
+    const visible = announcementRulesState.items.filter((rule) => {
+        if (status !== 'all' && normalizeAnnouncementWorkflowStatus(rule.status) !== status) {
+            return false;
+        }
+        if (time !== 'all' && getAnnouncementRuleScheduleState(rule) !== time) {
+            return false;
+        }
+        if (query && !getAnnouncementRuleSearchText(rule).includes(query)) {
+            return false;
+        }
+        return true;
+    });
+
+    return visible.sort((left, right) => {
+        if (sort === 'priority_desc') {
+            return Number(right.priority || 0) - Number(left.priority || 0)
+                || String(right.updated_at || '').localeCompare(String(left.updated_at || ''));
+        }
+        if (sort === 'starts_asc') {
+            return String(left.starts_at || '9999').localeCompare(String(right.starts_at || '9999'))
+                || String(right.updated_at || '').localeCompare(String(left.updated_at || ''));
+        }
+        if (sort === 'reads_desc') {
+            const leftReads = Number(announcementRulesState.stats?.[left.id]?.reads || 0);
+            const rightReads = Number(announcementRulesState.stats?.[right.id]?.reads || 0);
+            return rightReads - leftReads
+                || String(right.updated_at || '').localeCompare(String(left.updated_at || ''));
+        }
+        return String(right.updated_at || '').localeCompare(String(left.updated_at || ''));
+    });
+}
+
+function buildAnnouncementRuleSummaryMarkup() {
+    const items = announcementRulesState.items || [];
+    const countByStatus = items.reduce((result, rule) => {
+        const status = normalizeAnnouncementWorkflowStatus(rule.status);
+        result[status] = (result[status] || 0) + 1;
+        return result;
+    }, {});
+    const activeCount = items.filter((rule) => getAnnouncementRuleScheduleState(rule) === 'active' && rule.status === 'approved').length;
+
+    return [
+        ['全部', items.length],
+        ['待审核', countByStatus.pending_review || 0],
+        ['生效中', activeCount],
+        ['已归档', countByStatus.archived || 0]
+    ].map(([label, value]) => `
+        <div class="announcement-summary-item">
+            <span>${escapeConfigHtml(label)}</span>
+            <strong>${Number(value || 0)}</strong>
+        </div>
+    `).join('');
+}
+
+function updateAnnouncementRuleFilterControls() {
+    const filters = announcementRulesState.filters || {};
+    const searchEl = document.getElementById('announcementRuleSearch');
+
+    if (searchEl && searchEl.value !== String(filters.query || '')) {
+        searchEl.value = String(filters.query || '');
+    }
+    setAnnouncementCustomSelectValue('announcementRuleTimeFilter', filters.time || 'all', { silent: true });
+    setAnnouncementCustomSelectValue('announcementRuleSort', filters.sort || 'updated_desc', { silent: true });
+
+    document.querySelectorAll('[data-admin-action="settings-set-announcement-status-filter"]').forEach((button) => {
+        const status = String(button.dataset.announcementStatusFilter || 'all').trim().toLowerCase();
+        button.classList.toggle('active', status === String(filters.status || 'all'));
+    });
+}
+
+function syncAnnouncementSelectionAfterFilterChange() {
+    const visibleRules = getFilteredAnnouncementRules();
+    if (!visibleRules.length) {
+        renderAnnouncementRulesPanel();
+        return;
+    }
+
+    if (!visibleRules.some((rule) => rule.id === announcementRulesState.selectedId)) {
+        announcementRulesState.selectedId = visibleRules[0].id;
+        hydrateSelectedAnnouncementRuleIntoEditor();
+        return;
+    }
+
+    renderAnnouncementRulesPanel();
+}
+
+function handleAnnouncementRuleFilterChange() {
+    const searchEl = document.getElementById('announcementRuleSearch');
+    const timeEl = document.getElementById('announcementRuleTimeFilter');
+    const sortEl = document.getElementById('announcementRuleSort');
+
+    announcementRulesState.filters = {
+        ...(announcementRulesState.filters || {}),
+        query: String(searchEl?.value || '').trim(),
+        time: String(timeEl?.value || 'all').trim().toLowerCase(),
+        sort: String(sortEl?.value || 'updated_desc').trim().toLowerCase()
+    };
+    syncAnnouncementSelectionAfterFilterChange();
+}
+
+function setAnnouncementRuleStatusFilter(status = 'all') {
+    const normalizedStatus = String(status || 'all').trim().toLowerCase();
+    announcementRulesState.filters = {
+        ...(announcementRulesState.filters || {}),
+        status: ['all', 'draft', 'pending_review', 'approved', 'rejected', 'archived'].includes(normalizedStatus)
+            ? normalizedStatus
+            : 'all'
+    };
+    syncAnnouncementSelectionAfterFilterChange();
+}
+
+function buildAnnouncementStatsMarkup(rule = null) {
+    if (!rule?.id) {
+        return `
+            <div class="announcement-stats-empty">
+                <i class="fas fa-route"></i>
+                <span>先保存草稿，再进入审核流程</span>
+                <small>点击右侧底部“发布公告”保存当前内容；保存成功后可提交审核，通过后开始统计浏览、已读和关闭数据。</small>
+            </div>
+        `;
+    }
+
+    const stats = announcementRulesState.stats?.[rule.id] || {};
+    const views = Number(stats.views || 0);
+    const reads = Number(stats.reads || 0);
+    const dismisses = Number(stats.dismisses || 0);
+    const readRate = views > 0 ? Math.round((reads / views) * 100) : 0;
+
+    return `
+        <div class="announcement-stat">
+            <span>浏览</span>
+            <strong>${views}</strong>
+        </div>
+        <div class="announcement-stat">
+            <span>已读</span>
+            <strong>${reads}</strong>
+        </div>
+        <div class="announcement-stat">
+            <span>关闭</span>
+            <strong>${dismisses}</strong>
+        </div>
+        <div class="announcement-stat">
+            <span>读完率</span>
+            <strong>${readRate}%</strong>
+        </div>
+    `;
+}
+
+function buildAnnouncementHistoryMarkup(rule = null) {
+    if (!rule?.id) {
+        return `
+            <div class="announcement-history-empty">
+                <i class="far fa-clock"></i>
+                <span>暂无历史</span>
+                <small>创建、提交审核、通过或归档后，这里会按时间线记录每一步。</small>
+            </div>
+        `;
+    }
+
+    const rows = (announcementRulesState.history || [])
+        .filter((row) => String(row.announcement_id || '') === rule.id)
+        .sort((left, right) => String(left.created_at || '').localeCompare(String(right.created_at || '')));
+
+    if (!rows.length) {
+        return `
+            <div class="announcement-history-empty">
+                <i class="far fa-clock"></i>
+                <span>暂无历史</span>
+                <small>这条公告还没有流程记录。</small>
+            </div>
+        `;
+    }
+
+    const entries = rows.map((row, index) => {
+        const action = String(row.action || '').trim();
+        const label = ANNOUNCEMENT_WORKFLOW_ACTION_LABELS[action] || action || '更新';
+        const actor = row.actor_label || '管理员';
+        const fromStatus = row.from_status ? getAnnouncementWorkflowStatusMeta(row.from_status).label : '';
+        const toStatus = row.to_status ? getAnnouncementWorkflowStatusMeta(row.to_status).label : '';
+        const statusText = fromStatus && toStatus && fromStatus !== toStatus
+            ? `${fromStatus} -> ${toStatus}`
+            : (toStatus || fromStatus);
+        const previousRow = rows[index - 1];
+        const stepDuration = previousRow?.created_at
+            ? formatAnnouncementHistoryDuration(previousRow.created_at, row.created_at)
+            : '';
+        const totalDuration = index > 0
+            ? formatAnnouncementHistoryDuration(rows[0].created_at, row.created_at)
+            : '';
+        const durationText = [
+            stepDuration ? `距上一步 ${stepDuration}` : '',
+            totalDuration ? `累计 ${totalDuration}` : ''
+        ].filter(Boolean).join(' · ');
+
+        return {
+            ...row,
+            label,
+            actor,
+            statusText: statusText || '状态更新',
+            durationText
+        };
+    });
+    const visibleEntries = entries.slice(-6).reverse();
+    const hiddenCount = Math.max(0, rows.length - visibleEntries.length);
+
+    const itemsMarkup = visibleEntries.map((row, index) => {
+        return `
+            <div class="announcement-history-item${index === 0 ? ' is-latest' : ''}">
+                <span class="announcement-history-item__dot"></span>
+                <div class="announcement-history-item__main">
+                    <strong>${escapeConfigHtml(row.label)}</strong>
+                    <em>${escapeConfigHtml(row.actor)}</em>
+                </div>
+                <div class="announcement-history-item__meta">
+                    <time>${escapeConfigHtml(formatAnnouncementHistoryDateTime(row.created_at))}</time>
+                    <span>${escapeConfigHtml(row.statusText)}</span>
+                    ${row.durationText ? `<small>${escapeConfigHtml(row.durationText)}</small>` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <div class="announcement-history-header">
+            <div>
+                <strong>最近流程</strong>
+                <span>${escapeConfigHtml(rule.title || '当前公告')}</span>
+            </div>
+            <small>显示最近 ${visibleEntries.length} 条 / 共 ${rows.length} 条</small>
+        </div>
+        <div class="announcement-history-list">
+            ${itemsMarkup}
+        </div>
+        ${hiddenCount ? `<div class="announcement-history-folded">已收起 ${hiddenCount} 条较早记录，保留完整流水用于审计。</div>` : ''}
+    `;
+}
+
+function renderAnnouncementRulesPanel() {
+    const listEl = document.getElementById('announcementRulesList');
+    const summaryEl = document.getElementById('announcementRuleSummary');
+    const statsEl = document.getElementById('announcementRuleStats');
+    const historyEl = document.getElementById('announcementRuleHistory');
+    const statusEl = document.getElementById('announcementRuleStatusMeta');
+
+    if (!listEl) return;
+
+    const selectedRule = getSelectedAnnouncementRule();
+    const visibleRules = getFilteredAnnouncementRules();
+
+    updateAnnouncementRuleFilterControls();
+    if (summaryEl) {
+        summaryEl.innerHTML = buildAnnouncementRuleSummaryMarkup();
+    }
+
+    if (announcementRulesState.loading) {
+        listEl.innerHTML = '<div class="announcement-rules-empty">公告队列加载中...</div>';
+    } else if (announcementRulesState.unavailable) {
+        listEl.innerHTML = `<div class="announcement-rules-empty">${escapeConfigHtml(announcementRulesState.errorMessage)}</div>`;
+    } else if (announcementRulesState.errorMessage) {
+        listEl.innerHTML = `<div class="announcement-rules-empty">${escapeConfigHtml(announcementRulesState.errorMessage)}</div>`;
+    } else if (!announcementRulesState.items.length) {
+        listEl.innerHTML = '<div class="announcement-rules-empty">暂无公告，先保存一条草稿</div>';
+    } else if (!visibleRules.length) {
+        listEl.innerHTML = '<div class="announcement-rules-empty">没有匹配当前筛选条件的公告</div>';
+    } else {
+        listEl.innerHTML = visibleRules.map((rule) => {
+            const statusMeta = getAnnouncementWorkflowStatusMeta(rule.status);
+            const isActive = rule.id === announcementRulesState.selectedId;
+            const pages = normalizeAnnouncementPageList(rule.pages).map((page) => ANNOUNCEMENT_SCOPE_LABELS[page] || page).join(' / ');
+            const stats = announcementRulesState.stats?.[rule.id] || {};
+            const reads = Number(stats.reads || 0);
+            const views = Number(stats.views || 0);
+            const schedule = getAnnouncementRuleScheduleLabel(rule);
+            const startText = rule.starts_at ? `开始 ${formatAnnouncementDateTime(rule.starts_at)}` : '';
+            const endText = rule.ends_at ? `结束 ${formatAnnouncementDateTime(rule.ends_at)}` : '';
+            const timingText = [schedule, startText, endText].filter(Boolean).join(' · ');
+
+            return `
+                <button type="button" class="announcement-rule-item ${isActive ? 'active' : ''}" data-admin-action="settings-select-announcement-rule" data-announcement-rule-id="${escapeConfigHtml(rule.id)}">
+                    <span class="announcement-rule-item__main">
+                        <strong>${escapeConfigHtml(rule.title)}</strong>
+                        <em>${escapeConfigHtml(pages || '全部')}</em>
+                        <small>${escapeConfigHtml(timingText)} · 浏览 ${views} / 已读 ${reads}</small>
+                    </span>
+                    <span class="announcement-status-badge announcement-status-badge--${escapeConfigHtml(statusMeta.tone)}">${escapeConfigHtml(statusMeta.label)}</span>
+                </button>
+            `;
+        }).join('');
+    }
+
+    if (statusEl) {
+        const statusMeta = getAnnouncementWorkflowStatusMeta(selectedRule?.status || 'draft');
+        statusEl.className = `announcement-rule-status announcement-status-badge--${statusMeta.tone}`;
+        statusEl.textContent = getAnnouncementRuleStatusText(selectedRule);
+    }
+    if (statsEl) {
+        statsEl.innerHTML = buildAnnouncementStatsMarkup(selectedRule);
+    }
+    if (historyEl) {
+        historyEl.innerHTML = buildAnnouncementHistoryMarkup(selectedRule);
+    }
+
+    const hasSelected = Boolean(selectedRule?.id);
+    const status = normalizeAnnouncementWorkflowStatus(selectedRule?.status);
+    const submitBtn = document.querySelector('[data-admin-action="settings-submit-announcement-review"]');
+    const approveBtn = document.querySelector('[data-admin-action="settings-approve-announcement"]');
+    const rejectBtn = document.querySelector('[data-admin-action="settings-reject-announcement"]');
+    const archiveBtn = document.querySelector('[data-admin-action="settings-archive-announcement"]');
+
+    if (submitBtn) submitBtn.disabled = !hasSelected || ['pending_review', 'approved', 'archived'].includes(status);
+    if (approveBtn) approveBtn.disabled = !hasSelected || status !== 'pending_review';
+    if (rejectBtn) rejectBtn.disabled = !hasSelected || status !== 'pending_review';
+    if (archiveBtn) archiveBtn.disabled = !hasSelected || status === 'archived';
+}
+
+function hydrateAnnouncementRuleIntoEditor(rule = null) {
+    if (!rule) return;
+
+    const titleInput = document.getElementById('announcementRuleTitle');
+    const priorityInput = document.getElementById('announcementRulePriority');
+    const enabledEl = document.getElementById('cfgAnnouncementEnabled');
+
+    if (titleInput) titleInput.value = rule.title || '';
+    if (priorityInput) priorityInput.value = String(Number(rule.priority || 0));
+    setAnnouncementDateTimeValue('announcementRuleStartsAt', toAnnouncementDateTimeLocalValue(rule.starts_at));
+    setAnnouncementDateTimeValue('announcementRuleEndsAt', toAnnouncementDateTimeLocalValue(rule.ends_at));
+    if (enabledEl) enabledEl.checked = rule.enabled === true;
+
+    document.querySelectorAll('input[name="announcementType"]').forEach((radio) => {
+        radio.checked = radio.value === (rule.type || 'banner');
+    });
+    document.querySelectorAll('input[name="announcementColor"]').forEach((radio) => {
+        radio.checked = radio.value === (rule.color || 'purple');
+    });
+
+    const decoration = rule.decoration || 'none';
+    const decorationEnabled = document.getElementById('decorationEnabled');
+    const decorationSelector = document.getElementById('decorationSelector');
+    if (decorationEnabled) decorationEnabled.checked = decoration !== 'none';
+    if (decorationSelector) decorationSelector.classList.toggle('active', decoration !== 'none');
+    selectDecoration(decoration);
+
+    announcementContentDrafts = buildAnnouncementDraftsFromConfig({
+        announcement_content: rule.content,
+        announcement_pages: rule.pages,
+        announcement_page_overrides: rule.page_overrides
+    });
+    activeAnnouncementScope = ANNOUNCEMENT_DEFAULT_SCOPE;
+    renderActiveAnnouncementScope();
+    renderAnnouncementRulesPanel();
+}
+
+function hydrateSelectedAnnouncementRuleIntoEditor() {
+    hydrateAnnouncementRuleIntoEditor(getSelectedAnnouncementRule());
+}
+
+function selectAnnouncementRule(id) {
+    persistActiveAnnouncementDraftFromEditor();
+    const normalizedId = String(id || '').trim();
+    if (!normalizedId || !announcementRulesState.items.some((item) => item.id === normalizedId)) {
+        return;
+    }
+    announcementRulesState.selectedId = normalizedId;
+    hydrateSelectedAnnouncementRuleIntoEditor();
+}
+
+function newAnnouncementRule() {
+    persistActiveAnnouncementDraftFromEditor();
+    announcementRulesState.selectedId = '';
+    announcementRulesState.filters = {
+        ...(announcementRulesState.filters || {}),
+        query: '',
+        status: 'all',
+        time: 'all'
+    };
+
+    const titleInput = document.getElementById('announcementRuleTitle');
+    const priorityInput = document.getElementById('announcementRulePriority');
+    const enabledEl = document.getElementById('cfgAnnouncementEnabled');
+
+    if (titleInput) titleInput.value = '未命名公告';
+    if (priorityInput) priorityInput.value = '0';
+    setAnnouncementDateTimeValue('announcementRuleStartsAt', '');
+    setAnnouncementDateTimeValue('announcementRuleEndsAt', '');
+    if (enabledEl) enabledEl.checked = false;
+
+    announcementContentDrafts = { all: '', pages: {} };
+    activeAnnouncementScope = ANNOUNCEMENT_DEFAULT_SCOPE;
+    renderActiveAnnouncementScope();
+    renderAnnouncementRulesPanel();
+}
+
+function collectAnnouncementRuleDraft(previousConfig = {}) {
+    persistActiveAnnouncementDraftFromEditor();
+
+    const selectedRule = getSelectedAnnouncementRule();
+    const typeRadio = document.querySelector('input[name="announcementType"]:checked');
+    const colorRadio = document.querySelector('input[name="announcementColor"]:checked');
+    const enabledEl = document.getElementById('cfgAnnouncementEnabled');
+    const title = String(document.getElementById('announcementRuleTitle')?.value || '').trim() || '未命名公告';
+    const priorityValue = Number(document.getElementById('announcementRulePriority')?.value || 0);
+    const updatedAt = new Date().toISOString();
+    const pageOverrides = buildAnnouncementPageOverridesForSave({
+        announcement_page_overrides: selectedRule?.page_overrides || previousConfig.announcement_page_overrides || {}
+    }, updatedAt);
+    const draftStatus = selectedRule?.status === 'approved'
+        ? 'draft'
+        : normalizeAnnouncementWorkflowStatus(selectedRule?.status || 'draft');
+
+    return {
+        title,
+        content: announcementContentDrafts.all || '',
+        type: typeRadio?.value || selectedRule?.type || 'banner',
+        color: colorRadio?.value || selectedRule?.color || previousConfig.announcement_color || 'purple',
+        size: selectedRule?.size || previousConfig.announcement_size || 'medium',
+        decoration: getCurrentDecoration(),
+        pages: computeAnnouncementTargetPages(
+            announcementContentDrafts.all || '',
+            Object.fromEntries(
+                Object.entries(pageOverrides || {}).map(([page, override]) => [page, override.content || ''])
+            )
+        ),
+        page_overrides: pageOverrides,
+        enabled: enabledEl?.checked || false,
+        priority: Number.isFinite(priorityValue) ? Math.round(priorityValue) : 0,
+        status: draftStatus,
+        starts_at: readAnnouncementDateTimeInput('announcementRuleStartsAt'),
+        ends_at: readAnnouncementDateTimeInput('announcementRuleEndsAt')
+    };
+}
+
+function validateAnnouncementRuleDraft(draft = {}) {
+    const startsAt = draft.starts_at ? new Date(draft.starts_at) : null;
+    const endsAt = draft.ends_at ? new Date(draft.ends_at) : null;
+
+    if (
+        startsAt
+        && endsAt
+        && !Number.isNaN(startsAt.getTime())
+        && !Number.isNaN(endsAt.getTime())
+        && startsAt >= endsAt
+    ) {
+        throw new Error('结束时间必须晚于开始时间。');
+    }
+}
+
+async function saveAnnouncementRuleDraft(previousConfig = {}) {
+    const selectedRule = getSelectedAnnouncementRule();
+    const draft = collectAnnouncementRuleDraft(previousConfig);
+    validateAnnouncementRuleDraft(draft);
+    const payload = await requestAnnouncementRulesApi('POST', {
+        action: selectedRule?.id ? 'save' : 'create',
+        id: selectedRule?.id || undefined,
+        announcement: draft
+    });
+
+    applyAnnouncementRulesPayload(payload, {
+        selectedId: payload.announcement?.id || selectedRule?.id || '',
+        hydrate: false
+    });
+
+    return payload;
+}
+
+function setAnnouncementWorkflowActionButtonFeedback(triggerEl, action, state = 'loading') {
+    const feedback = window.AdminStudioActionFeedback;
+    const labels = ANNOUNCEMENT_WORKFLOW_ACTION_FEEDBACK_LABELS[action] || {};
+    const normalizedState = ['loading', 'saved', 'failed'].includes(state) ? state : 'loading';
+    const text = labels[normalizedState]
+        || (normalizedState === 'failed' ? '操作失败' : normalizedState === 'saved' ? '已完成' : '处理中...');
+
+    if (!triggerEl || typeof feedback?.setLoading !== 'function') {
+        return;
+    }
+
+    if (normalizedState === 'failed' && typeof feedback.fail === 'function') {
+        feedback.fail(triggerEl, { errorText: text, restoreDelayMs: -1 });
+        return;
+    }
+
+    if (normalizedState === 'saved' && typeof feedback.finish === 'function') {
+        feedback.finish(triggerEl, { successText: text, restoreDelayMs: -1 });
+        return;
+    }
+
+    feedback.setLoading(triggerEl, { loadingText: text });
+}
+
+function restoreAnnouncementWorkflowActionButtonFeedback(triggerEl) {
+    const feedback = window.AdminStudioActionFeedback;
+    if (!triggerEl || typeof feedback?.restore !== 'function') {
+        renderAnnouncementRulesPanel();
+        return;
+    }
+
+    window.setTimeout(() => {
+        feedback.restore(triggerEl);
+        renderAnnouncementRulesPanel();
+    }, 900);
+}
+
+async function runAnnouncementWorkflowAction(action, triggerEl = null) {
+    const selectedRule = getSelectedAnnouncementRule();
+    if (!selectedRule?.id) {
+        if (typeof showToast === 'function') showToast('请先保存公告草稿', 'warning');
+        return false;
+    }
+
+    const label = ANNOUNCEMENT_WORKFLOW_ACTION_LABELS[action] || '操作';
+    let reason = '';
+    if (action === 'reject') {
+        reason = window.prompt?.('拒绝原因（可选）') || '';
+    }
+
+    try {
+        setAnnouncementWorkflowActionButtonFeedback(triggerEl, action, 'loading');
+        const payload = await requestAnnouncementRulesApi('POST', {
+            action,
+            id: selectedRule.id,
+            reason
+        });
+        applyAnnouncementRulesPayload(payload, {
+            selectedId: payload.announcement?.id || selectedRule.id,
+            hydrate: true
+        });
+        renderAnnouncementRulesPanel();
+        setAnnouncementWorkflowActionButtonFeedback(triggerEl, action, 'saved');
+        if (typeof showToast === 'function') showToast(`${label}完成`, 'success');
+        return true;
+    } catch (error) {
+        console.error('[Config] Announcement workflow action failed:', error);
+        renderAnnouncementRulesPanel();
+        setAnnouncementWorkflowActionButtonFeedback(triggerEl, action, 'failed');
+        if (typeof showToast === 'function') showToast(`${label}失败: ${error.message}`, 'error');
+        return false;
+    } finally {
+        restoreAnnouncementWorkflowActionButtonFeedback(triggerEl);
+    }
+}
+
+function submitAnnouncementReview(triggerEl = null) {
+    return runAnnouncementWorkflowAction('submit_review', triggerEl);
+}
+
+function approveAnnouncementRule(triggerEl = null) {
+    return runAnnouncementWorkflowAction('approve', triggerEl);
+}
+
+function rejectAnnouncementRule(triggerEl = null) {
+    return runAnnouncementWorkflowAction('reject', triggerEl);
+}
+
+function archiveAnnouncementRule(triggerEl = null) {
+    return runAnnouncementWorkflowAction('archive', triggerEl);
+}
 
 function renderNotificationsConfig() {
     const config = systemConfigCache['notifications'] || {
@@ -21782,10 +23253,9 @@ function renderNotificationsConfig() {
     const announcementEnabled = document.getElementById('cfgAnnouncementEnabled');
     if (announcementEnabled) announcementEnabled.checked = config.announcement_enabled || false;
 
-    // Announcement content (for contenteditable div, use innerHTML)
-    const announcementContent = document.getElementById('cfgAnnouncementContent');
-    if (announcementContent) {
-        announcementContent.innerHTML = config.announcement_content || '';
+    announcementContentDrafts = buildAnnouncementDraftsFromConfig(config);
+    if (!activeAnnouncementScope || ![ANNOUNCEMENT_DEFAULT_SCOPE, ...ANNOUNCEMENT_PAGE_SCOPES].includes(activeAnnouncementScope)) {
+        activeAnnouncementScope = ANNOUNCEMENT_DEFAULT_SCOPE;
     }
 
     // Announcement type (radio buttons)
@@ -21815,12 +23285,9 @@ function renderNotificationsConfig() {
         selectDecoration(savedDecoration);
     }
 
-    // Page target selector - restore saved pages
-    const savedPages = config.announcement_pages || ['all'];
-    restorePageSelector(savedPages);
-
-    // Update preview
-    updateAnnouncementPreview();
+    renderActiveAnnouncementScope();
+    renderAnnouncementRulesPanel();
+    void loadAnnouncementRules(false);
 }
 
 function updateAnnouncementPreview() {
@@ -21849,12 +23316,13 @@ function updateAnnouncementPreview() {
     }
 }
 
-async function saveAnnouncement() {
+async function saveAnnouncement(triggerEl = null) {
     const contentEl = document.getElementById('cfgAnnouncementContent');
     const enabledEl = document.getElementById('cfgAnnouncementEnabled');
     const typeRadio = document.querySelector('input[name="announcementType"]:checked');
+    const saveBtn = resolveAnnouncementSaveButton(triggerEl);
 
-    if (!contentEl) return;
+    if (!contentEl || announcementSaveInFlight) return false;
 
     const previousConfig = {
         ...(systemConfigCache['notifications'] || {})
@@ -21862,31 +23330,66 @@ async function saveAnnouncement() {
     const config = {
         ...previousConfig
     };
-    // For contenteditable div, use innerHTML
-    config.announcement_content = contentEl.innerHTML || contentEl.value || '';
+    persistActiveAnnouncementDraftFromEditor();
+    const updatedAt = new Date().toISOString();
+
+    config.announcement_content = announcementContentDrafts.all || '';
+    config.announcement_page_overrides = buildAnnouncementPageOverridesForSave(previousConfig, updatedAt);
     config.announcement_enabled = enabledEl?.checked || false;
     config.announcement_type = typeRadio?.value || 'banner';
     // Save decoration theme
     config.announcement_decoration = getCurrentDecoration();
-    // Save target pages
-    config.announcement_pages = getSelectedPages();
+    config.announcement_pages = computeAnnouncementTargetPages(
+        config.announcement_content,
+        Object.fromEntries(
+            Object.entries(config.announcement_page_overrides || {}).map(([page, override]) => [page, override.content || ''])
+        )
+    );
     // Add timestamp so each publish generates a new ackKey
-    config.announcement_updated_at = new Date().toISOString();
+    config.announcement_updated_at = updatedAt;
 
-    const success = await saveConfig('notifications', config);
+    const loadingMessage = config.announcement_enabled ? '发布中...' : '保存中...';
+    announcementSaveInFlight = true;
+    setAnnouncementSaveButtonFeedback(saveBtn, 'loading', loadingMessage);
+    emitAdminConfigCommandFeedback(loadingMessage, 'loading', {
+        source: 'settings-announcement'
+    });
 
-    // Get the save button
-    const saveBtn = document.querySelector('.editor-actions .btn-primary');
+    try {
+        try {
+            await saveAnnouncementRuleDraft(config);
+            const workflowMessage = config.announcement_enabled
+                ? '公告草稿已保存，提交审核后发布'
+                : '公告草稿已保存';
+            setAnnouncementSaveButtonFeedback(saveBtn, 'saved', '已保存');
+            if (typeof showToast === 'function') {
+                showToast(workflowMessage, 'success');
+            }
+            emitAdminConfigCommandFeedback(workflowMessage, 'saved', {
+                source: 'settings-announcement'
+            });
+            return true;
+        } catch (workflowError) {
+            if (!isAnnouncementWorkflowUnavailableError(workflowError)) {
+                throw workflowError;
+            }
+            announcementRulesState.unavailable = true;
+            announcementRulesState.errorMessage = '公告审核、历史和阅读统计表还没有创建。已回退到旧版公告保存；执行迁移 SQL 后可启用审核流。';
+            renderAnnouncementRulesPanel();
+        }
 
-    if (!success) {
-        emitAdminConfigCommandFeedback('公告保存失败，请稍后重试', 'failed', {
-            source: 'settings-announcement'
-        });
-        return;
-    }
+        const success = await saveConfig('notifications', config);
 
-    if (saveBtn) {
+        if (!success) {
+            setAnnouncementSaveButtonFeedback(saveBtn, 'failed', '发布失败');
+            emitAdminConfigCommandFeedback('公告保存失败，请稍后重试', 'failed', {
+                source: 'settings-announcement'
+            });
+            return false;
+        }
+
         const successMessage = config.announcement_enabled ? '公告已发布' : '公告设置已保存';
+        setAnnouncementSaveButtonFeedback(saveBtn, 'saved', successMessage);
         if (typeof showToast === 'function') {
             showToast(successMessage, 'success');
         } else {
@@ -21895,10 +23398,49 @@ async function saveAnnouncement() {
         emitAdminConfigCommandFeedback(successMessage, 'saved', {
             source: 'settings-announcement'
         });
+        return true;
+    } catch (err) {
+        console.error('[Config] Announcement save failed:', err);
+        const errorMessage = err.message || '公告保存失败，请稍后重试';
+        setAnnouncementSaveButtonFeedback(saveBtn, 'failed', '保存失败');
+        if (typeof showToast === 'function') {
+            showToast(errorMessage, 'error');
+        }
+        emitAdminConfigCommandFeedback(errorMessage, 'failed', {
+            source: 'settings-announcement'
+        });
+        return false;
+    } finally {
+        announcementSaveInFlight = false;
     }
 }
 
 function setupNotificationsEventListeners() {
+    if (!setupNotificationsEventListeners._announcementFloatingBound) {
+        document.addEventListener('click', (event) => {
+            const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+            if (target?.closest?.('.announcement-custom-select, .announcement-datetime-control')) {
+                return;
+            }
+            closeAnnouncementFloatingControls();
+        });
+        document.addEventListener('keydown', (event) => {
+            const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+            if (event.key === 'Escape') {
+                closeAnnouncementFloatingControls();
+                return;
+            }
+            if (event.key !== 'Enter') {
+                return;
+            }
+            const control = target?.closest?.('.announcement-datetime-control.is-open');
+            if (!control) return;
+            event.preventDefault();
+            confirmAnnouncementDateTimePicker(control.dataset.announcementDatetimeControl);
+        });
+        setupNotificationsEventListeners._announcementFloatingBound = true;
+    }
+
     // New user notification toggle
     const newUserNotify = document.getElementById('cfgNewUserNotify');
     if (newUserNotify) {
@@ -21912,10 +23454,8 @@ function setupNotificationsEventListeners() {
     // Announcement enabled toggle
     const announcementEnabled = document.getElementById('cfgAnnouncementEnabled');
     if (announcementEnabled) {
-        announcementEnabled.addEventListener('change', async (e) => {
-            const config = systemConfigCache['notifications'] || {};
-            config.announcement_enabled = e.target.checked;
-            await saveConfig('notifications', config);
+        announcementEnabled.addEventListener('change', () => {
+            renderAnnouncementRulesPanel();
         });
     }
 
@@ -21934,7 +23474,13 @@ function setupNotificationsEventListeners() {
     // Content editor - update preview on input
     const contentEl = document.getElementById('cfgAnnouncementContent');
     if (contentEl) {
-        contentEl.addEventListener('input', updateAnnouncementPreview);
+        contentEl.addEventListener('input', () => {
+            persistActiveAnnouncementDraftFromEditor({ forcePageOverride: activeAnnouncementScope !== ANNOUNCEMENT_DEFAULT_SCOPE });
+            updateAnnouncementScopeButtons();
+            updateAnnouncementScopeHint();
+            updateAnnouncementScopeActions();
+            updateAnnouncementPreview();
+        });
     }
 }
 
@@ -21960,6 +23506,12 @@ const AdminRichTextEditor = (() => {
         { value: '3', label: '中', className: 'medium' },
         { value: '5', label: '大', className: 'large' }
     ];
+    const richTextFontSizeStyles = Object.freeze({
+        small: '0.875em',
+        medium: '1em',
+        large: '1.18em'
+    });
+    const richTextAlignValues = new Set(['left', 'center', 'right']);
 
     function escapeHtml(text) {
         const div = document.createElement('div');
@@ -22022,6 +23574,51 @@ const AdminRichTextEditor = (() => {
         placeCursorAtEnd(instance.editor);
     }
 
+    function getElementFromNode(node) {
+        if (!node) return null;
+        return node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+    }
+
+    function getCurrentEditorRange(instance) {
+        if (!instance?.editor) return null;
+        const selection = window.getSelection();
+        if (!selection || !selection.rangeCount) return null;
+        const range = selection.getRangeAt(0);
+        return instance.editor.contains(range.commonAncestorContainer) ? range : null;
+    }
+
+    function findEditorScopedAncestor(node, editor, selector) {
+        if (!editor || !selector) return null;
+        let element = getElementFromNode(node);
+        while (element && element !== editor) {
+            if (element.matches?.(selector)) return element;
+            element = element.parentElement;
+        }
+        return null;
+    }
+
+    function selectElementContents(instance, element) {
+        if (!instance?.editor || !element) return;
+        const selection = window.getSelection();
+        if (!selection) return;
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        instance.selection = range.cloneRange();
+    }
+
+    function wrapRichTextSelection(instance, wrapper) {
+        const range = getCurrentEditorRange(instance);
+        if (!range || range.collapsed || !wrapper) return false;
+
+        wrapper.appendChild(range.extractContents());
+        range.insertNode(wrapper);
+        selectElementContents(instance, wrapper);
+        syncHiddenInput(instance);
+        return true;
+    }
+
     function syncHiddenInput(instance, invokeCallback = true) {
         if (!instance) return;
         if (instance.hiddenInput) {
@@ -22059,6 +23656,7 @@ const AdminRichTextEditor = (() => {
             if (button.dataset.rteMouseBound === '1') return;
             button.dataset.rteMouseBound = '1';
             button.addEventListener('mousedown', (event) => {
+                saveSelection(instance);
                 event.preventDefault();
             });
         });
@@ -22091,6 +23689,75 @@ const AdminRichTextEditor = (() => {
         instance.editor.focus();
         restoreSelection(instance);
         return true;
+    }
+
+    function normalizeFontSizeClass(size, sizeClass) {
+        if (sizeClass && richTextFontSizeStyles[sizeClass]) return sizeClass;
+        return defaultSizes.find(item => item.value === String(size))?.className || 'medium';
+    }
+
+    function applyFontSizeToSelection(key, size, sizeClass) {
+        const instance = getInstance(key);
+        if (!focusAndRestore(instance)) return;
+
+        const normalizedSize = String(size || '3');
+        const normalizedClass = normalizeFontSizeClass(normalizedSize, sizeClass);
+        const range = getCurrentEditorRange(instance);
+        const existingSizeNode = range
+            ? findEditorScopedAncestor(range.commonAncestorContainer, instance.editor, '[data-announcement-font-size]')
+            : null;
+
+        if (existingSizeNode) {
+            existingSizeNode.dataset.announcementFontSize = normalizedClass;
+            existingSizeNode.style.fontSize = richTextFontSizeStyles[normalizedClass];
+            saveSelection(instance);
+            syncHiddenInput(instance);
+            return;
+        }
+
+        const wrapper = document.createElement('span');
+        wrapper.dataset.announcementFontSize = normalizedClass;
+        wrapper.style.fontSize = richTextFontSizeStyles[normalizedClass];
+
+        if (!wrapRichTextSelection(instance, wrapper)) {
+            document.execCommand('fontSize', false, normalizedSize);
+            saveSelection(instance);
+            syncHiddenInput(instance);
+        }
+    }
+
+    function applyTextAlignToSelection(key, align) {
+        const instance = getInstance(key);
+        if (!focusAndRestore(instance)) return;
+
+        const normalizedAlign = richTextAlignValues.has(align) ? align : 'center';
+        const range = getCurrentEditorRange(instance);
+        const existingAlignNode = range
+            ? findEditorScopedAncestor(range.commonAncestorContainer, instance.editor, '[data-announcement-align]')
+            : null;
+
+        if (existingAlignNode) {
+            existingAlignNode.dataset.announcementAlign = normalizedAlign;
+            existingAlignNode.style.textAlign = normalizedAlign;
+            saveSelection(instance);
+            syncHiddenInput(instance);
+            return;
+        }
+
+        const wrapper = document.createElement('div');
+        wrapper.dataset.announcementAlign = normalizedAlign;
+        wrapper.style.textAlign = normalizedAlign;
+
+        if (!wrapRichTextSelection(instance, wrapper)) {
+            const commands = {
+                left: 'justifyLeft',
+                center: 'justifyCenter',
+                right: 'justifyRight'
+            };
+            document.execCommand(commands[normalizedAlign], false, null);
+            saveSelection(instance);
+            syncHiddenInput(instance);
+        }
     }
 
     function execCommand(key, command, value = null) {
@@ -22355,12 +24022,7 @@ const AdminRichTextEditor = (() => {
             execCommand(key, tag === 'b' ? 'bold' : tag === 'i' ? 'italic' : 'underline');
         },
         applyTextAlign(key, align) {
-            const commands = {
-                left: 'justifyLeft',
-                center: 'justifyCenter',
-                right: 'justifyRight'
-            };
-            execCommand(key, commands[align] || 'justifyCenter');
+            applyTextAlignToSelection(key, align);
             getInstance(key)?.alignPicker?.classList.remove('active');
         },
         toggleAlignPicker(key) {
@@ -22392,9 +24054,11 @@ const AdminRichTextEditor = (() => {
             closeDropdownElement(instance?.dropdowns?.color);
         },
         selectFontSize(key, size, sizeClass) {
-            execCommand(key, 'fontSize', size);
+            const normalizedSize = String(size || '3');
+            const normalizedClass = normalizeFontSizeClass(normalizedSize, sizeClass);
+            applyFontSizeToSelection(key, normalizedSize, normalizedClass);
             const instance = getInstance(key);
-            updateSizeUI(instance, size, sizeClass);
+            updateSizeUI(instance, normalizedSize, normalizedClass);
             closeDropdownElement(instance?.dropdowns?.size);
         }
     };
@@ -23364,7 +25028,7 @@ window.changeAdminAuditMonitorConfigPage = changeAdminAuditMonitorConfigPage;
 
 async function saveSensitiveWords() {
     const textarea = document.getElementById('cfgSensitiveWords');
-    if (!textarea) return;
+    if (!textarea) return false;
 
     const lines = textarea.value.split('\n').map(l => l.trim()).filter(l => l);
     const config = systemConfigCache['moderation'] || {};
@@ -23375,6 +25039,8 @@ async function saveSensitiveWords() {
     if (success && typeof showToast === 'function') {
         showToast('敏感词列表已保存', 'success');
     }
+
+    return success;
 }
 
 function setupModerationEventListeners() {
@@ -23587,65 +25253,20 @@ function getCurrentDecoration() {
 
 // Toggle page target selection
 function togglePageTarget(page) {
-    const selector = document.getElementById('pageTargetSelector');
-    if (!selector) return;
-
-    const allBtn = selector.querySelector('[data-page="all"]');
-    const pageBtns = selector.querySelectorAll('[data-page]:not([data-page="all"])');
-    const clickedBtn = selector.querySelector(`[data-page="${page}"]`);
-
-    if (page === 'all') {
-        // Toggle "all" - if clicking "all", select only "all" and deselect others
-        if (allBtn.classList.contains('active')) {
-            // Already selected, do nothing (must have at least one page)
-            return;
-        }
-        // Select "all", deselect individual pages
-        allBtn.classList.add('active');
-        pageBtns.forEach(btn => btn.classList.remove('active'));
-    } else {
-        // Toggle individual page
-        clickedBtn.classList.toggle('active');
-
-        // If any individual page is selected, deselect "all"
-        const anyPageSelected = Array.from(pageBtns).some(btn => btn.classList.contains('active'));
-        if (anyPageSelected) {
-            allBtn.classList.remove('active');
-        } else {
-            // No individual pages selected, auto-select "all"
-            allBtn.classList.add('active');
-        }
-
-        // If all individual pages are selected, switch to "all"
-        const allPagesSelected = Array.from(pageBtns).every(btn => btn.classList.contains('active'));
-        if (allPagesSelected) {
-            allBtn.classList.add('active');
-            pageBtns.forEach(btn => btn.classList.remove('active'));
-        }
+    const normalizedPage = normalizeAnnouncementPageValue(page) || ANNOUNCEMENT_DEFAULT_SCOPE;
+    if (normalizedPage !== ANNOUNCEMENT_DEFAULT_SCOPE && !isAnnouncementPageScope(normalizedPage)) {
+        return;
     }
+
+    persistActiveAnnouncementDraftFromEditor();
+    activeAnnouncementScope = normalizedPage;
+    renderActiveAnnouncementScope();
 }
 
 // Get selected pages from UI
 function getSelectedPages() {
-    const selector = document.getElementById('pageTargetSelector');
-    if (!selector) return ['all'];
-
-    const allBtn = selector.querySelector('[data-page="all"]');
-    if (allBtn && allBtn.classList.contains('active')) {
-        return ['all'];
-    }
-
-    const selectedPages = [];
-    selector.querySelectorAll('[data-page]:not([data-page="all"])').forEach(btn => {
-        if (btn.classList.contains('active')) {
-            const normalizedPage = normalizeAnnouncementPageValue(btn.dataset.page);
-            if (normalizedPage) {
-                selectedPages.push(normalizedPage);
-            }
-        }
-    });
-
-    return selectedPages.length > 0 ? selectedPages : ['all'];
+    persistActiveAnnouncementDraftFromEditor();
+    return computeAnnouncementTargetPages();
 }
 
 function normalizeAnnouncementPageValue(page) {
@@ -23658,27 +25279,33 @@ function normalizeAnnouncementPageValue(page) {
 
 // Restore page selector state from saved config
 function restorePageSelector(pages) {
-    const selector = document.getElementById('pageTargetSelector');
-    if (!selector) return;
+    const normalizedPages = normalizeAnnouncementPageList(pages);
+    activeAnnouncementScope = normalizedPages.includes('all')
+        ? ANNOUNCEMENT_DEFAULT_SCOPE
+        : (normalizedPages.find(isAnnouncementPageScope) || ANNOUNCEMENT_DEFAULT_SCOPE);
+    renderActiveAnnouncementScope();
+}
 
-    const normalizedPages = Array.isArray(pages)
-        ? pages.map(normalizeAnnouncementPageValue).filter(Boolean)
-        : [];
-
-    // Clear all active states
-    selector.querySelectorAll('.page-btn').forEach(btn => btn.classList.remove('active'));
-
-    if (!normalizedPages.length || normalizedPages.includes('all')) {
-        // Select "all" button
-        const allBtn = selector.querySelector('[data-page="all"]');
-        if (allBtn) allBtn.classList.add('active');
-    } else {
-        // Select individual pages
-        normalizedPages.forEach(page => {
-            const btn = selector.querySelector(`[data-page="${page}"]`);
-            if (btn) btn.classList.add('active');
-        });
+function copyDefaultAnnouncementToScope() {
+    if (activeAnnouncementScope === ANNOUNCEMENT_DEFAULT_SCOPE || !isAnnouncementPageScope(activeAnnouncementScope)) {
+        return;
     }
+
+    announcementContentDrafts.pages[activeAnnouncementScope] = announcementContentDrafts.all || '';
+    setAnnouncementEditorContent(announcementContentDrafts.pages[activeAnnouncementScope], { fallback: false });
+    updateAnnouncementScopeButtons();
+    updateAnnouncementScopeHint();
+    updateAnnouncementScopeActions();
+    updateAnnouncementPreview();
+}
+
+function clearAnnouncementScopeOverride() {
+    if (activeAnnouncementScope === ANNOUNCEMENT_DEFAULT_SCOPE || !isAnnouncementPageScope(activeAnnouncementScope)) {
+        return;
+    }
+
+    delete announcementContentDrafts.pages[activeAnnouncementScope];
+    renderActiveAnnouncementScope();
 }
 
 // ============================================
@@ -23850,6 +25477,22 @@ window.saveSensitiveWords = saveSensitiveWords;
 window.toggleDecoration = toggleDecoration;
 window.selectDecoration = selectDecoration;
 window.togglePageTarget = togglePageTarget;
+window.copyDefaultAnnouncementToScope = copyDefaultAnnouncementToScope;
+window.clearAnnouncementScopeOverride = clearAnnouncementScopeOverride;
+window.loadAnnouncementRules = loadAnnouncementRules;
+window.selectAnnouncementRule = selectAnnouncementRule;
+window.newAnnouncementRule = newAnnouncementRule;
+window.handleAnnouncementRuleFilterChange = handleAnnouncementRuleFilterChange;
+window.setAnnouncementRuleStatusFilter = setAnnouncementRuleStatusFilter;
+window.toggleAnnouncementCustomSelect = toggleAnnouncementCustomSelect;
+window.selectAnnouncementCustomSelectOption = selectAnnouncementCustomSelectOption;
+window.toggleAnnouncementDateTimePicker = toggleAnnouncementDateTimePicker;
+window.confirmAnnouncementDateTimePicker = confirmAnnouncementDateTimePicker;
+window.clearAnnouncementDateTimePicker = clearAnnouncementDateTimePicker;
+window.submitAnnouncementReview = submitAnnouncementReview;
+window.approveAnnouncementRule = approveAnnouncementRule;
+window.rejectAnnouncementRule = rejectAnnouncementRule;
+window.archiveAnnouncementRule = archiveAnnouncementRule;
 window.loadAffiliateSettings = loadAffiliateSettings;
 window.saveAffiliateSetting = saveAffiliateSetting;
 window.saveAffiliatePosterField = saveAffiliatePosterField;

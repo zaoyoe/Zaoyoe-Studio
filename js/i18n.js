@@ -9,6 +9,14 @@
     const I18N_STORAGE_KEY = 'zaoyoe_language';
     const DEFAULT_LANG = 'zh';
     const SUPPORTED_LANGS = ['zh', 'en'];
+    const I18N_ASSET_VERSION = (() => {
+        try {
+            const scriptUrl = new URL(document.currentScript?.src || '', window.location.href);
+            return scriptUrl.searchParams.get('v') || '20260501_I18N_STABLE_LANG_CACHE_1';
+        } catch (error) {
+            return '20260501_I18N_STABLE_LANG_CACHE_1';
+        }
+    })();
 
     let translations = {};
     let currentLang = DEFAULT_LANG;
@@ -47,7 +55,9 @@
         if (translations[lang]) return translations[lang];
 
         try {
-            const response = await fetch(`/lang/${lang}.json?v=${Date.now()}`);
+            const response = await fetch(`/lang/${lang}.json?v=${encodeURIComponent(I18N_ASSET_VERSION)}`, {
+                cache: 'force-cache'
+            });
             if (!response.ok) throw new Error(`Failed to load ${lang}.json`);
             translations[lang] = await response.json();
             return translations[lang];
