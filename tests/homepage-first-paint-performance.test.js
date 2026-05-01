@@ -31,7 +31,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should cache-bust the first-paint homepage runtime'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home_critical.css?v=20260501_HOME_CRITICAL_MOBILE_HERO_CENTER_1'),
+        indexSource.includes('./css/framer_home_critical.css?v=20260502_HOME_CRITICAL_NAV_AUTH_SHELL_1'),
         true,
         'index.html should load a small blocking homepage critical stylesheet'
     );
@@ -135,6 +135,21 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         criticalStyles,
         /\.hero-title\s*\{[\s\S]*padding-top:\s*max\(0px, calc\(60px - 5vw\)\);[\s\S]*font-size:\s*clamp\(48px, 10vw, 110px\);[\s\S]*letter-spacing:\s*0;/,
         'critical homepage CSS should match the final hero title typography before the full stylesheet loads'
+    );
+    assert.match(
+        criticalStyles,
+        /20260502_HOME_CRITICAL_NAV_AUTH_SHELL_1[\s\S]*\.auth-display-none\s*\{[\s\S]*display:\s*none !important;[\s\S]*\.avatar-dropdown\s*\{[\s\S]*position:\s*fixed;[\s\S]*visibility:\s*hidden;[\s\S]*pointer-events:\s*none;/,
+        'critical homepage CSS should hide injected auth text and avatar dropdown before deferred styles load'
+    );
+    assert.match(
+        criticalStyles,
+        /@media \(max-width: 767px\)\s*\{[\s\S]*\.nav-container\s*\{[\s\S]*padding-right:\s*var\(--spacing-lg\);[\s\S]*padding-left:\s*var\(--spacing-lg\);[\s\S]*\.hero-title\s*\{[\s\S]*font-size:\s*clamp\(48px, 10vw, 110px\);/,
+        'mobile critical nav and hero sizing should match the final stylesheet during refresh'
+    );
+    assert.equal(
+        criticalStyles.includes('font-size: 56px;'),
+        false,
+        'mobile critical CSS should not use the old fixed hero title size that caused refresh jumps'
     );
     assert.match(
         criticalStyles,
