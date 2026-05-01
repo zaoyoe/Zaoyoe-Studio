@@ -1035,6 +1035,11 @@ body.mobile-menu-open .framer-nav,
         display: none;
     }
 
+    .hero-section[data-home-static-hero="1"]:not([data-render-signature]) .hero-carousel {
+        overflow: hidden;
+        scroll-snap-type: none;
+    }
+
     .hero-carousel-track {
         gap: 16px;
         padding: 0 calc(50vw - 70px);
@@ -1043,9 +1048,6 @@ body.mobile-menu-open .framer-nav,
     .hero-section[data-home-static-hero="1"]:not([data-render-signature]) .hero-carousel-track {
         grid-template-columns: repeat(5, 140px);
         gap: 16px;
-        justify-content: start;
-        width: fit-content;
-        padding: 0 calc(50vw - 70px);
     }
 
     .entry-card {
