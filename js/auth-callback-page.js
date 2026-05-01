@@ -6,6 +6,8 @@
     const GOOGLE_POPUP_WINDOW_NAME = 'google_login';
     const GOOGLE_POPUP_RESULT_STORAGE_KEY = 'zaoyoe_google_popup_auth_result_v1';
     const GOOGLE_POPUP_STATE_PREFIX = 'zaoyoe_google_popup:';
+    const GOOGLE_REDIRECT_STATE_PREFIX = 'zaoyoe_google_redirect:';
+    const GOOGLE_REDIRECT_STATE_STORAGE_KEY = 'zaoyoe_google_redirect_state_v1';
     const POST_LOGIN_REDIRECT_STORAGE_KEY = 'zaoyoe_post_login_redirect_v1';
     const POST_LOGIN_REDIRECT_TTL_MS = 15 * 60 * 1000;
     const { url: SUPABASE_URL, publishableKey: SUPABASE_KEY } = window.requireZaoyoeSupabaseConfig();
@@ -86,6 +88,24 @@
         typeof value === 'string' && value.startsWith(GOOGLE_POPUP_STATE_PREFIX)
     );
 
+    const isGoogleRedirectState = (value) => (
+        typeof value === 'string' && value.startsWith(GOOGLE_REDIRECT_STATE_PREFIX)
+    );
+
+    const clearGoogleRedirectState = (value = '') => {
+        try {
+            const currentState = localStorage.getItem(GOOGLE_REDIRECT_STATE_STORAGE_KEY);
+            if (!currentState) {
+                return;
+            }
+            if (!value || currentState === value) {
+                localStorage.removeItem(GOOGLE_REDIRECT_STATE_STORAGE_KEY);
+            }
+        } catch (error) {
+            console.warn('Failed to clear Google redirect state:', error);
+        }
+    };
+
     const broadcastPopupResult = (payload) => {
         try {
             const envelope = JSON.stringify({
@@ -129,8 +149,8 @@
         }
     };
 
-    const attemptClosePopup = () => {
-        if (!isPopupWindow()) {
+    const attemptClosePopup = (force = false, fallbackTarget = '') => {
+        if (!force && !isPopupWindow()) {
             return false;
         }
 
@@ -154,6 +174,16 @@
             }
             tryClose();
         }, 120);
+        setTimeout(() => {
+            if (window.closed || !fallbackTarget) {
+                return;
+            }
+            try {
+                window.location.replace(resolveSafeRedirectTarget(fallbackTarget));
+            } catch (error) {
+                // ignore final fallback failure
+            }
+        }, 420);
 
         return true;
     };
@@ -163,8 +193,9 @@
         const hash = window.location.hash || '';
         const code = url.searchParams.get('code');
         const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
-        const popupState = hashParams.get('state') || url.searchParams.get('state') || '';
-        const isPopupMode = url.searchParams.get('popup') === '1' || isGooglePopupState(popupState);
+        const googleAuthState = hashParams.get('state') || url.searchParams.get('state') || '';
+        const isRedirectMode = isGoogleRedirectState(googleAuthState);
+        const isPopupMode = url.searchParams.get('popup') === '1' || (isGooglePopupState(googleAuthState) && !isRedirectMode);
         const isCloseOnlyMode = url.searchParams.get('close') === '1';
         const hasAccessToken = Boolean(hashParams.get('access_token'));
         const hasRefreshToken = Boolean(hashParams.get('refresh_token'));
@@ -174,8 +205,12 @@
 
         if (isCloseOnlyMode) {
             setStatus();
-            attemptClosePopup();
+            attemptClosePopup(true, '/');
             return;
+        }
+
+        if (isRedirectMode) {
+            clearGoogleRedirectState(googleAuthState);
         }
 
         if (hashError) {
@@ -254,7 +289,7 @@
                 userId: user?.id || null
             });
             setTimeout(() => {
-                attemptClosePopup();
+                attemptClosePopup(true, readPendingPostLoginRedirectTarget() || '/');
             }, 120);
             return;
         }
@@ -263,14 +298,20 @@
     } catch (error) {
         console.error('OAuth callback failed:', error);
         const url = new URL(window.location.href);
-        const isPopupMode = url.searchParams.get('popup') === '1';
+        const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+        const googleAuthState = hashParams.get('state') || url.searchParams.get('state') || '';
+        const isRedirectMode = isGoogleRedirectState(googleAuthState);
+        const isPopupMode = url.searchParams.get('popup') === '1' || (isGooglePopupState(googleAuthState) && !isRedirectMode);
+        if (isRedirectMode) {
+            clearGoogleRedirectState(googleAuthState);
+        }
         if (isPopupWindow() || isPopupMode) {
             notifyOpener({
                 status: 'error',
                 message: error.message || '未知错误'
             });
             setTimeout(() => {
-                attemptClosePopup();
+                attemptClosePopup(true, readPendingPostLoginRedirectTarget() || '/');
             }, 200);
             return;
         }

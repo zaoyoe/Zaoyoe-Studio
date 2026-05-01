@@ -254,6 +254,7 @@
         "sendTimeout": "发送超时，请检查网络后重试。",
         "codeSentNotice": "验证码已发送至 {email}，请查收。",
         "sendFailedNotice": "发送失败，请检查网络或稍后重试。",
+        "redirectingToGoogle": "正在跳转到 Google...",
         "popupOpenFailed": "打开授权窗口失败: {message}",
         "allowPopupRetry": "弹窗被浏览器拦截，请允许弹窗后重试",
         "googleLoginFailed": "Google 登录失败: {message}",

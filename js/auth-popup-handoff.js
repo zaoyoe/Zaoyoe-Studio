@@ -6,8 +6,9 @@
         const hashParams = new URLSearchParams(hash.replace(/^#/, ''));
         const state = hashParams.get('state') || '';
         const isGooglePopupState = state.startsWith('zaoyoe_google_popup:');
+        const isGoogleRedirectState = state.startsWith('zaoyoe_google_redirect:');
         const hasPopupResult = hashParams.has('id_token') || hashParams.has('access_token') || hashParams.has('error');
-        if (!isGooglePopupState || !hasPopupResult) return;
+        if ((!isGooglePopupState && !isGoogleRedirectState) || !hasPopupResult) return;
 
         document.documentElement.classList.add('auth-popup-handoff');
         const callbackUrl = new URL('/auth-callback.html', window.location.origin);
