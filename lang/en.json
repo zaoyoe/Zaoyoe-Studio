@@ -254,6 +254,7 @@
         "sendTimeout": "Sending timed out. Please check your network and try again.",
         "codeSentNotice": "Verification code sent to {email}. Please check your inbox.",
         "sendFailedNotice": "Failed to send. Please check your network or try again later.",
+        "redirectingToGoogle": "Redirecting to Google...",
         "popupOpenFailed": "Failed to open authorization window: {message}",
         "allowPopupRetry": "Popup was blocked by the browser. Please allow popups and try again.",
         "googleLoginFailed": "Google sign-in failed: {message}",

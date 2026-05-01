@@ -2051,6 +2051,8 @@ const GOOGLE_POPUP_WINDOW_NAME = 'google_login';
 const GOOGLE_POPUP_RESULT_STORAGE_KEY = 'zaoyoe_google_popup_auth_result_v1';
 const GOOGLE_POPUP_STATE_PREFIX = 'zaoyoe_google_popup:';
 const GOOGLE_POPUP_STATE_STORAGE_KEY = 'zaoyoe_google_popup_state_v1';
+const GOOGLE_REDIRECT_STATE_PREFIX = 'zaoyoe_google_redirect:';
+const GOOGLE_REDIRECT_STATE_STORAGE_KEY = 'zaoyoe_google_redirect_state_v1';
 let googleIdentityScriptPromise = null;
 window.currentGoogleNonce = null;
 window.currentGoogleNonceHash = null;
@@ -2141,6 +2143,35 @@ function clearGooglePopupState(value = '') {
     }
 }
 
+function createGoogleRedirectState() {
+    const state = `${GOOGLE_REDIRECT_STATE_PREFIX}${Date.now()}:${Math.random().toString(36).slice(2, 10)}`;
+    try {
+        localStorage.setItem(GOOGLE_REDIRECT_STATE_STORAGE_KEY, state);
+    } catch (err) {
+        console.warn('Failed to persist Google redirect state:', err);
+    }
+    return state;
+}
+
+function buildGoogleImplicitAuthUrl(state) {
+    const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+    authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
+    authUrl.searchParams.set('redirect_uri', window.location.origin);
+    authUrl.searchParams.set('response_type', 'id_token');
+    authUrl.searchParams.set('scope', 'openid email profile');
+    authUrl.searchParams.set('state', state);
+    authUrl.searchParams.set('nonce', String(Date.now()));
+    authUrl.searchParams.set('prompt', 'select_account');
+    return authUrl.toString();
+}
+
+function shouldUseGoogleSameTabRedirect() {
+    const ua = navigator.userAgent || '';
+    const platform = navigator.platform || '';
+    const isIOS = /iP(ad|hone|od)/i.test(ua) || (platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    return isIOS && /WebKit/i.test(ua);
+}
+
 function buildGooglePopupRedirectUrl(mode = 'callback') {
     const popupUrl = new URL('/auth-callback.html', window.location.origin);
     popupUrl.searchParams.set('popup', '1');
@@ -2187,11 +2218,25 @@ function attemptCloseCurrentGooglePopup(force = false) {
     setTimeout(() => {
         if (window.closed) return;
         try {
-            window.location.replace(buildGooglePopupRedirectUrl('close'));
+            window.open('', '_self');
         } catch (_) {
             // ignore
         }
+        tryClose();
     }, 120);
+    setTimeout(() => {
+        if (window.closed) return;
+        const fallbackTarget = readPendingPostLoginRedirectTarget() || '/';
+        try {
+            window.location.replace(normalizePostLoginRedirectTarget(fallbackTarget, '/'));
+        } catch (_) {
+            try {
+                window.location.replace(buildGooglePopupRedirectUrl('close'));
+            } catch (err) {
+                // ignore
+            }
+        }
+    }, 420);
 
     return true;
 }
@@ -2621,13 +2666,19 @@ async function triggerGoogleOAuthRedirectFallback() {
 // This bypasses BOTH the FedCM cooldown issues AND the Supabase server-side PKCE failure
 // on the canonical project domain.
 window.triggerGoogleLogin = async () => {
-    console.log('🔵 triggerGoogleLogin called (Client-side Popup mode)');
+    console.log('🔵 triggerGoogleLogin called (Client-side Google auth mode)');
 
     if (window.isGoogleLoginLoading) return;
     clearAuthFeedback();
     setGoogleButtonsLoading(true, authT('auth.openingGoogleWindow', '正在打开授权窗口...'));
 
     try {
+        if (shouldUseGoogleSameTabRedirect()) {
+            setGoogleButtonsLoading(true, authT('auth.redirectingToGoogle', '正在跳转到 Google...'));
+            startGoogleSameTabRedirectLogin();
+            return;
+        }
+
         ensureGooglePopupMessageBridge();
         openGooglePopupFallback();
         // Loading state will be cleared by the popup polling logic or after redirect
@@ -2644,20 +2695,27 @@ window.triggerGoogleLogin = async () => {
     }
 };
 
+function startGoogleSameTabRedirectLogin() {
+    const currentPage = getCurrentPageRedirectUrl();
+    storePendingPostLoginRedirectTarget(currentPage);
+    try {
+        localStorage.setItem('oauth_post_login_redirect', currentPage);
+    } catch (err) {
+        console.warn('Failed to persist legacy OAuth redirect target:', err);
+    }
+
+    stopGooglePopupMonitor();
+    closeTrackedGooglePopup();
+    clearGooglePopupState();
+
+    const redirectState = createGoogleRedirectState();
+    window.location.assign(buildGoogleImplicitAuthUrl(redirectState));
+}
+
 // Fallback: Open Google OAuth in a popup window when One Tap is blocked
 function openGooglePopupFallback() {
-    const clientId = '1017068787594-ep4bj8cdirkllqlpbmlfk436br0vbifp.apps.googleusercontent.com';
-    const redirectUri = window.location.origin;
-    const scope = 'openid email profile';
     const popupState = createGooglePopupState();
-    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
-        `client_id=${encodeURIComponent(clientId)}` +
-        `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-        `&response_type=id_token` +
-        `&scope=${encodeURIComponent(scope)}` +
-        `&state=${encodeURIComponent(popupState)}` +
-        `&nonce=${Date.now()}` +
-        `&prompt=select_account`;
+    const authUrl = buildGoogleImplicitAuthUrl(popupState);
 
     const width = 500, height = 600;
     // Calculate center relative to the entire browser window (including its toolbars)

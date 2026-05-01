@@ -65,18 +65,25 @@ test('password reset handler finds the auth-sheet submit button outside the form
 
 test('google popup callback is handed to the lightweight auth callback before the home page renders', () => {
     assert.match(indexSource, /\.\/css\/auth-popup-handoff\.css\?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1/);
-    assert.match(indexSource, /\.\/js\/auth-popup-handoff\.js\?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1/);
+    assert.match(indexSource, /\.\/js\/auth-popup-handoff\.js\?v=20260501_IOS_GOOGLE_REDIRECT_1/);
     assert.match(authPopupHandoffStyles, /html\.auth-popup-handoff body/);
     assert.match(authPopupHandoffSource, /state\.startsWith\('zaoyoe_google_popup:'\)/);
+    assert.match(authPopupHandoffSource, /state\.startsWith\('zaoyoe_google_redirect:'\)/);
     assert.match(authPopupHandoffSource, /new URL\('\/auth-callback\.html', window\.location\.origin\)/);
     assert.match(authPopupHandoffSource, /window\.location\.replace\(callbackUrl\.toString\(\)\)/);
 
     assert.match(authCallbackSource, /GOOGLE_POPUP_STATE_PREFIX = 'zaoyoe_google_popup:'/);
+    assert.match(authCallbackSource, /GOOGLE_REDIRECT_STATE_PREFIX = 'zaoyoe_google_redirect:'/);
     assert.match(authCallbackSource, /const isGooglePopupState = \(value\)/);
-    assert.match(authCallbackSource, /url\.searchParams\.get\('popup'\) === '1' \|\| isGooglePopupState\(popupState\)/);
+    assert.match(authCallbackSource, /const isGoogleRedirectState = \(value\)/);
+    assert.match(authCallbackSource, /const isRedirectMode = isGoogleRedirectState\(googleAuthState\)/);
+    assert.match(authCallbackSource, /url\.searchParams\.get\('popup'\) === '1' \|\| \(isGooglePopupState\(googleAuthState\) && !isRedirectMode\)/);
     assert.match(authCallbackSource, /status: 'credential'/);
     assert.match(authCallbackSource, /broadcast: false/);
     assert.match(authSource, /payload\.status === 'credential'/);
+    assert.match(authSource, /function shouldUseGoogleSameTabRedirect\(\)/);
+    assert.match(authSource, /function startGoogleSameTabRedirectLogin\(\)/);
+    assert.match(authSource, /buildGoogleImplicitAuthUrl\(redirectState\)/);
     assert.match(authSource, /handleGoogleCredentialResponse\(\{ credential: payload\.credential \}/);
     assert.match(authSource, /function closeGoogleAuthSurfacesAfterSuccess\(\)/);
     assert.match(authSource, /function hasActiveGoogleAuthLoading\(\)/);
