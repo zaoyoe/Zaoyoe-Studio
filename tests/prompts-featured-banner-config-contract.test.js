@@ -13,7 +13,11 @@ test('prompts featured banner prefers homepage manual featured items before dail
     const promptsPageCss = readRepoFile('css/prompts-page.css');
 
     const requiredMarkers = [
-        'void renderFeaturedBanner();',
+        'const featuredFirstPaintPromise = renderFeaturedBanner({ waitForFirstImage: true });',
+        'const galleryConfigPromise = loadGalleryConfigForFirstRender();',
+        'await featuredFirstPaintPromise;',
+        'await galleryConfigPromise;',
+        'renderGallery(initialFilter);',
         'async function loadHomepagePromptsConfigForBanner(site = getPromptHomepageBannerSite())',
         ".rpc('fn_get_homepage_config', {",
         'p_include_hidden: true',
@@ -22,7 +26,7 @@ test('prompts featured banner prefers homepage manual featured items before dail
         "if (status === 'draft' || status === 'archived') {",
         'const hasBaseTitle = hasPromptPageVisibleCopy(prompt?.title);',
         'const hasPromptText = hasPromptPageVisibleCopy(prompt?.prompt_text || prompt?.prompt);',
-        'const hasImages = Array.isArray(prompt?.images) && prompt.images.some((item) => hasPromptPageVisibleCopy(item));',
+        'const hasImages = getPromptImageAssets(prompt).some((item) => hasPromptPageVisibleCopy(getPromptImageAssetOriginalUrl(item)));',
         'const visibleSupabasePrompts = filterVisiblePromptsForPromptsPage(supabasePrompts);',
         'function findPromptByHomepageFeaturedItemId(featuredItemId = \'\')',
         'String(item?.supabaseId || item?.id || \'\').trim() === normalizedId',
@@ -32,6 +36,12 @@ test('prompts featured banner prefers homepage manual featured items before dail
         'const immediateFeatured = prefetchedConfiguredFeatured || resolveDailyFeaturedPrompt();',
         'const configuredFeatured = resolveHomepageFeaturedBannerPrompt(homepageConfig);',
         "const localizedDescription = String(getLocalizedField(featured, 'description') || '').trim();",
+        'function getFeaturedBannerImageCandidates(imageAsset)',
+        'function setFeaturedBannerImageSource(image, imageAsset)',
+        "image.dataset.featuredFallbackIndex = '0';",
+        'function waitForPromptFeaturedFirstImage(imagePromise)',
+        'const configuredUpdatePromise = renderFeaturedBannerConfiguredUpdate(immediateFeatured);',
+        'setFeaturedBannerImageSource(image, featuredImageAsset);',
         "title.textContent = getLocalizedField(featured, 'title') || featured.title || '';",
         'const currentLanguage = getCurrentLanguage();',
         "window.addEventListener('languageChanged', () => {"
@@ -46,7 +56,7 @@ test('prompts featured banner prefers homepage manual featured items before dail
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260428_PROMPTS_SKELETON_CACHE_1'),
+        promptsHtml.includes('prompts-poetry.js?v=20260501_PROMPTS_SEARCH_VISUAL_TAGS_9'),
         true,
         'prompts.html should reference the featured-banner homepage-config bundle version'
     );
@@ -102,7 +112,7 @@ test('prompts mobile comment mode keeps a dedicated light theme surface', () => 
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260428_PROMPTS_SKELETON_CACHE_1'),
+        promptsHtml.includes('prompts-poetry.css?v=20260501_PROMPTS_LIGHT_BLUE_ACCENTS_2'),
         true,
         'prompts.html should cache-bust the mobile light comment mode stylesheet'
     );

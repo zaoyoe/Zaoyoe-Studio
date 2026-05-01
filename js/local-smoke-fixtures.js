@@ -5719,6 +5719,11 @@
         const rows = buildSmokeProductFixtureRows();
         const rankPayloads = buildSmokeProductRankPayloads(rows, limit);
         const healthPayloads = buildSmokeProductHealthPayloads(rows, limit);
+        const funnelPayload = buildSmokeProductFunnelBundleFixture({
+            site,
+            days: options.days,
+            limit
+        });
 
         return {
             success: true,
@@ -5744,7 +5749,10 @@
                 soldOutProducts: buildSmokeProductBundleSegment(healthPayloads.soldOutProducts),
                 deliveryRiskProducts: buildSmokeProductBundleSegment(healthPayloads.deliveryRiskProducts),
                 refundRiskProducts: buildSmokeProductBundleSegment(healthPayloads.refundRiskProducts),
-                inventoryTurnoverHints: buildSmokeProductBundleSegment(healthPayloads.inventoryTurnoverHints)
+                inventoryTurnoverHints: buildSmokeProductBundleSegment(healthPayloads.inventoryTurnoverHints),
+                funnelSummary: funnelPayload.segments.summary,
+                funnelSiteComparison: funnelPayload.segments.siteComparison,
+                funnelProductRows: funnelPayload.segments.productRows
             }
         };
     }
@@ -6149,8 +6157,11 @@
         };
     }
 
-    function buildSmokeMarketingAssetsResponse(site = 'all') {
+    function buildSmokeMarketingAssetsResponse(site = 'all', mode = 'full') {
         const normalizedSite = normalizeSmokeAnalyticsSite(site);
+        const normalizedMode = ['summary', 'details'].includes(String(mode || '').trim().toLowerCase())
+            ? String(mode || '').trim().toLowerCase()
+            : 'full';
         const discounts = getTableRows('discount_codes')
             .filter((row) => matchesSmokeSiteScope(row?.applicable_site, normalizedSite));
         const discountAssets = getTableRows('discount_user_assets');
@@ -6296,18 +6307,20 @@
             };
         });
 
-        return {
+        const recentDiscountOrders = orders.filter((row) => String(row?.discount_code || '').trim());
+        const fullPayload = {
             success: true,
             generated_at: new Date().toISOString(),
             site_context: normalizedSite,
+            load_mode: 'full',
+            details_pending: false,
             summary: {
                 discount_count: discountItems.length,
                 package_count: packageItems.length,
                 issued_asset_count: discountAssets.filter((row) => discountItems.some((item) => item.id === String(row?.discount_id || '').trim())).length,
                 redemption_generated_count: batches.reduce((sum, row) => sum + Math.max(0, Number(row?.total_count) || 0), 0),
-                recent_revenue_net: orders
-                    .filter((row) => String(row?.discount_code || '').trim())
-                    .reduce((sum, row) => sum + Math.max(0, Number(row?.price_paid) || 0), 0),
+                recent_revenue_net: recentDiscountOrders.reduce((sum, row) => sum + Math.max(0, Number(row?.price_paid) || 0), 0),
+                recent_discount_cost_net: recentDiscountOrders.reduce((sum, row) => sum + Math.max(0, Number(row?.discount_amount) || 0), 0),
                 due_workflow_count: workflowRows.filter((row) => row.status === 'active' && row.due_count > 0).length
             },
             asset_families: [
@@ -6342,6 +6355,63 @@
             unified_assets: unifiedAssets,
             workflows: workflowRows
         };
+
+        if (normalizedMode === 'details') {
+            const discountFamily = fullPayload.asset_families.find((family) => family.key === 'discount') || {};
+            return {
+                success: true,
+                generated_at: fullPayload.generated_at,
+                site_context: fullPayload.site_context,
+                load_mode: 'details',
+                details_pending: false,
+                summary: {
+                    issued_asset_count: fullPayload.summary.issued_asset_count,
+                    recent_revenue_net: fullPayload.summary.recent_revenue_net,
+                    recent_discount_cost_net: fullPayload.summary.recent_discount_cost_net,
+                    due_workflow_count: fullPayload.summary.due_workflow_count
+                },
+                asset_families: [
+                    {
+                        key: 'discount',
+                        summary: discountFamily.summary || {}
+                    }
+                ],
+                unified_assets_mode: 'discount_patch',
+                unified_assets: fullPayload.unified_assets.filter((item) => item?.type === 'discount'),
+                workflows: fullPayload.workflows
+            };
+        }
+
+        if (normalizedMode === 'summary') {
+            return {
+                ...fullPayload,
+                load_mode: 'summary',
+                details_pending: true,
+                summary: {
+                    ...fullPayload.summary,
+                    issued_asset_count: 0,
+                    recent_revenue_net: 0,
+                    recent_discount_cost_net: 0
+                },
+                asset_families: fullPayload.asset_families.map((family) => {
+                    if (family.key !== 'discount') {
+                        return family;
+                    }
+                    return {
+                        ...family,
+                        summary: {
+                            ...(family.summary || {}),
+                            asset_issued_count: 0,
+                            asset_available_count: 0,
+                            recent_revenue_net: 0,
+                            recent_discount_cost_net: 0
+                        }
+                    };
+                })
+            };
+        }
+
+        return fullPayload;
     }
 
     function runSmokeMarketingWorkflow(workflowKey = '', site = 'all') {
@@ -6673,6 +6743,7 @@
 
         globalScope.supabaseClient = fakeClient;
         globalScope.AdminAccess = {
+            __localSmokeAccess: true,
             async getCurrentAdminAccess() {
                 return {
                     user: deepClone(smokeState.user),
@@ -6689,6 +6760,9 @@
                         success: true
                     }
                 };
+            },
+            hasActiveAdminStudioSession() {
+                return true;
             },
             clearAccessCache() {},
             clearCachedAdminStudioSession() {},
@@ -6737,6 +6811,24 @@
 
             if (adminRoute && method === 'GET') {
                 smokeState.analyticsAdminRouteLastQuery[adminRoute] = Object.fromEntries(url.searchParams.entries());
+            }
+
+            if (adminRoute === 'access/session' || url.pathname === '/api/admin/access/session') {
+                if (method === 'DELETE') {
+                    return createResponse({
+                        success: true,
+                        cleared: true
+                    });
+                }
+
+                if (method === 'POST') {
+                    return createResponse({
+                        success: true,
+                        granted: true,
+                        expiresInSeconds: 600,
+                        source: 'local-smoke'
+                    });
+                }
             }
 
             if (url.pathname === '/api/admin/settings/ops-alerts') {
@@ -7145,7 +7237,10 @@
 
             if (url.pathname === '/api/admin/marketing/assets-center') {
                 if (method === 'GET') {
-                    return createResponse(deepClone(buildSmokeMarketingAssetsResponse(url.searchParams.get('site') || 'all')));
+                    return createResponse(deepClone(buildSmokeMarketingAssetsResponse(
+                        url.searchParams.get('site') || 'all',
+                        url.searchParams.get('mode') || 'full'
+                    )));
                 }
 
                 if (method === 'POST') {

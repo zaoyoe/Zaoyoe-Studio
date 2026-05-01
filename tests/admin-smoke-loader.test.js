@@ -66,7 +66,7 @@ test('admin smoke loader only injects the local smoke harness when smoke mode is
 
     const enabled = runLoader('js/admin-smoke-loader.js', 'http://127.0.0.1:8000/admin-studio.html?smoke=1');
     assert.equal(enabled.writes.length, 1);
-    assert.match(enabled.writes[0], /js\/local-smoke-fixtures\.js\?v=20260421_LOCAL_SMOKE_FIXTURES_GALLERY_WAIT_STATE_38/);
+    assert.match(enabled.writes[0], /js\/local-smoke-fixtures\.js\?v=20260429_LOCAL_SMOKE_ADMIN_ACCESS_SESSION_1/);
     assert.deepEqual(enabled.appendedScripts, []);
 });
 

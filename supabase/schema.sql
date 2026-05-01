@@ -76,6 +76,7 @@ create table public.prompts (
   prompt text, 
   tags text[],
   images text[],
+  image_assets jsonb default '[]'::jsonb,
   author_name text,
   author_avatar text,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,

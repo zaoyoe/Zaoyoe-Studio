@@ -167,6 +167,37 @@ test('admin api auth helper prefers an active admin studio cookie session before
     assert.equal(getSessionCalls, 0);
 });
 
+test('admin api auth helper treats the local smoke admin session as active', async () => {
+    let getSessionCalls = 0;
+    const api = loadAdminApiWithSupabase({
+        adminAccess: {
+            __localSmokeAccess: true,
+            hasActiveAdminStudioSession() {
+                return true;
+            }
+        },
+        async getSession() {
+            getSessionCalls += 1;
+            return {
+                data: {
+                    session: {
+                        access_token: 'local-smoke-access-token'
+                    }
+                }
+            };
+        }
+    });
+
+    const init = await api.buildRequestInit({
+        method: 'POST'
+    });
+
+    assert.equal(api.hasActiveAdminStudioSession(), true);
+    assert.equal(init.credentials, 'include');
+    assert.equal(init.headers.get('Authorization'), null);
+    assert.equal(getSessionCalls, 0);
+});
+
 test('admin api auth helper falls back to bearer token when the admin studio session is stale', async () => {
     let getSessionCalls = 0;
     const api = loadAdminApiWithSupabase({

@@ -105,6 +105,12 @@ function normalizeTranslatedPair(target, fieldBase, maxLength = 240) {
     return target;
 }
 
+function preserveTranslatedPair(target, source, fieldBase, maxLength = 240) {
+    target[`${fieldBase}_zh`] = sanitizeText(source?.[`${fieldBase}_zh`], '', maxLength);
+    target[`${fieldBase}_en`] = sanitizeText(source?.[`${fieldBase}_en`], '', maxLength);
+    return normalizeTranslatedPair(target, fieldBase, maxLength);
+}
+
 function normalizeStringList(value, {
     maxItems = 12,
     maxLength = 80
@@ -266,7 +272,7 @@ function normalizeHomepageGuestbookFeaturedItems(value) {
             }
 
             const id = sanitizeText(item.id, '', 160);
-            const content = sanitizeText(item.content, '', 600);
+            const content = sanitizeText(item.content || item.content_zh || item.content_en, '', 600);
             if (!id || !content) {
                 return null;
             }
@@ -274,22 +280,34 @@ function normalizeHomepageGuestbookFeaturedItems(value) {
             const normalized = {
                 id,
                 content,
+                content_zh: sanitizeText(item.content_zh, '', 600),
+                content_en: sanitizeText(item.content_en, '', 600),
                 image_url: sanitizeUrl(item.image_url, '', 2048),
                 like_count: sanitizeInteger(item.like_count, { fallback: 0, min: 0, max: 999999 }),
                 created_at: sanitizeText(item.created_at, '', 80),
                 user_id: sanitizeText(item.user_id, '', 160),
                 username: sanitizeText(item.username || item?.profiles?.username, '', 120),
+                username_zh: sanitizeText(item.username_zh, '', 120),
+                username_en: sanitizeText(item.username_en, '', 120),
                 avatar_url: sanitizeUrl(item.avatar_url || item?.profiles?.avatar_url, '', 2048),
-                reason: sanitizeText(item.reason, '', 160)
+                reason: sanitizeText(item.reason || item.reason_zh || item.reason_en, '', 160),
+                reason_zh: sanitizeText(item.reason_zh, '', 160),
+                reason_en: sanitizeText(item.reason_en, '', 160)
             };
 
+            if (!normalized.content_zh) delete normalized.content_zh;
+            if (!normalized.content_en) delete normalized.content_en;
             if (!normalized.image_url) delete normalized.image_url;
             if (!normalized.like_count && item.like_count == null) delete normalized.like_count;
             if (!normalized.created_at) delete normalized.created_at;
             if (!normalized.user_id) delete normalized.user_id;
             if (!normalized.username) delete normalized.username;
+            if (!normalized.username_zh) delete normalized.username_zh;
+            if (!normalized.username_en) delete normalized.username_en;
             if (!normalized.avatar_url) delete normalized.avatar_url;
             if (!normalized.reason) delete normalized.reason;
+            if (!normalized.reason_zh) delete normalized.reason_zh;
+            if (!normalized.reason_en) delete normalized.reason_en;
 
             return normalized;
         })
@@ -304,7 +322,7 @@ function normalizeHomepageGuestbookFallbackItems(value) {
                 return null;
             }
 
-            const content = sanitizeText(item.content || item.text, '', 600);
+            const content = sanitizeText(item.content || item.text || item.content_zh || item.content_en, '', 600);
             if (!content) {
                 return null;
             }
@@ -312,11 +330,19 @@ function normalizeHomepageGuestbookFallbackItems(value) {
             const normalized = {
                 id: sanitizeText(item.id, '', 160) || `fallback_${index + 1}`,
                 content,
+                content_zh: sanitizeText(item.content_zh, '', 600),
+                content_en: sanitizeText(item.content_en, '', 600),
                 author: sanitizeText(item.author, '', 120),
+                author_zh: sanitizeText(item.author_zh, '', 120),
+                author_en: sanitizeText(item.author_en, '', 120),
                 avatar_url: sanitizeUrl(item.avatar_url, '', 2048)
             };
 
+            if (!normalized.content_zh) delete normalized.content_zh;
+            if (!normalized.content_en) delete normalized.content_en;
             if (!normalized.author) delete normalized.author;
+            if (!normalized.author_zh) delete normalized.author_zh;
+            if (!normalized.author_en) delete normalized.author_en;
             if (!normalized.avatar_url) delete normalized.avatar_url;
 
             return normalized;
@@ -569,8 +595,8 @@ function normalizeHomepageContent(section, content = {}) {
             next.cta = normalizeHomepageHeroCtaConfig(source.cta) || next.cta;
             next.experiments = normalizeHomepageSectionExperiments(normalizedSection, source.experiments);
             next.entries = normalizeHomepageHeroEntries(source.entries);
-            normalizeTranslatedPair(next, 'title', 120);
-            normalizeTranslatedPair(next, 'subtitle', 240);
+            preserveTranslatedPair(next, source, 'title', 120);
+            preserveTranslatedPair(next, source, 'subtitle', 240);
             if (!next.custom_image) delete next.custom_image;
             if (!next.experiments.length) delete next.experiments;
             if (!next.entries.length) delete next.entries;
@@ -586,8 +612,8 @@ function normalizeHomepageContent(section, content = {}) {
             next.sort = HOMEPAGE_SORT_VALUES.has(String(source.sort || '').trim()) ? String(source.sort).trim() : 'popular';
             next.experiments = normalizeHomepageSectionExperiments(normalizedSection, source.experiments);
             next.featured_items = normalizeHomepageFeaturedPromptItems(source.featured_items);
-            normalizeTranslatedPair(next, 'section_title', 120);
-            normalizeTranslatedPair(next, 'section_subtitle', 240);
+            preserveTranslatedPair(next, source, 'section_title', 120);
+            preserveTranslatedPair(next, source, 'section_subtitle', 240);
             if (!next.experiments.length) delete next.experiments;
             if (!next.featured_items.length) delete next.featured_items;
             return next;
@@ -600,8 +626,8 @@ function normalizeHomepageContent(section, content = {}) {
             next.sort = HOMEPAGE_SORT_VALUES.has(String(source.sort || '').trim()) ? String(source.sort).trim() : 'popular';
             next.experiments = normalizeHomepageSectionExperiments(normalizedSection, source.experiments);
             next.custom_items = normalizeHomepageShopCustomItems(source.custom_items);
-            normalizeTranslatedPair(next, 'section_title', 120);
-            normalizeTranslatedPair(next, 'section_subtitle', 240);
+            preserveTranslatedPair(next, source, 'section_title', 120);
+            preserveTranslatedPair(next, source, 'section_subtitle', 240);
             if (!next.experiments.length) delete next.experiments;
             if (!next.custom_items.length) delete next.custom_items;
             return next;
@@ -625,15 +651,15 @@ function normalizeHomepageContent(section, content = {}) {
             next.model_items = Object.prototype.hasOwnProperty.call(source, 'model_items')
                 ? normalizeHomepageGongyiModelItems(source.model_items)
                 : next.model_items;
-            normalizeTranslatedPair(next, 'section_tag', 40);
-            normalizeTranslatedPair(next, 'brand_subtitle', 240);
-            normalizeTranslatedPair(next, 'cta_text', 48);
-            normalizeTranslatedPair(next, 'feature_1_title', 80);
-            normalizeTranslatedPair(next, 'feature_1_description', 240);
-            normalizeTranslatedPair(next, 'feature_2_title', 80);
-            normalizeTranslatedPair(next, 'feature_2_description', 240);
-            normalizeTranslatedPair(next, 'feature_3_title', 80);
-            normalizeTranslatedPair(next, 'feature_3_description', 240);
+            preserveTranslatedPair(next, source, 'section_tag', 40);
+            preserveTranslatedPair(next, source, 'brand_subtitle', 240);
+            preserveTranslatedPair(next, source, 'cta_text', 48);
+            preserveTranslatedPair(next, source, 'feature_1_title', 80);
+            preserveTranslatedPair(next, source, 'feature_1_description', 240);
+            preserveTranslatedPair(next, source, 'feature_2_title', 80);
+            preserveTranslatedPair(next, source, 'feature_2_description', 240);
+            preserveTranslatedPair(next, source, 'feature_3_title', 80);
+            preserveTranslatedPair(next, source, 'feature_3_description', 240);
             if (!next.section_tag) delete next.section_tag;
             if (!next.brand_name) delete next.brand_name;
             if (!next.brand_subtitle) delete next.brand_subtitle;
@@ -669,8 +695,8 @@ function normalizeHomepageContent(section, content = {}) {
             next.demo_quota = Object.prototype.hasOwnProperty.call(source, 'demo_quota') ? sanitizeText(source.demo_quota, '', 48) : next.demo_quota;
             next.demo_balance = Object.prototype.hasOwnProperty.call(source, 'demo_balance') ? sanitizeText(source.demo_balance, '', 48) : next.demo_balance;
             next.demo_cost_points = sanitizeInteger(source.demo_cost_points, { fallback: next.demo_cost_points, min: 1, max: 999 });
-            normalizeTranslatedPair(next, 'section_title', 120);
-            normalizeTranslatedPair(next, 'section_subtitle', 240);
+            preserveTranslatedPair(next, source, 'section_title', 120);
+            preserveTranslatedPair(next, source, 'section_subtitle', 240);
             if (!next.experiments.length) delete next.experiments;
             if (!next.screenshot_path) delete next.screenshot_path;
             if (!next.features.length) delete next.features;
@@ -695,8 +721,8 @@ function normalizeHomepageContent(section, content = {}) {
             next.experiments = normalizeHomepageSectionExperiments(normalizedSection, source.experiments);
             next.featured_items = normalizeHomepageGuestbookFeaturedItems(source.featured_items);
             next.fallback_items = normalizeHomepageGuestbookFallbackItems(source.fallback_items);
-            normalizeTranslatedPair(next, 'section_title', 120);
-            normalizeTranslatedPair(next, 'section_subtitle', 240);
+            preserveTranslatedPair(next, source, 'section_title', 120);
+            preserveTranslatedPair(next, source, 'section_subtitle', 240);
             if (!next.experiments.length) delete next.experiments;
             if (!next.featured_items.length) delete next.featured_items;
             if (!next.fallback_items.length) delete next.fallback_items;

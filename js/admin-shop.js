@@ -12,6 +12,9 @@ try {
 }
 const SHOP_ADMIN_PROJECT_URL = String(SHOP_ADMIN_RUNTIME_CONFIG?.url || '').trim();
 const SHOP_ADMIN_PUBLISHABLE_KEY = String(SHOP_ADMIN_RUNTIME_CONFIG?.publishableKey || '').trim();
+const SHOP_PRODUCT_IMAGE_CARD_WIDTH = 480;
+const SHOP_PRODUCT_IMAGE_CARD_HEIGHT = 320;
+const SHOP_PRODUCT_IMAGE_CARD_QUALITY = 0.78;
 
 // Keep auth on the custom domain client, but route shop data reads/writes
 // through the official project endpoint to avoid PATCH/DELETE fetch failures.
@@ -61,6 +64,130 @@ const supabaseClient = (() => {
     return window.__shopAdminDbClient;
 })();
 
+function getShopProductR2CardVariantUrl(url) {
+    const manifestUrl = String(window.__SHOP_IMAGE_VARIANTS__?.variants?.card?.[String(url || '').trim()] || '').trim();
+    if (manifestUrl) {
+        return manifestUrl;
+    }
+
+    try {
+        const parsed = new URL(String(url || '').trim(), window.location.origin);
+        if (parsed.hostname !== 'cdn.zaoyoe.com' && !parsed.hostname.endsWith('.r2.dev')) {
+            return '';
+        }
+
+        const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+        if (parts.length !== 2 || parts[0] !== 'products') {
+            return '';
+        }
+
+        const basename = decodeURIComponent(parts[1] || '').replace(/\.[^.]+$/, '');
+        if (!basename) {
+            return '';
+        }
+
+        return `${parsed.origin}/products/card/${encodeURIComponent(basename)}.webp`;
+    } catch (error) {
+        return '';
+    }
+}
+
+function normalizeShopProductImageAsset(value) {
+    if (Array.isArray(value)) {
+        return value.map(normalizeShopProductImageAsset).find(Boolean) || null;
+    }
+
+    if (typeof value === 'string') {
+        const original = value.trim();
+        return original ? { original } : null;
+    }
+
+    if (!value || typeof value !== 'object') {
+        return null;
+    }
+
+    const variants = value.variants && typeof value.variants === 'object' && !Array.isArray(value.variants)
+        ? value.variants
+        : {};
+    const asset = {};
+
+    for (const key of ['original', 'thumb', 'card', 'home', 'detail']) {
+        const url = String(value[key] || variants[key] || '').trim();
+        if (url) {
+            asset[key] = url;
+        }
+    }
+
+    const fallbackOriginal = String(value.url || value.src || value.image || value.icon_url || '').trim();
+    if (!asset.original && fallbackOriginal) {
+        asset.original = fallbackOriginal;
+    }
+
+    return asset.original || asset.thumb || asset.card || asset.home || asset.detail ? asset : null;
+}
+
+function buildShopProductImageAssetFromUrl(url) {
+    const original = String(url || '').trim();
+    if (!original || original.startsWith('fa')) {
+        return null;
+    }
+
+    const asset = { original };
+    const card = getShopProductR2CardVariantUrl(original);
+    if (card) {
+        asset.card = card;
+    }
+    return asset;
+}
+
+function getShopProductImageAsset(productOrAsset = {}) {
+    const explicitAsset = normalizeShopProductImageAsset(
+        productOrAsset?.image_assets ?? productOrAsset?.imageAssets ?? productOrAsset
+    );
+    if (explicitAsset) {
+        return explicitAsset;
+    }
+
+    return buildShopProductImageAssetFromUrl(productOrAsset?.icon_url);
+}
+
+function getShopProductImageAssetUrl(value, variant = 'original') {
+    const asset = normalizeShopProductImageAsset(value);
+    if (!asset) {
+        return typeof value === 'string' ? value.trim() : '';
+    }
+
+    const normalizedVariant = String(variant || 'original').trim() || 'original';
+    return String(asset[normalizedVariant] || asset.original || asset.card || asset.thumb || asset.home || asset.detail || '').trim();
+}
+
+function getShopProductImageAssetExplicitVariantUrl(value, variant = '') {
+    const normalizedVariant = String(variant || '').trim();
+    if (!normalizedVariant || normalizedVariant === 'original') {
+        return '';
+    }
+
+    const asset = normalizeShopProductImageAsset(value);
+    return String(asset?.[normalizedVariant] || '').trim();
+}
+
+function buildShopProductImageAssetForSave(iconUrl, existingAsset = null) {
+    const normalizedIconUrl = String(iconUrl || '').trim();
+    if (!normalizedIconUrl || normalizedIconUrl.startsWith('fa')) {
+        return {};
+    }
+
+    const normalizedExistingAsset = normalizeShopProductImageAsset(existingAsset);
+    if (
+        normalizedExistingAsset
+        && getShopProductImageAssetUrl(normalizedExistingAsset, 'original') === normalizedIconUrl
+    ) {
+        return normalizedExistingAsset;
+    }
+
+    return buildShopProductImageAssetFromUrl(normalizedIconUrl) || { original: normalizedIconUrl };
+}
+
 const ShopAdmin = {
     currentTab: 'products',
     SHOP_TAB_IDS: ['products', 'import', 'inventory', 'orders', 'fulfillment'],
@@ -80,6 +207,7 @@ const ShopAdmin = {
     currentOrderDetailId: '',
     orderDetailRequestToken: 0,
     pendingOpenOrderDetails: false,
+    currentProductImageAsset: null,
     orderSearchRequestToken: 0,
     orderSearchContext: null,
     currentOrderRows: [],
@@ -127,6 +255,7 @@ const ShopAdmin = {
     delegatedHandlersBound: false,
     editingProductSnapshot: null, // Original product row for resilient saves on existing items
     purchaseNotesSchemaAvailable: null, // null = unknown, false = remote DB not migrated yet
+    productSaveInFlight: false,
     richTextEditorsReady: false,
     shopCustomSelectBridgeReady: false,
     productDeliveryFilterPlacementBound: false,
@@ -195,6 +324,29 @@ const ShopAdmin = {
             console[logMethod](`[ShopAdmin] ${normalizedMessage}`);
         }
         return null;
+    },
+
+    setProductSaveInlineError: function (message = '') {
+        const normalizedMessage = String(message || '').trim();
+        const errorEl = document.getElementById('productSaveError');
+        const saveButton = document.getElementById('productSaveBtn') || document.querySelector('#productModal .btn-save');
+
+        if (errorEl) {
+            errorEl.textContent = normalizedMessage;
+            errorEl.hidden = !normalizedMessage;
+        }
+
+        if (saveButton) {
+            if (normalizedMessage) {
+                saveButton.title = normalizedMessage;
+                saveButton.setAttribute('aria-describedby', 'productSaveError');
+            } else {
+                saveButton.removeAttribute('title');
+                saveButton.removeAttribute('aria-describedby');
+            }
+        }
+
+        return normalizedMessage;
     },
 
     setActionButtonLoading: function (button, loadingText = '处理中...') {
@@ -372,6 +524,66 @@ const ShopAdmin = {
         ];
     },
 
+    getProductGuidanceTextForEdit(data, baseField) {
+        if (!data || !baseField) return '';
+        const legacyText = typeof data?.[baseField] === 'string' ? data[baseField] : '';
+        const zhText = typeof data?.[`${baseField}_zh`] === 'string' ? data[`${baseField}_zh`] : '';
+        const enText = typeof data?.[`${baseField}_en`] === 'string' ? data[`${baseField}_en`] : '';
+        return this.getEditSite() === 'intl'
+            ? (enText || '')
+            : (zhText || legacyText || '');
+    },
+
+    buildProductGuidancePayloadPatch(baseField, {
+        value = '',
+        show = false,
+        editSite = 'cn',
+        translatedEn = '',
+        existing = null
+    } = {}) {
+        const normalizedText = String(value || '').replace(/\r\n/g, '\n').trim();
+        const existingEn = typeof existing?.[`${baseField}_en`] === 'string'
+            ? existing[`${baseField}_en`].trim()
+            : '';
+        const patch = {};
+
+        if (editSite === 'intl') {
+            patch[`${baseField}_en`] = show ? (normalizedText || null) : null;
+            return patch;
+        }
+
+        const normalizedTranslatedEn = String(translatedEn || '').replace(/\r\n/g, '\n').trim();
+        patch[baseField] = show ? (normalizedText || null) : null;
+        patch[`${baseField}_zh`] = show ? (normalizedText || null) : null;
+        patch[`${baseField}_en`] = show ? (normalizedTranslatedEn || existingEn || null) : null;
+        return patch;
+    },
+
+    withProductSaveTimeout(promise, timeoutMs = 8000, label = '操作') {
+        let timer = null;
+        const timerApi = typeof window !== 'undefined' ? window : globalThis;
+        const timeoutPromise = new Promise((_, reject) => {
+            timer = timerApi.setTimeout(() => {
+                reject(new Error(`${label}超时，已跳过该步骤`));
+            }, Math.max(1000, Number(timeoutMs) || 8000));
+        });
+
+        return Promise.race([Promise.resolve(promise), timeoutPromise])
+            .finally(() => {
+                if (timer) {
+                    timerApi.clearTimeout(timer);
+                }
+            });
+    },
+
+    getProductTranslationTimeoutMs: function () {
+        const preferredService = String(
+            window.AdminAI?.getPreferredService?.() || window.ADMIN_AI_SERVICE || 'gemini'
+        ).trim().toLowerCase();
+
+        return preferredService === 'codex' ? 30000 : 12000;
+    },
+
     ensureRichTextEditors() {
         if (this.richTextEditorsReady) return true;
         if (!window.AdminRichTextEditor?.ensureInjectedEditor) return false;
@@ -413,24 +625,44 @@ const ShopAdmin = {
         }
     },
 
-    // Translate Chinese text to English using the configured admin AI provider
-    translateToEnglish: async function (name, description) {
+    // Translate Chinese product fields to English using the configured admin AI provider.
+    translateToEnglish: async function (name, description, options = {}) {
         if (!window.AdminAI?.configured) {
             console.warn('[ShopAdmin] No server AI proxy, skipping translation');
-            return { name_en: null, description_en: null };
+            return {
+                name_en: null,
+                description_en: null,
+                purchase_notes_en: null,
+                usage_instructions_en: null
+            };
         }
 
-        const prompt = `Translate the following Chinese product information to English. Return ONLY a JSON object with "name" and "description" fields, no markdown or extra text.
+        const purchaseNotes = String(options?.purchaseNotes || '').trim();
+        const usageInstructions = String(options?.usageInstructions || '').trim();
+        const preferredService = window.AdminAI?.getPreferredService?.() || window.ADMIN_AI_SERVICE || 'gemini';
+        const serviceMeta = window.AdminAI?.getServiceMeta?.(preferredService) || {};
+        const currentModel = String(window.AdminAI?.defaultModel || '').trim();
+        const currentModelMatchesService = preferredService === 'codex'
+            ? !/^gemini-/i.test(currentModel)
+            : (preferredService === 'gemini' ? /^gemini-/i.test(currentModel) : Boolean(currentModel));
+        const translationModel = currentModelMatchesService
+            ? currentModel
+            : (serviceMeta.defaultModel || currentModel || 'gemini-2.0-flash');
+        const prompt = `Translate the following Chinese product information to English. Return ONLY a JSON object with "name", "description", "purchase_notes", and "usage_instructions" fields, no markdown or extra text.
+
+Preserve URLs, line breaks, numbers, product terms, and any simple HTML tags. Use an empty string for empty source fields.
 
 Product Name: ${name}
 Description: ${description || 'N/A'}
+Purchase Notes: ${purchaseNotes || 'N/A'}
+Usage Instructions: ${usageInstructions || 'N/A'}
 
 Example output format:
-{"name": "English Name", "description": "English description"}`;
+{"name": "English Name", "description": "English description", "purchase_notes": "English purchase notes", "usage_instructions": "English usage instructions"}`;
 
         try {
             const text = await window.AdminAI.generateText(prompt, {
-                model: window.AdminAI?.defaultModel || 'gemini-2.0-flash',
+                model: translationModel,
                 generationConfig: { temperature: 0.1, maxOutputTokens: 500 },
                 budget: {
                     tier: 'lean',
@@ -445,14 +677,21 @@ Example output format:
                 const parsed = JSON.parse(jsonMatch[0]);
                 console.log('[ShopAdmin] Translation result:', parsed);
                 return {
-                    name_en: parsed.name || null,
-                    description_en: parsed.description || null
+                    name_en: parsed.name || parsed.name_en || null,
+                    description_en: parsed.description || parsed.description_en || null,
+                    purchase_notes_en: parsed.purchase_notes || parsed.purchase_notes_en || null,
+                    usage_instructions_en: parsed.usage_instructions || parsed.usage_instructions_en || null
                 };
             }
         } catch (err) {
             console.error('[ShopAdmin] Translation failed:', err);
         }
-        return { name_en: null, description_en: null };
+        return {
+            name_en: null,
+            description_en: null,
+            purchase_notes_en: null,
+            usage_instructions_en: null
+        };
     },
 
     getAdminAuthHeaders: async function () {
@@ -532,7 +771,13 @@ Example output format:
 
         const result = await response.json().catch(() => ({}));
         if (!response.ok || !result.success) {
-            throw new Error(result.message || '管理员接口调用失败');
+            const error = new Error(result.message || '管理员接口调用失败');
+            error.status = response.status;
+            error.details = result.details || '';
+            error.hint = result.hint || '';
+            error.code = result.code || '';
+            error.result = result;
+            throw error;
         }
 
         this.invalidateShopTabCache();
@@ -1834,6 +2079,10 @@ Example output format:
                     break;
                 case 'product-delete':
                     this.deleteProduct(actionEl.dataset.productId, actionEl.dataset.productName || '', actionEl);
+                    break;
+                case 'product-save':
+                    event.preventDefault();
+                    void this.saveProduct();
                     break;
                 case 'inventory-toggle-selection-mode':
                     this.toggleSelectionMode();
@@ -4890,10 +5139,21 @@ Example output format:
     },
 
     getOptimizedShopImageUrl: function (url, options = {}) {
-        const trimmed = String(url || '').trim();
+        const explicitVariantUrl = getShopProductImageAssetExplicitVariantUrl(url, options.variant || '');
+        if (explicitVariantUrl && options.variant) {
+            return explicitVariantUrl;
+        }
+
+        const trimmed = getShopProductImageAssetUrl(url, 'original');
         if (!trimmed) return '';
 
-        const { format = 'avif' } = options;
+        const { format = 'avif', variant = '' } = options;
+        if (variant === 'card') {
+            const cardVariantUrl = getShopProductR2CardVariantUrl(trimmed);
+            if (cardVariantUrl) {
+                return cardVariantUrl;
+            }
+        }
 
         if (trimmed.startsWith('data:image/') || trimmed.startsWith('/')) {
             return trimmed;
@@ -4935,10 +5195,11 @@ Example output format:
     setProductCardImageSource: function (cardImage, originalUrl) {
         if (!(cardImage instanceof HTMLImageElement) || !originalUrl) return;
 
-        const primaryUrl = this.getOptimizedShopImageUrl(originalUrl);
-        const transformFallbackUrl = this.getOptimizedShopImageUrl(originalUrl, { format: '' });
+        const primaryUrl = this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' });
+        const originalSrc = getShopProductImageAssetUrl(originalUrl, 'original');
+        const transformFallbackUrl = this.getOptimizedShopImageUrl(originalSrc, { format: '' });
 
-        cardImage.dataset.originalSrc = originalUrl;
+        cardImage.dataset.originalSrc = originalSrc;
         cardImage.dataset.transformFallbackSrc = transformFallbackUrl !== primaryUrl ? transformFallbackUrl : '';
         cardImage.dataset.fallbackStage = '';
         cardImage.src = primaryUrl;
@@ -5040,11 +5301,13 @@ Example output format:
                 const safeProductId = this.escapeForAttr(String(p.id || ''));
                 const safeProductName = this.escapeHtml(p.name || '未命名商品');
                 const safeProductDescription = this.escapeHtml(p.description || '暂无描述');
-                const safeProductIconUrl = this.escapeForAttr(String(p.icon_url || ''));
+                const productImageAsset = getShopProductImageAsset(p);
+                const productImageOriginalUrl = getShopProductImageAssetUrl(productImageAsset, 'original') || String(p.icon_url || '');
+                const safeProductIconUrl = this.escapeForAttr(productImageOriginalUrl);
                 const safeProductIconClass = this.escapeForAttr(String(p.icon_url || 'fas fa-box'));
                 const safeProductNameAttr = this.escapeForAttr(p.name || '');
                 const productAltText = this.escapeForAttr(p.name || '商品封面');
-                const hasProductImage = this.isShopImageSource(p.icon_url);
+                const hasProductImage = this.isShopImageSource(productImageOriginalUrl);
                 const priceHtml = (() => {
                     const editSite = ShopAdmin.getEditSite();
                     if (editSite === 'intl') {
@@ -5106,12 +5369,12 @@ Example output format:
                 const productImage = card.querySelector('img[data-shop-product-image="1"]');
                 if (productImage) {
                     productImage.addEventListener('error', () => {
-                        if (this.handleProductCardImageError(productImage, p.icon_url)) {
+                        if (this.handleProductCardImageError(productImage, productImageAsset || productImageOriginalUrl)) {
                             return;
                         }
                         this.replaceProductCardImageWithFallback(productImage);
                     });
-                    this.setProductCardImageSource(productImage, p.icon_url);
+                    this.setProductCardImageSource(productImage, productImageAsset || productImageOriginalUrl);
                 }
 
                 const editBtn = card.querySelector('[data-shop-action="product-edit"]');
@@ -5386,11 +5649,15 @@ Example output format:
 
         // Icon Logic
         if (iconMedia) {
-            if (iconInput.startsWith('http') || iconInput.startsWith('data:image')) {
-                iconMedia.innerHTML = `<img src="${iconInput}" class="shop-admin-preview-icon-image" alt="商品封面预览">`;
+            const previewAsset = buildShopProductImageAssetForSave(iconInput, this.currentProductImageAsset);
+            const previewImageUrl = getShopProductImageAssetUrl(previewAsset, 'card')
+                || getShopProductImageAssetUrl(previewAsset, 'original')
+                || iconInput;
+            if (this.isShopImageSource(previewImageUrl)) {
+                iconMedia.innerHTML = `<img src="${this.escapeForAttr(previewImageUrl)}" class="shop-admin-preview-icon-image" alt="商品封面预览">`;
             } else {
                 // Assume FontAwesome class
-                iconMedia.innerHTML = `<i class="${iconInput}"></i>`;
+                iconMedia.innerHTML = `<i class="${this.escapeForAttr(iconInput)}"></i>`;
             }
         }
 
@@ -5430,15 +5697,23 @@ Example output format:
         iconBox.classList.add('upload-box--busy');
 
         try {
-            // 1. Compress Image
+            // 1. Compress image and generate the storefront card variant.
             const compressedBlob = await this.compressImage(file);
+            let cardImageData = '';
+            try {
+                const cardBlob = await this.compressImage(file, {
+                    maxWidth: SHOP_PRODUCT_IMAGE_CARD_WIDTH,
+                    maxHeight: SHOP_PRODUCT_IMAGE_CARD_HEIGHT,
+                    quality: SHOP_PRODUCT_IMAGE_CARD_QUALITY,
+                    fit: 'cover'
+                });
+                cardImageData = await this.blobToDataUrl(cardBlob);
+            } catch (cardError) {
+                console.warn('Product card image variant generation failed:', cardError);
+            }
 
             // 2. Convert to Base64
-            const base64Data = await new Promise((resolve) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve(reader.result);
-                reader.readAsDataURL(compressedBlob);
-            });
+            const base64Data = await this.blobToDataUrl(compressedBlob);
 
             // 3. Get current user session
             const { data: { session } } = await window.supabaseClient.auth.getSession();
@@ -5462,7 +5737,8 @@ Example output format:
                         userId: session.user.id,
                         type: 'product',
                         productId: productId,
-                        imageData: base64Data
+                        imageData: base64Data,
+                        cardImageData
                     })
                 }
             );
@@ -5472,10 +5748,13 @@ Example output format:
                 throw new Error(errorData.error || 'Upload failed');
             }
 
-            const { imageUrl } = await response.json();
+            const { imageUrl, imageAsset } = await response.json();
+            const uploadedImageAsset = normalizeShopProductImageAsset(imageAsset)
+                || buildShopProductImageAssetFromUrl(imageUrl);
 
             // 5. Set value
-            document.getElementById('prodIcon').value = imageUrl;
+            document.getElementById('prodIcon').value = getShopProductImageAssetUrl(uploadedImageAsset, 'original') || imageUrl;
+            this.currentProductImageAsset = uploadedImageAsset;
 
             // 6. Update Preview
             this.updatePreview();
@@ -5496,9 +5775,24 @@ Example output format:
         }
     },
 
-    // Helper: Image Compression
-    compressImage: function (file) {
+    blobToDataUrl: function (blob) {
         return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = (error) => reject(error);
+            reader.readAsDataURL(blob);
+        });
+    },
+
+    // Helper: Image Compression
+    compressImage: function (file, options = {}) {
+        return new Promise((resolve, reject) => {
+            const {
+                maxWidth = 1200,
+                maxHeight = 1200,
+                quality = 0.8,
+                fit = 'contain'
+            } = options;
             const reader = new FileReader();
             reader.readAsDataURL(file);
             reader.onload = (event) => {
@@ -5507,37 +5801,47 @@ Example output format:
                 img.onload = () => {
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
 
-                    // Max dimensions
-                    const MAX_WIDTH = 1200;
-                    const MAX_HEIGHT = 1200;
                     let width = img.width;
                     let height = img.height;
 
-                    if (width > height) {
-                        if (width > MAX_WIDTH) {
-                            height *= MAX_WIDTH / width;
-                            width = MAX_WIDTH;
-                        }
+                    if (fit === 'cover') {
+                        const targetWidth = Math.max(Number.parseInt(maxWidth, 10) || SHOP_PRODUCT_IMAGE_CARD_WIDTH, 1);
+                        const targetHeight = Math.max(Number.parseInt(maxHeight, 10) || SHOP_PRODUCT_IMAGE_CARD_HEIGHT, 1);
+                        const scale = Math.max(targetWidth / width, targetHeight / height);
+                        const drawWidth = Math.round(width * scale);
+                        const drawHeight = Math.round(height * scale);
+                        const offsetX = Math.round((targetWidth - drawWidth) / 2);
+                        const offsetY = Math.round((targetHeight - drawHeight) / 2);
+
+                        canvas.width = targetWidth;
+                        canvas.height = targetHeight;
+                        ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
                     } else {
-                        if (height > MAX_HEIGHT) {
-                            width *= MAX_HEIGHT / height;
-                            height = MAX_HEIGHT;
+                        if (width > height) {
+                            if (width > maxWidth) {
+                                height *= maxWidth / width;
+                                width = maxWidth;
+                            }
+                        } else if (height > maxHeight) {
+                            width *= maxHeight / height;
+                            height = maxHeight;
                         }
+
+                        canvas.width = width;
+                        canvas.height = height;
+                        ctx.drawImage(img, 0, 0, width, height);
                     }
 
-                    canvas.width = width;
-                    canvas.height = height;
-                    ctx.drawImage(img, 0, 0, width, height);
-
-                    // Convert to WebP with 0.8 quality
                     canvas.toBlob((blob) => {
                         if (!blob) {
                             reject(new Error('Canvas to Blob failed'));
                             return;
                         }
                         resolve(blob);
-                    }, 'image/webp', 0.8);
+                    }, 'image/webp', quality);
                 };
                 img.onerror = (err) => reject(err);
             };
@@ -5615,6 +5919,7 @@ Example output format:
         }
 
         this.editingProductSnapshot = data;
+        this.currentProductImageAsset = getShopProductImageAsset(data);
         const fields = this.getFieldMap();
         const sortValue = Number.parseInt(data.display_order, 10);
         const normalizedDeliveryType = data.delivery_type === 'API' ? 'API' : 'KEY';
@@ -5622,7 +5927,7 @@ Example output format:
         document.getElementById('editProductId').value = data.id;
         document.getElementById('prodName').value = data[fields.name] || '';
         document.getElementById('prodPrice').value = data[fields.price] != null ? data[fields.price] : '';
-        document.getElementById('prodIcon').value = data.icon_url;
+        document.getElementById('prodIcon').value = getShopProductImageAssetUrl(this.currentProductImageAsset, 'original') || data.icon_url || '';
         document.getElementById('prodDesc').value = data[fields.desc] || '';
         document.getElementById('prodShowProductDescription').checked = data.show_product_description !== false;
         document.getElementById('prodSort').value = Number.isFinite(sortValue) ? sortValue : 0;
@@ -5679,14 +5984,17 @@ Example output format:
 
         const showPurchaseNotes = !!data.show_purchase_notes;
         document.getElementById('prodShowPurchaseNotes').checked = showPurchaseNotes;
-        document.getElementById('prodPurchaseNotes').value = typeof data.purchase_notes === 'string' ? data.purchase_notes : '';
+        document.getElementById('prodPurchaseNotes').value = this.getProductGuidanceTextForEdit(data, 'purchase_notes');
         this.togglePurchaseNotes(showPurchaseNotes);
 
         const showUsageInstructions = !!data.show_usage_instructions;
         document.getElementById('prodShowUsageInstructions').checked = showUsageInstructions;
-        document.getElementById('prodUsageInstructions').value = typeof data.usage_instructions === 'string' ? data.usage_instructions : '';
+        document.getElementById('prodUsageInstructions').value = this.getProductGuidanceTextForEdit(data, 'usage_instructions');
         this.toggleUsageInstructions(showUsageInstructions);
 
+        this.syncRichTextEditorsFromInputs();
+        this.refreshFormSectionHeight('purchaseNotesWrapper');
+        this.refreshFormSectionHeight('usageInstructionsWrapper');
         void this.applyProductModalCategorySelection(data.category || 'other');
         this.updatePreview();
     },
@@ -5836,9 +6144,44 @@ Example output format:
         return upsertPayload;
     },
 
+    buildLegacyProductGuidanceFallbackPayload: function (payload = {}, { editSite = 'cn' } = {}) {
+        const fallbackPayload = { ...(payload && typeof payload === 'object' ? payload : {}) };
+        const guidanceFields = [
+            'purchase_notes_zh',
+            'purchase_notes_en',
+            'usage_instructions_zh',
+            'usage_instructions_en'
+        ];
+
+        if (editSite !== 'intl') {
+            if (Object.prototype.hasOwnProperty.call(fallbackPayload, 'purchase_notes_zh')) {
+                fallbackPayload.purchase_notes = fallbackPayload.purchase_notes_zh;
+            }
+            if (Object.prototype.hasOwnProperty.call(fallbackPayload, 'usage_instructions_zh')) {
+                fallbackPayload.usage_instructions = fallbackPayload.usage_instructions_zh;
+            }
+        }
+
+        guidanceFields.forEach((field) => {
+            delete fallbackPayload[field];
+        });
+
+        return fallbackPayload;
+    },
+
     isPurchaseNotesSchemaError: function (err) {
         const message = `${err?.message || ''} ${err?.details || ''} ${err?.hint || ''}`.toLowerCase();
         return message.includes('purchase_notes') || message.includes('show_purchase_notes');
+    },
+
+    isProductGuidanceBilingualSchemaError: function (err) {
+        const message = `${err?.message || ''} ${err?.details || ''} ${err?.hint || ''}`.toLowerCase();
+        return [
+            'purchase_notes_zh',
+            'purchase_notes_en',
+            'usage_instructions_zh',
+            'usage_instructions_en'
+        ].some((field) => message.includes(field));
     },
 
     isProductDescriptionVisibilitySchemaError: function (err) {
@@ -5846,7 +6189,32 @@ Example output format:
         return message.includes('show_product_description');
     },
 
+    isUsageInstructionsSchemaError: function (err) {
+        const message = `${err?.message || ''} ${err?.details || ''} ${err?.hint || ''}`.toLowerCase();
+        return message.includes('usage_instructions') || message.includes('show_usage_instructions');
+    },
+
+    isProductPurchasePolicySchemaError: function (err) {
+        const message = `${err?.message || ''} ${err?.details || ''} ${err?.hint || ''}`.toLowerCase();
+        return [
+            'max_purchase_quantity',
+            'purchase_limit_24h_quantity',
+            'purchase_limit_window_quantity',
+            'purchase_limit_window_minutes',
+            'per_account_purchase_limit'
+        ].some((field) => message.includes(field));
+    },
+
+    isProductDeliverySchemaError: function (err) {
+        const message = `${err?.message || ''} ${err?.details || ''} ${err?.hint || ''}`.toLowerCase();
+        return message.includes('delivery_type') || message.includes('webhook_target');
+    },
+
     getFriendlySaveErrorMessage: function (err) {
+        if (this.isProductGuidanceBilingualSchemaError(err)) {
+            return '保存失败：当前 Supabase 数据库还没有“注意事项 / 使用说明”的双语字段。请先执行 `supabase/migrations/20260430_add_bilingual_shop_guidance.sql`，再保存商品。';
+        }
+
         if (this.isProductDescriptionVisibilitySchemaError(err)) {
             return '保存失败：当前 Supabase 数据库还没有“商品描述展示开关”字段。请先执行 `supabase/add_product_description_visibility.sql`，再保存商品。';
         }
@@ -5854,6 +6222,18 @@ Example output format:
         if (this.isPurchaseNotesSchemaError(err)) {
             this.purchaseNotesSchemaAvailable = false;
             return '保存失败：当前 Supabase 数据库还没有“注意事项”字段。请先执行 `supabase/add_purchase_notes.sql`，再保存商品。';
+        }
+
+        if (this.isUsageInstructionsSchemaError(err)) {
+            return '保存失败：当前 Supabase 数据库还没有“使用说明”字段。请先执行 `supabase/add_usage_instructions.sql`，再保存商品。';
+        }
+
+        if (this.isProductPurchasePolicySchemaError(err)) {
+            return '保存失败：当前 Supabase 数据库还没有商品限购相关字段。请先执行对应的 shop purchase policy / cumulative purchase limits migrations。';
+        }
+
+        if (this.isProductDeliverySchemaError(err)) {
+            return '保存失败：当前 Supabase 数据库还没有商品发货模式字段。请先执行 `supabase/migrations/20260321_add_shop_delivery_pipeline.sql`，再保存商品。';
         }
 
         const details = [err?.message, err?.details, err?.hint].filter(Boolean).join(' | ');
@@ -5876,7 +6256,13 @@ Example output format:
 
         const result = await response.json().catch(() => ({}));
         if (!response.ok || !result.success) {
-            throw new Error(result.message || '商品配置校验失败');
+            const error = new Error(result.message || '商品配置校验失败');
+            error.status = response.status;
+            error.details = result.details || '';
+            error.hint = result.hint || '';
+            error.code = result.code || '';
+            error.result = result;
+            throw error;
         }
 
         return result.validation && typeof result.validation === 'object'
@@ -6011,6 +6397,7 @@ Example output format:
 
         if (!isEdit) {
             this.editingProductSnapshot = null;
+            this.currentProductImageAsset = null;
             document.getElementById('editProductId').value = '';
             document.getElementById('prodName').value = '';
             document.getElementById('prodPrice').value = '';
@@ -6121,7 +6508,14 @@ Example output format:
             return;
         }
 
-        const saveButton = document.getElementById('productSaveBtn') || document.querySelector('#productModal .btn-save[type="submit"]');
+        if (this.productSaveInFlight) {
+            this.showActionToast('商品正在保存中，请稍候', 'info');
+            return;
+        }
+        this.productSaveInFlight = true;
+
+        const saveButton = document.getElementById('productSaveBtn') || document.querySelector('#productModal .btn-save');
+        this.setProductSaveInlineError('');
         let saveFeedbackActive = false;
         const startSaveFeedback = () => {
             if (saveFeedbackActive) {
@@ -6160,26 +6554,20 @@ Example output format:
             console.log('[ShopAdmin] Base fields read successfully');
 
             if (!name || !price) {
-                this.showActionToast('名称和价格必填', 'warning');
+                const failureMessage = '名称和价格必填';
+                this.setProductSaveInlineError(failureMessage);
+                this.showActionToast(failureMessage, 'warning');
                 return;
             }
             const normalizedPrice = Number.parseInt(price, 10);
             if (!Number.isFinite(normalizedPrice) || normalizedPrice < 0) {
-                this.showActionToast('价格格式错误', 'warning');
+                const failureMessage = '价格格式错误';
+                this.setProductSaveInlineError(failureMessage);
+                this.showActionToast(failureMessage, 'warning');
                 return;
             }
 
             startSaveFeedback();
-
-            // Auto-translate to English if Gemini API is available
-            let name_en = null, description_en = null;
-            try {
-                const translation = await this.translateToEnglish(name, description);
-                name_en = translation.name_en;
-                description_en = translation.description_en;
-            } catch (e) {
-                console.warn('[ShopAdmin] Translation step failed, continuing without:', e);
-            }
 
             const fields = this.getFieldMap();
             const editSite = this.getEditSite();
@@ -6235,8 +6623,10 @@ Example output format:
             if (maxPurchaseQuantityRaw !== '') {
                 const parsedMaxPurchaseQuantity = Number.parseInt(maxPurchaseQuantityRaw, 10);
                 if (!Number.isFinite(parsedMaxPurchaseQuantity) || parsedMaxPurchaseQuantity < 1 || parsedMaxPurchaseQuantity > 99) {
+                    const failureMessage = '单次限购必须是 1 到 99 之间的整数';
                     failSaveFeedback();
-                    this.showActionToast('单次限购必须是 1 到 99 之间的整数', 'warning');
+                    this.setProductSaveInlineError(failureMessage);
+                    this.showActionToast(failureMessage, 'warning');
                     return;
                 }
                 normalizedMaxPurchaseQuantity = parsedMaxPurchaseQuantity;
@@ -6253,8 +6643,10 @@ Example output format:
                 normalizedPurchaseLimitWindowQuantity = parseOptionalPositiveInteger(purchaseLimitWindowQuantityRaw, 'N分钟累计上限');
                 normalizedPurchaseLimitWindowMinutes = parseOptionalPositiveInteger(purchaseLimitWindowMinutesRaw, 'N分钟');
             } catch (validationError) {
+                const failureMessage = validationError.message || '限购配置格式错误';
                 failSaveFeedback();
-                this.showActionToast(validationError.message || '限购配置格式错误', 'warning');
+                this.setProductSaveInlineError(failureMessage);
+                this.showActionToast(failureMessage, 'warning');
                 return;
             }
 
@@ -6279,16 +6671,99 @@ Example output format:
             );
 
             if (this.purchaseNotesSchemaAvailable === false && (showPurchaseNotes || normalizedPurchaseNotes)) {
+                const failureMessage = '保存失败：当前 Supabase 数据库还没有“注意事项”字段。请先执行 `supabase/add_purchase_notes.sql`，再保存商品。';
                 failSaveFeedback();
-                this.showActionToast('保存失败：当前 Supabase 数据库还没有“注意事项”字段。请先执行 `supabase/add_purchase_notes.sql`，再保存商品。', 'error', { durationMs: 6000 });
+                this.setProductSaveInlineError(failureMessage);
+                this.showActionToast(failureMessage, 'error', { durationMs: 6000 });
                 return;
             }
+
+            // Auto-translate CN edits to English so guidance can be saved as a bilingual pair.
+            let name_en = null;
+            let description_en = null;
+            let purchase_notes_en = null;
+            let usage_instructions_en = null;
+            let productTranslationFailed = false;
+            let productTranslationErrorMessage = '';
+            if (editSite === 'cn') {
+                try {
+                    const translation = await this.withProductSaveTimeout(
+                        this.translateToEnglish(name, description, {
+                            purchaseNotes: showPurchaseNotes ? normalizedPurchaseNotes : '',
+                            usageInstructions: showUsageInstructions ? normalizedUsageInstructions : ''
+                        }),
+                        this.getProductTranslationTimeoutMs(),
+                        '商品双语自动翻译'
+                    );
+                    name_en = translation.name_en;
+                    description_en = translation.description_en;
+                    purchase_notes_en = translation.purchase_notes_en;
+                    usage_instructions_en = translation.usage_instructions_en;
+                    const hasTranslationOutput = [
+                        name_en,
+                        description_en,
+                        purchase_notes_en,
+                        usage_instructions_en
+                    ].some((value) => String(value || '').trim());
+                    if (!hasTranslationOutput) {
+                        productTranslationFailed = true;
+                        productTranslationErrorMessage = '商品双语自动翻译未返回英文内容';
+                    }
+                } catch (e) {
+                    productTranslationFailed = true;
+                    productTranslationErrorMessage = e?.message || '商品双语自动翻译失败';
+                    console.warn('[ShopAdmin] Translation step failed, continuing without:', e);
+                }
+            }
+
+            const hasUsableEnglishGuidanceText = (value) => {
+                const normalized = String(value || '').trim();
+                return Boolean(normalized && !/[\u3400-\u9fff\uf900-\ufaff]/.test(normalized));
+            };
+            const hasSavedEnglishGuidanceText = (baseField, translatedEn) => hasUsableEnglishGuidanceText(translatedEn)
+                || hasUsableEnglishGuidanceText(this.editingProductSnapshot?.[`${baseField}_en`]);
+            const missingGuidanceTranslations = [];
+            if (
+                editSite === 'cn'
+                && showPurchaseNotes
+                && normalizedPurchaseNotes
+                && !hasSavedEnglishGuidanceText('purchase_notes', purchase_notes_en)
+            ) {
+                missingGuidanceTranslations.push('注意事项');
+            }
+            if (
+                editSite === 'cn'
+                && showUsageInstructions
+                && normalizedUsageInstructions
+                && !hasSavedEnglishGuidanceText('usage_instructions', usage_instructions_en)
+            ) {
+                missingGuidanceTranslations.push('使用说明');
+            }
+
+            const usageGuidancePayload = this.buildProductGuidancePayloadPatch('usage_instructions', {
+                value: normalizedUsageInstructions,
+                show: showUsageInstructions,
+                editSite,
+                translatedEn: usage_instructions_en,
+                existing: this.editingProductSnapshot
+            });
+            const purchaseGuidancePayload = this.buildProductGuidancePayloadPatch('purchase_notes', {
+                value: normalizedPurchaseNotes,
+                show: showPurchaseNotes,
+                editSite,
+                translatedEn: purchase_notes_en,
+                existing: this.editingProductSnapshot
+            });
+            const iconUrl = String(document.getElementById('prodIcon').value || '').trim();
+            const imageAsset = buildShopProductImageAssetForSave(iconUrl, this.currentProductImageAsset);
+            this.currentProductImageAsset = normalizeShopProductImageAsset(imageAsset);
 
             const payload = {
                 [fields.name]: name,
                 [fields.price]: normalizedPrice,
                 [fields.desc]: description,
-                icon_url: document.getElementById('prodIcon').value,
+                icon_url: iconUrl,
+                image_assets: imageAsset,
                 category: document.getElementById('prodCategory').value,
                 display_order: normalizedSort,
                 max_purchase_quantity: normalizedMaxPurchaseQuantity,
@@ -6297,7 +6772,7 @@ Example output format:
                 purchase_limit_window_minutes: normalizedPurchaseLimitWindowMinutes,
                 per_account_purchase_limit: normalizedPerAccountPurchaseLimit,
                 show_usage_instructions: showUsageInstructions,
-                usage_instructions: showUsageInstructions ? (normalizedUsageInstructions || null) : null,
+                ...usageGuidancePayload,
                 delivery_type: normalizedDeliveryType,
                 webhook_target: normalizedDeliveryType === 'API' ? (webhookTargetValue || null) : null,
 
@@ -6313,7 +6788,7 @@ Example output format:
 
             if (this.purchaseNotesSchemaAvailable !== false) {
                 payload.show_purchase_notes = showPurchaseNotes;
-                payload.purchase_notes = showPurchaseNotes ? (normalizedPurchaseNotes || null) : null;
+                Object.assign(payload, purchaseGuidancePayload);
             }
 
             // Parse marketing fields visually
@@ -6334,7 +6809,9 @@ Example output format:
                             const price = parseFloat(priceVal);
 
                             if (isNaN(qty) || isNaN(price) || qty <= 0 || price < 0) {
-                                this.showActionToast('阶梯定价规则格式错误：满减数量必须大于0，单价不能为负数', 'warning');
+                                const failureMessage = '阶梯定价规则格式错误：满减数量必须大于0，单价不能为负数';
+                                this.setProductSaveInlineError(failureMessage);
+                                this.showActionToast(failureMessage, 'warning');
                                 hasTieredPricingError = true;
                                 return;
                             }
@@ -6384,8 +6861,10 @@ Example output format:
                 });
 
                 if (Array.isArray(validation?.blockingIssues) && validation.blockingIssues.length) {
+                    const failureMessage = this.buildProductValidationSummary(validation);
                     failSaveFeedback();
-                    this.showActionToast(this.buildProductValidationSummary(validation), 'warning', { durationMs: 6000 });
+                    this.setProductSaveInlineError(failureMessage);
+                    this.showActionToast(failureMessage, 'warning', { durationMs: 6000 });
                     return;
                 }
 
@@ -6397,26 +6876,47 @@ Example output format:
                     }
                 }
 
-                let mutationResult;
-                if (id) {
-                    const upsertPayload = this.buildExistingProductUpsertPayload(id, payload);
-                    mutationResult = await this.callAdminMutation('upsert_product', {
-                        productId: id,
-                        payload: upsertPayload,
-                        pendingCategory: this.pendingCategory && payload.category === this.pendingCategory.name
-                            ? this.pendingCategory
-                            : null
-                    });
-                    if (mutationResult?.product) {
-                        this.editingProductSnapshot = mutationResult.product;
+                const pendingCategoryForSave = this.pendingCategory && payload.category === this.pendingCategory.name
+                    ? this.pendingCategory
+                    : null;
+                let savedWithLegacyGuidanceFallback = false;
+                const upsertProductPayload = async (nextPayload) => {
+                    if (id) {
+                        const upsertPayload = this.buildExistingProductUpsertPayload(id, nextPayload);
+                        return this.callAdminMutation('upsert_product', {
+                            productId: id,
+                            payload: upsertPayload,
+                            pendingCategory: pendingCategoryForSave
+                        });
                     }
-                } else {
-                    mutationResult = await this.callAdminMutation('upsert_product', {
-                        payload,
-                        pendingCategory: this.pendingCategory && payload.category === this.pendingCategory.name
-                            ? this.pendingCategory
-                            : null
+
+                    return this.callAdminMutation('upsert_product', {
+                        payload: nextPayload,
+                        pendingCategory: pendingCategoryForSave
                     });
+                };
+
+                let mutationResult;
+                try {
+                    mutationResult = await upsertProductPayload(payload);
+                } catch (saveError) {
+                    if (!this.isProductGuidanceBilingualSchemaError(saveError)) {
+                        throw saveError;
+                    }
+                    console.warn('[ShopAdmin] Bilingual product guidance columns are missing; retrying with legacy guidance fields only:', saveError);
+                    const legacyPayload = this.buildLegacyProductGuidanceFallbackPayload(payload, { editSite });
+                    mutationResult = await upsertProductPayload(legacyPayload);
+                    savedWithLegacyGuidanceFallback = true;
+                }
+
+                if (mutationResult?.compatibilityFallback) {
+                    console.warn('[ShopAdmin] Product payload schema fields are missing; saved with a server-side compatibility fallback:', mutationResult.compatibilityRemovedFields || []);
+                    savedWithLegacyGuidanceFallback = true;
+                }
+
+                if (mutationResult?.product) {
+                    this.editingProductSnapshot = mutationResult.product;
+                    this.currentProductImageAsset = getShopProductImageAsset(mutationResult.product);
                 }
 
                 // Clear pending category after successful save
@@ -6424,9 +6924,23 @@ Example output format:
 
                 finishSaveFeedback();
                 this.hideProductModal();
-                const successMessage = '商品已保存' + (name_en ? '（已自动翻译）' : '');
-                this.showActionToast(successMessage, 'success');
-                this.emitCommandFeedback(`${successMessage}：${name}`, 'saved', { source: 'shop-products' });
+                const translationApplied = !savedWithLegacyGuidanceFallback && Boolean(name_en || description_en || purchase_notes_en || usage_instructions_en);
+                const savedWithTranslationWarning = !savedWithLegacyGuidanceFallback && missingGuidanceTranslations.length > 0;
+                const successMessage = savedWithLegacyGuidanceFallback
+                    ? '商品已保存（部分新字段待迁移）'
+                    : (savedWithTranslationWarning
+                        ? `商品已保存（英文翻译未完成：${missingGuidanceTranslations.join('、')}）`
+                        : ('商品已保存' + (translationApplied ? '（已自动翻译）' : '')));
+                const saveToastType = savedWithLegacyGuidanceFallback || savedWithTranslationWarning ? 'warning' : 'success';
+                const saveToastDuration = savedWithLegacyGuidanceFallback ? 7000 : (savedWithTranslationWarning ? 9000 : undefined);
+                const feedbackMessage = savedWithTranslationWarning && productTranslationFailed && productTranslationErrorMessage
+                    ? `${successMessage}：${name}；${productTranslationErrorMessage}`
+                    : `${successMessage}：${name}`;
+                this.showActionToast(successMessage, saveToastType, { durationMs: saveToastDuration });
+                this.emitCommandFeedback(feedbackMessage, 'saved', {
+                    source: 'shop-products',
+                    tone: savedWithTranslationWarning ? 'warning' : ''
+                });
 
                 // Refresh products and category filters
                 this.loadProducts();
@@ -6435,6 +6949,7 @@ Example output format:
                 console.error('[ShopAdmin] Save process completely failed:', err);
                 const failureMessage = this.getFriendlySaveErrorMessage(err);
                 failSaveFeedback();
+                this.setProductSaveInlineError(failureMessage);
                 this.showActionToast(failureMessage, 'error', { durationMs: 6000 });
                 this.emitCommandFeedback(failureMessage, 'failed', { source: 'shop-products' });
             }
@@ -6442,8 +6957,11 @@ Example output format:
             console.error('[ShopAdmin] Outer try-catch failed:', err);
             const failureMessage = this.getFriendlySaveErrorMessage(err);
             failSaveFeedback();
+            this.setProductSaveInlineError(failureMessage);
             this.showActionToast(failureMessage, 'error', { durationMs: 6000 });
             this.emitCommandFeedback(failureMessage, 'failed', { source: 'shop-products' });
+        } finally {
+            this.productSaveInFlight = false;
         }
     },
 

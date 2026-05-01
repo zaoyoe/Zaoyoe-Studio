@@ -29,10 +29,14 @@ let activeAnalyticsProductName = '';
 let analyticsProductDetailRequestId = 0;
 let analyticsUserTrendRequestId = 0;
 let analyticsGrowthSummaryRequestId = 0;
+let analyticsOverviewBusinessMixRequestId = 0;
+let analyticsCommandCenterInventoryPrimeTimerId = 0;
+let analyticsCommandCenterInventoryPrimePromise = null;
 let analyticsDestinationFocusTimeoutId = 0;
 const DEFAULT_ANALYTICS_DAYS = 7;
 const ANALYTICS_DAY_MS = 24 * 60 * 60 * 1000;
 const ANALYTICS_REENTRY_REFRESH_TTL_MS = 15000;
+const ANALYTICS_COMMAND_CENTER_INVENTORY_PRIME_DELAY_MS = 1800;
 const ANALYTICS_ADVANCED_WORKSPACE_STORAGE_KEY = 'analyticsAdvancedWorkspaceOpen';
 const ANALYTICS_ADVANCED_TOGGLE_BINDING_FLAG = 'analyticsAdvancedToggleBound';
 const ANALYTICS_PANEL_SUPPORT_TOP_CONTENT_LIMIT = 100;
@@ -945,6 +949,80 @@ async function fetchAnalyticsTableRows(table, columns = '*', options = {}) {
     return rows;
 }
 
+function collectAnalyticsVerificationUserIds(rows = []) {
+    return [...new Set((Array.isArray(rows) ? rows : [])
+        .map((row) => String(row?.user_id || '').trim())
+        .filter(Boolean))]
+        .slice(0, 500);
+}
+
+function buildAnalyticsLedgerSubmitterMap(rows = []) {
+    const map = new Map();
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+        const referenceId = String(row?.reference_id || '').trim();
+        const userId = String(row?.user_id || '').trim();
+        if (!referenceId || !userId || map.has(referenceId)) {
+            return;
+        }
+        map.set(referenceId, userId);
+    });
+    return map;
+}
+
+function enrichAnalyticsVerificationRowsWithLedgerSubmitters(rows = [], ledgerRows = []) {
+    const ledgerSubmitters = buildAnalyticsLedgerSubmitterMap(ledgerRows);
+    if (!Array.isArray(rows) || rows.length === 0 || ledgerSubmitters.size === 0) {
+        return Array.isArray(rows) ? rows : [];
+    }
+
+    return rows.map((row) => {
+        if (String(row?.user_id || '').trim()) {
+            return row;
+        }
+        const payload = getAnalyticsVerificationPayload(row);
+        const referenceId = String(row?.verification_id || payload.job_id || payload.task_id || '').trim();
+        const userId = referenceId ? ledgerSubmitters.get(referenceId) : '';
+        return userId ? { ...row, user_id: userId } : row;
+    });
+}
+
+async function enrichAnalyticsVerificationRowsWithSubmitters(rows = []) {
+    if (!Array.isArray(rows) || rows.length === 0) return [];
+
+    const userIds = collectAnalyticsVerificationUserIds(rows);
+    if (!userIds.length) return rows;
+
+    try {
+        const { data, error } = await getAnalyticsSupabaseClient()
+            .from('profiles')
+            .select('id, email, username, display_name')
+            .in('id', userIds);
+
+        if (error) throw error;
+
+        const profilesById = new Map((Array.isArray(data) ? data : [])
+            .map((profile) => [String(profile?.id || '').trim(), profile])
+            .filter(([id]) => Boolean(id)));
+
+        return rows.map((row) => {
+            const userId = String(row?.user_id || '').trim();
+            const profile = profilesById.get(userId) || null;
+            if (!profile) return row;
+
+            return {
+                ...row,
+                submitter: profile,
+                submitter_email: profile.email || '',
+                submitter_username: profile.username || '',
+                submitter_display_name: profile.display_name || ''
+            };
+        });
+    } catch (error) {
+        console.warn('[Analytics] Failed to enrich verification submitters:', error?.message || error);
+        return rows;
+    }
+}
+
 function formatAnalyticsDateTime(value) {
     if (!value) return '--';
 
@@ -959,6 +1037,111 @@ function formatAnalyticsDateTime(value) {
     }).format(date);
 }
 
+function renderAnalyticsCompactItemDetails(item = {}) {
+    const details = Array.isArray(item.detailItems)
+        ? item.detailItems.filter((detail) => detail && String(detail.value || '').trim())
+        : [];
+
+    if (!details.length) return '';
+
+    return `<dl class="analytics-compact-item__detail-grid">
+        ${details.map((detail) => {
+            const value = String(detail.value || '').trim();
+            const href = String(detail.href || '').trim();
+            const safeHref = /^https?:\/\//i.test(href) ? href : '';
+            const context = detail.context || detail.destinationContext || {};
+            const userId = String(detail.userId || context.userId || context.user_id || '').trim();
+            const userEmail = String(detail.userEmail || context.userEmail || context.user_email || context.email || '').trim();
+            const actionMarkup = detail.action === 'analytics-open-user-detail' && userId
+                ? `<button
+                        type="button"
+                        class="analytics-compact-item__detail-link"
+                        data-admin-action="analytics-open-user-detail"
+                        data-user-id="${escapeHtml(userId)}"
+                        data-user-email="${escapeHtml(userEmail)}"
+                        data-analytics-context="${escapeHtml(serializeAnalyticsActionContext(context || null))}"
+                    >${escapeHtml(value)}</button>`
+                : '';
+            return `
+                <div class="analytics-compact-item__detail-row">
+                    <dt>${escapeHtml(detail.label || '详情')}</dt>
+                    <dd>${actionMarkup || (safeHref
+                        ? `<a href="${escapeHtml(safeHref)}" target="_blank" rel="noopener noreferrer">${escapeHtml(value)}</a>`
+                        : escapeHtml(value))}
+                    </dd>
+                </div>
+            `;
+        }).join('')}
+    </dl>`;
+}
+
+function renderAnalyticsCompactItemAction(item = {}) {
+    if (!item.actionLabel) return '';
+
+    if (item.action === 'analytics-open-user-detail') {
+        const context = item.context || item.destinationContext || {};
+        const userId = String(item.userId || context.userId || context.user_id || '').trim();
+        const userEmail = String(item.userEmail || context.userEmail || context.user_email || context.email || '').trim();
+        return `
+            <div class="analytics-compact-item__actions">
+                <button
+                    type="button"
+                    class="btn-sm btn-secondary"
+                    data-admin-action="analytics-open-user-detail"
+                    data-user-id="${escapeHtml(userId)}"
+                    data-user-email="${escapeHtml(userEmail)}"
+                    data-analytics-context="${escapeHtml(serializeAnalyticsActionContext(context || null))}"
+                >
+                    <i class="${escapeHtml(item.icon || 'fas fa-user')}"></i> ${escapeHtml(item.actionLabel)}
+                </button>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="analytics-compact-item__actions">
+            <button
+                type="button"
+                class="btn-sm btn-secondary"
+                data-admin-action="${escapeHtml(item.action || 'analytics-open-destination')}"
+                ${item.action === 'analytics-view-context'
+                    ? `data-prompt-id="${escapeHtml(String(item.promptId || '').trim())}"`
+                    : `data-analytics-destination="${escapeHtml(item.destination || '')}"
+                       data-analytics-context="${escapeHtml(serializeAnalyticsActionContext(item.context || item.destinationContext || null))}"`}
+            >
+                <i class="${escapeHtml(item.icon || 'fas fa-arrow-right')}"></i> ${escapeHtml(item.actionLabel)}
+            </button>
+        </div>
+    `;
+}
+
+function renderAnalyticsCompactItemContent(item = {}, options = {}) {
+    const expandable = options.expandable === true;
+    const summaryMarkup = item.hideSummary === true || !item.summary
+        ? ''
+        : `<div class="analytics-compact-item__summary">${escapeHtml(item.summary)}</div>`;
+    return `
+        <div class="analytics-compact-item__top">
+            <div class="analytics-compact-item__heading">
+                <strong class="analytics-compact-item__title">${escapeHtml(item.title || '未命名指标')}</strong>
+                ${item.meta ? `<div class="analytics-compact-item__meta">${escapeHtml(item.meta)}</div>` : ''}
+            </div>
+            ${expandable ? `
+                <div class="analytics-compact-item__value-wrap">
+                    ${item.value ? `<span class="analytics-compact-item__value">${escapeHtml(item.value)}</span>` : ''}
+                    <i class="fas fa-chevron-down analytics-compact-item__expand-icon" aria-hidden="true"></i>
+                </div>
+            ` : (item.value ? `<div class="analytics-compact-item__value">${escapeHtml(item.value)}</div>` : '')}
+        </div>
+        ${item.badgeLabel ? `
+            <div class="analytics-compact-item__badge-row">
+                <span class="analytics-status-chip analytics-status-chip--${escapeHtml(item.badgeTone || 'neutral')}">${escapeHtml(item.badgeLabel)}</span>
+            </div>
+        ` : ''}
+        ${summaryMarkup}
+    `;
+}
+
 function renderAnalyticsCompactItems(items = [], emptyConfig = {}) {
     if (!Array.isArray(items) || items.length === 0) {
         return renderHintState(
@@ -968,38 +1151,30 @@ function renderAnalyticsCompactItems(items = [], emptyConfig = {}) {
     }
 
     return `<div class="analytics-compact-stack">
-        ${items.map((item) => `
-            <article class="analytics-compact-item">
-                <div class="analytics-compact-item__top">
-                    <div class="analytics-compact-item__heading">
-                        <strong class="analytics-compact-item__title">${escapeHtml(item.title || '未命名指标')}</strong>
-                        ${item.meta ? `<div class="analytics-compact-item__meta">${escapeHtml(item.meta)}</div>` : ''}
-                    </div>
-                    ${item.value ? `<div class="analytics-compact-item__value">${escapeHtml(item.value)}</div>` : ''}
-                </div>
-                ${item.badgeLabel ? `
-                    <div class="analytics-compact-item__badge-row">
-                        <span class="analytics-status-chip analytics-status-chip--${escapeHtml(item.badgeTone || 'neutral')}">${escapeHtml(item.badgeLabel)}</span>
-                    </div>
-                ` : ''}
-                ${item.summary ? `<div class="analytics-compact-item__summary">${escapeHtml(item.summary)}</div>` : ''}
-                ${item.actionLabel ? `
-                    <div class="analytics-compact-item__actions">
-                        <button
-                            type="button"
-                            class="btn-sm btn-secondary"
-                            data-admin-action="${escapeHtml(item.action || 'analytics-open-destination')}"
-                            ${item.action === 'analytics-view-context'
-                                ? `data-prompt-id="${escapeHtml(String(item.promptId || '').trim())}"`
-                                : `data-analytics-destination="${escapeHtml(item.destination || '')}"
-                                   data-analytics-context="${escapeHtml(serializeAnalyticsActionContext(item.context || item.destinationContext || null))}"`}
-                        >
-                            <i class="${escapeHtml(item.icon || 'fas fa-arrow-right')}"></i> ${escapeHtml(item.actionLabel)}
-                        </button>
-                    </div>
-                ` : ''}
-            </article>
-        `).join('')}
+        ${items.map((item) => {
+            const hasDetails = Array.isArray(item.detailItems)
+                && item.detailItems.some((detail) => detail && String(detail.value || '').trim());
+            const actionMarkup = renderAnalyticsCompactItemAction(item);
+
+            if (hasDetails) {
+                return `
+                    <details class="analytics-compact-item analytics-compact-item--expandable">
+                        <summary class="analytics-compact-item__toggle">
+                            ${renderAnalyticsCompactItemContent(item, { expandable: true })}
+                        </summary>
+                        ${renderAnalyticsCompactItemDetails(item)}
+                        ${actionMarkup}
+                    </details>
+                `;
+            }
+
+            return `
+                <article class="analytics-compact-item">
+                    ${renderAnalyticsCompactItemContent(item)}
+                    ${actionMarkup}
+                </article>
+            `;
+        }).join('')}
     </div>`;
 }
 
@@ -1121,19 +1296,380 @@ function getVerifyStatusTone(statusGroup = 'other') {
     }
 }
 
+function getAnalyticsVerificationPayload(row = {}) {
+    const rawMessage = row?.message;
+    if (rawMessage && typeof rawMessage === 'object' && !Array.isArray(rawMessage)) {
+        return rawMessage;
+    }
+
+    const normalizedMessage = String(rawMessage || '').trim();
+    if (!normalizedMessage || !normalizedMessage.startsWith('{')) {
+        return {};
+    }
+
+    try {
+        const parsed = JSON.parse(normalizedMessage);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+            ? parsed
+            : {};
+    } catch (_) {
+        return {};
+    }
+}
+
+function isGenericAnalyticsVerificationFailureText(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    return [
+        '任务失败',
+        '失败',
+        '失败/阻塞',
+        'failed',
+        'fail',
+        'error',
+        'task failed',
+        'unknown'
+    ].includes(normalized);
+}
+
+function pickAnalyticsVerificationFailureText(candidates = []) {
+    let fallback = '';
+
+    for (const candidate of candidates) {
+        const value = String(candidate || '').trim();
+        if (!value) continue;
+        if (!isGenericAnalyticsVerificationFailureText(value)) {
+            return value;
+        }
+        if (!fallback) {
+            fallback = value;
+        }
+    }
+
+    return fallback;
+}
+
 function getAnalyticsVerificationSummary(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    const statusGroup = getVerifyStatusGroup(row?.status || payload.status || payload.raw_status);
+    if (statusGroup === 'failed') {
+        const failureReason = getAnalyticsVerificationFailureReason(row);
+        if (failureReason) return failureReason;
+    }
+
+    const rawMessage = Object.keys(payload).length > 0 ? '' : row.message;
     return String(
         row.summary
-        || row.message
+        || payload.error_message
+        || payload.message
+        || rawMessage
         || row.error_message
         || row.stage_label
+        || payload.stage_label
         || row.raw_status
+        || payload.raw_status
         || ''
     ).trim();
 }
 
+function formatAnalyticsVerificationUserId(value = '') {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+    return normalized.length > 12 ? `用户 ${normalized.slice(0, 8)}…` : `用户 ${normalized}`;
+}
+
+function getAnalyticsVerificationSubmitterProfile(row = {}) {
+    const candidates = [
+        row?.submitter,
+        row?.submitter_profile,
+        row?.profile,
+        row?.profiles
+    ];
+
+    return candidates.find((candidate) => candidate && typeof candidate === 'object' && !Array.isArray(candidate)) || {};
+}
+
+function getAnalyticsVerificationSubmitterEmail(row = {}) {
+    const profile = getAnalyticsVerificationSubmitterProfile(row);
+    return String(row?.submitter_email || profile.email || row?.user_email || '').trim();
+}
+
+function getAnalyticsVerificationSubmitterIdentity(row = {}) {
+    const profile = getAnalyticsVerificationSubmitterProfile(row);
+    const displayName = String(row?.submitter_display_name || profile.display_name || '').trim();
+    const username = String(row?.submitter_username || profile.username || '').trim();
+    const submitterEmail = getAnalyticsVerificationSubmitterEmail(row);
+
+    return submitterEmail || displayName || username || '';
+}
+
+function getAnalyticsVerificationSubmittedAccount(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    return String(
+        row?.submitted_email
+        || row?.verification_email
+        || row?.target_email
+        || payload.email
+        || row?.email
+        || payload.user_id
+        || ''
+    ).trim();
+}
+
+function getAnalyticsVerificationTaskType(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    return String(row?.task_type || payload.task_type || row?.taskType || payload.taskType || '').trim().toLowerCase();
+}
+
+function getAnalyticsVerificationTaskTypeLabel(row = {}) {
+    const taskType = getAnalyticsVerificationTaskType(row);
+    if (taskType === 'full') return '全流程包绑卡';
+    if (taskType === 'extract') return '半流程 / 仅提链';
+    return '未记录模式';
+}
+
+function getAnalyticsVerificationPassLabel(row = {}) {
+    const statusGroup = getVerifyStatusGroup(row?.status);
+    if (statusGroup === 'success') return '通过';
+    if (statusGroup === 'failed') return '未通过';
+    if (statusGroup === 'active') return '处理中';
+    return '待确认';
+}
+
+function getAnalyticsVerificationFailureReason(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    const statusGroup = getVerifyStatusGroup(row?.status || payload.status || payload.raw_status);
+    if (statusGroup !== 'failed') return '';
+
+    const rawMessage = Object.keys(payload).length > 0 ? '' : row?.message;
+    return pickAnalyticsVerificationFailureText([
+        payload.failure_reason,
+        row?.failure_reason,
+        row?.error_message,
+        payload.error_message,
+        payload.message,
+        rawMessage,
+        row?.summary,
+        payload.summary,
+        payload.reason,
+        row?.reason,
+        payload.error,
+        payload.error_code,
+        row?.error_code,
+        row?.stage_label,
+        payload.stage_label,
+        row?.raw_status,
+        payload.raw_status
+    ]);
+}
+
+function getAnalyticsVerificationResultDetail(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    const resultUrl = String(payload.offer_url || payload.url || row?.offer_url || row?.url || '').trim();
+    const statusGroup = getVerifyStatusGroup(row?.status || payload.status || payload.raw_status);
+    if (statusGroup === 'failed') {
+        return {
+            value: getAnalyticsVerificationFailureReason(row),
+            href: ''
+        };
+    }
+
+    const rawMessage = Object.keys(payload).length > 0 ? '' : row?.message;
+    const resultText = String(
+        row?.summary
+        || payload.summary
+        || payload.message
+        || rawMessage
+        || resultUrl
+        || payload.error_message
+        || row?.error_message
+        || row?.stage_label
+        || payload.stage_label
+        || ''
+    ).trim();
+    return {
+        value: resultText,
+        href: resultUrl
+    };
+}
+
+function buildAnalyticsVerificationSubmittedContent(row = {}) {
+    const submittedAccount = getAnalyticsVerificationSubmittedAccount(row);
+    const taskTypeLabel = getAnalyticsVerificationTaskTypeLabel(row);
+    return [
+        submittedAccount ? `账号 ${submittedAccount}` : '未记录账号',
+        taskTypeLabel
+    ].filter(Boolean).join(' · ');
+}
+
+function buildAnalyticsVerificationTaskDetails(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    const verificationId = String(row?.verification_id || payload.job_id || payload.task_id || '').trim();
+    const submitterIdentity = getAnalyticsVerificationSubmitterIdentity(row);
+    const siteLabel = String(row?.site || getAnalyticsSiteParam() || 'all').toUpperCase();
+    const resultDetail = getAnalyticsVerificationResultDetail(row);
+    const failureReason = getAnalyticsVerificationFailureReason(row);
+    const queuePosition = Number(payload.queue_position ?? row?.queue_position);
+    const waitSeconds = Number(payload.estimated_wait_seconds ?? row?.estimated_wait_seconds);
+    const points = toNumericValue(row?.points_deducted ?? payload.points_deducted);
+    const submitterContext = buildAnalyticsVerificationUserDetailContext(row);
+    const details = [
+        submitterContext && submitterIdentity
+            ? {
+                label: '提交人',
+                value: submitterIdentity,
+                action: 'analytics-open-user-detail',
+                userId: submitterContext.userId,
+                userEmail: submitterContext.userEmail,
+                context: {
+                    ...submitterContext,
+                    autoOpenLedgerDetail: true,
+                    auto_open_ledger_detail: true
+                }
+            }
+            : { label: '提交人', value: submitterIdentity || '未记录提交人' },
+        { label: '提交内容', value: buildAnalyticsVerificationSubmittedContent(row) },
+        { label: '是否通过', value: getAnalyticsVerificationPassLabel(row) }
+    ];
+
+    if (getVerifyStatusGroup(row?.status || payload.status || payload.raw_status) === 'failed') {
+        details.push({ label: '失败原因', value: failureReason || '未记录失败原因' });
+    }
+
+    details.push(
+        { label: '提交模式', value: getAnalyticsVerificationTaskTypeLabel(row) },
+        { label: '任务号', value: verificationId || '未记录' },
+        { label: '站点', value: siteLabel },
+        { label: '提交时间', value: formatAnalyticsDateTime(row?.created_at) }
+    );
+
+    if (Number.isFinite(points) && points > 0) {
+        details.push({ label: '扣积分', value: `${formatNumber(points)} 积分` });
+    }
+    if (Number.isFinite(queuePosition) && queuePosition >= 0) {
+        details.push({ label: '队列位置', value: `#${queuePosition}` });
+    }
+    if (Number.isFinite(waitSeconds) && waitSeconds > 0) {
+        details.push({ label: '预计等待', value: `${formatNumber(waitSeconds)} 秒` });
+    }
+    if (resultDetail.value && resultDetail.value !== failureReason) {
+        details.push({ label: '返回内容', value: resultDetail.value, href: resultDetail.href });
+    }
+
+    return details;
+}
+
+function shouldHideAnalyticsVerificationCollapsedSummary(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    const statusGroup = getVerifyStatusGroup(row?.status || payload.status || payload.raw_status);
+    return statusGroup === 'success' || statusGroup === 'failed';
+}
+
+function buildAnalyticsVerificationTaskTitle(row = {}) {
+    const submitterIdentity = getAnalyticsVerificationSubmitterIdentity(row);
+    const payload = getAnalyticsVerificationPayload(row);
+    const verificationId = String(row?.verification_id || payload.job_id || payload.task_id || '').trim();
+    return submitterIdentity || (verificationId ? `任务 #${verificationId}` : '未记录提交身份');
+}
+
+function buildAnalyticsVerificationUserDetailContext(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    const userId = String(row?.user_id || payload.user_id || '').trim();
+    if (!userId) {
+        return null;
+    }
+
+    const verificationId = String(row?.verification_id || payload.job_id || payload.task_id || '').trim();
+    const userEmail = getAnalyticsVerificationSubmitterEmail(row);
+    const submittedAccount = getAnalyticsVerificationSubmittedAccount(row);
+    const taskTypeLabel = getAnalyticsVerificationTaskTypeLabel(row);
+    const statusLabel = getAnalyticsVerificationPassLabel(row);
+    const site = String(row?.site || getAnalyticsSiteParam() || '').trim().toLowerCase();
+    const siteLabel = site ? site.toUpperCase() : '';
+
+    return {
+        contextType: 'verification',
+        sourceLabel: '验证交接',
+        summary: verificationId
+            ? `来自最近验证任务 #${verificationId}，进入用户详情后会定位到同一验证流水。`
+            : '来自最近验证任务，进入用户详情后会优先查看验证相关流水。',
+        signalLabel: '验证记录',
+        signalValue: verificationId ? `#${verificationId}` : statusLabel,
+        referenceLabel: '验证单号',
+        referenceValue: verificationId,
+        actionLabel: '回到验证监控',
+        destination: 'verify-monitor',
+        destinationContext: verificationId ? {
+            verificationId,
+            targetId: verificationId,
+            referenceValue: verificationId
+        } : {},
+        userId,
+        user_id: userId,
+        userEmail,
+        user_email: userEmail,
+        email: userEmail,
+        verificationId,
+        verification_id: verificationId,
+        ledgerReferenceId: verificationId,
+        ledger_reference_id: verificationId,
+        submittedAccount,
+        submitted_account: submittedAccount,
+        taskTypeLabel,
+        task_type_label: taskTypeLabel,
+        statusLabel,
+        status_label: statusLabel,
+        site,
+        siteLabel,
+        defaultTab: 'ledger',
+        tab: 'ledger',
+        autoOpenLedgerDetail: true,
+        auto_open_ledger_detail: true
+    };
+}
+
+function buildAnalyticsVerificationTaskAction(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    const verificationId = String(row?.verification_id || payload.job_id || payload.task_id || '').trim();
+    const userDetailContext = buildAnalyticsVerificationUserDetailContext(row);
+    if (userDetailContext) {
+        return {
+            action: 'analytics-open-user-detail',
+            actionLabel: '查看用户详情',
+            icon: 'fas fa-user',
+            userId: userDetailContext.userId,
+            userEmail: userDetailContext.userEmail,
+            context: userDetailContext
+        };
+    }
+
+    return {
+        actionLabel: verificationId ? '打开任务' : '打开 Verify Monitor',
+        destination: 'verify-monitor',
+        icon: 'fas fa-wave-square',
+        context: verificationId ? {
+            verificationId,
+            targetId: verificationId,
+            referenceValue: verificationId
+        } : null
+    };
+}
+
+function buildAnalyticsVerificationTaskMeta(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    const verificationId = String(row?.verification_id || payload.job_id || payload.task_id || '').trim();
+    const siteLabel = String(row?.site || getAnalyticsSiteParam() || 'all').toUpperCase();
+    const statusLabel = getAnalyticsVerificationPassLabel(row);
+    const taskTypeLabel = getAnalyticsVerificationTaskTypeLabel(row);
+    return [
+        verificationId ? `任务 #${verificationId}` : '',
+        taskTypeLabel,
+        siteLabel,
+        statusLabel
+    ].filter(Boolean).join(' · ');
+}
+
 function formatAnalyticsVerificationSample(row = {}) {
-    const id = row?.verification_id || row?.email || row?.user_id || '验证任务';
+    const id = buildAnalyticsVerificationTaskTitle(row);
     const status = getVerifyStatusLabel(getVerifyStatusGroup(row?.status));
     const summary = truncateAnalyticsSnippet(getAnalyticsVerificationSummary(row), 30);
     return [id, status, summary].filter(Boolean).join(' · ');
@@ -1357,15 +1893,19 @@ function createAnalyticsCommandCenterInventorySummary() {
     };
 }
 
-function buildAnalyticsCommandCenterInventorySummary({ productSummaryBundle = null, productHealthBundle = null } = {}) {
+function buildAnalyticsCommandCenterInventorySummary({ productSummaryBundle = null, productHealthBundle = null, productRankBundle = null } = {}) {
     const summary = getOverviewProductBundleSegmentPayload(productSummaryBundle, 'summary');
     const health = {
         lowStockProducts: getOverviewProductBundleSegmentPayload(productHealthBundle, 'lowStockProducts') || [],
         soldOutProducts: getOverviewProductBundleSegmentPayload(productHealthBundle, 'soldOutProducts') || [],
         deliveryRiskProducts: getOverviewProductBundleSegmentPayload(productHealthBundle, 'deliveryRiskProducts') || []
     };
+    const ranks = {
+        highExposureLowConversion: getOverviewProductBundleSegmentPayload(productRankBundle, 'highExposureLowConversion') || [],
+        contentDrivenTop: getOverviewProductBundleSegmentPayload(productRankBundle, 'contentDrivenTop') || []
+    };
 
-    if (!summary && !health.lowStockProducts.length && !health.soldOutProducts.length && !health.deliveryRiskProducts.length) {
+    if (!summary && !health.lowStockProducts.length && !health.soldOutProducts.length && !health.deliveryRiskProducts.length && !ranks.highExposureLowConversion.length && !ranks.contentDrivenTop.length) {
         return createAnalyticsCommandCenterInventorySummary();
     }
 
@@ -1470,6 +2010,32 @@ function buildAnalyticsCommandCenterInventorySummary({ productSummaryBundle = nu
         });
     }
 
+    if (ranks.highExposureLowConversion[0]) {
+        const product = ranks.highExposureLowConversion[0];
+        recentItems.push({
+            label: '高曝低转',
+            copy: `${product.product_name || '未命名商品'} · 浏览 ${formatNumber(product.view_count || product.view_user_count || 0)}`,
+            tone: 'warn',
+            moduleId: 'commerce-center',
+            stateKey: `inventory-conversion-gap-${String(product.product_id || product.id || product.product_name || 'recent').trim() || 'recent'}`,
+            feedbackLabel: product.product_name || '商品转化断点',
+            intent: `打开 ${product.product_name || '该商品'} 的曝光转化拆解。`,
+            context: {
+                payload: {
+                    view: 'product',
+                    tab: 'product',
+                    focusTargetId: 'productRankingsSection',
+                    productId: product.product_id,
+                    productName: product.product_name,
+                    detailFocus: 'conversion-gap'
+                }
+            },
+            options: {
+                viewName: 'product'
+            }
+        });
+    }
+
     if (!recentItems.length && Number.isFinite(Number(summary?.purchase_conversion_rate))) {
         recentItems.push({
             label: '商品转化',
@@ -1512,9 +2078,11 @@ function getAnalyticsCommandCenterInventorySummary() {
         return createAnalyticsCommandCenterInventorySummary();
     }
 
+    const productDashboardBundle = getAnalyticsDerivedStateValue('productDashboardBundle');
     return buildAnalyticsCommandCenterInventorySummary({
-        productSummaryBundle: getAnalyticsDerivedStateValue('productSummaryBundle'),
-        productHealthBundle: getAnalyticsDerivedStateValue('productHealthBundle')
+        productSummaryBundle: getAnalyticsDerivedStateValue('productSummaryBundle') || productDashboardBundle,
+        productHealthBundle: getAnalyticsDerivedStateValue('productHealthBundle') || productDashboardBundle,
+        productRankBundle: getAnalyticsDerivedStateValue('productRankBundle') || productDashboardBundle
     });
 }
 
@@ -1538,20 +2106,40 @@ function emitAnalyticsCommandCenterInventorySummaryUpdate(summary = null) {
     return nextSummary;
 }
 
-async function primeAnalyticsCommandCenterInventorySummary(options = {}) {
-    if (typeof getAnalyticsProductSummaryBundle !== 'function' || typeof getAnalyticsProductHealthBundle !== 'function') {
+async function loadAnalyticsCommandCenterInventorySummary(options = {}) {
+    if (
+        typeof getAnalyticsProductDashboardBundle !== 'function'
+        && (typeof getAnalyticsProductSummaryBundle !== 'function' || typeof getAnalyticsProductHealthBundle !== 'function')
+    ) {
         return createAnalyticsCommandCenterInventorySummary();
     }
 
     try {
-        const [productSummaryBundle, productHealthBundle] = await Promise.all([
+        if (typeof getAnalyticsProductDashboardBundle === 'function') {
+            const productDashboardBundle = await getAnalyticsProductDashboardBundle({
+                limit: 10,
+                forceRefresh: options.force === true
+            }).catch(() => null);
+
+            return emitAnalyticsCommandCenterInventorySummaryUpdate(
+                buildAnalyticsCommandCenterInventorySummary({
+                    productSummaryBundle: productDashboardBundle,
+                    productHealthBundle: productDashboardBundle,
+                    productRankBundle: productDashboardBundle
+                })
+            );
+        }
+
+        const [productSummaryBundle, productHealthBundle, productRankBundle] = await Promise.all([
             getAnalyticsProductSummaryBundle({ forceRefresh: options.force === true }).catch(() => null),
-            getAnalyticsProductHealthBundle({ forceRefresh: options.force === true }).catch(() => null)
+            getAnalyticsProductHealthBundle({ forceRefresh: options.force === true }).catch(() => null),
+            getAnalyticsProductRankBundle({ forceRefresh: options.force === true }).catch(() => null)
         ]);
         return emitAnalyticsCommandCenterInventorySummaryUpdate(
             buildAnalyticsCommandCenterInventorySummary({
                 productSummaryBundle,
-                productHealthBundle
+                productHealthBundle,
+                productRankBundle
             })
         );
     } catch (error) {
@@ -1563,6 +2151,57 @@ async function primeAnalyticsCommandCenterInventorySummary(options = {}) {
         };
         return emitAnalyticsCommandCenterInventorySummaryUpdate(summary);
     }
+}
+
+function getAnalyticsCommandCenterInventoryPrimeDelayMs(options = {}) {
+    const explicitDelayMs = Number(options.delayMs);
+    if (Number.isFinite(explicitDelayMs) && explicitDelayMs >= 0) {
+        return explicitDelayMs;
+    }
+    return options.force === true
+        ? Math.max(400, Math.round(ANALYTICS_COMMAND_CENTER_INVENTORY_PRIME_DELAY_MS / 2))
+        : ANALYTICS_COMMAND_CENTER_INVENTORY_PRIME_DELAY_MS;
+}
+
+function scheduleAnalyticsCommandCenterInventorySummaryPrime(options = {}) {
+    if (analyticsCommandCenterInventoryPrimePromise) {
+        return analyticsCommandCenterInventoryPrimePromise;
+    }
+
+    if (analyticsCommandCenterInventoryPrimeTimerId) {
+        if (options.force !== true) {
+            return null;
+        }
+        window.clearTimeout?.(analyticsCommandCenterInventoryPrimeTimerId);
+        analyticsCommandCenterInventoryPrimeTimerId = 0;
+    }
+
+    const delayMs = getAnalyticsCommandCenterInventoryPrimeDelayMs(options);
+    analyticsCommandCenterInventoryPrimeTimerId = window.setTimeout(() => {
+        analyticsCommandCenterInventoryPrimeTimerId = 0;
+        analyticsCommandCenterInventoryPrimePromise = loadAnalyticsCommandCenterInventorySummary(options)
+            .finally(() => {
+                analyticsCommandCenterInventoryPrimePromise = null;
+            });
+        void analyticsCommandCenterInventoryPrimePromise;
+    }, delayMs);
+
+    return null;
+}
+
+async function primeAnalyticsCommandCenterInventorySummary(options = {}) {
+    const currentSummary = getAnalyticsCommandCenterInventorySummary();
+
+    if (options.immediate === true || options.await === true) {
+        return loadAnalyticsCommandCenterInventorySummary(options);
+    }
+
+    if (options.force !== true && currentSummary?.ready === true) {
+        return emitAnalyticsCommandCenterInventorySummaryUpdate(currentSummary);
+    }
+
+    scheduleAnalyticsCommandCenterInventorySummaryPrime(options);
+    return emitAnalyticsCommandCenterInventorySummaryUpdate(currentSummary);
 }
 
 function buildOverviewBusinessMixProductSignals({
@@ -3061,12 +3700,42 @@ function buildOverviewBusinessMixFallbackSummary({
     }, summaryWindow);
 }
 
-async function getOverviewBusinessMixSummaryData(options = {}) {
+async function getOverviewBusinessMixProductSignalsData(options = {}) {
     const contextKey = options.contextKey || getAnalyticsAIContextKey();
     return runAnalyticsDerivedRequest(
-        'overviewBusinessMix',
+        'overviewBusinessMixProductSignals',
         async () => {
-            const [payloadBundle, summaryWindow, productSummaryBundle, productRankBundle, productHealthBundle] = await Promise.all([
+            const productDashboardBundle = await getAnalyticsProductDashboardBundle({
+                contextKey,
+                forceRefresh: options.forceRefresh
+            }).catch(() => null);
+            const productSignals = buildOverviewBusinessMixProductSignals({
+                productSummary: getOverviewProductBundleSegmentPayload(productDashboardBundle, 'summary'),
+                productHealth: {
+                    lowStockProducts: getOverviewProductBundleSegmentPayload(productDashboardBundle, 'lowStockProducts') || [],
+                    soldOutProducts: getOverviewProductBundleSegmentPayload(productDashboardBundle, 'soldOutProducts') || [],
+                    deliveryRiskProducts: getOverviewProductBundleSegmentPayload(productDashboardBundle, 'deliveryRiskProducts') || [],
+                    refundRiskProducts: getOverviewProductBundleSegmentPayload(productDashboardBundle, 'refundRiskProducts') || []
+                },
+                productRanks: {
+                    highExposureLowConversion: getOverviewProductBundleSegmentPayload(productDashboardBundle, 'highExposureLowConversion') || [],
+                    contentDrivenTop: getOverviewProductBundleSegmentPayload(productDashboardBundle, 'contentDrivenTop') || []
+                }
+            });
+            return productSignals;
+        },
+        { contextKey, forceRefresh: options.forceRefresh }
+    );
+}
+
+async function getOverviewBusinessMixSummaryData(options = {}) {
+    const contextKey = options.contextKey || getAnalyticsAIContextKey();
+    const includeProductSignals = options.includeProductSignals !== false;
+    const requestKey = includeProductSignals ? 'overviewBusinessMix' : 'overviewBusinessMixBase';
+    return runAnalyticsDerivedRequest(
+        requestKey,
+        async () => {
+            const [payloadBundle, summaryWindow] = await Promise.all([
                 getAnalyticsSummaryPayloadBundle({
                     contextKey,
                     forceRefresh: options.forceRefresh
@@ -3074,33 +3743,14 @@ async function getOverviewBusinessMixSummaryData(options = {}) {
                 getAnalyticsSummaryWindowData({
                     contextKey,
                     forceRefresh: options.forceRefresh
-                }).catch(() => null),
-                getAnalyticsProductSummaryBundle({
-                    contextKey,
-                    forceRefresh: options.forceRefresh
-                }).catch(() => null),
-                getAnalyticsProductRankBundle({
-                    contextKey,
-                    forceRefresh: options.forceRefresh
-                }).catch(() => null),
-                getAnalyticsProductHealthBundle({
+                }).catch(() => null)
+            ]);
+            const productSignals = includeProductSignals
+                ? await getOverviewBusinessMixProductSignalsData({
                     contextKey,
                     forceRefresh: options.forceRefresh
                 }).catch(() => null)
-            ]);
-            const productSignals = buildOverviewBusinessMixProductSignals({
-                productSummary: getOverviewProductBundleSegmentPayload(productSummaryBundle, 'summary'),
-                productHealth: {
-                    lowStockProducts: getOverviewProductBundleSegmentPayload(productHealthBundle, 'lowStockProducts') || [],
-                    soldOutProducts: getOverviewProductBundleSegmentPayload(productHealthBundle, 'soldOutProducts') || [],
-                    deliveryRiskProducts: getOverviewProductBundleSegmentPayload(productHealthBundle, 'deliveryRiskProducts') || [],
-                    refundRiskProducts: getOverviewProductBundleSegmentPayload(productHealthBundle, 'refundRiskProducts') || []
-                },
-                productRanks: {
-                    highExposureLowConversion: getOverviewProductBundleSegmentPayload(productRankBundle, 'highExposureLowConversion') || [],
-                    contentDrivenTop: getOverviewProductBundleSegmentPayload(productRankBundle, 'contentDrivenTop') || []
-                }
-            });
+                : null;
             const payloadSegment = getAnalyticsSummaryPayloadBundleSegment(payloadBundle, 'overviewBusinessMix');
             if (payloadSegment?.ok && payloadSegment.summary) {
                 return enrichOverviewBusinessMixSummaryWithProductSignals(
@@ -3143,7 +3793,7 @@ async function getOverviewBusinessMixSummaryData(options = {}) {
                         orderBy: 'unlocked_at',
                         rangeColumn: 'unlocked_at'
                     }),
-                    fetchAnalyticsTableRows('verification_logs', 'verification_id, status, created_at, points_deducted, summary, message, error_message, stage_label, raw_status, site', {
+                    fetchAnalyticsTableRows('verification_logs', 'verification_id, user_id, email, status, created_at, points_deducted, summary, message, error_message, stage_label, raw_status, site', {
                         orderBy: 'created_at',
                         rangeColumn: 'created_at'
                     }),
@@ -3238,24 +3888,16 @@ function buildVerifyServiceSummaryFromRows(rows = []) {
 
     const recentItems = sortedRows.slice(0, 5).map((row) => {
         const statusGroup = getVerifyStatusGroup(row?.status);
-        const verificationId = String(row?.verification_id || '').trim();
-        const identity = row?.email || row?.user_id || '未记录身份';
-        const siteLabel = String(row?.site || getAnalyticsSiteParam() || 'all').toUpperCase();
         return {
-            title: row?.verification_id || identity,
+            title: buildAnalyticsVerificationTaskTitle(row),
             value: formatAnalyticsDateTime(row?.created_at),
-            meta: `${identity} · ${siteLabel}`,
+            meta: buildAnalyticsVerificationTaskMeta(row),
             badgeLabel: getVerifyStatusLabel(statusGroup),
             badgeTone: getVerifyStatusTone(statusGroup),
             summary: getAnalyticsVerificationSummary(row) || '暂无额外摘要',
-            actionLabel: verificationId ? '打开任务' : '打开 Verify Monitor',
-            destination: 'verify-monitor',
-            icon: 'fas fa-wave-square',
-            context: verificationId ? {
-                verificationId,
-                targetId: verificationId,
-                referenceValue: verificationId
-            } : null
+            hideSummary: shouldHideAnalyticsVerificationCollapsedSummary(row),
+            detailItems: buildAnalyticsVerificationTaskDetails(row),
+            ...buildAnalyticsVerificationTaskAction(row)
         };
     });
 
@@ -3265,22 +3907,16 @@ function buildVerifyServiceSummaryFromRows(rows = []) {
 
     const focusItems = focusTaskRows.map((row) => {
         const statusGroup = getVerifyStatusGroup(row?.status);
-        const verificationId = String(row?.verification_id || '').trim();
         return {
-            title: row?.verification_id || row?.email || row?.user_id || '未命名验证任务',
+            title: buildAnalyticsVerificationTaskTitle(row),
             value: formatAnalyticsDateTime(row?.created_at),
-            meta: `${String(row?.site || getAnalyticsSiteParam() || 'all').toUpperCase()} · ${row?.email || row?.user_id || '匿名用户'}`,
+            meta: buildAnalyticsVerificationTaskMeta(row),
             badgeLabel: getVerifyStatusLabel(statusGroup),
             badgeTone: getVerifyStatusTone(statusGroup),
             summary: getAnalyticsVerificationSummary(row) || '暂无失败摘要',
-            actionLabel: verificationId ? '打开任务' : '打开 Verify Monitor',
-            destination: 'verify-monitor',
-            icon: 'fas fa-wave-square',
-            context: verificationId ? {
-                verificationId,
-                targetId: verificationId,
-                referenceValue: verificationId
-            } : null
+            hideSummary: shouldHideAnalyticsVerificationCollapsedSummary(row),
+            detailItems: buildAnalyticsVerificationTaskDetails(row),
+            ...buildAnalyticsVerificationTaskAction(row)
         };
     });
 
@@ -3369,7 +4005,7 @@ function buildVerifyServiceSummaryFromRows(rows = []) {
         focusItems,
         recentRows: sortedRows.slice(0, 8).map((row) => ({
             '验证单号': row?.verification_id || '',
-            '用户': row?.email || row?.user_id || '匿名用户',
+            '用户': getAnalyticsVerificationSubmitterIdentity(row) || '匿名用户',
             '站点': String(row?.site || getAnalyticsSiteParam() || 'all').toUpperCase(),
             '状态': getVerifyStatusLabel(getVerifyStatusGroup(row?.status)),
             '积分消耗': toNumericValue(row?.points_deducted) || 0,
@@ -3378,7 +4014,7 @@ function buildVerifyServiceSummaryFromRows(rows = []) {
         })),
         focusRows: focusTaskRows.map((row) => ({
             '验证单号': row?.verification_id || '',
-            '用户': row?.email || row?.user_id || '匿名用户',
+            '用户': getAnalyticsVerificationSubmitterIdentity(row) || '匿名用户',
             '站点': String(row?.site || getAnalyticsSiteParam() || 'all').toUpperCase(),
             '状态': getVerifyStatusLabel(getVerifyStatusGroup(row?.status)),
             '时间': formatAnalyticsDateTime(row?.created_at),
@@ -3404,22 +4040,16 @@ function buildVerifyServiceSummaryFallback({ snapshot = null, summaryWindow = {}
     const successRate = requestCount > 0 ? (successCount / requestCount) * 100 : 0;
     const mapRow = (row = {}) => {
         const statusGroup = getVerifyStatusGroup(row?.status);
-        const verificationId = String(row?.verification_id || '').trim();
         return {
-            title: row?.verification_id || row?.email || row?.user_id || '验证任务',
+            title: buildAnalyticsVerificationTaskTitle(row),
             value: formatAnalyticsDateTime(row?.created_at),
-            meta: `${String(row?.site || getAnalyticsSiteParam() || 'all').toUpperCase()} · ${row?.email || row?.user_id || '匿名用户'}`,
+            meta: buildAnalyticsVerificationTaskMeta(row),
             badgeLabel: getVerifyStatusLabel(statusGroup),
             badgeTone: getVerifyStatusTone(statusGroup),
             summary: getAnalyticsVerificationSummary(row) || '来自验证运维兼容口径',
-            actionLabel: verificationId ? '打开任务' : '打开 Verify Monitor',
-            destination: 'verify-monitor',
-            icon: 'fas fa-wave-square',
-            context: verificationId ? {
-                verificationId,
-                targetId: verificationId,
-                referenceValue: verificationId
-            } : null
+            hideSummary: shouldHideAnalyticsVerificationCollapsedSummary(row),
+            detailItems: buildAnalyticsVerificationTaskDetails(row),
+            ...buildAnalyticsVerificationTaskAction(row)
         };
     };
 
@@ -3505,7 +4135,7 @@ function buildVerifyServiceSummaryFallback({ snapshot = null, summaryWindow = {}
         focusItems: recentFailures.slice(0, 5).map(mapRow),
         recentRows: recentTasks.slice(0, 8).map((row) => ({
             '验证单号': row?.verification_id || '',
-            '用户': row?.email || row?.user_id || '匿名用户',
+            '用户': getAnalyticsVerificationSubmitterIdentity(row) || '匿名用户',
             '站点': String(row?.site || getAnalyticsSiteParam() || 'all').toUpperCase(),
             '状态': getVerifyStatusLabel(getVerifyStatusGroup(row?.status)),
             '积分消耗': toNumericValue(row?.points_deducted) || 0,
@@ -3514,7 +4144,7 @@ function buildVerifyServiceSummaryFallback({ snapshot = null, summaryWindow = {}
         })),
         focusRows: recentFailures.slice(0, 8).map((row) => ({
             '验证单号': row?.verification_id || '',
-            '用户': row?.email || row?.user_id || '匿名用户',
+            '用户': getAnalyticsVerificationSubmitterIdentity(row) || '匿名用户',
             '站点': String(row?.site || getAnalyticsSiteParam() || 'all').toUpperCase(),
             '状态': getVerifyStatusLabel(getVerifyStatusGroup(row?.status)),
             '时间': formatAnalyticsDateTime(row?.created_at),
@@ -3559,6 +4189,7 @@ async function getVerifyServiceSummaryData(options = {}) {
                 forceRefresh: options.forceRefresh
             }).catch(() => null);
             const bundledRows = getAnalyticsSummaryRowsBundleTable(rowsBundle, 'verificationLogs');
+            const bundledLedgerRows = getAnalyticsSummaryRowsBundleTable(rowsBundle, 'pointsLedger');
             const rows = Array.isArray(bundledRows)
                 ? bundledRows
                 : await fetchAnalyticsTableRows(
@@ -3566,7 +4197,19 @@ async function getVerifyServiceSummaryData(options = {}) {
                     'verification_id, user_id, email, site, status, summary, message, error_message, stage_label, raw_status, points_deducted, created_at',
                     { orderBy: 'created_at', rangeColumn: 'created_at' }
                 );
-            const baseSummary = buildVerifyServiceSummaryFromRows(rows);
+            const needsLedgerSubmitterLookup = rows.some((row) => !String(row?.user_id || '').trim());
+            const ledgerRows = Array.isArray(bundledLedgerRows)
+                ? bundledLedgerRows
+                : (needsLedgerSubmitterLookup
+                    ? await fetchAnalyticsTableRows(
+                        'points_ledger',
+                        'id, user_id, amount, reason, reference_id, created_at, site',
+                        { orderBy: 'created_at', rangeColumn: 'created_at' }
+                    ).catch(() => [])
+                    : []);
+            const rowsWithLedgerSubmitters = enrichAnalyticsVerificationRowsWithLedgerSubmitters(rows, ledgerRows);
+            const enrichedRows = await enrichAnalyticsVerificationRowsWithSubmitters(rowsWithLedgerSubmitters);
+            const baseSummary = buildVerifyServiceSummaryFromRows(enrichedRows);
             const enrichedSummary = enrichVerifyServiceSummaryWithEvents(baseSummary, summaryWindow || {});
             if (hasVerifyServiceSummarySignal(enrichedSummary)) {
                 return enrichedSummary;

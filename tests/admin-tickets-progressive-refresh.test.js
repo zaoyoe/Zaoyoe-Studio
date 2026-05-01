@@ -34,7 +34,7 @@ test('ticket mutations refresh the queue list before warming the overview', () =
     );
     const bulkAssignmentSegment = getSegment(
         source,
-        'submitBulkAssignment: async function (operation = \'assign_self\') {',
+        'submitBulkAssignment: async function (operation = \'assign_self\', actionEl = null) {',
         'getSelectedPendingTickets: function () {'
     );
     const bulkProcessSegment = getSegment(

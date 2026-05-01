@@ -826,6 +826,30 @@
     font-weight: 500;
 }
 
+.filter-option[data-comments-action-feedback-state] {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    cursor: wait;
+    pointer-events: none;
+}
+
+.filter-option[data-comments-action-feedback-state="loading"] {
+    color: var(--admin-accent, #6b9ece);
+    background: rgba(107, 158, 206, 0.12);
+}
+
+.filter-option[data-comments-action-feedback-state="saved"] {
+    color: #16a34a;
+    background: rgba(34, 197, 94, 0.12);
+}
+
+.filter-option[data-comments-action-feedback-state="failed"] {
+    color: #dc2626;
+    background: rgba(239, 68, 68, 0.12);
+}
+
 /* Filter Divider */
 .filter-divider {
     height: 1px;
@@ -1430,6 +1454,39 @@
 .comment-list-admin:not(.list-view) .action-delete:hover {
     background: rgba(239, 68, 68, 0.1);
     color: #ef4444;
+}
+
+.comment-list-admin :is(.action-info, .action-btn, .action-detail, .action-view, .action-delete)[data-comments-action-feedback-state] {
+    opacity: 1;
+    cursor: wait;
+    pointer-events: none;
+}
+
+.comment-list-admin :is(.action-info, .action-btn, .action-detail, .action-view, .action-delete)[data-comments-action-feedback-state="loading"] {
+    color: var(--admin-accent, #6b9ece);
+    background: rgba(107, 158, 206, 0.12);
+}
+
+.comment-list-admin :is(.action-info, .action-btn, .action-detail, .action-view, .action-delete)[data-comments-action-feedback-state="saved"] {
+    color: #22c55e;
+    background: rgba(34, 197, 94, 0.12);
+}
+
+.comment-list-admin :is(.action-info, .action-btn, .action-detail, .action-view, .action-delete)[data-comments-action-feedback-state="failed"] {
+    color: #ef4444;
+    background: rgba(239, 68, 68, 0.12);
+}
+
+.admin-comments-action-feedback__sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
 }
 
 .comment-list-admin:not(.list-view) .action-view {
@@ -2288,6 +2345,29 @@
 .block-menu-btn:hover {
     background: var(--spotlight-color);
     color: var(--accent-purple);
+}
+
+.block-menu-btn[data-comments-action-feedback-state] {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: wait;
+    pointer-events: none;
+}
+
+.block-menu-btn[data-comments-action-feedback-state="loading"] {
+    color: var(--admin-accent, #6b9ece);
+    background: rgba(107, 158, 206, 0.12);
+}
+
+.block-menu-btn[data-comments-action-feedback-state="saved"] {
+    color: #16a34a;
+    background: rgba(34, 197, 94, 0.12);
+}
+
+.block-menu-btn[data-comments-action-feedback-state="failed"] {
+    color: #dc2626;
+    background: rgba(239, 68, 68, 0.12);
 }
 
 .block-menu-divider {

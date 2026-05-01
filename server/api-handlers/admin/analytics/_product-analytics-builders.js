@@ -8,6 +8,14 @@ const PRODUCT_ROW_PAGE_SIZE = 500;
 const PRODUCT_ROW_MAX_PAGES = 12;
 const DEFAULT_PRODUCT_RANK_LIMIT = 10;
 const DEFAULT_LOW_STOCK_THRESHOLD = 3;
+const PRODUCT_ANALYTICS_EVENT_NAMES = [
+    'shop_view',
+    'product_card_click',
+    'product_detail_view',
+    'product_purchase_click',
+    'shop_purchase',
+    'product_purchase_success'
+];
 
 function normalizeText(value, maxLength = 200) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
@@ -688,6 +696,7 @@ async function fetchProductEvents(supabase, { site = 'all', startIso = '', endIs
         let query = supabase
             .from('user_events')
             .select('id, user_id, site, event_name, event_type, event_data, page_url, referrer, created_at')
+            .in('event_name', PRODUCT_ANALYTICS_EVENT_NAMES)
             .order('created_at', { ascending: false });
 
         if (site && site !== 'all') {
@@ -949,6 +958,12 @@ function buildProductMetricEntries({ products = [], orders = [], events = [], in
     });
 }
 
+function resolveProductMetricEntries({ entries, products = [], orders = [], events = [], inventory = [], site = 'all' } = {}) {
+    return Array.isArray(entries)
+        ? entries
+        : buildProductMetricEntries({ products, orders, events, inventory, site });
+}
+
 function buildProductUserValueSummary({ products = [], orders = [] } = {}) {
     const paidOrders = (Array.isArray(orders) ? orders : [])
         .filter((order) => !isRefundedOrder(order))
@@ -1196,29 +1211,29 @@ function buildProductUserValueSummary({ products = [], orders = [] } = {}) {
     };
 }
 
-function buildProductSummaryPayload({ products = [], orders = [], events = [], inventory = [], site = 'all' } = {}) {
-    const entries = buildProductMetricEntries({ products, orders, events, inventory, site });
-    const activeProducts = entries.filter((entry) => entry.is_active);
+function buildProductSummaryPayload({ products = [], orders = [], events = [], inventory = [], site = 'all', entries } = {}) {
+    const metricEntries = resolveProductMetricEntries({ entries, products, orders, events, inventory, site });
+    const activeProducts = metricEntries.filter((entry) => entry.is_active);
     const sellingProducts = activeProducts.filter((entry) => entry.stock_count > 0);
     const lowStockProducts = activeProducts.filter((entry) => isInventoryManagedProduct(entry) && entry.stock_count > 0 && entry.stock_count <= DEFAULT_LOW_STOCK_THRESHOLD);
     const soldOutProducts = activeProducts.filter((entry) => isInventoryManagedProduct(entry) && entry.stock_count <= 0);
 
-    const totalViewUsers = entries.reduce((sum, entry) => sum + entry.view_user_count, 0);
-    const totalViewCount = entries.reduce((sum, entry) => sum + entry.view_count, 0);
-    const totalCardClickUsers = entries.reduce((sum, entry) => sum + entry.card_click_user_count, 0);
-    const totalCardClickCount = entries.reduce((sum, entry) => sum + entry.card_click_count, 0);
-    const totalDetailViewUsers = entries.reduce((sum, entry) => sum + entry.detail_view_user_count, 0);
-    const totalDetailViewCount = entries.reduce((sum, entry) => sum + entry.detail_view_count, 0);
-    const totalPurchaseClickUsers = entries.reduce((sum, entry) => sum + entry.purchase_click_user_count, 0);
-    const totalPurchaseClickCount = entries.reduce((sum, entry) => sum + entry.purchase_click_count, 0);
-    const totalBuyers = entries.reduce((sum, entry) => sum + entry.buyer_count, 0);
-    const totalOrders = entries.reduce((sum, entry) => sum + entry.order_count, 0);
-    const totalRefundedOrders = entries.reduce((sum, entry) => sum + entry.refunded_order_count, 0);
-    const totalUnits = entries.reduce((sum, entry) => sum + entry.units_sold, 0);
-    const totalGmv = entries.reduce((sum, entry) => sum + entry.gmv_points, 0);
-    const totalDeliverySuccess = entries.reduce((sum, entry) => sum + entry.delivery_success_count, 0);
-    const totalDeliveryRisk = entries.reduce((sum, entry) => sum + entry.delivery_risk_count, 0);
-    const topRevenueEntry = [...entries]
+    const totalViewUsers = metricEntries.reduce((sum, entry) => sum + entry.view_user_count, 0);
+    const totalViewCount = metricEntries.reduce((sum, entry) => sum + entry.view_count, 0);
+    const totalCardClickUsers = metricEntries.reduce((sum, entry) => sum + entry.card_click_user_count, 0);
+    const totalCardClickCount = metricEntries.reduce((sum, entry) => sum + entry.card_click_count, 0);
+    const totalDetailViewUsers = metricEntries.reduce((sum, entry) => sum + entry.detail_view_user_count, 0);
+    const totalDetailViewCount = metricEntries.reduce((sum, entry) => sum + entry.detail_view_count, 0);
+    const totalPurchaseClickUsers = metricEntries.reduce((sum, entry) => sum + entry.purchase_click_user_count, 0);
+    const totalPurchaseClickCount = metricEntries.reduce((sum, entry) => sum + entry.purchase_click_count, 0);
+    const totalBuyers = metricEntries.reduce((sum, entry) => sum + entry.buyer_count, 0);
+    const totalOrders = metricEntries.reduce((sum, entry) => sum + entry.order_count, 0);
+    const totalRefundedOrders = metricEntries.reduce((sum, entry) => sum + entry.refunded_order_count, 0);
+    const totalUnits = metricEntries.reduce((sum, entry) => sum + entry.units_sold, 0);
+    const totalGmv = metricEntries.reduce((sum, entry) => sum + entry.gmv_points, 0);
+    const totalDeliverySuccess = metricEntries.reduce((sum, entry) => sum + entry.delivery_success_count, 0);
+    const totalDeliveryRisk = metricEntries.reduce((sum, entry) => sum + entry.delivery_risk_count, 0);
+    const topRevenueEntry = [...metricEntries]
         .filter((entry) => normalizeNumber(entry?.gmv_points, 0) > 0)
         .sort((left, right) => normalizeNumber(right?.gmv_points, 0) - normalizeNumber(left?.gmv_points, 0))[0] || null;
     const userSignalMaps = {
@@ -1279,7 +1294,7 @@ function buildProductSummaryPayload({ products = [], orders = [], events = [], i
     return {
         active_product_count: activeProducts.length,
         selling_product_count: sellingProducts.length,
-        product_with_sales_count: entries.filter((entry) => entry.units_sold > 0).length,
+        product_with_sales_count: metricEntries.filter((entry) => entry.units_sold > 0).length,
         unique_buyer_count: totalBuyers,
         view_user_count: totalViewUsers,
         view_count: totalViewCount,
@@ -1301,7 +1316,7 @@ function buildProductSummaryPayload({ products = [], orders = [], events = [], i
             : 0,
         low_stock_product_count: lowStockProducts.length,
         sold_out_product_count: soldOutProducts.length,
-        delivery_risk_product_count: entries.filter((entry) => entry.delivery_risk_count > 0).length,
+        delivery_risk_product_count: metricEntries.filter((entry) => entry.delivery_risk_count > 0).length,
         top_product_name: topRevenueEntry?.product_name || '',
         user_signal_samples: userSignalSamples,
         buyer_snapshot: userValueSummary.buyer_snapshot,
@@ -1389,11 +1404,18 @@ function buildProductTrendPayload({ orders = [], events = [], startIso = '', end
         }));
 }
 
-function buildProductSiteComparisonPayload({ products = [], orders = [], events = [], inventory = [], activeSite = 'all' } = {}) {
+function buildProductSiteComparisonPayload({ products = [], orders = [], events = [], inventory = [], activeSite = 'all', entriesBySite } = {}) {
     const snapshots = ['cn', 'intl'].map((site) => ({
         site,
         label: site === 'intl' ? 'INTL' : 'CN',
-        summary: buildProductSummaryPayload({ products, orders: orders.filter((row) => normalizeSite(row?.site) === site), events: events.filter((row) => normalizeSite(row?.site) === site), inventory, site })
+        summary: buildProductSummaryPayload({
+            products,
+            orders: orders.filter((row) => normalizeSite(row?.site) === site),
+            events: events.filter((row) => normalizeSite(row?.site) === site),
+            inventory,
+            site,
+            entries: entriesBySite?.[site]
+        })
     }));
 
     return {
@@ -1403,13 +1425,13 @@ function buildProductSiteComparisonPayload({ products = [], orders = [], events 
     };
 }
 
-function buildProductCategoryBreakdownPayload({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = 6 } = {}) {
-    const entries = buildProductMetricEntries({ products, orders, events, inventory, site });
+function buildProductCategoryBreakdownPayload({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = 6, entries } = {}) {
+    const metricEntries = resolveProductMetricEntries({ entries, products, orders, events, inventory, site });
     const safeLimit = Math.max(1, normalizeInteger(limit, 6));
     const bucketMap = new Map();
-    const totalGmv = entries.reduce((sum, entry) => sum + normalizeNumber(entry?.gmv_points, 0), 0);
+    const totalGmv = metricEntries.reduce((sum, entry) => sum + normalizeNumber(entry?.gmv_points, 0), 0);
 
-    entries.forEach((entry) => {
+    metricEntries.forEach((entry) => {
         const category = normalizeText(entry?.category, 120) || '未分类';
         const bucket = bucketMap.get(category) || {
             category,
@@ -1553,8 +1575,8 @@ function getProductOperatingQuadrant(entry = {}, benchmarks = {}) {
     return { key: 'observe', label: '低动销观察', tone: 'neutral' };
 }
 
-function buildProductOperatingMatrixPayload({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = 12 } = {}) {
-    const entries = buildProductMetricEntries({ products, orders, events, inventory, site })
+function buildProductOperatingMatrixPayload({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = 12, entries } = {}) {
+    const metricEntries = resolveProductMetricEntries({ entries, products, orders, events, inventory, site })
         .filter((entry) => (
             normalizeInteger(entry?.view_user_count, 0) > 0
             || normalizeInteger(entry?.buyer_count, 0) > 0
@@ -1562,14 +1584,14 @@ function buildProductOperatingMatrixPayload({ products = [], orders = [], events
             || normalizeInteger(entry?.order_count, 0) > 0
         ));
     const safeLimit = Math.max(1, normalizeInteger(limit, 12));
-    const maxGmv = entries.reduce((maxValue, entry) => Math.max(maxValue, normalizeNumber(entry?.gmv_points, 0)), 0);
+    const maxGmv = metricEntries.reduce((maxValue, entry) => Math.max(maxValue, normalizeNumber(entry?.gmv_points, 0)), 0);
     const benchmarks = {
-        exposure_midpoint: getMedianValue(entries.map((entry) => entry.view_user_count)),
-        conversion_midpoint: getMedianValue(entries.map((entry) => entry.conversion_rate)),
-        gmv_midpoint: getMedianValue(entries.map((entry) => entry.gmv_points))
+        exposure_midpoint: getMedianValue(metricEntries.map((entry) => entry.view_user_count)),
+        conversion_midpoint: getMedianValue(metricEntries.map((entry) => entry.conversion_rate)),
+        gmv_midpoint: getMedianValue(metricEntries.map((entry) => entry.gmv_points))
     };
 
-    const items = entries
+    const items = metricEntries
         .map((entry) => {
             const quadrant = getProductOperatingQuadrant(entry, benchmarks);
             const gmvPoints = normalizeNumber(entry?.gmv_points, 0);
@@ -1631,24 +1653,24 @@ function sortByNumeric(rows = [], key = '', direction = 'desc') {
     return safeRows;
 }
 
-function buildProductRankPayloads({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = DEFAULT_PRODUCT_RANK_LIMIT } = {}) {
-    const entries = buildProductMetricEntries({ products, orders, events, inventory, site });
+function buildProductRankPayloads({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = DEFAULT_PRODUCT_RANK_LIMIT, entries } = {}) {
+    const metricEntries = resolveProductMetricEntries({ entries, products, orders, events, inventory, site });
     const safeLimit = Math.max(1, normalizeInteger(limit, DEFAULT_PRODUCT_RANK_LIMIT));
 
     return {
-        salesTop: sortByNumeric(entries.filter((entry) => entry.units_sold > 0), 'units_sold').slice(0, safeLimit),
-        gmvTop: sortByNumeric(entries.filter((entry) => entry.gmv_points > 0), 'gmv_points').slice(0, safeLimit),
-        conversionTop: sortByNumeric(entries.filter((entry) => entry.view_user_count > 0 && entry.buyer_count > 0), 'conversion_rate').slice(0, safeLimit),
+        salesTop: sortByNumeric(metricEntries.filter((entry) => entry.units_sold > 0), 'units_sold').slice(0, safeLimit),
+        gmvTop: sortByNumeric(metricEntries.filter((entry) => entry.gmv_points > 0), 'gmv_points').slice(0, safeLimit),
+        conversionTop: sortByNumeric(metricEntries.filter((entry) => entry.view_user_count > 0 && entry.buyer_count > 0), 'conversion_rate').slice(0, safeLimit),
         refundRateTop: sortByNumeric(
-            entries.filter((entry) => entry.refunded_order_count > 0 && entry.refund_rate > 0),
+            metricEntries.filter((entry) => entry.refunded_order_count > 0 && entry.refund_rate > 0),
             'refund_rate'
         ).slice(0, safeLimit),
         deliveryRiskRateTop: sortByNumeric(
-            entries.filter((entry) => entry.delivery_risk_count > 0 && entry.delivery_risk_rate > 0),
+            metricEntries.filter((entry) => entry.delivery_risk_count > 0 && entry.delivery_risk_rate > 0),
             'delivery_risk_rate'
         ).slice(0, safeLimit),
         contentDrivenTop: sortByNumeric(
-            entries.filter((entry) => entry.content_assisted_prompt_count > 0 && (
+            metricEntries.filter((entry) => entry.content_assisted_prompt_count > 0 && (
                 entry.content_assisted_gmv_points > 0
                 || entry.content_assisted_purchase_success_count > 0
                 || entry.content_assisted_purchase_click_count > 0
@@ -1657,7 +1679,7 @@ function buildProductRankPayloads({ products = [], orders = [], events = [], inv
             'content_assisted_gmv_points'
         ).slice(0, safeLimit),
         highExposureLowConversion: sortByNumeric(
-            entries
+            metricEntries
                 .filter((entry) => entry.view_user_count > 0)
                 .map((entry) => ({
                     ...entry,
@@ -1710,29 +1732,29 @@ function buildInventoryTurnoverHints(entries = []) {
     return hints;
 }
 
-function buildProductHealthPayloads({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = DEFAULT_PRODUCT_RANK_LIMIT } = {}) {
-    const entries = buildProductMetricEntries({ products, orders, events, inventory, site });
+function buildProductHealthPayloads({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = DEFAULT_PRODUCT_RANK_LIMIT, entries } = {}) {
+    const metricEntries = resolveProductMetricEntries({ entries, products, orders, events, inventory, site });
     const safeLimit = Math.max(1, normalizeInteger(limit, DEFAULT_PRODUCT_RANK_LIMIT));
 
     return {
         lowStockProducts: sortByNumeric(
-            entries.filter((entry) => entry.is_active && isInventoryManagedProduct(entry) && entry.stock_count > 0 && entry.stock_count <= DEFAULT_LOW_STOCK_THRESHOLD),
+            metricEntries.filter((entry) => entry.is_active && isInventoryManagedProduct(entry) && entry.stock_count > 0 && entry.stock_count <= DEFAULT_LOW_STOCK_THRESHOLD),
             'stock_count',
             'asc'
         ).slice(0, safeLimit),
         soldOutProducts: sortByNumeric(
-            entries.filter((entry) => entry.is_active && isInventoryManagedProduct(entry) && entry.stock_count <= 0),
+            metricEntries.filter((entry) => entry.is_active && isInventoryManagedProduct(entry) && entry.stock_count <= 0),
             'units_sold'
         ).slice(0, safeLimit),
         deliveryRiskProducts: sortByNumeric(
-            entries.filter((entry) => entry.delivery_risk_count > 0),
+            metricEntries.filter((entry) => entry.delivery_risk_count > 0),
             'delivery_risk_count'
         ).slice(0, safeLimit),
         refundRiskProducts: sortByNumeric(
-            entries.filter((entry) => entry.refunded_order_count > 0),
+            metricEntries.filter((entry) => entry.refunded_order_count > 0),
             'refunded_order_count'
         ).slice(0, safeLimit),
-        inventoryTurnoverHints: buildInventoryTurnoverHints(entries).slice(0, safeLimit)
+        inventoryTurnoverHints: buildInventoryTurnoverHints(metricEntries).slice(0, safeLimit)
     };
 }
 
@@ -1975,13 +1997,13 @@ function buildProductFunnelProductRows(entries = [], limit = 6) {
     ).slice(0, safeLimit);
 }
 
-function buildProductFunnelPayload({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = 6, productId = '' } = {}) {
+function buildProductFunnelPayload({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = 6, productId = '', entries } = {}) {
     const normalizedSite = normalizeSite(site);
     const normalizedProductId = normalizeText(productId, 160);
-    const entries = buildProductMetricEntries({ products, orders, events, inventory, site: normalizedSite });
+    const metricEntries = resolveProductMetricEntries({ entries, products, orders, events, inventory, site: normalizedSite });
     const filteredEntries = normalizedProductId
-        ? entries.filter((entry) => entry.product_id === normalizedProductId)
-        : entries;
+        ? metricEntries.filter((entry) => entry.product_id === normalizedProductId)
+        : metricEntries;
     const entry = normalizedProductId
         ? filteredEntries[0] || null
         : null;
@@ -2526,6 +2548,7 @@ module.exports = {
     buildRangeWindow,
     normalizePositiveInteger,
     loadProductAnalyticsDataset,
+    buildProductMetricEntries,
     buildProductSummaryPayload,
     buildProductTrendPayload,
     buildProductSiteComparisonPayload,

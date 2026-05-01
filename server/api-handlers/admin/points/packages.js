@@ -5,6 +5,9 @@ const {
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
+const {
+    clearPointsCatalogBaseCache
+} = require('./_catalog-base');
 
 const PACKAGE_SELECT_FIELDS = [
     'id',
@@ -179,6 +182,7 @@ module.exports = async (req, res) => {
                 .eq('id', id);
 
             if (error) throw error;
+            clearPointsCatalogBaseCache();
 
             await writeAdminAuditLog({
                 supabase,
@@ -220,6 +224,7 @@ module.exports = async (req, res) => {
                 .single();
 
             if (error) throw error;
+            clearPointsCatalogBaseCache();
 
             await writeAdminAuditLog({
                 supabase,
@@ -257,6 +262,7 @@ module.exports = async (req, res) => {
             .single();
 
         if (error) throw error;
+        clearPointsCatalogBaseCache();
 
         await writeAdminAuditLog({
             supabase,

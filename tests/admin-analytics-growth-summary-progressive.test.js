@@ -17,7 +17,7 @@ function getSegment(source, startMarker, endMarker) {
     return source.slice(start, end);
 }
 
-test('growth summary renders the base summary before awaiting product signal warmup', () => {
+test('growth summary renders the base summary before background product signal warmup', () => {
     const analyticsCoreSource = readRepoFile('admin-analytics.js');
     const panelLoadersSource = readRepoFile('js/admin-analytics-panel-loaders.js');
     const warmSegment = getSegment(
@@ -59,13 +59,23 @@ test('growth summary renders the base summary before awaiting product signal war
     );
     assert.equal(
         loadSegment.includes('await scheduleGrowthSummaryProductSignalsWarm(summary, { requestId, summaryWindow });'),
+        false,
+        'growth summary should not keep the refresh lifecycle open for product-signal enrichment'
+    );
+    assert.equal(
+        loadSegment.includes('void scheduleGrowthSummaryProductSignalsWarm(summary, { requestId, summaryWindow });'),
         true,
-        'growth summary should keep the spinner alive while product-signal enrichment finishes after the base render'
+        'growth summary should warm product signals in the background after first paint'
     );
     assert.equal(
         loadSegment.includes('await scheduleGrowthSummaryProductSignalsWarm(fallbackSummary, { requestId, summaryWindow });'),
+        false,
+        'growth summary fallback should not keep the refresh lifecycle open for product-signal enrichment'
+    );
+    assert.equal(
+        loadSegment.includes('void scheduleGrowthSummaryProductSignalsWarm(fallbackSummary, { requestId, summaryWindow });'),
         true,
-        'growth summary fallback should also keep the refresh lifecycle open during product-signal warmup'
+        'growth summary fallback should also warm product signals in the background'
     );
 
     assert.equal(

@@ -2516,6 +2516,7 @@ function selectCommentQueue(queue = 'pending') {
 function ensureCommentDetailDrawer() {
     let drawer = document.getElementById('commentDetailDrawer');
     if (drawer) {
+        bindCommentDetailDrawerCloseActivation(drawer);
         return drawer;
     }
 
@@ -2539,7 +2540,35 @@ function ensureCommentDetailDrawer() {
     `;
 
     document.body.appendChild(drawer);
+    bindCommentDetailDrawerCloseActivation(drawer);
     return drawer;
+}
+
+function handleCommentDetailDrawerCloseActivation(event) {
+    if (event.type === 'pointerup' && typeof event.button === 'number' && event.button !== 0) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    closeCommentDetailDrawer();
+}
+
+function bindCommentDetailDrawerCloseActivation(drawer) {
+    if (!(drawer instanceof HTMLElement)) {
+        return;
+    }
+
+    drawer.querySelectorAll('[data-comments-action="close-detail-drawer"]').forEach((trigger) => {
+        if (!(trigger instanceof HTMLElement) || trigger.dataset.commentsDrawerTouchBound === '1') {
+            return;
+        }
+
+        trigger.dataset.commentsDrawerTouchBound = '1';
+        trigger.addEventListener('click', handleCommentDetailDrawerCloseActivation);
+        trigger.addEventListener('pointerup', handleCommentDetailDrawerCloseActivation);
+        trigger.addEventListener('touchend', handleCommentDetailDrawerCloseActivation, { passive: false });
+    });
 }
 
 function closeCommentDetailDrawer() {
@@ -3548,7 +3577,7 @@ function renderCommentList(comments) {
                     </button>` : ''}
 
                     ${window.hasPermission && window.hasPermission('content.moderate') ? `
-                    <button class="action-delete" type="button" data-comments-action="delete-comment" data-comment-id="${encodeURIComponent(comment.id)}" data-comment-type="${encodeURIComponent(comment.type)}" data-comment-record-type="${encodeURIComponent(comment.record_type || '')}" title="删除">
+                    <button class="action-delete" type="button" data-comments-action="delete-comment" data-comment-id="${encodeURIComponent(comment.id)}" data-comment-type="${encodeURIComponent(comment.type)}" data-comment-record-type="${encodeURIComponent(comment.record_type || '')}" title="删除" aria-label="删除评论">
                         <i class="fas fa-trash"></i>
                     </button>
                     ` : ''}
@@ -3792,6 +3821,171 @@ function beginCommentsBatchMenuInteraction(actionEl, options = {}) {
     return cleanup;
 }
 
+function isAdminCommentsActionButton(actionEl) {
+    return Boolean(actionEl && actionEl.nodeType === 1 && actionEl.tagName === 'BUTTON');
+}
+
+function isAdminCommentsCompactActionButton(button) {
+    if (!isAdminCommentsActionButton(button)) {
+        return false;
+    }
+
+    return button.matches('.action-info, .action-btn, .action-detail, .action-view, .action-delete')
+        || button.closest('.comment-admin-item') instanceof HTMLElement;
+}
+
+function renderAdminCommentsActionButtonFeedback(button, state, text, options = {}) {
+    if (!isAdminCommentsActionButton(button)) {
+        return;
+    }
+
+    const normalizedState = ['loading', 'saved', 'failed'].includes(state) ? state : 'loading';
+    const label = String(text || '').trim()
+        || (normalizedState === 'loading' ? '处理中...' : normalizedState === 'failed' ? '操作失败' : '已完成');
+    const compact = options.compact !== false && isAdminCommentsCompactActionButton(button);
+    const iconClass = normalizedState === 'loading'
+        ? 'fas fa-spinner fa-spin'
+        : (normalizedState === 'failed' ? 'fas fa-exclamation-triangle' : 'fas fa-check');
+
+    button.dataset.commentsActionFeedbackState = normalizedState;
+    button.disabled = true;
+    button.setAttribute('aria-busy', normalizedState === 'loading' ? 'true' : 'false');
+    button.setAttribute('aria-label', label);
+    button.title = label;
+    button.innerHTML = compact
+        ? `<i class="${iconClass}" aria-hidden="true"></i><span class="admin-comments-action-feedback__sr">${escapeHtml(label)}</span>`
+        : `<i class="${iconClass}" aria-hidden="true"></i><span class="admin-comments-action-feedback__label">${escapeHtml(label)}</span>`;
+}
+
+function beginAdminCommentsActionButtonFeedback(actionEl, options = {}) {
+    if (!isAdminCommentsActionButton(actionEl)) {
+        return () => {};
+    }
+
+    if (actionEl.dataset.commentsActionFeedbackRunning === 'true') {
+        return () => {};
+    }
+
+    const snapshot = {
+        html: actionEl.innerHTML,
+        disabled: actionEl.disabled,
+        title: actionEl.getAttribute('title'),
+        ariaLabel: actionEl.getAttribute('aria-label')
+    };
+    const restoreDelayMs = Number.isFinite(Number(options.restoreDelayMs))
+        ? Number(options.restoreDelayMs)
+        : 900;
+
+    actionEl.dataset.commentsActionFeedbackRunning = 'true';
+    renderAdminCommentsActionButtonFeedback(actionEl, 'loading', options.loadingText || '处理中...', options);
+
+    return ({ state = 'restore', text = '', restore = true } = {}) => {
+        const normalizedState = ['saved', 'failed'].includes(state) ? state : 'restore';
+
+        const restoreButton = () => {
+            actionEl.innerHTML = snapshot.html;
+            actionEl.disabled = Boolean(snapshot.disabled);
+            if (snapshot.title === null) {
+                actionEl.removeAttribute('title');
+            } else {
+                actionEl.setAttribute('title', snapshot.title);
+            }
+            if (snapshot.ariaLabel === null) {
+                actionEl.removeAttribute('aria-label');
+            } else {
+                actionEl.setAttribute('aria-label', snapshot.ariaLabel);
+            }
+            actionEl.removeAttribute('aria-busy');
+            actionEl.removeAttribute('data-comments-action-feedback-state');
+            delete actionEl.dataset.commentsActionFeedbackRunning;
+        };
+
+        if (normalizedState === 'restore') {
+            restoreButton();
+            return;
+        }
+
+        const feedbackText = text
+            || (normalizedState === 'failed' ? options.errorText : options.successText)
+            || (normalizedState === 'failed' ? '操作失败' : '已完成');
+        renderAdminCommentsActionButtonFeedback(actionEl, normalizedState, feedbackText, options);
+
+        if (restore !== false) {
+            window.setTimeout(restoreButton, Math.max(0, restoreDelayMs));
+        }
+    };
+}
+
+function beginAdminCommentsMenuOptionFeedback(actionEl, options = {}) {
+    const optionEl = actionEl?.closest?.('.filter-option');
+    if (!optionEl) {
+        return () => {};
+    }
+
+    if (optionEl.dataset.commentsActionFeedbackRunning === 'true') {
+        return () => {};
+    }
+
+    const snapshot = {
+        html: optionEl.innerHTML,
+        title: optionEl.getAttribute('title'),
+        ariaDisabled: optionEl.getAttribute('aria-disabled')
+    };
+    const restoreDelayMs = Number.isFinite(Number(options.restoreDelayMs))
+        ? Number(options.restoreDelayMs)
+        : 900;
+
+    const renderOptionFeedback = (state, text) => {
+        const normalizedState = ['loading', 'saved', 'failed'].includes(state) ? state : 'loading';
+        const label = String(text || '').trim()
+            || (normalizedState === 'loading' ? '处理中...' : normalizedState === 'failed' ? '操作失败' : '已完成');
+        const iconClass = normalizedState === 'loading'
+            ? 'fas fa-spinner fa-spin'
+            : (normalizedState === 'failed' ? 'fas fa-exclamation-triangle' : 'fas fa-check');
+
+        optionEl.dataset.commentsActionFeedbackState = normalizedState;
+        optionEl.setAttribute('aria-busy', normalizedState === 'loading' ? 'true' : 'false');
+        optionEl.setAttribute('aria-disabled', 'true');
+        optionEl.innerHTML = `<i class="${iconClass}" aria-hidden="true"></i> ${escapeHtml(label)}`;
+    };
+
+    const restoreOption = () => {
+        optionEl.innerHTML = snapshot.html;
+        if (snapshot.title === null) {
+            optionEl.removeAttribute('title');
+        } else {
+            optionEl.setAttribute('title', snapshot.title);
+        }
+        if (snapshot.ariaDisabled === null) {
+            optionEl.removeAttribute('aria-disabled');
+        } else {
+            optionEl.setAttribute('aria-disabled', snapshot.ariaDisabled);
+        }
+        optionEl.removeAttribute('aria-busy');
+        optionEl.removeAttribute('data-comments-action-feedback-state');
+        delete optionEl.dataset.commentsActionFeedbackRunning;
+    };
+
+    optionEl.dataset.commentsActionFeedbackRunning = 'true';
+    renderOptionFeedback('loading', options.loadingText || '处理中...');
+
+    return ({ state = 'restore', text = '', restore = true } = {}) => {
+        const normalizedState = ['saved', 'failed'].includes(state) ? state : 'restore';
+        if (normalizedState === 'restore') {
+            restoreOption();
+            return;
+        }
+
+        const feedbackText = text
+            || (normalizedState === 'failed' ? options.errorText : options.successText)
+            || (normalizedState === 'failed' ? '操作失败' : '已完成');
+        renderOptionFeedback(normalizedState, feedbackText);
+        if (restore !== false) {
+            window.setTimeout(restoreOption, Math.max(0, restoreDelayMs));
+        }
+    };
+}
+
 function closeCommentsBatchMenu(force = false) {
     const container = document.getElementById('commentsBatchMenuContainer');
     const trigger = document.getElementById('commentsBatchMenuTrigger');
@@ -3992,7 +4186,13 @@ async function batchAssignCommentWorkflowSelf(actionEl = null) {
  * Export data function
  * format: 'csv' | 'json'
  */
-async function exportData(format) {
+async function exportData(format, actionEl = null) {
+    const finishMenuFeedback = beginAdminCommentsMenuOptionFeedback(actionEl, {
+        loadingText: '导出中...',
+        successText: '已导出',
+        errorText: '导出失败'
+    });
+
     try {
         const checked = document.querySelectorAll('.comment-checkbox:checked');
         let sourceData = [];
@@ -4009,7 +4209,8 @@ async function exportData(format) {
 
         if (sourceData.length === 0) {
             alert('无数据可导出');
-            return;
+            finishMenuFeedback();
+            return null;
         }
 
         // 2. Generate Content
@@ -4039,9 +4240,13 @@ async function exportData(format) {
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+        finishMenuFeedback({ state: 'saved', text: '已导出' });
+        return true;
     } catch (error) {
         console.error('Export comments error:', error);
+        finishMenuFeedback({ state: 'failed', text: '导出失败' });
         showToast('导出评论失败: ' + (error.message || '未知错误'), 'error');
+        return false;
     }
 }
 
@@ -4161,15 +4366,21 @@ async function batchDeleteComments(actionEl = null) {
 /**
  * Delete a comment
  */
-async function deleteComment(id, type, recordType = '') {
+async function deleteComment(id, type, recordType = '', actionEl = null) {
     const writableSite = requireWritableCommentsSite({
         label: recordType === 'message' ? '删除留言主贴' : '删除评论'
     });
     if (!writableSite) {
-        return;
+        return false;
     }
 
-    if (!confirm('确定要删除这条评论吗？此操作无法撤销。')) return;
+    if (!confirm('确定要删除这条评论吗？此操作无法撤销。')) return null;
+
+    const finishButtonFeedback = beginAdminCommentsActionButtonFeedback(actionEl, {
+        loadingText: '删除中...',
+        successText: '已删除',
+        errorText: '删除失败'
+    });
 
     try {
         const fallbackFocusId = findAdjacentCommentId(id, [id]);
@@ -4206,14 +4417,18 @@ async function deleteComment(id, type, recordType = '') {
         const successMessage = cascadeDeleted > 0
             ? `已删除 ${deleted} 条内容（含级联 ${cascadeDeleted} 条）`
             : '评论已删除';
+        finishButtonFeedback({ state: 'saved', text: '已删除', restore: false });
         showToast(successMessage, 'success');
         emitCommentsCommandFeedback(successMessage, 'saved', { source: 'comments-governance' });
+        return true;
 
     } catch (error) {
         console.error('Error deleting comment:', error);
         const failureMessage = '删除失败: ' + error.message;
+        finishButtonFeedback({ state: 'failed', text: '删除失败' });
         showToast(failureMessage, 'error');
         emitCommentsCommandFeedback(failureMessage, 'failed', { source: 'comments-governance' });
+        return false;
     }
 }
 
@@ -4546,7 +4761,8 @@ function bindAdminCommentsRuntimeDelegates() {
                 window.togglePin?.(
                     decodeURIComponent(actionEl.dataset.commentId || ''),
                     actionEl.dataset.commentPinned === '1',
-                    decodeURIComponent(actionEl.dataset.promptId || '')
+                    decodeURIComponent(actionEl.dataset.promptId || ''),
+                    actionEl
                 );
                 break;
             case 'toggle-block-dropdown':
@@ -4625,7 +4841,8 @@ function bindAdminCommentsRuntimeDelegates() {
                 window.deleteComment?.(
                     decodeURIComponent(actionEl.dataset.commentId || ''),
                     decodeURIComponent(actionEl.dataset.commentType || ''),
-                    decodeURIComponent(actionEl.dataset.commentRecordType || '')
+                    decodeURIComponent(actionEl.dataset.commentRecordType || ''),
+                    actionEl
                 );
                 break;
             case 'block-user': {
@@ -4635,26 +4852,22 @@ function bindAdminCommentsRuntimeDelegates() {
                 window.blockUser?.(
                     decodeURIComponent(actionEl.dataset.userId || ''),
                     actionEl.dataset.userScope || '',
-                    Number.isFinite(days) ? days : null
+                    Number.isFinite(days) ? days : null,
+                    actionEl
                 );
-                activeBlockDropdown?.remove();
-                activeBlockDropdown = null;
                 break;
             }
             case 'unblock-user':
                 event.stopPropagation();
                 window.unblockUser?.(
                     decodeURIComponent(actionEl.dataset.userId || ''),
-                    actionEl.dataset.userScope || ''
+                    actionEl.dataset.userScope || '',
+                    actionEl
                 );
-                activeBlockDropdown?.remove();
-                activeBlockDropdown = null;
                 break;
             case 'check-user-status':
                 event.stopPropagation();
-                window.checkUserStatus?.(decodeURIComponent(actionEl.dataset.userId || ''));
-                activeBlockDropdown?.remove();
-                activeBlockDropdown = null;
+                window.checkUserStatus?.(decodeURIComponent(actionEl.dataset.userId || ''), actionEl);
                 break;
         }
     });
@@ -4700,13 +4913,20 @@ document.addEventListener('click', (event) => {
 /**
  * Toggle Pin Status (Single pin per card)
  */
-window.togglePin = async function (id, currentStatus, promptId) {
+window.togglePin = async function (id, currentStatus, promptId, actionEl = null) {
     console.log('togglePin called:', id, 'current:', currentStatus, 'prompt:', promptId);
+    let finishButtonFeedback = () => {};
     try {
         const writableSite = requireWritableCommentsSite({ label: currentStatus ? '取消评论置顶' : '置顶评论' });
         if (!writableSite) {
-            return;
+            return false;
         }
+
+        finishButtonFeedback = beginAdminCommentsActionButtonFeedback(actionEl, {
+            loadingText: currentStatus ? '取消中...' : '置顶中...',
+            successText: currentStatus ? '已取消' : '已置顶',
+            errorText: '操作失败'
+        });
 
         const payload = await toggleCommentPinViaAdminApi({
             id,
@@ -4722,14 +4942,18 @@ window.togglePin = async function (id, currentStatus, promptId) {
             focusCommentId: id
         });
         const successMessage = currentStatus ? '已取消评论置顶' : '评论已置顶';
+        finishButtonFeedback({ state: 'saved', text: currentStatus ? '已取消' : '已置顶' });
         showToast(currentStatus ? '已取消置顶' : '评论已置顶', 'success');
         emitCommentsCommandFeedback(successMessage, 'saved', { source: 'comments-governance' });
         loadComments(currentCommentView, { preserveSelection: true, focusCommentId: id }); // Refresh list
+        return true;
     } catch (err) {
         console.error('Error toggling pin:', err);
         const failureMessage = '评论置顶操作失败';
+        finishButtonFeedback({ state: 'failed', text: '操作失败' });
         showToast('操作失败', 'error');
         emitCommentsCommandFeedback(failureMessage, 'failed', { source: 'comments-governance' });
+        return false;
     }
 };
 
@@ -4879,18 +5103,26 @@ function renderBlockDropdownMenu(userId, { isGuestbookBlocked = false, isGallery
     return html;
 }
 
-window.blockUser = async function (userId, scope, days) {
+window.blockUser = async function (userId, scope, days, actionEl = null) {
     const durationStr = days ? `${days}天` : '永久';
     const scopeStr = scope === 'guestbook' ? '留言板' : (scope === 'all' ? '全站' : '画廊');
 
-    if (!confirm(`确定要 [${durationStr}] 封禁该用户在 [${scopeStr}] 的权限吗？`)) return;
+    if (!confirm(`确定要 [${durationStr}] 封禁该用户在 [${scopeStr}] 的权限吗？`)) return null;
     const reason = window.prompt('可选：填写封禁原因（会写入封禁历史）', '') || '';
+    let finishButtonFeedback = () => {};
 
     try {
         const writableSite = requireWritableCommentsSite({ label: `${scopeStr}用户封禁` });
         if (!writableSite) {
-            return;
+            return false;
         }
+
+        finishButtonFeedback = beginAdminCommentsActionButtonFeedback(actionEl, {
+            loadingText: '封禁中...',
+            successText: '已封禁',
+            errorText: '封禁失败',
+            compact: false
+        });
 
         const payload = await mutateAdminCommentBlockState({
             action: 'block',
@@ -4911,20 +5143,32 @@ window.blockUser = async function (userId, scope, days) {
 
         refreshCommentsForUserStatus(userId);
         const successMessage = `已${durationStr}封禁用户 ${scopeStr} 权限（全站生效）`;
+        finishButtonFeedback({ state: 'saved', text: '已封禁', restore: false });
         showToast(successMessage, 'success');
         emitCommentsCommandFeedback(successMessage, 'saved', { source: 'comments-governance' });
+        return true;
     } catch (err) {
         console.error('Block user error:', err);
         const failureMessage = '操作失败: ' + err.message;
+        finishButtonFeedback({ state: 'failed', text: '封禁失败' });
         showToast(failureMessage, 'error');
         emitCommentsCommandFeedback(failureMessage, 'failed', { source: 'comments-governance' });
+        return false;
     }
 };
 
-window.checkUserStatus = async function (userId) {
+window.checkUserStatus = async function (userId, actionEl = null) {
+    const finishButtonFeedback = beginAdminCommentsActionButtonFeedback(actionEl, {
+        loadingText: '查询中...',
+        successText: '已查询',
+        errorText: '查询失败',
+        compact: false
+    });
+
     try {
         const payload = await fetchAdminCommentBlockState(userId);
         const blocks = Array.isArray(payload?.blocks) ? payload.blocks : [];
+        finishButtonFeedback({ state: 'saved', text: '已查询' });
 
         if (!blocks.length) {
             alert('该用户未被封禁');
@@ -4940,25 +5184,36 @@ window.checkUserStatus = async function (userId) {
             });
             alert(`用户当前封禁状态：\n\n${lines.join('\n\n')}`);
         }
+        return true;
     } catch (err) {
         console.error('Check status error:', err);
+        finishButtonFeedback({ state: 'failed', text: '查询失败' });
         showToast('查询失败', 'error');
+        return false;
     }
 };
 
-window.unblockUser = async function (userId, scope) {
+window.unblockUser = async function (userId, scope, actionEl = null) {
     const scopeLabel = scope === 'guestbook'
         ? '留言板'
         : (scope === 'all' ? '全站' : '画廊');
 
-    if (!confirm(`确定要解除该用户在 [${scopeLabel}] 的封禁吗？`)) return;
+    if (!confirm(`确定要解除该用户在 [${scopeLabel}] 的封禁吗？`)) return null;
     const reason = window.prompt('可选：填写解封说明（会写入封禁历史）', '') || '';
+    let finishButtonFeedback = () => {};
 
     try {
         const writableSite = requireWritableCommentsSite({ label: `${scopeLabel}用户解封` });
         if (!writableSite) {
-            return;
+            return false;
         }
+
+        finishButtonFeedback = beginAdminCommentsActionButtonFeedback(actionEl, {
+            loadingText: '解封中...',
+            successText: '已解封',
+            errorText: '解封失败',
+            compact: false
+        });
 
         const payload = await mutateAdminCommentBlockState({
             action: 'unblock',
@@ -4978,12 +5233,16 @@ window.unblockUser = async function (userId, scope) {
 
         refreshCommentsForUserStatus(userId);
         const successMessage = `已解封用户 ${scopeLabel} 权限`;
+        finishButtonFeedback({ state: 'saved', text: '已解封', restore: false });
         showToast(successMessage, 'success');
         emitCommentsCommandFeedback(successMessage, 'saved', { source: 'comments-governance' });
+        return true;
     } catch (err) {
         console.error('Unblock user error:', err);
         const failureMessage = '操作失败: ' + err.message;
+        finishButtonFeedback({ state: 'failed', text: '解封失败' });
         showToast(failureMessage, 'error');
         emitCommentsCommandFeedback(failureMessage, 'failed', { source: 'comments-governance' });
+        return false;
     }
 };

@@ -632,6 +632,29 @@ function resolveAdminUsersShellContextState(context = {}) {
         || normalizedContext.reference_value
         || ''
     ).trim();
+    const verificationId = String(
+        focus.verificationId
+        || focus.verification_id
+        || payload.verificationId
+        || payload.verification_id
+        || payload.analyticsContext?.verificationId
+        || payload.analyticsContext?.verification_id
+        || raw.verificationId
+        || raw.verification_id
+        || normalizedContext.verificationId
+        || normalizedContext.verification_id
+        || ''
+    ).trim();
+    const ledgerReferenceId = String(
+        focus.ledgerReferenceId
+        || focus.ledger_reference_id
+        || payload.ledgerReferenceId
+        || payload.ledger_reference_id
+        || payload.analyticsContext?.ledgerReferenceId
+        || payload.analyticsContext?.ledger_reference_id
+        || verificationId
+        || ''
+    ).trim();
 
     return {
         userId,
@@ -657,6 +680,8 @@ function resolveAdminUsersShellContextState(context = {}) {
             || normalizedContext.payment_order_id
             || ''
         ).trim(),
+        verificationId,
+        ledgerReferenceId,
         analyticsContext: payload.analyticsContext
             || raw.analyticsContext
             || normalizedContext.analyticsContext
@@ -666,6 +691,28 @@ function resolveAdminUsersShellContextState(context = {}) {
 
 async function handleAdminUsersShellContext(context = {}, options = {}) {
     const state = resolveAdminUsersShellContextState(context);
+    if (!state.analyticsContext && (state.verificationId || state.ledgerReferenceId)) {
+        state.analyticsContext = {
+            contextType: 'verification',
+            verificationId: state.verificationId,
+            verification_id: state.verificationId,
+            ledgerReferenceId: state.ledgerReferenceId,
+            ledger_reference_id: state.ledgerReferenceId,
+            userId: state.userId,
+            user_id: state.userId,
+            userEmail: state.email,
+            user_email: state.email,
+            email: state.email,
+            defaultTab: state.defaultTab || 'ledger',
+            tab: state.defaultTab || 'ledger',
+            autoOpenLedgerDetail: true,
+            auto_open_ledger_detail: true,
+            sourceLabel: '验证交接',
+            signalLabel: '验证记录',
+            referenceLabel: '验证单号',
+            referenceValue: state.verificationId || state.ledgerReferenceId
+        };
+    }
 
     if (state.userId || state.email) {
         const opened = await openUserModal(state.userId, {
@@ -2902,6 +2949,7 @@ function createModalAdminPermissionsState() {
         pendingAfterSave: false,
         saveTimer: 0,
         savePromise: null,
+        adminTogglePromise: null,
         lastError: '',
         lastSavedAt: 0,
         pendingTemplateId: ''
@@ -3226,6 +3274,7 @@ function createInitialUserModalData({ paymentFocusOrderId = '', preservedTabUiSt
         analyticsContext: null,
         paymentFocusOrderId,
         ledgerDetails: {},
+        ledgerAutoOpenedReferences: new Set(),
         tabs
     };
 
@@ -3980,14 +4029,14 @@ function syncModalAdminPermissionsSaveUi() {
         return;
     }
 
-    const { dirty, saving, saveTimer, lastError, lastSavedAt } = modalAdminPermissionsState;
+    const { dirty, saving, saveTimer, lastError, lastSavedAt, adminTogglePromise } = modalAdminPermissionsState;
     let state = 'idle';
     let statusText = '自动保存已开启';
 
     if (lastError) {
         state = 'error';
         statusText = `保存失败：${lastError}`;
-    } else if (saving) {
+    } else if (saving || adminTogglePromise) {
         state = 'saving';
         statusText = '正在保存权限修改...';
     } else if (dirty && saveTimer) {
@@ -4007,9 +4056,9 @@ function syncModalAdminPermissionsSaveUi() {
     }
 
     if (saveButton) {
-        saveButton.disabled = saving;
+        saveButton.disabled = saving || Boolean(adminTogglePromise);
         saveButton.dataset.state = state;
-        saveButton.innerHTML = saving
+        saveButton.innerHTML = state === 'saving'
             ? '<i class="fas fa-spinner fa-spin"></i> 保存中...'
             : '<i class="fas fa-save"></i> 立即保存';
     }
@@ -4155,12 +4204,33 @@ function ensureModalAdminDefaultPermissionSelection() {
 }
 
 function hasPendingModalAdminPermissionsWork() {
-    return modalAdminPermissionsState.dirty || modalAdminPermissionsState.saving || modalAdminPermissionsState.saveTimer !== 0;
+    return modalAdminPermissionsState.dirty
+        || modalAdminPermissionsState.saving
+        || modalAdminPermissionsState.saveTimer !== 0
+        || Boolean(modalAdminPermissionsState.adminTogglePromise);
 }
 
 async function flushModalAdminPermissionsBeforeExit({ reason = 'close', confirmOnFailure = true } = {}) {
     const userId = currentModalUser?.id || modalAdminPermissionsState.userId;
     if (!userId || !hasPendingModalAdminPermissionsWork()) {
+        return true;
+    }
+
+    const pendingAdminToggle = modalAdminPermissionsState.adminTogglePromise;
+    if (pendingAdminToggle) {
+        try {
+            await pendingAdminToggle;
+        } catch (error) {
+            console.warn(`Failed to finish modal admin toggle before ${reason}:`, error);
+        } finally {
+            if (modalAdminPermissionsState.adminTogglePromise === pendingAdminToggle) {
+                modalAdminPermissionsState.adminTogglePromise = null;
+                syncModalAdminPermissionsSaveUi();
+            }
+        }
+    }
+
+    if (!hasPendingModalAdminPermissionsWork()) {
         return true;
     }
 
@@ -4904,6 +4974,9 @@ async function openUserModal(userId, options = {}) {
     clearAllUserModalTabFeedbackDismiss();
     currentModalData = createInitialUserModalData({ paymentFocusOrderId, preservedTabUiState });
     currentModalData.analyticsContext = normalizeUserAnalyticsContext(options?.analyticsContext || null);
+    if (getUserModalLedgerFocusReferenceId(currentModalData.analyticsContext)) {
+        setUserModalTabFilterState('ledger', createDefaultUserModalTabFilterState('ledger'));
+    }
 
     const leftPanel = document.getElementById('userModalLeft');
     const tabContent = document.getElementById('userTabContent');
@@ -4990,6 +5063,14 @@ function formatAdminPermissionLabels(permissionKeys = []) {
         .join(', ');
 }
 
+function buildModalAdminPermissionCheckboxId(groupId = '', permissionKey = '') {
+    const stablePart = `${groupId || 'group'}-${permissionKey || 'permission'}`
+        .replace(/[^a-zA-Z0-9_-]+/g, '-')
+        .replace(/^-+|-+$/g, '')
+        .slice(0, 90) || 'permission';
+    return `modal-admin-perm-${stablePart}`;
+}
+
 function renderAdminPermissionChecklist(permissionList = []) {
     return getAdminPermissionGroupsForModal().map((group) => {
         const permissions = Array.isArray(group.permissions) ? group.permissions : [];
@@ -5002,15 +5083,23 @@ function renderAdminPermissionChecklist(permissionList = []) {
                 <div class="perm-subsection-title">${escapeHtml(group.title || '权限分组')}</div>
                 ${group.description ? `<div class="perm-subsection-help">${escapeHtml(group.description)}</div>` : ''}
                 <div class="perm-checkboxes">
-                    ${permissions.map((permissionDef) => `
-                        <label class="perm-item perm-item--rich">
-                            <input type="checkbox" data-perm="${escapeHtml(permissionDef.key)}" ${permissionList.includes(permissionDef.key) ? 'checked' : ''}>
+                    ${permissions.map((permissionDef) => {
+                        const permissionKey = String(permissionDef.key || '').trim();
+                        if (!permissionKey) {
+                            return '';
+                        }
+                        const checkboxId = buildModalAdminPermissionCheckboxId(group.id, permissionKey);
+                        return `
+                        <label class="perm-item perm-item--rich" for="${escapeHtml(checkboxId)}">
+                            <input id="${escapeHtml(checkboxId)}" class="perm-item-input" type="checkbox" data-perm="${escapeHtml(permissionKey)}" ${permissionList.includes(permissionKey) ? 'checked' : ''}>
+                            <span class="perm-item-check" aria-hidden="true"></span>
                             <span class="perm-item-copy">
                                 <span class="perm-item-label">${escapeHtml(getAdminPermissionDisplayLabel(permissionDef))}</span>
                                 <span class="perm-item-meta">${escapeHtml(getAdminPermissionCoverageText(permissionDef))}</span>
                             </span>
                         </label>
-                    `).join('')}
+                    `;
+                    }).join('')}
                 </div>
             </div>
         `;
@@ -5167,6 +5256,23 @@ function normalizeUserAnalyticsContext(rawContext = null) {
     const destinationContext = parsed.destinationContext && typeof parsed.destinationContext === 'object' && !Array.isArray(parsed.destinationContext)
         ? { ...parsed.destinationContext }
         : {};
+    const contextType = String(parsed.contextType || parsed.context_type || parsed.type || '').trim().toLowerCase();
+    const userId = String(parsed.userId || parsed.user_id || destinationContext.userId || destinationContext.user_id || '').trim();
+    const userEmail = String(parsed.userEmail || parsed.user_email || parsed.email || destinationContext.userEmail || destinationContext.user_email || destinationContext.email || '').trim();
+    const verificationId = String(parsed.verificationId || parsed.verification_id || destinationContext.verificationId || destinationContext.verification_id || '').trim();
+    const ledgerReferenceId = String(
+        parsed.ledgerReferenceId
+        || parsed.ledger_reference_id
+        || destinationContext.ledgerReferenceId
+        || destinationContext.ledger_reference_id
+        || verificationId
+        || ''
+    ).trim();
+    const submittedAccount = String(parsed.submittedAccount || parsed.submitted_account || '').trim();
+    const taskTypeLabel = String(parsed.taskTypeLabel || parsed.task_type_label || '').trim();
+    const statusLabel = String(parsed.statusLabel || parsed.status_label || '').trim();
+    const defaultTab = String(parsed.defaultTab || parsed.tab || '').trim().toLowerCase();
+    const autoOpenLedgerDetail = parsed.autoOpenLedgerDetail === true || parsed.auto_open_ledger_detail === true;
 
     if (!destinationContext.productId && productId && destination === 'analytics-product-detail') {
         destinationContext.productId = productId;
@@ -5192,6 +5298,16 @@ function normalizeUserAnalyticsContext(rawContext = null) {
         && !feedbackEntityType
         && !feedbackEntityId
         && !feedbackEntityName
+        && !contextType
+        && !userId
+        && !userEmail
+        && !verificationId
+        && !ledgerReferenceId
+        && !submittedAccount
+        && !taskTypeLabel
+        && !statusLabel
+        && !defaultTab
+        && !autoOpenLedgerDetail
         && !destination
     ) {
         return null;
@@ -5215,6 +5331,26 @@ function normalizeUserAnalyticsContext(rawContext = null) {
         feedbackEntityType,
         feedbackEntityId,
         feedbackEntityName,
+        contextType,
+        userId,
+        user_id: userId,
+        userEmail,
+        user_email: userEmail,
+        email: userEmail,
+        verificationId,
+        verification_id: verificationId,
+        ledgerReferenceId,
+        ledger_reference_id: ledgerReferenceId,
+        submittedAccount,
+        submitted_account: submittedAccount,
+        taskTypeLabel,
+        task_type_label: taskTypeLabel,
+        statusLabel,
+        status_label: statusLabel,
+        defaultTab,
+        tab: defaultTab,
+        autoOpenLedgerDetail,
+        auto_open_ledger_detail: autoOpenLedgerDetail,
         destination,
         destinationContext
     };
@@ -5576,7 +5712,7 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
                         <div class="perm-section-title">预设模板</div>
                         <div class="perm-help">先套用常用角色模板，再微调个别权限会更快。</div>
                         ${renderAdminPermissionTemplateButtons(user.id, permissionList)}
-                        <div class="perm-coverage-card" id="modalAdminPermissionCoverage" aria-live="polite">
+                        <div class="perm-coverage-card" id="modalAdminPermissionCoverage" aria-live="polite" data-empty="${permissionList.length === 0 ? '1' : '0'}">
                             ${buildModalAdminPermissionCoverageMarkup(permissionList)}
                         </div>
                         <div class="perm-section-title">后台权限</div>
@@ -5598,8 +5734,9 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
                 <div class="perm-section">
                     <div class="perm-section-title">商城购买</div>
                     <label class="perm-item">
-                        <input type="checkbox" id="modalUnlimitedPurchasesToggle" ${roleInfo.unlimited_shop_purchases ? 'checked' : ''}>
-                        <span>🛒 无限制购买</span>
+                        <input type="checkbox" id="modalUnlimitedPurchasesToggle" class="perm-item-input" ${roleInfo.unlimited_shop_purchases ? 'checked' : ''}>
+                        <span class="perm-item-check" aria-hidden="true"></span>
+                        <span class="perm-item-copy perm-item-copy--inline">🛒 无限制购买</span>
                     </label>
                     <div class="perm-help">勾选后，该用户可跳过商城单次限购、24 小时累计限购、N 分钟累计限购和每账号限购。</div>
                 </div>
@@ -5774,26 +5911,40 @@ function setModalAdminPermissionsSectionVisible(visible, { immediate = false } =
 
 // Handle admin toggle in modal
 async function handleModalAdminToggle(userId, isEnabled) {
-    setModalAdminPermissionsSectionVisible(isEnabled);
-    const updated = await toggleAdminRole(userId, isEnabled);
-    if (!updated) {
-        return false;
-    }
+    const operation = (async () => {
+        setModalAdminPermissionsSectionVisible(isEnabled);
+        const updated = await toggleAdminRole(userId, isEnabled);
+        if (!updated) {
+            return false;
+        }
 
-    if (isEnabled) {
-        ensureModalAdminDefaultPermissionSelection();
-    }
+        if (isEnabled) {
+            ensureModalAdminDefaultPermissionSelection();
+        }
 
-    const formState = readModalAdminPermissionsFormState();
-    if (formState) {
-        markModalAdminPermissionsAsSaved(formState, {
-            clearPendingTemplate: true,
-            lastSavedAt: Date.now()
-        });
-    } else {
-        syncModalAdminPermissionInsights();
+        const formState = readModalAdminPermissionsFormState();
+        if (formState) {
+            markModalAdminPermissionsAsSaved(formState, {
+                clearPendingTemplate: true,
+                lastSavedAt: Date.now()
+            });
+        } else {
+            syncModalAdminPermissionInsights();
+        }
+        return true;
+    })();
+
+    modalAdminPermissionsState.adminTogglePromise = operation;
+    syncModalAdminPermissionsSaveUi();
+
+    try {
+        return await operation;
+    } finally {
+        if (modalAdminPermissionsState.adminTogglePromise === operation) {
+            modalAdminPermissionsState.adminTogglePromise = null;
+        }
+        syncModalAdminPermissionsSaveUi();
     }
-    return true;
 }
 
 async function applyModalAdminPermissionTemplate(userId, templateId) {
@@ -6739,6 +6890,58 @@ function buildUsersTabError(message) {
     return `<div class="error-msg users-tab-error">加载失败: ${escapeHtml(message)}</div>`;
 }
 
+function getUserModalLedgerFocusReferenceId(context = currentModalData?.analyticsContext) {
+    const normalizedContext = normalizeUserAnalyticsContext(context);
+    return String(
+        normalizedContext?.ledgerReferenceId
+        || normalizedContext?.ledger_reference_id
+        || normalizedContext?.verificationId
+        || normalizedContext?.verification_id
+        || ''
+    ).trim();
+}
+
+function shouldAutoOpenUserLedgerFocusDetail(context = currentModalData?.analyticsContext) {
+    const normalizedContext = normalizeUserAnalyticsContext(context);
+    return normalizedContext?.autoOpenLedgerDetail === true
+        || normalizedContext?.auto_open_ledger_detail === true;
+}
+
+function scheduleUserLedgerFocusScroll() {
+    const focusReferenceId = getUserModalLedgerFocusReferenceId();
+    if (!focusReferenceId) {
+        return;
+    }
+
+    const run = () => {
+        const target = document.querySelector('#ledgerList .admin-ledger-item.is-focused');
+        if (!(target instanceof HTMLElement)) {
+            return;
+        }
+        target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        target.classList.add('is-focus-pulse');
+        window.setTimeout?.(() => target.classList.remove('is-focus-pulse'), 1600);
+        if (
+            shouldAutoOpenUserLedgerFocusDetail()
+            && !currentModalData?.ledgerAutoOpenedReferences?.has(focusReferenceId)
+        ) {
+            currentModalData.ledgerAutoOpenedReferences?.add(focusReferenceId);
+            const ledgerId = decodeURIComponent(target.getAttribute('data-ledger-id') || '');
+            if (ledgerId) {
+                window.setTimeout?.(() => {
+                    window.openAdminLedgerDetail?.(ledgerId);
+                }, 220);
+            }
+        }
+    };
+
+    if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(run);
+    } else {
+        window.setTimeout(run, 0);
+    }
+}
+
 function buildUserAnalyticsCommerceTrace(tabName = '', rawData = []) {
     const context = normalizeUserAnalyticsContext(currentModalData?.analyticsContext);
     if (!context) {
@@ -6747,11 +6950,14 @@ function buildUserAnalyticsCommerceTrace(tabName = '', rawData = []) {
 
     const normalizedTab = normalizeUserModalTab(tabName);
     const rows = Array.isArray(rawData) ? rawData : [];
-    const signalLabel = String(context.signalLabel || '商品信号').trim();
+    const isVerificationContext = context.contextType === 'verification' || Boolean(context.verificationId || context.ledgerReferenceId);
+    const signalLabel = String(context.signalLabel || (isVerificationContext ? '验证记录' : '商品信号')).trim();
     const signalValue = String(context.signalValue || '').trim();
-    const productLabel = String(context.productName || context.productId || '当前商品').trim();
+    const productLabel = isVerificationContext
+        ? String(context.productName || context.productId || '').trim()
+        : String(context.productName || context.productId || '当前商品').trim();
     const chips = [];
-    let title = '商品承接链';
+    let title = isVerificationContext ? '验证承接链' : '商品承接链';
     let summary = String(context.summary || '').trim();
     const feedbackEntries = typeof window.getAnalyticsResolutionFeedbackEntries === 'function'
         ? window.getAnalyticsResolutionFeedbackEntries(
@@ -6776,6 +6982,15 @@ function buildUserAnalyticsCommerceTrace(tabName = '', rawData = []) {
     if (productLabel) {
         chips.push(`<span class="users-commerce-trace__chip"><strong>商品</strong>${escapeHtml(productLabel)}</span>`);
     }
+    if (isVerificationContext && (context.verificationId || context.ledgerReferenceId)) {
+        chips.push(`<span class="users-commerce-trace__chip"><strong>验证单号</strong>${escapeHtml(context.verificationId || context.ledgerReferenceId)}</span>`);
+    }
+    if (isVerificationContext && context.submittedAccount) {
+        chips.push(`<span class="users-commerce-trace__chip"><strong>提交账号</strong>${escapeHtml(context.submittedAccount)}</span>`);
+    }
+    if (isVerificationContext && context.statusLabel) {
+        chips.push(`<span class="users-commerce-trace__chip"><strong>结果</strong>${escapeHtml(context.statusLabel)}</span>`);
+    }
     if (context.rangeLabel) {
         chips.push(`<span class="users-commerce-trace__chip"><strong>范围</strong>${escapeHtml(context.rangeLabel)}</span>`);
     }
@@ -6785,6 +7000,9 @@ function buildUserAnalyticsCommerceTrace(tabName = '', rawData = []) {
 
     if (normalizedTab === 'payments') {
         title = '商品承接链 / 支付记录';
+        if (isVerificationContext) {
+            title = '验证承接链 / 支付记录';
+        }
         const settledCount = rows.filter((item) => isAdminPaymentSettled(item)).length;
         const refundedCount = rows.filter((item) => {
             const refundStatus = String(item?.refund_status || '').trim().toLowerCase();
@@ -6808,12 +7026,21 @@ function buildUserAnalyticsCommerceTrace(tabName = '', rawData = []) {
         }
     } else if (normalizedTab === 'ledger') {
         title = '商品承接链 / 积分流水';
+        if (isVerificationContext) {
+            title = '验证承接链 / 积分流水';
+        }
         const shopRelatedCount = rows.filter((item) => isAdminShopLedgerReason(item?.reason, item?.referenceId)).length;
+        const verificationRelatedCount = rows.filter((item) => {
+            const referenceId = String(item?.reference_id || item?.referenceId || '').trim();
+            return isAdminVerifyServiceReason(item?.reason) || (context.ledgerReferenceId && referenceId === context.ledgerReferenceId);
+        }).length;
         const spendCount = rows.filter((item) => normalizeAdminLedgerValue(item?.amount) < 0).length;
         const incomeCount = rows.filter((item) => normalizeAdminLedgerValue(item?.amount) >= 0).length;
 
         chips.push(`<span class="users-commerce-trace__chip"><strong>流水</strong>${formatNumber(rows.length)} 条</span>`);
-        chips.push(`<span class="users-commerce-trace__chip"><strong>商城相关</strong>${formatNumber(shopRelatedCount)} 条</span>`);
+        chips.push(isVerificationContext
+            ? `<span class="users-commerce-trace__chip"><strong>验证相关</strong>${formatNumber(verificationRelatedCount)} 条</span>`
+            : `<span class="users-commerce-trace__chip"><strong>商城相关</strong>${formatNumber(shopRelatedCount)} 条</span>`);
         if (spendCount > 0) {
             chips.push(`<span class="users-commerce-trace__chip"><strong>支出</strong>${formatNumber(spendCount)} 条</span>`);
         }
@@ -6822,12 +7049,19 @@ function buildUserAnalyticsCommerceTrace(tabName = '', rawData = []) {
         }
 
         if (!summary) {
-            summary = rows.length > 0
-                ? '这里用积分流水确认这位用户是否已经从商品浏览/意图走到商城消费、退款返还或其它经营结果。'
-                : '当前积分流水里还没有可对照的商品经营样本，建议结合商品总盘和单品详情继续观察后续承接。';
+            summary = isVerificationContext
+                ? (rows.length > 0
+                    ? '这里用积分流水定位这位用户对应的验证扣分记录，便于继续核对验证结果、扣分和失败原因。'
+                    : '当前积分流水里还没有可定位的验证扣分记录，可能是失败未扣分或流水尚未同步。')
+                : (rows.length > 0
+                    ? '这里用积分流水确认这位用户是否已经从商品浏览/意图走到商城消费、退款返还或其它经营结果。'
+                    : '当前积分流水里还没有可对照的商品经营样本，建议结合商品总盘和单品详情继续观察后续承接。');
         }
     } else if (normalizedTab === 'activity') {
         title = '商品承接链 / 活动记录';
+        if (isVerificationContext) {
+            title = '验证承接链 / 活动记录';
+        }
         const commentCount = rows.filter((item) => String(item?.type || '').trim().toLowerCase() === 'comment').length;
         const guestbookCount = rows.filter((item) => String(item?.type || '').trim().toLowerCase() === 'guestbook').length;
         const sourceSamples = rows
@@ -6937,6 +7171,7 @@ function renderLedgerTab(container, rawData = currentModalData.pointsLedger || [
             </div>
         `, { variant: 'ledger' })}
     `;
+    scheduleUserLedgerFocusScroll();
 }
 
 function renderPaymentsTab(container, rawData = currentModalData.paymentOrders || []) {
@@ -6960,18 +7195,24 @@ function renderLedgerItems(data) {
     if (data.length === 0) {
         return buildUsersTabEmptyState('暂无积分记录');
     }
+    const focusReferenceId = getUserModalLedgerFocusReferenceId();
     return data.map(record => {
         const meta = getAdminLedgerMeta(record);
         const normalizedAmount = normalizeAdminLedgerValue(record.amount);
         const recordId = encodeURIComponent(String(record.id || ''));
+        const referenceId = String(record.reference_id || record.referenceId || '').trim();
+        const isFocused = focusReferenceId && referenceId === focusReferenceId;
         const amountText = `${normalizedAmount >= 0 ? '+' : ''}${formatAdminPointValue(normalizedAmount)} 分`;
         const tone = getAdminUiTone(meta.accent);
         const referenceChip = meta.referenceLabel
             ? `<span class="admin-ledger-chip admin-ledger-chip-mono">${escapeHtml(meta.referenceLabel)}</span>`
             : '';
+        const focusChip = isFocused
+            ? '<span class="users-payment-focus-pill users-ledger-focus-pill">当前验证记录</span>'
+            : '';
 
         return `
-            <div class="data-list-item admin-ledger-item admin-ledger-item--${tone}" data-admin-action="users-open-ledger-detail" data-ledger-id="${recordId}">
+            <div class="data-list-item admin-ledger-item admin-ledger-item--${tone}${isFocused ? ' is-focused' : ''}" data-admin-action="users-open-ledger-detail" data-ledger-id="${recordId}" data-ledger-reference-id="${escapeHtml(referenceId)}">
                 <div class="admin-ledger-icon admin-ledger-icon--${tone}">
                     <i class="fas ${meta.icon}"></i>
                 </div>
@@ -6986,6 +7227,7 @@ function renderLedgerItems(data) {
                     <div class="admin-ledger-meta-row">
                         <span class="admin-ledger-chip">${escapeHtml(meta.badge)}</span>
                         ${referenceChip}
+                        ${focusChip}
                         <span class="admin-ledger-time">${escapeHtml(meta.timeLabel)}</span>
                     </div>
                 </div>
@@ -7638,13 +7880,17 @@ function extractAdminFirstUrl(text = '') {
 }
 
 function parseAdminVerifyLogMessage(message) {
+    if (message && typeof message === 'object' && !Array.isArray(message)) {
+        return message;
+    }
+
     if (typeof message !== 'string' || !message.trim().startsWith('{')) {
         return null;
     }
 
     try {
         const parsed = JSON.parse(message);
-        return parsed?.kind === 'google_one_job' ? parsed : null;
+        return parsed?.kind === 'google_one_job' || parsed?.job_id || parsed?.email || parsed?.task_type ? parsed : null;
     } catch (_) {
         return null;
     }
@@ -7663,6 +7909,41 @@ function getAdminVerifyStatusMeta(status = '') {
         return { text: '处理中', color: '#6b9ece' };
     }
     return { text: normalized || '未知', color: '#cbd5e1' };
+}
+
+function getAdminVerifyTaskTypeLabel(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'full') return '全流程包绑卡';
+    if (normalized === 'extract') return '半流程 / 仅提链';
+    return normalized || '未记录';
+}
+
+function getAdminVerifyPassLabel(status = '') {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (normalized.includes('success') || normalized.includes('completed')) return '通过';
+    if (normalized.includes('fail') || normalized.includes('error') || normalized.includes('timeout')) return '未通过';
+    if (normalized.includes('queue') || normalized.includes('running') || normalized.includes('process') || normalized.includes('pending')) return '处理中';
+    return normalized || '待确认';
+}
+
+function isGenericAdminVerifyFailureText(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    return ['任务失败', '失败', 'failed', 'fail', 'error', 'task failed', 'unknown'].includes(normalized);
+}
+
+function pickAdminVerifyFailureText(candidates = []) {
+    let fallback = '';
+    for (const candidate of candidates) {
+        const value = String(candidate || '').trim();
+        if (!value) continue;
+        if (!isGenericAdminVerifyFailureText(value)) {
+            return value;
+        }
+        if (!fallback) {
+            fallback = value;
+        }
+    }
+    return fallback;
 }
 
 function getAdminUiTone(color = '') {
@@ -7695,6 +7976,9 @@ function isAdminVerifyServiceReason(reason = '') {
     const normalized = String(reason || '').trim().toLowerCase();
     return normalized.includes('google one') && (
         normalized.includes('链接获取服务') ||
+        normalized.includes('试用链接提取') ||
+        normalized.includes('全流程包绑卡') ||
+        normalized.includes('验证') ||
         normalized.includes('trial link') ||
         normalized.includes('link service') ||
         normalized.includes('verify service')
@@ -8047,6 +8331,87 @@ function renderAdminLedgerContentCards(items = []) {
     `;
 }
 
+function toAdminOptionalNumber(value) {
+    if (value === null || value === undefined || value === '') return NaN;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : NaN;
+}
+
+function buildAdminVerifyLedgerDetail(detail, verifyLog = null) {
+    const context = normalizeUserAnalyticsContext(currentModalData?.analyticsContext || null) || {};
+    const payload = parseAdminVerifyLogMessage(verifyLog?.message) || {};
+    const status = String(
+        verifyLog?.status
+        || payload.status
+        || payload.raw_status
+        || context.statusLabel
+        || context.status_label
+        || (detail.amount < 0 ? 'success' : '')
+        || ''
+    ).trim();
+    const taskType = String(payload.task_type || verifyLog?.task_type || '').trim();
+    const taskTypeLabel = taskType
+        ? getAdminVerifyTaskTypeLabel(taskType)
+        : String(context.taskTypeLabel || context.task_type_label || '').trim() || '未记录';
+    const resultUrl = String(payload.offer_url || payload.url || extractAdminFirstUrl(verifyLog?.message) || '').trim();
+    const submittedAccount = String(
+        payload.email
+        || context.submittedAccount
+        || context.submitted_account
+        || (looksLikeAdminEmail(detail.referenceId) ? detail.referenceId : '')
+        || ''
+    ).trim();
+    const jobId = String(
+        payload.job_id
+        || payload.task_id
+        || (!looksLikeAdminEmail(detail.referenceId) ? detail.referenceId : '')
+        || ''
+    ).trim();
+    const failureReason = pickAdminVerifyFailureText([
+        payload.failure_reason,
+        verifyLog?.error_message,
+        payload.error_message,
+        payload.message,
+        verifyLog?.summary,
+        payload.summary,
+        payload.reason,
+        payload.error,
+        payload.error_code,
+        verifyLog?.stage_label,
+        payload.stage_label,
+        verifyLog?.raw_status,
+        payload.raw_status
+    ]);
+
+    return {
+        ...(verifyLog || {}),
+        verification_id: String(verifyLog?.verification_id || detail.referenceId || jobId || '').trim(),
+        payload,
+        status,
+        site: String(verifyLog?.site || payload.site || context.site || '').trim(),
+        submitterEmail: String(currentModalUser?.email || context.userEmail || context.user_email || context.email || '').trim(),
+        submitterUserId: String(verifyLog?.user_id || detail.record?.user_id || currentModalUser?.id || context.userId || context.user_id || '').trim(),
+        email: submittedAccount,
+        jobId,
+        taskType,
+        taskTypeLabel,
+        passLabel: String(context.statusLabel || context.status_label || '').trim() || getAdminVerifyPassLabel(status),
+        failureReason,
+        stageLabel: String(verifyLog?.stage_label || payload.stage_label || '').trim(),
+        rawStatus: String(verifyLog?.raw_status || payload.raw_status || payload.status || '').trim(),
+        errorCode: String(payload.error_code || payload.error || '').trim(),
+        providerKeyName: String(payload.provider_key_name || '').trim(),
+        providerKeyFingerprint: String(payload.provider_key_fingerprint || '').trim(),
+        queuePosition: toAdminOptionalNumber(payload.queue_position),
+        estimatedWaitSeconds: toAdminOptionalNumber(payload.estimated_wait_seconds),
+        elapsedSeconds: toAdminOptionalNumber(payload.elapsed_seconds),
+        resultText: String(verifyLog?.summary || payload.summary || payload.message || payload.error_message || verifyLog?.error_message || '').trim(),
+        points_deducted: verifyLog?.points_deducted ?? Math.abs(detail.amount),
+        created_at: verifyLog?.created_at || detail.createdAt,
+        url: resultUrl
+    };
+}
+
 async function fetchAdminLedgerDetail(record) {
     const meta = getAdminLedgerMeta(record);
     const detail = {
@@ -8110,29 +8475,47 @@ async function fetchAdminLedgerDetail(record) {
             if (data && data.found !== false) {
                 detail.affiliate = data;
             }
-        } else if (meta.transactionType === 'verify' && detail.referenceId) {
-            const { data } = await window.supabaseClient
-                .from('verification_logs')
-                .select('verification_id, status, message, points_deducted, created_at')
-                .eq('verification_id', detail.referenceId)
-                .order('created_at', { ascending: false })
-                .limit(1);
+        } else if (meta.transactionType === 'verify') {
+            let verifyLog = null;
+            const verifyLogColumns = 'verification_id, user_id, site, status, summary, message, points_deducted, created_at';
+            if (detail.referenceId) {
+                const { data, error } = await window.supabaseClient
+                    .from('verification_logs')
+                    .select(verifyLogColumns)
+                    .eq('verification_id', detail.referenceId)
+                    .order('created_at', { ascending: false })
+                    .limit(1);
 
-            if (Array.isArray(data) && data.length > 0) {
-                const verifyLog = data[0];
-                const payload = parseAdminVerifyLogMessage(verifyLog.message) || {};
-                detail.verify = {
-                    ...verifyLog,
-                    payload,
-                    email: String(payload.email || (looksLikeAdminEmail(detail.referenceId) ? detail.referenceId : '')).trim(),
-                    jobId: String(payload.job_id || (!looksLikeAdminEmail(detail.referenceId) ? detail.referenceId : '')).trim(),
-                    url: String(payload.url || extractAdminFirstUrl(verifyLog.message) || '').trim()
-                };
+                if (error) throw error;
+                verifyLog = Array.isArray(data) && data.length > 0 ? data[0] : null;
+
+                if (!verifyLog) {
+                    let query = window.supabaseClient
+                        .from('verification_logs')
+                        .select(verifyLogColumns)
+                        .ilike('message', `%${detail.referenceId}%`);
+                    const modalUserId = String(currentModalUser?.id || '').trim();
+                    if (modalUserId) {
+                        query = query.eq('user_id', modalUserId);
+                    }
+                    const fallbackResult = await query
+                        .order('created_at', { ascending: false })
+                        .limit(1);
+                    if (fallbackResult.error) throw fallbackResult.error;
+                    verifyLog = Array.isArray(fallbackResult.data) && fallbackResult.data.length > 0
+                        ? fallbackResult.data[0]
+                        : null;
+                }
             }
+
+            detail.verify = buildAdminVerifyLedgerDetail(detail, verifyLog);
         }
     } catch (error) {
         console.warn('Failed to fetch ledger detail:', error);
         detail.error = error.message || '详情加载失败';
+        if (meta.transactionType === 'verify') {
+            detail.verify = buildAdminVerifyLedgerDetail(detail, null);
+        }
     }
 
     return detail;
@@ -8239,6 +8622,12 @@ function renderAdminLedgerDetailModal(detail) {
 
     if (detail.verify) {
         const verifyStatus = getAdminVerifyStatusMeta(detail.verify.status || detail.verify.payload?.raw_status || '');
+        const queuePosition = Number(detail.verify.queuePosition);
+        const waitSeconds = Number(detail.verify.estimatedWaitSeconds);
+        const elapsedSeconds = Number(detail.verify.elapsedSeconds);
+        const verifyPayloadText = detail.verify.payload && Object.keys(detail.verify.payload).length
+            ? JSON.stringify(detail.verify.payload, null, 2)
+            : '';
         extraSections += `
             <section class="admin-ledger-section">
                 <div class="admin-ledger-section-title">验证服务详情</div>
@@ -8246,17 +8635,42 @@ function renderAdminLedgerDetailModal(detail) {
                     ${renderAdminLedgerDetailRows([
                         { label: '验证编号', value: detail.verify.verification_id || detail.referenceId || '未记录', mono: true },
                         { label: '状态', value: verifyStatus.text, color: verifyStatus.color },
-                        { label: '账号邮箱', value: detail.verify.email || '未记录' },
+                        { label: '是否通过', value: detail.verify.passLabel || getAdminVerifyPassLabel(detail.verify.status), color: verifyStatus.color },
+                        { label: '提交用户', value: detail.verify.submitterEmail || detail.verify.submitterUserId || '未记录', mono: !detail.verify.submitterEmail && !!detail.verify.submitterUserId },
+                        { label: '验证账号', value: detail.verify.email || '未记录' },
+                        { label: '提交模式', value: detail.verify.taskTypeLabel || '未记录' },
                         { label: '任务编号', value: detail.verify.jobId || '未记录', mono: !!detail.verify.jobId },
+                        { label: '站点', value: String(detail.verify.site || detail.record?.site || '').toUpperCase() || '未记录' },
+                        { label: '阶段', value: detail.verify.stageLabel || '未记录' },
+                        { label: '上游状态', value: detail.verify.rawStatus || '未记录' },
+                        { label: '错误码', value: detail.verify.errorCode || '无', mono: !!detail.verify.errorCode },
+                        { label: '失败原因', value: detail.verify.failureReason || '无' },
+                        { label: '服务 Key', value: detail.verify.providerKeyName || '未记录' },
+                        { label: 'Key 指纹', value: detail.verify.providerKeyFingerprint || '未记录', mono: !!detail.verify.providerKeyFingerprint },
+                        { label: '队列位置', value: Number.isFinite(queuePosition) ? `#${queuePosition}` : '未记录' },
+                        { label: '预计等待', value: Number.isFinite(waitSeconds) ? `${formatAdminPointValue(waitSeconds)} 秒` : '未记录' },
+                        { label: '处理耗时', value: Number.isFinite(elapsedSeconds) ? `${formatAdminPointValue(elapsedSeconds)} 秒` : '未记录' },
                         { label: '完成时间', value: formatAdminDateTime(detail.verify.created_at || detail.createdAt) },
                         { label: '扣除积分', value: `${formatAdminPointValue(detail.verify.points_deducted || Math.abs(detail.amount))} 分` }
                     ])}
                 </div>
-                ${detail.verify.url ? renderAdminLedgerContentCards([{
-            title: '生成链接',
-            content: detail.verify.url,
-            copyText: detail.verify.url
-        }]) : ''}
+                ${renderAdminLedgerContentCards([
+            detail.verify.url ? {
+                title: '生成链接',
+                content: detail.verify.url,
+                copyText: detail.verify.url
+            } : null,
+            detail.verify.resultText ? {
+                title: '验证返回摘要',
+                content: detail.verify.resultText,
+                copyText: detail.verify.resultText
+            } : null,
+            verifyPayloadText ? {
+                title: '上游原始记录',
+                content: verifyPayloadText,
+                copyText: verifyPayloadText
+            } : null
+        ].filter(Boolean))}
             </section>
         `;
     }
@@ -9371,7 +9785,27 @@ async function fetchPointsLedger(userId) {
 
         if (error) throw error;
 
-        return data || [];
+        const rows = Array.isArray(data) ? data : [];
+        const focusReferenceId = getUserModalLedgerFocusReferenceId();
+        if (!focusReferenceId || rows.some((row) => String(row?.reference_id || '').trim() === focusReferenceId)) {
+            return rows;
+        }
+
+        const { data: focusData, error: focusError } = await window.supabaseClient
+            .from('points_ledger')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('reference_id', focusReferenceId)
+            .order('created_at', { ascending: false })
+            .limit(1);
+
+        if (focusError || !Array.isArray(focusData) || focusData.length === 0) {
+            return rows;
+        }
+
+        const existingIds = new Set(rows.map((row) => String(row?.id || '').trim()).filter(Boolean));
+        const missingFocusRows = focusData.filter((row) => !existingIds.has(String(row?.id || '').trim()));
+        return [...missingFocusRows, ...rows];
     } catch (err) {
         console.error('Failed to fetch points ledger:', err);
         return [];
@@ -9908,7 +10342,8 @@ function formatTimeAgo(dateString) {
 }
 
 function closeUserDrawer() {
-    document.getElementById('userDrawerOverlay').classList.remove('active');
+    closeUserModal();
+    document.getElementById('userDrawerOverlay')?.classList.remove('active');
 }
 
 // Close drawer on overlay click (with null check)
@@ -10511,6 +10946,7 @@ async function toggleAdminRole(userId, enabled) {
                     userState.users[userIndex].admin_role,
                     { email: userState.users[userIndex].email }
                 );
+                renderUsersTable();
             }
             console.log('✅ Admin role granted to', userId);
             return true;
@@ -10535,6 +10971,7 @@ async function toggleAdminRole(userId, enabled) {
                 userState.users[userIndex].admin_role_expiry_meta = getAdminRoleExpiryMeta(null, {
                     email: userState.users[userIndex].email
                 });
+                renderUsersTable();
             }
             console.log('✅ Admin role revoked from', userId);
             return true;

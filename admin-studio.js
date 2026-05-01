@@ -9,10 +9,19 @@
 const DEFAULT_ADMIN_VISION_MODEL = 'gemini-2.5-flash';
 const ADMIN_VISION_ANALYSIS_TIMEOUT_MS = 45000;
 const ADMIN_VISION_ANALYSIS_MAX_OUTPUT_TOKENS = 2048;
+const PROMPT_UPLOAD_ORIGINAL_MAX_WIDTH = 2048;
+const PROMPT_UPLOAD_ORIGINAL_QUALITY = 0.9;
 const ADMIN_VISION_SINGLE_IMAGE_MAX_WIDTH = 1024;
 const ADMIN_VISION_SINGLE_IMAGE_QUALITY = 0.8;
 const ADMIN_VISION_GRID_CELL_SIZE = 448;
 const ADMIN_VISION_RETRYABLE_STATUS_CODES = new Set([500, 502, 503, 504]);
+const PROMPT_UPLOAD_IMAGE_VARIANTS = Object.freeze([
+    { id: 'thumb', maxWidth: 800, quality: 0.85 },
+    { id: 'featured', maxWidth: 1280, quality: 0.8 },
+    { id: 'card', maxWidth: 560, quality: 0.76 },
+    { id: 'home', maxWidth: 420, quality: 0.74 }
+]);
+const PROMPT_UPLOAD_SAFE_VARIANT_IDS = new Set(['thumb', 'featured', 'card', 'home']);
 const ADMIN_STUDIO_ACCESS_RESTORE_TIMEOUT_MS = 7000;
 const ADMIN_STUDIO_ACCESS_GATE_TIMEOUT_MS = 10000;
 const ADMIN_STUDIO_SESSION_WARM_TIMEOUT_MS = 1800;
@@ -55,6 +64,8 @@ function setPendingAdminGalleryFocusPromptId(promptId = '') {
 let uploadedFiles = [];
 let analysisResult = null;
 let currentEditingPromptImageUrls = [];
+let currentEditingPromptImageAssets = [];
+const pendingUploadFileFingerprints = new Set();
 window.currentUserPermissions = [];
 window.isSuperAdmin = false;
 window.isAdmin = false;
@@ -87,6 +98,14 @@ const ADMIN_MODAL_SCROLL_LOCK_SELECTORS = [
     '.shop-inventory-detail-overlay.is-visible',
     '.shop-inventory-fault-overlay.is-visible'
 ].join(', ');
+
+function dedupePromptImageUrls(urls = []) {
+    return [...new Set(
+        (Array.isArray(urls) ? urls : [])
+            .map((url) => String(url || '').trim())
+            .filter(Boolean)
+    )];
+}
 const ADMIN_SCROLLBAR_AUTO_HIDE_SELECTOR = [
     '.select-options',
     '.modal-content',
@@ -478,14 +497,95 @@ function sanitizeImageUrl(url) {
     return '';
 }
 
+function normalizePromptImageAsset(value) {
+    if (typeof value === 'string') {
+        const original = sanitizeImageUrl(value);
+        return original ? { original } : null;
+    }
+
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+
+    const variants = value.variants && typeof value.variants === 'object' && !Array.isArray(value.variants)
+        ? value.variants
+        : {};
+    const asset = {};
+
+    for (const key of ['original', 'thumb', 'featured', 'card', 'home']) {
+        const url = sanitizeImageUrl(value[key] || variants[key]);
+        if (url) {
+            asset[key] = url;
+        }
+    }
+
+    const fallbackOriginal = sanitizeImageUrl(value.url || value.src || value.image);
+    if (!asset.original && fallbackOriginal) {
+        asset.original = fallbackOriginal;
+    }
+
+    return asset.original || asset.thumb || asset.featured || asset.card || asset.home ? asset : null;
+}
+
+function normalizePromptImageAssetsFromRecord(prompt = {}) {
+    const explicitAssets = Array.isArray(prompt?.image_assets)
+        ? prompt.image_assets
+        : (Array.isArray(prompt?.imageAssets) ? prompt.imageAssets : []);
+    const legacyImages = Array.isArray(prompt?.images) ? prompt.images : [];
+
+    const assets = explicitAssets
+        .map(normalizePromptImageAsset)
+        .filter(Boolean);
+    const seenOriginals = new Set(assets.map((asset) => String(asset.original || '').trim()).filter(Boolean));
+
+    for (const imageUrl of legacyImages) {
+        const asset = normalizePromptImageAsset(imageUrl);
+        if (!asset?.original || seenOriginals.has(asset.original)) continue;
+        assets.push(asset);
+        seenOriginals.add(asset.original);
+    }
+
+    return assets;
+}
+
+function dedupePromptImageAssets(assets = []) {
+    const seen = new Set();
+    return (Array.isArray(assets) ? assets : [])
+        .map(normalizePromptImageAsset)
+        .filter((asset) => {
+            if (!asset) return false;
+            const key = asset.original || asset.featured || asset.card || asset.home || asset.thumb || '';
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+}
+
+function getPromptImageAssetUrl(assetOrUrl, variant = 'original') {
+    const asset = normalizePromptImageAsset(assetOrUrl);
+    if (!asset) return '';
+
+    const key = String(variant || 'original').trim() || 'original';
+    return asset[key] || asset.original || asset.featured || asset.card || asset.home || asset.thumb || '';
+}
+
+function getPromptImageAssetOriginalUrl(assetOrUrl) {
+    return getPromptImageAssetUrl(assetOrUrl, 'original');
+}
+
 function getOptimizedPromptCardImageUrl(url) {
-    if (typeof url !== 'string' || !url.trim()) return '';
+    const imageAsset = typeof url === 'string' ? null : normalizePromptImageAsset(url);
+    const explicitCardUrl = String(imageAsset?.card || '').trim();
+    if (explicitCardUrl) return explicitCardUrl;
+
+    const rawUrl = typeof url === 'string' ? url : getPromptImageAssetOriginalUrl(url);
+    if (typeof rawUrl !== 'string' || !rawUrl.trim()) return '';
     const options = arguments[1] && typeof arguments[1] === 'object'
         ? arguments[1]
         : {};
     const { format = 'avif' } = options;
 
-    const trimmed = url.trim();
+    const trimmed = rawUrl.trim();
 
     if (trimmed.includes('cdn.zaoyoe.com/prompts/') && !trimmed.includes('/thumb/')) {
         return trimmed.replace('/prompts/', '/prompts/thumb/');
@@ -522,7 +622,7 @@ function sanitizePromptImageUrl(url) {
 }
 
 function buildAdminPromptCardImageCandidates(url, primarySrc = '') {
-    const originalSrc = sanitizeImageUrl(url);
+    const originalSrc = getPromptImageAssetOriginalUrl(url);
     if (!originalSrc) {
         return {
             originalSrc: '',
@@ -1143,7 +1243,7 @@ function applyAdminStudioThemePreference(themePreference) {
         return;
     }
 
-    applyAdminStudioThemePreference(window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    applyAdminStudioThemePreference('light');
 })();
 
 // Listen for theme changes from other tabs (Gallery)
@@ -1211,6 +1311,10 @@ function applyResolvedAdminAccess(access = {}) {
     window.isAdmin = Boolean(access.isAdmin);
     window.currentUserPermissions = Array.isArray(access.permissions) ? access.permissions : [];
     window.adminStudioAccessGranted = Boolean(access.isAdmin);
+    window.AdminStudioTiming?.mark?.('studio:access-granted', {
+        isSuperAdmin: window.isSuperAdmin,
+        permissionsCount: window.currentUserPermissions.length
+    });
 
     console.log('🛡️ Permissions loaded:', {
         isSuperAdmin: window.isSuperAdmin,
@@ -1657,6 +1761,108 @@ function bindAdminStudioDelegatedControls() {
             });
 
         return true;
+    }
+
+    function runAdminStudioActionFeedback(actionEl, runner, options = {}) {
+        if (!actionEl || typeof runner !== 'function') {
+            return false;
+        }
+
+        if (actionEl.dataset.adminActionRunning === 'true') {
+            pulseAdminStudioDelegatedAction(actionEl);
+            return true;
+        }
+
+        const normalizedOptions = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
+        const feedback = window.AdminStudioActionFeedback;
+        const canRenderButtonFeedback = actionEl.tagName === 'BUTTON'
+            && typeof feedback?.setLoading === 'function'
+            && typeof feedback?.finish === 'function'
+            && typeof feedback?.fail === 'function';
+        const loadingText = String(normalizedOptions.loadingText || actionEl.dataset.adminActionFeedback || '处理中...').trim() || '处理中...';
+        const successText = String(normalizedOptions.successText || '已完成').trim() || '已完成';
+        const errorText = String(normalizedOptions.errorText || '失败').trim() || '失败';
+        const restoreDelayMs = Number.isFinite(Number(normalizedOptions.restoreDelayMs))
+            ? Number(normalizedOptions.restoreDelayMs)
+            : undefined;
+
+        setAdminStudioDelegatedActionBusy(actionEl, true);
+        pulseAdminStudioDelegatedAction(actionEl);
+        if (canRenderButtonFeedback) {
+            feedback.setLoading(actionEl, {
+                loadingText,
+                compact: normalizedOptions.compact === true
+            });
+        }
+
+        void Promise.resolve()
+            .then(() => runner())
+            .then((result) => {
+                if ((result === null || typeof result === 'undefined') && normalizedOptions.restoreOnNull === true) {
+                    if (canRenderButtonFeedback) {
+                        feedback.restore(actionEl);
+                    }
+                    return result;
+                }
+
+                if (result === false) {
+                    if (canRenderButtonFeedback) {
+                        feedback.fail(actionEl, {
+                            errorText,
+                            restoreDelayMs,
+                            compact: normalizedOptions.compact === true
+                        });
+                    }
+                    return false;
+                }
+
+                if (canRenderButtonFeedback) {
+                    if (normalizedOptions.restoreOnly === true) {
+                        feedback.restore(actionEl);
+                    } else {
+                        feedback.finish(actionEl, {
+                            successText,
+                            restoreDelayMs,
+                            hideIcon: normalizedOptions.hideSuccessIcon === true,
+                            compact: normalizedOptions.compact === true
+                        });
+                    }
+                }
+                return result;
+            })
+            .catch((error) => {
+                console.warn('[AdminStudio] Action feedback task failed:', error);
+                if (canRenderButtonFeedback) {
+                    feedback.fail(actionEl, {
+                        errorText,
+                        restoreDelayMs,
+                        compact: normalizedOptions.compact === true
+                    });
+                }
+                if (normalizedOptions.silentErrors !== true) {
+                    window.showToast?.(
+                        normalizedOptions.errorMessage || `操作失败: ${error?.message || '未知错误'}`,
+                        'error'
+                    );
+                }
+                return false;
+            })
+            .finally(() => {
+                window.setTimeout(() => {
+                    setAdminStudioDelegatedActionBusy(actionEl, false);
+                }, Math.max(120, Number(normalizedOptions.cleanupDelayMs || 220)));
+            });
+
+        return true;
+    }
+
+    function runAdminStudioOpsAlertSampleAction(actionEl, runner) {
+        return runAdminStudioActionFeedback(actionEl, runner, {
+            loadingText: '发送中...',
+            successText: '已发送',
+            errorText: '发送失败',
+            silentErrors: true
+        });
     }
 
     function queueAdminStudioDelegatedAction(actionEl, runner, options = {}) {
@@ -2653,7 +2859,7 @@ function bindAdminStudioDelegatedControls() {
                 (window.switchAdminCommentsView || window.switchCommentView)?.(actionEl.dataset.commentView);
                 break;
             case 'comments-export':
-                window.exportData?.(actionEl.dataset.exportFormat);
+                window.exportData?.(actionEl.dataset.exportFormat, actionEl);
                 break;
             case 'comments-switch-layout':
                 window.switchLayoutView?.(actionEl.dataset.view);
@@ -2793,16 +2999,28 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'settings-delete-channel': {
                 const index = parseInt(actionEl.dataset.channelIndex || '', 10);
-                if (!Number.isNaN(index)) {
-                    window.deleteChannel?.(index);
-                }
+                runAdminStudioActionFeedback(actionEl, () => (
+                    Number.isNaN(index) ? null : window.deleteChannel?.(index)
+                ), {
+                    loadingText: '删除中...',
+                    successText: '已删除',
+                    errorText: '删除失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
                 break;
             }
             case 'settings-prompt-api-key':
                 window.promptForApiKey?.();
                 break;
             case 'settings-delete-api-key':
-                window.deleteApiKey?.();
+                runAdminStudioActionFeedback(actionEl, () => window.deleteApiKey?.(), {
+                    loadingText: '删除中...',
+                    successText: '已删除',
+                    errorText: '删除失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
                 break;
             case 'settings-focus-codex-config':
                 window.focusCodexConfigPanel?.();
@@ -2811,13 +3029,31 @@ function bindAdminStudioDelegatedControls() {
                 window.promptForCodexKey?.();
                 break;
             case 'settings-save-codex-config':
-                window.saveCodexConfig?.();
+                runAdminStudioActionFeedback(actionEl, () => window.saveCodexConfig?.(), {
+                    loadingText: '保存中...',
+                    successText: '已保存',
+                    errorText: '保存失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
                 break;
             case 'settings-test-codex-config':
-                window.testCodexConnectivity?.();
+                runAdminStudioActionFeedback(actionEl, () => window.testCodexConnectivity?.(), {
+                    loadingText: '测试中...',
+                    successText: '测试通过',
+                    errorText: '测试失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
                 break;
             case 'settings-delete-codex-config':
-                window.deleteCodexConfig?.();
+                runAdminStudioActionFeedback(actionEl, () => window.deleteCodexConfig?.(), {
+                    loadingText: '删除中...',
+                    successText: '已删除',
+                    errorText: '删除失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
                 break;
             case 'settings-toggle-ops-alerts-enabled':
                 window.toggleOpsAlertsEnabled?.();
@@ -2957,88 +3193,98 @@ function bindAdminStudioDelegatedControls() {
                 window.applyOpsAlertUnifiedSummaryDraft?.();
                 break;
             case 'settings-save-ops-alerts':
-                window.saveOpsAlertSettings?.();
+                runAdminStudioActionFeedback(actionEl, () => window.saveOpsAlertSettings?.(), {
+                    loadingText: '保存中...',
+                    successText: '已保存',
+                    errorText: '保存失败',
+                    silentErrors: true
+                });
                 break;
             case 'settings-send-ops-alert-telegram-test':
-                window.sendOpsAlertTelegramTest?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertTelegramTest?.());
                 break;
             case 'settings-send-ops-alert-refund-sample':
-                window.sendOpsAlertRefundSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertRefundSample?.());
                 break;
             case 'settings-send-ops-alert-customer-chat-message-sample':
-                window.sendOpsAlertCustomerChatMessageSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertCustomerChatMessageSample?.());
                 break;
             case 'settings-send-ops-alert-shop-purchase-succeeded-sample':
-                window.sendOpsAlertShopPurchaseSucceededSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertShopPurchaseSucceededSample?.());
                 break;
             case 'settings-send-ops-alert-wallet-recharge-succeeded-sample':
-                window.sendOpsAlertWalletRechargeSucceededSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertWalletRechargeSucceededSample?.());
                 break;
             case 'settings-send-ops-alert-gateway-sample':
-                window.sendOpsAlertGatewaySample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertGatewaySample?.());
                 break;
             case 'settings-send-ops-alert-gateway-recovered-sample':
-                window.sendOpsAlertGatewayRecoveredSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertGatewayRecoveredSample?.());
                 break;
             case 'settings-send-ops-alert-verify-service-disabled-sample':
-                window.sendOpsAlertVerifyServiceDisabledSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertVerifyServiceDisabledSample?.());
                 break;
             case 'settings-send-ops-alert-verify-queue-backlog-sample':
-                window.sendOpsAlertVerifyQueueBacklogSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertVerifyQueueBacklogSample?.());
                 break;
             case 'settings-send-ops-alert-verify-failure-rate-spike-sample':
-                window.sendOpsAlertVerifyFailureRateSpikeSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertVerifyFailureRateSpikeSample?.());
                 break;
             case 'settings-send-ops-alert-verify-incident-escalated-sample':
-                window.sendOpsAlertVerifyIncidentEscalatedSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertVerifyIncidentEscalatedSample?.());
                 break;
             case 'settings-send-ops-alert-verify-incident-recovered-sample':
-                window.sendOpsAlertVerifyIncidentRecoveredSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertVerifyIncidentRecoveredSample?.());
                 break;
             case 'settings-send-ops-alert-verify-quota-sample':
-                window.sendOpsAlertVerifyQuotaSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertVerifyQuotaSample?.());
                 break;
             case 'settings-send-ops-alert-ticket-sla-sample':
-                window.sendOpsAlertTicketSlaSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertTicketSlaSample?.());
                 break;
             case 'settings-send-ops-alert-ticket-sla-recovered-sample':
-                window.sendOpsAlertTicketSlaRecoveredSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertTicketSlaRecoveredSample?.());
                 break;
             case 'settings-send-ops-alert-shop-inventory-sample':
-                window.sendOpsAlertShopInventorySample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertShopInventorySample?.());
                 break;
             case 'settings-send-ops-alert-shop-inventory-recovered-sample':
-                window.sendOpsAlertShopInventoryRecoveredSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertShopInventoryRecoveredSample?.());
                 break;
             case 'settings-send-ops-alert-admin-login-anomaly-sample':
-                window.sendOpsAlertAdminLoginAnomalySample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertAdminLoginAnomalySample?.());
                 break;
             case 'settings-send-ops-alert-shop-order-delivery-failed-sample':
-                window.sendOpsAlertShopOrderDeliveryFailedSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertShopOrderDeliveryFailedSample?.());
                 break;
             case 'settings-send-ops-alert-shop-order-delivery-incident-sample':
-                window.sendOpsAlertShopOrderDeliveryIncidentSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertShopOrderDeliveryIncidentSample?.());
                 break;
             case 'settings-send-ops-alert-shop-order-delivery-incident-recovered-sample':
-                window.sendOpsAlertShopOrderDeliveryIncidentRecoveredSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertShopOrderDeliveryIncidentRecoveredSample?.());
                 break;
             case 'settings-send-ops-alert-shop-order-delivery-recovered-sample':
-                window.sendOpsAlertShopOrderDeliveryRecoveredSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertShopOrderDeliveryRecoveredSample?.());
                 break;
             case 'settings-send-ops-alert-payment-config-changed-sample':
-                window.sendOpsAlertPaymentConfigChangedSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertPaymentConfigChangedSample?.());
                 break;
             case 'settings-send-ops-alert-payment-config-incident-sample':
-                window.sendOpsAlertPaymentConfigIncidentSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertPaymentConfigIncidentSample?.());
                 break;
             case 'settings-send-ops-alert-payment-config-incident-recovered-sample':
-                window.sendOpsAlertPaymentConfigIncidentRecoveredSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertPaymentConfigIncidentRecoveredSample?.());
                 break;
             case 'settings-send-ops-alert-payment-config-recovered-sample':
-                window.sendOpsAlertPaymentConfigRecoveredSample?.();
+                runAdminStudioOpsAlertSampleAction(actionEl, () => window.sendOpsAlertPaymentConfigRecoveredSample?.());
                 break;
             case 'settings-refresh-ops-alert-health':
-                window.refreshOpsAlertHealthPanel?.();
+                runAdminStudioActionFeedback(actionEl, () => window.refreshOpsAlertHealthPanel?.(), {
+                    loadingText: '刷新中...',
+                    successText: '已刷新',
+                    errorText: '刷新失败',
+                    silentErrors: true
+                });
                 break;
             case 'settings-scroll-ops-alert-health':
                 window.scrollToOpsAlertHealthPanel?.();
@@ -3139,7 +3385,12 @@ function bindAdminStudioDelegatedControls() {
                 window.submitShopRiskCaseComposer?.();
                 break;
             case 'settings-refresh-ops-alert-monitor':
-                window.refreshOpsAlertMonitorPanel?.();
+                runAdminStudioActionFeedback(actionEl, () => window.refreshOpsAlertMonitorPanel?.(), {
+                    loadingText: '刷新中...',
+                    successText: '已刷新',
+                    errorText: '刷新失败',
+                    silentErrors: true
+                });
                 break;
             case 'settings-batch-claim-ops-alert-monitor':
                 runOpsAlertMonitorBatchCaseAction('assign');
@@ -3181,7 +3432,13 @@ function bindAdminStudioDelegatedControls() {
                 window.copyOpsAlertMonitorChecklist?.(actionEl.dataset.opsAlertMonitorCategoryKey);
                 break;
             case 'settings-delete-ops-alert-secret':
-                window.deleteOpsAlertSecret?.(actionEl.dataset.secretName);
+                runAdminStudioActionFeedback(actionEl, () => window.deleteOpsAlertSecret?.(actionEl.dataset.secretName), {
+                    loadingText: '删除中...',
+                    successText: '已删除',
+                    errorText: '删除失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
                 break;
             case 'settings-select-affiliate-poster-template':
                 window.selectAffiliatePosterTemplate?.(actionEl.dataset.posterTemplateId);
@@ -3303,7 +3560,12 @@ function bindAdminStudioDelegatedControls() {
                 window.togglePaymentProviderEnabled?.(actionEl.dataset.provider);
                 break;
             case 'payments-save-channel-settings':
-                window.savePaymentChannelSettings?.();
+                runAdminStudioActionFeedback(actionEl, () => window.savePaymentChannelSettings?.(), {
+                    loadingText: '保存中...',
+                    successText: '已保存',
+                    errorText: '保存失败',
+                    silentErrors: true
+                });
                 break;
             case 'payments-toggle-range-menu':
                 window.AdminPayments?.toggleRangeMenu?.(event);
@@ -3315,10 +3577,22 @@ function bindAdminStudioDelegatedControls() {
                 window.AdminPayments?.applyCustomRange?.();
                 break;
             case 'payments-export':
-                window.AdminPayments?.exportData?.(actionEl.dataset.exportFormat);
+                runAdminStudioActionFeedback(actionEl, () => window.AdminPayments?.exportData?.(actionEl.dataset.exportFormat), {
+                    loadingText: '导出中...',
+                    successText: '已导出',
+                    errorText: '导出失败',
+                    compact: true,
+                    silentErrors: true
+                });
                 break;
             case 'payments-reload':
-                window.AdminPayments?.reload?.();
+                runAdminStudioActionFeedback(actionEl, () => window.AdminPayments?.reload?.(), {
+                    loadingText: '刷新中...',
+                    successText: '已刷新',
+                    errorText: '刷新失败',
+                    compact: true,
+                    silentErrors: true
+                });
                 break;
             case 'payments-handle-anomaly-action':
                 window.AdminPayments?.handleAnomalyAction?.(
@@ -3435,10 +3709,22 @@ function bindAdminStudioDelegatedControls() {
                 );
                 break;
             case 'analytics-export-data':
-                window.exportAnalyticsData?.(actionEl.dataset.analyticsExportFormat);
+                runAdminStudioActionFeedback(actionEl, () => window.exportAnalyticsData?.(actionEl.dataset.analyticsExportFormat), {
+                    loadingText: '导出中...',
+                    successText: '已导出',
+                    errorText: '导出失败',
+                    compact: true,
+                    silentErrors: true
+                });
                 break;
             case 'analytics-refresh-data':
-                window.refreshAllAnalytics?.();
+                runAdminStudioActionFeedback(actionEl, () => window.refreshAllAnalytics?.(), {
+                    loadingText: '刷新中...',
+                    successText: '已刷新',
+                    errorText: '刷新失败',
+                    compact: true,
+                    silentErrors: true
+                });
                 break;
             case 'analytics-toggle-advanced-tools':
                 window.toggleAnalyticsAdvancedTools?.();
@@ -3474,9 +3760,27 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'analytics-open-user-detail': {
                 const userId = decodeURIComponent(actionEl.dataset.userId || '');
-                const analyticsContext = typeof parseAnalyticsActionContext === 'function'
+                const parsedAnalyticsContext = typeof parseAnalyticsActionContext === 'function'
                     ? parseAnalyticsActionContext(actionEl.dataset.analyticsContext || '')
                     : {};
+                const analyticsContext = parsedAnalyticsContext && typeof parsedAnalyticsContext === 'object' && !Array.isArray(parsedAnalyticsContext)
+                    ? parsedAnalyticsContext
+                    : {};
+                const userEmail = String(
+                    actionEl.dataset.userEmail
+                    || analyticsContext.userEmail
+                    || analyticsContext.user_email
+                    || analyticsContext.email
+                    || ''
+                ).trim();
+                const defaultTab = String(analyticsContext.defaultTab || analyticsContext.tab || 'ledger').trim().toLowerCase();
+                const verificationId = String(analyticsContext.verificationId || analyticsContext.verification_id || '').trim();
+                const ledgerReferenceId = String(
+                    analyticsContext.ledgerReferenceId
+                    || analyticsContext.ledger_reference_id
+                    || verificationId
+                    || ''
+                ).trim();
                 if (!userId) {
                     break;
                 }
@@ -3484,7 +3788,11 @@ function bindAdminStudioDelegatedControls() {
                 if (typeof window.tryOpenOpsAlertWorkspaceUserModal === 'function') {
                     void window.tryOpenOpsAlertWorkspaceUserModal(userId, {
                         notifyDenied: true,
-                        analyticsContext
+                        analyticsContext,
+                        email: userEmail,
+                        userEmail,
+                        defaultTab,
+                        fallbackEmail: userEmail
                     });
                     break;
                 }
@@ -3497,13 +3805,28 @@ function bindAdminStudioDelegatedControls() {
                             action: 'open-user',
                             focus: {
                                 userId,
-                                user_id: userId
+                                user_id: userId,
+                                email: userEmail,
+                                userEmail,
+                                verificationId,
+                                verification_id: verificationId,
+                                ledgerReferenceId,
+                                ledger_reference_id: ledgerReferenceId
                             },
                             payload: {
                                 analyticsContext,
-                                search: userId,
-                                searchQuery: userId,
-                                query: userId
+                                defaultTab,
+                                tab: defaultTab,
+                                email: userEmail,
+                                userEmail,
+                                user_email: userEmail,
+                                verificationId,
+                                verification_id: verificationId,
+                                ledgerReferenceId,
+                                ledger_reference_id: ledgerReferenceId,
+                                search: userEmail || userId,
+                                searchQuery: userEmail || userId,
+                                query: userEmail || userId
                             }
                         }, {
                             settleMs: 0,
@@ -3526,20 +3849,37 @@ function bindAdminStudioDelegatedControls() {
                             action: 'open-user',
                             focus: {
                                 userId,
-                                user_id: userId
+                                user_id: userId,
+                                email: userEmail,
+                                userEmail,
+                                verificationId,
+                                verification_id: verificationId,
+                                ledgerReferenceId,
+                                ledger_reference_id: ledgerReferenceId
                             },
                             payload: {
                                 analyticsContext,
-                                search: userId,
-                                searchQuery: userId,
-                                query: userId
+                                defaultTab,
+                                tab: defaultTab,
+                                email: userEmail,
+                                userEmail,
+                                user_email: userEmail,
+                                verificationId,
+                                verification_id: verificationId,
+                                ledgerReferenceId,
+                                ledger_reference_id: ledgerReferenceId,
+                                search: userEmail || userId,
+                                searchQuery: userEmail || userId,
+                                query: userEmail || userId
                             }
                         });
                         return;
                     }
 
                     window.openUserModal?.(userId, {
-                        analyticsContext
+                        analyticsContext,
+                        defaultTab,
+                        fallbackEmail: userEmail
                     });
                 })().catch((error) => {
                     console.warn('[AdminStudio] Failed to open analytics user detail:', error);
@@ -3845,28 +4185,67 @@ function bindAdminStudioDelegatedControls() {
                 );
                 break;
             case 'settings-save-login-security':
-                window.saveLoginSecuritySettings?.();
+                runAdminStudioActionFeedback(actionEl, () => window.saveLoginSecuritySettings?.(), {
+                    loadingText: '保存中...',
+                    successText: '已保存',
+                    errorText: '保存失败',
+                    silentErrors: true
+                });
                 break;
             case 'settings-refresh-locked-accounts':
                 window.refreshLockedAccounts?.();
                 break;
             case 'settings-unlock-account':
-                window.unlockAccount?.(actionEl.dataset.userId);
+                runAdminStudioActionFeedback(actionEl, () => window.unlockAccount?.(actionEl.dataset.userId), {
+                    loadingText: '解锁中...',
+                    successText: '已解锁',
+                    errorText: '解锁失败',
+                    silentErrors: true
+                });
                 break;
             case 'settings-unlock-all-accounts':
-                window.unlockAllAccounts?.();
+                runAdminStudioActionFeedback(actionEl, () => window.unlockAllAccounts?.(), {
+                    loadingText: '解锁中...',
+                    successText: '已解锁',
+                    errorText: '解锁失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
                 break;
             case 'settings-save-ip-blacklist':
-                window.saveIpBlacklist?.();
+                runAdminStudioActionFeedback(actionEl, () => window.saveIpBlacklist?.(), {
+                    loadingText: '保存中...',
+                    successText: '已保存',
+                    errorText: '保存失败',
+                    silentErrors: true
+                });
                 break;
             case 'settings-check-verify-quota':
-                window.checkVerifyQuota?.();
+                runAdminStudioActionFeedback(actionEl, async () => {
+                    const quotaState = await window.checkVerifyQuota?.();
+                    return quotaState?.status !== 'error';
+                }, {
+                    loadingText: '查询中...',
+                    successText: '已刷新',
+                    errorText: '查询失败',
+                    silentErrors: true
+                });
                 break;
             case 'settings-clean-empty-verify-keys':
                 window.cleanZeroBalanceVerifyKeys?.();
                 break;
             case 'settings-refresh-verify-monitor':
-                window.refreshVerifyMonitor?.();
+                runAdminStudioActionFeedback(actionEl, async () => {
+                    const state = await window.refreshVerifyMonitor?.(true);
+                    return state?.recent?.status !== 'error'
+                        && state?.queue?.status !== 'error'
+                        && state?.quota?.status !== 'error';
+                }, {
+                    loadingText: '刷新中...',
+                    successText: '已刷新',
+                    errorText: '刷新失败',
+                    silentErrors: true
+                });
                 break;
             case 'settings-refocus-verify-monitor': {
                 const focusContext = typeof window.readOpsAlertWorkspaceContextDataset === 'function'
@@ -3906,7 +4285,15 @@ function bindAdminStudioDelegatedControls() {
                 break;
             }
             case 'settings-refresh-admin-audit-monitor':
-                window.refreshAdminAuditMonitor?.();
+                runAdminStudioActionFeedback(actionEl, async () => {
+                    const result = await window.refreshAdminAuditMonitor?.(true);
+                    return result !== null && result !== false;
+                }, {
+                    loadingText: '刷新中...',
+                    successText: '已刷新',
+                    errorText: '刷新失败',
+                    silentErrors: true
+                });
                 break;
             case 'settings-refocus-admin-audit-monitor': {
                 const focusContext = typeof window.readOpsAlertWorkspaceContextDataset === 'function'
@@ -3945,6 +4332,51 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-page-target':
                 window.togglePageTarget?.(actionEl.dataset.targetPage);
                 break;
+            case 'settings-select-announcement-rule':
+                window.selectAnnouncementRule?.(actionEl.dataset.announcementRuleId);
+                break;
+            case 'settings-new-announcement-rule':
+                window.newAnnouncementRule?.();
+                break;
+            case 'settings-set-announcement-status-filter':
+                window.setAnnouncementRuleStatusFilter?.(actionEl.dataset.announcementStatusFilter);
+                break;
+            case 'settings-toggle-announcement-select':
+                window.toggleAnnouncementCustomSelect?.(actionEl.dataset.announcementSelectId);
+                break;
+            case 'settings-select-announcement-select-option':
+                window.selectAnnouncementCustomSelectOption?.(
+                    actionEl.dataset.announcementSelectId,
+                    actionEl.dataset.announcementSelectValue
+                );
+                break;
+            case 'settings-toggle-announcement-datetime':
+                window.toggleAnnouncementDateTimePicker?.(actionEl.dataset.announcementDatetimeId);
+                break;
+            case 'settings-confirm-announcement-datetime':
+                window.confirmAnnouncementDateTimePicker?.(actionEl.dataset.announcementDatetimeId);
+                break;
+            case 'settings-clear-announcement-datetime':
+                window.clearAnnouncementDateTimePicker?.(actionEl.dataset.announcementDatetimeId);
+                break;
+            case 'settings-submit-announcement-review':
+                void window.submitAnnouncementReview?.(actionEl);
+                break;
+            case 'settings-approve-announcement':
+                void window.approveAnnouncementRule?.(actionEl);
+                break;
+            case 'settings-reject-announcement':
+                void window.rejectAnnouncementRule?.(actionEl);
+                break;
+            case 'settings-archive-announcement':
+                void window.archiveAnnouncementRule?.(actionEl);
+                break;
+            case 'settings-copy-default-announcement':
+                window.copyDefaultAnnouncementToScope?.();
+                break;
+            case 'settings-clear-page-announcement':
+                window.clearAnnouncementScopeOverride?.();
+                break;
             case 'settings-insert-format':
                 window.insertFormat?.(actionEl.dataset.formatTag);
                 break;
@@ -3973,10 +4405,15 @@ function bindAdminStudioDelegatedControls() {
                 window.selectFontSize?.(actionEl.dataset.fontSizeValue, actionEl.dataset.fontSizeClass);
                 break;
             case 'settings-save-announcement':
-                window.saveAnnouncement?.();
+                void window.saveAnnouncement?.(actionEl);
                 break;
             case 'settings-save-sensitive-words':
-                window.saveSensitiveWords?.();
+                runAdminStudioActionFeedback(actionEl, () => window.saveSensitiveWords?.(), {
+                    loadingText: '保存中...',
+                    successText: '已保存',
+                    errorText: '保存失败',
+                    silentErrors: true
+                });
                 break;
             case 'discounts-filter':
                 window.AdminDiscounts?.filter?.(actionEl.dataset.discountStatus, actionEl);
@@ -3985,7 +4422,13 @@ function bindAdminStudioDelegatedControls() {
                 window.AdminDiscounts?.openGenerateModal?.();
                 break;
             case 'discounts-export-filtered-audit-summaries':
-                void window.AdminDiscounts?.exportFilteredAuditSummaries?.();
+                runAdminStudioActionFeedback(actionEl, () => window.AdminDiscounts?.exportFilteredAuditSummaries?.(), {
+                    loadingText: '导出中...',
+                    successText: '已导出',
+                    errorText: '导出失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
                 break;
             case 'discounts-open-batch-restore-history-modal':
                 void window.AdminDiscounts?.openBatchRestoreHistoryModal?.();
@@ -4009,31 +4452,60 @@ function bindAdminStudioDelegatedControls() {
                 window.AdminDiscounts?.closeBatchRestoreHistoryRunDetail?.();
                 break;
             case 'discounts-refresh-batch-restore-history':
-                void window.AdminDiscounts?.loadBatchRestoreHistory?.({ force: true });
+                runAdminStudioActionFeedback(actionEl, () => window.AdminDiscounts?.loadBatchRestoreHistory?.({ force: true }), {
+                    loadingText: '刷新中...',
+                    successText: '已刷新',
+                    errorText: '刷新失败',
+                    silentErrors: true
+                });
                 break;
             case 'discounts-copy-batch-restore-result-summary':
                 void window.AdminDiscounts?.copyBatchRestoreSummary?.();
                 break;
             case 'discounts-export-batch-restore-result-summary':
-                window.AdminDiscounts?.exportBatchRestoreSummary?.();
+                runAdminStudioActionFeedback(actionEl, () => window.AdminDiscounts?.exportBatchRestoreSummary?.(), {
+                    loadingText: '导出中...',
+                    successText: '已导出',
+                    errorText: '导出失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
                 break;
             case 'discounts-copy-batch-restore-failed-summary':
                 void window.AdminDiscounts?.copyBatchRestoreFailedSummary?.();
                 break;
             case 'discounts-export-batch-restore-failed-summary':
-                window.AdminDiscounts?.exportBatchRestoreFailedSummary?.();
+                runAdminStudioActionFeedback(actionEl, () => window.AdminDiscounts?.exportBatchRestoreFailedSummary?.(), {
+                    loadingText: '导出中...',
+                    successText: '已导出',
+                    errorText: '导出失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
                 break;
             case 'discounts-copy-history-run-summary':
                 void window.AdminDiscounts?.copyBatchRestoreHistoryRunSummary?.(actionEl.dataset.discountBatchRunId || '', 'all');
                 break;
             case 'discounts-export-history-run-summary':
-                window.AdminDiscounts?.exportBatchRestoreHistoryRunSummary?.(actionEl.dataset.discountBatchRunId || '', 'all');
+                runAdminStudioActionFeedback(actionEl, () => window.AdminDiscounts?.exportBatchRestoreHistoryRunSummary?.(actionEl.dataset.discountBatchRunId || '', 'all'), {
+                    loadingText: '导出中...',
+                    successText: '已导出',
+                    errorText: '导出失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
                 break;
             case 'discounts-copy-history-run-failed-summary':
                 void window.AdminDiscounts?.copyBatchRestoreHistoryRunSummary?.(actionEl.dataset.discountBatchRunId || '', 'failed');
                 break;
             case 'discounts-export-history-run-failed-summary':
-                window.AdminDiscounts?.exportBatchRestoreHistoryRunSummary?.(actionEl.dataset.discountBatchRunId || '', 'failed');
+                runAdminStudioActionFeedback(actionEl, () => window.AdminDiscounts?.exportBatchRestoreHistoryRunSummary?.(actionEl.dataset.discountBatchRunId || '', 'failed'), {
+                    loadingText: '导出中...',
+                    successText: '已导出',
+                    errorText: '导出失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
                 break;
             case 'discounts-retry-history-run':
                 void window.AdminDiscounts?.retryBatchRestoreHistoryRun?.(actionEl.dataset.discountBatchRunId || '');
@@ -4063,7 +4535,13 @@ function bindAdminStudioDelegatedControls() {
                 void window.AdminDiscounts?.openEditFromDetail?.(actionEl.dataset.discountId || '');
                 break;
             case 'discounts-assign-assets':
-                void window.AdminDiscounts?.assignAssetsFromDetail?.(actionEl.dataset.discountId || '');
+                runAdminStudioActionFeedback(actionEl, () => window.AdminDiscounts?.assignAssetsFromDetail?.(actionEl.dataset.discountId || ''), {
+                    loadingText: '发放中...',
+                    successText: '已发放',
+                    errorText: '发放失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
                 break;
             case 'discounts-copy-code':
                 window.AdminDiscounts?.copyCode?.(actionEl.dataset.discountCode || '');
@@ -4072,7 +4550,13 @@ function bindAdminStudioDelegatedControls() {
                 void window.AdminDiscounts?.copyAuditSummary?.();
                 break;
             case 'discounts-export-audit-summary':
-                window.AdminDiscounts?.exportAuditSummary?.();
+                runAdminStudioActionFeedback(actionEl, () => window.AdminDiscounts?.exportAuditSummary?.(), {
+                    loadingText: '导出中...',
+                    successText: '已导出',
+                    errorText: '导出失败',
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
                 break;
             case 'discounts-clear-workbench-context':
                 window.AdminDiscounts?.clearWorkbenchContext?.();
@@ -4105,16 +4589,29 @@ function bindAdminStudioDelegatedControls() {
                 window.AdminDiscounts?.skipBatchRestoreResultItem?.(actionEl.dataset.discountId || '');
                 break;
             case 'discounts-toggle-status':
-                window.AdminDiscounts?.toggleStatus?.(
+                runAdminStudioActionFeedback(actionEl, () => window.AdminDiscounts?.toggleStatus?.(
                     actionEl.dataset.discountId,
                     actionEl.dataset.discountNextActive === 'true'
-                );
+                ), {
+                    loadingText: '更新中...',
+                    successText: '已更新',
+                    errorText: '更新失败',
+                    compact: true,
+                    silentErrors: true
+                });
                 break;
             case 'discounts-delete-code':
-                window.AdminDiscounts?.deleteCode?.(
+                runAdminStudioActionFeedback(actionEl, () => window.AdminDiscounts?.deleteCode?.(
                     actionEl.dataset.discountId,
                     actionEl.dataset.discountCode || ''
-                );
+                ), {
+                    loadingText: '删除中...',
+                    successText: '已删除',
+                    errorText: '删除失败',
+                    compact: true,
+                    restoreOnNull: true,
+                    silentErrors: true
+                });
                 break;
             case 'discounts-close-generate-modal':
                 window.AdminDiscounts?.closeGenerateModal?.();
@@ -4205,10 +4702,10 @@ function bindAdminStudioDelegatedControls() {
                 window.AdminTickets?.openReminderTicket?.(actionEl.dataset.ticketId);
                 break;
             case 'tickets-bulk-assign-self':
-                window.AdminTickets?.submitBulkAssignment?.('assign_self');
+                window.AdminTickets?.submitBulkAssignment?.('assign_self', actionEl);
                 break;
             case 'tickets-bulk-clear-assignee':
-                window.AdminTickets?.submitBulkAssignment?.('clear');
+                window.AdminTickets?.submitBulkAssignment?.('clear', actionEl);
                 break;
             case 'tickets-open-bulk-resolve':
                 window.AdminTickets?.openBulkProcessModal?.('RESOLVED');
@@ -4335,6 +4832,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-toggle-decoration':
                 window.toggleDecoration?.();
                 break;
+            case 'settings-filter-announcement-rules':
+                window.handleAnnouncementRuleFilterChange?.();
+                break;
             case 'settings-save-verify-config':
                 window.saveVerifyConfig?.();
                 break;
@@ -4418,6 +4918,9 @@ function bindAdminStudioDelegatedControls() {
         }
 
         switch (actionEl.dataset.adminInputAction) {
+            case 'settings-filter-announcement-rules':
+                window.handleAnnouncementRuleFilterChange?.();
+                break;
             case 'discounts-search':
                 window.AdminDiscounts?.search?.();
                 break;
@@ -4695,6 +5198,33 @@ function closeAdminStudioLargeModalFromButton(closeButton) {
     overlay.setAttribute('aria-hidden', 'true');
 }
 
+function handleAdminStudioLargeModalCloseActivation(event) {
+    const closeButton = event.currentTarget instanceof HTMLElement
+        ? event.currentTarget
+        : event.target?.closest?.('[data-admin-large-modal-close]');
+    if (!(closeButton instanceof HTMLElement)) {
+        return;
+    }
+    if (event.type === 'pointerup' && typeof event.button === 'number' && event.button !== 0) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    closeAdminStudioLargeModalFromButton(closeButton);
+}
+
+function bindAdminStudioLargeModalCloseButton(button) {
+    if (!(button instanceof HTMLElement) || button.dataset.adminLargeModalTouchBound === '1') {
+        return;
+    }
+
+    button.dataset.adminLargeModalTouchBound = '1';
+    button.addEventListener('click', handleAdminStudioLargeModalCloseActivation);
+    button.addEventListener('pointerup', handleAdminStudioLargeModalCloseActivation);
+    button.addEventListener('touchend', handleAdminStudioLargeModalCloseActivation, { passive: false });
+}
+
 function collectAdminStudioLargeModalOverlays(root, selector) {
     const overlays = [];
     if (root instanceof Element && root.matches(selector)) {
@@ -4715,9 +5245,14 @@ function ensureAdminStudioLargeModalCloseButton(panel) {
     const overlay = panel.closest('[data-admin-overlay-close], [data-shop-overlay-close], [data-points-overlay-close]');
     if (overlay instanceof HTMLElement) {
         overlay.classList.add('admin-studio-large-modal-overlay');
+        if (overlay.dataset.shopOverlayClose === 'product-modal') {
+            panel.dataset.adminLargeModalKind = 'shop-product';
+        }
     }
 
-    if (panel.querySelector(':scope > [data-admin-large-modal-close]')) {
+    const existingButton = panel.querySelector(':scope > [data-admin-large-modal-close]');
+    if (existingButton instanceof HTMLElement) {
+        bindAdminStudioLargeModalCloseButton(existingButton);
         return;
     }
 
@@ -4727,7 +5262,11 @@ function ensureAdminStudioLargeModalCloseButton(panel) {
     button.setAttribute('data-admin-large-modal-close', 'true');
     button.setAttribute('aria-label', '关闭弹窗');
     button.setAttribute('title', '关闭弹窗');
+    if (overlay instanceof HTMLElement && overlay.dataset.shopOverlayClose === 'product-modal') {
+        button.setAttribute('data-shop-action', 'product-close-modal');
+    }
     button.innerHTML = '<i class="fas fa-times" aria-hidden="true"></i>';
+    bindAdminStudioLargeModalCloseButton(button);
     panel.appendChild(button);
 }
 
@@ -6479,8 +7018,9 @@ function renderAdminCard(prompt) {
     image.addEventListener('load', handleAdminPromptCardImageLoad);
     image.addEventListener('error', handleAdminPromptCardImageError);
 
-    const rawImageUrl = Array.isArray(prompt.images) ? prompt.images[0] : '';
-    const imageUrl = sanitizePromptImageUrl(Array.isArray(prompt.images) ? prompt.images[0] : '');
+    const promptImageAssets = normalizePromptImageAssetsFromRecord(prompt);
+    const rawImageUrl = promptImageAssets[0] || (Array.isArray(prompt.images) ? prompt.images[0] : '');
+    const imageUrl = getOptimizedPromptCardImageUrl(rawImageUrl);
     const imageCandidates = buildAdminPromptCardImageCandidates(rawImageUrl, imageUrl);
     if (imageUrl) {
         image.dataset.primarySrc = imageCandidates.primarySrc;
@@ -6690,9 +7230,10 @@ async function editPrompt(id) {
         // Set mode to edit
         currentMode = 'edit';
         editingId = id;
-        currentEditingPromptImageUrls = Array.isArray(data.images)
-            ? data.images.map((url) => String(url || '').trim()).filter(Boolean)
-            : [];
+        currentEditingPromptImageAssets = normalizePromptImageAssetsFromRecord(data);
+        currentEditingPromptImageUrls = dedupePromptImageUrls(
+            currentEditingPromptImageAssets.map(getPromptImageAssetOriginalUrl)
+        );
 
         // Show the form (it's hidden by default)
         const promptForm = document.getElementById('promptForm');
@@ -6769,7 +7310,7 @@ async function editPrompt(id) {
         // Load images into preview AND into uploadedFiles for analysis
         if (currentEditingPromptImageUrls.length > 0) {
             renderPreviewGridItems(
-                currentEditingPromptImageUrls.map((url) => ({ url })),
+                currentEditingPromptImageAssets.map((asset) => ({ url: getPromptImageAssetOriginalUrl(asset), asset })),
                 { removable: false, croppable: true }
             );
 
@@ -7313,11 +7854,11 @@ window.addNewApiKey = addNewApiKey;
 async function deleteApiKey() {
     if ((window.GEMINI_API_SOURCE || 'missing') !== 'stored') {
         showAdminStudioToast('当前没有可删除的后台存储 Gemini Key。', 'info');
-        return;
+        return null;
     }
 
     if (!confirm('确定要删除当前后台安全存储的 Gemini Key 吗？')) {
-        return;
+        return null;
     }
 
     try {
@@ -7329,9 +7870,11 @@ async function deleteApiKey() {
         renderApiKeySelector();
         updateAnalyzeButton();
         showAdminStudioToast(payload.message || 'Gemini Key 已删除', 'success');
+        return true;
     } catch (err) {
         console.error('Failed to delete Gemini key:', err);
         showAdminStudioToast(err.message || '删除 Gemini Key 失败', 'error');
+        return false;
     }
 }
 
@@ -7371,7 +7914,7 @@ async function promptForCodexKey(options = {}) {
     if (validationMessage) {
         showAdminStudioToast(validationMessage, 'warning');
         focusCodexConfigPanel();
-        return false;
+        return null;
     }
 
     const helperText = options.helperText || (
@@ -7419,7 +7962,7 @@ async function saveCodexConfig() {
     if (validationMessage) {
         showAdminStudioToast(validationMessage, 'warning');
         focusCodexConfigPanel();
-        return;
+        return false;
     }
 
     const config = getCodexRuntimeConfig();
@@ -7428,7 +7971,7 @@ async function saveCodexConfig() {
             draft,
             helperText: '首次固化 Codex 中转配置时，需要同时录入 API Key。后续若只切换中转站地址、模型或接口格式，就可以直接点击“保存 Codex 配置”。'
         });
-        return;
+        return null;
     }
 
     try {
@@ -7439,9 +7982,11 @@ async function saveCodexConfig() {
         renderApiKeySelector();
         renderCodexConfigPanel();
         showAdminStudioToast(payload.message || 'Codex 配置已更新。', 'success');
+        return true;
     } catch (err) {
         console.error('Failed to update Codex config:', err);
         showAdminStudioToast(err.message || '保存 Codex 配置失败', 'error');
+        return false;
     }
 }
 
@@ -7450,11 +7995,11 @@ async function deleteCodexConfig() {
 
     if ((config.source || 'missing') !== 'stored') {
         showAdminStudioToast('当前没有可删除的后台存储 Codex 配置。', 'info');
-        return;
+        return null;
     }
 
     if (!confirm('确定要删除当前后台安全存储的 Codex 配置吗？')) {
-        return;
+        return null;
     }
 
     try {
@@ -7463,9 +8008,11 @@ async function deleteCodexConfig() {
         renderApiKeySelector();
         renderCodexConfigPanel();
         showAdminStudioToast(payload.message || 'Codex 配置已删除', 'success');
+        return true;
     } catch (err) {
         console.error('Failed to delete Codex config:', err);
         showAdminStudioToast(err.message || '删除 Codex 配置失败', 'error');
+        return false;
     }
 }
 
@@ -7476,7 +8023,7 @@ async function testCodexConnectivity() {
     if (validationMessage) {
         showAdminStudioToast(validationMessage, 'warning');
         focusCodexConfigPanel();
-        return;
+        return null;
     }
 
     const runtimeConfig = getCodexRuntimeConfig();
@@ -7493,13 +8040,13 @@ async function testCodexConnectivity() {
         );
 
         if (input === null) {
-            return;
+            return null;
         }
 
         transientApiKey = String(input || '').trim();
         if (!transientApiKey) {
             showAdminStudioToast('未输入可用于测试的 Codex API Key', 'warning');
-            return;
+            return null;
         }
     }
 
@@ -7512,9 +8059,11 @@ async function testCodexConnectivity() {
         const responsePreview = String(payload.text || '').trim();
         const detail = responsePreview ? ` 返回：${responsePreview.slice(0, 80)}` : '';
         showAdminStudioToast((payload.message || 'Codex Relay 连通性测试通过。') + detail, 'success');
+        return true;
     } catch (err) {
         console.error('Failed to test Codex connectivity:', err);
         showAdminStudioToast(err.message || '测试 Codex 连通性失败', 'error');
+        return false;
     }
 }
 
@@ -7991,13 +8540,19 @@ async function normalizeImageForAnalysis(imageData) {
 function initUploadZone() {
     const uploadZone = document.getElementById('uploadZone');
     const fileInput = document.getElementById('fileInput');
+    if (!uploadZone || !fileInput || uploadZone.dataset.uploadZoneBound === '1') {
+        return;
+    }
+
+    uploadZone.dataset.uploadZoneBound = '1';
 
     // Click to upload
     uploadZone.addEventListener('click', () => fileInput.click());
 
     // File input change
     fileInput.addEventListener('change', (e) => {
-        handleFiles(e.target.files);
+        void handleFiles(e.target.files);
+        e.target.value = '';
     });
 
     // Drag and drop
@@ -8013,8 +8568,24 @@ function initUploadZone() {
     uploadZone.addEventListener('drop', (e) => {
         e.preventDefault();
         uploadZone.classList.remove('dragover');
-        handleFiles(e.dataTransfer.files);
+        void handleFiles(e.dataTransfer.files);
     });
+}
+
+function getUploadedFileFingerprint(file) {
+    if (!file) return '';
+    return [
+        file.name || 'image',
+        file.size || 0,
+        file.lastModified || 0,
+        file.type || ''
+    ].join(':');
+}
+
+function hasUploadedFileFingerprint(fingerprint) {
+    if (!fingerprint) return false;
+    if (pendingUploadFileFingerprints.has(fingerprint)) return true;
+    return uploadedFiles.some((item) => item?.fingerprint === fingerprint);
 }
 
 async function handleFiles(files) {
@@ -8028,18 +8599,29 @@ async function handleFiles(files) {
     }
 
     for (const file of validFiles) {
+        const fingerprint = getUploadedFileFingerprint(file);
+        if (hasUploadedFileFingerprint(fingerprint)) {
+            console.warn('Skipping duplicate uploaded image:', file.name);
+            continue;
+        }
+        pendingUploadFileFingerprints.add(fingerprint);
         const reader = new FileReader();
 
         await new Promise((resolve) => {
             reader.onload = async (e) => {
                 try {
-                    // Convert to WebP automatically
-                    const webp = await convertToWebP(e.target.result);
+                    // Convert to WebP automatically. Keep a high-resolution original for detail views.
+                    const webp = await convertToWebP(
+                        e.target.result,
+                        PROMPT_UPLOAD_ORIGINAL_QUALITY,
+                        PROMPT_UPLOAD_ORIGINAL_MAX_WIDTH
+                    );
 
                     uploadedFiles.push({
                         file: file,               // Keep original file reference
                         dataUrl: webp.dataUrl,    // Use WebP for display
                         base64: webp.base64,      // Use WebP for upload
+                        fingerprint,
                         originalDataUrl: e.target.result  // Preserve original
                     });
 
@@ -8050,12 +8632,18 @@ async function handleFiles(files) {
                     uploadedFiles.push({
                         file: file,
                         dataUrl: e.target.result,
-                        base64: e.target.result.split(',')[1]
+                        base64: e.target.result.split(',')[1],
+                        fingerprint
                     });
                 }
 
                 renderPreviews();
                 updateAnalyzeButton();
+                pendingUploadFileFingerprints.delete(fingerprint);
+                resolve();
+            };
+            reader.onerror = () => {
+                pendingUploadFileFingerprints.delete(fingerprint);
                 resolve();
             };
             reader.readAsDataURL(file);
@@ -8123,6 +8711,9 @@ function removeFile(index) {
     uploadedFiles.splice(index, 1);
     if (currentMode === 'edit' && index >= 0 && index < currentEditingPromptImageUrls.length) {
         currentEditingPromptImageUrls.splice(index, 1);
+        if (typeof currentEditingPromptImageAssets !== 'undefined' && Array.isArray(currentEditingPromptImageAssets)) {
+            currentEditingPromptImageAssets.splice(index, 1);
+        }
     }
     renderPreviews();
     updateAnalyzeButton();
@@ -8974,22 +9565,32 @@ async function savePrompt(e) {
 
         // Try to upload images to Supabase Storage
         let imageUrls = [];
+        let imageAssets = [];
         let storageAvailable = true;
         const retainedEditingImageUrls = currentMode === 'edit'
             ? currentEditingPromptImageUrls.map((url) => String(url || '').trim()).filter(Boolean)
+            : [];
+        const retainedEditingImageAssets = currentMode === 'edit'
+            ? dedupePromptImageAssets(currentEditingPromptImageAssets)
             : [];
 
         try {
             if (uploadedFiles.length === 0 && retainedEditingImageUrls.length > 0) {
                 imageUrls = retainedEditingImageUrls;
+                imageAssets = retainedEditingImageAssets.length > 0
+                    ? retainedEditingImageAssets
+                    : retainedEditingImageUrls.map((url) => ({ original: url }));
             } else {
-                imageUrls = await uploadImages();
+                const uploadResult = await uploadImages();
+                imageUrls = uploadResult.urls;
+                imageAssets = uploadResult.assets;
             }
         } catch (storageError) {
             console.warn('Storage upload failed:', storageError);
             storageAvailable = false;
             // Keep existing images when storage fails in edit mode
             imageUrls = retainedEditingImageUrls;
+            imageAssets = retainedEditingImageAssets;
         }
 
         // Create prompt object
@@ -9000,6 +9601,7 @@ async function savePrompt(e) {
             description: description,
             prompt: promptText,
             images: imageUrls,
+            image_assets: imageAssets,
             ...bilingualValues
         };
 
@@ -9110,6 +9712,7 @@ async function savePrompt(e) {
 
         if (storageAvailable) {
             promptPayload.images = promptData.images;
+            promptPayload.image_assets = promptData.image_assets;
         }
 
         if (promptData.dominantColors) {
@@ -9135,6 +9738,7 @@ async function savePrompt(e) {
                 payload: {
                     ...promptPayload,
                     images: promptData.images,
+                    image_assets: promptData.image_assets,
                     dominant_colors: promptData.dominantColors,
                     ai_tags: promptData.aiTags
                 }
@@ -9218,25 +9822,21 @@ async function savePrompt(e) {
 // SAVE BUTTON FEEDBACK
 // ========================================
 /**
- * Generate a thumbnail from base64 image using Canvas API
+ * Generate a resized WebP image variant from base64 image data.
  * @param {string} base64 - Original image base64 (without data: prefix)
- * @param {number} maxWidth - Maximum width for thumbnail (default: 400)
- * @param {number} quality - WebP quality 0-1 (default: 0.8)
- * @returns {Promise<string>} - Thumbnail base64 (without data: prefix)
+ * @param {number} maxWidth - Maximum width for the generated variant
+ * @param {number} quality - WebP quality 0-1
+ * @returns {Promise<string>} - Variant base64 (without data: prefix)
  */
-async function generateThumbnail(base64, maxWidth = 800, quality = 0.85) {
+async function generatePromptImageVariant(base64, maxWidth = 800, quality = 0.85) {
     return new Promise((resolve, reject) => {
         const img = new Image();
         img.onload = () => {
-            // Only resize if image is wider than maxWidth
-            if (img.width <= maxWidth) {
-                resolve(base64); // Return original if already small
-                return;
-            }
-
             const canvas = document.createElement('canvas');
-            const ratio = maxWidth / img.width;
-            canvas.width = maxWidth;
+            const safeMaxWidth = Math.max(Number.parseInt(maxWidth, 10) || 800, 1);
+            const targetWidth = Math.min(img.width, safeMaxWidth);
+            const ratio = targetWidth / img.width;
+            canvas.width = targetWidth;
             canvas.height = Math.round(img.height * ratio);
 
             const ctx = canvas.getContext('2d');
@@ -9244,26 +9844,62 @@ async function generateThumbnail(base64, maxWidth = 800, quality = 0.85) {
             ctx.imageSmoothingQuality = 'high';
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-            // Convert to WebP base64
             const thumbnailDataUrl = canvas.toDataURL('image/webp', quality);
             const thumbnailBase64 = thumbnailDataUrl.split(',')[1];
             resolve(thumbnailBase64);
         };
-        img.onerror = () => reject(new Error('Failed to load image for thumbnail generation'));
+        img.onerror = () => reject(new Error('Failed to load image for variant generation'));
         img.src = `data:image/webp;base64,${base64}`;
     });
 }
 
+async function generateThumbnail(base64, maxWidth = 800, quality = 0.85) {
+    return generatePromptImageVariant(base64, maxWidth, quality);
+}
+
+function getUploadedImagePayloadFingerprint(item = {}) {
+    const explicitFingerprint = String(item?.fingerprint || '').trim();
+    if (explicitFingerprint) {
+        return explicitFingerprint;
+    }
+
+    const base64 = String(item?.base64 || '');
+    if (base64) {
+        return [
+            base64.length,
+            base64.slice(0, 96),
+            base64.slice(-96)
+        ].join(':');
+    }
+
+    return String(item?.url || '').trim();
+}
+
 async function uploadImages() {
     const urls = [];
+    const assets = [];
     const imagesToUpload = [];
+    const uploadedPayloadFingerprints = new Set();
+    const variantUploadsEnabled = window.__ENABLE_PROMPT_R2_DELIVERY_VARIANTS__ === true;
 
     for (let i = 0; i < uploadedFiles.length; i++) {
         const item = uploadedFiles[i];
+        const payloadFingerprint = getUploadedImagePayloadFingerprint(item);
+        if (payloadFingerprint && uploadedPayloadFingerprints.has(payloadFingerprint)) {
+            console.warn(`⚠️ Skipping duplicate image payload at index ${i}`);
+            continue;
+        }
+        if (payloadFingerprint) {
+            uploadedPayloadFingerprints.add(payloadFingerprint);
+        }
 
         // If item already has a public URL (existing image in edit mode), just use it
         if (item.url && item.url.startsWith('http')) {
-            urls.push(item.url);
+            const retainedAsset = normalizePromptImageAsset(
+                item.asset || currentEditingPromptImageAssets[i] || item.url
+            ) || { original: item.url };
+            urls.push(getPromptImageAssetOriginalUrl(retainedAsset));
+            assets.push(retainedAsset);
             console.log(`♻️ Reusing existing URL: ${item.url.substring(0, 50)}...`);
             continue;
         }
@@ -9283,21 +9919,28 @@ async function uploadImages() {
         imagesToUpload.push({
             base64: base64,
             filename: fileName,
+            variant: 'original',
             isThumb: false
         });
 
-        // Generate and add thumbnail
-        try {
-            const thumbBase64 = await generateThumbnail(base64, 800, 0.85);
-            imagesToUpload.push({
-                base64: thumbBase64,
-                filename: fileName, // Same filename, Edge Function will add thumb/ prefix
-                isThumb: true
-            });
-            console.log(`🖼️ Generated thumbnail for: ${fileName}`);
-        } catch (thumbError) {
-            console.warn(`⚠️ Failed to generate thumbnail for ${fileName}:`, thumbError);
-            // Continue without thumbnail
+        // Generate safe delivery variants. Keep card/home disabled until the deployed Edge Function supports variant paths.
+        const variantsToUpload = PROMPT_UPLOAD_IMAGE_VARIANTS.filter((variant) => (
+            variantUploadsEnabled || PROMPT_UPLOAD_SAFE_VARIANT_IDS.has(variant.id)
+        ));
+        for (const variant of variantsToUpload) {
+            try {
+                const variantBase64 = await generatePromptImageVariant(base64, variant.maxWidth, variant.quality);
+                imagesToUpload.push({
+                    base64: variantBase64,
+                    filename: fileName,
+                    variant: variant.id,
+                    isThumb: variant.id === 'thumb'
+                });
+                console.log(`🖼️ Generated ${variant.id} variant for: ${fileName}`);
+            } catch (variantError) {
+                console.warn(`⚠️ Failed to generate ${variant.id} variant for ${fileName}:`, variantError);
+                // Continue without this variant.
+            }
         }
     }
 
@@ -9333,10 +9976,21 @@ async function uploadImages() {
             }
 
             const result = await response.json();
-            urls.push(...result.urls);
+            const resultUrls = dedupePromptImageUrls(result.urls);
+            urls.push(...resultUrls);
+            assets.push(...dedupePromptImageAssets(result.assets));
+            const assetOriginals = new Set(
+                assets.map((asset) => getPromptImageAssetOriginalUrl(asset)).filter(Boolean)
+            );
+            for (const url of resultUrls) {
+                if (!assetOriginals.has(url)) {
+                    assets.push({ original: url });
+                    assetOriginals.add(url);
+                }
+            }
 
-            console.log(`✅ Successfully uploaded ${result.urls.length} images to R2 CDN`);
-            result.urls.forEach((url, idx) => {
+            console.log(`✅ Successfully uploaded ${resultUrls.length} images to R2 CDN`);
+            resultUrls.forEach((url, idx) => {
                 console.log(`   ${idx + 1}. ${url}`);
             });
 
@@ -9346,7 +10000,7 @@ async function uploadImages() {
             // Fallback to Supabase Storage if R2 fails
             console.warn('⚠️ Falling back to Supabase Storage...');
 
-            const originalImagesToUpload = imagesToUpload.filter(({ isThumb }) => !isThumb);
+            const originalImagesToUpload = imagesToUpload.filter(({ variant, isThumb }) => variant === 'original' || (!variant && !isThumb));
 
             for (let i = 0; i < originalImagesToUpload.length; i++) {
                 const { base64, filename } = originalImagesToUpload[i];
@@ -9371,6 +10025,7 @@ async function uploadImages() {
                         .getPublicUrl(filename);
 
                     urls.push(urlData.publicUrl);
+                    assets.push({ original: urlData.publicUrl });
                     console.log(`📤 Fallback upload: ${filename} (Supabase Storage)`);
                 } catch (storageError) {
                     console.error(`❌ Failed to upload ${filename} to Supabase:`, storageError);
@@ -9384,7 +10039,22 @@ async function uploadImages() {
         }
     }
 
-    return urls;
+    const dedupedUrls = dedupePromptImageUrls(urls);
+    const dedupedAssets = dedupePromptImageAssets(assets);
+    const assetOriginals = new Set(
+        dedupedAssets.map((asset) => getPromptImageAssetOriginalUrl(asset)).filter(Boolean)
+    );
+    for (const url of dedupedUrls) {
+        if (!assetOriginals.has(url)) {
+            dedupedAssets.push({ original: url });
+            assetOriginals.add(url);
+        }
+    }
+
+    return {
+        urls: dedupedUrls,
+        assets: dedupedAssets
+    };
 }
 
 
@@ -9632,15 +10302,26 @@ function ensureAdminStudioActionFeedbackSnapshot(button) {
     if (!button._adminStudioActionFeedbackSnapshot) {
         button._adminStudioActionFeedbackSnapshot = {
             html: button.innerHTML,
-            disabled: button.disabled
+            disabled: button.disabled,
+            title: button.getAttribute('title'),
+            ariaLabel: button.getAttribute('aria-label')
         };
     }
 
     return button._adminStudioActionFeedbackSnapshot;
 }
 
-function renderAdminStudioActionFeedbackContent(button, state, text) {
+function renderAdminStudioActionFeedbackContent(button, state, text, options = {}) {
     if (!isAdminStudioActionFeedbackButton(button)) {
+        return;
+    }
+
+    const label = document.createElement('span');
+    label.className = 'admin-action-feedback__label';
+    label.textContent = text;
+
+    if (options?.hideIcon === true && state !== 'loading') {
+        button.replaceChildren(label);
         return;
     }
 
@@ -9653,9 +10334,14 @@ function renderAdminStudioActionFeedbackContent(button, state, text) {
         icon.textContent = state === 'failed' ? '!' : '✓';
     }
 
-    const label = document.createElement('span');
-    label.className = 'admin-action-feedback__label';
-    label.textContent = text;
+    if (options?.compact === true) {
+        const sr = document.createElement('span');
+        sr.className = 'admin-action-feedback__sr';
+        sr.textContent = text;
+        button.replaceChildren(icon, sr);
+        button.setAttribute('aria-label', text);
+        return;
+    }
 
     button.replaceChildren(icon, label);
 }
@@ -9679,7 +10365,10 @@ function setAdminStudioActionButtonState(button, state = 'loading', options = {}
     button.dataset.actionFeedbackState = normalizedState;
     button.disabled = true;
     button.setAttribute('aria-busy', normalizedState === 'loading' ? 'true' : 'false');
-    renderAdminStudioActionFeedbackContent(button, normalizedState, text);
+    renderAdminStudioActionFeedbackContent(button, normalizedState, text, {
+        hideIcon: options?.hideIcon === true,
+        compact: options?.compact === true
+    });
 
     return button;
 }
@@ -9698,6 +10387,16 @@ function restoreAdminStudioActionButton(button) {
     if (snapshot) {
         button.innerHTML = snapshot.html;
         button.disabled = Boolean(snapshot.disabled);
+        if (snapshot.title === null) {
+            button.removeAttribute('title');
+        } else {
+            button.setAttribute('title', snapshot.title);
+        }
+        if (snapshot.ariaLabel === null) {
+            button.removeAttribute('aria-label');
+        } else {
+            button.setAttribute('aria-label', snapshot.ariaLabel);
+        }
         button._adminStudioActionFeedbackSnapshot = null;
     }
 
@@ -9706,7 +10405,9 @@ function restoreAdminStudioActionButton(button) {
 
 function finishAdminStudioActionButton(button, options = {}) {
     const target = setAdminStudioActionButtonState(button, 'saved', {
-        successText: options?.successText || options?.text || '已完成'
+        successText: options?.successText || options?.text || '已完成',
+        hideIcon: options?.hideIcon === true,
+        compact: options?.compact === true
     });
     const restoreDelayMs = Number.isFinite(Number(options?.restoreDelayMs)) ? Number(options.restoreDelayMs) : 900;
     if (target && restoreDelayMs >= 0) {
@@ -9719,7 +10420,8 @@ function finishAdminStudioActionButton(button, options = {}) {
 
 function failAdminStudioActionButton(button, options = {}) {
     const target = setAdminStudioActionButtonState(button, 'failed', {
-        errorText: options?.errorText || options?.text || '失败'
+        errorText: options?.errorText || options?.text || '失败',
+        compact: options?.compact === true
     });
     const restoreDelayMs = Number.isFinite(Number(options?.restoreDelayMs)) ? Number(options.restoreDelayMs) : 1200;
     if (target && restoreDelayMs >= 0) {
@@ -9733,7 +10435,8 @@ function failAdminStudioActionButton(button, options = {}) {
 window.AdminStudioActionFeedback = {
     setLoading(button, options = {}) {
         return setAdminStudioActionButtonState(button, 'loading', {
-            loadingText: options?.loadingText || options?.text || '处理中...'
+            loadingText: options?.loadingText || options?.text || '处理中...',
+            compact: options?.compact === true
         });
     },
     finish: finishAdminStudioActionButton,
@@ -9767,9 +10470,11 @@ function withTimeout(promise, timeoutMs = 20000, timeoutMessage = '操作超时'
 
 function resetForm() {
     uploadedFiles = [];
+    pendingUploadFileFingerprints.clear();
     analysisResult = null;
     currentEditingPromptAiTags = null;
     currentEditingPromptImageUrls = [];
+    currentEditingPromptImageAssets = [];
     document.getElementById('previewGrid').innerHTML = '';
     setAdminStudioVisibility(document.getElementById('promptForm'), false);
     document.getElementById('promptForm').reset();
@@ -10006,7 +10711,7 @@ function initBatchOperations() {
     document.getElementById('deleteConfirmOk')?.addEventListener('click', executeBatchDelete);
 
     // Lightbox
-    document.getElementById('lightboxClose')?.addEventListener('click', closeLightbox);
+    bindAdminStudioLightboxCloseButton();
     document.getElementById('lightboxOverlay')?.addEventListener('click', (e) => {
         if (e.target.id === 'lightboxOverlay') closeLightbox();
     });
@@ -10017,6 +10722,28 @@ function initBatchOperations() {
 
     // Global keyboard events for image preview
     document.addEventListener('keydown', handleImageKeydown);
+}
+
+function handleAdminStudioLightboxCloseActivation(event) {
+    if (event.type === 'pointerup' && typeof event.button === 'number' && event.button !== 0) {
+        return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    closeLightbox();
+}
+
+function bindAdminStudioLightboxCloseButton() {
+    const button = document.getElementById('lightboxClose');
+    if (!(button instanceof HTMLElement) || button.dataset.adminLightboxTouchBound === '1') {
+        return;
+    }
+
+    button.dataset.adminLightboxTouchBound = '1';
+    button.addEventListener('click', handleAdminStudioLightboxCloseActivation);
+    button.addEventListener('pointerup', handleAdminStudioLightboxCloseActivation);
+    button.addEventListener('touchend', handleAdminStudioLightboxCloseActivation, { passive: false });
 }
 
 // Toggle batch menu dropdown
@@ -11899,11 +12626,20 @@ function setupAdminSearch() {
 }
 
 async function bootAdminStudio() {
+    window.AdminStudioTiming?.mark?.('studio:boot:start', {
+        readyState: document.readyState
+    });
     try {
         const access = await requireAdminStudioAccess();
         if (!access) return;
         await initializeAdminStudioShell();
+        window.AdminStudioTiming?.mark?.('studio:boot:ready', {
+            isAdmin: window.isAdmin === true
+        });
     } catch (error) {
+        window.AdminStudioTiming?.mark?.('studio:boot:error', {
+            message: error?.message || 'unknown'
+        });
         console.error('[AdminStudio] Failed to boot Admin Studio:', error);
         window.adminStudioAccessGranted = false;
         renderAdminStudioAccessGate('denied', {
@@ -11918,6 +12654,9 @@ async function bootAdminStudio() {
 }
 
 function scheduleAdminStudioBoot() {
+    window.AdminStudioTiming?.mark?.('studio:boot:scheduled', {
+        readyState: document.readyState
+    });
     window.setTimeout(() => {
         void bootAdminStudio();
     }, 0);

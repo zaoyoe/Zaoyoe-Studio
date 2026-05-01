@@ -218,7 +218,7 @@ test('analytics summary rows bundle filters site and explicit date range across 
             },
             points_ledger: {
                 rows: [
-                    { id: 'ledger-cn-1', site: 'cn', created_at: '2026-04-05T07:00:00.000Z', amount: 5 }
+                    { id: 'ledger-cn-1', user_id: 'user-ledger-1', site: 'cn', created_at: '2026-04-05T07:00:00.000Z', amount: 5 }
                 ]
             }
         }
@@ -242,6 +242,7 @@ test('analytics summary rows bundle filters site and explicit date range across 
         assert.equal(payload.tables.verificationLogs.rowCount, 1);
         assert.equal(payload.tables.verificationLogs.rows[0]?.verification_id, 'verify-cn-1');
         assert.equal(payload.tables.pointsLedger.rowCount, 1);
+        assert.equal(payload.tables.pointsLedger.rows[0]?.user_id, 'user-ledger-1');
 
         const unlockCall = state.calls.find((entry) => entry.table === 'prompt_unlocks');
         assert.ok(unlockCall);

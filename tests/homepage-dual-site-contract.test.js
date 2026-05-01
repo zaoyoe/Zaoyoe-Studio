@@ -39,14 +39,16 @@ test('homepage frontend runtime reads and writes site-specific prefetch payloads
     const contractSource = fs.readFileSync(homepageContractPath, 'utf8');
 
     assert.match(framerSource, /\.rpc\('fn_get_homepage_config'/);
-    assert.match(framerSource, /async fetchVisiblePromptPool\(\)/);
-    assert.match(framerSource, /\.from\('prompts'\)\s*\.select\('\*'\)\s*\.order\('updated_at', \{ ascending: false \}\)/);
+    assert.match(framerSource, /async fetchVisiblePromptPool\(options = \{\}\)/);
+    assert.match(framerSource, /const \{ preferStaticFirst = false \} = options;/);
+    assert.match(framerSource, /\.from\('prompts'\)\s*\.select\(HOMEPAGE_PROMPT_LIVE_SELECT\)\s*\.order\('updated_at', \{ ascending: false \}\)\s*\.limit\(80\)/);
     assert.match(framerSource, /filterHomeVisiblePrompts\(data\)/);
     assert.match(framerSource, /const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';/);
     assert.match(framerSource, /const isFreshPromptPool = !promptPoolUpdatedAt \|\| \(prefetch\.timestamp \|\| 0\) >= promptPoolUpdatedAt;/);
     assert.match(framerSource, /function buildHomepagePromptRenderSignature\(prompts = \[\]\)/);
+    assert.match(framerSource, /schedulePromptPoolLiveSync\(options = \{\}\)/);
     assert.match(framerSource, /async syncPromptPoolFromLiveSourceInBackground\(options = \{\}\)/);
-    assert.match(framerSource, /void this\.syncPromptPoolFromLiveSourceInBackground\(\{ reason: 'prefetch-cache' \}\);/);
+    assert.match(framerSource, /this\.schedulePromptPoolLiveSync\(\{ reason: 'prefetch-cache' \}\);/);
     assert.match(framerSource, /prompt\?\.image_url/);
     assert.match(framerSource, /prompt\?\.cover_image/);
     assert.match(framerSource, /function readHomepagePrefetchCache\(site = getHomepageRuntimeSite\(\)\)/);
@@ -64,7 +66,7 @@ test('homepage frontend runtime reads and writes site-specific prefetch payloads
 
     assert.match(prefetchSource, /\.rpc\('fn_get_homepage_config'/);
     assert.match(prefetchSource, /async function fetchVisiblePromptPool\(\)/);
-    assert.match(prefetchSource, /\.from\('prompts'\)\s*\.select\('\*'\)\s*\.order\('updated_at', \{ ascending: false \}\)/);
+    assert.match(prefetchSource, /\.from\('prompts'\)\s*\.select\(HOMEPAGE_PROMPT_LIVE_SELECT\)\s*\.order\('updated_at', \{ ascending: false \}\)\s*\.limit\(80\)/);
     assert.match(prefetchSource, /filterVisibleHomepagePrompts\(data\)/);
     assert.match(prefetchSource, /const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';/);
     assert.match(prefetchSource, /prompt\?\.image_url/);

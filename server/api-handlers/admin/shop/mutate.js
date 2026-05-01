@@ -208,6 +208,232 @@ function formatValidationMessages(issues = []) {
         .join('；');
 }
 
+const PRODUCT_SCHEMA_COMPATIBILITY_FIELDS = [
+    'purchase_notes_zh',
+    'purchase_notes_en',
+    'usage_instructions_zh',
+    'usage_instructions_en',
+    'purchase_notes',
+    'show_purchase_notes',
+    'usage_instructions',
+    'show_usage_instructions',
+    'show_product_description',
+    'max_purchase_quantity',
+    'purchase_limit_24h_quantity',
+    'purchase_limit_window_quantity',
+    'purchase_limit_window_minutes',
+    'per_account_purchase_limit',
+    'delivery_type',
+    'webhook_target',
+    'quantity_rules',
+    'flash_sale_price',
+    'flash_sale_end',
+    'name_en',
+    'description_en',
+    'image_assets'
+];
+
+function getProductSchemaErrorText(error) {
+    return [
+        error?.message,
+        error?.details,
+        error?.hint,
+        error?.code
+    ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function getMissingProductSchemaFields(error) {
+    const message = getProductSchemaErrorText(error);
+    if (!message) {
+        return [];
+    }
+
+    return PRODUCT_SCHEMA_COMPATIBILITY_FIELDS.filter((field) => {
+        const pattern = new RegExp(`(^|[^a-z0-9_])${field}([^a-z0-9_]|$)`);
+        return pattern.test(message);
+    });
+}
+
+function isMissingProductSchemaColumnError(error) {
+    const message = getProductSchemaErrorText(error);
+    if (!message) {
+        return false;
+    }
+
+    if (getMissingProductSchemaFields(error).length) {
+        return true;
+    }
+
+    return (
+        message.includes('shop_products')
+        && (
+            message.includes('schema cache')
+            || message.includes('could not find')
+            || message.includes('does not exist')
+            || message.includes('column')
+        )
+    );
+}
+
+function buildSchemaCompatibleProductPayload(payload = {}, { site = 'cn', missingFields = [] } = {}) {
+    const nextPayload = { ...(payload && typeof payload === 'object' ? payload : {}) };
+    const removedFields = [];
+    const missingSet = new Set(Array.isArray(missingFields) && missingFields.length
+        ? missingFields
+        : PRODUCT_SCHEMA_COMPATIBILITY_FIELDS);
+
+    const hasMissing = (...fields) => fields.some((field) => missingSet.has(field));
+    const removeFields = (fields = []) => {
+        fields.forEach((field) => {
+            if (Object.prototype.hasOwnProperty.call(nextPayload, field)) {
+                delete nextPayload[field];
+                removedFields.push(field);
+            }
+        });
+    };
+
+    if (hasMissing('purchase_notes_zh', 'purchase_notes_en')) {
+        if (site !== 'intl' && Object.prototype.hasOwnProperty.call(nextPayload, 'purchase_notes_zh')) {
+            nextPayload.purchase_notes = nextPayload.purchase_notes_zh;
+        }
+        removeFields(['purchase_notes_zh', 'purchase_notes_en']);
+    }
+
+    if (hasMissing('usage_instructions_zh', 'usage_instructions_en')) {
+        if (site !== 'intl' && Object.prototype.hasOwnProperty.call(nextPayload, 'usage_instructions_zh')) {
+            nextPayload.usage_instructions = nextPayload.usage_instructions_zh;
+        }
+        removeFields(['usage_instructions_zh', 'usage_instructions_en']);
+    }
+
+    if (hasMissing('purchase_notes', 'show_purchase_notes')) {
+        removeFields(['show_purchase_notes', 'purchase_notes', 'purchase_notes_zh', 'purchase_notes_en']);
+    }
+
+    if (hasMissing('usage_instructions', 'show_usage_instructions')) {
+        removeFields(['show_usage_instructions', 'usage_instructions', 'usage_instructions_zh', 'usage_instructions_en']);
+    }
+
+    if (hasMissing('show_product_description')) {
+        removeFields(['show_product_description']);
+    }
+
+    if (hasMissing(
+        'purchase_limit_24h_quantity',
+        'purchase_limit_window_quantity',
+        'purchase_limit_window_minutes',
+        'per_account_purchase_limit'
+    )) {
+        removeFields([
+            'purchase_limit_24h_quantity',
+            'purchase_limit_window_quantity',
+            'purchase_limit_window_minutes',
+            'per_account_purchase_limit'
+        ]);
+    }
+
+    if (hasMissing('max_purchase_quantity')) {
+        removeFields(['max_purchase_quantity']);
+    }
+
+    if (hasMissing('delivery_type', 'webhook_target')) {
+        removeFields(['delivery_type', 'webhook_target']);
+    }
+
+    if (hasMissing('quantity_rules', 'flash_sale_price', 'flash_sale_end')) {
+        removeFields(['quantity_rules', 'flash_sale_price', 'flash_sale_end']);
+    }
+
+    if (hasMissing('name_en')) {
+        removeFields(['name_en']);
+    }
+
+    if (hasMissing('description_en')) {
+        removeFields(['description_en']);
+    }
+
+    if (hasMissing('image_assets')) {
+        removeFields(['image_assets']);
+    }
+
+    return {
+        payload: nextPayload,
+        removedFields: Array.from(new Set(removedFields))
+    };
+}
+
+async function writeProductRow(supabase, { productId = null, payload = {} } = {}) {
+    if (productId) {
+        return supabase
+            .from('shop_products')
+            .upsert({ ...payload, id: productId }, { onConflict: 'id' })
+            .select('*')
+            .limit(1);
+    }
+
+    return supabase
+        .from('shop_products')
+        .insert(payload)
+        .select('*')
+        .limit(1);
+}
+
+async function writeProductRowWithSchemaFallback(supabase, {
+    productId = null,
+    payload = {},
+    site = 'cn'
+} = {}) {
+    let nextPayload = { ...(payload && typeof payload === 'object' ? payload : {}) };
+    let removedFields = [];
+    let usedCompatibilityFallback = false;
+    let lastResult = null;
+
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+        const result = await writeProductRow(supabase, { productId, payload: nextPayload });
+        lastResult = result;
+
+        if (!result.error || result.data?.length) {
+            return {
+                result,
+                payload: nextPayload,
+                compatibilityFallback: usedCompatibilityFallback,
+                compatibilityRemovedFields: Array.from(new Set(removedFields))
+            };
+        }
+
+        if (!isMissingProductSchemaColumnError(result.error)) {
+            return {
+                result,
+                payload: nextPayload,
+                compatibilityFallback: usedCompatibilityFallback,
+                compatibilityRemovedFields: Array.from(new Set(removedFields))
+            };
+        }
+
+        const missingFields = getMissingProductSchemaFields(result.error);
+        const fallback = buildSchemaCompatibleProductPayload(nextPayload, { site, missingFields });
+        if (!fallback.removedFields.length) {
+            return {
+                result,
+                payload: nextPayload,
+                compatibilityFallback: usedCompatibilityFallback,
+                compatibilityRemovedFields: Array.from(new Set(removedFields))
+            };
+        }
+
+        usedCompatibilityFallback = true;
+        removedFields = removedFields.concat(fallback.removedFields);
+        nextPayload = fallback.payload;
+    }
+
+    return {
+        result: lastResult || { data: null, error: new Error('保存商品失败') },
+        payload: nextPayload,
+        compatibilityFallback: usedCompatibilityFallback,
+        compatibilityRemovedFields: Array.from(new Set(removedFields))
+    };
+}
+
 function isMissingRpcFunctionError(error, functionName = '') {
     const message = normalizeText(error?.message, 400).toLowerCase();
     const hint = normalizeText(error?.hint, 400).toLowerCase();
@@ -240,8 +466,12 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
     const perAccountPurchaseLimit = normalizePositiveInteger(safePayload.per_account_purchase_limit);
     const showPurchaseNotes = normalizeBoolean(safePayload.show_purchase_notes, false);
     const purchaseNotes = normalizeText(safePayload.purchase_notes, 4000);
+    const purchaseNotesZh = normalizeText(safePayload.purchase_notes_zh, 4000);
+    const purchaseNotesEn = normalizeText(safePayload.purchase_notes_en, 4000);
     const showUsageInstructions = normalizeBoolean(safePayload.show_usage_instructions, false);
     const usageInstructions = normalizeText(safePayload.usage_instructions, 4000);
+    const usageInstructionsZh = normalizeText(safePayload.usage_instructions_zh, 4000);
+    const usageInstructionsEn = normalizeText(safePayload.usage_instructions_en, 4000);
 
     if (!name) {
         appendProductValidationIssue(blockingIssues, 'blocking', 'name_required', '商品名称不能为空。', 'name');
@@ -335,8 +565,12 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
         isActive
         && !showPurchaseNotes
         && !purchaseNotes
+        && !purchaseNotesZh
+        && !purchaseNotesEn
         && !showUsageInstructions
         && !usageInstructions
+        && !usageInstructionsZh
+        && !usageInstructionsEn
     ) {
         appendProductValidationIssue(
             warnings,
@@ -492,25 +726,20 @@ module.exports = async (req, res) => {
                 }, { onConflict: 'name' });
             }
 
-            let result;
-            if (productId) {
-                result = await supabase
-                    .from('shop_products')
-                    .upsert({ ...payload, id: productId }, { onConflict: 'id' })
-                    .select('*')
-                    .limit(1);
-            } else {
-                result = await supabase
-                    .from('shop_products')
-                    .insert(payload)
-                    .select('*')
-                    .limit(1);
-            }
+            const writeResult = await writeProductRowWithSchemaFallback(supabase, {
+                productId,
+                payload,
+                site: writableSite
+            });
+            const result = writeResult.result;
 
             if (result.error || !result.data?.length) {
                 return sendJson(res, 400, {
                     success: false,
-                    message: result.error?.message || '保存商品失败'
+                    message: result.error?.message || '保存商品失败',
+                    details: result.error?.details || '',
+                    hint: result.error?.hint || '',
+                    code: result.error?.code || ''
                 });
             }
 
@@ -533,7 +762,9 @@ module.exports = async (req, res) => {
             return sendJson(res, 200, {
                 success: true,
                 product: savedProduct,
-                validation
+                validation,
+                compatibilityFallback: writeResult.compatibilityFallback,
+                compatibilityRemovedFields: writeResult.compatibilityRemovedFields
             });
         }
 

@@ -6775,6 +6775,7 @@ async function tryOpenOpsAlertWorkspaceUserModal(userId, options = {}) {
         const opened = await window.openUserModal(normalizedUserId, {
             defaultTab: normalizedTab,
             paymentOrderId: normalizedPaymentOrderId,
+            ...(analyticsContext ? { analyticsContext } : {}),
             fallbackEmail: normalizedEmail,
             silentOnNotFound
         });
@@ -6793,6 +6794,7 @@ async function tryOpenOpsAlertWorkspaceUserModal(userId, options = {}) {
                 await window.openUserModal(normalizedUserId, {
                     defaultTab: normalizedTab,
                     paymentOrderId: normalizedPaymentOrderId,
+                    ...(analyticsContext ? { analyticsContext } : {}),
                     fallbackEmail: normalizedEmail,
                     silentOnNotFound
                 });

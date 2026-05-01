@@ -15,7 +15,7 @@ test('shop profile security reuses the homepage light-theme profile modal contra
     const shopSource = readRepoFile('shop.html');
 
     assert.equal(
-        profileModalStyles.includes('20260428_PROFILE_SECURITY_LIGHT_THEME_MOBILE_1'),
+        profileModalStyles.includes('20260501_PROFILE_MODAL_MOBILE_HEIGHT_1'),
         true,
         'profile modal stylesheet should carry the shop security light-theme marker'
     );
@@ -55,12 +55,12 @@ test('shop profile security reuses the homepage light-theme profile modal contra
     );
 
     assert.equal(
-        loaderSource.includes('css/profile-modal.css?v=20260428_PROFILE_SECURITY_LIGHT_THEME_MOBILE_1'),
+        loaderSource.includes('css/profile-modal.css?v=20260501_PROFILE_MODAL_MOBILE_HEIGHT_1'),
         true,
         'profile modal loader should cache-bust the light-theme security stylesheet'
     );
     assert.equal(
-        shopSource.includes('./js/profile-modal-loader.js?v=20260428_PROFILE_SECURITY_LIGHT_THEME_MOBILE_1'),
+        shopSource.includes('./js/profile-modal-loader.js?v=20260501_PROFILE_MODAL_MOBILE_HEIGHT_1'),
         true,
         'shop.html should load the updated shared profile modal bootstrap'
     );

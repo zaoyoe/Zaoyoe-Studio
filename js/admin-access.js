@@ -667,7 +667,16 @@
         warmAdminStudioEntry
     };
 
-    globalScope.AdminAccess = api;
+    const existingAdminAccess = globalScope.AdminAccess;
+    if (existingAdminAccess?.__localSmokeAccess === true) {
+        globalScope.AdminAccess = {
+            ...api,
+            ...existingAdminAccess,
+            __localSmokeAccess: true
+        };
+    } else {
+        globalScope.AdminAccess = api;
+    }
 
     if (typeof module !== 'undefined' && module.exports) {
         module.exports = api;

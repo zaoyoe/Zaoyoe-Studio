@@ -20,6 +20,7 @@ const PROMPT_REQUIRED_SELECT_FIELDS = [
 const PROMPT_OPTIONAL_SELECT_FIELDS = [
     'dominant_colors',
     'ai_tags',
+    'image_assets',
     'quality_score',
     'updated_at'
 ];
@@ -174,6 +175,53 @@ function normalizeOptionalObject(value, fieldName) {
     return value;
 }
 
+function normalizePromptImageAsset(value) {
+    if (typeof value === 'string') {
+        const original = value.trim();
+        return original ? { original } : null;
+    }
+
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+
+    const variants = value.variants && typeof value.variants === 'object' && !Array.isArray(value.variants)
+        ? value.variants
+        : {};
+    const asset = {};
+
+    for (const key of ['original', 'thumb', 'featured', 'card', 'home']) {
+        const url = String(value[key] || variants[key] || '').trim();
+        if (url) {
+            asset[key] = url;
+        }
+    }
+
+    const fallbackOriginal = String(value.url || value.src || value.image || '').trim();
+    if (!asset.original && fallbackOriginal) {
+        asset.original = fallbackOriginal;
+    }
+
+    return asset.original || asset.thumb || asset.featured || asset.card || asset.home ? asset : null;
+}
+
+function normalizeOptionalImageAssets(value, fieldName) {
+    if (value === undefined) return undefined;
+
+    const values = Array.isArray(value)
+        ? value
+        : (value && typeof value === 'object' ? [value] : []);
+    if (!Array.isArray(value) && !(value && typeof value === 'object')) {
+        const error = new Error(`${fieldName} must be an array`);
+        error.statusCode = 400;
+        throw error;
+    }
+
+    return values
+        .map(normalizePromptImageAsset)
+        .filter(Boolean);
+}
+
 function applyPromptFieldFallbacks(row = {}) {
     const safeRow = row && typeof row === 'object' ? { ...row } : {};
 
@@ -187,6 +235,10 @@ function applyPromptFieldFallbacks(row = {}) {
 
     if (!Object.prototype.hasOwnProperty.call(safeRow, 'quality_score')) {
         safeRow.quality_score = null;
+    }
+
+    if (!Object.prototype.hasOwnProperty.call(safeRow, 'image_assets')) {
+        safeRow.image_assets = [];
     }
 
     for (const fieldName of PROMPT_BILINGUAL_SELECT_FIELDS) {
@@ -273,6 +325,9 @@ function buildPromptMutationPayload(body, { action = 'create' } = {}) {
 
     const images = normalizeOptionalStringArray(body.images, 'images');
     if (images !== undefined) payload.images = images;
+
+    const imageAssets = normalizeOptionalImageAssets(body.image_assets ?? body.imageAssets, 'image_assets');
+    if (imageAssets !== undefined) payload.image_assets = imageAssets;
 
     const dominantColors = normalizeOptionalStringArray(body.dominant_colors ?? body.dominantColors, 'dominant_colors');
     if (dominantColors !== undefined) payload.dominant_colors = dominantColors;

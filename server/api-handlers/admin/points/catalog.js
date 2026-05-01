@@ -3,18 +3,9 @@ const {
     requireAdmin,
     sendJson
 } = require('../../../../api/_lib/admin');
-
-const PACKAGE_SELECT_FIELDS = [
-    'id',
-    'name',
-    'name_en',
-    'points_amount',
-    'bonus_points',
-    'price_cny',
-    'is_active',
-    'sort_order',
-    'created_at'
-].join(', ');
+const {
+    getPointsCatalogBaseData
+} = require('./_catalog-base');
 
 function getSearchParams(req) {
     const url = new URL(req.url || '', 'http://localhost');
@@ -35,26 +26,6 @@ function createEmptyPackageMetrics() {
         intl: { batch_count: 0, generated_count: 0, used_count: 0 },
         total: { batch_count: 0, generated_count: 0, used_count: 0 }
     };
-}
-
-async function loadPointsPackages(supabase) {
-    const { data, error } = await supabase
-        .from('points_packages')
-        .select(PACKAGE_SELECT_FIELDS)
-        .order('sort_order', { ascending: true })
-        .order('points_amount', { ascending: true });
-
-    if (error) throw error;
-    return data || [];
-}
-
-async function loadRedemptionBatches(supabase) {
-    const { data, error } = await supabase
-        .from('redemption_batches')
-        .select('id, package_id, total_count, used_count, status, site, created_at');
-
-    if (error) throw error;
-    return data || [];
 }
 
 function buildSummaryFromBatches(batches, siteContext) {
@@ -117,10 +88,7 @@ module.exports = async (req, res) => {
         const { supabase } = await requireAdmin(req, { permission: 'points.manage' });
         const searchParams = getSearchParams(req);
         const siteContext = normalizePointsCatalogSite(searchParams.get('site') || req.adminSite);
-        const [packages, batches] = await Promise.all([
-            loadPointsPackages(supabase),
-            loadRedemptionBatches(supabase)
-        ]);
+        const { packages, batches } = await getPointsCatalogBaseData(supabase, { site: siteContext });
 
         const packageRows = attachPackageMetrics(packages, batches);
         const summary = buildSummaryFromBatches(batches, siteContext);

@@ -47,7 +47,7 @@ const TABLE_DEFINITIONS = Object.freeze({
     },
     pointsLedger: {
         table: 'points_ledger',
-        columns: 'id, amount, reason, reference_id, created_at, site',
+        columns: 'id, user_id, amount, reason, reference_id, created_at, site',
         orderBy: 'created_at',
         rangeColumn: 'created_at'
     }

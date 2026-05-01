@@ -313,3 +313,108 @@ test('ops alerts has a dedicated deep light-theme adaptation layer', () => {
         'ops alert overview trend fill should not force a static background over runtime stacked colors'
     );
 });
+
+test('ops alert monitor badges keep transparent header containers in light theme', () => {
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+    const marker = '20260430_ADMIN_STUDIO_OPS_ALERT_MONITOR_BADGE_STATS_TRANSPARENT_1';
+    const markerIndex = stylesSource.indexOf(marker);
+
+    assert.notEqual(markerIndex, -1, 'ops alert monitor badge container cleanup should carry a unique marker');
+
+    const block = stylesSource.slice(markerIndex);
+
+    assert.match(
+        block,
+        /#module-ops-alerts \.ops-alert-monitor-card \.ops-alert-monitor-card__head,[\s\S]*#module-ops-alerts \.ops-alert-monitor-card \.ops-alert-monitor-card__stats \{[\s\S]*background: transparent !important;[\s\S]*background-color: transparent !important;[\s\S]*background-image: none !important;/,
+        'monitor card head and stat wrappers should not paint square light surfaces behind badges'
+    );
+    assert.match(
+        block,
+        /\.ops-alert-monitor-card :is\(\.ops-alert-monitor-card__head, \.ops-alert-monitor-card__stats\)::before,[\s\S]*\.ops-alert-monitor-card :is\(\.ops-alert-monitor-card__head, \.ops-alert-monitor-card__stats\)::after \{[\s\S]*content: none !important;[\s\S]*display: none !important;/,
+        'monitor card badge wrappers should suppress inherited pseudo surface strips'
+    );
+    assert.equal(
+        adminStudioHtml.includes(`opsAlertsMonitorBadgeStats=${marker}`),
+        true,
+        'admin studio should cache-bust the ops alert monitor badge container cleanup'
+    );
+});
+
+test('ops alert monitor item shells do not paint square backgrounds around rounded rows', () => {
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+    const marker = '20260430_ADMIN_STUDIO_OPS_ALERT_MONITOR_ITEM_SHELL_TRANSPARENT_1';
+    const markerIndex = stylesSource.indexOf(marker);
+
+    assert.notEqual(markerIndex, -1, 'ops alert monitor item shell cleanup should carry a unique marker');
+
+    const block = stylesSource.slice(markerIndex);
+
+    assert.match(
+        block,
+        /#module-ops-alerts \.ops-alert-monitor-item \{[\s\S]*overflow: hidden !important;/,
+        'monitor alert rows should clip any internal light surfaces to their rounded border'
+    );
+    assert.match(
+        block,
+        /\.ops-alert-monitor-card :is\([\s\S]*\.ops-alert-monitor-card__items,[\s\S]*\.ops-alert-monitor-item__top,[\s\S]*\.ops-alert-monitor-item__summary,[\s\S]*\.ops-alert-monitor-item__meta,[\s\S]*\.ops-alert-monitor-item__actions[\s\S]*\) \{[\s\S]*background: transparent !important;[\s\S]*background-color: transparent !important;[\s\S]*background-image: none !important;/,
+        'monitor item layout wrappers should not draw rectangular backgrounds behind rounded rows'
+    );
+    assert.match(
+        block,
+        /\.ops-alert-monitor-card :is\([\s\S]*\.ops-alert-monitor-card__items,[\s\S]*\.ops-alert-monitor-item__top,[\s\S]*\.ops-alert-monitor-item__summary,[\s\S]*\.ops-alert-monitor-item__meta,[\s\S]*\.ops-alert-monitor-item__actions[\s\S]*\)::before,[\s\S]*\.ops-alert-monitor-card :is\([\s\S]*\.ops-alert-monitor-card__items,[\s\S]*\.ops-alert-monitor-item__top,[\s\S]*\.ops-alert-monitor-item__summary,[\s\S]*\.ops-alert-monitor-item__meta,[\s\S]*\.ops-alert-monitor-item__actions[\s\S]*\)::after \{[\s\S]*content: none !important;[\s\S]*display: none !important;/,
+        'monitor item shell pseudo-elements should not reintroduce square light strips'
+    );
+    assert.equal(
+        adminStudioHtml.includes(`opsAlertsMonitorItemShell=${marker}`),
+        true,
+        'admin studio should cache-bust the ops alert monitor item shell cleanup'
+    );
+});
+
+test('ops alert summary mode hints stay readable in light theme', () => {
+    const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+    const marker = '20260430_ADMIN_STUDIO_OPS_ALERT_SUMMARY_MODE_NOTE_LIGHT_1';
+    const spacingMarker = '20260430_ADMIN_STUDIO_OPS_ALERT_SUMMARY_MODE_NOTE_SPACING_1';
+    const markerIndex = stylesSource.indexOf(marker);
+    const spacingMarkerIndex = stylesSource.indexOf(spacingMarker);
+
+    assert.notEqual(markerIndex, -1, 'ops alert summary mode hint light fix should carry a unique marker');
+    assert.notEqual(spacingMarkerIndex, -1, 'ops alert summary mode hint spacing fix should carry a unique marker');
+
+    const block = stylesSource.slice(markerIndex);
+    const spacingBlock = stylesSource.slice(spacingMarkerIndex);
+
+    assert.match(
+        block,
+        /html\[data-theme="light"\] #module-ops-alerts \.ops-alert-summary-mode-note,[\s\S]*html:not\(\[data-theme="dark"\]\) #module-ops-alerts \.ops-alert-summary-mode-note \{[\s\S]*background: rgba\(var\(--admin-studio-ui-blue-rgb, 118, 157, 202\), 0\.08\) !important;[\s\S]*border-color: rgba\(var\(--admin-studio-ui-blue-rgb, 118, 157, 202\), 0\.24\) !important;/,
+        'summary mode hint container should use a light readable tinted surface'
+    );
+    assert.match(
+        block,
+        /#module-ops-alerts \.ops-alert-summary-mode-note i \{[\s\S]*color: var\(--ops-alert-light-blue, var\(--admin-studio-ui-blue, #769dca\)\) !important;/,
+        'summary mode hint icon should use the light theme blue'
+    );
+    assert.match(
+        block,
+        /#module-ops-alerts \.ops-alert-summary-mode-note span \{[\s\S]*color: var\(--ops-alert-light-muted, rgba\(71, 85, 105, 0\.9\)\) !important;[\s\S]*-webkit-text-fill-color: var\(--ops-alert-light-muted, rgba\(71, 85, 105, 0\.9\)\) !important;/,
+        'summary mode hint text should override the dark-theme pale copy color'
+    );
+    assert.equal(
+        adminStudioHtml.includes(`opsAlertsSummaryModeNoteLight=${marker}`),
+        true,
+        'admin studio should cache-bust the summary mode hint light fix'
+    );
+    assert.match(
+        spacingBlock,
+        /#ops-alerts-view-monitors \.ops-alert-config-card > \.config-card-body > \.ops-alert-summary-mode-note \{[\s\S]*grid-column: 1 \/ -1 !important;[\s\S]*margin-top: 10px !important;[\s\S]*margin-bottom: 6px !important;/,
+        'summary mode hint should have breathing room below the preceding divider on mobile'
+    );
+    assert.equal(
+        adminStudioHtml.includes(`opsAlertsSummaryModeNoteSpacing=${spacingMarker}`),
+        true,
+        'admin studio should cache-bust the summary mode hint spacing fix'
+    );
+});

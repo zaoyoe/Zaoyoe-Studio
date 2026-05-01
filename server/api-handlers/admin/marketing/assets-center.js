@@ -16,8 +16,13 @@ const {
 const {
     buildDiscountStackingPolicy
 } = require('../../../../api/_lib/discount-pricing');
+const {
+    getPointsCatalogBaseData
+} = require('../points/_catalog-base');
 
 const RECENT_WINDOW_DAYS = 30;
+const MARKETING_ASSETS_BASE_CACHE_TTL_MS = 5000;
+const marketingAssetsBaseCache = new Map();
 const WORKFLOW_DEFAULTS = Object.freeze({
     discount_lifecycle_sync: {
         workflow_key: 'discount_lifecycle_sync',
@@ -82,7 +87,10 @@ function normalizeWorkflowKey(value = '') {
 
 function normalizeOverviewLoadMode(value = '') {
     const normalized = normalizeText(value, 40).toLowerCase();
-    return normalized === 'summary' ? 'summary' : 'full';
+    if (normalized === 'summary' || normalized === 'details') {
+        return normalized;
+    }
+    return 'full';
 }
 
 function isMissingSchemaObjectError(error, relationName = '') {
@@ -183,6 +191,31 @@ function computeNextRunAt(workflow = {}, startedAt = new Date()) {
     return new Date(startedAt.getTime() + intervalHours * 60 * 60 * 1000).toISOString();
 }
 
+function cloneMarketingAssetRow(row = {}) {
+    if (!row || typeof row !== 'object') {
+        return {};
+    }
+    return {
+        ...row,
+        config: row.config && typeof row.config === 'object' && !Array.isArray(row.config)
+            ? { ...row.config }
+            : row.config
+    };
+}
+
+function cloneMarketingAssetsBaseData(baseData = {}) {
+    return {
+        discounts: (Array.isArray(baseData.discounts) ? baseData.discounts : []).map(cloneMarketingAssetRow),
+        packages: (Array.isArray(baseData.packages) ? baseData.packages : []).map(cloneMarketingAssetRow),
+        batches: (Array.isArray(baseData.batches) ? baseData.batches : []).map(cloneMarketingAssetRow),
+        workflows: (Array.isArray(baseData.workflows) ? baseData.workflows : []).map(cloneMarketingAssetRow)
+    };
+}
+
+function clearMarketingAssetsBaseCache() {
+    marketingAssetsBaseCache.clear();
+}
+
 async function loadDiscountRows(supabase) {
     const { data, error } = await supabase
         .from('discount_codes')
@@ -240,29 +273,6 @@ async function loadDiscountAssetRows(supabase, discountIds = []) {
     }
 }
 
-async function loadPointsPackages(supabase) {
-    const { data, error } = await supabase
-        .from('points_packages')
-        .select('id, name, points_amount, bonus_points, price_cny, is_active, sort_order, created_at')
-        .order('sort_order', { ascending: true });
-
-    if (error) {
-        throw error;
-    }
-    return Array.isArray(data) ? data : [];
-}
-
-async function loadRedemptionBatches(supabase) {
-    const { data, error } = await supabase
-        .from('redemption_batches')
-        .select('id, package_id, total_count, used_count, status, site, created_at');
-
-    if (error) {
-        throw error;
-    }
-    return Array.isArray(data) ? data : [];
-}
-
 async function loadWorkflowRows(supabase, now = new Date()) {
     try {
         const { data, error } = await supabase
@@ -298,6 +308,47 @@ async function loadWorkflowRuns(supabase, workflowIds = []) {
         if (isMissingSchemaObjectError(error, 'marketing_asset_workflow_runs')) {
             return [];
         }
+        throw error;
+    }
+}
+
+async function loadMarketingAssetsBaseData(supabase, now = new Date(), site = 'all') {
+    const cacheKey = `overview-base:${normalizeSite(site, 'all')}`;
+    const cached = marketingAssetsBaseCache.get(cacheKey);
+    const nowMs = Date.now();
+    if (cached?.value && nowMs - cached.cachedAt <= MARKETING_ASSETS_BASE_CACHE_TTL_MS) {
+        return cloneMarketingAssetsBaseData(cached.value);
+    }
+    if (cached?.promise) {
+        return cloneMarketingAssetsBaseData(await cached.promise);
+    }
+
+    const loadPromise = Promise.all([
+        loadDiscountRows(supabase),
+        getPointsCatalogBaseData(supabase, { site }),
+        loadWorkflowRows(supabase, now)
+    ]).then(([discounts, pointsBase, workflows]) => ({
+        discounts,
+        packages: pointsBase.packages,
+        batches: pointsBase.batches,
+        workflows
+    }));
+
+    marketingAssetsBaseCache.set(cacheKey, {
+        cachedAt: nowMs,
+        promise: loadPromise,
+        value: null
+    });
+
+    try {
+        const value = await loadPromise;
+        marketingAssetsBaseCache.set(cacheKey, {
+            cachedAt: Date.now(),
+            value: cloneMarketingAssetsBaseData(value)
+        });
+        return cloneMarketingAssetsBaseData(value);
+    } catch (error) {
+        marketingAssetsBaseCache.delete(cacheKey);
         throw error;
     }
 }
@@ -508,9 +559,9 @@ function buildUnifiedAssetItems(discountState = {}, packageState = {}) {
         .slice(0, 10);
 }
 
-function buildOverviewPayload({ discountState = {}, packageState = {}, workflows = [], workflowRuns = [], workflowSourceDiscounts = [], site = 'all', now = new Date() } = {}) {
+function buildWorkflowOverviewRows({ workflows = [], workflowRuns = [], workflowSourceDiscounts = [], site = 'all', now = new Date() } = {}) {
     const workflowRunsByWorkflowId = groupBy(workflowRuns, (row) => normalizeText(row?.workflow_id, 160));
-    const workflowRows = (Array.isArray(workflows) ? workflows : []).map((workflow) => {
+    return (Array.isArray(workflows) ? workflows : []).map((workflow) => {
         const runRows = workflowRunsByWorkflowId.get(normalizeText(workflow?.id, 160)) || [];
         const latestRun = runRows[0] || null;
         const candidates = buildWorkflowCandidateState(workflow.workflow_key, workflowSourceDiscounts, site, now, workflow.config);
@@ -527,7 +578,16 @@ function buildOverviewPayload({ discountState = {}, packageState = {}, workflows
                 : null
         };
     });
+}
 
+function buildOverviewPayload({ discountState = {}, packageState = {}, workflows = [], workflowRuns = [], workflowSourceDiscounts = [], site = 'all', now = new Date() } = {}) {
+    const workflowRows = buildWorkflowOverviewRows({
+        workflows,
+        workflowRuns,
+        workflowSourceDiscounts,
+        site,
+        now
+    });
     return {
         success: true,
         generated_at: now.toISOString(),
@@ -562,6 +622,42 @@ function buildOverviewPayload({ discountState = {}, packageState = {}, workflows
             }
         ],
         unified_assets: buildUnifiedAssetItems(discountState, packageState),
+        workflows: workflowRows
+    };
+}
+
+function buildDetailsOverlayPayload({ discountState = {}, workflows = [], workflowRuns = [], workflowSourceDiscounts = [], site = 'all', now = new Date() } = {}) {
+    const workflowRows = buildWorkflowOverviewRows({
+        workflows,
+        workflowRuns,
+        workflowSourceDiscounts,
+        site,
+        now
+    });
+    const discountSummary = discountState?.summary && typeof discountState.summary === 'object'
+        ? discountState.summary
+        : {};
+
+    return {
+        success: true,
+        generated_at: now.toISOString(),
+        site_context: normalizeSite(site, 'all'),
+        load_mode: 'details',
+        details_pending: false,
+        summary: {
+            issued_asset_count: Math.max(0, Number(discountSummary.asset_issued_count) || 0),
+            recent_revenue_net: Math.max(0, Number(discountSummary.recent_revenue_net) || 0),
+            recent_discount_cost_net: Math.max(0, Number(discountSummary.recent_discount_cost_net) || 0),
+            due_workflow_count: workflowRows.filter((row) => row.status === 'active' && row.due_count > 0).length
+        },
+        asset_families: [
+            {
+                key: 'discount',
+                summary: discountSummary
+            }
+        ],
+        unified_assets_mode: 'discount_patch',
+        unified_assets: Array.isArray(discountState?.rows) ? discountState.rows : [],
         workflows: workflowRows
     };
 }
@@ -753,12 +849,12 @@ module.exports = async function marketingAssetsCenterHandler(req, res) {
             const loadMode = normalizeOverviewLoadMode(url.searchParams.get('mode'));
             const includeDetails = loadMode !== 'summary';
 
-            const [discounts, packages, batches, workflows] = await Promise.all([
-                loadDiscountRows(supabase),
-                loadPointsPackages(supabase),
-                loadRedemptionBatches(supabase),
-                loadWorkflowRows(supabase, now)
-            ]);
+            const {
+                discounts,
+                packages,
+                batches,
+                workflows
+            } = await loadMarketingAssetsBaseData(supabase, now, site);
 
             const [orders, assets, workflowRuns] = includeDetails
                 ? await Promise.all([
@@ -775,6 +871,17 @@ module.exports = async function marketingAssetsCenterHandler(req, res) {
                 site,
                 now
             });
+            if (loadMode === 'details') {
+                return sendJson(res, 200, buildDetailsOverlayPayload({
+                    discountState,
+                    workflows,
+                    workflowRuns,
+                    workflowSourceDiscounts: discounts,
+                    site,
+                    now
+                }));
+            }
+
             const packageState = buildPackageMetrics(packages, batches, site);
             const payload = buildOverviewPayload({
                 discountState,
@@ -815,6 +922,7 @@ module.exports = async function marketingAssetsCenterHandler(req, res) {
             site,
             now
         });
+        clearMarketingAssetsBaseCache();
 
         if (user?.id) {
             await writeAdminAuditLog({

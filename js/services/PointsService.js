@@ -377,17 +377,18 @@
             return cloneWalletDiscountAssetsPayload(await request);
         },
 
-        buildWalletShopOrderDetailCacheKey({ orderId = '', userId = '' } = {}) {
+        buildWalletShopOrderDetailCacheKey({ orderId = '', userId = '', site = '' } = {}) {
             const normalizedOrderId = String(orderId || '').trim();
             const normalizedUserId = String(userId || '').trim();
+            const normalizedSite = String(site || window.SiteConfig?.site || 'cn').trim().toLowerCase() || 'cn';
             if (!normalizedOrderId || !normalizedUserId) {
                 return '';
             }
-            return `${normalizedUserId}::${normalizedOrderId}`;
+            return `${normalizedSite}::${normalizedUserId}::${normalizedOrderId}`;
         },
 
-        readWalletShopOrderDetailCache({ orderId = '', userId = this._cachedUserId } = {}) {
-            const cacheKey = this.buildWalletShopOrderDetailCacheKey({ orderId, userId });
+        readWalletShopOrderDetailCache({ orderId = '', userId = this._cachedUserId, site = '' } = {}) {
+            const cacheKey = this.buildWalletShopOrderDetailCacheKey({ orderId, userId, site });
             if (!cacheKey || !(this._shopOrderDetailCache instanceof Map)) {
                 return null;
             }
@@ -406,8 +407,8 @@
             return cloneWalletShopOrderDetailPayload(cachedEntry.payload || null);
         },
 
-        writeWalletShopOrderDetailCache({ orderId = '', userId = this._cachedUserId } = {}, payload = null) {
-            const cacheKey = this.buildWalletShopOrderDetailCacheKey({ orderId, userId });
+        writeWalletShopOrderDetailCache({ orderId = '', userId = this._cachedUserId, site = '' } = {}, payload = null) {
+            const cacheKey = this.buildWalletShopOrderDetailCacheKey({ orderId, userId, site });
             if (!cacheKey || !payload || typeof payload !== 'object' || Array.isArray(payload)) {
                 return;
             }
@@ -423,15 +424,16 @@
         },
 
         peekWalletShopOrderDetail({ orderId = '' } = {}) {
-            return this.readWalletShopOrderDetailCache({ orderId, userId: this._cachedUserId });
+            const site = arguments[0]?.site || '';
+            return this.readWalletShopOrderDetailCache({ orderId, userId: this._cachedUserId, site });
         },
 
-        invalidateWalletShopOrderDetail({ orderId = '', userId = this._cachedUserId } = {}) {
+        invalidateWalletShopOrderDetail({ orderId = '', userId = this._cachedUserId, site = '' } = {}) {
             if (!(this._shopOrderDetailCache instanceof Map)) {
                 this._shopOrderDetailCache = new Map();
             }
 
-            const cacheKey = this.buildWalletShopOrderDetailCacheKey({ orderId, userId });
+            const cacheKey = this.buildWalletShopOrderDetailCacheKey({ orderId, userId, site });
             if (cacheKey) {
                 this._shopOrderDetailCache.delete(cacheKey);
             }
@@ -446,7 +448,9 @@
         },
 
         async getWalletShopOrderDetail({ orderId = '', force = false } = {}) {
+            const site = arguments[0]?.site || '';
             const normalizedOrderId = String(orderId || '').trim();
+            const currentSite = String(site || window.SiteConfig?.site || 'cn').trim().toLowerCase() || 'cn';
             if (!normalizedOrderId) {
                 throw new Error('缺少订单号');
             }
@@ -458,13 +462,15 @@
 
             const cacheKey = this.buildWalletShopOrderDetailCacheKey({
                 orderId: normalizedOrderId,
-                userId
+                userId,
+                site: currentSite
             });
 
             if (!force) {
                 const cachedPayload = this.readWalletShopOrderDetailCache({
                     orderId: normalizedOrderId,
-                    userId
+                    userId,
+                    site: currentSite
                 });
                 if (cachedPayload) {
                     return cachedPayload;
@@ -476,7 +482,8 @@
             }
 
             const request = this._postWalletJson('/api/wallet/order-detail', {
-                orderId: normalizedOrderId
+                orderId: normalizedOrderId,
+                site: currentSite
             }).then((payload) => {
                 const normalizedPayload = cloneWalletShopOrderDetailPayload(
                     payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data)
@@ -489,7 +496,8 @@
 
                 this.writeWalletShopOrderDetailCache({
                     orderId: normalizedOrderId,
-                    userId
+                    userId,
+                    site: currentSite
                 }, normalizedPayload);
                 return normalizedPayload;
             }).finally(() => {

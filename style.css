@@ -95,6 +95,31 @@ body {
     width: 100%;
     min-height: 100vh;
     overflow-x: hidden;
+    scrollbar-width: none;
+    scrollbar-gutter: auto;
+    -ms-overflow-style: none;
+}
+
+/* 20260430_PUBLIC_ROOT_SCROLLBAR_FULL_HIDE_1
+   Shared public fallback for pages that do not load framer_home.css early. */
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
+}
+
+html::-webkit-scrollbar-track,
+html::-webkit-scrollbar-thumb,
+html::-webkit-scrollbar-corner,
+body::-webkit-scrollbar-track,
+body::-webkit-scrollbar-thumb,
+body::-webkit-scrollbar-corner {
+    width: 0 !important;
+    height: 0 !important;
+    background: transparent !important;
+    border: 0 !important;
 }
 
 body {
@@ -9239,8 +9264,18 @@ body {
 
     #profileModal .modal-content.profile-modal,
     #profileModal.active .modal-content.profile-modal,
-    #profileModal.active:focus-within .modal-content.profile-modal,
-    #profileModal.ios-focus-lock .modal-content.profile-modal {
+    #profileModal.active:focus-within .modal-content.profile-modal {
+        top: 0 !important;
+        transform: none !important;
+        height: min(82svh, calc(var(--profile-modal-overlay-height, 100dvh) - 56px)) !important;
+        min-height: 0 !important;
+        max-height: calc(var(--profile-modal-overlay-height, 100dvh) - 48px) !important;
+        margin: auto !important;
+        overflow: hidden !important;
+    }
+
+    #profileModal.active.ios-focus-lock .modal-content.profile-modal,
+    #profileModal.active.keyboard-active .modal-content.profile-modal {
         top: var(--profile-modal-shift-y, 0px) !important;
         transform: none !important;
         height: auto !important;
@@ -11661,4 +11696,18 @@ html:not([data-theme="dark"]) #loginModal.auth-sheet-overlay.login-overlay.activ
     -webkit-backdrop-filter: var(--public-light-modal-backdrop-filter) !important;
     overscroll-behavior: contain !important;
     overscroll-behavior-y: contain !important;
+}
+
+/* Keep guestbook timestamps visually stable after async scripts, fonts, and late styles settle. */
+body.guestbook-page .message-item .message-header .message-time {
+    flex: 0 0 auto;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif !important;
+    font-size: 0.82rem !important;
+    line-height: 1.2 !important;
+    font-weight: 500 !important;
+    letter-spacing: 0 !important;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
 }

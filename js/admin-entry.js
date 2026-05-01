@@ -15,7 +15,7 @@
         const secondaryAction = globalScope.document?.getElementById('entrySecondaryAction');
 
         if (titleEl) {
-            titleEl.textContent = options.title || (state === 'pending' ? '正在验证后台访问' : '无法继续进入后台');
+            titleEl.textContent = options.title || (state === 'pending' ? '正在校验后台访问权限' : '无法继续进入后台');
         }
 
         if (messageEl) {
@@ -94,8 +94,8 @@
         const safeTarget = getSafeTarget();
 
         setEntryState('pending', {
-            title: '正在验证后台访问',
-            message: '请稍候，我们正在检查管理员权限并签发短时访问凭证。'
+            title: '正在校验后台访问权限',
+            message: '请稍候，我们正在确认当前账号是否拥有 Admin Studio 访问权限。'
         });
 
         try {

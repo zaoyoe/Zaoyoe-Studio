@@ -47,11 +47,16 @@ function createElement(tagName = 'div', id = '') {
     return element;
 }
 
-function loadCommandCenterRuntime() {
+function loadCommandCenterRuntime(options = {}) {
     const script = fs.readFileSync(commandCenterPath, 'utf8');
     const listeners = {};
     const elements = {};
     const now = Date.now();
+    const primeCalls = [];
+    const scheduledTasks = [];
+    const clearedTasks = [];
+    const timingMarks = [];
+    const timingMeasures = [];
     const commandSummaries = {
         notifications: {
             ready: true,
@@ -351,21 +356,24 @@ function loadCommandCenterRuntime() {
         getAdminChatCommandCenterSummary() {
             return { ...commandSummaries.notifications };
         },
-        async primeAdminChatCommandCenterSummary() {
+        async primeAdminChatCommandCenterSummary(options = {}) {
+            primeCalls.push({ key: 'notifications', force: options.force === true });
             return { ...commandSummaries.notifications };
         },
         AdminPayments: {
             getCommandCenterSummary() {
                 return { ...commandSummaries.payments };
             },
-            async primeCommandCenterSummary() {
+            async primeCommandCenterSummary(options = {}) {
+                primeCalls.push({ key: 'payments', force: options.force === true });
                 return { ...commandSummaries.payments };
             }
         },
         getAnalyticsCommandCenterInventorySummary() {
             return { ...commandSummaries.inventory };
         },
-        async primeAnalyticsCommandCenterInventorySummary() {
+        async primeAnalyticsCommandCenterInventorySummary(options = {}) {
+            primeCalls.push({ key: 'inventory', force: options.force === true });
             return { ...commandSummaries.inventory };
         },
         AdminAI: {
@@ -378,16 +386,33 @@ function loadCommandCenterRuntime() {
             getCommandCenterSummary() {
                 return { ...commandSummaries.ai };
             },
-            async primeCommandCenterSummary() {
+            async primeCommandCenterSummary(options = {}) {
+                primeCalls.push({ key: 'ai', force: options.force === true });
                 return { ...commandSummaries.ai };
             }
         },
         getAdminAuditMonitorCommandCenterSummary() {
             return { ...commandSummaries.security };
         },
-        async primeAdminAuditMonitorCommandCenterSummary() {
+        async primeAdminAuditMonitorCommandCenterSummary(options = {}) {
+            primeCalls.push({ key: 'security', force: options.force === true });
             return { ...commandSummaries.security };
         },
+        AdminStudioTiming: options.captureTiming ? {
+            mark(name, detail = {}) {
+                timingMarks.push({ name, detail: { ...detail } });
+            },
+            markOnce(name, detail = {}) {
+                if (timingMarks.some((entry) => entry.name === name)) {
+                    return null;
+                }
+                timingMarks.push({ name, detail: { ...detail } });
+                return null;
+            },
+            measure(name, startName, endName, detail = {}) {
+                timingMeasures.push({ name, startName, endName, detail: { ...detail } });
+            }
+        } : null,
         addEventListener(name, handler) {
             listeners[name] = handler;
         },
@@ -398,6 +423,16 @@ function loadCommandCenterRuntime() {
             }
         }
     };
+    if (options.captureTimers) {
+        window.setTimeout = (callback, delay = 0) => {
+            const id = scheduledTasks.length + 1;
+            scheduledTasks.push({ id, callback, delay });
+            return id;
+        };
+        window.clearTimeout = (id) => {
+            clearedTasks.push(id);
+        };
+    }
     const context = {
         document,
         window,
@@ -414,7 +449,12 @@ function loadCommandCenterRuntime() {
         window,
         listeners,
         elements,
-        commandSummaries
+        commandSummaries,
+        clearedTasks,
+        primeCalls,
+        scheduledTasks,
+        timingMarks,
+        timingMeasures
     };
 }
 
@@ -658,6 +698,104 @@ test('AdminCommandCenter uses live summaries for notifications, payments, invent
     assert.match(elements.adminCommandCenter.innerHTML, /配置审计[\s\S]*2条/);
     assert.match(elements.adminCommandCenter.innerHTML, /支付通道切换到了 mock 模式/);
     assert.doesNotMatch(elements.adminCommandCenter.innerHTML, /2 位管理员 · 5 个 IP/);
+});
+
+test('AdminCommandCenter stages heavy summary primes after the first dock render', () => {
+    const { listeners, primeCalls, scheduledTasks, clearedTasks } = loadCommandCenterRuntime({ captureTimers: true });
+
+    assert.deepEqual(
+        primeCalls.map((call) => `${call.key}:${call.force}`),
+        ['notifications:false', 'inventory:false']
+    );
+    assert.deepEqual(
+        scheduledTasks.map((task) => task.delay),
+        [650, 1300, 2100]
+    );
+
+    listeners['admin-site-changed']({
+        detail: {
+            site: 'intl'
+        }
+    });
+
+    assert.deepEqual(clearedTasks, [1, 2, 3]);
+    assert.deepEqual(
+        primeCalls.map((call) => `${call.key}:${call.force}`),
+        ['notifications:false', 'inventory:false', 'notifications:true', 'inventory:true']
+    );
+    assert.deepEqual(
+        scheduledTasks.slice(3).map((task) => task.delay),
+        [650, 1300, 2100]
+    );
+
+    scheduledTasks.slice(0, 3).forEach((task) => task.callback());
+    assert.deepEqual(
+        primeCalls.map((call) => `${call.key}:${call.force}`),
+        ['notifications:false', 'inventory:false', 'notifications:true', 'inventory:true']
+    );
+
+    scheduledTasks.slice(3).forEach((task) => task.callback());
+    assert.deepEqual(
+        primeCalls.map((call) => `${call.key}:${call.force}`),
+        [
+            'notifications:false',
+            'inventory:false',
+            'notifications:true',
+            'inventory:true',
+            'payments:true',
+            'ai:true',
+            'security:true'
+        ]
+    );
+});
+
+test('AdminCommandCenter emits timing marks for first render and staged summary primes', async () => {
+    const { scheduledTasks, timingMarks, timingMeasures } = loadCommandCenterRuntime({
+        captureTimers: true,
+        captureTiming: true
+    });
+
+    for (let index = 0; index < 5; index += 1) {
+        await Promise.resolve();
+    }
+    assert.equal(
+        timingMarks.some((entry) => entry.name === 'command-center:first-render'),
+        true,
+        'command center should mark the first dock render'
+    );
+    assert.equal(
+        timingMarks.some((entry) => entry.name === 'command-center:prime:notifications:start'),
+        true,
+        'command center should mark notification prime start'
+    );
+    assert.equal(
+        timingMarks.some((entry) => entry.name === 'command-center:prime:inventory:end'),
+        true,
+        'command center should mark inventory prime completion'
+    );
+
+    scheduledTasks.forEach((task) => task.callback());
+    for (let index = 0; index < 5; index += 1) {
+        await Promise.resolve();
+    }
+
+    for (const key of ['payments', 'ai', 'security']) {
+        assert.equal(
+            timingMarks.some((entry) => entry.name === `command-center:prime:${key}:start`),
+            true,
+            `command center should mark ${key} prime start`
+        );
+        assert.equal(
+            timingMarks.some((entry) => entry.name === `command-center:prime:${key}:end`),
+            true,
+            `command center should mark ${key} prime completion`
+        );
+        assert.equal(
+            timingMeasures.some((entry) => entry.name === `command-center:prime:${key}`),
+            true,
+            `command center should measure ${key} prime duration`
+        );
+    }
 });
 
 test('AdminCommandCenter keeps the AI dock badge hidden until the AI summary is ready', () => {

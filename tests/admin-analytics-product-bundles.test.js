@@ -41,6 +41,7 @@ function createQueryBuilder(state, table, rows = [], options = {}) {
         from: 0,
         to: 499,
         eqFilters: [],
+        inFilters: [],
         gteFilters: [],
         lteFilters: [],
         shouldFail: options.shouldFail === true
@@ -64,6 +65,10 @@ function createQueryBuilder(state, table, rows = [], options = {}) {
             queryState.eqFilters.push([String(column || ''), value]);
             return builder;
         },
+        in(column, values) {
+            queryState.inFilters.push([String(column || ''), Array.isArray(values) ? [...values] : []]);
+            return builder;
+        },
         gte(column, value) {
             queryState.gteFilters.push([String(column || ''), String(value || '')]);
             return builder;
@@ -76,6 +81,7 @@ function createQueryBuilder(state, table, rows = [], options = {}) {
             state.calls.push({
                 table,
                 eqFilters: queryState.eqFilters.map((item) => [...item]),
+                inFilters: queryState.inFilters.map(([column, values]) => [column, [...values]]),
                 gteFilters: queryState.gteFilters.map((item) => [...item]),
                 lteFilters: queryState.lteFilters.map((item) => [...item]),
                 orderBy: queryState.orderBy,
@@ -94,6 +100,11 @@ function createQueryBuilder(state, table, rows = [], options = {}) {
 
             for (const [column, value] of queryState.eqFilters) {
                 filteredRows = filteredRows.filter((row) => String(row?.[column] || '') === String(value || ''));
+            }
+
+            for (const [column, values] of queryState.inFilters) {
+                const valueSet = new Set((Array.isArray(values) ? values : []).map((value) => String(value || '')));
+                filteredRows = filteredRows.filter((row) => valueSet.has(String(row?.[column] || '')));
             }
 
             for (const [column, value] of queryState.gteFilters) {
@@ -227,6 +238,15 @@ const PRODUCT_TEST_TABLES = {
     }
 };
 
+const EXPECTED_PRODUCT_EVENT_NAMES = [
+    'shop_view',
+    'product_card_click',
+    'product_detail_view',
+    'product_purchase_click',
+    'shop_purchase',
+    'product_purchase_success'
+];
+
 test('product summary bundle returns summary, trend, site comparison, category breakdown, and operating matrix payloads', async () => {
     await withHandler('product-summary-bundle.js', {
         tables: PRODUCT_TEST_TABLES
@@ -243,6 +263,8 @@ test('product summary bundle returns summary, trend, site comparison, category b
         assert.equal(payload.success, true);
         assert.equal(payload.partial_failure_count, 0);
         assert.deepEqual(state.requireAdminCalls[0]?.config, { permission: 'analytics.view' });
+        const userEventsCall = state.calls.find((call) => call.table === 'user_events');
+        assert.deepEqual(userEventsCall?.inFilters, [['event_name', EXPECTED_PRODUCT_EVENT_NAMES]]);
 
         assert.equal(payload.segments.summary.ok, true);
         assert.equal(payload.segments.summary.payload.active_product_count, 3);
@@ -322,6 +344,12 @@ test('product dashboard bundle returns shared summary, rank, and health payloads
         assert.equal(payload.segments.lowStockProducts.payload[0].product_id, 'product-1');
         assert.equal(payload.segments.deliveryRiskProducts.ok, true);
         assert.equal(payload.segments.deliveryRiskProducts.payload[0].product_id, 'product-2');
+        assert.equal(payload.segments.funnelSummary.ok, true);
+        assert.equal(payload.segments.funnelSummary.payload.stages[0].value, 7);
+        assert.equal(payload.segments.funnelSiteComparison.ok, true);
+        assert.equal(payload.segments.funnelSiteComparison.payload.snapshots.length, 2);
+        assert.equal(payload.segments.funnelProductRows.ok, true);
+        assert.equal(payload.segments.funnelProductRows.payload[0].product_id, 'product-3');
     });
 });
 

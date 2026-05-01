@@ -13,7 +13,7 @@
     const COLOR_SCHEME_SELECTOR = 'meta[name="color-scheme"]';
 
     function normalizeTheme(theme) {
-        return theme === 'light' ? 'light' : 'dark';
+        return theme === 'dark' ? 'dark' : 'light';
     }
 
     function getThemeChromeColor(theme) {
@@ -182,7 +182,7 @@
     }
 
     function applyThemeChrome(theme, options = {}) {
-        const normalizedTheme = theme === 'light' ? 'light' : 'dark';
+        const normalizedTheme = normalizeTheme(theme);
         const themeColor = getThemeChromeColor(normalizedTheme);
         const metaTheme = ensureThemeColorMeta();
 

@@ -10,19 +10,30 @@
  * @returns {string} Thumbnail URL for R2 CDN images, original for others
  */
 function getOptimizedImageUrl(url, options = {}) {
-    if (!url) return '';
-    const { format = 'avif' } = options;
+    const { format = 'avif', variant = '' } = options;
+    const explicitVariantUrl = getPromptImageAssetVariantUrl(url, variant);
+    if (explicitVariantUrl) {
+        return explicitVariantUrl;
+    }
 
-    // R2 CDN images - use pre-generated thumbnails
-    if (url.includes('cdn.zaoyoe.com/prompts/') && !url.includes('/thumb/')) {
-        // Convert: /prompts/xxx.webp → /prompts/thumb/xxx.webp
-        return url.replace('/prompts/', '/prompts/thumb/');
+    const rawUrl = getPromptImageAssetOriginalUrl(url);
+    if (!rawUrl) return '';
+
+    const variantUrl = getPromptResponsiveImageVariantUrl(rawUrl, variant);
+    if (variantUrl) {
+        return variantUrl;
+    }
+
+    // R2 CDN images - use pre-generated thumbnails for direct original prompt images.
+    const r2ThumbUrl = getPromptResponsiveR2VariantUrl(rawUrl, 'thumb');
+    if (r2ThumbUrl && !hasPromptResponsiveVariantManifest()) {
+        return r2ThumbUrl;
     }
 
     // Supabase Storage images - use the built-in transform endpoint for card-sized WebP delivery
-    if (url.includes('supabase.co/storage/v1/object/public/prompt-images/')) {
+    if (rawUrl.includes('supabase.co/storage/v1/object/public/prompt-images/')) {
         try {
-            const optimizedUrl = new URL(url);
+            const optimizedUrl = new URL(rawUrl);
             optimizedUrl.pathname = optimizedUrl.pathname.replace(
                 '/storage/v1/object/public/',
                 '/storage/v1/render/image/public/'
@@ -42,7 +53,186 @@ function getOptimizedImageUrl(url, options = {}) {
     }
 
     // Return original URL for other images or already-thumbnail URLs
-    return url;
+    return rawUrl;
+}
+
+function getPromptResponsiveImageFilename(url) {
+    try {
+        const parsed = new URL(String(url || '').trim(), window.location.origin);
+        return decodeURIComponent(String(parsed.pathname || '').split('/').filter(Boolean).pop() || '');
+    } catch (error) {
+        return String(url || '').split('?')[0].split('#')[0].split('/').filter(Boolean).pop() || '';
+    }
+}
+
+function getPromptResponsiveVariantList(variant = '') {
+    const normalizedVariant = String(variant || '').trim();
+    if (!normalizedVariant) return null;
+
+    const manifest = window.__PROMPT_IMAGE_VARIANTS__ || null;
+    const available = manifest?.variants?.[normalizedVariant];
+    return Array.isArray(available) ? available : null;
+}
+
+function hasPromptResponsiveVariantManifest() {
+    const manifest = window.__PROMPT_IMAGE_VARIANTS__ || null;
+    return Boolean(manifest?.variants && typeof manifest.variants === 'object');
+}
+
+function hasPromptResponsiveImageVariant(url, variant = '') {
+    const available = getPromptResponsiveVariantList(variant);
+    if (!available) return false;
+
+    const filename = getPromptResponsiveImageFilename(url);
+    return Boolean(filename && available.includes(filename));
+}
+
+function getPromptResponsiveR2VariantUrl(url, variant = '') {
+    const variantPath = { thumb: 'thumb', featured: 'featured', home: 'home', card: 'card' }[String(variant || '').trim()];
+    if (!variantPath) return '';
+
+    try {
+        const parsed = new URL(String(url || '').trim(), window.location.origin);
+        if (parsed.hostname !== 'cdn.zaoyoe.com') return '';
+
+        const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+        if (parts.length !== 2 || parts[0] !== 'prompts') return '';
+
+        const filename = decodeURIComponent(parts[1] || '');
+        if (!filename) return '';
+
+        return `${parsed.origin}/prompts/${variantPath}/${encodeURIComponent(filename)}`;
+    } catch (error) {
+        return '';
+    }
+}
+
+function getPromptResponsiveImageVariantUrl(url, variant = '') {
+    const normalizedVariant = String(variant || '').trim();
+    const trimmed = String(url || '').trim();
+    if (!normalizedVariant || !trimmed.includes('cdn.zaoyoe.com/prompts/')) {
+        return '';
+    }
+
+    const available = getPromptResponsiveVariantList(normalizedVariant);
+    if (Array.isArray(available)) {
+        const filename = getPromptResponsiveImageFilename(trimmed);
+        if (filename && available.includes(filename)) {
+            const manifest = window.__PROMPT_IMAGE_VARIANTS__ || null;
+            const basePath = String(manifest?.basePaths?.[normalizedVariant] || `/assets/prompts-${normalizedVariant}`).replace(/\/+$/, '');
+            return `${basePath}/${encodeURIComponent(filename)}`;
+        }
+        return '';
+    }
+
+    return getPromptResponsiveR2VariantUrl(trimmed, normalizedVariant);
+}
+
+function normalizePromptImageAsset(value) {
+    if (typeof value === 'string') {
+        const original = value.trim();
+        return original ? { original } : null;
+    }
+
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return null;
+    }
+
+    const variants = value.variants && typeof value.variants === 'object' && !Array.isArray(value.variants)
+        ? value.variants
+        : {};
+    const asset = {};
+
+    for (const key of ['original', 'thumb', 'featured', 'card', 'home']) {
+        const url = String(value[key] || variants[key] || '').trim();
+        if (url) {
+            asset[key] = url;
+        }
+    }
+
+    const fallbackOriginal = String(value.url || value.src || value.image || '').trim();
+    if (!asset.original && fallbackOriginal) {
+        asset.original = fallbackOriginal;
+    }
+
+    return asset.original || asset.thumb || asset.featured || asset.card || asset.home ? asset : null;
+}
+
+function getPromptImageAssetVariantUrl(value, variant = '') {
+    const normalizedVariant = String(variant || '').trim();
+    if (!normalizedVariant || typeof value === 'string') {
+        return '';
+    }
+
+    const asset = normalizePromptImageAsset(value);
+    if (!asset) return '';
+    return String(asset[normalizedVariant] || '').trim();
+}
+
+function getPromptImageAssetOriginalUrl(value) {
+    const asset = normalizePromptImageAsset(value);
+    if (!asset) return '';
+    return String(asset.original || asset.featured || asset.card || asset.home || asset.thumb || '').trim();
+}
+
+function normalizePromptImageAssetsFromRecord(record = {}) {
+    const explicitAssets = Array.isArray(record?.imageAssets)
+        ? record.imageAssets
+        : (Array.isArray(record?.image_assets) ? record.image_assets : []);
+    const legacyImages = Array.isArray(record?.images) ? record.images : [];
+    const assets = [];
+    const seen = new Set();
+
+    for (const source of [...explicitAssets, ...legacyImages]) {
+        const asset = normalizePromptImageAsset(source);
+        if (!asset) continue;
+
+        const key = getPromptImageAssetOriginalUrl(asset);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        assets.push(asset);
+    }
+
+    return assets;
+}
+
+function getPromptImageAssets(item = {}) {
+    return normalizePromptImageAssetsFromRecord(item);
+}
+
+function getPromptPrimaryImageAsset(item = {}) {
+    return getPromptImageAssets(item)[0] || null;
+}
+
+function getPromptModalImageUrl(url) {
+    const trimmed = getPromptImageAssetOriginalUrl(url);
+    if (!trimmed) return '';
+
+    try {
+        const parsed = new URL(trimmed, window.location.origin);
+        const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+
+        const isPromptCdnHost = parsed.hostname === 'cdn.zaoyoe.com' || parsed.hostname.endsWith('.r2.dev');
+        if (isPromptCdnHost && parts.length === 3 && parts[0] === 'prompts' && ['thumb', 'featured', 'card', 'home'].includes(parts[1])) {
+            parsed.pathname = `/prompts/${parts[2]}`;
+            parsed.search = '';
+            parsed.hash = '';
+            return parsed.toString();
+        }
+
+        if (parsed.pathname.includes('/storage/v1/render/image/public/')) {
+            parsed.pathname = parsed.pathname.replace(
+                '/storage/v1/render/image/public/',
+                '/storage/v1/object/public/'
+            );
+            ['width', 'height', 'quality', 'format'].forEach((param) => parsed.searchParams.delete(param));
+            return parsed.toString();
+        }
+    } catch (error) {
+        return trimmed;
+    }
+
+    return trimmed;
 }
 
 function shouldForcePromptPageTop() {
@@ -119,6 +309,7 @@ function toggleTheme(event) {
     } else {
         html.setAttribute('data-theme', 'dark');
         localStorage.setItem('theme', 'dark');
+        void loadPromptStarrySkyRuntime({ force: true });
     }
 }
 
@@ -142,6 +333,32 @@ function getCurrentLanguage() {
     return browserLang.startsWith('en') ? 'en' : 'zh';
 }
 
+function containsPromptCjkText(value) {
+    return /[\u3400-\u9fff\uf900-\ufaff]/.test(String(value || ''));
+}
+
+function getPromptFieldFallback(field) {
+    const lang = getCurrentLanguage();
+    if (lang !== 'en') {
+        return '';
+    }
+    if (field === 'description') {
+        return window.i18n?.t('gallery.noDescription') || 'No description available';
+    }
+    if (field === 'prompt_text') {
+        return window.i18n?.t('gallery.promptUnavailable') || 'Prompt content is not available in English.';
+    }
+    return 'Prompt';
+}
+
+function resolvePromptLocalizedDataText(value, field) {
+    const normalized = String(value || '').trim();
+    if (getCurrentLanguage() === 'en' && containsPromptCjkText(normalized)) {
+        return getPromptFieldFallback(field);
+    }
+    return normalized || getPromptFieldFallback(field);
+}
+
 // Get localized field from prompt data
 // @param {Object} item - Prompt object
 // @param {string} field - Base field name (e.g., 'title', 'description', 'prompt_text')
@@ -153,16 +370,14 @@ function getLocalizedField(item, field) {
 
     // Priority 1: Try current language field
     if (item[localizedKey] && item[localizedKey].trim()) {
-        return item[localizedKey];
+        return resolvePromptLocalizedDataText(item[localizedKey], field);
     }
 
-    // Priority 2: Try other language field
-    if (item[otherLangKey] && item[otherLangKey].trim()) {
-        return item[otherLangKey];
+    if (lang !== 'en' && item[otherLangKey] && item[otherLangKey].trim()) {
+        return resolvePromptLocalizedDataText(item[otherLangKey], field);
     }
 
-    // Priority 3: Fall back to base field
-    return item[field] || '';
+    return resolvePromptLocalizedDataText(item[field], field);
 }
 
 const PROMPT_HOT_TAG_LIMIT = 10;
@@ -175,6 +390,150 @@ function getPromptAiTags(item = {}) {
 
 function normalizePromptTagText(value = '') {
     return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizePromptSearchText(value = '') {
+    const rawValue = String(value || '');
+    const normalizedValue = typeof rawValue.normalize === 'function' ? rawValue.normalize('NFKC') : rawValue;
+    return normalizedValue
+        .toLowerCase()
+        .replace(/[氣気]/g, '气')
+        .replace(/の/g, '之')
+        .replace(/[_-]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+}
+
+function hasPromptSearchSignal(value = '') {
+    const normalized = normalizePromptSearchText(value).replace(/\s+/g, '');
+    return normalized.length >= 2 || /[\u3400-\u9fff\uf900-\ufaff]/.test(normalized);
+}
+
+function collectPromptSearchValues(value, output = []) {
+    if (value === null || value === undefined) {
+        return output;
+    }
+
+    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        const normalized = normalizePromptSearchText(value);
+        if (normalized) {
+            output.push(normalized);
+        }
+        return output;
+    }
+
+    if (Array.isArray(value)) {
+        value.forEach((item) => collectPromptSearchValues(item, output));
+        return output;
+    }
+
+    if (typeof value === 'object') {
+        Object.values(value).forEach((item) => collectPromptSearchValues(item, output));
+    }
+
+    return output;
+}
+
+function getPromptSearchTokenVariants(value = '') {
+    const normalized = normalizePromptSearchText(value);
+    if (!normalized) return [];
+
+    const tokens = new Set([normalized]);
+    normalized
+        .split(/[\s,，、\/|;；:：()[\]{}<>《》"'“”‘’]+/)
+        .map((token) => token.trim())
+        .filter(Boolean)
+        .forEach((token) => tokens.add(token));
+
+    return Array.from(tokens).filter(hasPromptSearchSignal);
+}
+
+function getPromptSearchHaystack(item = {}) {
+    return collectPromptSearchValues({
+        title: item?.title,
+        title_en: item?.title_en,
+        title_zh: item?.title_zh,
+        tags: item?.tags,
+        description: item?.description,
+        description_en: item?.description_en,
+        description_zh: item?.description_zh,
+        prompt: item?.prompt,
+        prompt_text: item?.prompt_text,
+        prompt_text_en: item?.prompt_text_en,
+        prompt_text_zh: item?.prompt_text_zh,
+        aiTags: item?.aiTags || item?.ai_tags,
+        dominantColors: item?.dominantColors || item?.dominant_colors
+    }).join(' ');
+}
+
+function escapePromptSearchRegExp(value = '') {
+    return String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function getPromptSearchCjkChars(value = '') {
+    return Array.from(String(value || '').matchAll(/[\u3400-\u9fff\uf900-\ufaff]/g), (match) => match[0]);
+}
+
+const PROMPT_SEARCH_CONTROLLED_SINGLE_CJK_TERMS = new Set(['枪', '蛇']);
+
+function isPromptSearchSingleCjkTerm(value = '') {
+    const normalized = normalizePromptSearchText(value).replace(/\s+/g, '');
+    return normalized.length === 1 && getPromptSearchCjkChars(normalized).length === 1;
+}
+
+function isPromptSearchControlledSingleCjkTerm(value = '') {
+    const normalized = normalizePromptSearchText(value).replace(/\s+/g, '');
+    return isPromptSearchSingleCjkTerm(normalized) && PROMPT_SEARCH_CONTROLLED_SINGLE_CJK_TERMS.has(normalized);
+}
+
+function shouldPromptSearchUsePartialIndexTerm(term = '') {
+    return hasPromptSearchSignal(term) && !isPromptSearchSingleCjkTerm(term);
+}
+
+function shouldPromptSearchUseBodyTerm(term = '') {
+    return hasPromptSearchSignal(term) && (!isPromptSearchSingleCjkTerm(term) || isPromptSearchControlledSingleCjkTerm(term));
+}
+
+function shouldPromptSearchUseAiFallback(term = '') {
+    return hasPromptSearchSignal(term) && !isPromptSearchSingleCjkTerm(term);
+}
+
+function shouldPromptSearchHydrateDetails(term = '') {
+    return hasPromptSearchSignal(term) && (!isPromptSearchSingleCjkTerm(term) || isPromptSearchControlledSingleCjkTerm(term));
+}
+
+function promptSearchCjkFuzzyMatches(haystack = '', term = '') {
+    const termChars = getPromptSearchCjkChars(term);
+    if (termChars.length < 4) return false;
+
+    const haystackChars = getPromptSearchCjkChars(haystack);
+    if (haystackChars.length < termChars.length - 1) return false;
+
+    const requiredCount = Math.max(3, termChars.length - 1);
+    const compactHaystack = haystackChars.join('');
+
+    for (let omittedIndex = 0; omittedIndex < termChars.length; omittedIndex += 1) {
+        const omittedChars = termChars.filter((_, index) => index !== omittedIndex);
+        if (omittedChars.length >= requiredCount && compactHaystack.includes(omittedChars.join(''))) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function promptSearchHaystackMatchesTerm(haystack = '', term = '') {
+    const normalizedHaystack = normalizePromptSearchText(haystack);
+    const normalizedTerm = normalizePromptSearchText(term);
+    if (!normalizedHaystack || !normalizedTerm) return false;
+
+    if (/[\u3400-\u9fff\uf900-\ufaff]/.test(normalizedTerm)) {
+        return normalizedHaystack.includes(normalizedTerm)
+            || promptSearchCjkFuzzyMatches(normalizedHaystack, normalizedTerm);
+    }
+
+    const termPattern = escapePromptSearchRegExp(normalizedTerm).replace(/\s+/g, '\\s+');
+    return new RegExp(`(^|[^a-z0-9])${termPattern}(?=$|[^a-z0-9])`, 'i').test(normalizedHaystack);
 }
 
 function pushUniquePromptTag(target, value, seen = new Set()) {
@@ -213,7 +572,8 @@ function getLocalizedPromptPairedTags(tagData = {}) {
     const seen = new Set();
 
     for (let index = 0; index < maxLength; index += 1) {
-        pushUniquePromptTag(output, primaryTags[index] || fallbackTags[index], seen);
+        const nextTag = primaryTags[index] || (lang === 'en' ? '' : fallbackTags[index]);
+        pushUniquePromptTag(output, nextTag, seen);
     }
 
     return output;
@@ -486,13 +846,6 @@ function setPromptsCssVars(element, entries) {
     });
 }
 
-function applyPromptsThemeParticleClasses(element, classes, vars = null) {
-    if (!element) return;
-    const nextClasses = Array.isArray(classes) ? classes : [classes];
-    element.className = ['prompts-theme-particle', ...nextClasses.filter(Boolean)].join(' ');
-    setPromptsCssVars(element, vars);
-}
-
 function getPromptsPageOverflowState() {
     const htmlStyle = document.documentElement.style;
     const bodyStyle = document.body.style;
@@ -508,14 +861,6 @@ function setPromptsPageOverflow(value) {
     });
     setPromptsCssVars(document.body, {
         overflow: value
-    });
-}
-
-function setPromptsPercentPosition(element, x, y) {
-    if (!element) return;
-    setPromptsCssVars(element, {
-        left: `${x}%`,
-        top: `${y}%`
     });
 }
 
@@ -558,76 +903,55 @@ function setCommentCollapseVisibility(allComments, collapsed) {
 // Inverted search index for O(1) tag lookups (built on init)
 // Structure: { "tag_lowercase": [promptIndex1, promptIndex2, ...] }
 let SEARCH_INDEX = null;
+let SEARCH_INDEX_PROMPTS_REF = null;
+let SEARCH_INDEX_PROMPTS_LENGTH = 0;
+let PROMPT_SEARCH_REQUEST_ID = 0;
+
+function invalidatePromptSearchCaches() {
+    SEARCH_INDEX = null;
+    SEARCH_INDEX_PROMPTS_REF = null;
+    SEARCH_INDEX_PROMPTS_LENGTH = 0;
+    HOT_TAGS_CACHE = null;
+}
 
 /**
  * Build inverted search index for all searchable content
  * Called once during initialization for O(1) lookups
  */
 function buildSearchIndex() {
-    // 如果索引已存在且数据量合理，跳过重建
-    // 否则重建（处理数据更新后索引过期的情况）
-    if (SEARCH_INDEX && Object.keys(SEARCH_INDEX).length > 50) return;
+    if (SEARCH_INDEX && SEARCH_INDEX_PROMPTS_REF === PROMPTS && SEARCH_INDEX_PROMPTS_LENGTH === PROMPTS.length) return;
     if (typeof PROMPTS === 'undefined' || PROMPTS.length === 0) return;
 
     console.log('🔍 Building search index...');
     SEARCH_INDEX = {};
 
-    PROMPTS.forEach((p, id) => {
+    PROMPTS.forEach((p, index) => {
         if (!p) return;
+        const searchId = p.id ?? index;
 
         const addToIndex = (term) => {
-            if (!term || term.length < 2) return;
-            const key = term.toLowerCase().trim();
+            const key = normalizePromptSearchText(term);
+            if (!hasPromptSearchSignal(key)) return;
             if (!SEARCH_INDEX[key]) SEARCH_INDEX[key] = [];
-            if (!SEARCH_INDEX[key].includes(id)) {
-                SEARCH_INDEX[key].push(id);
+            if (!SEARCH_INDEX[key].includes(searchId)) {
+                SEARCH_INDEX[key].push(searchId);
             }
         };
 
-        // Index title words
-        if (p.title) {
-            p.title.split(/\s+/).forEach(addToIndex);
-            addToIndex(p.title); // Also index full title
-        }
-
-        // Index tags
-        if (p.tags) {
-            p.tags.forEach(addToIndex);
-        }
-
-        // Index AI tags (all categories, both languages)
-        // 兼容 aiTags 和 ai_tags 两种字段名
-        const aiTags = p.aiTags || p.ai_tags;
-        if (aiTags) {
-            ['objects', 'scenes', 'styles', 'mood'].forEach(category => {
-                const tagData = aiTags[category];
-                if (tagData?.en) tagData.en.forEach(addToIndex);
-                if (tagData?.zh) tagData.zh.forEach(addToIndex);
-            });
-
-            // Index useCase (platform, purpose, format)
-            if (aiTags.useCase) {
-                if (aiTags.useCase.platform) aiTags.useCase.platform.forEach(addToIndex);
-                if (aiTags.useCase.purpose) aiTags.useCase.purpose.forEach(addToIndex);
-                if (aiTags.useCase.format) aiTags.useCase.format.forEach(addToIndex);
-            }
-
-            // Index commercial (niche, targetAudience)
-            if (aiTags.commercial) {
-                if (aiTags.commercial.niche) aiTags.commercial.niche.forEach(addToIndex);
-                if (aiTags.commercial.targetAudience) aiTags.commercial.targetAudience.forEach(addToIndex);
-            }
-
-            // Index difficulty
-            if (aiTags.difficulty) addToIndex(aiTags.difficulty);
-        }
-
-        // Index dominant colors
-        if (p.dominantColors) {
-            p.dominantColors.forEach(addToIndex);
-        }
+        collectPromptSearchValues({
+            title: p.title,
+            title_en: p.title_en,
+            title_zh: p.title_zh,
+            tags: p.tags,
+            aiTags: p.aiTags || p.ai_tags,
+            dominantColors: p.dominantColors || p.dominant_colors
+        }).forEach((value) => {
+            getPromptSearchTokenVariants(value).forEach(addToIndex);
+        });
     });
 
+    SEARCH_INDEX_PROMPTS_REF = PROMPTS;
+    SEARCH_INDEX_PROMPTS_LENGTH = PROMPTS.length;
     console.log(`✅ Search index built: ${Object.keys(SEARCH_INDEX).length} terms`);
 }
 
@@ -638,8 +962,9 @@ function buildSearchIndex() {
  */
 function searchByIndex(query) {
     if (!SEARCH_INDEX) buildSearchIndex();
+    if (!SEARCH_INDEX) return new Set();
 
-    const terms = query.toLowerCase().trim().split(/\s+/);
+    const terms = getPromptSearchTokenVariants(query);
     let results = null;
 
     terms.forEach(term => {
@@ -647,11 +972,13 @@ function searchByIndex(query) {
         const directMatches = new Set(SEARCH_INDEX[term] || []);
 
         // Partial match (for terms that are substrings)
-        Object.keys(SEARCH_INDEX).forEach(indexedTerm => {
-            if (indexedTerm.includes(term) || term.includes(indexedTerm)) {
-                SEARCH_INDEX[indexedTerm].forEach(id => directMatches.add(id));
-            }
-        });
+        if (shouldPromptSearchUsePartialIndexTerm(term)) {
+            Object.keys(SEARCH_INDEX).forEach(indexedTerm => {
+                if (indexedTerm.includes(term) || term.includes(indexedTerm)) {
+                    SEARCH_INDEX[indexedTerm].forEach(id => directMatches.add(id));
+                }
+            });
+        }
 
         if (results === null) {
             results = directMatches;
@@ -680,6 +1007,10 @@ const SYNONYM_DICTIONARY = {
     'landscape': ['scenery', 'nature', 'view', '风景', '山水', '自然', '风光'],
     'food': ['cuisine', 'dish', 'meal', 'culinary', '美食', '食物', '料理'],
     'animal': ['pet', 'creature', 'wildlife', '动物', '宠物', '生物'],
+    'snake': ['serpent', 'cobra', 'viper', 'python', 'reptile', '蛇', '毒蛇', '眼镜蛇', '蟒蛇', '爬行动物'],
+    'gun': ['枪', '枪械', '火器', '手枪', '步枪', '机枪', '狙击枪', '机械枪', 'rifle', 'pistol', 'firearm'],
+    '裙子': ['连衣裙', '半身裙', '长裙', '短裙', '公主裙', '礼服裙', '洛丽塔裙'],
+    'water': ['水', '水面', '水流', '水滴', '水下', '水花', '水波', '海水', '河流', '溪流', '湖泊', '瀑布', '雨水'],
 
     // === Platform/Use case synonyms ===
     '小红书': ['xiaohongshu', 'xhs', 'red', '种草', 'rednote', '小红书封面'],
@@ -1038,1560 +1369,6 @@ function enterAdminStudio() {
     closeAvatarMenu();
 }
 
-// ========================================
-// SYSTEM ANNOUNCEMENT (Multi-Type Support)
-// ========================================
-
-let currentAnnouncementElement = null;
-let announcementOwnsScrollLock = false;
-let announcementOverflowRestore = null;
-
-function lockAnnouncementBackground(lockTarget) {
-    if (announcementOwnsScrollLock) return;
-    if (window.iOSScrollLock?.isLocked) return;
-
-    announcementOwnsScrollLock = true;
-    announcementOverflowRestore = getPromptsPageOverflowState();
-
-    setPromptsPageOverflow('hidden');
-
-    if (window.iOSScrollLock) {
-        window.iOSScrollLock.lockLight(lockTarget);
-    }
-}
-
-function unlockAnnouncementBackground() {
-    if (!announcementOwnsScrollLock) return;
-
-    if (window.iOSScrollLock?.isLocked) {
-        window.iOSScrollLock.unlock();
-    }
-
-    if (announcementOverflowRestore) {
-        setPromptsPageOverflow(announcementOverflowRestore.htmlOverflow || '');
-        setPromptsCssVars(document.body, {
-            overflow: announcementOverflowRestore.bodyOverflow || ''
-        });
-    } else {
-        setPromptsPageOverflow('');
-    }
-
-    announcementOverflowRestore = null;
-    announcementOwnsScrollLock = false;
-}
-
-function clearCurrentAnnouncement() {
-    stopContinuousParticles();
-
-    if (currentAnnouncementElement) {
-        currentAnnouncementElement.remove();
-        currentAnnouncementElement = null;
-    }
-
-    if (toastBackdropElement) {
-        toastBackdropElement.remove();
-        toastBackdropElement = null;
-    }
-
-    document.body.classList.remove('has-banner');
-    unlockAnnouncementBackground();
-}
-
-// Get current page ID for announcement targeting
-function getCurrentPageId() {
-    const path = window.location.pathname.toLowerCase();
-    if (path.includes('prompts')) return 'prompts';
-    if (path.includes('shop')) return 'shop';
-    if (path.includes('verify')) return 'verify';
-    if (path.includes('guestbook')) return 'guestbook';
-    if (path === '/' || path.includes('index') || path.endsWith('/')) return 'index';
-    return 'unknown';
-}
-
-async function loadAnnouncement() {
-    console.log('📢 loadAnnouncement() 开始执行...');
-
-    if (!window.supabaseClient) {
-        console.warn('📢 Supabase client 不可用');
-        return;
-    }
-
-    try {
-        console.log('📢 正在获取 notifications 配置...');
-        const { data, error } = await window.supabaseClient.rpc('get_system_config', { p_key: 'notifications' });
-
-        if (error) {
-            console.error('📢 获取配置出错:', error);
-            return;
-        }
-
-        if (!data) {
-            console.warn('📢 notifications 配置不存在');
-            return;
-        }
-
-        const config = data;
-        console.log('📢 配置:', config);
-
-        // Check if current page is in target pages
-        const targetPages = config.announcement_pages || ['all'];
-        const currentPage = getCurrentPageId();
-        console.log('📢 目标页面:', targetPages, '当前页面:', currentPage);
-
-        if (!targetPages.includes('all') && !targetPages.includes(currentPage)) {
-            console.log('📢 当前页面不在公告目标页面中，跳过显示');
-            return;
-        }
-
-        if (config.announcement_enabled && config.announcement_content) {
-            const type = config.announcement_type || 'banner';
-            const color = config.announcement_color || 'purple';
-            const size = config.announcement_size || 'medium';
-            // Convert line breaks to <br> for proper display
-            const content = config.announcement_content.replace(/\n/g, '<br>');
-
-            // Check if user already acknowledged this announcement (permanent)
-            // Use simple hash of FULL content + timestamp for unique key
-            const contentForHash = (config.announcement_content || '') + '|' + (config.announcement_updated_at || '');
-            let hash = 0;
-            for (let i = 0; i < contentForHash.length; i++) {
-                const char = contentForHash.charCodeAt(i);
-                hash = ((hash << 5) - hash) + char;
-                hash = hash & hash; // Convert to 32bit integer
-            }
-            const ackKey = 'announcement_acked_' + Math.abs(hash).toString(36);
-            console.log('📢 公告标识:', ackKey, '更新时间:', config.announcement_updated_at);
-            if (localStorage.getItem(ackKey)) {
-                console.log('📢 该公告已被用户确认');
-                return;
-            }
-
-            // Show announcement based on type
-            const decoration = config.announcement_decoration || 'none';
-            showAnnouncement(type, color, size, content, ackKey, decoration);
-            console.log('公告已显示:', type, color, size, '装饰:', decoration);
-        } else {
-            console.log('📢 公告未启用或内容为空');
-        }
-    } catch (err) {
-        console.error('📢 加载公告失败:', err);
-    }
-}
-
-function showAnnouncement(type, color, size, content, ackKey, decoration) {
-    // Remove any existing announcement
-    if (currentAnnouncementElement) {
-        clearCurrentAnnouncement();
-    }
-
-    if (type === 'banner') {
-        showBannerAnnouncement(color, size, content, ackKey, decoration);
-    } else if (type === 'modal') {
-        showModalAnnouncement(color, size, content, ackKey, decoration);
-    } else if (type === 'toast') {
-        showToastAnnouncement(color, size, content, ackKey, decoration);
-    }
-}
-
-function hydrateDecorationParticleStyles(root) {
-    if (!root) return;
-
-    root.querySelectorAll('.dust-mote[data-left]').forEach((mote) => {
-        setPromptsCssVars(mote, {
-            left: `${mote.dataset.left}%`,
-            top: `${mote.dataset.top}%`,
-            width: `${mote.dataset.width}px`,
-            height: `${mote.dataset.height}px`,
-            opacity: mote.dataset.opacity,
-            '--tx': `${mote.dataset.tx}px`,
-            '--ty': `${mote.dataset.ty}px`,
-            'animation-duration': `${mote.dataset.duration}s`,
-            'animation-delay': `${mote.dataset.delay}s`
-        });
-    });
-
-    root.querySelectorAll('.decoration-particle[data-left]').forEach((particle) => {
-        const width = particle.dataset.width;
-        const height = particle.dataset.height;
-        setPromptsCssVars(particle, {
-            left: `${particle.dataset.left}%`,
-            'animation-delay': `${particle.dataset.delay}s`,
-            'animation-duration': `${particle.dataset.duration}s`,
-            '--drift-x': `${particle.dataset.drift}px`,
-            'font-size': `${particle.dataset.fontSize}px`,
-            width: width ? `${width}px` : null,
-            height: height ? `${height}px` : null,
-            opacity: particle.dataset.opacity,
-            filter: `blur(${particle.dataset.blur}px)`
-        });
-    });
-}
-
-// ========================================
-// DECORATION PARTICLE SYSTEM
-// ========================================
-
-// Generate decoration particles with continuous falling effect
-function generateDecorationParticles(theme) {
-    if (!theme || theme === 'none') return '';
-
-    // ========================================
-    // 特殊装饰：爱心 (Hearts) - 优雅的呼吸光效
-    // ========================================
-    // ========================================
-    // 特殊装饰：阳光 (Sunlight) - 丁达尔效应 + 金色微尘
-    // ========================================
-    if (theme === 'sunlight' || theme === 'sunshine') {
-        let dustParticles = '';
-        // Create 50 dust motes
-        for (let i = 0; i < 50; i++) {
-            const left = Math.random() * 100;
-            const top = Math.random() * 100;
-
-            // Precision Tune: 1.0px to 2.6px (Visible but refined)
-            const size = 1.0 + Math.random() * 1.6;
-
-            const duration = 20 + Math.random() * 20;
-            const delay = Math.random() * -20;
-            const opacity = 0.2 + Math.random() * 0.3;
-
-            // Random Trajectory vars
-            const tx = Math.random() * 100 - 50; // -50px to +50px drift
-            const ty = Math.random() * -70 - 30; // -30px to -100px rise
-
-            dustParticles += `<div class="dust-mote" data-left="${left.toFixed(2)}" data-top="${top.toFixed(2)}" data-width="${size.toFixed(2)}" data-height="${size.toFixed(2)}" data-opacity="${opacity.toFixed(2)}" data-tx="${tx.toFixed(2)}" data-ty="${ty.toFixed(2)}" data-duration="${duration.toFixed(2)}" data-delay="${delay.toFixed(2)}"></div>`;
-        }
-
-        return `
-            <style>
-                /* Theme Variables */
-                .decoration-container.sunlight {
-                    /* Default (Light Mode) - Soft Gold / Visible Warmth */
-                    /* Tuned: More visible than Champagne, but cleaner than Deep Orange */
-                    --sun-glow: rgba(255, 200, 120, 0.12);     /* 0.06 -> 0.12 (Visible) */
-                    --sun-beam-1-color: 255, 210, 150;         /* Warm Gold */
-                    --sun-beam-2-color: 255, 225, 180;         /* Soft Yellow-Gold */
-                    --dust-bg: rgba(255, 210, 120, 0.5);       /* More visible dust */
-                    --dust-shadow: rgba(255, 200, 100, 0.15);
-                    
-                    position: absolute;
-                    top: 0; left: 0; width: 100%; height: 100%;
-                    overflow: hidden;
-                    z-index: 0;
-                    pointer-events: none;
-                    border-radius: inherit;
-                    /* Base ambient wash - Theme aware */
-                    background: linear-gradient(135deg, var(--sun-glow) 0%, transparent 60%);
-                }
-
-                /* Dark Mode Overrides - White/Pale */
-                [data-theme="dark"] .decoration-container.sunlight {
-                    --sun-glow: rgba(255, 255, 255, 0.05); /* Very subtle white glow */
-                    --sun-beam-1-color: 220, 230, 255;      /* Cool white/silver */
-                    --sun-beam-2-color: 200, 220, 255;
-                    --dust-bg: rgba(255, 255, 255, 0.4);    /* White dust */
-                    --dust-shadow: rgba(200, 220, 255, 0.2);
-                }
-                
-                .announcement-header, .announcement-body, .announcement-footer {
-                    position: relative;
-                    z-index: 10;
-                }
-
-                /* 1. Ambient Warmth/Glow */
-                .sunlight-glow {
-                    position: absolute;
-                    top: -25%; left: -25%;
-                    width: 120%; height: 120%;
-                    background: radial-gradient(circle at 25% 25%, var(--sun-glow) 0%, transparent 60%);
-                    animation: sunPulse 10s ease-in-out infinite alternate;
-                }
-
-                /* 2. God Rays Base (Shared) */
-                .sunlight-beam {
-                    position: absolute;
-                    top: -50%; left: -50%;
-                    width: 200%; height: 200%;
-                    filter: blur(3px); 
-                    transform-origin: 40% 40%;
-                    will-change: transform, opacity;
-                }
-
-                /* Layer 1: The "Hero" Rays */
-                .sunlight-beam.layer-1 {
-                    background: linear-gradient(
-                        115deg,
-                        transparent 25%,
-                        rgba(var(--sun-beam-1-color), 0.15) 30%, 
-                        transparent 35%, 
-                        rgba(var(--sun-beam-1-color), 0.25) 45%, 
-                        transparent 50%,
-                        rgba(var(--sun-beam-1-color), 0.1) 60%, 
-                        transparent 70%
-                    );
-                    background-size: 150% 150%;
-                    animation: sunRayPrimary 18s ease-in-out infinite alternate; 
-                }
-
-                /* Layer 2: The "Fill" */
-                .sunlight-beam.layer-2 {
-                    background: linear-gradient(
-                        110deg,
-                        transparent 20%,
-                        rgba(var(--sun-beam-2-color), 0.08) 40%, 
-                        transparent 60%,
-                        rgba(var(--sun-beam-2-color), 0.1) 75%,
-                        transparent 90%
-                    );
-                    background-size: 150% 150%;
-                    opacity: 0.7;
-                    animation: sunRaySecondary 22s ease-in-out infinite alternate-reverse; 
-                }
-
-                /* 3. Dust Motes - Theme Aware */
-                .dust-mote {
-                    position: absolute;
-                    background: var(--dust-bg);
-                    box-shadow: 0 0 1px var(--dust-shadow);
-                    border-radius: 50%;
-                    animation-name: dustFloat;
-                    animation-timing-function: ease-in-out;
-                    animation-iteration-count: infinite;
-                    will-change: transform, opacity;
-                }
-
-                @keyframes sunPulse {
-                    0% { opacity: 0.8; transform: scale(1); }
-                    100% { opacity: 1; transform: scale(1.05); }
-                }
-
-                @keyframes sunRayPrimary {
-                    0% { 
-                        transform: rotate(0deg) translateX(0); 
-                        opacity: 0.8; 
-                        background-position: 0% 50%;
-                    }
-                    100% { 
-                        transform: rotate(3deg) translateX(10px); 
-                        opacity: 1; 
-                        background-position: 20% 50%; /* Increased flow range slightly */
-                    }
-                }
-
-                @keyframes sunRaySecondary {
-                    0% { 
-                        transform: rotate(-2deg) translateX(-5px); 
-                        opacity: 0.4; 
-                        background-position: 10% 50%;
-                    }
-                    100% { 
-                        transform: rotate(1deg) translateX(5px); 
-                        opacity: 0.6; 
-                        background-position: 0% 50%;
-                    }
-                }
-                
-                @keyframes dustFloat {
-                    0% { transform: translate(0, 0); opacity: 0; }
-                    20% { opacity: 1; }
-                    70% { opacity: 1; } /* Disappear earlier randomly */
-                    100% { 
-                        transform: translate(var(--tx), var(--ty)); /* Random Trajectory */
-                        opacity: 0; 
-                    }
-                }
-            </style>
-
-            <div class="decoration-container sunlight">
-                 <div class="sunlight-glow"></div>
-                 <div class="sunlight-beam layer-1"></div>
-                 <div class="sunlight-beam layer-2"></div>
-                 ${dustParticles}
-            </div>
-        `;
-    }
-
-    if (theme === 'hearts') {
-        return `
-                <style>
-                    .decoration-pulsing-bg {
-                        position: absolute;
-                        top: 0; left: 0; width: 100%; height: 100%;
-                        overflow: hidden;
-                        z-index: 1;
-                        pointer-events: none;
-                        border-radius: inherit;
-                    }
-                    /* Ensure content sits above */
-                    .announcement-header, .announcement-body, .announcement-footer {
-                        position: relative;
-                        z-index: 2;
-                    }
-                    
-                    /* Container handles Position + Floating (Bobbing) */
-                    .heart-container {
-                        position: absolute;
-                        will-change: top, left, opacity;
-                        transition: opacity 2s ease-in-out; /* Slower fade */
-                    }
-                    .heart-container.relocating {
-                        opacity: 0 !important;
-                    }
-
-                    /* Inner SVG handles Pulse + Shape */
-                    .heart-svg {
-                        width: 100%; height: 100%;
-                        filter: blur(16px); /* Increased blur (was 8px) */
-                        fill: currentColor;
-                        display: block;
-                        /* Animation defined in modifiers below */
-                    }
-
-                    /* --- Heart 2 (Big) --- */
-                    .container-2 {
-                        width: 240px; height: 240px; /* Reduced from 320px */
-                        top: 20%; left: 20%; /* Initial pos */
-                        color: rgba(255, 120, 160, 0.5); 
-                        animation: gentleFloat 8s ease-in-out infinite;
-                    }
-                    .container-2 .heart-svg {
-                        animation: realHeartBeat 8s ease-in-out infinite; /* Main beat */
-                    }
-
-                    /* --- Heart 3 (Small) --- */
-                    .container-3 {
-                        width: 160px; height: 160px;
-                        top: 60%; left: 70%; /* Initial pos far from Heart 2 */
-                        color: rgba(255, 140, 180, 0.6); 
-                        animation: gentleFloat 6s ease-in-out infinite reverse; 
-                    }
-                    .container-3 .heart-svg {
-                        filter: blur(24px); /* Very blurry (was 12px) */
-                        animation: realHeartBeat 8s ease-in-out infinite;
-                        animation-delay: 2s; /* Echo beat (2s after main) */
-                    }
-
-                    @keyframes realHeartBeat {
-                        /* "Lub-Dub" takes ~20% of 8s (1.6s), rest is silence */
-                        0%   { transform: scale(1) rotate(-5deg); opacity: 0.5; }
-                        5%   { transform: scale(1.08) rotate(0deg); opacity: 0.7; } /* Lub */
-                        10%  { transform: scale(1) rotate(-5deg); opacity: 0.5; }
-                        15%  { transform: scale(1.12) rotate(3deg); opacity: 0.8; } /* Dub */
-                        20%  { transform: scale(1) rotate(-5deg); opacity: 0.5; }
-                        100% { transform: scale(1) rotate(-5deg); opacity: 0.5; }
-                    }
-
-                    @keyframes gentleFloat {
-                        0%, 100% { transform: translateY(0); }
-                        50% { transform: translateY(-20px); }
-                    }
-                </style>
-                
-                <!-- Heart 2 -->
-                <div class="heart-container container-2">
-                    <svg class="heart-svg" viewBox="0 0 24 24">
-                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                    </svg>
-                </div>
-
-                <!-- Heart 3 -->
-                <div class="heart-container container-3">
-                    <svg class="heart-svg" viewBox="0 0 24 24">
-                        <path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/>
-                    </svg>
-                </div>
-        `;
-    }
-
-    const themeEmoji = {
-        snow: '❄️', sakura: '🌸', fireworks: '✨', // hearts removed from here effectively
-        leaves: '🍂', rain: '💧', sunshine: '☀️'
-    };
-
-    // 增加粒子数量确保持续下落 (Optimized for continuous flow & density)
-    const particleCounts = {
-        snow: 24, sakura: 24, fireworks: 15, hearts: 12,
-        leaves: 12, rain: 30, sunshine: 5 // Sakura: 20 -> 24 for better flow
-    };
-
-    // Helper to generate random leaf SVG
-    const getLeafContent = () => {
-        const type = Math.floor(Math.random() * 3);
-        const colors = ['#e06c75', '#d19a66', '#e5c07b', '#c678dd', '#be5046']; // Autumn Palette
-        const color = colors[Math.floor(Math.random() * colors.length)];
-
-        // 1. Maple Leaf (Maple)
-        if (type === 0) {
-            return `<svg viewBox="0 0 24 24" fill="${color}" class="decoration-svg"><path d="M12.5,2C12.5,2 12.8,4.5 11,6C9,7.5 7,6 7,6L6,8C6,8 3,7.5 2,9C1,10.5 4,11 4,11L3,13C3,13 1,12.5 0,14C-1,15.5 2,16 2,16L3,18C3,18 2,19.5 4,20.5C6,21.5 7,19.5 7,19.5L9,21C9,21 10,22 13,22C16,22 16,19 16,19L17,20.5C17,20.5 19,20.5 20,19C21,17.5 19,16 19,16L21,14.5C21,14.5 23,14 22,12C21,10 19,10.5 19,10.5L20,8C20,8 19,6 17,6C15,6 14.5,8 14.5,8L12.5,2Z" /></svg>`;
-        }
-        // 2. Oak Leaf (Oak - Lobed)
-        if (type === 1) {
-            return `<svg viewBox="0 0 24 24" fill="${color}" class="decoration-svg"><path d="M7,18C6,18 5,16.5 5.5,15C6,13.5 4,12 4,12C4,12 5,10.5 6.5,11C8,11.5 9,10 9,10C9,10 8,8 9.5,7C11,6 12,3 13,3C14,3 15.5,5 15,7C14.5,9 16,9.5 16,9.5C16,9.5 18,9 18.5,10.5C19,12 17,13 17,13C17,13 18.5,14 18,16C17.5,18 16,18 15,17C14,16 13,17 12,18C11,19 12,21 12,21H11C11,21 10,19 11,18C12,17 10,16 10,16C10,16 8,18 7,18Z"/></svg>`;
-        }
-        // 3. Poplar/Birch (Simple Teardrop)
-        return `<svg viewBox="0 0 24 24" fill="${color}" class="decoration-svg"><path d="M12,2C12,2 4,8 4,14C4,19 9,22 12,22C15,22 20,19 20,14C20,8 12,2 12,2M12,20C12,20 11,16 12,12"/></svg>`;
-    };
-
-    // Helper to generate random Sakura SVG
-    const getSakuraContent = () => {
-        const type = Math.random(); // Use float for probability
-        const colors = ['#fecdd3', '#fca5a5', '#fda4af', '#f43f5e']; // Premium Pink Palette
-        const color = colors[Math.floor(Math.random() * colors.length)];
-
-        // 60% Full Flower (5 Petals with authentic notches)
-        if (type > 0.4) {
-            // A more detailed 5-petal sakura shape
-            return `<svg viewBox="0 0 100 100" fill="${color}" class="decoration-svg"><path d="M50 50 L50 15 C50 15 55 20 60 15 C65 10 75 25 50 50 Z M50 50 L85 50 C85 50 80 55 85 60 C90 65 75 75 50 50 Z M50 50 L50 85 C50 85 45 80 40 85 C35 90 25 75 50 50 Z M50 50 L15 50 C15 50 20 45 15 40 C10 35 25 25 50 50 Z M50 50 L25 25 C25 25 30 20 25 15 C20 10 10 20 50 50 Z" stroke="none" opacity="0.9"/><circle cx="50" cy="50" r="4" fill="#fff1f2"/></svg>`;
-        }
-
-        // 40% Single Petal (Notched tip, not heart)
-        // Classic Sakura petal shape: wider top with a notch, tapering bottom
-        return `<svg viewBox="0 0 100 100" fill="${color}" class="decoration-svg"><path d="M50 90 C50 90 20 60 20 40 C20 25 30 10 45 20 C48 22 50 25 50 25 C50 25 52 22 55 20 C70 10 80 25 80 40 C80 60 50 90 50 90 Z" opacity="0.8"/></svg>`;
-    };
-
-
-    const count = particleCounts[theme] || 20;
-    let particles = '';
-
-    // Helper to generate random Snowflake SVG (Theme Adaptive)
-    const getSnowContent = () => {
-        // High-quality Snowflake SVG
-        return `<svg viewBox="0 0 24 24" fill="var(--snow-color)" class="decoration-svg"><path d="M12,2L12,22 M2,12L22,12 M19.07,4.93L4.93,19.07 M19.07,19.07L4.93,4.93 M12,2C12,2 14,6 16,6 M12,2C12,2 10,6 8,6 M12,22C12,22 14,18 16,18 M12,22C12,22 10,18 8,18 M2,12C2,12 6,10 6,8 M2,12C2,12 6,14 6,16 M22,12C22,12 18,10 18,8 M22,12C22,12 18,14 18,16" stroke="var(--snow-color)" stroke-width="2" stroke-linecap="round" fill="none"/></svg>`;
-    };
-
-    for (let i = 0; i < count; i++) {
-        // Select content - Move inside loop for diversity
-        let particleContent = '';
-        if (theme === 'leaves') {
-            particleContent = getLeafContent();
-        } else if (theme === 'sakura') {
-            particleContent = getSakuraContent();
-        } else if (theme === 'snow') {
-            particleContent = getSnowContent();
-        } else {
-            particleContent = theme === 'sunshine' ? '' : // Sunshine is css-only
-                theme === 'rain' ? '' : // Rain uses JS canvas/physics (streaks) only
-                    theme === 'fireworks' ? '' : // Fireworks uses JS canvas/physics only
-                        '❤️';
-        }
-
-        const left = Math.random() * 100;
-        // Depth Logic: 0.0 (Far) -> 1.0 (Near)
-        const depth = Math.random();
-        // Re-coupled speed to depth for true 3D effect.
-        // Near (1.0) = Fast (e.g. 10s), Far (0.0) = Slow (e.g. 25s)
-        // We keep some random noise (+/- 2s) to avoid robotic feel, but preserve the trend.
-        const baseDuration = theme === 'rain' ? 2 : theme === 'snow' ? 15 : 12;
-        const depthFactor = theme === 'rain' ? 3 : 10; // Rain varies less
-        const duration = baseDuration + ((1 - depth) * depthFactor) + (Math.random() * 4 - 2);
-
-        const delay = -Math.random() * duration;
-
-        // Size: Near = Bigger (1.2), Far = Smaller (0.3)
-        // Wider range for more dramatic contrast
-        const size = 0.3 + (depth * 0.9);
-
-        const driftOffset = Math.random() * 80 - 40;
-        // Font Size Config
-        const fontSize = theme === 'sunshine' ? 18 + Math.random() * 6 :
-            theme === 'rain' ? 8 + Math.random() * 4 :
-                theme === 'leaves' ? 14 + Math.random() * 8 :
-                    theme === 'sakura' ? 16 + Math.random() * 6 : /* SVG Sakura Size: 16-22px base */
-                        theme === 'snow' ? 8 + Math.random() * 4 : /* Micro Snow: 8-12px base */
-                            12 + Math.random() * 6;
-
-        const finalFontSize = fontSize * size;
-
-        // Explicit dimensions for SVGs (Added snow via SVG)
-        const dimensionSize = (theme === 'leaves' || theme === 'sakura' || theme === 'snow')
-            ? finalFontSize.toFixed(0)
-            : '';
-
-        // Opacity: Near = 1.0, Far = 0.4 (Increased visibility floor)
-        const opacity = 0.4 + (depth * 0.6);
-
-        // Blur: Far = 1.5px, Near = 0px (Sharper for visibility)
-        const blur = (1 - depth) * 1.5;
-
-        particles += `<span class="decoration-particle" data-left="${left.toFixed(2)}" data-delay="${delay.toFixed(2)}" data-duration="${duration.toFixed(2)}" data-drift="${driftOffset.toFixed(2)}" data-font-size="${finalFontSize.toFixed(0)}" data-width="${dimensionSize}" data-height="${dimensionSize}" data-opacity="${opacity.toFixed(2)}" data-blur="${blur.toFixed(1)}">${particleContent}</span>`;
-    }
-
-    return `<div class="decoration-particles ${theme}">${particles}</div>`;
-}
-
-// 活跃的粒子动画控制器
-const ParticleSystem = {
-    timer: null,
-    frameId: null,
-    particles: [],
-    container: null,
-    theme: null,
-    width: 0,
-    height: 0,
-    lastTime: 0,
-
-    init(container, theme) {
-        this.stop(); // 清理旧的
-        if (!container || !theme || theme === 'none') return;
-
-        this.container = container;
-        this.theme = theme;
-        this.particles = [];
-
-        // 强制容器样式，确保动画环境稳定
-        container.classList.add('prompts-theme-particle-layer');
-
-        // 更新尺寸
-        this.updateDimensions();
-
-        // 立即生成一批 (Pre-warm)，让画面一开始就有内容飘落
-        // 雨雪天气增加预热数量
-        let initialCount = 6;
-        if (theme === 'rain' || theme === 'snow') initialCount = 40;
-
-        this.spawnBatch(initialCount, true);
-
-        // 启动循环
-        // 启动循环 (必须通过 rAF 传入 timestamp，否则 deltaTime 为 NaN)
-        this.frameId = requestAnimationFrame((t) => this.loop(t));
-
-        // 定时生成
-        this.scheduleSpawn();
-    },
-
-    stop() {
-        if (this.timer) clearTimeout(this.timer);
-        if (this.frameId) cancelAnimationFrame(this.frameId);
-        if (this.container) {
-            this.container.innerHTML = ''; // 清空DOM
-        }
-        this.particles = [];
-        this.timer = null;
-        this.frameId = null;
-        this.container = null;
-    },
-
-    updateDimensions() {
-        if (!this.container) return;
-        this.width = this.container.clientWidth || 0;
-        this.height = this.container.clientHeight || 0;
-
-        // 获取按钮的碰撞体积
-        const btn = this.container.parentElement ? this.container.parentElement.querySelector('.announcement-ack-btn') : null;
-        if (btn) {
-            const parentRect = this.container.getBoundingClientRect();
-            const btnRect = btn.getBoundingClientRect();
-            this.btnBounds = {
-                top: btnRect.top - parentRect.top,
-                left: btnRect.left - parentRect.left,
-                right: btnRect.right - parentRect.left,
-                bottom: btnRect.bottom - parentRect.top
-            };
-        } else {
-            this.btnBounds = null;
-        }
-    },
-
-    getParticleContent() {
-        if (this.theme === 'sakura') {
-            // 原创手绘樱花矢量图 (SVG)
-            // 包含花蕊细节和渐变色
-            return `
-            <svg viewBox="0 0 32 32" width="100%" height="100%" class="decoration-svg decoration-svg--overflow-visible">
-                <defs>
-                    <radialGradient id="sakuraGradient" cx="50%" cy="50%" r="50%" fx="50%" fy="50%">
-                        <stop offset="0%" stop-color="#ffe6ea" stop-opacity="1" />
-                        <stop offset="100%" stop-color="#ffb7b2" stop-opacity="1" />
-                    </radialGradient>
-                    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
-                        <feGaussianBlur stdDeviation="1" result="blur"/>
-                        <feComposite in="SourceGraphic" in2="blur" operator="over"/>
-                    </filter>
-                </defs>
-                <!-- 花瓣主体 -->
-                <path d="M16 2 C16 2 9 8 9 14 C9 21 16 28 16 28 C16 28 23 21 23 14 C23 8 16 2 16 2 Z" 
-                      fill="url(#sakuraGradient)" stroke="#ff9e99" stroke-width="0.5" />
-                <!-- 内部花蕊细节 -->
-                <path d="M16 28 Q13 20 16 12 Q19 20 16 28" fill="none" stroke="#fff" stroke-width="0.8" opacity="0.6"/>
-            </svg>`;
-        }
-
-        if (this.theme === 'snow') {
-            // 原创矢量雪花 (SVG) - 简化版 (无 Gradient/Filter，确保颜色正确)
-            return `
-            <svg viewBox="0 0 32 32" width="100%" height="100%" class="decoration-svg decoration-svg--overflow-visible">
-                <g stroke="var(--snow-color)" stroke-width="1.5" stroke-linecap="round" fill="none">
-                    <!-- 主轴 -->
-                    <path d="M16 2 L16 30 M8 6 L24 26 M24 6 L8 26" />
-                    <!-- 枝晶细节 -->
-                    <path d="M16 6 L13 9 M16 6 L19 9" />
-                    <path d="M16 26 L13 23 M16 26 L19 23" />
-                    <path d="M22 9 L20 12 M22 9 L23 12" />
-                    <path d="M10 23 L12 20 M10 23 L9 20" />
-                    <path d="M22 23 L20 20 M22 23 L23 20" />
-                    <path d="M10 9 L12 12 M10 9 L9 12" />
-                </g>
-                <!-- 中心晶核 - 直接填充颜色，无 Gradient -->
-                <circle cx="16" cy="16" r="2.5" fill="var(--snow-color)" opacity="0.8" />
-            </svg>`;
-        }
-
-        // 其他主题暂时保持 Emoji
-        const themeEmoji = {
-            fireworks: '✨', hearts: '❤️',
-            leaves: '🍂', sunshine: '☀️',
-            // 雨滴改为 SVG，此处留空或返回特定标记
-            rain: '<svg viewBox="0 0 10 20" width="100%" height="100%"><path d="M5 0 Q 5 10 0 15 A 5 5 0 1 0 10 15 Q 5 10 5 0" fill="rgba(173, 216, 230, 0.6)"/></svg>'
-        };
-        return themeEmoji[this.theme] || '🌸';
-    },
-
-    // 烟花爆炸逻辑
-    explode(rocket) {
-        const type = rocket.subType || 'willow'; // 默认柳叶型
-
-        // 1. 柳叶 (Willow): 金/银色，下落慢，悬浮感强
-        if (type === 'willow') {
-            const sparkCount = 30 + Math.random() * 20;
-            for (let i = 0; i < sparkCount; i++) {
-                this.createSpark(rocket, {
-                    speed: 1 + Math.random() * 3,
-                    gravity: 0.02 + Math.random() * 0.02,
-                    friction: 0.97,
-                    decay: 0.002 + Math.random() * 0.003,
-                    color: Math.random() > 0.5 ? '#FFD700' : '#E0E0E0' // 金银
-                });
-            }
-        }
-        // 2. 牡丹 (Peony): 彩色，球形均匀，炸得更开
-        else if (type === 'peony') {
-            const sparkCount = 40 + Math.random() * 20;
-            const baseHue = Math.random() * 360; // 统一色系
-            for (let i = 0; i < sparkCount; i++) {
-                this.createSpark(rocket, {
-                    speed: 2 + Math.random() * 4, // 初始速度快
-                    gravity: 0.03 + Math.random() * 0.02,
-                    friction: 0.95, // 阻力稍大，停得快
-                    decay: 0.005 + Math.random() * 0.005, // 消失稍快
-                    color: `hsl(${baseHue + Math.random() * 40}, 100%, 70%)`
-                });
-            }
-        }
-        // 3. 光环 (Ring): 只有边缘有粒子
-        else if (type === 'ring') {
-            const sparkCount = 36; // 均匀分布
-            const ringSpeed = 3 + Math.random() * 1;
-            const color = `hsl(${Math.random() * 360}, 100%, 75%)`;
-            for (let i = 0; i < sparkCount; i++) {
-                const angle = (i / sparkCount) * Math.PI * 2;
-                this.createSpark(rocket, {
-                    vx: Math.cos(angle) * ringSpeed,
-                    vy: Math.sin(angle) * ringSpeed,
-                    gravity: 0.025,
-                    friction: 0.98, // 阻力小，保持圆环形状扩散
-                    decay: 0.003 + Math.random() * 0.003,
-                    color: color,
-                    fixedSpeed: true // 标记使用自定义vx/vy
-                });
-            }
-        }
-    },
-
-    createSpark(rocket, CONFIG) {
-        const el = document.createElement('div');
-        applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--spark', {
-            '--particle-color': CONFIG.color
-        });
-
-        this.container.appendChild(el);
-
-        const angle = Math.random() * Math.PI * 2;
-        const speed = CONFIG.speed || (1 + Math.random() * 3);
-
-        this.particles.push({
-            el: el,
-            type: 'spark',
-            x: rocket.x,
-            y: rocket.y,
-            // 如果传入 fixedSpeed 则忽略随机角度计算
-            vx: CONFIG.fixedSpeed ? CONFIG.vx : Math.cos(angle) * speed,
-            vy: CONFIG.fixedSpeed ? CONFIG.vy : Math.sin(angle) * speed,
-            gravity: CONFIG.gravity,
-            friction: CONFIG.friction,
-            opacity: 1,
-            decay: CONFIG.decay,
-            state: 'fading'
-        });
-    },
-
-
-    spawnBatch(count, preWarm = false) {
-        for (let i = 0; i < count; i++) {
-            let startY;
-            if (preWarm && this.height > 0) {
-                // 预热：随机分布在整个屏幕高度 (包含负值以便衔接)
-                startY = Math.random() * (this.height + 50) - 50;
-            } else {
-                // 正常：从顶部上方生成
-                startY = -20 - Math.random() * 50;
-            }
-            // 稍微错开位置
-            this.createParticle(startY);
-        }
-    },
-
-    scheduleSpawn() {
-        // 默认为普通模式
-        let delay = 1800 + Math.random() * 1200;
-        let maxParticles = 12;
-
-        // 雨天模式：极速高密度
-        if (this.theme === 'rain') {
-            delay = 30 + Math.random() * 30; // 30-60ms 极快
-            maxParticles = 80; // 允许同屏 80 个雨滴
-        }
-
-
-        // 雪天模式：中等密度，允许堆积
-        else if (this.theme === 'snow') {
-            delay = 200 + Math.random() * 200; // 200-400ms
-            maxParticles = 60; // 允许较多雪花共存(含堆积)
-        }
-
-        this.timer = setTimeout(() => {
-            if (this.container && this.particles.length < maxParticles) {
-
-                // 烟花连发逻辑：8% 概率触发连发 (降低概率)
-                if (this.theme === 'fireworks' && Math.random() < 0.08) {
-                    this.fireCombo();
-                } else {
-                    this.createParticle();
-                }
-            }
-            this.scheduleSpawn();
-        }, delay);
-    },
-
-    // 烟花连发
-    fireCombo() {
-        const count = 2 + Math.floor(Math.random() * 2); // 2-3个
-        for (let i = 0; i < count; i++) {
-            // 稍微错开时间发射，模拟真实烟花的 "嘭-嘭-嘭"
-            setTimeout(() => {
-                this.createParticle();
-            }, i * 300 + Math.random() * 200);
-        }
-    },
-
-    createParticle(startY = -30) {
-        if (!this.container) return;
-
-        // --- 烟花逻辑分支 ---
-        if (this.theme === 'fireworks') {
-            const el = document.createElement('div');
-            el.textContent = '✦'; // 烟花弹
-            const rocketColor = `hsl(${Math.random() * 360}, 100%, 70%)`;
-            applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--rocket', {
-                '--particle-color': rocketColor
-            });
-
-            this.container.appendChild(el);
-
-            const p = {
-                el: el,
-                type: 'rocket', // 类型标记
-                subType: ['willow', 'peony', 'ring'][Math.floor(Math.random() * 3)], // 随机类型
-                x: 20 + Math.random() * (this.width - 40), // 随机X位置
-                y: this.height, // 从底部发射
-                targetY: this.height * 0.05 + Math.random() * (this.height * 0.2), // 目标高度：顶部 5%-25% 处 (更高)
-                vx: (Math.random() - 0.5) * 1, // 轻微左右偏移
-                vy: -4 - Math.random() * 3, // 向上速度 (稍微加快)
-                state: 'rising',
-                opacity: 1,
-                color: rocketColor
-            };
-            this.particles.push(p);
-            return;
-        }
-
-        // 防止宽度过小（弹窗动画初期）时堆积
-        // 只有当宽度确实 > 100 时才开始生成，彻底杜绝边缘堆积
-        if (!this.width || this.width < 100) return;
-
-        // --- 雨滴逻辑分支 (CSS Streaks) ---
-        if (this.theme === 'rain') {
-            const el = document.createElement('div');
-            applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--rain', {
-                '--particle-width': `${1 + Math.random()}px`,
-                '--particle-height': `${60 + Math.random() * 60}px`,
-                '--particle-opacity': (0.4 + Math.random() * 0.4).toFixed(2)
-            });
-
-            this.container.appendChild(el);
-
-            const p = {
-                el: el,
-                type: 'rain',
-                // 左右留边 20px，防止贴边显示不全; 确保 range >= 0
-                x: 20 + Math.random() * Math.max(0, this.width - 40),
-                y: -150, // 从更上方开始，保证进入画面时已有速度感
-                speed: 25 + Math.random() * 15, // 极速狂飙 (25-40px/frame)
-                swayAmp: 0,
-                swaySpeed: 0,
-                rotation: 5 + Math.random() * 5, // 轻微倾斜 (5-10度)
-                rotSpeed: 0,
-                state: 'falling',
-                targetAmp: 0,
-                landingY: this.height
-            };
-            this.particles.push(p);
-            return;
-        }
-
-        // --- 雪花逻辑分支 (复用SVG但自定义物理) ---
-        // 放在通用逻辑前拦截
-        if (this.theme === 'snow') {
-            // 1. 创建元素
-            const el = document.createElement('div');
-
-            // 引入更丰富的多样性 (3个层级)
-            const rand = Math.random();
-            let size, isCrystal = false;
-            let swayParam = 1.0; // 物理参数系数
-            const particleClasses = ['prompts-theme-particle--snow'];
-
-            // 层级 1: 微尘 (30%) - 极小，增加氛围感
-            if (rand < 0.3) {
-                size = 1.5 + Math.random() * 1.5; // 1.5-3px (极小)
-                particleClasses.push('prompts-theme-particle--snow-dust');
-                swayParam = 1.5; // 更容易受风影响，摇摆快
-            }
-            // 层级 2: 柔光片 (20%) - 中等，模糊边缘
-            else if (rand < 0.5) {
-                size = 3 + Math.random() * 2; // 3-5px (缩小)
-                particleClasses.push('prompts-theme-particle--snow-soft');
-                swayParam = 1.2;
-            }
-            // 层级 3: 冰晶 (20%) - 大，清晰 SVG
-            else {
-                isCrystal = true;
-                el.innerHTML = this.getParticleContent().trim();
-                size = 4 + Math.random() * 4; // 4-8px (极致精细)
-                particleClasses.push('prompts-theme-particle--snow-crystal');
-                swayParam = 0.8; // 重，摇摆稳
-            }
-
-            applyPromptsThemeParticleClasses(el, particleClasses, {
-                '--particle-size': `${size}px`
-            });
-
-            this.container.appendChild(el);
-
-            // 2. 堆积逻辑
-            // 统计当前已堆积(resting)的雪花数量
-            const restingCount = this.particles.filter(p => p.state === 'resting').length;
-            // 允许最多 35 个像自然积雪一样停留在底部
-            const willRest = restingCount < 35;
-
-            // 3. 物理属性
-            const p = {
-                el: el,
-                type: 'snow', // 标记类型
-                startX: Math.random() * this.width,
-                currentX: 0,
-                y: startY, // -30
-                // 飘落极其缓慢
-                speed: (0.4 + Math.random() * 0.6) * (2 - swayParam), // 小颗粒(sway large)飘得慢，大颗粒(sway small)飘得稍快
-                // 大幅度摇摆 (Drift)
-                swayAmp: (10 + Math.random() * 20) * swayParam, // 10-30px 摆幅 (减小)
-                swaySpeed: (0.002 + Math.random() * 0.006) * swayParam, // 摇摆更缓慢
-                phase: Math.random() * Math.PI * 2,
-
-                rotation: Math.random() * 360,
-                // 只有晶体才旋转，尘埃不明显旋转
-                rotSpeed: isCrystal ? (Math.random() - 0.5) * 1.5 : 0,
-
-                state: 'falling',
-                opacity: 0,
-                size: size,
-                // 落地位置：带一点随机起伏，模拟不平整雪堆
-                landingY: this.height - size * 0.8 - (Math.random() * 8),
-                willRest: willRest,
-                restTime: 0
-            };
-            // 初始X需计算一次
-            p.currentX = p.startX + Math.sin(p.phase) * p.swayAmp;
-
-            this.particles.push(p);
-            return;
-        }
-
-        // --- 原有逻辑 (花瓣/其他) ---
-        const el = document.createElement('div');
-        // 使用 innerHTML 插入 SVG
-        // 关键修复：去除首尾空格，否则 startsWith('<svg') 会失败导致显示源码
-        const content = this.getParticleContent().trim();
-
-        // 计算精确尺寸 (再大一点)
-        const size = 26 + Math.random() * 12; // 26-38px
-
-        if (content.startsWith('<svg')) {
-            el.innerHTML = content;
-            applyPromptsThemeParticleClasses(el, ['prompts-theme-particle--decor', 'prompts-theme-particle--decor-svg'], {
-                '--particle-size': `${size}px`
-            });
-        } else {
-            el.textContent = content;
-            applyPromptsThemeParticleClasses(el, ['prompts-theme-particle--decor', 'prompts-theme-particle--decor-emoji'], {
-                '--particle-size': `${size}px`
-            });
-        }
-
-        this.container.appendChild(el);
-
-        // 动态决定是否停留：用户希望始终保持 2-3 个
-        const restingCount = this.particles.filter(p => p.state === 'resting').length;
-        let willRest = false;
-
-        // 只有当极度稀缺(<1)时才小概率补充，否则绝对不停
-        if (restingCount < 1) {
-            willRest = Math.random() < 0.2; // 只有 20% 概率补充第一个
-        } else {
-            // willRest = false; // logic removed
-        }
-
-        // 所有的雪花都应该堆积 (100% 堆积率)
-        if (this.theme === 'snow') {
-            willRest = true;
-        }
-
-        const p = {
-            el: el,
-            startX: Math.random() * this.width, // 初始X轴中心
-            currentX: 0,
-            y: startY,
-            // 物理属性
-            speed: 0.5 + Math.random() * 0.4,
-            swayAmp: 10 + Math.random() * 20,
-            targetAmp: 0,
-            // 降低摇曳频率，更加慵懒
-            swaySpeed: 0.003 + Math.random() * 0.008,
-            phase: Math.random() * Math.PI * 2,
-            rotation: Math.random() * 360,
-            // 随机旋转方向：正负随机
-            // 只有 60% 的粒子会旋转，40% 的粒子保持静止角度飘落
-            rotSpeed: (Math.random() > 0.4)
-                ? (Math.random() < 0.5 ? -1 : 1) * (0.2 + Math.random() * 0.5)
-                : 0,
-
-            // 状态
-            // 状态
-            state: 'falling',
-            opacity: 0,
-            restTime: 0,
-            size: size,
-            isCrystal: isCrystal, // 保存类型用于物理计算
-            willRest: willRest
-        };
-
-        // 设定落地后的目标摇摆幅度 (停留时仅微风吹动)
-        // 设定落地后的目标摇摆幅度 (停留时停止摇摆)
-        p.targetAmp = 0;
-        // 随机微调落地高度，模拟积雪不平整 (-2px 到 +2px)
-        p.landingOffset = (Math.random() - 0.5) * 4;
-
-        this.particles.push(p);
-    },
-
-    createSplash(x, y) {
-        const splashCount = 3 + Math.floor(Math.random() * 4); // 3-6 个水滴
-        for (let i = 0; i < splashCount; i++) {
-            const el = document.createElement('div');
-            applyPromptsThemeParticleClasses(el, 'prompts-theme-particle--splash');
-            // 修正：初始位置
-            setPromptsCssVars(el, {
-                transform: `translate3d(${x}px, ${y}px, 0)`
-            });
-
-            this.container.appendChild(el);
-
-            this.particles.push({
-                el: el,
-                type: 'splash',
-                x: x,
-                y: y,
-                vx: (Math.random() - 0.5) * 4, // 向左右溅射
-                vy: -3 - Math.random() * 3, // 向上溅起
-                friction: 0.95,
-                gravity: 0.5, // 重力较大，快速落下
-                opacity: 1,
-                state: 'fading'
-            });
-        }
-    },
-
-    loop(timestamp) {
-        if (!this.container) return;
-
-        // 保底：如果没有传入 timestamp (比如手动调用)，使用 perf.now
-        if (!timestamp) timestamp = performance.now();
-
-        // 初始化或长时间暂停后重置
-        if (!this.lastTime) this.lastTime = timestamp;
-        const deltaTime = timestamp - this.lastTime;
-        this.lastTime = timestamp;
-
-        // 限制最大帧间隔 (防止切后台回来后瞬间爆炸)
-        // 16.67ms = 60fps. timeScale = 1.0 @ 60fps
-        const timeScale = Math.min(deltaTime, 100) / 16.67;
-
-        this.updateDimensions();
-
-        for (let i = this.particles.length - 1; i >= 0; i--) {
-            const p = this.particles[i];
-
-            // --- 烟花物理逻辑: 火箭 ---
-            if (p.type === 'rocket') {
-                p.y += p.vy * timeScale;
-                setPromptsCssVars(p.el, {
-                    transform: `translate3d(${p.x}px, ${p.y}px, 0)`
-                });
-
-                // 到达目标高度或速度耗尽则爆炸
-                if (p.y <= p.targetY) {
-                    this.explode(p);
-                    this.particles.splice(i, 1);
-                    p.el.remove();
-                }
-                continue;
-            }
-
-            // --- 烟花物理逻辑: 雨滴 ---
-            if (p.type === 'rain') {
-                // 高刷屏下(>100Hz, deltaTime < 10ms)，极速流体看起来会比 60Hz 视觉上更快 (无残影)。
-                // 增加感知补偿系数：如果是高刷，降低速度以匹配 60Hz 的观感。
-                let hzDampener = 1.0;
-                if (deltaTime < 10) hzDampener = 0.6; // 240Hz 降速 40%
-
-                p.y += p.speed * timeScale * hzDampener;
-                setPromptsCssVars(p.el, {
-                    transform: `translate3d(${p.x}px, ${p.y}px, 0)`
-                });
-                // 边界检测：超出屏幕底部移除
-                if (p.y > this.height) {
-                    // 溅起水花
-                    this.createSplash(p.x, this.height);
-
-                    this.particles.splice(i, 1);
-                    p.el.remove();
-                }
-                continue;
-            }
-
-            // --- 烟花物理逻辑: 溅起的水花 ---
-            if (p.type === 'splash') {
-                p.vy += 0.5 * timeScale; // 重力
-                p.x += p.vx * timeScale;
-                p.y += p.vy * timeScale;
-                p.opacity -= 0.05 * timeScale; // 快速消失
-
-                setPromptsCssVars(p.el, {
-                    opacity: String(p.opacity),
-                    transform: `translate3d(${p.x}px, ${p.y}px, 0)`
-                });
-
-                if (p.opacity <= 0) {
-                    this.particles.splice(i, 1);
-                    p.el.remove();
-                }
-                continue;
-            }
-
-            // --- 烟花物理逻辑: 火花 ---
-            if (p.type === 'spark') {
-                // 摩擦力指数衰减: vel = vel * friction^timeScale
-                p.vx *= Math.pow(p.friction, timeScale);
-                p.vy *= Math.pow(p.friction, timeScale);
-                p.vy += p.gravity * timeScale;
-                p.x += p.vx * timeScale;
-                p.y += p.vy * timeScale;
-                p.opacity -= p.decay * timeScale;
-
-                setPromptsCssVars(p.el, {
-                    opacity: String(p.opacity),
-                    transform: `translate3d(${p.x}px, ${p.y}px, 0)`
-                });
-
-                if (p.opacity <= 0) {
-                    this.particles.splice(i, 1);
-                    p.el.remove();
-                }
-                continue;
-            }
-
-            // 动态更新 landingY 以适应窗口大小变化
-            // 差异化落地高度：
-            // 1. 晶体 (SVG): 沉入 20% (HEIGHT - size*0.2)，看起来"脚踏实地"
-            // 2. 圆点 (Dust/Soft): 沉入 50% (HEIGHT - size*0.5)，看起来"嵌入/半埋"在雪堆里
-            const sinkRatio = p.isCrystal ? 0.2 : 0.5;
-            let currentLandingY = this.height - p.size * sinkRatio + (p.landingOffset || 0);
-
-            // 检测按钮碰撞
-            if (this.btnBounds && p.currentX >= this.btnBounds.left && p.currentX <= this.btnBounds.right) {
-                // 同样应用差异化沉入
-                // 晶体沉入少一点 (0.3)，圆点沉入多一点 (0.6)
-                const btnSinkRatio = p.isCrystal ? 0.3 : 0.6;
-                const btnY = this.btnBounds.top - p.size * btnSinkRatio + 2;
-                if (p.y <= btnY + 10) {
-                    currentLandingY = btnY;
-                }
-            }
-
-            // 1. 公共运动逻辑：水平摇摆
-            p.phase += p.swaySpeed * timeScale;
-            if (p.state === 'resting') {
-                // 已在进入状态时冻结 sway，此处无需操作
-            }
-            const currentSway = Math.sin(p.phase) * p.swayAmp;
-            p.currentX = p.startX + currentSway;
-
-            // 2. 状态机逻辑
-            if (p.state === 'falling') {
-                p.y += p.speed * timeScale;
-                p.rotation += p.rotSpeed * timeScale;
-
-                // 渐显效果
-                if (p.opacity < 1) {
-                    p.opacity += 0.02 * timeScale;
-                    if (p.opacity > 1) p.opacity = 1;
-                }
-
-                // 落地检测
-                if (p.y >= currentLandingY) {
-                    if (p.willRest) {
-                        p.state = 'resting';
-                        p.y = currentLandingY;
-                        // 彻底冻结 X 轴位置，防止滑动
-                        p.startX = p.currentX;
-                        p.swayAmp = 0;
-                        p.swaySpeed = 0;
-                    } else {
-                        // 如果不应该停留，则直接转为 falling_through 继续下落
-                        p.state = 'falling_through';
-                    }
-                }
-
-            } else if (p.state === 'falling_through') {
-                // 继续下落
-                p.y += p.speed * timeScale;
-
-                const realBottom = this.height - p.size;
-                if (p.y < realBottom) {
-                    p.opacity -= 0.002 * timeScale;
-                } else {
-                    p.opacity -= 0.03 * timeScale;
-                }
-
-            } else if (p.state === 'resting') {
-                // 底部停留
-                p.y = currentLandingY;
-                p.restTime += 16.7 * timeScale;
-
-                if (p.restTime > 2000 + Math.random() * 3000) {
-                    // 时间到后融化 (原地消失)，而不是掉下去
-                    p.state = 'melting';
-                }
-            } else if (p.state === 'melting') {
-                // 融化逻辑：原地变透明
-                p.opacity -= 0.01 * timeScale;
-                // p.y 不变
-            } else if (p.state === 'fading') {
-                p.opacity = 0;
-            }
-
-            // 移除检测
-            if (p.opacity <= 0 && (p.state === 'falling_through' || p.state === 'fading' || p.state === 'melting')) {
-                p.el.remove();
-                this.particles.splice(i, 1);
-                continue;
-            }
-
-            // 渲染
-            setPromptsCssVars(p.el, {
-                opacity: String(p.opacity),
-                transform: `translate3d(${p.currentX}px, ${p.y}px, 0) rotate(${p.rotation}deg)`
-            });
-        }
-
-        this.frameId = requestAnimationFrame((t) => this.loop(t));
-    }
-};
-
-// 兼容旧接口
-function startContinuousParticles(container, theme) {
-    ParticleSystem.init(container, theme);
-}
-
-// 停止粒子动画
-function stopContinuousParticles() {
-    ParticleSystem.stop();
-}
-
-function showBannerAnnouncement(color, size, content, ackKey, decoration) {
-    const banner = document.getElementById('announcementBanner');
-    const textEl = document.getElementById('announcementText');
-
-    if (banner && textEl) {
-        textEl.innerHTML = content;
-        banner.className = 'announcement-banner color-' + color + ' size-' + size;
-        banner.classList.remove('prompts-announcement-banner-hidden');
-        banner.dataset.ackKey = ackKey;
-        currentAnnouncementElement = banner;
-
-        // Add decoration particles
-        if (decoration && decoration !== 'none') {
-            const existing = banner.querySelector('.decoration-particles');
-            if (existing) existing.remove();
-            banner.insertAdjacentHTML('beforeend', generateDecorationParticles(decoration));
-            const particleContainer = banner.querySelector('.decoration-particles');
-            if (particleContainer) {
-                hydrateDecorationParticleStyles(particleContainer);
-                startContinuousParticles(particleContainer, decoration);
-            }
-        }
-
-        // Add class to body to offset fixed elements
-        document.body.classList.add('has-banner');
-        forcePromptPageTop();
-    }
-}
-
-function showModalAnnouncement(color, size, content, ackKey, decoration) {
-    // Create modal overlay
-    const overlay = document.createElement('div');
-    overlay.className = 'announcement-modal-overlay';
-    overlay.dataset.ackKey = ackKey;
-
-    const decorationHtml = generateDecorationParticles(decoration);
-
-    overlay.innerHTML = `
-        <div class="announcement-modal color-${color} size-${size}">
-            ${decorationHtml}
-            <div class="announcement-header">
-                <div class="announcement-icon-wrapper">
-                    <i class="fas fa-bullhorn"></i>
-                </div>
-                <span class="announcement-title">站内公告</span>
-            </div>
-            <div class="announcement-body">
-                <div class="announcement-text">${content}</div>
-            </div>
-            <div class="announcement-footer">
-                <button class="announcement-ack-btn" type="button">
-                    已读
-                </button>
-            </div>
-        </div>
-    `;
-
-    overlay.querySelector('.announcement-ack-btn')?.addEventListener('click', () => {
-        closeAnnouncement(true);
-    });
-
-    // Close on overlay click (temporary close)
-    overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) {
-            closeAnnouncement(false);
-        }
-    });
-
-    document.body.appendChild(overlay);
-    currentAnnouncementElement = overlay;
-    lockAnnouncementBackground(overlay);
-    hydrateDecorationParticleStyles(overlay);
-
-    // Start particle animation after DOM is ready
-    if (decoration && decoration !== 'none') {
-        if (decoration === 'hearts') {
-            startHeartFloat(overlay);
-        } else {
-            // Only use active JS ParticleSystem for complex physics themes
-            // Sakura and Leaves use the CSS-based particles we generated
-            const activePhysicsThemes = ['snow', 'rain', 'fireworks'];
-
-            if (activePhysicsThemes.includes(decoration)) {
-                const particleContainer = overlay.querySelector('.decoration-particles');
-                if (particleContainer) {
-                    startContinuousParticles(particleContainer, decoration);
-                }
-            }
-        }
-    }
-}
-
-// ----------------------------------------
-// Random Floating Heart Logic (Fade Out -> Teleport -> Fade In)
-// ----------------------------------------
-// ----------------------------------------
-// Random Floating Heart Logic (Fade Out -> Teleport -> Fade In)
-// With Collision Avoidance (Keep hearts apart)
-// ----------------------------------------
-function startHeartFloat(container) {
-    const hearts = Array.from(container.querySelectorAll('.heart-container'));
-
-    // Track current target positions (initialized with defaults)
-    const positions = hearts.map(() => ({ x: 0, y: 0 }));
-
-    hearts.forEach((heart, index) => {
-        // --- Helper: Generate Safe Position ---
-        const getSafePosition = () => {
-            let safe = false;
-            let attempts = 0;
-            let newX, newY;
-
-            while (!safe && attempts < 20) {
-                // Generate random position (10% to 90%)
-                newX = Math.random() * 80 + 10;
-                newY = Math.random() * 80 + 10;
-                safe = true;
-
-                // Check distance against other hearts
-                for (let i = 0; i < positions.length; i++) {
-                    if (i === index) continue; // Skip self
-
-                    // Only check if other heart has been initialized (not 0,0)
-                    if (positions[i].x !== 0 && positions[i].y !== 0) {
-                        const dist = Math.hypot(newX - positions[i].x, newY - positions[i].y);
-                        if (dist < 40) { // Keep at least 40% screen width apart
-                            safe = false;
-                            break;
-                        }
-                    }
-                }
-                attempts++;
-            }
-            return { x: newX, y: newY };
-        };
-
-        // --- Initial Move ---
-        const initialPos = getSafePosition();
-        positions[index] = initialPos;
-        setPromptsPercentPosition(heart, initialPos.x, initialPos.y);
-
-        // --- Schedule Next Move ---
-        const scheduleNextMove = () => {
-            if (!document.body.contains(container)) return;
-
-            // Random delay 10-18s
-            const delay = 10000 + Math.random() * 8000;
-
-            setTimeout(() => {
-                if (!document.body.contains(container)) return;
-
-                // 1. Fade Out
-                heart.classList.add('relocating');
-
-                // 2. Teleport after fade out (2s)
-                setTimeout(() => {
-                    if (!document.body.contains(container)) return;
-
-                    // Generate new safe position
-                    const newPos = getSafePosition();
-                    positions[index] = newPos; // Update tracker
-
-                    setPromptsPercentPosition(heart, newPos.x, newPos.y);
-
-                    // 3. Fade In
-                    requestAnimationFrame(() => {
-                        heart.classList.remove('relocating');
-                        scheduleNextMove();
-                    });
-                }, 2000);
-            }, delay);
-        };
-
-        scheduleNextMove();
-    });
-}
-
-let toastBackdropElement = null;
-
-function showToastAnnouncement(color, size, content, ackKey, decoration) {
-    // Create blur backdrop
-    const backdrop = document.createElement('div');
-    backdrop.className = 'announcement-toast-backdrop';
-    document.body.appendChild(backdrop);
-    toastBackdropElement = backdrop;
-
-    const decorationHtml = generateDecorationParticles(decoration);
-
-    // Create toast
-    const toast = document.createElement('div');
-    toast.className = 'announcement-toast color-' + color + ' size-' + size;
-    toast.dataset.ackKey = ackKey;
-
-    toast.innerHTML = `
-        ${decorationHtml}
-        <div class="toast-header">
-            <i class="fas fa-bullhorn"></i>
-            <span class="toast-title">站内公告</span>
-        </div>
-        <div class="toast-body">${content}</div>
-        <button class="announcement-ack-btn-sm" type="button">已读</button>
-    `;
-    hydrateDecorationParticleStyles(toast);
-
-    toast.querySelector('.announcement-ack-btn-sm')?.addEventListener('click', (event) => {
-        event.stopPropagation();
-        closeAnnouncement(true);
-    });
-
-    // Prevent clicks inside toast from closing
-    toast.addEventListener('click', (e) => {
-        e.stopPropagation();
-    });
-
-    // Click backdrop to close
-    backdrop.addEventListener('click', () => {
-        closeAnnouncement(false);
-    });
-
-    document.body.appendChild(toast);
-    currentAnnouncementElement = toast;
-    lockAnnouncementBackground(toast);
-}
-
-function closeAnnouncement(acknowledged = false) {
-    if (!currentAnnouncementElement) return;
-
-    const ackKey = currentAnnouncementElement.dataset.ackKey;
-
-    // If user clicked "已读", save to localStorage (permanent)
-    // If user clicked X or overlay, don't save (will show again on refresh)
-    if (acknowledged && ackKey) {
-        localStorage.setItem(ackKey, 'true');
-        console.log('用户已确认公告，不再显示');
-    } else {
-        console.log('用户临时关闭公告，刷新后将重新显示');
-    }
-
-    // Add closing animation class
-    currentAnnouncementElement.classList.add('closing');
-
-    // Stop particle animation
-    stopContinuousParticles();
-
-    // Also animate backdrop if exists
-    if (toastBackdropElement) {
-        toastBackdropElement.classList.add('closing');
-    }
-
-    // Remove after animation
-    setTimeout(() => {
-        clearCurrentAnnouncement();
-    }, 300);
-}
-
 // Initialize theme before page renders
 initTheme();
 
@@ -2629,9 +1406,10 @@ function isPromptVisibleOnPromptsPage(prompt = {}) {
 
     const hasBaseTitle = hasPromptPageVisibleCopy(prompt?.title);
     const hasPromptText = hasPromptPageVisibleCopy(prompt?.prompt_text || prompt?.prompt);
-    const hasImages = Array.isArray(prompt?.images) && prompt.images.some((item) => hasPromptPageVisibleCopy(item));
+    const hasDeferredPromptText = prompt?.hasPromptDetail === true || prompt?.promptSummaryOnly === true;
+    const hasImages = getPromptImageAssets(prompt).some((item) => hasPromptPageVisibleCopy(getPromptImageAssetOriginalUrl(item)));
 
-    return hasBaseTitle && hasPromptText && hasImages;
+    return hasBaseTitle && (hasPromptText || hasDeferredPromptText) && hasImages;
 }
 
 function filterVisiblePromptsForPromptsPage(prompts = []) {
@@ -2685,8 +1463,77 @@ async function waitForPromptSupabaseClientReady(timeoutMs = 2200) {
     });
 }
 
-const STATIC_PROMPTS_FALLBACK_SRC = 'prompts-data.js?v=20260302_G_AUTH';
+const STATIC_PROMPTS_SUMMARY_SRC = 'js/prompts-summary-data.js?v=20260501_PROMPTS_SUMMARY_DATA_1';
+const STATIC_PROMPTS_DETAIL_SRC = 'prompts-data.js?v=20260302_G_AUTH';
+const PROMPTS_SUPABASE_SUMMARY_SELECT = [
+    'id',
+    'title',
+    'title_en',
+    'title_zh',
+    'tags',
+    'description',
+    'description_en',
+    'description_zh',
+    'images',
+    'image_assets',
+    'dominant_colors',
+    'ai_tags',
+    'created_at'
+].join(',');
+const PROMPTS_SUPABASE_SUMMARY_LEGACY_SELECT = PROMPTS_SUPABASE_SUMMARY_SELECT
+    .split(',')
+    .filter((field) => field !== 'image_assets')
+    .join(',');
+const PROMPTS_SUPABASE_DETAIL_SELECT = [
+    'id',
+    'title',
+    'title_en',
+    'title_zh',
+    'tags',
+    'description',
+    'description_en',
+    'description_zh',
+    'prompt_text',
+    'prompt_text_en',
+    'prompt_text_zh',
+    'images',
+    'image_assets',
+    'dominant_colors',
+    'ai_tags'
+].join(',');
+const PROMPTS_SUPABASE_SEARCH_DETAIL_SELECT = [
+    'id',
+    'title',
+    'title_en',
+    'title_zh',
+    'tags',
+    'description',
+    'description_en',
+    'description_zh',
+    'prompt_text',
+    'prompt_text_en',
+    'prompt_text_zh',
+    'dominant_colors',
+    'ai_tags'
+].join(',');
+const PROMPTS_SUPABASE_DETAIL_LEGACY_SELECT = PROMPTS_SUPABASE_DETAIL_SELECT
+    .split(',')
+    .filter((field) => field !== 'image_assets')
+    .join(',');
 let staticPromptsFallbackPromise = null;
+let staticPromptDetailPromise = null;
+let promptSearchDetailHydrationPromise = null;
+let promptSearchDetailsHydrated = false;
+const promptDetailLoadPromises = new Map();
+
+function isMissingPromptImageAssetsColumnError(error) {
+    const message = String(error?.message || '').toLowerCase();
+    return Boolean(message && (
+        message.includes('image_assets')
+        || message.includes('column of "prompts"')
+        || message.includes("column of 'prompts'")
+    ));
+}
 
 function replacePromptDataset(nextPrompts = []) {
     const visiblePrompts = filterVisiblePromptsForPromptsPage(nextPrompts).map((prompt, index) => ({
@@ -2701,12 +1548,100 @@ function replacePromptDataset(nextPrompts = []) {
 
     visiblePrompts.forEach((prompt) => PROMPTS.push(prompt));
     window.PROMPTS = PROMPTS;
+    promptSearchDetailsHydrated = false;
+    promptSearchDetailHydrationPromise = null;
+    invalidatePromptSearchCaches();
     return visiblePrompts;
 }
 
-async function loadStaticPromptFallbackData() {
+function normalizeSupabasePromptSummary(item = {}, index = 0) {
+    const imageAssets = normalizePromptImageAssetsFromRecord(item);
+    return {
+        id: index,
+        supabaseId: item.id,
+        title: item.title || '',
+        title_en: item.title_en || '',
+        title_zh: item.title_zh || '',
+        tags: Array.isArray(item.tags) ? item.tags : [],
+        description: item.description || '',
+        description_en: item.description_en || '',
+        description_zh: item.description_zh || '',
+        images: imageAssets.map(getPromptImageAssetOriginalUrl).filter(Boolean),
+        imageAssets,
+        image_assets: imageAssets,
+        dominantColors: Array.isArray(item.dominant_colors) ? item.dominant_colors : [],
+        aiTags: item.ai_tags || {},
+        createdAt: item.created_at || '',
+        hasPromptDetail: true,
+        promptSummaryOnly: true,
+        detailSource: 'supabase'
+    };
+}
+
+function normalizeSupabasePromptDetail(item = {}) {
+    const imageAssets = normalizePromptImageAssetsFromRecord(item);
+    return {
+        supabaseId: item.id,
+        title: item.title || '',
+        title_en: item.title_en || '',
+        title_zh: item.title_zh || '',
+        tags: Array.isArray(item.tags) ? item.tags : [],
+        description: item.description || '',
+        description_en: item.description_en || '',
+        description_zh: item.description_zh || '',
+        prompt: item.prompt_text || '',
+        prompt_text: item.prompt_text || '',
+        prompt_text_en: item.prompt_text_en || '',
+        prompt_text_zh: item.prompt_text_zh || '',
+        images: imageAssets.map(getPromptImageAssetOriginalUrl).filter(Boolean),
+        imageAssets,
+        image_assets: imageAssets,
+        dominantColors: Array.isArray(item.dominant_colors) ? item.dominant_colors : [],
+        aiTags: item.ai_tags || {},
+        hasPromptDetail: true,
+        promptSummaryOnly: false,
+        promptDetailLoaded: true,
+        detailSource: 'supabase'
+    };
+}
+
+function normalizeSupabasePromptSearchDetail(item = {}) {
+    return {
+        supabaseId: item.id,
+        title: item.title || '',
+        title_en: item.title_en || '',
+        title_zh: item.title_zh || '',
+        tags: Array.isArray(item.tags) ? item.tags : [],
+        description: item.description || '',
+        description_en: item.description_en || '',
+        description_zh: item.description_zh || '',
+        prompt: item.prompt_text || '',
+        prompt_text: item.prompt_text || '',
+        prompt_text_en: item.prompt_text_en || '',
+        prompt_text_zh: item.prompt_text_zh || '',
+        dominantColors: Array.isArray(item.dominant_colors) ? item.dominant_colors : [],
+        aiTags: item.ai_tags || {},
+        hasPromptDetail: true,
+        promptSummaryOnly: false,
+        promptDetailLoaded: true,
+        detailSource: 'supabase'
+    };
+}
+
+function getPromptStaticSummaryDataset() {
+    if (Array.isArray(window.__PROMPTS_SUMMARY__) && window.__PROMPTS_SUMMARY__.length > 0) {
+        return window.__PROMPTS_SUMMARY__;
+    }
     if (Array.isArray(window.__STATIC_PROMPTS__) && window.__STATIC_PROMPTS__.length > 0) {
-        return replacePromptDataset(window.__STATIC_PROMPTS__);
+        return window.__STATIC_PROMPTS__;
+    }
+    return [];
+}
+
+async function loadStaticPromptFallbackData() {
+    const existingDataset = getPromptStaticSummaryDataset();
+    if (existingDataset.length > 0) {
+        return replacePromptDataset(existingDataset);
     }
 
     if (staticPromptsFallbackPromise) {
@@ -2714,32 +1649,285 @@ async function loadStaticPromptFallbackData() {
     }
 
     staticPromptsFallbackPromise = new Promise((resolve, reject) => {
-        const existingScript = document.querySelector('script[data-prompt-static-fallback="1"]');
+        const existingScript = document.querySelector('script[data-prompt-static-summary="1"]');
         if (existingScript) {
             existingScript.addEventListener('load', () => {
-                resolve(replacePromptDataset(window.__STATIC_PROMPTS__ || []));
+                resolve(replacePromptDataset(getPromptStaticSummaryDataset()));
             }, { once: true });
             existingScript.addEventListener('error', reject, { once: true });
             return;
         }
 
         const script = document.createElement('script');
-        script.src = STATIC_PROMPTS_FALLBACK_SRC;
+        script.src = STATIC_PROMPTS_SUMMARY_SRC;
         script.async = true;
-        script.dataset.promptStaticFallback = '1';
+        script.dataset.promptStaticSummary = '1';
         script.addEventListener('load', () => {
-            resolve(replacePromptDataset(window.__STATIC_PROMPTS__ || []));
+            resolve(replacePromptDataset(getPromptStaticSummaryDataset()));
         }, { once: true });
         script.addEventListener('error', () => {
-            reject(new Error('Failed to load static prompts fallback'));
+            reject(new Error('Failed to load static prompts summary fallback'));
         }, { once: true });
         document.head.appendChild(script);
     }).catch((error) => {
         staticPromptsFallbackPromise = null;
-        throw error;
+        console.warn('Static prompts summary unavailable, falling back to detail data:', error?.message || error);
+        return loadStaticPromptDetailData().then((detailPrompts) => replacePromptDataset(detailPrompts));
     });
 
     return staticPromptsFallbackPromise;
+}
+
+function getPromptDetailLookupKeys(item = {}) {
+    return [
+        item?.supabaseId,
+        item?.sourceId,
+        item?.staticId,
+        item?.originalId,
+        item?.id
+    ]
+        .map((value) => String(value || '').trim())
+        .filter(Boolean);
+}
+
+function getPromptTitleLookupKeys(item = {}) {
+    return [
+        item?.title,
+        item?.title_en,
+        item?.title_zh
+    ]
+        .map(normalizePromptSearchText)
+        .filter(Boolean);
+}
+
+function hasPromptDetailBody(item = {}) {
+    return [
+        item?.prompt,
+        item?.prompt_text,
+        item?.prompt_text_en,
+        item?.prompt_text_zh
+    ].some((value) => hasPromptPageVisibleCopy(value));
+}
+
+function mergePromptDetailIntoItem(item = {}, detail = {}) {
+    if (!item || !detail) return item;
+
+    Object.assign(item, {
+        title: detail.title || item.title || '',
+        title_en: detail.title_en || item.title_en || '',
+        title_zh: detail.title_zh || item.title_zh || '',
+        tags: Array.isArray(detail.tags) ? detail.tags : (item.tags || []),
+        description: detail.description || item.description || '',
+        description_en: detail.description_en || item.description_en || '',
+        description_zh: detail.description_zh || item.description_zh || '',
+        prompt: detail.prompt || detail.prompt_text || item.prompt || '',
+        prompt_text: detail.prompt_text || detail.prompt || item.prompt_text || '',
+        prompt_text_en: detail.prompt_text_en || item.prompt_text_en || '',
+        prompt_text_zh: detail.prompt_text_zh || item.prompt_text_zh || '',
+        imageAssets: getPromptImageAssets(detail).length > 0 ? getPromptImageAssets(detail) : getPromptImageAssets(item),
+        image_assets: getPromptImageAssets(detail).length > 0 ? getPromptImageAssets(detail) : getPromptImageAssets(item),
+        images: (getPromptImageAssets(detail).length > 0 ? getPromptImageAssets(detail) : getPromptImageAssets(item))
+            .map(getPromptImageAssetOriginalUrl)
+            .filter(Boolean),
+        dominantColors: Array.isArray(detail.dominantColors) ? detail.dominantColors : (item.dominantColors || []),
+        aiTags: detail.aiTags || item.aiTags || {},
+        hasPromptDetail: true,
+        promptSummaryOnly: false,
+        promptDetailLoaded: hasPromptDetailBody(detail) || hasPromptDetailBody(item)
+    });
+
+    return item;
+}
+
+async function loadStaticPromptDetailData() {
+    if (Array.isArray(window.__STATIC_PROMPTS__) && window.__STATIC_PROMPTS__.length > 0) {
+        return window.__STATIC_PROMPTS__;
+    }
+
+    if (staticPromptDetailPromise) {
+        return staticPromptDetailPromise;
+    }
+
+    staticPromptDetailPromise = new Promise((resolve, reject) => {
+        const existingScript = document.querySelector('script[data-prompt-static-detail="1"]');
+        if (existingScript) {
+            existingScript.addEventListener('load', () => {
+                resolve(window.__STATIC_PROMPTS__ || []);
+            }, { once: true });
+            existingScript.addEventListener('error', reject, { once: true });
+            return;
+        }
+
+        const script = document.createElement('script');
+        script.src = STATIC_PROMPTS_DETAIL_SRC;
+        script.async = true;
+        script.dataset.promptStaticDetail = '1';
+        script.addEventListener('load', () => {
+            resolve(window.__STATIC_PROMPTS__ || []);
+        }, { once: true });
+        script.addEventListener('error', () => {
+            reject(new Error('Failed to load static prompts detail data'));
+        }, { once: true });
+        document.head.appendChild(script);
+    }).catch((error) => {
+        staticPromptDetailPromise = null;
+        throw error;
+    });
+
+    return staticPromptDetailPromise;
+}
+
+function findStaticPromptDetailForItem(item = {}, staticPrompts = []) {
+    const lookupKeys = new Set(getPromptDetailLookupKeys(item));
+    const titleKeys = new Set(getPromptTitleLookupKeys(item));
+    if (!lookupKeys.size && !titleKeys.size) return null;
+
+    return (Array.isArray(staticPrompts) ? staticPrompts : []).find((prompt) => {
+        return getPromptDetailLookupKeys(prompt).some((key) => lookupKeys.has(key))
+            || getPromptTitleLookupKeys(prompt).some((key) => titleKeys.has(key));
+    }) || null;
+}
+
+async function fetchSupabasePromptDetail(item = {}) {
+    if (!window.supabaseClient || item?.detailSource !== 'supabase') return null;
+
+    const promptId = String(item.supabaseId || '').trim();
+    if (!promptId) return null;
+
+    let { data, error } = await window.supabaseClient
+        .from('prompts')
+        .select(PROMPTS_SUPABASE_DETAIL_SELECT)
+        .eq('id', promptId)
+        .maybeSingle();
+
+    if (error && isMissingPromptImageAssetsColumnError(error)) {
+        const fallbackResult = await window.supabaseClient
+            .from('prompts')
+            .select(PROMPTS_SUPABASE_DETAIL_LEGACY_SELECT)
+            .eq('id', promptId)
+            .maybeSingle();
+        data = fallbackResult.data;
+        error = fallbackResult.error;
+    }
+
+    if (error) {
+        throw error;
+    }
+
+    return data ? normalizeSupabasePromptDetail(data) : null;
+}
+
+async function fetchSupabasePromptSearchDetails() {
+    if (!window.supabaseClient) return 0;
+
+    const targetPrompts = PROMPTS.filter((item) => {
+        return item?.detailSource === 'supabase'
+            && !hasPromptDetailBody(item)
+            && String(item.supabaseId || '').trim();
+    });
+    if (!targetPrompts.length) return 0;
+
+    const ids = Array.from(new Set(targetPrompts.map((item) => String(item.supabaseId || '').trim()).filter(Boolean)));
+    if (!ids.length) return 0;
+
+    const { data, error } = await window.supabaseClient
+        .from('prompts')
+        .select(PROMPTS_SUPABASE_SEARCH_DETAIL_SELECT)
+        .in('id', ids);
+
+    if (error) {
+        throw error;
+    }
+
+    const detailsById = new Map(
+        (Array.isArray(data) ? data : [])
+            .map((item) => normalizeSupabasePromptSearchDetail(item))
+            .map((detail) => [String(detail.supabaseId || '').trim(), detail])
+            .filter(([id]) => id)
+    );
+
+    let changedCount = 0;
+    targetPrompts.forEach((item) => {
+        const detail = detailsById.get(String(item.supabaseId || '').trim());
+        if (!detail) return;
+        mergePromptDetailIntoItem(item, detail);
+        changedCount += 1;
+    });
+
+    return changedCount;
+}
+
+async function hydratePromptSearchDetails() {
+    if (promptSearchDetailsHydrated) return false;
+    if (promptSearchDetailHydrationPromise) return promptSearchDetailHydrationPromise;
+
+    promptSearchDetailHydrationPromise = (async () => {
+        let changed = false;
+
+        try {
+            const supabaseChangedCount = await fetchSupabasePromptSearchDetails();
+            changed = changed || supabaseChangedCount > 0;
+        } catch (error) {
+            console.warn('Failed to hydrate Supabase prompt text for search:', error?.message || error);
+        }
+
+        if (PROMPTS.some((item) => item && !hasPromptDetailBody(item))) {
+            try {
+                const staticPrompts = await loadStaticPromptDetailData();
+                PROMPTS.forEach((item) => {
+                    if (!item || hasPromptDetailBody(item)) return;
+                    const detail = findStaticPromptDetailForItem(item, staticPrompts);
+                    if (!detail) return;
+                    mergePromptDetailIntoItem(item, detail);
+                    changed = true;
+                });
+            } catch (error) {
+                console.warn('Failed to hydrate static prompt text for search:', error?.message || error);
+            }
+        }
+
+        promptSearchDetailsHydrated = true;
+        if (changed) {
+            invalidatePromptSearchCaches();
+        }
+        return changed;
+    })().finally(() => {
+        promptSearchDetailHydrationPromise = null;
+    });
+
+    return promptSearchDetailHydrationPromise;
+}
+
+async function ensurePromptDetailLoaded(item = {}) {
+    if (!item || hasPromptDetailBody(item)) {
+        return item;
+    }
+
+    const cacheKey = getPromptDetailLookupKeys(item)[0] || String(item.id || '');
+    if (promptDetailLoadPromises.has(cacheKey)) {
+        return promptDetailLoadPromises.get(cacheKey);
+    }
+
+    const loadPromise = (async () => {
+        let detail = await fetchSupabasePromptDetail(item);
+
+        if (!detail) {
+            const staticPrompts = await loadStaticPromptDetailData();
+            detail = findStaticPromptDetailForItem(item, staticPrompts);
+        }
+
+        if (detail) {
+            return mergePromptDetailIntoItem(item, detail);
+        }
+
+        return item;
+    })().catch((error) => {
+        promptDetailLoadPromises.delete(cacheKey);
+        throw error;
+    });
+
+    promptDetailLoadPromises.set(cacheKey, loadPromise);
+    return loadPromise;
 }
 
 async function loadPromptsFromSupabase() {
@@ -2763,10 +1951,23 @@ async function loadPromptsFromSupabase() {
     }
 
     try {
-        const { data, error } = await window.supabaseClient
+        let { data, error } = await window.supabaseClient
             .from('prompts')
-            .select('*')
+            .select(PROMPTS_SUPABASE_SUMMARY_SELECT)
+            .not('prompt_text', 'is', null)
+            .neq('prompt_text', '')
             .order('created_at', { ascending: false });
+
+        if (error && isMissingPromptImageAssetsColumnError(error)) {
+            const fallbackResult = await window.supabaseClient
+                .from('prompts')
+                .select(PROMPTS_SUPABASE_SUMMARY_LEGACY_SELECT)
+                .not('prompt_text', 'is', null)
+                .neq('prompt_text', '')
+                .order('created_at', { ascending: false });
+            data = fallbackResult.data;
+            error = fallbackResult.error;
+        }
 
         if (error) {
             console.error('Supabase fetch error:', error);
@@ -2778,24 +1979,7 @@ async function loadPromptsFromSupabase() {
 
         if (data && data.length > 0) {
             // Transform Supabase data to match PROMPTS format
-            const supabasePrompts = data.map((item, index) => ({
-                id: index,
-                supabaseId: item.id, // Keep the real Supabase ID for reference
-                title: item.title,
-                title_en: item.title_en || '',
-                title_zh: item.title_zh || '',
-                tags: item.tags || [],
-                description: item.description || '',
-                description_en: item.description_en || '',
-                description_zh: item.description_zh || '',
-                prompt: item.prompt_text || '',
-                prompt_text: item.prompt_text || '',
-                prompt_text_en: item.prompt_text_en || '',
-                prompt_text_zh: item.prompt_text_zh || '',
-                images: item.images || [],
-                dominantColors: item.dominant_colors || [],
-                aiTags: item.ai_tags || {}
-            }));
+            const supabasePrompts = data.map((item, index) => normalizeSupabasePromptSummary(item, index));
             const visibleSupabasePrompts = filterVisiblePromptsForPromptsPage(supabasePrompts);
             const normalizedSupabasePrompts = replacePromptDataset(visibleSupabasePrompts);
 
@@ -2888,7 +2072,7 @@ function warmPromptGalleryLeadImages(items = []) {
     const leadItems = (Array.isArray(items) ? items : []).slice(0, PROMPT_GALLERY_EAGER_IMAGE_COUNT);
 
     leadItems.forEach((item) => {
-        const optimizedUrl = getOptimizedImageUrl(item?.images?.[0]);
+        const optimizedUrl = getOptimizedImageUrl(getPromptPrimaryImageAsset(item), { variant: 'card' });
         if (!optimizedUrl || promptGalleryImageWarmCache.has(optimizedUrl)) return;
         if (optimizedUrl.includes('supabase.co/storage/v1/render/image/public/')) return;
 
@@ -2922,11 +2106,12 @@ function markPromptCardImageReady(card, cardImage) {
     cardImage?.classList.add('loaded');
 }
 
-function setPromptCardImageSource(cardImage, originalUrl) {
-    if (!cardImage || !originalUrl) return;
+function setPromptCardImageSource(cardImage, imageAsset) {
+    if (!cardImage || !imageAsset) return;
 
-    const primaryUrl = getOptimizedImageUrl(originalUrl);
-    const transformFallbackUrl = getOptimizedImageUrl(originalUrl, { format: '' });
+    const originalUrl = getPromptImageAssetOriginalUrl(imageAsset);
+    const primaryUrl = getOptimizedImageUrl(imageAsset, { variant: 'card' });
+    const transformFallbackUrl = getOptimizedImageUrl(imageAsset, { format: '' });
 
     cardImage.dataset.originalSrc = originalUrl;
     cardImage.dataset.transformFallbackSrc = transformFallbackUrl !== primaryUrl ? transformFallbackUrl : '';
@@ -2934,9 +2119,112 @@ function setPromptCardImageSource(cardImage, originalUrl) {
     cardImage.src = primaryUrl;
 }
 
+function getUniquePromptImageCandidates(urls = []) {
+    const seen = new Set();
+    return urls
+        .map((url) => String(url || '').trim())
+        .filter((url) => {
+            if (!url || seen.has(url)) return false;
+            seen.add(url);
+            return true;
+        });
+}
+
+function getFeaturedBannerImageCandidates(imageAsset) {
+    const trimmed = getPromptImageAssetOriginalUrl(imageAsset);
+    if (!trimmed) return [];
+
+    const supabaseTransformFallback = trimmed.includes('supabase.co/storage/v1/object/public/prompt-images/')
+        ? getOptimizedImageUrl(trimmed, { format: '' })
+        : '';
+
+    return getUniquePromptImageCandidates([
+        getOptimizedImageUrl(imageAsset, { variant: 'featured' }),
+        getOptimizedImageUrl(imageAsset, { variant: 'thumb' }),
+        getOptimizedImageUrl(imageAsset, { variant: 'card' }),
+        getOptimizedImageUrl(imageAsset, { variant: 'home' }),
+        supabaseTransformFallback,
+        trimmed
+    ]);
+}
+
+function setFeaturedBannerImageSource(image, imageAsset) {
+    if (!image || !imageAsset) return Promise.resolve(false);
+
+    const originalUrl = getPromptImageAssetOriginalUrl(imageAsset);
+    const candidates = getFeaturedBannerImageCandidates(imageAsset);
+    if (!candidates.length) return Promise.resolve(false);
+
+    image.classList.remove('featured-image--loaded', 'featured-image--failed');
+    image.dataset.featuredOriginalSrc = String(originalUrl || '').trim();
+    image.dataset.featuredFallbackIndex = '0';
+
+    return new Promise((resolve) => {
+        let settled = false;
+        const finish = (loaded) => {
+            if (settled) return;
+            settled = true;
+            if (loaded) {
+                image.classList.add('featured-image--loaded');
+                image.classList.remove('featured-image--failed');
+            } else {
+                image.classList.add('featured-image--failed');
+            }
+            resolve(Boolean(loaded));
+        };
+
+        image.onload = () => finish(true);
+        image.onerror = () => {
+            const nextIndex = (Number.parseInt(image.dataset.featuredFallbackIndex || '0', 10) || 0) + 1;
+            const nextSrc = candidates[nextIndex];
+            if (nextSrc) {
+                image.dataset.featuredFallbackIndex = String(nextIndex);
+                image.src = nextSrc;
+                return;
+            }
+
+            finish(false);
+        };
+
+        image.src = candidates[0];
+        if (image.complete && image.naturalWidth > 0) {
+            finish(true);
+        }
+    });
+}
+
+function waitForPromptFeaturedFirstImage(imagePromise) {
+    return Promise.race([
+        Promise.resolve(imagePromise).catch(() => false),
+        new Promise((resolve) => {
+            window.setTimeout(() => resolve(false), PROMPT_FEATURED_FIRST_IMAGE_TIMEOUT_MS);
+        })
+    ]);
+}
+
+function renderFeaturedBannerConfiguredUpdate(immediateFeatured) {
+    return (async () => {
+        const homepageConfig = await loadHomepagePromptsConfigForBanner();
+        const configuredFeatured = resolveHomepageFeaturedBannerPrompt(homepageConfig);
+        if (configuredFeatured) {
+            applyFeaturedBannerPrompt(configuredFeatured);
+            return;
+        }
+
+        applyFeaturedBannerPrompt(immediateFeatured);
+    })();
+}
+
 const PROMPTS_DEFERRED_TASK_TIMEOUT_MS = 1600;
+const PROMPTS_DEFERRED_VISUAL_DELAY_MS = 900;
+const PROMPTS_DEFERRED_COMMENT_COUNT_DELAY_MS = 4200;
+const PROMPTS_DEFERRED_SEARCH_INDEX_DELAY_MS = 5200;
+const PROMPT_FEATURED_FIRST_IMAGE_TIMEOUT_MS = 240;
+const PROMPT_GALLERY_CONFIG_FIRST_RENDER_TIMEOUT_MS = 320;
 let promptsDeferredEnhancementsScheduled = false;
-let promptsDeferredEnhancementsExecuted = false;
+const promptsDeferredTasksScheduled = new Set();
+const promptsDeferredTasksExecuted = new Set();
+let promptStarrySkyRuntimePromise = null;
 
 function runPromptDeferredTask(taskName, task) {
     try {
@@ -2949,30 +2237,98 @@ function runPromptDeferredTask(taskName, task) {
     }
 }
 
-function executePromptsDeferredEnhancements() {
-    if (promptsDeferredEnhancementsExecuted) {
+function runPromptDeferredTaskOnce(taskName, task) {
+    if (promptsDeferredTasksExecuted.has(taskName)) {
+        return Promise.resolve();
+    }
+    promptsDeferredTasksExecuted.add(taskName);
+    return runPromptDeferredTask(taskName, task);
+}
+
+function schedulePromptIdleTask(taskName, task, options = {}) {
+    if (promptsDeferredTasksScheduled.has(taskName) || promptsDeferredTasksExecuted.has(taskName)) {
         return;
     }
-    promptsDeferredEnhancementsExecuted = true;
 
-    const tasks = [
-        ['search-index', () => {
-            if (!SEARCH_INDEX) {
-                buildSearchIndex();
-            }
-        }],
-        ['comment-count-prefetch', () => preloadPromptCommentCounts()],
-        ['spotlight', () => initSpotlight()],
-        ['ambient-light', () => initAmbientLight()],
-        ['starry-sky', () => initStarrySky()],
-        ['scroll-reveal', () => setupScrollReveal()],
-        ['announcement', () => loadAnnouncement()]
-    ];
+    promptsDeferredTasksScheduled.add(taskName);
+    const delayMs = Math.max(0, Number(options.delayMs || 0));
+    const timeoutMs = Math.max(1, Number(options.timeoutMs || PROMPTS_DEFERRED_TASK_TIMEOUT_MS));
 
-    void tasks.reduce(
-        (chain, [taskName, task]) => chain.then(() => runPromptDeferredTask(taskName, task)),
-        Promise.resolve()
-    );
+    const requestRun = () => {
+        const run = () => {
+            void runPromptDeferredTaskOnce(taskName, task);
+        };
+
+        if (typeof window.requestIdleCallback === 'function') {
+            window.requestIdleCallback(run, { timeout: timeoutMs });
+        } else {
+            window.setTimeout(run, Math.min(timeoutMs, 900));
+        }
+    };
+
+    if (delayMs > 0) {
+        window.setTimeout(requestRun, delayMs);
+    } else {
+        requestRun();
+    }
+}
+
+function warmPromptSearchIndex() {
+    return runPromptDeferredTaskOnce('search-index', () => {
+        if (!SEARCH_INDEX) {
+            buildSearchIndex();
+        }
+    });
+}
+
+function schedulePromptSearchIndexWarmup() {
+    const searchInput = document.getElementById('gallerySearch');
+    const warm = () => {
+        void warmPromptSearchIndex();
+    };
+
+    searchInput?.addEventListener('focus', warm, { once: true, passive: true });
+    searchInput?.addEventListener('input', warm, { once: true, passive: true });
+
+    schedulePromptIdleTask('search-index', warmPromptSearchIndex, {
+        delayMs: PROMPTS_DEFERRED_SEARCH_INDEX_DELAY_MS,
+        timeoutMs: 2400
+    });
+}
+
+function shouldLoadPromptStarrySkyRuntime(options = {}) {
+    if (options.force === true) return true;
+    return document.documentElement.getAttribute('data-theme') === 'dark';
+}
+
+function loadPromptStarrySkyRuntime(options = {}) {
+    if (!document.getElementById('starryCanvas') || !shouldLoadPromptStarrySkyRuntime(options)) {
+        return Promise.resolve();
+    }
+
+    if (promptStarrySkyRuntimePromise) {
+        return promptStarrySkyRuntimePromise;
+    }
+
+    const existingScript = document.querySelector('script[data-prompt-starry-sky="1"]');
+    if (existingScript) {
+        return Promise.resolve(existingScript);
+    }
+
+    promptStarrySkyRuntimePromise = new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'starry-sky.js?v=20260501_PROMPTS_IDLE_STARRY_1';
+        script.async = true;
+        script.dataset.promptStarrySky = '1';
+        script.addEventListener('load', () => resolve(script), { once: true });
+        script.addEventListener('error', () => {
+            promptStarrySkyRuntimePromise = null;
+            reject(new Error('Failed to load starry sky runtime'));
+        }, { once: true });
+        document.head.appendChild(script);
+    });
+
+    return promptStarrySkyRuntimePromise;
 }
 
 function schedulePromptsDeferredEnhancements() {
@@ -2981,18 +2337,26 @@ function schedulePromptsDeferredEnhancements() {
     }
     promptsDeferredEnhancementsScheduled = true;
 
-    const kickoff = () => {
-        executePromptsDeferredEnhancements();
-    };
-
-    if (typeof window.requestIdleCallback === 'function') {
-        window.requestIdleCallback(kickoff, { timeout: PROMPTS_DEFERRED_TASK_TIMEOUT_MS });
-    } else {
-        window.setTimeout(kickoff, 700);
-    }
-
-    ['pointerdown', 'keydown', 'touchstart', 'scroll'].forEach((eventName) => {
-        window.addEventListener(eventName, kickoff, { once: true, passive: true });
+    schedulePromptSearchIndexWarmup();
+    schedulePromptIdleTask('spotlight', () => initSpotlight(), {
+        delayMs: PROMPTS_DEFERRED_VISUAL_DELAY_MS,
+        timeoutMs: PROMPTS_DEFERRED_TASK_TIMEOUT_MS
+    });
+    schedulePromptIdleTask('scroll-reveal', () => setupScrollReveal(), {
+        delayMs: PROMPTS_DEFERRED_VISUAL_DELAY_MS,
+        timeoutMs: PROMPTS_DEFERRED_TASK_TIMEOUT_MS
+    });
+    schedulePromptIdleTask('ambient-light', () => initAmbientLight(), {
+        delayMs: PROMPTS_DEFERRED_VISUAL_DELAY_MS + 700,
+        timeoutMs: 2400
+    });
+    schedulePromptIdleTask('starry-sky', () => loadPromptStarrySkyRuntime(), {
+        delayMs: PROMPTS_DEFERRED_VISUAL_DELAY_MS + 1200,
+        timeoutMs: 2400
+    });
+    schedulePromptIdleTask('comment-count-prefetch', () => preloadPromptCommentCounts(), {
+        delayMs: PROMPTS_DEFERRED_COMMENT_COUNT_DELAY_MS,
+        timeoutMs: 3000
     });
 }
 
@@ -3020,7 +2384,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     PROMPTS.forEach((p, i) => p.id = i);
 
     generateDynamicNav(); // New: AI-driven navigation
-    void renderFeaturedBanner(); // New: Today's featured artwork
+    const featuredFirstPaintPromise = renderFeaturedBanner({ waitForFirstImage: true });
+    const galleryConfigPromise = loadGalleryConfigForFirstRender();
 
     // Read URL parameters to set initial tag filter
     const urlParams = new URLSearchParams(window.location.search);
@@ -3041,14 +2406,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
     }
 
+    await featuredFirstPaintPromise;
+    await galleryConfigPromise;
     renderGallery(initialFilter);
     setupFilters();
     setupInfiniteScroll();
     setupSearch(); // Pinterest-style search
     checkAuthState(); // New: Check if admin is logged in
-    void loadGalleryConfig().then((configResult) => {
-        applyLoadedGalleryConfig(configResult);
-    });
     schedulePromptsDeferredEnhancements();
 
     // Fade in nav after fonts load (or timeout)
@@ -3927,7 +3291,7 @@ function applyFeaturedBannerPrompt(featured = null) {
         banner.classList.remove('featured-banner--visible', 'featured-banner--revealed', 'featured-banner--interactive');
         banner.onclick = null;
         banner.dataset.promptId = '';
-        return;
+        return Promise.resolve(false);
     }
 
     const nextPromptId = String(featured?.supabaseId || featured?.id || '').trim();
@@ -3948,14 +3312,18 @@ function applyFeaturedBannerPrompt(featured = null) {
     }
 
     // Set image (use first image from the array)
-    if (image && featured.images && featured.images.length > 0) {
-        image.src = featured.images[0];
+    let featuredImagePromise = Promise.resolve(false);
+    const featuredImageAsset = getPromptPrimaryImageAsset(featured);
+    if (image && featuredImageAsset) {
+        featuredImagePromise = setFeaturedBannerImageSource(image, featuredImageAsset);
         image.loading = 'eager';
         image.decoding = 'async';
         image.setAttribute('fetchpriority', 'high');
         if ('fetchPriority' in image) {
             image.fetchPriority = 'high';
         }
+    } else if (image) {
+        clearFeaturedBannerImageSource(image);
     }
 
     // Set title
@@ -3969,9 +3337,10 @@ function applyFeaturedBannerPrompt(featured = null) {
 
     // Click to open modal
     banner.onclick = () => openPromptModal(featured.id);
+    return featuredImagePromise;
 }
 
-async function renderFeaturedBanner() {
+async function renderFeaturedBanner(options = {}) {
     const banner = document.getElementById('featuredBanner');
     if (!banner) return;
 
@@ -3983,16 +3352,18 @@ async function renderFeaturedBanner() {
     const prefetchedHomepageConfig = readPromptHomepagePrefetchConfig();
     const prefetchedConfiguredFeatured = resolveHomepageFeaturedBannerPrompt(prefetchedHomepageConfig);
     const immediateFeatured = prefetchedConfiguredFeatured || resolveDailyFeaturedPrompt();
-    applyFeaturedBannerPrompt(immediateFeatured);
+    const immediateImagePromise = applyFeaturedBannerPrompt(immediateFeatured);
+    const configuredUpdatePromise = renderFeaturedBannerConfiguredUpdate(immediateFeatured);
 
-    const homepageConfig = await loadHomepagePromptsConfigForBanner();
-    const configuredFeatured = resolveHomepageFeaturedBannerPrompt(homepageConfig);
-    if (configuredFeatured) {
-        applyFeaturedBannerPrompt(configuredFeatured);
+    if (options.waitForFirstImage === true) {
+        await waitForPromptFeaturedFirstImage(immediateImagePromise);
+        void configuredUpdatePromise.catch((error) => {
+            console.warn('[Prompts] Featured banner configured update failed:', error?.message || error);
+        });
         return;
     }
 
-    applyFeaturedBannerPrompt(immediateFeatured);
+    await configuredUpdatePromise;
 }
 
 // ========================================
@@ -4047,6 +3418,7 @@ function initSpotlight() {
 
 // --- Pagination State ---
 let CARDS_PER_PAGE = 20; // Default: 5 rows * 4 columns
+let currentPage = 1;
 let currentFilter = 'all';
 let isLoading = false;
 let allFilteredItems = [];
@@ -4056,10 +3428,11 @@ let renderedCards = new Map(); // Cache rendered cards by id
 // Load gallery config from system_config
 let DEFAULT_SORT = 'newest'; // Default sort order
 
-async function loadGalleryConfig() {
+async function loadGalleryConfig(options = {}) {
     try {
         if (!window.supabaseClient) return null;
 
+        const cancellationToken = options.cancellationToken || null;
         const previousCardsPerPage = CARDS_PER_PAGE;
         const previousSort = DEFAULT_SORT;
 
@@ -4068,6 +3441,10 @@ async function loadGalleryConfig() {
             .select('config_value')
             .eq('config_key', 'gallery')
             .single();
+
+        if (cancellationToken?.cancelled) {
+            return null;
+        }
 
         if (!error && data && data.config_value) {
             const config = data.config_value;
@@ -4098,6 +3475,22 @@ async function loadGalleryConfig() {
     }
 }
 
+function loadGalleryConfigForFirstRender() {
+    const cancellationToken = { cancelled: false };
+    const configPromise = loadGalleryConfig({ cancellationToken });
+    const timeoutPromise = new Promise((resolve) => {
+        window.setTimeout(() => {
+            cancellationToken.cancelled = true;
+            resolve(null);
+        }, PROMPT_GALLERY_CONFIG_FIRST_RENDER_TIMEOUT_MS);
+    });
+
+    return Promise.race([
+        configPromise.catch(() => null),
+        timeoutPromise
+    ]);
+}
+
 function applyLoadedGalleryConfig(configResult) {
     if (!configResult || (!configResult.cardsPerPageChanged && !configResult.defaultSortChanged)) {
         return;
@@ -4112,10 +3505,11 @@ function sortPrompts(sortType) {
 
     // Helper: Extract numeric id from string format like "prompt-123"
     const getNumericId = (item) => {
-        if (!item.id) return 0;
-        if (typeof item.id === 'number') return item.id;
+        const rawId = item?.supabaseId || item?.id;
+        if (!rawId) return 0;
+        if (typeof rawId === 'number') return rawId;
         // Extract number from string like "prompt-42"
-        const match = String(item.id).match(/(\d+)/);
+        const match = String(rawId).match(/(\d+)/);
         return match ? parseInt(match[1], 10) : 0;
     };
 
@@ -4177,6 +3571,7 @@ function sortPrompts(sortType) {
             sortPrompts('newest');
     }
 
+    invalidatePromptSearchCaches();
     console.log('🔄 画廊已排序:', sortType);
 }
 
@@ -4283,19 +3678,21 @@ function renderCurrentPage() {
     warmPromptGalleryLeadImages(itemsToLoad);
 
     itemsToLoad.forEach((item, index) => {
+        const imageAssets = getPromptImageAssets(item);
+        const primaryImageAsset = imageAssets[0] || null;
         const shouldLoadImageEagerly = index < PROMPT_GALLERY_EAGER_IMAGE_COUNT;
         const card = document.createElement('div');
         card.className = 'prompt-card card-enter prompt-card--loading';
         card.dataset.tags = item.tags.join(','); // For CSS filtering
         card.dataset.id = item.id;
-        card.dataset.images = JSON.stringify(item.images); // Store all images
+        card.dataset.images = JSON.stringify(imageAssets); // Store all images
         card.onclick = () => openPromptModal(item.id);
         setPromptCardStaggerClass(card, index);
 
         // Generate image indicator dots if multiple images
-        const hasMultiple = item.images.length > 1;
+        const hasMultiple = imageAssets.length > 1;
         const indicators = hasMultiple
-            ? `<div class="card-indicators">${item.images.map((_, i) => `<span class="indicator-dot${i === 0 ? ' active' : ''}"></span>`).join('')}</div>`
+            ? `<div class="card-indicators">${imageAssets.map((_, i) => `<span class="indicator-dot${i === 0 ? ' active' : ''}"></span>`).join('')}</div>`
             : '';
 
         // Check if item is already saved
@@ -4332,14 +3729,14 @@ function renderCurrentPage() {
             if ('fetchPriority' in cardImage) {
                 cardImage.fetchPriority = shouldLoadImageEagerly ? 'high' : 'auto';
             }
-            setPromptCardImageSource(cardImage, item.images[0]);
+            setPromptCardImageSource(cardImage, primaryImageAsset);
         }
         cardImage?.addEventListener('load', () => {
             markPromptCardImageReady(card, cardImage);
         });
         cardImage?.addEventListener('error', () => {
             const transformFallbackSrc = cardImage.dataset.transformFallbackSrc;
-            const originalSrc = cardImage.dataset.originalSrc || item.images[0];
+            const originalSrc = cardImage.dataset.originalSrc || getPromptImageAssetOriginalUrl(primaryImageAsset);
 
             if (!cardImage.dataset.fallbackStage && transformFallbackSrc && cardImage.src !== transformFallbackSrc) {
                 cardImage.dataset.fallbackStage = 'transform';
@@ -4387,16 +3784,17 @@ function renderCurrentPage() {
             });
         }
 
-        grid.appendChild(card);
+            grid.appendChild(card);
 
-        // Trigger animation with stagger delay
-        const staggerDelay = index * 50;
-        setTimeout(() => {
-            card.classList.add('card-visible');
+            // Trigger animation with stagger delay
+            const staggerDelay = index * 50;
+            const visibleIndex = index;
             setTimeout(() => {
-                card.classList.add('breathing');
-            }, 850);
-        }, staggerDelay);
+	            showPromptCard(card, visibleIndex);
+	            setTimeout(() => {
+	                card.classList.add('breathing');
+	            }, 850);
+	        }, staggerDelay);
     });
 
     isLoading = false;
@@ -4794,21 +4192,20 @@ function setupSearch() {
 
         // Collect matching suggestions
         const suggestions = new Set();
-        const lowerQuery = query.toLowerCase();
+        const lowerQuery = normalizePromptSearchText(query);
 
         PROMPTS.forEach(p => {
-            // Match titles
-            if (p.title && p.title.toLowerCase().includes(lowerQuery)) {
-                suggestions.add(p.title);
-            }
-            // Match tags
-            if (p.tags) {
-                p.tags.forEach(tag => {
-                    if (tag.toLowerCase().includes(lowerQuery)) {
-                        suggestions.add(tag);
-                    }
-                });
-            }
+            collectPromptSearchValues({
+                title: p.title,
+                title_en: p.title_en,
+                title_zh: p.title_zh,
+                tags: p.tags,
+                aiTags: p.aiTags || p.ai_tags
+            }).forEach((value) => {
+                if (normalizePromptSearchText(value).includes(lowerQuery)) {
+                    suggestions.add(value);
+                }
+            });
         });
 
         const suggestionArray = Array.from(suggestions).slice(0, 5); // Reduced to 5 for inline tags
@@ -4916,16 +4313,13 @@ function setupSearch() {
 }
 
 async function filterBySearch(query) {
-    const cards = document.querySelectorAll('.prompt-card');
+    const normalizedQuery = normalizePromptSearchText(query);
+    const searchRequestId = ++PROMPT_SEARCH_REQUEST_ID;
 
     // If no query, show all cards
-    if (!query) {
-        let visibleIndex = 0;
-        cards.forEach(card => {
-            showPromptCard(card, visibleIndex);
-            visibleIndex++;
-        });
-        // Re-select "All" when search cleared
+    if (!normalizedQuery) {
+        renderGallery('all', true);
+        document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
         const allItem = document.querySelector('.nav-item[data-filter="all"]');
         if (allItem) allItem.classList.add('active');
         return;
@@ -4950,7 +4344,7 @@ async function filterBySearch(query) {
     // Check if query is a color search
     let searchingForColor = null;
     for (const [colorKey, aliases] of Object.entries(COLOR_MAP)) {
-        if (aliases.some(alias => query.includes(alias))) {
+        if (aliases.some(alias => normalizedQuery.includes(alias))) {
             searchingForColor = colorKey;
             break;
         }
@@ -4959,12 +4353,36 @@ async function filterBySearch(query) {
     // === 3-LAYER SEARCH STRATEGY ===
 
     // Layer 1 & 2: Local search (instant, no network)
-    const localResults = performLocalSearch(query, searchingForColor);
-    console.log(`🔍 Local search: found ${localResults.size} results for "${query}"`);
+    const localResults = performLocalSearch(normalizedQuery, searchingForColor);
+    console.log(`🔍 Local search: found ${localResults.size} results for "${normalizedQuery}"`);
 
     // If local search found results, use them directly
     if (localResults.size > 0) {
-        applySearchResults(cards, localResults, searchingForColor);
+        applySearchResults(localResults, searchingForColor);
+        if (shouldPromptSearchHydrateDetails(normalizedQuery)) {
+            void refinePromptSearchWithDetails(normalizedQuery, searchingForColor, localResults, searchRequestId);
+        }
+        return;
+    }
+
+    if (!shouldPromptSearchHydrateDetails(normalizedQuery)) {
+        applySearchResults(new Set(), searchingForColor);
+        return;
+    }
+
+    await refinePromptSearchWithDetails(normalizedQuery, searchingForColor, localResults, searchRequestId);
+    if (!isPromptSearchRequestCurrent(searchRequestId, normalizedQuery)) {
+        return;
+    }
+
+    const hydratedResults = performLocalSearch(normalizedQuery, searchingForColor);
+    if (hydratedResults.size > 0) {
+        applySearchResults(hydratedResults, searchingForColor);
+        return;
+    }
+
+    if (!shouldPromptSearchUseAiFallback(normalizedQuery)) {
+        applySearchResults(new Set(), searchingForColor);
         return;
     }
 
@@ -4973,43 +4391,50 @@ async function filterBySearch(query) {
     if (!isAdmin && !checkAISearchRateLimit()) {
         console.log('⏳ AI search rate limited');
         showSearchCooldownMessage();
-        applySearchResults(cards, new Set(), searchingForColor); // Show no results
+        applySearchResults(new Set(), searchingForColor); // Show no results
         return;
     }
 
     // Trigger AI semantic search
     console.log('🔍 Local search: 0 results, triggering AI semantic search...');
     const aiResults = await performAISemanticSearch(query);
+    if (!isPromptSearchRequestCurrent(searchRequestId, normalizedQuery)) {
+        return;
+    }
 
     if (aiResults.size > 0) {
         console.log(`✨ AI search: found ${aiResults.size} results`);
-        applySearchResults(cards, aiResults, searchingForColor);
+        applySearchResults(aiResults, searchingForColor);
     } else {
         console.log('❌ AI search: no results found');
-        applySearchResults(cards, new Set(), searchingForColor);
+        applySearchResults(new Set(), searchingForColor);
     }
 }
 
 // Expand query using synonym dictionary
 function expandSynonyms(query) {
-    const q = query.toLowerCase();
+    const q = normalizePromptSearchText(query);
     const expanded = new Set([q]);
+    const isSingleCjkQuery = isPromptSearchSingleCjkTerm(q);
 
     for (const [key, synonyms] of Object.entries(SYNONYM_DICTIONARY)) {
-        const allTerms = [key, ...synonyms].map(s => s.toLowerCase());
-        if (allTerms.some(term => q.includes(term) || term.includes(q))) {
-            allTerms.forEach(s => expanded.add(s.toLowerCase()));
+        const allTerms = [key, ...synonyms].map(normalizePromptSearchText).filter(Boolean);
+        const shouldExpand = isSingleCjkQuery
+            ? allTerms.includes(q)
+            : allTerms.some(term => q.includes(term) || term.includes(q));
+        if (shouldExpand) {
+            allTerms.forEach(s => expanded.add(s));
         }
     }
 
-    return Array.from(expanded);
+    return Array.from(expanded).filter(hasPromptSearchSignal);
 }
 
 // Layer 1 & 2: Local search with synonym expansion + index optimization
 // 【优化】原始词做精确+部分匹配，同义词只做精确匹配
 function performLocalSearch(query, searchingForColor) {
     const matchedIds = new Set();
-    const originalQuery = query.toLowerCase().trim();
+    const originalQuery = normalizePromptSearchText(query);
     const expandedTerms = expandSynonyms(query);
 
     console.log(`🔄 Expanded terms: [${expandedTerms.slice(0, 5).join(', ')}${expandedTerms.length > 5 ? '...' : ''}]`);
@@ -5025,6 +4450,7 @@ function performLocalSearch(query, searchingForColor) {
     }
 
     if (!SEARCH_INDEX) buildSearchIndex();
+    if (!SEARCH_INDEX) return matchedIds;
 
     console.log(`📊 Index size: ${Object.keys(SEARCH_INDEX).length} terms`);
 
@@ -5034,7 +4460,7 @@ function performLocalSearch(query, searchingForColor) {
         SEARCH_INDEX[originalQuery].forEach(id => matchedIds.add(id));
     }
     // 部分匹配 - 只对原始搜索词进行
-    if (originalQuery.length >= 2) {
+    if (shouldPromptSearchUsePartialIndexTerm(originalQuery)) {
         const partialMatches = [];
         Object.keys(SEARCH_INDEX).forEach(indexedTerm => {
             if (indexedTerm.includes(originalQuery)) {
@@ -5054,19 +4480,16 @@ function performLocalSearch(query, searchingForColor) {
         }
     });
 
-    // If index search found nothing, fall back to linear search for fuzzy matching
-    if (matchedIds.size === 0) {
-        console.log('📝 Index miss, using linear fallback...');
+    // Also scan body fields so prompts whose visual words only live in descriptions still match.
+    const searchableBodyTerms = expandedTerms.filter(shouldPromptSearchUseBodyTerm);
+    if (searchableBodyTerms.length > 0) {
         PROMPTS.forEach((item, index) => {
             if (!item) return;
+            const haystack = getPromptSearchHaystack(item);
 
-            for (const term of expandedTerms) {
-                // Check description and prompt text (not indexed)
-                const descMatch = item.description?.toLowerCase().includes(term);
-                const promptMatch = item.prompt?.toLowerCase().includes(term);
-
-                if (descMatch || promptMatch) {
-                    matchedIds.add(index);
+            for (const term of searchableBodyTerms) {
+                if (term && promptSearchHaystackMatchesTerm(haystack, term)) {
+                    matchedIds.add(item.id ?? index);
                     break;
                 }
             }
@@ -5074,6 +4497,34 @@ function performLocalSearch(query, searchingForColor) {
     }
 
     return matchedIds;
+}
+
+function isPromptSearchQueryCurrent(normalizedQuery = '') {
+    const searchInput = document.getElementById('gallerySearch');
+    if (!searchInput) return true;
+    return normalizePromptSearchText(searchInput.value) === normalizePromptSearchText(normalizedQuery);
+}
+
+function isPromptSearchRequestCurrent(searchRequestId, normalizedQuery = '') {
+    return searchRequestId === PROMPT_SEARCH_REQUEST_ID && isPromptSearchQueryCurrent(normalizedQuery);
+}
+
+async function refinePromptSearchWithDetails(normalizedQuery, searchingForColor, baseResults = new Set(), searchRequestId = PROMPT_SEARCH_REQUEST_ID) {
+    const detailsChanged = await hydratePromptSearchDetails();
+    if (!detailsChanged || !isPromptSearchRequestCurrent(searchRequestId, normalizedQuery)) {
+        return baseResults;
+    }
+
+    const refinedResults = performLocalSearch(normalizedQuery, searchingForColor);
+    const combinedResults = new Set(baseResults);
+    refinedResults.forEach((id) => combinedResults.add(id));
+
+    if (combinedResults.size > baseResults.size) {
+        applySearchResults(combinedResults, searchingForColor);
+        return combinedResults;
+    }
+
+    return baseResults;
 }
 
 // Check AI search rate limit (returns true if allowed)
@@ -5183,27 +4634,7 @@ Return ONLY a JSON array of lowercase tags, no explanation:
         // Search for these AI-extracted tags locally
         if (Array.isArray(aiTags)) {
             for (const tag of aiTags) {
-                const tagLower = tag.toLowerCase();
-                PROMPTS.forEach((item, index) => {
-                    if (!item) return;
-
-                    // Check title, tags, aiTags
-                    const titleMatch = item.title?.toLowerCase().includes(tagLower);
-                    const tagMatch = item.tags?.some(t => t.toLowerCase().includes(tagLower));
-
-                    let aiMatch = false;
-                    if (item.aiTags) {
-                        const searchIn = (arr) => arr && arr.some(t => t && t.toLowerCase().includes(tagLower));
-                        aiMatch = searchIn(item.aiTags.objects?.en) ||
-                            searchIn(item.aiTags.styles?.en) ||
-                            searchIn(item.aiTags.scenes?.en) ||
-                            searchIn(item.aiTags.mood?.en);
-                    }
-
-                    if (titleMatch || tagMatch || aiMatch) {
-                        matchedIds.add(index);
-                    }
-                });
+                performLocalSearch(String(tag || ''), null).forEach((id) => matchedIds.add(id));
             }
         }
     } catch (e) {
@@ -5214,30 +4645,28 @@ Return ONLY a JSON array of lowercase tags, no explanation:
 }
 
 // Apply search results to cards with animation
-function applySearchResults(cards, matchedIds, searchingForColor) {
-    let visibleIndex = 0;
+function applySearchResults(matchedIds, searchingForColor) {
+    const matchedKeys = new Set();
+    matchedIds.forEach((id) => {
+        matchedKeys.add(id);
+        matchedKeys.add(String(id));
+    });
 
-    cards.forEach(card => {
-        const cardId = parseInt(card.dataset.id);
-        const item = PROMPTS[cardId];
+    currentFilter = 'search';
+    currentPage = 1;
+    allFilteredItems = PROMPTS.filter((item, index) => {
         if (!item) return;
 
-        let isVisible = matchedIds.has(cardId);
+        let isVisible = matchedKeys.has(item.id) || matchedKeys.has(String(item.id)) || matchedKeys.has(index) || matchedKeys.has(String(index));
 
-        // For color searches with no AI semantic involvement, also check colors
         if (searchingForColor && !isVisible) {
             isVisible = item.dominantColors && item.dominantColors.includes(searchingForColor);
         }
 
-        if (isVisible) {
-            showPromptCard(card, visibleIndex);
-            visibleIndex++;
-        } else {
-            hidePromptCard(card, false);
-        }
+        return isVisible;
     });
 
-    // Update nav items - deselect all when searching
+    renderCurrentPage();
     document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
 }
 
@@ -5479,9 +4908,6 @@ function handlePromptModalTopButton() {
 function initializePromptStaticControls() {
     if (window.__promptStaticControlsBound) return;
 
-    document.getElementById('announcementCloseBtn')?.addEventListener('click', () => {
-        closeAnnouncement(true);
-    });
     document.getElementById('promptModalTopBtn')?.addEventListener('click', () => {
         handlePromptModalTopButton();
     });
@@ -6058,13 +5484,78 @@ function primePromptModalKeyboardDock() {
     scrollPromptModalPageToBase();
 }
 
+function getPromptDetailLoadingText() {
+    return getCurrentLanguage() === 'en' ? 'Loading prompt details...' : '提示词详情加载中...';
+}
+
+function setPromptDetailLoadingState(promptText) {
+    if (!promptText) return;
+    promptText.classList.add('prompt-text--loading');
+    promptText.setAttribute('role', 'status');
+    promptText.setAttribute('aria-live', 'polite');
+    promptText.setAttribute('aria-label', getPromptDetailLoadingText());
+    promptText.innerHTML = `
+        <span class="prompt-detail-loading-dots" aria-hidden="true">
+            <span></span><span></span><span></span>
+        </span>
+    `;
+}
+
+function setPromptDetailTextState(promptText, text = '') {
+    if (!promptText) return;
+    promptText.classList.remove('prompt-text--loading');
+    promptText.removeAttribute('role');
+    promptText.removeAttribute('aria-live');
+    promptText.removeAttribute('aria-label');
+    promptText.textContent = text;
+}
+
+function setPromptModalPromptContent(promptText, item = {}) {
+    if (hasPromptDetailBody(item)) {
+        setPromptDetailTextState(promptText, getPromptModalPromptText(item));
+        return;
+    }
+    setPromptDetailLoadingState(promptText);
+}
+
+function getPromptDetailUnavailableText() {
+    return getCurrentLanguage() === 'en' ? 'Prompt details are temporarily unavailable.' : '提示词详情暂时不可用。';
+}
+
+function getPromptModalPromptText(item = {}) {
+    if (hasPromptDetailBody(item)) {
+        return getLocalizedField(item, 'prompt_text') || item.prompt || '';
+    }
+    return getPromptDetailLoadingText();
+}
+
+function applyPromptModalDetailContent(item = {}) {
+    const title = document.getElementById('modalTitle');
+    const description = document.getElementById('modalDesc');
+    const promptText = document.getElementById('modalPromptText');
+
+    if (title) {
+        title.textContent = getLocalizedField(item, 'title') || item.title || '';
+    }
+    if (description) {
+        description.textContent = getLocalizedField(item, 'description');
+    }
+    if (promptText) {
+        setPromptDetailTextState(promptText, hasPromptDetailBody(item)
+            ? getPromptModalPromptText(item)
+            : getPromptDetailUnavailableText());
+    }
+}
+
 function openPromptModal(id) {
     const item = PROMPTS.find(p => p.id === id);
     if (!item) return;
+    const detailPromise = ensurePromptDetailLoaded(item);
 
     promptModalBaseScrollY = window.scrollY || window.pageYOffset || 0;
 
     currentPromptId = item.supabaseId || item.id; // Prefer persistent UUID if available
+    const modalPromptId = String(currentPromptId || '').trim();
     console.log('[DEBUG] openPromptModal opening:', {
         localId: id,
         supabaseId: currentPromptId,
@@ -6138,7 +5629,9 @@ function openPromptModal(id) {
     _copyInProgress = false;
 
     // Store images for navigation
-    currentModalImages = item.images || [];
+    currentModalImages = getPromptImageAssets(item)
+        .map(getPromptModalImageUrl)
+        .filter(Boolean);
     currentModalImageIndex = 0;
 
     // Reset Image Container - remove ALL images (including leftovers from transitions)
@@ -6153,7 +5646,7 @@ function openPromptModal(id) {
     const newImg = document.createElement('img');
     newImg.id = 'modalImg';
     newImg.className = 'active';
-    newImg.src = currentModalImages[0];
+    newImg.src = currentModalImages[0] || '';
     newImg.alt = getLocalizedField(item, 'title');
 
     // Insert before nav buttons
@@ -6165,7 +5658,18 @@ function openPromptModal(id) {
     document.getElementById('modalDesc').textContent = getLocalizedField(item, 'description');
 
     // Set prompt text (ensure clean connection) - use localized version if available
-    promptText.textContent = getLocalizedField(item, 'prompt_text') || item.prompt;
+    setPromptModalPromptContent(promptText, item);
+    detailPromise
+        .then((updatedItem) => {
+            if (String(currentPromptId || '').trim() !== modalPromptId) return;
+            applyPromptModalDetailContent(updatedItem);
+        })
+        .catch((error) => {
+            console.warn('Failed to load prompt detail:', error?.message || error);
+            if (String(currentPromptId || '').trim() === modalPromptId) {
+                setPromptDetailTextState(promptText, getPromptDetailUnavailableText());
+            }
+        });
 
     // Tags hidden as per user request
     const tagsContainer = document.getElementById('modalTags');
@@ -6597,8 +6101,24 @@ function setPromptUnlocked() {
     // Find prompt in PROMPTS (supabaseId or id match)
     const promptItem = PROMPTS.find(p => p.supabaseId === promptId || p.id === promptId);
     if (promptItem) {
-        // Use localized field to respect language preference
-        promptText.textContent = getLocalizedField(promptItem, 'prompt_text') || promptItem.prompt;
+        if (hasPromptDetailBody(promptItem)) {
+            setPromptDetailTextState(promptText, getPromptModalPromptText(promptItem));
+        } else {
+            setPromptDetailLoadingState(promptText);
+            ensurePromptDetailLoaded(promptItem)
+                .then((updatedItem) => {
+                    if (currentPromptId !== promptId) return;
+                    setPromptDetailTextState(promptText, hasPromptDetailBody(updatedItem)
+                        ? getPromptModalPromptText(updatedItem)
+                        : getPromptDetailUnavailableText());
+                })
+                .catch((error) => {
+                    console.warn('Failed to load unlocked prompt detail:', error?.message || error);
+                    if (currentPromptId === promptId) {
+                        setPromptDetailTextState(promptText, getPromptDetailUnavailableText());
+                    }
+                });
+        }
     }
 
     // Reset copy lock when unlocking (in case it's stuck)

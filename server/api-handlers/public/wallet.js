@@ -91,6 +91,82 @@ function normalizeGuidanceText(value) {
     return typeof value === 'string' ? value.trim() : '';
 }
 
+function containsGuidanceCjkText(value) {
+    return /[\u3400-\u9fff\uf900-\ufaff]/.test(String(value || ''));
+}
+
+function normalizeGuidanceSite(value = 'cn') {
+    const normalized = String(value || 'cn').trim().toLowerCase();
+    return normalized === 'intl' || normalized === 'en' ? 'intl' : 'cn';
+}
+
+function resolveLocalizedGuidanceText(product = {}, baseField = '', guidanceSite = 'cn') {
+    const siteKey = normalizeGuidanceSite(guidanceSite);
+    const legacyText = normalizeGuidanceText(product?.[baseField]);
+    const zhText = normalizeGuidanceText(product?.[`${baseField}_zh`]);
+    const enText = normalizeGuidanceText(product?.[`${baseField}_en`]);
+
+    if (siteKey === 'intl') {
+        const candidate = enText || legacyText;
+        return containsGuidanceCjkText(candidate) ? '' : candidate;
+    }
+
+    return zhText || legacyText || enText;
+}
+
+function getProductGuidanceSelectClause({ bilingual = true, purchaseNotes = true } = {}) {
+    const fields = [];
+    if (purchaseNotes) {
+        fields.push(
+            'show_purchase_notes',
+            'purchase_notes',
+            ...(bilingual ? ['purchase_notes_zh', 'purchase_notes_en'] : [])
+        );
+    }
+    fields.push(
+        'show_usage_instructions',
+        'usage_instructions',
+        ...(bilingual ? ['usage_instructions_zh', 'usage_instructions_en'] : [])
+    );
+    return fields.join(', ');
+}
+
+async function loadProductGuidanceRow(client, normalizedProductId) {
+    const selectAttempts = [
+        getProductGuidanceSelectClause({ bilingual: true, purchaseNotes: true }),
+        getProductGuidanceSelectClause({ bilingual: false, purchaseNotes: true }),
+        getProductGuidanceSelectClause({ bilingual: false, purchaseNotes: false })
+    ];
+
+    let lastError = null;
+    for (const selectClause of selectAttempts) {
+        const { data, error } = await client
+            .from('shop_products')
+            .select(selectClause)
+            .eq('id', normalizedProductId)
+            .maybeSingle();
+
+        if (!error) {
+            return { data, error: null };
+        }
+
+        lastError = error;
+        const isGuidanceColumnMissing = [
+            'purchase_notes',
+            'show_purchase_notes',
+            'purchase_notes_zh',
+            'purchase_notes_en',
+            'usage_instructions_zh',
+            'usage_instructions_en'
+        ].some((field) => isMissingColumnError(error) && String(error?.message || '').toLowerCase().includes(field));
+        if (!isGuidanceColumnMissing) {
+            return { data: null, error };
+        }
+    }
+
+    return { data: null, error: lastError };
+}
+
 function isUuid(value) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
 }
@@ -114,6 +190,78 @@ async function loadPromptTitles(client, promptIds = []) {
         result[prompt.id] = normalizeText(prompt.title, 240);
         return result;
     }, {});
+}
+
+async function loadShopProductNameMap(client, productIds = []) {
+    const normalizedProductIds = [...new Set(
+        (productIds || []).map((item) => normalizeText(item, 160)).filter((item) => isUuid(item))
+    )];
+    if (!normalizedProductIds.length) {
+        return new Map();
+    }
+
+    const selectAttempts = [
+        'id, name, name_en',
+        'id, name'
+    ];
+
+    let rows = [];
+    for (const selectClause of selectAttempts) {
+        const { data, error } = await client
+            .from('shop_products')
+            .select(selectClause)
+            .in('id', normalizedProductIds);
+
+        if (!error) {
+            rows = data || [];
+            break;
+        }
+
+        if (!isMissingColumnError(error) || selectClause === selectAttempts[selectAttempts.length - 1]) {
+            throw error;
+        }
+    }
+
+    return new Map((rows || []).map((row) => [
+        normalizeText(row?.id, 160),
+        {
+            id: normalizeText(row?.id, 160),
+            name: normalizeText(row?.name, 240),
+            name_en: normalizeText(row?.name_en, 240)
+        }
+    ]).filter(([id]) => id));
+}
+
+async function attachShopProductSnapshots(client, orders = []) {
+    const normalizedOrders = Array.isArray(orders) ? orders : [];
+    const productMap = await loadShopProductNameMap(
+        client,
+        normalizedOrders.map((order) => order?.product_id)
+    );
+
+    return normalizedOrders.map((order) => {
+        const productId = normalizeText(order?.product_id, 160);
+        const product = productMap.get(productId) || null;
+        const productPayload = product
+            ? {
+                id: product.id,
+                name: product.name,
+                name_en: product.name_en
+            }
+            : null;
+
+        return {
+            ...order,
+            snapshot_product_name_en: product?.name_en || '',
+            shop_product: productPayload,
+            shop_order_items: Array.isArray(order?.shop_order_items)
+                ? order.shop_order_items.map((item) => ({
+                    ...item,
+                    name_en: product?.name_en || ''
+                }))
+                : order?.shop_order_items
+        };
+    });
 }
 
 async function loadWalletBalanceRows(client, userId) {
@@ -223,6 +371,7 @@ async function queryWalletBrowseData(client, { userId, site, limit }) {
                 item_count,
                 status,
                 created_at,
+                product_id,
                 snapshot_product_name,
                 shop_order_items (
                     id,
@@ -257,7 +406,7 @@ async function queryWalletBrowseData(client, { userId, site, limit }) {
     );
 
     return {
-        shopOrders: dedupeRowsById(shopOrdersResult.data || []),
+        shopOrders: await attachShopProductSnapshots(client, dedupeRowsById(shopOrdersResult.data || [])),
         ledgerEntries: dedupeRowsById(ledgerEntries),
         promptTitles
     };
@@ -288,6 +437,7 @@ async function queryWalletSearchData(client, { userId, site, query, searchLimit 
                 item_count,
                 status,
                 created_at,
+                product_id,
                 snapshot_product_name,
                 shop_order_items (
                     id,
@@ -343,6 +493,7 @@ async function queryWalletSearchData(client, { userId, site, query, searchLimit 
                     item_count,
                     status,
                     created_at,
+                    product_id,
                     snapshot_product_name,
                     shop_order_items (
                         id,
@@ -477,7 +628,7 @@ async function queryWalletSearchData(client, { userId, site, query, searchLimit 
     );
 
     return {
-        shopOrders: dedupeRowsById(shopOrders),
+        shopOrders: await attachShopProductSnapshots(client, dedupeRowsById(shopOrders)),
         ledgerEntries: normalizedLedgerEntries,
         promptTitles: {
             ...promptTitles,
@@ -653,7 +804,7 @@ async function findWalletVerifyLog(client, {
     };
 }
 
-async function loadWalletShopOrderDetail(client, { orderId = '', userId = '' } = {}) {
+async function loadWalletShopOrderDetail(client, { orderId = '', userId = '', site = 'cn' } = {}) {
     const normalizedOrderId = normalizeText(orderId, 160);
     const normalizedUserId = normalizeText(userId, 160);
 
@@ -702,52 +853,39 @@ async function loadWalletShopOrderDetail(client, { orderId = '', userId = '' } =
             return { purchaseNotes, usageInstructions };
         }
 
-        let productGuidanceRow = null;
-        const { data: guidanceData, error: productGuidanceError } = await client
-            .from('shop_products')
-            .select('show_purchase_notes, purchase_notes, show_usage_instructions, usage_instructions')
-            .eq('id', normalizedProductId)
-            .maybeSingle();
-
+        const { data: productGuidanceRow, error: productGuidanceError } = await loadProductGuidanceRow(
+            client,
+            normalizedProductId
+        );
         if (productGuidanceError) {
-            if (
-                isMissingColumnError(productGuidanceError)
-                && (
-                    String(productGuidanceError?.message || '').includes('purchase_notes')
-                    || String(productGuidanceError?.message || '').includes('show_purchase_notes')
-                )
-            ) {
-                const { data: legacyGuidanceData, error: legacyGuidanceError } = await client
-                    .from('shop_products')
-                    .select('show_usage_instructions, usage_instructions')
-                    .eq('id', normalizedProductId)
-                    .maybeSingle();
-
-                if (legacyGuidanceError) {
-                    throw legacyGuidanceError;
-                }
-                productGuidanceRow = legacyGuidanceData;
-            } else {
-                throw productGuidanceError;
-            }
-        } else {
-            productGuidanceRow = guidanceData;
+            throw productGuidanceError;
         }
 
         purchaseNotes = productGuidanceRow?.show_purchase_notes
-            ? normalizeGuidanceText(productGuidanceRow?.purchase_notes)
+            ? resolveLocalizedGuidanceText(productGuidanceRow, 'purchase_notes', site)
             : '';
         usageInstructions = productGuidanceRow?.show_usage_instructions
-            ? normalizeGuidanceText(productGuidanceRow?.usage_instructions)
+            ? resolveLocalizedGuidanceText(productGuidanceRow, 'usage_instructions', site)
             : '';
 
         return { purchaseNotes, usageInstructions };
     })();
 
-    const [orderItems, guidance] = await Promise.all([
+    const productNamesPromise = loadShopProductNameMap(client, [normalizedProductId]);
+
+    const [orderItems, guidance, productNameMap] = await Promise.all([
         orderItemsPromise,
-        guidancePromise
+        guidancePromise,
+        productNamesPromise
     ]);
+    const orderProduct = productNameMap.get(normalizedProductId) || null;
+    const orderProductPayload = orderProduct
+        ? {
+            id: orderProduct.id,
+            name: orderProduct.name,
+            name_en: orderProduct.name_en
+        }
+        : null;
 
     const inventoryIds = [...new Set(
         [
@@ -784,6 +922,8 @@ async function loadWalletShopOrderDetail(client, { orderId = '', userId = '' } =
                 id: item?.id || null,
                 inventory_id: inventoryId || null,
                 name: item?.snapshot_product_name || order?.snapshot_product_name || '未知商品',
+                name_en: orderProduct?.name_en || '',
+                shop_product: orderProductPayload,
                 content: inventoryId ? (inventoryContentMap.get(inventoryId) || '') : '',
                 price: Number(item?.price_paid || 0) || 0
             };
@@ -792,6 +932,8 @@ async function loadWalletShopOrderDetail(client, { orderId = '', userId = '' } =
             id: null,
             inventory_id: String(order?.inventory_id || '').trim() || null,
             name: order?.snapshot_product_name || '未知商品',
+            name_en: orderProduct?.name_en || '',
+            shop_product: orderProductPayload,
             content: inventoryContentMap.get(String(order?.inventory_id || '').trim()) || '',
             price: Number(order?.price_paid || 0) || 0
         }];
@@ -803,6 +945,8 @@ async function loadWalletShopOrderDetail(client, { orderId = '', userId = '' } =
             product_id: order.product_id || null,
             inventory_id: order.inventory_id || null,
             snapshot_product_name: order.snapshot_product_name || '',
+            snapshot_product_name_en: orderProduct?.name_en || '',
+            shop_product: orderProductPayload,
             price_paid: Number(order.price_paid || 0) || 0,
             total_price: order.total_price == null ? null : (Number(order.total_price) || 0),
             discount_code: order.discount_code || null,
@@ -1052,6 +1196,7 @@ function createWalletHandlers({
                     ? await parseJsonBody(req)
                     : (req?.body && typeof req.body === 'object' ? req.body : {});
                 const orderId = normalizeText(body?.orderId || body?.order_id || '', 160);
+                const currentSite = requireSupportedSite(body.site || req?.query?.site || 'cn', { fieldName: 'site' });
 
                 if (!isUuid(orderId)) {
                     return sendJson(res, 400, {
@@ -1064,7 +1209,8 @@ function createWalletHandlers({
                     success: true,
                     data: await loadWalletShopOrderDetail(client, {
                         orderId,
-                        userId: user.id
+                        userId: user.id,
+                        site: currentSite
                     })
                 });
             } catch (error) {

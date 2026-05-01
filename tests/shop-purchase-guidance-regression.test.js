@@ -17,10 +17,12 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     const walletModalSource = readRepoFile(path.join('js', 'components', 'WalletModal.js'));
     const shopHtmlSource = readRepoFile('shop.html');
     const shopCssSource = readRepoFile(path.join('css', 'shop-page.css'));
+    const publicScrollbarSource = readRepoFile(path.join('js', 'public-scrollbar-auto-hide.js'));
+    const publicScrollbarCss = readRepoFile(path.join('css', 'public-scrollbar-auto-hide.css'));
 
     assert.match(
         shopClientSource,
-        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260423_PRODUCT_DESCRIPTION_VISIBILITY_1';/,
+        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260430_SHOP_GUIDANCE_BILINGUAL_1';/,
         'shop-client.js should define a dedicated schema version for prefetched shop payloads'
     );
     assert.match(
@@ -70,7 +72,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         homeBootstrapSource,
-        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260423_PRODUCT_DESCRIPTION_VISIBILITY_1';/,
+        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260430_SHOP_GUIDANCE_BILINGUAL_1';/,
         'homepage shop prefetch should use the same guidance-aware schema version'
     );
     assert.match(
@@ -95,8 +97,8 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /\.from\('shop_products'\)\s*\.select\('show_purchase_notes, purchase_notes, show_usage_instructions, usage_instructions'\)/s,
-        'shop-client.js should keep a direct product guidance fallback for local and static preview environments'
+        /guidanceSelect = 'show_purchase_notes, purchase_notes, purchase_notes_zh, purchase_notes_en, show_usage_instructions, usage_instructions, usage_instructions_zh, usage_instructions_en'/,
+        'shop-client.js should keep a bilingual direct product guidance fallback for local and static preview environments'
     );
     assert.match(
         shopHandlerSource,
@@ -110,8 +112,13 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHandlerSource,
-        /usage_instructions: normalizeGuidanceText\(responseData\.usage_instructions\) \|\| guidanceData\?\.usage_instructions \|\| null/,
-        'purchase responses should fall back to the server-side product guidance when the RPC omits usage instructions'
+        /usage_instructions: guidanceData\?\.usage_instructions \|\| normalizeGuidanceText\(responseData\.usage_instructions\) \|\| null/,
+        'purchase responses should prefer server-side localized product guidance over legacy RPC usage instructions'
+    );
+    assert.match(
+        shopHandlerSource,
+        /resolveLocalizedGuidanceText\(product = \{\}, baseField = '', guidanceSite = 'cn'\)/,
+        'shared shop handlers should resolve purchase guidance from bilingual fields by site'
     );
     assert.match(
         shopHandlerSource,
@@ -150,7 +157,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /js\/shop-client\.js\?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1/,
+        /js\/shop-client\.js\?v=20260430_SHOP_LANGUAGE_BREATHE_1/,
         'shop.html should load the purchase-guidance rich-text runtime with the visible yellow normalization fix'
     );
     assert.match(
@@ -175,8 +182,8 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /const shouldWaitForLiveAvailableItems = discountAssetsLoading[\s\S]*currentlyUnavailableItems\.length > 0;[\s\S]*if \(\(\!ownedItems\.length && !claimableItems\.length\) \|\| shouldWaitForLiveAvailableItems\) \{\s+container\.innerHTML = discountAssetsLoading\s+\? '<div class="shop-discount-assets-empty">正在同步当前商品可用卡券\.\.\.<\/div>'/s,
-        'purchase modal should keep the unified loading state while only stale unavailable coupon prefills are present'
+        /const shouldWaitForLiveAvailableItems = discountAssetsLoading[\s\S]*currentlyUnavailableItems\.length > 0;[\s\S]*if \(\(\!ownedItems\.length && !claimableItems\.length\) \|\| shouldWaitForLiveAvailableItems\) \{\s+container\.innerHTML = discountAssetsLoading\s+\? `<div class="shop-discount-assets-empty">\$\{this\.trShop\('syncingCurrentCoupons', '正在同步当前商品可用卡券\.\.\.'\)\}<\/div>`[\s\S]*: `<div class="shop-discount-assets-empty">\$\{this\.trShop\('noSelectableCoupons', '当前没有可直接选择的卡券，仍可继续输入暗码。'\)\}<\/div>`;/s,
+        'purchase modal should keep the localized unified loading state while only stale unavailable coupon prefills are present'
     );
     assert.doesNotMatch(
         shopHtmlSource,
@@ -232,6 +239,16 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         shopClientSource,
         /buildCartItemMarkup: function \(entry\)[\s\S]*data-shop-cart-action="toggle-notes"[\s\S]*data-shop-cart-action="toggle-usage"/,
         'cart guidance pills should expose dedicated toggles for notes and usage instructions'
+    );
+    assert.match(
+        publicScrollbarSource,
+        /'.shop-cart-drawer__body'[\s\S]*'.shop-cart-item__panel'[\s\S]*target\.classList\.add\(PUBLIC_SCROLLBAR_AUTO_HIDE_NO_GUTTER_CLASS\);/s,
+        'cart drawer and disclosure scroll surfaces should opt into no-gutter scrollbar handling'
+    );
+    assert.match(
+        publicScrollbarCss,
+        /\.public-scrollbar-auto-hide\.public-scrollbar-auto-hide--no-gutter[\s\S]*scrollbar-width:\s*none !important;[\s\S]*scrollbar-gutter:\s*auto !important;[\s\S]*\.public-scrollbar-auto-hide\.public-scrollbar-auto-hide--no-gutter::-webkit-scrollbar[\s\S]*width:\s*0 !important;[\s\S]*height:\s*0 !important;/s,
+        'cart guidance expansion should not make scrollbars consume layout width and squeeze cards left'
     );
     assert.match(
         shopClientSource,

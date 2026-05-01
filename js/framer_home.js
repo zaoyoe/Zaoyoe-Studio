@@ -58,15 +58,46 @@ const HOME_GUESTBOOK_CARD_SLOTS = ['l1', 'l2', 'l3', 'r1', 'r2', 'r3'];
 const HOME_GUESTBOOK_PARTICLE_COUNT = 24;
 const HOME_GUESTBOOK_PARTICLE_SEED = 20260409;
 const HOME_GUESTBOOK_PARTICLE_RESET_SEED = 9090909;
+const HOMEPAGE_PROMPT_EAGER_IMAGE_ROWS = 2;
+const HOMEPAGE_PROMPT_WARMUP_LIMIT = 24;
+const HOMEPAGE_PROMPT_WARMUP_STAGGER_MS = 25;
 const HOMEPAGE_DEFERRED_OVERLAY_STYLE_GROUP = 'homepage-overlays';
 const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
 const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
 const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260419_HOME_PROMPT_CACHE_INVALIDATION_2';
+const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260430_HOME_GUESTBOOK_UGC_CARDS_1';
+const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260430_HOME_TEXT_LANGUAGE_2';
+const HOMEPAGE_PROMPT_LIVE_SELECT = [
+  'id',
+  'title',
+  'title_zh',
+  'title_en',
+  'description',
+  'description_zh',
+  'description_en',
+  'prompt_text',
+  'prompt_text_zh',
+  'prompt_text_en',
+  'images',
+  'image_assets',
+  'dominant_colors',
+  'ai_tags',
+  'tags',
+  'created_at',
+  'updated_at'
+].join(', ');
+const HOMEPAGE_PROMPT_LIVE_LEGACY_SELECT = HOMEPAGE_PROMPT_LIVE_SELECT
+  .split(', ')
+  .filter((field) => field !== 'image_assets')
+  .join(', ');
 const HomepageContract = window.HomepageContract || null;
 const HOME_DEFAULT_SECTION_ORDER = Array.isArray(HomepageContract?.MANAGED_SECTION_ORDER)
   ? [...HomepageContract.MANAGED_SECTION_ORDER]
   : ['hero', 'prompts', 'shop', 'gongyi', 'verify', 'guestbook', 'ticker'];
+const HOMEPAGE_FIRST_PAINT_SECTION_KEYS = new Set(['hero', 'prompts']);
+const HOMEPAGE_DEFERRED_SECTION_KEYS = HOME_DEFAULT_SECTION_ORDER.filter((sectionKey) => !HOMEPAGE_FIRST_PAINT_SECTION_KEYS.has(sectionKey));
+const HOMEPAGE_DEFERRED_SECTION_ROOT_MARGIN = '900px 0px';
+const HOMEPAGE_DEFERRED_SECTION_IDLE_TIMEOUT_MS = 1600;
 
 function getHomepageRuntimeSite() {
   return HomepageContract?.normalizeSite?.(window.SiteConfig?.site) || (window.SiteConfig?.site === 'intl' ? 'intl' : 'cn');
@@ -82,6 +113,164 @@ function getHomepageConfigLastUpdatedKey(site = getHomepageRuntimeSite()) {
 
 function getHomepagePromptPoolLastUpdatedKey(site = getHomepageRuntimeSite()) {
   return `${HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY}_${site}`;
+}
+
+function getHomepageStaticPromptSource() {
+  const homepagePrompts = Array.isArray(window.__HOMEPAGE_PROMPTS__) ? window.__HOMEPAGE_PROMPTS__ : [];
+  if (homepagePrompts.length > 0) {
+    return homepagePrompts;
+  }
+  return Array.isArray(window.PROMPTS) ? window.PROMPTS : [];
+}
+
+function isHomepagePromptSourceReady() {
+  return window.__HOMEPAGE_PROMPTS_READY__ === true
+    || Array.isArray(window.__HOMEPAGE_PROMPTS__)
+    || Array.isArray(window.PROMPTS);
+}
+
+function getHomepageRuntimeLanguage() {
+  return window.i18n?.getCurrentLanguage?.() === 'en' ? 'en' : 'zh';
+}
+
+function containsHomeCjkText(value) {
+  return /[\u3400-\u9fff\uf900-\ufaff]/.test(String(value || ''));
+}
+
+function getHomepageLanguageFallback(i18nKey, fallbackByLanguage = {}) {
+  const lang = getHomepageRuntimeLanguage();
+  const translated = i18nKey ? window.i18n?.t?.(i18nKey) : '';
+  return (translated && translated !== i18nKey ? translated : '') || fallbackByLanguage[lang] || fallbackByLanguage.zh || '';
+}
+
+function resolveHomepageLocalizedText(value, i18nKey, fallbackByLanguage = {}) {
+  const normalized = String(value || '').trim();
+  if (getHomepageRuntimeLanguage() === 'en' && containsHomeCjkText(normalized)) {
+    return getHomepageLanguageFallback(i18nKey, fallbackByLanguage);
+  }
+  return normalized || getHomepageLanguageFallback(i18nKey, fallbackByLanguage);
+}
+
+function getHomepageStrictLanguageFallback(fallbackByLanguage = {}) {
+  const lang = getHomepageRuntimeLanguage();
+  if (Object.prototype.hasOwnProperty.call(fallbackByLanguage, lang)) {
+    return fallbackByLanguage[lang] || '';
+  }
+  return lang === 'zh' ? (fallbackByLanguage.zh || '') : '';
+}
+
+function resolveHomepageDataText(value, fallbackByLanguage = {}) {
+  const normalized = String(value || '').trim();
+  if (getHomepageRuntimeLanguage() === 'en' && containsHomeCjkText(normalized)) {
+    return getHomepageStrictLanguageFallback(fallbackByLanguage);
+  }
+  return normalized || getHomepageStrictLanguageFallback(fallbackByLanguage);
+}
+
+function getHomepageLocalizedDataField(item = {}, fieldBase, fallbackByLanguage = {}) {
+  if (!item || typeof item !== 'object') {
+    return getHomepageStrictLanguageFallback(fallbackByLanguage);
+  }
+  const lang = getHomepageRuntimeLanguage();
+  const primary = String(item?.[`${fieldBase}_${lang}`] || '').trim();
+  if (primary) {
+    return resolveHomepageDataText(primary, fallbackByLanguage);
+  }
+  const base = String(item?.[fieldBase] || '').trim();
+  if (base) {
+    return resolveHomepageDataText(base, fallbackByLanguage);
+  }
+  if (lang === 'zh') {
+    return String(item?.[`${fieldBase}_en`] || '').trim() || getHomepageStrictLanguageFallback(fallbackByLanguage);
+  }
+  return getHomepageStrictLanguageFallback(fallbackByLanguage);
+}
+
+function normalizeHomepageGuestbookMessageRows(source) {
+  const rows = Array.isArray(source)
+    ? source
+    : (Array.isArray(source?.messages) ? source.messages : []);
+
+  return rows.filter((item) => item && typeof item === 'object');
+}
+
+function readHomepageGuestbookPrefetchMessages(currentSite, maxAgeMs = 300000) {
+  try {
+    const prefetchRaw = sessionStorage.getItem('guestbook_prefetch');
+    if (!prefetchRaw) {
+      return [];
+    }
+
+    const prefetch = JSON.parse(prefetchRaw);
+    const age = Date.now() - Number(prefetch?.timestamp || 0);
+    const prefetchMessages = normalizeHomepageGuestbookMessageRows(prefetch?.data);
+    if (age < maxAgeMs && (!prefetch?.site || prefetch.site === currentSite) && prefetchMessages.length > 0) {
+      return prefetchMessages;
+    }
+  } catch (_) {
+    // Ignore prefetch parsing failures and fall through to live fetch.
+  }
+
+  return [];
+}
+
+async function fetchHomepageGuestbookRpcMessages(currentSite, limit = 24) {
+  if (!window.supabaseClient?.rpc) {
+    return [];
+  }
+
+  const { data, error } = await window.supabaseClient.rpc('fn_load_guestbook', {
+    p_site: currentSite,
+    p_limit: limit,
+    p_user_id: null
+  });
+
+  if (error) {
+    throw error;
+  }
+
+  return normalizeHomepageGuestbookMessageRows(data).slice(0, limit);
+}
+
+function normalizeHomepageTextList(value) {
+  return Array.isArray(value)
+    ? value.map((item) => String(item || '').trim()).filter(Boolean)
+    : [];
+}
+
+function resolveHomepageLocalizedTextList(value, fallbackItems = []) {
+  const normalized = normalizeHomepageTextList(value);
+  if (getHomepageRuntimeLanguage() === 'en' && normalized.some((item) => containsHomeCjkText(item))) {
+    return normalizeHomepageTextList(fallbackItems);
+  }
+  return normalized.length > 0 ? normalized : normalizeHomepageTextList(fallbackItems);
+}
+
+function filterHomepageDataTextList(value) {
+  const normalized = normalizeHomepageTextList(value);
+  return getHomepageRuntimeLanguage() === 'en'
+    ? normalized.filter((item) => !containsHomeCjkText(item))
+    : normalized;
+}
+
+function resolveHomepageHeroText(value, i18nKey, fallbackByLanguage = {}) {
+  return resolveHomepageLocalizedText(value, i18nKey, fallbackByLanguage);
+}
+
+function getHomepageEntryFallback(item = {}, index = 0) {
+  const key = String(item?.section || item?.id || '').trim().toLowerCase();
+  const fallbackByKey = {
+    prompts: { i18nKey: 'home.entries.prompts', zh: '提示词', en: 'Prompts' },
+    gongyi: { i18nKey: 'home.entries.gongyi', zh: '公益站', en: 'Community Access' },
+    shop: { i18nKey: 'home.entries.shop', zh: '商城', en: 'Shop' },
+    verify: { i18nKey: 'home.entries.verify', zh: '验证', en: 'Verify' },
+    guestbook: { i18nKey: 'home.entries.guestbook', zh: '留言板', en: 'Guestbook' }
+  };
+  return fallbackByKey[key] || {
+    i18nKey: '',
+    zh: `入口 ${index + 1}`,
+    en: `Entry ${index + 1}`
+  };
 }
 
 async function loadHomepageConfigRows(site = getHomepageRuntimeSite()) {
@@ -105,6 +294,10 @@ function readHomepagePrefetchCache(site = getHomepageRuntimeSite()) {
   try {
     const parsed = JSON.parse(raw);
     if (parsed?.site && parsed.site !== site) {
+      return null;
+    }
+    if (parsed?.language !== getHomepageRuntimeLanguage()) {
+      sessionStorage.removeItem(key);
       return null;
     }
     if (parsed?.schemaVersion !== HOMEPAGE_PREFETCH_SCHEMA_VERSION) {
@@ -174,7 +367,8 @@ function writeHomepagePrefetchCache(payload, site = getHomepageRuntimeSite()) {
   sessionStorage.setItem(getHomepagePrefetchCacheKey(site), JSON.stringify({
     ...payload,
     schemaVersion: HOMEPAGE_PREFETCH_SCHEMA_VERSION,
-    site
+    site,
+    language: getHomepageRuntimeLanguage()
   }));
   sessionStorage.removeItem(HOMEPAGE_PREFETCH_CACHE_KEY);
 }
@@ -188,14 +382,49 @@ function escapeHomeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+function normalizeHomeIconClass(value) {
+  const normalized = String(value || 'fa-circle')
+    .split(/\s+/)
+    .map((part) => part.replace(/[^\w-]/g, ''))
+    .filter(Boolean)
+    .join(' ');
+  return normalized || 'fa-circle';
+}
+
 function clampHomeValue(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
-function sanitizeTickerItems(value) {
-  return Array.isArray(value)
-    ? value.map((item) => String(item || '').trim()).filter(Boolean)
+function sanitizeTickerItems(value, { allowCjk = false } = {}) {
+  const items = Array.isArray(value)
+    ? value.map((item) => {
+      if (item && typeof item === 'object') {
+        return String(item.name || item.label || item.category || '').trim();
+      }
+
+      return String(item || '').trim();
+    }).filter(Boolean)
     : [];
+  return getHomepageRuntimeLanguage() === 'en' && !allowCjk
+    ? items.filter((item) => !containsHomeCjkText(item))
+    : items;
+}
+
+function getHomepageProductCategoryLabel(category) {
+  const normalized = String(category || '').trim();
+  if (!normalized) return '';
+  if (getHomepageRuntimeLanguage() !== 'en') {
+    return normalized;
+  }
+  const translations = {
+    '公益站': 'Community Access',
+    '虚拟卡': 'Virtual Card',
+    '账号': 'Account',
+    '账户': 'Account',
+    '其他': 'Other',
+    '其它': 'Other'
+  };
+  return translations[normalized] || normalized;
 }
 
 function getHomepagePrimaryLanguage() {
@@ -204,6 +433,15 @@ function getHomepagePrimaryLanguage() {
 
 function isHomepagePrimaryLanguageActive() {
   return (window.i18n?.getCurrentLanguage?.() || 'zh') === getHomepagePrimaryLanguage();
+}
+
+function isMissingPromptImageAssetsColumnError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return Boolean(message && (
+    message.includes('image_assets')
+    || message.includes('column of "prompts"')
+    || message.includes("column of 'prompts'")
+  ));
 }
 
 function cloneHomeExperimentValue(value) {
@@ -216,6 +454,239 @@ function cloneHomeExperimentValue(value) {
   return value;
 }
 
+function getHomepageImageFilenameFromUrl(url) {
+  try {
+    const parsed = new URL(String(url || '').trim(), window.location.origin);
+    return decodeURIComponent(pathnameBasename(parsed.pathname));
+  } catch (error) {
+    return pathnameBasename(String(url || '').split('?')[0].split('#')[0]);
+  }
+}
+
+function pathnameBasename(pathname = '') {
+  return String(pathname || '').split('/').filter(Boolean).pop() || '';
+}
+
+function getPromptR2VariantUrl(url, variant = '') {
+  const variantPath = { thumb: 'thumb', featured: 'featured', home: 'home', card: 'card' }[String(variant || '').trim()];
+  if (!variantPath) return '';
+
+  try {
+    const parsed = new URL(String(url || '').trim(), window.location.origin);
+    if (parsed.hostname !== 'cdn.zaoyoe.com') return '';
+
+    const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+    if (parts.length !== 2 || parts[0] !== 'prompts') return '';
+
+    const filename = decodeURIComponent(parts[1] || '');
+    if (!filename) return '';
+
+    return `${parsed.origin}/prompts/${variantPath}/${encodeURIComponent(filename)}`;
+  } catch (error) {
+    return '';
+  }
+}
+
+function getPromptImageVariantUrl(url, variant = '') {
+  const normalizedVariant = String(variant || '').trim();
+  const trimmed = String(url || '').trim();
+  if (!normalizedVariant || !trimmed.includes('cdn.zaoyoe.com/prompts/')) {
+    return '';
+  }
+
+  const manifest = window.__PROMPT_IMAGE_VARIANTS__ || null;
+  const available = manifest?.variants?.[normalizedVariant];
+  if (Array.isArray(available) && available.length > 0) {
+    const filename = getHomepageImageFilenameFromUrl(trimmed);
+    if (filename && available.includes(filename)) {
+      const basePath = String(manifest?.basePaths?.[normalizedVariant] || `/assets/prompts-${normalizedVariant}`).replace(/\/+$/, '');
+      return `${basePath}/${encodeURIComponent(filename)}`;
+    }
+  }
+
+  return getPromptR2VariantUrl(trimmed, normalizedVariant);
+}
+
+function getShopImageVariantUrl(url, variant = '') {
+  const normalizedVariant = String(variant || '').trim();
+  const trimmed = String(url || '').trim();
+  if (!normalizedVariant || !trimmed) {
+    return '';
+  }
+
+  const manifest = window.__SHOP_IMAGE_VARIANTS__ || null;
+  const variants = manifest?.variants?.[normalizedVariant];
+  if (variants && typeof variants === 'object') {
+    const manifestUrl = String(variants[trimmed] || '').trim();
+    if (manifestUrl) {
+      return manifestUrl;
+    }
+  }
+
+  return getShopR2CardVariantUrl(trimmed, normalizedVariant);
+}
+
+function getShopR2CardVariantUrl(url, variant = '') {
+  if (String(variant || '').trim() !== 'card') {
+    return '';
+  }
+
+  try {
+    const parsed = new URL(String(url || '').trim(), window.location.origin);
+    if (parsed.hostname !== 'cdn.zaoyoe.com' && !parsed.hostname.endsWith('.r2.dev')) {
+      return '';
+    }
+
+    const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+    if (parts.length !== 2 || parts[0] !== 'products') {
+      return '';
+    }
+
+    const basename = decodeURIComponent(parts[1] || '').replace(/\.[^.]+$/, '');
+    if (!basename) {
+      return '';
+    }
+
+    return `${parsed.origin}/products/card/${encodeURIComponent(basename)}.webp`;
+  } catch (error) {
+    return '';
+  }
+}
+
+function normalizeShopProductImageAsset(value) {
+  if (Array.isArray(value)) {
+    return value.map(normalizeShopProductImageAsset).find(Boolean) || null;
+  }
+
+  if (typeof value === 'string') {
+    const original = value.trim();
+    return original ? { original } : null;
+  }
+
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  const variants = value.variants && typeof value.variants === 'object' && !Array.isArray(value.variants)
+    ? value.variants
+    : {};
+  const asset = {};
+
+  for (const key of ['original', 'thumb', 'card', 'home', 'detail']) {
+    const url = String(value[key] || variants[key] || '').trim();
+    if (url) {
+      asset[key] = url;
+    }
+  }
+
+  const fallbackOriginal = String(value.url || value.src || value.image || value.icon_url || '').trim();
+  if (!asset.original && fallbackOriginal) {
+    asset.original = fallbackOriginal;
+  }
+
+  return asset.original || asset.thumb || asset.card || asset.home || asset.detail ? asset : null;
+}
+
+function getShopProductImageAsset(productOrAsset = {}) {
+  const explicitAsset = normalizeShopProductImageAsset(
+    productOrAsset?.image_assets ?? productOrAsset?.imageAssets ?? productOrAsset
+  );
+  if (explicitAsset) {
+    return explicitAsset;
+  }
+
+  const original = String(productOrAsset?.icon_url || '').trim();
+  if (!original || original.startsWith('fa')) {
+    return null;
+  }
+
+  const asset = { original };
+  const card = getShopImageVariantUrl(original, 'card');
+  if (card && card !== original) {
+    asset.card = card;
+  }
+  return asset;
+}
+
+function getShopProductImageAssetUrl(value, variant = 'original') {
+  const asset = normalizeShopProductImageAsset(value);
+  if (!asset) {
+    return typeof value === 'string' ? value.trim() : '';
+  }
+
+  const normalizedVariant = String(variant || 'original').trim() || 'original';
+  return String(asset[normalizedVariant] || asset.original || asset.card || asset.thumb || asset.home || asset.detail || '').trim();
+}
+
+function getShopProductImageAssetExplicitVariantUrl(value, variant = '') {
+  const normalizedVariant = String(variant || '').trim();
+  if (!normalizedVariant || normalizedVariant === 'original') {
+    return '';
+  }
+
+  const asset = normalizeShopProductImageAsset(value);
+  return String(asset?.[normalizedVariant] || '').trim();
+}
+
+function normalizePromptImageAsset(value) {
+  if (typeof value === 'string') {
+    const original = value.trim();
+    return original ? { original } : null;
+  }
+
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+
+  const variants = value.variants && typeof value.variants === 'object' && !Array.isArray(value.variants)
+    ? value.variants
+    : {};
+  const asset = {};
+
+  for (const key of ['original', 'thumb', 'featured', 'card', 'home']) {
+    const url = String(value[key] || variants[key] || '').trim();
+    if (url) {
+      asset[key] = url;
+    }
+  }
+
+  const fallbackOriginal = String(value.url || value.src || value.image || '').trim();
+  if (!asset.original && fallbackOriginal) {
+    asset.original = fallbackOriginal;
+  }
+
+  return asset.original || asset.thumb || asset.featured || asset.card || asset.home ? asset : null;
+}
+
+function getPromptImageAssetUrl(value, variant = 'original') {
+  const asset = normalizePromptImageAsset(value);
+  if (!asset) return '';
+
+  const key = String(variant || 'original').trim() || 'original';
+  return String(asset[key] || asset.original || asset.featured || asset.card || asset.home || asset.thumb || '').trim();
+}
+
+function normalizePromptImageAssetsFromRecord(prompt = {}) {
+  const explicitAssets = Array.isArray(prompt?.imageAssets)
+    ? prompt.imageAssets
+    : (Array.isArray(prompt?.image_assets) ? prompt.image_assets : []);
+  const legacyImages = Array.isArray(prompt?.images) ? prompt.images : [];
+  const assets = [];
+  const seen = new Set();
+
+  for (const source of [...explicitAssets, ...legacyImages]) {
+    const asset = normalizePromptImageAsset(source);
+    if (!asset) continue;
+
+    const key = getPromptImageAssetUrl(asset);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    assets.push(asset);
+  }
+
+  return assets;
+}
+
 function normalizeHomePromptRecord(prompt = {}) {
   const normalizedId = String(prompt?.supabaseId || prompt?.id || '').trim();
   const promptText = String(prompt?.prompt_text || prompt?.prompt || '').trim();
@@ -224,18 +695,24 @@ function normalizeHomePromptRecord(prompt = {}) {
     : (prompt?.ai_tags && typeof prompt.ai_tags === 'object' && !Array.isArray(prompt.ai_tags)
       ? prompt.ai_tags
       : {});
-  const images = [...new Set([
-    ...(Array.isArray(prompt?.images) ? prompt.images : []),
-    prompt?.image,
-    prompt?.image_url,
-    prompt?.imageUrl,
-    prompt?.cover_image,
-    prompt?.coverImage,
-    prompt?.cover_url,
-    prompt?.coverUrl,
-    prompt?.thumbnail_url,
-    prompt?.thumbnailUrl
-  ].map((item) => String(item || '').trim()).filter(Boolean))];
+  const imageAssets = normalizePromptImageAssetsFromRecord({
+    ...prompt,
+    images: [
+      ...(Array.isArray(prompt?.images) ? prompt.images : []),
+      prompt?.image,
+      prompt?.image_url,
+      prompt?.imageUrl,
+      prompt?.cover_image,
+      prompt?.coverImage,
+      prompt?.cover_url,
+      prompt?.coverUrl,
+      prompt?.thumbnail_url,
+      prompt?.thumbnailUrl
+    ]
+  });
+  const images = imageAssets
+    .map((asset) => getPromptImageAssetUrl(asset))
+    .filter(Boolean);
 
   return {
     ...prompt,
@@ -253,6 +730,8 @@ function normalizeHomePromptRecord(prompt = {}) {
     prompt_text_zh: String(prompt?.prompt_text_zh || promptText).trim(),
     prompt_text_en: String(prompt?.prompt_text_en || '').trim(),
     images,
+    imageAssets,
+    image_assets: imageAssets,
     image: images[0] || '',
     image_url: String(prompt?.image_url || images[0] || '').trim(),
     dominantColors: Array.isArray(prompt?.dominantColors)
@@ -302,8 +781,9 @@ function isHomePromptVisible(prompt = {}) {
   }
 
   const normalizedPrompt = normalizeHomePromptRecord(prompt);
+  const isHomepageSummary = prompt?.homepage_summary === true || prompt?.homepageSummary === true;
   const hasBaseTitle = hasHomePromptVisibleCopy(normalizedPrompt?.title);
-  const hasPromptText = hasHomePromptVisibleCopy(normalizedPrompt?.prompt_text || normalizedPrompt?.prompt);
+  const hasPromptText = isHomepageSummary || hasHomePromptVisibleCopy(normalizedPrompt?.prompt_text || normalizedPrompt?.prompt);
   const hasImages = Array.isArray(normalizedPrompt?.images) && normalizedPrompt.images.some((item) => hasHomePromptVisibleCopy(item));
 
   return hasBaseTitle && hasPromptText && hasImages;
@@ -663,6 +1143,31 @@ function clearHomepageHeroGuestbookArmedState(exceptCard = null) {
   });
 }
 
+function handleHomepageHeroEntryCenterFirstClick(event, eventTarget) {
+  const heroEntryCard = eventTarget?.closest?.('.hero-carousel .entry-card');
+  if (!heroEntryCard) {
+    return false;
+  }
+
+  const hasImmediateAction = Boolean(
+    heroEntryCard.getAttribute('data-action')
+    && heroEntryCard.getAttribute('data-home-open-guestbook') !== '1'
+  );
+  if (hasImmediateAction) {
+    return false;
+  }
+
+  const didCenterHeroEntryCard = centerHomepageHeroEntryCardIfNeeded(heroEntryCard);
+  if (!didCenterHeroEntryCard) {
+    return false;
+  }
+
+  clearHomepageHeroGuestbookArmedState();
+  event.preventDefault();
+  event.stopPropagation();
+  return true;
+}
+
 function bindHomepageStaticDelegates() {
   if (document.documentElement.dataset.homepageStaticDelegatesBound === '1') {
     return;
@@ -718,6 +1223,10 @@ function bindHomepageStaticDelegates() {
       return;
     }
 
+    if (handleHomepageHeroEntryCenterFirstClick(event, eventTarget)) {
+      return;
+    }
+
     clearHomepageHeroGuestbookArmedState();
 
     const uploadTrigger = eventTarget.closest('[data-home-trigger-upload="1"]');
@@ -730,6 +1239,8 @@ function bindHomepageStaticDelegates() {
     }
   });
 }
+
+bindHomepageStaticDelegates();
 
 function toHomeCssPropertyName(name) {
   if (typeof name !== 'string' || !name) return '';
@@ -917,8 +1428,15 @@ const FramerHome = {
   verifyDemoRuntime: null,
   supplementalDataScheduled: false,
   supplementalDataPromise: null,
+  deferredSectionRenderScheduled: false,
+  deferredSectionRenderComplete: false,
+  deferredSectionRenderObserver: null,
+  deferredSectionRenderIdleHandle: null,
+  deferredSectionRenderTimer: null,
   masonryParallaxCleanup: null,
   masonryParallaxHandle: null,
+  promptImageWarmupHandles: [],
+  promptImageWarmupLoadAbort: null,
   scrollAnimationObserver: null,
   scrollAnimationHandle: null,
   navDropdownsInitialized: false,
@@ -990,14 +1508,23 @@ const FramerHome = {
   },
 
   getPromptPool() {
-    if (Array.isArray(this.promptPool)) {
+    if (Array.isArray(this.promptPool) && this.promptPool.length > 0) {
       return this.promptPool;
     }
-    return filterHomeVisiblePrompts(window.PROMPTS);
+    return filterHomeVisiblePrompts(getHomepageStaticPromptSource());
   },
 
-  async fetchVisiblePromptPool() {
-    const fallbackPool = filterHomeVisiblePrompts(window.PROMPTS);
+  async fetchVisiblePromptPool(options = {}) {
+    const { preferStaticFirst = false } = options;
+    const fallbackPool = filterHomeVisiblePrompts(getHomepageStaticPromptSource());
+
+    if (preferStaticFirst && fallbackPool.length > 0) {
+      this.promptPool = fallbackPool;
+      if (!Array.isArray(window.PROMPTS) || window.PROMPTS.length === 0) {
+        window.PROMPTS = fallbackPool;
+      }
+      return fallbackPool;
+    }
 
     if (!window.supabaseClient) {
       this.promptPool = fallbackPool;
@@ -1005,10 +1532,21 @@ const FramerHome = {
     }
 
     try {
-      const { data, error } = await window.supabaseClient
+      let { data, error } = await window.supabaseClient
         .from('prompts')
-        .select('*')
-        .order('updated_at', { ascending: false });
+        .select(HOMEPAGE_PROMPT_LIVE_SELECT)
+        .order('updated_at', { ascending: false })
+        .limit(80);
+
+      if (error && isMissingPromptImageAssetsColumnError(error)) {
+        const fallbackResult = await window.supabaseClient
+          .from('prompts')
+          .select(HOMEPAGE_PROMPT_LIVE_LEGACY_SELECT)
+          .order('updated_at', { ascending: false })
+          .limit(80);
+        data = fallbackResult.data;
+        error = fallbackResult.error;
+      }
 
       if (error) {
         throw error;
@@ -1021,8 +1559,22 @@ const FramerHome = {
     } catch (error) {
       console.warn('Failed to fetch live homepage prompt pool:', error);
       this.promptPool = fallbackPool;
-      window.PROMPTS = fallbackPool;
+      if (!Array.isArray(window.PROMPTS) || window.PROMPTS.length === 0) {
+        window.PROMPTS = fallbackPool;
+      }
       return fallbackPool;
+    }
+  },
+
+  schedulePromptPoolLiveSync(options = {}) {
+    const kickoff = () => {
+      void this.syncPromptPoolFromLiveSourceInBackground(options);
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+      window.requestIdleCallback(kickoff, { timeout: 2500 });
+    } else {
+      window.setTimeout(kickoff, 600);
     }
   },
 
@@ -1082,8 +1634,9 @@ const FramerHome = {
     this._initPromise = (async () => {
     console.log('🚀 Initializing Framer Home...');
 
-    // Scroll to top on page load
-    window.scrollTo(0, 0);
+    // The head bootstrap owns the initial reload reset. Avoid forcing the
+    // viewport here because deferred runtime init can happen after the user
+    // has already scrolled.
     // Check performance and apply degradation if needed
     this.checkPerformance();
 
@@ -1095,8 +1648,10 @@ const FramerHome = {
     // Load configuration and data (uses sessionStorage prefetch if available)
     await this.loadAll();
 
-    // Render all sections (single render, no double-paint)
-    this.renderAll();
+    // Keep first paint narrow: hero and prompt cards render first, while
+    // below-fold sections mount on idle or as the user nears them.
+    this.renderAll({ phase: 'first-paint' });
+    this.scheduleDeferredSectionRender();
 
     bindHomepageStaticDelegates();
 
@@ -1193,6 +1748,16 @@ const FramerHome = {
       if (!raw) return null;
       const parsed = JSON.parse(raw);
       if (!parsed?.title) return null;
+      if (parsed.schemaVersion !== HOMEPAGE_HERO_TEXT_CACHE_VERSION) {
+        sessionStorage.removeItem('homepage_hero_text');
+        return null;
+      }
+      if (parsed.site !== getHomepageRuntimeSite() || parsed.language !== getHomepageRuntimeLanguage()) {
+        return null;
+      }
+      if (getHomepageRuntimeLanguage() === 'en' && containsHomeCjkText(parsed.title)) {
+        return null;
+      }
       const age = Date.now() - (parsed.timestamp || 0);
       if (age > 7 * 24 * 60 * 60 * 1000) return null;
       return parsed;
@@ -1205,6 +1770,9 @@ const FramerHome = {
     if (!hero?.title) return;
     try {
       sessionStorage.setItem('homepage_hero_text', JSON.stringify({
+        schemaVersion: HOMEPAGE_HERO_TEXT_CACHE_VERSION,
+        site: getHomepageRuntimeSite(),
+        language: getHomepageRuntimeLanguage(),
         title: hero.title,
         subtitle: hero.subtitle || '',
         timestamp: Date.now()
@@ -1239,16 +1807,19 @@ const FramerHome = {
     this.supplementalDataPromise = new Promise((resolve) => {
       const kickoff = async () => {
         try {
-          const [guestbook, shopCategories] = await Promise.all([
+          const [shop, guestbook, shopCategories] = await Promise.all([
+            this.aggregateShop(this.config.shop || {}),
             this.aggregateGuestbook(this.config.guestbook || {}),
             this.fetchShopCategories()
           ]);
 
           this.cachedData = this.cachedData || {};
+          this.cachedData.shop = shop;
           this.cachedData.guestbook = guestbook;
           this.cachedData.shopCategories = shopCategories;
           this.cachedData.ticker = await this.buildTickerData(this.config.ticker || {});
 
+          this.renderShop();
           this.renderGuestbook();
           this.renderTicker();
           this.scheduleScrollAnimationsInit();
@@ -1289,6 +1860,84 @@ const FramerHome = {
     return this.supplementalDataPromise;
   },
 
+  clearDeferredSectionRenderHandles() {
+    if (this.deferredSectionRenderObserver) {
+      this.deferredSectionRenderObserver.disconnect();
+      this.deferredSectionRenderObserver = null;
+    }
+    if (this.deferredSectionRenderTimer !== null && this.deferredSectionRenderTimer !== undefined) {
+      window.clearTimeout(this.deferredSectionRenderTimer);
+      this.deferredSectionRenderTimer = null;
+    }
+    if (this.deferredSectionRenderIdleHandle !== null && this.deferredSectionRenderIdleHandle !== undefined) {
+      if (typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(this.deferredSectionRenderIdleHandle);
+      }
+      this.deferredSectionRenderIdleHandle = null;
+    }
+  },
+
+  renderDeferredSections(options = {}) {
+    if (this.deferredSectionRenderComplete) {
+      return;
+    }
+
+    this.deferredSectionRenderComplete = true;
+    this.clearDeferredSectionRenderHandles();
+    this.renderAll({ phase: 'deferred', reason: options.reason || 'deferred-sections' });
+    this.scheduleScrollAnimationsInit();
+  },
+
+  scheduleDeferredSectionRender() {
+    if (this.deferredSectionRenderScheduled || this.deferredSectionRenderComplete) {
+      return;
+    }
+
+    this.deferredSectionRenderScheduled = true;
+
+    const runDeferredRender = (reason) => {
+      if (this.deferredSectionRenderComplete) {
+        return;
+      }
+      this.renderDeferredSections({ reason });
+    };
+
+    const sectionIds = {
+      shop: 'shop-section',
+      gongyi: 'gongyi-section',
+      verify: 'verify-section',
+      guestbook: 'guestbook-section',
+      ticker: 'ticker-section'
+    };
+    const deferredSectionEls = HOMEPAGE_DEFERRED_SECTION_KEYS
+      .map((sectionKey) => document.getElementById(sectionIds[sectionKey]))
+      .filter(Boolean);
+
+    if (typeof window.IntersectionObserver === 'function' && deferredSectionEls.length > 0) {
+      this.deferredSectionRenderObserver = new IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          runDeferredRender('viewport-near');
+        }
+      }, { rootMargin: HOMEPAGE_DEFERRED_SECTION_ROOT_MARGIN });
+
+      deferredSectionEls.forEach((sectionEl) => {
+        this.deferredSectionRenderObserver.observe(sectionEl);
+      });
+    }
+
+    if (typeof window.requestIdleCallback === 'function') {
+      this.deferredSectionRenderIdleHandle = window.requestIdleCallback(() => {
+        this.deferredSectionRenderIdleHandle = null;
+        runDeferredRender('idle');
+      }, { timeout: HOMEPAGE_DEFERRED_SECTION_IDLE_TIMEOUT_MS });
+    } else {
+      this.deferredSectionRenderTimer = window.setTimeout(() => {
+        this.deferredSectionRenderTimer = null;
+        runDeferredRender('timer');
+      }, HOMEPAGE_DEFERRED_SECTION_IDLE_TIMEOUT_MS);
+    }
+  },
+
   scheduleMasonryParallaxInit() {
     if (this.masonryParallaxHandle?.id != null) {
       if (this.masonryParallaxHandle.kind === 'idle' && typeof window.cancelIdleCallback === 'function') {
@@ -1315,6 +1964,120 @@ const FramerHome = {
         id: window.setTimeout(kickoff, 180)
       };
     }
+  },
+
+  clearPromptImageWarmup() {
+    if (this.promptImageWarmupLoadAbort) {
+      this.promptImageWarmupLoadAbort.abort();
+      this.promptImageWarmupLoadAbort = null;
+    }
+
+    if (!Array.isArray(this.promptImageWarmupHandles) || this.promptImageWarmupHandles.length === 0) {
+      this.promptImageWarmupHandles = [];
+      return;
+    }
+
+    this.promptImageWarmupHandles.forEach((handle) => {
+      if (!handle) return;
+      if (handle.kind === 'observer' && handle.observer?.disconnect) {
+        handle.observer.disconnect();
+      } else if (handle.kind === 'idle' && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(handle.id);
+      } else {
+        window.clearTimeout(handle.id);
+      }
+    });
+    this.promptImageWarmupHandles = [];
+  },
+
+  schedulePromptMasonryImageWarmup(section) {
+    if (!(section instanceof HTMLElement)) {
+      return;
+    }
+
+    this.clearPromptImageWarmup();
+
+    const urls = Array.from(section.querySelectorAll('.masonry-card img[src]'))
+      .map((image) => String(image.currentSrc || image.getAttribute('src') || '').trim())
+      .filter(Boolean)
+      .slice(0, HOMEPAGE_PROMPT_WARMUP_LIMIT);
+    if (urls.length === 0) {
+      return;
+    }
+
+    const warmOne = (url) => {
+      const image = new Image();
+      image.decoding = 'async';
+      if ('fetchPriority' in image) {
+        image.fetchPriority = 'low';
+      }
+      image.src = url;
+    };
+
+    let warmupQueued = false;
+    let nearViewportObserver = null;
+
+    const startWarmup = () => {
+      urls.forEach((url, index) => {
+        const id = window.setTimeout(() => warmOne(url), index * HOMEPAGE_PROMPT_WARMUP_STAGGER_MS);
+        this.promptImageWarmupHandles.push({ kind: 'timeout', id });
+      });
+    };
+
+    const scheduleIdleWarmup = () => {
+      if (typeof window.requestIdleCallback === 'function') {
+        const id = window.requestIdleCallback(startWarmup, { timeout: 900 });
+        this.promptImageWarmupHandles.push({ kind: 'idle', id });
+        return;
+      }
+
+      const id = window.setTimeout(startWarmup, 350);
+      this.promptImageWarmupHandles.push({ kind: 'timeout', id });
+    };
+
+    const queueWarmup = (delayMs = 0) => {
+      if (warmupQueued) {
+        return;
+      }
+      warmupQueued = true;
+      if (nearViewportObserver) {
+        nearViewportObserver.disconnect();
+        nearViewportObserver = null;
+      }
+
+      const id = window.setTimeout(scheduleIdleWarmup, delayMs);
+      this.promptImageWarmupHandles.push({ kind: 'timeout', id });
+    };
+
+    if (typeof IntersectionObserver === 'function') {
+      nearViewportObserver = new IntersectionObserver((entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          queueWarmup(60);
+        }
+      }, {
+        rootMargin: '900px 0px',
+        threshold: 0
+      });
+      nearViewportObserver.observe(section);
+      this.promptImageWarmupHandles.push({ kind: 'observer', observer: nearViewportObserver });
+    }
+
+    if (document.readyState === 'complete') {
+      queueWarmup(100);
+      return;
+    }
+
+    const loadOptions = { once: true };
+    if (typeof AbortController === 'function') {
+      const controller = new AbortController();
+      this.promptImageWarmupLoadAbort = controller;
+      loadOptions.signal = controller.signal;
+    }
+
+    window.addEventListener('load', () => {
+      this.promptImageWarmupLoadAbort = null;
+      queueWarmup(100);
+    }, loadOptions);
   },
 
   scheduleScrollAnimationsInit() {
@@ -1486,10 +2249,13 @@ const FramerHome = {
           const isTranslated = prefetch.cachedData?.hero?.title && !prefetch.cachedData.hero.title.includes('home.hero');
           const isFreshConfig = !configUpdatedAt || (prefetch.timestamp || 0) >= configUpdatedAt;
           const isFreshPromptPool = !promptPoolUpdatedAt || (prefetch.timestamp || 0) >= promptPoolUpdatedAt;
-          const isCompletePrefetch = prefetch.cacheKind === 'complete';
+          const cacheKind = String(prefetch.cacheKind || '').trim().toLowerCase();
+          const isCompletePrefetch = cacheKind === 'complete';
+          const hasPromptFastPathPayload = Array.isArray(prefetch.cachedData?.prompts) && prefetch.cachedData.prompts.length > 0;
+          const canUsePrefetch = isCompletePrefetch || (cacheKind === 'partial' && hasPromptFastPathPayload);
 
           // Use if < 5 minutes old and contains actual translated text
-          if (age < 300000 && prefetch.cachedData && prefetch.config && isTranslated && isFreshConfig && isFreshPromptPool && isCompletePrefetch) {
+          if (age < 300000 && prefetch.cachedData && prefetch.config && isTranslated && isFreshConfig && isFreshPromptPool && canUsePrefetch) {
             this.cachedData = prefetch.cachedData;
             this.config = prefetch.config;
             this.promptPool = Array.isArray(prefetch.promptPool)
@@ -1516,8 +2282,11 @@ const FramerHome = {
               }
             }
             this.cachedData.gongyi = this.cachedData.gongyi || this.buildGongyiData(this.config.gongyi || {});
+            this.cachedData.shop = Array.isArray(this.cachedData.shop) ? this.cachedData.shop : [];
+            this.cachedData.guestbook = Array.isArray(this.cachedData.guestbook) ? this.cachedData.guestbook : [];
+            this.cachedData.shopCategories = Array.isArray(this.cachedData.shopCategories) ? this.cachedData.shopCategories : [];
             this.writeHeroTextCache(this.cachedData.hero);
-            void this.syncPromptPoolFromLiveSourceInBackground({ reason: 'prefetch-cache' });
+            this.schedulePromptPoolLiveSync({ reason: 'prefetch-cache' });
             void this.scheduleSupplementalHomepageDataLoad();
             console.log(`⚡ Using prefetched homepage data (${Math.round(age / 1000)}s old)`);
             return;
@@ -1532,24 +2301,19 @@ const FramerHome = {
     }
 
     try {
-      const [config, promptPool] = await Promise.all([
-        this.fetchHomepageConfig(),
-        this.fetchVisiblePromptPool()
-      ]);
+      const config = await this.fetchHomepageConfig();
       this.config = config;
-      this.promptPool = promptPool;
       this.resetActiveExperiments();
+      this.promptPool = await this.fetchVisiblePromptPool({ preferStaticFirst: true });
 
-      // Aggregate section data in parallel to reduce initial waiting time
-      const [prompts, shop] = await Promise.all([
-        this.aggregatePrompts(this.config.prompts || {}),
-        this.aggregateShop(this.config.shop || {})
-      ]);
+      // Keep the first homepage paint focused: prompt cards can render from
+      // the static prompt bundle while live prompts and shop data warm behind it.
+      const prompts = await this.aggregatePrompts(this.config.prompts || {});
 
       this.cachedData = {
         hero: this.buildHeroData(this.config.hero || {}),
         prompts,
-        shop,
+        shop: [],
         gongyi: this.buildGongyiData(this.config.gongyi || {}),
         verify: this.buildVerifyData(this.config.verify || {}),
         guestbook: [],
@@ -1560,6 +2324,7 @@ const FramerHome = {
 
       console.log('📦 Data aggregated:', this.cachedData);
       this.persistHomepagePrefetch('partial');
+      this.schedulePromptPoolLiveSync({ reason: 'initial-static-prompt-pool' });
       void this.scheduleSupplementalHomepageDataLoad();
     } catch (error) {
       console.error('❌ Failed to load data:', error);
@@ -1672,8 +2437,14 @@ const FramerHome = {
 
     return {
       // Prioritize i18n translations for multilingual support
-      title: experimentTitle || this.getLocalizedField(config, 'title') || window.i18n?.t('home.hero.title') || '早鸟',
-      subtitle: experimentSubtitle || this.getLocalizedField(config, 'subtitle') || window.i18n?.t('home.hero.subtitle') || '创意 · 效率 · 无限可能',
+      title: resolveHomepageHeroText(experimentTitle || this.getLocalizedField(config, 'title'), 'home.hero.title', {
+        zh: '早鸟',
+        en: 'Zaoyoe Studio'
+      }),
+      subtitle: resolveHomepageHeroText(experimentSubtitle || this.getLocalizedField(config, 'subtitle'), 'home.hero.subtitle', {
+        zh: '创意 · 效率 · 无限可能',
+        en: 'Creativity · Efficiency · Endless Possibilities'
+      }),
       customImage: config.custom_image || null,
       entries: normalizedEntries
         .filter((item) => item?.enabled !== false)
@@ -1688,11 +2459,15 @@ const FramerHome = {
             link: normalizedLink,
             action: normalizedAction
           });
+          const entryFallback = getHomepageEntryFallback(item, index);
 
           return {
             id: normalizedId,
             icon: String(item?.icon || 'fa-star').trim(),
-            text: this.getLocalizedField(item, 'text') || item?.text || `入口 ${index + 1}`,
+            text: resolveHomepageLocalizedText(this.getLocalizedField(item, 'text') || item?.text, entryFallback.i18nKey, {
+              zh: entryFallback.zh,
+              en: entryFallback.en
+            }),
             link: isGuestbookEntry ? '/guestbook.html' : normalizedLink,
             color: String(item?.color || '#ffffff').trim() || '#ffffff',
             action: normalizedAction || (isGuestbookEntry ? 'openGuestbookModal' : ''),
@@ -1817,11 +2592,23 @@ const FramerHome = {
   async fetchShopProductCatalog() {
     try {
       return await Cache.loadWithCache('shop_products', async () => {
-        const { data, error } = await window.supabaseClient
+        const baseFields = 'id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, category, is_active, display_order';
+        let query = window.supabaseClient
           .from('shop_products')
-          .select('id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, category, is_active, display_order')
+          .select(`${baseFields}, image_assets`)
           .order('display_order', { ascending: false })
           .limit(120);
+        let { data, error } = await query;
+
+        if (error && String(error?.message || '').toLowerCase().includes('image_assets')) {
+          const fallback = await window.supabaseClient
+            .from('shop_products')
+            .select(baseFields)
+            .order('display_order', { ascending: false })
+            .limit(120);
+          data = fallback.data;
+          error = fallback.error;
+        }
 
         if (error) throw error;
         return data || [];
@@ -1897,33 +2684,57 @@ const FramerHome = {
   },
 
   buildGongyiData(config = {}) {
-    const defaultHighlights = ['订阅转 API', '会话保持', '按量计费'];
-    const defaultCards = [
-      {
-        title: '一键接入',
-        description: '获取一个 API 密钥，即可调用所有已接入的 AI 模型，无需分别申请。',
-        icon: 'fa-server',
-        accent: 'blue'
-      },
-      {
-        title: '稳定可靠',
-        description: '智能调度多个上游账号，自动切换和负载均衡，告别频繁报错。',
-        icon: 'fa-users',
-        accent: 'mint'
-      },
-      {
-        title: '用多少付多少',
-        description: '按实际使用量计费，支持设置额度上限，团队用量一目了然。',
-        icon: 'fa-tv',
-        accent: 'violet'
-      }
-    ];
+    const isEnglish = getHomepageRuntimeLanguage() === 'en';
+    const defaultHighlights = isEnglish
+      ? ['Subscription to API', 'Session continuity', 'Usage billing']
+      : ['订阅转 API', '会话保持', '按量计费'];
+    const defaultCards = isEnglish
+      ? [
+        {
+          title: 'One-key access',
+          description: 'Use one API key to call every connected AI model without separate applications.',
+          icon: 'fa-server',
+          accent: 'blue'
+        },
+        {
+          title: 'Stable routing',
+          description: 'Smartly balance upstream accounts and switch routes automatically to reduce failures.',
+          icon: 'fa-users',
+          accent: 'mint'
+        },
+        {
+          title: 'Usage-based billing',
+          description: 'Pay by actual usage, set spending limits, and keep team consumption visible.',
+          icon: 'fa-tv',
+          accent: 'violet'
+        }
+      ]
+      : [
+        {
+          title: '一键接入',
+          description: '获取一个 API 密钥，即可调用所有已接入的 AI 模型，无需分别申请。',
+          icon: 'fa-server',
+          accent: 'blue'
+        },
+        {
+          title: '稳定可靠',
+          description: '智能调度多个上游账号，自动切换和负载均衡，告别频繁报错。',
+          icon: 'fa-users',
+          accent: 'mint'
+        },
+        {
+          title: '用多少付多少',
+          description: '按实际使用量计费，支持设置额度上限，团队用量一目了然。',
+          icon: 'fa-tv',
+          accent: 'violet'
+        }
+      ];
     const defaultModels = [
       { id: 'claude', label: 'Claude' },
       { id: 'gpt', label: 'GPT' },
       { id: 'gemini', label: 'Gemini' },
       { id: 'antigravity', label: 'Antigravity' },
-      { id: 'more', label: '更多' }
+      { id: 'more', label: isEnglish ? 'More' : '更多' }
     ];
     const sourceModels = Array.isArray(config.model_items) && config.model_items.length > 0
       ? config.model_items
@@ -1952,15 +2763,27 @@ const FramerHome = {
 
     return {
       brandName: String(config.brand_name || '').trim() || 'Zaoyoe',
-      brandSubtitle: this.getLocalizedField(config, 'brand_subtitle') || 'Subscription to API Conversion Platform',
-      ctaText: this.getLocalizedField(config, 'cta_text') || '进入控制台',
+      brandSubtitle: resolveHomepageLocalizedText(this.getLocalizedField(config, 'brand_subtitle'), '', {
+        zh: '订阅转 API 转换平台',
+        en: 'Subscription to API Conversion Platform'
+      }),
+      ctaText: resolveHomepageLocalizedText(this.getLocalizedField(config, 'cta_text'), '', {
+        zh: '进入控制台',
+        en: 'Open Console'
+      }),
       ctaLink: String(config.cta_link || '').trim() || 'https://gongyi.zaoyoe.com',
-      highlights: Array.isArray(config.highlight_items) && config.highlight_items.length > 0 ? config.highlight_items : defaultHighlights,
+      highlights: resolveHomepageLocalizedTextList(config.highlight_items, defaultHighlights),
       featureCards: defaultCards.map((card, index) => {
         const baseKey = `feature_${index + 1}`;
         return {
-          title: this.getLocalizedField(config, `${baseKey}_title`) || card.title,
-          description: this.getLocalizedField(config, `${baseKey}_description`) || card.description,
+          title: resolveHomepageLocalizedText(this.getLocalizedField(config, `${baseKey}_title`), '', {
+            zh: card.title,
+            en: card.title
+          }),
+          description: resolveHomepageLocalizedText(this.getLocalizedField(config, `${baseKey}_description`), '', {
+            zh: card.description,
+            en: card.description
+          }),
           icon: card.icon,
           accent: card.accent
         };
@@ -1978,17 +2801,34 @@ const FramerHome = {
    * @param {string} url - Original image URL
    * @returns {string} Thumbnail URL for R2 CDN images, original for others
    */
-  getOptimizedImageUrl(url) {
+  getOptimizedImageUrl(url, options = {}) {
     if (!url) return '';
 
-    // R2 CDN images - use pre-generated thumbnails
-    if (url.includes('cdn.zaoyoe.com/prompts/') && !url.includes('/thumb/')) {
-      return url.replace('/prompts/', '/prompts/thumb/');
+    const imageAsset = typeof url === 'string' ? null : normalizePromptImageAsset(url);
+    const explicitVariantUrl = imageAsset && options.variant
+      ? String(imageAsset[options.variant] || '').trim()
+      : '';
+    if (explicitVariantUrl) {
+      return explicitVariantUrl;
+    }
+
+    const rawUrl = getPromptImageAssetUrl(url);
+    if (!rawUrl) return '';
+
+    const variantUrl = getPromptImageVariantUrl(rawUrl, options.variant || '');
+    if (variantUrl) {
+      return variantUrl;
+    }
+
+    // R2 CDN images - use pre-generated thumbnails for direct original prompt images.
+    const r2ThumbUrl = getPromptR2VariantUrl(rawUrl, 'thumb');
+    if (r2ThumbUrl) {
+      return r2ThumbUrl;
     }
 
     // Supabase Storage images - use Supabase Transform API
-    if (url.includes('supabase.co/storage')) {
-      const transformUrl = url.replace(
+    if (rawUrl.includes('supabase.co/storage')) {
+      const transformUrl = rawUrl.replace(
         '/storage/v1/object/public/',
         '/storage/v1/render/image/public/'
       );
@@ -1996,7 +2836,7 @@ const FramerHome = {
     }
 
     // Return original URL for other images
-    return url;
+    return rawUrl;
   },
 
   isShopImageSource(value) {
@@ -2008,10 +2848,19 @@ const FramerHome = {
   },
 
   getOptimizedShopImageUrl(url, options = {}) {
-    const trimmed = String(url || '').trim();
+    const explicitVariantUrl = getShopProductImageAssetExplicitVariantUrl(url, options.variant || '');
+    if (explicitVariantUrl && options.variant) {
+      return explicitVariantUrl;
+    }
+
+    const trimmed = getShopProductImageAssetUrl(url, 'original');
     if (!trimmed) return '';
 
-    const { format = 'avif' } = options;
+    const { format = 'avif', variant = '' } = options;
+    const variantUrl = getShopImageVariantUrl(trimmed, variant);
+    if (variantUrl) {
+      return variantUrl;
+    }
 
     if (trimmed.startsWith('data:image/') || trimmed.startsWith('/')) {
       return trimmed;
@@ -2053,10 +2902,11 @@ const FramerHome = {
   setHomeShopCardImageSource(cardImage, originalUrl) {
     if (!(cardImage instanceof HTMLImageElement) || !originalUrl) return;
 
-    const primaryUrl = this.getOptimizedShopImageUrl(originalUrl);
-    const transformFallbackUrl = this.getOptimizedShopImageUrl(originalUrl, { format: '' });
+    const primaryUrl = this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' });
+    const originalSrc = getShopProductImageAssetUrl(originalUrl, 'original');
+    const transformFallbackUrl = this.getOptimizedShopImageUrl(originalSrc, { format: '' });
 
-    cardImage.dataset.originalSrc = originalUrl;
+    cardImage.dataset.originalSrc = originalSrc;
     cardImage.dataset.transformFallbackSrc = transformFallbackUrl !== primaryUrl ? transformFallbackUrl : '';
     cardImage.dataset.fallbackStage = '';
     cardImage.src = primaryUrl;
@@ -2083,16 +2933,17 @@ const FramerHome = {
     return false;
   },
 
-  getVersionedPromptImageUrl(url, prompt = {}) {
-    const rawUrl = String(url || '').trim();
+  getVersionedPromptImageUrl(url, prompt = {}, options = {}) {
+    const rawUrl = getPromptImageAssetUrl(url);
     if (!rawUrl) {
       return '';
     }
 
+    const { preferOriginal = false, variant = '' } = options;
     const version = String(prompt?.updated_at || prompt?.created_at || '').trim();
-    const resolvedUrl = rawUrl.includes('cdn.zaoyoe.com/prompts/') && !rawUrl.includes('/thumb/')
+    const resolvedUrl = preferOriginal
       ? rawUrl
-      : this.getOptimizedImageUrl(rawUrl);
+      : this.getOptimizedImageUrl(url, { variant });
 
     if (!version) {
       return resolvedUrl;
@@ -2114,16 +2965,29 @@ const FramerHome = {
    * Build Gemini verify section data
    */
   buildVerifyData(config) {
-    const defaultFeatures = [
-      window.i18n?.t('home.verify.features.free') || '免费',
-      window.i18n?.t('home.verify.features.realtime') || '实时',
-      window.i18n?.t('home.verify.features.secure') || '安全'
-    ];
-    const defaultValueProps = [
-      window.i18n?.t('home.verify.valueProps.fast') || '秒级校验',
-      window.i18n?.t('home.verify.valueProps.visible') || '过程可见',
-      window.i18n?.t('home.verify.valueProps.safe') || '结果可追踪'
-    ];
+    const isEnglish = getHomepageRuntimeLanguage() === 'en';
+    const defaultFeatures = isEnglish
+      ? [
+        window.i18n?.t('home.verify.features.free') || 'Free',
+        window.i18n?.t('home.verify.features.realtime') || 'Real-time',
+        window.i18n?.t('home.verify.features.secure') || 'Secure'
+      ]
+      : [
+        window.i18n?.t('home.verify.features.free') || '免费',
+        window.i18n?.t('home.verify.features.realtime') || '实时',
+        window.i18n?.t('home.verify.features.secure') || '安全'
+      ];
+    const defaultValueProps = isEnglish
+      ? [
+        window.i18n?.t('home.verify.valueProps.fast') || 'Second-level checks',
+        window.i18n?.t('home.verify.valueProps.visible') || 'Visible process',
+        window.i18n?.t('home.verify.valueProps.safe') || 'Traceable results'
+      ]
+      : [
+        window.i18n?.t('home.verify.valueProps.fast') || '秒级校验',
+        window.i18n?.t('home.verify.valueProps.visible') || '过程可见',
+        window.i18n?.t('home.verify.valueProps.safe') || '结果可追踪'
+      ];
     const defaultModels = [
       'Gemini',
       'Claude',
@@ -2133,23 +2997,41 @@ const FramerHome = {
     const experimentCtaText = this.getSectionExperimentValue('verify', config, 'cta_text', '');
     const demoCostPoints = Number.parseInt(config.demo_cost_points, 10);
     return {
-      title: this.getLocalizedField(config, 'section_title') || window.i18n?.t('home.verify.title') || 'Gemini 验证',
-      subtitle: this.getLocalizedField(config, 'section_subtitle') || window.i18n?.t('home.verify.subtitle') || '快速验证您的 API 密钥，实时返回结果',
+      title: resolveHomepageLocalizedText(this.getLocalizedField(config, 'section_title'), 'home.verify.title', {
+        zh: 'Gemini 验证',
+        en: 'Google One'
+      }),
+      subtitle: resolveHomepageLocalizedText(this.getLocalizedField(config, 'section_subtitle'), 'home.verify.subtitle', {
+        zh: '快速验证您的 API 密钥，实时返回结果',
+        en: 'Submit account jobs and fetch trial links automatically'
+      }),
       screenshot: config.screenshot_path || '/assets/verify-preview.png',
       previewMode: String(config.preview_mode || 'dynamic').trim() === 'image' ? 'image' : 'dynamic',
-      features: (config.features && config.features.length > 0) ? config.features : defaultFeatures,
-      valueProps: (config.value_props && config.value_props.length > 0) ? config.value_props : defaultValueProps,
+      features: resolveHomepageLocalizedTextList(config.features, defaultFeatures),
+      valueProps: resolveHomepageLocalizedTextList(config.value_props, defaultValueProps),
       supportedModels: (config.supported_models && config.supported_models.length > 0) ? config.supported_models : defaultModels,
-      ctaText: String(experimentCtaText || config.cta_text || '').trim() || (window.i18n?.t('home.verify.cta') || '立即验证'),
-      riskNotice: String(config.risk_notice || '').trim() || (window.i18n?.t('home.verify.riskNotice') || '建议先使用测试账号完成校验，再切换正式账号。'),
+      ctaText: resolveHomepageLocalizedText(experimentCtaText || config.cta_text, 'home.verify.cta', {
+        zh: '立即验证',
+        en: 'Verify Now'
+      }),
+      riskNotice: resolveHomepageLocalizedText(config.risk_notice, 'home.verify.riskNotice', {
+        zh: '建议先使用测试账号完成校验，再切换正式账号。',
+        en: 'Use a test account for the first check, then switch to a production account.'
+      }),
       link: String(config.cta_link || '').trim() || '/verify.html?source=homepage_verify',
       demo: {
         title: String(config.demo_title || '').trim() || 'Google One',
-        subtitle: String(config.demo_subtitle || '').trim() || '获取 1年 pro 权限的试用链接',
+        subtitle: resolveHomepageLocalizedText(config.demo_subtitle, '', {
+          zh: '获取 1年 pro 权限的试用链接',
+          en: 'Get a one-year Pro trial link'
+        }),
         email: String(config.demo_email || '').trim() || 'preview.account@gmail.com',
         totp: String(config.demo_totp || '').trim() || '3r6cu37xch4ej6d5',
         successLink: String(config.demo_success_link || '').trim() || 'https://services.sheerid.com/verify/zaoyoe-demo?verificationId=GO-8K21',
-        quota: String(config.demo_quota || '').trim() || '0.5 提 / 全 1',
+        quota: resolveHomepageLocalizedText(config.demo_quota, '', {
+          zh: '0.5 提 / 全 1',
+          en: '0.5 submit / 1 full'
+        }),
         balance: String(config.demo_balance || '').trim() || '7.6',
         costPoints: Number.isFinite(demoCostPoints) && demoCostPoints > 0 ? demoCostPoints : 10
       }
@@ -2168,7 +3050,7 @@ const FramerHome = {
         }
       }
 
-      const currentSite = window.SiteConfig?.site || 'cn';
+      const currentSite = getHomepageRuntimeSite();
       const directFetch = async () => {
         const { data, error } = await window.supabaseClient
           .from('guestbook_messages')
@@ -2189,27 +3071,27 @@ const FramerHome = {
         return Array.isArray(data) ? data : [];
       };
 
-      try {
-        const prefetchRaw = sessionStorage.getItem('guestbook_prefetch');
-        if (prefetchRaw) {
-          const prefetch = JSON.parse(prefetchRaw);
-          const age = Date.now() - Number(prefetch?.timestamp || 0);
-          const prefetchData = Array.isArray(prefetch?.data) ? prefetch.data : [];
-          if (age < 300000 && (!prefetch?.site || prefetch.site === currentSite) && prefetchData.length > 0) {
-            return prefetchData;
-          }
+      const liveFetch = async () => {
+        try {
+          return await fetchHomepageGuestbookRpcMessages(currentSite, 24);
+        } catch (error) {
+          console.warn('Homepage guestbook RPC failed, using direct fetch:', error?.message || error);
+          return await directFetch();
         }
-      } catch (_) {
-        // Ignore prefetch parsing failures and fall through to live fetch.
+      };
+
+      const prefetchData = readHomepageGuestbookPrefetchMessages(currentSite);
+      if (prefetchData.length > 0) {
+        return prefetchData.slice(0, 24);
       }
 
-      const cachedMessages = await Cache.loadWithCache('guestbook_messages', directFetch, 10);
+      const cachedMessages = await Cache.loadWithCache('guestbook_messages', liveFetch, 10);
       if (Array.isArray(cachedMessages) && cachedMessages.length > 0) {
         return cachedMessages;
       }
 
       window.Cache?.invalidateCache?.('guestbook_messages');
-      return await directFetch();
+      return await liveFetch();
     } catch (error) {
       console.error('Failed to fetch guestbook:', error);
       return [];
@@ -2227,31 +3109,38 @@ const FramerHome = {
       return {
         ...liveMessage,
         homepage_curated: true,
-        homepage_reason: String(item?.reason || '').trim()
+        homepage_reason: getHomepageLocalizedDataField(item, 'reason', { en: '' })
       };
     }
 
-    if (!item?.content) {
+    const curatedContent = getHomepageLocalizedDataField(item, 'content', { en: '' });
+    if (!curatedContent) {
       return null;
     }
 
     return {
       id: normalizedId,
-      content: String(item.content || '').trim(),
+      content: curatedContent,
       image_url: String(item.image_url || '').trim(),
       like_count: Number(item.like_count || 0) || 0,
       created_at: item.created_at || null,
       user_id: item.user_id || null,
-      username: item.username || item?.profiles?.username || '',
+      username: getHomepageLocalizedDataField(item, 'username', {
+        zh: item.username || item?.profiles?.username || '',
+        en: 'Community'
+      }),
       avatar_url: item.avatar_url || item?.profiles?.avatar_url || '',
       homepage_curated: true,
       homepage_missing: true,
-      homepage_reason: String(item?.reason || '').trim()
+      homepage_reason: getHomepageLocalizedDataField(item, 'reason', { en: '' })
     };
   },
 
   buildGuestbookFallbackCard(item = {}, index = 0) {
-    const content = String(item?.content || item?.text || '').trim();
+    const content = getHomepageLocalizedDataField({
+      ...item,
+      content: item?.content || item?.text || ''
+    }, 'content', { en: '' });
     if (!content) {
       return null;
     }
@@ -2259,7 +3148,10 @@ const FramerHome = {
     return {
       id: String(item?.id || `guestbook_fallback_${index + 1}`).trim(),
       content,
-      author: String(item?.author || '').trim(),
+      author: getHomepageLocalizedDataField(item, 'author', {
+        zh: item?.author || '',
+        en: item?.author_en || 'Community'
+      }),
       avatar_url: String(item?.avatar_url || '').trim(),
       homepage_fallback: true
     };
@@ -2280,11 +3172,13 @@ const FramerHome = {
         : [];
       const fallbackItems = Array.isArray(config.fallback_items)
         ? config.fallback_items
+          .filter((item) => getHomepageRuntimeLanguage() !== 'en' || Boolean(getHomepageLocalizedDataField(item, 'content', { en: '' })))
           .map((item, index) => this.buildGuestbookFallbackCard(item, index))
           .filter(Boolean)
         : [];
       const featuredIds = new Set(featuredItems.map((item) => String(item?.id || '').trim()).filter(Boolean));
-      const autoItems = (Array.isArray(messages) ? messages : []).filter((item) => !featuredIds.has(String(item?.id || '').trim()));
+      const autoItems = (Array.isArray(messages) ? messages : [])
+        .filter((item) => !featuredIds.has(String(item?.id || '').trim()));
 
       if (config.enable_auto === false) {
         return [...featuredItems, ...fallbackItems].slice(0, Math.min(maxItems, HOME_GUESTBOOK_CARD_SLOTS.length));
@@ -2295,6 +3189,7 @@ const FramerHome = {
       console.error('Failed to fetch guestbook:', error);
       const fallbackItems = Array.isArray(config.fallback_items)
         ? config.fallback_items
+          .filter((item) => getHomepageRuntimeLanguage() !== 'en' || Boolean(getHomepageLocalizedDataField(item, 'content', { en: '' })))
           .map((item, index) => this.buildGuestbookFallbackCard(item, index))
           .filter(Boolean)
         : [];
@@ -2314,8 +3209,9 @@ const FramerHome = {
       ...sanitizeTickerItems(config.custom_items_top)
     ];
     const productCategorySeed = [
-      ...sanitizeTickerItems(config.product_categories),
-      ...sanitizeTickerItems(config.custom_items_bottom)
+      ...sanitizeTickerItems(config.product_categories, { allowCjk: true }),
+      ...sanitizeTickerItems(config.custom_items_bottom, { allowCjk: true }),
+      ...sanitizeTickerItems(this.cachedData?.shopCategories, { allowCjk: true })
     ];
     let tags = [...new Set(promptTagSeed)];
     const productCategories = Array.from(new Set(productCategorySeed));
@@ -2325,12 +3221,12 @@ const FramerHome = {
       promptPool.forEach(p => {
         if (p.aiTags && typeof p.aiTags === 'object') {
           ['styles', 'objects', 'scenes', 'mood'].forEach(cat => {
-            const promptTags = p.aiTags[cat]?.[lang] || p.aiTags[cat]?.zh || [];
+            const promptTags = p.aiTags[cat]?.[lang] || (lang === 'en' ? [] : (p.aiTags[cat]?.zh || []));
             promptTags.forEach(tag => tagSet.add(tag));
           });
         }
       });
-      tags = Array.from(tagSet).slice(0, 20);
+      tags = sanitizeTickerItems(Array.from(tagSet)).slice(0, 20);
     }
 
     if ((config.enable_auto !== false || productCategories.length === 0) && config.enable_products !== false) {
@@ -2341,7 +3237,7 @@ const FramerHome = {
           categorySet.add(category);
         }
       });
-      productCategories.splice(0, productCategories.length, ...Array.from(categorySet).slice(0, 20));
+      productCategories.splice(0, productCategories.length, ...sanitizeTickerItems(Array.from(categorySet), { allowCjk: true }).slice(0, 20));
     }
 
     return {
@@ -2453,8 +3349,11 @@ const FramerHome = {
   /**
    * Render all sections
    */
-  renderAll() {
+  renderAll(options = {}) {
     const sv = window.SectionVisibility;
+    const renderPhase = String(options.phase || 'all').trim().toLowerCase();
+    const firstPaintOnly = renderPhase === 'first-paint';
+    const deferredOnly = renderPhase === 'deferred';
     this.applyHomepageSectionOrder();
 
     const renderers = {
@@ -2494,7 +3393,20 @@ const FramerHome = {
         return;
       }
 
+      if (firstPaintOnly && !HOMEPAGE_FIRST_PAINT_SECTION_KEYS.has(sectionKey)) {
+        sectionEl.dataset.homepageDeferredRender = '1';
+        if (!isVisible) {
+          setHomeSectionVisibility(sectionEl, false);
+        }
+        return;
+      }
+
+      if (deferredOnly && HOMEPAGE_FIRST_PAINT_SECTION_KEYS.has(sectionKey)) {
+        return;
+      }
+
       if (isVisible) {
+        delete sectionEl.dataset.homepageDeferredRender;
         setHomeSectionVisibility(sectionEl, true);
         renderers[sectionKey]();
       } else {
@@ -2521,9 +3433,10 @@ const FramerHome = {
         this.cachedData = {};
       }
 
-      // Load prompts from global PROMPTS (if available)
-      if (window.PROMPTS && Array.isArray(window.PROMPTS)) {
-        this.cachedData.prompts = window.PROMPTS;
+      // Load prompts from the lightweight homepage summary first, then fall back to full PROMPTS.
+      const navPromptSource = getHomepageStaticPromptSource();
+      if (navPromptSource.length > 0) {
+        this.cachedData.prompts = filterHomeVisiblePrompts(navPromptSource);
       } else {
         // Fallback: empty array (will use fallback tags)
         this.cachedData.prompts = [];
@@ -2820,6 +3733,125 @@ const FramerHome = {
   /**
    * Render Hero section
    */
+  buildHeroEntryCardMarkup(entry, index) {
+    const link = String(entry?.link || '#').trim() || '#';
+    const entryId = String(entry?.id || `hero_entry_${index + 1}`).trim() || `hero_entry_${index + 1}`;
+    const entryTitle = String(entry?.text || '').trim();
+    const entrySection = String(entry?.section || '').trim();
+    const entryAction = String(entry?.action || '').trim();
+    const iconClass = normalizeHomeIconClass(entry?.icon || 'fa-circle');
+    const entryColor = String(entry?.color || '').trim();
+
+    return `
+            <a
+              href="${escapeHomeHtml(link)}"
+              class="entry-card"
+              data-index="${index}"
+              data-home-entry-id="${escapeHomeHtml(entryId)}"
+              data-home-entry-title="${escapeHomeHtml(entryTitle)}"
+              data-home-entry-link="${escapeHomeHtml(link)}"
+              data-home-entry-section="${escapeHomeHtml(entrySection)}"
+              ${entryAction === 'openGuestbookModal' ? 'data-home-open-guestbook="1"' : ''}
+              ${entryAction ? `data-action="${escapeHomeHtml(entryAction)}"` : ''}>
+              <span class="entry-card-ui">
+                <i class="fas ${escapeHomeHtml(iconClass)} home-entry-card-icon" data-home-entry-color="${escapeHomeHtml(entryColor)}"></i>
+                <span>${escapeHomeHtml(entryTitle)}</span>
+              </span>
+            </a>
+          `;
+  },
+
+  hydrateStaticHeroSection(section, data, visibleEntries, heroSignature) {
+    if (!section || section.dataset.homeStaticHero !== '1' || section.dataset.renderSignature) {
+      return false;
+    }
+
+    const track = section.querySelector('.hero-carousel-track');
+    if (!track) {
+      return false;
+    }
+
+    setHomeRuntimeStyle(section, {
+      backgroundImage: data.customImage
+        ? `linear-gradient(180deg, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.9)), url("${String(data.customImage).replace(/"/g, '%22')}")`
+        : '',
+      backgroundSize: data.customImage ? 'cover' : '',
+      backgroundPosition: data.customImage ? 'center center' : '',
+      backgroundRepeat: data.customImage ? 'no-repeat' : ''
+    });
+
+    const titleEl = section.querySelector('.hero-title');
+    if (titleEl) {
+      titleEl.textContent = data.title || '';
+      titleEl.removeAttribute('data-i18n');
+    }
+
+    const subtitleEl = section.querySelector('.hero-subtitle');
+    if (subtitleEl) {
+      subtitleEl.textContent = data.subtitle || '';
+      subtitleEl.removeAttribute('data-i18n');
+    }
+
+    if (track.querySelectorAll('.entry-card').length !== visibleEntries.length) {
+      track.innerHTML = visibleEntries.map((entry, index) => this.buildHeroEntryCardMarkup(entry, index)).join('');
+    }
+
+    Array.from(track.querySelectorAll('.entry-card')).forEach((card, index) => {
+      const entry = visibleEntries[index] || {};
+      const link = String(entry.link || '#').trim() || '#';
+      const entryId = String(entry.id || `hero_entry_${index + 1}`).trim() || `hero_entry_${index + 1}`;
+      const entryTitle = String(entry.text || '').trim();
+      const entrySection = String(entry.section || '').trim();
+      const entryAction = String(entry.action || '').trim();
+
+      card.setAttribute('href', link);
+      card.dataset.index = String(index);
+      card.dataset.homeEntryId = entryId;
+      card.dataset.homeEntryTitle = entryTitle;
+      card.dataset.homeEntryLink = link;
+      card.dataset.homeEntrySection = entrySection;
+      if (entryAction === 'openGuestbookModal') {
+        card.dataset.homeOpenGuestbook = '1';
+      } else {
+        card.removeAttribute('data-home-open-guestbook');
+      }
+      if (entryAction) {
+        card.dataset.action = entryAction;
+      } else {
+        card.removeAttribute('data-action');
+      }
+
+      const icon = card.querySelector('.home-entry-card-icon') || card.querySelector('.entry-card-ui i');
+      if (icon) {
+        icon.className = `fas ${normalizeHomeIconClass(entry.icon || 'fa-circle')} home-entry-card-icon`;
+        icon.dataset.homeEntryColor = String(entry.color || '').trim();
+      }
+
+      const label = card.querySelector('.entry-card-ui > span');
+      if (label) {
+        label.textContent = entryTitle;
+        label.removeAttribute('data-i18n');
+      }
+    });
+
+    section.dataset.renderSignature = heroSignature;
+    section.dataset.homeHeroHydrated = '1';
+    this.writeHeroTextCache(data);
+
+    // Keep the seeded prism scene intact so its intro scale animation does not replay.
+    section.querySelectorAll('.fade-in-up').forEach((el) => {
+      el.classList.add('visible');
+    });
+    section.querySelectorAll('[data-home-entry-color]').forEach((icon) => {
+      setHomeRuntimeStyle(icon, {
+        color: icon.dataset.homeEntryColor || ''
+      });
+    });
+    observeHomepageSectionImpression(section, 'hero');
+    this.initCarousel();
+    return true;
+  },
+
   renderHero() {
     const data = this.cachedData.hero;
     const section = document.getElementById('hero-section');
@@ -2854,6 +3886,10 @@ const FramerHome = {
 
     // Avoid replacing Hero DOM when content is unchanged (prevents visual jump on re-init).
     if (section.dataset.renderSignature === heroSignature) {
+      return;
+    }
+
+    if (this.hydrateStaticHeroSection(section, data, visibleEntries, heroSignature)) {
       return;
     }
 
@@ -2899,23 +3935,7 @@ const FramerHome = {
       <!-- Horizontal Scroll Carousel -->
       <div class="hero-carousel fade-in-up">
         <div class="hero-carousel-track">
-          ${visibleEntries.map((entry, index) => `
-            <a
-              href="${escapeHomeHtml(entry.link || '#')}"
-              class="entry-card"
-              data-index="${index}"
-              data-home-entry-id="${escapeHomeHtml(entry.id || `hero_entry_${index + 1}`)}"
-              data-home-entry-title="${escapeHomeHtml(entry.text || '')}"
-              data-home-entry-link="${escapeHomeHtml(entry.link || '#')}"
-              data-home-entry-section="${escapeHomeHtml(entry.section || '')}"
-              ${entry.action === 'openGuestbookModal' ? 'data-home-open-guestbook="1"' : ''}
-              ${entry.action ? `data-action="${escapeHomeHtml(entry.action)}"` : ''}>
-              <span class="entry-card-ui">
-                <i class="fas ${escapeHomeHtml(entry.icon || 'fa-circle')} home-entry-card-icon" data-home-entry-color="${entry.color}"></i>
-                <span>${escapeHomeHtml(entry.text || '')}</span>
-              </span>
-            </a>
-          `).join('')}
+          ${visibleEntries.map((entry, index) => this.buildHeroEntryCardMarkup(entry, index)).join('')}
         </div>
       </div>
     `;
@@ -2985,36 +4005,47 @@ const FramerHome = {
 
     // Match the number of columns to the actual card count to avoid empty tracks.
     const columnCount = Math.min(5, Math.max(1, prompts.length || 1));
-    const columns = this.distributeCardsToColumns(prompts, columnCount);
+    const viewportWidth = Number(window.innerWidth || document.documentElement?.clientWidth || 0);
+    const visiblePromptColumnCount = viewportWidth > 0 && viewportWidth <= 768
+      ? Math.min(3, columnCount)
+      : (viewportWidth > 0 && viewportWidth <= 1200 ? Math.min(4, columnCount) : columnCount);
+    const promptRenderItems = prompts.map((prompt, promptIndex) => ({ prompt, promptIndex }));
+    const columns = this.distributeCardsToColumns(promptRenderItems, columnCount);
 
-    let promptRenderIndex = 0;
+    const sectionTitle = resolveHomepageLocalizedText(this.getLocalizedField(config, 'section_title'), 'home.prompts.title', {
+      zh: 'AI 提示词工作室',
+      en: 'AI Prompt Studio'
+    });
+    const sectionSubtitle = resolveHomepageLocalizedText(this.getLocalizedField(config, 'section_subtitle'), 'home.prompts.subtitle', {
+      zh: '让创作更高效，让灵感更自由',
+      en: 'Make creation more efficient, inspiration more free'
+    });
 
     section.innerHTML = `
       <div class="section-header fade-in-up">
-        <h2 class="section-title">${this.getLocalizedField(config, 'section_title') || window.i18n?.t('home.prompts.title') || 'AI 提示词工作室'}</h2>
-        <p class="section-subtitle">${this.getLocalizedField(config, 'section_subtitle') || window.i18n?.t('home.prompts.subtitle') || '让创作更高效，让灵感更自由'}</p>
+        <h2 class="section-title">${escapeHomeHtml(sectionTitle)}</h2>
+        <p class="section-subtitle">${escapeHomeHtml(sectionSubtitle)}</p>
       </div>
       
       <div class="prompts-masonry-wrapper">
         <div class="masonry-container" data-columns="${columnCount}">
           ${columns.map((columnCards, columnIndex) => `
             <div class="masonry-column" data-column="${columnIndex}">
-                ${columnCards.map(prompt => {
-      const shouldLoadImageEagerly = promptRenderIndex < 12;
-      const shouldPromoteImagePriority = promptRenderIndex < 8;
-      promptRenderIndex += 1;
-      const promptImage = Array.isArray(prompt.images) ? prompt.images[0] : (prompt.image || '');
-      const promptImageSrc = this.getVersionedPromptImageUrl(promptImage, prompt);
-      const promptFallbackSrc = this.getVersionedPromptImageUrl(promptImage, {
-        updated_at: '',
-        created_at: prompt?.updated_at || prompt?.created_at || ''
+                ${columnCards.map(({ prompt }, rowIndex) => {
+      const promptImageAssets = normalizePromptImageAssetsFromRecord(prompt);
+      const promptImage = promptImageAssets[0] || (Array.isArray(prompt.images) ? prompt.images[0] : (prompt.image || ''));
+      const promptImageSrc = this.getVersionedPromptImageUrl(promptImage, prompt, { variant: 'home' });
+      const promptFallbackSrc = this.getVersionedPromptImageUrl(promptImage, prompt, { preferOriginal: true });
+      const promptTitle = getHomepageLocalizedDataField(prompt, 'title', {
+        zh: 'Prompt',
+        en: 'Prompt'
       });
-      const promptTitle = this.getLocalizedField(prompt, 'title') || prompt.title || prompt.title_zh || prompt.title_en || 'Prompt';
-      const cardMedia = promptImage
+      const isPriorityPromptImage = columnIndex < visiblePromptColumnCount && rowIndex < HOMEPAGE_PROMPT_EAGER_IMAGE_ROWS;
+      const cardMedia = getPromptImageAssetUrl(promptImage)
         ? `<img src="${promptImageSrc}"
                          alt="${escapeHomeHtml(promptTitle)}" 
-                         loading="${shouldLoadImageEagerly ? 'eager' : 'lazy'}"
-                         fetchpriority="${shouldPromoteImagePriority ? 'high' : 'auto'}"
+                         loading="${isPriorityPromptImage ? 'eager' : 'lazy'}"
+                         fetchpriority="${isPriorityPromptImage ? 'high' : 'low'}"
                          decoding="async"
                          draggable="false"
                          data-home-fallback-src="${encodeURIComponent(promptFallbackSrc)}" />`
@@ -3044,12 +4075,12 @@ const FramerHome = {
             // Extract from aiTags with language-specific keys
             ['styles', 'objects', 'scenes', 'mood'].forEach(c => {
               const langTags = p.aiTags[c]?.[langKey];
-              if (langTags) langTags.forEach(t => allTags.add(t));
+              filterHomepageDataTextList(langTags).forEach(t => allTags.add(t));
             });
           } else if (p.tags) {
             // Fallback to simple tags field with language support
             const tagsField = lang === 'en' ? 'tags_en' : 'tags';
-            (p[tagsField] || p.tags || []).forEach(t => allTags.add(t));
+            filterHomepageDataTextList(p[tagsField] || p.tags || []).forEach(t => allTags.add(t));
           }
         });
         const tagList = Array.from(allTags).slice(0, 8); // Top 8 tags
@@ -3066,7 +4097,7 @@ const FramerHome = {
                 ${row1.map(tag => `<span class="mask-tag">${tag}</span>`).join('')}
               </div>
               <div class="mask-cta">
-                <span class="mask-cta-text">${window.i18n?.t('home.prompts.viewMore') || '查看更多'}</span>
+                <span class="mask-cta-text">${escapeHomeHtml(getHomepageLanguageFallback('home.prompts.viewMore', { zh: '查看更多', en: 'View more' }))}</span>
                 <span class="mask-cta-arrow">›</span>
               </div>
               <div class="mask-labels-row">
@@ -3090,6 +4121,7 @@ const FramerHome = {
     });
 
     // Parallax is a visual enhancement; let first paint win and attach it slightly later.
+    this.schedulePromptMasonryImageWarmup(section);
     this.scheduleMasonryParallaxInit();
     const maskLink = section.querySelector('[data-home-prompts-mask-link="1"]');
     if (maskLink) {
@@ -3142,12 +4174,22 @@ const FramerHome = {
     const cycleProducts = Array.from({ length: repeatCount }, () => products).flat();
     const renderShopCard = (product) => {
       const productId = String(product?.id || '').trim();
-      const productName = this.getLocalizedField(product, 'name');
-      const productDescription = this.getLocalizedField(product, 'description');
-      const hasProductImage = this.isShopImageSource(product?.icon_url);
+      const productName = getHomepageLocalizedDataField(product, 'name', {
+        zh: '商品',
+        en: 'Resource'
+      });
+      const productDescription = getHomepageLocalizedDataField(product, 'description', {
+        zh: window.i18n?.t('shop.noDescription') || '暂无描述',
+        en: 'Details are available in the store.'
+      });
+      const productCategory = getHomepageProductCategoryLabel(product?.category);
+      const productImageAsset = getShopProductImageAsset(product);
+      const productImageOriginalUrl = getShopProductImageAssetUrl(productImageAsset, 'original') || String(product?.icon_url || '');
+      const productImageCardUrl = getShopProductImageAssetExplicitVariantUrl(productImageAsset, 'card');
+      const hasProductImage = this.isShopImageSource(productImageOriginalUrl);
       const stockText = Number(product?.stock_count || 0) > 0
-        ? `${window.i18n?.t('home.shop.stock') || '库存'} ${Number(product.stock_count || 0)}`
-        : (window.i18n?.t('home.shop.lowStock') || '库存紧张');
+        ? `${getHomepageLanguageFallback('shop.stock', { zh: '库存', en: 'Stock' })} ${Number(product.stock_count || 0)}`
+        : getHomepageLanguageFallback('shop.outOfStock', { zh: '售罄', en: 'Sold Out' });
       return `
       <a
         href="/shop.html"
@@ -3157,13 +4199,13 @@ const FramerHome = {
         ${product.homepage_badge ? `<span class="shop-card-badge">${escapeHomeHtml(product.homepage_badge)}</span>` : ''}
         <div class="shop-card-image">
           ${hasProductImage
-      ? `<img class="shop-card-home-image" alt="${escapeHomeHtml(productName)}" loading="lazy" decoding="async" data-home-shop-image="1" data-home-shop-original-src="${escapeHomeHtml(product.icon_url)}">`
+      ? `<img class="shop-card-home-image" alt="${escapeHomeHtml(productName)}" loading="lazy" decoding="async" data-home-shop-image="1" data-home-shop-original-src="${escapeHomeHtml(productImageOriginalUrl)}" data-home-shop-card-src="${escapeHomeHtml(productImageCardUrl)}">`
       : (product.icon_url && product.icon_url.startsWith('fa-') ? `<i class="fas ${product.icon_url} shop-card-icon"></i>` : `<i class="fas fa-box-open shop-card-icon shop-card-icon--fallback"></i>`)}
         </div>
         <div class="shop-card-info">
           <h3>${escapeHomeHtml(productName)}</h3>
           <p>${escapeHomeHtml(productDescription)}</p>
-          <span class="shop-card-meta">${escapeHomeHtml(product.category || '')}${product.category ? ' · ' : ''}${escapeHomeHtml(stockText)}</span>
+          <span class="shop-card-meta">${escapeHomeHtml(productCategory)}${productCategory ? ' · ' : ''}${escapeHomeHtml(stockText)}</span>
         </div>
       </a>
     `;
@@ -3171,11 +4213,19 @@ const FramerHome = {
 
     // Read shop_scroll_speed from ticker config and convert it into pixels-per-second motion
     const shopSpeed = this.config.ticker?.shop_scroll_speed || 30;
+    const sectionTitle = resolveHomepageLocalizedText(this.getLocalizedField(config, 'section_title'), 'home.shop.title', {
+      zh: '精选资源商城',
+      en: 'Featured Resource Store'
+    });
+    const sectionSubtitle = resolveHomepageLocalizedText(this.getLocalizedField(config, 'section_subtitle'), 'home.shop.subtitle', {
+      zh: '优质资源，助力成长',
+      en: 'Quality resources for growth'
+    });
 
     section.innerHTML = `
       <div class="section-header fade-in-up">
-        <h2 class="section-title">${this.getLocalizedField(config, 'section_title') || window.i18n?.t('home.shop.title') || '精选资源商城'}</h2>
-        <p class="section-subtitle">${this.getLocalizedField(config, 'section_subtitle') || window.i18n?.t('home.shop.subtitle') || '优质资源，助力成长'}</p>
+        <h2 class="section-title">${escapeHomeHtml(sectionTitle)}</h2>
+        <p class="section-subtitle">${escapeHomeHtml(sectionSubtitle)}</p>
       </div>
       
       <div class="shop-carousel-wrapper">
@@ -3192,6 +4242,8 @@ const FramerHome = {
 
     section.querySelectorAll('img[data-home-shop-image="1"]').forEach((image) => {
       const originalSrc = String(image.dataset.homeShopOriginalSrc || '').trim();
+      const cardSrc = String(image.dataset.homeShopCardSrc || '').trim();
+      const imageAsset = cardSrc ? { original: originalSrc, card: cardSrc } : originalSrc;
       if (!originalSrc) {
         const fallbackIcon = document.createElement('i');
         fallbackIcon.className = 'fas fa-box-open shop-card-icon shop-card-icon--fallback';
@@ -3201,7 +4253,7 @@ const FramerHome = {
       }
 
       image.addEventListener('error', () => {
-        if (this.handleHomeShopCardImageError(image, originalSrc)) {
+        if (this.handleHomeShopCardImageError(image, imageAsset)) {
           return;
         }
 
@@ -3211,7 +4263,7 @@ const FramerHome = {
         image.replaceWith(fallbackIcon);
       });
 
-      this.setHomeShopCardImageSource(image, originalSrc);
+      this.setHomeShopCardImageSource(image, imageAsset);
     });
     section.querySelectorAll('[data-home-animation-duration]').forEach((track) => {
       const primaryCycle = track.querySelector('[data-home-shop-cycle="1"]');
@@ -3253,15 +4305,39 @@ const FramerHome = {
     setHomeSectionVisibility(section, true);
 
     const accentByIndex = ['orange', 'green', 'blue', 'pink', 'slate'];
+    const fallbackBrandSubtitle = resolveHomepageLocalizedText('', '', {
+      zh: '订阅转 API 转换平台',
+      en: 'Subscription to API Conversion Platform'
+    });
+    const fallbackCtaText = resolveHomepageLocalizedText('', '', {
+      zh: '进入控制台',
+      en: 'Open Console'
+    });
+    const modelSectionTitle = resolveHomepageLocalizedText('', '', {
+      zh: '已支持的 AI 模型',
+      en: 'Supported AI Models'
+    });
+    const modelSectionSubtitle = resolveHomepageLocalizedText('', '', {
+      zh: '一个 API，多种选择',
+      en: 'One API, many choices'
+    });
+    const modelSupportedStatus = resolveHomepageLocalizedText('', '', {
+      zh: '已支持',
+      en: 'Supported'
+    });
+    const modelComingSoonStatus = resolveHomepageLocalizedText('', '', {
+      zh: '即将推出',
+      en: 'Coming Soon'
+    });
     section.innerHTML = `
       <div class="gongyi-shell ${data.showModelSection ? '' : 'gongyi-shell--no-models'} fade-in-up">
         <div class="gongyi-hero">
           <div class="gongyi-copy">
             <h2 class="gongyi-brand">${escapeHomeHtml(data.brandName || 'Zaoyoe')}</h2>
-            <p class="gongyi-brand-subtitle">${escapeHomeHtml(data.brandSubtitle || 'Subscription to API Conversion Platform')}</p>
+            <p class="gongyi-brand-subtitle">${escapeHomeHtml(data.brandSubtitle || fallbackBrandSubtitle)}</p>
             <div class="gongyi-actions">
               <a href="${escapeHomeHtml(data.ctaLink || 'https://gongyi.zaoyoe.com')}" class="btn btn-primary gongyi-cta" data-home-gongyi-cta="1" target="_blank" rel="noopener noreferrer">
-                ${escapeHomeHtml(data.ctaText || '进入控制台')}
+                ${escapeHomeHtml(data.ctaText || fallbackCtaText)}
               </a>
             </div>
           </div>
@@ -3304,8 +4380,8 @@ const FramerHome = {
 
         ${data.showModelSection ? `
         <div class="gongyi-models">
-          <h3 class="gongyi-models-title">已支持的 AI 模型</h3>
-          <p class="gongyi-models-subtitle">一个 API，多种选择</p>
+          <h3 class="gongyi-models-title">${escapeHomeHtml(modelSectionTitle)}</h3>
+          <p class="gongyi-models-subtitle">${escapeHomeHtml(modelSectionSubtitle)}</p>
           <div class="gongyi-model-chip-list">
             ${(Array.isArray(data.modelItems) ? data.modelItems : []).map((item, index) => {
               const normalized = String(item?.label || '').trim();
@@ -3314,7 +4390,7 @@ const FramerHome = {
                 <div class="gongyi-model-chip ${isMuted ? 'is-muted' : ''}">
                   <span class="gongyi-model-chip__icon gongyi-model-chip__icon--${accentByIndex[index % accentByIndex.length]}">${escapeHomeHtml((normalized[0] || '+').toUpperCase())}</span>
                   <span class="gongyi-model-chip__label">${escapeHomeHtml(normalized)}</span>
-                  <span class="gongyi-model-chip__status">${isMuted ? '即将推出' : '已支持'}</span>
+                  <span class="gongyi-model-chip__status">${escapeHomeHtml(isMuted ? modelComingSoonStatus : modelSupportedStatus)}</span>
                 </div>
               `;
             }).join('')}
@@ -3428,12 +4504,44 @@ const FramerHome = {
     const costPoints = Number.isFinite(Number(demo.costPoints)) && Number(demo.costPoints) > 0
       ? Number(demo.costPoints)
       : 10;
+    const copy = (i18nKey, fallbackByLanguage) => getHomepageLanguageFallback(i18nKey, fallbackByLanguage);
+    const labels = {
+      subtitle: copy('', { zh: '获取 1年 pro 权限的试用链接', en: 'Get a one-year Pro trial link' }),
+      quota: copy('', { zh: '0.5 提 / 全 1', en: '0.5 submit / 1 full' }),
+      apiQuotaTitle: copy('verify.apiQuotaTitle', { zh: 'API 剩余额度', en: 'API balance' }),
+      walletTitle: copy('verify.walletTitle', { zh: '我的钱包', en: 'My wallet' }),
+      emailLabel: copy('verify.emailLabel', { zh: 'Gmail 地址', en: 'Gmail Address' }),
+      emailPlaceholder: copy('verify.emailPlaceholder', { zh: 'your.account@gmail.com', en: 'your.account@gmail.com' }),
+      passwordLabel: copy('verify.passwordLabel', { zh: '账号密码', en: 'Account Password' }),
+      passwordPlaceholder: copy('verify.passwordPlaceholder', { zh: '密码', en: 'Password' }),
+      showPassword: copy('verify.showPassword', { zh: '显示密码', en: 'Show password' }),
+      totpLabel: copy('verify.totpLabel', { zh: '2FA 密钥（Base32）', en: '2FA Secret (Base32)' }),
+      modeLabel: copy('', { zh: '业务模式', en: 'Task Mode' }),
+      extractTitle: copy('', { zh: '仅提链', en: 'Extract Link Only' }),
+      fullTitle: copy('', { zh: '全流程包绑卡', en: 'Full Flow With Card' }),
+      pointsUnit: copy('', { zh: '积分', en: 'points' }),
+      extractMeta: copy('', { zh: '只拿可用订阅链接', en: 'Get the available subscription link only' }),
+      fullMeta: copy('', { zh: '完成 Google One 订阅流程', en: 'Complete the Google One subscription flow' }),
+      modeNote: copy('', {
+        zh: '提链模式成功后，请自行打开链接完成绑卡订阅；没有卡可前往商城购卡。',
+        en: 'After link extraction succeeds, open the link to finish card binding. Cards are available in the shop.'
+      }),
+      singleCost: copy('verify.singleCost', { zh: '本次提交消耗', en: 'This submission costs' }),
+      resetForm: copy('verify.resetForm', { zh: '清空', en: 'Clear' }),
+      submitTask: copy('', { zh: '提交任务', en: 'Submit Task' }),
+      taskStatus: copy('', { zh: '任务状态', en: 'Task Status' }),
+      progress: copy('', { zh: '进度', en: 'Progress' }),
+      waiting: copy('', { zh: '等待提交任务', en: 'Waiting to submit' }),
+      success: copy('', { zh: '成功', en: 'Success' }),
+      error: copy('', { zh: '失败', en: 'Failed' }),
+      total: copy('', { zh: '总计', en: 'Total' })
+    };
     const title = escapeHomeHtml(demo.title || 'Google One');
-    const subtitle = escapeHomeHtml(demo.subtitle || '获取 1年 pro 权限的试用链接');
+    const subtitle = escapeHomeHtml(demo.subtitle || labels.subtitle);
     const email = escapeHomeHtml(demo.email || 'preview.account@gmail.com');
     const totp = escapeHomeHtml(demo.totp || '3r6cu37xch4ej6d5');
     const successLink = escapeHomeHtml(demo.successLink || 'https://services.sheerid.com/verify/zaoyoe-demo?verificationId=GO-8K21');
-    const quota = escapeHomeHtml(demo.quota || '0.5 提 / 全 1');
+    const quota = escapeHomeHtml(demo.quota || labels.quota);
     const balance = escapeHomeHtml(demo.balance || '7.6');
 
     return `
@@ -3453,11 +4561,11 @@ const FramerHome = {
             <p>${subtitle}</p>
           </div>
           <div class="verify-header-right">
-            <div class="verify-api-quota verify-api-quota--warning" title="API 剩余额度">
+            <div class="verify-api-quota verify-api-quota--warning" title="${escapeHomeHtml(labels.apiQuotaTitle)}">
               <i class="fas fa-gem" aria-hidden="true"></i>
               <span data-home-verify-quota>${quota}</span>
             </div>
-            <div class="verify-balance" title="我的钱包">
+            <div class="verify-balance" title="${escapeHomeHtml(labels.walletTitle)}">
               <i class="fas fa-coins" aria-hidden="true"></i>
               <span data-home-verify-balance>${balance}</span>
             </div>
@@ -3467,23 +4575,23 @@ const FramerHome = {
         <div class="verify-form-shell">
           <div class="verify-input-area verify-form-main">
             <label class="verify-form-field">
-              <span class="verify-field-label">Gmail 地址 <em>*</em></span>
-              <input class="verify-input" data-home-verify-email type="text" readonly placeholder="your.account@gmail.com">
+              <span class="verify-field-label">${escapeHomeHtml(labels.emailLabel)} <em>*</em></span>
+              <input class="verify-input" data-home-verify-email type="text" readonly placeholder="${escapeHomeHtml(labels.emailPlaceholder)}">
             </label>
 
             <div class="home-verify-field-grid">
               <label class="verify-form-field">
-                <span class="verify-field-label">账号密码 <em>*</em></span>
+                <span class="verify-field-label">${escapeHomeHtml(labels.passwordLabel)} <em>*</em></span>
                 <span class="verify-password-shell">
-                  <input class="verify-input" data-home-verify-password type="text" readonly placeholder="密码">
-                  <button class="verify-password-toggle" type="button" tabindex="-1" aria-label="显示密码">
+                  <input class="verify-input" data-home-verify-password type="text" readonly placeholder="${escapeHomeHtml(labels.passwordPlaceholder)}">
+                  <button class="verify-password-toggle" type="button" tabindex="-1" aria-label="${escapeHomeHtml(labels.showPassword)}">
                     <i class="fas fa-eye" aria-hidden="true"></i>
                   </button>
                 </span>
               </label>
 
               <label class="verify-form-field">
-                <span class="verify-field-label">2FA 密钥（Base32） <em>*</em></span>
+                <span class="verify-field-label">${escapeHomeHtml(labels.totpLabel)} <em>*</em></span>
                 <input class="verify-input" data-home-verify-totp type="text" readonly placeholder="${totp}">
               </label>
             </div>
@@ -3491,42 +4599,42 @@ const FramerHome = {
             <div class="home-verify-bottom-zone">
               <div class="home-verify-bottom-panel home-verify-bottom-panel--primary" data-home-verify-panel="primary">
                 <div class="verify-form-field home-verify-mode-field">
-                  <span class="verify-field-label">业务模式</span>
+                  <span class="verify-field-label">${escapeHomeHtml(labels.modeLabel)}</span>
                   <div class="verify-mode-selector">
                     <label class="verify-mode-option">
                       <input type="radio" name="homeVerifyTaskType" value="extract" checked tabindex="-1">
                       <span class="verify-mode-option__body">
-                        <span class="verify-mode-option__title">仅提链</span>
-                        <span class="verify-mode-option__meta">${costPoints} 积分 · 只拿可用订阅链接</span>
+                        <span class="verify-mode-option__title">${escapeHomeHtml(labels.extractTitle)}</span>
+                        <span class="verify-mode-option__meta">${costPoints} ${escapeHomeHtml(labels.pointsUnit)} · ${escapeHomeHtml(labels.extractMeta)}</span>
                       </span>
                     </label>
                     <label class="verify-mode-option verify-mode-option--accent">
                       <input type="radio" name="homeVerifyTaskType" value="full" tabindex="-1">
                       <span class="verify-mode-option__body">
-                        <span class="verify-mode-option__title">全流程包绑卡</span>
-                        <span class="verify-mode-option__meta">${costPoints * 2} 积分 · 完成 Google One 订阅流程</span>
+                        <span class="verify-mode-option__title">${escapeHomeHtml(labels.fullTitle)}</span>
+                        <span class="verify-mode-option__meta">${costPoints * 2} ${escapeHomeHtml(labels.pointsUnit)} · ${escapeHomeHtml(labels.fullMeta)}</span>
                       </span>
                     </label>
                   </div>
-                  <div class="verify-mode-note">提链模式成功后，请自行打开链接完成绑卡订阅；没有卡可前往商城购卡。</div>
+                  <div class="verify-mode-note">${escapeHomeHtml(labels.modeNote)}</div>
                 </div>
 
                 <div class="verify-form-meta">
                   <div class="verify-price-info verify-form-price">
                     <i class="fas fa-coins" aria-hidden="true"></i>
-                    本次提交消耗 <span class="price" data-home-verify-cost>${costPoints}</span> 积分
+                    ${escapeHomeHtml(labels.singleCost)} <span class="price" data-home-verify-cost>${costPoints}</span> ${escapeHomeHtml(labels.pointsUnit)}
                   </div>
                 </div>
 
                 <div class="verify-form-actions">
                   <button class="verify-reset-btn" type="button" tabindex="-1">
                     <i class="fas fa-rotate-left" aria-hidden="true"></i>
-                    清空
+                    ${escapeHomeHtml(labels.resetForm)}
                   </button>
                   <button class="verify-submit-btn" data-home-verify-submit type="button" tabindex="-1">
                     <span class="spinner" aria-hidden="true"></span>
                     <i class="fas fa-paper-plane" data-home-verify-submit-icon aria-hidden="true"></i>
-                    <span data-home-verify-submit-label>提交任务</span>
+                    <span data-home-verify-submit-label>${escapeHomeHtml(labels.submitTask)}</span>
                   </button>
                 </div>
               </div>
@@ -3536,10 +4644,10 @@ const FramerHome = {
                   <div class="verify-batch-results-header">
                     <div class="verify-batch-results-title">
                       <i class="fas fa-list-check" aria-hidden="true"></i>
-                      任务状态
+                      ${escapeHomeHtml(labels.taskStatus)}
                     </div>
                     <div class="verify-batch-progress">
-                      进度: <span class="current" data-home-verify-current>0</span>/<span class="total">1</span>
+                      ${escapeHomeHtml(labels.progress)}: <span class="current" data-home-verify-current>0</span>/<span class="total">1</span>
                     </div>
                   </div>
                   <div>
@@ -3547,7 +4655,7 @@ const FramerHome = {
                       <div class="verify-result-item-content">
                         <div class="verify-result-item-id">#1: <span data-home-verify-result-email>${email}</span></div>
                         <div class="verify-result-item-message">
-                          <span data-home-verify-message>等待提交任务</span>
+                          <span data-home-verify-message>${escapeHomeHtml(labels.waiting)}</span>
                           <div class="verify-result-link-row" data-home-verify-link-row hidden>
                             <a class="verify-result-link" href="${successLink}" target="_blank" rel="noopener noreferrer" data-home-verify-link>${successLink}</a>
                           </div>
@@ -3556,9 +4664,9 @@ const FramerHome = {
                     </div>
                   </div>
                   <div class="verify-batch-summary" data-home-verify-summary data-visible="0" aria-hidden="true">
-                    <div class="verify-batch-stat success">成功: <span data-home-verify-success-count>0</span></div>
-                    <div class="verify-batch-stat error">失败: <span>0</span></div>
-                    <div class="verify-batch-stat total">总计: <span>1</span></div>
+                    <div class="verify-batch-stat success">${escapeHomeHtml(labels.success)}: <span data-home-verify-success-count>0</span></div>
+                    <div class="verify-batch-stat error">${escapeHomeHtml(labels.error)}: <span>0</span></div>
+                    <div class="verify-batch-stat total">${escapeHomeHtml(labels.total)}: <span>1</span></div>
                   </div>
                 </div>
               </div>
@@ -3591,6 +4699,18 @@ const FramerHome = {
     const emailValue = String(demo.email || '').trim() || 'preview.account@gmail.com';
     const totpValue = String(demo.totp || '').trim() || '3r6cu37xch4ej6d5';
     const successLinkValue = String(demo.successLink || '').trim() || 'https://services.sheerid.com/verify/zaoyoe-demo?verificationId=GO-8K21';
+    const copy = (fallbackByLanguage) => getHomepageLanguageFallback('', fallbackByLanguage);
+    const demoCopy = {
+      waiting: copy({ zh: '等待提交任务', en: 'Waiting to submit' }),
+      ready: copy({ zh: '账号信息已就绪，等待提交', en: 'Account details are ready. Waiting to submit.' }),
+      submitted: copy({ zh: '任务已提交，正在扣减额度并创建任务 #GO-8K21', en: 'Task submitted. Deducting quota and creating task #GO-8K21.' }),
+      queued: copy({ zh: '预检查通过，正在分配可用浏览器节点', en: 'Precheck passed. Assigning an available browser node.' }),
+      running: copy({ zh: '正在登录 Google 并提取 Google One 试用入口', en: 'Logging in to Google and extracting the Google One trial entry.' }),
+      success: copy({ zh: '链接获取成功', en: 'Link ready' }),
+      submitTask: copy({ zh: '提交任务', en: 'Submit Task' }),
+      submitting: copy({ zh: '提交中', en: 'Submitting' }),
+      verifying: copy({ zh: '验证中', en: 'Verifying' })
+    };
     const fields = {
       email: widget.querySelector('[data-home-verify-email]'),
       password: widget.querySelector('[data-home-verify-password]'),
@@ -3625,12 +4745,12 @@ const FramerHome = {
         resultsOpen: false,
         resultClass: 'info',
         current: '0',
-        message: '等待提交任务',
+        message: demoCopy.waiting,
         linkVisible: false,
         summaryVisible: false,
         success: '0',
         icon: 'fa-paper-plane',
-        submit: '提交任务',
+        submit: demoCopy.submitTask,
         disabled: false
       },
       {
@@ -3646,12 +4766,12 @@ const FramerHome = {
         resultsOpen: false,
         resultClass: 'info',
         current: '0',
-        message: '账号信息已就绪，等待提交',
+        message: demoCopy.ready,
         linkVisible: false,
         summaryVisible: false,
         success: '0',
         icon: 'fa-paper-plane',
-        submit: '提交任务',
+        submit: demoCopy.submitTask,
         disabled: false
       },
       {
@@ -3667,12 +4787,12 @@ const FramerHome = {
         resultsOpen: true,
         resultClass: 'processing',
         current: '0',
-        message: '任务已提交，正在扣减额度并创建任务 #GO-8K21',
+        message: demoCopy.submitted,
         linkVisible: false,
         summaryVisible: false,
         success: '0',
         icon: '',
-        submit: '提交中',
+        submit: demoCopy.submitting,
         disabled: true
       },
       {
@@ -3688,12 +4808,12 @@ const FramerHome = {
         resultsOpen: true,
         resultClass: 'processing',
         current: '0',
-        message: '预检查通过，正在分配可用浏览器节点',
+        message: demoCopy.queued,
         linkVisible: false,
         summaryVisible: false,
         success: '0',
         icon: '',
-        submit: '验证中',
+        submit: demoCopy.verifying,
         disabled: true
       },
       {
@@ -3709,12 +4829,12 @@ const FramerHome = {
         resultsOpen: true,
         resultClass: 'processing',
         current: '0',
-        message: '正在登录 Google 并提取 Google One 试用入口',
+        message: demoCopy.running,
         linkVisible: false,
         summaryVisible: false,
         success: '0',
         icon: '',
-        submit: '验证中',
+        submit: demoCopy.verifying,
         disabled: true
       },
       {
@@ -3730,12 +4850,12 @@ const FramerHome = {
         resultsOpen: true,
         resultClass: 'success',
         current: '1',
-        message: '链接获取成功',
+        message: demoCopy.success,
         linkVisible: true,
         summaryVisible: true,
         success: '1',
         icon: 'fa-paper-plane',
-        submit: '提交任务',
+        submit: demoCopy.submitTask,
         disabled: false
       }
     ];
@@ -4134,7 +5254,10 @@ const FramerHome = {
 
   getGuestbookDisplayName(message) {
     const username = String(message?.author || message?.profiles?.username || message?.username || '').trim();
-    return username || (window.i18n?.getCurrentLanguage?.() === 'en' ? 'Anonymous' : '匿名用户');
+    return resolveHomepageDataText(username, {
+      zh: '匿名用户',
+      en: 'Anonymous'
+    });
   },
 
   getGuestbookMessagePreview(message) {
@@ -4143,14 +5266,25 @@ const FramerHome = {
       .trim();
   },
 
+  getGuestbookCardContent(message) {
+    if (message?.homepage_missing || message?.homepage_fallback) {
+      return getHomepageLocalizedDataField(message, 'content', { en: '' });
+    }
+
+    return this.getGuestbookMessagePreview(message);
+  },
+
   createGuestbookCardMarkup(message, slot) {
     const displayName = this.getGuestbookDisplayName(message);
     const safeName = escapeHomeHtml(displayName);
-    const safeContent = escapeHomeHtml(this.getGuestbookMessagePreview(message));
+    const safeContent = escapeHomeHtml(this.getGuestbookCardContent(message));
     const avatarSrc = escapeHomeHtml(this.getGuestbookAvatarUrl(message));
     const fallbackSrc = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(displayName || 'U')}&backgroundColor=6b9ece`;
     const side = slot.startsWith('l') ? 'left' : 'right';
-    const reason = escapeHomeHtml(message?.homepage_reason || (message?.homepage_fallback ? (window.i18n?.t('home.guestbook.opsPick') || '运营推荐') : ''));
+    const reason = escapeHomeHtml(resolveHomepageDataText(message?.homepage_reason, {
+      zh: message?.homepage_reason || (message?.homepage_fallback ? (window.i18n?.t('home.guestbook.opsPick') || '运营推荐') : ''),
+      en: ''
+    }));
 
     return `
       <article class="home-guestbook-card home-guestbook-card--${slot}${message?.homepage_fallback ? ' home-guestbook-card--fallback' : ''}" data-home-guestbook-card data-card-side="${side}">
@@ -4374,8 +5508,14 @@ const FramerHome = {
 
     setHomeSectionVisibility(section, true);
 
-    const title = escapeHomeHtml(this.getLocalizedField(config, 'section_title') || window.i18n?.t('home.guestbook.title') || '留言板');
-    const subtitle = escapeHomeHtml(this.getLocalizedField(config, 'section_subtitle') || window.i18n?.t('home.guestbook.subtitle') || '用户的声音');
+    const title = escapeHomeHtml(resolveHomepageLocalizedText(this.getLocalizedField(config, 'section_title'), 'home.guestbook.title', {
+      zh: '留言板',
+      en: 'Guestbook'
+    }));
+    const subtitle = escapeHomeHtml(resolveHomepageLocalizedText(this.getLocalizedField(config, 'section_subtitle'), 'home.guestbook.subtitle', {
+      zh: '用户的声音',
+      en: 'Community Voice'
+    }));
     const cardsMarkup = messages
       .map((message, index) => this.createGuestbookCardMarkup(message, HOME_GUESTBOOK_CARD_SLOTS[index]))
       .join('');
@@ -4497,7 +5637,8 @@ const FramerHome = {
     `;
 
     const renderTickerItem = (label, role) => {
-      const safeLabel = escapeHomeHtml(label);
+      const displayLabel = role === 'bottom' ? getHomepageProductCategoryLabel(label) : label;
+      const safeLabel = escapeHomeHtml(displayLabel);
       const href = role === 'top'
         ? `/prompts.html?tag=${encodeURIComponent(label)}`
         : `/shop.html?category=${encodeURIComponent(label)}`;
@@ -4829,8 +5970,7 @@ const FramerHome = {
       hamburger._navInitialized = true;
     }
 
-    // Always bind mobile submenu triggers, dropdown sync, and close handlers
-    // (these may not have been bound by the standalone initNavBar)
+    // Always bind mobile submenu triggers, dropdown sync, and close handlers.
     if (hamburger && mobileMenu && !mobileMenu._submenuInitialized) {
       // Sync desktop dropdown content to mobile submenus
       const syncDropdownToMobile = (desktopDropdownId, mobileSubmenuId) => {
@@ -5044,10 +6184,13 @@ function scheduleHomepageInit() {
 
   document.documentElement.dataset.homepageInitScheduled = '1';
 
-  const waitForDeps = setInterval(() => {
-    const promptsReady = Boolean(window.PROMPTS);
+  FramerHome.renderHeroFirstPaint();
 
-    if (!promptsReady) {
+  const startedAt = Date.now();
+  const waitForDeps = setInterval(() => {
+    const promptsReady = isHomepagePromptSourceReady();
+
+    if (!promptsReady && Date.now() - startedAt < 2500) {
       return;
     }
 
@@ -5071,124 +6214,3 @@ window.FramerHome = FramerHome;
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = FramerHome;
 }
-
-/**
- * ==========================================
- * Standalone Navigation Bar Initialization
- * For pages that use framer-nav but aren't homepage
- * ==========================================
- */
-document.addEventListener('DOMContentLoaded', function initNavBar() {
-  const nav = document.querySelector('.framer-nav');
-  if (!nav) return; // No nav bar on this page
-
-  const hamburger = document.querySelector('.nav-hamburger');
-  const mobileMenu = document.querySelector('.mobile-menu');
-  const closeMobileMenu = () => setMobileMenuState(hamburger, mobileMenu, false);
-
-  if (mobileMenu) {
-    bindMobileMenuScrollGuard(mobileMenu);
-  }
-
-  // Already initialized by FramerHome? Skip
-  if (hamburger && hamburger._navInitialized) return;
-
-  console.log('🍔 Initializing standalone nav bar...');
-
-  // Nav scroll effect
-  window.addEventListener('scroll', () => {
-    if (window.scrollY > 50) {
-      nav.classList.add('scrolled');
-    } else {
-      nav.classList.remove('scrolled');
-    }
-  });
-
-  // Mobile hamburger menu toggle
-  if (hamburger && mobileMenu) {
-    hamburger.addEventListener('click', () => {
-      console.log('🍔 Hamburger clicked');
-      toggleMobileMenu(hamburger, mobileMenu);
-    });
-    hamburger._navInitialized = true;
-  }
-
-  // Close mobile menu when clicking a link (standalone fallback)
-  if (mobileMenu && !mobileMenu._submenuInitialized) {
-    mobileMenu.querySelectorAll('a').forEach(link => {
-      link.addEventListener('click', () => {
-        closeMobileMenu();
-      });
-    });
-
-    // Mobile submenu toggle
-    const mobileTriggers = mobileMenu.querySelectorAll('.mobile-menu-trigger');
-    mobileTriggers.forEach(trigger => {
-      trigger.addEventListener('click', () => {
-        const submenuId = trigger.getAttribute('data-submenu');
-        const submenu = document.getElementById(submenuId);
-
-        if (submenu) {
-          trigger.classList.toggle('active');
-          submenu.classList.toggle('active');
-        }
-      });
-    });
-
-    // Close mobile menu when clicking on blank area (outside menu items)
-    mobileMenu.addEventListener('click', (e) => {
-      if (e.target === mobileMenu) {
-        closeMobileMenu();
-      }
-    });
-
-    mobileMenu._submenuInitialized = true;
-  }
-
-  // Sync desktop dropdown content to mobile submenus
-  const syncDropdownToMobile = (desktopDropdownId, mobileSubmenuId) => {
-    const desktopDropdown = document.getElementById(desktopDropdownId);
-    const mobileSubmenu = document.getElementById(mobileSubmenuId);
-
-    if (desktopDropdown && mobileSubmenu) {
-      const content = desktopDropdown.cloneNode(true);
-      content.removeAttribute('id');
-      mobileSubmenu.innerHTML = content.innerHTML;
-    }
-  };
-
-  // Initialize navigation dropdowns for subpages too
-  // Need to load data first, then init dropdowns
-  if (typeof FramerHome !== 'undefined' && FramerHome.loadNavData && FramerHome.initNavDropdowns) {
-    console.log('📂 Loading nav data for subpage...');
-    FramerHome.loadNavData().then(() => {
-      console.log('📂 Initializing nav dropdowns on subpage...');
-      FramerHome.initNavDropdowns();
-
-      // Sync dropdown content to mobile submenus after dropdowns are created
-      setTimeout(() => {
-        syncDropdownToMobile('dropdown-prompts', 'prompts-mobile');
-        syncDropdownToMobile('dropdown-shop', 'shop-mobile');
-        syncDropdownToMobile('dropdown-settings', 'settings-mobile');
-        console.log('✅ Mobile submenus synced on subpage');
-      }, 100);
-
-      // 🆕 Listen for language changes and re-initialize dropdowns
-      window.addEventListener('languageChanged', () => {
-        console.log('🌐 Language changed on subpage, re-initializing nav dropdowns...');
-        FramerHome.initNavDropdowns();
-
-        // Re-sync mobile submenus after dropdown re-init
-        setTimeout(() => {
-          syncDropdownToMobile('dropdown-prompts', 'prompts-mobile');
-          syncDropdownToMobile('dropdown-shop', 'shop-mobile');
-          syncDropdownToMobile('dropdown-settings', 'settings-mobile');
-        }, 100);
-      });
-    }).catch(err => {
-      console.error('Failed to load nav data:', err);
-    });
-  }
-
-  console.log('✅ Standalone nav bar initialized');
-});

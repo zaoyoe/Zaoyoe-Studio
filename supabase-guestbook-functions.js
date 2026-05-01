@@ -12,6 +12,15 @@ function escapeHTML(str) {
     });
 }
 
+function onGuestbookDomReady(callback) {
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', callback, { once: true });
+        return;
+    }
+
+    callback();
+}
+
 // ==================== 敏感词过滤 ====================
 let sensitiveWordsCache = null;
 let sensitiveWordsCacheTime = null;
@@ -1338,7 +1347,7 @@ function disableRealTimeUpdates() {
 }
 
 // ==================== 页面初始化 ====================
-document.addEventListener('DOMContentLoaded', function () {
+onGuestbookDomReady(function () {
     console.log('📋 Supabase Guestbook functions loaded');
 
     // Add capsule click handler
@@ -1462,7 +1471,7 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 // ==================== 表单绑定 ====================
-document.addEventListener('DOMContentLoaded', function () {
+onGuestbookDomReady(function () {
     console.log('📋 绑定留言板表单...');
     const GUESTBOOK_SUCCESS_FEEDBACK_MS = 1160;
 
@@ -1889,7 +1898,7 @@ document.addEventListener('DOMContentLoaded', function () {
 });
 
 // ==================== 图片上传处理 ====================
-document.addEventListener('DOMContentLoaded', function () {
+onGuestbookDomReady(function () {
     const imageUpload = document.getElementById('imageUpload');
     const imagePreview = document.getElementById('imagePreview');
     const previewImg = document.getElementById('previewImg');

@@ -1149,7 +1149,7 @@ const AdminDiscounts = {
             return `
                 <div>
                     <span class="admin-discount-type-value admin-discount-type-value--percent">${this.formatPercentDiscountValue(discount.discount_value)}</span>
-                    <div class="admin-discount-expiry-meta">按比例打折</div>
+                    <div class="admin-discount-expiry-meta">按比例优惠</div>
                 </div>
             `;
         }
@@ -2253,7 +2253,7 @@ const AdminDiscounts = {
         const detail = this.getActiveDetailData();
         if (!detail) {
             alert('当前没有可导出的审计摘要');
-            return;
+            return null;
         }
 
         const code = this.safeText(detail.discount?.code).toUpperCase() || 'discount';
@@ -2262,12 +2262,13 @@ const AdminDiscounts = {
         const filename = `discount_audit_${safeCode}_${filterKey}_${new Date().toISOString().slice(0, 10)}.txt`;
         this.downloadTextFile(this.buildDiscountAuditSummaryText(detail), filename);
         this.showFeedbackToast('已导出审计摘要');
+        return true;
     },
 
     exportFilteredAuditSummaries: async function () {
         if (!Array.isArray(this.filteredDiscounts) || this.filteredDiscounts.length === 0) {
             alert('当前筛选结果为空，暂无可导出的复盘摘要');
-            return;
+            return null;
         }
 
         const maxBatchSize = 20;
@@ -2275,13 +2276,16 @@ const AdminDiscounts = {
         if (this.filteredDiscounts.length > maxBatchSize) {
             const confirmed = confirm(`当前筛选共有 ${this.filteredDiscounts.length} 张优惠券。为避免导出内容过大，本次将仅导出前 ${maxBatchSize} 张，是否继续？`);
             if (!confirmed) {
-                return;
+                return null;
             }
         }
 
         const exportButton = document.querySelector('[data-admin-action="discounts-export-filtered-audit-summaries"]');
-        const originalMarkup = exportButton instanceof HTMLElement ? exportButton.innerHTML : '';
-        if (exportButton instanceof HTMLButtonElement) {
+        const shouldManageButtonFallback = exportButton instanceof HTMLButtonElement
+            && exportButton.dataset.adminActionRunning !== 'true'
+            && !exportButton.dataset.actionFeedbackState;
+        const originalMarkup = shouldManageButtonFallback ? exportButton.innerHTML : '';
+        if (shouldManageButtonFallback) {
             exportButton.disabled = true;
             exportButton.textContent = '导出中...';
         }
@@ -2292,10 +2296,12 @@ const AdminDiscounts = {
             const filename = `discount_batch_audit_${this.getReadSite()}_${new Date().toISOString().slice(0, 10)}.txt`;
             this.downloadTextFile(summaryText, filename);
             this.showFeedbackToast(`已导出 ${details.length} 张券的复盘摘要`);
+            return true;
         } catch (error) {
             alert(`批量导出失败: ${error.message || '未知错误'}`);
+            return false;
         } finally {
-            if (exportButton instanceof HTMLButtonElement) {
+            if (shouldManageButtonFallback) {
                 exportButton.disabled = false;
                 exportButton.innerHTML = originalMarkup || '<i class="fas fa-file-arrow-down"></i> 导出当前筛选复盘';
             }
@@ -2319,7 +2325,7 @@ const AdminDiscounts = {
     exportBatchRestoreResultSummary: function (mode = 'all') {
         if (!this.batchRestoreResult) {
             alert('当前没有可导出的批量恢复结果');
-            return;
+            return null;
         }
 
         const normalizedMode = this.safeText(mode).toLowerCase() === 'failed' ? 'failed' : 'all';
@@ -2332,6 +2338,7 @@ const AdminDiscounts = {
             filename
         );
         this.showFeedbackToast(normalizedMode === 'failed' ? '已导出失败项摘要' : '已导出批量恢复摘要');
+        return true;
     },
 
     copyBatchRestoreSummary: async function () {
@@ -2343,11 +2350,11 @@ const AdminDiscounts = {
     },
 
     exportBatchRestoreSummary: function () {
-        this.exportBatchRestoreResultSummary('all');
+        return this.exportBatchRestoreResultSummary('all');
     },
 
     exportBatchRestoreFailedSummary: function () {
-        this.exportBatchRestoreResultSummary('failed');
+        return this.exportBatchRestoreResultSummary('failed');
     },
 
     copyBatchRestoreHistoryRunSummary: async function (runId = '', mode = 'all') {
@@ -2369,7 +2376,7 @@ const AdminDiscounts = {
         const run = this.findBatchRestoreHistoryRun(runId);
         if (!run) {
             alert('未找到要导出的历史跑次');
-            return;
+            return null;
         }
 
         const normalizedMode = this.safeText(mode).toLowerCase() === 'failed' ? 'failed' : 'all';
@@ -2380,6 +2387,7 @@ const AdminDiscounts = {
             : `discount_batch_restore_history_${safeSite}_${safeRunId}.txt`;
         this.downloadTextFile(this.buildBatchRestoreResultSummaryText(run, { mode: normalizedMode }), filename);
         this.showFeedbackToast(normalizedMode === 'failed' ? '已导出历史失败项摘要' : '已导出历史结果摘要');
+        return true;
     },
 
     buildDiscountDetailTimelineMarkup: function (detail = {}) {
@@ -5164,16 +5172,16 @@ const AdminDiscounts = {
     toggleStatus: async function (id, newState) {
         const writableSite = this.requireWritableSite({ label: newState ? '启用折扣码' : '停用折扣码' });
         if (!writableSite) {
-            return;
+            return null;
         }
 
         const discount = this.getDiscountById(id);
         if (newState && this.shouldUseRiskRestoreFlow(discount)) {
             this.openRestoreModal(id);
-            return;
+            return null;
         }
 
-        if (!confirm(`确定要${newState ? '启用' : '停用'}该优惠码吗？`)) return;
+        if (!confirm(`确定要${newState ? '启用' : '停用'}该优惠码吗？`)) return null;
 
         try {
             await this.mutateDiscountsViaAdminApi({
@@ -5185,18 +5193,20 @@ const AdminDiscounts = {
                 }
             });
             await this.loadDiscounts();
+            return true;
         } catch (err) {
             alert('操作失败: ' + err.message);
+            return false;
         }
     },
 
     deleteCode: async function (id, code) {
         const writableSite = this.requireWritableSite({ action: 'discounts-delete-code' });
         if (!writableSite) {
-            return;
+            return null;
         }
 
-        if (!confirm(`警告：确定要永久删除优惠码 "${code}" 吗？这可能影响历史订单的关联显示。建议使用"停用"功能。`)) return;
+        if (!confirm(`警告：确定要永久删除优惠码 "${code}" 吗？这可能影响历史订单的关联显示。建议使用"停用"功能。`)) return null;
 
         try {
             await this.mutateDiscountsViaAdminApi({
@@ -5207,21 +5217,23 @@ const AdminDiscounts = {
                 }
             });
             await this.loadDiscounts();
+            return true;
         } catch (err) {
             alert('删除失败: ' + err.message);
+            return false;
         }
     },
 
     assignAssetsFromDetail: async function (id = '') {
         const writableSite = this.requireWritableSite({ label: '定向发券' });
         if (!writableSite) {
-            return;
+            return null;
         }
 
         const discount = this.getCachedDiscountRecord({ id });
         if (!discount) {
             alert('未找到要发放的优惠券');
-            return;
+            return null;
         }
 
         const recipientsInput = document.getElementById('discountAssetRecipientsInput');
@@ -5233,7 +5245,7 @@ const AdminDiscounts = {
         const recipientTags = this.safeText(recipientTagsInput?.value);
         if (!recipients && !recipientTags) {
             alert('请先输入要发券的用户，或填写用户管理标签');
-            return;
+            return null;
         }
 
         try {
@@ -5253,8 +5265,10 @@ const AdminDiscounts = {
             this.detailCache.set(cacheKey, detail);
             this.rerenderActiveDetailModal();
             await this.loadDiscounts();
+            return true;
         } catch (error) {
             alert(`定向发券失败: ${error.message || '未知错误'}`);
+            return false;
         }
     },
 
@@ -5381,6 +5395,8 @@ const AdminDiscounts = {
         const dropdown = document.getElementById('discountTypeDropdown');
         const suffix = document.getElementById('discountValueSuffix');
         const valueInput = document.getElementById('discountValue');
+        const valueLabel = document.getElementById('discountValueLabel');
+        const valueHint = document.getElementById('discountValueHint');
 
         if (valueType) {
             valueType.value = isFixed ? 'fixed' : 'percent';
@@ -5389,15 +5405,25 @@ const AdminDiscounts = {
         if (label) {
             label.innerHTML = isFixed
                 ? '<span class="admin-discount-type-label-icon">💰</span> 固定金额立减'
-                : '<span class="admin-discount-type-label-icon">📊</span> 按比例打折';
+                : '<span class="admin-discount-type-label-icon">📊</span> 按比例优惠';
         }
 
         if (suffix) {
-            suffix.innerText = isFixed ? '积分' : '折';
+            suffix.innerText = isFixed ? '积分' : '%';
         }
 
         if (valueInput) {
             valueInput.placeholder = isFixed ? '如: 100' : '如: 80';
+        }
+
+        if (valueLabel) {
+            valueLabel.textContent = isFixed ? '优惠面额' : '结算比例';
+        }
+
+        if (valueHint) {
+            valueHint.textContent = isFixed
+                ? '直接抵扣固定积分，如 100 表示立减 100 积分。'
+                : '按百分比填写折后结算比例；80 = 按原价 80% 结算，实际抵扣 20%，不要填 8。';
         }
 
         this.setTypeDropdownOpen(false);
@@ -5447,12 +5473,12 @@ const AdminDiscounts = {
             const type = document.getElementById('discountValueType').value;
             const value = parseInt(document.getElementById('discountValue').value);
             if (!value || value <= 0) {
-                alert('请输入有效的优惠券面额');
+                alert(type === 'percent' ? '请输入 1-100 的结算比例' : '请输入有效的优惠券面额');
                 return;
             }
 
             if (type === 'percent' && value > 100) {
-                alert('折扣比例不能大于 100，例如 80 表示 8 折');
+                alert('结算比例不能大于 100；例如 80 表示按原价 80% 结算，实际抵扣 20%');
                 return;
             }
 

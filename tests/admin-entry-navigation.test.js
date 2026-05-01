@@ -63,6 +63,10 @@ function loadAdminAccess(overrides = {}) {
         global.supabaseClient = overrides.supabaseClient;
     }
 
+    if (Object.prototype.hasOwnProperty.call(overrides, 'adminAccess')) {
+        global.AdminAccess = overrides.adminAccess;
+    }
+
     if (Object.prototype.hasOwnProperty.call(overrides, 'sessionStorage')) {
         global.sessionStorage = overrides.sessionStorage;
     }
@@ -233,6 +237,63 @@ test('createAdminStudioSession reuses the cached short-lived admin session for t
         assert.equal(fetchCount, 0);
         assert.equal(result.payload.granted, true);
         assert.equal(result.payload.expiresInSeconds > 0, true);
+    } finally {
+        restore();
+    }
+});
+
+test('admin access module preserves the local smoke AdminAccess shim loaded before it', async () => {
+    let smokeSessionCalls = 0;
+    const smokeAdminAccess = {
+        __localSmokeAccess: true,
+        async getCurrentAdminAccess() {
+            return {
+                user: { id: 'admin-smoke', email: 'admin-smoke@zaoyoe.invalid' },
+                isAdmin: true,
+                isSuperAdmin: true,
+                permissions: ['users.manage']
+            };
+        },
+        async createAdminStudioSession() {
+            smokeSessionCalls += 1;
+            return {
+                ok: true,
+                status: 200,
+                payload: {
+                    success: true,
+                    source: 'local-smoke'
+                }
+            };
+        },
+        hasActiveAdminStudioSession() {
+            return true;
+        }
+    };
+
+    const { api, restore } = loadAdminAccess({
+        adminAccess: smokeAdminAccess,
+        fetch() {
+            throw new Error('local smoke AdminAccess shim should not be replaced by the real session issuer');
+        },
+        supabaseClient: {
+            auth: {
+                getSession() {
+                    throw new Error('local smoke AdminAccess shim should not read the real Supabase session');
+                }
+            }
+        }
+    });
+
+    try {
+        const session = await global.AdminAccess.createAdminStudioSession({ userId: 'admin-smoke' });
+
+        assert.equal(global.AdminAccess.__localSmokeAccess, true);
+        assert.equal(global.AdminAccess.hasActiveAdminStudioSession(), true);
+        assert.equal(typeof global.AdminAccess.sanitizeAdminStudioTarget, 'function');
+        assert.notEqual(global.AdminAccess.createAdminStudioSession, api.createAdminStudioSession);
+        assert.equal(session.ok, true);
+        assert.equal(session.payload.source, 'local-smoke');
+        assert.equal(smokeSessionCalls, 1);
     } finally {
         restore();
     }

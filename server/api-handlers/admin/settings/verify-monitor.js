@@ -107,6 +107,36 @@ function buildMonitorLogKey(row) {
     return `${site}:${jobId}`;
 }
 
+function isGenericVerifyMonitorFailureText(value = '') {
+    const normalized = sanitizeText(value, 300).toLowerCase();
+    return [
+        '任务失败',
+        '失败',
+        'failed',
+        'fail',
+        'error',
+        'task failed',
+        'unknown'
+    ].includes(normalized);
+}
+
+function pickVerifyMonitorFailureText(candidates = []) {
+    let fallback = '';
+
+    for (const candidate of candidates) {
+        const value = sanitizeText(candidate, 300);
+        if (!value) continue;
+        if (!isGenericVerifyMonitorFailureText(value)) {
+            return value;
+        }
+        if (!fallback) {
+            fallback = value;
+        }
+    }
+
+    return fallback;
+}
+
 function buildMonitorSummary(row) {
     if (sanitizeText(row.error_message, 300)) {
         return sanitizeText(row.error_message, 300);
@@ -128,6 +158,15 @@ function buildMonitorSummary(row) {
 function normalizeMonitorRow(row = {}) {
     const payload = parseHistoryMessage(row.message) || {};
     const status = normalizeVerifyStatus(row.status || payload.status);
+    const failureMessage = pickVerifyMonitorFailureText([
+        payload.failure_reason,
+        row.error_message,
+        payload.error_message,
+        payload.message,
+        payload.reason,
+        payload.error,
+        payload.error_code
+    ]);
     const normalized = {
         id: sanitizeText(row.id, 120),
         verification_id: sanitizeText(payload.job_id, 120) || sanitizeText(row.verification_id, 120),
@@ -139,10 +178,11 @@ function normalizeMonitorRow(row = {}) {
         points_deducted: Number.isFinite(Number(row.points_deducted))
             ? Number(row.points_deducted)
             : 0,
+        task_type: sanitizeText(payload.task_type, 40),
         stage_label: sanitizeText(payload.stage_label, 120),
         raw_status: sanitizeText(payload.raw_status || payload.status, 120),
         error_code: sanitizeText(payload.error_code, 120),
-        error_message: sanitizeText(payload.error_message || payload.message, 300),
+        error_message: failureMessage,
         url: sanitizeText(payload.url, 400)
     };
 
@@ -283,6 +323,138 @@ async function fetchRecentVerifyLogRows(supabase) {
     }
 
     return rows;
+}
+
+function collectVerifyReferenceIds(rows = []) {
+    return [...new Set((Array.isArray(rows) ? rows : [])
+        .map((row) => sanitizeText(row.verification_id, 120))
+        .filter(Boolean))]
+        .slice(0, 500);
+}
+
+function collectVerifySubmitterUserIds(rows = []) {
+    return [...new Set((Array.isArray(rows) ? rows : [])
+        .map((row) => sanitizeText(row.user_id, 120))
+        .filter(Boolean))]
+        .slice(0, 500);
+}
+
+function isUuid(value = '') {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(value || '').trim());
+}
+
+function buildVerifySubmitterProfileFromAuthUser(user = {}) {
+    const metadata = user?.user_metadata && typeof user.user_metadata === 'object' && !Array.isArray(user.user_metadata)
+        ? user.user_metadata
+        : {};
+    return {
+        id: sanitizeText(user.id, 120),
+        email: sanitizeText(user.email, 180),
+        username: sanitizeText(metadata.username || metadata.name, 120),
+        display_name: sanitizeText(metadata.display_name || metadata.full_name || metadata.name, 120)
+    };
+}
+
+async function fetchVerifyLedgerSubmitterRows(supabase, rows = []) {
+    const referenceIds = collectVerifyReferenceIds(rows);
+    if (!referenceIds.length) {
+        return [];
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('points_ledger')
+            .select('id, user_id, reference_id, created_at')
+            .in('reference_id', referenceIds);
+
+        if (error) {
+            return [];
+        }
+
+        return Array.isArray(data) ? data : [];
+    } catch (_error) {
+        return [];
+    }
+}
+
+async function fetchVerifySubmitterProfiles(supabase, rows = []) {
+    const userIds = collectVerifySubmitterUserIds(rows);
+    const profilesById = new Map();
+    if (!userIds.length) {
+        return profilesById;
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('id, email, username, display_name')
+            .in('id', userIds);
+
+        if (!error) {
+            (Array.isArray(data) ? data : []).forEach((profile) => {
+                const id = sanitizeText(profile.id, 120);
+                if (id) {
+                    profilesById.set(id, profile);
+                }
+            });
+        }
+    } catch (_error) {
+        // Auth fallback below can still recover the website email for UUID users.
+    }
+
+    const missingEmailIds = userIds
+        .filter((id) => isUuid(id))
+        .filter((id) => !sanitizeText(profilesById.get(id)?.email, 180));
+    if (!missingEmailIds.length || !supabase?.auth?.admin?.getUserById) {
+        return profilesById;
+    }
+
+    const authProfiles = await Promise.all(missingEmailIds.map(async (id) => {
+        try {
+            const { data, error } = await supabase.auth.admin.getUserById(id);
+            if (error || !data?.user) return null;
+            return buildVerifySubmitterProfileFromAuthUser(data.user);
+        } catch (_error) {
+            return null;
+        }
+    }));
+
+    authProfiles.forEach((profile) => {
+        const id = sanitizeText(profile?.id, 120);
+        const email = sanitizeText(profile?.email, 180);
+        if (!id || !email) return;
+        profilesById.set(id, {
+            ...(profilesById.get(id) || {}),
+            ...profile
+        });
+    });
+
+    return profilesById;
+}
+
+function enrichVerifyRowsWithLedgerAndProfiles(rows = [], ledgerRows = [], profilesById = new Map()) {
+    const ledgerSubmitters = new Map();
+    (Array.isArray(ledgerRows) ? ledgerRows : []).forEach((row) => {
+        const referenceId = sanitizeText(row.reference_id, 120);
+        const userId = sanitizeText(row.user_id, 120);
+        if (referenceId && userId && !ledgerSubmitters.has(referenceId)) {
+            ledgerSubmitters.set(referenceId, userId);
+        }
+    });
+
+    return (Array.isArray(rows) ? rows : []).map((row) => {
+        const referenceId = sanitizeText(row.verification_id, 120);
+        const ledgerUserId = referenceId ? ledgerSubmitters.get(referenceId) : '';
+        const userId = sanitizeText(row.user_id, 120) || ledgerUserId || '';
+        const profile = profilesById instanceof Map ? profilesById.get(userId) : null;
+        return {
+            ...row,
+            user_id: userId || row.user_id,
+            submitter_email: sanitizeText(profile?.email, 180),
+            submitter_username: sanitizeText(profile?.username, 120),
+            submitter_display_name: sanitizeText(profile?.display_name, 120)
+        };
+    });
 }
 
 async function fetchRecentVerifyAlertJobs(supabase, sinceIso) {
@@ -495,7 +667,19 @@ module.exports = async (req, res) => {
             fetchRecentVerifyAlertJobs(supabase, verifyAlertSinceIso)
         ]);
 
-        const dedupedRows = dedupeLatestMonitorRows(verificationLogs || []);
+        const rawDedupedRows = dedupeLatestMonitorRows(verificationLogs || []);
+        const verifyLedgerSubmitters = await fetchVerifyLedgerSubmitterRows(supabase, rawDedupedRows);
+        const rowsWithLedgerSubmitters = enrichVerifyRowsWithLedgerAndProfiles(
+            rawDedupedRows,
+            verifyLedgerSubmitters,
+            new Map()
+        );
+        const verifySubmitterProfiles = await fetchVerifySubmitterProfiles(supabase, rowsWithLedgerSubmitters);
+        const dedupedRows = enrichVerifyRowsWithLedgerAndProfiles(
+            rawDedupedRows,
+            verifyLedgerSubmitters,
+            verifySubmitterProfiles
+        );
         const activeRows = dedupedRows.filter((row) => ACTIVE_VERIFY_STATUSES.has(row.status));
         const failureRows = dedupedRows.filter((row) => (
             !SUCCESS_VERIFY_STATUSES.has(row.status)

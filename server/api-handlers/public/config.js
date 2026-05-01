@@ -7,6 +7,7 @@ function createPublicConfigHandlers({
 } = {}) {
     const {
         getOptionalSupabaseAdmin,
+        parseJsonBody,
         requireAuthenticatedUser,
         sendJson
     } = admin || {};
@@ -39,6 +40,36 @@ function createPublicConfigHandlers({
         return pages;
     }
 
+    function normalizeAnnouncementPageOverrides(value) {
+        const source = value && typeof value === 'object' && !Array.isArray(value)
+            ? value
+            : {};
+        const overrides = {};
+
+        Object.entries(source).forEach(([rawPage, rawConfig]) => {
+            const page = normalizeAnnouncementPages([rawPage])[0];
+            if (!page || page === 'all') {
+                return;
+            }
+
+            const config = rawConfig && typeof rawConfig === 'object' && !Array.isArray(rawConfig)
+                ? rawConfig
+                : { content: rawConfig };
+            const content = String(config.content ?? config.announcement_content ?? '').slice(0, 12000);
+            if (!content.trim() && config.enabled !== false) {
+                return;
+            }
+
+            overrides[page] = {
+                enabled: config.enabled !== false,
+                content,
+                updated_at: sanitizeText(config.updated_at || config.announcement_updated_at, 120)
+            };
+        });
+
+        return overrides;
+    }
+
     function sanitizeAnnouncementConfig(configValue = {}) {
         const config = configValue && typeof configValue === 'object' && !Array.isArray(configValue)
             ? configValue
@@ -52,8 +83,84 @@ function createPublicConfigHandlers({
             announcement_size: sanitizeText(config.announcement_size, 80).toLowerCase() || 'medium',
             announcement_decoration: sanitizeText(config.announcement_decoration, 80).toLowerCase() || 'none',
             announcement_pages: normalizeAnnouncementPages(config.announcement_pages),
+            announcement_page_overrides: normalizeAnnouncementPageOverrides(config.announcement_page_overrides),
             announcement_updated_at: sanitizeText(config.announcement_updated_at, 120)
         };
+    }
+
+    function isMissingAnnouncementTableError(error) {
+        const text = [
+            error?.code,
+            error?.message,
+            error?.details,
+            error?.hint
+        ].filter(Boolean).join(' ');
+        return error?.code === '42P01'
+            || error?.code === 'PGRST205'
+            || /could not find the table .*announcement_(rules|reads)/i.test(text)
+            || /relation .*announcement_(rules|reads).* does not exist/i.test(text)
+            || (/schema cache/i.test(text) && /announcement_(rules|reads)/i.test(text));
+    }
+
+    function normalizeAnnouncementRule(row = {}) {
+        return {
+            id: sanitizeText(row.id, 120),
+            title: sanitizeText(row.title || '站内公告', 160) || '站内公告',
+            announcement_enabled: row.enabled === true,
+            announcement_content: String(row.content || '').slice(0, 12000),
+            announcement_type: sanitizeText(row.type, 80).toLowerCase() || 'banner',
+            announcement_color: sanitizeText(row.color, 80).toLowerCase() || 'purple',
+            announcement_size: sanitizeText(row.size, 80).toLowerCase() || 'medium',
+            announcement_decoration: sanitizeText(row.decoration, 80).toLowerCase() || 'none',
+            announcement_pages: normalizeAnnouncementPages(row.pages),
+            announcement_page_overrides: normalizeAnnouncementPageOverrides(row.page_overrides),
+            priority: Number(row.priority || 0),
+            status: sanitizeText(row.status, 80).toLowerCase() || 'draft',
+            starts_at: sanitizeText(row.starts_at, 120),
+            ends_at: sanitizeText(row.ends_at, 120),
+            announcement_updated_at: sanitizeText(row.updated_at, 120)
+        };
+    }
+
+    function isAnnouncementRuleCurrentlyVisible(rule = {}, now = new Date()) {
+        if (rule.announcement_enabled !== true || rule.status !== 'approved') {
+            return false;
+        }
+        if (!rule.announcement_content && !Object.keys(rule.announcement_page_overrides || {}).length) {
+            return false;
+        }
+        const startsAt = rule.starts_at ? new Date(rule.starts_at) : null;
+        const endsAt = rule.ends_at ? new Date(rule.ends_at) : null;
+        if (startsAt && !Number.isNaN(startsAt.getTime()) && startsAt > now) {
+            return false;
+        }
+        if (endsAt && !Number.isNaN(endsAt.getTime()) && endsAt <= now) {
+            return false;
+        }
+        return true;
+    }
+
+    async function fetchPublicAnnouncementRules(supabase) {
+        const { data, error } = await supabase
+            .from('announcement_rules')
+            .select('*')
+            .eq('enabled', true)
+            .eq('status', 'approved')
+            .order('priority', { ascending: false })
+            .order('updated_at', { ascending: false })
+            .limit(50);
+
+        if (error) {
+            if (isMissingAnnouncementTableError(error)) {
+                return [];
+            }
+            throw error;
+        }
+
+        const now = new Date();
+        return (Array.isArray(data) ? data : [])
+            .map(normalizeAnnouncementRule)
+            .filter((rule) => isAnnouncementRuleCurrentlyVisible(rule, now));
     }
 
     async function notificationsHandler(req, res) {
@@ -76,21 +183,96 @@ function createPublicConfigHandlers({
             });
         }
 
-        const { data, error } = await supabase
-            .from('system_config')
-            .select('config_value')
-            .eq('config_key', 'notifications')
-            .maybeSingle();
+        const [{ data, error }, rules] = await Promise.all([
+            supabase
+                .from('system_config')
+                .select('config_value')
+                .eq('config_key', 'notifications')
+                .maybeSingle(),
+            fetchPublicAnnouncementRules(supabase)
+        ]);
 
         if (error) {
             throw error;
         }
 
+        const config = sanitizeAnnouncementConfig(data?.config_value || {});
+        config.announcement_rules = rules;
+
         res.setHeader('Cache-Control', 'no-store');
         return sendJson(res, 200, {
             success: true,
             key: 'notifications',
-            config: sanitizeAnnouncementConfig(data?.config_value || {})
+            config
+        });
+    }
+
+    async function announcementEventHandler(req, res) {
+        if (req.method !== 'POST') {
+            res.setHeader('Allow', 'POST');
+            return sendJson(res, 405, {
+                success: false,
+                message: 'Method not allowed'
+            });
+        }
+
+        const supabase = typeof getOptionalSupabaseAdmin === 'function'
+            ? getOptionalSupabaseAdmin()
+            : null;
+
+        if (!supabase) {
+            return sendJson(res, 202, {
+                success: true,
+                recorded: false,
+                message: 'Announcement event storage is unavailable'
+            });
+        }
+
+        const body = typeof parseJsonBody === 'function' ? await parseJsonBody(req) : (req.body || {});
+        const announcementId = sanitizeText(body.announcement_id || body.id, 120);
+        const readerKey = sanitizeText(body.reader_key, 160);
+        const eventType = sanitizeText(body.event_type || 'read', 40).toLowerCase();
+
+        if (!announcementId || !readerKey || !['view', 'read', 'dismiss'].includes(eventType)) {
+            return sendJson(res, 400, {
+                success: false,
+                message: 'Invalid announcement event'
+            });
+        }
+
+        const payload = {
+            announcement_id: announcementId,
+            reader_key: readerKey,
+            page: normalizeAnnouncementPages(body.page || 'unknown')[0] || 'unknown',
+            event_type: eventType,
+            ack_key: sanitizeText(body.ack_key, 240),
+            user_agent: sanitizeText(req.headers?.['user-agent'] || req.headers?.['User-Agent'], 500),
+            metadata: body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
+                ? body.metadata
+                : {}
+        };
+
+        const { error } = await supabase
+            .from('announcement_reads')
+            .upsert(payload, {
+                onConflict: 'announcement_id,reader_key,page,event_type',
+                ignoreDuplicates: true
+            });
+
+        if (error) {
+            if (isMissingAnnouncementTableError(error)) {
+                return sendJson(res, 202, {
+                    success: true,
+                    recorded: false,
+                    message: 'Announcement event tables are not migrated yet'
+                });
+            }
+            throw error;
+        }
+
+        return sendJson(res, 200, {
+            success: true,
+            recorded: true
         });
     }
 
@@ -139,6 +321,16 @@ function createPublicConfigHandlers({
                 return sendJson(res, error.statusCode || 500, {
                     success: false,
                     message: error.message || 'Public config request failed'
+                });
+            }
+        },
+        'announcement-event': async (req, res) => {
+            try {
+                return await announcementEventHandler(req, res);
+            } catch (error) {
+                return sendJson(res, error.statusCode || 500, {
+                    success: false,
+                    message: error.message || 'Announcement event request failed'
                 });
             }
         },

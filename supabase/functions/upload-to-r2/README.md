@@ -7,6 +7,7 @@ This Supabase Edge Function handles uploading images directly to Cloudflare R2 C
 - ✅ Admin authentication and authorization
 - ✅ Direct upload to R2 using S3-compatible API
 - ✅ Automatic WebP format support
+- ✅ Prompt image variants for `original`, `thumb`, `card`, and `home` delivery
 - ✅ Secure credential management (server-side only)
 - ✅ CORS support for browser requests
 
@@ -47,12 +48,22 @@ const response = await fetch(
         },
         body: JSON.stringify({
             images: [
-                { base64: '...', filename: 'image.webp' }
+                { base64: '...', filename: 'image.webp', variant: 'original' },
+                { base64: '...', filename: 'image.webp', variant: 'thumb', isThumb: true },
+                { base64: '...', filename: 'image.webp', variant: 'card' },
+                { base64: '...', filename: 'image.webp', variant: 'home' }
             ]
         })
     }
 );
 ```
+
+Variant upload paths:
+
+- `original` -> `prompts/image.webp`
+- `thumb` -> `prompts/thumb/image.webp`
+- `card` -> `prompts/card/image.webp`
+- `home` -> `prompts/home/image.webp`
 
 ## Response Format
 

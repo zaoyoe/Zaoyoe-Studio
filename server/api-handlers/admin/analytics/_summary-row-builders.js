@@ -138,19 +138,377 @@ function getVerifyStatusTone(statusGroup = 'other') {
     }
 }
 
+function getAnalyticsVerificationPayload(row = {}) {
+    const rawMessage = row?.message;
+    if (rawMessage && typeof rawMessage === 'object' && !Array.isArray(rawMessage)) {
+        return rawMessage;
+    }
+
+    const normalizedMessage = String(rawMessage || '').trim();
+    if (!normalizedMessage || !normalizedMessage.startsWith('{')) {
+        return {};
+    }
+
+    try {
+        const parsed = JSON.parse(normalizedMessage);
+        return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+            ? parsed
+            : {};
+    } catch (_) {
+        return {};
+    }
+}
+
+function isGenericAnalyticsVerificationFailureText(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    return [
+        '任务失败',
+        '失败',
+        '失败/阻塞',
+        'failed',
+        'fail',
+        'error',
+        'task failed',
+        'unknown'
+    ].includes(normalized);
+}
+
+function pickAnalyticsVerificationFailureText(candidates = []) {
+    let fallback = '';
+
+    for (const candidate of candidates) {
+        const value = String(candidate || '').trim();
+        if (!value) continue;
+        if (!isGenericAnalyticsVerificationFailureText(value)) {
+            return value;
+        }
+        if (!fallback) {
+            fallback = value;
+        }
+    }
+
+    return fallback;
+}
+
 function getAnalyticsVerificationSummary(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    const statusGroup = getVerifyStatusGroup(row?.status || payload.status || payload.raw_status);
+    if (statusGroup === 'failed') {
+        const failureReason = getAnalyticsVerificationFailureReason(row);
+        if (failureReason) return failureReason;
+    }
+
+    const rawMessage = Object.keys(payload).length > 0 ? '' : row.message;
     return String(
         row.summary
-        || row.message
+        || payload.error_message
+        || payload.message
+        || rawMessage
         || row.error_message
         || row.stage_label
+        || payload.stage_label
         || row.raw_status
+        || payload.raw_status
         || ''
     ).trim();
 }
 
+function formatAnalyticsVerificationUserId(value = '') {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '';
+    return normalized.length > 12 ? `用户 ${normalized.slice(0, 8)}…` : `用户 ${normalized}`;
+}
+
+function getAnalyticsVerificationSubmitterProfile(row = {}) {
+    const candidates = [
+        row?.submitter,
+        row?.submitter_profile,
+        row?.profile,
+        row?.profiles
+    ];
+
+    return candidates.find((candidate) => candidate && typeof candidate === 'object' && !Array.isArray(candidate)) || {};
+}
+
+function getAnalyticsVerificationSubmitterEmail(row = {}) {
+    const profile = getAnalyticsVerificationSubmitterProfile(row);
+    return String(row?.submitter_email || profile.email || row?.user_email || '').trim();
+}
+
+function getAnalyticsVerificationSubmitterIdentity(row = {}) {
+    const profile = getAnalyticsVerificationSubmitterProfile(row);
+    const displayName = String(row?.submitter_display_name || profile.display_name || '').trim();
+    const username = String(row?.submitter_username || profile.username || '').trim();
+    const submitterEmail = getAnalyticsVerificationSubmitterEmail(row);
+
+    return submitterEmail || displayName || username || '';
+}
+
+function getAnalyticsVerificationSubmittedAccount(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    return String(
+        row?.submitted_email
+        || row?.verification_email
+        || row?.target_email
+        || payload.email
+        || row?.email
+        || payload.user_id
+        || ''
+    ).trim();
+}
+
+function getAnalyticsVerificationTaskType(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    return String(row?.task_type || payload.task_type || row?.taskType || payload.taskType || '').trim().toLowerCase();
+}
+
+function getAnalyticsVerificationTaskTypeLabel(row = {}) {
+    const taskType = getAnalyticsVerificationTaskType(row);
+    if (taskType === 'full') return '全流程包绑卡';
+    if (taskType === 'extract') return '半流程 / 仅提链';
+    return '未记录模式';
+}
+
+function getAnalyticsVerificationPassLabel(row = {}) {
+    const statusGroup = getVerifyStatusGroup(row?.status);
+    if (statusGroup === 'success') return '通过';
+    if (statusGroup === 'failed') return '未通过';
+    if (statusGroup === 'active') return '处理中';
+    return '待确认';
+}
+
+function getAnalyticsVerificationFailureReason(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    const statusGroup = getVerifyStatusGroup(row?.status || payload.status || payload.raw_status);
+    if (statusGroup !== 'failed') return '';
+
+    const rawMessage = Object.keys(payload).length > 0 ? '' : row?.message;
+    return pickAnalyticsVerificationFailureText([
+        payload.failure_reason,
+        row?.failure_reason,
+        row?.error_message,
+        payload.error_message,
+        payload.message,
+        rawMessage,
+        row?.summary,
+        payload.summary,
+        payload.reason,
+        row?.reason,
+        payload.error,
+        payload.error_code,
+        row?.error_code,
+        row?.stage_label,
+        payload.stage_label,
+        row?.raw_status,
+        payload.raw_status
+    ]);
+}
+
+function getAnalyticsVerificationResultDetail(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    const resultUrl = String(payload.offer_url || payload.url || row?.offer_url || row?.url || '').trim();
+    const statusGroup = getVerifyStatusGroup(row?.status || payload.status || payload.raw_status);
+    if (statusGroup === 'failed') {
+        return {
+            value: getAnalyticsVerificationFailureReason(row),
+            href: ''
+        };
+    }
+
+    const rawMessage = Object.keys(payload).length > 0 ? '' : row?.message;
+    const resultText = String(
+        row?.summary
+        || payload.summary
+        || payload.message
+        || rawMessage
+        || resultUrl
+        || payload.error_message
+        || row?.error_message
+        || row?.stage_label
+        || payload.stage_label
+        || ''
+    ).trim();
+    return {
+        value: resultText,
+        href: resultUrl
+    };
+}
+
+function buildAnalyticsVerificationTaskTitle(row = {}) {
+    const submitterIdentity = getAnalyticsVerificationSubmitterIdentity(row);
+    const payload = getAnalyticsVerificationPayload(row);
+    const verificationId = String(row?.verification_id || payload.job_id || payload.task_id || '').trim();
+    return submitterIdentity || (verificationId ? `任务 #${verificationId}` : '未记录提交身份');
+}
+
+function buildAnalyticsVerificationUserDetailContext(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    const userId = String(row?.user_id || payload.user_id || '').trim();
+    if (!userId) {
+        return null;
+    }
+
+    const verificationId = String(row?.verification_id || payload.job_id || payload.task_id || '').trim();
+    const userEmail = getAnalyticsVerificationSubmitterEmail(row);
+    const submittedAccount = getAnalyticsVerificationSubmittedAccount(row);
+    const taskTypeLabel = getAnalyticsVerificationTaskTypeLabel(row);
+    const statusLabel = getAnalyticsVerificationPassLabel(row);
+    const site = String(row?.site || '').trim().toLowerCase();
+    const siteLabel = site ? site.toUpperCase() : '';
+
+    return {
+        contextType: 'verification',
+        sourceLabel: '验证交接',
+        summary: verificationId
+            ? `来自最近验证任务 #${verificationId}，进入用户详情后会定位到同一验证流水。`
+            : '来自最近验证任务，进入用户详情后会优先查看验证相关流水。',
+        signalLabel: '验证记录',
+        signalValue: verificationId ? `#${verificationId}` : statusLabel,
+        referenceLabel: '验证单号',
+        referenceValue: verificationId,
+        actionLabel: '回到验证监控',
+        destination: 'verify-monitor',
+        destinationContext: verificationId ? {
+            verificationId,
+            targetId: verificationId,
+            referenceValue: verificationId
+        } : {},
+        userId,
+        user_id: userId,
+        userEmail,
+        user_email: userEmail,
+        email: userEmail,
+        verificationId,
+        verification_id: verificationId,
+        ledgerReferenceId: verificationId,
+        ledger_reference_id: verificationId,
+        submittedAccount,
+        submitted_account: submittedAccount,
+        taskTypeLabel,
+        task_type_label: taskTypeLabel,
+        statusLabel,
+        status_label: statusLabel,
+        site,
+        siteLabel,
+        defaultTab: 'ledger',
+        tab: 'ledger',
+        autoOpenLedgerDetail: true,
+        auto_open_ledger_detail: true
+    };
+}
+
+function buildAnalyticsVerificationTaskAction(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    const verificationId = String(row?.verification_id || payload.job_id || payload.task_id || '').trim();
+    const userDetailContext = buildAnalyticsVerificationUserDetailContext(row);
+    if (userDetailContext) {
+        return {
+            action: 'analytics-open-user-detail',
+            actionLabel: '查看用户详情',
+            icon: 'fas fa-user',
+            userId: userDetailContext.userId,
+            userEmail: userDetailContext.userEmail,
+            context: userDetailContext
+        };
+    }
+
+    return {
+        actionLabel: verificationId ? '打开任务' : '打开 Verify Monitor',
+        destination: 'verify-monitor',
+        icon: 'fas fa-wave-square',
+        context: verificationId ? {
+            verificationId,
+            targetId: verificationId,
+            referenceValue: verificationId
+        } : null
+    };
+}
+
+function buildAnalyticsVerificationTaskMeta(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    const verificationId = String(row?.verification_id || payload.job_id || payload.task_id || '').trim();
+    const siteLabel = String(row?.site || 'all').toUpperCase();
+    return [
+        verificationId ? `任务 #${verificationId}` : '',
+        getAnalyticsVerificationTaskTypeLabel(row),
+        siteLabel,
+        getAnalyticsVerificationPassLabel(row)
+    ].filter(Boolean).join(' · ');
+}
+
+function buildAnalyticsVerificationSubmittedContent(row = {}) {
+    const submittedAccount = getAnalyticsVerificationSubmittedAccount(row);
+    return [
+        submittedAccount ? `账号 ${submittedAccount}` : '未记录账号',
+        getAnalyticsVerificationTaskTypeLabel(row)
+    ].filter(Boolean).join(' · ');
+}
+
+function buildAnalyticsVerificationTaskDetails(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    const verificationId = String(row?.verification_id || payload.job_id || payload.task_id || '').trim();
+    const submitterIdentity = getAnalyticsVerificationSubmitterIdentity(row);
+    const siteLabel = String(row?.site || 'all').toUpperCase();
+    const resultDetail = getAnalyticsVerificationResultDetail(row);
+    const failureReason = getAnalyticsVerificationFailureReason(row);
+    const queuePosition = Number(payload.queue_position ?? row?.queue_position);
+    const waitSeconds = Number(payload.estimated_wait_seconds ?? row?.estimated_wait_seconds);
+    const points = toNumericValue(row?.points_deducted ?? payload.points_deducted);
+    const submitterContext = buildAnalyticsVerificationUserDetailContext(row);
+    const details = [
+        submitterContext && submitterIdentity
+            ? {
+                label: '提交人',
+                value: submitterIdentity,
+                action: 'analytics-open-user-detail',
+                userId: submitterContext.userId,
+                userEmail: submitterContext.userEmail,
+                context: {
+                    ...submitterContext,
+                    autoOpenLedgerDetail: true,
+                    auto_open_ledger_detail: true
+                }
+            }
+            : { label: '提交人', value: submitterIdentity || '未记录提交人' },
+        { label: '提交内容', value: buildAnalyticsVerificationSubmittedContent(row) },
+        { label: '是否通过', value: getAnalyticsVerificationPassLabel(row) }
+    ];
+
+    if (getVerifyStatusGroup(row?.status || payload.status || payload.raw_status) === 'failed') {
+        details.push({ label: '失败原因', value: failureReason || '未记录失败原因' });
+    }
+
+    details.push(
+        { label: '提交模式', value: getAnalyticsVerificationTaskTypeLabel(row) },
+        { label: '任务号', value: verificationId || '未记录' },
+        { label: '站点', value: siteLabel },
+        { label: '提交时间', value: formatAnalyticsDateTime(row?.created_at) }
+    );
+
+    if (Number.isFinite(points) && points > 0) {
+        details.push({ label: '扣积分', value: `${formatNumber(points)} 积分` });
+    }
+    if (Number.isFinite(queuePosition) && queuePosition >= 0) {
+        details.push({ label: '队列位置', value: `#${queuePosition}` });
+    }
+    if (Number.isFinite(waitSeconds) && waitSeconds > 0) {
+        details.push({ label: '预计等待', value: `${formatNumber(waitSeconds)} 秒` });
+    }
+    if (resultDetail.value && resultDetail.value !== failureReason) {
+        details.push({ label: '返回内容', value: resultDetail.value, href: resultDetail.href });
+    }
+
+    return details;
+}
+
+function shouldHideAnalyticsVerificationCollapsedSummary(row = {}) {
+    const payload = getAnalyticsVerificationPayload(row);
+    const statusGroup = getVerifyStatusGroup(row?.status || payload.status || payload.raw_status);
+    return statusGroup === 'success' || statusGroup === 'failed';
+}
+
 function formatAnalyticsVerificationSample(row = {}) {
-    const id = row?.verification_id || row?.email || row?.user_id || '验证任务';
+    const id = buildAnalyticsVerificationTaskTitle(row);
     const status = getVerifyStatusLabel(getVerifyStatusGroup(row?.status));
     const summary = truncateAnalyticsSnippet(getAnalyticsVerificationSummary(row), 30);
     return [id, status, summary].filter(Boolean).join(' · ');
@@ -394,24 +752,16 @@ function buildVerifyServiceSummaryFromRows(rows = []) {
 
     const recentItems = sortedRows.slice(0, 5).map((row) => {
         const statusGroup = getVerifyStatusGroup(row?.status);
-        const verificationId = String(row?.verification_id || '').trim();
-        const identity = row?.email || row?.user_id || '未记录身份';
-        const siteLabel = String(row?.site || 'all').toUpperCase();
         return {
-            title: row?.verification_id || identity,
+            title: buildAnalyticsVerificationTaskTitle(row),
             value: formatAnalyticsDateTime(row?.created_at),
-            meta: `${identity} · ${siteLabel}`,
+            meta: buildAnalyticsVerificationTaskMeta(row),
             badgeLabel: getVerifyStatusLabel(statusGroup),
             badgeTone: getVerifyStatusTone(statusGroup),
             summary: getAnalyticsVerificationSummary(row) || '暂无额外摘要',
-            actionLabel: verificationId ? '打开任务' : '打开 Verify Monitor',
-            destination: 'verify-monitor',
-            icon: 'fas fa-wave-square',
-            context: verificationId ? {
-                verificationId,
-                targetId: verificationId,
-                referenceValue: verificationId
-            } : null
+            hideSummary: shouldHideAnalyticsVerificationCollapsedSummary(row),
+            detailItems: buildAnalyticsVerificationTaskDetails(row),
+            ...buildAnalyticsVerificationTaskAction(row)
         };
     });
 
@@ -421,22 +771,16 @@ function buildVerifyServiceSummaryFromRows(rows = []) {
 
     const focusItems = focusTaskRows.map((row) => {
         const statusGroup = getVerifyStatusGroup(row?.status);
-        const verificationId = String(row?.verification_id || '').trim();
         return {
-            title: row?.verification_id || row?.email || row?.user_id || '未命名验证任务',
+            title: buildAnalyticsVerificationTaskTitle(row),
             value: formatAnalyticsDateTime(row?.created_at),
-            meta: `${String(row?.site || 'all').toUpperCase()} · ${row?.email || row?.user_id || '匿名用户'}`,
+            meta: buildAnalyticsVerificationTaskMeta(row),
             badgeLabel: getVerifyStatusLabel(statusGroup),
             badgeTone: getVerifyStatusTone(statusGroup),
             summary: getAnalyticsVerificationSummary(row) || '暂无失败摘要',
-            actionLabel: verificationId ? '打开任务' : '打开 Verify Monitor',
-            destination: 'verify-monitor',
-            icon: 'fas fa-wave-square',
-            context: verificationId ? {
-                verificationId,
-                targetId: verificationId,
-                referenceValue: verificationId
-            } : null
+            hideSummary: shouldHideAnalyticsVerificationCollapsedSummary(row),
+            detailItems: buildAnalyticsVerificationTaskDetails(row),
+            ...buildAnalyticsVerificationTaskAction(row)
         };
     });
 
@@ -525,7 +869,7 @@ function buildVerifyServiceSummaryFromRows(rows = []) {
         focusItems,
         recentRows: sortedRows.slice(0, 8).map((row) => ({
             '验证单号': row?.verification_id || '',
-            '用户': row?.email || row?.user_id || '匿名用户',
+            '用户': getAnalyticsVerificationSubmitterIdentity(row) || '匿名用户',
             '站点': String(row?.site || 'all').toUpperCase(),
             '状态': getVerifyStatusLabel(getVerifyStatusGroup(row?.status)),
             '积分消耗': toNumericValue(row?.points_deducted) || 0,
@@ -534,7 +878,7 @@ function buildVerifyServiceSummaryFromRows(rows = []) {
         })),
         focusRows: focusTaskRows.map((row) => ({
             '验证单号': row?.verification_id || '',
-            '用户': row?.email || row?.user_id || '匿名用户',
+            '用户': getAnalyticsVerificationSubmitterIdentity(row) || '匿名用户',
             '站点': String(row?.site || 'all').toUpperCase(),
             '状态': getVerifyStatusLabel(getVerifyStatusGroup(row?.status)),
             '时间': formatAnalyticsDateTime(row?.created_at),

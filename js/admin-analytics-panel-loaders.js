@@ -130,6 +130,111 @@ function buildAnalyticsResolutionFeedbackStatusSummary(entries = []) {
     return summary;
 }
 
+function normalizeAnalyticsProductIndicatorKey(value = '') {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[\s_-]+/g, '');
+}
+
+function getAnalyticsProductIndicatorPalette() {
+    return [
+        chartColors.primary,
+        chartColors.secondary,
+        chartColors.success,
+        chartColors.warning,
+        chartColors.danger,
+        '#14b8a6',
+        '#f97316',
+        '#ec4899'
+    ];
+}
+
+function getAnalyticsProductSemanticIndicatorColor(value = '', index = 0) {
+    const key = normalizeAnalyticsProductIndicatorKey(value);
+    if (key.includes('虚拟卡') || key.includes('virtualcard') || key.includes('vcard')) {
+        return chartColors.danger;
+    }
+    if (key.includes('facebook') || key.includes('meta')) {
+        return chartColors.warning;
+    }
+    if (key.includes('公益') || key.includes('charity') || key.includes('public')) {
+        return chartColors.secondary;
+    }
+    if (key.includes('other') || key.includes('others') || key.includes('其他') || key.includes('未分类') || key.includes('misc')) {
+        return chartColors.success;
+    }
+    if (key.includes('gemini') || key.includes('google') || key.includes('gmail')) {
+        return chartColors.primary;
+    }
+    if (key.includes('chatgpt') || key.includes('openai')) {
+        return '#10b981';
+    }
+    if (key.includes('兑换') || key.includes('redeem') || key.includes('coupon') || key.includes('discount')) {
+        return '#ec4899';
+    }
+
+    const palette = getAnalyticsProductIndicatorPalette();
+    const safeIndex = Number.isFinite(Number(index)) ? Math.max(0, Number(index)) : 0;
+    return palette[safeIndex % palette.length];
+}
+
+function getAnalyticsProductCategoryIndicatorColor(rowOrLabel = {}, index = 0) {
+    if (rowOrLabel && typeof rowOrLabel === 'object') {
+        return getAnalyticsProductSemanticIndicatorColor(
+            rowOrLabel.category
+                || rowOrLabel.category_label
+                || rowOrLabel.product_name
+                || rowOrLabel.name
+                || rowOrLabel.key
+                || '',
+            index
+        );
+    }
+    return getAnalyticsProductSemanticIndicatorColor(rowOrLabel, index);
+}
+
+function getAnalyticsProductToneIndicatorColor(tone = '', index = 0) {
+    const normalized = normalizeAnalyticsProductIndicatorKey(tone);
+    if (normalized === 'success') return chartColors.success;
+    if (normalized === 'warning') return chartColors.warning;
+    if (normalized === 'danger' || normalized === 'error') return chartColors.danger;
+    if (normalized === 'accent' || normalized === 'info') return chartColors.primary;
+    if (normalized === 'neutral' || normalized === 'muted') return '#64748b';
+    return getAnalyticsProductIndicatorPalette()[Math.max(0, Number(index) || 0) % getAnalyticsProductIndicatorPalette().length];
+}
+
+function getAnalyticsProductSiteIndicatorColor(snapshot = {}, index = 0) {
+    const key = normalizeAnalyticsProductIndicatorKey(snapshot?.site || snapshot?.site_key || snapshot?.label || '');
+    if (key.includes('cn') || key.includes('中国') || key.includes('国内')) return chartColors.primary;
+    if (key.includes('intl') || key.includes('global') || key.includes('国际')) return chartColors.secondary;
+    if (key.includes('all') || key.includes('全站')) return '#14b8a6';
+    return getAnalyticsProductCategoryIndicatorColor(snapshot?.label || snapshot?.site || '', index);
+}
+
+function withAnalyticsProductIndicatorAlpha(color = '', alpha = 1) {
+    const safeColor = String(color || '').trim();
+    const safeAlpha = Math.max(0, Math.min(1, Number(alpha)));
+    const hexMatch = safeColor.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    if (!hexMatch) {
+        return safeColor;
+    }
+    const hex = hexMatch[1].length === 3
+        ? hexMatch[1].split('').map((char) => char + char).join('')
+        : hexMatch[1];
+    const r = parseInt(hex.slice(0, 2), 16);
+    const g = parseInt(hex.slice(2, 4), 16);
+    const b = parseInt(hex.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, ${safeAlpha})`;
+}
+
+function buildAnalyticsProductIndicatorStyle(color = '') {
+    const safeColor = String(color || '').trim();
+    return safeColor
+        ? ` style="--analytics-distribution-indicator:${escapeHtml(safeColor)};"`
+        : '';
+}
+
 function buildAnalyticsResolutionPriorityProducts(entries = [], alertItems = []) {
     const grouped = new Map();
     const alertMap = new Map();
@@ -3890,8 +3995,9 @@ function renderAnalyticsProductCategoryBreakdown(payload = {}) {
                     ${visibleRows.length > 0
                         ? visibleRows.map((row, index) => {
                             const guidance = buildAnalyticsProductCategoryGuidance(row, index, payload);
+                            const indicatorColor = getAnalyticsProductCategoryIndicatorColor(row, index);
                             return `
-                                <article class="analytics-product-category-row">
+                                <article class="analytics-product-category-row"${buildAnalyticsProductIndicatorStyle(indicatorColor)}>
                                     <div class="analytics-product-category-row__main">
                                         <div class="analytics-product-category-row__top">
                                             <strong>${escapeHtml(row.category || '未分类')}</strong>
@@ -4000,7 +4106,7 @@ function renderAnalyticsProductMatrix(payload = {}) {
             </div>
             <div class="analytics-product-matrix-list">
                 ${items.length > 0
-                    ? items.slice(0, 5).map((item) => {
+                    ? items.slice(0, 5).map((item, index) => {
                         const guidance = buildAnalyticsProductListGuidance(item, {
                             tone: item?.tone,
                             reason(row) {
@@ -4040,8 +4146,9 @@ function renderAnalyticsProductMatrix(payload = {}) {
                                 return '回到商品经营矩阵，确认这件商品的位置和转化信号是否比当前更健康。';
                             }
                         });
+                        const indicatorColor = getAnalyticsProductToneIndicatorColor(item?.tone || item?.quadrant_key || 'neutral', index);
                         return `
-                            <article class="analytics-product-matrix-row">
+                            <article class="analytics-product-matrix-row analytics-product-matrix-row--${escapeHtml(item.tone || 'neutral')}"${buildAnalyticsProductIndicatorStyle(indicatorColor)}>
                                 <div class="analytics-product-matrix-row__main">
                                     <div class="analytics-product-matrix-row__top">
                                         ${renderAnalyticsProductNameButton(item.product_name, item.product_id, {
@@ -4078,12 +4185,13 @@ function renderAnalyticsProductOverview(summary = {}, trendRows = [], comparison
     const metricCards = renderAnalyticsProductOverviewMetricCards(summary);
 
     const comparisonMarkup = snapshots.length > 0
-        ? snapshots.map((snapshot) => {
+        ? snapshots.map((snapshot, index) => {
             const siteSummary = snapshot?.summary && typeof snapshot.summary === 'object'
                 ? snapshot.summary
                 : {};
+            const indicatorColor = getAnalyticsProductSiteIndicatorColor(snapshot, index);
             return `
-                <article class="analytics-product-site-card">
+                <article class="analytics-product-site-card"${buildAnalyticsProductIndicatorStyle(indicatorColor)}>
                     <div class="analytics-product-site-card__top">
                         <strong>${escapeHtml(snapshot.label || snapshot.site || '站点')}</strong>
                         <span class="analytics-status-chip analytics-status-chip--${snapshot.site === comparison?.active_site ? 'warning' : 'neutral'}">${snapshot.site === comparison?.active_site ? '当前视角' : '对照'}</span>
@@ -4298,15 +4406,7 @@ function renderAnalyticsProductCategoryBreakdownChart(payload = {}) {
 
     const theme = getChartTheme();
     const state = getAnalyticsProductOverviewChartState();
-    const colors = [
-        chartColors.primary,
-        chartColors.secondary,
-        chartColors.success,
-        chartColors.warning,
-        chartColors.danger,
-        '#14b8a6',
-        '#f97316'
-    ];
+    const colors = rows.map((row, index) => getAnalyticsProductCategoryIndicatorColor(row, index));
 
     state.categoryChart = new Chart(canvas, {
         type: 'doughnut',
@@ -4314,7 +4414,7 @@ function renderAnalyticsProductCategoryBreakdownChart(payload = {}) {
             labels: rows.map((row) => row.category || '未分类'),
             datasets: [{
                 data: rows.map((row) => toNumericValue(row?.gmv_points) || 0),
-                backgroundColor: rows.map((_, index) => colors[index % colors.length]),
+                backgroundColor: colors,
                 borderWidth: 2,
                 borderColor: theme.background
             }]
@@ -4354,12 +4454,10 @@ function renderAnalyticsProductOperatingMatrixChart(payload = {}) {
 
     const theme = getChartTheme();
     const state = getAnalyticsProductOverviewChartState();
-    const toneColors = {
-        success: 'rgba(34, 197, 94, 0.72)',
-        warning: 'rgba(245, 158, 11, 0.72)',
-        accent: 'rgba(107, 158, 206, 0.72)',
-        neutral: 'rgba(148, 163, 184, 0.72)'
-    };
+    const itemColors = items.map((item, index) => getAnalyticsProductToneIndicatorColor(
+        item?.tone || item?.quadrant_key || 'neutral',
+        index
+    ));
 
     state.matrixChart = new Chart(canvas, {
         type: 'bubble',
@@ -4371,8 +4469,8 @@ function renderAnalyticsProductOperatingMatrixChart(payload = {}) {
                     y: toNumericValue(item?.conversion_rate) || 0,
                     r: Math.max(7, Math.min(22, toNumericValue(item?.bubble_size) || 10))
                 })),
-                backgroundColor: items.map((item) => toneColors[item?.tone] || toneColors.neutral),
-                borderColor: items.map((item) => toneColors[item?.tone] || toneColors.neutral),
+                backgroundColor: itemColors.map((color) => withAnalyticsProductIndicatorAlpha(color, 0.72)),
+                borderColor: itemColors,
                 borderWidth: 1
             }]
         },
@@ -5047,9 +5145,10 @@ function getAnalyticsProductStatusBreakdownActions(kind = 'refund', item = {}, s
 function renderAnalyticsProductStatusBreakdownRow(item = {}, options = {}) {
     const siteSummary = String(item?.site_summary || '').trim();
     const tone = String(item?.tone || 'neutral').trim().toLowerCase();
+    const indicatorColor = getAnalyticsProductToneIndicatorColor(tone);
     const actionMarkup = getAnalyticsProductStatusBreakdownActions(options.kind, item, options.summary || {});
     return `
-        <div class="analytics-product-event-row">
+        <div class="analytics-product-event-row"${buildAnalyticsProductIndicatorStyle(indicatorColor)}>
             <div class="analytics-product-event-row__meta">
                 <strong>${escapeHtml(item?.label || '状态')}</strong>
                 <span>${escapeHtml(siteSummary || '当前窗口状态分布')}</span>
@@ -5072,9 +5171,10 @@ function renderAnalyticsProductStatusBreakdownRow(item = {}, options = {}) {
 function renderAnalyticsProductDeliveryStatusCard(item = {}, options = {}) {
     const siteSummary = String(item?.site_summary || '').trim();
     const tone = String(item?.tone || 'neutral').trim().toLowerCase();
+    const indicatorColor = getAnalyticsProductToneIndicatorColor(tone);
     const actionMarkup = getAnalyticsProductStatusBreakdownActions('delivery', item, options.summary || {});
     return `
-        <article class="analytics-product-delivery-card analytics-product-delivery-card--${escapeHtml(tone)}">
+        <article class="analytics-product-delivery-card analytics-product-delivery-card--${escapeHtml(tone)}"${buildAnalyticsProductIndicatorStyle(indicatorColor)}>
             <div class="analytics-product-delivery-card__top">
                 <div class="analytics-product-delivery-card__copy">
                     <strong>${escapeHtml(item?.label || '履约状态')}</strong>
@@ -5103,9 +5203,10 @@ function renderAnalyticsProductDeliveryStatusCard(item = {}, options = {}) {
 
 function renderAnalyticsProductRankSection(title = '', rows = [], emptyMessage = '暂无榜单数据', metricFormatter = () => '', sectionTone = 'default', options = {}) {
     const safeRows = Array.isArray(rows) ? rows.slice(0, 5) : [];
+    const indicatorColor = getAnalyticsProductToneIndicatorColor(sectionTone);
     if (safeRows.length === 0) {
         return `
-            <article class="analytics-product-rank-card analytics-product-rank-card--${escapeHtml(sectionTone)}">
+            <article class="analytics-product-rank-card analytics-product-rank-card--${escapeHtml(sectionTone)}"${buildAnalyticsProductIndicatorStyle(indicatorColor)}>
                 <div class="analytics-product-rank-card__head">
                     <strong>${escapeHtml(title)}</strong>
                 </div>
@@ -5115,7 +5216,7 @@ function renderAnalyticsProductRankSection(title = '', rows = [], emptyMessage =
     }
 
     return `
-        <article class="analytics-product-rank-card analytics-product-rank-card--${escapeHtml(sectionTone)}">
+        <article class="analytics-product-rank-card analytics-product-rank-card--${escapeHtml(sectionTone)}"${buildAnalyticsProductIndicatorStyle(indicatorColor)}>
             <div class="analytics-product-rank-card__head">
                 <strong>${escapeHtml(title)}</strong>
             </div>
@@ -5273,10 +5374,11 @@ function renderAnalyticsProductFunnel(payload = {}) {
     const productRows = Array.isArray(payload?.productRows) ? payload.productRows.slice(0, 6) : [];
 
     const siteMarkup = siteSnapshots.length > 0
-        ? siteSnapshots.map((snapshot) => {
+        ? siteSnapshots.map((snapshot, index) => {
             const stageSummary = snapshot?.summary && typeof snapshot.summary === 'object' ? snapshot.summary : {};
+            const indicatorColor = getAnalyticsProductSiteIndicatorColor(snapshot, index);
             return `
-                <article class="analytics-product-site-card analytics-product-site-card--funnel">
+                <article class="analytics-product-site-card analytics-product-site-card--funnel"${buildAnalyticsProductIndicatorStyle(indicatorColor)}>
                     <div class="analytics-product-site-card__top">
                         <strong>${escapeHtml(snapshot.label || snapshot.site || '站点')}</strong>
                         <span class="analytics-status-chip analytics-status-chip--${snapshot.site === payload?.siteComparison?.active_site ? 'warning' : 'neutral'}">${snapshot.site === payload?.siteComparison?.active_site ? '当前视角' : '对照'}</span>
@@ -6007,8 +6109,8 @@ function renderAnalyticsProductDetailPanel(payload = {}, options = {}) {
                 <span>CN / INTL</span>
             </div>
             <div class="analytics-product-site-grid analytics-product-site-grid--detail">
-                ${siteSnapshots.map((snapshot) => `
-                    <article class="analytics-product-site-card">
+                ${siteSnapshots.map((snapshot, index) => `
+                    <article class="analytics-product-site-card"${buildAnalyticsProductIndicatorStyle(getAnalyticsProductSiteIndicatorColor(snapshot, index))}>
                         <div class="analytics-product-site-card__top">
                             <strong>${escapeHtml(snapshot.label || snapshot.site || '站点')}</strong>
                         </div>
@@ -6418,7 +6520,7 @@ async function loadProductOverview() {
     container.innerHTML = renderAnalyticsProductCommerceSkeleton('overview');
 
     try {
-        const bundle = await getAnalyticsProductDashboardBundle();
+        const bundle = await getAnalyticsProductDashboardBundle({ limit: 10 });
         const summary = getAnalyticsProductBundlePayloadOrThrow(bundle, 'summary', 'Product summary unavailable') || {};
         const trend = getAnalyticsProductBundlePayloadOrThrow(bundle, 'trend', 'Product trend unavailable') || [];
         const comparison = getAnalyticsProductBundlePayloadOrThrow(bundle, 'siteComparison', 'Product site comparison unavailable') || {};
@@ -6584,11 +6686,11 @@ async function loadProductFunnel() {
     container.innerHTML = renderAnalyticsProductCommerceSkeleton('funnel');
 
     try {
-        const bundle = await getAnalyticsProductFunnelBundle({ limit: 6 });
+        const bundle = await getAnalyticsProductDashboardBundle({ limit: 10 });
         const payload = {
-            summary: getAnalyticsProductBundlePayloadOrThrow(bundle, 'summary', 'Product funnel summary unavailable') || {},
-            siteComparison: getAnalyticsProductBundlePayloadOrThrow(bundle, 'siteComparison', 'Product funnel site comparison unavailable') || {},
-            productRows: getAnalyticsProductBundlePayloadOrThrow(bundle, 'productRows', 'Product funnel product comparison unavailable') || []
+            summary: getAnalyticsProductBundlePayloadOrThrow(bundle, 'funnelSummary', 'Product funnel summary unavailable') || {},
+            siteComparison: getAnalyticsProductBundlePayloadOrThrow(bundle, 'funnelSiteComparison', 'Product funnel site comparison unavailable') || {},
+            productRows: getAnalyticsProductBundlePayloadOrThrow(bundle, 'funnelProductRows', 'Product funnel product comparison unavailable') || []
         };
 
         const hasSignal = Number(payload.summary?.stages?.[0]?.value || 0) > 0
@@ -8176,7 +8278,7 @@ function renderAnalyticsOperatingFocusWorkspace(cards = null) {
                 <div class="analytics-operating-focus__hero-copy">
                     <div class="analytics-operating-focus__hero-top">
                         <span class="analytics-operating-focus__route">${escapeHtml(routeLabel)}</span>
-                        <span class="analytics-status-chip analytics-status-chip--${escapeHtml(tone)}">${escapeHtml(statusLabel)}</span>
+                        ${renderAnalyticsNavigatorStatus(statusLabel, tone)}
                     </div>
                     <strong class="analytics-operating-focus__title">${escapeHtml(title)}</strong>
                     ${summary ? `<p class="analytics-operating-focus__summary">${escapeHtml(summary)}</p>` : ''}
@@ -8309,6 +8411,11 @@ function renderAnalyticsSectionNavigatorEntryItems(entryItems = []) {
             </div>
         </div>
     `;
+}
+
+function renderAnalyticsNavigatorStatus(statusLabel = '观察中', tone = 'neutral') {
+    const normalizedTone = String(tone || 'neutral').trim().toLowerCase() || 'neutral';
+    return `<span class="analytics-nav-status-text analytics-nav-status-text--${escapeHtml(normalizedTone)}">${escapeHtml(statusLabel || '观察中')}</span>`;
 }
 
 function buildAnalyticsOperatingHubItems(cards = []) {
@@ -8567,7 +8674,7 @@ function renderAnalyticsBusinessCenterCloseoutCard(state = null) {
         <article class="analytics-business-center-shell__card analytics-business-center-shell__card--${escapeHtml(state.tone || 'neutral')} analytics-business-center-shell__card--closeout">
             <div class="analytics-business-center-shell__card-top">
                 <span class="analytics-business-center-shell__card-label">当前状态</span>
-                <span class="analytics-status-chip analytics-status-chip--${escapeHtml(state.tone || 'neutral')}">${escapeHtml(state.statusLabel || '观察中')}</span>
+                ${renderAnalyticsNavigatorStatus(state.statusLabel || '观察中', state.tone || 'neutral')}
             </div>
             <strong class="analytics-business-center-shell__card-title">${escapeHtml(state.title || '经营分析主线')}</strong>
             ${state.summary ? `<p class="analytics-business-center-shell__card-summary">${escapeHtml(state.summary)}</p>` : ''}
@@ -8579,7 +8686,7 @@ function renderAnalyticsBusinessCenterCloseoutCard(state = null) {
                     <div class="analytics-business-center-shell__closeout-item analytics-business-center-shell__closeout-item--${escapeHtml(item.tone || 'neutral')}">
                         <div class="analytics-business-center-shell__closeout-top">
                             <strong>${escapeHtml(item.label || '经营线')}</strong>
-                            <span class="analytics-status-chip analytics-status-chip--${escapeHtml(item.tone || 'neutral')}">${escapeHtml(item.statusLabel || '观察中')}</span>
+                            ${renderAnalyticsNavigatorStatus(item.statusLabel || '观察中', item.tone || 'neutral')}
                         </div>
                         ${item.summary ? `<p class="analytics-business-center-shell__closeout-summary">${escapeHtml(item.summary)}</p>` : ''}
                         ${item.primaryAction
@@ -8634,7 +8741,7 @@ function renderAnalyticsBusinessCenterWatchItems(items = []) {
                     >
                         <div class="analytics-business-center-shell__watch-top">
                             <span class="analytics-business-center-shell__watch-route">${escapeHtml(item.navLabel || item.eyebrow || '经营线')}</span>
-                            <span class="analytics-status-chip analytics-status-chip--${escapeHtml(item.tone || 'neutral')}">${escapeHtml(item.statusLabel || '观察中')}</span>
+                            ${renderAnalyticsNavigatorStatus(item.statusLabel || '观察中', item.tone || 'neutral')}
                         </div>
                         <strong class="analytics-business-center-shell__watch-title">${escapeHtml(item.title || item.navLabel || '经营线')}</strong>
                         ${item.summary ? `<p class="analytics-business-center-shell__watch-summary">${escapeHtml(item.summary)}</p>` : ''}
@@ -8683,7 +8790,7 @@ function renderAnalyticsBusinessCenterShell(cards = null) {
                 <div class="analytics-business-center-shell__hero-copy">
                     <div class="analytics-business-center-shell__hero-top">
                         <span class="analytics-business-center-shell__route">经营分析中心</span>
-                        <span class="analytics-status-chip analytics-status-chip--${escapeHtml(state.tone || 'neutral')}">${escapeHtml(state.statusLabel || '观察中')}</span>
+                        ${renderAnalyticsNavigatorStatus(state.statusLabel || '观察中', state.tone || 'neutral')}
                     </div>
                     <strong class="analytics-business-center-shell__title">${escapeHtml(state.title || '经营分析中心')}</strong>
                     ${state.summary ? `<p class="analytics-business-center-shell__summary">${escapeHtml(state.summary)}</p>` : ''}
@@ -8786,7 +8893,7 @@ function renderAnalyticsOperatingHub(items = []) {
                 >
                     <div class="analytics-operating-hub__item-top">
                         <span class="analytics-operating-hub__route">${escapeHtml(item.navLabel || '经营线')}</span>
-                        <span class="analytics-status-chip analytics-status-chip--${escapeHtml(item.tone || 'neutral')}">${escapeHtml(item.statusLabel || '观察中')}</span>
+                        ${renderAnalyticsNavigatorStatus(item.statusLabel || '观察中', item.tone || 'neutral')}
                     </div>
                     <strong class="analytics-operating-hub__title">${escapeHtml(item.title || item.navLabel || '经营入口')}</strong>
                     <p class="analytics-operating-hub__summary">${escapeHtml(item.summary || '')}</p>
@@ -8842,7 +8949,7 @@ function renderAnalyticsOverviewNavigator(cards = []) {
                     <article class="analytics-overview-navigator-card analytics-overview-navigator-card--${escapeHtml(card.tone || 'neutral')}">
                         <div class="analytics-overview-navigator-card__top">
                             <span class="analytics-overview-navigator-card__eyebrow">${escapeHtml(card.eyebrow || '经营导航')}</span>
-                            <span class="analytics-status-chip analytics-status-chip--${escapeHtml(card.tone || 'neutral')}">${escapeHtml(card.statusLabel || '观察中')}</span>
+                            ${renderAnalyticsNavigatorStatus(card.statusLabel || '观察中', card.tone || 'neutral')}
                         </div>
                         <strong class="analytics-overview-navigator-card__title">${escapeHtml(card.title || '经营导航')}</strong>
                         <p class="analytics-overview-navigator-card__summary">${escapeHtml(card.summary || '')}</p>
@@ -8995,7 +9102,7 @@ function renderAnalyticsSectionNavigator(cards = []) {
                 >
                     <div class="analytics-section-navigator-card__top">
                         <span class="analytics-section-navigator-card__route">${escapeHtml(card.navLabel || card.eyebrow || '经营')}</span>
-                        <span class="analytics-status-chip analytics-status-chip--${escapeHtml(card.tone || 'neutral')}">${escapeHtml(card.statusLabel || '观察中')}</span>
+                        ${renderAnalyticsNavigatorStatus(card.statusLabel || '观察中', card.tone || 'neutral')}
                     </div>
                     <strong class="analytics-section-navigator-card__title">${escapeHtml(card.title || card.navLabel || '经营分层')}</strong>
                     <p class="analytics-section-navigator-card__summary">${escapeHtml(card.summary || '')}</p>
@@ -9479,7 +9586,7 @@ async function loadOverviewOperatingNavigator() {
         };
         const requestStatus = {
             summaryWindowData: 'pending',
-            productDashboardBundle: 'pending',
+            productDashboardBundle: 'idle',
             operationsHealthSnapshot: 'pending',
             verifyServiceSummary: 'pending',
             topContentRows: 'pending'
@@ -9554,9 +9661,28 @@ async function loadOverviewOperatingNavigator() {
             return true;
         };
 
+        const scheduleProductDashboardWarm = () => {
+            if (requestStatus.productDashboardBundle === 'pending' || requestStatus.productDashboardBundle === 'fulfilled') {
+                return;
+            }
+            requestStatus.productDashboardBundle = 'pending';
+            window.setTimeout(() => {
+                void Promise.resolve(getAnalyticsProductDashboardBundle())
+                    .then((value) => {
+                        requestState.productDashboardBundle = value;
+                        requestStatus.productDashboardBundle = 'fulfilled';
+                        renderCards(false);
+                        return value;
+                    })
+                    .catch((error) => {
+                        requestStatus.productDashboardBundle = 'rejected';
+                        console.warn('[Analytics] Overview product navigator warm failed:', error);
+                    });
+            }, 0);
+        };
+
         const requests = [
             ['summaryWindowData', getAnalyticsSummaryWindowData()],
-            ['productDashboardBundle', getAnalyticsProductDashboardBundle()],
             ['operationsHealthSnapshot', getOperationsHealthSnapshotData()],
             ['verifyServiceSummary', getVerifyServiceSummaryData()],
             ['topContentRows', fetchTopContentData(10)]
@@ -9575,6 +9701,7 @@ async function loadOverviewOperatingNavigator() {
             })));
 
         renderCards(true);
+        scheduleProductDashboardWarm();
     } catch (err) {
         console.error('[Analytics] Failed to load overview operating navigator:', err);
         if (container) {
@@ -9836,6 +9963,7 @@ function renderAnalyticsUserValueCockpitBuyerSample(sample = {}, summary = {}, s
         return '';
     }
 
+    const displayUserLabel = buildAnalyticsUserFallbackLabel(userId);
     const signalValue = `${formatNumber(sample.order_count || 0)} 单 / ${formatNumber(sample.gmv_points || 0)} 积分`;
     return `
         <button
@@ -9862,7 +9990,7 @@ function renderAnalyticsUserValueCockpitBuyerSample(sample = {}, summary = {}, s
             })}
             title="查看 ${escapeHtml(userId)} 的用户详情"
         >
-            <strong>${escapeHtml(userId)}</strong>
+            <strong>用户 ${escapeHtml(displayUserLabel)}</strong>
             <span>${escapeHtml(signalValue)}</span>
         </button>
     `;
@@ -10964,7 +11092,7 @@ function getChannelBreakdownActionConfig(metricKey = '') {
     }
 }
 
-function renderChannelBreakdownDetails(rows = [], metricMeta = {}) {
+function renderChannelBreakdownDetails(rows = [], metricMeta = {}, indicatorColors = []) {
     if (!Array.isArray(rows) || rows.length === 0) {
         return renderHintState('fas fa-list-ul', '当前窗口暂无渠道明细');
     }
@@ -10973,10 +11101,11 @@ function renderChannelBreakdownDetails(rows = [], metricMeta = {}) {
 
     return `
         <div class="analytics-recommendation-stack">
-            ${rows.slice(0, 5).map((row) => {
+            ${rows.slice(0, 5).map((row, index) => {
                 const primaryValue = toNumericValue(row?.[metricMeta.key]) || 0;
                 const shareRate = toNumericValue(row?.[metricMeta.rateKey || 'share_rate']);
                 const detailParts = [];
+                const indicatorColor = indicatorColors[index % indicatorColors.length] || chartColors.primary;
 
                 if (metricMeta.key !== 'user_count' && (toNumericValue(row?.user_count) || 0) > 0) {
                     detailParts.push(`覆盖 ${formatNumber(row.user_count)} 位用户`);
@@ -11003,7 +11132,7 @@ function renderChannelBreakdownDetails(rows = [], metricMeta = {}) {
                 }
 
                 return `
-                    <article class="analytics-recommendation-item">
+                    <article class="analytics-recommendation-item" style="--analytics-distribution-indicator:${escapeHtml(indicatorColor)};">
                         <div class="analytics-recommendation-item__top">
                             <span class="analytics-status-chip analytics-status-chip--accent">${escapeHtml(metricMeta.unitLabel || '样本')}</span>
                             <strong class="analytics-recommendation-item__title">${escapeHtml(row?.channel || '未分类')}</strong>
@@ -11128,7 +11257,7 @@ async function loadChannelChart(days = getAnalyticsRangeDays()) {
         });
 
         if (detailContainer) {
-            detailContainer.innerHTML = renderChannelBreakdownDetails(chartRows, metricMeta);
+            detailContainer.innerHTML = renderChannelBreakdownDetails(chartRows, metricMeta, backgroundColors);
         }
     } catch (err) {
         console.error('[Analytics] Failed to load channel chart:', err);
@@ -13818,25 +13947,73 @@ async function loadRedemptionFunnel(days = getAnalyticsRangeDays()) {
     }
 }
 
+function renderOverviewBusinessMixSummary(summary = {}, container = null, recommendations = null) {
+    if (!container) {
+        return false;
+    }
+
+    container.innerHTML = renderAnalyticsCompactItems(summary.items, {
+        iconClass: 'fas fa-compass-drafting',
+        message: '当前窗口暂无经营主线数据'
+    });
+
+    if (recommendations) {
+        recommendations.innerHTML = renderAnalyticsRecommendationItems(summary.recommendations, {
+            iconClass: 'fas fa-list-check',
+            message: '当前窗口暂无建议动作'
+        });
+    }
+
+    return true;
+}
+
+function scheduleOverviewBusinessMixProductSignalsWarm(summary = {}, options = {}) {
+    const requestId = Number(options?.requestId || 0);
+    return new Promise((resolve) => {
+        window.setTimeout(() => {
+            void (async () => {
+                if (requestId !== analyticsOverviewBusinessMixRequestId) {
+                    return false;
+                }
+
+                const productSignals = await getOverviewBusinessMixProductSignalsData().catch(() => null);
+                if (requestId !== analyticsOverviewBusinessMixRequestId || !productSignals) {
+                    return false;
+                }
+
+                const container = document.getElementById('overviewBusinessMix');
+                if (!container) {
+                    return false;
+                }
+
+                renderOverviewBusinessMixSummary(
+                    enrichOverviewBusinessMixSummaryWithProductSignals(summary, productSignals),
+                    container,
+                    document.getElementById('overviewActionRecommendations')
+                );
+                return true;
+            })().then(resolve).catch((error) => {
+                console.warn('[Analytics] Overview business mix product warm failed:', error);
+                resolve(false);
+            });
+        }, 0);
+    });
+}
+
 async function loadOverviewBusinessMix() {
     const container = document.getElementById('overviewBusinessMix');
     const recommendations = document.getElementById('overviewActionRecommendations');
     if (!container) return;
+    const requestId = ++analyticsOverviewBusinessMixRequestId;
 
     try {
-        const summary = await getOverviewBusinessMixSummaryData();
-
-        container.innerHTML = renderAnalyticsCompactItems(summary.items, {
-            iconClass: 'fas fa-compass-drafting',
-            message: '当前窗口暂无经营主线数据'
-        });
-
-        if (recommendations) {
-            recommendations.innerHTML = renderAnalyticsRecommendationItems(summary.recommendations, {
-                iconClass: 'fas fa-list-check',
-                message: '当前窗口暂无建议动作'
-            });
+        const summary = await getOverviewBusinessMixSummaryData({ includeProductSignals: false });
+        if (requestId !== analyticsOverviewBusinessMixRequestId) {
+            return;
         }
+
+        renderOverviewBusinessMixSummary(summary, container, recommendations);
+        void scheduleOverviewBusinessMixProductSignalsWarm(summary, { requestId });
     } catch (err) {
         console.error('[Analytics] Failed to load overview business mix:', err);
         try {
@@ -13848,16 +14025,10 @@ async function loadOverviewBusinessMix() {
                 summaryWindow,
                 commentsSummary
             });
-            container.innerHTML = renderAnalyticsCompactItems(fallbackSummary.items, {
-                iconClass: 'fas fa-compass-drafting',
-                message: '当前窗口暂无经营主线数据'
-            });
-            if (recommendations) {
-                recommendations.innerHTML = renderAnalyticsRecommendationItems(fallbackSummary.recommendations, {
-                    iconClass: 'fas fa-list-check',
-                    message: '当前窗口暂无建议动作'
-                });
+            if (requestId !== analyticsOverviewBusinessMixRequestId) {
+                return;
             }
+            renderOverviewBusinessMixSummary(fallbackSummary, container, recommendations);
         } catch (fallbackErr) {
             console.error('[Analytics] Overview business mix fallback failed:', fallbackErr);
             container.innerHTML = renderHintState('fas fa-compass-drafting', '经营主线加载失败', 'error');
@@ -13877,7 +14048,7 @@ async function loadOverviewDutyBoard() {
     try {
         const [summaryWindowResult, overviewResult, verifyResult, growthResult, operationsResult] = await Promise.allSettled([
             getAnalyticsSummaryWindowData(),
-            getOverviewBusinessMixSummaryData(),
+            getOverviewBusinessMixSummaryData({ includeProductSignals: false }),
             getVerifyServiceSummaryData(),
             getGrowthSummaryData(),
             getOperationsHealthSnapshotData()
@@ -13896,6 +14067,27 @@ async function loadOverviewDutyBoard() {
         console.error('[Analytics] Failed to load overview duty board:', err);
         container.innerHTML = renderHintState('fas fa-clipboard-list', '今日待处理加载失败', 'error');
     }
+}
+
+function renderVerifyServiceSummaryUnavailableState(message = '') {
+    const fallbackMessage = String(message || '').trim();
+    const panelStates = [
+        ['verifyStatusList', 'fas fa-signal', '验证状态暂未返回，请稍后刷新或打开 Verify Monitor。'],
+        ['verifyRecentList', 'fas fa-list-check', '最近验证任务暂未返回，请稍后刷新或打开 Verify Monitor。'],
+        ['verifyFailureList', 'fas fa-triangle-exclamation', '失败与阻塞暂未返回，请稍后刷新或打开 Verify Monitor。'],
+        ['verifyActionRecommendations', 'fas fa-list-check', '建议动作暂未返回，请稍后刷新或打开 Verify Monitor。']
+    ];
+
+    panelStates.forEach(([containerId, iconClass, panelMessage]) => {
+        const container = document.getElementById(containerId);
+        if (container) {
+            container.innerHTML = renderHintState(iconClass, fallbackMessage || panelMessage, 'error');
+        }
+    });
+}
+
+if (typeof window !== 'undefined') {
+    window.renderVerifyServiceSummaryUnavailableState = renderVerifyServiceSummaryUnavailableState;
 }
 
 async function loadVerifyServiceSummary() {
@@ -13996,11 +14188,7 @@ async function loadVerifyServiceSummary() {
             }
         } catch (fallbackErr) {
             console.error('[Analytics] Verify summary fallback failed:', fallbackErr);
-            const errorState = renderHintState('fas fa-shield-halved', '验证服务摘要加载失败', 'error');
-            if (statusContainer) statusContainer.innerHTML = errorState;
-            if (recentContainer) recentContainer.innerHTML = errorState;
-            if (failureContainer) failureContainer.innerHTML = errorState;
-            if (recommendations) recommendations.innerHTML = renderHintState('fas fa-list-check', '建议动作加载失败', 'error');
+            renderVerifyServiceSummaryUnavailableState('验证服务摘要加载失败，请稍后刷新或打开 Verify Monitor。');
         }
     }
 }
@@ -14652,7 +14840,7 @@ function renderAnalyticsOpsCockpitCard(state = {}, options = {}) {
                     <div class="analytics-ops-cockpit__eyebrow">${escapeHtml(state.eyebrow || '运营保障')}</div>
                     <strong class="analytics-ops-cockpit__title">${escapeHtml(state.title || '运营保障')}</strong>
                 </div>
-                <span class="analytics-status-chip analytics-status-chip--${escapeHtml(state.tone || 'neutral')}">${escapeHtml(state.statusLabel || '观察中')}</span>
+                ${renderAnalyticsNavigatorStatus(state.statusLabel || '观察中', state.tone || 'neutral')}
             </div>
             <p class="analytics-ops-cockpit__summary">${escapeHtml(state.summary || '')}</p>
             ${renderAnalyticsOpsCockpitStatGrid(state.stats)}
@@ -15461,7 +15649,7 @@ function renderAnalyticsOpsCockpitOverview(state = {}) {
                     <strong class="analytics-ops-cockpit__overview-title">${escapeHtml(state.title || '运营保障总览')}</strong>
                     <p class="analytics-ops-cockpit__summary">${escapeHtml(state.summary || '')}</p>
                 </div>
-                <span class="analytics-status-chip analytics-status-chip--${escapeHtml(state.tone || 'neutral')}">${escapeHtml(state.statusLabel || '观察中')}</span>
+                ${renderAnalyticsNavigatorStatus(state.statusLabel || '观察中', state.tone || 'neutral')}
             </div>
             ${renderAnalyticsOpsCockpitStatGrid(state.stats)}
             ${renderAnalyticsOpsCockpitSampleList(state.samples, '当前窗口没有需要额外提示的运营异常样本。')}
@@ -16125,7 +16313,7 @@ async function loadGrowthSummary() {
             return;
         }
         applyGrowthSummaryPanelState(summary, { summaryWindow });
-        await scheduleGrowthSummaryProductSignalsWarm(summary, { requestId, summaryWindow });
+        void scheduleGrowthSummaryProductSignalsWarm(summary, { requestId, summaryWindow });
     } catch (err) {
         console.error('[Analytics] Failed to load growth summary:', err);
         try {
@@ -16141,7 +16329,7 @@ async function loadGrowthSummary() {
                 commentsSummary
             });
             applyGrowthSummaryPanelState(fallbackSummary, { summaryWindow });
-            await scheduleGrowthSummaryProductSignalsWarm(fallbackSummary, { requestId, summaryWindow });
+            void scheduleGrowthSummaryProductSignalsWarm(fallbackSummary, { requestId, summaryWindow });
         } catch (fallbackErr) {
             if (requestId !== analyticsGrowthSummaryRequestId) {
                 return;
@@ -16703,7 +16891,7 @@ async function loadGeoDistribution() {
                 const color = geoColors[data.indexOf(row) % geoColors.length];
                 const count = row.user_count || 0;
                 const pct = totalUsers > 0 ? ((count / totalUsers) * 100).toFixed(1) : '0.0';
-                return `<div class="analytics-compact-item analytics-geo-item">
+                return `<div class="analytics-compact-item analytics-geo-item" style="--analytics-distribution-indicator:${escapeHtml(color)};">
                     <div class="analytics-compact-item__top">
                         <div class="analytics-compact-item__heading">
                             <span class="analytics-compact-item__title">

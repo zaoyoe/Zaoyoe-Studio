@@ -2092,6 +2092,36 @@ async function tryFinalizeCustomRechargeFromQuote({
     };
 }
 
+function isGenericVerifyFailureMessage(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    return [
+        '任务失败',
+        '失败',
+        'failed',
+        'fail',
+        'error',
+        'task failed',
+        'unknown'
+    ].includes(normalized);
+}
+
+function pickVerifyFailureMessage(candidates = []) {
+    let fallback = '';
+
+    for (const candidate of candidates) {
+        const value = String(candidate || '').trim();
+        if (!value) continue;
+        if (!isGenericVerifyFailureMessage(value)) {
+            return value;
+        }
+        if (!fallback) {
+            fallback = value;
+        }
+    }
+
+    return fallback;
+}
+
 function buildClientStatusMessage(job) {
     const status = String(job?.status || '').toLowerCase();
     const taskType = normalizeVerifyTaskType(job?.task_type || job?.taskType);
@@ -2120,7 +2150,14 @@ function buildClientStatusMessage(job) {
     }
 
     if (status === 'failed') {
-        return job?.error || '任务失败';
+        return pickVerifyFailureMessage([
+            job?.message,
+            job?.error_message,
+            job?.failure_reason,
+            job?.reason,
+            job?.error,
+            job?.error_code
+        ]) || '任务失败';
     }
 
     return job?.message || job?.status || '处理中';

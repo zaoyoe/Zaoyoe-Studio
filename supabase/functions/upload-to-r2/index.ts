@@ -7,6 +7,37 @@ const corsHeaders = {
     'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+const PROMPT_IMAGE_VARIANT_PREFIXES: Record<string, string> = {
+    original: 'prompts',
+    thumb: 'prompts/thumb',
+    featured: 'prompts/featured',
+    card: 'prompts/card',
+    home: 'prompts/home',
+};
+
+function sanitizePromptImageFilename(filename: unknown): string {
+    return String(filename || '')
+        .split(/[\\/]/)
+        .pop()
+        ?.replace(/[^a-zA-Z0-9._-]/g, '_') || '';
+}
+
+function getPromptImageUploadTarget(image: Record<string, unknown>) {
+    const isThumb = Boolean(image?.isThumb);
+    const requestedVariant = String(image?.variant || (isThumb ? 'thumb' : 'original')).trim();
+    const variant = Object.prototype.hasOwnProperty.call(PROMPT_IMAGE_VARIANT_PREFIXES, requestedVariant)
+        ? requestedVariant
+        : (isThumb ? 'thumb' : 'original');
+    const filename = sanitizePromptImageFilename(image?.filename);
+    const prefix = PROMPT_IMAGE_VARIANT_PREFIXES[variant];
+
+    return {
+        key: filename ? `${prefix}/${filename}` : '',
+        variant,
+        isOriginal: variant === 'original',
+    };
+}
+
 serve(async (req) => {
     // Handle CORS preflight requests
     if (req.method === 'OPTIONS') {
@@ -81,11 +112,14 @@ serve(async (req) => {
 
         // Upload images to R2
         const uploadedUrls: string[] = [];
+        const uploadedAssetsByFilename = new Map<string, Record<string, string>>();
+        const uploadedAssetOrder: string[] = [];
 
         for (const image of images) {
-            const { base64, filename, isThumb } = image;
+            const { base64, filename } = image;
+            const { key, variant, isOriginal } = getPromptImageUploadTarget(image);
 
-            if (!base64 || !filename) {
+            if (!base64 || !filename || !key) {
                 console.warn('Skipping invalid image:', image);
                 continue;
             }
@@ -98,28 +132,37 @@ serve(async (req) => {
                     bytes[i] = binaryString.charCodeAt(i);
                 }
 
-                // Determine upload path based on isThumb flag
-                const key = isThumb
-                    ? `prompts/thumb/${filename}`
-                    : `prompts/${filename}`;
-
                 await s3Client.send(
                     new PutObjectCommand({
                         Bucket: 'zaoyoeimages',
                         Key: key,
                         Body: bytes,
                         ContentType: 'image/webp',
+                        CacheControl: 'public, max-age=31536000, immutable',
                     })
                 );
 
                 const publicUrl = `${R2_PUBLIC_URL}/${key}`;
+                const safeFilename = sanitizePromptImageFilename(filename);
+                if (safeFilename) {
+                    if (!uploadedAssetsByFilename.has(safeFilename)) {
+                        uploadedAssetsByFilename.set(safeFilename, {});
+                    }
 
-                // Only add original images to uploadedUrls (not thumbnails)
-                if (!isThumb) {
+                    const asset = uploadedAssetsByFilename.get(safeFilename)!;
+                    asset[variant] = publicUrl;
+
+                    if (isOriginal && !uploadedAssetOrder.includes(safeFilename)) {
+                        uploadedAssetOrder.push(safeFilename);
+                    }
+                }
+
+                // Only add original images to uploadedUrls (not thumbnails/variants)
+                if (isOriginal) {
                     uploadedUrls.push(publicUrl);
                 }
 
-                console.log(`✅ Uploaded ${isThumb ? '(thumb)' : ''}: ${filename} → ${publicUrl}`);
+                console.log(`✅ Uploaded (${variant}): ${filename} → ${publicUrl}`);
             } catch (uploadError) {
                 console.error(`Failed to upload ${filename}:`, uploadError);
                 // Continue with other images even if one fails
@@ -136,6 +179,9 @@ serve(async (req) => {
         return new Response(
             JSON.stringify({
                 urls: uploadedUrls,
+                assets: uploadedAssetOrder
+                    .map((filename) => uploadedAssetsByFilename.get(filename))
+                    .filter((asset) => asset?.original),
                 count: uploadedUrls.length,
             }),
             {
