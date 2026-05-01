@@ -31,7 +31,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should cache-bust the first-paint homepage runtime'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home_critical.css?v=20260501_HOME_CRITICAL_CSS_SPLIT_1'),
+        indexSource.includes('./css/framer_home_critical.css?v=20260501_HOME_CRITICAL_MOBILE_HERO_CENTER_1'),
         true,
         'index.html should load a small blocking homepage critical stylesheet'
     );
@@ -100,6 +100,11 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         criticalStyles,
         /\.hero-section\[data-home-static-hero="1"\]:not\(\[data-render-signature\]\) \.hero-carousel-track\s*\{[\s\S]*display:\s*grid;[\s\S]*justify-content:\s*center;/,
         'static hero carousel should match the runtime centered position before JS takes over'
+    );
+    assert.match(
+        criticalStyles,
+        /@media \(max-width: 767px\)\s*\{[\s\S]*\.hero-section\[data-home-static-hero="1"\]:not\(\[data-render-signature\]\) \.hero-carousel\s*\{[\s\S]*overflow:\s*hidden;[\s\S]*scroll-snap-type:\s*none;[\s\S]*\.hero-section\[data-home-static-hero="1"\]:not\(\[data-render-signature\]\) \.hero-carousel-track\s*\{[\s\S]*grid-template-columns:\s*repeat\(5, 140px\);[\s\S]*gap:\s*16px;/,
+        'mobile static hero carousel should stay centered during critical first paint before runtime hydration'
     );
     assert.match(
         criticalStyles,
