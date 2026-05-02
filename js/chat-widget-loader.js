@@ -6,10 +6,11 @@
     }
     global.__zaoyoeChatWidgetBootstrapLoaded = true;
 
-    const VERSION = '20260501_CHAT_WIDGET_INTENT_LOAD_1';
+    const VERSION = '20260502_CHAT_WIDGET_FAB_PLACEMENT_GUARD_1';
     const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';
     const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';
     const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260426_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_12';
+    const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';
     const POLL_INTERVAL_MS = 125;
     const MAX_WAIT_MS = 10000;
 
@@ -19,7 +20,125 @@
     let pendingOpen = false;
     let placeholderFab = null;
 
+    function ensurePlaceholderPlacementStyles() {
+        if (document.getElementById(CHAT_WIDGET_CRITICAL_STYLE_ID)) {
+            return;
+        }
+
+        const style = document.createElement('style');
+        style.id = CHAT_WIDGET_CRITICAL_STYLE_ID;
+        style.textContent = `
+/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */
+.chat-widget-fab {
+    position: fixed;
+    top: 85%;
+    right: 0;
+    width: 92px;
+    height: 76px;
+    transform: translateY(-50%);
+    background: transparent;
+    border: 0;
+    box-shadow: none;
+    display: block;
+    cursor: pointer;
+    z-index: 9999;
+    overflow: visible;
+    transition: opacity 0.24s ease;
+}
+
+@media (hover: hover) and (pointer: fine) {
+    .chat-widget-fab:hover {
+        transform: translateY(calc(-50% - 2px));
+    }
+}
+
+.chat-widget-fab:active {
+    transform: translateY(-50%);
+}
+
+.chat-widget-fab--peek .chat-widget-fab__robot {
+    position: absolute;
+    top: 8px;
+    right: -8px;
+    width: 64px;
+    height: 48px;
+    transform: translateX(16px) scaleX(0.84) scaleY(1.04) rotate(-4deg);
+    transform-origin: 100% 50%;
+    transition: filter 240ms ease;
+    will-change: auto;
+}
+
+.chat-widget-fab--peek .chat-widget-fab__glow {
+    position: absolute;
+    inset: 8px 10px 4px 4px;
+    border-radius: 999px;
+    pointer-events: none;
+    transition: opacity 240ms ease;
+}
+
+.chat-widget-fab--peek .chat-widget-fab__shadow {
+    position: absolute;
+    right: 18px;
+    top: 56px;
+    width: 32px;
+    height: 9px;
+    pointer-events: none;
+    transform: scaleX(0.74) translateX(12px);
+    transition: opacity 240ms ease;
+}
+
+@media (max-width: 768px) {
+    .chat-widget-fab {
+        top: auto;
+        bottom: 30px;
+        right: 16px;
+        width: 58px;
+        height: 52px;
+        transform: none;
+    }
+
+    .chat-widget-fab:hover,
+    .chat-widget-fab:active {
+        transform: none;
+    }
+
+    .chat-widget-fab.chat-widget-fab--peek .chat-widget-fab__robot {
+        top: 4px;
+        right: 0;
+        width: 56px;
+        height: 46px;
+        transform: none;
+        transition: none;
+        will-change: auto;
+    }
+
+    .chat-widget-fab.chat-widget-fab--peek .chat-widget-fab__glow {
+        inset: 8px 8px 4px 2px;
+        transition: opacity 240ms ease;
+    }
+
+    .chat-widget-fab.chat-widget-fab--peek .chat-widget-fab__shadow {
+        right: 10px;
+        top: 42px;
+        width: 30px;
+        transform: scaleX(0.82);
+        transition: opacity 240ms ease;
+    }
+}
+`;
+
+        const chatStylesheet = document.querySelector('link[href*="css/chat-widget.css"]');
+        if (chatStylesheet?.parentNode) {
+            chatStylesheet.parentNode.insertBefore(style, chatStylesheet);
+            return;
+        }
+
+        (document.head || document.documentElement).appendChild(style);
+    }
+
     function ensureChatWidgetStyles() {
+        ensurePlaceholderPlacementStyles();
+
         if (typeof global.activateDeferredStyleGroup === 'function') {
             global.activateDeferredStyleGroup('homepage-chat');
             global.activateDeferredStyleGroup('public-chat');

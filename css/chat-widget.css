@@ -186,9 +186,8 @@ html[data-theme="light"] {
     cursor: pointer;
     z-index: 9999;
     overflow: visible;
-    transition:
-        transform 0.32s cubic-bezier(0.22, 1, 0.36, 1),
-        opacity 0.24s ease;
+    /* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */
+    transition: opacity 0.24s ease;
 }
 
 .chat-widget-fab.chat-widget-fab--hidden {
@@ -484,10 +483,8 @@ html[data-theme="light"] {
     height: 48px;
     transform: translateX(16px) scaleX(0.84) scaleY(1.04) rotate(-4deg);
     transform-origin: 100% 50%;
-    transition:
-        transform 340ms cubic-bezier(0.22, 1, 0.36, 1),
-        filter 240ms ease;
-    will-change: transform;
+    transition: filter 240ms ease;
+    will-change: auto;
     filter: saturate(0.98);
 }
 
@@ -499,9 +496,7 @@ html[data-theme="light"] {
     filter: blur(8px);
     opacity: 0.18;
     pointer-events: none;
-    transition:
-        opacity 240ms ease,
-        transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition: opacity 240ms ease;
 }
 
 .chat-widget-fab--peek .chat-widget-fab__shadow {
@@ -515,9 +510,7 @@ html[data-theme="light"] {
     filter: blur(8px);
     opacity: 0.1;
     transform: scaleX(0.74) translateX(12px);
-    transition:
-        transform 240ms ease,
-        opacity 240ms ease;
+    transition: opacity 240ms ease;
     pointer-events: none;
 }
 
@@ -1671,11 +1664,14 @@ html[data-theme="light"] {
         width: 56px;
         height: 46px;
         transform: none;
+        transition: none;
+        will-change: auto;
     }
 
     .chat-widget-fab.chat-widget-fab--peek .chat-widget-fab__glow {
         inset: 8px 8px 4px 2px;
         opacity: 0.16;
+        transition: opacity 240ms ease;
     }
 
     .chat-widget-fab.chat-widget-fab--peek .chat-widget-fab__shadow {
@@ -1684,6 +1680,7 @@ html[data-theme="light"] {
         width: 30px;
         transform: scaleX(0.82);
         opacity: 0.1;
+        transition: opacity 240ms ease;
     }
 
     .chat-widget-fab.chat-widget-fab--peek:active .chat-widget-fab__robot {
