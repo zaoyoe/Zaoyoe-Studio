@@ -219,6 +219,21 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
     );
     assert.match(
         framerStyles,
+        /\.hero-prismchrono-field span b\s*\{[\s\S]*20260502_HOME_PRISM_FACE_NO_SHADOW_1[\s\S]*box-shadow:\s*none;/,
+        'full homepage CSS should not add cube-face shadows that veil the hero ruler after the intro animation'
+    );
+    assert.match(
+        framerStyles,
+        /\.hero-prismchrono-field i\s*\{[\s\S]*20260502_HOME_PRISM_FACE_NO_SHADOW_1[\s\S]*box-shadow:\s*none;/,
+        'full homepage CSS should not add prism ring glows that look like gray shadows near the hero ruler'
+    );
+    assert.match(
+        framerStyles,
+        /\.hero-prismchrono-field em\s*\{[\s\S]*box-shadow:\s*none;/,
+        'full homepage CSS should keep prism nodes shadowless like the critical first-paint scene'
+    );
+    assert.match(
+        framerStyles,
         /\.hero-prismchrono-field span:nth-of-type\(2\)\s*\{[\s\S]*animation-direction:\s*reverse, normal;/,
         'prism cube intro should preserve the middle cube reverse spin while keeping the intro animation forward'
     );

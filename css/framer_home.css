@@ -963,10 +963,8 @@ body.mobile-menu-open .chat-widget-fab {
     aspect-ratio: 1;
     border-radius: 50%;
     border: 1.25px solid rgba(37, 99, 235, 0.16);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.3),
-        0 0 0 1px rgba(255, 255, 255, 0.1),
-        0 0 18px rgba(14, 165, 233, 0.05);
+    /* 20260502_HOME_PRISM_FACE_NO_SHADOW_1 */
+    box-shadow: none;
     opacity: var(--hero-prism-ring-opacity-max, 0.42);
     transform: translate(-50%, -50%) rotateX(72deg) rotateZ(var(--hero-prism-ring-rot, 0deg)) scale(1);
     animation: hero-prismchrono-orbit var(--hero-prism-ring-speed, 8.8s) ease-in-out infinite;
@@ -1044,7 +1042,8 @@ body.mobile-menu-open .chat-widget-fab {
     border: 1px solid rgba(37, 99, 235, 0.22);
     border-radius: 8px;
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(56, 189, 248, 0.06));
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.62), 0 10px 24px rgba(15, 23, 42, 0.03);
+    /* 20260502_HOME_PRISM_FACE_NO_SHADOW_1: shadows read as a gray veil over the hero ruler after cube intro. */
+    box-shadow: none;
 }
 
 .hero-prismchrono-field span b:nth-child(1) { transform: rotateY(0deg) translateZ(calc(var(--hero-prism-cube-size, 160px) / 2)); }
@@ -1058,7 +1057,7 @@ body.mobile-menu-open .chat-widget-fab {
     border-radius: 50%;
     background: #fff;
     border: 1px solid rgba(14, 165, 233, 0.38);
-    box-shadow: 0 0 14px rgba(14, 165, 233, 0.18);
+    box-shadow: none;
     transform: var(--hero-prism-node-transform) scale(0.82);
     animation: hero-prismchrono-node 3.6s ease-in-out infinite;
 }
