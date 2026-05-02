@@ -31,7 +31,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should cache-bust the first-paint homepage runtime'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home_critical.css?v=20260502_HOME_CRITICAL_HERO_VERTICAL_LOCK_1'),
+        indexSource.includes('./css/framer_home_critical.css?v=20260502_HOME_CRITICAL_MOBILE_SPACING_PARITY_1'),
         true,
         'index.html should load a small blocking homepage critical stylesheet'
     );
@@ -145,6 +145,16 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         criticalStyles,
         /@media \(max-width: 767px\)\s*\{[\s\S]*\.nav-container\s*\{[\s\S]*padding-right:\s*var\(--spacing-lg\);[\s\S]*padding-left:\s*var\(--spacing-lg\);[\s\S]*\.hero-title\s*\{[\s\S]*font-size:\s*clamp\(48px, 10vw, 110px\);/,
         'mobile critical nav and hero sizing should match the final stylesheet during refresh'
+    );
+    assert.match(
+        criticalStyles,
+        /@media \(max-width: 767px\)\s*\{[\s\S]*20260502_HOME_CRITICAL_MOBILE_SPACING_PARITY_1[\s\S]*:root\s*\{[\s\S]*--spacing-xl:\s*60px;[\s\S]*--spacing-2xl:\s*80px;/,
+        'mobile critical spacing variables should match the deferred stylesheet so hero refresh does not recenter'
+    );
+    assert.match(
+        framerStyles,
+        /@media \(max-width: 767px\)[\s\S]*:root\s*\{[\s\S]*--spacing-xl:\s*60px;[\s\S]*--spacing-2xl:\s*80px;/,
+        'full mobile stylesheet should keep the same spacing variables that critical CSS mirrors'
     );
     assert.equal(
         criticalStyles.includes('font-size: 56px;'),
