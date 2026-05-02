@@ -1226,12 +1226,7 @@ body.mobile-menu-open .framer-nav,
         font-size: clamp(18px, 2vw, 24px);
     }
 
-    .hero-progress {
-        margin-top: 56px;
-    }
-
     .hero-carousel {
-        margin-top: 96px;
         scroll-snap-type: x mandatory;
         scroll-padding-inline: calc(50vw - 70px);
         overflow-x: auto;

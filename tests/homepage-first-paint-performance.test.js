@@ -31,7 +31,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should cache-bust the first-paint homepage runtime'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home_critical.css?v=20260502_HOME_CRITICAL_NAV_AUTH_SHELL_1'),
+        indexSource.includes('./css/framer_home_critical.css?v=20260502_HOME_CRITICAL_HERO_VERTICAL_STABLE_1'),
         true,
         'index.html should load a small blocking homepage critical stylesheet'
     );
@@ -150,6 +150,21 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         criticalStyles.includes('font-size: 56px;'),
         false,
         'mobile critical CSS should not use the old fixed hero title size that caused refresh jumps'
+    );
+    assert.equal(
+        criticalStyles.includes('margin-top: 56px;'),
+        false,
+        'mobile critical CSS should not move the hero ruler away from the final vertical rhythm'
+    );
+    assert.equal(
+        criticalStyles.includes('margin-top: 96px;'),
+        false,
+        'mobile critical CSS should not lift the hero entry icons above their final position'
+    );
+    assert.match(
+        criticalStyles,
+        /\.hero-carousel\s*\{[\s\S]*margin-top:\s*120px;/,
+        'critical homepage CSS should keep the hero entry icons at the same vertical offset as the final stylesheet'
     );
     assert.match(
         criticalStyles,
