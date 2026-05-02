@@ -31,7 +31,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should cache-bust the first-paint homepage runtime'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home_critical.css?v=20260502_HOME_CRITICAL_HERO_VERTICAL_STABLE_1'),
+        indexSource.includes('./css/framer_home_critical.css?v=20260502_HOME_CRITICAL_HERO_VERTICAL_LOCK_1'),
         true,
         'index.html should load a small blocking homepage critical stylesheet'
     );
@@ -160,6 +160,16 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         criticalStyles.includes('margin-top: 96px;'),
         false,
         'mobile critical CSS should not lift the hero entry icons above their final position'
+    );
+    assert.match(
+        criticalStyles,
+        /\.hero-progress\s*\{[\s\S]*20260502_HOME_CRITICAL_HERO_VERTICAL_LOCK_1[\s\S]*margin:\s*64px 0;/,
+        'critical homepage CSS should keep the hero ruler on the final vertical rhythm during refresh'
+    );
+    assert.match(
+        framerStyles,
+        /\.hero-progress\s*\{[\s\S]*margin:\s*64px 0;/,
+        'full homepage CSS should keep the same hero ruler vertical rhythm as critical CSS'
     );
     assert.match(
         criticalStyles,
