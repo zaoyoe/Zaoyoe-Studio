@@ -57422,3 +57422,29 @@ html:not([data-theme="dark"]) :is(
     box-shadow: none !important;
     outline: 0 !important;
 }
+
+/* 20260502_ADMIN_STUDIO_USER_VALUE_PRIORITY_MOBILE_STACK_1 */
+.admin-main-content :is(#module-analytics, #module-business-overview, #module-growth-center, #module-commerce-center) .analytics-user-value-cockpit .analytics-writeback-priority__list {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)) !important;
+}
+
+@media (max-width: 640px) {
+    .admin-main-content :is(#module-analytics, #module-business-overview, #module-growth-center, #module-commerce-center) .analytics-user-value-cockpit .analytics-writeback-priority__list {
+        grid-template-columns: minmax(0, 1fr) !important;
+    }
+
+    .admin-main-content :is(#module-analytics, #module-business-overview, #module-growth-center, #module-commerce-center) .analytics-user-value-cockpit .analytics-writeback-priority__item {
+        box-sizing: border-box !important;
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .admin-main-content :is(#module-analytics, #module-business-overview, #module-growth-center, #module-commerce-center) .analytics-user-value-cockpit .analytics-writeback-priority__actions {
+        justify-content: flex-start !important;
+    }
+
+    .admin-main-content :is(#module-analytics, #module-business-overview, #module-growth-center, #module-commerce-center) .analytics-user-value-cockpit .analytics-writeback-priority__actions .btn-sm.btn-secondary {
+        min-width: 0 !important;
+        white-space: normal !important;
+    }
+}

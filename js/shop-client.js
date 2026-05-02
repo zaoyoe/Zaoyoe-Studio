@@ -362,6 +362,7 @@ const ShopClient = {
     purchaseNotesHeightAnimationTimer: null,
     purchaseModalKeyboardViewportCleanup: null,
     purchaseModalKeyboardViewportRafId: null,
+    purchaseModalKeyboardContentRafId: null,
     purchaseModalKeyboardBaseViewportHeight: 0,
     purchaseModalKeyboardBaseCardHeight: 0,
     purchaseModalKeyboardLastBottomInset: 0,
@@ -3922,6 +3923,7 @@ const ShopClient = {
             container.innerHTML = discountAssetsLoading
                 ? `<div class="shop-discount-assets-empty">${this.trShop('syncingCurrentCoupons', '正在同步当前商品可用卡券...')}</div>`
                 : `<div class="shop-discount-assets-empty">${this.trShop('noSelectableCoupons', '当前没有可直接选择的卡券，仍可继续输入暗码。')}</div>`;
+            this.schedulePurchaseModalKeyboardContentSync();
             return;
         }
 
@@ -3960,6 +3962,7 @@ const ShopClient = {
                 ` : ''}
             </div>
         `;
+        this.schedulePurchaseModalKeyboardContentSync();
     },
 
     jumpToDiscountTargetProduct: async function (productId, options = {}) {
@@ -7433,6 +7436,22 @@ const ShopClient = {
         this.purchaseModalKeyboardPendingInset = 0;
     },
 
+    schedulePurchaseModalKeyboardContentSync: function () {
+        const { overlay } = this.getPurchaseModalElements();
+        if (!overlay?.classList.contains('active') || !this.isPurchaseModalKeyboardDockEnabled()) {
+            return;
+        }
+
+        if (this.purchaseModalKeyboardContentRafId) {
+            cancelAnimationFrame(this.purchaseModalKeyboardContentRafId);
+        }
+
+        this.purchaseModalKeyboardContentRafId = requestAnimationFrame(() => {
+            this.purchaseModalKeyboardContentRafId = null;
+            this.syncPurchaseModalKeyboardDock();
+        });
+    },
+
     togglePurchaseModalSheetAnimation: function (card, animate, duration = 200) {
         if (!card) return;
 
@@ -7493,7 +7512,9 @@ const ShopClient = {
             this.purchaseModalKeyboardBaseCardHeight = Math.max(320, liveHeight || 420);
         }
 
-        const baseCardHeight = Math.max(320, this.purchaseModalKeyboardBaseCardHeight || 420);
+        const liveScrollHeight = Math.round(card.scrollHeight || 0);
+        const liveCardHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 0);
+        const baseCardHeight = Math.max(320, this.purchaseModalKeyboardBaseCardHeight || 420, liveCardHeight, liveScrollHeight);
         const baseViewportHeight = Math.max(metrics.baseVisualHeight || 0, this.purchaseModalKeyboardBaseViewportHeight || 0);
         const keyboardTop = Math.max(0, baseViewportHeight - Math.max(0, bottomInset));
         const minTop = 14;
@@ -7531,6 +7552,10 @@ const ShopClient = {
         if (this.purchaseModalKeyboardViewportRafId) {
             cancelAnimationFrame(this.purchaseModalKeyboardViewportRafId);
             this.purchaseModalKeyboardViewportRafId = null;
+        }
+        if (this.purchaseModalKeyboardContentRafId) {
+            cancelAnimationFrame(this.purchaseModalKeyboardContentRafId);
+            this.purchaseModalKeyboardContentRafId = null;
         }
         this.releasePurchaseModalKeyboardDock();
         this.purchaseModalKeyboardBaseViewportHeight = 0;

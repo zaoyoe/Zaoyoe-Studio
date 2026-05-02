@@ -892,7 +892,8 @@ html[lang^="en"] .hero-subtitle {
     z-index: 2;
     width: 280px;
     height: 24px;
-    margin: var(--spacing-xl) auto var(--spacing-lg);
+    /* 20260502_HOME_CRITICAL_HERO_VERTICAL_LOCK_1 */
+    margin: 64px 0;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -1079,6 +1080,7 @@ html[data-theme="light"] body.home-page .hero-section {
 }
 
 html[data-theme="light"] body.home-page .hero-section::after {
+    height: 220px;
     background: linear-gradient(to bottom, transparent, #f8fafc 74%);
 }
 
@@ -1200,6 +1202,9 @@ body.mobile-menu-open .framer-nav,
 }
 
 @media (max-width: 767px) {
+    /* 20260502_HOME_CRITICAL_MOBILE_SPACING_PARITY_1 */
+    :root{--spacing-xl:60px;--spacing-2xl:80px;}
+
     .nav-container {
         padding-right: var(--spacing-lg);
         padding-left: var(--spacing-lg);
@@ -1226,12 +1231,7 @@ body.mobile-menu-open .framer-nav,
         font-size: clamp(18px, 2vw, 24px);
     }
 
-    .hero-progress {
-        margin-top: 56px;
-    }
-
     .hero-carousel {
-        margin-top: 96px;
         scroll-snap-type: x mandatory;
         scroll-padding-inline: calc(50vw - 70px);
         overflow-x: auto;
@@ -1267,6 +1267,15 @@ body.mobile-menu-open .framer-nav,
     .entry-card-ui>span {
         font-size: 13px;
     }
+
+    /* 20260502_HOME_CRITICAL_PRISM_MOBILE_PARITY_1 */
+    .hero-prismchrono-field{transform:translateY(16%);}
+    .hero-prismchrono-field i:nth-child(1){--hero-prism-ring-size:min(86vw,560px);}
+    .hero-prismchrono-field i:nth-child(2){--hero-prism-ring-size:min(64vw,420px);}
+    .hero-prismchrono-field i:nth-child(3){--hero-prism-ring-size:min(42vw,260px);}
+    .hero-prismchrono-field span:nth-of-type(1){--hero-prism-cube-size:132px;--hero-prism-cube-y:-70px;}
+    .hero-prismchrono-field span:nth-of-type(2){--hero-prism-cube-size:82px;--hero-prism-cube-x:-232px;--hero-prism-cube-y:-178px;--hero-prism-cube-z:-44px;}
+    .hero-prismchrono-field span:nth-of-type(3){--hero-prism-cube-size:78px;--hero-prism-cube-x:224px;--hero-prism-cube-y:144px;--hero-prism-cube-z:56px;}
 }
 
 @media (prefers-reduced-motion: reduce) {

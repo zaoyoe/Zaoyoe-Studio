@@ -454,8 +454,8 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
             violations.push(`${relativePath} is missing css/chat-widget.css`);
         }
 
-        if (!source.includes('css/chat-widget.css?v=20260428_PUBLIC_TOUCH_PAN_LOCK_1')) {
-            violations.push(`${relativePath} should cache-bust the mobile touch pan lock chat stylesheet`);
+        if (!source.includes('css/chat-widget.css?v=20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1')) {
+            violations.push(`${relativePath} should cache-bust the no-slide chat FAB stylesheet`);
         }
 
         if (source.includes('js/admin-workbench.js')) {
@@ -484,7 +484,11 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260501_CHAT_WIDGET_INTENT_LOAD_1';",
+        "const VERSION = '20260502_CHAT_WIDGET_FAB_PLACEMENT_GUARD_1';",
+        "const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';",
+        'function ensurePlaceholderPlacementStyles() {',
+        '/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */',
+        '.chat-widget-fab--peek .chat-widget-fab__robot {',
         "const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';",
         "const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';",
         "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260426_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_12';",
@@ -715,6 +719,7 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         '.chat-widget-fab.chat-widget-fab--hidden',
         '.chat-widget-fab.chat-widget-fab--disabled',
         '.chat-widget-fab.chat-widget-fab--transitionless',
+        '/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */',
         '.chat-window.chat-window--transitionless',
         '.chat-window.chat-window--force-hidden',
         '.chat-window.chat-window--keyboard-animating',
@@ -740,6 +745,30 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
     for (const marker of cssMarkers) {
         assert.equal(chatWidgetCss.includes(marker), true, `css/chat-widget.css should contain ${marker}`);
     }
+
+    const fabBaseRule = chatWidgetCss.match(/\.chat-widget-fab\s*\{[\s\S]*?\n\}/)?.[0] || '';
+    assert.match(
+        fabBaseRule,
+        /transition:\s*opacity 0\.24s ease;/,
+        'chat FAB should only fade between visibility states'
+    );
+    assert.doesNotMatch(
+        fabBaseRule,
+        /transition:[\s\S]*transform/,
+        'chat FAB placement should not animate from pre-style to mobile final position'
+    );
+
+    const fabPeekRobotRule = chatWidgetCss.match(/\.chat-widget-fab--peek \.chat-widget-fab__robot\s*\{[\s\S]*?\n\}/)?.[0] || '';
+    assert.match(
+        fabPeekRobotRule,
+        /transition:\s*filter 240ms ease;/,
+        'chat FAB robot should not slide horizontally during ambient state changes'
+    );
+    assert.doesNotMatch(
+        fabPeekRobotRule,
+        /transition:[\s\S]*transform|will-change:\s*transform/,
+        'chat FAB robot should not keep transform compositing or transition hints that create refresh drift'
+    );
 });
 
 test('public chat and shop scroll panels clamp accidental horizontal pan', () => {
@@ -764,9 +793,9 @@ test('public chat and shop scroll panels clamp accidental horizontal pan', () =>
         'long chat messages should wrap instead of widening the chat pane'
     );
     assert.equal(
-        optionalEnhancementsSource.includes('css/chat-widget.css?v=20260428_PUBLIC_TOUCH_PAN_LOCK_1'),
+        optionalEnhancementsSource.includes('css/chat-widget.css?v=20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1'),
         true,
-        'optional guestbook chat loader should request the horizontal pan lock stylesheet'
+        'optional guestbook chat loader should request the no-slide chat FAB stylesheet'
     );
 
     assert.match(
@@ -795,9 +824,9 @@ test('public chat and shop scroll panels clamp accidental horizontal pan', () =>
         'shop usage instruction card should keep long content from causing lateral wobble'
     );
     assert.equal(
-        shopHtmlSource.includes('css/shop-page.css?v=20260428_PUBLIC_TOUCH_PAN_LOCK_1'),
+        shopHtmlSource.includes('css/shop-page.css?v=20260502_PURCHASE_MODAL_KEYBOARD_SCROLL_1'),
         true,
-        'shop.html should cache-bust the shop touch pan lock stylesheet'
+        'shop.html should cache-bust the keyboard-scroll shop stylesheet'
     );
 });
 
@@ -1405,7 +1434,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/chat-widget-loader.js?v=20260501_CHAT_WIDGET_INTENT_LOAD_1'),
+            source.includes('js/chat-widget-loader.js?v=20260502_CHAT_WIDGET_FAB_PLACEMENT_GUARD_1'),
             true,
             'public entry pages should load the lazy chat widget bootstrap'
         );
@@ -2067,7 +2096,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['privacy.html', 'css/privacy-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260425_HOME_GUESTBOOK_MODAL_HIDE_1'],
-        ['shop.html', 'css/shop-page.css?v=20260428_PUBLIC_TOUCH_PAN_LOCK_1'],
+        ['shop.html', 'css/shop-page.css?v=20260502_PURCHASE_MODAL_KEYBOARD_SCROLL_1'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260427_ADMIN_SITE_SWITCHER_ACTIVE_HOVER_LOCK_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260501_ADMIN_ENTRY_LIGHT_THEME_GATE_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260427_AUTH_CALLBACK_SILENT_2'],
@@ -2156,7 +2185,7 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260428_PUBLIC_TOUCH_PAN_LOCK_1'],
+        ['shop.html', 'css/shop-page.css?v=20260502_PURCHASE_MODAL_KEYBOARD_SCROLL_1'],
         ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
@@ -2745,7 +2774,7 @@ test('shop storefront uses a 21:9 media ratio for mobile product cards', () => {
         'mobile shop product cards and loading skeletons should keep the top media area at 21:9'
     );
     assert.equal(
-        shopHtmlSource.includes('css/shop-page.css?v=20260428_PUBLIC_TOUCH_PAN_LOCK_1'),
+        shopHtmlSource.includes('css/shop-page.css?v=20260502_PURCHASE_MODAL_KEYBOARD_SCROLL_1'),
         true,
         'shop.html should bust the shop stylesheet cache for the latest shop card sizing'
     );
@@ -2870,7 +2899,7 @@ test('shop mobile purchase actions stay visible while guidance content scrolls',
 
     assert.match(
         shopCssSource,
-        /@media \(max-width: 768px\)[\s\S]*?#shopPurchaseModal \.modal-content\s*\{[\s\S]*?max-height:\s*min\(760px,\s*calc\(100dvh - 112px - env\(safe-area-inset-top, 0px\) - env\(safe-area-inset-bottom, 0px\)\)\)\s*!important;[\s\S]*?display:\s*flex\s*!important;[\s\S]*?flex-direction:\s*column;[\s\S]*?overflow:\s*hidden\s*!important;/,
+        /@media \(max-width: 768px\)[\s\S]*?#shopPurchaseModal \.modal-content\s*\{[\s\S]*?max-height:\s*min\(760px,\s*calc\(100dvh - 112px - env\(safe-area-inset-top, 0px\) - env\(safe-area-inset-bottom, 0px\)\)\)\s*!important;[\s\S]*?display:\s*flex\s*!important;[\s\S]*?flex-direction:\s*column;[\s\S]*?overflow-y:\s*auto\s*!important;[\s\S]*?overflow-x:\s*hidden\s*!important;/,
         'mobile purchase modal should leave a clear outside tap area while using a vertical flex layout'
     );
     assert.match(

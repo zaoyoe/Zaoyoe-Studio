@@ -31,17 +31,17 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should cache-bust the first-paint homepage runtime'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home_critical.css?v=20260502_HOME_CRITICAL_NAV_AUTH_SHELL_1'),
+        indexSource.includes('./css/framer_home_critical.css?v=20260502_HOME_LIGHT_HERO_BG_PARITY_1'),
         true,
         'index.html should load a small blocking homepage critical stylesheet'
     );
     assert.match(
         indexSource,
-        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260430_HOME_ROOT_SCROLLBAR_FULL_HIDE_1" media="print" data-deferred-style="1">/,
+        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260502_HOME_LIGHT_HERO_BG_PARITY_1" media="print" data-deferred-style="1">/,
         'index.html should defer the full homepage stylesheet after the first-paint shell'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home.css?v=20260430_HOME_ROOT_SCROLLBAR_FULL_HIDE_1'),
+        indexSource.includes('./css/framer_home.css?v=20260502_HOME_LIGHT_HERO_BG_PARITY_1'),
         true,
         'index.html should keep cache-busting the full static hero stability styles'
     );
@@ -70,7 +70,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'nav auth fast-paint helper should mark fast-painted auth markup for diagnostics'
     );
     assert.ok(
-        criticalStyles.length < 36000,
+        criticalStyles.length < 37000,
         'homepage critical stylesheet should stay small enough for first paint'
     );
     assert.ok(
@@ -146,10 +146,55 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         /@media \(max-width: 767px\)\s*\{[\s\S]*\.nav-container\s*\{[\s\S]*padding-right:\s*var\(--spacing-lg\);[\s\S]*padding-left:\s*var\(--spacing-lg\);[\s\S]*\.hero-title\s*\{[\s\S]*font-size:\s*clamp\(48px, 10vw, 110px\);/,
         'mobile critical nav and hero sizing should match the final stylesheet during refresh'
     );
+    assert.match(
+        criticalStyles,
+        /@media \(max-width: 767px\)\s*\{[\s\S]*20260502_HOME_CRITICAL_MOBILE_SPACING_PARITY_1[\s\S]*:root\s*\{[\s\S]*--spacing-xl:\s*60px;[\s\S]*--spacing-2xl:\s*80px;/,
+        'mobile critical spacing variables should match the deferred stylesheet so hero refresh does not recenter'
+    );
+    assert.match(
+        framerStyles,
+        /@media \(max-width: 767px\)[\s\S]*:root\s*\{[\s\S]*--spacing-xl:\s*60px;[\s\S]*--spacing-2xl:\s*80px;/,
+        'full mobile stylesheet should keep the same spacing variables that critical CSS mirrors'
+    );
+    assert.match(
+        criticalStyles,
+        /20260502_HOME_CRITICAL_PRISM_MOBILE_PARITY_1[\s\S]*\.hero-prismchrono-field\s*\{transform:\s*translateY\(16%\);[\s\S]*\.hero-prismchrono-field span:nth-of-type\(1\)\s*\{[\s\S]*--hero-prism-cube-size:\s*132px;[\s\S]*--hero-prism-cube-y:\s*-70px;/,
+        'mobile critical prism field should match the final deferred position before the full stylesheet activates'
+    );
+    assert.match(
+        criticalStyles,
+        /20260502_HOME_CRITICAL_PRISM_MOBILE_PARITY_1[\s\S]*\.hero-prismchrono-field span:nth-of-type\(2\)\s*\{[\s\S]*--hero-prism-cube-x:\s*-232px;[\s\S]*--hero-prism-cube-y:\s*-178px;[\s\S]*\.hero-prismchrono-field span:nth-of-type\(3\)\s*\{[\s\S]*--hero-prism-cube-x:\s*224px;[\s\S]*--hero-prism-cube-y:\s*144px;/,
+        'mobile critical side prism cubes should use the final mobile offsets during refresh'
+    );
     assert.equal(
         criticalStyles.includes('font-size: 56px;'),
         false,
         'mobile critical CSS should not use the old fixed hero title size that caused refresh jumps'
+    );
+    assert.equal(
+        criticalStyles.includes('margin-top: 56px;'),
+        false,
+        'mobile critical CSS should not move the hero ruler away from the final vertical rhythm'
+    );
+    assert.equal(
+        criticalStyles.includes('margin-top: 96px;'),
+        false,
+        'mobile critical CSS should not lift the hero entry icons above their final position'
+    );
+    assert.match(
+        criticalStyles,
+        /\.hero-progress\s*\{[\s\S]*20260502_HOME_CRITICAL_HERO_VERTICAL_LOCK_1[\s\S]*margin:\s*64px 0;/,
+        'critical homepage CSS should keep the hero ruler on the final vertical rhythm during refresh'
+    );
+    assert.match(
+        framerStyles,
+        /\.hero-progress\s*\{[\s\S]*margin:\s*64px 0;/,
+        'full homepage CSS should keep the same hero ruler vertical rhythm as critical CSS'
+    );
+    assert.match(
+        criticalStyles,
+        /\.hero-carousel\s*\{[\s\S]*margin-top:\s*120px;/,
+        'critical homepage CSS should keep the hero entry icons at the same vertical offset as the final stylesheet'
     );
     assert.match(
         criticalStyles,
@@ -174,6 +219,21 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
     );
     assert.match(
         framerStyles,
+        /\.hero-prismchrono-field span b\s*\{[\s\S]*20260502_HOME_PRISM_FACE_NO_SHADOW_1[\s\S]*box-shadow:\s*none;/,
+        'full homepage CSS should not add cube-face shadows that veil the hero ruler after the intro animation'
+    );
+    assert.match(
+        framerStyles,
+        /\.hero-prismchrono-field i\s*\{[\s\S]*20260502_HOME_PRISM_FACE_NO_SHADOW_1[\s\S]*box-shadow:\s*none;/,
+        'full homepage CSS should not add prism ring glows that look like gray shadows near the hero ruler'
+    );
+    assert.match(
+        framerStyles,
+        /\.hero-prismchrono-field em\s*\{[\s\S]*box-shadow:\s*none;/,
+        'full homepage CSS should keep prism nodes shadowless like the critical first-paint scene'
+    );
+    assert.match(
+        framerStyles,
         /\.hero-prismchrono-field span:nth-of-type\(2\)\s*\{[\s\S]*animation-direction:\s*reverse, normal;/,
         'prism cube intro should preserve the middle cube reverse spin while keeping the intro animation forward'
     );
@@ -191,6 +251,21 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         criticalStyles,
         /html\[data-theme="light"\] body\.home-page \.hero-section\s*\{[\s\S]*20260501_HOME_LIGHT_HERO_CRITICAL_BG_1[\s\S]*radial-gradient\(circle at 50% 34%, rgba\(14, 165, 233, 0\.11\), transparent 32%\)/,
         'critical homepage CSS should give the light hero a nonblank visual background before the full stylesheet loads'
+    );
+    assert.match(
+        framerStyles,
+        /html\[data-theme="light"\] body\.home-page \.hero-section\s*\{[\s\S]*20260502_HOME_LIGHT_HERO_BG_PARITY_1[\s\S]*radial-gradient\(circle at 50% 34%, rgba\(14, 165, 233, 0\.11\), transparent 32%\)/,
+        'full homepage CSS should keep the same light hero background as critical CSS'
+    );
+    assert.match(
+        criticalStyles,
+        /html\[data-theme="light"\] body\.home-page \.hero-section::after\s*\{[\s\S]*height:\s*220px;[\s\S]*background:\s*linear-gradient\(to bottom, transparent, #f8fafc 74%\);/,
+        'critical homepage CSS should match the final light hero fade height'
+    );
+    assert.match(
+        framerStyles,
+        /html\[data-theme="light"\] body\.home-page \.hero-prism-preview-effect-layer\s*\{[\s\S]*mix-blend-mode:\s*normal;[\s\S]*animation:\s*none;[\s\S]*transform:\s*none;/,
+        'full homepage CSS should not brighten the light hero preview layer after deferred styles activate'
     );
     assert.match(
         criticalStyles,

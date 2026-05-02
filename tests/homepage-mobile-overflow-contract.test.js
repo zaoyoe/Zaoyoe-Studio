@@ -19,7 +19,7 @@ test('homepage mobile shell prevents document-level horizontal dragging', () => 
     assert.match(styles, /body\.home-page #main-content\s*\{[\s\S]*max-width:\s*100%;[\s\S]*overflow-x:\s*hidden;/);
     assert.match(
         homepage,
-        /css\/framer_home\.css\?v=20260430_HOME_ROOT_SCROLLBAR_FULL_HIDE_1/,
+        /css\/framer_home\.css\?v=20260502_HOME_LIGHT_HERO_BG_PARITY_1/,
         'homepage should bust cached framer_home.css after mobile overflow fix'
     );
 });

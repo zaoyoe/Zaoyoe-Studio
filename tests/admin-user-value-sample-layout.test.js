@@ -48,3 +48,40 @@ test('user value cockpit buyer samples render as rectangular rows', () => {
         'admin studio should cache-bust the user value sample rectangle layout'
     );
 });
+
+test('user value priority review cards stack safely on mobile', () => {
+    const styles = readRepoFile(path.join('css', 'admin-studio-page.css'));
+    const baseStyles = readRepoFile('admin-studio.css');
+    const html = readRepoFile('admin-studio.html');
+
+    assert.equal(
+        styles.includes('20260502_ADMIN_STUDIO_USER_VALUE_PRIORITY_MOBILE_STACK_1'),
+        true,
+        'user value priority mobile stack should carry a unique marker'
+    );
+    assert.match(
+        baseStyles,
+        /\.analytics-user-value-cockpit \.analytics-writeback-priority__list \{[\s\S]*grid-template-columns: repeat\(auto-fit, minmax\(min\(100%, 280px\), 1fr\)\);/,
+        'base user value priority cards should auto-fit instead of staying in a fixed 3-column grid'
+    );
+    assert.match(
+        styles,
+        /#module-growth-center[\s\S]*\.analytics-user-value-cockpit \.analytics-writeback-priority__list \{[\s\S]*grid-template-columns: repeat\(auto-fit, minmax\(min\(100%, 280px\), 1fr\)\) !important;/,
+        'growth center user value priority cards should inherit the adaptive grid override'
+    );
+    assert.match(
+        styles,
+        /@media \(max-width: 640px\) \{[\s\S]*\.analytics-user-value-cockpit \.analytics-writeback-priority__list \{[\s\S]*grid-template-columns: minmax\(0, 1fr\) !important;/,
+        'mobile user value priority cards should collapse to one full-width column'
+    );
+    assert.match(
+        styles,
+        /@media \(max-width: 640px\) \{[\s\S]*\.analytics-user-value-cockpit \.analytics-writeback-priority__item \{[\s\S]*width: 100% !important;[\s\S]*min-width: 0 !important;/,
+        'mobile user value priority cards should keep card width inside the available rail'
+    );
+    assert.equal(
+        html.includes('userValuePriorityMobile=20260502_ADMIN_STUDIO_USER_VALUE_PRIORITY_MOBILE_STACK_1'),
+        true,
+        'admin studio should cache-bust the mobile user value priority stack fix'
+    );
+});

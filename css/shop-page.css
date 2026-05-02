@@ -4391,6 +4391,8 @@
         #shopPurchaseModal .modal-content.shop-purchase-height-locked {
             height: var(--shop-purchase-dock-height) !important;
             max-height: var(--shop-purchase-dock-height) !important;
+            overflow-y: auto !important;
+            overflow-x: hidden !important;
         }
 
         #shopPurchaseModal .modal-content.shop-purchase-notes-height-animating,
@@ -4423,7 +4425,13 @@
                 max-height: min(760px, calc(100dvh - 112px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))) !important;
                 display: flex !important;
                 flex-direction: column;
-                overflow: hidden !important;
+                overflow-y: auto !important;
+                overflow-x: hidden !important;
+                overscroll-behavior: contain;
+                overscroll-behavior-x: none;
+                -webkit-overflow-scrolling: touch;
+                touch-action: pan-y;
+                scroll-padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
                 border-radius: 30px !important;
                 padding: 24px 20px calc(20px + env(safe-area-inset-bottom)) !important;
             }
@@ -4446,7 +4454,6 @@
                 transform: translate3d(0, var(--shop-purchase-translate-y, 0px), 0) scale(1) !important;
                 transition: none !important;
                 will-change: transform, height !important;
-                overscroll-behavior: contain;
             }
 
             #shopPurchaseModal .shop-purchase-stage-header,

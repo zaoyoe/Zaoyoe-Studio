@@ -30224,6 +30224,10 @@ body .admin-main-content #module-payments .payments-trend-skeleton::after {
     overflow: visible;
 }
 
+.analytics-user-value-cockpit .analytics-writeback-priority__list {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+
 .analytics-user-value-cockpit__panel-label {
     color: var(--text-dim);
     font-size: 0.72rem;
@@ -31070,6 +31074,25 @@ body .admin-main-content #module-payments .payments-trend-skeleton::after {
         width: 100%;
         order: 3;
         justify-content: flex-start;
+    }
+}
+
+@media (max-width: 640px) {
+    .analytics-user-value-cockpit .analytics-writeback-priority__list {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .analytics-user-value-cockpit .analytics-writeback-priority__item {
+        width: 100%;
+    }
+
+    .analytics-user-value-cockpit .analytics-writeback-priority__actions {
+        justify-content: flex-start;
+    }
+
+    .analytics-user-value-cockpit .analytics-writeback-priority__actions .btn-sm.btn-secondary {
+        min-width: 0;
+        white-space: normal;
     }
 }
 
