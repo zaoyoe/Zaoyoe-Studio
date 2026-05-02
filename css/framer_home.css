@@ -4708,7 +4708,10 @@ html[data-theme="light"] body.home-page {
 }
 
 html[data-theme="light"] body.home-page .hero-section {
-    background: #f8fafc;
+    /* 20260502_HOME_LIGHT_HERO_BG_PARITY_1: match critical first paint so refresh does not change brightness. */
+    background:
+        radial-gradient(circle at 50% 34%, rgba(14, 165, 233, 0.11), transparent 32%),
+        linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
 }
 
 html[data-theme="light"] body.home-page .hero-section::after {
@@ -4734,6 +4737,12 @@ html[data-theme="light"] body.home-page .hero-prismchrono-scene {
 
 html[data-theme="light"] body.home-page .hero-prism-preview-bg {
     display: block;
+}
+
+html[data-theme="light"] body.home-page .hero-prism-preview-effect-layer {
+    mix-blend-mode: normal;
+    animation: none;
+    transform: none;
 }
 
 html[data-theme="light"] body.home-page .hero-cta .hero-cta-btn {

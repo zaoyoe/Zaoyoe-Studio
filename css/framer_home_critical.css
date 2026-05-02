@@ -1080,6 +1080,7 @@ html[data-theme="light"] body.home-page .hero-section {
 }
 
 html[data-theme="light"] body.home-page .hero-section::after {
+    height: 220px;
     background: linear-gradient(to bottom, transparent, #f8fafc 74%);
 }
 
@@ -1266,6 +1267,15 @@ body.mobile-menu-open .framer-nav,
     .entry-card-ui>span {
         font-size: 13px;
     }
+
+    /* 20260502_HOME_CRITICAL_PRISM_MOBILE_PARITY_1 */
+    .hero-prismchrono-field{transform:translateY(16%);}
+    .hero-prismchrono-field i:nth-child(1){--hero-prism-ring-size:min(86vw,560px);}
+    .hero-prismchrono-field i:nth-child(2){--hero-prism-ring-size:min(64vw,420px);}
+    .hero-prismchrono-field i:nth-child(3){--hero-prism-ring-size:min(42vw,260px);}
+    .hero-prismchrono-field span:nth-of-type(1){--hero-prism-cube-size:132px;--hero-prism-cube-y:-70px;}
+    .hero-prismchrono-field span:nth-of-type(2){--hero-prism-cube-size:82px;--hero-prism-cube-x:-232px;--hero-prism-cube-y:-178px;--hero-prism-cube-z:-44px;}
+    .hero-prismchrono-field span:nth-of-type(3){--hero-prism-cube-size:78px;--hero-prism-cube-x:224px;--hero-prism-cube-y:144px;--hero-prism-cube-z:56px;}
 }
 
 @media (prefers-reduced-motion: reduce) {
