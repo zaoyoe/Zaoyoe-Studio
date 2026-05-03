@@ -59,6 +59,8 @@
     body.guestbook-page #loginModal.auth-sheet-overlay.login-overlay.active {
         align-items: flex-end !important;
         justify-content: center !important;
+        height: 100dvh !important;
+        min-height: 100svh !important;
         padding-left: 0 !important;
         padding-right: 0 !important;
         padding-bottom: var(--auth-sheet-mobile-bottom-inset) !important;
@@ -66,7 +68,14 @@
 
     body.guestbook-page #loginModal.auth-sheet-overlay .auth-sheet-stage {
         align-items: flex-end !important;
+        justify-content: center !important;
         width: 100% !important;
+        min-height: 0 !important;
+    }
+
+    body.guestbook-page #loginModal.auth-sheet-overlay .auth-sheet {
+        margin-top: auto !important;
+        margin-bottom: 0 !important;
     }
 }
 
@@ -2738,7 +2747,15 @@ body.guestbook-page #ambientCanvas {
 }
 
 [data-theme="dark"] body.guestbook-page #ambientCanvas {
-    opacity: 0.4;
+    opacity: 0;
+}
+
+html.guestbook-document[data-theme="dark"],
+html.guestbook-document[data-theme="dark"] body,
+html.guestbook-document[data-theme="dark"] body.guestbook-page {
+    background: #000000 !important;
+    background-color: #000000 !important;
+    color-scheme: dark;
 }
 
 body.guestbook-page #starryCanvas {
@@ -2757,7 +2774,7 @@ body.guestbook-page #starryCanvas {
 }
 
 body.guestbook-page.auth-sheet-open #ambientCanvas {
-    opacity: 0.4 !important;
+    opacity: 0 !important;
     transition: none !important;
 }
 
@@ -2768,24 +2785,8 @@ html[data-theme="dark"] body.guestbook-page.auth-sheet-open #starryCanvas {
 
 html[data-theme="dark"] body.guestbook-page.auth-sheet-open::before,
 html[data-theme="dark"] body.guestbook-page.auth-sheet-open::after {
-    content: "";
-    position: fixed;
-    left: 0;
-    right: 0;
-    pointer-events: none;
-    z-index: 12040;
-}
-
-html[data-theme="dark"] body.guestbook-page.auth-sheet-open::before {
-    top: calc(-1 * env(safe-area-inset-top, 0px));
-    height: calc(env(safe-area-inset-top, 0px) + 34px);
-    background: linear-gradient(180deg, #000000 0%, #000000 74%, rgba(0, 0, 0, 0.94) 100%);
-}
-
-html[data-theme="dark"] body.guestbook-page.auth-sheet-open::after {
-    bottom: calc(-1 * env(safe-area-inset-bottom, 0px));
-    height: calc(env(safe-area-inset-bottom, 0px) + 96px);
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.94) 0%, #000000 26px, #000000 100%);
+    content: none !important;
+    display: none !important;
 }
 
 /* Floating Back Button */
@@ -10487,6 +10488,19 @@ body.guestbook-page .message-item {
     width: 100% !important;
 }
 
+@media (max-width: 768px) {
+    html:not([data-theme="light"]) body.guestbook-page .message-item.active-focus {
+        transform: scale(1.02) translateY(-3px);
+        background: rgba(24, 38, 52, 0.98) !important;
+        border-color: rgba(148, 197, 253, 0.18) !important;
+        box-shadow:
+            0 14px 30px rgba(0, 0, 0, 0.34),
+            0 24px 46px rgba(0, 0, 0, 0.28),
+            inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+        filter: none;
+    }
+}
+
 body.guestbook-page .message-item.comment-post-highlight {
     transition: background 0.5s ease;
     background: rgba(155, 93, 229, 0.15);
@@ -10538,6 +10552,14 @@ body.guestbook-page .guestbook-launcher {
 }
 
 body.guestbook-page .guestbook-launcher__button {
+    --guestbook-launcher-glass-bg: rgba(15, 23, 42, 0.78);
+    --guestbook-launcher-glass-border: rgba(226, 232, 240, 0.11);
+    --guestbook-launcher-glass-filter: blur(20px) saturate(150%);
+    --guestbook-launcher-glass-shadow:
+        0 18px 38px rgba(0, 0, 0, 0.34),
+        0 6px 14px rgba(15, 23, 42, 0.24),
+        inset 0 0.5px 0 rgba(255, 255, 255, 0.045),
+        inset 0 -14px 30px rgba(15, 23, 42, 0.18);
     position: relative;
     display: inline-flex;
     align-items: center;
@@ -10546,17 +10568,20 @@ body.guestbook-page .guestbook-launcher__button {
     height: 58px;
     min-height: 58px;
     padding: 0;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid var(--guestbook-launcher-glass-border);
+    border-top-color: rgba(226, 232, 240, 0.045);
     border-radius: 999px;
-    background: rgba(18, 27, 39, 0.92);
+    background:
+        linear-gradient(180deg, rgba(30, 41, 59, 0.68) 0%, rgba(15, 23, 42, 0.76) 100%),
+        var(--guestbook-launcher-glass-bg);
+    background-color: var(--guestbook-launcher-glass-bg);
     color: rgba(248, 250, 252, 0.96);
-    box-shadow:
-        0 14px 34px rgba(0, 0, 0, 0.32),
-        inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    box-shadow: var(--guestbook-launcher-glass-shadow);
+    backdrop-filter: var(--guestbook-launcher-glass-filter);
+    -webkit-backdrop-filter: var(--guestbook-launcher-glass-filter);
     cursor: pointer;
     pointer-events: auto;
+    isolation: isolate;
     transition:
         transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
         border-color 220ms ease,
@@ -10569,8 +10594,7 @@ body.guestbook-page .guestbook-launcher__button:focus-visible {
     border-color: rgba(147, 197, 253, 0.26);
     box-shadow:
         0 0 0 3px rgba(147, 197, 253, 0.12),
-        0 14px 34px rgba(0, 0, 0, 0.32),
-        inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        var(--guestbook-launcher-glass-shadow);
 }
 
 body.guestbook-page .guestbook-launcher__button::before {
@@ -10615,10 +10639,12 @@ body.guestbook-page .guestbook-launcher__title {
 @media (hover: hover) and (pointer: fine) {
     body.guestbook-page .guestbook-launcher__button:hover {
         transform: translateY(-1px);
-        border-color: rgba(147, 197, 253, 0.18);
+        border-color: rgba(191, 219, 254, 0.18);
         box-shadow:
-            0 18px 38px rgba(0, 0, 0, 0.36),
-            inset 0 1px 0 rgba(255, 255, 255, 0.08);
+            0 20px 42px rgba(0, 0, 0, 0.38),
+            0 7px 16px rgba(15, 23, 42, 0.28),
+            inset 0 0.5px 0 rgba(255, 255, 255, 0.06),
+            inset 0 -14px 30px rgba(15, 23, 42, 0.16);
     }
 
     body.guestbook-page .guestbook-launcher__button:hover .guestbook-launcher__icon {
@@ -10636,8 +10662,8 @@ body.guestbook-page.chat-widget-open .guestbook-launcher {
 
 @media (max-width: 768px) {
     body.guestbook-page .guestbook-launcher {
-        right: max(42px, calc(env(safe-area-inset-right, 0px) + 42px));
-        bottom: calc(env(safe-area-inset-bottom, 0px) + 78px);
+        right: max(17px, calc(env(safe-area-inset-right, 0px) + 17px));
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 100px);
     }
 
     body.guestbook-page .guestbook-launcher__button {
@@ -11484,20 +11510,23 @@ html[data-theme="light"] body.guestbook-page .empty-hint {
 }
 
 html[data-theme="light"] body.guestbook-page .guestbook-launcher__button {
-    border-color: rgba(148, 163, 184, 0.16);
-    background: rgba(255, 255, 255, 0.86);
+    --guestbook-launcher-glass-bg: rgba(255, 255, 255, 0.76);
+    --guestbook-launcher-glass-border: rgba(15, 23, 42, 0.065);
+    --guestbook-launcher-glass-shadow:
+        0 2px 8px rgba(15, 23, 42, 0.045),
+        inset 0 0.5px 0 rgba(255, 255, 255, 0.34);
+    border-color: var(--guestbook-launcher-glass-border);
+    background: var(--guestbook-launcher-glass-bg);
+    background-color: var(--guestbook-launcher-glass-bg);
     color: rgba(15, 23, 42, 0.88);
-    box-shadow:
-        0 18px 38px rgba(148, 163, 184, 0.24),
-        inset 0 1px 0 rgba(255, 255, 255, 0.92);
+    box-shadow: var(--guestbook-launcher-glass-shadow);
 }
 
 html[data-theme="light"] body.guestbook-page .guestbook-launcher__button:focus-visible {
     border-color: rgba(107, 158, 206, 0.28);
     box-shadow:
         0 0 0 3px rgba(107, 158, 206, 0.12),
-        0 18px 38px rgba(148, 163, 184, 0.24),
-        inset 0 1px 0 rgba(255, 255, 255, 0.92);
+        var(--guestbook-launcher-glass-shadow);
 }
 
 html[data-theme="light"] body.guestbook-page .guestbook-launcher__icon {
@@ -11508,8 +11537,8 @@ html[data-theme="light"] body.guestbook-page .guestbook-launcher__icon {
     html[data-theme="light"] body.guestbook-page .guestbook-launcher__button:hover {
         border-color: rgba(107, 158, 206, 0.22);
         box-shadow:
-            0 22px 44px rgba(148, 163, 184, 0.28),
-            inset 0 1px 0 rgba(255, 255, 255, 0.96);
+            0 3px 10px rgba(15, 23, 42, 0.07),
+            inset 0 0.5px 0 rgba(255, 255, 255, 0.42);
     }
 
     html[data-theme="light"] body.guestbook-page .guestbook-launcher__button:hover .guestbook-launcher__icon {

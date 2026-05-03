@@ -147,7 +147,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /css\/shop-page\.css\?v=20260503_SHOP_FLOATING_ICON_SWAP_2/,
+        /css\/shop-page\.css\?v=20260503_SHOP_MOBILE_FRESH_ENTER_2/,
         'shop.html should bust the shop stylesheet cache after updating purchase guidance light-theme color visibility'
     );
     assert.match(
@@ -177,7 +177,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /js\/shop-client\.js\?v=20260503_SHOP_CART_SCROLL_LOCK_1/,
+        /js\/shop-client\.js\?v=20260503_SHOP_MOBILE_FRESH_ENTER_2/,
         'shop.html should load the purchase-guidance rich-text runtime with the visible yellow normalization fix'
     );
     assert.match(
@@ -429,6 +429,31 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         shopClientSource,
         /buildProductCardElement: function \(product, agentPrices = \{}, index = 0\)[\s\S]*el\.dataset\.shopAction = 'buy-product';[\s\S]*class="shop-card-cart-trigger[\s\S]*data-shop-action="add-product-to-cart"/,
         'product cards should open purchase from the card body and use a dedicated cart icon trigger'
+    );
+    assert.match(
+        shopClientSource,
+        /el\.dataset\.shopAction = 'sold-out-product';[\s\S]*this\.applyShopPurchaseDataset\(el, purchaseDataset\);/s,
+        'sold-out product cards should remain clickable and show a storefront toast instead of doing nothing'
+    );
+    assert.match(
+        shopClientSource,
+        /if \(action === 'sold-out-product'\) \{[\s\S]*this\.openProductPurchaseFromDataset\(target\.dataset, sourceContext\);/s,
+        'sold-out product card clicks should route through the shared sold-out purchase guard'
+    );
+    assert.match(
+        shopClientSource,
+        /showSoldOutProductToast: function \(payload = \{\}\) \{[\s\S]*this\.trShop\('soldOutClickHint', '已售罄'\),\s+'sold-out'[\s\S]*if \(action === 'add-product-to-cart'\) \{[\s\S]*const payload = this\.getShopPurchasePayloadFromDataset\(target\.dataset\);[\s\S]*this\.isShopPurchasePayloadSoldOut\(payload\)[\s\S]*this\.showSoldOutProductToast\(payload\);/s,
+        'sold-out cart icon clicks should show the same sold-out toast without adding the product to the cart'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-success-toast\[data-shop-toast-global="1"\]\[data-variant="sold-out"\]\s*\{[\s\S]*border-color:\s*rgba\(239,\s*68,\s*68,\s*0\.82\);[\s\S]*color:\s*#111827;[\s\S]*\.shop-success-toast\[data-shop-toast-global="1"\]\[data-variant="sold-out"\]::before\s*\{[\s\S]*content:\s*'';[\s\S]*data:image\/svg\+xml[\s\S]*stroke-linecap='round'/s,
+        'sold-out storefront toast should use black text, a red capsule border, and a custom red X icon'
+    );
+    assert.doesNotMatch(
+        shopCssSource,
+        /0 0 0 3px rgba\(239,\s*68,\s*68,\s*0\.(?:1|12)\)/,
+        'sold-out storefront toast should not render a red glow outside the capsule border'
     );
     assert.match(
         shopClientSource,

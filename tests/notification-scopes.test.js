@@ -157,6 +157,33 @@ test('notifyActiveAdmins defaults to admin personal notification scope', async (
     assert.equal(state.systemNotifications[0].category, 'admin_notice');
 });
 
+test('notifyUsers does not send admin personal notifications to non-admin recipients', async () => {
+    const state = {
+        adminRoles: [
+            { user_id: 'admin-1', role_name: 'admin', expires_at: null }
+        ],
+        systemNotifications: []
+    };
+    const supabase = createSupabaseStub(state);
+
+    const result = await notifyUsers(supabase, {
+        userIds: ['admin-1', 'user-1'],
+        title: '支付通道异常汇总',
+        content: '支付通道在最近窗口触发异常阈值。',
+        type: 'alert',
+        scope: 'admin_personal',
+        category: 'admin_notice',
+        dedupeWindowMinutes: 60
+    });
+
+    assert.equal(result.recipients, 2);
+    assert.equal(result.created, 1);
+    assert.equal(result.skipped, 1);
+    assert.equal(state.systemNotifications.length, 1);
+    assert.equal(state.systemNotifications[0].user_id, 'admin-1');
+    assert.equal(state.systemNotifications[0].scope, 'admin_personal');
+});
+
 test('notification inserts gracefully fall back when scope columns are not deployed yet', async () => {
     const state = {
         adminRoles: [

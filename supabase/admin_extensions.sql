@@ -106,7 +106,13 @@ alter table public.system_notifications enable row level security;
 drop policy if exists "Users can view own notifications" on public.system_notifications;
 create policy "Users can view own notifications"
   on public.system_notifications for select
-  using (auth.uid() = user_id);
+  using (
+    auth.uid() = user_id
+    and (
+      scope <> 'admin_personal'
+      or public.is_admin()
+    )
+  );
 
 drop policy if exists "Admins can send notifications" on public.system_notifications;
 create policy "Admins can send notifications"
@@ -116,12 +122,24 @@ create policy "Admins can send notifications"
 drop policy if exists "Users can update own notifications" on public.system_notifications;
 create policy "Users can update own notifications"
   on public.system_notifications for update
-  using (auth.uid() = user_id);
+  using (
+    auth.uid() = user_id
+    and (
+      scope <> 'admin_personal'
+      or public.is_admin()
+    )
+  );
 
 drop policy if exists "Users can delete own notifications" on public.system_notifications;
 create policy "Users can delete own notifications"
   on public.system_notifications for delete
-  using (auth.uid() = user_id);
+  using (
+    auth.uid() = user_id
+    and (
+      scope <> 'admin_personal'
+      or public.is_admin()
+    )
+  );
 
 -- ENABLE REALTIME
 alter publication supabase_realtime add table system_notifications;

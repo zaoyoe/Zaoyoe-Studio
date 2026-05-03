@@ -79,6 +79,7 @@ test('database migrations retire the legacy redemption overload and formalize th
     const rateLimitSql = readRepoFile(path.join('supabase', 'migrations', '20260324_add_persistent_rate_limits.sql'));
     const refundReclaimSql = readRepoFile(path.join('supabase', 'migrations', '20260418_enable_decimal_refund_reclaim_rpc.sql'));
     const notificationScopeSql = readRepoFile(path.join('supabase', 'migrations', '20260330_add_system_notification_scopes.sql'));
+    const notificationScopeHardeningSql = readRepoFile(path.join('supabase', 'migrations', '20260503_harden_system_notification_admin_scope.sql'));
     const adminExtensionsSql = readRepoFile(path.join('supabase', 'admin_extensions.sql'));
 
     assert.match(
@@ -227,9 +228,24 @@ test('database migrations retire the legacy redemption overload and formalize th
         'system notification scope migration should add a scoped lookup index'
     );
     assert.match(
+        notificationScopeHardeningSql,
+        /scope <> 'admin_personal'/,
+        'system notification hardening migration should hide admin-personal rows from non-admin owners'
+    );
+    assert.match(
+        notificationScopeHardeningSql,
+        /OR public\.is_admin\(\)/,
+        'system notification hardening migration should still allow current admins to read their admin-personal rows'
+    );
+    assert.match(
         adminExtensionsSql,
         /scope text default 'unspecified' not null check \(scope in \('unspecified', 'user_personal', 'admin_personal'\)\)/,
         'bootstrap admin extensions SQL should keep the scoped notification schema'
+    );
+    assert.match(
+        adminExtensionsSql,
+        /scope <> 'admin_personal'/,
+        'bootstrap admin extensions SQL should keep scoped notification RLS hardening'
     );
     assert.match(
         adminExtensionsSql,

@@ -69,6 +69,21 @@ async function listActiveAdminUserIds(supabase) {
     ));
 }
 
+async function filterActiveAdminUserIds(supabase, userIds = []) {
+    const normalizedUserIds = Array.from(new Set(
+        (userIds || [])
+            .map((userId) => normalizeText(userId))
+            .filter(Boolean)
+    ));
+
+    if (!normalizedUserIds.length) {
+        return [];
+    }
+
+    const activeAdminUserIds = new Set(await listActiveAdminUserIds(supabase));
+    return normalizedUserIds.filter((userId) => activeAdminUserIds.has(userId));
+}
+
 async function hasRecentMatchingNotification(supabase, {
     userId,
     title,
@@ -168,10 +183,13 @@ async function notifyUsers(supabase, {
     const notificationType = normalizeNotificationType(type);
     const notificationScope = normalizeNotificationScope(scope);
     const notificationCategory = normalizeNotificationCategory(category);
+    const recipientUserIds = notificationScope === 'admin_personal'
+        ? await filterActiveAdminUserIds(supabase, normalizedUserIds)
+        : normalizedUserIds;
     let created = 0;
-    let skipped = 0;
+    let skipped = normalizedUserIds.length - recipientUserIds.length;
 
-    for (const userId of normalizedUserIds) {
+    for (const userId of recipientUserIds) {
         const exists = await hasRecentMatchingNotification(supabase, {
             userId,
             title: normalizedTitle,
@@ -228,6 +246,7 @@ async function notifyActiveAdmins(supabase, payload = {}) {
 }
 
 module.exports = {
+    filterActiveAdminUserIds,
     listActiveAdminUserIds,
     notifyActiveAdmins,
     notifyUsers

@@ -14,6 +14,12 @@
         return;
     }
 
+    try {
+        globalScope.localStorage?.removeItem?.('notifications_pinned_v1');
+    } catch (_) {
+        // Smoke fixtures should stay deterministic even when storage is unavailable.
+    }
+
     const now = new Date('2026-03-31T09:30:00+08:00');
     const smokeAdminPermissions = [
         'prompts.manage',
@@ -10517,6 +10523,11 @@
 
     async function runNotificationSmoke() {
         await waitFor(() => typeof globalScope.initNotificationSystem === 'function', { message: '通知系统未加载完成' });
+        try {
+            globalScope.localStorage?.removeItem?.('notifications_pinned_v1');
+        } catch (_) {
+            // Ignore local storage availability in restricted smoke contexts.
+        }
         await globalScope.initNotificationSystem();
         await waitFor(() => document.getElementById('notifBadge')?.hidden === false, { message: '通知数据未完成初始拉取' });
         globalScope.toggleNotifMenu?.();

@@ -454,8 +454,8 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
             violations.push(`${relativePath} is missing css/chat-widget.css`);
         }
 
-        if (!source.includes('css/chat-widget.css?v=20260503_CHAT_WIDGET_SAFARI_HANDOFF_12')) {
-            violations.push(`${relativePath} should cache-bust the Safari handoff chat widget stylesheet`);
+        if (!source.includes('css/chat-widget.css?v=20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1')) {
+            violations.push(`${relativePath} should cache-bust the scroll-lock chat widget stylesheet`);
         }
 
         if (source.includes('js/admin-workbench.js')) {
@@ -484,11 +484,14 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260503_CHAT_WIDGET_SAFARI_HANDOFF_12';",
+        "const VERSION = '20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1';",
         "const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';",
         'function ensurePlaceholderPlacementStyles() {',
         '/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */',
         '/* 20260503_CHAT_WIDGET_SAFARI_HANDOFF_12 */',
+        '/* 20260503_CHAT_WIDGET_DESKTOP_NARROW_PEEK_1 */',
+        '/* 20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1 */',
+        '@media (max-width: 768px) and (hover: none) and (pointer: coarse) {',
         '-webkit-tap-highlight-color: transparent;',
         '--chat-mobile-fab-glass-bg: rgba(0, 0, 0, 0.48);',
         'border: 1px solid var(--chat-mobile-fab-glass-border) !important;',
@@ -497,9 +500,13 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         '.chat-widget-fab[data-chat-widget-loading="1"] .chat-widget-fab__robot',
         'html.chat-widget-bootstrap-loading .chat-widget-fab',
         'body.chat-widget-bootstrap-loading .chat-widget-fab',
+        'html.chat-widget-open,',
+        'body.chat-widget-open,',
+        'html.chat-widget-bootstrap-scroll-locked,',
+        'body.chat-widget-bootstrap-scroll-locked',
         "const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';",
         "const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';",
-        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260503_CHAT_WIDGET_SAFARI_HANDOFF_12';",
+        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260503_CHAT_WIDGET_DESKTOP_NARROW_PEEK_1';",
         "const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';",
         'function getChatWidgetConstructor() {',
         'global.ChatWidget = ChatWidget;',
@@ -517,6 +524,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'void ensureChatWidgetReady({ open: true });',
         'showBootstrapLoadingShell();',
         'let placeholderSuppressed = false;',
+        'let bootstrapScrollLockActive = false;',
         'let bootstrapDismissToken = 0;',
         "overlay.addEventListener('click', dismissBootstrapLoadingShell);",
         'function dismissBootstrapLoadingShell(event = null) {',
@@ -532,6 +540,14 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'function setBootstrapLoadingPageFabHidden(hidden) {',
         "document.documentElement?.classList?.toggle('chat-widget-bootstrap-loading', active);",
         "document.body?.classList?.toggle('chat-widget-bootstrap-loading', active);",
+        'function setBootstrapLoadingPageScrollLocked(locked) {',
+        "document.documentElement?.classList?.toggle('chat-widget-bootstrap-scroll-locked', active);",
+        "document.body?.classList?.toggle('chat-widget-bootstrap-scroll-locked', active);",
+        'function lockBootstrapLoadingPageScroll(loadingShell) {',
+        'global.iOSScrollLock.lockLight(shell, { restoreScrollDuringViewport: true });',
+        'function releaseBootstrapLoadingPageScroll(options = {}) {',
+        'const preserveForHandoff = options.preserveForHandoff === true;',
+        'global.iOSScrollLock.unlock();',
         'function suppressRuntimeFabDuringBootstrapLoading() {',
         "runtimeFab.classList.add('chat-widget-fab--hidden', 'chat-widget-fab--disabled');",
         'setBootstrapLoadingPageFabHidden(true);',
@@ -581,8 +597,6 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'width: min(460px, max(97vw, calc(100vw - 16px)));',
         'height: 70vh;',
         'function startChatWidgetBootstrap() {',
-        "fab.addEventListener('pointerenter', prewarmOnIntent, { once: true, passive: true });",
-        "fab.addEventListener('focus', prewarmOnIntent, { once: true });",
         "global.ZaoyoeChatWidgetBootstrap = Object.freeze({"
     ];
 
@@ -632,7 +646,22 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     );
     assert.match(
         chatWidgetLoaderSource,
-        /syncBootstrapLoadingShellMode\(loadingShell\);[\s\S]*setBootstrapLoadingPageFabHidden\(true\);[\s\S]*openingPlaceholder\.dataset\.chatWidgetPlaceholderOpening = '1';[\s\S]*openingPlaceholder\.classList\.add\('chat-widget-fab--hidden'\);[\s\S]*suppressRuntimeFabDuringBootstrapLoading\(\);[\s\S]*loadingShell\.overlay\.classList\.add\('is-visible'\);/,
+        /function lockBootstrapLoadingPageScroll\(loadingShell\) \{[\s\S]*setBootstrapLoadingPageScrollLocked\(true\);[\s\S]*global\.iOSScrollLock\.lockLight\(shell, \{ restoreScrollDuringViewport: true \}\);/,
+        'bootstrap loading shell should lock page scroll through the shared iOS-safe helper'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /function releaseBootstrapLoadingPageScroll\(options = \{\}\) \{[\s\S]*const preserveForHandoff = options\.preserveForHandoff === true;[\s\S]*setBootstrapLoadingPageScrollLocked\(false\);[\s\S]*if \(preserveForHandoff\) \{[\s\S]*return;[\s\S]*global\.iOSScrollLock\.unlock\(\);/,
+        'bootstrap loading shell should unlock only when the real widget has not taken over'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /function hideBootstrapLoadingShell\(options = \{\}\) \{[\s\S]*const handoff = options\.handoff === true;[\s\S]*releaseBootstrapLoadingPageScroll\(\{ preserveForHandoff: handoff \}\);[\s\S]*releaseBootstrapLoadingPageScroll\(\{ preserveForHandoff: true \}\);[\s\S]*if \(!handoff\) \{[\s\S]*releaseBootstrapLoadingPageScroll\(\);/,
+        'bootstrap loading shell should release scroll lock on dismiss but preserve the shared lock during handoff'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /syncBootstrapLoadingShellMode\(loadingShell\);[\s\S]*lockBootstrapLoadingPageScroll\(loadingShell\);[\s\S]*setBootstrapLoadingPageFabHidden\(true\);[\s\S]*openingPlaceholder\.dataset\.chatWidgetPlaceholderOpening = '1';[\s\S]*openingPlaceholder\.classList\.add\('chat-widget-fab--hidden'\);[\s\S]*suppressRuntimeFabDuringBootstrapLoading\(\);[\s\S]*loadingShell\.overlay\.classList\.add\('is-visible'\);/,
         'bootstrap loading should hide placeholder and runtime FABs before the shell becomes visible'
     );
     assert.match(
@@ -688,6 +717,13 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         chatWidgetLoaderSource.includes("global.addEventListener(eventName, warmHandler"),
         false,
         'js/chat-widget-loader.js should not warm the heavy chat runtime from page-level scroll/input'
+    );
+    assert.equal(
+        chatWidgetLoaderSource.includes('prewarmOnIntent')
+            || chatWidgetLoaderSource.includes("fab.addEventListener('pointerenter'")
+            || chatWidgetLoaderSource.includes("fab.addEventListener('focus', prewarmOnIntent"),
+        false,
+        'js/chat-widget-loader.js should keep desktop first-open on the same click-to-loading-shell path as mobile'
     );
     assert.equal(
         chatWidgetLoaderSource.includes('正在连接客服') || chatWidgetLoaderSource.includes('Connecting support'),
@@ -869,7 +905,7 @@ test('public pages lazy-load notifications and head-preload announcement runtime
 
     const loaderMarkers = [
         "const VERSION = '20260501_ENGAGEMENT_ANNOUNCEMENT_DARK_CARD_AUTH_BACKDROP_1';",
-        "const NOTIFICATION_SRC = 'notification-client.js?v=20260428_NOTIFICATION_FIRST_OPEN_SYNC_1';",
+        "const NOTIFICATION_SRC = 'notification-client.js?v=20260503_NOTIFICATION_MOBILE_HEADER_PIN_2';",
         "const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=20260503_ANNOUNCEMENT_MODAL_CHROME_CLOSE_1';",
         'const NOTIFICATION_IDLE_TIMEOUT_MS = 1800;',
         'const ANNOUNCEMENT_BOOT_DELAY_MS = 0;',
@@ -1040,6 +1076,14 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         '.chat-widget-fab.chat-widget-fab--transitionless',
         '/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */',
         '/* 20260503_CHAT_WIDGET_SAFARI_HANDOFF_12 */',
+        '/* 20260503_CHAT_WIDGET_DESKTOP_NARROW_PEEK_1 */',
+        '/* 20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1 */',
+        'html.chat-widget-open,',
+        'body.chat-widget-open,',
+        'html.chat-widget-bootstrap-scroll-locked,',
+        'body.chat-widget-bootstrap-scroll-locked',
+        'overscroll-behavior: none !important;',
+        '@media (max-width: 480px) and (hover: none) and (pointer: coarse) {',
         '.chat-window.chat-window--transitionless',
         '.chat-window.chat-window--force-hidden',
         '.chat-window--bootstrap-adopting-content > *:not(.chat-bootstrap-content-snapshot)',
@@ -1101,17 +1145,36 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         /transition:[\s\S]*transform/,
         'chat FAB placement should not animate from pre-style to mobile final position'
     );
+    assert.match(
+        chatWidgetCss,
+        /@media \(hover:\s*hover\) and \(pointer:\s*fine\) \{[\s\S]*?\.chat-widget-fab\s*\{[\s\S]*?transition:[\s\S]*?transform 260ms cubic-bezier\(0\.22, 1, 0\.36, 1\);/,
+        'desktop hover should ease the small FAB lift without affecting mobile placement'
+    );
+    assert.match(
+        chatWidgetCss,
+        /@media \(max-width: 480px\) and \(hover: none\) and \(pointer: coarse\) \{[\s\S]*?\.chat-widget-fab\s*\{[\s\S]*?--chat-mobile-fab-glass-bg/,
+        'mobile FAB shell should only apply on narrow coarse-touch devices'
+    );
+    const desktopNarrowWindowBlock = chatWidgetCss.slice(
+        chatWidgetCss.indexOf('@media (max-width: 480px) {'),
+        chatWidgetCss.indexOf('@media (max-width: 480px) and (hover: none) and (pointer: coarse) {')
+    );
+    assert.equal(
+        desktopNarrowWindowBlock.includes('--chat-mobile-fab-glass-bg'),
+        false,
+        'desktop narrow windows should keep the side-peek FAB instead of the mobile glass shell'
+    );
 
     const fabPeekRobotRule = chatWidgetCss.match(/\.chat-widget-fab--peek \.chat-widget-fab__robot\s*\{[\s\S]*?\n\}/)?.[0] || '';
     assert.match(
         fabPeekRobotRule,
-        /transition:\s*filter 240ms ease;/,
-        'chat FAB robot should not slide horizontally during ambient state changes'
+        /transition:[\s\S]*transform 420ms cubic-bezier\(0\.22, 1, 0\.36, 1\),[\s\S]*filter 240ms ease;/,
+        'chat FAB robot should ease between peek, hover, and ambient states'
     );
-    assert.doesNotMatch(
+    assert.match(
         fabPeekRobotRule,
-        /transition:[\s\S]*transform|will-change:\s*transform/,
-        'chat FAB robot should not keep transform compositing or transition hints that create refresh drift'
+        /will-change:\s*transform,\s*filter;/,
+        'chat FAB robot should prepare only the animated properties'
     );
     assert.doesNotMatch(
         chatWidgetCss,
@@ -1142,7 +1205,7 @@ test('public chat and shop scroll panels clamp accidental horizontal pan', () =>
         'long chat messages should wrap instead of widening the chat pane'
     );
     assert.equal(
-        optionalEnhancementsSource.includes('css/chat-widget.css?v=20260503_CHAT_WIDGET_SAFARI_HANDOFF_12'),
+        optionalEnhancementsSource.includes('css/chat-widget.css?v=20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1'),
         true,
         'optional guestbook chat loader should request the Safari handoff chat FAB stylesheet'
     );
@@ -1173,7 +1236,7 @@ test('public chat and shop scroll panels clamp accidental horizontal pan', () =>
         'shop usage instruction card should keep long content from causing lateral wobble'
     );
     assert.equal(
-        shopHtmlSource.includes('css/shop-page.css?v=20260503_SHOP_FLOATING_ICON_SWAP_2'),
+        shopHtmlSource.includes('css/shop-page.css?v=20260503_SHOP_MOBILE_FRESH_ENTER_2'),
         true,
         'shop.html should cache-bust the keyboard-scroll shop stylesheet'
     );
@@ -1807,12 +1870,12 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/chat-widget-loader.js?v=20260503_CHAT_WIDGET_SAFARI_HANDOFF_12'),
+            source.includes('js/chat-widget-loader.js?v=20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1'),
             true,
             'public entry pages should load the lazy chat widget bootstrap'
         );
         assert.equal(
-            source.includes('js/components/ChatWidget.js?v=20260503_CHAT_WIDGET_SAFARI_HANDOFF_12'),
+            source.includes('js/components/ChatWidget.js?v=20260503_CHAT_WIDGET_DESKTOP_NARROW_PEEK_1'),
             false,
             'public entry pages should no longer eagerly load the heavy chat widget runtime'
         );
@@ -2504,7 +2567,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['privacy.html', 'css/privacy-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260425_HOME_GUESTBOOK_MODAL_HIDE_1'],
-        ['shop.html', 'css/shop-page.css?v=20260503_SHOP_FLOATING_ICON_SWAP_2'],
+        ['shop.html', 'css/shop-page.css?v=20260503_SHOP_MOBILE_FRESH_ENTER_2'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260427_ADMIN_SITE_SWITCHER_ACTIVE_HOVER_LOCK_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260502_ADMIN_ENTRY_TAP_HIGHLIGHT_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260427_AUTH_CALLBACK_SILENT_2'],
@@ -2593,7 +2656,7 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260503_SHOP_FLOATING_ICON_SWAP_2'],
+        ['shop.html', 'css/shop-page.css?v=20260503_SHOP_MOBILE_FRESH_ENTER_2'],
         ['index_old.html', 'css/index-old.css?v=20260502_INDEX_OLD_TAP_HIGHLIGHT_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
@@ -3261,7 +3324,7 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should not render a secondary text loading message after the skeleton'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260503_SHOP_CART_SCROLL_LOCK_1'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260503_SHOP_MOBILE_FRESH_ENTER_2'),
         true,
         'shop.html should reference the latest shop client runtime for the cart-enabled storefront flow'
     );
@@ -3300,7 +3363,7 @@ test('shop storefront uses a 21:9 media ratio for mobile product cards', () => {
         'mobile shop product cards and loading skeletons should keep the top media area at 21:9'
     );
     assert.equal(
-        shopHtmlSource.includes('css/shop-page.css?v=20260503_SHOP_FLOATING_ICON_SWAP_2'),
+        shopHtmlSource.includes('css/shop-page.css?v=20260503_SHOP_MOBILE_FRESH_ENTER_2'),
         true,
         'shop.html should bust the shop stylesheet cache for the latest shop card sizing'
     );
@@ -3327,18 +3390,69 @@ test('shop initial product entrance defers idle breathe until lift animation com
     );
     assert.match(
         shopCssSource,
-        /@keyframes shopMobileInitialCardEnter\s*\{[\s\S]*?transform:\s*translate3d\(0,\s*58px,\s*0\)\s*scale\(0\.976\);[\s\S]*?transform:\s*translate3d\(0,\s*0,\s*0\)\s*scale\(1\);/,
-        'mobile initial entrance should use a compositor transform animation instead of a custom-property transition'
+        /body\.shop-page \.shop-card\.user-product-card\.shop-card-filter-enter\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?transform:\s*translateY\(20px\);[\s\S]*?body\.shop-page \.shop-card\.user-product-card\.shop-card-filter-enter\.is-visible\s*\{[\s\S]*?opacity:\s*1;[\s\S]*?transform:\s*translateY\(0\);[\s\S]*?opacity 1\.05s ease var\(--shop-card-filter-delay, 0ms\),[\s\S]*?transform 1\.05s ease var\(--shop-card-filter-delay, 0ms\)/,
+        'mobile initial and category entrances should reuse the prompt-card opacity/translateY transition'
     );
     assert.match(
         shopCssSource,
-        /body\.shop-page \.shop-card\.user-product-card\.shop-card-filter-enter--initial\.is-visible\s*\{[\s\S]*?transition:\s*none;[\s\S]*?animation:\s*shopMobileInitialCardEnter/,
-        'mobile initial entrance should not rely on transition state that can be canceled by scroll restoration'
+        /@keyframes shopMobileFreshCardEnter\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?transform:\s*translateY\(20px\);[\s\S]*?opacity:\s*1;[\s\S]*?transform:\s*translateY\(0\);[\s\S]*?body\.shop-page \.shop-card\.user-product-card\.shop-card-mobile-fresh-enter\s*\{[\s\S]*?animation:\s*shopMobileFreshCardEnter 1\.05s ease var\(--shop-card-filter-delay, 0ms\) both !important;/,
+        'mobile category fresh-enter cards should use a dedicated keyframe so early cards cannot skip the entrance'
     );
+    assert.match(
+        shopCssSource,
+        /\.shop-card\.shop-card-filter-enter:not\(\.shop-card-mobile-fresh-enter\),[\s\S]*?\.shop-card\.shop-card-filter-exit,[\s\S]*?\.shop-card\.shop-card-filter-moving\s*\{[\s\S]*?animation:\s*none !important;/,
+        'generic transition animation suppression should not disable mobile fresh-enter keyframes'
+    );
+    assert.equal(shopCssSource.includes('shopMobileInitialCardEnter'), false, 'mobile initial entrance should not keep a separate keyframe path');
+    const mobileInitialRule = shopCssSource.match(
+        /body\.shop-page \.shop-card\.user-product-card\.shop-card-filter-enter--initial\.is-visible\s*\{([\s\S]*?)\n    \}/
+    );
+    assert.ok(mobileInitialRule, 'mobile initial entrance should keep a focused initial-state rule');
+    assert.doesNotMatch(mobileInitialRule[1], /transition:\s*none|animation:/, 'mobile initial entrance should not bypass the shared desktop transition');
     assert.match(
         shopClientSource,
         /const SHOP_CARD_BREATHE_MAX_DELAY_S = 4;[\s\S]*?const SHOP_CARD_BREATHE_ACTIVATE_DELAY_MS = 850;[\s\S]*?getShopCardBreatheDelay:\s*function \(\) \{[\s\S]*?Math\.random\(\) \* SHOP_CARD_BREATHE_MAX_DELAY_S[\s\S]*?toFixed\(2\)\}s`;/,
         'initial storefront cards should prepare a randomized idle breathe delay instead of re-entering in a synchronized phase'
+    );
+    assert.match(
+        shopClientSource,
+        /const SHOP_CARD_FRESH_ENTER_DELAY_STEP_MS = 150;[\s\S]*?const usesPromptStyleMobileEnter = window\.matchMedia\?\.\('\(max-width: 768px\)'\)\?\.matches === true;[\s\S]*?const forceFreshEnterActive = forceFreshEnter === true;[\s\S]*?const usesPromptStyleEnter = usesPromptStyleMobileEnter \|\| forceFreshEnterActive;[\s\S]*?const enterDelayStepMs = usesPromptStyleEnter \? SHOP_CARD_FRESH_ENTER_DELAY_STEP_MS : \(isInitialEntrance \? 136 : 38\);[\s\S]*?const enterDurationBaseMs = usesPromptStyleEnter \? SHOP_CARD_FRESH_ENTER_DURATION_MS : \(isInitialEntrance \? 1540 : 620\);/,
+        'mobile storefront cards should use a wider stagger and slower duration for refresh and category entrances'
+    );
+    assert.match(
+        shopClientSource,
+        /filterCategory:\s*function \(category, btn\) \{[\s\S]*?this\.loadProducts\(\{ forceFreshEnter: true \}\);/,
+        'mobile category tab switches should request a fresh card entrance sequence'
+    );
+    assert.match(
+        shopClientSource,
+        /transitionProductGrid:\s*function \(container, cardElements = \[\], \{ empty = false, forceFreshEnter = false \} = \{\}\) \{[\s\S]*?const forceFreshEnterActive = forceFreshEnter === true;[\s\S]*?if \(!forceFreshEnterActive\) \{[\s\S]*?cardElements\.forEach\(card => \{[\s\S]*?const effectiveEnterDelayBase = forceFreshEnterActive\s*\? Math\.max\(SHOP_CARD_FRESH_ENTER_BASE_DELAY_MS, enterDelayBase\)[\s\S]*?if \(!forceFreshEnterActive && previousIds\.has\(productId\)\) \{/,
+        'category tab switches should not treat already-rendered products as static persistent cards'
+    );
+    assert.match(
+        shopClientSource,
+        /if \(forceFreshEnterActive\) \{[\s\S]*?card\.classList\.add\('shop-card-mobile-fresh-enter'\);[\s\S]*?\}[\s\S]*?card\.dataset\.shopFreshEnterDelayMs = String\(enterDelayMs\);/,
+        'category fresh-enter cards should get the keyframe class and stable delay data'
+    );
+    assert.match(
+        shopClientSource,
+        /playShopCardFreshEnterAnimation:\s*function \(card\) \{[\s\S]*?typeof card\.animate !== 'function'[\s\S]*?card\.animate\([\s\S]*?opacity:\s*0, transform:\s*'translateY\(20px\)'[\s\S]*?opacity:\s*1, transform:\s*'translateY\(0\)'[\s\S]*?duration:\s*SHOP_CARD_FRESH_ENTER_DURATION_MS[\s\S]*?animation\.id = SHOP_CARD_FRESH_ENTER_ANIMATION_ID;/,
+        'category fresh-enter cards should also trigger an explicit Web Animations entrance'
+    );
+    assert.match(
+        shopClientSource,
+        /card\.addEventListener\('animationend', handler\);[\s\S]*?card\.addEventListener\('animationcancel', handler\);/,
+        'mobile category fresh-enter cards should settle on animation completion'
+    );
+    assert.match(
+        shopClientSource,
+        /const revealEnteringCards = \(\) => \{[\s\S]*?if \(forceFreshEnterActive\) \{[\s\S]*?enteringCards\.forEach\(card => this\.playShopCardFreshEnterAnimation\(card\)\);[\s\S]*?enteringCards\.forEach\(card => card\.classList\.add\('is-visible'\)\);[\s\S]*?if \(forceFreshEnterActive\) \{[\s\S]*?window\.requestAnimationFrame\(revealEnteringCards\);/,
+        'category tab switches should reveal fresh-enter cards on the next frame so the first card animates'
+    );
+    assert.match(
+        shopClientSource,
+        /if \(empty\) \{[\s\S]*?this\.gridTransitionActiveUntil = 0;[\s\S]*?container\.innerHTML = '';[\s\S]*?container\.classList\.add\('is-empty'\);[\s\S]*?container\.appendChild\(this\.buildEmptyStateElement\(\)\);[\s\S]*?this\.clearMobileProductFocus\(\);[\s\S]*?return;[\s\S]*?\}[\s\S]*?const previousCardState = new Map/,
+        'empty storefront states should render immediately without product-card exit or empty-state enter animation'
     );
     assert.match(
         shopClientSource,
@@ -4040,7 +4154,7 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
     }
 
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260503_COMMENT_MODAL_CHROME_CLOSE_1'),
+        guestbookHtml.includes('style.css?v=20260503_GUESTBOOK_LAUNCHER_DARK_BASE_1'),
         true,
         'guestbook.html should reference the updated guestbook stylesheet version'
     );
@@ -4201,7 +4315,7 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
         'index.html should load the latest homepage guestbook intent loader version'
     );
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260503_COMMENT_MODAL_CHROME_CLOSE_1'),
+        guestbookHtml.includes('style.css?v=20260503_GUESTBOOK_LAUNCHER_DARK_BASE_1'),
         true,
         'guestbook.html should load the latest shared stylesheet version'
     );
@@ -12869,7 +12983,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), false, 'index.html should not eagerly load the full guestbook runtime');
     assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260501_GUESTBOOK_DOM_READY_LATE_LOAD_1'), true, 'guestbook.html should load the latest guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should load the latest guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260503_SHOP_CART_SCROLL_LOCK_1'), true, 'shop.html should load the latest cart-aware shop runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260503_SHOP_MOBILE_FRESH_ENTER_2'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
     assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260503_WALLET_REDEEM_REVOKE_REASON_UI_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
@@ -14715,6 +14829,8 @@ test('final frontend runtime remnants route through delegated or bound listeners
         'data-notif-action="mark-all-read"',
         'data-notif-action="filter-read"',
         'data-notif-action="toggle-pin"',
+        'data-notif-action="close-drawer"',
+        'data-notif-action="clear-read"',
         'function handleDrawerClick(e)',
         'data-notif-action="filter-category"',
         'data-announcement-action="acknowledge"',
@@ -14729,20 +14845,35 @@ test('final frontend runtime remnants route through delegated or bound listeners
     assert.equal(notificationSource.includes(delegatedMarkers[1]), true, 'notification-client.js should render a delegated mark-all-read control');
     assert.equal(notificationSource.includes(delegatedMarkers[2]), true, 'notification-client.js should render delegated read filters');
     assert.equal(notificationSource.includes(delegatedMarkers[3]), true, 'notification-client.js should render delegated pin controls');
-    assert.equal(notificationSource.includes(delegatedMarkers[4]), true, 'notification-client.js should handle delegated drawer actions');
-    assert.equal(notificationSource.includes(delegatedMarkers[5]), true, 'notification-client.js should render delegated admin notification filters');
-    assert.equal(announcementSource.includes(delegatedMarkers[6]), true, 'announcement-loader.js should render a bound acknowledge action');
-    assert.equal(announcementSource.includes(delegatedMarkers[7]), true, 'announcement-loader.js should bind the acknowledge button');
-    assert.equal(guestbookSource.includes(delegatedMarkers[8]), true, 'supabase-guestbook-functions.js should render delegated like actions');
-    assert.equal(guestbookSource.includes(delegatedMarkers[9]), true, 'supabase-guestbook-functions.js should bind fallback like actions');
-    assert.equal(adminStudioScript.includes(delegatedMarkers[10]), true, 'admin-studio.js should render delegated preview removal controls');
-    assert.equal(adminStudioScript.includes(delegatedMarkers[11]), true, 'admin-studio.js should handle delegated preview removal controls');
+    assert.equal(notificationSource.includes(delegatedMarkers[4]), true, 'notification-client.js should render a delegated drawer close control');
+    assert.equal(notificationSource.includes(delegatedMarkers[5]), true, 'notification-client.js should render a delegated clear-read control');
+    assert.equal(notificationSource.includes(delegatedMarkers[6]), true, 'notification-client.js should handle delegated drawer actions');
+    assert.equal(notificationSource.includes(delegatedMarkers[7]), true, 'notification-client.js should render delegated admin notification filters');
+    assert.equal(announcementSource.includes(delegatedMarkers[8]), true, 'announcement-loader.js should render a bound acknowledge action');
+    assert.equal(announcementSource.includes(delegatedMarkers[9]), true, 'announcement-loader.js should bind the acknowledge button');
+    assert.equal(guestbookSource.includes(delegatedMarkers[10]), true, 'supabase-guestbook-functions.js should render delegated like actions');
+    assert.equal(guestbookSource.includes(delegatedMarkers[11]), true, 'supabase-guestbook-functions.js should bind fallback like actions');
+    assert.equal(adminStudioScript.includes(delegatedMarkers[12]), true, 'admin-studio.js should render delegated preview removal controls');
+    assert.equal(adminStudioScript.includes(delegatedMarkers[13]), true, 'admin-studio.js should handle delegated preview removal controls');
 
     const notificationRuntimeMarkers = [
         'wrapper.hidden = true;',
         'wrapper.hidden = false;',
         'badge.hidden = unreadCount <= 0;',
-        'class="notif-expand-wrapper"',
+        "drawer.setAttribute('aria-label', PERSONAL_MESSAGE_TITLE);",
+        'class="notif-drawer-footer"',
+        'class="notif-close-btn"',
+        'notif-mark-read-chip',
+        'notif-clear-read-chip',
+        'window.clearReadNotifications = function (e) {',
+        'function completeClearReadNotifications(readIds = []) {',
+        'function deleteNotificationsByIds(ids = []) {',
+        'notif-card-filter-enter',
+        'notif-drawer-opening',
+        'notif-drawer-closing',
+        'const NOTIFICATION_MOBILE_MOTION_MS = 360;',
+        'const NOTIFICATION_MOBILE_ENTRY_MS = 1480;',
+        'const NOTIFICATION_MOBILE_CLOSE_MS = 1080;',
         "const PERSONAL_MESSAGE_TITLE = '个人消息';",
         "const EMPTY_PERSONAL_MESSAGE_TEXT = '暂无个人消息';",
         "const EMPTY_ADMIN_PERSONAL_MESSAGE_TEXT = '暂无个人提醒';",
@@ -14758,6 +14889,8 @@ test('final frontend runtime remnants route through delegated or bound listeners
         'return Boolean(category);',
         "function normalizeNotificationScope(value) {",
         "function normalizeNotificationCategory(value) {",
+        'function shouldShowUserPersonalNotification(notification) {',
+        'return shouldShowUserPersonalNotification(notification);',
         'function loadPinnedNotificationIds() {',
         'function loadNotificationFilterState() {',
         'function persistNotificationFilterState() {',
@@ -14797,7 +14930,10 @@ test('final frontend runtime remnants route through delegated or bound listeners
         "wrapper.style.display = 'none';",
         "wrapper.style.display = 'block';",
         "badge.style.display = unreadCount > 0 ? 'block' : 'none';",
-        'style="text-align: center; padding: 8px 0;"'
+        'style="text-align: center; padding: 8px 0;"',
+        'data-i18n="nav.notification">${PERSONAL_MESSAGE_TITLE}</span>',
+        '还有 ${remaining} 条通知',
+        'window.expandNotifications'
     ];
 
     for (const marker of removedNotificationRuntimeMarkers) {
@@ -14807,16 +14943,26 @@ test('final frontend runtime remnants route through delegated or bound listeners
     const notificationStyleMarkers = [
         '.notif-drawer-actions',
         '.notif-mark-read',
+        '.notif-mark-read-chip',
         '.notif-filter-strip',
         '.notif-filter-strip--status',
         '.notif-filter-chip',
-        '.notif-expand-wrapper',
+        '.notif-clear-read-chip',
+        'html.notif-scroll-locked .chat-widget-fab',
+        '.notif-drawer-footer',
+        '.notif-close-btn',
+        '.notif-card.notif-card-filter-enter',
+        '.notif-drawer.notif-drawer-opening',
+        '.notif-drawer.notif-drawer-closing',
+        '@keyframes notifMobileLayerFadeOut',
         '#navNotifWrapper[hidden]',
         '.notif-drawer',
         '.notif-drawer-list',
         '.notif-card.exit',
         '.notif-card.is-pinned',
         '.notif-card-pin',
+        '.notif-card-pin.is-active',
+        '.notif-card-tag--security',
         '.notif-card-tag',
         '.notif-scroll-locked'
     ];
@@ -14837,7 +14983,7 @@ test('final frontend runtime remnants route through delegated or bound listeners
     );
 
     const notificationAssetMarkers = [
-        'css/notification-client.css?v=20260428_PUBLIC_TOUCH_PAN_LOCK_1',
+        'css/notification-client.css?v=20260503_NOTIFICATION_MOBILE_HEADER_PIN_2',
         'js/engagement-runtime-loader.js?v=20260501_ENGAGEMENT_ANNOUNCEMENT_DARK_CARD_AUTH_BACKDROP_1'
     ];
 
@@ -14998,7 +15144,7 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         'smoke-notifications.html should load the local smoke fixtures entry'
     );
     assert.equal(
-        smokeNotificationHtml.includes('notification-client.js?v=20260428_NOTIFICATION_FIRST_OPEN_SYNC_1'),
+        smokeNotificationHtml.includes('notification-client.js?v=20260503_NOTIFICATION_MOBILE_HEADER_PIN_2'),
         true,
         'smoke-notifications.html should load the current notification runtime'
     );

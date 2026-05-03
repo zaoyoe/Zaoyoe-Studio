@@ -269,6 +269,7 @@
         "points": "积分",
         "stock": "库存",
         "outOfStock": "售罄",
+        "soldOutClickHint": "已售罄",
         "noStock": "无货",
         "redeem": "兑换",
         "confirmRedeem": "确认兑换",
