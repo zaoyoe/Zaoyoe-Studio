@@ -27,6 +27,68 @@ function clearAuthFeedback() {
     }
 }
 
+function requestLoginModalOpen(view = 'login') {
+    const normalizedView = ['login', 'register', 'reset'].includes(view) ? view : 'login';
+
+    const clearPendingLoginModalRequest = () => {
+        try {
+            sessionStorage.removeItem('openLoginModal');
+        } catch (err) {
+            console.warn('Failed to clear pending login modal request:', err);
+        }
+    };
+
+    const openWhenReady = () => {
+        if (typeof window.openLoginModal !== 'function') {
+            return false;
+        }
+
+        clearPendingLoginModalRequest();
+        Promise.resolve(window.openLoginModal(normalizedView)).catch((err) => {
+            console.warn('Failed to open login modal:', err);
+        });
+        return true;
+    };
+
+    if (openWhenReady()) {
+        return true;
+    }
+
+    try {
+        sessionStorage.setItem('openLoginModal', 'true');
+    } catch (err) {
+        console.warn('Failed to queue login modal request:', err);
+    }
+
+    const retryOpen = () => {
+        if (!openWhenReady()) return;
+        window.removeEventListener('zaoyoe:auth-markup-ready', retryOpen);
+        document.removeEventListener('DOMContentLoaded', retryOpen);
+    };
+
+    window.addEventListener('zaoyoe:auth-markup-ready', retryOpen, { once: true });
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', retryOpen, { once: true });
+    }
+    window.setTimeout(retryOpen, 80);
+    window.setTimeout(retryOpen, 300);
+    return false;
+}
+
+window.requestLoginModalOpen = requestLoginModalOpen;
+
+function hasActiveModalBehindLogin() {
+    return !!document.querySelector([
+        '#shopPurchaseModal.active',
+        '#shopSuccessModal.active',
+        '#guestbookModal.active',
+        '#commentModal.active',
+        '#profileModal.active',
+        '.wallet-overlay.active',
+        '.poetry-modal.active'
+    ].join(','));
+}
+
 function authT(key, fallback) {
     return window.i18n?.t(key, fallback) || fallback;
 }
@@ -37,6 +99,29 @@ function formatAuthText(key, fallback, vars = {}) {
         text = text.split(`{${name}}`).join(String(value));
     });
     return text;
+}
+
+function isValidAuthEmailFormat(email) {
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
+}
+
+function getInvalidResetEmailMessage() {
+    return authT('auth.invalidResetEmailFormat', '请输入有效的邮箱地址');
+}
+
+function isInvalidAuthEmailError(error) {
+    const message = String(error?.message || error || '').toLowerCase();
+    return message.includes('unable to validate email address')
+        || message.includes('invalid email')
+        || message.includes('invalid format');
+}
+
+function getPasswordResetErrorMessage(error) {
+    if (isInvalidAuthEmailError(error)) {
+        return getInvalidResetEmailMessage();
+    }
+
+    return error?.message || authT('auth.sendFailed', '发送失败');
 }
 
 function setAuthLoading(formName, isLoading, label) {
@@ -921,7 +1006,7 @@ async function ensureSupabaseAuthWalletModalRuntime(options = {}) {
 let walletWarmPrefetchHandle = null;
 let profileModalWarmHandle = null;
 let profileModalBootstrapScriptPromise = null;
-const PROFILE_MODAL_BOOTSTRAP_SRC = 'js/profile-modal-loader.js?v=20260501_PROFILE_MODAL_MOBILE_HEIGHT_1';
+const PROFILE_MODAL_BOOTSTRAP_SRC = 'js/profile-modal-loader.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1';
 
 function scheduleSupabaseAuthWalletWarmPrefetch(reason = 'auth-ready') {
     if (walletWarmPrefetchHandle) {
@@ -1146,16 +1231,7 @@ async function handleAuthClick(event) {
         // no need to await getUser() here for dropdown toggle
     } else {
         // User is not logged in - open login modal
-        if (typeof window.openLoginModal === 'function') {
-            window.openLoginModal();
-        } else {
-            const loginModal = document.getElementById('loginModal');
-            if (loginModal) {
-                loginModal.hidden = false;
-                loginModal.setAttribute('aria-hidden', 'false');
-                loginModal.classList.add('active');
-            }
-        }
+        requestLoginModalOpen('login');
     }
 }
 
@@ -1984,6 +2060,11 @@ async function handlePasswordReset(event) {
         return;
     }
 
+    if (!isValidAuthEmailFormat(email)) {
+        showAuthFeedback(getInvalidResetEmailMessage(), 'error', 'reset');
+        return;
+    }
+
     if (resetCooldownSeconds > 0) {
         showAuthFeedback(
             formatAuthText('auth.waitSecondsRetry', '请等待 {seconds} 秒后再试', { seconds: resetCooldownSeconds }),
@@ -2021,7 +2102,7 @@ async function handlePasswordReset(event) {
 
     } catch (error) {
         console.error('密码重置失败:', error);
-        showAuthFeedback(error.message || authT('auth.sendFailed', '发送失败'), 'error', 'reset');
+        showAuthFeedback(getPasswordResetErrorMessage(error), 'error', 'reset');
         submitBtn.textContent = originalText;
         submitBtn.disabled = false;
     }
@@ -2324,7 +2405,7 @@ function closeGoogleAuthSurfacesAfterSuccess() {
     loginModal.hidden = true;
     document.body?.classList?.remove('auth-sheet-open');
 
-    if (window.iOSScrollLock) {
+    if (window.iOSScrollLock && !hasActiveModalBehindLogin()) {
         try {
             window.iOSScrollLock.unlock();
         } catch (err) {
@@ -3383,16 +3464,7 @@ async function initializeAuthPageBoot() {
     if (sessionStorage.getItem('openLoginModal') === 'true') {
         sessionStorage.removeItem('openLoginModal');
         setTimeout(() => {
-            if (typeof window.openLoginModal === 'function') {
-                window.openLoginModal();
-            } else {
-                const loginModal = document.getElementById('loginModal');
-                if (loginModal) {
-                    loginModal.hidden = false;
-                    loginModal.setAttribute('aria-hidden', 'false');
-                    loginModal.classList.add('active');
-                }
-            }
+            requestLoginModalOpen('login');
         }, 300);
     }
 
@@ -3494,14 +3566,32 @@ if (document.readyState === 'loading') {
 
 let profileModalOpenLock = false;
 let lastProfileModalOpenAt = 0;
-const PROFILE_MODAL_KEYBOARD_SETTLE_MS = 100;
+const PROFILE_MODAL_KEYBOARD_SETTLE_MS = 260;
+const PROFILE_MODAL_KEYBOARD_RESIZE_IDLE_MS = 180;
+const PROFILE_MODAL_KEYBOARD_MOTION_MS = 250;
 const PROFILE_MODAL_SCROLL_STATE_CLEAR_MS = 320;
 const profileModalState = {
     baseScrollY: 0,
     overlayBaseHeight: 0,
+    baseViewportHeight: 0,
+    baseVisualHeight: 0,
+    baseCardHeight: 0,
+    lastKeyboardBottomInset: 0,
+    lastDockHeight: 0,
+    lastTranslateY: 0,
     viewportCleanup: null,
     rootScrollCleanup: null,
     layoutRafId: 0,
+    keyboardResizeTimer: null,
+    keyboardMotionTimer: null,
+    pendingFirstDockTimer: null,
+    pendingFirstDockParams: null,
+    focusScrollRafId: 0,
+    focusScrollTimer: null,
+    focusScrollSuppressUntil: 0,
+    keyboardBlurUndocking: false,
+    lastStableKeyboardInset: 0,
+    scrollAnimationRafId: 0,
     scrollAnimationClearTimer: null,
     scrollAnimationHost: null,
     scrollAnimationTarget: null,
@@ -3550,12 +3640,47 @@ function clearProfileModalTimers() {
         clearTimeout(profileModalState.blurTimer);
         profileModalState.blurTimer = null;
     }
+    if (profileModalState.keyboardResizeTimer) {
+        clearTimeout(profileModalState.keyboardResizeTimer);
+        profileModalState.keyboardResizeTimer = null;
+    }
+    if (profileModalState.keyboardMotionTimer) {
+        clearTimeout(profileModalState.keyboardMotionTimer);
+        profileModalState.keyboardMotionTimer = null;
+    }
+    if (profileModalState.pendingFirstDockTimer) {
+        clearTimeout(profileModalState.pendingFirstDockTimer);
+        profileModalState.pendingFirstDockTimer = null;
+    }
+    if (profileModalState.focusScrollRafId) {
+        cancelAnimationFrame(profileModalState.focusScrollRafId);
+        profileModalState.focusScrollRafId = 0;
+    }
+    if (profileModalState.focusScrollTimer) {
+        clearTimeout(profileModalState.focusScrollTimer);
+        profileModalState.focusScrollTimer = null;
+    }
+    profileModalState.focusScrollSuppressUntil = 0;
+    profileModalState.pendingFirstDockParams = null;
+    getProfileModalElements().overlay?.classList.remove(
+        'profile-modal-keyboard-resizing',
+        'profile-modal-keyboard-animating'
+    );
 }
 
 function freezeProfileModalPage() {
     if (profileModalState.pageFrozen) return;
 
     profileModalState.baseScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
+    if (isProfileModalIOSMode() && window.iOSScrollLock) {
+        const { overlay } = getProfileModalElements();
+        window.iOSScrollLock.lockLight(overlay || null, {
+            restoreScrollDuringViewport: true
+        });
+        profileModalState.pageFrozen = 'light';
+        return;
+    }
+
     document.documentElement.classList.add('profile-modal-lock');
     document.body.classList.add('profile-modal-lock');
     setAuthStyleState(document.documentElement, {
@@ -3575,6 +3700,15 @@ function freezeProfileModalPage() {
 
 function unfreezeProfileModalPage() {
     if (!profileModalState.pageFrozen) return;
+
+    if (profileModalState.pageFrozen === 'light') {
+        if (window.iOSScrollLock) {
+            window.iOSScrollLock.unlock();
+        }
+        profileModalState.pageFrozen = false;
+        profileModalState.baseScrollY = 0;
+        return;
+    }
 
     const restoreScrollY = profileModalState.baseScrollY;
     document.documentElement.classList.remove('profile-modal-lock');
@@ -3604,41 +3738,65 @@ function resetProfileModalVisualState() {
     overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
     setAuthStyleState(overlay, {
         '--profile-modal-shift-y': '0px',
+        '--profile-modal-dock-height': '',
         '--profile-modal-overlay-height': ''
     });
     setAuthStyleState(card, {
+        height: '',
         maxHeight: ''
     });
     setAuthStyleState(scroller, {
         scrollPaddingBottom: ''
     });
     profileModalState.overlayBaseHeight = 0;
+    profileModalState.baseViewportHeight = 0;
+    profileModalState.baseVisualHeight = 0;
+    profileModalState.baseCardHeight = 0;
+    profileModalState.lastKeyboardBottomInset = 0;
+    profileModalState.lastDockHeight = 0;
+    profileModalState.lastTranslateY = 0;
+    profileModalState.keyboardBlurUndocking = false;
+    profileModalState.lastStableKeyboardInset = 0;
+    profileModalState.pendingFirstDockParams = null;
     profileModalState.focusTransferUntil = 0;
     profileModalState.lastFocusAnchor = null;
     profileModalState.preserveLayoutDuringFocusTransfer = false;
 }
 
 function captureProfileModalOverlayBaseHeight(force = false) {
-    const { overlay } = getProfileModalElements();
+    const { overlay, card } = getProfileModalElements();
     if (!overlay) return;
 
+    const vv = window.visualViewport;
+    const visualTop = Math.max(0, vv?.offsetTop || 0);
+    const visualHeight = Math.max(0, vv?.height || 0);
+    const visualBottom = visualTop + visualHeight;
     const measuredHeight = Math.max(
         Math.round(window.innerHeight || 0),
         Math.round(document.documentElement.clientHeight || 0),
-        Math.round(window.visualViewport?.height || 0)
+        Math.round(visualBottom || 0),
+        Math.round(visualHeight || 0)
     );
 
     if (!measuredHeight) return;
     if (!force && profileModalState.overlayBaseHeight >= measuredHeight) return;
 
     profileModalState.overlayBaseHeight = measuredHeight;
+    profileModalState.baseViewportHeight = Math.max(profileModalState.baseViewportHeight || 0, measuredHeight);
+    profileModalState.baseVisualHeight = Math.max(profileModalState.baseVisualHeight || 0, visualHeight);
+    if (card) {
+        const cardHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 0);
+        if (cardHeight > 220) {
+            profileModalState.baseCardHeight = Math.max(320, cardHeight);
+        }
+    }
     setAuthStyleState(overlay, {
         '--profile-modal-overlay-height': `${measuredHeight}px`
     });
 }
 
 function stabilizeProfileModalViewport() {
-    if (!profileModalState.pageFrozen) return;
+    if (!profileModalState.pageFrozen || profileModalState.pageFrozen === 'light') return;
 
     setAuthStyleState(document.body, {
         top: `-${profileModalState.baseScrollY}px`
@@ -3661,17 +3819,17 @@ function getProfileModalFocusAnchor(input = getActiveProfileModalInput()) {
     );
 }
 
-function ensureProfileModalInputVisible(input = getActiveProfileModalInput()) {
+function getProfileModalInputTargetScrollTop(input = getActiveProfileModalInput()) {
     const { card, scroller } = getProfileModalElements();
     const scrollHost = scroller || card;
-    if (!card || !scrollHost || !input) return;
+    if (!card || !scrollHost || !input) return null;
 
     const anchor = getProfileModalFocusAnchor(input) || input;
     const cardRect = scrollHost.getBoundingClientRect();
     const anchorRect = anchor.getBoundingClientRect();
     const inputRect = input.getBoundingClientRect();
     const maxScrollTop = Math.max(0, scrollHost.scrollHeight - scrollHost.clientHeight);
-    if (maxScrollTop <= 0) return;
+    if (maxScrollTop <= 0) return null;
 
     const preferredCenter = Math.max(
         136,
@@ -3705,10 +3863,24 @@ function ensureProfileModalInputVisible(input = getActiveProfileModalInput()) {
         );
     }
 
-    animateProfileModalScroll(scrollHost, nextScrollTop);
+    return {
+        scrollHost,
+        targetScrollTop: nextScrollTop
+    };
+}
+
+function ensureProfileModalInputVisible(input = getActiveProfileModalInput()) {
+    const target = getProfileModalInputTargetScrollTop(input);
+    if (!target) return;
+
+    animateProfileModalScroll(target.scrollHost, target.targetScrollTop);
 }
 
 function clearProfileModalScrollAnimationState() {
+    if (profileModalState.scrollAnimationRafId) {
+        cancelAnimationFrame(profileModalState.scrollAnimationRafId);
+        profileModalState.scrollAnimationRafId = 0;
+    }
     if (profileModalState.scrollAnimationClearTimer) {
         clearTimeout(profileModalState.scrollAnimationClearTimer);
         profileModalState.scrollAnimationClearTimer = null;
@@ -3733,7 +3905,7 @@ function cancelProfileModalScrollAnimation() {
     }
 }
 
-function animateProfileModalScroll(scrollHost, targetScrollTop) {
+function animateProfileModalScroll(scrollHost, targetScrollTop, options = {}) {
     if (!scrollHost) return;
 
     const to = Math.max(0, targetScrollTop);
@@ -3754,13 +3926,32 @@ function animateProfileModalScroll(scrollHost, targetScrollTop) {
     profileModalState.scrollAnimationHost = scrollHost;
     profileModalState.scrollAnimationTarget = to;
 
-    try {
-        scrollHost.scrollTo({ top: to, behavior: 'smooth' });
-    } catch (_) {
+    const from = scrollHost.scrollTop;
+    const distance = to - from;
+    const duration = Math.max(
+        options.minDuration ?? 180,
+        Math.min(options.maxDuration ?? 340, Math.round(Math.abs(distance) * (options.durationFactor ?? 0.72)))
+    );
+    const startedAt = performance.now();
+    const easeOut = (t) => options.ease === 'standard'
+        ? (1 - Math.pow(1 - t, 4))
+        : (1 - Math.pow(1 - t, 3));
+
+    const step = (now) => {
+        if (profileModalState.scrollAnimationHost !== scrollHost) return;
+
+        const progress = Math.min(1, Math.max(0, (now - startedAt) / duration));
+        scrollHost.scrollTop = Math.round(from + (distance * easeOut(progress)));
+        if (progress < 1) {
+            profileModalState.scrollAnimationRafId = requestAnimationFrame(step);
+            return;
+        }
+
         scrollHost.scrollTop = to;
-        clearProfileModalScrollAnimationState();
-        return;
-    }
+        profileModalState.scrollAnimationRafId = 0;
+    };
+
+    profileModalState.scrollAnimationRafId = requestAnimationFrame(step);
 
     profileModalState.scrollAnimationClearTimer = setTimeout(() => {
         if (
@@ -3775,27 +3966,258 @@ function animateProfileModalScroll(scrollHost, targetScrollTop) {
 
 function markProfileModalFocusTransfer(nextInput = null) {
     const nextAnchor = getProfileModalFocusAnchor(nextInput);
+    const docked = getProfileModalElements().overlay?.classList.contains('keyboard-docked');
     profileModalState.focusTransferUntil = Date.now() + 260;
     profileModalState.preserveLayoutDuringFocusTransfer = !!(
-        nextAnchor &&
+        docked &&
         profileModalState.lastFocusAnchor &&
-        nextAnchor === profileModalState.lastFocusAnchor
+        nextAnchor &&
+        profileModalState.lastDockHeight
     );
 }
 
-function applyProfileModalLayout() {
+function markProfileModalKeyboardResizing() {
+    const { overlay } = getProfileModalElements();
+    if (!overlay?.classList.contains('active')) return;
+
+    overlay.classList.add('profile-modal-keyboard-resizing');
+    if (profileModalState.keyboardResizeTimer) {
+        clearTimeout(profileModalState.keyboardResizeTimer);
+    }
+    profileModalState.keyboardResizeTimer = setTimeout(() => {
+        profileModalState.keyboardResizeTimer = null;
+        getProfileModalElements().overlay?.classList.remove('profile-modal-keyboard-resizing');
+    }, PROFILE_MODAL_KEYBOARD_RESIZE_IDLE_MS);
+}
+
+function setProfileModalKeyboardAnimating(enabled) {
+    const { overlay } = getProfileModalElements();
+    if (!overlay) return;
+
+    overlay.classList.toggle('profile-modal-keyboard-animating', Boolean(enabled));
+    setAuthStyleState(overlay, {
+        '--profile-modal-keyboard-motion-duration': enabled ? `${PROFILE_MODAL_KEYBOARD_MOTION_MS}ms` : ''
+    });
+
+    if (profileModalState.keyboardMotionTimer) {
+        clearTimeout(profileModalState.keyboardMotionTimer);
+        profileModalState.keyboardMotionTimer = null;
+    }
+    if (!enabled) return;
+
+    profileModalState.keyboardMotionTimer = setTimeout(() => {
+        profileModalState.keyboardMotionTimer = null;
+        getProfileModalElements().overlay?.classList.remove('profile-modal-keyboard-animating');
+        setAuthStyleState(getProfileModalElements().overlay, {
+            '--profile-modal-keyboard-motion-duration': ''
+        });
+    }, PROFILE_MODAL_KEYBOARD_MOTION_MS + 40);
+}
+
+function clearProfileModalPendingFirstDock() {
+    if (profileModalState.pendingFirstDockTimer) {
+        clearTimeout(profileModalState.pendingFirstDockTimer);
+        profileModalState.pendingFirstDockTimer = null;
+    }
+    profileModalState.pendingFirstDockParams = null;
+}
+
+function getProfileModalKeyboardMetrics() {
+    const vv = window.visualViewport;
+    const visualTop = Math.max(0, vv?.offsetTop || 0);
+    const visualHeight = Math.max(0, vv?.height || 0);
+    const visualBottom = visualTop + visualHeight;
+    const baseViewportHeight = Math.max(
+        profileModalState.baseViewportHeight || 0,
+        window.innerHeight || 0,
+        document.documentElement.clientHeight || 0,
+        visualBottom
+    );
+    const baseVisualHeight = Math.max(profileModalState.baseVisualHeight || 0, visualHeight);
+    const bottomInset = Math.max(
+        0,
+        Math.round(Math.max(
+            baseViewportHeight - visualBottom,
+            baseVisualHeight - visualHeight
+        ))
+    );
+
+    return {
+        visualHeight,
+        visualBottom,
+        baseViewportHeight,
+        baseVisualHeight,
+        bottomInset
+    };
+}
+
+function captureProfileModalStableDockHeight(metrics = getProfileModalKeyboardMetrics()) {
+    const { card } = getProfileModalElements();
+    if (!card || metrics.bottomInset > 60) return;
+
+    const cardHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 0);
+    if (cardHeight > 220) {
+        profileModalState.baseCardHeight = cardHeight;
+    }
+}
+
+function applyProfileModalKeyboardDock(metrics, animate = false) {
+    const { overlay, card, scroller } = getProfileModalElements();
+    if (!overlay || !card) return;
+
+    const bottomInset = Math.max(0, metrics?.bottomInset || 0);
+    const baseViewportHeight = Math.max(
+        metrics?.baseViewportHeight || 0,
+        window.innerHeight || 0,
+        document.documentElement.clientHeight || 0,
+        (metrics?.visualHeight || 0) + bottomInset
+    );
+    const keyboardTop = Math.max(0, baseViewportHeight - bottomInset);
+    const keyboardClearance = 12;
+    const minTop = 12;
+    const fallbackHeight = Math.min(600, Math.max(420, Math.round(baseViewportHeight * 0.7)));
+    const stableHeight = Math.max(320, Math.round(profileModalState.baseCardHeight || fallbackHeight));
+    const maxAvailableHeight = Math.max(320, Math.round(keyboardTop - minTop - keyboardClearance));
+    const dockHeight = Math.min(stableHeight, maxAvailableHeight);
+    const centeredBottom = (baseViewportHeight * 0.5) + (dockHeight * 0.5);
+    const targetBottom = Math.max(40, keyboardTop - keyboardClearance);
+    const translateY = Math.round(Math.max(-520, Math.min(520, targetBottom - centeredBottom)));
+
+    clearProfileModalPendingFirstDock();
+    overlay.classList.add('keyboard-active', 'keyboard-docked');
+    setProfileModalKeyboardAnimating(animate);
+    setAuthStyleState(overlay, {
+        '--profile-modal-shift-y': `${translateY}px`,
+        '--profile-modal-dock-height': `${dockHeight}px`
+    });
+    setAuthStyleState(card, {
+        height: `${dockHeight}px`,
+        maxHeight: `${dockHeight}px`
+    });
+    setAuthStyleState(scroller, {
+        scrollPaddingBottom: '144px'
+    });
+
+    profileModalState.keyboardBlurUndocking = false;
+    profileModalState.lastKeyboardBottomInset = bottomInset;
+    profileModalState.lastDockHeight = dockHeight;
+    profileModalState.lastTranslateY = translateY;
+    if (bottomInset > 40) {
+        profileModalState.lastStableKeyboardInset = bottomInset;
+    }
+}
+
+function resetProfileModalKeyboardDock(animate = false) {
+    const { overlay, card, scroller } = getProfileModalElements();
+    if (!overlay || !card) return;
+
+    clearProfileModalPendingFirstDock();
+    overlay.classList.remove('keyboard-active', 'keyboard-docked');
+    setProfileModalKeyboardAnimating(animate);
+    setAuthStyleState(overlay, {
+        '--profile-modal-shift-y': '0px',
+        '--profile-modal-dock-height': ''
+    });
+    setAuthStyleState(card, {
+        height: '',
+        maxHeight: ''
+    });
+    setAuthStyleState(scroller, {
+        scrollPaddingBottom: '96px'
+    });
+
+    profileModalState.lastKeyboardBottomInset = 0;
+    profileModalState.lastDockHeight = 0;
+    profileModalState.lastTranslateY = 0;
+}
+
+function scheduleProfileModalInitialKeyboardDock(metrics) {
+    const requiresWarmup = profileModalState.lastStableKeyboardInset <= 40;
+    let predictedInset = Math.max(0, metrics?.bottomInset || 0);
+
+    if (profileModalState.lastStableKeyboardInset > 40) {
+        predictedInset = predictedInset < 24
+            ? profileModalState.lastStableKeyboardInset
+            : Math.min(predictedInset, profileModalState.lastStableKeyboardInset + 12);
+    }
+
+    profileModalState.pendingFirstDockParams = {
+        ...metrics,
+        bottomInset: predictedInset,
+        animate: true
+    };
+
+    if (profileModalState.pendingFirstDockTimer) return;
+
+    profileModalState.pendingFirstDockTimer = setTimeout(() => {
+        const params = profileModalState.pendingFirstDockParams;
+        profileModalState.pendingFirstDockTimer = null;
+        profileModalState.pendingFirstDockParams = null;
+        const { overlay } = getProfileModalElements();
+        if (!params || !overlay?.classList.contains('active')) return;
+        if (!getActiveProfileModalInput()) return;
+        if (overlay.classList.contains('keyboard-docked')) return;
+
+        applyProfileModalKeyboardDock(params, params.animate !== false);
+        ensureProfileModalInputVisible();
+    }, requiresWarmup ? 88 : 34);
+}
+
+function scheduleProfileModalFocusedInputScroll(input, delay = 0) {
+    if (!input) return;
+
+    if (profileModalState.focusScrollRafId) {
+        cancelAnimationFrame(profileModalState.focusScrollRafId);
+        profileModalState.focusScrollRafId = 0;
+    }
+    if (profileModalState.focusScrollTimer) {
+        clearTimeout(profileModalState.focusScrollTimer);
+        profileModalState.focusScrollTimer = null;
+    }
+
+    const run = () => {
+        profileModalState.focusScrollRafId = requestAnimationFrame(() => {
+            profileModalState.focusScrollRafId = 0;
+            const { overlay } = getProfileModalElements();
+            if (!overlay?.classList.contains('keyboard-docked')) return;
+            if (document.activeElement !== input) return;
+            const target = getProfileModalInputTargetScrollTop(input);
+            if (!target) return;
+            animateProfileModalScroll(target.scrollHost, target.targetScrollTop, {
+                minDuration: 240,
+                maxDuration: 460,
+                durationFactor: 0.95,
+                ease: 'standard'
+            });
+        });
+    };
+
+    if (delay > 0) {
+        profileModalState.focusScrollTimer = setTimeout(() => {
+            profileModalState.focusScrollTimer = null;
+            run();
+        }, delay);
+        return;
+    }
+
+    run();
+}
+
+function applyProfileModalLayout({ ensureInput = true, allowUndock = true } = {}) {
     const { overlay, card, scroller } = getProfileModalElements();
     if (!overlay || !card || !overlay.classList.contains('active')) return;
 
     if (!isProfileModalIOSMode()) {
         setAuthStyleState(card, {
+            height: '',
             maxHeight: ''
         });
         setAuthStyleState(scroller, {
             scrollPaddingBottom: ''
         });
         setAuthStyleState(overlay, {
-            '--profile-modal-shift-y': '0px'
+            '--profile-modal-shift-y': '0px',
+            '--profile-modal-dock-height': ''
         });
         overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
         profileModalState.lastFocusAnchor = getProfileModalFocusAnchor(getActiveProfileModalInput()) || null;
@@ -3803,24 +4225,46 @@ function applyProfileModalLayout() {
         return;
     }
 
-    const visibleHeight = Math.max(
-        320,
-        Math.round(window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 0)
-    );
+    const metrics = getProfileModalKeyboardMetrics();
+    if (metrics.bottomInset < 40) {
+        captureProfileModalStableDockHeight(metrics);
+    }
+
     const activeInput = getActiveProfileModalInput();
     const activeAnchor = getProfileModalFocusAnchor(activeInput);
     const holdDuringFocusTransfer = !activeInput && profileModalState.focusTransferUntil > Date.now();
+    const wasDocked = overlay.classList.contains('keyboard-docked');
+    const preserveFocusDock = Boolean(
+        wasDocked &&
+        profileModalState.preserveLayoutDuringFocusTransfer &&
+        profileModalState.lastDockHeight > 0 &&
+        profileModalState.focusTransferUntil > Date.now()
+    );
+    const keyboardActive = Boolean(activeInput || holdDuringFocusTransfer);
+    const shouldDock =
+        !profileModalState.keyboardBlurUndocking &&
+        keyboardActive &&
+        (wasDocked ? metrics.bottomInset > 8 : metrics.bottomInset > 24);
 
-    setAuthStyleState(card, {
-        maxHeight: `${Math.max(320, visibleHeight - 24)}px`
-    });
     setAuthStyleState(scroller, {
-        scrollPaddingBottom: `${activeInput || holdDuringFocusTransfer ? 144 : 96}px`
+        scrollPaddingBottom: `${wasDocked || shouldDock ? 144 : 96}px`
     });
-    setAuthStyleState(overlay, {
-        '--profile-modal-shift-y': '0px'
-    });
-    overlay.classList.toggle('keyboard-active', !!activeInput || holdDuringFocusTransfer);
+
+    if (shouldDock) {
+        if (!wasDocked) {
+            scheduleProfileModalInitialKeyboardDock(metrics);
+        } else if (!preserveFocusDock && Math.abs(metrics.bottomInset - profileModalState.lastKeyboardBottomInset) > 1) {
+            applyProfileModalKeyboardDock(metrics, false);
+        }
+    } else {
+        clearProfileModalPendingFirstDock();
+        if (wasDocked && allowUndock) {
+            resetProfileModalKeyboardDock(true);
+        } else if (!keyboardActive && metrics.bottomInset <= 8) {
+            resetProfileModalKeyboardDock(false);
+            profileModalState.keyboardBlurUndocking = false;
+        }
+    }
 
     if (!activeInput) {
         if (!holdDuringFocusTransfer) {
@@ -3830,31 +4274,37 @@ function applyProfileModalLayout() {
         return;
     }
 
-    if (!isProfileModalIOSMode()) {
-        profileModalState.lastFocusAnchor = activeAnchor || null;
-        profileModalState.preserveLayoutDuringFocusTransfer = false;
-        return;
+    if (ensureInput && overlay.classList.contains('keyboard-docked')) {
+        ensureProfileModalInputVisible(activeInput);
     }
-
-    ensureProfileModalInputVisible(activeInput);
     profileModalState.lastFocusAnchor = activeAnchor || null;
-    profileModalState.preserveLayoutDuringFocusTransfer = false;
+    if (profileModalState.focusTransferUntil <= Date.now()) {
+        profileModalState.preserveLayoutDuringFocusTransfer = false;
+    }
 }
 
-function scheduleProfileModalLayout({ settled = false, deferOnly = false } = {}) {
+function scheduleProfileModalLayout({ settled = false, deferOnly = false, ensureInput = true, allowUndock = true } = {}) {
     if (profileModalState.layoutRafId) {
         cancelAnimationFrame(profileModalState.layoutRafId);
     }
 
-    const runLayout = () => {
+    const runLayout = (options = {}) => {
         profileModalState.layoutRafId = requestAnimationFrame(() => {
             profileModalState.layoutRafId = 0;
-            applyProfileModalLayout();
+            applyProfileModalLayout({
+                ensureInput: options.ensureInput ?? ensureInput,
+                allowUndock: options.allowUndock ?? allowUndock
+            });
+            if (options.finishKeyboardResize) {
+                requestAnimationFrame(() => {
+                    getProfileModalElements().overlay?.classList.remove('profile-modal-keyboard-resizing');
+                });
+            }
         });
     };
 
     if (!deferOnly) {
-        runLayout();
+        runLayout({ ensureInput, allowUndock });
     }
 
     if (settled) {
@@ -3863,7 +4313,7 @@ function scheduleProfileModalLayout({ settled = false, deferOnly = false } = {})
         }
         profileModalState.settleTimer = setTimeout(() => {
             profileModalState.settleTimer = null;
-            runLayout();
+            runLayout({ ensureInput: true, allowUndock: true, finishKeyboardResize: true });
         }, PROFILE_MODAL_KEYBOARD_SETTLE_MS);
     }
 }
@@ -3886,6 +4336,27 @@ function bindProfileModalInputBehavior(input) {
             clearTimeout(profileModalState.blurTimer);
             profileModalState.blurTimer = null;
         }
+        profileModalState.keyboardBlurUndocking = false;
+        if (isProfileModalIOSMode()) {
+            const docked = getProfileModalElements().overlay?.classList.contains('keyboard-docked');
+            if (docked) {
+                clearProfileModalPendingFirstDock();
+                setAuthStyleState(getProfileModalElements().scroller, {
+                    scrollPaddingBottom: '144px'
+                });
+                profileModalState.lastFocusAnchor = getProfileModalFocusAnchor(input) || null;
+                if (profileModalState.focusScrollSuppressUntil > Date.now()) {
+                    return;
+                }
+                scheduleProfileModalFocusedInputScroll(input);
+                return;
+            }
+            captureProfileModalOverlayBaseHeight(true);
+            captureProfileModalStableDockHeight();
+            scheduleProfileModalLayout({ ensureInput: false, allowUndock: false });
+            setTimeout(() => scheduleProfileModalLayout({ ensureInput: true, allowUndock: false }), 160);
+            return;
+        }
         scheduleProfileModalLayout();
     });
 
@@ -3896,16 +4367,22 @@ function bindProfileModalInputBehavior(input) {
         profileModalState.blurTimer = setTimeout(() => {
             profileModalState.blurTimer = null;
             if (!getActiveProfileModalInput()) {
+                profileModalState.keyboardBlurUndocking = true;
+                resetProfileModalKeyboardDock(true);
                 scheduleProfileModalLayout({ settled: true, deferOnly: true });
             }
         }, 120);
     });
 
-    input.addEventListener('click', () => {
-        if (document.activeElement === input) return;
-        markProfileModalFocusTransfer(input);
-        scheduleProfileModalLayout();
-    });
+        input.addEventListener('click', () => {
+            if (document.activeElement === input) return;
+            markProfileModalFocusTransfer(input);
+            if (isProfileModalIOSMode() && getProfileModalElements().overlay?.classList.contains('keyboard-docked')) {
+                scheduleProfileModalFocusedInputScroll(input);
+                return;
+            }
+            scheduleProfileModalLayout();
+        });
 
     input.addEventListener('touchstart', (event) => {
         const { overlay, card, scroller } = getProfileModalElements();
@@ -3967,16 +4444,32 @@ function bindProfileModalInputBehavior(input) {
         const isTap = gesture.mode === 'pending' && movedDistance < 8 && scrollMoved < 3;
 
         if (isProfileModalIOSMode() && isTap && document.activeElement !== input) {
+            const beforeFocusScrollTop = scrollHost ? scrollHost.scrollTop : null;
+            const wasDockedBeforeFocus = getProfileModalElements().overlay?.classList.contains('keyboard-docked');
             if (event.cancelable) {
                 event.preventDefault();
             }
             markProfileModalFocusTransfer(input);
+            profileModalState.focusScrollSuppressUntil = Date.now() + 120;
             try {
                 input.focus({ preventScroll: true });
             } catch (_) {
                 input.focus();
             }
-            scheduleProfileModalLayout();
+            profileModalState.keyboardBlurUndocking = false;
+            if (getProfileModalElements().overlay?.classList.contains('keyboard-docked')) {
+                clearProfileModalPendingFirstDock();
+                if (wasDockedBeforeFocus && scrollHost && Number.isFinite(beforeFocusScrollTop)) {
+                    scrollHost.scrollTop = beforeFocusScrollTop;
+                }
+                profileModalState.lastFocusAnchor = getProfileModalFocusAnchor(input) || null;
+                scheduleProfileModalFocusedInputScroll(input, 34);
+            } else {
+                captureProfileModalOverlayBaseHeight(true);
+                captureProfileModalStableDockHeight();
+                scheduleProfileModalLayout({ ensureInput: false, allowUndock: false });
+                setTimeout(() => scheduleProfileModalLayout({ ensureInput: true, allowUndock: false }), 160);
+            }
         }
         gesture.mode = 'idle';
     });
@@ -4010,10 +4503,11 @@ function attachProfileModalViewportHandlers() {
 
     const handleViewportChange = () => {
         stabilizeProfileModalViewport();
+        markProfileModalKeyboardResizing();
         if (!getActiveProfileModalInput()) {
             captureProfileModalOverlayBaseHeight();
         }
-        scheduleProfileModalLayout({ settled: true, deferOnly: true });
+        scheduleProfileModalLayout({ settled: true, ensureInput: false, allowUndock: false });
     };
 
     const handleRootScroll = () => {
@@ -4116,7 +4610,8 @@ function resetProfileModalViewState() {
     if (overlay) {
         overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
         setAuthStyleState(overlay, {
-            '--profile-modal-shift-y': '0px'
+            '--profile-modal-shift-y': '0px',
+            '--profile-modal-dock-height': ''
         });
         overlay.dataset.profileTab = 'profile';
         overlay.dataset.securityPanel = 'change-password';
@@ -4156,11 +4651,13 @@ function cleanupProfileModalAfterClose(options = {}) {
     if (overlay) {
         overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
         setAuthStyleState(overlay, {
-            '--profile-modal-shift-y': '0px'
+            '--profile-modal-shift-y': '0px',
+            '--profile-modal-dock-height': ''
         });
     }
 
     setAuthStyleState(card, {
+        height: '',
         maxHeight: ''
     });
     if (scroller) {
@@ -4176,6 +4673,11 @@ function closeProfileModal() {
     const { overlay } = getProfileModalElements();
     if (!overlay) return;
 
+    window.runSiteModalCloseChromeCleanup?.({
+        targets: [overlay],
+        forceHiddenClass: 'profile-modal-force-hidden',
+        restoreDelayMs: 320
+    });
     cleanupProfileModalAfterClose();
     overlay.classList.remove('active');
 
@@ -4223,6 +4725,7 @@ async function openProfileModal(event) {
     bindProfileModalInputs();
 
     modal.classList.remove('active');
+    modal.classList.remove('profile-modal-force-hidden');
 
     void modal.offsetHeight;
     modal.classList.add('active');
@@ -4335,16 +4838,7 @@ async function handleSwitchAccount(event) {
 
     // 打开登录弹窗
     setTimeout(() => {
-        if (typeof window.openLoginModal === 'function') {
-            window.openLoginModal();
-        } else {
-            const loginModal = document.getElementById('loginModal');
-            if (loginModal) {
-                loginModal.hidden = false;
-                loginModal.setAttribute('aria-hidden', 'false');
-                loginModal.classList.add('active');
-            }
-        }
+        requestLoginModalOpen('login');
     }, 100);
 }
 

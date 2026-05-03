@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const HOMEPAGE_GUESTBOOK_LOADER_VERSION = '20260501_HOME_GUESTBOOK_INTENT_LOAD_1';
+    const HOMEPAGE_GUESTBOOK_LOADER_VERSION = '20260502_HOME_GUESTBOOK_LOADER_STABLE_DOCK_1';
     const HOMEPAGE_GUESTBOOK_RUNTIME_SOURCES = Object.freeze([
         {
             id: 'guestbook-data-runtime',
@@ -11,7 +11,7 @@
         },
         {
             id: 'guestbook-modal-runtime',
-            src: './js/homepage-guestbook-modal.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
+            src: './js/homepage-guestbook-modal.js?v=20260503_HOME_GUESTBOOK_MODAL_CHROME_CLOSE_1',
             isReady: () => typeof window.openGuestbookModal === 'function'
                 && window.openGuestbookModal.__homepageGuestbookIntentStub !== true
         }

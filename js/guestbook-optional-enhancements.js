@@ -71,8 +71,8 @@
         }, 800);
 
         scheduleOptionalTask(2200, () => {
-            loadStylesheet('css/chat-widget.css?v=20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1');
-            loadScript('js/components/ChatWidget.js?v=20260426_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_12', initChatWidgetIfReady);
+            loadStylesheet('css/chat-widget.css?v=20260503_CHAT_WIDGET_SAFARI_HANDOFF_12');
+            loadScript('js/components/ChatWidget.js?v=20260503_CHAT_WIDGET_SAFARI_HANDOFF_12', initChatWidgetIfReady);
         }, 2200);
     }
 

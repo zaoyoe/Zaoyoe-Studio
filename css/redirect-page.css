@@ -85,6 +85,19 @@ body.redirect-page {
     border-radius: 999px;
     text-decoration: none;
     font-weight: 600;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+}
+
+/* 20260502_REDIRECT_TAP_HIGHLIGHT_1 */
+.redirect-page__button:focus:not(:focus-visible) {
+    outline: none;
+}
+
+.redirect-page__button:active {
+    box-shadow: none;
+    outline: none;
 }
 
 .redirect-page__button--primary {

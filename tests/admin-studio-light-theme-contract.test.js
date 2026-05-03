@@ -2878,7 +2878,7 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'admin chat light theme should remove floating card shadows from contextual panels'
     );
     assert.equal(
-        chatStylesSource.includes('20260426_ADMIN_CHAT_LIGHT_THEME_FROSTED_CONTEXT_FLAT_ALERTS_2'),
+        chatStylesSource.includes('20260502_ADMIN_CHAT_KEYBOARD_DOCK_6'),
         true,
         'admin chat styles should restore frosted context panels while keeping them flat'
     );
@@ -2913,7 +2913,7 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'admin studio should cache-bust the updated scroll lock runtime'
     );
     assert.equal(
-        readRepoFile('admin-studio.html').includes('css/admin-chat.css?v=20260426_ADMIN_CHAT_LIGHT_THEME_FROSTED_CONTEXT_FLAT_ALERTS_2'),
+        readRepoFile('admin-studio.html').includes('css/admin-chat.css?v=20260502_ADMIN_CHAT_KEYBOARD_DOCK_6'),
         true,
         'admin studio should cache-bust the updated admin chat stylesheet'
     );

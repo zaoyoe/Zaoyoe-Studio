@@ -1,4 +1,4 @@
-/* 20260501_ADMIN_ENTRY_LIGHT_THEME_GATE_1 */
+/* 20260502_ADMIN_ENTRY_TAP_HIGHLIGHT_1 */
 :root {
     color-scheme: light;
     --entry-page-bg: #ffffff;
@@ -156,11 +156,23 @@ body[data-state="error"] .entry-spinner {
     text-decoration: none;
     background: var(--entry-btn-bg);
     transition: background 0.2s ease, border-color 0.2s ease;
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
 }
 
 .entry-btn:hover,
 .entry-btn:focus-visible {
     background: var(--entry-btn-hover-bg);
+}
+
+.entry-btn:focus:not(:focus-visible) {
+    outline: none;
+}
+
+.entry-btn:active {
+    box-shadow: none;
+    outline: none;
 }
 
 .entry-btn.primary {

@@ -127,6 +127,18 @@ function normalizeDeleteMode(value) {
     throw error;
 }
 
+function buildRedemptionRevokeLedgerReason(code = '', reason = '') {
+    const normalizedCode = normalizeString(code);
+    const normalizedReason = normalizeString(reason, '管理员撤销') || '管理员撤销';
+    const baseReason = normalizedReason === '批次删除-自动撤销'
+        ? '兑换码批次删除扣回'
+        : '兑换码撤销扣回';
+
+    return normalizedCode
+        ? `${baseReason}: ${normalizedReason}（${normalizedCode}）`
+        : `${baseReason}: ${normalizedReason}`;
+}
+
 function getPointsRequestRpcClient({ requestSupabase, supabase, token = '' } = {}) {
     if (String(token || '').trim() && requestSupabase?.rpc) {
         return requestSupabase;
@@ -224,7 +236,7 @@ async function revokePointsCodeViaService({
             supabase,
             userId: targetUserId,
             amount: pointsToDeduct,
-            reason: `兑换码撤销: ${code}`,
+            reason: buildRedemptionRevokeLedgerReason(code, reason),
             referenceId: `redeem_${code}`,
             site
         });
@@ -262,31 +274,13 @@ async function revokePointsCodeViaService({
 }
 
 async function revokePointsCode({
-    requestSupabase,
     supabase,
-    token = '',
     adminId = '',
     site,
     code = '',
     reason = '',
     existing = null
 } = {}) {
-    if (String(token || '').trim() && requestSupabase?.rpc) {
-        try {
-            return await revokePointsCodeViaRpc({
-                requestSupabase,
-                supabase,
-                token,
-                code,
-                reason
-            });
-        } catch (error) {
-            if (!shouldFallbackToServiceRevoke(error)) {
-                throw error;
-            }
-        }
-    }
-
     return revokePointsCodeViaService({
         supabase,
         adminId,

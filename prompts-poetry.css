@@ -1353,6 +1353,7 @@ body {
     /* Softer shadow */
     --mood-color: rgba(139, 92, 246, 0.5);
     /* Default mood color */
+    -webkit-tap-highlight-color: transparent;
 }
 
 .nav-search:focus-within {
@@ -1410,12 +1411,32 @@ body {
 
 .nav-search input {
     flex: 1;
+    min-width: 0;
     border: none;
-    background: transparent;
+    background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
     outline: none;
+    box-shadow: none !important;
     font-size: 1rem;
     color: var(--text-main);
+    caret-color: var(--text-main);
     font-family: var(--font-sans);
+    -webkit-appearance: none;
+    appearance: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+body.prompts-page .nav-search input:focus,
+body.prompts-page .nav-search input:focus-visible,
+body.prompts-page .nav-search input:active {
+    border: none !important;
+    outline: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .nav-search input::placeholder {
@@ -3072,11 +3093,8 @@ body.modal-open .prompt-card {
 .poetry-modal.active:focus-within .modal-inner.prompt-modal-animating,
 .poetry-modal.ios-focus-lock .modal-inner.prompt-modal-animating,
 .poetry-modal.keyboard-docked .modal-inner.prompt-modal-animating {
-    transition:
-        transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
-        height 180ms cubic-bezier(0.22, 1, 0.36, 1),
-        max-height 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
-    will-change: transform, height !important;
+    transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+    will-change: transform !important;
 }
 
 .modal-image-col {
@@ -3298,6 +3316,22 @@ body.modal-open .prompt-card {
 .prompt-text.blur-masked.prompt-text--loading {
     mask-image: none;
     -webkit-mask-image: none;
+}
+
+/* 20260502_PROMPTS_PROMPT_CARD_STABLE_1 */
+@media (max-width: 768px) {
+    .modal-inner:not(.comment-mode) .prompt-area {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .modal-inner:not(.comment-mode) .prompt-text,
+    .modal-inner:not(.comment-mode) .prompt-text.prompt-text--loading {
+        height: 120px;
+        min-height: 120px;
+        max-height: 120px;
+        box-sizing: border-box;
+    }
 }
 
 .prompt-detail-loading-dots {
@@ -4209,6 +4243,17 @@ body.modal-open .prompt-card {
     border-bottom-color: var(--prompt-detail-accent);
 }
 
+.poetry-modal.prompt-caret-stabilizing #commentInput,
+.poetry-modal.prompt-caret-stabilizing #commentInput:focus,
+.prompt-comment-composer.composer-caret-stabilizing #promptCommentComposerInput,
+.prompt-comment-composer.composer-caret-stabilizing #promptCommentComposerInput:focus {
+    caret-color: transparent !important;
+}
+
+.prompts-caret-repaint {
+    transform: translateZ(0);
+}
+
 .send-comment-btn {
     background: transparent;
     border: none;
@@ -4288,6 +4333,10 @@ body.modal-open .prompt-card {
     animation: composerSheetFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
+.prompt-comment-composer.keyboard-docked-active.active .prompt-comment-composer-sheet {
+    animation: none !important;
+}
+
 /* For closing animation */
 .prompt-comment-composer.composer-closing {
     opacity: 0 !important;
@@ -4326,19 +4375,7 @@ body.modal-open .prompt-card {
 }
 
 .prompt-comment-composer-sheet.composer-animating {
-    transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1) !important;
-}
-
-.prompt-comment-composer-viewport-probe {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 0;
-    height: 100svh;
-    pointer-events: none;
-    visibility: hidden;
-    opacity: 0;
-    z-index: -1;
+    transition: transform 250ms cubic-bezier(0.22, 1, 0.36, 1) !important;
 }
 
 [data-theme="dark"] .prompt-comment-composer-sheet {
@@ -4829,6 +4866,12 @@ body.modal-open .prompt-card {
         margin: 0 auto;
     }
 
+    .modal-inner.comment-mode.prompt-comment-geometry-locked:not(.keyboard-docked) {
+        height: var(--prompt-modal-comment-height, min(90svh, calc(100% - 128px)));
+        max-height: var(--prompt-modal-comment-height, min(90svh, calc(100% - 128px)));
+        overflow-anchor: none;
+    }
+
     /* Match announcement modal width to the mobile prompt card modal */
     .announcement-modal {
         width: 95%;
@@ -5084,6 +5127,7 @@ body.modal-open .prompt-card {
         pointer-events: none;
     }
 
+    /* 20260502_PROMPTS_COMMENT_FAB_COMPOSITE_1 */
     .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput {
         min-height: auto;
         width: 54px;
@@ -5092,16 +5136,21 @@ body.modal-open .prompt-card {
         padding: 0;
         flex: 0 0 auto;
         margin: 0 0 0 auto;
-        border: 1px solid rgba(255, 255, 255, 0.14);
+        border: 1px solid transparent;
         border-radius: 50%;
-        background: rgba(7, 15, 30, 0.42);
+        background: transparent !important;
+        background-color: transparent !important;
+        background-image: none !important;
         color: transparent;
         text-align: center;
-        backdrop-filter: blur(8px);
-        -webkit-backdrop-filter: blur(8px);
-        box-shadow:
-            0 18px 40px rgba(2, 6, 23, 0.26),
-            inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        box-shadow: none !important;
+        filter: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        appearance: none;
+        -webkit-appearance: none;
+        resize: none;
+        overflow: hidden;
         pointer-events: auto;
         touch-action: manipulation;
     }
@@ -5120,6 +5169,15 @@ body.modal-open .prompt-card {
         z-index: 2;
         opacity: 1;
         transform: none;
+        box-sizing: border-box;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 50%;
+        background: rgba(7, 15, 30, 0.42);
+        box-shadow:
+            0 8px 18px rgba(2, 6, 23, 0.18),
+            inset 0 1px 0 rgba(255, 255, 255, 0.06);
+        overflow: hidden;
+        isolation: isolate;
     }
 
     .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput {
@@ -5272,10 +5330,20 @@ body.modal-open .prompt-card {
 
     html[data-theme="light"] .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput,
     html:not([data-theme="dark"]) .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput {
+        background: transparent !important;
+        border-color: transparent;
+        box-shadow: none !important;
+        filter: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+    }
+
+    html[data-theme="light"] .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-ui,
+    html:not([data-theme="dark"]) .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-ui {
         background: rgba(255, 255, 255, 0.82);
         border-color: rgba(15, 23, 42, 0.1);
         box-shadow:
-            0 18px 40px rgba(15, 23, 42, 0.12),
+            0 6px 16px rgba(15, 23, 42, 0.08),
             inset 0 1px 0 rgba(255, 255, 255, 0.74);
     }
 
@@ -5935,4 +6003,41 @@ html:not([data-theme="dark"]) :is(
     -webkit-backdrop-filter: var(--public-light-modal-backdrop-filter) !important;
     overscroll-behavior: contain !important;
     overscroll-behavior-y: contain !important;
+}
+
+/* 20260503_PROMPTS_MODAL_CHROME_CLOSE_1 */
+body.prompts-page.prompt-modal-force-hidden #promptModal,
+body.prompts-page.prompt-modal-force-hidden .poetry-modal-backdrop,
+#promptModal.prompt-modal-force-hidden,
+.poetry-modal-backdrop.prompt-modal-force-hidden {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    transition: none !important;
+}
+
+body.prompts-page.prompt-modal-force-hidden #promptModal,
+#promptModal.prompt-modal-force-hidden {
+    display: none !important;
+    clip-path: none !important;
+    -webkit-clip-path: none !important;
+}
+
+body.prompts-page.prompt-modal-force-hidden #promptModal .modal-inner,
+#promptModal.prompt-modal-force-hidden .modal-inner {
+    opacity: 0 !important;
+    transform: translate3d(0, 24px, 0) scale(0.98) translateZ(0) !important;
+    transition: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+body.prompts-page.prompt-modal-force-hidden .prompt-status-bar-shield {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    background: transparent !important;
+    transition: none !important;
 }

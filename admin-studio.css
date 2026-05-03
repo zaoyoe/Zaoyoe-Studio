@@ -1895,6 +1895,11 @@ body.ios-scroll-lock-fixed {
     box-shadow: 0 0 0 2px rgba(96, 165, 250, 0.28), 0 22px 46px rgba(12, 22, 44, 0.34);
 }
 
+.admin-card.admin-card--editing {
+    border-color: rgba(96, 165, 250, 0.68);
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.24), 0 22px 48px rgba(37, 99, 235, 0.24);
+}
+
 .admin-card-media {
     position: relative;
     overflow: hidden;
@@ -2441,6 +2446,10 @@ body.ios-scroll-lock-fixed {
     line-height: 1;
 }
 
+.hover-action-btn:active:not(:disabled) {
+    transform: scale(0.94);
+}
+
 .hover-action-btn:hover {
     --admin-card-hover-action-bg: #6b9ece;
     color: #ffffff;
@@ -2463,6 +2472,25 @@ body.ios-scroll-lock-fixed {
     --admin-card-hover-action-bg: #6b9ece;
     color: #f8fbff;
     background: var(--admin-card-hover-action-bg);
+}
+
+.hover-action-btn.is-loading,
+.hover-action-btn.is-loading:hover,
+.hover-action-btn:disabled.is-loading,
+.admin-action-btn.is-loading,
+.admin-action-btn.is-loading:hover,
+.admin-action-btn:disabled.is-loading {
+    background: #2563eb;
+    border-color: rgba(191, 219, 254, 0.82);
+    color: #ffffff;
+    cursor: progress;
+    opacity: 1;
+    transform: none;
+}
+
+.hover-action-btn:disabled,
+.admin-action-btn:disabled {
+    cursor: not-allowed;
 }
 
 .admin-card-actions {
@@ -2935,7 +2963,8 @@ body.ios-scroll-lock-fixed {
     flex-direction: column;
     align-items: flex-end;
     gap: 10px;
-    z-index: 1000;
+    pointer-events: none;
+    z-index: 11050;
 }
 
 #toastContainer .toast {
@@ -2959,7 +2988,8 @@ body.ios-scroll-lock-fixed {
     animation: adminToastSlideIn 0.3s ease;
     transform-origin: right bottom;
     transition: opacity 0.3s ease, transform 0.3s ease, background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
-    z-index: 1000;
+    pointer-events: auto;
+    z-index: 11050;
 }
 
 #toastContainer .toast i,
@@ -3111,6 +3141,72 @@ button[data-action-feedback-state="failed"] {
     clip: rect(0, 0, 0, 0);
     white-space: nowrap;
     border: 0;
+}
+
+:where(button,
+    .admin-tab,
+    .batch-menu-item,
+    .filter-option,
+    .admin-card-context-btn,
+    .analytics-action-btn,
+    .sidebar-item,
+    .status-toggle,
+    .payment-provider-accordion-header,
+    .discount-type-option,
+    .config-card-header)[data-admin-action].is-click-feedback {
+    animation: adminDelegatedActionClickFeedback 0.36s ease-out;
+}
+
+:where(button,
+    .admin-tab,
+    .batch-menu-item,
+    .filter-option,
+    .admin-card-context-btn,
+    .analytics-action-btn,
+    .sidebar-item,
+    .status-toggle,
+    .payment-provider-accordion-header,
+    .discount-type-option,
+    .config-card-header)[data-admin-action].is-pressed:not([data-action-feedback-state]) {
+    filter: brightness(1.08);
+    box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2), 0 10px 22px rgba(15, 23, 42, 0.16);
+    transform: translateY(1px) scale(0.99);
+}
+
+:where(button,
+    .admin-tab,
+    .batch-menu-item,
+    .filter-option,
+    .admin-card-context-btn,
+    .analytics-action-btn,
+    .sidebar-item,
+    .status-toggle,
+    .payment-provider-accordion-header,
+    .discount-type-option,
+    .config-card-header)[data-admin-action].is-running:not([data-action-feedback-state]) {
+    cursor: progress;
+    filter: brightness(1.06);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18), 0 12px 26px rgba(15, 23, 42, 0.16);
+}
+
+button[data-admin-action].is-running:not([data-action-feedback-state]) i:first-child,
+.admin-card-context-btn.is-running:not([data-action-feedback-state]) i:first-child,
+.analytics-action-btn.is-running:not([data-action-feedback-state]) i:first-child {
+    animation: adminActionButtonRunningIcon 0.9s linear infinite;
+}
+
+@keyframes adminDelegatedActionClickFeedback {
+    0% {
+        box-shadow: 0 0 0 0 rgba(96, 165, 250, 0.26);
+    }
+
+    56% {
+        box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.22), 0 10px 22px rgba(15, 23, 42, 0.16);
+    }
+
+    100% {
+        box-shadow: 0 0 0 0 rgba(96, 165, 250, 0);
+    }
 }
 
 @keyframes adminActionFeedbackSpin {
@@ -23072,6 +23168,7 @@ input:checked+.toggle-slider:before {
 
 .points-code-action-cancel,
 .points-code-action-submit {
+    position: relative;
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -23082,6 +23179,7 @@ input:checked+.toggle-slider:before {
     border: 1px solid rgba(148, 163, 184, 0.18);
     font-size: 0.88rem;
     font-weight: 600;
+    overflow: hidden;
     transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
 }
 
@@ -23111,6 +23209,20 @@ input:checked+.toggle-slider:before {
     opacity: 0.52;
     cursor: not-allowed;
     transform: none;
+}
+
+.points-code-action-submit:active:not(:disabled) {
+    transform: translateY(1px) scale(0.99);
+}
+
+.points-code-action-submit.is-submitting {
+    cursor: progress;
+    opacity: 1;
+    pointer-events: none;
+}
+
+.points-code-action-submit.is-submitting i {
+    animation: adminActionFeedbackSpin 0.82s linear infinite;
 }
 
 .points-code-action-submit--danger {
@@ -23567,6 +23679,98 @@ input:checked+.toggle-slider:before {
 
 .points-batch-codes-filter select option {
     color: #0f172a;
+}
+
+.points-batch-codes-filter--custom {
+    position: relative;
+    padding: 0;
+}
+
+.points-batch-codes-select-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    width: 100%;
+    min-height: 44px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: inherit;
+    background: transparent;
+    color: var(--text-main);
+    font: inherit;
+    cursor: pointer;
+}
+
+.points-batch-codes-select-trigger i {
+    color: rgba(148, 163, 184, 0.88);
+    font-size: 0.72rem;
+    transition: transform 0.18s ease;
+}
+
+.points-batch-codes-filter--custom.is-open .points-batch-codes-select-trigger i {
+    transform: rotate(180deg);
+}
+
+.points-batch-codes-select-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px;
+    border-radius: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(15, 23, 42, 0.96);
+    box-shadow: 0 18px 34px rgba(2, 6, 23, 0.34);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-6px);
+    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+}
+
+.points-batch-codes-filter--custom.is-open .points-batch-codes-select-menu {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.points-batch-codes-select-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 34px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: rgba(226, 232, 240, 0.9);
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 650;
+    text-align: left;
+    cursor: pointer;
+}
+
+.points-batch-codes-select-option i {
+    width: 14px;
+    opacity: 0;
+    color: #bfdbfe;
+    font-size: 0.7rem;
+}
+
+.points-batch-codes-select-option:hover,
+.points-batch-codes-select-option.is-selected {
+    background: rgba(107, 158, 206, 0.16);
+    color: #f8fafc;
+}
+
+.points-batch-codes-select-option.is-selected i {
+    opacity: 1;
 }
 
 .points-batch-codes-toolbar__meta {
@@ -53372,6 +53576,439 @@ body::-webkit-scrollbar-corner {
 .edit-modal-close,
 .batch-modal-close {
     display: none !important;
+}
+
+html:not([data-theme="dark"]) .codes-modal-overlay,
+html:not([data-theme="dark"]) .points-code-action-modal-overlay {
+    background: rgba(15, 23, 42, 0.42) !important;
+}
+
+html:not([data-theme="dark"]) .codes-modal,
+html:not([data-theme="dark"]) .points-code-action-modal-overlay .edit-modal {
+    background: #ffffff !important;
+    border-color: rgba(148, 163, 184, 0.24) !important;
+    color: #0f172a;
+    box-shadow: 0 28px 80px rgba(15, 23, 42, 0.22) !important;
+}
+
+html:not([data-theme="dark"]) .codes-modal-header,
+html:not([data-theme="dark"]) .points-code-action-modal-overlay .edit-modal-header {
+    background: #ffffff;
+    border-bottom-color: rgba(148, 163, 184, 0.2);
+}
+
+html:not([data-theme="dark"]) .codes-modal-header h3,
+html:not([data-theme="dark"]) .points-code-action-modal-overlay .edit-modal-header h3,
+html:not([data-theme="dark"]) .points-batch-codes-hero__title,
+html:not([data-theme="dark"]) .points-batch-codes-summary-card__value,
+html:not([data-theme="dark"]) .points-batch-codes-panel__copy h4,
+html:not([data-theme="dark"]) .points-code-action-summary__code,
+html:not([data-theme="dark"]) .points-site-context__item strong,
+html:not([data-theme="dark"]) .points-batch-invalidate-item strong {
+    color: #0f172a;
+}
+
+html:not([data-theme="dark"]) .codes-modal-header p,
+html:not([data-theme="dark"]) .points-code-action-modal-overlay .edit-modal-header p,
+html:not([data-theme="dark"]) .points-batch-codes-panel__copy p,
+html:not([data-theme="dark"]) .points-batch-codes-summary-card__meta,
+html:not([data-theme="dark"]) .points-code-action-summary__copy p,
+html:not([data-theme="dark"]) .points-site-context__note,
+html:not([data-theme="dark"]) .points-batch-invalidate-item span {
+    color: #64748b;
+}
+
+html:not([data-theme="dark"]) .codes-modal-header__eyebrow,
+html:not([data-theme="dark"]) .points-code-action-modal-overlay .edit-modal-header__eyebrow {
+    color: #5f8fbd;
+}
+
+html:not([data-theme="dark"]) .codes-modal-body,
+html:not([data-theme="dark"]) .points-code-action-modal-overlay .edit-modal-form {
+    background: #f8fafc;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-hero,
+html:not([data-theme="dark"]) .points-batch-codes-panel,
+html:not([data-theme="dark"]) .points-batch-codes-summary-card,
+html:not([data-theme="dark"]) .points-code-action-summary,
+html:not([data-theme="dark"]) .points-site-context,
+html:not([data-theme="dark"]) .points-batch-codes-table-shell,
+html:not([data-theme="dark"]) .points-batch-invalidate-item {
+    border-color: rgba(203, 213, 225, 0.9);
+    background: #ffffff;
+    box-shadow: 0 14px 34px rgba(15, 23, 42, 0.055);
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-hero {
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-summary-card {
+    border-left-width: 3px;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-summary-card--blue {
+    border-left-color: #6b9ece;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-summary-card--amber {
+    border-left-color: #d69037;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-summary-card--green {
+    border-left-color: #3aa66d;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-summary-card--rose {
+    border-left-color: #d25371;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-summary-card--slate {
+    border-left-color: #8da0b8;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-hero__eyebrow,
+html:not([data-theme="dark"]) .points-batch-codes-panel__eyebrow,
+html:not([data-theme="dark"]) .points-batch-codes-summary-card__label,
+html:not([data-theme="dark"]) .points-code-action-summary__eyebrow,
+html:not([data-theme="dark"]) .points-site-context__item span,
+html:not([data-theme="dark"]) .points-batch-invalidate-list__title,
+html:not([data-theme="dark"]) .points-batch-codes-toolbar__meta {
+    color: #5f7896;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-hero__meta span,
+html:not([data-theme="dark"]) .points-batch-risk,
+html:not([data-theme="dark"]) .points-batch-codes-status-pill {
+    border-color: rgba(148, 163, 184, 0.28);
+    background: #f8fafc;
+    color: #475569;
+}
+
+html:not([data-theme="dark"]) .points-batch-risk--site {
+    border-color: rgba(107, 158, 206, 0.34);
+    background: #eff6ff;
+    color: #315f8c;
+}
+
+html:not([data-theme="dark"]) .points-batch-risk--manual {
+    border-color: rgba(217, 142, 49, 0.34);
+    background: #fff7ed;
+    color: #9a5b12;
+}
+
+html:not([data-theme="dark"]) .points-batch-risk--custom {
+    border-color: rgba(139, 92, 246, 0.32);
+    background: #f5f3ff;
+    color: #6d4bb8;
+}
+
+html:not([data-theme="dark"]) .points-batch-risk--low {
+    border-color: rgba(225, 83, 115, 0.34);
+    background: #fff1f2;
+    color: #b8325b;
+}
+
+html:not([data-theme="dark"]) .points-batch-risk--expiring {
+    border-color: rgba(217, 119, 6, 0.34);
+    background: #fffbeb;
+    color: #a16207;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-summary-card__icon,
+html:not([data-theme="dark"]) .points-code-action-summary__icon {
+    background: #eaf4ff;
+    color: #376c9e;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-summary-card--green .points-batch-codes-summary-card__icon {
+    background: #eafaf1;
+    color: #28794f;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-summary-card--amber .points-batch-codes-summary-card__icon {
+    background: #fff7e8;
+    color: #9a5b12;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-summary-card--rose .points-batch-codes-summary-card__icon,
+html:not([data-theme="dark"]) .points-code-action-summary--danger .points-code-action-summary__icon {
+    background: #fff1f2;
+    color: #be123c;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-summary-card--slate .points-batch-codes-summary-card__icon {
+    background: #f1f5f9;
+    color: #52627a;
+}
+
+html:not([data-theme="dark"]) .points-code-action-summary--danger {
+    border-color: rgba(248, 113, 113, 0.26);
+    background: #fff7f7;
+}
+
+html:not([data-theme="dark"]) .points-site-context__item,
+html:not([data-theme="dark"]) .points-batch-codes-search,
+html:not([data-theme="dark"]) .points-batch-codes-filter {
+    border-color: rgba(203, 213, 225, 0.9);
+    background: #f8fafc;
+    box-shadow: none;
+}
+
+html:not([data-theme="dark"]) .points-site-context__item.is-ready {
+    border-color: rgba(107, 158, 206, 0.34);
+    background: #eff6ff;
+}
+
+html:not([data-theme="dark"]) .points-site-context__item.is-blocked {
+    border-color: rgba(248, 113, 113, 0.28);
+    background: #fff1f2;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-search i,
+html:not([data-theme="dark"]) .points-batch-codes-filter span,
+html:not([data-theme="dark"]) .points-batch-codes-select-trigger i {
+    color: #7890aa;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-search input,
+html:not([data-theme="dark"]) .points-batch-codes-select-trigger {
+    color: #0f172a;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-search input::placeholder {
+    color: #94a3b8;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-select-menu {
+    border-color: rgba(203, 213, 225, 0.9);
+    background: #ffffff;
+    box-shadow: 0 18px 36px rgba(15, 23, 42, 0.14);
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-select-option {
+    color: #475569;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-select-option i {
+    color: #376c9e;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-select-option:hover,
+html:not([data-theme="dark"]) .points-batch-codes-select-option.is-selected {
+    background: #eff6ff;
+    color: #1e3a5f;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-toolbar-btn,
+html:not([data-theme="dark"]) .points-batch-codes-action-btn,
+html:not([data-theme="dark"]) .points-batch-codes-row-btn,
+html:not([data-theme="dark"]) .points-code-action-cancel {
+    border-color: rgba(203, 213, 225, 0.95);
+    background: #eef6ff;
+    color: #315f8c;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-toolbar-btn:hover,
+html:not([data-theme="dark"]) .points-batch-codes-action-btn:hover,
+html:not([data-theme="dark"]) .points-batch-codes-row-btn:hover,
+html:not([data-theme="dark"]) .points-code-action-cancel:hover {
+    border-color: rgba(107, 158, 206, 0.42);
+    background: #e4f1ff;
+    color: #244f78;
+    box-shadow: 0 10px 18px rgba(15, 23, 42, 0.08);
+}
+
+html:not([data-theme="dark"]) .codes-modal--batch .points-inline-feedback {
+    background: #ffffff;
+    border-color: rgba(73, 103, 138, 0.16);
+    color: #101827;
+    box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    text-shadow: none;
+}
+
+html:not([data-theme="dark"]) .codes-modal--batch .points-inline-feedback__copy,
+html:not([data-theme="dark"]) .codes-modal--batch .points-inline-feedback__stat-value {
+    color: #101827;
+}
+
+html:not([data-theme="dark"]) .codes-modal--batch .points-inline-feedback__detail,
+html:not([data-theme="dark"]) .codes-modal--batch .points-inline-feedback__stat-label {
+    color: #66758a;
+}
+
+html:not([data-theme="dark"]) .codes-modal--batch .points-inline-feedback__stat {
+    background: #f8fbfe;
+    border-color: rgba(73, 103, 138, 0.14);
+}
+
+html:not([data-theme="dark"]) .codes-modal--batch .points-inline-feedback--success {
+    background: #ecfdf5;
+    border-color: rgba(22, 163, 74, 0.28);
+    color: #166534;
+}
+
+html:not([data-theme="dark"]) .codes-modal--batch .points-inline-feedback--success .points-inline-feedback__icon {
+    background: #d1fae5;
+    color: #15803d;
+}
+
+html:not([data-theme="dark"]) .codes-modal--batch .points-inline-feedback--success .points-inline-feedback__copy,
+html:not([data-theme="dark"]) .codes-modal--batch .points-inline-feedback--success .points-inline-feedback__stat-value {
+    color: #14532d;
+}
+
+html:not([data-theme="dark"]) .codes-modal--batch .points-inline-feedback--success .points-inline-feedback__detail,
+html:not([data-theme="dark"]) .codes-modal--batch .points-inline-feedback--success .points-inline-feedback__stat-label {
+    color: rgba(22, 101, 52, 0.86);
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-action-btn--accent,
+html:not([data-theme="dark"]) .points-code-action-submit {
+    border-color: rgba(107, 158, 206, 0.44);
+    background: #6b9ece;
+    color: #ffffff;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-action-btn--danger,
+html:not([data-theme="dark"]) .points-batch-codes-row-btn--danger,
+html:not([data-theme="dark"]) .points-code-action-submit--danger {
+    border-color: rgba(225, 83, 115, 0.34);
+    background: #fff1f2;
+    color: #be123c;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-row-btn--success,
+html:not([data-theme="dark"]) .points-code-action-submit--success {
+    border-color: rgba(52, 168, 100, 0.34);
+    background: #ecfdf5;
+    color: #15803d;
+}
+
+html:not([data-theme="dark"]) .points-code-action-submit:hover {
+    background: #5f8fbd;
+    border-color: rgba(95, 143, 189, 0.56);
+}
+
+html:not([data-theme="dark"]) .points-code-action-submit--danger:hover,
+html:not([data-theme="dark"]) .points-batch-codes-row-btn--danger:hover {
+    background: #ffe4e6;
+    border-color: rgba(225, 83, 115, 0.48);
+}
+
+html:not([data-theme="dark"]) .points-code-action-submit--success:hover,
+html:not([data-theme="dark"]) .points-batch-codes-row-btn--success:hover {
+    background: #dcfce7;
+    border-color: rgba(52, 168, 100, 0.48);
+}
+
+html:not([data-theme="dark"]) .points-code-action-submit:disabled {
+    opacity: 0.68;
+}
+
+html:not([data-theme="dark"]) .points-code-action-submit.is-submitting {
+    cursor: progress;
+    opacity: 1;
+    pointer-events: none;
+    box-shadow: 0 0 0 3px rgba(95, 143, 189, 0.18), 0 10px 20px rgba(15, 23, 42, 0.1);
+}
+
+html:not([data-theme="dark"]) .points-code-action-submit--danger.is-submitting {
+    background: #ffe3ec;
+    border-color: rgba(216, 76, 114, 0.42);
+    color: #9f1239;
+}
+
+html:not([data-theme="dark"]) .points-code-action-submit--success.is-submitting {
+    background: #d1fae5;
+    border-color: rgba(34, 197, 94, 0.38);
+    color: #166534;
+}
+
+.points-code-action-submit.is-submitting i {
+    animation: adminActionFeedbackSpin 0.82s linear infinite;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-status-pill--pending {
+    border-color: rgba(217, 119, 6, 0.34);
+    background: #fffbeb;
+    color: #a16207;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-status-pill--used {
+    border-color: rgba(52, 168, 100, 0.34);
+    background: #ecfdf5;
+    color: #15803d;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-status-pill--revoked,
+html:not([data-theme="dark"]) .points-batch-codes-status-pill--disabled {
+    border-color: rgba(225, 83, 115, 0.34);
+    background: #fff1f2;
+    color: #be123c;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-status-pill--locked,
+html:not([data-theme="dark"]) .points-batch-codes-status-pill--expired {
+    border-color: rgba(148, 163, 184, 0.34);
+    background: #f1f5f9;
+    color: #475569;
+}
+
+html:not([data-theme="dark"]) .points-batch-codes-table-empty {
+    border-color: rgba(203, 213, 225, 0.95);
+    background: #ffffff;
+}
+
+html:not([data-theme="dark"]) .codes-table th {
+    background: #f8fafc;
+    color: #64748b;
+    border-bottom-color: rgba(203, 213, 225, 0.9);
+}
+
+html:not([data-theme="dark"]) .codes-table td {
+    color: #334155;
+    border-bottom-color: rgba(226, 232, 240, 0.92);
+}
+
+html:not([data-theme="dark"]) .codes-table .code-cell,
+html:not([data-theme="dark"]) .detail-user {
+    color: #0f172a;
+}
+
+html:not([data-theme="dark"]) .codes-table tr.points-batch-code-row--focused td {
+    background: #eff6ff;
+}
+
+html:not([data-theme="dark"]) .codes-table tr.points-batch-code-row--focused .code-cell {
+    color: #1d4ed8;
+}
+
+html:not([data-theme="dark"]) .edit-field label {
+    color: #475569;
+}
+
+html:not([data-theme="dark"]) .edit-field input,
+html:not([data-theme="dark"]) .edit-field textarea {
+    background: #ffffff;
+    border-color: rgba(203, 213, 225, 0.95);
+    color: #0f172a;
+}
+
+html:not([data-theme="dark"]) .edit-field textarea::placeholder,
+html:not([data-theme="dark"]) .edit-field input::placeholder {
+    color: #94a3b8;
+}
+
+html:not([data-theme="dark"]) .points-code-action-error {
+    border-color: rgba(225, 83, 115, 0.34);
+    background: #fff1f2;
+    color: #be123c;
+}
+
+html:not([data-theme="dark"]) .points-batch-invalidate-item em {
+    color: #be123c;
 }
 
 /* Ops alert case composer: align with the points batch workbench modal surface. */

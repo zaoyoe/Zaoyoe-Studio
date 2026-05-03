@@ -98,7 +98,7 @@ test('prompts search uses visual ai tags across the full gallery dataset', () =>
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260501_PROMPTS_SEARCH_VISUAL_TAGS_9'),
+        promptsHtml.includes('prompts-poetry.js?v=20260503_PROMPTS_MODAL_CHROME_CLOSE_1'),
         true,
         'prompts.html should cache-bust the visual-tag search runtime'
     );

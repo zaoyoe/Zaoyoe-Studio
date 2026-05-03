@@ -454,8 +454,8 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
             violations.push(`${relativePath} is missing css/chat-widget.css`);
         }
 
-        if (!source.includes('css/chat-widget.css?v=20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1')) {
-            violations.push(`${relativePath} should cache-bust the no-slide chat FAB stylesheet`);
+        if (!source.includes('css/chat-widget.css?v=20260503_CHAT_WIDGET_SAFARI_HANDOFF_12')) {
+            violations.push(`${relativePath} should cache-bust the Safari handoff chat widget stylesheet`);
         }
 
         if (source.includes('js/admin-workbench.js')) {
@@ -484,14 +484,23 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260502_CHAT_WIDGET_FAB_PLACEMENT_GUARD_1';",
+        "const VERSION = '20260503_CHAT_WIDGET_SAFARI_HANDOFF_12';",
         "const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';",
         'function ensurePlaceholderPlacementStyles() {',
         '/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */',
+        '/* 20260503_CHAT_WIDGET_SAFARI_HANDOFF_12 */',
+        '-webkit-tap-highlight-color: transparent;',
+        '--chat-mobile-fab-glass-bg: rgba(0, 0, 0, 0.48);',
+        'border: 1px solid var(--chat-mobile-fab-glass-border) !important;',
+        'backdrop-filter: var(--chat-mobile-fab-glass-filter) !important;',
         '.chat-widget-fab--peek .chat-widget-fab__robot {',
+        '.chat-widget-fab[data-chat-widget-loading="1"] .chat-widget-fab__robot',
+        'html.chat-widget-bootstrap-loading .chat-widget-fab',
+        'body.chat-widget-bootstrap-loading .chat-widget-fab',
         "const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';",
         "const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';",
-        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260426_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_12';",
+        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260503_CHAT_WIDGET_SAFARI_HANDOFF_12';",
+        "const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';",
         'function getChatWidgetConstructor() {',
         'global.ChatWidget = ChatWidget;',
         'function isPlaceholderOpenIntent(event) {',
@@ -500,7 +509,77 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         "loadScript(SUPPORT_CONFIG_SRC),",
         "loadScript(ADMIN_WORKBENCH_SRC),",
         "loadScript(CHAT_WIDGET_SRC)",
+        "typeof widget.openChat === 'function'",
+        'waitForWidgetWindowHandoff(widget)',
+        "if (shell.dataset.chatWidgetBootstrapAdopted === '1') {",
+        "hideBootstrapLoadingShell({ handoff: true });",
+        'hideBootstrapLoadingShell();',
         'void ensureChatWidgetReady({ open: true });',
+        'showBootstrapLoadingShell();',
+        'let placeholderSuppressed = false;',
+        'let bootstrapDismissToken = 0;',
+        "overlay.addEventListener('click', dismissBootstrapLoadingShell);",
+        'function dismissBootstrapLoadingShell(event = null) {',
+        "event?.currentTarget?.classList?.contains('chat-widget-bootstrap-overlay')",
+        'bootstrapDismissToken += 1;',
+        'pendingOpen = false;',
+        'hideBootstrapLoadingShell({ dismissed: true });',
+        'const showDismissToken = bootstrapDismissToken;',
+        'const openDismissToken = bootstrapDismissToken;',
+        'function restoreClosedRuntimeFabVisibility() {',
+        'document.querySelector(\'.chat-widget-fab:not([data-chat-widget-placeholder="1"])\')',
+        "runtimeFab.classList.remove('chat-widget-fab--hidden', 'chat-widget-fab--disabled');",
+        'function setBootstrapLoadingPageFabHidden(hidden) {',
+        "document.documentElement?.classList?.toggle('chat-widget-bootstrap-loading', active);",
+        "document.body?.classList?.toggle('chat-widget-bootstrap-loading', active);",
+        'function suppressRuntimeFabDuringBootstrapLoading() {',
+        "runtimeFab.classList.add('chat-widget-fab--hidden', 'chat-widget-fab--disabled');",
+        'setBootstrapLoadingPageFabHidden(true);',
+        "openingPlaceholder.classList.add('chat-widget-fab--hidden');",
+        "openingPlaceholder.setAttribute('aria-hidden', 'true');",
+        'const shouldRestoreClosedRuntimeFab = !pendingOpen;',
+        'restoreClosedRuntimeFabVisibility();',
+        'setPlaceholderSuppressed(true);',
+        'setPlaceholderSuppressed(false);',
+        'placeholderSuppressed = Boolean(suppressed);',
+        "openingPlaceholder.dataset.chatWidgetPlaceholderOpening = '1';",
+        "fab.removeAttribute('data-chat-widget-placeholder-opening');",
+        "const opening = fab.dataset.chatWidgetPlaceholderOpening === '1';",
+        "fab.removeAttribute('data-chat-widget-loading');",
+        "fab.dataset.chatWidgetPlaceholderSuppressed = suppressed ? '1' : '0';",
+        "fab.classList.toggle('chat-widget-fab--hidden', Boolean(suppressed));",
+        'chat-window--bootstrap-adopting-content',
+        'chat-window--bootstrap-content-ready',
+        'chat-window--bootstrap-interaction-locked',
+        'chat-widget-loading-state',
+        'chat-loading-dots',
+        'chat-header chat-widget-bootstrap-user-header',
+        'chat-messages chat-widget-bootstrap-user-body',
+        'chat-input-area chat-widget-bootstrap-user-input',
+        "mode === 'user' && Number.isFinite(savedAt)",
+        '@keyframes chat-loading-dots',
+        '@keyframes chat-widget-bootstrap-content-swap',
+        '@keyframes chat-widget-bootstrap-content-settle',
+        'animation: chat-widget-bootstrap-content-settle 360ms cubic-bezier(0.22, 1, 0.36, 1) both;',
+        'transition-delay: 80ms;',
+        "loadingShell.shell?.dataset?.chatWidgetBootstrapAdopted === '1'",
+        'chat-widget-bootstrap-overlay--user',
+        '--chat-bootstrap-shell-width: 380px;',
+        '--chat-bootstrap-shell-height: 600px;',
+        "shell.className = 'chat-window chat-widget-bootstrap-shell';",
+        'data-chat-widget-bootstrap-shell',
+        'chat-widget-bootstrap-shell--admin',
+        'admin-mode-layout--narrow',
+        'hasRecentAdminAccessCache()',
+        'getAdminBootstrapShellMarkup()',
+        'chat-widget-bootstrap-admin-loading',
+        'chat-loading-dots--admin',
+        "shell.setAttribute('aria-label', '内容加载中');",
+        'width: 97vw !important;',
+        'height: 78vh !important;',
+        ':not([data-chat-widget-bootstrap-shell="1"])',
+        'width: min(460px, max(97vw, calc(100vw - 16px)));',
+        'height: 70vh;',
         'function startChatWidgetBootstrap() {',
         "fab.addEventListener('pointerenter', prewarmOnIntent, { once: true, passive: true });",
         "fab.addEventListener('focus', prewarmOnIntent, { once: true });",
@@ -511,21 +590,182 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         assert.equal(chatWidgetLoaderSource.includes(marker), true, `js/chat-widget-loader.js should contain ${marker}`);
     }
 
+    assert.match(
+        chatWidgetLoaderSource,
+        /openingPlaceholder\.dataset\.chatWidgetPlaceholderOpening = '1';[\s\S]*loadingShell\.overlay\.classList\.add\('is-visible'\);[\s\S]*requestAnimationFrame\(\(\) => \{[\s\S]*loadingShell\.overlay\.classList\.add\('is-active'\);[\s\S]*setPlaceholderSuppressed\(true\);/,
+        'placeholder FAB should stay painted until the bootstrap overlay is active'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /const opening = fab\.dataset\.chatWidgetPlaceholderOpening === '1';[\s\S]*if \(suppressed \|\| opening\) \{[\s\S]*fab\.removeAttribute\('data-chat-widget-loading'\);/,
+        'placeholder FAB should not flip into loading styling during the open handoff'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /function dismissBootstrapLoadingShell\(event = null\) \{[\s\S]*clickedBootstrapOverlay[\s\S]*bootstrapDismissToken \+= 1;[\s\S]*pendingOpen = false;[\s\S]*hideBootstrapLoadingShell\(\{ dismissed: true \}\);/,
+        'bootstrap loading overlay clicks should close the shell and cancel the pending open intent'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /const showDismissToken = bootstrapDismissToken;[\s\S]*if \(showDismissToken !== bootstrapDismissToken\)/,
+        'bootstrap shell activation should abort when the user has dismissed the loading overlay'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /const openDismissToken = bootstrapDismissToken;[\s\S]*if \(openDismissToken !== bootstrapDismissToken \|\| !activeWidget\?\.isOpen\)/,
+        'late widget initialization should not reopen or hand off a dismissed loading shell'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /function restoreClosedRuntimeFabVisibility\(\) \{[\s\S]*if \(widget\?\.isOpen\)[\s\S]*\.chat-widget-fab:not\(\[data-chat-widget-placeholder="1"\]\)[\s\S]*runtimeFab\.classList\.remove\('chat-widget-fab--hidden', 'chat-widget-fab--disabled'\);/,
+        'dismissed bootstrap loading should restore the real FAB when the placeholder was already adopted'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /html\.chat-widget-bootstrap-loading \.chat-widget-fab,[\s\S]*body\.chat-widget-bootstrap-loading \.chat-widget-fab \{[\s\S]*opacity: 0 !important;[\s\S]*visibility: hidden !important;/,
+        'bootstrap loading should hide every floating chat FAB at the page level'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /function setBootstrapLoadingPageFabHidden\(hidden\) \{[\s\S]*document\.documentElement\?\.classList\?\.toggle\('chat-widget-bootstrap-loading', active\);[\s\S]*document\.body\?\.classList\?\.toggle\('chat-widget-bootstrap-loading', active\);/,
+        'loader should toggle the page-level bootstrap loading FAB suppression class'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /syncBootstrapLoadingShellMode\(loadingShell\);[\s\S]*setBootstrapLoadingPageFabHidden\(true\);[\s\S]*openingPlaceholder\.dataset\.chatWidgetPlaceholderOpening = '1';[\s\S]*openingPlaceholder\.classList\.add\('chat-widget-fab--hidden'\);[\s\S]*suppressRuntimeFabDuringBootstrapLoading\(\);[\s\S]*loadingShell\.overlay\.classList\.add\('is-visible'\);/,
+        'bootstrap loading should hide placeholder and runtime FABs before the shell becomes visible'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /function suppressRuntimeFabDuringBootstrapLoading\(\) \{[\s\S]*\.chat-widget-fab:not\(\[data-chat-widget-placeholder="1"\]\)[\s\S]*runtimeFab\.classList\.add\('chat-widget-fab--hidden', 'chat-widget-fab--disabled'\);/,
+        'bootstrap loading should hide the real FAB when it already replaced the placeholder'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /if \(!fab\) \{[\s\S]*if \(suppressed\) \{[\s\S]*suppressRuntimeFabDuringBootstrapLoading\(\);[\s\S]*return;/,
+        'placeholder suppression should fall back to hiding the real runtime FAB when the placeholder has been replaced'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /if \(!fab\) \{[\s\S]*if \(!suppressed\) \{[\s\S]*restoreClosedRuntimeFabVisibility\(\);/,
+        'placeholder unsuppression should fall back to the real runtime FAB when the placeholder has been replaced'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /const shouldRestoreClosedRuntimeFab = !pendingOpen;[\s\S]*global\.chatWidget = new ChatWidgetCtor\(global\.supabaseClient\);[\s\S]*openWidgetIfPending\(\);[\s\S]*if \(shouldRestoreClosedRuntimeFab\) \{[\s\S]*restoreClosedRuntimeFabVisibility\(\);/,
+        'late closed-widget initialization should not leave a hidden FAB inherited from the loading handoff'
+    );
+    assert.doesNotMatch(
+        chatWidgetLoaderSource,
+        /chat-widget-fab--disabled \.chat-widget-fab__robot|chat-widget-fab--disabled \.mascot-wrapper/,
+        'disabled placeholder FAB state should not restyle the robot layers while opening'
+    );
+
+    const adminBootstrapShellMatch = chatWidgetLoaderSource.match(/function getAdminBootstrapShellMarkup\(\) \{[\s\S]*?\n    function syncBootstrapLoadingShellMode/);
+    assert.ok(adminBootstrapShellMatch, 'js/chat-widget-loader.js should define getAdminBootstrapShellMarkup before shell sync');
+    assert.equal(
+        adminBootstrapShellMatch[0].includes('chat-widget-bootstrap-skeleton'),
+        false,
+        'admin chat bootstrap shell should use dots instead of skeleton placeholders'
+    );
+    assert.match(
+        adminBootstrapShellMatch[0],
+        /chat-widget-bootstrap-admin-loading[\s\S]*chat-loading-dots chat-loading-dots--admin/,
+        'admin chat bootstrap shell should render the shared three-dot loader'
+    );
+
     assert.equal(
         chatWidgetLoaderSource.includes('scheduleIdleWarmup'),
         false,
         'js/chat-widget-loader.js should not warm the heavy chat runtime on idle'
     );
     assert.equal(
+        chatWidgetLoaderSource.includes("hasRecentAdminSessionSnapshot() || global.localStorage.getItem('zaoyoe_admin_support_queue_preferences_v1')"),
+        false,
+        'js/chat-widget-loader.js should not seed a public user shell from stale admin queue snapshots'
+    );
+    assert.equal(
         chatWidgetLoaderSource.includes("global.addEventListener(eventName, warmHandler"),
         false,
         'js/chat-widget-loader.js should not warm the heavy chat runtime from page-level scroll/input'
+    );
+    assert.equal(
+        chatWidgetLoaderSource.includes('正在连接客服') || chatWidgetLoaderSource.includes('Connecting support'),
+        false,
+        'js/chat-widget-loader.js should show the chat popup dots loader instead of an intermediate connecting message'
+    );
+    assert.equal(
+        chatWidgetLoaderSource.includes('客服消息')
+            || chatWidgetLoaderSource.includes('⌕')
+            || chatWidgetLoaderSource.includes('↧')
+            || chatWidgetLoaderSource.includes("'喜'")
+            || chatWidgetLoaderSource.includes("'G'")
+            || chatWidgetLoaderSource.includes('chat-widget-bootstrap-admin-search-icon'),
+        false,
+        'js/chat-widget-loader.js admin dots loader should stay textless and image-free'
     );
 
     assert.equal(
         chatWidgetRuntimeSource.includes('window.ChatWidget = ChatWidget;'),
         true,
         'js/components/ChatWidget.js should expose the runtime constructor for the shared lazy loader'
+    );
+
+    for (const marker of [
+        'this.ready = this.init()',
+        'this._pendingOpenAfterInit = true;',
+        'chat-opening--bootstrap-handoff',
+        "document.querySelector('.chat-window[data-chat-widget-bootstrap-shell=\"1\"]')",
+        'claimBootstrapShell(mode =',
+        "claimBootstrapOverlay(mode = 'user')",
+        'chat-overlay--user',
+        'chat-overlay--active',
+        '_showChatOverlay()',
+        'backdrop-filter: blur(0) saturate(100%) !important;',
+        'backdrop-filter: var(--chat-overlay-filter, blur(14px) saturate(108%)) !important;',
+        'completeBootstrapShellAdoption()',
+        'chatWidgetBootstrapAdopted',
+        "&& this.chatWindow?.hasAttribute('data-chat-widget-bootstrap-shell')",
+        "this.chatWindow.removeAttribute('data-chat-widget-bootstrap-adopted');",
+        "this.chatWindow.removeAttribute('data-chat-widget-bootstrap-adopted-mode');",
+        "this.overlay.removeAttribute('data-chat-widget-bootstrap-adopted');",
+        '_scheduleChatOpeningActivation(useBootstrapHandoffOpening, {',
+        '_shouldDeferFabHideForOpening(useBootstrapHandoffOpening)',
+        '_scheduleChatOpeningActivation(useBootstrapHandoffOpening, options = {})',
+        'deferFabHide: deferFabHideForOpening',
+        'immediateStartFrame: deferFabHideForOpening',
+        'will-change: transform, opacity !important;',
+        '_primeOpeningAnimationForBootstrapLaunch()',
+        "this._setRuntimeStyle(this.chatWindow, '--chat-open-offset-y', '24px');",
+        "this._setRuntimeStyle(this.chatWindow, '--chat-open-scale', '0.94');",
+        'this.sessionAvatarImageCache = new Map();',
+        'const existingSessionItems = new Map(',
+        'this.sessionList.replaceChildren(fragment);',
+        '__chatWidgetSessionClickHandler',
+        'createStableSessionAvatarImage(session, avatarUrl, fallbackInitial, avatarEl)',
+        "img.getAttribute('src') !== normalizedUrl",
+        "const wasOpening = existingPlaceholder.dataset.chatWidgetPlaceholderOpening === '1';",
+        'const shouldKeepHiddenForBootstrap = wasSuppressed || wasOpening;',
+        "reusedFab.removeAttribute('data-chat-widget-placeholder-opening');",
+        "reusedFab.classList.toggle('chat-widget-fab--hidden', shouldKeepHiddenForBootstrap);",
+        "reusedFab.classList.toggle('chat-widget-fab--disabled', shouldKeepHiddenForBootstrap);",
+        'max-height: 78vh !important;',
+        '_primeOpeningAnimationForBootstrapHandoff()',
+        'openChat() {',
+        'closeChat() {'
+    ]) {
+        assert.equal(chatWidgetRuntimeSource.includes(marker), true, `js/components/ChatWidget.js should contain ${marker}`);
+    }
+
+    assert.match(
+        chatWidgetRuntimeSource,
+        /const alreadyActive = this\.overlay\.classList\.contains\('chat-overlay--active'\)[\s\S]*this\.overlay\.classList\.contains\('is-active'\);[\s\S]*if \(alreadyActive\) \{/,
+        'adopted chat overlays should not toggle inactive before becoming active again'
+    );
+    assert.match(
+        chatWidgetRuntimeSource,
+        /if \(this\.overlay\?\.dataset\?\.chatWidgetBootstrapAdopted === '1'\) \{[\s\S]*this\.overlay\.classList\.add\('chat-overlay', 'visible', 'chat-overlay--active'\);[\s\S]*this\.overlay\.classList\.remove\([\s\S]*'chat-widget-bootstrap-overlay'/,
+        'bootstrap overlay adoption should keep the overlay active while removing bootstrap classes'
     );
 
     assert.deepEqual(violations, [], violations.join('\n'));
@@ -560,9 +800,9 @@ test('public pages wire wallet modal through the shared bootstrap loader', () =>
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260430_WALLET_GUIDANCE_BILINGUAL_1';",
+        "const VERSION = '20260503_WALLET_REDEEM_REVOKE_REASON_UI_1';",
         "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260430_WALLET_GUIDANCE_BILINGUAL_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260430_WALLET_GUIDANCE_BILINGUAL_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260503_WALLET_REDEEM_REVOKE_REASON_UI_1';",
         'function ensureWalletModalReady() {',
         'function warmWalletModal(options = {}) {',
         "function openWalletModal(view = 'balance', context = {}) {",
@@ -614,7 +854,7 @@ test('public pages lazy-load notifications and head-preload announcement runtime
         if (/<script[^>]+src=["'][^"']*announcement-loader\.js\?v=/.test(source)) {
             violations.push(`${relativePath} should not execute announcement-loader.js outside the shared engagement loader`);
         }
-        if (!source.includes('rel="preload" href="announcement-loader.js?v=20260501_ANNOUNCEMENT_DARK_CARD_AUTH_BACKDROP_1" as="script"')) {
+        if (!source.includes('rel="preload" href="announcement-loader.js?v=20260503_ANNOUNCEMENT_MODAL_CHROME_CLOSE_1" as="script"')) {
             violations.push(`${relativePath} should preload announcement-loader.js from the document head`);
         }
         const headEndIndex = source.indexOf('</head>');
@@ -630,7 +870,7 @@ test('public pages lazy-load notifications and head-preload announcement runtime
     const loaderMarkers = [
         "const VERSION = '20260501_ENGAGEMENT_ANNOUNCEMENT_DARK_CARD_AUTH_BACKDROP_1';",
         "const NOTIFICATION_SRC = 'notification-client.js?v=20260428_NOTIFICATION_FIRST_OPEN_SYNC_1';",
-        "const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=20260501_ANNOUNCEMENT_DARK_CARD_AUTH_BACKDROP_1';",
+        "const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=20260503_ANNOUNCEMENT_MODAL_CHROME_CLOSE_1';",
         'const NOTIFICATION_IDLE_TIMEOUT_MS = 1800;',
         'const ANNOUNCEMENT_BOOT_DELAY_MS = 0;',
         "const shouldLoadNotification = bootstrapScript?.dataset.loadNotification !== '0';",
@@ -664,18 +904,64 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         '_setFabTransitionless(enabled)',
         '_setChatWindowForceHidden(hidden)',
         '_setChatWindowTransitionless(enabled)',
+        '_showChatOverlay()',
         '_setRuntimeStyle(target, prop, value, priority = \'\')',
         "const removeProperty = style['removeProperty'].bind(style);",
         "const setProperty = style['setProperty'].bind(style);",
-        '_setChatWindowKeyboardAnimating(enabled, durationMs = 120)',
+        '_setChatWindowKeyboardAnimating(enabled, durationMs = 250)',
         '_setChatWindowDockHeight(heightPx)',
         '_setChatWindowDockBottom(bottomPx)',
         '_setMessagesContainerMinHeight(heightPx)',
         '_setSessionItemHidden(item, hidden)',
+        '_runChatCloseChromeCleanup()',
+        'this._closeChromeCleanupStarted = false;',
+        'this._bootstrapContentSettleTimer = null;',
+        'this._ignoreEmojiClicksUntil = 0;',
+        'this._userHistoryComposerHandoffHeld = false;',
+        'const shouldSuppressEmojiIntent = () => (',
+        'const suppressEmojiIntent = (event) => {',
+        "['pointerdown', 'touchstart', 'mousedown'].forEach((eventName) => {",
+        'holdUserHistoryComposerHandoff()',
+        'releaseUserHistoryComposerHandoff()',
+        'finishUserHistoryLoadHandoff()',
+        'releaseUserBootstrapComposer()',
+        'const composerReleaseDelay = this.releaseUserBootstrapComposer();',
+        'this.finishUserHistoryLoadHandoff();',
+        'const contentSettleDelayMs = 420;',
+        'const useBootstrapHistoryHandoff = this.isBootstrapShellAdopted();',
+        'areUserHistoryMessagesEquivalent(left = [], right = [])',
+        'const shouldRenderFullHistory = !this.areUserHistoryMessagesEquivalent',
+        'this.bindUserEvents();',
+        "getChatLoadingDotsMarkup(label = '', extraClass = '')",
+        'chat-loading-state--user-handoff',
+        'loading-overlay--user-dots',
+        'chat-loading-dots',
+        '@keyframes chat-widget-loading-dots',
+        'chat-window--bootstrap-content-ready',
+        'chat-window--bootstrap-interaction-locked',
+        'chat-overlay.visible.chat-overlay--active',
+        'html[data-theme="light"] .chat-window:not(.admin-mode-layout) {',
+        '--chat-panel-shadow: none;',
+        '--chat-avatar-bg: rgba(107, 158, 206, 0.18);',
+        'html[data-theme="light"] .chat-window:not(.admin-mode-layout) .message.user',
+        'const openingCleanupDelay = useBootstrapHandoffOpening ? 560 : 440;',
+        'const deferFabHide = options.deferFabHide === true;',
+        'const immediateStartFrame = options.immediateStartFrame === true;',
+        '--chat-open-offset-y: 24px;',
+        '--chat-open-scale: 0.94;',
+        'opacity 320ms cubic-bezier(0.22, 1, 0.36, 1),',
+        '@keyframes chat-widget-content-settle',
+        'animation: chat-widget-content-settle 360ms cubic-bezier(0.22, 1, 0.36, 1) both;',
+        '@keyframes chat-widget-content-swap',
         'chat-file-input',
         'mascot-wrapper mascot-wrapper--compact',
         "loadingOverlay.className = 'loading-overlay';",
         "shield.className = 'chat-status-bar-shield';",
+        '_getChatThemeChromeColor()',
+        'this._openingAnimationRunId = 0;',
+        'cancelAnimationFrame(this._openingAnimationFrame);',
+        'const openingRunId = ++this._openingAnimationRunId;',
+        'this.chatWindow.getBoundingClientRect();',
         "_toggleElementClass(this.overlay, 'chat-overlay--frozen', true)",
         "_toggleElementClass(this.chatWindow, 'chat-window--stable-visuals', true)",
         "_toggleElementClass(container, 'chat-prompt-spotlight-suspended', suspended)"
@@ -684,6 +970,18 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
     for (const marker of runtimeMarkers) {
         assert.equal(chatWidgetSource.includes(marker), true, `js/components/ChatWidget.js should contain ${marker}`);
     }
+
+    assert.match(
+        chatWidgetSource,
+        /document\.documentElement\.classList\.remove\('chat-widget-open'\);[\s\S]*document\.body\.classList\.remove\('chat-widget-open'\);[\s\S]*this\._runChatCloseChromeCleanup\(\);[\s\S]*this\._finalizeChatClose\(\);/,
+        'mobile user chat close should follow the admin popup path and finalize immediately after browser chrome cleanup'
+    );
+
+    assert.match(
+        chatWidgetSource,
+        /_finalizeChatClose\(\) \{[\s\S]*if \(window\.iOSScrollLock\) window\.iOSScrollLock\.unlock\(\);[\s\S]*this\._runChatCloseChromeCleanup\(\);/,
+        'chat close finalization should reuse the idempotent browser chrome cleanup instead of rescheduling theme-color restore'
+    );
 
     const removedRuntimeMarkers = [
         "shield.style.cssText = [",
@@ -706,22 +1004,59 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         "this.chatWindow.style.setProperty('transition', 'transform 120ms cubic-bezier(0.22, 1, 0.36, 1)', 'important');",
         "this.chatWindow.style.setProperty('height', `${dockHeight}px`, 'important');",
         "container.style.setProperty('--cursor-x', '50%');",
-        "this.chatWindow.style.setProperty('will-change', 'transform', 'important');"
+        "this.chatWindow.style.setProperty('will-change', 'transform', 'important');",
+        '_startClosingAnimation()',
+        '.chat-window:not(.admin-mode-layout).chat-closing',
+        'html.chat-widget-open {',
+        'body.chat-widget-open .framer-nav',
+        'body.chat-widget-open .top-right-nav',
+        'background-color: #000 !important;',
+        "themeColor: '#000000'",
+        "meta.setAttribute('content', '#000000')",
+        'getUserComposerHandoffSkeletonMarkup',
+        'chat-input-area--handoff-hidden',
+        'chat-input-area--handoff-ready',
+        'chat-input-area--handoff-revealing',
+        'chat-widget-user-content-settle',
+        'chat-widget-user-content-swap'
     ];
 
     for (const marker of removedRuntimeMarkers) {
         assert.equal(chatWidgetSource.includes(marker), false, `js/components/ChatWidget.js should not contain ${marker}`);
     }
+    assert.doesNotMatch(
+        chatWidgetSource,
+        /body\.chat-spotlight-suspended[\s\S]{0,260}opacity:\s*0 !important/,
+        'public chat should preserve the blurred page background instead of blanking spotlight/canvas layers after bootstrap'
+    );
 
     const cssMarkers = [
         '.chat-status-bar-shield',
         '.chat-status-bar-shield.is-visible',
         '.chat-widget-fab.chat-widget-fab--hidden',
+        'html.chat-widget-bootstrap-loading .chat-widget-fab',
+        'body.chat-widget-bootstrap-loading .chat-widget-fab',
         '.chat-widget-fab.chat-widget-fab--disabled',
         '.chat-widget-fab.chat-widget-fab--transitionless',
         '/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */',
+        '/* 20260503_CHAT_WIDGET_SAFARI_HANDOFF_12 */',
         '.chat-window.chat-window--transitionless',
         '.chat-window.chat-window--force-hidden',
+        '.chat-window--bootstrap-adopting-content > *:not(.chat-bootstrap-content-snapshot)',
+        '.chat-window--bootstrap-adopting-content.chat-window--bootstrap-content-ready > *:not(.emoji-picker-popover):not(.chat-bootstrap-content-snapshot)',
+        '.chat-bootstrap-content-snapshot',
+        '.chat-window--bootstrap-content-ready .chat-bootstrap-content-snapshot',
+        '@keyframes chat-widget-content-settle',
+        'animation: chat-widget-content-settle 360ms cubic-bezier(0.22, 1, 0.36, 1) both;',
+        '.chat-window--bootstrap-content-ready .emoji-picker-popover:not(.active)',
+        '.chat-window--bootstrap-interaction-locked #chatEmojiBtn.chat-action-btn:active',
+        '.chat-window--bootstrap-interaction-locked #chatEmojiBtn.chat-action-btn i',
+        '.loading-overlay--user-dots',
+        '.chat-loading-state--user-handoff',
+        '.loading-overlay.is-exiting',
+        '.chat-loading-dots span',
+        '@keyframes chat-widget-loading-dots',
+        '@keyframes chat-widget-content-swap',
         '.chat-window.chat-window--keyboard-animating',
         '.chat-window.chat-window--stable-visuals',
         '.chat-window.chat-window--keyboard-bottom-docked',
@@ -732,9 +1067,18 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         '.mascot-wrapper--compact',
         'html[data-theme="light"] {',
         '--chat-shell-bg: rgba(252, 253, 255, 0.98);',
+        'html[data-theme="light"] .chat-window:not(.admin-mode-layout) {',
+        '--chat-panel-shadow: none;',
+        '--chat-avatar-bg: rgba(107, 158, 206, 0.18);',
+        'html[data-theme="light"] .chat-window:not(.admin-mode-layout) .message.user',
         '--chat-overlay-bg: rgba(34, 41, 52, 0.48);',
         '--chat-mascot-head: #6b9ece;',
         '--chat-fab-mascot-detail: #ffffff;',
+        '--chat-mobile-fab-glass-bg: rgba(0, 0, 0, 0.48);',
+        '.chat-widget-fab[data-chat-widget-loading="1"] .chat-widget-fab__robot',
+        '--chat-mobile-fab-glass-border: rgba(255, 255, 255, 0.055);',
+        'html[data-theme="light"] .chat-widget-fab {',
+        '--chat-mobile-fab-glass-border: rgba(15, 23, 42, 0.065);',
         '--chat-support-primary-bg: rgba(107, 158, 206, 0.82);',
         '/* 20260428_PUBLIC_TOUCH_PAN_LOCK_1 */',
         '.chat-messages.chat-messages--height-locked',
@@ -769,6 +1113,11 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         /transition:[\s\S]*transform|will-change:\s*transform/,
         'chat FAB robot should not keep transform compositing or transition hints that create refresh drift'
     );
+    assert.doesNotMatch(
+        chatWidgetCss,
+        /chat-widget-fab--disabled \.chat-widget-fab__robot|chat-widget-fab--disabled \.mascot-wrapper/,
+        'disabled chat FAB should only block interaction and never reset the robot artwork'
+    );
 });
 
 test('public chat and shop scroll panels clamp accidental horizontal pan', () => {
@@ -793,9 +1142,9 @@ test('public chat and shop scroll panels clamp accidental horizontal pan', () =>
         'long chat messages should wrap instead of widening the chat pane'
     );
     assert.equal(
-        optionalEnhancementsSource.includes('css/chat-widget.css?v=20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1'),
+        optionalEnhancementsSource.includes('css/chat-widget.css?v=20260503_CHAT_WIDGET_SAFARI_HANDOFF_12'),
         true,
-        'optional guestbook chat loader should request the no-slide chat FAB stylesheet'
+        'optional guestbook chat loader should request the Safari handoff chat FAB stylesheet'
     );
 
     assert.match(
@@ -824,7 +1173,7 @@ test('public chat and shop scroll panels clamp accidental horizontal pan', () =>
         'shop usage instruction card should keep long content from causing lateral wobble'
     );
     assert.equal(
-        shopHtmlSource.includes('css/shop-page.css?v=20260502_PURCHASE_MODAL_KEYBOARD_SCROLL_1'),
+        shopHtmlSource.includes('css/shop-page.css?v=20260503_SHOP_FLOATING_ICON_SWAP_2'),
         true,
         'shop.html should cache-bust the keyboard-scroll shop stylesheet'
     );
@@ -932,6 +1281,30 @@ test('chat widget restores authenticated session ids quickly and hydrates linked
     for (const marker of markers) {
         assert.equal(chatWidgetSource.includes(marker), true, `js/components/ChatWidget.js should contain ${marker}`);
     }
+});
+
+test('user chat history handoff keeps the dots loader until real content is painted', () => {
+    const chatWidgetSource = readRepoFile('js/components/ChatWidget.js');
+    const chatWidgetCss = readRepoFile('css/chat-widget.css');
+
+    const markers = [
+        'finishUserHistoryLoadingOverlayHandoff(loadingOverlay = null)',
+        'chat-loading-state--user-handoff',
+        "loadingOverlay.classList.add('loading-overlay--handoff');",
+        'if (node !== loadingOverlay) {',
+        'this.finishUserHistoryLoadingOverlayHandoff(loadingOverlay);',
+        "overlay.classList.add('is-exiting');"
+    ];
+
+    for (const marker of markers) {
+        assert.equal(chatWidgetSource.includes(marker), true, `js/components/ChatWidget.js should contain ${marker}`);
+    }
+
+    assert.equal(
+        chatWidgetCss.includes('.loading-overlay.is-exiting'),
+        true,
+        'chat widget dots loader should fade out after the rendered history is already in place'
+    );
 });
 
 test('ops alert inbox cards expose case actions in both admin studio and admin chat widget', () => {
@@ -1422,24 +1795,24 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
     }
 
     assert.equal(
-        adminStudioHtml.includes('js/admin-chat.js?v=20260421_ADMIN_CHAT_SITE_CHANGE_P2'),
+        adminStudioHtml.includes('js/admin-chat.js?v=20260502_ADMIN_CHAT_KEYBOARD_DOCK_6'),
         true,
         'admin-studio.html should load the latest admin chat case action runtime'
     );
     assert.equal(
-        adminStudioHtml.includes('css/admin-chat.css?v=20260426_ADMIN_CHAT_LIGHT_THEME_FROSTED_CONTEXT_FLAT_ALERTS_2'),
+        adminStudioHtml.includes('css/admin-chat.css?v=20260502_ADMIN_CHAT_KEYBOARD_DOCK_6'),
         true,
         'admin-studio.html should load the latest admin chat case action stylesheet'
     );
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/chat-widget-loader.js?v=20260502_CHAT_WIDGET_FAB_PLACEMENT_GUARD_1'),
+            source.includes('js/chat-widget-loader.js?v=20260503_CHAT_WIDGET_SAFARI_HANDOFF_12'),
             true,
             'public entry pages should load the lazy chat widget bootstrap'
         );
         assert.equal(
-            source.includes('js/components/ChatWidget.js?v=20260426_CHAT_WIDGET_OPS_ALERT_LIGHT_GLASS_12'),
+            source.includes('js/components/ChatWidget.js?v=20260503_CHAT_WIDGET_SAFARI_HANDOFF_12'),
             false,
             'public entry pages should no longer eagerly load the heavy chat widget runtime'
         );
@@ -1593,10 +1966,10 @@ test('public auth entry pages defer profile modal runtime through the shared pro
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260501_PROFILE_MODAL_MOBILE_HEIGHT_1';",
-        "const PROFILE_TEMPLATE_SRC = 'js/profile-modal-template.js?v=20260501_PROFILE_MODAL_MOBILE_HEIGHT_1';",
+        "const VERSION = '20260503_PROFILE_MODAL_CHROME_CLOSE_1';",
+        "const PROFILE_TEMPLATE_SRC = 'js/profile-modal-template.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1';",
         "const SECURITY_CARDS_SRC = 'security-cards.js?v=20260423_PROFILE_MODAL_SECURITY_INDICATOR_1';",
-        "const PROFILE_MODAL_STYLE_HREF = 'css/profile-modal.css?v=20260501_PROFILE_MODAL_MOBILE_HEIGHT_1';",
+        "const PROFILE_MODAL_STYLE_HREF = 'css/profile-modal.css?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1';",
         'function ensureProfileModalStyles() {',
         'return ensureProfileModalStyles().then(() => true);',
         'function ensureProfileModalReady() {',
@@ -1617,8 +1990,8 @@ test('critical auth pages consume delegated profile modal and form bindings', ()
 
     assert.equal(verifySource.includes('js/profile-modal-loader.js'), true, 'verify.html should load the shared profile modal bootstrap');
     assert.equal(indexSource.includes('js/profile-modal-loader.js'), true, 'index.html should load the shared profile modal bootstrap');
-    assert.equal(indexSource.includes('./js/profile-modal-loader.js?v=20260501_PROFILE_MODAL_MOBILE_HEIGHT_1'), true, 'index.html should load the latest profile modal bootstrap version');
-    assert.equal(verifySource.includes('js/profile-modal-loader.js?v=20260501_PROFILE_MODAL_MOBILE_HEIGHT_1'), true, 'verify.html should load the latest profile modal bootstrap version');
+    assert.equal(indexSource.includes('./js/profile-modal-loader.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1'), true, 'index.html should load the latest profile modal bootstrap version');
+    assert.equal(verifySource.includes('js/profile-modal-loader.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1'), true, 'verify.html should load the latest profile modal bootstrap version');
     assert.equal(verifySource.includes('id="profileModal"'), false, 'verify.html should not embed a duplicated profile modal');
     assert.equal(indexSource.includes('id="profileModal"'), false, 'index.html should not embed a duplicated profile modal');
     assert.equal(verifySource.includes('onmousedown="closeModal(event)"'), false, 'verify.html should not inline modal close handlers');
@@ -1701,7 +2074,7 @@ test('auth runtime renderers centralize avatar, google loading, and profile moda
         'function setAuthStyleState(target, styles = {})',
         "setAuthAvatarVisualState(navAvatar, true)",
         "btn.classList.add('is-loading')",
-        "loginModal.hidden = false;",
+        "requestLoginModalOpen('login')",
         "setAuthStyleState(document.body, {",
         "setAuthStyleState(tabsWrap, {"
     ];
@@ -1722,12 +2095,12 @@ test('auth runtime renderers centralize avatar, google loading, and profile moda
 
     for (const source of pageSources) {
         assert.equal(
-            source.includes('css/auth-sheet.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
+            source.includes('css/auth-sheet.css?v=20260503_AUTH_MODAL_CHROME_CLOSE_1'),
             true,
             'auth entry pages should load the latest auth sheet stylesheet'
         );
         assert.equal(
-            source.includes('supabase-auth-functions.js?v=20260501_IOS_GOOGLE_REDIRECT_1'),
+            source.includes('supabase-auth-functions.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1'),
             true,
             'auth entry pages should load the latest auth runtime script'
         );
@@ -1774,9 +2147,44 @@ test('login auth sheet uses natural height while preserving smooth resize transi
         'inject-auth.js should clear auth messages during login/register tab switches without double-running the height animation'
     );
     assert.equal(
+        injectSource.includes('function reserveAuthMessageSpace(messageBox) {'),
+        true,
+        'inject-auth.js should reserve the current auth message height while a mobile submit is stabilizing'
+    );
+    assert.match(
+        injectSource,
+        /clearAuthMessage\(\{ reserveSpace: true, animate: false \}\);/,
+        'auth form submits should clear stale messages without collapsing the sheet before feedback returns'
+    );
+    assert.match(
+        authSheetStyles,
+        /\.auth-sheet-message\.is-reserved\[hidden\] \{[\s\S]*?display:\s*block !important;[\s\S]*?height:\s*var\(--auth-sheet-message-reserve-height/,
+        'css/auth-sheet.css should keep the previous message slot reserved during submit stabilization'
+    );
+    assert.equal(
         injectSource.includes("setInjectedAuthStyleProperty(body, 'overflowY', 'hidden', 'important');"),
         true,
         'inject-auth.js should lock sheet body scrolling while the auth sheet height is animating'
+    );
+    assert.equal(
+        injectSource.includes("const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260503_AUTH_MODAL_CHROME_CLOSE_1';"),
+        true,
+        'inject-auth.js should cache-bust the auth sheet stylesheet for shop staggered auth entry'
+    );
+    assert.doesNotMatch(
+        authSheetStyles,
+        /\.auth-sheet-overlay\.auth-sheet-over-shop-modal[\s\S]*?animation:\s*none !important;/,
+        'css/auth-sheet.css should not suppress auth sheet staggered motion above the shop purchase modal'
+    );
+    assert.doesNotMatch(
+        authSheetStyles,
+        /\.auth-sheet-overlay\.auth-sheet-over-shop-modal[\s\S]*?transition:\s*none !important;/,
+        'css/auth-sheet.css should preserve the same auth sheet entrance transition used by the avatar login flow'
+    );
+    assert.match(
+        authSheetStyles,
+        /\.auth-sheet-overlay\.active \.auth-sheet-header \{[\s\S]*?animation:\s*authSheetStaggeredRise/,
+        'css/auth-sheet.css should keep the shared staggered auth header rise animation'
     );
     assert.match(
         authSheetStyles,
@@ -1910,13 +2318,13 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
 
     for (const source of pageSources) {
         assert.equal(
-            source.includes('css/auth-sheet.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
+            source.includes('css/auth-sheet.css?v=20260503_AUTH_MODAL_CHROME_CLOSE_1'),
             true,
             'auth entry pages should load the latest injected auth stylesheet'
         );
         assert.match(
             source,
-            /inject-auth\.js\?v=20260430_NAV_AVATAR_FAST_1/,
+            /inject-auth\.js\?v=20260503_AUTH_MODAL_CHROME_CLOSE_1/,
             'auth entry pages should load the latest injected auth runtime version'
         );
     }
@@ -2096,9 +2504,9 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['privacy.html', 'css/privacy-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260425_HOME_GUESTBOOK_MODAL_HIDE_1'],
-        ['shop.html', 'css/shop-page.css?v=20260502_PURCHASE_MODAL_KEYBOARD_SCROLL_1'],
+        ['shop.html', 'css/shop-page.css?v=20260503_SHOP_FLOATING_ICON_SWAP_2'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260427_ADMIN_SITE_SWITCHER_ACTIVE_HOVER_LOCK_1'],
-        ['admin-entry.html', 'css/admin-entry-page.css?v=20260501_ADMIN_ENTRY_LIGHT_THEME_GATE_1'],
+        ['admin-entry.html', 'css/admin-entry-page.css?v=20260502_ADMIN_ENTRY_TAP_HIGHLIGHT_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260427_AUTH_CALLBACK_SILENT_2'],
         ['debug-realtime.html', 'css/debug-realtime-page.css?v=20260324_DEBUG_REALTIME_STYLE_ATTRS_1'],
         ['test-lang-toggle.html', 'css/test-lang-toggle-page.css?v=20260324_TEST_LANG_TOGGLE_PAGE_STYLES_1'],
@@ -2130,7 +2538,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['icons_preview_v6.html', 'css/icons-preview-v6.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
         ['icons_preview_v7.html', 'css/icons-preview-v7.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
         ['icons_preview_v8.html', 'css/icons-preview-v8.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
-        ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1'],
+        ['index_old.html', 'css/index-old.css?v=20260502_INDEX_OLD_TAP_HIGHLIGHT_1'],
         ['preview-hero-effects.html', 'css/preview-hero-effects.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
         ['profile_mobile_tab_minimal_preview.html', 'css/profile-mobile-tab-minimal-preview.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
         ['profile_security_frosted_board.html', 'css/profile-security-frosted-board.css?v=20260324_REMAINING_HTML_STYLE_BLOCKS_1'],
@@ -2185,8 +2593,8 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260502_PURCHASE_MODAL_KEYBOARD_SCROLL_1'],
-        ['index_old.html', 'css/index-old.css?v=20260324_INLINE_STYLE_ATTRS_BATCH_1']
+        ['shop.html', 'css/shop-page.css?v=20260503_SHOP_FLOATING_ICON_SWAP_2'],
+        ['index_old.html', 'css/index-old.css?v=20260502_INDEX_OLD_TAP_HIGHLIGHT_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
 
@@ -2240,8 +2648,8 @@ test('admin entry trampoline paints the shared light access gate before admin st
     const stylesSource = readRepoFile(path.join('css', 'admin-entry-page.css'));
     const runtimeSource = readRepoFile(path.join('js', 'admin-entry.js'));
 
-    const themePreloadIndex = source.indexOf('./js/theme-preload.js?v=20260430_FIRST_VISIT_LIGHT_THEME_1');
-    const stylesheetIndex = source.indexOf('css/admin-entry-page.css?v=20260501_ADMIN_ENTRY_LIGHT_THEME_GATE_1');
+    const themePreloadIndex = source.indexOf('./js/theme-preload.js?v=20260503_MODAL_CHROME_CLOSE_1');
+    const stylesheetIndex = source.indexOf('css/admin-entry-page.css?v=20260502_ADMIN_ENTRY_TAP_HIGHLIGHT_1');
 
     assert.notEqual(themePreloadIndex, -1, 'admin entry should preload the shared theme before first paint');
     assert.notEqual(stylesheetIndex, -1, 'admin entry should load the cache-busted light gate stylesheet');
@@ -2250,13 +2658,40 @@ test('admin entry trampoline paints the shared light access gate before admin st
     assert.equal(source.includes('正在验证后台访问'), false, 'admin entry static shell should not render the legacy pending copy');
     assert.equal(runtimeSource.includes('正在验证后台访问'), false, 'admin entry runtime should not reintroduce the legacy pending copy');
     assert.equal(runtimeSource.includes('正在校验后台访问权限'), true, 'admin entry runtime should match the admin studio access-gate title');
-    assert.equal(stylesSource.includes('20260501_ADMIN_ENTRY_LIGHT_THEME_GATE_1'), true, 'admin entry styles should carry the light gate marker');
+    assert.equal(stylesSource.includes('20260502_ADMIN_ENTRY_TAP_HIGHLIGHT_1'), true, 'admin entry styles should carry the light gate marker');
     assert.match(stylesSource, /:root\s*\{[\s\S]*color-scheme:\s*light;/, 'admin entry should default to a light first paint');
     assert.match(stylesSource, /html\[data-theme="dark"\]\s*\{[\s\S]*color-scheme:\s*dark;/, 'admin entry should still honor an explicit dark theme');
 });
 
+test('public redirect and archived shells suppress mobile tap rectangles', () => {
+    const redirectStyles = readRepoFile(path.join('css', 'redirect-page.css'));
+    const adminEntryStyles = readRepoFile(path.join('css', 'admin-entry-page.css'));
+    const indexOldStyles = readRepoFile(path.join('css', 'index-old.css'));
+    const gongyiSource = readRepoFile('gongyi.html');
+    const statusSource = readRepoFile('status.html');
+    const archivedIndexSource = readRepoFile('index_old.html');
+
+    assert.equal(gongyiSource.includes('css/redirect-page.css?v=20260502_REDIRECT_TAP_HIGHLIGHT_1'), true);
+    assert.equal(statusSource.includes('css/redirect-page.css?v=20260502_REDIRECT_TAP_HIGHLIGHT_1'), true);
+    assert.equal(archivedIndexSource.includes('css/index-old.css?v=20260502_INDEX_OLD_TAP_HIGHLIGHT_1'), true);
+
+    for (const marker of [
+        '20260502_REDIRECT_TAP_HIGHLIGHT_1',
+        '20260502_ADMIN_ENTRY_TAP_HIGHLIGHT_1',
+        '20260502_INDEX_OLD_TAP_HIGHLIGHT_1',
+        '-webkit-tap-highlight-color: transparent;'
+    ]) {
+        assert.equal(
+            [redirectStyles, adminEntryStyles, indexOldStyles].some((source) => source.includes(marker)),
+            true,
+            `tap highlight guard should include ${marker}`
+        );
+    }
+});
+
 test('theme bootstraps default first visits to light instead of system dark', () => {
     const themePreloadSource = readRepoFile('js/theme-preload.js');
+    const promptsHeadSource = readRepoFile('js/prompts-head-bootstrap.js');
     assert.match(
         themePreloadSource,
         /let theme = 'light';/,
@@ -2271,6 +2706,31 @@ test('theme bootstraps default first visits to light instead of system dark', ()
         themePreloadSource,
         /const normalizedTheme = normalizeTheme\(theme\);/,
         'shared browser chrome theme writes should use the same light-default normalization'
+    );
+    assert.match(
+        themePreloadSource,
+        /const THEME_CHROME_OVERRIDE_SELECTOR = 'meta\[name="site-theme-chrome-color"\]';[\s\S]*function getThemeChromeColorOverride\(theme\)[\s\S]*overrideMeta\.getAttribute\(`data-\$\{normalizedTheme\}`\)/,
+        'shared theme preload should allow pages to override browser chrome colors before first paint'
+    );
+    assert.match(
+        themePreloadSource,
+        /function getIOSRepaintColor\(theme, themeColor\) \{[\s\S]*const rgb = parseThemeChromeHexColor\(themeColor\);[\s\S]*const delta = normalizedTheme === 'dark' \? 1 : -1;[\s\S]*const repaintColor = `#\$\{[\s\S]*toThemeChromeHexColor\(rgb\.r \+ delta\)[\s\S]*const repaintColor = getIOSRepaintColor\(theme, themeColor\);/s,
+        'shared theme preload should derive the iOS repaint color from the final chrome color instead of flashing pure white for softer light pages'
+    );
+    assert.match(
+        themePreloadSource,
+        /const SITE_MODAL_THEME_RESTORE_ATTRIBUTE = 'data-site-modal-theme-restore';[\s\S]*const PROMPT_MODAL_THEME_RESTORE_ATTRIBUTE = 'data-prompt-modal-theme-restore';[\s\S]*function hasThemeRestoreAttribute\(metaTheme\) \{[\s\S]*THEME_RESTORE_ATTRIBUTES\.some\(\(attributeName\) => metaTheme\?\.hasAttribute\(attributeName\)\)[\s\S]*if \(hasThemeRestoreAttribute\(metaTheme\)\) \{[\s\S]*return;/,
+        'shared theme preload should not fight modal close-time theme-color cleanup'
+    );
+    assert.match(
+        promptsHeadSource,
+        /const SITE_MODAL_THEME_RESTORE_ATTRIBUTE = 'data-site-modal-theme-restore';[\s\S]*const PROMPT_MODAL_THEME_RESTORE_ATTRIBUTE = 'data-prompt-modal-theme-restore';[\s\S]*function hasPromptThemeRestoreAttribute\(meta\)[\s\S]*meta\?\.hasAttribute\(SITE_MODAL_THEME_RESTORE_ATTRIBUTE\)[\s\S]*meta\?\.hasAttribute\(PROMPT_MODAL_THEME_RESTORE_ATTRIBUTE\)[\s\S]*if \(hasPromptThemeRestoreAttribute\(meta\)\) \{[\s\S]*return meta;[\s\S]*new MutationObserver\(\(\) => \{[\s\S]*if \(hasPromptThemeRestoreAttribute\(meta\)\) \{[\s\S]*return;/,
+        'prompts head bootstrap should not reinsert the black theme-color while modal close cleanup is active'
+    );
+    assert.doesNotMatch(
+        themePreloadSource,
+        /const IOS_REPAINT_COLORS[\s\S]*light: '#fffffe'[\s\S]*const repaintColor = IOS_REPAINT_COLORS\[theme\]/,
+        'shared theme preload should not use the legacy hard-coded near-white repaint color for every light page'
     );
 
     const injectAuthSource = readRepoFile('inject-auth.js');
@@ -2324,8 +2784,9 @@ test('theme bootstraps default first visits to light instead of system dark', ()
 
     for (const relativePath of publicThemeEntryPages) {
         const source = readRepoFile(relativePath);
+        const expectedThemePreloadVersion = 'js/theme-preload.js?v=20260503_MODAL_CHROME_CLOSE_1';
         assert.equal(
-            source.includes('js/theme-preload.js?v=20260430_FIRST_VISIT_LIGHT_THEME_1'),
+            source.includes(expectedThemePreloadVersion),
             true,
             `${relativePath} should cache-bust the first-visit light theme preload`
         );
@@ -2345,11 +2806,48 @@ test('theme bootstraps default first visits to light instead of system dark', ()
     for (const relativePath of injectedAuthEntryPages) {
         const source = readRepoFile(relativePath);
         assert.equal(
-            source.includes('inject-auth.js?v=20260430_NAV_AVATAR_FAST_1'),
+            source.includes('inject-auth.js?v=20260503_AUTH_MODAL_CHROME_CLOSE_1'),
             true,
             `${relativePath} should cache-bust the injected auth light-default runtime`
         );
     }
+});
+
+test('public modal closes use the shared iOS theme-color cleanup helper', () => {
+    const themePreloadSource = readRepoFile('js/theme-preload.js');
+    const shopClientSource = readRepoFile('js/shop-client.js');
+    const promptsSource = readRepoFile('prompts-poetry.js');
+    const injectAuthSource = readRepoFile('inject-auth.js');
+    const walletSource = readRepoFile('js/components/WalletModal.js');
+    const profileSource = readRepoFile('supabase-auth-functions.js');
+    const guestbookModalSource = readRepoFile('js/homepage-guestbook-modal.js');
+    const guestbookSource = readRepoFile('guestbook.js');
+    const announcementSource = readRepoFile('announcement-loader.js');
+
+    [
+        'window.lockSiteModalThemeColor = lockSiteModalThemeColor;',
+        'window.clearSiteModalThemeColor = clearSiteModalThemeColor;',
+        'window.runSiteModalCloseChromeCleanup = runSiteModalCloseChromeCleanup;',
+        'const SITE_MODAL_THEME_RESTORE_ATTRIBUTE = \'data-site-modal-theme-restore\';'
+    ].forEach((marker) => {
+        assert.equal(themePreloadSource.includes(marker), true, `js/theme-preload.js should expose ${marker}`);
+    });
+
+    [
+        ['js/shop-client.js', shopClientSource, 'runShopModalCloseChromeCleanup: function (options = {})'],
+        ['js/shop-client.js', shopClientSource, "forceHiddenClass: 'shop-purchase-force-hidden'"],
+        ['js/shop-client.js', shopClientSource, "forceHiddenClass: 'shop-modal-force-hidden'"],
+        ['prompts-poetry.js', promptsSource, 'function runPromptModalCloseChromeCleanup()'],
+        ['inject-auth.js', injectAuthSource, "forceHiddenClass: 'auth-sheet-force-hidden'"],
+        ['js/components/WalletModal.js', walletSource, "forceHiddenClass: 'wallet-modal-force-hidden'"],
+        ['supabase-auth-functions.js', profileSource, "forceHiddenClass: 'profile-modal-force-hidden'"],
+        ['js/homepage-guestbook-modal.js', guestbookModalSource, "forceHiddenClass: 'guestbook-modal-force-hidden'"],
+        ['guestbook.js', guestbookSource, "forceHiddenClass: 'comment-modal-force-hidden'"],
+        ['guestbook.js', guestbookSource, "forceHiddenClass: 'image-modal-force-hidden'"],
+        ['announcement-loader.js', announcementSource, "forceHiddenClass: 'announcement-modal-force-hidden'"]
+    ].forEach(([file, source, marker]) => {
+        assert.equal(source.includes(marker), true, `${file} should route close cleanup through ${marker}`);
+    });
 });
 
 test('auth and verify runtime pages externalize page bootstraps instead of embedding large inline scripts', () => {
@@ -2722,7 +3220,6 @@ test('shop client runtime renderers externalize product cards, purchase feedback
         '.shop-expand-toggle',
         '.shop-order-history-item',
         '.shop-rich-link',
-        '.shop-purchase-viewport-probe',
         '#shopPurchaseModal .modal-content.shop-purchase-height-locked',
         '.shop-discount-assets-shell',
         '.shop-discount-asset-card',
@@ -2732,6 +3229,12 @@ test('shop client runtime renderers externalize product cards, purchase feedback
     for (const marker of cssMarkers) {
         assert.equal(shopCssSource.includes(marker), true, `css/shop-page.css should contain ${marker}`);
     }
+
+    assert.equal(
+        shopCssSource.includes('.shop-purchase-viewport-probe'),
+        false,
+        'css/shop-page.css should not keep a 100svh purchase modal probe that can overrun iOS native chrome'
+    );
 
     assert.equal(shopHtmlSource.includes('<body class="shop-page guestbook-page">'), true, 'shop.html should scope the page with shop-page before guestbook-page compatibility styles');
     assert.equal(shopHtmlSource.includes('id="purchaseDiscountAssetsPanel"'), true, 'shop.html should expose the purchase discount asset panel');
@@ -2758,9 +3261,32 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should not render a secondary text loading message after the skeleton'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260430_SHOP_LANGUAGE_BREATHE_1'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260503_SHOP_CART_SCROLL_LOCK_1'),
         true,
         'shop.html should reference the latest shop client runtime for the cart-enabled storefront flow'
+    );
+});
+
+test('shop category filters keep live pills mounted during refresh revalidation', () => {
+    const shopClientSource = readRepoFile('js/shop-client.js');
+    const loadCategoryStart = shopClientSource.indexOf('loadCategoryFilters: async function');
+    const loadCategoryEnd = shopClientSource.indexOf('loadProducts: async function', loadCategoryStart);
+    const loadCategoryBlock = shopClientSource.slice(loadCategoryStart, loadCategoryEnd);
+
+    assert.match(
+        shopClientSource,
+        /renderCategoryFilterButtons: function \(container, categories = \[\]\) \{[\s\S]*const canPatchInPlace = existingTabs\.length === entries\.length[\s\S]*this\.syncCategoryFilterButton\(tab, entries\[index\]\);[\s\S]*return;[\s\S]*container\.replaceChildren\(fragment\);/,
+        'shop category filters should patch existing live pills in place before falling back to a full replacement'
+    );
+    assert.match(
+        loadCategoryBlock,
+        /Using prefetched shop categories[\s\S]*return;/,
+        'prefetched shop categories should render immediately and leave DB refresh to the background revalidation path'
+    );
+    assert.equal(
+        loadCategoryBlock.includes("container.innerHTML = '';"),
+        false,
+        'loadCategoryFilters should not clear the category pill container before rebuilding it'
     );
 });
 
@@ -2774,7 +3300,7 @@ test('shop storefront uses a 21:9 media ratio for mobile product cards', () => {
         'mobile shop product cards and loading skeletons should keep the top media area at 21:9'
     );
     assert.equal(
-        shopHtmlSource.includes('css/shop-page.css?v=20260502_PURCHASE_MODAL_KEYBOARD_SCROLL_1'),
+        shopHtmlSource.includes('css/shop-page.css?v=20260503_SHOP_FLOATING_ICON_SWAP_2'),
         true,
         'shop.html should bust the shop stylesheet cache for the latest shop card sizing'
     );
@@ -3193,7 +3719,11 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         '.guestbook-author',
         '.guestbook-content',
         '.guestbook-actions',
-        '.guestbook-action-btn'
+        '.guestbook-action-btn',
+        '20260502_PUBLIC_MOBILE_TAP_HIGHLIGHT_GUARD_1',
+        '20260502_NAV_LOGO_TAP_HIGHLIGHT_1',
+        '-webkit-tap-highlight-color: transparent;',
+        ':focus:not(:focus-visible)'
     ];
 
     for (const marker of cssMarkers) {
@@ -3510,12 +4040,12 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
     }
 
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260501_GUESTBOOK_TIME_STABLE_1'),
+        guestbookHtml.includes('style.css?v=20260503_COMMENT_MODAL_CHROME_CLOSE_1'),
         true,
         'guestbook.html should reference the updated guestbook stylesheet version'
     );
     assert.equal(
-        guestbookHtml.includes('guestbook.js?v=20260425_GUESTBOOK_RESIZE_FOCUS_2'),
+        guestbookHtml.includes('guestbook.js?v=20260503_COMMENT_MODAL_CHROME_CLOSE_1'),
         true,
         'guestbook.html should reference the updated guestbook script version'
     );
@@ -3600,7 +4130,7 @@ test('supabase guestbook runtime renderers externalize error, empty state, delet
     assert.match(guestbookHtml, /style\.css\?v=[A-Za-z0-9_]+/, 'guestbook.html should contain a cache-busted shared stylesheet reference');
     assert.match(archivedIndexSource, /style\.css\?v=[A-Za-z0-9_]+/, 'index_old.html should contain a cache-busted shared stylesheet reference');
     assert.equal(indexSource.includes('supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), false, 'index.html should not eagerly load the full guestbook runtime');
-    assert.equal(indexSource.includes('./js/homepage-guestbook-modal-loader.js?v=20260501_HOME_GUESTBOOK_INTENT_LOAD_1'), true, 'index.html should load the intent-based homepage guestbook modal loader');
+    assert.equal(indexSource.includes('./js/homepage-guestbook-modal-loader.js?v=20260502_HOME_GUESTBOOK_LOADER_STABLE_DOCK_1'), true, 'index.html should load the intent-based homepage guestbook modal loader');
     assert.equal(guestbookHtml.includes('supabase-guestbook-functions.js?v=20260501_GUESTBOOK_DOM_READY_LATE_LOAD_1'), true, 'guestbook.html should contain the DOM-ready-safe guestbook runtime');
     assert.equal(archivedIndexSource.includes('supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should contain supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1');
 });
@@ -3661,17 +4191,17 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
     }
 
     assert.equal(
-        indexSource.includes('css/homepage-overlays.css?v=20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1'),
+        indexSource.includes('css/homepage-overlays.css?v=20260503_HOME_GUESTBOOK_MODAL_CHROME_CLOSE_1'),
         true,
         'index.html should load the latest homepage guestbook modal stylesheet version'
     );
     assert.equal(
-        indexSource.includes('./js/homepage-guestbook-modal-loader.js?v=20260501_HOME_GUESTBOOK_INTENT_LOAD_1'),
+        indexSource.includes('./js/homepage-guestbook-modal-loader.js?v=20260502_HOME_GUESTBOOK_LOADER_STABLE_DOCK_1'),
         true,
         'index.html should load the latest homepage guestbook intent loader version'
     );
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260501_GUESTBOOK_TIME_STABLE_1'),
+        guestbookHtml.includes('style.css?v=20260503_COMMENT_MODAL_CHROME_CLOSE_1'),
         true,
         'guestbook.html should load the latest shared stylesheet version'
     );
@@ -4036,6 +4566,16 @@ test('ios scroll lock externalizes fixed-body shell styles while keeping dynamic
     const runtimeMarkers = [
         "function setFixedBodyLockOffset() {",
         "function clearFixedBodyLockOffset() {",
+        "function restoreLightLockedScroll() {",
+        "function scheduleLightLockedScrollRestore(options = {}) {",
+        "function shouldAnchorLightLock(modalElement) {",
+        "let suspendedLightLock = null;",
+        "function getRestorableSuspendedLightLock() {",
+        "function restoreSuspendedLightLock(lockState, fallbackScrollY) {",
+        "const previousModal = currentModal;",
+        "modalElement: previousModal,",
+        "const lightLockToRestore = getRestorableSuspendedLightLock();",
+        "scheduleLightLockedScrollRestore({ withFollowup: true });",
         "document.body.classList.add('ios-scroll-lock-fixed');",
         "document.body.classList.remove('ios-scroll-lock-fixed');",
         "document.body.style['setProperty']('--ios-scroll-lock-offset', `-${savedScrollY}px`);",
@@ -4057,7 +4597,7 @@ test('ios scroll lock externalizes fixed-body shell styles while keeping dynamic
         'style.css should source the iOS scroll lock offset from a CSS variable'
     );
 
-    const expectedVersion = 'js/ios-scroll-lock.js?v=20260324_IOS_SCROLL_LOCK_RUNTIME_STYLE_2';
+    const expectedVersion = 'js/ios-scroll-lock.js?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6';
     for (const [fileName, html] of Object.entries({
         'index.html': indexHtml,
         'guestbook.html': guestbookHtml,
@@ -7261,7 +7801,7 @@ test('admin studio centralizes module permissions and gates sidebar modules thro
     );
     assert.match(
         adminStudioSource,
-        /js\/admin-studio-bootstrap\.js\?v=20260421_BOOTSTRAP_NO_CHAT_PREWARM_P2/,
+        /js\/admin-studio-bootstrap\.js\?v=20260503_ADMIN_CLIPBOARD_FALLBACK_1/,
         'admin-studio.html should load the cache-busted admin studio bootstrap without legacy chat prewarm'
     );
     assert.match(
@@ -10804,7 +11344,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         'js/admin-analytics-ai-controller.js?v=20260405_ANALYTICS_AI_CONTROLLER_1',
         'js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1',
         'js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0',
-        'js/admin-studio-bootstrap.js?v=20260421_BOOTSTRAP_NO_CHAT_PREWARM_P2',
+        'js/admin-studio-bootstrap.js?v=20260503_ADMIN_CLIPBOARD_FALLBACK_1',
         'admin-studio.css?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1',
         'class="charts-grid analytics-growth-insight-grid"',
         'class="chart-card glass-panel analytics-growth-card analytics-growth-card--full"',
@@ -12074,13 +12614,33 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'showPromptCard(card, visibleIndex)',
         'setPromptCardStaggerClass(card, index)',
         "shield.classList.add('prompt-status-bar-shield--active')",
-        "probe.className = 'prompt-comment-composer-viewport-probe'",
+        "const PROMPT_MODAL_THEME_RESTORE_ATTRIBUTE = 'data-prompt-modal-theme-restore';",
+        'function lockPromptModalThemeColor()',
+        'function clearPromptModalThemeColor(options = {})',
+        'function forceHidePromptModalDuringClose()',
+        'function releasePromptModalForceHidden()',
+        "clearPromptModalThemeColor({ restoreDelayMs: 320 });",
         'const PROMPTS_DEFERRED_COMMENT_COUNT_DELAY_MS = 4200;',
         'const PROMPTS_DEFERRED_SEARCH_INDEX_DELAY_MS = 5200;',
         'function schedulePromptIdleTask(taskName, task, options = {}) {',
         'function schedulePromptSearchIndexWarmup() {',
         "schedulePromptIdleTask('comment-count-prefetch'",
         "script.src = 'starry-sky.js?v=20260501_PROMPTS_IDLE_STARRY_1';",
+        'function lockPromptModalCommentModeGeometry({ force = false, defer = false } = {}) {',
+        'function releasePromptModalCommentModeGeometry() {',
+        'function refreshPromptsTextareaCaret(input) {',
+        'function stabilizePromptModalCaretDuringMotion(duration = 250) {',
+        'function stabilizePromptCommentComposerCaretDuringMotion(duration = 250) {',
+        "activeInner.classList.add('prompt-comment-geometry-locked')",
+        "modal.classList.add('prompt-caret-stabilizing')",
+        "overlay.classList.add('composer-caret-stabilizing')",
+        'let promptCommentComposerScrollLockMode = null;',
+        'const PROMPT_COMMENT_COMPOSER_KEYBOARD_CLEARANCE = 12;',
+        "window.iOSScrollLock.lockLight(sheet, { restoreScrollDuringViewport: true });",
+        "window.iOSScrollLock.lockLight(modalInner, { restoreScrollDuringViewport: true });",
+        'const targetBottom = Math.max(40, Math.round(keyboardTop - keyboardClearance));',
+        'const deltaY = Math.max(-520, Math.min(520, Math.round(targetBottom - zeroBottom)));',
+        'applyPromptCommentComposerDock(liveMetrics.bottomInset, true);',
         'setPromptsCssVars(modalInner, {',
         'setPromptsCssVars(backdrop, {',
         'setPromptsCssVars(modal, {',
@@ -12125,7 +12685,11 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         '.prompt-card.card-visible.prompt-card-stagger-11',
         '.prompt-status-bar-shield',
         '.prompt-status-bar-shield.prompt-status-bar-shield--visible',
-        '.prompt-comment-composer-viewport-probe',
+        '.prompt-comment-composer.keyboard-docked-active.active .prompt-comment-composer-sheet',
+        '.prompt-comment-composer-sheet.composer-animating',
+        '.poetry-modal.prompt-caret-stabilizing #commentInput',
+        '.prompt-comment-composer.composer-caret-stabilizing #promptCommentComposerInput',
+        '.prompts-caret-repaint',
         '.prompts-theme-particle--spark',
         '.prompts-theme-particle--rain',
         '.prompts-theme-particle--snow',
@@ -12137,8 +12701,16 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'html[data-theme="light"] .modal-inner.comment-mode .comment-sort-btn',
         'html[data-theme="light"] .modal-inner.comment-mode .comment-footer-toggle',
         'html[data-theme="light"] .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput',
+        'html[data-theme="light"] .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-ui',
+        '20260502_PROMPTS_COMMENT_FAB_COMPOSITE_1',
+        '20260502_PROMPTS_PROMPT_CARD_STABLE_1',
+        '20260503_PROMPTS_MODAL_CHROME_CLOSE_1',
+        '.modal-inner:not(.comment-mode) .prompt-text.prompt-text--loading',
+        'body.prompts-page.prompt-modal-force-hidden #promptModal',
+        'body.prompts-page.prompt-modal-force-hidden .poetry-modal-backdrop',
         'html[data-theme="light"] .prompt-comment-composer-sheet',
         'html[data-theme="light"] .prompt-comment-composer-send',
+        '.modal-inner.comment-mode.prompt-comment-geometry-locked:not(.keyboard-docked)',
         '.decoration-svg--overflow-visible'
     ];
 
@@ -12147,7 +12719,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260501_PROMPTS_LIGHT_BLUE_ACCENTS_2'),
+        promptsHtml.includes('prompts-poetry.css?v=20260503_PROMPTS_MODAL_CHROME_CLOSE_1'),
         true,
         'prompts.html should load the latest prompts gallery stylesheet version'
     );
@@ -12157,7 +12729,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'prompts.html should load the shared user event tracker'
     );
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260501_PROMPTS_SEARCH_VISUAL_TAGS_9'),
+        promptsHtml.includes('prompts-poetry.js?v=20260503_PROMPTS_MODAL_CHROME_CLOSE_1'),
         true,
         'prompts.html should load the latest prompts gallery runtime version'
     );
@@ -12293,13 +12865,13 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(indexSource.includes('./js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), true, 'index.html should load the shared user event tracker');
     assert.equal(guestbookSource.includes('js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), true, 'guestbook.html should load the shared user event tracker');
     assert.equal(shopSource.includes('js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), true, 'shop.html should load the shared user event tracker');
-    assert.equal(indexSource.includes('./js/homepage-guestbook-modal-loader.js?v=20260501_HOME_GUESTBOOK_INTENT_LOAD_1'), true, 'index.html should load the lazy guestbook modal bootstrap');
+    assert.equal(indexSource.includes('./js/homepage-guestbook-modal-loader.js?v=20260502_HOME_GUESTBOOK_LOADER_STABLE_DOCK_1'), true, 'index.html should load the lazy guestbook modal bootstrap');
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), false, 'index.html should not eagerly load the full guestbook runtime');
     assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260501_GUESTBOOK_DOM_READY_LATE_LOAD_1'), true, 'guestbook.html should load the latest guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should load the latest guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260430_SHOP_LANGUAGE_BREATHE_1'), true, 'shop.html should load the latest cart-aware shop runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260503_SHOP_CART_SCROLL_LOCK_1'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
-    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260430_WALLET_GUIDANCE_BILINGUAL_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
+    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260503_WALLET_REDEEM_REVOKE_REASON_UI_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
 
 test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {
@@ -14013,8 +14585,8 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
     }
 
     const htmlMarkers = [
-        'css/admin-chat.css?v=20260426_ADMIN_CHAT_LIGHT_THEME_FROSTED_CONTEXT_FLAT_ALERTS_2',
-        'js/admin-chat.js?v=20260421_ADMIN_CHAT_SITE_CHANGE_P2'
+        'css/admin-chat.css?v=20260502_ADMIN_CHAT_KEYBOARD_DOCK_6',
+        'js/admin-chat.js?v=20260502_ADMIN_CHAT_KEYBOARD_DOCK_6'
     ];
 
     for (const marker of htmlMarkers) {
@@ -14993,7 +15565,7 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
     for (const file of files) {
         const source = readRepoFile(file);
         const expectedMarker = file === 'css/auth-sheet.css'
-            ? '20260427_AUTH_MESSAGE_CENTER_1'
+            ? '20260503_AUTH_MODAL_CHROME_CLOSE_1'
             : '20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1';
         assert.equal(source.includes(expectedMarker), true, `${file} should carry the public light modal backdrop marker`);
         assert.equal(source.includes('rgba(34, 41, 52, 0.48)'), true, `${file} should use the shared muted blue-gray backdrop`);
@@ -15013,16 +15585,20 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
     ];
 
     for (const source of pageSources) {
-        assert.equal(source.includes(expectedHref), true, 'public pages should cache-bust the light modal backdrop material');
+        assert.equal(
+            source.includes(expectedHref) || source.includes('css/auth-sheet.css?v=20260503_AUTH_MODAL_CHROME_CLOSE_1'),
+            true,
+            'public pages should cache-bust the light modal backdrop material'
+        );
     }
 
     assert.equal(
-        readRepoFile('js/profile-modal-loader.js').includes('css/profile-modal.css?v=20260501_PROFILE_MODAL_MOBILE_HEIGHT_1'),
+        readRepoFile('js/profile-modal-loader.js').includes('css/profile-modal.css?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1'),
         true,
         'profile modal loader should cache-bust the light backdrop material'
     );
     assert.equal(
-        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260430_WALLET_GUIDANCE_BILINGUAL_1'),
+        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260503_WALLET_REDEEM_REVOKE_REASON_UI_1'),
         true,
         'wallet modal loader should cache-bust the latest wallet surface stylesheet'
     );
@@ -15031,7 +15607,7 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
 test('shop page loads auth sheet after legacy shared styles', () => {
     const shopSource = readRepoFile('shop.html');
     const sharedStyleIndex = shopSource.indexOf('style.css?v=20260430_PUBLIC_ROOT_SCROLLBAR_FULL_HIDE_1');
-    const authSheetIndex = shopSource.indexOf('css/auth-sheet.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1');
+    const authSheetIndex = shopSource.indexOf('css/auth-sheet.css?v=20260503_AUTH_MODAL_CHROME_CLOSE_1');
 
     assert.notEqual(sharedStyleIndex, -1, 'shop.html should load the shared style.css bundle');
     assert.notEqual(authSheetIndex, -1, 'shop.html should load the shared auth sheet stylesheet');

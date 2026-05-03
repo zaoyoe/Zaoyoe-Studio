@@ -141,6 +141,8 @@ body.mobile-menu-open {
     color: var(--text-primary);
     text-decoration: none;
     transition: opacity var(--transition-fast);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .nav-logo svg {
@@ -151,6 +153,12 @@ body.mobile-menu-open {
 
 .nav-logo:hover {
     opacity: 0.8;
+}
+
+.nav-logo:active {
+    background: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
 }
 
 .nav-menu {

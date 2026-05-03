@@ -17,6 +17,8 @@
 }
 
 .chat-container {
+    --admin-chat-keyboard-shift-y: 0px;
+    --admin-chat-keyboard-dock-height: auto;
     display: flex;
     width: 100%;
     max-width: 1200px;
@@ -35,6 +37,34 @@
     position: relative;
     min-height: 0;
     box-shadow: 0 25px 50px rgba(0, 0, 0, 0.4);
+}
+
+.admin-chat-viewport-probe {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 100svh;
+    pointer-events: none;
+    visibility: hidden;
+    opacity: 0;
+    z-index: -1;
+}
+
+.chat-container.admin-chat-keyboard-docked {
+    height: var(--admin-chat-keyboard-dock-height, 90vh) !important;
+    max-height: var(--admin-chat-keyboard-dock-height, 90vh) !important;
+    transform: translate3d(0, var(--admin-chat-keyboard-shift-y, 0px), 0) !important;
+    transition:
+        transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+        height 180ms cubic-bezier(0.22, 1, 0.36, 1),
+        max-height 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform, height;
+}
+
+.chat-container.admin-chat-keyboard-docked .chat-main,
+.chat-container.admin-chat-keyboard-docked #chatInterface {
+    min-height: 0;
 }
 
 /* Left Sidebar: Session List */
@@ -1314,6 +1344,7 @@
 }
 
 .chat-interface {
+    --admin-chat-keyboard-shift-y: 0px;
     display: flex;
     flex: 1 1 auto;
     min-height: 0;
@@ -3434,7 +3465,7 @@ html[data-theme="light"] #module-chat :is(
     font-size: 13px;
 }
 
-/* 20260426_ADMIN_CHAT_LIGHT_THEME_FROSTED_CONTEXT_FLAT_ALERTS_2 */
+/* 20260502_ADMIN_CHAT_KEYBOARD_DOCK_6 */
 html[data-theme="light"] #module-chat :is(
     .user-context-shell,
     .chat-reply-templates,

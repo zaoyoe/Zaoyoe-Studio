@@ -24,7 +24,7 @@ test('profile modal first open uses fast mount instead of waiting for full secur
     }
 
     for (const marker of [
-        "const PROFILE_MODAL_BOOTSTRAP_SRC = 'js/profile-modal-loader.js?v=20260501_PROFILE_MODAL_MOBILE_HEIGHT_1';",
+        "const PROFILE_MODAL_BOOTSTRAP_SRC = 'js/profile-modal-loader.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1';",
         'function scheduleSupabaseAuthProfileModalWarmup(reason =',
         'await loader.mount();',
         "scheduleSupabaseAuthProfileModalWarmup('dropdown-open');",

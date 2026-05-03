@@ -7,6 +7,34 @@ const ticketLinksProtocol = require('../js/admin-ticket-links.js');
 
 const adminTicketsPath = path.resolve(__dirname, '../js/admin-tickets.js');
 
+function createFixedDateConstructor(nowValue = '') {
+    const fixedNowMs = Date.parse(String(nowValue || ''));
+    if (!Number.isFinite(fixedNowMs)) {
+        return Date;
+    }
+
+    const realStartedAtMs = Date.now();
+    const getCurrentMs = () => fixedNowMs + Math.max(0, Date.now() - realStartedAtMs);
+
+    return class FixedDate extends Date {
+        constructor(...args) {
+            super(args.length ? args[0] : getCurrentMs(), ...args.slice(1));
+        }
+
+        static now() {
+            return getCurrentMs();
+        }
+
+        static parse(value) {
+            return Date.parse(value);
+        }
+
+        static UTC(...args) {
+            return Date.UTC(...args);
+        }
+    };
+}
+
 function createSupabaseQuery(rows = []) {
     const state = {
         filters: [],
@@ -93,6 +121,7 @@ function loadAdminTicketsRuntime(options = {}) {
     let confirmCalls = [];
     let viewportScrollX = Number(options.scrollX || 0);
     let viewportScrollY = Number(options.scrollY || 0);
+    const DateConstructor = createFixedDateConstructor(options.now);
 
     const document = {
         getElementById(id) {
@@ -179,6 +208,7 @@ function loadAdminTicketsRuntime(options = {}) {
         supabaseClient: options.supabaseClient || createSupabaseClientStub(),
         AdminTicketLinks: options.ticketLinks || null
     };
+    window.Date = DateConstructor;
 
     const context = {
         console: {
@@ -202,6 +232,7 @@ function loadAdminTicketsRuntime(options = {}) {
         },
         URL,
         URLSearchParams,
+        Date: DateConstructor,
         fetch: typeof options.fetchImpl === 'function'
             ? options.fetchImpl
             : async () => ({ ok: true, json: async () => ({ success: true }) })
@@ -1402,7 +1433,8 @@ test('admin tickets overview falls back to client-side metrics when the admin ro
             ticketsOverviewReminderPanel: reminderPanel,
             ticketsOverviewSubtitle: overviewSubtitle,
             ticketsOverviewUpdatedAt: overviewUpdatedAt
-        }
+        },
+        now: '2026-04-04T00:00:00.000Z'
     });
     AdminTickets.parseLinkedChatSessionContext = (description = '') => (
         String(description || '').includes('[客服会话转工单]')

@@ -152,6 +152,25 @@ body.mobile-menu-open {
     overscroll-behavior: none;
 }
 
+/* 20260502_PUBLIC_MOBILE_TAP_HIGHLIGHT_GUARD_1 */
+@media (hover: none) and (pointer: coarse) {
+    :where(a, button, label, summary, [role="button"], [data-action], [data-home-action], [data-shop-action], [data-comments-action], [class*="-btn"], [class*="__btn"], [class*="-button"], [class*="__button"], .nav-trigger, .mobile-menu-trigger, .mobile-menu-link, .login-trigger-btn, .user-avatar-btn, .theme-toggle-btn, #authBtn, #notifBtn) {
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+        touch-action: manipulation;
+    }
+
+    :where(input, textarea, select) {
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    :where(a, button, summary, [role="button"], [data-action], [data-home-action], [data-shop-action], [data-comments-action], [class*="-btn"], [class*="__btn"], [class*="-button"], [class*="__button"]):focus:not(:focus-visible) {
+        outline: none;
+    }
+}
+
 /* ========== Typography =========== */
 .hero-title {
     font-family: var(--font-display);
@@ -225,6 +244,9 @@ h3 {
     color: var(--text-primary);
     text-decoration: none;
     transition: opacity var(--transition-fast);
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
     /* Ensure SVG inherits color */
 }
 
@@ -232,10 +254,24 @@ h3 {
     width: 40px;
     height: 40px;
     display: block;
+    -webkit-tap-highlight-color: transparent;
 }
 
 .nav-logo:hover {
     opacity: 0.8;
+}
+
+/* 20260502_NAV_LOGO_TAP_HIGHLIGHT_1 */
+.nav-logo:active {
+    background: transparent !important;
+    box-shadow: none !important;
+    outline: none !important;
+}
+
+@media (hover: none) and (pointer: coarse) {
+    .nav-logo:hover {
+        opacity: 1;
+    }
 }
 
 .nav-menu {

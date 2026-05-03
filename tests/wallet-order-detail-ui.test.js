@@ -99,9 +99,25 @@ test('wallet shop order content cards wrap long card secrets inside adaptive box
     assert.match(styles, /\.wallet-copy-card--compact:hover\s*\{[\s\S]*border-color:\s*rgba\(148,\s*163,\s*184,\s*0\.26\);/);
     assert.match(styles, /\.wallet-copy-card--compact:active\s*\{[\s\S]*transform:\s*translateY\(0\);/);
     assert.match(styles, /\.item-content-box--plain\s*\{[\s\S]*min-width:\s*0;[\s\S]*max-width:\s*100%;/);
+    assert.match(styles, /\.wallet-order-modal-body \.content-section\s*\{[\s\S]*margin-right:\s*0;[\s\S]*margin-left:\s*0;[\s\S]*padding:\s*16px 0 0;[\s\S]*width:\s*100%;/);
+    assert.match(styles, /\.wallet-content-grid--stacked \.wallet-copy-card--compact\s*\{[\s\S]*width:\s*min\(100%,\s*420px\);[\s\S]*min-width:\s*min\(100%,\s*340px\);/);
     assert.match(styles, /\.wallet-copy-card--compact \.item-text,[\s\S]*\.wallet-copy-card--link \.item-text\s*\{[\s\S]*white-space:\s*pre-wrap;/);
     assert.match(styles, /\.wallet-copy-card--compact \.item-text,[\s\S]*\.wallet-copy-card--link \.item-text\s*\{[\s\S]*overflow-wrap:\s*anywhere;/);
     assert.match(styles, /@media \(max-width: 640px\)[\s\S]*\.wallet-content-grid--stacked \.wallet-copy-card--compact\s*\{[\s\S]*justify-self:\s*stretch;[\s\S]*width:\s*100%;[\s\S]*min-width:\s*0;/);
+});
+
+test('wallet order detail copying uses mobile-safe fallback path', () => {
+    const script = fs.readFileSync(walletScriptPath, 'utf8');
+
+    assert.match(script, /async writeTextWithLegacyClipboard\(text\)/);
+    assert.match(script, /document\.execCommand\('copy'\)/);
+    assert.match(script, /async writeTextToClipboard\(text\)/);
+    assert.match(script, /window\.isSecureContext/);
+    assert.match(script, /navigator\.clipboard\?\.writeText/);
+    assert.match(script, /Clipboard API failed, trying legacy copy/);
+    assert.match(script, /async copyToClipboard\(text, event, options = \{\}\)/);
+    assert.match(script, /const copyAllOrderContent = \(\) => \{\s*this\.copyToClipboard\(allContent, null, \{/);
+    assert.match(script, /copyOrderContent\(element\)[\s\S]*this\.copyToClipboard\(content, null, \{/);
 });
 
 test('wallet prompt, redeem, and shop details expose clickable names with green status checks', () => {
@@ -230,6 +246,29 @@ test('wallet ledger details map check-in and rewards by reason instead of positi
         script,
         /const typeLabel = normalizedAmount >= 0\s*\?\s*\(window\.i18n\?\.t\('wallet\.rechargeType'\) \|\| '充值'\)/
     );
+});
+
+test('wallet ledger list labels redemption revocations separately from redemption credits', () => {
+    const script = fs.readFileSync(walletScriptPath, 'utf8');
+    const styles = fs.readFileSync(walletStylesPath, 'utf8');
+    const reversalIndex = script.indexOf('this.isRedemptionReversalReason(entry.reason, entry.reference_id, entryAmount)');
+    const redeemIndex = script.indexOf("entry.reason === 'redeem_code' || (entry.reason && entry.reason.includes('兑换码'))");
+
+    assert.notEqual(reversalIndex, -1, 'wallet should detect redemption revocation ledger rows');
+    assert.notEqual(redeemIndex, -1, 'wallet should still detect redemption credit ledger rows');
+    assert.equal(reversalIndex < redeemIndex, true, 'redemption revocation rows must be classified before generic redemption rows');
+    assert.match(script, /transactionType = 'redemption_reversal'/);
+    assert.match(script, /order\.transactionType === 'redeem' \|\| order\.transactionType === 'redemption_reversal'/);
+    assert.match(script, /getRedemptionReversalDisplayName\(reason = '', referenceId = ''\)/);
+    assert.match(script, /getRedemptionReversalMeta\(reason = '', referenceId = ''\)/);
+    assert.match(script, /renderRedemptionReversalName\(order\.rawReason, order\.referenceId\)/);
+    assert.match(script, /buildRedemptionReversalDetailMarkup\(reason, referenceId\)/);
+    assert.match(script, /wallet\.redeemCodeRevocation/);
+    assert.match(script, /wallet\.redeemCodeBatchRevocation/);
+    assert.match(script, /wallet\.pointsDeducted/);
+    assert.match(styles, /\.order-item--redemption-reversal\s*\{/);
+    assert.match(styles, /\.wallet-redemption-reversal-reason\s*\{/);
+    assert.match(styles, /\.wallet-redemption-reversal-detail\s*\{/);
 });
 
 test('wallet recharge detail shows balance snapshots and hides internal type/name rows', () => {

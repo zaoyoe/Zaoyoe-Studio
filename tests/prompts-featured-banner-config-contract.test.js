@@ -56,7 +56,7 @@ test('prompts featured banner prefers homepage manual featured items before dail
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260501_PROMPTS_SEARCH_VISUAL_TAGS_9'),
+        promptsHtml.includes('prompts-poetry.js?v=20260503_PROMPTS_MODAL_CHROME_CLOSE_1'),
         true,
         'prompts.html should reference the featured-banner homepage-config bundle version'
     );
@@ -86,6 +86,35 @@ test('prompts featured banner prefers homepage manual featured items before dail
     );
 });
 
+test('prompts mobile search input suppresses native tap flash inside the search pill', () => {
+    const promptsHtml = readRepoFile('prompts.html');
+    const promptsCss = readRepoFile('prompts-poetry.css');
+
+    const requiredStyleMarkers = [
+        '.nav-search input {',
+        'background-color: transparent !important;',
+        'background-image: none !important;',
+        '-webkit-appearance: none;',
+        '-webkit-tap-highlight-color: transparent;',
+        'body.prompts-page .nav-search input:focus',
+        'body.prompts-page .nav-search input:active'
+    ];
+
+    for (const marker of requiredStyleMarkers) {
+        assert.equal(
+            promptsCss.includes(marker),
+            true,
+            `prompts-poetry.css should keep mobile search input neutral for ${marker}`
+        );
+    }
+
+    assert.equal(
+        promptsHtml.includes('prompts-poetry.css?v=20260503_PROMPTS_MODAL_CHROME_CLOSE_1'),
+        true,
+        'prompts.html should cache-bust the mobile search tap highlight fix'
+    );
+});
+
 test('prompts mobile comment mode keeps a dedicated light theme surface', () => {
     const promptsHtml = readRepoFile('prompts.html');
     const promptsCss = readRepoFile('prompts-poetry.css');
@@ -97,10 +126,15 @@ test('prompts mobile comment mode keeps a dedicated light theme surface', () => 
         'html[data-theme="light"] .modal-inner.comment-mode .comment-sort-btn',
         'html[data-theme="light"] .modal-inner.comment-mode .comment-footer-toggle',
         'html[data-theme="light"] .modal-inner.comment-mode .comment-input-area.composer-proxy #commentInput',
+        'html[data-theme="light"] .modal-inner.comment-mode .comment-input-area.composer-proxy .comment-input-proxy-ui',
+        '20260502_PROMPTS_COMMENT_FAB_COMPOSITE_1',
+        '20260502_PROMPTS_PROMPT_CARD_STABLE_1',
+        '.modal-inner:not(.comment-mode) .prompt-text.prompt-text--loading',
         'html[data-theme="light"] .modal-inner.comment-mode .close-modal-btn',
         'html[data-theme="light"] .prompt-comment-composer-sheet',
         'html[data-theme="light"] .prompt-comment-composer-send',
-        'html:not([data-theme="dark"]) .prompt-comment-composer-editor'
+        'html:not([data-theme="dark"]) .prompt-comment-composer-editor',
+        '.modal-inner.comment-mode.prompt-comment-geometry-locked:not(.keyboard-docked)'
     ];
 
     for (const marker of requiredStyleMarkers) {
@@ -112,7 +146,7 @@ test('prompts mobile comment mode keeps a dedicated light theme surface', () => 
     }
 
     assert.equal(
-        promptsHtml.includes('prompts-poetry.css?v=20260501_PROMPTS_LIGHT_BLUE_ACCENTS_2'),
+        promptsHtml.includes('prompts-poetry.css?v=20260503_PROMPTS_MODAL_CHROME_CLOSE_1'),
         true,
         'prompts.html should cache-bust the mobile light comment mode stylesheet'
     );

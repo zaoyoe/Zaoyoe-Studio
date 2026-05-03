@@ -7,6 +7,13 @@
     }
 
     const THEME_COLOR = '#000000';
+    const SITE_MODAL_THEME_RESTORE_ATTRIBUTE = 'data-site-modal-theme-restore';
+    const PROMPT_MODAL_THEME_RESTORE_ATTRIBUTE = 'data-prompt-modal-theme-restore';
+
+    function hasPromptThemeRestoreAttribute(meta) {
+        return meta?.hasAttribute(SITE_MODAL_THEME_RESTORE_ATTRIBUTE)
+            || meta?.hasAttribute(PROMPT_MODAL_THEME_RESTORE_ATTRIBUTE);
+    }
 
     function ensureThemeColorBlack() {
         let meta = document.querySelector('meta[name="theme-color"]');
@@ -14,6 +21,10 @@
             meta = document.createElement('meta');
             meta.setAttribute('name', 'theme-color');
             document.head.appendChild(meta);
+        }
+
+        if (hasPromptThemeRestoreAttribute(meta)) {
+            return meta;
         }
 
         if (meta.getAttribute('content') !== THEME_COLOR) {
@@ -30,6 +41,10 @@
         }
 
         const attributeObserver = new MutationObserver(() => {
+            if (hasPromptThemeRestoreAttribute(meta)) {
+                return;
+            }
+
             if (meta.getAttribute('content') !== THEME_COLOR) {
                 meta.setAttribute('content', THEME_COLOR);
             }

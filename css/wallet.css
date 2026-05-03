@@ -52,6 +52,29 @@ body.wallet-modal-lock {
     display: none !important;
 }
 
+.wallet-overlay.wallet-modal-force-hidden {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    transition: none !important;
+}
+
+.wallet-overlay.wallet-modal-force-hidden .wallet-modal,
+.wallet-overlay.wallet-modal-force-hidden .wallet-backdrop,
+.wallet-overlay.wallet-modal-force-hidden .wallet-viewport {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    transition: none !important;
+    animation: none !important;
+}
+
 #wallet-modal-overlay.wallet-overlay {
     background: transparent !important;
     backdrop-filter: none !important;
@@ -159,7 +182,7 @@ body.wallet-modal-lock {
     transform: translate3d(0, calc(var(--wallet-modal-translate-y, 0px) + 24px), 0) scale(0.988);
     opacity: 0;
     transition: transform 0.34s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.24s ease;
-    will-change: transform, height;
+    will-change: transform;
 }
 
 .wallet-overlay.active .wallet-modal {
@@ -209,16 +232,44 @@ body.wallet-modal-lock {
     transform: translate3d(0, var(--wallet-modal-translate-y, 0px), 0) scale(1);
     transition:
         transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
-        height 180ms cubic-bezier(0.22, 1, 0.36, 1),
-        max-height 180ms cubic-bezier(0.22, 1, 0.36, 1),
         opacity 0.2s ease;
-    will-change: transform, height;
+    will-change: transform;
 }
 
 .wallet-overlay.keyboard-docked .wallet-modal,
 .wallet-overlay.keyboard-docked.active .wallet-modal {
     transform: translate3d(0, var(--wallet-modal-translate-y, 0px), 0) scale(1);
-    will-change: transform, height;
+    will-change: transform;
+}
+
+.wallet-overlay.ios-focus-lock:not(.keyboard-active) .wallet-modal,
+.wallet-overlay.active:not(.keyboard-active):focus-within .wallet-modal {
+    transform: translate3d(0, var(--wallet-modal-translate-y, 0px), 0) scale(1);
+    transition: none !important;
+    animation: none !important;
+}
+
+.wallet-overlay.active.keyboard-active:focus-within .wallet-modal {
+    animation: none !important;
+}
+
+.wallet-overlay.wallet-modal-keyboard-resizing .wallet-modal {
+    transition: none !important;
+}
+
+.wallet-overlay.wallet-modal-keyboard-animating .wallet-modal {
+    transition: transform var(--wallet-modal-keyboard-motion-duration, 250ms) cubic-bezier(0.22, 1, 0.36, 1) !important;
+}
+
+.wallet-overlay.keyboard-active #view-balance,
+.wallet-overlay.keyboard-docked #view-balance,
+.wallet-overlay.wallet-modal-keyboard-content-releasing #view-balance {
+    overflow-anchor: none;
+}
+
+.wallet-overlay.wallet-modal-keyboard-content-releasing #view-balance .redeem-section {
+    transition: margin-bottom var(--wallet-modal-content-release-duration, 260ms) cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: margin-bottom;
 }
 
 .wallet-modal::before {
@@ -3978,6 +4029,12 @@ body.wallet-modal-lock {
         margin-bottom: 20px;
     }
 
+    .wallet-overlay.keyboard-active #view-balance .redeem-section,
+    .wallet-overlay.keyboard-docked #view-balance .redeem-section,
+    .wallet-overlay.ios-focus-lock #view-balance .redeem-section {
+        margin-bottom: 160px;
+    }
+
     .redeem-input-row {
         flex-direction: column;
         gap: 8px;
@@ -4251,6 +4308,17 @@ body.wallet-modal-lock {
     background: rgba(255, 255, 255, 0.05);
 }
 
+.order-item--redemption-reversal {
+    border: 1px solid rgba(251, 113, 133, 0.2);
+    border-left: 3px solid rgba(251, 113, 133, 0.78);
+    background: linear-gradient(135deg, rgba(251, 113, 133, 0.1), rgba(245, 158, 11, 0.06));
+    box-shadow: 0 10px 24px rgba(127, 29, 29, 0.12);
+}
+
+.order-item--redemption-reversal:hover {
+    background: linear-gradient(135deg, rgba(251, 113, 133, 0.14), rgba(245, 158, 11, 0.08));
+}
+
 .order-item:last-child {
     border-bottom: none;
 }
@@ -4272,6 +4340,51 @@ body.wallet-modal-lock {
     font-size: 14px;
     color: rgba(255, 255, 255, 0.9);
     font-weight: 500;
+}
+
+.order-product--redemption-reversal {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+}
+
+.wallet-redemption-reversal-title,
+.wallet-redemption-reversal-detail-head {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+}
+
+.wallet-redemption-reversal-title > span:not(.wallet-redemption-reversal-badge) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.wallet-redemption-reversal-badge {
+    flex: 0 0 auto;
+    padding: 2px 7px;
+    border-radius: 999px;
+    background: rgba(251, 113, 133, 0.16);
+    color: #fb7185;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.4;
+}
+
+.wallet-redemption-reversal-reason {
+    display: block;
+    max-width: 100%;
+    color: rgba(253, 186, 116, 0.92);
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
 }
 
 .order-meta {
@@ -4602,6 +4715,37 @@ body.wallet-modal-lock {
     margin-bottom: 0;
 }
 
+.wallet-redemption-reversal-detail {
+    margin-bottom: 16px;
+    padding: 14px 16px;
+    border: 1px solid rgba(251, 113, 133, 0.22);
+    border-left: 4px solid rgba(251, 113, 133, 0.82);
+    border-radius: 8px;
+    background: linear-gradient(135deg, rgba(251, 113, 133, 0.12), rgba(245, 158, 11, 0.07));
+}
+
+.wallet-redemption-reversal-detail-head {
+    color: #fff1f2;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.wallet-redemption-reversal-detail-body {
+    margin-top: 9px;
+    color: rgba(255, 237, 213, 0.94);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.wallet-redemption-reversal-detail-code {
+    margin-top: 8px;
+    color: rgba(255, 255, 255, 0.58);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+
 .wallet-order-modal-body .detail-row {
     display: flex;
     justify-content: space-between;
@@ -4671,8 +4815,11 @@ body.wallet-modal-lock {
 
 .wallet-order-modal-body .content-section {
     margin-top: 20px;
-    padding-top: 16px;
+    margin-right: 0;
+    margin-left: 0;
+    padding: 16px 0 0;
     border-top: 1px solid rgba(255, 255, 255, 0.08);
+    width: 100%;
     min-width: 0;
     max-width: 100%;
 }
@@ -5345,8 +5492,8 @@ body.wallet-modal-lock {
 
 .wallet-content-grid--stacked .wallet-copy-card--compact {
     justify-self: center;
-    width: fit-content;
-    min-width: min(100%, 300px);
+    width: min(100%, 420px);
+    min-width: min(100%, 340px);
 }
 
 .wallet-copy-card--compact .item-text,
@@ -6450,6 +6597,52 @@ html:not([data-theme="dark"]) .wallet-order-guidance-content a * {
 [data-theme="light"] .history-item.expanded,
 [data-theme="light"] .order-item:hover {
     background: rgba(93, 143, 206, 0.05);
+}
+
+[data-theme="light"] .order-item--redemption-reversal,
+html:not([data-theme="dark"]) .order-item--redemption-reversal {
+    border-color: rgba(244, 63, 94, 0.18);
+    border-left-color: rgba(244, 63, 94, 0.76);
+    background: linear-gradient(135deg, rgba(255, 241, 242, 0.96), rgba(255, 247, 237, 0.84));
+    box-shadow: 0 10px 26px rgba(148, 27, 45, 0.08);
+}
+
+[data-theme="light"] .order-item--redemption-reversal:hover,
+html:not([data-theme="dark"]) .order-item--redemption-reversal:hover {
+    background: linear-gradient(135deg, rgba(255, 228, 230, 0.98), rgba(255, 237, 213, 0.88));
+}
+
+[data-theme="light"] .wallet-redemption-reversal-badge,
+html:not([data-theme="dark"]) .wallet-redemption-reversal-badge {
+    background: rgba(244, 63, 94, 0.12);
+    color: #be123c;
+}
+
+[data-theme="light"] .wallet-redemption-reversal-reason,
+html:not([data-theme="dark"]) .wallet-redemption-reversal-reason {
+    color: #9a3412;
+}
+
+[data-theme="light"] .wallet-redemption-reversal-detail,
+html:not([data-theme="dark"]) .wallet-redemption-reversal-detail {
+    border-color: rgba(244, 63, 94, 0.2);
+    border-left-color: rgba(244, 63, 94, 0.76);
+    background: linear-gradient(135deg, rgba(255, 241, 242, 0.95), rgba(255, 247, 237, 0.86));
+}
+
+[data-theme="light"] .wallet-redemption-reversal-detail-head,
+html:not([data-theme="dark"]) .wallet-redemption-reversal-detail-head {
+    color: #881337;
+}
+
+[data-theme="light"] .wallet-redemption-reversal-detail-body,
+html:not([data-theme="dark"]) .wallet-redemption-reversal-detail-body {
+    color: #9a3412;
+}
+
+[data-theme="light"] .wallet-redemption-reversal-detail-code,
+html:not([data-theme="dark"]) .wallet-redemption-reversal-detail-code {
+    color: #64748b;
 }
 
 [data-theme="light"] .history-details {

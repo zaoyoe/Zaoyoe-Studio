@@ -160,6 +160,11 @@
             currentAnnouncementAckKey = '';
         }
 
+        window.runSiteModalCloseChromeCleanup?.({
+            targets: [element],
+            forceHiddenClass: 'announcement-modal-force-hidden',
+            restoreDelayMs: 320
+        });
         element.remove();
         unlockAnnouncementBackground();
     }
@@ -634,6 +639,33 @@
                 align-items: center;
                 justify-content: center;
                 animation: fadeIn 0.3s ease;
+            }
+
+            .zaoyoe-announcement-overlay.announcement-modal-force-hidden,
+            .zaoyoe-announcement-banner.announcement-modal-force-hidden,
+            .zaoyoe-announcement-toast.announcement-modal-force-hidden {
+                display: none !important;
+                opacity: 0 !important;
+                visibility: hidden !important;
+                pointer-events: none !important;
+                background: transparent !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+                transition: none !important;
+                animation: none !important;
+            }
+
+            .zaoyoe-announcement-overlay.announcement-modal-force-hidden .zaoyoe-announcement-modal,
+            .zaoyoe-announcement-overlay.announcement-modal-force-hidden .zaoyoe-announcement-modal *,
+            .zaoyoe-announcement-banner.announcement-modal-force-hidden *,
+            .zaoyoe-announcement-toast.announcement-modal-force-hidden * {
+                opacity: 0 !important;
+                visibility: hidden !important;
+                pointer-events: none !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+                transition: none !important;
+                animation: none !important;
             }
             
             .zaoyoe-announcement-modal {

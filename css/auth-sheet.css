@@ -8,7 +8,7 @@
     gap: 16px;
 }
 
-/* 20260427_AUTH_MESSAGE_CENTER_1 */
+/* 20260503_AUTH_MODAL_CHROME_CLOSE_1 */
 :root {
     --auth-sheet-overlay: rgba(7, 9, 12, 0.28);
     --auth-sheet-overlay-filter: blur(14px) saturate(108%);
@@ -202,6 +202,29 @@ body.auth-sheet-open {
     background: transparent !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
+}
+
+#loginModal.auth-sheet-overlay.auth-sheet-force-hidden,
+#loginModal.auth-sheet-overlay.login-overlay.auth-sheet-force-hidden {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    transition: none !important;
+}
+
+#loginModal.auth-sheet-overlay.auth-sheet-force-hidden .auth-sheet-surface,
+#loginModal.auth-sheet-overlay.login-overlay.auth-sheet-force-hidden .auth-sheet-surface {
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    transition: none !important;
+    animation: none !important;
 }
 
 .auth-sheet-backdrop {
@@ -478,6 +501,20 @@ body.auth-sheet-open {
 
 .auth-sheet-message[hidden] {
     display: none;
+}
+
+.auth-sheet-message.is-reserved[hidden] {
+    display: block !important;
+    box-sizing: border-box;
+    height: var(--auth-sheet-message-reserve-height, auto) !important;
+    min-height: var(--auth-sheet-message-reserve-height, 0px);
+    overflow: hidden;
+    visibility: hidden;
+    pointer-events: none;
+    color: transparent;
+    background: transparent;
+    border-color: transparent;
+    box-shadow: none;
 }
 
 .auth-sheet-message.is-error {

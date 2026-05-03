@@ -1,4 +1,19 @@
 /* index_old.html inline style block 1 (from line 48) */
+/* 20260502_INDEX_OLD_TAP_HIGHLIGHT_1 */
+@media (hover: none) and (pointer: coarse) {
+    :where(a, button, label, [role="button"], [class*="-btn"], [class*="__btn"], .glass-box, .guestbook-view-more) {
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+        touch-action: manipulation;
+    }
+
+    :where(a, button, [role="button"], [class*="-btn"], [class*="__btn"], .glass-box, .guestbook-view-more):focus:not(:focus-visible) {
+        outline: none;
+    }
+}
+
 /* Homepage entrance animation - Subtle */
         @keyframes slideInUp {
             from {

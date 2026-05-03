@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260427_AUTH_MESSAGE_CENTER_1';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260503_AUTH_MODAL_CHROME_CLOSE_1';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260314_AUTH_I18N_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -251,7 +251,7 @@
 
     function buildAuthSheetHTML() {
         return `
-            <div id="loginModal" class="auth-sheet-overlay login-overlay" data-auth-current-view="login" hidden aria-hidden="true">
+            <div id="loginModal" class="auth-sheet-overlay login-overlay" data-auth-current-view="login" hidden aria-hidden="true" style="display: none;">
                 <div class="auth-sheet-backdrop" data-auth-backdrop></div>
                 <div class="auth-sheet-stage">
                     <section class="auth-sheet" role="dialog" aria-modal="true" aria-labelledby="authSheetTitle">
@@ -457,6 +457,48 @@
 
             link.addEventListener('load', markReady, { once: true });
             link.addEventListener('error', markReady, { once: true });
+        });
+    }
+
+    function areAuthSheetStylesApplied(overlay = document.getElementById('loginModal')) {
+        const sheet = overlay?.querySelector('.auth-sheet');
+        const inputProxy = overlay?.querySelector('.auth-sheet-input-proxy');
+        if (!sheet || !inputProxy || typeof window.getComputedStyle !== 'function') {
+            return false;
+        }
+
+        const sheetStyle = window.getComputedStyle(sheet);
+        const inputProxyStyle = window.getComputedStyle(inputProxy);
+        const inputProxyHeight = Number.parseFloat(inputProxyStyle.height) || 0;
+
+        return sheetStyle.display === 'grid'
+            && inputProxyHeight >= 40
+            && inputProxyStyle.borderRadius !== '0px';
+    }
+
+    function waitForAuthSheetStylesApplied(overlay, timeoutMs = 1200) {
+        if (areAuthSheetStylesApplied(overlay)) {
+            return Promise.resolve(true);
+        }
+
+        return new Promise((resolve) => {
+            const startedAt = window.performance?.now?.() || Date.now();
+            const check = () => {
+                if (areAuthSheetStylesApplied(overlay)) {
+                    resolve(true);
+                    return;
+                }
+
+                const now = window.performance?.now?.() || Date.now();
+                if (now - startedAt >= timeoutMs) {
+                    resolve(false);
+                    return;
+                }
+
+                window.requestAnimationFrame(check);
+            };
+
+            window.requestAnimationFrame(check);
         });
     }
 
@@ -678,6 +720,10 @@
             submitState.stabilizeTimerId = 0;
         }
         overlay?.classList.remove('auth-sheet-submit-active', 'auth-sheet-submitting');
+        const message = overlay?.querySelector('#authSheetMessage');
+        if (message?.hidden) {
+            releaseAuthMessageReserve(message);
+        }
     }
 
     function getProxyForInputId(inputId) {
@@ -928,7 +974,7 @@
             }
             scheduleActivePortaledInputPosition();
             if (options.focus !== false && document.activeElement !== input) {
-                input.focus({ preventScroll: true });
+                focusPortaledInput(input);
             }
             return;
         }
@@ -1160,6 +1206,49 @@
         }
     }
 
+    function renderAuthMessage(message, type = 'error') {
+        const { message: messageBox } = getSheetElements();
+        const normalizedMessage = String(message || '').trim();
+        if (!messageBox || !normalizedMessage) return false;
+
+        releaseAuthMessageReserve(messageBox);
+        messageBox.hidden = false;
+        messageBox.textContent = normalizedMessage;
+        messageBox.classList.remove('is-error', 'is-success');
+        messageBox.classList.add(type === 'success' ? 'is-success' : 'is-error');
+        return true;
+    }
+
+    function hasSubmitStabilizedAuthSheet(overlay) {
+        return !!(
+            overlay?.classList.contains('auth-sheet-submit-active') ||
+            overlay?.classList.contains('auth-sheet-submitting')
+        );
+    }
+
+    function reserveAuthMessageSpace(messageBox) {
+        if (!messageBox || messageBox.hidden) return false;
+
+        const reserveHeight = Math.ceil(
+            messageBox.getBoundingClientRect().height ||
+            messageBox.offsetHeight ||
+            0
+        );
+
+        if (reserveHeight <= 0) return false;
+
+        setInjectedAuthStyleProperty(messageBox, '--auth-sheet-message-reserve-height', `${reserveHeight}px`);
+        messageBox.classList.add('is-reserved');
+        return true;
+    }
+
+    function releaseAuthMessageReserve(messageBox) {
+        if (!messageBox?.classList?.contains('is-reserved')) return;
+
+        messageBox.classList.remove('is-reserved');
+        setInjectedAuthStyleProperty(messageBox, '--auth-sheet-message-reserve-height', null);
+    }
+
     function showAuthMessage(message, type = 'error', targetView) {
         const { overlay, message: messageBox } = getSheetElements();
         if (!messageBox || !overlay?.classList.contains('active')) return false;
@@ -1169,37 +1258,49 @@
         }
 
         mutateAuthSheetLayout(() => {
-            messageBox.hidden = false;
-            messageBox.textContent = message;
-            messageBox.classList.remove('is-error', 'is-success');
-            messageBox.classList.add(type === 'success' ? 'is-success' : 'is-error');
-        });
+            renderAuthMessage(message, type);
+        }, { animate: !overlay.classList.contains('auth-sheet-over-shop-modal') });
         return true;
     }
 
     function clearAuthMessage(options = {}) {
-        const { animate = true } = options;
-        const { message } = getSheetElements();
+        const { animate = true, reserveSpace = false } = options;
+        const { overlay, message } = getSheetElements();
         if (!message) return;
         if (message.hidden && !message.textContent && !message.classList.contains('is-error') && !message.classList.contains('is-success')) {
+            if (!hasSubmitStabilizedAuthSheet(overlay)) {
+                releaseAuthMessageReserve(message);
+            }
             return;
         }
 
+        const shouldReserveSpace = (
+            reserveSpace ||
+            (hasSubmitStabilizedAuthSheet(overlay) && !message.hidden && !!message.textContent)
+        );
+
         mutateAuthSheetLayout(() => {
+            if (shouldReserveSpace) {
+                reserveAuthMessageSpace(message);
+            } else {
+                releaseAuthMessageReserve(message);
+            }
             message.hidden = true;
             message.textContent = '';
             message.classList.remove('is-error', 'is-success');
-        }, { animate });
+        }, { animate: animate && !shouldReserveSpace });
     }
 
     function resetAuthSheetFields(options = {}) {
-        const { preserveView = false } = options;
+        const { preserveView = false, preserveMessage = false } = options;
         const overlay = document.getElementById('loginModal');
         if (!overlay) return;
 
         deactivateActivePortaledInput({ blur: false });
         getActiveAuthInput()?.blur();
-        clearAuthMessage();
+        if (!preserveMessage) {
+            clearAuthMessage();
+        }
 
         overlay.querySelectorAll('form').forEach((form) => {
             form.reset();
@@ -1332,19 +1433,44 @@
         authBtn?.setAttribute('aria-expanded', 'false');
     }
 
-    async function openLoginModal(viewId = sheetState.lastPrimaryView || 'login') {
+    function hasActiveShopModalBehindAuthSheet() {
+        return !!document.querySelector('#shopPurchaseModal.active, #shopSuccessModal.active');
+    }
+
+    function lockAuthSheetScroll(overlay, options = {}) {
+        if (!window.iOSScrollLock) return;
+
+        const freezeScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
+        window.iOSScrollLock.lock(overlay, { freezeScrollY });
+    }
+
+    async function openLoginModal(viewId = sheetState.lastPrimaryView || 'login', options = {}) {
+        const initialMessage = String(options?.initialMessage || '').trim();
+        const initialMessageType = options?.initialMessageType === 'success' ? 'success' : 'error';
+        const hasInitialMessage = !!initialMessage;
+
         ensureMarkup();
         await ensureAuthSheetStylesReady();
 
         const { overlay } = getSheetElements();
         if (!overlay) return;
 
+        await waitForAuthSheetStylesApplied(overlay);
+
+        const overShopModal = hasActiveShopModalBehindAuthSheet();
+        overlay.classList.toggle('auth-sheet-over-shop-modal', overShopModal);
+        overlay.classList.remove('auth-sheet-force-hidden');
+
         syncAuthInputInteractionMode();
         resetAuthSheetFields({ preserveView: true });
 
+        setInjectedAuthStyleProperty(overlay, 'display', null);
         overlay.hidden = false;
         overlay.classList.remove('auth-sheet-input-active');
         await setAuthView(viewId, { clearMessage: true });
+        if (hasInitialMessage) {
+            renderAuthMessage(initialMessage, initialMessageType);
+        }
         syncAllInputProxyDisplays();
         syncTabIndicator(sheetState.view, { immediate: true });
 
@@ -1355,17 +1481,18 @@
 
         window.setTimeout(() => {
             if (!overlay.classList.contains('active')) return;
-            resetAuthSheetFields({ preserveView: true });
-            setAuthView(viewId, { clearMessage: true, ensureDependencies: false }).catch(() => { /* ignore */ });
+            resetAuthSheetFields({ preserveView: true, preserveMessage: hasInitialMessage });
+            setAuthView(viewId, { clearMessage: !hasInitialMessage, ensureDependencies: false }).catch(() => { /* ignore */ });
+            if (hasInitialMessage) {
+                renderAuthMessage(initialMessage, initialMessageType);
+            }
         }, 80);
 
         document.body.classList.add('auth-sheet-open');
         if (typeof window.__forcePromptThemeColorBlack === 'function') {
             window.__forcePromptThemeColorBlack();
         }
-        if (window.iOSScrollLock) {
-            window.iOSScrollLock.lock(overlay);
-        }
+        lockAuthSheetScroll(overlay, { overShopModal });
 
         overlayCloseDisabledUntil = Date.now() + 240;
         warmRegisterDependencies();
@@ -1391,28 +1518,9 @@
             return;
         }
 
-        await openLoginModal(viewId);
-
-        if (!normalizedMessage) {
-            return;
-        }
-
-        let attempts = 0;
-        const presentMessage = () => {
-            const { overlay: activeOverlay } = getSheetElements();
-            if (!activeOverlay?.classList.contains('active')) {
-                attempts += 1;
-                if (attempts < 8) {
-                    window.requestAnimationFrame(presentMessage);
-                }
-                return;
-            }
-
-            showAuthMessage(normalizedMessage, type, viewId);
-        };
-
-        window.requestAnimationFrame(() => {
-            window.requestAnimationFrame(presentMessage);
+        await openLoginModal(viewId, {
+            initialMessage: normalizedMessage,
+            initialMessageType: type
         });
     }
 
@@ -1429,6 +1537,11 @@
         dragState.deltaY = 0;
         setInjectedAuthStyleProperty(sheet, 'transform', null);
 
+        window.runSiteModalCloseChromeCleanup?.({
+            targets: [overlay],
+            forceHiddenClass: 'auth-sheet-force-hidden',
+            restoreDelayMs: 320
+        });
         overlay.classList.remove('active');
         overlay.setAttribute('aria-hidden', 'true');
         document.body.classList.remove('auth-sheet-open');
@@ -1439,6 +1552,7 @@
         window.setTimeout(() => {
             if (!overlay.classList.contains('active')) {
                 overlay.hidden = true;
+                overlay.classList.remove('auth-sheet-over-shop-modal');
             }
         }, 280);
 
@@ -1530,17 +1644,20 @@
         });
 
         overlay.querySelector('#loginForm')?.addEventListener('submit', (event) => {
-            clearAuthMessage();
+            stabilizeAuthSheetForSubmit();
+            clearAuthMessage({ reserveSpace: true, animate: false });
             window.handleLogin?.(event);
         });
 
         overlay.querySelector('#registerForm')?.addEventListener('submit', (event) => {
-            clearAuthMessage();
+            stabilizeAuthSheetForSubmit();
+            clearAuthMessage({ reserveSpace: true, animate: false });
             window.handleRegister?.(event);
         });
 
         overlay.querySelector('#resetForm')?.addEventListener('submit', (event) => {
-            clearAuthMessage();
+            stabilizeAuthSheetForSubmit();
+            clearAuthMessage({ reserveSpace: true, animate: false });
             window.handlePasswordReset?.(event);
         });
 

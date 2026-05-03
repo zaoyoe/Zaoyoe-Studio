@@ -130,6 +130,140 @@
         return String(readPersistedSupabaseSession()?.session?.access_token || '').trim() || null;
     }
 
+    async function writeAdminTextWithLegacyClipboard(text) {
+        const normalizedText = String(text ?? '');
+        const root = document.body || document.documentElement;
+        if (!root || typeof document.execCommand !== 'function') {
+            throw new Error('legacy_copy_unavailable');
+        }
+
+        const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        const selection = typeof window.getSelection === 'function' ? window.getSelection() : null;
+        const savedRanges = selection
+            ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange())
+            : [];
+        const textarea = document.createElement('textarea');
+        const restoreSelection = () => {
+            if (!selection) return;
+            selection.removeAllRanges();
+            savedRanges.forEach((range) => selection.addRange(range));
+        };
+
+        textarea.value = normalizedText;
+        textarea.setAttribute('readonly', '');
+        textarea.setAttribute('aria-hidden', 'true');
+        textarea.style.position = 'fixed';
+        textarea.style.top = '0';
+        textarea.style.left = '0';
+        textarea.style.width = '1px';
+        textarea.style.height = '1px';
+        textarea.style.padding = '0';
+        textarea.style.border = '0';
+        textarea.style.opacity = '0';
+        textarea.style.pointerEvents = 'none';
+        textarea.style.fontSize = '16px';
+
+        root.appendChild(textarea);
+        try {
+            textarea.focus({ preventScroll: true });
+        } catch (_error) {
+            textarea.focus();
+        }
+        textarea.select();
+        textarea.setSelectionRange(0, textarea.value.length);
+
+        try {
+            const copied = document.execCommand('copy');
+            if (!copied) {
+                throw new Error('legacy_copy_failed');
+            }
+        } finally {
+            textarea.remove();
+            restoreSelection();
+            if (activeElement && typeof activeElement.focus === 'function') {
+                try {
+                    activeElement.focus({ preventScroll: true });
+                } catch (_error) {
+                    activeElement.focus();
+                }
+            }
+        }
+    }
+
+    function installAdminClipboardFallback() {
+        if (typeof navigator === 'undefined') return;
+
+        const nativeClipboard = navigator.clipboard || null;
+        const existingWriteText = nativeClipboard?.writeText || null;
+        if (existingWriteText?.__adminClipboardFallback === true) {
+            return;
+        }
+
+        const nativeWriteText = typeof existingWriteText === 'function'
+            ? existingWriteText.bind(nativeClipboard)
+            : null;
+        const writeText = async (value) => {
+            const normalizedText = String(value ?? '');
+            const canUseNativeClipboard = typeof nativeWriteText === 'function'
+                && (typeof window.isSecureContext !== 'boolean' || window.isSecureContext);
+
+            if (canUseNativeClipboard) {
+                try {
+                    await nativeWriteText(normalizedText);
+                    return;
+                } catch (error) {
+                    console.warn('[AdminClipboard] Clipboard API failed, trying legacy copy:', error?.message || error);
+                }
+            }
+
+            await writeAdminTextWithLegacyClipboard(normalizedText);
+        };
+        Object.defineProperty(writeText, '__adminClipboardFallback', {
+            value: true,
+            configurable: false,
+            enumerable: false
+        });
+
+        const clipboardTarget = nativeClipboard || {};
+        try {
+            Object.defineProperty(clipboardTarget, 'writeText', {
+                value: writeText,
+                configurable: true,
+                enumerable: true
+            });
+        } catch (_error) {
+            try {
+                clipboardTarget.writeText = writeText;
+            } catch (_) {
+                // Leave window.AdminClipboard available even when the native object is sealed.
+            }
+        }
+
+        if (!navigator.clipboard) {
+            try {
+                Object.defineProperty(navigator, 'clipboard', {
+                    value: clipboardTarget,
+                    configurable: true,
+                    enumerable: true
+                });
+            } catch (_error) {
+                try {
+                    navigator.clipboard = clipboardTarget;
+                } catch (_) {
+                    // Some browsers expose navigator.clipboard as a non-configurable accessor.
+                }
+            }
+        }
+
+        window.AdminClipboard = Object.freeze({
+            writeText,
+            writeTextWithLegacyClipboard: writeAdminTextWithLegacyClipboard
+        });
+        window.copyAdminTextToClipboard = writeText;
+    }
+
+    installAdminClipboardFallback();
+
     window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
         auth: {
             persistSession: true,
