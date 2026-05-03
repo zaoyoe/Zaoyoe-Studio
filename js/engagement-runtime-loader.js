@@ -7,7 +7,7 @@
     global.__zaoyoeEngagementRuntimeBootstrapLoaded = true;
 
     const VERSION = '20260501_ENGAGEMENT_ANNOUNCEMENT_DARK_CARD_AUTH_BACKDROP_1';
-    const NOTIFICATION_SRC = 'notification-client.js?v=20260428_NOTIFICATION_FIRST_OPEN_SYNC_1';
+    const NOTIFICATION_SRC = 'notification-client.js?v=20260503_NOTIFICATION_MOBILE_HEADER_PIN_2';
     const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=20260503_ANNOUNCEMENT_MODAL_CHROME_CLOSE_1';
     const NOTIFICATION_IDLE_TIMEOUT_MS = 1800;
     const ANNOUNCEMENT_BOOT_DELAY_MS = 0;

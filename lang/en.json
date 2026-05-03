@@ -269,6 +269,7 @@
         "points": "Points",
         "stock": "Stock",
         "outOfStock": "Sold Out",
+        "soldOutClickHint": "Sold out",
         "noStock": "Out of Stock",
         "redeem": "Redeem",
         "confirmRedeem": "Confirm Redeem",

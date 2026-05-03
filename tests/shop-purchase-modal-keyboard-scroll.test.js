@@ -15,7 +15,7 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
     const shopHtml = readRepoFile('shop.html');
 
     assert.equal(
-        shopHtml.includes('css/shop-page.css?v=20260503_SHOP_FLOATING_ICON_SWAP_2'),
+        shopHtml.includes('css/shop-page.css?v=20260503_SHOP_MOBILE_FRESH_ENTER_2'),
         true,
         'shop.html should load the keyboard-dock cache-busted storefront stylesheet'
     );
