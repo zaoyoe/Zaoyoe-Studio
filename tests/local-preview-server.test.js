@@ -16,6 +16,7 @@ const {
     loadFreshPaymentsApiHandler,
     loadFreshPublicApiHandler,
     loadFreshShopApiHandler,
+    loadFreshSupportApiHandler,
     loadFreshWalletApiHandler,
     resolveLocalPreviewListenHost,
     resolveLocalPreviewStandaloneApiRoute,
@@ -240,6 +241,33 @@ test('local preview server reloads standalone wallet handlers without requiring 
     const secondLoad = loadFreshWalletApiHandler(tempRoot, '/api/wallet/overview');
     assert.equal(typeof secondLoad, 'function');
     assert.equal(secondLoad(), 'v2');
+});
+
+test('local preview server reloads the support api handler without requiring a restart', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-support-handler-'));
+    const tempApiDir = path.join(tempRoot, 'api');
+    const tempSupportHandler = path.join(tempApiDir, 'support.js');
+
+    fs.mkdirSync(tempApiDir, { recursive: true });
+    fs.writeFileSync(tempSupportHandler, "module.exports = function handler() { return 'v1'; };\n");
+
+    const firstLoad = loadFreshSupportApiHandler(tempRoot);
+    assert.equal(typeof firstLoad, 'function');
+    assert.equal(firstLoad(), 'v1');
+
+    fs.writeFileSync(tempSupportHandler, "module.exports = function handler() { return 'v2'; };\n");
+
+    const secondLoad = loadFreshSupportApiHandler(tempRoot);
+    assert.equal(typeof secondLoad, 'function');
+    assert.equal(secondLoad(), 'v2');
+});
+
+test('local preview server mounts the support api endpoint used by the support bot', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../scripts/local-preview-server.js'), 'utf8');
+
+    assert.match(source, /app\.all\('\/api\/support'/);
+    assert.match(source, /kind:\s*'support api'/);
+    assert.match(source, /loadHandler:\s*loadFreshSupportApiHandler/);
 });
 
 test('local preview server seeds process env from loaded preview values without clobbering existing vars', () => {

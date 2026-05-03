@@ -63,6 +63,16 @@ test('password reset handler finds the auth-sheet submit button outside the form
     assert.equal(authSource.includes("document.querySelector('#resetForm button[type=\"submit\"]')"), false);
 });
 
+test('password reset invalid email feedback follows the active locale', () => {
+    assert.match(authSource, /function isValidAuthEmailFormat\(email\)/);
+    assert.match(authSource, /showAuthFeedback\(getInvalidResetEmailMessage\(\), 'error', 'reset'\)/);
+    assert.match(authSource, /message\.includes\('unable to validate email address'\)/);
+    assert.match(zhLocale, /"invalidResetEmailFormat": "请输入有效的邮箱地址"/);
+    assert.match(enLocale, /"invalidResetEmailFormat": "Please enter a valid email address"/);
+    assert.doesNotMatch(zhLocale, /invalidResetEmailFormat": "[^"]*Please enter a valid email address/);
+    assert.doesNotMatch(enLocale, /invalidResetEmailFormat": "[^"]*请输入有效的邮箱地址/);
+});
+
 test('google popup callback is handed to the lightweight auth callback before the home page renders', () => {
     assert.match(indexSource, /\.\/css\/auth-popup-handoff\.css\?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1/);
     assert.match(indexSource, /\.\/js\/auth-popup-handoff\.js\?v=20260501_IOS_GOOGLE_REDIRECT_1/);
@@ -86,11 +96,33 @@ test('google popup callback is handed to the lightweight auth callback before th
     assert.match(authSource, /buildGoogleImplicitAuthUrl\(redirectState\)/);
     assert.match(authSource, /handleGoogleCredentialResponse\(\{ credential: payload\.credential \}/);
     assert.match(authSource, /function closeGoogleAuthSurfacesAfterSuccess\(\)/);
+    assert.match(authSource, /function hasActiveModalBehindLogin\(\)/);
     assert.match(authSource, /function hasActiveGoogleAuthLoading\(\)/);
     assert.match(authSource, /window\.closeLoginModal\(\)/);
     assert.match(authSource, /loginModal\.hidden = true/);
+    assert.match(authSource, /window\.iOSScrollLock && !hasActiveModalBehindLogin\(\)/);
     assert.match(authSource, /window\.iOSScrollLock\.unlock\(\)/);
     assert.match(authSource, /closeGoogleAuthSurfacesAfterSuccess\(\);\s*await handleGoogleCredentialResponse/);
     assert.match(authSource, /event === 'SIGNED_IN' && session && hasActiveGoogleAuthLoading\(\)/);
     assert.doesNotMatch(authSource, /typeof toggleLoginModal === 'function'/);
+});
+
+test('public login modal waits for the auth sheet runtime before becoming visible', () => {
+    assert.match(authSource, /function requestLoginModalOpen\(view = 'login'\)/);
+    assert.match(authSource, /window\.addEventListener\('zaoyoe:auth-markup-ready', retryOpen, \{ once: true \}\)/);
+    assert.match(authSource, /sessionStorage\.setItem\('openLoginModal', 'true'\)/);
+    assert.doesNotMatch(
+        authSource,
+        /loginModal\.hidden = false;\s*loginModal\.setAttribute\('aria-hidden', 'false'\);\s*loginModal\.classList\.add\('active'\);/
+    );
+
+    assert.match(injectAuthSource, /id="loginModal"[\s\S]*style="display: none;"/);
+    assert.match(injectAuthSource, /function areAuthSheetStylesApplied\(overlay = document\.getElementById\('loginModal'\)\)/);
+    assert.match(injectAuthSource, /sheetStyle\.display === 'grid'[\s\S]*inputProxyHeight >= 40/);
+    assert.match(injectAuthSource, /await waitForAuthSheetStylesApplied\(overlay\);[\s\S]*setInjectedAuthStyleProperty\(overlay, 'display', null\);\s*overlay\.hidden = false;/);
+    assert.match(injectAuthSource, /function hasActiveShopModalBehindAuthSheet\(\)/);
+    assert.match(injectAuthSource, /function lockAuthSheetScroll\(overlay, options = \{\}\)/);
+    assert.match(injectAuthSource, /overlay\.classList\.toggle\('auth-sheet-over-shop-modal', overShopModal\)/);
+    assert.match(injectAuthSource, /window\.iOSScrollLock\.lock\(overlay, \{ freezeScrollY \}\)/);
+    assert.match(injectAuthSource, /lockAuthSheetScroll\(overlay, \{ overShopModal \}\);/);
 });

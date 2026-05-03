@@ -1,5 +1,6 @@
 #profileModal {
     --profile-modal-shift-y: 0px;
+    --profile-modal-dock-height: min(82svh, calc(var(--profile-modal-overlay-height, 100dvh) - 56px));
     --profile-modal-overlay-height: 100dvh;
     --profile-mobile-modal-radius: 20px;
     --profile-mobile-topbar-height: 86px;
@@ -30,6 +31,17 @@
     opacity: 0 !important;
 }
 
+#profileModal.profile-modal-force-hidden {
+    display: none !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    transition: none !important;
+}
+
 /*
  * Mobile layout overrides later in this file force several inner panels back to
  * `visibility: visible` / `pointer-events: auto`. Without this guard, the hidden
@@ -37,10 +49,16 @@
  * mobile nav, avatar dropdown, and gallery content.
  */
 #profileModal:not(.active) .modal-content.profile-modal,
-#profileModal:not(.active) .modal-content.profile-modal * {
+#profileModal:not(.active) .modal-content.profile-modal *,
+#profileModal.profile-modal-force-hidden .modal-content.profile-modal,
+#profileModal.profile-modal-force-hidden .modal-content.profile-modal * {
     opacity: 0 !important;
     visibility: hidden !important;
     pointer-events: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    transition: none !important;
+    animation: none !important;
 }
 
 #profileModal.active {
@@ -104,22 +122,20 @@
     padding: 0 !important;
     text-align: center;
     color: white;
-    top: var(--profile-modal-shift-y, 0px);
+    top: 0;
     background: rgba(12, 15, 19, 0.92) !important;
     border: 1px solid rgba(255, 255, 255, 0.08) !important;
     border-radius: var(--profile-mobile-modal-radius) !important;
     box-shadow:
         0 26px 56px rgba(0, 0, 0, 0.32),
         inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
-    transform: scale(0.95);
+    transform: translate3d(0, var(--profile-modal-shift-y, 0px), 0) scale(0.95);
     transition:
-        top 180ms cubic-bezier(0.22, 1, 0.36, 1),
-        transform 0.3s ease-out,
+        transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
         opacity 0.3s ease-out,
-        max-height 180ms cubic-bezier(0.22, 1, 0.36, 1),
         width 220ms cubic-bezier(0.22, 1, 0.36, 1),
         max-width 220ms cubic-bezier(0.22, 1, 0.36, 1);
-    will-change: top, opacity, transform;
+    will-change: transform, opacity;
     overflow: hidden !important;
     overscroll-behavior: contain;
 }
@@ -129,7 +145,7 @@
 }
 
 #profileModal.active .modal-content.profile-modal {
-    transform: scale(1);
+    transform: translate3d(0, var(--profile-modal-shift-y, 0px), 0) scale(1);
 }
 
 #profileModal .profile-modal-scroll {
@@ -1414,7 +1430,8 @@
     }
 
     #profileModal.keyboard-active {
-        align-items: flex-start !important;
+        align-items: center !important;
+        justify-content: center !important;
     }
 
     #profileModal .modal-content.profile-modal {
@@ -1438,6 +1455,15 @@
         min-height: 0 !important;
         max-height: calc(var(--profile-modal-overlay-height, 100dvh) - 48px) !important;
         margin: auto !important;
+    }
+
+    #profileModal.active.keyboard-active .modal-content.profile-modal {
+        top: 0 !important;
+        height: var(--profile-modal-dock-height, min(82svh, calc(var(--profile-modal-overlay-height, 100dvh) - 56px))) !important;
+        min-height: 0 !important;
+        max-height: var(--profile-modal-dock-height, calc(var(--profile-modal-overlay-height, 100dvh) - 48px)) !important;
+        margin: auto !important;
+        transform: translate3d(0, var(--profile-modal-shift-y, 0px), 0) scale(1) !important;
     }
 
     #profileModal .profile-modal-scroll {
@@ -1493,13 +1519,26 @@
         -webkit-backdrop-filter: none !important;
     }
 
-    #profileModal.ios-focus-lock,
-    #profileModal.ios-focus-lock .modal-content.profile-modal,
-    #profileModal.active:focus-within,
-    #profileModal.active:focus-within .modal-content.profile-modal {
+    #profileModal.ios-focus-lock:not(.keyboard-active),
+    #profileModal.ios-focus-lock:not(.keyboard-active) .modal-content.profile-modal,
+    #profileModal.active:not(.keyboard-active):focus-within,
+    #profileModal.active:not(.keyboard-active):focus-within .modal-content.profile-modal {
         transform: none !important;
         transition: none !important;
         animation: none !important;
+    }
+
+    #profileModal.active.keyboard-active:focus-within,
+    #profileModal.active.keyboard-active:focus-within .modal-content.profile-modal {
+        animation: none !important;
+    }
+
+    #profileModal.profile-modal-keyboard-resizing .modal-content.profile-modal {
+        transition: none !important;
+    }
+
+    #profileModal.profile-modal-keyboard-animating .modal-content.profile-modal {
+        transition: transform var(--profile-modal-keyboard-motion-duration, 250ms) cubic-bezier(0.22, 1, 0.36, 1) !important;
     }
 }
 
@@ -1884,7 +1923,7 @@ html:not([data-theme="dark"]) #profileModal {
     color: #b91c1c;
 }
 
-/* 20260501_PROFILE_MODAL_MOBILE_HEIGHT_1
+/* 20260503_PROFILE_MODAL_CHROME_CLOSE_1
    Keep shop/profile security on the same light contract as the homepage when
    the page is any non-dark public theme state. */
 html:not([data-theme="dark"]) #profileModal::-webkit-scrollbar-thumb,
@@ -2175,7 +2214,7 @@ html:not([data-theme="dark"]) #profileModal :is(
     color: #b91c1c;
 }
 
-/* 20260501_PROFILE_MODAL_MOBILE_HEIGHT_1 */
+/* 20260503_PROFILE_MODAL_CHROME_CLOSE_1 */
 @media (max-width: 768px) {
     html:not([data-theme="dark"]) #profileModal .mobile-security-section {
         background: rgba(255, 255, 255, 0.98) !important;

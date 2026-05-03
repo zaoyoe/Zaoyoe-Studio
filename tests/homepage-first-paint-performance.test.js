@@ -31,17 +31,17 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should cache-bust the first-paint homepage runtime'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home_critical.css?v=20260502_HOME_LIGHT_HERO_BG_PARITY_1'),
+        indexSource.includes('./css/framer_home_critical.css?v=20260502_NAV_LOGO_TAP_HIGHLIGHT_1'),
         true,
         'index.html should load a small blocking homepage critical stylesheet'
     );
     assert.match(
         indexSource,
-        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260502_HOME_LIGHT_HERO_BG_PARITY_1" media="print" data-deferred-style="1">/,
+        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260502_NAV_LOGO_TAP_HIGHLIGHT_1" media="print" data-deferred-style="1">/,
         'index.html should defer the full homepage stylesheet after the first-paint shell'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home.css?v=20260502_HOME_LIGHT_HERO_BG_PARITY_1'),
+        indexSource.includes('./css/framer_home.css?v=20260502_NAV_LOGO_TAP_HIGHLIGHT_1'),
         true,
         'index.html should keep cache-busting the full static hero stability styles'
     );
@@ -51,7 +51,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'homepage should load the cached nav auth fast-paint helper before the lower auth runtime'
     );
     assert.ok(
-        indexSource.indexOf('./js/nav-auth-fast-paint.js?v=20260501_NAV_AUTH_FAST_PAINT_1') < indexSource.indexOf('./supabase-auth-functions.js?v=20260501_IOS_GOOGLE_REDIRECT_1'),
+        indexSource.indexOf('./js/nav-auth-fast-paint.js?v=20260501_NAV_AUTH_FAST_PAINT_1') < indexSource.indexOf('./supabase-auth-functions.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1'),
         'homepage nav auth fast-paint helper should run before Supabase auth hydration'
     );
     assert.match(
@@ -533,12 +533,12 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
     );
     assert.match(
         indexSource,
-        /<script src="\.\/js\/homepage-guestbook-modal-loader\.js\?v=20260501_HOME_GUESTBOOK_INTENT_LOAD_1" defer><\/script>/,
+        /<script src="\.\/js\/homepage-guestbook-modal-loader\.js\?v=20260502_HOME_GUESTBOOK_LOADER_STABLE_DOCK_1" defer><\/script>/,
         'homepage should keep only a small guestbook intent loader on the first load path'
     );
     assert.match(
         guestbookLoaderSource,
-        /const HOMEPAGE_GUESTBOOK_RUNTIME_SOURCES = Object\.freeze\(\[[\s\S]*supabase-guestbook-functions\.js\?v=20260501_GUESTBOOK_DOM_READY_LATE_LOAD_1[\s\S]*homepage-guestbook-modal\.js\?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1/,
+        /const HOMEPAGE_GUESTBOOK_RUNTIME_SOURCES = Object\.freeze\(\[[\s\S]*supabase-guestbook-functions\.js\?v=20260501_GUESTBOOK_DOM_READY_LATE_LOAD_1[\s\S]*homepage-guestbook-modal\.js\?v=20260503_HOME_GUESTBOOK_MODAL_CHROME_CLOSE_1/,
         'guestbook intent loader should own the deferred runtime sources'
     );
     assert.match(

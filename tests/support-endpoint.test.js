@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const Module = require('node:module');
 const {
@@ -254,6 +255,69 @@ test('support create_ticket enqueues an external ops alert for the new ticket', 
         assert.equal(enqueuedAlerts[0].payload.user_email, 'profile-member@example.com');
         assert.equal(enqueuedAlerts[0].createdAt, '2026-03-30T12:00:00.000Z');
     });
+});
+
+test('support code_status returns fn_check_code_status payload for the support bot', async () => {
+    const rpcCalls = [];
+
+    await withSupportHandler({
+        adminModule: {
+            async requireAuthenticatedUser() {
+                return {
+                    user: {
+                        id: 'user-support-code'
+                    },
+                    requestSupabase: {
+                        from() {
+                            throw new Error('code_status should not read request tables');
+                        }
+                    },
+                    adminSupabase: {
+                        async rpc(fn, args) {
+                            rpcCalls.push({ fn, args });
+                            assert.equal(fn, 'fn_check_code_status');
+                            return {
+                                data: {
+                                    valid: false,
+                                    status: 'revoked',
+                                    code: 'ZY-C4B7-9F36-A9F0',
+                                    message: '该兑换码已被撤销'
+                                },
+                                error: null
+                            };
+                        }
+                    }
+                };
+            }
+        }
+    }, async (handler) => {
+        const req = {
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'code_status',
+                input: 'zy-c4b7-9f36-a9f0'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.payload.status, 'revoked');
+        assert.equal(rpcCalls[0]?.args?.p_code, 'ZY-C4B7-9F36-A9F0');
+    });
+});
+
+test('chat support code_status falls back to direct rpc when the support endpoint is unavailable', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../js/components/ChatWidget.js'), 'utf8');
+
+    assert.match(source, /async callSupportCodeStatusRpcFallback\(input, cause = null\)/);
+    assert.match(source, /shouldFallbackSupportCodeStatusRequest\(response, payload = \{\}\)/);
+    assert.match(source, /\[404, 405, 500, 501, 502, 503, 504\]\.includes\(status\)/);
+    assert.match(source, /this\.supabase\.rpc\('fn_check_code_status', \{\s*p_code: codeOrOrder\s*\}\)/);
 });
 
 test('support create_ticket still succeeds when external alert enqueue fails', async () => {

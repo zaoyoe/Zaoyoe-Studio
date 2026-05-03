@@ -42,6 +42,32 @@ const AdminDiscounts = {
         return detail;
     },
 
+    getToastTypeForFeedbackState: function (feedbackState = 'saved') {
+        const normalized = String(feedbackState || '').trim().toLowerCase();
+        if (['saved', 'success', 'ready'].includes(normalized)) return 'success';
+        if (['partial', 'warning'].includes(normalized)) return 'warning';
+        if (['failed', 'error', 'danger'].includes(normalized)) return 'error';
+        return 'info';
+    },
+
+    notify: function (message = '', type = 'info', options = {}) {
+        const normalizedMessage = String(message || '').trim();
+        if (!normalizedMessage) {
+            return null;
+        }
+
+        const normalizedType = ['success', 'warning', 'error', 'info'].includes(String(type || '').trim().toLowerCase())
+            ? String(type || '').trim().toLowerCase()
+            : this.getToastTypeForFeedbackState(type);
+
+        if (typeof window.showToast === 'function') {
+            return window.showToast(normalizedMessage, normalizedType, options);
+        }
+
+        alert(normalizedMessage);
+        return null;
+    },
+
     discounts: [],
     filteredDiscounts: [],
     scopeSummary: null,
@@ -2237,7 +2263,7 @@ const AdminDiscounts = {
     copyAuditSummary: async function () {
         const detail = this.getActiveDetailData();
         if (!detail) {
-            alert('当前没有可复制的审计摘要');
+            this.notify('当前没有可复制的审计摘要', 'warning');
             return;
         }
 
@@ -2245,14 +2271,14 @@ const AdminDiscounts = {
             await navigator.clipboard.writeText(this.buildDiscountAuditSummaryText(detail));
             this.showFeedbackToast('已复制审计摘要');
         } catch (error) {
-            alert(`复制失败: ${error.message || '未知错误'}`);
+            this.notify(`复制失败: ${error.message || '未知错误'}`, 'error');
         }
     },
 
     exportAuditSummary: function () {
         const detail = this.getActiveDetailData();
         if (!detail) {
-            alert('当前没有可导出的审计摘要');
+            this.notify('当前没有可导出的审计摘要', 'warning');
             return null;
         }
 
@@ -2267,7 +2293,7 @@ const AdminDiscounts = {
 
     exportFilteredAuditSummaries: async function () {
         if (!Array.isArray(this.filteredDiscounts) || this.filteredDiscounts.length === 0) {
-            alert('当前筛选结果为空，暂无可导出的复盘摘要');
+            this.notify('当前筛选结果为空，暂无可导出的复盘摘要', 'warning');
             return null;
         }
 
@@ -2298,7 +2324,7 @@ const AdminDiscounts = {
             this.showFeedbackToast(`已导出 ${details.length} 张券的复盘摘要`);
             return true;
         } catch (error) {
-            alert(`批量导出失败: ${error.message || '未知错误'}`);
+            this.notify(`批量导出失败: ${error.message || '未知错误'}`, 'error');
             return false;
         } finally {
             if (shouldManageButtonFallback) {
@@ -2310,7 +2336,7 @@ const AdminDiscounts = {
 
     copyBatchRestoreResultSummary: async function (mode = 'all') {
         if (!this.batchRestoreResult) {
-            alert('当前没有可复制的批量恢复结果');
+            this.notify('当前没有可复制的批量恢复结果', 'warning');
             return;
         }
 
@@ -2318,13 +2344,13 @@ const AdminDiscounts = {
             await navigator.clipboard.writeText(this.buildBatchRestoreResultSummaryText(this.batchRestoreResult, { mode }));
             this.showFeedbackToast(mode === 'failed' ? '已复制失败项摘要' : '已复制批量恢复摘要');
         } catch (error) {
-            alert(`复制失败: ${error.message || '未知错误'}`);
+            this.notify(`复制失败: ${error.message || '未知错误'}`, 'error');
         }
     },
 
     exportBatchRestoreResultSummary: function (mode = 'all') {
         if (!this.batchRestoreResult) {
-            alert('当前没有可导出的批量恢复结果');
+            this.notify('当前没有可导出的批量恢复结果', 'warning');
             return null;
         }
 
@@ -2360,7 +2386,7 @@ const AdminDiscounts = {
     copyBatchRestoreHistoryRunSummary: async function (runId = '', mode = 'all') {
         const run = this.findBatchRestoreHistoryRun(runId);
         if (!run) {
-            alert('未找到要复制的历史跑次');
+            this.notify('未找到要复制的历史跑次', 'warning');
             return;
         }
 
@@ -2368,14 +2394,14 @@ const AdminDiscounts = {
             await navigator.clipboard.writeText(this.buildBatchRestoreResultSummaryText(run, { mode }));
             this.showFeedbackToast(mode === 'failed' ? '已复制历史失败项摘要' : '已复制历史结果摘要');
         } catch (error) {
-            alert(`复制失败: ${error.message || '未知错误'}`);
+            this.notify(`复制失败: ${error.message || '未知错误'}`, 'error');
         }
     },
 
     exportBatchRestoreHistoryRunSummary: function (runId = '', mode = 'all') {
         const run = this.findBatchRestoreHistoryRun(runId);
         if (!run) {
-            alert('未找到要导出的历史跑次');
+            this.notify('未找到要导出的历史跑次', 'warning');
             return null;
         }
 
@@ -2756,7 +2782,7 @@ const AdminDiscounts = {
         const normalizedCode = this.safeText(code).toUpperCase();
         const cachedDiscount = this.getCachedDiscountRecord({ id: normalizedId, code: normalizedCode });
         if (!cachedDiscount && !normalizedId && !normalizedCode) {
-            alert('未找到要查看的优惠券');
+            this.notify('未找到要查看的优惠券', 'warning');
             return;
         }
 
@@ -2854,7 +2880,7 @@ const AdminDiscounts = {
             discount = detail?.discount || null;
         }
         if (!discount) {
-            alert('未找到要恢复的优惠券');
+            this.notify('未找到要恢复的优惠券', 'warning');
             return;
         }
 
@@ -2889,7 +2915,7 @@ const AdminDiscounts = {
     openBatchRestoreModal: function () {
         const candidates = this.getBatchRestoreCandidates();
         if (!candidates.length) {
-            alert('当前筛选结果里没有可批量恢复审批的优惠券');
+            this.notify('当前筛选结果里没有可批量恢复审批的优惠券', 'warning');
             return;
         }
 
@@ -3193,7 +3219,7 @@ const AdminDiscounts = {
     openBatchRestoreHistoryRunDetail: function (runId = '') {
         const run = this.findBatchRestoreHistoryRun(runId);
         if (!run) {
-            alert('未找到要查看的历史跑次');
+            this.notify('未找到要查看的历史跑次', 'warning');
             return;
         }
 
@@ -3228,7 +3254,7 @@ const AdminDiscounts = {
     retryBatchRestoreHistoryRun: async function (runId = '', options = {}) {
         const run = this.findBatchRestoreHistoryRun(runId);
         if (!run) {
-            alert('未找到要重试的历史跑次');
+            this.notify('未找到要重试的历史跑次', 'warning');
             return;
         }
 
@@ -3236,7 +3262,7 @@ const AdminDiscounts = {
             discountId: options.discountId
         });
         if (!retryItems.length) {
-            alert('当前没有可重试的失败项');
+            this.notify('当前没有可重试的失败项', 'warning');
             return;
         }
 
@@ -3303,7 +3329,7 @@ const AdminDiscounts = {
             this.closeBatchRestoreHistoryRunDetail();
             this.openBatchRestoreResultModal(mergedResult);
         } catch (error) {
-            alert(`重试历史失败项时出错: ${error.message || '未知错误'}`);
+            this.notify(`重试历史失败项时出错: ${error.message || '未知错误'}`, 'error');
         } finally {
             if (trigger instanceof HTMLButtonElement) {
                 trigger.disabled = false;
@@ -4001,7 +4027,7 @@ const AdminDiscounts = {
     submitRestoreModal: async function () {
         const discount = this.getDiscountById(this.restoreModalDiscountId);
         if (!discount) {
-            alert('未找到要恢复的优惠券');
+            this.notify('未找到要恢复的优惠券', 'warning');
             return;
         }
 
@@ -4018,12 +4044,12 @@ const AdminDiscounts = {
         const resolution = this.safeText(resolutionInput?.value);
 
         if (!reviewed) {
-            alert('请先确认已经完成风险复核');
+            this.notify('请先确认已经完成风险复核', 'warning');
             return;
         }
 
         if (!resolution) {
-            alert('请填写复核结论');
+            this.notify('请填写复核结论', 'warning');
             resolutionInput?.focus();
             return;
         }
@@ -4065,11 +4091,11 @@ const AdminDiscounts = {
             const successMessage = caseSyncWarning
                 ? `已恢复优惠码 ${this.safeText(discount.code).toUpperCase()}，但未能同步关闭风险 case：${caseSyncWarning}`
                 : `已恢复优惠码 ${this.safeText(discount.code).toUpperCase()}`;
-            alert(successMessage);
+            this.notify(successMessage, caseSyncWarning ? 'warning' : 'success', { feedback: false });
             this.emitCommandFeedback(successMessage, caseSyncWarning ? 'partial' : 'saved', { source: 'discounts-restore' });
         } catch (err) {
             const failureMessage = `恢复失败: ${err.message || '未知错误'}`;
-            alert(failureMessage);
+            this.notify(failureMessage, 'error', { feedback: false });
             this.emitCommandFeedback(failureMessage, 'failed', { source: 'discounts-restore' });
         } finally {
             if (submitButton instanceof HTMLButtonElement) {
@@ -4087,7 +4113,7 @@ const AdminDiscounts = {
 
         const candidates = this.getBatchRestoreCandidates();
         if (!candidates.length) {
-            alert('当前筛选结果里没有可批量恢复审批的优惠券');
+            this.notify('当前筛选结果里没有可批量恢复审批的优惠券', 'warning');
             return;
         }
 
@@ -4098,12 +4124,12 @@ const AdminDiscounts = {
         const processCandidates = candidates.slice(0, maxBatchSize);
 
         if (!reviewed) {
-            alert('请先确认已经完成本批次风险复核');
+            this.notify('请先确认已经完成本批次风险复核', 'warning');
             return;
         }
 
         if (!resolution) {
-            alert('请填写批量复核结论');
+            this.notify('请填写批量复核结论', 'warning');
             document.getElementById('discountBatchRestoreResolution')?.focus();
             return;
         }
@@ -4153,14 +4179,16 @@ const AdminDiscounts = {
             const resultMessage = failedCount > 0 || truncatedCount > 0 || this.safeText(mergedResult.case_sync_warning)
                 ? `批量恢复完成：成功 ${restoredCount} 张，待处理 ${failedCount + truncatedCount} 张`
                 : `批量恢复完成：成功 ${restoredCount} 张`;
+            const resultState = failedCount > 0 || truncatedCount > 0 || this.safeText(mergedResult.case_sync_warning) ? 'partial' : 'saved';
+            this.notify(resultMessage, this.getToastTypeForFeedbackState(resultState), { feedback: false });
             this.emitCommandFeedback(
                 resultMessage,
-                failedCount > 0 || truncatedCount > 0 || this.safeText(mergedResult.case_sync_warning) ? 'partial' : 'saved',
+                resultState,
                 { source: 'discounts-batch' }
             );
         } catch (err) {
             const failureMessage = `批量恢复失败: ${err.message || '未知错误'}`;
-            alert(failureMessage);
+            this.notify(failureMessage, 'error', { feedback: false });
             this.emitCommandFeedback(failureMessage, 'failed', { source: 'discounts-batch' });
         } finally {
             if (submitButton instanceof HTMLButtonElement) {
@@ -4195,7 +4223,7 @@ const AdminDiscounts = {
         const activeFailed = (Array.isArray(this.batchRestoreResult.failed) ? this.batchRestoreResult.failed : [])
             .filter((item) => item.skipped !== true);
         if (!activeFailed.length) {
-            alert('当前没有可重试的失败项');
+            this.notify('当前没有可重试的失败项', 'warning');
             return;
         }
 
@@ -4268,7 +4296,7 @@ const AdminDiscounts = {
             const successMessage = result.restored.length
                 ? `已重试 ${result.restored.length} 张失败项`
                 : '失败项重试完成';
-            this.showFeedbackToast(successMessage);
+            this.notify(successMessage, result.failed.length ? 'warning' : 'success', { feedback: false });
             this.emitCommandFeedback(
                 result.failed.length
                     ? `${successMessage}，仍有 ${result.failed.length} 张失败`
@@ -4278,7 +4306,7 @@ const AdminDiscounts = {
             );
         } catch (error) {
             const failureMessage = `重试失败项时出错: ${error.message || '未知错误'}`;
-            alert(failureMessage);
+            this.notify(failureMessage, 'error', { feedback: false });
             this.emitCommandFeedback(failureMessage, 'failed', { source: 'discounts-retry' });
         } finally {
             if (retryButton instanceof HTMLButtonElement) {
@@ -5132,6 +5160,11 @@ const AdminDiscounts = {
     },
 
     showFeedbackToast: function (message = '已复制') {
+        if (typeof window.showToast === 'function') {
+            window.showToast(String(message || '已复制').trim() || '已复制', 'success');
+            return;
+        }
+
         let toast = document.getElementById('discountCopyToast');
         if (!toast) {
             toast = document.createElement('div');
@@ -5193,9 +5226,10 @@ const AdminDiscounts = {
                 }
             });
             await this.loadDiscounts();
+            this.notify(newState ? '优惠码已启用' : '优惠码已停用', 'success');
             return true;
         } catch (err) {
-            alert('操作失败: ' + err.message);
+            this.notify('操作失败: ' + err.message, 'error');
             return false;
         }
     },
@@ -5217,9 +5251,10 @@ const AdminDiscounts = {
                 }
             });
             await this.loadDiscounts();
+            this.notify('优惠码已删除', 'success');
             return true;
         } catch (err) {
-            alert('删除失败: ' + err.message);
+            this.notify('删除失败: ' + err.message, 'error');
             return false;
         }
     },
@@ -5232,7 +5267,7 @@ const AdminDiscounts = {
 
         const discount = this.getCachedDiscountRecord({ id });
         if (!discount) {
-            alert('未找到要发放的优惠券');
+            this.notify('未找到要发放的优惠券', 'warning');
             return null;
         }
 
@@ -5244,7 +5279,7 @@ const AdminDiscounts = {
         const recipients = this.safeText(recipientsInput?.value);
         const recipientTags = this.safeText(recipientTagsInput?.value);
         if (!recipients && !recipientTags) {
-            alert('请先输入要发券的用户，或填写用户管理标签');
+            this.notify('请先输入要发券的用户，或填写用户管理标签', 'warning');
             return null;
         }
 
@@ -5258,7 +5293,7 @@ const AdminDiscounts = {
                 audienceSegment: this.safeText(audienceSegmentInput?.value)
             });
 
-            alert(this.buildDiscountAssetAssignmentSummary(result));
+            this.notify(this.buildDiscountAssetAssignmentSummary(result), 'success');
 
             const detail = await this.ensureDiscountDetailLoadedByReference({ id: this.safeText(discount.id) });
             const cacheKey = this.getDetailCacheKey(this.safeText(discount.id));
@@ -5267,7 +5302,7 @@ const AdminDiscounts = {
             await this.loadDiscounts();
             return true;
         } catch (error) {
-            alert(`定向发券失败: ${error.message || '未知错误'}`);
+            this.notify(`定向发券失败: ${error.message || '未知错误'}`, 'error');
             return false;
         }
     },
@@ -5361,7 +5396,7 @@ const AdminDiscounts = {
             discount = detail?.discount || null;
         }
         if (!discount) {
-            alert('未找到要编辑的优惠券');
+            this.notify('未找到要编辑的优惠券', 'warning');
             return;
         }
 
@@ -5473,30 +5508,30 @@ const AdminDiscounts = {
             const type = document.getElementById('discountValueType').value;
             const value = parseInt(document.getElementById('discountValue').value);
             if (!value || value <= 0) {
-                alert(type === 'percent' ? '请输入 1-100 的结算比例' : '请输入有效的优惠券面额');
+                this.notify(type === 'percent' ? '请输入 1-100 的结算比例' : '请输入有效的优惠券面额', 'warning');
                 return;
             }
 
             if (type === 'percent' && value > 100) {
-                alert('结算比例不能大于 100；例如 80 表示按原价 80% 结算，实际抵扣 20%');
+                this.notify('结算比例不能大于 100；例如 80 表示按原价 80% 结算，实际抵扣 20%', 'warning');
                 return;
             }
 
             const maxUses = parseInt(document.getElementById('discountMaxUses').value) || 0;
             if (maxUses < 0) {
-                alert('最大核销次数不能小于 0');
+                this.notify('最大核销次数不能小于 0', 'warning');
                 return;
             }
             const maxUsesPerUser = parseInt(document.getElementById('discountMaxUsesPerUser').value) || 0;
             if (maxUsesPerUser < 0) {
-                alert('每用户最多使用次数不能小于 0');
+                this.notify('每用户最多使用次数不能小于 0', 'warning');
                 return;
             }
 
             const applicableSiteRaw = String(document.getElementById('discountApplicableSite')?.value || '').trim().toLowerCase();
             const applicableSite = applicableSiteRaw || null;
             if (applicableSite && !['cn', 'intl'].includes(applicableSite)) {
-                alert('适用站点配置无效');
+                this.notify('适用站点配置无效', 'warning');
                 return;
             }
 
@@ -5509,12 +5544,12 @@ const AdminDiscounts = {
                 : null;
 
             if (scopeType === 'category' && !scopeCategory) {
-                alert('请选择优惠券适用的分类');
+                this.notify('请选择优惠券适用的分类', 'warning');
                 return;
             }
 
             if (scopeType === 'product' && !scopeProductId) {
-                alert('请选择优惠券适用的商品');
+                this.notify('请选择优惠券适用的商品', 'warning');
                 return;
             }
 
@@ -5533,7 +5568,7 @@ const AdminDiscounts = {
                 try { expires_at = new Date(expiryRaw.trim() + 'T' + (expiryTime.trim() || '23:59')).toISOString(); } catch (e) { expires_at = null; }
             }
             if (starts_at && expires_at && new Date(starts_at) >= new Date(expires_at)) {
-                alert('生效时间必须早于过期时间');
+                this.notify('生效时间必须早于过期时间', 'warning');
                 return;
             }
 
@@ -5550,7 +5585,7 @@ const AdminDiscounts = {
                 try { claim_expires_at = new Date(claimExpiresAtRaw.trim() + 'T' + (claimExpiresAtTime.trim() || '23:59')).toISOString(); } catch (e) { claim_expires_at = null; }
             }
             if (claim_starts_at && claim_expires_at && new Date(claim_starts_at) >= new Date(claim_expires_at)) {
-                alert('领取开始时间必须早于领取截止时间');
+                this.notify('领取开始时间必须早于领取截止时间', 'warning');
                 return;
             }
             let claimLimitPerUser = Math.max(0, parseInt(document.getElementById('discountClaimLimitPerUser')?.value, 10) || 0);
@@ -5652,18 +5687,18 @@ const AdminDiscounts = {
                 : `成功生成优惠码: ${code}`;
             if (assignmentError) {
                 const partialMessage = `${baseMessage}；但立即发券失败：${assignmentError}`;
-                alert(partialMessage);
+                this.notify(partialMessage, 'warning', { feedback: false });
                 this.emitCommandFeedback(partialMessage, 'partial', { source: 'discounts-generate' });
                 return;
             }
 
             const successMessage = assignmentSummary ? `${baseMessage}；${assignmentSummary}` : baseMessage;
-            alert(successMessage);
+            this.notify(successMessage, 'success', { feedback: false });
             this.emitCommandFeedback(successMessage, 'saved', { source: 'discounts-generate' });
 
         } catch (err) {
             const failureMessage = (this.modalMode === 'edit' ? '更新失败: ' : '生成失败: ') + err.message;
-            alert(failureMessage);
+            this.notify(failureMessage, 'error', { feedback: false });
             this.emitCommandFeedback(failureMessage, 'failed', { source: 'discounts-generate' });
         } finally {
             this.generateSubmitInFlight = false;

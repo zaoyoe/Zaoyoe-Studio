@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260430_WALLET_GUIDANCE_BILINGUAL_1';
+    const walletCssHref = 'css/wallet.css?v=20260503_WALLET_REDEEM_REVOKE_REASON_UI_1';
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
         existingWalletCss.href = walletCssHref;
@@ -26,36 +26,56 @@
         document.head.appendChild(link);
     }
 
-    const WALLET_MODAL_KEYBOARD_SETTLE_MS = 120;
+    const WALLET_MODAL_KEYBOARD_SETTLE_MS = 260;
+    const WALLET_MODAL_KEYBOARD_RESIZE_IDLE_MS = 180;
+    const WALLET_MODAL_KEYBOARD_MOTION_MS = 250;
     const WALLET_MODAL_SCROLL_STATE_CLEAR_MS = 320;
     const WALLET_MODAL_KEYBOARD_THRESHOLD = 120;
     const WALLET_MODAL_DOCK_THRESHOLD = 60;
     const WALLET_MODAL_UNDOCK_THRESHOLD = 40;
     const WALLET_MODAL_UNDOCK_DELAY_MS = 48;
-    const WALLET_MODAL_DOCK_ANIMATION_MS = 180;
+    const WALLET_MODAL_DOCK_ANIMATION_MS = 250;
+    const WALLET_MODAL_UNDOCK_CONTENT_RELEASE_MS = 260;
+    const WALLET_MODAL_UNDOCK_SCROLL_RESTORE_MS = 260;
+    const WALLET_MODAL_REDEEM_INPUT_BOTTOM_GUARD = 32;
     const walletModalState = {
         overlayBaseHeight: 0,
         overlayBaseVisualHeight: 0,
+        baseCardHeight: 0,
         baseScrollY: 0,
         pageFrozen: false,
         usingLegacyScrollLock: false,
         layoutRafId: 0,
         viewportRafId: 0,
+        keyboardResizeTimer: null,
+        keyboardMotionTimer: null,
         settleTimer: null,
         blurTimer: null,
         openingTimer: null,
+        scrollAnimationRafId: 0,
         scrollAnimationClearTimer: null,
         scrollAnimationHost: null,
         scrollAnimationTarget: null,
+        focusScrollRafId: 0,
+        focusScrollTimer: null,
+        focusScrollSuppressUntil: 0,
         focusTransferUntil: 0,
         lastFocusAnchor: null,
+        preserveLayoutDuringFocusTransfer: false,
         viewportCleanup: null,
         lastViewportHeight: 0,
         keyboardDocked: false,
         pendingUndockTimer: null,
+        pendingFirstDockTimer: null,
+        pendingFirstDockParams: null,
         animationCleanupTimer: null,
+        contentReleaseTimer: null,
         scrollCueRafId: 0,
         lastKeyboardInset: 0,
+        lastDockHeight: 0,
+        lastTranslateY: 0,
+        lastStableKeyboardInset: 0,
+        keyboardBlurUndocking: false,
         animatingUntil: 0
     };
 
@@ -166,6 +186,26 @@
             walletModalState.scrollCueRafId = 0;
         }
         cancelWalletModalScrollAnimation();
+        if (walletModalState.keyboardResizeTimer) {
+            clearTimeout(walletModalState.keyboardResizeTimer);
+            walletModalState.keyboardResizeTimer = null;
+        }
+        if (walletModalState.keyboardMotionTimer) {
+            clearTimeout(walletModalState.keyboardMotionTimer);
+            walletModalState.keyboardMotionTimer = null;
+        }
+        if (walletModalState.pendingFirstDockTimer) {
+            clearTimeout(walletModalState.pendingFirstDockTimer);
+            walletModalState.pendingFirstDockTimer = null;
+        }
+        if (walletModalState.focusScrollRafId) {
+            cancelAnimationFrame(walletModalState.focusScrollRafId);
+            walletModalState.focusScrollRafId = 0;
+        }
+        if (walletModalState.focusScrollTimer) {
+            clearTimeout(walletModalState.focusScrollTimer);
+            walletModalState.focusScrollTimer = null;
+        }
         if (walletModalState.settleTimer) {
             clearTimeout(walletModalState.settleTimer);
             walletModalState.settleTimer = null;
@@ -186,6 +226,21 @@
             clearTimeout(walletModalState.animationCleanupTimer);
             walletModalState.animationCleanupTimer = null;
         }
+        if (walletModalState.contentReleaseTimer) {
+            clearTimeout(walletModalState.contentReleaseTimer);
+            walletModalState.contentReleaseTimer = null;
+        }
+        walletModalState.pendingFirstDockParams = null;
+        walletModalState.focusScrollSuppressUntil = 0;
+        const activeOverlay = getWalletModalElements().overlay;
+        activeOverlay?.classList.remove(
+            'wallet-modal-keyboard-resizing',
+            'wallet-modal-keyboard-animating',
+            'wallet-modal-keyboard-content-releasing'
+        );
+        setCssVariables(activeOverlay, {
+            '--wallet-modal-content-release-duration': ''
+        });
     }
 
     function freezeWalletModalPage() {
@@ -230,6 +285,10 @@
     }
 
     function clearWalletModalScrollAnimationState() {
+        if (walletModalState.scrollAnimationRafId) {
+            cancelAnimationFrame(walletModalState.scrollAnimationRafId);
+            walletModalState.scrollAnimationRafId = 0;
+        }
         if (walletModalState.scrollAnimationClearTimer) {
             clearTimeout(walletModalState.scrollAnimationClearTimer);
             walletModalState.scrollAnimationClearTimer = null;
@@ -258,7 +317,7 @@
         const { overlay, viewport, card, scroller } = getWalletModalElements();
         if (!overlay || !card) return;
 
-        overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
+        overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock', 'wallet-modal-keyboard-resizing', 'wallet-modal-keyboard-animating', 'wallet-modal-keyboard-content-releasing');
         overlay.querySelector('.wallet-recharge-scroll-cue')?.classList.remove('visible');
         setCssVariables(viewport, {
             '--wallet-modal-translate-y': '0px',
@@ -266,6 +325,9 @@
             '--wallet-modal-viewport-top': '',
             '--wallet-modal-viewport-left': '',
             '--wallet-modal-viewport-width': ''
+        });
+        setCssVariables(overlay, {
+            '--wallet-modal-content-release-duration': ''
         });
         setInlineStyles(card, {
             maxHeight: '',
@@ -278,9 +340,18 @@
         });
         walletModalState.overlayBaseHeight = 0;
         walletModalState.overlayBaseVisualHeight = 0;
+        walletModalState.baseCardHeight = 0;
         walletModalState.focusTransferUntil = 0;
         walletModalState.lastFocusAnchor = null;
+        walletModalState.preserveLayoutDuringFocusTransfer = false;
         walletModalState.lastViewportHeight = 0;
+        walletModalState.lastKeyboardInset = 0;
+        walletModalState.lastDockHeight = 0;
+        walletModalState.lastTranslateY = 0;
+        walletModalState.lastStableKeyboardInset = 0;
+        walletModalState.keyboardBlurUndocking = false;
+        walletModalState.keyboardDocked = false;
+        walletModalState.pendingFirstDockParams = null;
         clearWalletModalScrollAnimationState();
     }
 
@@ -324,6 +395,7 @@
     }
 
     function captureWalletModalOverlayBaseHeight(force = false) {
+        const { card } = getWalletModalElements();
         const vv = window.visualViewport;
         const stableHeight = getWalletModalStableViewportHeight();
         const stableVisualHeight = Math.max(
@@ -338,6 +410,13 @@
 
         if (force || Math.abs(stableVisualHeight - walletModalState.overlayBaseVisualHeight) > 2) {
             walletModalState.overlayBaseVisualHeight = stableVisualHeight;
+        }
+
+        if (card) {
+            const cardHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 0);
+            if (cardHeight > 220) {
+                walletModalState.baseCardHeight = Math.max(320, cardHeight);
+            }
         }
     }
 
@@ -369,20 +448,67 @@
         };
     }
 
+    function getWalletModalFocusKeyboardInset(snapshot = getWalletModalViewportSnapshot()) {
+        return snapshot.bottomInset > WALLET_MODAL_DOCK_THRESHOLD
+            ? snapshot.bottomInset
+            : Math.max(snapshot.bottomInset || 0, walletModalState.lastStableKeyboardInset || 0);
+    }
+
+    function captureWalletModalStableDockHeight(snapshot = getWalletModalViewportSnapshot()) {
+        const { card } = getWalletModalElements();
+        if (!card || snapshot.bottomInset > WALLET_MODAL_DOCK_THRESHOLD) return;
+
+        const cardHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 0);
+        if (cardHeight > 220) {
+            walletModalState.baseCardHeight = Math.max(320, cardHeight);
+        }
+    }
+
+    function markWalletModalKeyboardResizing() {
+        const { overlay } = getWalletModalElements();
+        if (!overlay?.classList.contains('active')) return;
+
+        overlay.classList.add('wallet-modal-keyboard-resizing');
+        if (walletModalState.keyboardResizeTimer) {
+            clearTimeout(walletModalState.keyboardResizeTimer);
+        }
+        walletModalState.keyboardResizeTimer = setTimeout(() => {
+            walletModalState.keyboardResizeTimer = null;
+            getWalletModalElements().overlay?.classList.remove('wallet-modal-keyboard-resizing');
+        }, WALLET_MODAL_KEYBOARD_RESIZE_IDLE_MS);
+    }
+
     function setWalletModalAnimating(card, animate = false, duration = WALLET_MODAL_DOCK_ANIMATION_MS) {
         if (!card) return;
+        const { overlay } = getWalletModalElements();
 
         if (walletModalState.animationCleanupTimer) {
             clearTimeout(walletModalState.animationCleanupTimer);
             walletModalState.animationCleanupTimer = null;
         }
+        if (walletModalState.keyboardMotionTimer) {
+            clearTimeout(walletModalState.keyboardMotionTimer);
+            walletModalState.keyboardMotionTimer = null;
+        }
 
         card.classList.toggle('wallet-modal-animating', !!animate);
+        overlay?.classList.toggle('wallet-modal-keyboard-animating', !!animate);
+        setCssVariables(overlay, {
+            '--wallet-modal-keyboard-motion-duration': animate ? `${duration}ms` : ''
+        });
         walletModalState.animatingUntil = animate
             ? ((typeof performance !== 'undefined' ? performance.now() : Date.now()) + duration + 24)
             : 0;
 
         if (!animate) return;
+
+        walletModalState.keyboardMotionTimer = setTimeout(() => {
+            walletModalState.keyboardMotionTimer = null;
+            getWalletModalElements().overlay?.classList.remove('wallet-modal-keyboard-animating');
+            setCssVariables(getWalletModalElements().overlay, {
+                '--wallet-modal-keyboard-motion-duration': ''
+            });
+        }, duration + 40);
 
         walletModalState.animationCleanupTimer = setTimeout(() => {
             walletModalState.animationCleanupTimer = null;
@@ -398,22 +524,32 @@
         }
     }
 
-    function applyWalletModalDockLayout(bottomInset, { animate = false } = {}) {
+    function clearWalletModalPendingFirstDock() {
+        if (walletModalState.pendingFirstDockTimer) {
+            clearTimeout(walletModalState.pendingFirstDockTimer);
+            walletModalState.pendingFirstDockTimer = null;
+        }
+        walletModalState.pendingFirstDockParams = null;
+    }
+
+    function applyWalletModalDockLayout(bottomInset, { animate = false, duration = WALLET_MODAL_KEYBOARD_MOTION_MS } = {}) {
         const { overlay, viewport: viewportEl, card, scroller } = getWalletModalElements();
         if (!overlay || !viewportEl || !card) return;
 
         const snapshot = getWalletModalViewportSnapshot();
         const dockInset = Math.max(0, Math.round(bottomInset ?? snapshot.bottomInset));
-        const modalMaxHeight = Math.max(260, snapshot.height - 24);
-        const modalHeight = Math.min(500, modalMaxHeight);
-        const centeredTop = Math.max(12, Math.round((snapshot.baseViewportHeight - modalHeight) / 2));
         const keyboardTop = Math.max(0, snapshot.baseViewportHeight - dockInset);
-        const dockedTop = Math.max(
-            12,
-            Math.min(centeredTop, Math.round(keyboardTop - 12 - modalHeight))
-        );
-        const translateY = dockedTop - centeredTop;
+        const minTop = 12;
+        const keyboardClearance = 12;
+        const fallbackHeight = Math.min(500, Math.max(420, Math.round(snapshot.baseViewportHeight * 0.7)));
+        const stableHeight = Math.max(320, Math.round(walletModalState.baseCardHeight || fallbackHeight));
+        const maxAvailableHeight = Math.max(320, Math.round(keyboardTop - minTop - keyboardClearance));
+        const dockHeight = Math.min(stableHeight, maxAvailableHeight);
+        const centeredBottom = (snapshot.baseViewportHeight * 0.5) + (dockHeight * 0.5);
+        const targetBottom = Math.max(40, keyboardTop - keyboardClearance);
+        const translateY = Math.round(Math.max(-520, Math.min(520, targetBottom - centeredBottom)));
 
+        clearWalletModalPendingFirstDock();
         setCssVariables(viewportEl, {
             '--wallet-modal-viewport-top': `${snapshot.top}px`,
             '--wallet-modal-viewport-left': `${snapshot.left}px`,
@@ -423,19 +559,25 @@
         });
 
         overlay.classList.add('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
-        setWalletModalAnimating(card, animate);
+        setWalletModalAnimating(card, animate, duration);
         setInlineStyles(card, {
-            maxHeight: `${modalMaxHeight}px`,
-            height: `${modalHeight}px`,
-            minHeight: `${Math.min(400, modalHeight)}px`
+            maxHeight: `${dockHeight}px`,
+            height: `${dockHeight}px`,
+            minHeight: `${Math.min(400, dockHeight)}px`
         });
         setInlineStyles(scroller, {
             scrollPaddingTop: `${isWalletModalIOSMode() ? 84 : 24}px`,
             scrollPaddingBottom: `${Math.max(144, Math.round(dockInset + 72))}px`
         });
 
+        walletModalState.keyboardBlurUndocking = false;
         walletModalState.keyboardDocked = true;
         walletModalState.lastKeyboardInset = dockInset;
+        walletModalState.lastDockHeight = dockHeight;
+        walletModalState.lastTranslateY = translateY;
+        if (dockInset > WALLET_MODAL_UNDOCK_THRESHOLD) {
+            walletModalState.lastStableKeyboardInset = dockInset;
+        }
         walletModalState.lastViewportHeight = snapshot.height;
     }
 
@@ -444,6 +586,7 @@
         if (!overlay || !viewportEl || !card) return;
 
         clearWalletModalUndockTimer();
+        clearWalletModalPendingFirstDock();
 
         const snapshot = getWalletModalViewportSnapshot();
         const activeInput = getActiveWalletModalInput();
@@ -474,17 +617,27 @@
             scrollPaddingBottom: `${preserveFocusLock ? 144 : 96}px`
         });
 
+        if (animate) {
+            scheduleWalletModalBalanceUndockScrollRestore(24);
+        }
+
         walletModalState.keyboardDocked = false;
         walletModalState.lastKeyboardInset = 0;
+        walletModalState.lastDockHeight = 0;
+        walletModalState.lastTranslateY = 0;
         walletModalState.lastViewportHeight = snapshot.height;
 
         const cleanup = () => {
             const { overlay: activeOverlay, card: activeCard } = getWalletModalElements();
             if (!activeOverlay || !activeCard) return;
             if (!walletModalState.keyboardDocked) {
-                activeOverlay.classList.remove('keyboard-docked');
-                if (!getActiveWalletModalInput() && walletModalState.focusTransferUntil <= Date.now()) {
-                    activeOverlay.classList.remove('ios-focus-lock');
+                if (animate) {
+                    releaseWalletModalDockedContent(activeOverlay);
+                } else {
+                    activeOverlay.classList.remove('keyboard-docked');
+                    if (!getActiveWalletModalInput() && walletModalState.focusTransferUntil <= Date.now()) {
+                        activeOverlay.classList.remove('ios-focus-lock');
+                    }
                 }
             }
             activeCard.classList.remove('wallet-modal-animating');
@@ -502,6 +655,87 @@
         } else {
             cleanup();
         }
+    }
+
+    function isWalletModalBalanceViewActive() {
+        const { overlay } = getWalletModalElements();
+        return Boolean(overlay?.querySelector('#view-balance.active'));
+    }
+
+    function getWalletModalBalanceScrollRestoreHost() {
+        if (!isWalletModalBalanceViewActive()) return null;
+
+        const { content, layout, scroller, card } = getWalletModalElements();
+        const candidates = [content, layout, scroller, card];
+        const uniqueCandidates = Array.from(new Set(candidates.filter(Boolean)));
+
+        return uniqueCandidates.find((candidate) => candidate.scrollTop > 2)
+            || uniqueCandidates.find((candidate) => Math.max(0, candidate.scrollHeight - candidate.clientHeight) > 2)
+            || null;
+    }
+
+    function scheduleWalletModalBalanceUndockScrollRestore(delay = 0) {
+        if (!isWalletModalIOSMode()) return;
+
+        const run = () => {
+            requestAnimationFrame(() => {
+                const { overlay } = getWalletModalElements();
+                if (!overlay?.classList.contains('active')) return;
+                if (getActiveWalletModalInput()) return;
+
+                const scrollHost = getWalletModalBalanceScrollRestoreHost();
+                if (!scrollHost || scrollHost.scrollTop <= 2) return;
+
+                animateWalletModalScroll(scrollHost, 0, {
+                    minDuration: WALLET_MODAL_UNDOCK_SCROLL_RESTORE_MS,
+                    maxDuration: WALLET_MODAL_UNDOCK_SCROLL_RESTORE_MS + 120,
+                    durationFactor: 1,
+                    ease: 'standard'
+                });
+            });
+        };
+
+        if (delay > 0) {
+            setTimeout(run, delay);
+            return;
+        }
+
+        run();
+    }
+
+    function releaseWalletModalDockedContent(activeOverlay) {
+        if (!activeOverlay?.isConnected) return;
+
+        if (walletModalState.contentReleaseTimer) {
+            clearTimeout(walletModalState.contentReleaseTimer);
+            walletModalState.contentReleaseTimer = null;
+        }
+
+        activeOverlay.classList.add('wallet-modal-keyboard-content-releasing');
+        setCssVariables(activeOverlay, {
+            '--wallet-modal-content-release-duration': `${WALLET_MODAL_UNDOCK_CONTENT_RELEASE_MS}ms`
+        });
+
+        requestAnimationFrame(() => {
+            const { overlay: currentOverlay } = getWalletModalElements();
+            if (currentOverlay !== activeOverlay || walletModalState.keyboardDocked) return;
+
+            activeOverlay.classList.remove('keyboard-docked');
+            if (!getActiveWalletModalInput() && walletModalState.focusTransferUntil <= Date.now()) {
+                activeOverlay.classList.remove('ios-focus-lock');
+            }
+            scheduleWalletModalBalanceUndockScrollRestore();
+            requestWalletRechargeScrollCueUpdate();
+        });
+
+        walletModalState.contentReleaseTimer = setTimeout(() => {
+            walletModalState.contentReleaseTimer = null;
+            const { overlay: currentOverlay } = getWalletModalElements();
+            currentOverlay?.classList.remove('wallet-modal-keyboard-content-releasing');
+            setCssVariables(currentOverlay, {
+                '--wallet-modal-content-release-duration': ''
+            });
+        }, WALLET_MODAL_UNDOCK_CONTENT_RELEASE_MS + 80);
     }
 
     function applyWalletModalBaseLayout({ preserveFocusLock = false } = {}) {
@@ -535,6 +769,8 @@
 
         walletModalState.keyboardDocked = false;
         walletModalState.lastKeyboardInset = 0;
+        walletModalState.lastDockHeight = 0;
+        walletModalState.lastTranslateY = 0;
         walletModalState.lastViewportHeight = snapshot.height;
         requestWalletRechargeScrollCueUpdate();
     }
@@ -556,7 +792,26 @@
         );
     }
 
-    function animateWalletModalScroll(scrollHost, targetScrollTop) {
+    function isWalletModalRedeemInput(input) {
+        return Boolean(input && (input.id === 'redeem-code-input' || input.closest?.('.redeem-input-row')));
+    }
+
+    function getWalletModalInputScrollHost(input) {
+        if (!input) return null;
+
+        const { card, content, layout, scroller } = getWalletModalElements();
+        const isRedeemInput = isWalletModalRedeemInput(input);
+        const candidates = isRedeemInput
+            ? [content, layout, scroller, card]
+            : [scroller, content, layout, card];
+
+        return Array.from(new Set(candidates.filter(Boolean))).find((candidate) => {
+            if (!candidate?.contains?.(input)) return false;
+            return Math.max(0, candidate.scrollHeight - candidate.clientHeight) > 0;
+        }) || null;
+    }
+
+    function animateWalletModalScroll(scrollHost, targetScrollTop, options = {}) {
         if (!scrollHost) return;
 
         const to = Math.max(0, targetScrollTop);
@@ -577,13 +832,32 @@
         walletModalState.scrollAnimationHost = scrollHost;
         walletModalState.scrollAnimationTarget = to;
 
-        try {
-            scrollHost.scrollTo({ top: to, behavior: 'smooth' });
-        } catch (_) {
+        const from = scrollHost.scrollTop;
+        const distance = to - from;
+        const duration = Math.max(
+            options.minDuration ?? 180,
+            Math.min(options.maxDuration ?? 340, Math.round(Math.abs(distance) * (options.durationFactor ?? 0.72)))
+        );
+        const startedAt = performance.now();
+        const easeOut = (t) => options.ease === 'standard'
+            ? (1 - Math.pow(1 - t, 4))
+            : (1 - Math.pow(1 - t, 3));
+
+        const step = (now) => {
+            if (walletModalState.scrollAnimationHost !== scrollHost) return;
+
+            const progress = Math.min(1, Math.max(0, (now - startedAt) / duration));
+            scrollHost.scrollTop = Math.round(from + (distance * easeOut(progress)));
+            if (progress < 1) {
+                walletModalState.scrollAnimationRafId = requestAnimationFrame(step);
+                return;
+            }
+
             scrollHost.scrollTop = to;
-            clearWalletModalScrollAnimationState();
-            return;
-        }
+            walletModalState.scrollAnimationRafId = 0;
+        };
+
+        walletModalState.scrollAnimationRafId = requestAnimationFrame(step);
 
         walletModalState.scrollAnimationClearTimer = setTimeout(() => {
             if (
@@ -593,25 +867,36 @@
             ) {
                 clearWalletModalScrollAnimationState();
             }
-        }, WALLET_MODAL_SCROLL_STATE_CLEAR_MS);
+        }, Math.max(WALLET_MODAL_SCROLL_STATE_CLEAR_MS, duration + 60));
     }
 
-    function ensureWalletModalInputVisible(input = getActiveWalletModalInput()) {
-        const { card, scroller } = getWalletModalElements();
-        const scrollHost = scroller || card;
-        if (!card || !scrollHost || !input) return;
+    function getWalletModalInputTargetScrollTop(input = getActiveWalletModalInput()) {
+        const { card } = getWalletModalElements();
+        const scrollHost = getWalletModalInputScrollHost(input);
+        if (!card || !scrollHost || !input) return null;
 
         const anchor = getWalletModalFocusAnchor(input) || input;
+        const isRedeemInput = isWalletModalRedeemInput(input);
         const hostRect = scrollHost.getBoundingClientRect();
         const anchorRect = anchor.getBoundingClientRect();
         const inputRect = input.getBoundingClientRect();
         const maxScrollTop = Math.max(0, scrollHost.scrollHeight - scrollHost.clientHeight);
-        if (maxScrollTop <= 0) return;
+        if (maxScrollTop <= 0) return null;
 
-        const preferredCenter = Math.max(
-            136,
-            Math.min(Math.round(scrollHost.clientHeight * 0.36), scrollHost.clientHeight - 136)
-        );
+        const preferredCenter = isRedeemInput
+            ? Math.max(
+                112,
+                scrollHost.clientHeight -
+                    WALLET_MODAL_REDEEM_INPUT_BOTTOM_GUARD -
+                    Math.round(inputRect.height / 2)
+            )
+            : Math.max(
+                136,
+                Math.min(
+                    Math.round(scrollHost.clientHeight * 0.36),
+                    scrollHost.clientHeight - 136
+                )
+            );
         const anchorCenterInContent =
             scrollHost.scrollTop +
             (anchorRect.top - hostRect.top) +
@@ -624,7 +909,9 @@
 
         const topGuardBase = scrollHost.classList?.contains('wallet-layout') ? 112 : 64;
         const topGuard = Math.max(topGuardBase, Math.round(scrollHost.clientHeight * 0.18));
-        const bottomGuard = Math.max(120, Math.round(scrollHost.clientHeight * 0.28));
+        const bottomGuard = isRedeemInput
+            ? WALLET_MODAL_REDEEM_INPUT_BOTTOM_GUARD
+            : Math.max(120, Math.round(scrollHost.clientHeight * 0.28));
 
         if (inputRect.top < hostRect.top + topGuard) {
             nextScrollTop = Math.min(
@@ -641,15 +928,108 @@
             );
         }
 
-        animateWalletModalScroll(scrollHost, nextScrollTop);
+        return {
+            scrollHost,
+            targetScrollTop: nextScrollTop
+        };
+    }
+
+    function ensureWalletModalInputVisible(input = getActiveWalletModalInput()) {
+        const target = getWalletModalInputTargetScrollTop(input);
+        if (!target) return;
+
+        animateWalletModalScroll(target.scrollHost, target.targetScrollTop);
     }
 
     function markWalletModalFocusTransfer(nextInput = null) {
+        const nextAnchor = getWalletModalFocusAnchor(nextInput);
+        const docked = getWalletModalElements().overlay?.classList.contains('keyboard-docked');
         walletModalState.focusTransferUntil = Date.now() + 260;
-        walletModalState.lastFocusAnchor = getWalletModalFocusAnchor(nextInput) || walletModalState.lastFocusAnchor;
+        walletModalState.preserveLayoutDuringFocusTransfer = !!(
+            docked &&
+            walletModalState.lastFocusAnchor &&
+            nextAnchor &&
+            walletModalState.lastDockHeight
+        );
+        walletModalState.lastFocusAnchor = nextAnchor || walletModalState.lastFocusAnchor;
     }
 
-    function applyWalletModalLayout() {
+    function scheduleWalletModalInitialKeyboardDock(snapshot) {
+        const requiresWarmup = walletModalState.lastStableKeyboardInset <= WALLET_MODAL_UNDOCK_THRESHOLD;
+        let predictedInset = Math.max(0, snapshot?.bottomInset || 0);
+
+        if (walletModalState.lastStableKeyboardInset > WALLET_MODAL_UNDOCK_THRESHOLD) {
+            predictedInset = predictedInset < 24
+                ? walletModalState.lastStableKeyboardInset
+                : Math.min(predictedInset, walletModalState.lastStableKeyboardInset + 12);
+        }
+
+        walletModalState.pendingFirstDockParams = {
+            ...snapshot,
+            bottomInset: predictedInset,
+            animate: true
+        };
+
+        if (walletModalState.pendingFirstDockTimer) return;
+
+        walletModalState.pendingFirstDockTimer = setTimeout(() => {
+            const params = walletModalState.pendingFirstDockParams;
+            walletModalState.pendingFirstDockTimer = null;
+            walletModalState.pendingFirstDockParams = null;
+            const { overlay } = getWalletModalElements();
+            if (!params || !overlay?.classList.contains('active')) return;
+            if (!getActiveWalletModalInput()) return;
+            if (overlay.classList.contains('keyboard-docked')) return;
+
+            applyWalletModalDockLayout(params.bottomInset, {
+                animate: params.animate !== false,
+                duration: WALLET_MODAL_KEYBOARD_MOTION_MS
+            });
+            ensureWalletModalInputVisible();
+        }, requiresWarmup ? 88 : 34);
+    }
+
+    function scheduleWalletModalFocusedInputScroll(input, delay = 0) {
+        if (!input) return;
+
+        if (walletModalState.focusScrollRafId) {
+            cancelAnimationFrame(walletModalState.focusScrollRafId);
+            walletModalState.focusScrollRafId = 0;
+        }
+        if (walletModalState.focusScrollTimer) {
+            clearTimeout(walletModalState.focusScrollTimer);
+            walletModalState.focusScrollTimer = null;
+        }
+
+        const run = () => {
+            walletModalState.focusScrollRafId = requestAnimationFrame(() => {
+                walletModalState.focusScrollRafId = 0;
+                const { overlay } = getWalletModalElements();
+                if (!overlay?.classList.contains('keyboard-docked')) return;
+                if (document.activeElement !== input) return;
+                const target = getWalletModalInputTargetScrollTop(input);
+                if (!target) return;
+                animateWalletModalScroll(target.scrollHost, target.targetScrollTop, {
+                    minDuration: 240,
+                    maxDuration: 460,
+                    durationFactor: 0.95,
+                    ease: 'standard'
+                });
+            });
+        };
+
+        if (delay > 0) {
+            walletModalState.focusScrollTimer = setTimeout(() => {
+                walletModalState.focusScrollTimer = null;
+                run();
+            }, delay);
+            return;
+        }
+
+        run();
+    }
+
+    function applyWalletModalLayout({ ensureInput = true, allowUndock = true } = {}) {
         const { overlay, viewport: viewportEl, card, scroller } = getWalletModalElements();
         if (!overlay || !viewportEl || !card || !overlay.classList.contains('active')) return;
 
@@ -680,53 +1060,86 @@
 
         stabilizeWalletModalViewport();
 
-        const activeInput = getActiveWalletModalInput();
-        const holdDuringFocusTransfer = !activeInput && walletModalState.focusTransferUntil > Date.now();
         let snapshot = getWalletModalViewportSnapshot();
-        if (!activeInput || (!walletModalState.keyboardDocked && snapshot.bottomInset < WALLET_MODAL_UNDOCK_THRESHOLD)) {
+        if (snapshot.bottomInset < WALLET_MODAL_UNDOCK_THRESHOLD) {
+            captureWalletModalStableDockHeight(snapshot);
+        }
+
+        const activeInput = getActiveWalletModalInput();
+        const activeAnchor = getWalletModalFocusAnchor(activeInput);
+        const holdDuringFocusTransfer = !activeInput && walletModalState.focusTransferUntil > Date.now();
+        if (
+            (!activeInput && !holdDuringFocusTransfer)
+            || (
+                !walletModalState.keyboardDocked
+                && !holdDuringFocusTransfer
+                && snapshot.bottomInset < WALLET_MODAL_UNDOCK_THRESHOLD
+            )
+        ) {
             captureWalletModalOverlayBaseHeight();
             snapshot = getWalletModalViewportSnapshot();
         }
 
         const bottomInset = snapshot.bottomInset;
         const inputFocused = !!activeInput;
+        const focusDriven = inputFocused || holdDuringFocusTransfer;
+        const effectiveBottomInset = focusDriven
+            ? getWalletModalFocusKeyboardInset(snapshot)
+            : bottomInset;
+        const wasDocked = overlay.classList.contains('keyboard-docked');
+        const preserveFocusDock = Boolean(
+            wasDocked &&
+            walletModalState.preserveLayoutDuringFocusTransfer &&
+            walletModalState.lastDockHeight > 0 &&
+            walletModalState.focusTransferUntil > Date.now()
+        );
+        const shouldDock =
+            !walletModalState.keyboardBlurUndocking &&
+            focusDriven &&
+            (preserveFocusDock || (wasDocked ? effectiveBottomInset > 8 : bottomInset > 24));
 
-        if ((inputFocused || holdDuringFocusTransfer) && bottomInset > WALLET_MODAL_DOCK_THRESHOLD) {
+        setInlineStyles(scroller, {
+            scrollPaddingBottom: `${wasDocked || shouldDock ? 144 : 96}px`
+        });
+
+        if (shouldDock) {
             clearWalletModalUndockTimer();
-            const animateDock = walletModalState.keyboardDocked
-                && Math.abs(bottomInset - walletModalState.lastKeyboardInset) > 30
-                && walletModalState.animatingUntil <= (typeof performance !== 'undefined' ? performance.now() : Date.now());
-            applyWalletModalDockLayout(bottomInset, { animate: animateDock });
-            if (activeInput) {
-                requestAnimationFrame(() => {
-                    ensureWalletModalInputVisible(activeInput);
-                });
-                walletModalState.lastFocusAnchor = getWalletModalFocusAnchor(activeInput) || null;
+            if (!wasDocked) {
+                scheduleWalletModalInitialKeyboardDock(snapshot);
+            } else if (!preserveFocusDock && Math.abs(effectiveBottomInset - walletModalState.lastKeyboardInset) > 1) {
+                applyWalletModalDockLayout(effectiveBottomInset, { animate: false });
+            }
+        } else if (walletModalState.keyboardDocked && allowUndock && (!inputFocused || bottomInset <= WALLET_MODAL_UNDOCK_THRESHOLD)) {
+            clearWalletModalPendingFirstDock();
+            scheduleWalletModalUndock();
+            return;
+        } else if (walletModalState.keyboardDocked && !allowUndock) {
+            clearWalletModalPendingFirstDock();
+        } else {
+            clearWalletModalPendingFirstDock();
+            clearWalletModalUndockTimer();
+            applyWalletModalBaseLayout({ preserveFocusLock: inputFocused || holdDuringFocusTransfer });
+        }
+
+        if (!activeInput) {
+            if (!holdDuringFocusTransfer) {
+                walletModalState.lastFocusAnchor = null;
+                walletModalState.preserveLayoutDuringFocusTransfer = false;
             }
             return;
         }
 
-        if (walletModalState.keyboardDocked && (!inputFocused || bottomInset <= WALLET_MODAL_UNDOCK_THRESHOLD)) {
-            scheduleWalletModalUndock();
-            return;
-        }
-
-        clearWalletModalUndockTimer();
-        applyWalletModalBaseLayout({ preserveFocusLock: inputFocused || holdDuringFocusTransfer });
-
-        if (!activeInput) {
-            if (!holdDuringFocusTransfer) walletModalState.lastFocusAnchor = null;
-            return;
-        }
-
-        requestAnimationFrame(() => {
+        if (ensureInput && overlay.classList.contains('keyboard-docked')) {
             ensureWalletModalInputVisible(activeInput);
-        });
-        walletModalState.lastFocusAnchor = getWalletModalFocusAnchor(activeInput) || null;
+        }
+        walletModalState.lastFocusAnchor = activeAnchor || null;
+        if (walletModalState.focusTransferUntil <= Date.now()) {
+            walletModalState.preserveLayoutDuringFocusTransfer = false;
+        }
         requestWalletRechargeScrollCueUpdate();
     }
 
-    function scheduleWalletModalLayout({ settled = false, deferOnly = false } = {}) {
+    function scheduleWalletModalLayout({ settled = false, deferOnly = false, ensureInput = true, allowUndock = true } = {}) {
         if (walletModalState.layoutRafId) {
             cancelAnimationFrame(walletModalState.layoutRafId);
         }
@@ -736,15 +1149,23 @@
             walletModalState.settleTimer = null;
         }
 
-        const runLayout = () => {
+        const runLayout = (options = {}) => {
             walletModalState.layoutRafId = requestAnimationFrame(() => {
                 walletModalState.layoutRafId = 0;
-                applyWalletModalLayout();
+                applyWalletModalLayout({
+                    ensureInput: options.ensureInput ?? ensureInput,
+                    allowUndock: options.allowUndock ?? allowUndock
+                });
+                if (options.finishKeyboardResize) {
+                    requestAnimationFrame(() => {
+                        getWalletModalElements().overlay?.classList.remove('wallet-modal-keyboard-resizing');
+                    });
+                }
             });
         };
 
         if (!deferOnly) {
-            runLayout();
+            runLayout({ ensureInput, allowUndock });
         }
 
         if (settled) {
@@ -753,12 +1174,12 @@
             }
             walletModalState.settleTimer = setTimeout(() => {
                 walletModalState.settleTimer = null;
-                runLayout();
+                runLayout({ ensureInput: true, allowUndock: true, finishKeyboardResize: true });
             }, WALLET_MODAL_KEYBOARD_SETTLE_MS);
         }
     }
 
-    function requestWalletModalViewportSync() {
+    function requestWalletModalViewportSync({ ensureInput = true, allowUndock = true } = {}) {
         if (walletModalState.viewportRafId) return;
         walletModalState.viewportRafId = requestAnimationFrame(() => {
             walletModalState.viewportRafId = 0;
@@ -766,7 +1187,7 @@
             if (!getActiveWalletModalInput()) {
                 captureWalletModalOverlayBaseHeight();
             }
-            applyWalletModalLayout();
+            applyWalletModalLayout({ ensureInput, allowUndock });
             requestWalletRechargeScrollCueUpdate();
         });
     }
@@ -775,7 +1196,7 @@
         const { overlay } = getWalletModalElements();
         if (!overlay) return;
 
-        overlay.classList.remove('active', 'wallet-opening');
+        overlay.classList.remove('active', 'wallet-opening', 'wallet-modal-force-hidden');
         overlay.hidden = false;
         void overlay.offsetWidth;
 
@@ -797,11 +1218,42 @@
     function bindWalletModalInputBehavior(input) {
         if (!input || input.dataset.walletInputManaged === '1') return;
 
+        const gesture = {
+            startX: 0,
+            startY: 0,
+            startScrollTop: 0,
+            lastX: 0,
+            lastY: 0,
+            mode: 'idle'
+        };
+
         input.addEventListener('focus', () => {
             markWalletModalFocusTransfer(input);
             if (walletModalState.blurTimer) {
                 clearTimeout(walletModalState.blurTimer);
                 walletModalState.blurTimer = null;
+            }
+            walletModalState.keyboardBlurUndocking = false;
+            if (isWalletModalIOSMode()) {
+                const { overlay, scroller } = getWalletModalElements();
+                const docked = overlay?.classList.contains('keyboard-docked');
+                if (docked) {
+                    clearWalletModalPendingFirstDock();
+                    setInlineStyles(scroller, {
+                        scrollPaddingBottom: '144px'
+                    });
+                    walletModalState.lastFocusAnchor = getWalletModalFocusAnchor(input) || null;
+                    if (walletModalState.focusScrollSuppressUntil > Date.now()) {
+                        return;
+                    }
+                    scheduleWalletModalFocusedInputScroll(input);
+                    return;
+                }
+                captureWalletModalOverlayBaseHeight(true);
+                captureWalletModalStableDockHeight();
+                scheduleWalletModalLayout({ ensureInput: false, allowUndock: false });
+                setTimeout(() => scheduleWalletModalLayout({ ensureInput: true, allowUndock: false }), 160);
+                return;
             }
             scheduleWalletModalLayout();
         });
@@ -813,29 +1265,117 @@
             walletModalState.blurTimer = setTimeout(() => {
                 walletModalState.blurTimer = null;
                 if (!getActiveWalletModalInput()) {
-                    walletModalState.focusTransferUntil = 0;
-                    walletModalState.lastFocusAnchor = null;
-                    scheduleWalletModalLayout();
+                    walletModalState.keyboardBlurUndocking = true;
+                    resetWalletModalDockLayout(true);
+                    scheduleWalletModalLayout({ settled: true, deferOnly: true });
                 }
-            }, 0);
+            }, 120);
         });
 
         input.addEventListener('click', () => {
+            if (document.activeElement === input) return;
             markWalletModalFocusTransfer(input);
+            if (isWalletModalIOSMode() && getWalletModalElements().overlay?.classList.contains('keyboard-docked')) {
+                scheduleWalletModalFocusedInputScroll(input);
+                return;
+            }
             scheduleWalletModalLayout();
         });
 
-        input.addEventListener('touchend', (event) => {
-            if (!isWalletModalIOSMode() || document.activeElement === input) return;
-            if (event.cancelable) event.preventDefault();
-            markWalletModalFocusTransfer(input);
-            try {
-                input.focus({ preventScroll: true });
-            } catch (_) {
-                input.focus();
+        input.addEventListener('touchstart', (event) => {
+            const { overlay, card, scroller } = getWalletModalElements();
+            const scrollHost = scroller || card;
+            if (!overlay?.classList.contains('active') || !scrollHost) return;
+            cancelWalletModalScrollAnimation();
+
+            const touch = event.touches[0];
+            gesture.startX = touch?.clientX || 0;
+            gesture.startY = touch?.clientY || 0;
+            gesture.lastX = gesture.startX;
+            gesture.lastY = gesture.startY;
+            gesture.startScrollTop = scrollHost.scrollTop;
+            gesture.mode = 'pending';
+        }, { passive: true });
+
+        input.addEventListener('touchmove', (event) => {
+            const { overlay, card, scroller } = getWalletModalElements();
+            const scrollHost = scroller || card;
+            if (!overlay?.classList.contains('active') || !scrollHost) return;
+            cancelWalletModalScrollAnimation();
+
+            const touch = event.touches[0];
+            gesture.lastX = touch?.clientX || gesture.lastX;
+            gesture.lastY = touch?.clientY || gesture.lastY;
+            const deltaX = gesture.lastX - gesture.startX;
+            const deltaY = gesture.lastY - gesture.startY;
+
+            if (gesture.mode === 'pending') {
+                if (Math.abs(deltaY) < 8 || Math.abs(deltaY) <= Math.abs(deltaX)) {
+                    return;
+                }
+                gesture.mode = 'scroll';
             }
-            scheduleWalletModalLayout();
+
+            if (gesture.mode !== 'scroll') return;
+            if (document.activeElement !== input) return;
+
+            const maxScrollTop = Math.max(0, scrollHost.scrollHeight - scrollHost.clientHeight);
+            const nextScrollTop = Math.max(0, Math.min(gesture.startScrollTop - deltaY, maxScrollTop));
+
+            if (nextScrollTop !== scrollHost.scrollTop) {
+                scrollHost.scrollTop = nextScrollTop;
+            }
+
+            if (event.cancelable) {
+                event.preventDefault();
+            }
         }, { passive: false });
+
+        input.addEventListener('touchend', (event) => {
+            const { card, scroller } = getWalletModalElements();
+            const scrollHost = scroller || card;
+            const touch = event.changedTouches?.[0];
+            const endX = touch?.clientX ?? gesture.lastX;
+            const endY = touch?.clientY ?? gesture.lastY;
+            const movedDistance = Math.hypot(endX - gesture.startX, endY - gesture.startY);
+            const scrollMoved = scrollHost ? Math.abs(scrollHost.scrollTop - gesture.startScrollTop) : 0;
+            const isTap = gesture.mode === 'pending' && movedDistance < 8 && scrollMoved < 3;
+
+            if (isWalletModalIOSMode() && isTap && document.activeElement !== input) {
+                const beforeFocusScrollTop = scrollHost ? scrollHost.scrollTop : null;
+                const wasDockedBeforeFocus = getWalletModalElements().overlay?.classList.contains('keyboard-docked');
+                if (event.cancelable) {
+                    event.preventDefault();
+                }
+                freezeWalletModalPage();
+                markWalletModalFocusTransfer(input);
+                walletModalState.focusScrollSuppressUntil = Date.now() + 120;
+                try {
+                    input.focus({ preventScroll: true });
+                } catch (_) {
+                    input.focus();
+                }
+                walletModalState.keyboardBlurUndocking = false;
+                if (getWalletModalElements().overlay?.classList.contains('keyboard-docked')) {
+                    clearWalletModalPendingFirstDock();
+                    if (wasDockedBeforeFocus && scrollHost && Number.isFinite(beforeFocusScrollTop)) {
+                        scrollHost.scrollTop = beforeFocusScrollTop;
+                    }
+                    walletModalState.lastFocusAnchor = getWalletModalFocusAnchor(input) || null;
+                    scheduleWalletModalFocusedInputScroll(input, 34);
+                } else {
+                    captureWalletModalOverlayBaseHeight(true);
+                    captureWalletModalStableDockHeight();
+                    scheduleWalletModalLayout({ ensureInput: false, allowUndock: false });
+                    setTimeout(() => scheduleWalletModalLayout({ ensureInput: true, allowUndock: false }), 160);
+                }
+            }
+            gesture.mode = 'idle';
+        }, { passive: false });
+
+        input.addEventListener('touchcancel', () => {
+            gesture.mode = 'idle';
+        });
 
         input.dataset.walletInputManaged = '1';
     }
@@ -948,7 +1488,9 @@
         freezeWalletModalPage();
         const vv = window.visualViewport;
         const handleViewportChange = () => {
-            requestWalletModalViewportSync();
+            markWalletModalKeyboardResizing();
+            requestWalletModalViewportSync({ ensureInput: false, allowUndock: false });
+            scheduleWalletModalLayout({ settled: true, deferOnly: true });
         };
 
         const handleRootScroll = () => {
@@ -1694,6 +2236,114 @@
             return rawReason;
         },
 
+        isRedemptionReversalReason(reason = '', referenceId = '', amount = 0) {
+            const rawReason = String(reason || '').trim();
+            const normalizedReason = rawReason.toLowerCase();
+            const normalizedRef = String(referenceId || '').trim().toUpperCase();
+            const normalizedAmount = this.normalizePointValue(amount, 0);
+
+            if (normalizedAmount >= 0 || !rawReason) {
+                return false;
+            }
+
+            return rawReason.includes('兑换码撤销')
+                || rawReason.includes('兑换码批次删除')
+                || rawReason.includes('兑换码扣回')
+                || rawReason.includes('兑换码回收')
+                || normalizedReason.includes('redemption revoke')
+                || normalizedReason.includes('redeem revoke')
+                || normalizedReason.includes('redemption reversal')
+                || normalizedReason.includes('redeem reversal')
+                || (normalizedRef.startsWith('REDEEM_') && (
+                    rawReason.includes('撤销')
+                    || rawReason.includes('扣回')
+                    || normalizedReason.includes('revoke')
+                    || normalizedReason.includes('reversal')
+                ));
+        },
+
+        getRedemptionReversalDisplayName(reason = '', referenceId = '') {
+            return this.getRedemptionReversalMeta(reason, referenceId).title;
+        },
+
+        getRedemptionReversalMeta(reason = '', referenceId = '') {
+            const rawReason = String(reason || '').trim();
+            const normalizedRef = String(referenceId || '').trim();
+            const referenceCode = normalizedRef.replace(/^redeem_/i, '').trim();
+            const isBatch = rawReason.includes('批次删除');
+            const title = isBatch
+                ? this.tr('wallet.redeemCodeBatchRevocation', '兑换码批次删除扣回')
+                : this.tr('wallet.redeemCodeRevocation', '兑换码撤销扣回');
+            const fallbackReason = isBatch
+                ? this.tr('wallet.redemptionBatchRevocationReason', '批次删除自动撤销')
+                : this.tr('wallet.redemptionRevocationFallbackReason', '管理员后台撤销');
+            const content = rawReason
+                .replace(/^兑换码(?:批次删除|撤销)?扣回[:：]?\s*/i, '')
+                .replace(/^兑换码(?:批次删除|撤销|扣回|回收)[:：]?\s*/i, '')
+                .replace(/^redemption\s+(?:batch\s+)?(?:revoke|revoked|reversal)[:：]?\s*/i, '')
+                .replace(/^redeem\s+(?:batch\s+)?(?:revoke|revoked|reversal)[:：]?\s*/i, '')
+                .trim();
+            let adminReason = '';
+            let code = referenceCode;
+
+            if (content) {
+                const bracketMatch = content.match(/^(.*?)（([^（）]+)）\s*$/);
+                const asciiBracketMatch = content.match(/^(.*?)\(([^()]+)\)\s*$/);
+                const matched = bracketMatch || asciiBracketMatch;
+                if (matched) {
+                    adminReason = String(matched[1] || '').trim();
+                    code = String(matched[2] || '').trim() || code;
+                } else if (/^[A-Z0-9]+(?:-[A-Z0-9]+)+$/i.test(content) || /^ZY-/i.test(content)) {
+                    code = content;
+                } else {
+                    adminReason = content;
+                }
+            }
+
+            return {
+                title,
+                badge: isBatch
+                    ? this.tr('wallet.redemptionBatchRevokedBadge', '批次撤销')
+                    : this.tr('wallet.adminRevokedBadge', '后台撤销'),
+                reasonLabel: this.tr('wallet.adminRevocationReason', '撤销理由'),
+                reason: adminReason || fallbackReason,
+                codeLabel: this.tr('wallet.redeemCodeLabel', '兑换码'),
+                code,
+                isBatch
+            };
+        },
+
+        renderRedemptionReversalName(reason = '', referenceId = '') {
+            const meta = this.getRedemptionReversalMeta(reason, referenceId);
+            return `
+                <span class="wallet-redemption-reversal-title">
+                    ${this.renderWalletInlineIcon('fa-undo-alt', '#fb7185')}
+                    <span>${this.escapeHtml(meta.title)}</span>
+                    <span class="wallet-redemption-reversal-badge">${this.escapeHtml(meta.badge)}</span>
+                </span>
+                <span class="wallet-redemption-reversal-reason">${this.escapeHtml(meta.reasonLabel)}：${this.escapeHtml(meta.reason)}</span>
+            `;
+        },
+
+        buildRedemptionReversalDetailMarkup(reason = '', referenceId = '') {
+            const meta = this.getRedemptionReversalMeta(reason, referenceId);
+            const codeMarkup = meta.code
+                ? `<div class="wallet-redemption-reversal-detail-code">${this.escapeHtml(meta.codeLabel)}：<span class="mono">${this.escapeHtml(meta.code)}</span></div>`
+                : '';
+
+            return `
+                <div class="wallet-redemption-reversal-detail">
+                    <div class="wallet-redemption-reversal-detail-head">
+                        ${this.renderWalletInlineIcon('fa-undo-alt', '#fb7185')}
+                        <span>${this.escapeHtml(meta.reasonLabel)}</span>
+                        <span class="wallet-redemption-reversal-badge">${this.escapeHtml(meta.badge)}</span>
+                    </div>
+                    <div class="wallet-redemption-reversal-detail-body">${this.escapeHtml(meta.reason)}</div>
+                    ${codeMarkup}
+                </div>
+            `;
+        },
+
         getLedgerTransactionTypeLabel(reason = '', amount = 0) {
             const rawReason = String(reason || '').trim();
             const normalizedAmount = this.normalizePointValue(amount, 0);
@@ -1722,6 +2372,10 @@
 
             if (rawReason.startsWith('模拟充值:') || rawReason.startsWith('模拟充值：')) {
                 return this.tr('wallet.mockPayment', '模拟充值');
+            }
+
+            if (this.isRedemptionReversalReason(rawReason, '', normalizedAmount)) {
+                return this.getRedemptionReversalDisplayName(rawReason);
             }
 
             if (rawReason.startsWith('admin_manual')) {
@@ -3043,6 +3697,7 @@
 
             // Render UI immediately so there's zero delay for the user
             this.render();
+            this.modalEl?.classList.remove('wallet-modal-force-hidden');
             resetWalletSidebarIndicatorState();
             this.resetOrderFilters();
             this.syncOrderSearchUi();
@@ -3103,6 +3758,11 @@
             resetWalletModalVisualState();
 
             if (this.modalEl) {
+                window.runSiteModalCloseChromeCleanup?.({
+                    targets: [this.modalEl],
+                    forceHiddenClass: 'wallet-modal-force-hidden',
+                    restoreDelayMs: 320
+                });
                 this.modalEl.hidden = true;
                 this.modalEl.classList.remove('active', 'keyboard-active', 'keyboard-docked', 'ios-focus-lock');
             }
@@ -3140,6 +3800,7 @@
 
             if (overlay) {
                 overlay.hidden = false;
+                overlay.classList.remove('wallet-modal-force-hidden');
                 this.modalEl = overlay;
                 this.bindDelegatedHandlers(overlay);
                 this.syncOrderSearchUi();
@@ -8010,7 +8671,7 @@
             } else if (typeFilter === 'recharge') {
                 filtered = filtered.filter(order => order.transactionType === 'recharge' || order.transactionType === 'affiliate');
             } else if (typeFilter === 'redeem') {
-                filtered = filtered.filter(order => order.transactionType === 'redeem');
+                filtered = filtered.filter(order => order.transactionType === 'redeem' || order.transactionType === 'redemption_reversal');
             }
 
             // Apply time filter
@@ -8076,20 +8737,93 @@
             }
         },
 
-        /**
-         * Expand item to show details
-         */
+        async writeTextWithLegacyClipboard(text) {
+            const normalizedText = String(text ?? '');
+            const root = document.body || document.documentElement;
+            if (!root || typeof document.execCommand !== 'function') {
+                throw new Error('legacy_copy_unavailable');
+            }
+
+            const activeElement = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+            const selection = typeof window.getSelection === 'function' ? window.getSelection() : null;
+            const savedRanges = selection
+                ? Array.from({ length: selection.rangeCount }, (_, index) => selection.getRangeAt(index).cloneRange())
+                : [];
+            const textarea = document.createElement('textarea');
+            const restoreSelection = () => {
+                if (!selection) return;
+                selection.removeAllRanges();
+                savedRanges.forEach((range) => selection.addRange(range));
+            };
+
+            textarea.value = normalizedText;
+            textarea.setAttribute('readonly', '');
+            textarea.setAttribute('aria-hidden', 'true');
+            textarea.style.position = 'fixed';
+            textarea.style.top = '0';
+            textarea.style.left = '0';
+            textarea.style.width = '1px';
+            textarea.style.height = '1px';
+            textarea.style.padding = '0';
+            textarea.style.border = '0';
+            textarea.style.opacity = '0';
+            textarea.style.pointerEvents = 'none';
+            textarea.style.fontSize = '16px';
+
+            root.appendChild(textarea);
+            try {
+                textarea.focus({ preventScroll: true });
+            } catch (_) {
+                textarea.focus();
+            }
+            textarea.select();
+            textarea.setSelectionRange(0, textarea.value.length);
+
+            try {
+                const copied = document.execCommand('copy');
+                if (!copied) {
+                    throw new Error('legacy_copy_failed');
+                }
+            } finally {
+                textarea.remove();
+                restoreSelection();
+                if (activeElement && typeof activeElement.focus === 'function') {
+                    try {
+                        activeElement.focus({ preventScroll: true });
+                    } catch (_) {
+                        activeElement.focus();
+                    }
+                }
+            }
+        },
+
+        async writeTextToClipboard(text) {
+            const normalizedText = String(text ?? '');
+            const canUseClipboardApi = (typeof window.isSecureContext !== 'boolean' || window.isSecureContext)
+                && navigator.clipboard?.writeText;
+            if (canUseClipboardApi) {
+                try {
+                    await navigator.clipboard.writeText(normalizedText);
+                    return;
+                } catch (err) {
+                    console.warn('[WalletModal] Clipboard API failed, trying legacy copy:', err?.message || err);
+                }
+            }
+
+            await this.writeTextWithLegacyClipboard(normalizedText);
+        },
+
         /**
          * Copy text to clipboard
          */
-        async copyToClipboard(text, event) {
+        async copyToClipboard(text, event, options = {}) {
             if (event) event.stopPropagation();
             try {
-                await navigator.clipboard.writeText(text);
-                this.showToast('✅ 复制成功', 'success');
+                await this.writeTextToClipboard(text);
+                this.showToast(options.successMessage || '✅ 复制成功', 'success');
             } catch (err) {
                 console.error('Copy failed:', err);
-                this.showToast('❌ 复制失败', 'error');
+                this.showToast(options.errorMessage || '❌ 复制失败', 'error');
             }
         },
 
@@ -8261,6 +8995,10 @@
                         transactionType = 'recharge';
                         displayName = this.getRechargeDisplayName(entry.reason);
                         icon = '⚡';
+                    } else if (this.isRedemptionReversalReason(entry.reason, entry.reference_id, entryAmount)) {
+                        transactionType = 'redemption_reversal';
+                        displayName = this.getRedemptionReversalDisplayName(entry.reason, entry.reference_id);
+                        icon = '↩️';
                     } else if (entry.reason === 'redeem_code' || (entry.reason && entry.reason.includes('兑换码'))) {
                         transactionType = 'redeem';
                         displayName = this.tr('wallet.redeemCodeExchange', '兑换码兑换');
@@ -8293,6 +9031,7 @@
                         isRecharge: transactionType === 'recharge',
                         isAffiliateReward: transactionType === 'affiliate',
                         isRedeem: transactionType === 'redeem',
+                        isRedemptionReversal: transactionType === 'redemption_reversal',
                         promptId: entry.reason === 'unlock_prompt' ? entry.reference_id : null,
                         redeemCode: transactionType === 'redeem' ? entry.reference_id : null,
                         referenceId: entry.reference_id || '',
@@ -8390,6 +9129,8 @@
                 // Handle display based on transaction type
                 let displayName;
                 let actionAttrs = '';
+                let itemToneClass = '';
+                let productClass = 'order-product';
                 let amountDisplay;
                 let amountClass;
                 let statusText = completedText;
@@ -8483,8 +9224,10 @@
                         'wallet-balance-before': balanceBeforeValue === null ? null : this.encodeActionValue(balanceBeforeValue),
                         'wallet-balance-after': balanceAfterValue === null ? null : this.encodeActionValue(balanceAfterValue)
                     });
-                } else if (order.transactionType === 'recharge') {
-                    displayName = `${this.renderWalletInlineIcon('fa-bolt', '#fbbf24')} ${this.escapeHtml(order.snapshot_product_name)}`;
+                } else if (order.transactionType === 'redemption_reversal') {
+                    itemToneClass = 'order-item--redemption-reversal';
+                    productClass = 'order-product order-product--redemption-reversal';
+                    displayName = this.renderRedemptionReversalName(order.rawReason, order.referenceId);
                     actionAttrs = this.buildDataAttributes({
                         'wallet-action': 'open-order-detail',
                         'wallet-order-kind': 'recharge',
@@ -8492,7 +9235,23 @@
                         'wallet-amount': this.normalizePointValue(order.amount || order.total_price || 0),
                         'wallet-created-at': this.encodeActionValue(order.created_at),
                         'wallet-reason': this.encodeActionValue(order.rawReason || ''),
-                        'wallet-reference-id': this.encodeActionValue(order.referenceId || '')
+                        'wallet-reference-id': this.encodeActionValue(order.referenceId || ''),
+                        'wallet-balance-before': balanceBeforeValue === null ? null : this.encodeActionValue(balanceBeforeValue),
+                        'wallet-balance-after': balanceAfterValue === null ? null : this.encodeActionValue(balanceAfterValue)
+                    });
+                } else if (order.transactionType === 'recharge') {
+                    const isRedemptionReversal = this.isRedemptionReversalReason(order.rawReason, order.referenceId, signedAmount);
+                    displayName = `${this.renderWalletInlineIcon(isRedemptionReversal ? 'fa-undo-alt' : 'fa-bolt', isRedemptionReversal ? '#fb7185' : '#fbbf24')} ${this.escapeHtml(order.snapshot_product_name)}`;
+                    actionAttrs = this.buildDataAttributes({
+                        'wallet-action': 'open-order-detail',
+                        'wallet-order-kind': 'recharge',
+                        'wallet-order-id': this.encodeActionValue(order.id),
+                        'wallet-amount': this.normalizePointValue(order.amount || order.total_price || 0),
+                        'wallet-created-at': this.encodeActionValue(order.created_at),
+                        'wallet-reason': this.encodeActionValue(order.rawReason || ''),
+                        'wallet-reference-id': this.encodeActionValue(order.referenceId || ''),
+                        'wallet-balance-before': balanceBeforeValue === null ? null : this.encodeActionValue(balanceBeforeValue),
+                        'wallet-balance-after': balanceAfterValue === null ? null : this.encodeActionValue(balanceAfterValue)
                     });
                 } else if (order.transactionType === 'redeem') {
                     displayName = `${this.renderWalletInlineIcon('fa-ticket-alt', '#f472b6')} ${this.escapeHtml(order.snapshot_product_name)}`;
@@ -8511,9 +9270,9 @@
                 }
 
                 return `
-                    <div class="order-item${actionAttrs ? ' order-item--interactive' : ''}"${actionAttrs}>
+                    <div class="order-item${actionAttrs ? ' order-item--interactive' : ''}${itemToneClass ? ` ${itemToneClass}` : ''}"${actionAttrs}>
                         <div class="order-main">
-                            <div class="order-product">${displayName}</div>
+                            <div class="${productClass}">${displayName}</div>
                             <div class="order-meta">
                                 <span class="order-date">${dateStr}</span>
                             </div>
@@ -8958,25 +9717,36 @@
             const date = new Date(createdAt);
             const dateStr = `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
             const normalizedAmount = this.normalizePointValue(amount);
+            const isRedemptionReversal = this.isRedemptionReversalReason(reason, referenceId, normalizedAmount);
             const titleText = normalizedAmount >= 0
                 ? (window.i18n?.t('wallet.rechargeDetails') || '充值详情')
-                : (window.i18n?.t('wallet.orderDetails') || '订单详情');
+                : (isRedemptionReversal
+                    ? this.getRedemptionReversalDisplayName(reason, referenceId)
+                    : (window.i18n?.t('wallet.orderDetails') || '订单详情'));
             const pointsLabel = `${normalizedAmount >= 0 ? '+' : '-'}${this.formatPoints(Math.abs(normalizedAmount))} ${window.i18n?.t('wallet.pointsUnit') || '积分'}`;
             const amountColor = normalizedAmount >= 0 ? '#10b981' : '#f87171';
+            const pointsRowLabel = normalizedAmount >= 0
+                ? (window.i18n?.t('wallet.receivedPoints') || '获得积分')
+                : (isRedemptionReversal
+                    ? (this.tr('wallet.pointsDeducted', '扣回积分'))
+                    : (window.i18n?.t('wallet.pointsPaid') || '支付积分'));
             const shortOrderId = orderId ? `${orderId.substring(0, 8)}...${orderId.slice(-4)}` : '--';
             const resolvedBalanceSnapshot = this.resolveOrderBalanceSnapshot(orderId, balanceSnapshot);
             const balanceBefore = this.normalizeOptionalPointValue(resolvedBalanceSnapshot?.balanceBefore);
             const balanceAfter = this.normalizeOptionalPointValue(resolvedBalanceSnapshot?.balanceAfter);
-            const balanceSnapshotMarkup = normalizedAmount >= 0 && balanceBefore !== null && balanceAfter !== null
+            const balanceSnapshotMarkup = (normalizedAmount >= 0 || isRedemptionReversal) && balanceBefore !== null && balanceAfter !== null
                 ? `
                             <div class="detail-row">
-                                <span class="detail-label">到账前积分</span>
+                                <span class="detail-label">${isRedemptionReversal ? '扣回前积分' : '到账前积分'}</span>
                                 <span class="detail-val">${this.escapeHtml(this.formatPoints(balanceBefore))} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
                             </div>
                             <div class="detail-row">
-                                <span class="detail-label">到账后积分</span>
+                                <span class="detail-label">${isRedemptionReversal ? '扣回后积分' : '到账后积分'}</span>
                                 <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#10b981')}">${this.escapeHtml(this.formatPoints(balanceAfter))} ${window.i18n?.t('wallet.pointsUnit') || '积分'}</span>
                             </div>`
+                : '';
+            const redemptionReversalDetailMarkup = isRedemptionReversal
+                ? this.buildRedemptionReversalDetailMarkup(reason, referenceId)
                 : '';
 
             const detailOverlay = document.createElement('div');
@@ -8989,10 +9759,11 @@
                 <div class="wallet-order-modal">
                     <div class="wallet-order-modal-header">
                         <div class="wallet-order-modal-title">
-                            ${this.renderWalletInlineIcon(normalizedAmount >= 0 ? 'fa-bolt' : 'fa-shopping-bag', normalizedAmount >= 0 ? '#fbbf24' : '#22c55e')} ${this.escapeHtml(titleText)}
+                            ${this.renderWalletInlineIcon(isRedemptionReversal ? 'fa-undo-alt' : (normalizedAmount >= 0 ? 'fa-bolt' : 'fa-shopping-bag'), isRedemptionReversal ? '#fb7185' : (normalizedAmount >= 0 ? '#fbbf24' : '#22c55e'))} ${this.escapeHtml(titleText)}
                         </div>
                     </div>
                     <div class="wallet-order-modal-body">
+                        ${redemptionReversalDetailMarkup}
                         <div class="meta-section">
                             <div class="detail-row">
                                 <span class="detail-label">${window.i18n?.t('wallet.orderNumber') || '订单编号'}</span>
@@ -9003,7 +9774,7 @@
                                 <span class="detail-val">${this.escapeHtml(dateStr)}</span>
                             </div>
                             <div class="detail-row">
-                                <span class="detail-label">${normalizedAmount >= 0 ? (window.i18n?.t('wallet.receivedPoints') || '获得积分') : (window.i18n?.t('wallet.pointsPaid') || '支付积分')}</span>
+                                <span class="detail-label">${this.escapeHtml(pointsRowLabel)}</span>
                                 <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass(amountColor)}">${this.escapeHtml(pointsLabel)}</span>
                             </div>
                             ${balanceSnapshotMarkup}
@@ -9348,9 +10119,10 @@
                     URL.revokeObjectURL(url);
                 };
                 const copyAllOrderContent = () => {
-                    navigator.clipboard.writeText(allContent).then(() => {
-                        this.showToast(`✅ ${window.i18n?.t('wallet.copiedAll') || '已复制全部内容'}`, 'success');
-                    }).catch(() => this.showToast(window.i18n?.t('wallet.copyFailed') || '复制失败', 'error'));
+                    this.copyToClipboard(allContent, null, {
+                        successMessage: `✅ ${window.i18n?.t('wallet.copiedAll') || '已复制全部内容'}`,
+                        errorMessage: window.i18n?.t('wallet.copyFailed') || '复制失败'
+                    });
                 };
 
                 // 🚀 STEP 4: Replace skeleton with real content (smooth transition)
@@ -9651,10 +10423,9 @@
          */
         copyOrderContent(element) {
             const content = element.textContent;
-            navigator.clipboard.writeText(content).then(() => {
-                this.showToast('✅ 内容已复制', 'success');
-            }).catch(() => {
-                this.showToast('复制失败，请手动复制', 'error');
+            this.copyToClipboard(content, null, {
+                successMessage: '✅ 内容已复制',
+                errorMessage: '复制失败，请手动复制'
             });
         }
     };

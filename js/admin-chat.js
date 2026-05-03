@@ -67,6 +67,19 @@ class AdminChat {
         this.replyTemplateConfigPromise = null;
         this._replyTemplateRenderToken = 0;
         this._userContextRequestId = 0;
+        this._mobileKeyboardDock = {
+            baseViewportHeight: 0,
+            baseVisualHeight: 0,
+            baseContainerHeight: 0,
+            lastBottomInset: 0,
+            lastTranslateY: 0,
+            lastDockHeight: 0,
+            docked: false,
+            scrollLockActive: false,
+            rafId: 0,
+            stableViewportProbe: null,
+            cleanup: null
+        };
         this.destroyed = false;
         this.opsAlertSessionId = '__admin_ops_todo__';
         this.handleDocumentClick = this.handleDocumentClick.bind(this);
@@ -140,6 +153,328 @@ class AdminChat {
         document.removeEventListener('click', this.handleDocumentClick);
         window.removeEventListener('ops-alerts-config-updated', this.handleOpsAlertConfigUpdated);
         window.removeEventListener('resize', this.handleWindowResize);
+        this.detachMobileKeyboardDock();
+    }
+
+    isMobileKeyboardDockEnabled() {
+        const ua = navigator.userAgent || '';
+        const isiOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+        const vv = window.visualViewport;
+        const viewportWidth = Math.min(
+            ...[
+                window.innerWidth || 0,
+                document.documentElement.clientWidth || 0,
+                vv?.width || 0
+            ].filter((value) => value > 0)
+        );
+        const coarsePointer = window.matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+        const narrowViewport = window.matchMedia('(max-width: 900px)').matches
+            || (viewportWidth > 0 && viewportWidth <= 900)
+            || (coarsePointer && viewportWidth > 0 && viewportWidth <= 1024);
+        return isiOS && narrowViewport && Boolean(vv);
+    }
+
+    getAdminChatKeyboardElements() {
+        const containerEl = document.getElementById('chatMainContainer');
+        const interfaceEl = document.getElementById('chatInterface');
+        return {
+            containerEl,
+            interfaceEl,
+            inputWrapper: document.getElementById('chatInputWrapper'),
+            input: document.getElementById('adminChatInput')
+        };
+    }
+
+    isAdminChatInputFocused() {
+        const { interfaceEl } = this.getAdminChatKeyboardElements();
+        const active = document.activeElement;
+        return Boolean(interfaceEl && active && interfaceEl.contains(active) && /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName));
+    }
+
+    focusAdminChatInputWithoutScroll(input) {
+        if (!input) return;
+        try {
+            input.focus({ preventScroll: true });
+        } catch (_) {
+            input.focus();
+        }
+    }
+
+    lockAdminChatKeyboardPage() {
+        if (!window.iOSScrollLock || !this.isMobileKeyboardDockEnabled()) return;
+        const { containerEl, interfaceEl } = this.getAdminChatKeyboardElements();
+        if (!interfaceEl || interfaceEl.hidden) return;
+
+        window.iOSScrollLock.lockLight(containerEl || interfaceEl, {
+            restoreScrollDuringViewport: true
+        });
+        this._mobileKeyboardDock.scrollLockActive = true;
+    }
+
+    unlockAdminChatKeyboardPage() {
+        if (!this._mobileKeyboardDock?.scrollLockActive || !window.iOSScrollLock) return;
+        window.iOSScrollLock.unlock();
+        this._mobileKeyboardDock.scrollLockActive = false;
+    }
+
+    getAdminChatKeyboardStableViewportProbe() {
+        if (this._mobileKeyboardDock.stableViewportProbe?.isConnected) {
+            return this._mobileKeyboardDock.stableViewportProbe;
+        }
+
+        const probe = document.createElement('div');
+        probe.setAttribute('aria-hidden', 'true');
+        probe.className = 'admin-chat-viewport-probe';
+        document.body.appendChild(probe);
+        this._mobileKeyboardDock.stableViewportProbe = probe;
+        return probe;
+    }
+
+    getAdminChatKeyboardStableViewportHeight() {
+        const probe = this.getAdminChatKeyboardStableViewportProbe();
+        return Math.max(0, Math.round(probe?.getBoundingClientRect().height || probe?.offsetHeight || 0));
+    }
+
+    removeAdminChatKeyboardStableViewportProbe() {
+        if (this._mobileKeyboardDock.stableViewportProbe?.isConnected) {
+            this._mobileKeyboardDock.stableViewportProbe.remove();
+        }
+        this._mobileKeyboardDock.stableViewportProbe = null;
+    }
+
+    captureAdminChatKeyboardBase() {
+        const vv = window.visualViewport;
+        const visualTop = Math.max(0, vv?.offsetTop || 0);
+        const visualHeight = Math.max(0, vv?.height || 0);
+        const visualBottom = visualTop + visualHeight;
+        const stableViewportHeight = this.getAdminChatKeyboardStableViewportHeight();
+        this._mobileKeyboardDock.baseViewportHeight = Math.max(
+            this._mobileKeyboardDock.baseViewportHeight || 0,
+            stableViewportHeight,
+            window.innerHeight || 0,
+            document.documentElement.clientHeight || 0,
+            visualBottom
+        );
+        this._mobileKeyboardDock.baseVisualHeight = Math.max(
+            this._mobileKeyboardDock.baseVisualHeight || 0,
+            visualHeight
+        );
+
+        const { containerEl, interfaceEl } = this.getAdminChatKeyboardElements();
+        const dockTarget = containerEl || interfaceEl;
+        if (dockTarget && !this._mobileKeyboardDock.docked) {
+            const rect = dockTarget.getBoundingClientRect();
+            const targetHeight = Math.round(rect.height || dockTarget.offsetHeight || 0);
+            if (targetHeight > 0) {
+                this._mobileKeyboardDock.baseContainerHeight = Math.max(
+                    this._mobileKeyboardDock.baseContainerHeight || 0,
+                    targetHeight
+                );
+            }
+        }
+    }
+
+    getAdminChatKeyboardMetrics() {
+        const vv = window.visualViewport;
+        const visualTop = Math.max(0, vv?.offsetTop || 0);
+        const visualHeight = Math.max(0, vv?.height || 0);
+        const visualBottom = visualTop + visualHeight;
+        const baseViewportHeight = Math.max(
+            this._mobileKeyboardDock.baseViewportHeight || 0,
+            window.innerHeight || 0,
+            document.documentElement.clientHeight || 0,
+            visualBottom
+        );
+        const baseVisualHeight = Math.max(this._mobileKeyboardDock.baseVisualHeight || 0, visualHeight);
+        const bottomInset = Math.max(
+            0,
+            Math.round(Math.max(
+                baseViewportHeight - visualBottom,
+                baseVisualHeight - visualHeight
+            ))
+        );
+
+        return { baseViewportHeight, visualHeight, visualBottom, bottomInset };
+    }
+
+    getAdminChatFocusKeyboardInset(metrics = this.getAdminChatKeyboardMetrics()) {
+        const baseViewportHeight = Math.max(320, metrics.baseViewportHeight || 0);
+        const estimatedInset = Math.min(
+            440,
+            Math.max(280, Math.round(baseViewportHeight * 0.44))
+        );
+
+        return metrics.bottomInset > 24 ? metrics.bottomInset : estimatedInset;
+    }
+
+    applyAdminChatKeyboardDock(bottomInset) {
+        const { containerEl, interfaceEl, inputWrapper } = this.getAdminChatKeyboardElements();
+        if (!interfaceEl || !inputWrapper || interfaceEl.hidden) return;
+
+        const metrics = this.getAdminChatKeyboardMetrics();
+        const effectiveBottomInset = Math.max(0, Math.round(bottomInset ?? metrics.bottomInset));
+        const dockTarget = containerEl || interfaceEl;
+        const targetRect = dockTarget.getBoundingClientRect();
+        const liveTargetHeight = Math.round(targetRect.height || dockTarget.offsetHeight || interfaceEl.offsetHeight || 0);
+        const baseContainerHeight = Math.max(
+            320,
+            this._mobileKeyboardDock.baseContainerHeight || 0,
+            this._mobileKeyboardDock.lastDockHeight || 0,
+            liveTargetHeight || 0
+        );
+        const baseViewportHeight = Math.max(
+            320,
+            metrics.baseViewportHeight || 0,
+            this._mobileKeyboardDock.baseViewportHeight || 0
+        );
+        const keyboardTop = Math.max(0, baseViewportHeight - effectiveBottomInset);
+        const minTop = Math.max(8, Math.round((window.visualViewport?.offsetTop || 0) + 8));
+        const keyboardClearance = 12;
+        const maxAvailableHeight = Math.max(300, Math.round(keyboardTop - minTop - keyboardClearance));
+        const dockHeight = Math.round(Math.min(baseContainerHeight, maxAvailableHeight));
+        const targetBottom = Math.max(40, keyboardTop - 12);
+        const previousTranslateY = Math.round(this._mobileKeyboardDock.lastTranslateY || 0);
+        const layoutTop = Math.round((targetRect.top || 0) - previousTranslateY);
+        const layoutBottom = layoutTop + dockHeight;
+        const translateY = Math.round(Math.max(-520, Math.min(80, targetBottom - layoutBottom)));
+
+        interfaceEl.classList.remove('admin-chat-keyboard-docked');
+        dockTarget.classList.add('admin-chat-keyboard-docked');
+        dockTarget.style.setProperty('--admin-chat-keyboard-shift-y', `${translateY}px`);
+        dockTarget.style.setProperty('--admin-chat-keyboard-dock-height', `${dockHeight}px`);
+        this._mobileKeyboardDock.docked = true;
+        this._mobileKeyboardDock.lastBottomInset = effectiveBottomInset;
+        this._mobileKeyboardDock.lastTranslateY = translateY;
+        this._mobileKeyboardDock.lastDockHeight = dockHeight;
+        this.updateChatContextPanelLayout();
+    }
+
+    releaseAdminChatKeyboardDock() {
+        const { containerEl, interfaceEl } = this.getAdminChatKeyboardElements();
+        if (containerEl) {
+            containerEl.classList.remove('admin-chat-keyboard-docked');
+            containerEl.style.removeProperty('--admin-chat-keyboard-shift-y');
+            containerEl.style.removeProperty('--admin-chat-keyboard-dock-height');
+        }
+        if (interfaceEl) {
+            interfaceEl.classList.remove('admin-chat-keyboard-docked');
+            interfaceEl.style.removeProperty('--admin-chat-keyboard-shift-y');
+            interfaceEl.style.removeProperty('--admin-chat-keyboard-dock-height');
+        }
+        this._mobileKeyboardDock.docked = false;
+        this._mobileKeyboardDock.lastBottomInset = 0;
+        this._mobileKeyboardDock.lastTranslateY = 0;
+        this._mobileKeyboardDock.lastDockHeight = 0;
+    }
+
+    syncAdminChatKeyboardDock() {
+        const { interfaceEl } = this.getAdminChatKeyboardElements();
+        if (!interfaceEl || interfaceEl.hidden || !this.isMobileKeyboardDockEnabled()) {
+            this.releaseAdminChatKeyboardDock();
+            return;
+        }
+
+        const activeInput = this.isAdminChatInputFocused();
+        const metrics = this.getAdminChatKeyboardMetrics();
+        const effectiveBottomInset = activeInput
+            ? this.getAdminChatFocusKeyboardInset(metrics)
+            : metrics.bottomInset;
+        const shouldDock = activeInput && effectiveBottomInset > 24;
+
+        if (activeInput) {
+            this.lockAdminChatKeyboardPage();
+        } else {
+            this.unlockAdminChatKeyboardPage();
+        }
+
+        if (shouldDock) {
+            this.applyAdminChatKeyboardDock(effectiveBottomInset);
+            return;
+        }
+
+        if (this._mobileKeyboardDock.docked) {
+            this.releaseAdminChatKeyboardDock();
+        }
+    }
+
+    requestAdminChatKeyboardDockSync() {
+        if (this._mobileKeyboardDock.rafId) return;
+        this._mobileKeyboardDock.rafId = requestAnimationFrame(() => {
+            this._mobileKeyboardDock.rafId = 0;
+            this.syncAdminChatKeyboardDock();
+        });
+    }
+
+    attachMobileKeyboardDock() {
+        if (!this.isMobileKeyboardDockEnabled()) return;
+        const { interfaceEl, input } = this.getAdminChatKeyboardElements();
+        const vv = window.visualViewport;
+        if (!interfaceEl || !input || !vv) return;
+
+        this.detachMobileKeyboardDock();
+        this.captureAdminChatKeyboardBase();
+
+        const handleViewportChange = () => this.requestAdminChatKeyboardDockSync();
+        const handleInputFocus = () => {
+            this.captureAdminChatKeyboardBase();
+            this.lockAdminChatKeyboardPage();
+            handleViewportChange();
+            setTimeout(handleViewportChange, 60);
+            setTimeout(handleViewportChange, 120);
+            setTimeout(handleViewportChange, 260);
+        };
+        const handleInputBlur = () => {
+            handleViewportChange();
+            setTimeout(handleViewportChange, 120);
+        };
+        const handleTouchStart = (event) => {
+            if (!this.isMobileKeyboardDockEnabled()) return;
+            if (event.cancelable) event.preventDefault();
+            this.captureAdminChatKeyboardBase();
+            this.lockAdminChatKeyboardPage();
+            this.focusAdminChatInputWithoutScroll(input);
+            handleViewportChange();
+            setTimeout(handleViewportChange, 60);
+        };
+
+        vv.addEventListener('resize', handleViewportChange, { passive: true });
+        vv.addEventListener('scroll', handleViewportChange, { passive: true });
+        input.addEventListener('focus', handleInputFocus);
+        input.addEventListener('blur', handleInputBlur);
+        input.addEventListener('touchstart', handleTouchStart, { passive: false });
+
+        this._mobileKeyboardDock.cleanup = () => {
+            vv.removeEventListener('resize', handleViewportChange);
+            vv.removeEventListener('scroll', handleViewportChange);
+            input.removeEventListener('focus', handleInputFocus);
+            input.removeEventListener('blur', handleInputBlur);
+            input.removeEventListener('touchstart', handleTouchStart);
+            if (this._mobileKeyboardDock.rafId) {
+                cancelAnimationFrame(this._mobileKeyboardDock.rafId);
+                this._mobileKeyboardDock.rafId = 0;
+            }
+            this._mobileKeyboardDock.cleanup = null;
+        };
+
+        this.requestAdminChatKeyboardDockSync();
+    }
+
+    detachMobileKeyboardDock() {
+        if (typeof this._mobileKeyboardDock?.cleanup === 'function') {
+            this._mobileKeyboardDock.cleanup();
+        }
+        if (this._mobileKeyboardDock?.rafId) {
+            cancelAnimationFrame(this._mobileKeyboardDock.rafId);
+            this._mobileKeyboardDock.rafId = 0;
+        }
+        if (this._mobileKeyboardDock) {
+            this._mobileKeyboardDock.baseViewportHeight = 0;
+            this._mobileKeyboardDock.baseVisualHeight = 0;
+            this._mobileKeyboardDock.baseContainerHeight = 0;
+        }
+        this.releaseAdminChatKeyboardDock();
+        this.unlockAdminChatKeyboardPage();
+        this.removeAdminChatKeyboardStableViewportProbe();
     }
 
     // i18n helper with fallback
@@ -6653,6 +6988,7 @@ class AdminChat {
                 }
             });
         }
+        this.attachMobileKeyboardDock();
         if (backBtn) backBtn.addEventListener('click', () => this.backToSessions());
 
         if (uploadBtn && imageInput) {
@@ -7202,6 +7538,8 @@ class AdminChat {
         this.setElementHidden(document.getElementById('chatEmptyState'), true);
         const interfaceEl = document.getElementById('chatInterface');
         this.setElementHidden(interfaceEl, false);
+        this.attachMobileKeyboardDock();
+        this.requestAdminChatKeyboardDockSync();
 
         const normalizedRequestedSessionId = String(sessionId || '').trim();
         const session = this.sessions.find((item) => item.sessionId === normalizedRequestedSessionId)
@@ -7343,6 +7681,7 @@ class AdminChat {
         this.renderReplyTemplateBar(null);
         this.setElementHidden(document.getElementById('chatEmptyState'), false);
         this.setElementHidden(document.getElementById('chatInterface'), true);
+        this.releaseAdminChatKeyboardDock();
         this.renderSessionList(this.searchQuery);
     }
 

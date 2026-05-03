@@ -110,18 +110,48 @@ async function parseAdminPointsResponse(response) {
     return payload;
 }
 
-function announcePointsAction(message = '', tone = 'success') {
+function normalizePointsToastTone(tone = '') {
+    const normalized = String(tone || '').trim().toLowerCase();
+    if (['success', 'saved', 'ready'].includes(normalized)) return 'success';
+    if (['warning', 'partial'].includes(normalized)) return 'warning';
+    if (['error', 'danger', 'failed'].includes(normalized)) return 'error';
+    return 'info';
+}
+
+function announcePointsAction(message = '', tone = 'success', options = {}) {
     const normalizedMessage = String(message || '').trim();
     if (!normalizedMessage) {
         return;
     }
 
     if (typeof showToast === 'function') {
-        showToast(normalizedMessage, tone);
+        showToast(normalizedMessage, normalizePointsToastTone(tone), options);
         return;
     }
 
     alert(normalizedMessage);
+}
+
+function announcePointsActionToastOnly(message = '', tone = 'success') {
+    announcePointsAction(message, tone, { feedback: false });
+}
+
+function announcePointsOperationResult(message = '', tone = 'success', {
+    source = 'points-batch',
+    command = true
+} = {}) {
+    const normalizedMessage = String(message || '').trim();
+    if (!normalizedMessage) {
+        return;
+    }
+
+    announcePointsAction(normalizedMessage, tone, { feedback: !command });
+    if (command) {
+        emitPointsCommandFeedback(normalizedMessage, normalizePointsCommandFeedbackState(tone), {
+            source,
+            tone: String(tone || '').trim().toLowerCase()
+        });
+    }
 }
 
 function normalizePointsCommandFeedbackState(tone = '') {
@@ -2982,7 +3012,41 @@ function syncPointsPackageDeleteModalState() {
     }
 
     if (submitBtn) {
-        submitBtn.disabled = !context.canWrite || pointsPackageDeleteModalState.submitting;
+        syncPointsModalSubmitButtonState(submitBtn, {
+            submitting: pointsPackageDeleteModalState.submitting,
+            disabled: !context.canWrite
+        });
+    }
+}
+
+function syncPointsModalSubmitButtonState(submitBtn, {
+    submitting = false,
+    disabled = false
+} = {}) {
+    if (!submitBtn) {
+        return;
+    }
+
+    const iconEl = submitBtn.querySelector('i');
+    const labelEl = submitBtn.querySelector('span');
+    if (iconEl && !submitBtn.dataset.defaultIcon) {
+        submitBtn.dataset.defaultIcon = iconEl.className;
+    }
+    if (labelEl && !submitBtn.dataset.defaultLabel) {
+        submitBtn.dataset.defaultLabel = labelEl.textContent.trim();
+    }
+
+    submitBtn.disabled = Boolean(disabled || submitting);
+    submitBtn.classList.toggle('is-submitting', Boolean(submitting));
+    submitBtn.setAttribute('aria-busy', submitting ? 'true' : 'false');
+
+    if (iconEl) {
+        iconEl.className = submitting ? 'fas fa-spinner' : (submitBtn.dataset.defaultIcon || iconEl.className);
+    }
+    if (labelEl) {
+        labelEl.textContent = submitting
+            ? (submitBtn.dataset.loadingLabel || '处理中')
+            : (submitBtn.dataset.defaultLabel || labelEl.textContent);
     }
 }
 
@@ -3061,7 +3125,7 @@ function openPointsPackageDeleteModal(packageId = '') {
                     </section>
                     <div class="points-code-action-actions">
                         <button class="points-code-action-cancel" type="button" data-points-action="close-package-delete-modal">取消</button>
-                        <button class="points-code-action-submit points-code-action-submit--danger" type="submit" id="pointsPackageDeleteSubmitBtn">
+                        <button class="points-code-action-submit points-code-action-submit--danger" type="submit" id="pointsPackageDeleteSubmitBtn" data-loading-label="删除中">
                             <i class="fas fa-trash"></i>
                             <span>确认删除套餐</span>
                         </button>
@@ -3424,7 +3488,7 @@ async function generateCodes(event) {
 
     const currentSite = requireWritablePointsSite({ formId: 'generateCodesForm' });
     if (!currentSite) {
-        emitPointsCommandFeedback('生成兑换码需要先在站点筛选中选择 CN 或 INTL，all 视图仅用于查看。', 'failed', {
+        announcePointsOperationResult('生成兑换码需要先在站点筛选中选择 CN 或 INTL，all 视图仅用于查看。', 'error', {
             source: 'points-generate'
         });
         return;
@@ -3502,11 +3566,12 @@ async function generateCodes(event) {
         };
         displayGeneratedCodes();
         invalidatePointsCatalogSnapshot();
-        emitPointsCommandFeedback(buildPointsGenerateFeedbackMessage({
+        const successMessage = buildPointsGenerateFeedbackMessage({
             batchName: generatedBatchContext.batchName,
             count: generatedBatchContext.count,
             site: generatedBatchContext.site
-        }), 'saved', {
+        });
+        announcePointsOperationResult(successMessage, 'success', {
             source: 'points-generate'
         });
 
@@ -3617,9 +3682,9 @@ function upsertPointsBatchRow(batch = null) {
 // Copy single code to clipboard
 function copySingleCode(element, code) {
     copyPointsTextToClipboard(code, {
-        successMessage: '兑换码已复制',
+        successMessage: '已复制该兑换码',
         emptyMessage: '没有可复制的兑换码',
-        announcer: (message, tone) => announcePointsScopedAction(message, tone, { sourceEl: element })
+        announcer: announcePointsAction
     }).then((copied) => {
         if (!copied || !element) {
             return;
@@ -4082,7 +4147,7 @@ function copyVisibleBatchCodes() {
     copyPointsTextToClipboard(codes.join('\n'), {
         successMessage: `已复制 ${codes.length} 个兑换码`,
         emptyMessage: '当前筛选下没有可复制的兑换码',
-        announcer: (message, tone) => announcePointsScopedAction(message, tone, { batch: true })
+        announcer: announcePointsAction
     });
 }
 
@@ -5106,7 +5171,7 @@ function closeDeleteOptionsModal(event) {
 async function executeDeleteWithOption(batchIdsStr) {
     const writableSite = requireWritablePointsSite({ action: 'points-batch-delete' });
     if (!writableSite) {
-        announcePointsScopedAction('批量删除需要先在站点筛选中选择 CN 或 INTL，all 视图仅用于查看。', 'error', { batchList: true });
+        announcePointsOperationResult('批量删除需要先在站点筛选中选择 CN 或 INTL，all 视图仅用于查看。', 'error', { source: 'points-batch' });
         return;
     }
 
@@ -5114,7 +5179,7 @@ async function executeDeleteWithOption(batchIdsStr) {
     const selectedOption = document.querySelector('input[name="deleteOption"]:checked')?.value;
 
     if (!selectedOption) {
-        announcePointsScopedAction('请选择一个删除选项', 'error', { batchList: true });
+        announcePointsAction('请选择一个删除选项', 'error');
         return;
     }
 
@@ -5152,10 +5217,11 @@ async function executeDeleteWithOption(batchIdsStr) {
             detail: feedback.detail,
             stats: feedback.stats
         });
+        announcePointsActionToastOnly(feedback.message, feedback.tone);
 
     } catch (err) {
         console.error('Delete failed:', err);
-        announcePointsScopedAction(`删除失败: ${err.message}`, 'error', { batchList: true });
+        announcePointsOperationResult(`删除失败: ${err.message}`, 'error', { source: 'points-batch' });
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-trash"></i> 确认删除';
     }
@@ -5394,7 +5460,7 @@ async function viewBatchCodes(batchId) {
                 tone: 'green'
             }),
             buildPointsBatchCodesSummaryCard({
-                iconClass: 'fas fa-shield-exclamation',
+                iconClass: 'fas fa-triangle-exclamation',
                 label: '风险 / 失效',
                 value: `${codeCounts.risk} 个`,
                 meta: `撤销 ${codeCounts.revoked} · 禁用 ${codeCounts.disabled}`,
@@ -5519,7 +5585,10 @@ function syncPointsBatchInvalidateModalState() {
     }
 
     if (submitBtn) {
-        submitBtn.disabled = !context.canWrite || pointsBatchInvalidateModalState.submitting;
+        syncPointsModalSubmitButtonState(submitBtn, {
+            submitting: pointsBatchInvalidateModalState.submitting,
+            disabled: !context.canWrite
+        });
     }
 }
 
@@ -5599,7 +5668,7 @@ function openPointsBatchInvalidateModal(batchIds = []) {
                     </section>
                     <div class="points-code-action-actions">
                         <button class="points-code-action-cancel" type="button" data-points-action="close-batch-invalidate-modal">取消</button>
-                        <button class="points-code-action-submit points-code-action-submit--danger" type="submit" id="pointsBatchInvalidateSubmitBtn">
+                        <button class="points-code-action-submit points-code-action-submit--danger" type="submit" id="pointsBatchInvalidateSubmitBtn" data-loading-label="作废中">
                             <i class="fas fa-ban"></i>
                             <span>确认作废未使用</span>
                         </button>
@@ -5630,7 +5699,7 @@ async function submitPointsBatchInvalidate(event) {
 
     const writableSite = requireWritablePointsSite({ action: 'points-batch-invalidate' });
     if (!writableSite) {
-        announcePointsScopedAction('批量作废需要先在站点筛选中选择 CN 或 INTL，all 视图仅用于查看。', 'error', { batchList: true });
+        announcePointsOperationResult('批量作废需要先在站点筛选中选择 CN 或 INTL，all 视图仅用于查看。', 'error', { source: 'points-batch' });
         syncPointsBatchInvalidateModalState();
         return;
     }
@@ -5666,13 +5735,11 @@ async function submitPointsBatchInvalidate(event) {
                 detail: feedback.detail,
                 stats: feedback.stats
             });
+            announcePointsActionToastOnly(feedback.message, feedback.tone);
         }
 
         if (window.currentViewBatchId) {
-            announcePointsScopedAction(payload?.message || '已作废未使用兑换码', payload?.disabled_code_count > 0 ? 'success' : 'info', {
-                batch: true,
-                batchId: window.currentViewBatchId
-            });
+            announcePointsOperationResult(payload?.message || '已作废未使用兑换码', payload?.disabled_code_count > 0 ? 'success' : 'info', { source: 'points-batch' });
         }
     } catch (error) {
         pointsBatchInvalidateModalState.submitting = false;
@@ -5694,6 +5761,7 @@ function buildPointsCodeActionModalConfig(mode = '', code = '', currentExpiry = 
             description: '为这条兑换码单独设置过期时间；留空后会恢复继承批次有效期。',
             icon: 'fas fa-calendar-alt',
             confirmLabel: '保存有效期',
+            loadingLabel: '保存中',
             confirmTone: 'default',
             submitMode: 'expiry',
             helper: `当前有效期：${expiryLabel}`,
@@ -5716,6 +5784,7 @@ function buildPointsCodeActionModalConfig(mode = '', code = '', currentExpiry = 
             description: '禁用后这条码将无法继续使用，但不会影响已经存在的兑换记录。',
             icon: 'fas fa-ban',
             confirmLabel: '确认禁用',
+            loadingLabel: '禁用中',
             confirmTone: 'danger',
             submitMode: 'disable',
             helper: '适用于待使用兑换码的临时封禁或异常止损。',
@@ -5727,6 +5796,7 @@ function buildPointsCodeActionModalConfig(mode = '', code = '', currentExpiry = 
             description: '撤销会回滚这条兑换码对应的使用结果，并按规则扣回已发积分。',
             icon: 'fas fa-rotate-left',
             confirmLabel: '确认撤销',
+            loadingLabel: '撤销中',
             confirmTone: 'danger',
             submitMode: 'revoke',
             helper: '建议补充撤销原因，方便后续审计排查。',
@@ -5743,6 +5813,7 @@ function buildPointsCodeActionModalConfig(mode = '', code = '', currentExpiry = 
             description: '重新启用后，这条码会恢复到待使用状态，可以再次被兑换。',
             icon: 'fas fa-check',
             confirmLabel: '确认启用',
+            loadingLabel: '启用中',
             confirmTone: 'success',
             submitMode: 'enable',
             helper: '仅适用于当前处于禁用状态的兑换码。',
@@ -5774,7 +5845,10 @@ function syncPointsCodeActionModalState() {
     }
 
     if (submitBtn) {
-        submitBtn.disabled = !context.canWrite || pointsCodeActionModalState.submitting;
+        syncPointsModalSubmitButtonState(submitBtn, {
+            submitting: pointsCodeActionModalState.submitting,
+            disabled: !context.canWrite
+        });
     }
 }
 
@@ -5846,7 +5920,7 @@ async function openPointsCodeActionModal({ mode = '', code = '', currentExpiry =
                     <div class="points-code-action-error ${ADMIN_POINTS_HIDDEN_CLASS}" id="pointsCodeActionError"></div>
                     <div class="points-code-action-actions">
                         <button class="points-code-action-cancel" type="button" data-points-action="close-code-action-modal">取消</button>
-                        <button class="points-code-action-submit points-code-action-submit--${escapePointsHtml(config.confirmTone)}" type="submit" id="pointsCodeActionSubmitBtn">
+                        <button class="points-code-action-submit points-code-action-submit--${escapePointsHtml(config.confirmTone)}" type="submit" id="pointsCodeActionSubmitBtn" data-loading-label="${escapePointsHtml(config.loadingLabel || '处理中')}">
                             <i class="${escapePointsHtml(config.icon)}"></i>
                             <span>${escapePointsHtml(config.confirmLabel)}</span>
                         </button>
@@ -5914,11 +5988,7 @@ async function submitPointsCodeAction(event) {
     const writableSite = requireWritablePointsCodeActionSite(mode);
     if (!writableSite) {
         renderPointsCodeActionModalError('请先在站点筛选中选择 CN 或 INTL 后再处理兑换码。');
-        announcePointsScopedAction('兑换码处理需要先选择 CN 或 INTL 站点。', 'error', {
-            batch: pointsCodeActionModalState.source === 'batch-codes',
-            lookup: pointsCodeActionModalState.source === 'lookup',
-            batchId: window.currentViewBatchId
-        });
+        announcePointsOperationResult('兑换码处理需要先选择 CN 或 INTL 站点。', 'error', { source: 'points-codes' });
         syncPointsCodeActionModalState();
         return;
     }
@@ -5986,21 +6056,18 @@ async function submitPointsCodeAction(event) {
             payload
         });
 
-        const feedbackSource = String(pointsCodeActionModalState.source || '').trim();
         closePointsCodeActionModal();
         await refreshPointsAfterCodeMutation(code);
 
         const deducted = mode === 'revoke' ? Math.max(0, Number(responsePayload?.points_deducted) || 0) : 0;
         const feedbackMessage = responsePayload?.message || `${successMessage}${deducted > 0 ? `，已扣回 ${deducted} 积分` : ''}`;
-        announcePointsScopedAction(feedbackMessage, 'success', {
-            lookup: feedbackSource === 'lookup',
-            batch: feedbackSource === 'batch-codes',
-            batchId: window.currentViewBatchId
-        });
+        announcePointsOperationResult(feedbackMessage, 'success', { source: 'points-codes' });
     } catch (error) {
         pointsCodeActionModalState.submitting = false;
         syncPointsCodeActionModalState();
-        renderPointsCodeActionModalError(error.message || '操作失败，请稍后再试。');
+        const failureMessage = error.message || '操作失败，请稍后再试。';
+        renderPointsCodeActionModalError(failureMessage);
+        announcePointsOperationResult(failureMessage, 'error', { source: 'points-codes' });
     }
 }
 
@@ -6063,7 +6130,7 @@ async function exportBatchList() {
     closeAllBatchDropdowns();
 
     if (allBatches.length === 0) {
-        announcePointsScopedAction('暂无批次可导出', 'error', { batchList: true });
+        announcePointsAction('暂无批次可导出', 'error');
         return;
     }
 
@@ -6116,8 +6183,9 @@ async function exportBatchList() {
             detail: feedback.detail,
             stats: feedback.stats
         });
+        announcePointsActionToastOnly(feedback.message, feedback.tone);
     } catch (err) {
-        announcePointsScopedAction(`导出失败: ${err.message}`, 'error', { batchList: true });
+        announcePointsOperationResult(`导出失败: ${err.message}`, 'error', { source: 'points-batch' });
     }
 }
 
@@ -6126,7 +6194,7 @@ async function exportSelectedBatches() {
     closeAllBatchDropdowns();
 
     if (selectedBatchIds.size === 0) {
-        announcePointsScopedAction('请先选择要导出的批次', 'error', { batchList: true });
+        announcePointsAction('请先选择要导出的批次', 'error');
         return;
     }
 
@@ -6169,9 +6237,10 @@ async function exportSelectedBatches() {
             detail: feedback.detail,
             stats: feedback.stats
         });
+        announcePointsActionToastOnly(feedback.message, feedback.tone);
 
     } catch (err) {
-        announcePointsScopedAction(`导出失败: ${err.message}`, 'error', { batchList: true });
+        announcePointsOperationResult(`导出失败: ${err.message}`, 'error', { source: 'points-batch' });
     }
 }
 
@@ -6204,16 +6273,10 @@ async function exportBatchCodes(batchId) {
         const now = new Date().toISOString().slice(0, 10);
         const fileName = `${batch.name.replace(/\s+/g, '_')}_兑换码_${now}.xlsx`;
         XLSX.writeFile(wb, fileName);
-        announcePointsScopedAction(`已导出批次「${batch.name || '未命名批次'}」`, 'success', {
-            batch: Boolean(window.currentViewBatchId && String(window.currentViewBatchId) === String(batchId || '')),
-            batchId
-        });
+        announcePointsOperationResult(`已导出批次「${batch.name || '未命名批次'}」`, 'success', { source: 'points-batch' });
 
     } catch (err) {
-        announcePointsScopedAction(`导出失败: ${err.message}`, 'error', {
-            batch: Boolean(window.currentViewBatchId && String(window.currentViewBatchId) === String(batchId || '')),
-            batchId
-        });
+        announcePointsOperationResult(`导出失败: ${err.message}`, 'error', { source: 'points-batch' });
     }
 }
 
@@ -6532,14 +6595,10 @@ async function saveBatchEdit(event, batchId) {
         });
 
         announcePointsAction(payload?.message || '保存成功', 'success');
-        if (window.currentViewBatchId && String(window.currentViewBatchId) === normalizedBatchId) {
-            setPointsBatchCodesFeedback(payload?.message || '保存成功', 'success', window.currentViewBatchId);
-        }
         closeBatchEditModal();
         await refreshPointsAfterBatchMutation({ batchId: normalizedBatchId });
         if (shouldReturnToCodes) {
             await viewBatchCodes(normalizedBatchId);
-            setPointsBatchCodesFeedback(payload?.message || '保存成功', 'success', normalizedBatchId);
         }
 
     } catch (err) {

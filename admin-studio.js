@@ -37,6 +37,7 @@ const adminGalleryPrefetchState = {
 const ADMIN_GALLERY_BILINGUAL_BATCH_SIZE = 12;
 const adminGalleryLoadState = {
     site: '',
+    queryKey: '',
     loaded: false,
     loadedAt: 0,
     promise: null,
@@ -48,7 +49,16 @@ const adminGalleryViewState = {
     searchQuery: '',
     searchMatchedIds: null,
     sortValue: 'updated-desc',
-    filteredPromptIds: []
+    filteredPromptIds: [],
+    pagination: {
+        page: 1,
+        pageSize: ADMIN_GALLERY_PAGE_SIZE,
+        totalItems: 0,
+        totalPages: 1,
+        hasPrevPage: false,
+        hasNextPage: false,
+        returnedItems: 0
+    }
 };
 
 function getPendingAdminGalleryFocusPromptId() {
@@ -1107,8 +1117,29 @@ async function parseAdminPromptsResponse(response) {
     return payload;
 }
 
-async function fetchAdminPromptList({ site = getAdminPromptsReadSite(), hydrateBilingual = true } = {}) {
-    const response = await (window.AdminApi?.fetch || fetch)(buildAdminPromptsUrl({ site }), {
+async function fetchAdminPromptList({
+    site = getAdminPromptsReadSite(),
+    hydrateBilingual = true,
+    page = adminGalleryViewState.page,
+    pageSize = adminGalleryViewState.pageSize,
+    search = adminGalleryViewState.searchQuery,
+    category = '',
+    date = '',
+    language = '',
+    status = '',
+    sort = adminGalleryViewState.sortValue
+} = {}) {
+    const response = await (window.AdminApi?.fetch || fetch)(buildAdminPromptsUrl({
+        site,
+        page,
+        pageSize,
+        search,
+        category,
+        date,
+        language,
+        status,
+        sort: normalizeAdminGallerySortValue(sort)
+    }), {
         credentials: 'include'
     });
 
@@ -2796,32 +2827,63 @@ function bindAdminStudioDelegatedControls() {
             case 'gallery-pagination-go': {
                 const page = parseInt(actionEl.dataset.galleryPage || '', 10);
                 if (!Number.isNaN(page)) {
-                    window.changeAdminGalleryPage?.(page);
+                    runAdminStudioActionFeedback(actionEl, () => changeAdminGalleryPage(page), {
+                        loadingText: '加载中...',
+                        successText: '已加载',
+                        errorText: '加载失败',
+                        compact: true,
+                        restoreDelayMs: 420,
+                        silentErrors: true
+                    });
                 }
                 break;
             }
             case 'gallery-open-prompt-comments':
-                void openAdminStudioPromptCommentsContext({
+                runAdminStudioActionFeedback(actionEl, () => openAdminStudioPromptCommentsContext({
                     promptId: decodeURIComponent(actionEl.dataset.promptId || ''),
                     promptTitle: decodeURIComponent(actionEl.dataset.promptTitle || '')
+                }), {
+                    loadingText: '打开中...',
+                    successText: '已打开',
+                    errorText: '打开失败',
+                    restoreDelayMs: 520,
+                    silentErrors: true
                 });
                 break;
             case 'gallery-open-prompt-analytics':
-                void openAdminStudioPromptAnalyticsContext(
+                runAdminStudioActionFeedback(actionEl, () => openAdminStudioPromptAnalyticsContext(
                     decodeURIComponent(actionEl.dataset.promptId || ''),
                     {
                         promptTitle: decodeURIComponent(actionEl.dataset.promptTitle || '')
                     }
-                );
+                ), {
+                    loadingText: '打开中...',
+                    successText: '已打开',
+                    errorText: '打开失败',
+                    restoreDelayMs: 520,
+                    silentErrors: true
+                });
                 break;
             case 'gallery-add-prompt-homepage':
-                window.addPromptToHomepagePromptsSection?.(decodeURIComponent(actionEl.dataset.promptId || ''));
+                runAdminStudioActionFeedback(actionEl, () => window.addPromptToHomepagePromptsSection?.(decodeURIComponent(actionEl.dataset.promptId || '')), {
+                    loadingText: '加入中...',
+                    successText: '已加入',
+                    errorText: '加入失败',
+                    restoreDelayMs: 650,
+                    silentErrors: true
+                });
                 break;
             case 'gallery-open-prompt-homepage':
-                void openAdminStudioPromptHomepageContext(
+                runAdminStudioActionFeedback(actionEl, () => openAdminStudioPromptHomepageContext(
                     decodeURIComponent(actionEl.dataset.promptId || ''),
                     { section: 'prompts' }
-                );
+                ), {
+                    loadingText: '打开中...',
+                    successText: '已打开',
+                    errorText: '打开失败',
+                    restoreDelayMs: 520,
+                    silentErrors: true
+                });
                 break;
             case 'gallery-set-status-filter':
                 window.setAdminGalleryStatusFilter?.(actionEl.dataset.galleryStatusFilter || '');
@@ -2896,7 +2958,7 @@ function bindAdminStudioDelegatedControls() {
                 window.switchSettingsView?.(actionEl.dataset.settingsView);
                 break;
             case 'settings-open-points-catalog':
-                void (async () => {
+                runAdminStudioActionFeedback(actionEl, async () => {
                     if (window.AdminShell?.openContext) {
                         const opened = await window.AdminShell.openContext('points', {
                             source: 'settings',
@@ -2910,13 +2972,13 @@ function bindAdminStudioDelegatedControls() {
                             silentDenied: true
                         });
                         if (opened) {
-                            return;
+                            return true;
                         }
                     }
 
                     const switched = window.switchModule?.('points');
                     if (switched === false) {
-                        return;
+                        return false;
                     }
 
                     if (typeof window.openAdminPointsShellContext === 'function') {
@@ -2926,12 +2988,19 @@ function bindAdminStudioDelegatedControls() {
                             action: 'open-catalog',
                             view: 'catalog'
                         });
-                        return;
+                        return true;
                     }
 
                     window.switchPointsView?.('catalog');
-                })().catch((error) => {
-                    console.warn('[AdminStudio] Failed to open points catalog from settings:', error);
+                    return true;
+                }, {
+                    loadingText: '打开中...',
+                    successText: '已打开',
+                    errorText: '打开失败',
+                    restoreDelayMs: 520,
+                    restoreOnNull: true,
+                    silentErrors: true,
+                    errorMessage: '打开套餐目录失败'
                 });
                 break;
             case 'switch-ops-alerts-view':
@@ -4766,7 +4835,7 @@ function bindAdminStudioDelegatedControls() {
                 const max = Math.max(1, parseInt(actionEl.dataset.galleryPageMax || '1', 10) || 1);
                 const nextPage = Math.min(Math.max(parseInt(actionEl.value || '', 10) || 1, 1), max);
                 actionEl.value = String(nextPage);
-                window.changeAdminGalleryPage?.(nextPage);
+                changeAdminGalleryPage(nextPage);
                 break;
             }
             case 'payments-change-active-provider':
@@ -5602,17 +5671,68 @@ function normalizeAdminGallerySite(site = getAdminPromptsReadSite()) {
     return normalized === 'cn' || normalized === 'intl' ? normalized : 'all';
 }
 
-function hasFreshAdminGalleryPromptList(site = getAdminPromptsReadSite()) {
+function getAdminGalleryListParams(overrides = {}) {
+    const searchInput = document.getElementById('adminSearchInput');
+    const sortValue = normalizeAdminGallerySortValue(document.getElementById('sortFilter')?.value || adminGalleryViewState.sortValue);
+
+    adminGalleryViewState.sortValue = sortValue;
+
+    return {
+        site: normalizeAdminGallerySite(overrides.site || getAdminPromptsReadSite()),
+        page: normalizeAdminGalleryPage(overrides.page ?? adminGalleryViewState.page, 1),
+        pageSize: normalizeAdminGalleryPage(overrides.pageSize ?? adminGalleryViewState.pageSize, ADMIN_GALLERY_PAGE_SIZE),
+        search: Object.prototype.hasOwnProperty.call(overrides, 'search')
+            ? String(overrides.search || '').trim()
+            : String(searchInput?.value || adminGalleryViewState.searchQuery || '').trim(),
+        category: Object.prototype.hasOwnProperty.call(overrides, 'category')
+            ? String(overrides.category || '').trim()
+            : String(document.getElementById('categoryFilter')?.value || '').trim(),
+        date: Object.prototype.hasOwnProperty.call(overrides, 'date')
+            ? String(overrides.date || '').trim()
+            : String(document.getElementById('dateFilter')?.value || '').trim(),
+        language: Object.prototype.hasOwnProperty.call(overrides, 'language')
+            ? String(overrides.language || '').trim()
+            : String(document.getElementById('languageFilter')?.value || '').trim(),
+        status: Object.prototype.hasOwnProperty.call(overrides, 'status')
+            ? String(overrides.status || '').trim()
+            : String(document.getElementById('statusFilter')?.value || '').trim(),
+        sort: Object.prototype.hasOwnProperty.call(overrides, 'sort')
+            ? normalizeAdminGallerySortValue(overrides.sort)
+            : sortValue
+    };
+}
+
+function getAdminGalleryListQueryKey(site = getAdminPromptsReadSite(), params = {}) {
+    const normalizedParams = params && typeof params === 'object' ? params : {};
+    return JSON.stringify({
+        site: normalizeAdminGallerySite(site),
+        page: normalizeAdminGalleryPage(normalizedParams.page, 1),
+        pageSize: normalizeAdminGalleryPage(normalizedParams.pageSize, ADMIN_GALLERY_PAGE_SIZE),
+        search: String(normalizedParams.search || '').trim().toLowerCase(),
+        category: String(normalizedParams.category || '').trim().toLowerCase(),
+        date: String(normalizedParams.date || '').trim().toLowerCase(),
+        language: String(normalizedParams.language || '').trim().toLowerCase(),
+        status: String(normalizedParams.status || '').trim().toLowerCase(),
+        sort: normalizeAdminGallerySortValue(normalizedParams.sort)
+    });
+}
+
+function hasFreshAdminGalleryPromptList(site = getAdminPromptsReadSite(), queryKey = '') {
     const normalizedSite = normalizeAdminGallerySite(site);
-    if (!adminGalleryLoadState.loaded || adminGalleryLoadState.site !== normalizedSite) {
+    if (
+        !adminGalleryLoadState.loaded
+        || adminGalleryLoadState.site !== normalizedSite
+        || (queryKey && adminGalleryLoadState.queryKey !== queryKey)
+    ) {
         return false;
     }
 
     return (Date.now() - adminGalleryLoadState.loadedAt) <= ADMIN_GALLERY_LIST_REFRESH_TTL_MS;
 }
 
-function markAdminGalleryPromptListLoaded(site = getAdminPromptsReadSite()) {
+function markAdminGalleryPromptListLoaded(site = getAdminPromptsReadSite(), queryKey = '') {
     adminGalleryLoadState.site = normalizeAdminGallerySite(site);
+    adminGalleryLoadState.queryKey = queryKey || adminGalleryLoadState.queryKey || '';
     adminGalleryLoadState.loaded = true;
     adminGalleryLoadState.loadedAt = Date.now();
 }
@@ -5624,6 +5744,7 @@ function markAdminGalleryPromptListStale(site = '') {
         adminGalleryLoadState.loadedAt = 0;
         if (!normalizedSite) {
             adminGalleryLoadState.site = '';
+            adminGalleryLoadState.queryKey = '';
         }
     }
 }
@@ -5647,6 +5768,7 @@ function resetAdminGalleryManageFilters() {
 
     adminGalleryViewState.searchQuery = '';
     adminGalleryViewState.searchMatchedIds = null;
+    adminGalleryViewState.page = 1;
     adminGalleryViewState.sortValue = 'updated-desc';
     setAdminGalleryFilterDropdownValue('categoryFilterDropdown', '');
     setAdminGalleryFilterDropdownValue('dateFilterDropdown', '');
@@ -5852,7 +5974,12 @@ function setAdminGallerySortFilterValue(value = 'updated-desc') {
 
 function setAdminGalleryStatusFilter(value = '') {
     setAdminGalleryFilterDropdownValue('statusFilterDropdown', String(value || '').trim().toLowerCase());
-    applyAdminGalleryFilters({ resetPage: true });
+    void loadAdminPrompts({
+        force: true,
+        resetPage: true,
+        preferFastRender: true,
+        replaceExisting: true
+    });
 }
 
 function getPromptInteractionMetricForSite(prompt = {}, site = getAdminPromptsReadSite()) {
@@ -6092,12 +6219,48 @@ function focusAdminGalleryPromptCard(promptId = '', options = {}) {
         resetAdminGalleryManageFilters();
     }
 
+    const fetchAndFocusMissingPrompt = () => {
+        if (options.fetchIfMissing === false) {
+            return false;
+        }
+
+        void fetchAdminPromptItem(normalizedPromptId, {
+            site: getAdminPromptsReadSite()
+        })
+            .then((payload) => {
+                const row = payload?.row;
+                if (!row) {
+                    return false;
+                }
+                allPrompts = [row];
+                SEARCH_INDEX = null;
+                HOT_TAGS_CACHE = null;
+                syncAdminGalleryPaginationState({
+                    page: 1,
+                    pageSize: adminGalleryViewState.pageSize,
+                    totalItems: 1,
+                    totalPages: 1,
+                    returnedItems: 1
+                }, 1);
+                applyAdminGalleryFilters({ resetPage: false });
+                return focusAdminGalleryPromptCard(normalizedPromptId, {
+                    resetFilters: false,
+                    scroll: options.scroll !== false,
+                    fetchIfMissing: false
+                });
+            })
+            .catch((error) => {
+                console.warn('[Gallery] Failed to fetch focused prompt card:', error);
+            });
+        return true;
+    };
+
     const filteredRows = getAdminGalleryFilteredPrompts();
     const targetIndex = filteredRows.findIndex((prompt) => String(prompt?.id || '') === normalizedPromptId);
     if (targetIndex >= 0) {
         adminGalleryViewState.page = Math.floor(targetIndex / adminGalleryViewState.pageSize) + 1;
     } else {
-        return false;
+        return fetchAndFocusMissingPrompt();
     }
 
     applyAdminGalleryFilters();
@@ -6107,7 +6270,7 @@ function focusAdminGalleryPromptCard(promptId = '', options = {}) {
         : normalizedPromptId.replace(/["\\]/g, '\\$&');
     const targetCard = document.querySelector(`#adminGrid .admin-card[data-id="${escapedPromptId}"]`);
     if (!targetCard) {
-        return false;
+        return fetchAndFocusMissingPrompt();
     }
 
     getAdminGalleryCards().forEach((card) => card.classList.remove('is-focused'));
@@ -6156,9 +6319,37 @@ function invalidateAdminGalleryPrefetch() {
     markAdminGalleryPromptListStale();
 }
 
-async function renderLoadedAdminPromptRows(rows = [], { siteContext = getAdminPromptsReadSite(), resetPage = true } = {}) {
+function normalizeAdminGalleryPaginationPayload(pagination = {}, returnedItems = 0) {
+    const fallbackTotal = Math.max(0, Number(returnedItems) || 0);
+    const pageSize = normalizeAdminGalleryPage(pagination?.pageSize, adminGalleryViewState.pageSize || ADMIN_GALLERY_PAGE_SIZE);
+    const totalItems = Math.max(0, Number(pagination?.totalItems) || fallbackTotal);
+    const totalPages = Math.max(1, Number(pagination?.totalPages) || Math.ceil(totalItems / pageSize) || 1);
+    const page = Math.min(
+        Math.max(1, normalizeAdminGalleryPage(pagination?.page, adminGalleryViewState.page || 1)),
+        totalPages
+    );
+
+    return {
+        page,
+        pageSize,
+        totalItems,
+        totalPages,
+        hasPrevPage: page > 1,
+        hasNextPage: page < totalPages,
+        returnedItems: Math.max(0, Number(pagination?.returnedItems) || returnedItems || 0)
+    };
+}
+
+function syncAdminGalleryPaginationState(pagination = {}, returnedItems = 0) {
+    const nextPagination = normalizeAdminGalleryPaginationPayload(pagination, returnedItems);
+    adminGalleryViewState.page = nextPagination.page;
+    adminGalleryViewState.pageSize = nextPagination.pageSize;
+    adminGalleryViewState.pagination = nextPagination;
+    return nextPagination;
+}
+
+async function renderLoadedAdminPromptRows(rows = [], { siteContext = getAdminPromptsReadSite(), resetPage = true, pagination = null, queryKey = '' } = {}) {
     const grid = document.getElementById('adminGrid');
-    const pagination = document.getElementById('adminGalleryPagination');
     if (!grid) {
         return false;
     }
@@ -6172,6 +6363,12 @@ async function renderLoadedAdminPromptRows(rows = [], { siteContext = getAdminPr
     allPrompts = safeRows;
     SEARCH_INDEX = null;
     HOT_TAGS_CACHE = null;
+    syncAdminGalleryPaginationState(pagination || {
+        page: resetPage ? 1 : adminGalleryViewState.page,
+        pageSize: adminGalleryViewState.pageSize,
+        totalItems: safeRows.length,
+        totalPages: Math.max(1, Math.ceil(safeRows.length / adminGalleryViewState.pageSize))
+    }, safeRows.length);
 
     if (safeRows.length > 0) {
         renderGalleryOpsOverview();
@@ -6182,13 +6379,8 @@ async function renderLoadedAdminPromptRows(rows = [], { siteContext = getAdminPr
         const activeQuery = String(searchInput?.value || '').trim().toLowerCase();
         adminGalleryViewState.searchQuery = activeQuery;
         setupAdminSearch();
-
-        if (activeQuery) {
-            await filterBySearch(activeQuery);
-        } else {
-            adminGalleryViewState.searchMatchedIds = null;
-            applyAdminGalleryFilters({ resetPage });
-        }
+        adminGalleryViewState.searchMatchedIds = null;
+        applyAdminGalleryFilters({ resetPage: false });
 
         const routePromptId = getPendingAdminGalleryFocusPromptId() || getAdminGalleryRouteState().promptId;
         if (routePromptId && isGalleryModuleActive() && isGalleryManageViewActive()) {
@@ -6202,13 +6394,11 @@ async function renderLoadedAdminPromptRows(rows = [], { siteContext = getAdminPr
     } else {
         renderGalleryOpsOverview();
         renderAdminStudioEmptyMessage(grid, 'No prompts yet. Create your first one!');
-        if (pagination) {
-            pagination.innerHTML = '';
-        }
+        renderAdminGalleryPagination();
     }
 
     setAdminGalleryLoadingChrome(false);
-    markAdminGalleryPromptListLoaded(normalizedSite);
+    markAdminGalleryPromptListLoaded(normalizedSite, queryKey);
     return true;
 }
 
@@ -6518,20 +6708,19 @@ function renderAdminGalleryPagination() {
         return;
     }
 
-    const totalItems = Array.isArray(adminGalleryViewState.filteredPromptIds)
-        ? adminGalleryViewState.filteredPromptIds.length
-        : 0;
+    const paginationState = normalizeAdminGalleryPaginationPayload(
+        adminGalleryViewState.pagination,
+        Array.isArray(allPrompts) ? allPrompts.length : 0
+    );
+    const totalItems = paginationState.totalItems;
 
     if (totalItems <= 0) {
         container.innerHTML = '';
         return;
     }
 
-    const totalPages = Math.max(1, Math.ceil(totalItems / adminGalleryViewState.pageSize));
-    const currentPage = Math.min(
-        Math.max(1, normalizeAdminGalleryPage(adminGalleryViewState.page, 1)),
-        totalPages
-    );
+    const totalPages = paginationState.totalPages;
+    const currentPage = paginationState.page;
     adminGalleryViewState.page = currentPage;
 
     syncAdminGalleryVisibleCardImages();
@@ -6579,7 +6768,14 @@ function applyAdminGalleryFilters(options = {}) {
 
     if (!Array.isArray(allPrompts) || allPrompts.length === 0) {
         adminGalleryViewState.filteredPromptIds = [];
-        renderAdminStudioEmptyMessage(grid, 'No prompts yet. Create your first one!');
+        const hasActiveFilters = Boolean(
+            adminGalleryViewState.searchQuery
+            || document.getElementById('categoryFilter')?.value
+            || document.getElementById('dateFilter')?.value
+            || document.getElementById('languageFilter')?.value
+            || document.getElementById('statusFilter')?.value
+        );
+        renderAdminStudioEmptyMessage(grid, hasActiveFilters ? '没有找到匹配的提示词' : 'No prompts yet. Create your first one!');
         if (pagination) {
             pagination.innerHTML = '';
         }
@@ -6592,10 +6788,10 @@ function applyAdminGalleryFilters(options = {}) {
     const languageValue = document.getElementById('languageFilter')?.value || '';
     const statusValue = document.getElementById('statusFilter')?.value || '';
     renderGalleryOpsOverview();
-    const filteredRows = getAdminGalleryFilteredPrompts();
-    adminGalleryViewState.filteredPromptIds = filteredRows.map((prompt) => String(prompt?.id || ''));
+    const pageRows = Array.isArray(allPrompts) ? allPrompts : [];
+    adminGalleryViewState.filteredPromptIds = pageRows.map((prompt) => String(prompt?.id || ''));
 
-    if (filteredRows.length === 0) {
+    if (pageRows.length === 0) {
         const emptyText = searchQuery || categoryValue || dateValue || languageValue || statusValue
             ? '没有找到匹配的提示词'
             : 'No prompts yet. Create your first one!';
@@ -6606,14 +6802,6 @@ function applyAdminGalleryFilters(options = {}) {
         return;
     }
 
-    const totalPages = Math.max(1, Math.ceil(filteredRows.length / adminGalleryViewState.pageSize));
-    adminGalleryViewState.page = Math.min(
-        Math.max(1, normalizeAdminGalleryPage(adminGalleryViewState.page, 1)),
-        totalPages
-    );
-    const pageStartIndex = (adminGalleryViewState.page - 1) * adminGalleryViewState.pageSize;
-    const pageEndIndex = pageStartIndex + adminGalleryViewState.pageSize;
-    const pageRows = filteredRows.slice(pageStartIndex, pageEndIndex);
     const fragment = document.createDocumentFragment();
     pageRows.forEach((prompt) => {
         const card = renderAdminCard(prompt);
@@ -6628,7 +6816,12 @@ function applyAdminGalleryFilters(options = {}) {
 
 function changeAdminGalleryPage(page) {
     adminGalleryViewState.page = normalizeAdminGalleryPage(page, adminGalleryViewState.page);
-    applyAdminGalleryFilters();
+    return loadAdminPrompts({
+        force: true,
+        resetPage: false,
+        preferFastRender: true,
+        replaceExisting: true
+    });
 }
 
 let adminAIServicePreferenceWarmPromise = null;
@@ -6713,6 +6906,7 @@ function prefetchOpsAlertsModule() {
 
 window.prefetchGalleryModule = prefetchGalleryModule;
 window.loadAdminPrompts = loadAdminPrompts;
+window.changeAdminGalleryPage = changeAdminGalleryPage;
 window.openAdminGalleryPromptContext = openAdminGalleryPromptContext;
 window.setAdminGalleryStatusFilter = setAdminGalleryStatusFilter;
 window.batchSetSelectedPromptStatus = batchSetSelectedPromptStatus;
@@ -6804,6 +6998,22 @@ function promptHasVisibleCopy(value) {
     return typeof value === 'string' && value.trim().length > 0;
 }
 
+function countAdminPromptTextMatches(value, pattern) {
+    return (String(value || '').match(pattern) || []).length;
+}
+
+function isAdminPromptMostlyCjkText(value) {
+    const text = String(value || '');
+    const cjkCount = countAdminPromptTextMatches(text, /[\u3400-\u9fff\uf900-\ufaff]/g);
+    if (!cjkCount) return false;
+
+    const latinCount = countAdminPromptTextMatches(text, /[A-Za-z]/g);
+    if (!latinCount) return true;
+
+    const languageSignalCount = cjkCount + latinCount;
+    return cjkCount >= 4 && (cjkCount / languageSignalCount) >= 0.35;
+}
+
 function getPromptLanguageCoverage(prompt = {}) {
     return {
         zh: promptHasVisibleCopy(prompt.title_zh)
@@ -6856,26 +7066,94 @@ function buildPromptSiteMetricElement(siteLabel, siteMetrics, currentSite = 'all
     return metricRow;
 }
 
+function getAdminPromptCardById(promptId = '') {
+    const normalizedPromptId = String(promptId || '').trim();
+    if (!normalizedPromptId || typeof CSS === 'undefined' || typeof CSS.escape !== 'function') {
+        return null;
+    }
+    return document.querySelector(`.admin-card[data-id="${CSS.escape(normalizedPromptId)}"]`);
+}
+
+function setAdminPromptEditFeedback(promptId = '', active = false) {
+    const normalizedPromptId = String(promptId || '').trim();
+    if (!normalizedPromptId || typeof CSS === 'undefined' || typeof CSS.escape !== 'function') {
+        return;
+    }
+
+    const escapedPromptId = CSS.escape(normalizedPromptId);
+    const card = getAdminPromptCardById(normalizedPromptId);
+    if (card) {
+        card.classList.toggle('admin-card--editing', active);
+        if (active) {
+            card.setAttribute('aria-busy', 'true');
+        } else {
+            card.removeAttribute('aria-busy');
+        }
+    }
+
+    document.querySelectorAll(`[data-prompt-edit-id="${escapedPromptId}"]`).forEach((button) => {
+        if (!(button instanceof HTMLButtonElement)) {
+            return;
+        }
+
+        if (active) {
+            button.dataset.originalHtml = button.dataset.originalHtml || button.innerHTML;
+            button.dataset.originalTitle = button.dataset.originalTitle || button.title || '';
+            button.disabled = true;
+            button.classList.add('is-loading');
+            button.setAttribute('aria-busy', 'true');
+            button.title = '正在打开编辑';
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            return;
+        }
+
+        button.disabled = false;
+        button.classList.remove('is-loading');
+        button.removeAttribute('aria-busy');
+        if (button.dataset.originalHtml) {
+            button.innerHTML = button.dataset.originalHtml;
+            delete button.dataset.originalHtml;
+        }
+        if (Object.prototype.hasOwnProperty.call(button.dataset, 'originalTitle')) {
+            button.title = button.dataset.originalTitle;
+            delete button.dataset.originalTitle;
+        }
+    });
+}
+
 async function loadAdminPrompts(options = {}) {
     const site = normalizeAdminGallerySite(options?.site || getAdminPromptsReadSite());
     const force = options?.force === true;
     const allowCached = options?.allowCached === true;
     const preferFastRender = options?.preferFastRender === true || allowCached;
     const resetPage = options?.resetPage !== false;
+    if (resetPage) {
+        adminGalleryViewState.page = 1;
+    }
+    const listParams = getAdminGalleryListParams({
+        ...options,
+        site,
+        page: adminGalleryViewState.page,
+        pageSize: adminGalleryViewState.pageSize
+    });
+    const queryKey = getAdminGalleryListQueryKey(site, listParams);
 
-    if (!force && allowCached && hasFreshAdminGalleryPromptList(site)) {
+    if (!force && allowCached && hasFreshAdminGalleryPromptList(site, queryKey)) {
         await renderLoadedAdminPromptRows(allPrompts, {
             siteContext: site,
-            resetPage
+            resetPage,
+            pagination: adminGalleryViewState.pagination,
+            queryKey
         });
         return {
             rows: allPrompts,
             siteContext: site,
+            pagination: adminGalleryViewState.pagination,
             fromCache: true
         };
     }
 
-    if (!force && allowCached && adminGalleryLoadState.promise && adminGalleryLoadState.site === site) {
+    if (!force && allowCached && adminGalleryLoadState.promise && adminGalleryLoadState.site === site && adminGalleryLoadState.queryKey === queryKey) {
         renderAdminGalleryLoadingState({ preserveExisting: true });
         return adminGalleryLoadState.promise;
     }
@@ -6883,11 +7161,12 @@ async function loadAdminPrompts(options = {}) {
     const requestId = adminGalleryLoadState.requestId + 1;
     adminGalleryLoadState.requestId = requestId;
     adminGalleryLoadState.site = site;
+    adminGalleryLoadState.queryKey = queryKey;
     adminGalleryLoadState.loaded = false;
 
     const loadPromise = (async () => {
         try {
-            renderAdminGalleryLoadingState({ preserveExisting: true });
+            renderAdminGalleryLoadingState({ preserveExisting: options?.replaceExisting !== true });
             let homepageWarmPromise = null;
             if (preferFastRender) {
                 homepageWarmPromise = typeof window.HomepageAdmin?.ensureLoaded === 'function'
@@ -6915,7 +7194,7 @@ async function loadAdminPrompts(options = {}) {
             }
 
             const payload = await fetchAdminPromptList({
-                site,
+                ...listParams,
                 hydrateBilingual: !preferFastRender
             });
             if (requestId !== adminGalleryLoadState.requestId) {
@@ -6928,7 +7207,9 @@ async function loadAdminPrompts(options = {}) {
 
             await renderLoadedAdminPromptRows(payload.rows || [], {
                 siteContext: payload.siteContext || site,
-                resetPage
+                resetPage,
+                pagination: payload.pagination,
+                queryKey
             });
 
             if (preferFastRender) {
@@ -7156,10 +7437,11 @@ function renderAdminCard(prompt) {
     hoverEdit.className = 'hover-action-btn edit';
     hoverEdit.type = 'button';
     hoverEdit.title = '编辑';
+    hoverEdit.setAttribute('data-prompt-edit-id', String(prompt.id || ''));
     hoverEdit.innerHTML = '<i class="fas fa-edit"></i>';
     hoverEdit.addEventListener('click', (event) => {
         event.stopPropagation();
-        editPrompt(prompt.id);
+        void editPrompt(prompt.id);
     });
     hoverLeft.appendChild(hoverEdit);
     media.appendChild(hoverLeft);
@@ -7198,8 +7480,11 @@ function renderAdminCard(prompt) {
     const editBtn = document.createElement('button');
     editBtn.className = 'admin-action-btn';
     editBtn.type = 'button';
+    editBtn.setAttribute('data-prompt-edit-id', String(prompt.id || ''));
     editBtn.innerHTML = '<i class="fas fa-edit"></i> Edit';
-    editBtn.addEventListener('click', () => editPrompt(prompt.id));
+    editBtn.addEventListener('click', () => {
+        void editPrompt(prompt.id);
+    });
 
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'admin-action-btn delete';
@@ -7218,8 +7503,16 @@ function renderAdminCard(prompt) {
 // EDIT PROMPT
 // ========================================
 async function editPrompt(id) {
+    const normalizedId = String(id || '').trim();
+    if (!normalizedId) {
+        showAdminStudioToast('请先选择要编辑的提示词', 'error');
+        return;
+    }
+
+    setAdminPromptEditFeedback(normalizedId, true);
+
     try {
-        const payload = await fetchAdminPromptItem(id);
+        const payload = await fetchAdminPromptItem(normalizedId);
         const data = payload.row;
         const promptOpsData = getPromptAdminOpsData(data);
         currentEditingPromptAiTags = clonePromptAiTags(data.ai_tags || {});
@@ -7229,7 +7522,7 @@ async function editPrompt(id) {
 
         // Set mode to edit
         currentMode = 'edit';
-        editingId = id;
+        editingId = normalizedId;
         currentEditingPromptImageAssets = normalizePromptImageAssetsFromRecord(data);
         currentEditingPromptImageUrls = dedupePromptImageUrls(
             currentEditingPromptImageAssets.map(getPromptImageAssetOriginalUrl)
@@ -7325,6 +7618,8 @@ async function editPrompt(id) {
     } catch (err) {
         console.error('Error loading prompt for edit:', err);
         showAdminStudioToast('Failed to load prompt', 'error');
+    } finally {
+        setAdminPromptEditFeedback(normalizedId, false);
     }
 }
 
@@ -9615,7 +9910,7 @@ async function savePrompt(e) {
             promptData.description_zh = promptData.description_zh || activeAnalysisResult.description_zh || '';
         }
 
-        const promptTextLooksChinese = /[\u4e00-\u9fff]/.test(promptData.prompt || '');
+        const promptTextLooksChinese = isAdminPromptMostlyCjkText(promptData.prompt || '');
         if (!promptTextLooksChinese && promptData.prompt) {
             promptData.prompt_text_en = promptData.prompt;
             const promptTextEnInput = document.getElementById('promptTextEn');
@@ -12343,52 +12638,19 @@ function applySearchResults(matchedIds) {
 }
 
 /**
- * Main search function - 3 layer strategy
- * Layer 1 & 2: Local search with synonym expansion
- * Layer 3: AI semantic search (if local fails)
+ * Main search function.
+ * Manage view search is server-side so pagination can fetch one page at a time.
  */
 async function filterBySearch(query) {
     const queryLower = String(query || '').trim().toLowerCase();
     adminGalleryViewState.searchQuery = queryLower;
-
-    // If no query, show all cards
-    if (!queryLower) {
-        adminGalleryViewState.searchMatchedIds = null;
-        applyAdminGalleryFilters({ resetPage: true });
-        return;
-    }
-
-    // Check if query is a color search
-    let searchingForColor = null;
-    if (COLOR_MAP[queryLower]) {
-        searchingForColor = COLOR_MAP[queryLower];
-    }
-
-    // === 3-LAYER SEARCH STRATEGY ===
-    // Layer 1 & 2: Local search (instant, no network)
-    const localResults = performLocalSearch(queryLower, searchingForColor);
-    console.log(`🔍 Local search: found ${localResults.size} results for "${queryLower}"`);
-
-    // If local search found results, use them directly
-    if (localResults.size > 0) {
-        applySearchResults(localResults);
-        return;
-    }
-
-    // Layer 3: AI Semantic Search (only if local search failed)
-    console.log('🔍 Local search: 0 results, triggering AI semantic search...');
-    const aiResults = await performAISemanticSearch(queryLower);
-    if (adminGalleryViewState.searchQuery !== queryLower) {
-        return;
-    }
-
-    if (aiResults.size > 0) {
-        console.log(`✨ AI search: found ${aiResults.size} results`);
-        applySearchResults(aiResults);
-    } else {
-        console.log('❌ AI search: no results found');
-        applySearchResults(new Set());
-    }
+    adminGalleryViewState.searchMatchedIds = null;
+    return loadAdminPrompts({
+        force: true,
+        resetPage: true,
+        preferFastRender: true,
+        replaceExisting: true
+    });
 }
 
 /**
@@ -12581,7 +12843,12 @@ function setupAdminSearch() {
     const sortFilterInput = document.getElementById('sortFilter');
 
     function applyAllFilters() {
-        applyAdminGalleryFilters({ resetPage: true });
+        void loadAdminPrompts({
+            force: true,
+            resetPage: true,
+            preferFastRender: true,
+            replaceExisting: true
+        });
     }
 
     // 监听分类筛选器变化

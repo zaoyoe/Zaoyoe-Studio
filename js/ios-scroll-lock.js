@@ -24,6 +24,10 @@
     let currentModal = null;
     let touchStartY = 0;
     let lastTouchY = 0;
+    let lightRestoreRafId = 0;
+    let lightScrollAnchorEnabled = false;
+    let lightRestoreTimers = [];
+    let suspendedLightLock = null;
 
     function setFixedBodyLockOffset() {
         document.body.style['setProperty']('--ios-scroll-lock-offset', `-${savedScrollY}px`);
@@ -51,7 +55,13 @@
         if (typeof scrollCleanup === 'function') return;
 
         const handleRootScroll = () => {
-            if (!isLocked || isLightLock) return;
+            if (!isLocked) return;
+            if (isLightLock) {
+                if (lightScrollAnchorEnabled) {
+                    scheduleLightLockedScrollRestore({ withFollowup: true });
+                }
+                return;
+            }
             stabilizeLockedViewport();
         };
 
@@ -124,6 +134,105 @@
         }
         document.documentElement.scrollTop = 0;
         document.body.scrollTop = 0;
+    }
+
+    function restoreLightLockedScroll() {
+        if (!isLocked || !isLightLock || !lightScrollAnchorEnabled || !isIOSMobile()) return;
+
+        const currentScrollY = Math.max(0, Math.round(window.scrollY || window.pageYOffset || 0));
+        const targetScrollY = Math.max(0, Math.round(savedScrollY || 0));
+        if (Math.abs(currentScrollY - targetScrollY) <= 1) return;
+
+        window.scrollTo(0, targetScrollY);
+        document.documentElement.scrollTop = targetScrollY;
+        document.body.scrollTop = targetScrollY;
+    }
+
+    function clearLightLockedScrollRestoreTimers() {
+        lightRestoreTimers.forEach((timerId) => clearTimeout(timerId));
+        lightRestoreTimers = [];
+    }
+
+    function scheduleLightLockedScrollRestore(options = {}) {
+        if (!isLocked || !isLightLock || !lightScrollAnchorEnabled || !isIOSMobile()) return;
+
+        restoreLightLockedScroll();
+
+        if (!lightRestoreRafId) {
+            lightRestoreRafId = requestAnimationFrame(() => {
+                lightRestoreRafId = 0;
+                restoreLightLockedScroll();
+            });
+        }
+
+        if (!options.withFollowup) return;
+
+        clearLightLockedScrollRestoreTimers();
+        [48, 120, 240].forEach((delay) => {
+            const timerId = setTimeout(() => {
+                lightRestoreTimers = lightRestoreTimers.filter((id) => id !== timerId);
+                restoreLightLockedScroll();
+            }, delay);
+            lightRestoreTimers.push(timerId);
+        });
+    }
+
+    function shouldAnchorLightLock(modalElement) {
+        if (!modalElement || !modalElement.classList) return true;
+        if (modalElement.matches?.('.chat-window, .chat-widget, .chat-widget-window')) return false;
+        if (modalElement.closest?.('.chat-window, .chat-widget, .chat-widget-window')) return false;
+        return true;
+    }
+
+    function shouldEnableLightScrollAnchor(modalElement, options = {}) {
+        if (options.restoreScrollDuringViewport === false) return false;
+        if (options.restoreScrollDuringViewport === true) return true;
+        return shouldAnchorLightLock(modalElement);
+    }
+
+    function getRestorableSuspendedLightLock() {
+        const lockState = suspendedLightLock;
+        const modalElement = lockState?.modalElement || null;
+        if (!modalElement?.isConnected) return null;
+        if (modalElement.classList && !modalElement.classList.contains('active')) return null;
+        return lockState;
+    }
+
+    function restoreSuspendedLightLock(lockState, fallbackScrollY) {
+        const modalElement = lockState?.modalElement || null;
+        if (!modalElement) return false;
+
+        savedScrollY = Math.max(0, Math.round(lockState.savedScrollY ?? fallbackScrollY ?? 0));
+        isLocked = true;
+        isLightLock = true;
+        currentModal = modalElement;
+        lightScrollAnchorEnabled = lockState.lightScrollAnchorEnabled !== false;
+        suspendedLightLock = null;
+
+        if (!isIOSMobile()) {
+            document.documentElement.classList.add('no-scroll');
+            document.body.classList.add('no-scroll');
+        }
+
+        document.addEventListener('touchstart', handleTouchStart, { passive: true });
+        document.addEventListener('touchmove', handleTouchMove, { passive: false });
+
+        if (lightScrollAnchorEnabled) {
+            attachRootScrollGuard();
+            scheduleLightLockedScrollRestore({ withFollowup: true });
+        }
+
+        if (isIOSMobile() && shouldObserveViewportChanges()) {
+            attachViewportListener();
+        }
+
+        if (isIOSMobile()) {
+            requestAnimationFrame(() => {
+                restoreLightLockedScroll();
+            });
+        }
+
+        return true;
     }
 
     /**
@@ -265,9 +374,17 @@
             : null;
 
         if (isLocked) {
-            currentModal = modalElement || currentModal;
+            const previousModal = currentModal;
 
             if (isLightLock) {
+                if (!suspendedLightLock && previousModal) {
+                    suspendedLightLock = {
+                        modalElement: previousModal,
+                        savedScrollY,
+                        lightScrollAnchorEnabled
+                    };
+                }
+                currentModal = modalElement || previousModal;
                 if (freezeScrollY !== null) {
                     savedScrollY = freezeScrollY;
                 }
@@ -275,6 +392,8 @@
                 isLightLock = false;
                 stabilizeLockedViewport();
                 attachRootScrollGuard();
+            } else {
+                currentModal = modalElement || currentModal;
             }
 
             if (isIOSMobile() && shouldObserveViewportChanges()) {
@@ -315,9 +434,24 @@
      * 适用于不需要键盘输入的弹窗（如商城兑换弹窗）
      * @param {HTMLElement} [modalElement] - 弹窗元素
      */
-    function lockLight(modalElement) {
+    function lockLight(modalElement, options = {}) {
         if (isLocked) {
+            const previousModal = currentModal;
+            if (isLightLock && modalElement && modalElement !== previousModal && !suspendedLightLock && previousModal) {
+                suspendedLightLock = {
+                    modalElement: previousModal,
+                    savedScrollY,
+                    lightScrollAnchorEnabled
+                };
+            }
             currentModal = modalElement || currentModal;
+            if (isLightLock) {
+                lightScrollAnchorEnabled = shouldEnableLightScrollAnchor(currentModal, options);
+                if (lightScrollAnchorEnabled) {
+                    attachRootScrollGuard();
+                    scheduleLightLockedScrollRestore({ withFollowup: true });
+                }
+            }
             if (isIOSMobile() && shouldObserveViewportChanges()) {
                 detachViewportListener();
                 attachViewportListener();
@@ -336,10 +470,15 @@
         isLocked = true;
         isLightLock = true;
         currentModal = modalElement || null;
+        lightScrollAnchorEnabled = shouldEnableLightScrollAnchor(currentModal, options);
+        suspendedLightLock = null;
 
         // 添加 touchmove 拦截
         document.addEventListener('touchstart', handleTouchStart, { passive: true });
         document.addEventListener('touchmove', handleTouchMove, { passive: false });
+        if (lightScrollAnchorEnabled) {
+            attachRootScrollGuard();
+        }
 
         // iOS 专属：监听 visualViewport 变化，暴露键盘事件
         if (isIOSMobile() && shouldObserveViewportChanges()) {
@@ -355,6 +494,11 @@
 
         // 1. 清理 viewport 监听器
         detachViewportListener();
+        if (lightRestoreRafId) {
+            cancelAnimationFrame(lightRestoreRafId);
+            lightRestoreRafId = 0;
+        }
+        clearLightLockedScrollRestoreTimers();
         if (typeof scrollCleanup === 'function') {
             scrollCleanup();
         }
@@ -366,22 +510,43 @@
         // 3. 移除 body 上的锁定样式（仅 full lock 模式下需要）
         if (!isLightLock) {
             const scrollY = savedScrollY;
+            const lightLockToRestore = getRestorableSuspendedLightLock();
             clearFixedBodyLock();
+
+            window.scrollTo(0, scrollY);
+            if (restoreSuspendedLightLock(lightLockToRestore, scrollY)) {
+                return;
+            }
 
             isLocked = false;
             isLightLock = false;
+            lightScrollAnchorEnabled = false;
+            suspendedLightLock = null;
             currentModal = null;
-
-            // 恢复滚动位置
-            window.scrollTo(0, scrollY);
         } else {
+            const scrollY = Math.max(0, Math.round(savedScrollY || 0));
+            const lightLockToRestore = getRestorableSuspendedLightLock();
             // Light lock: 只移除 overflow hidden
             document.documentElement.classList.remove('no-scroll');
             document.body.classList.remove('no-scroll');
 
+            if (restoreSuspendedLightLock(lightLockToRestore, scrollY)) {
+                return;
+            }
+
             isLocked = false;
             isLightLock = false;
+            lightScrollAnchorEnabled = false;
+            suspendedLightLock = null;
             currentModal = null;
+
+            if (isIOSMobile()) {
+                requestAnimationFrame(() => {
+                    window.scrollTo(0, scrollY);
+                    document.documentElement.scrollTop = scrollY;
+                    document.body.scrollTop = scrollY;
+                });
+            }
         }
     }
 
@@ -397,6 +562,11 @@
         const handleViewportChange = () => {
             if (!isLocked || !currentModal) return;
 
+            if (isLightLock && lightScrollAnchorEnabled) {
+                scheduleLightLockedScrollRestore({ withFollowup: true });
+                return;
+            }
+
             stabilizeLockedViewport();
 
             // 检查当前是否有输入框正在聚焦
@@ -404,6 +574,10 @@
 
             // 键盘已收起（viewport 恢复到接近原始高度）且没有输入框聚焦
             if (!inField && window.visualViewport.height >= baseHeight - 2) {
+                if (isLightLock) {
+                    scheduleLightLockedScrollRestore();
+                    return;
+                }
                 // 重新对齐 body 的 top 值，防止键盘操作后产生的偏移
                 setFixedBodyLockOffset();
             }

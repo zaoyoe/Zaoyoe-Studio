@@ -36,8 +36,10 @@ async function withPromptsManageHandler(options, callback) {
     const originalLoad = Module._load;
     const state = {
         requireAdminCalls: [],
+        rpcCalls: [],
         selectFilters: [],
         metricFilters: [],
+        listRanges: [],
         updateFilters: [],
         deleteFilters: [],
         updatePayload: null,
@@ -45,6 +47,7 @@ async function withPromptsManageHandler(options, callback) {
         insertPayload: null,
         rows: options.rows || [],
         row: options.row || null,
+        rpcResponses: Array.isArray(options.rpcResponses) ? [...options.rpcResponses] : null,
         listResponses: Array.isArray(options.listResponses) ? [...options.listResponses] : null,
         singleResponses: Array.isArray(options.singleResponses) ? [...options.singleResponses] : null,
         unlockRows: options.unlockRows || [],
@@ -70,21 +73,124 @@ async function withPromptsManageHandler(options, callback) {
             return {
                 async requireAdmin(req, config = {}) {
                     state.requireAdminCalls.push({ req, config });
-                    return {
-                        user: { id: 'admin-1' },
-                        supabase: {
-                            from(table) {
-                                if (table === 'prompt_unlocks' || table === 'prompt_comments') {
+                    const supabase = {
+                        from(table) {
+                            if (table === 'prompt_unlocks' || table === 'prompt_comments') {
+                                return {
+                                    select() {
+                                        return {
+                                            in(field, values) {
+                                                state.metricFilters.push({ table, field, values });
+                                                if (state.metricResponses?.[table]?.length) {
+                                                    return Promise.resolve(state.metricResponses[table].shift());
+                                                }
+                                                return Promise.resolve({
+                                                    data: table === 'prompt_unlocks' ? state.unlockRows : state.commentRows,
+                                                    error: null
+                                                });
+                                            }
+                                        };
+                                    }
+                                };
+                            }
+
+                            if (table !== 'prompts') {
+                                throw new Error(`Unexpected table: ${table}`);
+                            }
+
+                            return {
+                                select() {
+                                    return this;
+                                },
+                                order() {
+                                    if (state.listResponses?.length) {
+                                        return Promise.resolve(state.listResponses.shift());
+                                    }
+                                    return {
+                                        range(from, to) {
+                                            state.listRanges.push({ from, to });
+                                            const slicedRows = state.rows.slice(from, to + 1);
+                                            return Promise.resolve({
+                                                data: slicedRows,
+                                                count: state.rows.length,
+                                                error: null
+                                            });
+                                        },
+                                        then(resolve, reject) {
+                                            return Promise.resolve({
+                                                data: state.rows,
+                                                error: null
+                                            }).then(resolve, reject);
+                                        }
+                                    };
+                                },
+                                eq(field, value) {
+                                    state.selectFilters.push({ field, value });
                                     return {
                                         select() {
+                                            return this;
+                                        },
+                                        async single() {
+                                            if (state.singleResponses?.length) {
+                                                return state.singleResponses.shift();
+                                            }
+                                            if (!state.row) {
+                                                return {
+                                                    data: null,
+                                                    error: { code: 'PGRST116', message: 'not found' }
+                                                };
+                                            }
                                             return {
-                                                in(field, values) {
-                                                    state.metricFilters.push({ table, field, values });
-                                                    if (state.metricResponses?.[table]?.length) {
-                                                        return Promise.resolve(state.metricResponses[table].shift());
-                                                    }
+                                                data: state.row,
+                                                error: null
+                                            };
+                                        }
+                                    };
+                                },
+                                insert(payload) {
+                                    state.insertPayload = payload;
+                                    return {
+                                        select() {
+                                            return this;
+                                        },
+                                        async single() {
+                                            return {
+                                                data: state.row,
+                                                error: null
+                                            };
+                                        }
+                                    };
+                                },
+                                update(payload) {
+                                    state.updatePayload = payload;
+                                    state.updatePayloads.push(payload);
+                                    return {
+                                        eq(field, value) {
+                                            state.updateFilters.push({ field, value });
+                                            return this;
+                                        },
+                                        select() {
+                                            return this;
+                                        },
+                                        async single() {
+                                            if (state.updateResponses?.length) {
+                                                return state.updateResponses.shift();
+                                            }
+                                            return {
+                                                data: state.row,
+                                                error: state.row ? null : { code: 'PGRST116', message: 'not found' }
+                                            };
+                                        }
+                                    };
+                                },
+                                delete() {
+                                    return {
+                                        in(field, values) {
+                                            state.deleteFilters.push({ field, values });
+                                            return {
+                                                select() {
                                                     return Promise.resolve({
-                                                        data: table === 'prompt_unlocks' ? state.unlockRows : state.commentRows,
+                                                        data: state.deletedRows,
                                                         error: null
                                                     });
                                                 }
@@ -92,101 +198,23 @@ async function withPromptsManageHandler(options, callback) {
                                         }
                                     };
                                 }
-
-                                if (table !== 'prompts') {
-                                    throw new Error(`Unexpected table: ${table}`);
-                                }
-
-                                return {
-                                    select() {
-                                        return this;
-                                    },
-                                    order() {
-                                        if (state.listResponses?.length) {
-                                            return Promise.resolve(state.listResponses.shift());
-                                        }
-                                        return Promise.resolve({
-                                            data: state.rows,
-                                            error: null
-                                        });
-                                    },
-                                    eq(field, value) {
-                                        state.selectFilters.push({ field, value });
-                                        return {
-                                            select() {
-                                                return this;
-                                            },
-                                            async single() {
-                                                if (state.singleResponses?.length) {
-                                                    return state.singleResponses.shift();
-                                                }
-                                                if (!state.row) {
-                                                    return {
-                                                        data: null,
-                                                        error: { code: 'PGRST116', message: 'not found' }
-                                                    };
-                                                }
-                                                return {
-                                                    data: state.row,
-                                                    error: null
-                                                };
-                                            }
-                                        };
-                                    },
-                                    insert(payload) {
-                                        state.insertPayload = payload;
-                                        return {
-                                            select() {
-                                                return this;
-                                            },
-                                            async single() {
-                                                return {
-                                                    data: state.row,
-                                                    error: null
-                                                };
-                                            }
-                                        };
-                                    },
-                                    update(payload) {
-                                        state.updatePayload = payload;
-                                        state.updatePayloads.push(payload);
-                                        return {
-                                            eq(field, value) {
-                                                state.updateFilters.push({ field, value });
-                                                return this;
-                                            },
-                                            select() {
-                                                return this;
-                                            },
-                                            async single() {
-                                                if (state.updateResponses?.length) {
-                                                    return state.updateResponses.shift();
-                                                }
-                                                return {
-                                                    data: state.row,
-                                                    error: state.row ? null : { code: 'PGRST116', message: 'not found' }
-                                                };
-                                            }
-                                        };
-                                    },
-                                    delete() {
-                                        return {
-                                            in(field, values) {
-                                                state.deleteFilters.push({ field, values });
-                                                return {
-                                                    select() {
-                                                        return Promise.resolve({
-                                                            data: state.deletedRows,
-                                                            error: null
-                                                        });
-                                                    }
-                                                };
-                                            }
-                                        };
-                                    }
-                                };
-                            }
+                            };
                         }
+                    };
+
+                    if (state.rpcResponses) {
+                        supabase.rpc = async (name, args) => {
+                            state.rpcCalls.push({ name, args });
+                            if (state.rpcResponses.length) {
+                                return state.rpcResponses.shift();
+                            }
+                            return { data: null, error: null };
+                        };
+                    }
+
+                    return {
+                        user: { id: 'admin-1' },
+                        supabase
                     };
                 },
                 async parseJsonBody(req) {
@@ -274,6 +302,156 @@ test('prompts manage handler lists prompt rows for reads', async () => {
             anyOf: ['prompts.manage', 'content.moderate']
         });
     });
+});
+
+test('prompts manage handler paginates prompt rows for manage cards', async () => {
+    await withPromptsManageHandler({
+        rows: [
+            { id: 'prompt-1', title: 'Prompt One', tags: ['Photography'] },
+            { id: 'prompt-2', title: 'Prompt Two', tags: ['Creative'] },
+            { id: 'prompt-3', title: 'Prompt Three', tags: ['Illustration'] }
+        ],
+        unlockRows: [
+            { prompt_id: 'prompt-3', site: 'intl' }
+        ],
+        commentRows: []
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/prompts/manage?site=all&page=2&pageSize=1&sort=created-desc',
+            headers: {}
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.deepEqual(state.listRanges, [{ from: 1, to: 1 }]);
+        assert.deepEqual(payload.rows.map((row) => row.id), ['prompt-2']);
+        assert.deepEqual(payload.pagination, {
+            page: 2,
+            pageSize: 1,
+            totalItems: 3,
+            totalPages: 3,
+            hasPrevPage: true,
+            hasNextPage: true,
+            returnedItems: 1
+        });
+        assert.deepEqual(state.metricFilters, [
+            { table: 'prompt_unlocks', field: 'prompt_id', values: ['prompt-2'] },
+            { table: 'prompt_comments', field: 'prompt_id', values: ['prompt-2'] }
+        ]);
+    });
+});
+
+test('prompts manage handler uses gallery manage rpc for derived filters and sorting', async () => {
+    await withPromptsManageHandler({
+        rpcResponses: [
+            {
+                data: JSON.stringify({
+                    rows: [
+                        {
+                            id: 'prompt-rpc',
+                            title: 'RPC Prompt',
+                            tags: ['Creative'],
+                            site_metrics: {
+                                cn: { unlock_count: 2, comment_count: 1 },
+                                total: { unlock_count: 3, comment_count: 1 }
+                            }
+                        }
+                    ],
+                    pagination: {
+                        page: 2,
+                        pageSize: 1,
+                        totalItems: 7,
+                        returnedItems: 1
+                    }
+                }),
+                error: null
+            }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/prompts/manage?site=intl&page=2&pageSize=1&search=cat%20art&category=Creative&date=week&language=needs-translation&status=live&sort=engagement-desc',
+            headers: {}
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.deepEqual(state.rpcCalls, [{
+            name: 'fn_admin_gallery_prompt_manage_list',
+            args: {
+                p_site: 'intl',
+                p_page: 2,
+                p_page_size: 1,
+                p_search: 'cat art',
+                p_category: 'Creative',
+                p_date_filter: 'week',
+                p_language_filter: 'needs-translation',
+                p_status_filter: 'live',
+                p_sort: 'engagement-desc'
+            }
+        }]);
+        assert.deepEqual(state.listRanges, []);
+        assert.deepEqual(state.metricFilters, []);
+        assert.equal(payload.rows[0].id, 'prompt-rpc');
+        assert.deepEqual(payload.rows[0].site_metrics, {
+            cn: { unlock_count: 2, comment_count: 1 },
+            intl: { unlock_count: 0, comment_count: 0 },
+            total: { unlock_count: 3, comment_count: 1 }
+        });
+        assert.deepEqual(payload.pagination, {
+            page: 2,
+            pageSize: 1,
+            totalItems: 7,
+            totalPages: 7,
+            hasPrevPage: true,
+            hasNextPage: true,
+            returnedItems: 1
+        });
+    });
+});
+
+test('prompts manage handler falls back to query pagination when gallery manage rpc is unavailable', async () => {
+    const originalWarn = console.warn;
+    console.warn = () => {};
+
+    try {
+        await withPromptsManageHandler({
+            rpcResponses: [
+                {
+                    data: null,
+                    error: { message: 'function fn_admin_gallery_prompt_manage_list does not exist' }
+                }
+            ],
+            rows: [
+                { id: 'prompt-1', title: 'Prompt One', tags: ['Photography'] },
+                { id: 'prompt-2', title: 'Prompt Two', tags: ['Creative'] }
+            ]
+        }, async ({ handler, state }) => {
+            const res = createMockResponse();
+
+            await handler({
+                method: 'GET',
+                url: '/api/admin/prompts/manage?site=all&page=2&pageSize=1&sort=created-desc',
+                headers: {}
+            }, res);
+
+            const payload = res.json();
+            assert.equal(res.statusCode, 200);
+            assert.equal(payload.success, true);
+            assert.equal(state.rpcCalls.length, 1);
+            assert.deepEqual(state.listRanges, [{ from: 1, to: 1 }]);
+            assert.deepEqual(payload.rows.map((row) => row.id), ['prompt-2']);
+        });
+    } finally {
+        console.warn = originalWarn;
+    }
 });
 
 test('prompts manage handler falls back to legacy select fields when bilingual columns are unavailable', async () => {

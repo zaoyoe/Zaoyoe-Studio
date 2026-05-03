@@ -50,6 +50,35 @@ const OPTIONAL_PROMPT_MUTATION_FIELDS = new Set([
     'updated_at'
 ]);
 const PROMPT_SCHEMA_RELOAD_SQL = "select pg_notify('pgrst', 'reload schema');";
+const DEFAULT_PROMPT_PAGE_SIZE = 10;
+const MAX_PROMPT_PAGE_SIZE = 100;
+const PROMPT_SORT_VALUES = new Set([
+    'updated-desc',
+    'created-desc',
+    'engagement-desc',
+    'status-priority',
+    'title-asc'
+]);
+const PROMPT_ADMIN_STATUS_LABELS = Object.freeze({
+    draft: '草稿',
+    review: '待复核',
+    'needs-localization': '待补双语',
+    'homepage-candidate': '首页候选',
+    featured: '已上首页',
+    ready: '可发布',
+    live: '已上线',
+    archived: '已归档'
+});
+const PROMPT_STATUS_PRIORITY = Object.freeze({
+    review: 0,
+    'homepage-candidate': 1,
+    featured: 2,
+    live: 3,
+    'needs-localization': 4,
+    ready: 5,
+    draft: 6,
+    archived: 7
+});
 
 function buildPromptSelectFields(excludedFields = []) {
     const excluded = new Set(
@@ -72,6 +101,48 @@ function getSearchParams(req) {
 
 function normalizePromptId(value) {
     return String(value || '').trim();
+}
+
+function normalizePositiveInteger(value, fallback, options = {}) {
+    const parsed = Number.parseInt(value, 10);
+    const min = Number.isFinite(options.min) ? options.min : 1;
+    const max = Number.isFinite(options.max) ? options.max : Number.POSITIVE_INFINITY;
+    if (!Number.isFinite(parsed) || parsed < min) {
+        return fallback;
+    }
+    return Math.min(parsed, max);
+}
+
+function normalizePromptSortValue(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    return PROMPT_SORT_VALUES.has(normalized) ? normalized : 'updated-desc';
+}
+
+function normalizePromptListQuery(searchParams) {
+    const hasExplicitPagination = searchParams.has('page') || searchParams.has('pageSize');
+    const pageSize = normalizePositiveInteger(searchParams.get('pageSize'), DEFAULT_PROMPT_PAGE_SIZE, {
+        min: 1,
+        max: MAX_PROMPT_PAGE_SIZE
+    });
+    const page = normalizePositiveInteger(searchParams.get('page'), 1);
+
+    return {
+        pagination: {
+            enabled: hasExplicitPagination,
+            page,
+            pageSize,
+            start: (page - 1) * pageSize,
+            end: (page * pageSize) - 1
+        },
+        filters: {
+            search: String(searchParams.get('search') || searchParams.get('q') || '').trim(),
+            category: String(searchParams.get('category') || '').trim(),
+            date: String(searchParams.get('date') || '').trim().toLowerCase(),
+            language: String(searchParams.get('language') || '').trim().toLowerCase(),
+            status: String(searchParams.get('status') || '').trim().toLowerCase(),
+            sort: normalizePromptSortValue(searchParams.get('sort'))
+        }
+    };
 }
 
 function normalizePromptSiteContext(value) {
@@ -367,7 +438,7 @@ async function executePromptSelectWithFallback(executor) {
 
     while (true) {
         const selectFields = buildPromptSelectFields([...excludedFields]);
-        const result = await executor(selectFields);
+        const result = await executor(selectFields, [...excludedFields]);
         if (!result?.error) {
             return result;
         }
@@ -380,6 +451,453 @@ async function executePromptSelectWithFallback(executor) {
 
         missingFields.forEach((field) => excludedFields.add(field));
     }
+}
+
+function promptHasVisibleCopy(value) {
+    return typeof value === 'string' && value.trim().length > 0;
+}
+
+function getPromptLanguageCoverage(row = {}) {
+    return {
+        zh: promptHasVisibleCopy(row.title_zh)
+            || promptHasVisibleCopy(row.description_zh)
+            || promptHasVisibleCopy(row.prompt_text_zh),
+        en: promptHasVisibleCopy(row.title_en)
+            || promptHasVisibleCopy(row.description_en)
+            || promptHasVisibleCopy(row.prompt_text_en)
+    };
+}
+
+function normalizePromptAdminOpsData(value = {}) {
+    const data = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const normalizedStatus = String(data.status || '').trim().toLowerCase();
+    return {
+        status: Object.prototype.hasOwnProperty.call(PROMPT_ADMIN_STATUS_LABELS, normalizedStatus) ? normalizedStatus : '',
+        note: String(data.note || '').trim()
+    };
+}
+
+function getPromptAdminOpsData(row = {}) {
+    const aiTags = row?.ai_tags && typeof row.ai_tags === 'object' && !Array.isArray(row.ai_tags)
+        ? row.ai_tags
+        : {};
+    return normalizePromptAdminOpsData(aiTags.admin || aiTags.ops || {});
+}
+
+function normalizeMetricValue(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+function normalizePromptSiteMetrics(row = {}) {
+    const rawMetrics = row && typeof row.site_metrics === 'object' && row.site_metrics ? row.site_metrics : {};
+    const normalizeSiteMetric = (value = {}) => ({
+        unlock_count: normalizeMetricValue(value.unlock_count),
+        comment_count: normalizeMetricValue(value.comment_count)
+    });
+    return {
+        cn: normalizeSiteMetric(rawMetrics.cn),
+        intl: normalizeSiteMetric(rawMetrics.intl),
+        total: normalizeSiteMetric(rawMetrics.total)
+    };
+}
+
+function getPromptLifecycleState(row = {}) {
+    const opsData = getPromptAdminOpsData(row);
+    const coverage = getPromptLanguageCoverage(row);
+    const metrics = normalizePromptSiteMetrics(row).total;
+    const hasBaseTitle = promptHasVisibleCopy(row.title);
+    const hasPromptText = promptHasVisibleCopy(row.prompt_text);
+    const hasImages = Array.isArray(row.images) && row.images.some((value) => promptHasVisibleCopy(value));
+
+    if (opsData.status === 'archived') return 'archived';
+    if (opsData.status === 'draft') return 'draft';
+    if (!hasBaseTitle || !hasPromptText || !hasImages) return 'draft';
+    if (opsData.status === 'review') return 'review';
+    if (!coverage.zh || !coverage.en) return 'needs-localization';
+    if (opsData.status === 'homepage-candidate') return 'homepage-candidate';
+    if (opsData.status === 'featured') return 'featured';
+    if (metrics.unlock_count > 0 || metrics.comment_count > 0) return 'live';
+    return opsData.status === 'live' ? 'live' : 'ready';
+}
+
+function getPromptEngagementScore(row = {}, site = 'all') {
+    const metrics = normalizePromptSiteMetrics(row);
+    const normalizedSite = normalizePromptSiteContext(site);
+    const selectedMetrics = normalizedSite === 'cn' || normalizedSite === 'intl'
+        ? metrics[normalizedSite]
+        : metrics.total;
+    return (Number(selectedMetrics.unlock_count || 0) * 3) + Number(selectedMetrics.comment_count || 0);
+}
+
+function getPromptSortTimestamp(row = {}, fieldName = 'updated_at') {
+    const timestamp = new Date(row?.[fieldName] || 0).getTime();
+    return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function comparePromptRows(left = {}, right = {}, { sort = 'updated-desc', site = 'all' } = {}) {
+    const normalizedSort = normalizePromptSortValue(sort);
+    const leftTitle = String(left.title || left.title_zh || left.title_en || '').trim();
+    const rightTitle = String(right.title || right.title_zh || right.title_en || '').trim();
+
+    if (normalizedSort === 'title-asc') {
+        return leftTitle.localeCompare(rightTitle, 'zh-CN', { sensitivity: 'base' });
+    }
+
+    if (normalizedSort === 'created-desc') {
+        const createdDelta = getPromptSortTimestamp(right, 'created_at') - getPromptSortTimestamp(left, 'created_at');
+        return createdDelta || leftTitle.localeCompare(rightTitle, 'zh-CN', { sensitivity: 'base' });
+    }
+
+    if (normalizedSort === 'engagement-desc') {
+        const scoreDelta = getPromptEngagementScore(right, site) - getPromptEngagementScore(left, site);
+        if (scoreDelta) return scoreDelta;
+    }
+
+    if (normalizedSort === 'status-priority') {
+        const leftPriority = PROMPT_STATUS_PRIORITY[getPromptLifecycleState(left)] ?? 99;
+        const rightPriority = PROMPT_STATUS_PRIORITY[getPromptLifecycleState(right)] ?? 99;
+        const priorityDelta = leftPriority - rightPriority;
+        if (priorityDelta) return priorityDelta;
+    }
+
+    const updatedDelta = getPromptSortTimestamp(right, 'updated_at') - getPromptSortTimestamp(left, 'updated_at');
+    if (updatedDelta) return updatedDelta;
+
+    const createdDelta = getPromptSortTimestamp(right, 'created_at') - getPromptSortTimestamp(left, 'created_at');
+    if (createdDelta) return createdDelta;
+
+    return leftTitle.localeCompare(rightTitle, 'zh-CN', { sensitivity: 'base' });
+}
+
+function matchesPromptDateFilter(row = {}, dateValue = '') {
+    const normalizedDate = String(dateValue || '').trim().toLowerCase();
+    if (!normalizedDate) return true;
+
+    const createdAt = new Date(row.created_at || 0);
+    if (Number.isNaN(createdAt.getTime())) return false;
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart = new Date(todayStart);
+    weekStart.setDate(weekStart.getDate() - 7);
+    const monthStart = new Date(todayStart);
+    monthStart.setMonth(monthStart.getMonth() - 1);
+
+    if (normalizedDate === 'today') return createdAt >= todayStart;
+    if (normalizedDate === 'week') return createdAt >= weekStart;
+    if (normalizedDate === 'month') return createdAt >= monthStart;
+    return true;
+}
+
+function matchesPromptLanguageFilter(row = {}, languageValue = '') {
+    const normalizedLanguage = String(languageValue || '').trim().toLowerCase();
+    if (!normalizedLanguage) return true;
+
+    const coverage = getPromptLanguageCoverage(row);
+    if (normalizedLanguage === 'bilingual-ready') return coverage.zh && coverage.en;
+    if (normalizedLanguage === 'zh-ready') return coverage.zh;
+    if (normalizedLanguage === 'en-ready') return coverage.en;
+    if (normalizedLanguage === 'needs-translation') return !(coverage.zh && coverage.en);
+    return true;
+}
+
+function matchesPromptSearchFilter(row = {}, search = '') {
+    const normalizedSearch = String(search || '').trim().toLowerCase();
+    if (!normalizedSearch) return true;
+
+    const terms = normalizedSearch.split(/\s+/).filter(Boolean);
+    if (!terms.length) return true;
+
+    const aiTags = row?.ai_tags && typeof row.ai_tags === 'object' && !Array.isArray(row.ai_tags) ? row.ai_tags : {};
+    const aiTagText = ['objects', 'scenes', 'styles', 'mood']
+        .flatMap((key) => {
+            const value = aiTags[key] || {};
+            return [
+                ...(Array.isArray(value.en) ? value.en : []),
+                ...(Array.isArray(value.zh) ? value.zh : [])
+            ];
+        })
+        .join(' ');
+
+    const searchableText = [
+        row.id,
+        row.title,
+        row.title_zh,
+        row.title_en,
+        row.description,
+        row.description_zh,
+        row.description_en,
+        row.prompt_text,
+        row.prompt_text_zh,
+        row.prompt_text_en,
+        Array.isArray(row.tags) ? row.tags.join(' ') : '',
+        Array.isArray(row.dominant_colors) ? row.dominant_colors.join(' ') : '',
+        aiTagText
+    ].join(' ').toLowerCase();
+
+    return terms.every((term) => searchableText.includes(term));
+}
+
+function filterPromptRows(rows = [], filters = {}) {
+    const category = String(filters.category || '').trim().toLowerCase();
+    const status = String(filters.status || '').trim().toLowerCase();
+
+    return (Array.isArray(rows) ? rows : []).filter((row) => {
+        if (!row) return false;
+
+        if (category) {
+            const tags = Array.isArray(row.tags) ? row.tags : [];
+            if (!tags.some((tag) => String(tag || '').trim().toLowerCase() === category)) {
+                return false;
+            }
+        }
+
+        if (!matchesPromptDateFilter(row, filters.date)) return false;
+        if (!matchesPromptLanguageFilter(row, filters.language)) return false;
+        if (status && getPromptLifecycleState(row) !== status) return false;
+        if (!matchesPromptSearchFilter(row, filters.search)) return false;
+
+        return true;
+    });
+}
+
+function paginatePromptRows(rows = [], pagination = {}) {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    if (!pagination.enabled) {
+        return {
+            rows: safeRows,
+            pagination: null
+        };
+    }
+
+    const totalItems = safeRows.length;
+    const totalPages = Math.max(1, Math.ceil(totalItems / pagination.pageSize));
+    const page = Math.min(Math.max(1, pagination.page), totalPages);
+    const start = (page - 1) * pagination.pageSize;
+    const pageRows = safeRows.slice(start, start + pagination.pageSize);
+
+    return {
+        rows: pageRows,
+        pagination: buildPromptPaginationPayload(totalItems, {
+            ...pagination,
+            page
+        }, pageRows.length)
+    };
+}
+
+function buildPromptPaginationPayload(totalItems, pagination = {}, returnedItems = 0) {
+    if (!pagination.enabled) return null;
+
+    const pageSize = normalizePositiveInteger(pagination.pageSize, DEFAULT_PROMPT_PAGE_SIZE, {
+        min: 1,
+        max: MAX_PROMPT_PAGE_SIZE
+    });
+    const total = Math.max(0, Number(totalItems) || 0);
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const page = Math.min(Math.max(1, normalizePositiveInteger(pagination.page, 1)), totalPages);
+
+    return {
+        page,
+        pageSize,
+        totalItems: total,
+        totalPages,
+        hasPrevPage: page > 1,
+        hasNextPage: page < totalPages,
+        returnedItems: Math.max(0, Number(returnedItems) || 0)
+    };
+}
+
+function normalizePromptPaginationPayload(value = {}, fallbackPagination = {}, returnedItems = 0) {
+    const safeValue = value && typeof value === 'object' ? value : {};
+    return buildPromptPaginationPayload(
+        Number.isFinite(Number(safeValue.totalItems)) ? Number(safeValue.totalItems) : returnedItems,
+        {
+            enabled: true,
+            page: Number.isFinite(Number(safeValue.page)) ? Number(safeValue.page) : fallbackPagination.page,
+            pageSize: Number.isFinite(Number(safeValue.pageSize)) ? Number(safeValue.pageSize) : fallbackPagination.pageSize
+        },
+        Number.isFinite(Number(safeValue.returnedItems)) ? Number(safeValue.returnedItems) : returnedItems
+    );
+}
+
+function resolvePromptPaginationTotal(count, rows = [], pagination = {}) {
+    const parsedCount = Number(count);
+    if (Number.isFinite(parsedCount) && parsedCount >= 0) {
+        return parsedCount;
+    }
+
+    const returnedItems = Array.isArray(rows) ? rows.length : 0;
+    if (!pagination.enabled) {
+        return returnedItems;
+    }
+
+    const minimumSeenItems = Math.max(0, Number(pagination.start) || 0) + returnedItems;
+    return returnedItems >= pagination.pageSize ? minimumSeenItems + 1 : minimumSeenItems;
+}
+
+function normalizePromptManageListRpcPayload(data, fallbackPagination = {}) {
+    let rawPayload = data;
+    if (typeof rawPayload === 'string') {
+        try {
+            rawPayload = JSON.parse(rawPayload);
+        } catch {
+            return null;
+        }
+    }
+
+    const payload = Array.isArray(rawPayload) ? rawPayload[0] : rawPayload;
+    if (!payload || typeof payload !== 'object') {
+        return null;
+    }
+
+    const rows = Array.isArray(payload.rows)
+        ? payload.rows.map((row) => {
+            const normalizedRow = applyPromptFieldFallbacks(row);
+            return {
+                ...normalizedRow,
+                site_metrics: normalizePromptSiteMetrics(normalizedRow)
+            };
+        })
+        : [];
+
+    return {
+        rows,
+        pagination: normalizePromptPaginationPayload(payload.pagination, fallbackPagination, rows.length)
+    };
+}
+
+function buildPromptManageListRpcArgs({ site = 'all', filters = {}, pagination = {} } = {}) {
+    return {
+        p_site: normalizePromptSiteContext(site),
+        p_page: normalizePositiveInteger(pagination.page, 1),
+        p_page_size: normalizePositiveInteger(pagination.pageSize, DEFAULT_PROMPT_PAGE_SIZE, {
+            min: 1,
+            max: MAX_PROMPT_PAGE_SIZE
+        }),
+        p_search: String(filters.search || '').trim(),
+        p_category: String(filters.category || '').trim(),
+        p_date_filter: String(filters.date || '').trim().toLowerCase(),
+        p_language_filter: String(filters.language || '').trim().toLowerCase(),
+        p_status_filter: String(filters.status || '').trim().toLowerCase(),
+        p_sort: normalizePromptSortValue(filters.sort)
+    };
+}
+
+async function loadPromptListViaRpc(supabase, options = {}) {
+    const pagination = options.pagination || { enabled: false };
+    if (!pagination.enabled || typeof supabase?.rpc !== 'function') {
+        return null;
+    }
+
+    try {
+        const result = await supabase.rpc(
+            'fn_admin_gallery_prompt_manage_list',
+            buildPromptManageListRpcArgs(options)
+        );
+
+        if (result?.error) {
+            console.warn('[PromptsManage] Gallery manage RPC unavailable, falling back to query path:', result.error.message || result.error);
+            return null;
+        }
+
+        return normalizePromptManageListRpcPayload(result?.data, pagination);
+    } catch (error) {
+        console.warn('[PromptsManage] Gallery manage RPC failed, falling back to query path:', error?.message || error);
+        return null;
+    }
+}
+
+function shouldUseInMemoryPromptList(filters = {}) {
+    return Boolean(
+        filters.search
+        || filters.language
+        || filters.status
+        || filters.sort === 'engagement-desc'
+        || filters.sort === 'status-priority'
+    );
+}
+
+function sanitizePostgrestOrTerm(value = '') {
+    return String(value || '').replace(/[(),]/g, ' ').replace(/\*/g, '').trim();
+}
+
+function applyPromptDbFilters(query, filters = {}) {
+    let nextQuery = query;
+    const category = String(filters.category || '').trim();
+    const searchTerms = String(filters.search || '')
+        .split(/\s+/)
+        .map(sanitizePostgrestOrTerm)
+        .filter(Boolean)
+        .slice(0, 5);
+    const dateValue = String(filters.date || '').trim().toLowerCase();
+
+    if (category && typeof nextQuery?.contains === 'function') {
+        nextQuery = nextQuery.contains('tags', [category]);
+    }
+
+    if (dateValue && typeof nextQuery?.gte === 'function') {
+        const now = new Date();
+        const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        if (dateValue === 'week') start.setDate(start.getDate() - 7);
+        if (dateValue === 'month') start.setMonth(start.getMonth() - 1);
+        if (dateValue === 'today' || dateValue === 'week' || dateValue === 'month') {
+            nextQuery = nextQuery.gte('created_at', start.toISOString());
+        }
+    }
+
+    if (searchTerms.length && typeof nextQuery?.or === 'function') {
+        const searchFields = [
+            'title',
+            'title_zh',
+            'title_en',
+            'description',
+            'description_zh',
+            'description_en',
+            'prompt_text',
+            'prompt_text_zh',
+            'prompt_text_en'
+        ];
+        for (const searchTerm of searchTerms) {
+            nextQuery = nextQuery.or(searchFields.map((field) => `${field}.ilike.*${searchTerm}*`).join(','));
+        }
+    }
+
+    return nextQuery;
+}
+
+function applyPromptDbSort(query, sort = 'updated-desc', excludedFields = []) {
+    const normalizedSort = normalizePromptSortValue(sort);
+    const excluded = new Set(Array.isArray(excludedFields) ? excludedFields : []);
+    let nextQuery = query;
+
+    if (normalizedSort === 'title-asc' && typeof nextQuery?.order === 'function') {
+        nextQuery = nextQuery.order('title', { ascending: true });
+        return typeof nextQuery?.order === 'function'
+            ? nextQuery.order('created_at', { ascending: false })
+            : nextQuery;
+    }
+
+    if (normalizedSort === 'created-desc' && typeof nextQuery?.order === 'function') {
+        return nextQuery.order('created_at', { ascending: false });
+    }
+
+    if (typeof nextQuery?.order === 'function') {
+        const primaryField = excluded.has('updated_at') ? 'created_at' : 'updated_at';
+        nextQuery = nextQuery.order(primaryField, { ascending: false });
+        if (primaryField !== 'created_at' && typeof nextQuery?.order === 'function') {
+            nextQuery = nextQuery.order('created_at', { ascending: false });
+        }
+    }
+
+    return nextQuery;
+}
+
+function applyPromptDbPagination(query, pagination = {}) {
+    if (!pagination.enabled || typeof query?.range !== 'function') {
+        return query;
+    }
+    return query.range(pagination.start, pagination.end);
 }
 
 async function executePromptMutationWithFallback(executor, payload = {}) {
@@ -412,7 +930,47 @@ async function executePromptMutationWithFallback(executor, payload = {}) {
     }
 }
 
-async function loadPromptList(supabase) {
+async function loadPromptList(supabase, options = {}) {
+    const filters = options.filters || {};
+    const pagination = options.pagination || { enabled: false };
+    const site = options.site || 'all';
+
+    const rpcResult = await loadPromptListViaRpc(supabase, {
+        site,
+        filters,
+        pagination
+    });
+    if (rpcResult) {
+        return rpcResult;
+    }
+
+    if (pagination.enabled && !shouldUseInMemoryPromptList(filters)) {
+        const result = await executePromptSelectWithFallback((selectFields, excludedFields) => {
+            let query = supabase
+                .from('prompts')
+                .select(selectFields, { count: 'planned' });
+
+            query = applyPromptDbFilters(query, filters);
+            query = applyPromptDbSort(query, filters.sort, excludedFields);
+            return applyPromptDbPagination(query, pagination);
+        });
+
+        if (result.error) throw result.error;
+
+        const rows = await attachPromptSiteMetrics(
+            supabase,
+            (result.data || []).map((row) => applyPromptFieldFallbacks(row))
+        );
+        return {
+            rows,
+            pagination: buildPromptPaginationPayload(
+                resolvePromptPaginationTotal(result.count, rows, pagination),
+                pagination,
+                rows.length
+            )
+        };
+    }
+
     const result = await executePromptSelectWithFallback((selectFields) => (
         supabase
             .from('prompts')
@@ -421,7 +979,22 @@ async function loadPromptList(supabase) {
     ));
 
     if (result.error) throw result.error;
-    return (result.data || []).map((row) => applyPromptFieldFallbacks(row));
+
+    const rows = await attachPromptSiteMetrics(
+        supabase,
+        (result.data || []).map((row) => applyPromptFieldFallbacks(row))
+    );
+    const filteredRows = filterPromptRows(rows, filters)
+        .sort((left, right) => comparePromptRows(left, right, {
+            sort: filters.sort,
+            site
+        }));
+    const pagedResult = paginatePromptRows(filteredRows, pagination);
+
+    return {
+        rows: pagedResult.rows,
+        pagination: pagedResult.pagination
+    };
 }
 
 async function loadPromptById(supabase, id) {
@@ -583,6 +1156,7 @@ module.exports = async (req, res) => {
         const { supabase, user } = await requireAdmin(req, accessOptions);
         const searchParams = getSearchParams(req);
         const readSite = normalizePromptSiteContext(searchParams.get('site') || req.adminSite);
+        const listQuery = normalizePromptListQuery(searchParams);
 
         if (method === 'GET') {
             const id = normalizePromptId(searchParams.get('id'));
@@ -597,11 +1171,16 @@ module.exports = async (req, res) => {
                 });
             }
 
-            const rows = await attachPromptSiteMetrics(supabase, await loadPromptList(supabase));
+            const listResult = await loadPromptList(supabase, {
+                site: readSite,
+                ...listQuery
+            });
             return sendJson(res, 200, {
                 success: true,
                 siteContext: readSite,
-                rows
+                rows: listResult.rows,
+                pagination: listResult.pagination,
+                filters: listQuery.filters
             });
         }
 

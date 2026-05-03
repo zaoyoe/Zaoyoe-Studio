@@ -1461,6 +1461,21 @@ if (document.readyState === 'loading') {
 
 // --- Comment Composer Helpers ---
 let commentComposerEntryTimer = null;
+const COMMENT_MODAL_KEYBOARD_SETTLE_MS = 90;
+const commentModalKeyboardState = {
+    viewportCleanup: null,
+    viewportRafId: null,
+    stableViewportProbe: null,
+    baseViewportHeight: 0,
+    baseVisualHeight: 0,
+    baseCardHeight: 0,
+    docked: false,
+    lastBottomInset: 0,
+    initialDockTimer: null,
+    insetDropTimer: null,
+    pendingInset: 0,
+    sheetAnimationTimer: null
+};
 
 function getCommentModalElements() {
     const overlay = document.getElementById('commentModal');
@@ -1478,6 +1493,340 @@ function getCommentModalElements() {
         messageIdInput: document.getElementById('commentMessageId'),
         parentIdInput: document.getElementById('commentParentId')
     };
+}
+
+function isCommentModalKeyboardDockEnabled() {
+    const ua = navigator.userAgent || '';
+    const isiOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    return isiOS && window.matchMedia('(max-width: 768px)').matches && Boolean(window.visualViewport);
+}
+
+function getActiveCommentModalInput() {
+    const { overlay } = getCommentModalElements();
+    const active = document.activeElement;
+    if (!overlay || !active || !overlay.contains(active)) return null;
+    return /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName) ? active : null;
+}
+
+function focusCommentModalInputWithoutScroll(input) {
+    if (!input) return;
+    try {
+        input.focus({ preventScroll: true });
+    } catch (_) {
+        input.focus();
+    }
+}
+
+function bindCommentModalInputFocusStabilizer(input) {
+    if (!input || input.dataset.commentFocusStabilizerBound === '1') return;
+
+    input.addEventListener('touchstart', (event) => {
+        const { overlay } = getCommentModalElements();
+        if (!isCommentModalKeyboardDockEnabled() || !overlay?.classList.contains('active')) return;
+        if (event.cancelable) event.preventDefault();
+        focusCommentModalInputWithoutScroll(input);
+    }, { passive: false });
+
+    input.dataset.commentFocusStabilizerBound = '1';
+}
+
+function getCommentModalStableViewportProbe() {
+    if (commentModalKeyboardState.stableViewportProbe?.isConnected) {
+        return commentModalKeyboardState.stableViewportProbe;
+    }
+
+    const probe = document.createElement('div');
+    probe.setAttribute('aria-hidden', 'true');
+    probe.className = 'comment-modal-viewport-probe';
+    document.body.appendChild(probe);
+    commentModalKeyboardState.stableViewportProbe = probe;
+    return probe;
+}
+
+function getCommentModalStableViewportHeight() {
+    const probe = getCommentModalStableViewportProbe();
+    return Math.max(0, Math.round(probe?.getBoundingClientRect().height || probe?.offsetHeight || 0));
+}
+
+function clearCommentModalKeyboardTimers() {
+    if (commentModalKeyboardState.initialDockTimer) {
+        clearTimeout(commentModalKeyboardState.initialDockTimer);
+        commentModalKeyboardState.initialDockTimer = null;
+    }
+    if (commentModalKeyboardState.insetDropTimer) {
+        clearTimeout(commentModalKeyboardState.insetDropTimer);
+        commentModalKeyboardState.insetDropTimer = null;
+    }
+    commentModalKeyboardState.pendingInset = 0;
+}
+
+function clearCommentModalSheetAnimationTimer() {
+    if (commentModalKeyboardState.sheetAnimationTimer) {
+        clearTimeout(commentModalKeyboardState.sheetAnimationTimer);
+        commentModalKeyboardState.sheetAnimationTimer = null;
+    }
+}
+
+function toggleCommentModalSheetAnimation(card, animate) {
+    if (!card) return;
+    clearCommentModalSheetAnimationTimer();
+    card.classList.toggle('comment-sheet-animating', Boolean(animate));
+    if (!animate) return;
+
+    commentModalKeyboardState.sheetAnimationTimer = setTimeout(() => {
+        card.classList.remove('comment-sheet-animating');
+        commentModalKeyboardState.sheetAnimationTimer = null;
+    }, 290);
+}
+
+function captureCommentModalKeyboardBase() {
+    const { overlay, card } = getCommentModalElements();
+    const vv = window.visualViewport;
+    const visualTop = Math.max(0, vv?.offsetTop || 0);
+    const visualHeight = Math.max(0, vv?.height || 0);
+    const visualBottom = visualTop + visualHeight;
+    const stableViewportHeight = getCommentModalStableViewportHeight();
+    const fallbackBaseHeight = Math.max(
+        window.innerHeight || 0,
+        document.documentElement.clientHeight || 0,
+        visualBottom,
+        visualHeight
+    );
+    const normalizedBaseHeight = Math.max(
+        stableViewportHeight || 0,
+        fallbackBaseHeight
+    );
+
+    commentModalKeyboardState.baseViewportHeight = normalizedBaseHeight;
+    commentModalKeyboardState.baseVisualHeight = Math.max(commentModalKeyboardState.baseVisualHeight || 0, visualHeight);
+    if (overlay && normalizedBaseHeight) {
+        setCssVariables(overlay, {
+            '--comment-modal-overlay-height': `${normalizedBaseHeight}px`
+        });
+    }
+    if (card) {
+        const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 420);
+        commentModalKeyboardState.baseCardHeight = Math.max(300, liveHeight || 400);
+    }
+}
+
+function getCommentModalViewportMetrics() {
+    const vv = window.visualViewport;
+    const visualTop = Math.max(0, vv?.offsetTop || 0);
+    const visualHeight = Math.max(0, vv?.height || 0);
+    const visualBottom = visualTop + visualHeight;
+    const baseViewportHeight = Math.max(
+        commentModalKeyboardState.baseViewportHeight || 0,
+        window.innerHeight || 0,
+        document.documentElement.clientHeight || 0,
+        visualBottom
+    );
+    const baseVisualHeight = Math.max(commentModalKeyboardState.baseVisualHeight || 0, visualHeight);
+    const insetFromLayout = Math.max(0, baseViewportHeight - visualBottom);
+    const insetFromViewportDelta = Math.max(0, baseVisualHeight - visualHeight);
+
+    return {
+        visualHeight,
+        visualBottom,
+        baseViewportHeight,
+        baseVisualHeight,
+        bottomInset: Math.max(0, Math.round(Math.max(insetFromLayout, insetFromViewportDelta)))
+    };
+}
+
+function applyCommentModalKeyboardDock(bottomInset, animate = false) {
+    const { overlay, card } = getCommentModalElements();
+    if (!overlay || !card) return;
+
+    clearCommentComposerEntryTimer();
+    overlay.classList.remove('comment-entrying');
+    overlay.classList.add('keyboard-docked');
+
+    const metrics = getCommentModalViewportMetrics();
+    if (!commentModalKeyboardState.baseCardHeight) {
+        const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 400);
+        commentModalKeyboardState.baseCardHeight = Math.max(300, liveHeight || 400);
+    }
+
+    const baseCardHeight = Math.max(300, commentModalKeyboardState.baseCardHeight || 400);
+    const baseViewportHeight = Math.max(metrics.baseViewportHeight || 0, commentModalKeyboardState.baseViewportHeight || 0);
+    const keyboardTop = Math.max(0, baseViewportHeight - Math.max(0, bottomInset));
+    const minTop = 12;
+    const keyboardClearance = 12;
+    const maxAvailableHeight = Math.max(260, Math.round(keyboardTop - minTop - keyboardClearance));
+    const dockHeight = Math.min(baseCardHeight, maxAvailableHeight);
+    const centeredBottom = (baseViewportHeight * 0.5) + (dockHeight * 0.5);
+    const targetBottom = Math.max(40, keyboardTop - keyboardClearance);
+    const translateY = Math.round(Math.max(-520, Math.min(520, targetBottom - centeredBottom)));
+
+    setCssVariables(overlay, {
+        '--comment-modal-translate-y': `${translateY}px`
+    });
+    setCssVariables(card, {
+        '--comment-modal-card-height': `${dockHeight}px`,
+        '--comment-modal-card-max-height': `${dockHeight}px`
+    });
+    toggleCommentModalSheetAnimation(card, animate);
+    commentModalKeyboardState.docked = bottomInset > 0;
+    commentModalKeyboardState.lastBottomInset = Math.max(0, bottomInset);
+}
+
+function releaseCommentModalKeyboardDock(animate = false) {
+    const { overlay, card } = getCommentModalElements();
+    if (!overlay || !card) return;
+
+    overlay.classList.remove('keyboard-docked');
+    setCssVariables(overlay, {
+        '--comment-modal-translate-y': '0px'
+    });
+    setCssVariables(card, {
+        '--comment-modal-card-height': '',
+        '--comment-modal-card-max-height': ''
+    });
+    toggleCommentModalSheetAnimation(card, animate);
+    commentModalKeyboardState.docked = false;
+    commentModalKeyboardState.lastBottomInset = 0;
+}
+
+function resetCommentModalKeyboardDockState() {
+    clearCommentModalKeyboardTimers();
+    clearCommentModalSheetAnimationTimer();
+    if (commentModalKeyboardState.viewportRafId) {
+        cancelAnimationFrame(commentModalKeyboardState.viewportRafId);
+        commentModalKeyboardState.viewportRafId = null;
+    }
+    releaseCommentModalKeyboardDock(false);
+    commentModalKeyboardState.baseViewportHeight = 0;
+    commentModalKeyboardState.baseVisualHeight = 0;
+    commentModalKeyboardState.baseCardHeight = 0;
+}
+
+function syncCommentModalKeyboardDock() {
+    const { overlay, card } = getCommentModalElements();
+    if (!overlay || !card || !overlay.classList.contains('active')) {
+        resetCommentModalKeyboardDockState();
+        return;
+    }
+
+    if (!isCommentModalKeyboardDockEnabled()) {
+        releaseCommentModalKeyboardDock(false);
+        return;
+    }
+
+    const activeInput = getActiveCommentModalInput();
+    const metrics = getCommentModalViewportMetrics();
+    const bottomInset = metrics.bottomInset;
+    const shouldDock = Boolean(activeInput) && (commentModalKeyboardState.docked ? bottomInset > 8 : bottomInset > 24);
+    const nextInset = shouldDock ? bottomInset : 0;
+    const previousInset = commentModalKeyboardState.lastBottomInset;
+    const isInsetDroppingWhileFocused = commentModalKeyboardState.docked
+        && Boolean(activeInput)
+        && nextInset > 24
+        && nextInset + 24 < previousInset;
+
+    if (!commentModalKeyboardState.docked && shouldDock) {
+        commentModalKeyboardState.pendingInset = nextInset;
+        if (!commentModalKeyboardState.initialDockTimer) {
+            commentModalKeyboardState.initialDockTimer = setTimeout(() => {
+                commentModalKeyboardState.initialDockTimer = null;
+                if (!getActiveCommentModalInput()) return;
+                const liveMetrics = getCommentModalViewportMetrics();
+                if (liveMetrics.bottomInset <= 24) return;
+                applyCommentModalKeyboardDock(liveMetrics.bottomInset, true);
+            }, COMMENT_MODAL_KEYBOARD_SETTLE_MS);
+        }
+        return;
+    }
+
+    if (commentModalKeyboardState.initialDockTimer && (commentModalKeyboardState.docked || !shouldDock)) {
+        clearTimeout(commentModalKeyboardState.initialDockTimer);
+        commentModalKeyboardState.initialDockTimer = null;
+    }
+
+    if (commentModalKeyboardState.insetDropTimer && (!isInsetDroppingWhileFocused || nextInset >= previousInset)) {
+        clearTimeout(commentModalKeyboardState.insetDropTimer);
+        commentModalKeyboardState.insetDropTimer = null;
+        commentModalKeyboardState.pendingInset = 0;
+    }
+
+    if (isInsetDroppingWhileFocused) {
+        commentModalKeyboardState.pendingInset = nextInset;
+        if (!commentModalKeyboardState.insetDropTimer) {
+            commentModalKeyboardState.insetDropTimer = setTimeout(() => {
+                commentModalKeyboardState.insetDropTimer = null;
+                const settledInset = commentModalKeyboardState.pendingInset;
+                commentModalKeyboardState.pendingInset = 0;
+                if (settledInset > 24) {
+                    applyCommentModalKeyboardDock(settledInset, false);
+                }
+            }, COMMENT_MODAL_KEYBOARD_SETTLE_MS);
+        }
+        return;
+    }
+
+    if (commentModalKeyboardState.docked && activeInput && nextInset <= 24) {
+        return;
+    }
+
+    if (nextInset > 24) {
+        applyCommentModalKeyboardDock(nextInset, false);
+        return;
+    }
+
+    if (commentModalKeyboardState.docked) {
+        releaseCommentModalKeyboardDock(!activeInput && previousInset > 0);
+    }
+}
+
+function attachCommentModalKeyboardDock() {
+    if (!isCommentModalKeyboardDockEnabled()) return;
+
+    const { overlay } = getCommentModalElements();
+    const vv = window.visualViewport;
+    if (!overlay || !vv) return;
+
+    detachCommentModalKeyboardDock();
+    captureCommentModalKeyboardBase();
+    syncCommentModalKeyboardDock();
+
+    const inputs = Array.from(overlay.querySelectorAll('input, textarea, select'));
+    inputs.forEach((input) => bindCommentModalInputFocusStabilizer(input));
+
+    const handleViewportChange = () => {
+        if (commentModalKeyboardState.viewportRafId) return;
+        commentModalKeyboardState.viewportRafId = requestAnimationFrame(() => {
+            commentModalKeyboardState.viewportRafId = null;
+            syncCommentModalKeyboardDock();
+        });
+    };
+
+    vv.addEventListener('resize', handleViewportChange, { passive: true });
+    vv.addEventListener('scroll', handleViewportChange, { passive: true });
+    inputs.forEach((input) => {
+        input.addEventListener('focus', handleViewportChange);
+        input.addEventListener('blur', handleViewportChange);
+    });
+
+    commentModalKeyboardState.viewportCleanup = () => {
+        vv.removeEventListener('resize', handleViewportChange);
+        vv.removeEventListener('scroll', handleViewportChange);
+        inputs.forEach((input) => {
+            input.removeEventListener('focus', handleViewportChange);
+            input.removeEventListener('blur', handleViewportChange);
+        });
+        if (commentModalKeyboardState.viewportRafId) {
+            cancelAnimationFrame(commentModalKeyboardState.viewportRafId);
+            commentModalKeyboardState.viewportRafId = null;
+        }
+        commentModalKeyboardState.viewportCleanup = null;
+    };
+}
+
+function detachCommentModalKeyboardDock() {
+    if (typeof commentModalKeyboardState.viewportCleanup === 'function') {
+        commentModalKeyboardState.viewportCleanup();
+    }
+    clearCommentModalKeyboardTimers();
 }
 
 function isEnglishDocument() {
@@ -1621,6 +1970,8 @@ window.openCommentModal = async function (messageId, parentCommentId = null) {
 
     if (modal && messageIdInput) {
         clearCommentComposerEntryTimer();
+        detachCommentModalKeyboardDock();
+        resetCommentModalKeyboardDockState();
         form?.reset();
 
         // Set messageId
@@ -1635,24 +1986,25 @@ window.openCommentModal = async function (messageId, parentCommentId = null) {
 
         // Add body class
         document.body.classList.add('modal-active');
-        if (window.iOSScrollLock) window.iOSScrollLock.lock(modal);
+        if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal);
 
         // Add active class to trigger CSS animation
-        modal.classList.remove('active', 'comment-entrying');
+        modal.classList.remove('active', 'comment-entrying', 'keyboard-docked', 'ios-focus-lock', 'comment-modal-force-hidden');
+        setCssVariables(modal, {
+            '--comment-modal-translate-y': '0px'
+        });
         void modal.offsetWidth;
         modal.classList.add('active');
         modal.classList.add('overlay-visible');
         modal.classList.remove('overlay-hidden');
         playCommentComposerEntryAnimation();
+        attachCommentModalKeyboardDock();
 
         // Focus content input
         setTimeout(() => {
             if (contentInput) {
-                try {
-                    contentInput.focus({ preventScroll: true });
-                } catch (_) {
-                    contentInput.focus();
-                }
+                focusCommentModalInputWithoutScroll(contentInput);
+                setTimeout(() => syncCommentModalKeyboardDock(), 120);
             }
         }, 100);
     } else {
@@ -1673,12 +2025,25 @@ window.closeCommentModal = function (event) {
     }
 
     clearCommentComposerEntryTimer();
+    window.runSiteModalCloseChromeCleanup?.({
+        targets: [modal],
+        forceHiddenClass: 'comment-modal-force-hidden',
+        restoreDelayMs: 320
+    });
+    getActiveCommentModalInput()?.blur();
+    detachCommentModalKeyboardDock();
+    resetCommentModalKeyboardDockState();
 
     document.body.classList.remove('modal-active');
     if (window.iOSScrollLock) window.iOSScrollLock.unlock();
 
-    modal.classList.remove('active', 'comment-entrying', 'overlay-visible');
+    modal.classList.remove('active', 'comment-entrying', 'keyboard-docked', 'ios-focus-lock', 'overlay-visible');
     modal.classList.add('overlay-hidden');
+    modal.querySelector('.comment-composer-sheet')?.classList.remove('comment-sheet-animating');
+    setCssVariables(modal, {
+        '--comment-modal-translate-y': '0px',
+        '--comment-modal-overlay-height': ''
+    });
     syncCommentModalHitTargets(false);
 
     form?.reset();
@@ -1779,6 +2144,7 @@ function openImageModal(src) {
     // 移除旧的事件监听器 - 让image-zoom.js接管所有图片交互
     // image-zoom.js会处理缩放、拖动和点击重置
 
+    modal.classList.remove('image-modal-force-hidden');
     modal.classList.add('active');
     if (window.iOSScrollLock) window.iOSScrollLock.lockLight(modal); // Lock background scrolling (light mode to preserve transparency)
 
@@ -1787,6 +2153,11 @@ function openImageModal(src) {
 function closeImageModal() {
     const modal = document.getElementById('imageModal');
     if (modal) {
+        window.runSiteModalCloseChromeCleanup?.({
+            targets: [modal],
+            forceHiddenClass: 'image-modal-force-hidden',
+            restoreDelayMs: 320
+        });
         modal.classList.remove('active');
         if (window.iOSScrollLock) window.iOSScrollLock.unlock();
     }

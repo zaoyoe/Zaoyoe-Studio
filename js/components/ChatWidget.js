@@ -37,6 +37,7 @@ class ChatWidget {
         this.lastMessageTime = null; // Track last seen message
         this.unreadSessions = new Set(); // Track sessions with unread messages (admin mode)
         this.sessionMessagesCache = new Map(); // Cache admin conversation payloads for faster switching
+        this.sessionAvatarImageCache = new Map(); // Keep decoded avatar images stable across list refreshes
         this.userContextCache = new Map();
         this.userContextRecentActions = new Map();
         this.currentUserContext = null;
@@ -123,7 +124,16 @@ class ChatWidget {
         this._lastStableKeyboardInset = 0;
         this._transitionCleanupTimer = null;
         this._openingAnimationTimer = null;
+        this._openingAnimationFrame = null;
+        this._openingAnimationRunId = 0;
         this._closingAnimationTimer = null;
+        this._bootstrapContentSettleTimer = null;
+        this._bootstrapContentSettleFrame = null;
+        this._ignoreEmojiClicksUntil = 0;
+        this._userHistoryComposerHandoffHeld = false;
+        this._userComposerUnlockTimer = null;
+        this._userComposerSkeletonRemoveTimer = null;
+        this._userComposerInteractionUnlockTimer = null;
         this._pendingFirstDockTimer = null;
         this._pendingFirstDockParams = null;
         this._keyboardDockAnimatingUntil = 0;
@@ -136,6 +146,7 @@ class ChatWidget {
         this._statusBarShield = null;
         this._themeColorMeta = null;
         this._themeColorRestoreContent = '';
+        this._closeChromeCleanupStarted = false;
         this._fabHovering = false;
         this._fabAmbientPeekTimer = null;
         this._fabAmbientReturnTimer = null;
@@ -150,10 +161,32 @@ class ChatWidget {
         this.supportInlineState = { actionId: '', value: '', result: '', error: '', loading: false };
         this._supportPanelPrewarmHandle = null;
         this._supportRootPrewarmed = false;
+        this._lastRenderedUserHistoryMessages = [];
+        this._pendingOpenAfterInit = false;
+        this._chatWidgetReady = false;
         window.addEventListener('ops-alerts-config-updated', this.handleOpsAlertConfigUpdated);
 
         this._detectRefreshRate();
-        this.init();
+        this.ready = this.init()
+            .then(() => {
+                this._chatWidgetReady = true;
+                if (this._pendingOpenAfterInit) {
+                    this._pendingOpenAfterInit = false;
+                    try {
+                        void this.openChat().catch((error) => {
+                            console.error('[ChatWidget] Failed to replay queued open:', error);
+                        });
+                    } catch (error) {
+                        console.error('[ChatWidget] Failed to replay queued open:', error);
+                    }
+                }
+                return this;
+            })
+            .catch((error) => {
+                this._pendingOpenAfterInit = false;
+                console.error('[ChatWidget] Failed to initialize:', error);
+                throw error;
+            });
     }
 
     // i18n helper with fallback
@@ -376,6 +409,26 @@ class ChatWidget {
     getAdminSessionSnapshotStorageKey() {
         const site = window.SiteConfig?.site === 'intl' ? 'intl' : 'cn';
         return `zaoyoe_admin_support_sessions_snapshot_v1_${site}`;
+    }
+
+    getBootstrapShellModeStorageKey() {
+        return 'zaoyoe_chat_widget_last_shell_mode_v1';
+    }
+
+    persistBootstrapShellMode(mode = 'user') {
+        if (typeof window === 'undefined' || typeof window.localStorage === 'undefined') {
+            return;
+        }
+
+        const normalizedMode = mode === 'admin' ? 'admin' : 'user';
+        try {
+            window.localStorage.setItem(this.getBootstrapShellModeStorageKey(), JSON.stringify({
+                mode: normalizedMode,
+                savedAt: Date.now()
+            }));
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to persist bootstrap shell mode:', error);
+        }
     }
 
     getAdminSessionSnapshotMaxAgeMs() {
@@ -1537,13 +1590,13 @@ class ChatWidget {
                 <div class="chat-support-eyebrow">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '自助排查' : 'Self-serve')}</div>
                 <div class="chat-support-title">${this.escapeHtml(this.getSupportEntryLabel())}</div>
                 <p class="chat-support-body">${this.escapeHtml(this.resolveSupportText(context.intro, '优先帮你处理兑换、发放和任务状态问题。'))}</p>
-                <div class="chat-support-section">
+                <div class="chat-support-section chat-support-section--shortcuts">
                     <div class="chat-support-section-title">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '推荐快捷入口' : 'Recommended')}</div>
-                    <div class="chat-support-grid">${shortcutButtons}</div>
+                    <div class="chat-support-grid chat-support-grid--shortcuts">${shortcutButtons}</div>
                 </div>
-                <div class="chat-support-section">
+                <div class="chat-support-section chat-support-section--menus">
                     <div class="chat-support-section-title">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '全部问题分类' : 'Categories')}</div>
-                    <div class="chat-support-grid">${menuButtons}</div>
+                    <div class="chat-support-grid chat-support-grid--menus">${menuButtons}</div>
                 </div>
             </div>
         `;
@@ -1570,7 +1623,7 @@ class ChatWidget {
                 <div class="chat-support-title">${this.escapeHtml(this.resolveSupportText(menu.title, menuId))}</div>
                 <p class="chat-support-body">${this.escapeHtml(this.resolveSupportText(menu.description, ''))}</p>
                 <div class="chat-support-grid">${this.buildSupportMenuButtons(menu.items || [])}</div>
-                <div class="chat-support-footer">
+                <div class="chat-support-footer chat-support-footer--back">
                     <button type="button" class="chat-support-link-btn" data-support-root="1">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '返回主菜单' : 'Back')}</button>
                 </div>
             </div>
@@ -1610,7 +1663,7 @@ class ChatWidget {
                 ${bodyText ? `<p class="chat-support-body">${this.escapeHtml(bodyText)}</p>` : ''}
                 ${checklist}
                 ${maybeLink}
-                <div class="chat-support-footer">
+                <div class="chat-support-footer chat-support-footer--back">
                     <button type="button" class="chat-support-link-btn" data-support-root="1">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '返回主菜单' : 'Back')}</button>
                 </div>
             </div>
@@ -1659,7 +1712,7 @@ class ChatWidget {
                 <p class="chat-support-body">${this.escapeHtml(this.getCurrentLanguage() === 'zh'
                     ? '这个操作会读取你的订单、兑换码或任务状态，所以需要先登录当前账号。'
                     : 'This action reads your orders, codes, or tasks, so you need to sign in first.')}</p>
-                <div class="chat-support-footer">
+                <div class="chat-support-footer chat-support-footer--back">
                     <button type="button" class="chat-support-link-btn" data-support-root="1">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '返回主菜单' : 'Back')}</button>
                 </div>
             </div>
@@ -1726,19 +1779,68 @@ class ChatWidget {
 
     async callSupportApi(action, input) {
         const headers = await this.getSupportAuthHeaders();
-        const response = await fetch('/api/support', {
-            method: 'POST',
-            headers,
-            body: JSON.stringify({
-                action,
-                input
-            })
-        });
-        const payload = await response.json().catch(() => ({}));
+        let response = null;
+        let payload = {};
+
+        try {
+            response = await fetch('/api/support', {
+                method: 'POST',
+                headers,
+                body: JSON.stringify({
+                    action,
+                    input
+                })
+            });
+            payload = await response.json().catch(() => ({}));
+        } catch (error) {
+            if (action === 'code_status') {
+                return this.callSupportCodeStatusRpcFallback(input, error);
+            }
+            throw error;
+        }
+
         if (!response.ok || payload.success === false) {
+            if (action === 'code_status' && this.shouldFallbackSupportCodeStatusRequest(response, payload)) {
+                return this.callSupportCodeStatusRpcFallback(input, new Error(payload.message || '支持请求失败'));
+            }
             throw new Error(payload.message || '支持请求失败');
         }
         return payload.payload || null;
+    }
+
+    shouldFallbackSupportCodeStatusRequest(response, payload = {}) {
+        const status = Number(response?.status || 0);
+        const code = String(payload?.code || '').trim();
+        if ([404, 405, 500, 501, 502, 503, 504].includes(status)) {
+            return true;
+        }
+
+        return [
+            'support_not_configured',
+            'auth_service_unavailable',
+            'support_request_failed',
+            'code_status_failed'
+        ].includes(code);
+    }
+
+    async callSupportCodeStatusRpcFallback(input, cause = null) {
+        const codeOrOrder = String(input || '').trim().toUpperCase();
+        if (!codeOrOrder) {
+            throw new Error(this.getCurrentLanguage() === 'zh' ? '请输入兑换码或外部订单号' : 'Enter a code or external order number');
+        }
+
+        if (!this.supabase?.rpc) {
+            throw cause || new Error(this.getCurrentLanguage() === 'zh' ? '支持请求失败' : 'Support request failed');
+        }
+
+        const { data, error } = await this.supabase.rpc('fn_check_code_status', {
+            p_code: codeOrOrder
+        });
+        if (error) {
+            throw new Error(error.message || (this.getCurrentLanguage() === 'zh' ? '兑换码状态查询失败' : 'Code status lookup failed'));
+        }
+
+        return data || null;
     }
 
     async callVerifyStatus(taskId) {
@@ -1793,6 +1895,8 @@ class ChatWidget {
                 payload.points ? `${this.getCurrentLanguage() === 'zh' ? '积分' : 'Points'}：${payload.points}` : '',
                 payload.used_by ? `${this.getCurrentLanguage() === 'zh' ? '使用者' : 'Used By'}：${payload.used_by}` : '',
                 payload.used_at ? `${this.getCurrentLanguage() === 'zh' ? '使用时间' : 'Used At'}：${payload.used_at}` : '',
+                payload.revoke_reason ? `${this.getCurrentLanguage() === 'zh' ? '撤销理由' : 'Revocation Reason'}：${payload.revoke_reason}` : '',
+                payload.revoked_at ? `${this.getCurrentLanguage() === 'zh' ? '撤销时间' : 'Revoked At'}：${payload.revoked_at}` : '',
                 payload.expires_at ? `${this.getCurrentLanguage() === 'zh' ? '过期时间' : 'Expires At'}：${payload.expires_at}` : '',
                 payload.message && !valid ? `${this.getCurrentLanguage() === 'zh' ? '说明' : 'Note'}：${payload.message}` : ''
             ].filter(Boolean);
@@ -2074,7 +2178,34 @@ class ChatWidget {
             document.removeEventListener('click', this._onEmojiDismissClick);
         }
 
+        const shouldSuppressEmojiIntent = () => (
+            this.chatWindow?.classList.contains('chat-window--bootstrap-interaction-locked')
+            || Date.now() < (this._ignoreEmojiClicksUntil || 0)
+        );
+        const suppressEmojiIntent = (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            if (typeof event.stopImmediatePropagation === 'function') {
+                event.stopImmediatePropagation();
+            }
+            this._closeEmojiPicker();
+            if (typeof emojiBtn.blur === 'function') {
+                emojiBtn.blur();
+            }
+        };
+
+        ['pointerdown', 'touchstart', 'mousedown'].forEach((eventName) => {
+            emojiBtn.addEventListener(eventName, (event) => {
+                if (!shouldSuppressEmojiIntent()) return;
+                suppressEmojiIntent(event);
+            }, { capture: true });
+        });
+
         emojiBtn.addEventListener('click', (e) => {
+            if (shouldSuppressEmojiIntent()) {
+                suppressEmojiIntent(e);
+                return;
+            }
             e.preventDefault();
             e.stopPropagation();
             this.emojiPicker.classList.toggle('active');
@@ -2280,7 +2411,7 @@ class ChatWidget {
         this._toggleElementClass(this.chatWindow, 'chat-window--desktop-edge-safe', useEdgeSafeInset);
     }
 
-    _setChatWindowKeyboardAnimating(enabled, durationMs = 120) {
+    _setChatWindowKeyboardAnimating(enabled, durationMs = 250) {
         if (!this.chatWindow) return;
         this._toggleElementClass(this.chatWindow, 'chat-window--keyboard-animating', enabled);
         this._setRuntimeStyle(
@@ -2338,20 +2469,48 @@ class ChatWidget {
         return meta;
     }
 
+    _getChatThemeChromeColor() {
+        const meta = document.querySelector('meta[name="theme-color"]');
+        const currentContent = meta?.getAttribute('content');
+        if (currentContent) return currentContent;
+        return document.documentElement?.getAttribute('data-theme') === 'dark' ? '#0a0d14' : '#ffffff';
+    }
+
     _lockThemeColor() {
         if (!(this._isIOSMobile() && this._isNarrowViewport())) return;
+        const themeColor = this._getChatThemeChromeColor();
+        if (typeof window.lockSiteModalThemeColor === 'function'
+            && window.lockSiteModalThemeColor({
+                themeColor,
+                restoreAttribute: 'data-chat-theme-restore',
+                restoreDelayMs: 320
+            })) {
+            this._themeColorMeta = document.querySelector('meta[name="theme-color"]');
+            return;
+        }
+
         const meta = this._ensureThemeColorMeta();
         if (!meta) return;
         if (!meta.hasAttribute('data-chat-theme-restore')) {
             meta.setAttribute('data-chat-theme-restore', meta.getAttribute('content') || '');
         }
         this._themeColorRestoreContent = meta.getAttribute('data-chat-theme-restore') || '';
-        meta.setAttribute('content', '#000000');
+        meta.setAttribute('content', themeColor);
     }
 
     _unlockThemeColor() {
         const meta = this._themeColorMeta || document.querySelector('meta[name="theme-color"]');
         if (!meta) return;
+
+        if (!meta.hasAttribute('data-chat-theme-created')
+            && typeof window.clearSiteModalThemeColor === 'function'
+            && window.clearSiteModalThemeColor({
+                restoreAttribute: 'data-chat-theme-restore',
+                restoreDelayMs: 320
+            })) {
+            this._themeColorRestoreContent = '';
+            return;
+        }
 
         // Clean up totally if the chat widget created the tag
         if (meta.hasAttribute('data-chat-theme-created')) {
@@ -2396,18 +2555,30 @@ class ChatWidget {
     }
 
     _hideStatusBarShield() {
-        if (!this._statusBarShield) return;
-        this._statusBarShield.classList.remove('is-visible');
-        setTimeout(() => {
-            if (!this._statusBarShield || this.isOpen) return;
+        if (this._statusBarShield) {
             this._statusBarShield.classList.remove('is-visible');
-        }, 90);
+            setTimeout(() => {
+                if (!this._statusBarShield || this.isOpen) return;
+                this._statusBarShield.classList.remove('is-visible');
+            }, 90);
+        }
         this._unlockThemeColor();
+    }
+
+    _runChatCloseChromeCleanup() {
+        if (this._closeChromeCleanupStarted) return;
+        this._closeChromeCleanupStarted = true;
+        this._hideStatusBarShield();
     }
 
     _setFabHidden(hidden) {
         if (!this.fab) return;
         this.fab.classList.toggle('chat-widget-fab--hidden', hidden);
+        if (hidden) {
+            this.fab.setAttribute('aria-hidden', 'true');
+        } else {
+            this.fab.removeAttribute('aria-hidden');
+        }
     }
 
     _setFabDisabled(disabled) {
@@ -2428,6 +2599,27 @@ class ChatWidget {
     _setChatWindowTransitionless(enabled) {
         if (!this.chatWindow) return;
         this.chatWindow.classList.toggle('chat-window--transitionless', enabled);
+    }
+
+    _showChatOverlay() {
+        if (!this.overlay) return;
+
+        const alreadyActive = this.overlay.classList.contains('chat-overlay--active')
+            || this.overlay.classList.contains('is-active');
+
+        this.overlay.classList.remove('closing');
+        this.overlay.classList.add('visible');
+
+        if (alreadyActive) {
+            this.overlay.classList.add('chat-overlay--active');
+            return;
+        }
+
+        this.overlay.classList.remove('chat-overlay--active');
+        requestAnimationFrame(() => {
+            if (!this.isOpen || !this.overlay?.classList.contains('visible')) return;
+            this.overlay.classList.add('chat-overlay--active');
+        });
     }
 
     _setSessionItemHidden(item, hidden) {
@@ -2573,8 +2765,6 @@ class ChatWidget {
                     }
                 }
             });
-            // User mode specific logic
-            this.bindUserEvents(); // Split bindEvents
             this.subscribeToMessages();
             this.loadHistory();
             this.checkAdminStatus();
@@ -2641,14 +2831,301 @@ class ChatWidget {
         }
     }
 
+    claimBootstrapShell(mode = 'user') {
+        const shell = document.querySelector('.chat-window[data-chat-widget-bootstrap-shell="1"]');
+        if (!shell) {
+            return null;
+        }
+
+        const normalizedMode = mode === 'admin' ? 'admin' : 'user';
+        shell.dataset.chatWidgetBootstrapAdopted = '1';
+        shell.dataset.chatWidgetBootstrapAdoptedMode = normalizedMode;
+        shell.removeAttribute('role');
+        shell.removeAttribute('aria-live');
+        shell.removeAttribute('aria-label');
+        shell.classList.add(
+            'chat-window',
+            'chat-window--bootstrap-adopting-content',
+            'chat-window--bootstrap-interaction-locked'
+        );
+        shell.classList.remove('chat-window--bootstrap-content-ready');
+        shell.classList.toggle('admin-mode-layout', normalizedMode === 'admin');
+        shell.classList.toggle('admin-mode-layout--narrow', normalizedMode === 'admin');
+        shell.classList.toggle('chat-widget-bootstrap-shell--admin', normalizedMode === 'admin');
+        shell.classList.toggle('chat-widget-bootstrap-shell--user', normalizedMode !== 'admin');
+        return shell;
+    }
+
+    claimBootstrapOverlay(mode = 'user') {
+        const overlay = document.querySelector('.chat-widget-bootstrap-overlay');
+        if (!overlay) {
+            return null;
+        }
+
+        const normalizedMode = mode === 'admin' ? 'admin' : 'user';
+        overlay.dataset.chatWidgetBootstrapAdopted = '1';
+        overlay.removeAttribute('aria-hidden');
+        overlay.classList.add('chat-overlay');
+        overlay.classList.toggle('chat-overlay--user', normalizedMode !== 'admin');
+        overlay.classList.toggle('chat-overlay--admin', normalizedMode === 'admin');
+        return overlay;
+    }
+
+    isBootstrapShellAdopted() {
+        return this.chatWindow?.dataset?.chatWidgetBootstrapAdopted === '1'
+            && this.chatWindow?.hasAttribute('data-chat-widget-bootstrap-shell');
+    }
+
+    getBootstrapContentSnapshotMarkup(shell = this.chatWindow) {
+        if (shell?.dataset?.chatWidgetBootstrapAdopted !== '1') {
+            return '';
+        }
+
+        const snapshotHtml = String(shell.innerHTML || '').trim();
+        if (!snapshotHtml) {
+            return '';
+        }
+
+        return `<div class="chat-bootstrap-content-snapshot" aria-hidden="true">${snapshotHtml}</div>`;
+    }
+
+    removeBootstrapContentSnapshot() {
+        this.chatWindow?.querySelectorAll('.chat-bootstrap-content-snapshot').forEach((snapshot) => {
+            snapshot.remove();
+        });
+    }
+
+    getChatLoadingDotsMarkup(label = '', extraClass = '') {
+        const loadingLabel = this.escapeHtml(String(label || this.t('chat.loading', '加载中...')));
+        const normalizedExtraClass = String(extraClass || '')
+            .split(/\s+/)
+            .filter((className) => /^[A-Za-z0-9_-]+$/.test(className))
+            .join(' ');
+        const stateClass = `chat-loading-state${normalizedExtraClass ? ` ${normalizedExtraClass}` : ''}`;
+        return `
+            <div class="${stateClass}" role="status" aria-label="${loadingLabel}">
+                <span class="chat-loading-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+            </div>
+        `;
+    }
+
+    getUserInitialMessagesMarkup({ loading = false } = {}) {
+        if (loading) {
+            return this.getChatLoadingDotsMarkup(
+                this.t('chat.loading', '加载中...'),
+                'chat-loading-state--user-handoff'
+            );
+        }
+
+        return `
+            <!-- Welcome Message -->
+            <div class="message admin">
+                ${this.t('chat.welcomeMessage', '您好！有什么可以帮您的吗？')}
+            </div>
+        `;
+    }
+
+    clearUserComposerHandoffTimers() {
+        if (this._userComposerUnlockTimer) {
+            clearTimeout(this._userComposerUnlockTimer);
+            this._userComposerUnlockTimer = null;
+        }
+        if (this._userComposerSkeletonRemoveTimer) {
+            clearTimeout(this._userComposerSkeletonRemoveTimer);
+            this._userComposerSkeletonRemoveTimer = null;
+        }
+        if (this._userComposerInteractionUnlockTimer) {
+            clearTimeout(this._userComposerInteractionUnlockTimer);
+            this._userComposerInteractionUnlockTimer = null;
+        }
+    }
+
+    holdUserHistoryComposerHandoff() {
+        if (this.isAdmin || !this.chatWindow) return;
+
+        this.clearUserComposerHandoffTimers();
+        this._userHistoryComposerHandoffHeld = true;
+        this._closeEmojiPicker();
+
+        this.chatWindow.querySelectorAll('.chat-input-handoff-skeleton').forEach((legacySkeleton) => {
+            legacySkeleton.remove();
+        });
+
+        this.chatWindow.classList.add('chat-window--bootstrap-interaction-locked');
+        this._ignoreEmojiClicksUntil = Date.now() + 760;
+    }
+
+    finishUserComposerHandoffRelease(releaseDelay = 0) {
+        if (!this.chatWindow) return;
+
+        if (releaseDelay > 0) {
+            this._ignoreEmojiClicksUntil = Date.now() + releaseDelay + 260;
+            if (this._userComposerInteractionUnlockTimer) {
+                clearTimeout(this._userComposerInteractionUnlockTimer);
+            }
+            this._userComposerInteractionUnlockTimer = setTimeout(() => {
+                this._userComposerInteractionUnlockTimer = null;
+                if (this._userHistoryComposerHandoffHeld) return;
+                this.chatWindow?.classList.remove('chat-window--bootstrap-interaction-locked');
+            }, releaseDelay);
+            return;
+        }
+
+        if (!this._userHistoryComposerHandoffHeld) {
+            this.chatWindow.classList.remove('chat-window--bootstrap-interaction-locked');
+        }
+        this._ignoreEmojiClicksUntil = Date.now() + 220;
+    }
+
+    releaseUserHistoryComposerHandoff() {
+        if (this.isAdmin || !this.chatWindow) return;
+        if (!this._userHistoryComposerHandoffHeld) return;
+
+        this._userHistoryComposerHandoffHeld = false;
+        const releaseDelay = this.releaseUserBootstrapComposer();
+        this.finishUserComposerHandoffRelease(releaseDelay);
+    }
+
+    finishUserHistoryLoadHandoff() {
+        if (this.isBootstrapShellAdopted()) {
+            this._userHistoryComposerHandoffHeld = false;
+            if (!this.isBootstrapContentSettleInFlight()) {
+                this.scheduleBootstrapAdoptedContentSettle();
+            }
+            return;
+        }
+
+        this.releaseUserHistoryComposerHandoff();
+    }
+
+    isBootstrapContentSettleInFlight() {
+        return Boolean(
+            this._bootstrapContentSettleFrame
+            || this._bootstrapContentSettleTimer
+            || this.chatWindow?.classList.contains('chat-window--bootstrap-content-ready')
+        );
+    }
+
+    scheduleBootstrapAdoptedContentSettle() {
+        if (!this.isBootstrapShellAdopted()) {
+            return;
+        }
+
+        if (this._bootstrapContentSettleTimer) {
+            clearTimeout(this._bootstrapContentSettleTimer);
+            this._bootstrapContentSettleTimer = null;
+        }
+        if (this._bootstrapContentSettleFrame) {
+            cancelAnimationFrame(this._bootstrapContentSettleFrame);
+            this._bootstrapContentSettleFrame = null;
+        }
+
+        this.chatWindow.classList.add(
+            'chat-window--bootstrap-adopting-content',
+            'chat-window--bootstrap-interaction-locked'
+        );
+        this.chatWindow.classList.remove('chat-window--bootstrap-content-ready');
+        this._closeEmojiPicker();
+        this._ignoreEmojiClicksUntil = Date.now() + 760;
+
+        const contentSettleDelayMs = 420;
+        this._bootstrapContentSettleFrame = requestAnimationFrame(() => {
+            this._bootstrapContentSettleFrame = null;
+            if (!this.chatWindow) return;
+            this.chatWindow.classList.add('chat-window--bootstrap-content-ready');
+            this._bootstrapContentSettleTimer = setTimeout(() => {
+                this._bootstrapContentSettleTimer = null;
+                this.chatWindow?.classList.remove(
+                    'chat-window--bootstrap-adopting-content',
+                    'chat-window--bootstrap-content-ready'
+                );
+                this.removeBootstrapContentSnapshot();
+                if (this._userHistoryComposerHandoffHeld) {
+                    this._ignoreEmojiClicksUntil = Date.now() + 760;
+                    return;
+                }
+                const composerReleaseDelay = this.releaseUserBootstrapComposer();
+                this.finishUserComposerHandoffRelease(composerReleaseDelay);
+                if (this.isBootstrapShellAdopted()) {
+                    this.completeBootstrapShellAdoption();
+                }
+            }, contentSettleDelayMs);
+        });
+    }
+
+    releaseUserBootstrapComposer() {
+        if (this.isAdmin || !this.chatWindow) return 0;
+
+        const inputArea = this.chatWindow.querySelector('.chat-input-area');
+        const legacySkeleton = this.chatWindow.querySelector('.chat-input-handoff-skeleton');
+
+        this.clearUserComposerHandoffTimers();
+        this._closeEmojiPicker();
+
+        if (inputArea) {
+            inputArea.removeAttribute('inert');
+            inputArea.removeAttribute('aria-hidden');
+        }
+
+        if (legacySkeleton) {
+            legacySkeleton.remove();
+        }
+
+        return 0;
+    }
+
+    completeBootstrapShellAdoption() {
+        if (this.chatWindow?.dataset?.chatWidgetBootstrapAdopted === '1') {
+            this.chatWindow.classList.remove(
+                'chat-widget-bootstrap-shell',
+                'chat-widget-bootstrap-shell--admin',
+                'chat-widget-bootstrap-shell--user',
+                'is-visible',
+                'is-active',
+                'is-handoff'
+            );
+            this.chatWindow.classList.toggle('admin-mode-layout', Boolean(this.isAdmin));
+            this.chatWindow.classList.toggle('admin-mode-layout--narrow', Boolean(this.isAdmin));
+            this.chatWindow.removeAttribute('data-chat-widget-bootstrap-shell');
+            this.chatWindow.removeAttribute('data-chat-widget-bootstrap-adopted');
+            this.chatWindow.removeAttribute('data-chat-widget-bootstrap-adopted-mode');
+            delete this.chatWindow.dataset.chatWidgetBootstrapMode;
+        }
+
+        if (this.overlay?.dataset?.chatWidgetBootstrapAdopted === '1') {
+            this.overlay.classList.add('chat-overlay', 'visible', 'chat-overlay--active');
+            this.overlay.classList.remove(
+                'chat-widget-bootstrap-overlay',
+                'chat-widget-bootstrap-overlay--admin',
+                'chat-widget-bootstrap-overlay--user',
+                'is-visible',
+                'is-active',
+                'is-handoff'
+            );
+            this.overlay.removeAttribute('data-chat-widget-bootstrap-adopted');
+        }
+    }
+
     renderFAB() {
         const existingPlaceholder = document.querySelector('.chat-widget-fab[data-chat-widget-placeholder="1"]');
         if (existingPlaceholder) {
+            const wasSuppressed = existingPlaceholder.dataset.chatWidgetPlaceholderSuppressed === '1';
+            const wasOpening = existingPlaceholder.dataset.chatWidgetPlaceholderOpening === '1';
+            const shouldKeepHiddenForBootstrap = wasSuppressed || wasOpening;
             const reusedFab = existingPlaceholder.cloneNode(true);
             reusedFab.removeAttribute('data-chat-widget-placeholder');
             reusedFab.removeAttribute('data-chat-widget-loading');
+            reusedFab.removeAttribute('data-chat-widget-placeholder-opening');
+            reusedFab.removeAttribute('data-chat-widget-placeholder-suppressed');
             reusedFab.removeAttribute('aria-busy');
-            reusedFab.classList.remove('chat-widget-fab--disabled');
+            reusedFab.removeAttribute('aria-hidden');
+            reusedFab.classList.toggle('chat-widget-fab--hidden', shouldKeepHiddenForBootstrap);
+            reusedFab.classList.toggle('chat-widget-fab--disabled', shouldKeepHiddenForBootstrap);
+            if (shouldKeepHiddenForBootstrap) {
+                reusedFab.setAttribute('aria-hidden', 'true');
+            } else {
+                reusedFab.removeAttribute('aria-hidden');
+            }
             reusedFab.setAttribute('aria-label', this.t('chat.openChat', '打开支持助手'));
             existingPlaceholder.replaceWith(reusedFab);
             this.fab = reusedFab;
@@ -2705,11 +3182,9 @@ class ChatWidget {
         }
 
         this.fab.addEventListener('click', () => {
-            this.toggleChat();
-            // Clear unread count when opening chat
-            if (this.isOpen) {
-                this.clearUnread();
-            }
+            this.openChat().then(() => this.clearUnread()).catch((error) => {
+                console.error('[ChatWidget] Failed to open chat:', error);
+            });
         });
 
         this.fab.addEventListener('keydown', (event) => {
@@ -2718,10 +3193,9 @@ class ChatWidget {
                 return;
             }
             event.preventDefault();
-            this.toggleChat();
-            if (this.isOpen) {
-                this.clearUnread();
-            }
+            this.openChat().then(() => this.clearUnread()).catch((error) => {
+                console.error('[ChatWidget] Failed to open chat:', error);
+            });
         });
     }
 
@@ -2930,18 +3404,28 @@ class ChatWidget {
     renderAdminMode() {
         // Two-column layout: Left = Session List, Right = Chat Area
         this.isAdmin = true;
+        this.persistBootstrapShellMode('admin');
         this.currentSessionId = null;
         this.currentSessionKey = null;
         this.currentSessionIds = [];
         this.sessions = [];
 
-        this.chatWindow = document.createElement('div');
-        this.chatWindow.className = 'chat-window admin-mode-layout';
+        const claimedShell = this.claimBootstrapShell('admin');
+        this.chatWindow = claimedShell || document.createElement('div');
+        if (claimedShell) {
+            this.chatWindow.classList.add('chat-window', 'admin-mode-layout');
+        } else {
+            this.chatWindow.className = 'chat-window admin-mode-layout';
+        }
+        const bootstrapContentSnapshot = this.getBootstrapContentSnapshotMarkup(this.chatWindow);
 
         // Create overlay for clicking outside to close
-        this.overlay = document.createElement('div');
-        this.overlay.className = 'chat-overlay';
-        document.body.appendChild(this.overlay);
+        const claimedOverlay = this.claimBootstrapOverlay('admin');
+        this.overlay = claimedOverlay || document.createElement('div');
+        if (!claimedOverlay) {
+            this.overlay.className = 'chat-overlay';
+            document.body.appendChild(this.overlay);
+        }
 
         this.chatWindow.innerHTML = `
             <!-- Left Sidebar: Session List -->
@@ -3009,8 +3493,12 @@ class ChatWidget {
                     ${this.emojis.map(e => `<div class="emoji-item">${e}</div>`).join('')}
                 </div>
             </div>
+            ${bootstrapContentSnapshot}
         `;
-        document.body.appendChild(this.chatWindow);
+        if (!claimedShell) {
+            document.body.appendChild(this.chatWindow);
+        }
+        this.scheduleBootstrapAdoptedContentSettle();
 
         this.messagesContainer = this.chatWindow.querySelector('#chatMessages');
         this.input = this.chatWindow.querySelector('#chatInput');
@@ -3228,6 +3716,18 @@ class ChatWidget {
 
             .chat-window.admin-mode-layout.chat-window--desktop-edge-safe.active {
                 transform: translateY(-50%) scale(1) !important;
+            }
+
+            .chat-window.admin-mode-layout.keyboard-docked,
+            .chat-window.admin-mode-layout.keyboard-docked.active,
+            .chat-window.admin-mode-layout.chat-window--keyboard-height-locked.keyboard-docked,
+            .chat-window.admin-mode-layout.chat-window--keyboard-height-locked.keyboard-docked.active {
+                top: 50% !important;
+                left: 50% !important;
+                right: auto !important;
+                bottom: auto !important;
+                transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(1) !important;
+                transform-origin: center center !important;
             }
             
             /* Left Sidebar */
@@ -4833,16 +5333,28 @@ class ChatWidget {
                 left: 0;
                 width: 100%;
                 height: 100%;
-                background: var(--chat-overlay-bg, rgba(7, 9, 12, 0.28));
+                background: rgba(7, 9, 12, 0);
                 z-index: 9998;
-                backdrop-filter: var(--chat-overlay-filter, blur(14px) saturate(108%));
-                -webkit-backdrop-filter: var(--chat-overlay-filter, blur(14px) saturate(108%));
+                backdrop-filter: blur(0) saturate(100%);
+                -webkit-backdrop-filter: blur(0) saturate(100%);
                 transform: translateZ(0);
                 -webkit-transform: translateZ(0);
                 will-change: opacity, backdrop-filter;
+                opacity: 0;
+                transition:
+                    opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
+                    background-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+                    backdrop-filter 260ms cubic-bezier(0.22, 1, 0.36, 1),
+                    -webkit-backdrop-filter 260ms cubic-bezier(0.22, 1, 0.36, 1);
             }
             .chat-overlay.visible {
                 display: block;
+            }
+            .chat-overlay.visible.chat-overlay--active {
+                background: var(--chat-overlay-bg, rgba(7, 9, 12, 0.28));
+                backdrop-filter: var(--chat-overlay-filter, blur(14px) saturate(108%));
+                -webkit-backdrop-filter: var(--chat-overlay-filter, blur(14px) saturate(108%));
+                opacity: 1;
             }
             
             /* Shake hint animation for input */
@@ -6157,7 +6669,7 @@ class ChatWidget {
             /* Mobile/Narrow: Slide Navigation Pattern */
             @media (max-width: 700px) {
                 .chat-window.admin-mode-layout {
-                    width: min(460px, calc(100vw - 16px)) !important;
+                    width: min(460px, max(97vw, calc(100vw - 16px))) !important;
                     max-width: 97vw;
                     height: min(640px, 84vh) !important;
                     max-height: 82vh;
@@ -6574,13 +7086,20 @@ class ChatWidget {
             /* Very narrow screens */
             @media (max-width: 480px) {
                 .chat-window.admin-mode-layout {
-                    width: 97vw;
-                    height: 78vh;
-                    border-radius: 16px;
+                    width: 97vw !important;
+                    max-width: 97vw !important;
+                    height: 78vh !important;
+                    max-height: 78vh !important;
+                    border-radius: 16px !important;
                 }
             }
             
             /* Loading Spinner for message loading */
+            .loading-overlay {
+                opacity: 1;
+                transition: opacity 160ms cubic-bezier(0.22, 1, 0.36, 1);
+            }
+
             .loading-overlay .loading-spinner {
                 width: 32px;
                 height: 32px;
@@ -6589,9 +7108,72 @@ class ChatWidget {
                 border-radius: 50%;
                 animation: spin 0.8s linear infinite;
             }
+
+            .loading-overlay.is-exiting {
+                opacity: 0 !important;
+                pointer-events: none !important;
+                transition: opacity 160ms cubic-bezier(0.22, 1, 0.36, 1) !important;
+            }
+
+            .loading-overlay--user-dots {
+                background: var(--chat-panel-bg, rgba(248, 250, 252, 0.94)) !important;
+                color: var(--chat-accent-blue, #6b94c6) !important;
+                backdrop-filter: none !important;
+                -webkit-backdrop-filter: none !important;
+            }
+
+            .chat-loading-state {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-width: 72px;
+                min-height: 44px;
+            }
+
+            .chat-loading-state--user-handoff {
+                margin: auto;
+                color: var(--chat-accent-blue, #6b94c6);
+            }
+
+            .chat-loading-dots {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                flex-shrink: 0;
+            }
+
+            .chat-loading-dots span {
+                width: 9px;
+                height: 9px;
+                border-radius: 999px;
+                background: currentColor;
+                opacity: 0.24;
+                animation: chat-widget-loading-dots 1.05s ease-in-out infinite;
+            }
+
+            .chat-loading-dots span:nth-child(2) {
+                animation-delay: 0.16s;
+            }
+
+            .chat-loading-dots span:nth-child(3) {
+                animation-delay: 0.32s;
+            }
             
             @keyframes spin {
                 to { transform: rotate(360deg); }
+            }
+
+            @keyframes chat-widget-loading-dots {
+                0%, 80%, 100% {
+                    transform: translateY(0);
+                    opacity: 0.24;
+                }
+
+                40% {
+                    transform: translateY(-3px);
+                    opacity: 0.96;
+                }
             }
         `;
         document.head.appendChild(style);
@@ -8943,10 +9525,21 @@ class ChatWidget {
     renderAdminSessionList() {
         if (!this.sessionList) return;
 
-        this.sessionList.innerHTML = '';
+        const existingSessionItems = new Map(
+            Array.from(this.sessionList.querySelectorAll(':scope > .session-item'))
+                .map((item) => [item.dataset.sessionId || '', item])
+                .filter(([sessionId]) => sessionId)
+        );
+        const renderSessionState = (message) => {
+            const stateEl = document.createElement('div');
+            stateEl.className = 'session-loading';
+            stateEl.textContent = message;
+            this.sessionList.replaceChildren(stateEl);
+        };
+
         this.renderAdminSessionQueueControls();
         if (!Array.isArray(this.sessions) || this.sessions.length === 0) {
-            this.sessionList.innerHTML = `<div class="session-loading">${this.t('chat.noSessions', '暂无会话')}</div>`;
+            renderSessionState(this.t('chat.noSessions', '暂无会话'));
             return;
         }
 
@@ -8955,12 +9548,14 @@ class ChatWidget {
             .filter((session) => this.matchesAdminSessionQueueFilter(session));
 
         if (!visibleSessions.length) {
-            this.sessionList.innerHTML = `<div class="session-loading">${this.getAdminSessionFilterEmptyMessage()}</div>`;
+            renderSessionState(this.getAdminSessionFilterEmptyMessage());
             return;
         }
 
+        const fragment = document.createDocumentFragment();
         visibleSessions.forEach((session) => {
-            const item = document.createElement('div');
+            const item = existingSessionItems.get(session.id) || document.createElement('div');
+            item.replaceChildren();
             const isOpsSession = this.isOpsAlertSession(session);
             item.className = `session-item${isOpsSession ? ' session-item--ops' : ''}`;
             item.dataset.sessionId = session.id;
@@ -9060,9 +9655,14 @@ class ChatWidget {
                 item.appendChild(unreadDot);
             }
 
-            item.addEventListener('click', () => this.selectSession(session.id, session));
-            this.sessionList.appendChild(item);
+            if (item.__chatWidgetSessionClickHandler) {
+                item.removeEventListener('click', item.__chatWidgetSessionClickHandler);
+            }
+            item.__chatWidgetSessionClickHandler = () => this.selectSession(session.id, session);
+            item.addEventListener('click', item.__chatWidgetSessionClickHandler);
+            fragment.appendChild(item);
         });
+        this.sessionList.replaceChildren(fragment);
 
         if (this.adminSessionSearchQuery) {
             void this.searchSessions(this.adminSessionSearchQuery);
@@ -12945,6 +13545,58 @@ class ChatWidget {
         return String(seed).trim().charAt(0).toUpperCase() || 'U';
     }
 
+    getSessionAvatarCacheKey(session = {}) {
+        const userId = String(session?.userId || '').trim();
+        if (userId) return `user:${userId}`;
+
+        const email = String(session?.email || '').trim().toLowerCase();
+        if (email) return `email:${email}`;
+
+        const sessionId = String(session?.id || '').trim();
+        if (sessionId) return `session:${sessionId}`;
+
+        const avatarUrl = String(session?.avatarUrl || '').trim();
+        return avatarUrl ? `avatar:${avatarUrl}` : '';
+    }
+
+    createStableSessionAvatarImage(session, avatarUrl, fallbackInitial, avatarEl) {
+        const cacheKey = this.getSessionAvatarCacheKey(session);
+        const normalizedUrl = String(avatarUrl || '').trim();
+        let img = cacheKey ? this.sessionAvatarImageCache.get(cacheKey) : null;
+
+        if (!img || img.tagName !== 'IMG' || img.isConnected) {
+            img = document.createElement('img');
+            if (cacheKey) {
+                this.sessionAvatarImageCache.set(cacheKey, img);
+            }
+        }
+
+        const previousErrorHandler = img.__chatWidgetAvatarErrorHandler;
+        if (previousErrorHandler) {
+            img.removeEventListener('error', previousErrorHandler);
+        }
+
+        img.alt = `${session.nickname || session.email || session.id || 'user'} avatar`;
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        img.referrerPolicy = 'no-referrer';
+        if (img.getAttribute('src') !== normalizedUrl) {
+            img.src = normalizedUrl;
+        }
+
+        const errorHandler = () => {
+            if (cacheKey && this.sessionAvatarImageCache.get(cacheKey) === img) {
+                this.sessionAvatarImageCache.delete(cacheKey);
+            }
+            avatarEl.classList.remove('has-image');
+            avatarEl.textContent = fallbackInitial;
+            img.remove();
+        };
+        img.__chatWidgetAvatarErrorHandler = errorHandler;
+        img.addEventListener('error', errorHandler, { once: true });
+        return img;
+    }
+
     createSessionAvatarElement(session) {
         const avatarEl = document.createElement('div');
         avatarEl.className = 'session-avatar';
@@ -12956,23 +13608,14 @@ class ChatWidget {
         }
 
         const fallbackInitial = this.getSessionAvatarInitial(session);
-        if (!session?.avatarUrl) {
+        const avatarUrl = String(session?.avatarUrl || '').trim();
+        if (!avatarUrl) {
             avatarEl.textContent = fallbackInitial;
             return avatarEl;
         }
 
         avatarEl.classList.add('has-image');
-        const img = document.createElement('img');
-        img.src = session.avatarUrl;
-        img.alt = `${session.nickname || session.email || session.id || 'user'} avatar`;
-        img.loading = 'lazy';
-        img.decoding = 'async';
-        img.referrerPolicy = 'no-referrer';
-        img.addEventListener('error', () => {
-            avatarEl.classList.remove('has-image');
-            avatarEl.textContent = fallbackInitial;
-            img.remove();
-        });
+        const img = this.createStableSessionAvatarImage(session, avatarUrl, fallbackInitial, avatarEl);
         avatarEl.appendChild(img);
         return avatarEl;
     }
@@ -13133,8 +13776,13 @@ class ChatWidget {
         if (loadingOverlay) return loadingOverlay;
 
         loadingOverlay = document.createElement('div');
-        loadingOverlay.className = 'loading-overlay';
-        loadingOverlay.innerHTML = '<div class="loading-spinner"></div><span>预加载消息中...</span>';
+        if (this.isAdmin) {
+            loadingOverlay.className = 'loading-overlay';
+            loadingOverlay.innerHTML = '<div class="loading-spinner"></div><span>预加载消息中...</span>';
+        } else {
+            loadingOverlay.className = 'loading-overlay loading-overlay--user-dots';
+            loadingOverlay.innerHTML = this.getChatLoadingDotsMarkup(this.t('chat.loading', '加载中...'));
+        }
         this.messagesContainer.appendChild(loadingOverlay);
         return loadingOverlay;
     }
@@ -13144,6 +13792,22 @@ class ChatWidget {
         if (!this.messagesContainer) return;
         const loadingOverlay = this.messagesContainer.querySelector('.loading-overlay');
         if (loadingOverlay) loadingOverlay.remove();
+    }
+
+    finishUserHistoryLoadingOverlayHandoff(loadingOverlay = null) {
+        this.clearSessionLoadingOverlayTimer();
+        const overlay = loadingOverlay || this.messagesContainer?.querySelector('.loading-overlay');
+        if (!overlay) return;
+
+        requestAnimationFrame(() => {
+            if (!overlay.isConnected) return;
+            overlay.classList.add('is-exiting');
+            setTimeout(() => {
+                if (overlay.isConnected) {
+                    overlay.remove();
+                }
+            }, 180);
+        });
     }
 
     clearSessionUnreadState(sessionKey, sessionIds = []) {
@@ -13340,11 +14004,11 @@ class ChatWidget {
 
     bindAdminEvents() {
         // Close button
-        this.chatWindow.querySelector('.chat-close').addEventListener('click', () => this.toggleChat());
+        this.chatWindow.querySelector('.chat-close').addEventListener('click', () => this.closeChat());
 
         // Overlay click to close
         if (this.overlay) {
-            this.overlay.addEventListener('click', () => this.toggleChat());
+            this.overlay.addEventListener('click', () => this.closeChat());
         }
 
         window.addEventListener('resize', this._adminFloatingPanelResizeHandler, { passive: true });
@@ -13788,6 +14452,154 @@ class ChatWidget {
                 box-shadow: var(--chat-shell-shadow, 0 26px 70px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06)) !important;
             }
 
+            html[data-theme="light"] .chat-window:not(.admin-mode-layout) {
+                --chat-shell-bg: rgba(252, 253, 255, 0.98);
+                --chat-panel-bg: rgba(243, 247, 251, 0.96);
+                --chat-panel-shadow: none;
+                --chat-avatar-bg: rgba(107, 158, 206, 0.18);
+                --chat-avatar-border: rgba(107, 158, 206, 0.14);
+                --chat-admin-shadow: 0 8px 18px rgba(148, 163, 184, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.88);
+                --chat-mascot-head-shadow: none;
+            }
+
+            html[data-theme="light"] .chat-window:not(.admin-mode-layout) .chat-header,
+            html[data-theme="light"] .chat-window:not(.admin-mode-layout) .chat-input-area {
+                background: var(--chat-shell-bg) !important;
+            }
+
+            html[data-theme="light"] .chat-window:not(.admin-mode-layout) .chat-messages {
+                background: var(--chat-panel-bg) !important;
+                box-shadow: none !important;
+            }
+
+            html[data-theme="light"] .chat-window:not(.admin-mode-layout) .chat-avatar {
+                background: var(--chat-avatar-bg) !important;
+                border-color: var(--chat-avatar-border) !important;
+            }
+
+            html[data-theme="light"] .chat-window:not(.admin-mode-layout) .mascot-head {
+                box-shadow: none !important;
+            }
+
+            html[data-theme="light"] .chat-window:not(.admin-mode-layout) .message.user {
+                box-shadow: 0 8px 18px rgba(148, 163, 184, 0.08) !important;
+            }
+
+            .chat-window:not(.admin-mode-layout).chat-opening--bootstrap-handoff,
+            .chat-window:not(.admin-mode-layout).chat-opening--bootstrap-handoff.active {
+                transform: translateY(0) scale(1) !important;
+                transform-origin: bottom right !important;
+            }
+
+            .chat-window:not(.admin-mode-layout).chat-opening--bootstrap-handoff.active {
+                transition:
+                    opacity 320ms cubic-bezier(0.22, 1, 0.36, 1),
+                    transform 360ms cubic-bezier(0.18, 0.88, 0.24, 1),
+                    visibility 320ms !important;
+            }
+
+            .chat-window--bootstrap-adopting-content > *:not(.chat-bootstrap-content-snapshot) {
+                opacity: 0;
+            }
+
+            .chat-window--bootstrap-adopting-content.chat-window--bootstrap-content-ready > *:not(.emoji-picker-popover):not(.chat-bootstrap-content-snapshot) {
+                opacity: 1;
+                animation: chat-widget-content-settle 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+            }
+
+            .chat-bootstrap-content-snapshot {
+                position: absolute;
+                inset: 0;
+                z-index: 5;
+                display: flex;
+                flex-direction: column;
+                min-width: 0;
+                min-height: 0;
+                overflow: hidden;
+                background: var(--chat-shell-bg, rgba(10, 13, 20, 0.98));
+                opacity: 1;
+                pointer-events: none;
+                transition: opacity 300ms cubic-bezier(0.22, 1, 0.36, 1);
+                contain: paint;
+            }
+
+            html[data-theme="light"] .chat-bootstrap-content-snapshot {
+                background: var(--chat-shell-bg, rgba(252, 253, 255, 0.98));
+            }
+
+            .chat-window--bootstrap-content-ready .chat-bootstrap-content-snapshot {
+                opacity: 0;
+                transition-delay: 80ms;
+            }
+
+            .chat-window--bootstrap-adopting-content .emoji-picker-popover:not(.active),
+            .chat-window--bootstrap-content-ready .emoji-picker-popover:not(.active) {
+                opacity: 0 !important;
+                pointer-events: none !important;
+                transform: translateY(10px) !important;
+                animation: none !important;
+            }
+
+            .chat-window--bootstrap-interaction-locked .chat-input-area,
+            .chat-window--bootstrap-interaction-locked .chat-action-btn,
+            .chat-window--bootstrap-interaction-locked .chat-send-btn,
+            .chat-window--bootstrap-interaction-locked .chat-input,
+            .chat-window--bootstrap-interaction-locked .emoji-picker-popover {
+                pointer-events: none !important;
+            }
+
+            .chat-window--bootstrap-interaction-locked #chatEmojiBtn.chat-action-btn,
+            .chat-window--bootstrap-interaction-locked #chatEmojiBtn.chat-action-btn:hover,
+            .chat-window--bootstrap-interaction-locked #chatEmojiBtn.chat-action-btn:active,
+            .chat-window--bootstrap-interaction-locked #chatEmojiBtn.chat-action-btn:focus,
+            .chat-window--bootstrap-interaction-locked #chatEmojiBtn.chat-action-btn i {
+                background: transparent !important;
+                color: var(--chat-action-color, rgba(255, 255, 255, 0.7)) !important;
+                box-shadow: none !important;
+                transform: none !important;
+                filter: none !important;
+            }
+
+            .chat-window--bootstrap-interaction-locked .emoji-picker-popover,
+            .chat-window--bootstrap-interaction-locked .emoji-picker-popover.active {
+                opacity: 0 !important;
+                transform: translateY(10px) !important;
+                pointer-events: none !important;
+            }
+
+            @keyframes chat-widget-content-swap {
+                0% {
+                    opacity: 0;
+                    filter: blur(3px);
+                    transform: translateY(8px);
+                }
+                58% {
+                    opacity: 0.9;
+                    filter: blur(1px);
+                }
+                100% {
+                    opacity: 1;
+                    filter: blur(0);
+                    transform: translateY(0);
+                }
+            }
+
+            @keyframes chat-widget-content-settle {
+                0% {
+                    opacity: 1;
+                    transform: translateY(4px);
+                }
+                100% {
+                    opacity: 1;
+                    transform: translateY(0);
+                }
+            }
+
+            .chat-loading-state--user-handoff {
+                margin: auto;
+                color: var(--chat-accent-blue, #6b94c6);
+            }
+
             .chat-window:not(.admin-mode-layout) .chat-header {
                 background: var(--chat-shell-bg, rgba(10, 13, 20, 0.98)) !important;
                 border-bottom: 1px solid var(--chat-panel-border, rgba(255, 255, 255, 0.08)) !important;
@@ -13821,6 +14633,8 @@ class ChatWidget {
                 margin: 0 !important;
                 appearance: none !important;
                 -webkit-appearance: none !important;
+                -webkit-tap-highlight-color: transparent !important;
+                touch-action: manipulation !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-action-btn i {
@@ -13852,6 +14666,18 @@ class ChatWidget {
             .chat-window:not(.admin-mode-layout) #chatEmojiBtn.chat-action-btn:hover {
                 background: transparent !important;
                 color: var(--chat-action-hover-color, white) !important;
+            }
+
+            .chat-window:not(.admin-mode-layout) #chatEmojiBtn.chat-action-btn:active,
+            .chat-window:not(.admin-mode-layout) #chatEmojiBtn.chat-action-btn:focus:not(:focus-visible),
+            .chat-window:not(.admin-mode-layout) #chatEmojiBtn.chat-action-btn:active i,
+            .chat-window:not(.admin-mode-layout) #chatEmojiBtn.chat-action-btn:focus:not(:focus-visible) i {
+                background: transparent !important;
+                color: var(--chat-action-color, rgba(255, 255, 255, 0.7)) !important;
+                box-shadow: none !important;
+                transform: none !important;
+                filter: none !important;
+                outline: none !important;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input {
@@ -13892,28 +14718,10 @@ class ChatWidget {
             body.chat-spotlight-suspended .poetry-nav-container:hover .spotlight-overlay,
             body.chat-spotlight-suspended #ambientCanvas,
             body.chat-spotlight-suspended #starryCanvas {
-                opacity: 0 !important;
-                visibility: hidden !important;
-                transition: none !important;
-            }
-            
-            /* Hide site navigation smoothly and prevent WebKit texture limit bugs when chat opens */
-            html.chat-widget-open {
-                background-color: #000 !important;
-            }
-            body.chat-widget-open {
-                background-color: transparent !important;
+                pointer-events: none !important;
             }
             
             @media (max-width: 768px) {
-                body.chat-widget-open .framer-nav,
-                body.chat-widget-open .top-right-nav {
-                    opacity: 0 !important;
-                    pointer-events: none !important;
-                    transform: translateY(-10px) !important;
-                    transition: opacity 0.3s ease, transform 0.3s ease !important;
-                }
-
                 .user-context-summary,
                 .user-context-grid {
                     grid-template-columns: 1fr;
@@ -13938,27 +14746,55 @@ class ChatWidget {
                 left: 0;
                 width: 100%;
                 height: 100%;
-                background: var(--chat-overlay-bg, rgba(7, 9, 12, 0.28));
+                background: rgba(7, 9, 12, 0);
                 z-index: 9997;
-                backdrop-filter: var(--chat-overlay-filter, blur(14px) saturate(108%));
-                -webkit-backdrop-filter: var(--chat-overlay-filter, blur(14px) saturate(108%));
+                backdrop-filter: blur(0) saturate(100%);
+                -webkit-backdrop-filter: blur(0) saturate(100%);
                 transform: translateZ(0);
                 -webkit-transform: translateZ(0);
                 will-change: opacity, backdrop-filter;
                 opacity: 0;
-                transition: opacity 190ms cubic-bezier(0.22, 1, 0.36, 1);
+                transition:
+                    opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
+                    background-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+                    backdrop-filter 260ms cubic-bezier(0.22, 1, 0.36, 1),
+                    -webkit-backdrop-filter 260ms cubic-bezier(0.22, 1, 0.36, 1);
             }
             .chat-overlay.visible {
                 display: block;
+            }
+            .chat-overlay.visible.chat-overlay--active {
+                background: var(--chat-overlay-bg, rgba(7, 9, 12, 0.28));
+                backdrop-filter: var(--chat-overlay-filter, blur(14px) saturate(108%));
+                -webkit-backdrop-filter: var(--chat-overlay-filter, blur(14px) saturate(108%));
                 opacity: 1;
             }
             .chat-overlay.closing {
                 display: block;
                 opacity: 0;
-                background: var(--chat-overlay-bg, rgba(7, 9, 12, 0.28));
-                backdrop-filter: none;
-                -webkit-backdrop-filter: none;
-                transition: opacity 120ms linear 140ms;
+                background: rgba(7, 9, 12, 0);
+                backdrop-filter: blur(0) saturate(100%);
+                -webkit-backdrop-filter: blur(0) saturate(100%);
+                transition:
+                    opacity 140ms linear,
+                    background-color 140ms linear,
+                    backdrop-filter 140ms linear,
+                    -webkit-backdrop-filter 140ms linear;
+            }
+            .chat-overlay.chat-overlay--user {
+                background: rgba(7, 9, 12, 0) !important;
+                backdrop-filter: blur(0) saturate(100%) !important;
+                -webkit-backdrop-filter: blur(0) saturate(100%) !important;
+            }
+            .chat-overlay.chat-overlay--user.visible.chat-overlay--active {
+                background: var(--chat-overlay-bg, rgba(7, 9, 12, 0.28)) !important;
+                backdrop-filter: var(--chat-overlay-filter, blur(14px) saturate(108%)) !important;
+                -webkit-backdrop-filter: var(--chat-overlay-filter, blur(14px) saturate(108%)) !important;
+            }
+            .chat-overlay.chat-overlay--user.closing {
+                background: rgba(7, 9, 12, 0) !important;
+                backdrop-filter: blur(0) saturate(100%) !important;
+                -webkit-backdrop-filter: blur(0) saturate(100%) !important;
             }
             
             /* Narrow desktop: keep the natural desktop pop animation, only tighten size */
@@ -13981,6 +14817,12 @@ class ChatWidget {
                 .chat-window:not(.admin-mode-layout).active {
                     transform: translate3d(-50%, 0, 0) scale(1) !important;
                 }
+
+                .chat-window:not(.admin-mode-layout).chat-opening--bootstrap-handoff,
+                .chat-window:not(.admin-mode-layout).chat-opening--bootstrap-handoff.active {
+                    transform: translate3d(-50%, 0, 0) scale(1) !important;
+                    transform-origin: center top !important;
+                }
             }
 
             /* Touch narrow screens: use the centered modal animation */
@@ -13993,9 +14835,9 @@ class ChatWidget {
                     --chat-base-translate-y: -50%;
                     --chat-shift-y: 0px;
                     --chat-open-offset-x: 0px;
-                    --chat-open-offset-y: 0px;
-                    --chat-open-scale: 1;
-                    --chat-close-scale: 0.11;
+                    --chat-open-offset-y: 24px;
+                    --chat-open-scale: 0.94;
+                    --chat-close-scale: 0.94;
                     position: fixed !important;
                     top: 50% !important;
                     left: 50% !important;
@@ -14003,14 +14845,15 @@ class ChatWidget {
                     bottom: auto !important;
                     /* Mobile position must stay stable; keyboard movement is controlled by JS only. */
                     transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(1) !important;
-                    width: 90vw !important;
-                    max-width: 400px !important;
+                    width: min(460px, max(97vw, calc(100vw - 16px))) !important;
+                    max-width: 97vw !important;
                     height: 70vh !important;
                     max-height: 600px !important;
                     /* Keep position stable; visibility and scale handle the open state. */
                     opacity: 1 !important;
-                    backdrop-filter: var(--chat-shell-filter, none) !important;
-                    -webkit-backdrop-filter: var(--chat-shell-filter, none) !important;
+                    /* Match admin mobile's compositor path: overlay owns the blur, the scaling shell stays cheap. */
+                    backdrop-filter: none !important;
+                    -webkit-backdrop-filter: none !important;
                 }
 
                 .chat-window:not(.admin-mode-layout).chat-opening {
@@ -14023,11 +14866,15 @@ class ChatWidget {
                         0
                     ) scale(var(--chat-open-scale, 0.2)) !important;
                     transform-origin: center center !important;
+                    will-change: transform, opacity !important;
+                    backface-visibility: hidden !important;
+                    -webkit-backface-visibility: hidden !important;
+                    contain: layout paint style !important;
                 }
                 
                 .chat-window:not(.admin-mode-layout).active {
-                    backdrop-filter: var(--chat-shell-filter, none) !important;
-                    -webkit-backdrop-filter: var(--chat-shell-filter, none) !important;
+                    backdrop-filter: none !important;
+                    -webkit-backdrop-filter: none !important;
                 }
 
                 .chat-window:not(.admin-mode-layout).chat-opening.active {
@@ -14036,33 +14883,24 @@ class ChatWidget {
                     opacity: 1 !important;
                     transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(1) !important;
                     transition:
-                        opacity 190ms cubic-bezier(0.22, 1, 0.36, 1),
-                        transform 280ms cubic-bezier(0.18, 0.88, 0.24, 1) !important;
+                        opacity 320ms cubic-bezier(0.22, 1, 0.36, 1),
+                        transform 360ms cubic-bezier(0.18, 0.88, 0.24, 1) !important;
                 }
 
-                .chat-window:not(.admin-mode-layout).chat-closing {
-                    visibility: visible !important;
-                    pointer-events: none !important;
-                    opacity: 1 !important;
-                    backdrop-filter: none !important;
-                    -webkit-backdrop-filter: none !important;
+                .chat-window:not(.admin-mode-layout).chat-opening.chat-opening--bootstrap-handoff {
+                    opacity: 0 !important;
                     transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(1) !important;
                     transform-origin: center center !important;
                 }
 
-                .chat-window:not(.admin-mode-layout).chat-closing.chat-closing-end {
-                    opacity: 0 !important;
-                    backdrop-filter: none !important;
-                    -webkit-backdrop-filter: none !important;
-                    transform: translate3d(
-                        calc(-50% + var(--chat-open-offset-x, 0px)),
-                        calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px) + var(--chat-open-offset-y, 0px)),
-                        0
-                    ) scale(var(--chat-close-scale, 0.11)) !important;
+                .chat-window:not(.admin-mode-layout).chat-opening.chat-opening--bootstrap-handoff.active {
+                    opacity: 1 !important;
+                    transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(1) !important;
                     transition:
-                        opacity 120ms linear 140ms,
-                        transform 280ms cubic-bezier(0.18, 0.88, 0.24, 1) !important;
+                        opacity 320ms cubic-bezier(0.22, 1, 0.36, 1),
+                        transform 360ms cubic-bezier(0.18, 0.88, 0.24, 1) !important;
                 }
+
             }
             
             /* Enforce instant scrolling for user mode too */
@@ -14076,10 +14914,22 @@ class ChatWidget {
 
     renderUserMode() {
         this.isAdmin = false;
+        this.persistBootstrapShellMode('user');
 
         // Create Chat Window
-        this.chatWindow = document.createElement('div');
-        this.chatWindow.className = 'chat-window';
+        const claimedShell = this.claimBootstrapShell('user');
+        this.chatWindow = claimedShell || document.createElement('div');
+        if (claimedShell) {
+            this.chatWindow.classList.add('chat-window');
+            this.chatWindow.classList.remove('admin-mode-layout', 'admin-mode-layout--narrow');
+        } else {
+            this.chatWindow.className = 'chat-window';
+        }
+        const bootstrapContentSnapshot = this.getBootstrapContentSnapshotMarkup(this.chatWindow);
+        const shouldUseInitialLoadingHandoff = Boolean(claimedShell);
+        const initialMessagesMarkup = this.getUserInitialMessagesMarkup({
+            loading: shouldUseInitialLoadingHandoff
+        });
         this.chatWindow.innerHTML = `
             <div class="chat-header">
                 <div class="chat-header-info">
@@ -14112,10 +14962,7 @@ class ChatWidget {
                 </div>
             </div>
             <div class="chat-messages" id="chatMessages">
-                <!-- Welcome Message -->
-                <div class="message admin">
-                    ${this.t('chat.welcomeMessage', '您好！有什么可以帮您的吗？')}
-                </div>
+                ${initialMessagesMarkup}
             </div>
             <div class="chat-support-panel" id="chatSupportPanel" hidden></div>
             <div class="chat-input-area">
@@ -14125,16 +14972,22 @@ class ChatWidget {
                 <button class="chat-action-btn" id="chatEmojiBtn"><i class="far fa-smile"></i></button>
                 <button class="chat-send-btn" id="chatSendBtn"><i class="fas fa-paper-plane"></i></button>
             </div>
+            ${bootstrapContentSnapshot}
             <div class="emoji-picker-popover" id="emojiPicker">
                 ${this.emojis.map(e => `<div class="emoji-item">${e}</div>`).join('')}
             </div>
         `;
-        document.body.appendChild(this.chatWindow);
+        if (!claimedShell) {
+            document.body.appendChild(this.chatWindow);
+        }
 
         // Create overlay for clicking outside to close (same as admin mode)
-        this.overlay = document.createElement('div');
-        this.overlay.className = 'chat-overlay';
-        document.body.appendChild(this.overlay);
+        const claimedOverlay = this.claimBootstrapOverlay('user');
+        this.overlay = claimedOverlay || document.createElement('div');
+        if (!claimedOverlay) {
+            this.overlay.className = 'chat-overlay chat-overlay--user';
+            document.body.appendChild(this.overlay);
+        }
 
         // Inject user mode styles (glassmorphism enhancement)
         this.injectUserLayoutStyles();
@@ -14148,12 +15001,16 @@ class ChatWidget {
         this.headerSupportToggle = this.chatWindow.querySelector('#chatHeaderSupportBtn');
         this.syncSupportShellState();
         this.scheduleSupportPanelPrewarm();
+        this.bindUserEvents();
+        if (shouldUseInitialLoadingHandoff) {
+            this.scheduleBootstrapAdoptedContentSettle();
+        }
     }
 
     bindUserEvents() {
         // Overlay click to close (same as admin mode)
         if (this.overlay) {
-            this.overlay.addEventListener('click', () => this.toggleChat());
+            this.overlay.addEventListener('click', () => this.closeChat());
         }
 
         // Send Message
@@ -14183,6 +15040,11 @@ class ChatWidget {
     }
 
     toggleChat() {
+        if (!this.chatWindow) {
+            this._pendingOpenAfterInit = !this.isOpen;
+            return;
+        }
+
         this.isOpen = !this.isOpen;
         if (this.isOpen) {
             if (!this.isAdmin) {
@@ -14197,64 +15059,92 @@ class ChatWidget {
             this._pauseFabAmbientMotion();
             document.documentElement.classList.add('chat-widget-open');
             document.body.classList.add('chat-widget-open');
+            this._closeChromeCleanupStarted = false;
             this._clearOpeningAnimationTimer();
             this._clearClosingAnimationTimer();
             this.chatWindow.classList.remove('chat-closing');
             this.chatWindow.classList.remove('chat-closing-end');
-            this.chatWindow.classList.add('chat-opening');
+            this.chatWindow.classList.remove('chat-opening');
+            this.chatWindow.classList.remove('chat-opening--bootstrap-handoff');
+            const useBootstrapHandoffOpening = this.isBootstrapShellAdopted() || (!this.isAdmin && this._shouldUseBootstrapHandoffOpening());
             this._syncDesktopViewportInsetMode();
             this.syncAdminResponsiveLayout({ force: true });
-            this._primeOpeningAnimationFromFab();
-            this._setChatWindowTransitionless(false);
-            this._setChatWindowForceHidden(false);
+            if (useBootstrapHandoffOpening) {
+                this._primeOpeningAnimationForBootstrapHandoff();
+                this._setChatWindowTransitionless(false);
+                this._setChatWindowForceHidden(false);
+            } else {
+                this.chatWindow.classList.remove('active');
+                this._setChatWindowTransitionless(true);
+                this._setChatWindowForceHidden(true);
+                this._primeOpeningAnimationFromFab();
+            }
+            this.chatWindow.classList.add('chat-opening');
+            this.chatWindow.classList.toggle('chat-opening--bootstrap-handoff', useBootstrapHandoffOpening);
+            const deferFabHideForOpening = this._shouldDeferFabHideForOpening(useBootstrapHandoffOpening);
             this._showStatusBarShield();
             // 1. 先执行所有会触发布局突变的操作（弹窗此刻仍然 opacity:0, visibility:hidden）
             this._setFabTransitionless(false);
-            this._setFabHidden(true);
-            this._setFabDisabled(true);
-            if (this.overlay) {
-                this.overlay.classList.remove('closing');
-                this.overlay.classList.add('visible');
+            if (!deferFabHideForOpening) {
+                this._setFabHidden(true);
             }
+            this._setFabDisabled(true);
+            this._showChatOverlay();
             this._freezeOverlay();
 
             if (window.iOSScrollLock) {
                 // Strictly use lockLight across all platforms.
                 // Using hard lock (position: fixed) on iOS violently conflicts with 
                 // native Safari scroll-to-input behaviors during keyboard popup, causing visual jitter.
-                window.iOSScrollLock.lockLight(this.chatWindow);
+                window.iOSScrollLock.lockLight(this.chatWindow, {
+                    restoreScrollDuringViewport: true
+                });
             }
             this._enableSessionVisualLock();
             if (this._shouldUseFocusDockFallback()) {
                 this._attachKeyboardListener();
             }
 
-            // 2. 等布局稳定后，再启动动画（double-rAF 确保浏览器已完成一次渲染）
-            requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                    if (!this.isOpen) return; // 用户可能在等待期间关闭了
-                    this.chatWindow.classList.add('active');
-                    this._captureStableDockHeight();
-                    this._openingAnimationTimer = setTimeout(() => {
-                        this._openingAnimationTimer = null;
-                        if (this.isOpen && this.chatWindow) {
-                            this.chatWindow.classList.remove('chat-opening');
-                            this._clearOpeningAnimationState();
-                            if (!this.chatWindow.classList.contains('keyboard-docked')) {
-                                this._setChatWindowTransitionless(false);
-                            }
-                        }
-                    }, 280);
-                });
+            // 2. 提交 opening 初始态后启动动画；移动端二次打开同步提交初始态，避免多等一帧造成顿挫。
+            this._scheduleChatOpeningActivation(useBootstrapHandoffOpening, {
+                deferFabHide: deferFabHideForOpening,
+                immediateStartFrame: deferFabHideForOpening
             });
 
         } else {
             this._pauseFabAmbientMotion(1800);
             document.documentElement.classList.remove('chat-widget-open');
             document.body.classList.remove('chat-widget-open');
-            if (this._startClosingAnimation()) return;
+            this._runChatCloseChromeCleanup();
             this._finalizeChatClose();
         }
+    }
+
+    openChat() {
+        if (!this.chatWindow) {
+            this._pendingOpenAfterInit = true;
+            return this.ready || Promise.resolve(this);
+        }
+
+        this._pendingOpenAfterInit = false;
+        if (!this.isOpen) {
+            this.toggleChat();
+        }
+
+        return Promise.resolve(this);
+    }
+
+    closeChat() {
+        this._pendingOpenAfterInit = false;
+        if (!this.chatWindow) {
+            return Promise.resolve(this);
+        }
+
+        if (this.isOpen) {
+            this.toggleChat();
+        }
+
+        return Promise.resolve(this);
     }
 
     /**
@@ -14532,7 +15422,13 @@ class ChatWidget {
         const handleTouchFocus = (e) => {
             if (!this.isOpen || !this._isIOSMobile() || !this._isNarrowViewport()) return;
             if (e.cancelable) e.preventDefault();
+            if (window.iOSScrollLock && this.chatWindow) {
+                window.iOSScrollLock.lockLight(this.chatWindow, {
+                    restoreScrollDuringViewport: true
+                });
+            }
             this._focusInputWithoutScroll(inputEl);
+            this._requestViewportSync();
         };
 
         inputEl.addEventListener('touchstart', handleTouchFocus, { passive: false });
@@ -14593,7 +15489,7 @@ class ChatWidget {
 
         this.chatWindow.classList.add('keyboard-docked');
         this._clearTransitionCleanupTimer();
-        const dockDuration = this._getAdaptiveKeyboardDuration(9, 70, 150);
+        const dockDuration = 250;
         if (animate) {
             this._applyMotionVisualLock(dockDuration + 40);
             this._keyboardDockAnimatingUntil = performance.now() + dockDuration + 24;
@@ -14694,6 +15590,11 @@ class ChatWidget {
             clearTimeout(this._openingAnimationTimer);
             this._openingAnimationTimer = null;
         }
+        if (this._openingAnimationFrame) {
+            cancelAnimationFrame(this._openingAnimationFrame);
+            this._openingAnimationFrame = null;
+        }
+        this._openingAnimationRunId += 1;
     }
 
     _clearClosingAnimationTimer() {
@@ -14726,6 +15627,11 @@ class ChatWidget {
     }
 
     _primeOpeningAnimationFromFab() {
+        if (!this.isAdmin && this._usesTouchNarrowLayout()) {
+            this._primeOpeningAnimationForBootstrapLaunch();
+            return;
+        }
+
         const motion = this._getFabMotionMetrics();
         if (!motion || !this.chatWindow) {
             this._setRuntimeStyle(this.chatWindow, '--chat-open-offset-x', '0px');
@@ -14741,8 +15647,86 @@ class ChatWidget {
         this._setRuntimeStyle(this.chatWindow, '--chat-close-scale', motion.closeScale.toFixed(3));
     }
 
+    _primeOpeningAnimationForBootstrapLaunch() {
+        if (!this.chatWindow) return;
+        this._setRuntimeStyle(this.chatWindow, '--chat-open-offset-x', '0px');
+        this._setRuntimeStyle(this.chatWindow, '--chat-open-offset-y', '24px');
+        this._setRuntimeStyle(this.chatWindow, '--chat-open-scale', '0.94');
+        this._setRuntimeStyle(this.chatWindow, '--chat-close-scale', '0.94');
+    }
+
+    _shouldUseBootstrapHandoffOpening() {
+        if (typeof document === 'undefined') return false;
+        return Boolean(document.querySelector('.chat-widget-bootstrap-shell.is-visible'));
+    }
+
+    _primeOpeningAnimationForBootstrapHandoff() {
+        if (!this.chatWindow) return;
+        this._setRuntimeStyle(this.chatWindow, '--chat-open-offset-x', '0px');
+        this._setRuntimeStyle(this.chatWindow, '--chat-open-offset-y', '0px');
+        this._setRuntimeStyle(this.chatWindow, '--chat-open-scale', '1');
+        this._setRuntimeStyle(this.chatWindow, '--chat-close-scale', '0.11');
+    }
+
+    _shouldDeferFabHideForOpening(useBootstrapHandoffOpening) {
+        return !this.isAdmin
+            && useBootstrapHandoffOpening !== true
+            && this._usesTouchNarrowLayout();
+    }
+
+    _scheduleChatOpeningActivation(useBootstrapHandoffOpening, options = {}) {
+        if (!this.chatWindow) return;
+
+        const deferFabHide = options.deferFabHide === true;
+        const immediateStartFrame = options.immediateStartFrame === true;
+        const openingRunId = ++this._openingAnimationRunId;
+        const commitOpeningStartFrame = () => {
+            this._openingAnimationFrame = null;
+            if (!this.isOpen || !this.chatWindow || openingRunId !== this._openingAnimationRunId) return;
+
+            this._setChatWindowForceHidden(false);
+            this._setChatWindowTransitionless(false);
+            this.chatWindow.getBoundingClientRect();
+
+            this._openingAnimationFrame = requestAnimationFrame(() => {
+                this._openingAnimationFrame = null;
+                if (!this.isOpen || !this.chatWindow || openingRunId !== this._openingAnimationRunId) return;
+
+                if (deferFabHide) {
+                    this._setFabHidden(true);
+                }
+                this.chatWindow.classList.add('active');
+                if (!this.isBootstrapShellAdopted()) {
+                    this.completeBootstrapShellAdoption();
+                }
+                this._captureStableDockHeight();
+                const openingCleanupDelay = useBootstrapHandoffOpening ? 560 : 440;
+                this._openingAnimationTimer = setTimeout(() => {
+                    this._openingAnimationTimer = null;
+                    if (!this.isOpen || !this.chatWindow || openingRunId !== this._openingAnimationRunId) return;
+                    if (this.isBootstrapShellAdopted()
+                        && !this.chatWindow.classList.contains('chat-window--bootstrap-adopting-content')) {
+                        this.completeBootstrapShellAdoption();
+                    }
+                    this.chatWindow.classList.remove('chat-opening');
+                    this._clearOpeningAnimationState();
+                    if (!this.chatWindow.classList.contains('keyboard-docked')) {
+                        this._setChatWindowTransitionless(false);
+                    }
+                }, openingCleanupDelay);
+            });
+        };
+
+        if (immediateStartFrame) {
+            commitOpeningStartFrame();
+        } else {
+            this._openingAnimationFrame = requestAnimationFrame(commitOpeningStartFrame);
+        }
+    }
+
     _clearOpeningAnimationState() {
         if (!this.chatWindow) return;
+        this.chatWindow.classList.remove('chat-opening--bootstrap-handoff');
         this._setRuntimeStyle(this.chatWindow, '--chat-open-offset-x', null);
         this._setRuntimeStyle(this.chatWindow, '--chat-open-offset-y', null);
         this._setRuntimeStyle(this.chatWindow, '--chat-open-scale', null);
@@ -14751,7 +15735,9 @@ class ChatWidget {
 
     _finalizeChatClose() {
         if (!this.chatWindow) return;
+        this._clearOpeningAnimationTimer();
         this.chatWindow.classList.remove('chat-opening');
+        this.chatWindow.classList.remove('chat-opening--bootstrap-handoff');
         this.chatWindow.classList.remove('chat-closing');
         this.chatWindow.classList.remove('chat-closing-end');
         this.chatWindow.classList.remove('active');
@@ -14760,6 +15746,7 @@ class ChatWidget {
         this._setChatWindowForceHidden(true);
         this._setFabDisabled(true);
         if (this.overlay) {
+            this.overlay.classList.remove('chat-overlay--active');
             this.overlay.classList.remove('visible');
             this.overlay.classList.remove('closing');
         }
@@ -14772,7 +15759,7 @@ class ChatWidget {
         this._stableDockHeight = null;
 
         if (window.iOSScrollLock) window.iOSScrollLock.unlock();
-        this._hideStatusBarShield();
+        this._runChatCloseChromeCleanup();
 
         requestAnimationFrame(() => {
             requestAnimationFrame(() => {
@@ -14789,51 +15776,6 @@ class ChatWidget {
                 });
             });
         });
-    }
-
-    _startClosingAnimation() {
-        if (!this.chatWindow) return false;
-        if (this.chatWindow.classList.contains('admin-mode-layout')) return false;
-        if (!this._usesTouchNarrowLayout()) return false;
-
-        this._clearOpeningAnimationTimer();
-        this._clearClosingAnimationTimer();
-        this.chatWindow.classList.remove('chat-opening');
-        this.chatWindow.classList.add('chat-closing');
-        this.chatWindow.classList.remove('chat-closing-end');
-        this._primeOpeningAnimationFromFab();
-        this._setChatWindowTransitionless(false);
-        this._setChatWindowForceHidden(false);
-        if (this.overlay) {
-            this.overlay.classList.add('closing');
-            this.overlay.classList.remove('visible');
-        }
-        this._setFabTransitionless(true);
-        this._setFabHidden(false);
-        this._setFabDisabled(true);
-        this._detachKeyboardListener();
-
-        const activeInput = document.activeElement;
-        if (activeInput && this.chatWindow.contains(activeInput) && typeof activeInput.blur === 'function') {
-            activeInput.blur();
-        }
-
-        // Force Safari to commit the fully-visible closing start state before flipping to the end state.
-        void this.chatWindow.offsetWidth;
-        requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-                if (this.isOpen || !this.chatWindow) return;
-                this.chatWindow.classList.add('chat-closing-end');
-            });
-        });
-
-        this._closingAnimationTimer = setTimeout(() => {
-            this._closingAnimationTimer = null;
-            if (this.isOpen) return;
-            this._finalizeChatClose();
-        }, 300);
-
-        return true;
     }
 
     _setPromptSpotlightSuspended(suspended) {
@@ -14958,14 +15900,14 @@ class ChatWidget {
         this._clearTransitionCleanupTimer();
         this._applyMotionVisualLock(160);
         this._setChatWindowTransitionless(false);
-        this._setChatWindowKeyboardAnimating(true, 120);
+        this._setChatWindowKeyboardAnimating(true, 250);
         this._setChatTranslateVars('-50%', -24);
         this._transitionCleanupTimer = setTimeout(() => {
             this._transitionCleanupTimer = null;
             if (this.chatWindow && !this.chatWindow.classList.contains('keyboard-docked')) {
                 this._setChatWindowKeyboardAnimating(false);
             }
-        }, 150);
+        }, 290);
     }
 
     _resetKeyboardViewportStyles(animate = false) {
@@ -14975,7 +15917,7 @@ class ChatWidget {
         if (this.chatWindow) {
             this.chatWindow.classList.remove('keyboard-docked');
             this._clearTransitionCleanupTimer();
-            const resetDuration = this._getAdaptiveKeyboardDuration(10, 80, 170);
+            const resetDuration = 250;
             if (animate) {
                 this._applyMotionVisualLock(resetDuration + 40);
                 this._keyboardDockAnimatingUntil = performance.now() + resetDuration + 24;
@@ -15262,12 +16204,42 @@ class ChatWidget {
         }
     }
 
+    getUserHistoryMessageSignature(message = {}) {
+        return [
+            String(message?.session_id || '').trim(),
+            String(message?.created_at || '').trim(),
+            String(message?.message_type || 'text').trim(),
+            Boolean(message?.is_admin) ? '1' : '0',
+            String(message?.content || '')
+        ].join('\u001f');
+    }
+
+    areUserHistoryMessagesEquivalent(left = [], right = []) {
+        if (!Array.isArray(left) || !Array.isArray(right)) return false;
+        if (left.length !== right.length) return false;
+
+        return left.every((message, index) => (
+            this.getUserHistoryMessageSignature(message) === this.getUserHistoryMessageSignature(right[index])
+        ));
+    }
+
     renderUserHistoryMessages(messages = []) {
         if (!this.messagesContainer) return;
 
-        this.removeSessionLoadingOverlay();
-        this.messagesContainer.innerHTML = '';
+        const loadingOverlay = this.messagesContainer.querySelector('.loading-overlay');
+        if (loadingOverlay) {
+            this.clearSessionLoadingOverlayTimer();
+            loadingOverlay.classList.add('loading-overlay--handoff');
+            Array.from(this.messagesContainer.childNodes).forEach((node) => {
+                if (node !== loadingOverlay) {
+                    node.remove();
+                }
+            });
+        } else {
+            this.messagesContainer.innerHTML = '';
+        }
         this.lastDisplayedTime = null;
+        this._lastRenderedUserHistoryMessages = Array.isArray(messages) ? messages : [];
 
         const welcomeMessage = document.createElement('div');
         welcomeMessage.className = 'message admin';
@@ -15282,6 +16254,10 @@ class ChatWidget {
                 msg.created_at
             );
         });
+
+        if (loadingOverlay) {
+            this.finishUserHistoryLoadingOverlayHandoff(loadingOverlay);
+        }
     }
 
     async fetchUserHistoryBatch(sessionIds = [], { fullHistory = false } = {}) {
@@ -15332,11 +16308,20 @@ class ChatWidget {
             if (requestId !== this._userHistoryLoadRequestId) return;
             if (cacheKey !== this.getSessionCacheKey(this.getActiveUserSessionIds())) return;
 
+            const previousHistory = Array.isArray(this.userHistoryCache.get(cacheKey))
+                ? this.userHistoryCache.get(cacheKey)
+                : this._lastRenderedUserHistoryMessages;
+            const shouldRenderFullHistory = !this.areUserHistoryMessagesEquivalent(previousHistory, fullHistory)
+                && !this.areUserHistoryMessagesEquivalent(this._lastRenderedUserHistoryMessages, fullHistory);
+
             this.userHistoryCache.set(cacheKey, fullHistory);
             this.persistUserHistorySnapshot(sessionIds, fullHistory);
-            this.renderUserHistoryMessages(fullHistory);
-            this._setMessagesContainerMinHeight(null);
-            this.scrollToBottom();
+
+            if (shouldRenderFullHistory) {
+                this.renderUserHistoryMessages(fullHistory);
+                this._setMessagesContainerMinHeight(null);
+                this.scrollToBottom();
+            }
             this.unlockScroll();
         } catch (error) {
             console.warn('[ChatWidget] Failed to sync complete user history:', error);
@@ -15438,7 +16423,11 @@ class ChatWidget {
 
         try {
             const sessionIds = this.getActiveUserSessionIds();
-            if (!sessionIds.length) return;
+            if (!sessionIds.length) {
+                this.unlockScroll();
+                this.finishUserHistoryLoadHandoff();
+                return;
+            }
             const cacheKey = this.getSessionCacheKey(sessionIds);
             const cachedHistory = this.userHistoryCache.get(cacheKey) || this.restoreUserHistorySnapshot(sessionIds);
 
@@ -15448,17 +16437,24 @@ class ChatWidget {
                 this._setMessagesContainerMinHeight(null);
                 this.scrollToBottom();
                 this.unlockScroll();
+                this.finishUserHistoryLoadHandoff();
                 this.scheduleUserHistorySync(sessionIds, cacheKey, requestId);
                 return;
             }
 
-            const currentHeight = this.messagesContainer.offsetHeight;
-            this._setMessagesContainerMinHeight(currentHeight);
-            this.clearSessionLoadingOverlayTimer();
-            this._sessionLoadingOverlayTimer = setTimeout(() => {
-                if (this._userHistoryLoadRequestId !== requestId) return;
-                this.ensureSessionLoadingOverlay();
-            }, 180);
+            const useBootstrapHistoryHandoff = this.isBootstrapShellAdopted();
+            if (!useBootstrapHistoryHandoff) {
+                this.holdUserHistoryComposerHandoff();
+                const currentHeight = this.messagesContainer.offsetHeight;
+                this._setMessagesContainerMinHeight(currentHeight);
+                this.clearSessionLoadingOverlayTimer();
+                this._sessionLoadingOverlayTimer = setTimeout(() => {
+                    if (this._userHistoryLoadRequestId !== requestId) return;
+                    this.ensureSessionLoadingOverlay();
+                }, 180);
+            } else {
+                this.clearSessionLoadingOverlayTimer();
+            }
 
             const recentHistory = await this.fetchUserHistoryBatch(sessionIds, { fullHistory: false });
             if (requestId !== this._userHistoryLoadRequestId) return;
@@ -15469,6 +16465,7 @@ class ChatWidget {
             this._setMessagesContainerMinHeight(null);
             this.scrollToBottom();
             this.unlockScroll();
+            this.finishUserHistoryLoadHandoff();
             this.scheduleUserHistorySync(sessionIds, cacheKey, requestId);
 
         } catch (err) {
@@ -15477,6 +16474,7 @@ class ChatWidget {
             this._setMessagesContainerMinHeight(null);
             // Unlock scroll even on error
             this.unlockScroll();
+            this.finishUserHistoryLoadHandoff();
         }
     }
 }
