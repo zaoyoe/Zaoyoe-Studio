@@ -347,6 +347,7 @@ test('vercel hobby deployment routes public endpoints through the shared handler
     const authRewrite = rewrites.find((entry) => entry?.source === '/api/auth/:path*');
     const paymentsRewrite = rewrites.find((entry) => entry?.source === '/api/payments/:path*');
     const runtimeRewrite = rewrites.find((entry) => entry?.source === '/api/runtime/:path*');
+    const engagementRewrite = rewrites.find((entry) => entry?.source === '/api/engagement/:path*');
     const shopRewrite = rewrites.find((entry) => entry?.source === '/api/shop/:path*');
     const walletRewrite = rewrites.find((entry) => entry?.source === '/api/wallet/:path*');
     const deployedApiRouteFiles = collectApiRouteFiles().filter((relativePath) => !ignoredEntries.has(relativePath));
@@ -357,6 +358,8 @@ test('vercel hobby deployment routes public endpoints through the shared handler
     assert.equal(paymentsRewrite.destination, '/api/public?scope=payments&route=:path*');
     assert.ok(runtimeRewrite, 'vercel.json should rewrite runtime endpoints through the shared public handler');
     assert.equal(runtimeRewrite.destination, '/api/public?scope=runtime&route=:path*');
+    assert.ok(engagementRewrite, 'vercel.json should rewrite engagement endpoints through the shared public handler');
+    assert.equal(engagementRewrite.destination, '/api/public?scope=engagement&route=:path*');
     assert.ok(shopRewrite, 'vercel.json should rewrite shop endpoints through the shared public handler');
     assert.equal(shopRewrite.destination, '/api/public?scope=shop&route=:path*');
     assert.ok(walletRewrite, 'vercel.json should rewrite wallet endpoints through the shared public handler');
@@ -454,7 +457,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
             violations.push(`${relativePath} is missing css/chat-widget.css`);
         }
 
-        if (!source.includes('css/chat-widget.css?v=20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1')) {
+        if (!source.includes('css/chat-widget.css?v=20260504_ENGAGEMENT_ROUTE_LINKS_1')) {
             violations.push(`${relativePath} should cache-bust the scroll-lock chat widget stylesheet`);
         }
 
@@ -484,7 +487,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1';",
+        "const VERSION = '20260504_ENGAGEMENT_ROUTE_LINKS_1';",
         "const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';",
         'function ensurePlaceholderPlacementStyles() {',
         '/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */',
@@ -506,7 +509,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'body.chat-widget-bootstrap-scroll-locked',
         "const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';",
         "const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';",
-        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260503_CHAT_WIDGET_DESKTOP_NARROW_PEEK_1';",
+        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260504_ENGAGEMENT_ROUTE_LINKS_1';",
         "const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';",
         'function getChatWidgetConstructor() {',
         'global.ChatWidget = ChatWidget;',
@@ -836,9 +839,9 @@ test('public pages wire wallet modal through the shared bootstrap loader', () =>
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260503_WALLET_REDEEM_REVOKE_REASON_UI_1';",
+        "const VERSION = '20260504_USDT_DIRECT_CHECKOUT_1';",
         "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260430_WALLET_GUIDANCE_BILINGUAL_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260503_WALLET_REDEEM_REVOKE_REASON_UI_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260504_USDT_DIRECT_CHECKOUT_1';",
         'function ensureWalletModalReady() {',
         'function warmWalletModal(options = {}) {',
         "function openWalletModal(view = 'balance', context = {}) {",
@@ -894,18 +897,18 @@ test('public pages lazy-load notifications and head-preload announcement runtime
             violations.push(`${relativePath} should preload announcement-loader.js from the document head`);
         }
         const headEndIndex = source.indexOf('</head>');
-        const engagementIndex = source.indexOf('js/engagement-runtime-loader.js?v=20260501_ENGAGEMENT_ANNOUNCEMENT_DARK_CARD_AUTH_BACKDROP_1');
+        const engagementIndex = source.indexOf('js/engagement-runtime-loader.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1');
         if (headEndIndex === -1 || engagementIndex === -1 || engagementIndex > headEndIndex) {
             violations.push(`${relativePath} should start the shared engagement loader from the document head`);
         }
-        if (!/js\/engagement-runtime-loader\.js\?v=20260501_ENGAGEMENT_ANNOUNCEMENT_DARK_CARD_AUTH_BACKDROP_1"[^>]*data-load-announcement="1"[^>]*async/.test(source)) {
+        if (!/js\/engagement-runtime-loader\.js\?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1"[^>]*data-load-announcement="1"[^>]*async/.test(source)) {
             violations.push(`${relativePath} should run the announcement engagement bootstrap asynchronously from the head`);
         }
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260501_ENGAGEMENT_ANNOUNCEMENT_DARK_CARD_AUTH_BACKDROP_1';",
-        "const NOTIFICATION_SRC = 'notification-client.js?v=20260503_NOTIFICATION_MOBILE_HEADER_PIN_2';",
+        "const VERSION = '20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1';",
+        "const NOTIFICATION_SRC = 'notification-client.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1';",
         "const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=20260503_ANNOUNCEMENT_MODAL_CHROME_CLOSE_1';",
         'const NOTIFICATION_IDLE_TIMEOUT_MS = 1800;',
         'const ANNOUNCEMENT_BOOT_DELAY_MS = 0;',
@@ -1858,24 +1861,24 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
     }
 
     assert.equal(
-        adminStudioHtml.includes('js/admin-chat.js?v=20260502_ADMIN_CHAT_KEYBOARD_DOCK_6'),
+        adminStudioHtml.includes('js/admin-chat.js?v=20260504_OPS_SESSION_NO_ONLINE_1'),
         true,
         'admin-studio.html should load the latest admin chat case action runtime'
     );
     assert.equal(
-        adminStudioHtml.includes('css/admin-chat.css?v=20260502_ADMIN_CHAT_KEYBOARD_DOCK_6'),
+        adminStudioHtml.includes('css/admin-chat.css?v=20260504_USER_ONLINE_GREEN_1'),
         true,
         'admin-studio.html should load the latest admin chat case action stylesheet'
     );
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/chat-widget-loader.js?v=20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1'),
+            source.includes('js/chat-widget-loader.js?v=20260504_ENGAGEMENT_ROUTE_LINKS_1'),
             true,
             'public entry pages should load the lazy chat widget bootstrap'
         );
         assert.equal(
-            source.includes('js/components/ChatWidget.js?v=20260503_CHAT_WIDGET_DESKTOP_NARROW_PEEK_1'),
+            source.includes('js/components/ChatWidget.js?v=20260504_ADMIN_CHAT_BOOTSTRAP_LAYOUT_1'),
             false,
             'public entry pages should no longer eagerly load the heavy chat widget runtime'
         );
@@ -2353,7 +2356,9 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
         "const PERSONAL_MESSAGE_BUTTON_LABEL = '打开个人消息';",
         "const PERSONAL_MESSAGE_BUTTON_UNREAD_LABEL = '打开个人消息（有未读）';",
         "dropdownButton.setAttribute('aria-label', entryLabel);",
-        "dropdownButton.setAttribute('title', entryLabel);"
+        "dropdownButton.setAttribute('title', entryLabel);",
+        'const warmNotifications = window.ZaoyoeEngagementRuntimeBootstrap?.warmNotifications;',
+        "console.warn('⚠️ Failed to warm notification runtime:', error?.message || error);"
     ];
 
     for (const marker of runtimeMarkers) {
@@ -2387,7 +2392,7 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
         );
         assert.match(
             source,
-            /inject-auth\.js\?v=20260503_AUTH_MODAL_CHROME_CLOSE_1/,
+            /inject-auth\.js\?v=20260504_USER_PRESENCE_STATUS_1/,
             'auth entry pages should load the latest injected auth runtime version'
         );
     }
@@ -2869,7 +2874,7 @@ test('theme bootstraps default first visits to light instead of system dark', ()
     for (const relativePath of injectedAuthEntryPages) {
         const source = readRepoFile(relativePath);
         assert.equal(
-            source.includes('inject-auth.js?v=20260503_AUTH_MODAL_CHROME_CLOSE_1'),
+            source.includes('inject-auth.js?v=20260504_USER_PRESENCE_STATUS_1'),
             true,
             `${relativePath} should cache-bust the injected auth light-default runtime`
         );
@@ -3324,7 +3329,7 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should not render a secondary text loading message after the skeleton'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260503_SHOP_MOBILE_FRESH_ENTER_2'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260504_SHOP_DISCOUNT_ENGAGEMENT_1'),
         true,
         'shop.html should reference the latest shop client runtime for the cart-enabled storefront flow'
     );
@@ -4154,7 +4159,7 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
     }
 
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260503_GUESTBOOK_LAUNCHER_DARK_BASE_1'),
+        guestbookHtml.includes('style.css?v=20260504_GUESTBOOK_KEYBOARD_RETRACT_1'),
         true,
         'guestbook.html should reference the updated guestbook stylesheet version'
     );
@@ -4244,8 +4249,8 @@ test('supabase guestbook runtime renderers externalize error, empty state, delet
     assert.match(guestbookHtml, /style\.css\?v=[A-Za-z0-9_]+/, 'guestbook.html should contain a cache-busted shared stylesheet reference');
     assert.match(archivedIndexSource, /style\.css\?v=[A-Za-z0-9_]+/, 'index_old.html should contain a cache-busted shared stylesheet reference');
     assert.equal(indexSource.includes('supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), false, 'index.html should not eagerly load the full guestbook runtime');
-    assert.equal(indexSource.includes('./js/homepage-guestbook-modal-loader.js?v=20260502_HOME_GUESTBOOK_LOADER_STABLE_DOCK_1'), true, 'index.html should load the intent-based homepage guestbook modal loader');
-    assert.equal(guestbookHtml.includes('supabase-guestbook-functions.js?v=20260501_GUESTBOOK_DOM_READY_LATE_LOAD_1'), true, 'guestbook.html should contain the DOM-ready-safe guestbook runtime');
+    assert.equal(indexSource.includes('./js/homepage-guestbook-modal-loader.js?v=20260504_HOME_GUESTBOOK_LOADER_KEYBOARD_RETRACT_1'), true, 'index.html should load the intent-based homepage guestbook modal loader');
+    assert.equal(guestbookHtml.includes('supabase-guestbook-functions.js?v=20260504_ENGAGEMENT_REPLY_NOTIFY_1'), true, 'guestbook.html should contain the DOM-ready-safe guestbook runtime');
     assert.equal(archivedIndexSource.includes('supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should contain supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1');
 });
 
@@ -4279,7 +4284,10 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
         'function setGuestbookModalRuntimeStyles(target, styles = {}, priority = \'\')',
         "overlay.classList.toggle('guestbook-modal-interactive', interactive);",
         "probe.className = 'guestbook-modal-viewport-probe';",
-        "'--guestbook-modal-overlay-height': `${measuredHeight}px`",
+        'function getGuestbookModalNativeViewportFrame()',
+        "const shouldPreserveKeyboardBase = overlay.classList.contains('active')",
+        "'--guestbook-modal-viewport-top': `${frame.top}px`",
+        "'--guestbook-modal-overlay-height': `${overlayHeight}px`",
         "'--guestbook-modal-translate-y': `${shiftY}px`",
         "'--guestbook-modal-card-height': `${finalCardHeight}px`",
         "'--guestbook-modal-card-max-height': `${finalCardHeight}px`"
@@ -4292,6 +4300,9 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
     const cssMarkers = [
         '--guestbook-modal-card-height: 420px;',
         '--guestbook-modal-card-max-height: calc(100svh - 56px);',
+        '--guestbook-modal-viewport-top: 0px;',
+        'top: var(--guestbook-modal-viewport-top) !important;',
+        'width: var(--guestbook-modal-viewport-width) !important;',
         '#guestbookModal.guestbook-modal-interactive',
         '.guestbook-modal-viewport-probe',
         'height: var(--guestbook-modal-card-height, 420px);',
@@ -4305,17 +4316,17 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
     }
 
     assert.equal(
-        indexSource.includes('css/homepage-overlays.css?v=20260503_HOME_GUESTBOOK_MODAL_CHROME_CLOSE_1'),
+        indexSource.includes('css/homepage-overlays.css?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1'),
         true,
         'index.html should load the latest homepage guestbook modal stylesheet version'
     );
     assert.equal(
-        indexSource.includes('./js/homepage-guestbook-modal-loader.js?v=20260502_HOME_GUESTBOOK_LOADER_STABLE_DOCK_1'),
+        indexSource.includes('./js/homepage-guestbook-modal-loader.js?v=20260504_HOME_GUESTBOOK_LOADER_KEYBOARD_RETRACT_1'),
         true,
         'index.html should load the latest homepage guestbook intent loader version'
     );
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260503_GUESTBOOK_LAUNCHER_DARK_BASE_1'),
+        guestbookHtml.includes('style.css?v=20260504_GUESTBOOK_KEYBOARD_RETRACT_1'),
         true,
         'guestbook.html should load the latest shared stylesheet version'
     );
@@ -10442,7 +10453,7 @@ test('shop admin order workflows externalize runtime table-row and modal styling
         assert.equal(shopStyles.includes(marker), true, `css/admin-studio-page.css should contain ${marker}`);
     }
 
-    assert.equal(adminStudioSource.includes('js/admin-shop.js?v=20260430_SHOP_SAVE_SCHEMA_FALLBACK_1'), true, 'admin-studio.html should load the cache-busted shop admin script');
+    assert.equal(adminStudioSource.includes('js/admin-shop.js?v=20260504_SHOP_IMPORT_STOCK_SYNC_1'), true, 'admin-studio.html should load the cache-busted shop admin script');
     assert.equal(adminStudioSource.includes('admin-config.js?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'), true, 'admin-studio.html should load the cache-busted admin config script');
     assert.equal(adminWorkbenchSource.includes('window.ShopAdmin?.focusOrder'), true, 'js/admin-workbench.js should directly focus shop order workspaces when an order id is available');
     assert.equal(adminWorkbenchSource.includes("const opened = await window.AdminShell.openContext('users', {"), true, 'js/admin-workbench.js should let the shared user detail helper prefer AdminShell context delivery');
@@ -11468,7 +11479,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         'js/admin-payments.js?v=20260421_ADMIN_PAYMENTS_CONTEXT_HELPER_P2',
         'js/admin-workbench.js?v=20260422_OPS_ALERT_RESOLVED_COUNT_P13',
         'js/admin-tickets.js?v=20260428_TICKETS_WORKSPACE_SCROLL_PRESERVE_1',
-        'js/admin-shop.js?v=20260430_SHOP_SAVE_SCHEMA_FALLBACK_1',
+        'js/admin-shop.js?v=20260504_SHOP_IMPORT_STOCK_SYNC_1',
         'data-tab="product"',
         'data-tab="ops"',
         'class="admin-tabs analytics-center-tabs"',
@@ -12843,7 +12854,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'prompts.html should load the shared user event tracker'
     );
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260503_PROMPTS_MODAL_CHROME_CLOSE_1'),
+        promptsHtml.includes('prompts-poetry.js?v=20260504_ENGAGEMENT_REPLY_NOTIFY_1&promptLangSignal=20260503_PROMPT_LANG_SIGNAL_1'),
         true,
         'prompts.html should load the latest prompts gallery runtime version'
     );
@@ -12979,13 +12990,13 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(indexSource.includes('./js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), true, 'index.html should load the shared user event tracker');
     assert.equal(guestbookSource.includes('js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), true, 'guestbook.html should load the shared user event tracker');
     assert.equal(shopSource.includes('js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), true, 'shop.html should load the shared user event tracker');
-    assert.equal(indexSource.includes('./js/homepage-guestbook-modal-loader.js?v=20260502_HOME_GUESTBOOK_LOADER_STABLE_DOCK_1'), true, 'index.html should load the lazy guestbook modal bootstrap');
+    assert.equal(indexSource.includes('./js/homepage-guestbook-modal-loader.js?v=20260504_HOME_GUESTBOOK_LOADER_KEYBOARD_RETRACT_1'), true, 'index.html should load the lazy guestbook modal bootstrap');
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), false, 'index.html should not eagerly load the full guestbook runtime');
-    assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260501_GUESTBOOK_DOM_READY_LATE_LOAD_1'), true, 'guestbook.html should load the latest guestbook runtime');
+    assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260504_ENGAGEMENT_REPLY_NOTIFY_1'), true, 'guestbook.html should load the latest guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should load the latest guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260503_SHOP_MOBILE_FRESH_ENTER_2'), true, 'shop.html should load the latest cart-aware shop runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260504_SHOP_DISCOUNT_ENGAGEMENT_1'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
-    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260503_WALLET_REDEEM_REVOKE_REASON_UI_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
+    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260504_USDT_DIRECT_CHECKOUT_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
 
 test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {
@@ -14699,8 +14710,8 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
     }
 
     const htmlMarkers = [
-        'css/admin-chat.css?v=20260502_ADMIN_CHAT_KEYBOARD_DOCK_6',
-        'js/admin-chat.js?v=20260502_ADMIN_CHAT_KEYBOARD_DOCK_6'
+        'css/admin-chat.css?v=20260504_USER_ONLINE_GREEN_1',
+        'js/admin-chat.js?v=20260504_OPS_SESSION_NO_ONLINE_1'
     ];
 
     for (const marker of htmlMarkers) {
@@ -14829,6 +14840,8 @@ test('final frontend runtime remnants route through delegated or bound listeners
         'data-notif-action="mark-all-read"',
         'data-notif-action="filter-read"',
         'data-notif-action="toggle-pin"',
+        'data-notif-action="delete-notification"',
+        'data-notif-action="mark-read"',
         'data-notif-action="close-drawer"',
         'data-notif-action="clear-read"',
         'function handleDrawerClick(e)',
@@ -14845,16 +14858,18 @@ test('final frontend runtime remnants route through delegated or bound listeners
     assert.equal(notificationSource.includes(delegatedMarkers[1]), true, 'notification-client.js should render a delegated mark-all-read control');
     assert.equal(notificationSource.includes(delegatedMarkers[2]), true, 'notification-client.js should render delegated read filters');
     assert.equal(notificationSource.includes(delegatedMarkers[3]), true, 'notification-client.js should render delegated pin controls');
-    assert.equal(notificationSource.includes(delegatedMarkers[4]), true, 'notification-client.js should render a delegated drawer close control');
-    assert.equal(notificationSource.includes(delegatedMarkers[5]), true, 'notification-client.js should render a delegated clear-read control');
-    assert.equal(notificationSource.includes(delegatedMarkers[6]), true, 'notification-client.js should handle delegated drawer actions');
-    assert.equal(notificationSource.includes(delegatedMarkers[7]), true, 'notification-client.js should render delegated admin notification filters');
-    assert.equal(announcementSource.includes(delegatedMarkers[8]), true, 'announcement-loader.js should render a bound acknowledge action');
-    assert.equal(announcementSource.includes(delegatedMarkers[9]), true, 'announcement-loader.js should bind the acknowledge button');
-    assert.equal(guestbookSource.includes(delegatedMarkers[10]), true, 'supabase-guestbook-functions.js should render delegated like actions');
-    assert.equal(guestbookSource.includes(delegatedMarkers[11]), true, 'supabase-guestbook-functions.js should bind fallback like actions');
-    assert.equal(adminStudioScript.includes(delegatedMarkers[12]), true, 'admin-studio.js should render delegated preview removal controls');
-    assert.equal(adminStudioScript.includes(delegatedMarkers[13]), true, 'admin-studio.js should handle delegated preview removal controls');
+    assert.equal(notificationSource.includes(delegatedMarkers[4]), true, 'notification-client.js should render delegated delete controls');
+    assert.equal(notificationSource.includes(delegatedMarkers[5]), true, 'notification-client.js should render delegated single-read controls');
+    assert.equal(notificationSource.includes(delegatedMarkers[6]), true, 'notification-client.js should render a delegated drawer close control');
+    assert.equal(notificationSource.includes(delegatedMarkers[7]), true, 'notification-client.js should render a delegated clear-read control');
+    assert.equal(notificationSource.includes(delegatedMarkers[8]), true, 'notification-client.js should handle delegated drawer actions');
+    assert.equal(notificationSource.includes(delegatedMarkers[9]), true, 'notification-client.js should render delegated admin notification filters');
+    assert.equal(announcementSource.includes(delegatedMarkers[10]), true, 'announcement-loader.js should render a bound acknowledge action');
+    assert.equal(announcementSource.includes(delegatedMarkers[11]), true, 'announcement-loader.js should bind the acknowledge button');
+    assert.equal(guestbookSource.includes(delegatedMarkers[12]), true, 'supabase-guestbook-functions.js should render delegated like actions');
+    assert.equal(guestbookSource.includes(delegatedMarkers[13]), true, 'supabase-guestbook-functions.js should bind fallback like actions');
+    assert.equal(adminStudioScript.includes(delegatedMarkers[14]), true, 'admin-studio.js should render delegated preview removal controls');
+    assert.equal(adminStudioScript.includes(delegatedMarkers[15]), true, 'admin-studio.js should handle delegated preview removal controls');
 
     const notificationRuntimeMarkers = [
         'wrapper.hidden = true;',
@@ -14867,8 +14882,26 @@ test('final frontend runtime remnants route through delegated or bound listeners
         'notif-clear-read-chip',
         'window.clearReadNotifications = function (e) {',
         'function completeClearReadNotifications(readIds = []) {',
+        'renderNotifications({ animateCards: false });',
         'function deleteNotificationsByIds(ids = []) {',
         'notif-card-filter-enter',
+        'notif-card-shell',
+        'notif-card-actions',
+        'notif-card-action--delete',
+        'notif-loading-dots',
+        'window.markNotificationRead = function',
+        ".classList.toggle('is-expanded', expanded)",
+        'function handleNotificationCardPointerDown(event)',
+        'function handleNotificationCardWheel(event)',
+        'function shouldSuppressNotificationCardClick(shell)',
+        'const NOTIFICATION_SWIPE_CLICK_SUPPRESS_MS = 520;',
+        'const NOTIFICATION_SWIPE_INTENT_THRESHOLD_PX = 14;',
+        'const NOTIFICATION_SWIPE_CLICK_DRAG_THRESHOLD_PX = 24;',
+        'function setNotificationDrawerLoadingState(isLoading) {',
+        'function playNotificationContentEntryAnimation() {',
+        'restartDrawerEntry: shouldAnimateLoadedNotifications',
+        'window.__resetNotificationSystemForSmoke = function () {',
+        "el.setAttribute('aria-expanded', expanded ? 'true' : 'false');",
         'notif-drawer-opening',
         'notif-drawer-closing',
         'const NOTIFICATION_MOBILE_MOTION_MS = 360;',
@@ -14882,6 +14915,11 @@ test('final frontend runtime remnants route through delegated or bound listeners
         'NOTIFICATION_READ_FILTER_ORDER',
         'NOTIFICATION_PINNED_STORAGE_KEY',
         'NOTIFICATION_FILTER_STORAGE_KEY',
+        'NOTIFICATION_LOADING_TEXT',
+        'NOTIFICATION_LOAD_ERROR_TEXT',
+        'function isSupabaseClientReady()',
+        'async function waitForSupabaseClientReady()',
+        'async function waitForAdminAccessRuntime()',
         'ADMIN_OPS_NOTIFICATION_BLOCK_TITLE_PATTERNS',
         'ADMIN_PERSONAL_NOTIFICATION_ALLOW_TITLE_PATTERNS',
         "if (scope === 'admin_personal') {",
@@ -14906,11 +14944,22 @@ test('final frontend runtime remnants route through delegated or bound listeners
         'function detachNotificationChromeLayers(drawer, backdrop) {',
         'function scheduleSafariChromeRefreshAfterNotificationClose() {',
         'window.syntheticThemeChromeMenuTap(theme);',
-        'function renderOpenNotificationDrawer() {',
+        'function renderOpenNotificationDrawer(options = {}) {',
         'renderOpenNotificationDrawer();',
+        'void window.initNotificationSystem?.();',
+        'notificationsLoading = notifications.length === 0 || !notificationsLoaded;',
+        'notif-empty--loading',
+        'notif-empty--error',
+        'function wrapNotificationFilterControls(...htmlParts) {',
+        'function wrapNotificationModule(filterHtml = \'\', contentHtml = \'\') {',
+        'data-notif-filter-title',
+        'data-notif-filter-panel',
+        'data-notif-module-shell',
+        'data-notif-module-container',
+        'data-notif-card-list',
         'class="notif-filter-chip${currentAdminNotificationFilter === filterKey ? \' is-active\' : \'\'}"',
         'class="notif-filter-chip${currentNotificationReadFilter === filterKey ? \' is-active\' : \'\'}"',
-        'class="notif-card-pin${n.is_pinned ? \' is-active\' : \'\'}"',
+        'class="notif-card-action notif-card-action--pin${n.is_pinned ? \' is-active\' : \'\'}"',
         'await resolveNotificationViewer();',
         'notifications = syncNotificationPinnedState((data || []).filter((row) => shouldIncludeNotification(row)));',
         'data-notif-category="${escapeHtml(visualMeta.categoryMeta?.key || normalizeNotificationCategory(n.category) || \'\')}"',
@@ -14925,6 +14974,12 @@ test('final frontend runtime remnants route through delegated or bound listeners
         assert.equal(notificationSource.includes(marker), true, `notification-client.js should contain ${marker}`);
     }
 
+    assert.match(
+        notificationSource,
+        /<div class="notif-module-shell" data-notif-module-shell>[\s\S]*?<div class="notif-filter-title" data-notif-filter-title>通知<\/div>[\s\S]*?<div class="notif-module-container" data-notif-module-container>/,
+        'notification title should render outside the clipped module container so it cannot be cropped'
+    );
+
     const removedNotificationRuntimeMarkers = [
         "const style = document.createElement('style');",
         "wrapper.style.display = 'none';",
@@ -14933,7 +14988,9 @@ test('final frontend runtime remnants route through delegated or bound listeners
         'style="text-align: center; padding: 8px 0;"',
         'data-i18n="nav.notification">${PERSONAL_MESSAGE_TITLE}</span>',
         '还有 ${remaining} 条通知',
-        'window.expandNotifications'
+        'window.expandNotifications',
+        'function isNotificationDetailActionable(notification) {',
+        'async function openNotificationDetail(notification) {'
     ];
 
     for (const marker of removedNotificationRuntimeMarkers) {
@@ -14944,6 +15001,9 @@ test('final frontend runtime remnants route through delegated or bound listeners
         '.notif-drawer-actions',
         '.notif-mark-read',
         '.notif-mark-read-chip',
+        '.notif-filter-panel',
+        '.notif-filter-panel::before',
+        '.notif-filter-title',
         '.notif-filter-strip',
         '.notif-filter-strip--status',
         '.notif-filter-chip',
@@ -14951,7 +15011,10 @@ test('final frontend runtime remnants route through delegated or bound listeners
         'html.notif-scroll-locked .chat-widget-fab',
         '.notif-drawer-footer',
         '.notif-close-btn',
-        '.notif-card.notif-card-filter-enter',
+        '.notif-module-shell',
+        '.notif-module-container',
+        '.notif-card-list',
+        '.notif-card-shell.notif-card-filter-enter',
         '.notif-drawer.notif-drawer-opening',
         '.notif-drawer.notif-drawer-closing',
         '@keyframes notifMobileLayerFadeOut',
@@ -14959,9 +15022,18 @@ test('final frontend runtime remnants route through delegated or bound listeners
         '.notif-drawer',
         '.notif-drawer-list',
         '.notif-card.exit',
+        '.notif-card-shell.exit',
         '.notif-card.is-pinned',
-        '.notif-card-pin',
-        '.notif-card-pin.is-active',
+        '.notif-card.unread.is-pinned',
+        '.notif-card-actions',
+        '.notif-card-shell.is-expanded',
+        '.notif-card-action--pin',
+        '.notif-card-action--delete',
+        '.notif-loading-dots',
+        '@keyframes notifLoadingDots',
+        '.notif-drawer.notif-drawer-content-entering .notif-drawer-list > *',
+        '.notif-drawer.notif-drawer-loading .notif-drawer-footer',
+        '.notif-card-action--read',
         '.notif-card-tag--security',
         '.notif-card-tag',
         '.notif-scroll-locked'
@@ -14971,20 +15043,176 @@ test('final frontend runtime remnants route through delegated or bound listeners
         assert.equal(notificationStyles.includes(marker), true, `css/notification-client.css should contain ${marker}`);
     }
 
+    assert.equal(
+        notificationStyles.includes('.notif-card::before'),
+        false,
+        'notification read-state indicator should be part of the card edge instead of a separate pseudo-element rail'
+    );
+    assert.equal(
+        /--notif-read-edge-wash|--notif-card-surface-image/.test(notificationStyles),
+        false,
+        'notification cards should not use colored gradient washes for read or pinned state'
+    );
+
     assert.match(
         notificationStyles,
-        /\.notif-drawer-list\s*\{[\s\S]*?overflow-y:\s*auto;[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overscroll-behavior-x:\s*none;[\s\S]*?touch-action:\s*pan-y;/,
-        'notification drawer list should not allow horizontal touch wobble'
+        /\.notif-drawer-list\s*\{[\s\S]*?display:\s*flex;[\s\S]*?overflow-y:\s*hidden;[\s\S]*?overflow-x:\s*hidden;/,
+        'notification drawer list should hold the fixed filter header and delegate scrolling to the card list'
     );
     assert.match(
         notificationStyles,
-        /\.notif-card\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;[\s\S]*?overflow-wrap:\s*anywhere;/,
+        /\.notif-drawer\s*\{[\s\S]*?top:\s*54px;[\s\S]*?max-height:\s*calc\(100vh - 78px\);/,
+        'desktop notification drawer should sit slightly higher in the viewport'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-card-list\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?overflow-y:\s*auto;[\s\S]*?overflow-x:\s*hidden;[\s\S]*?overscroll-behavior-x:\s*none;[\s\S]*?touch-action:\s*pan-y;/,
+        'notification cards should scroll inside their own list below the fixed filter header'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-card-list\s*\{[\s\S]*?padding-top:\s*12px;/,
+        'notification card list should provide the gap below the opaque filter header instead of relying on header bottom radius'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-filter-panel\s*\{[\s\S]*?position:\s*sticky;[\s\S]*?top:\s*0;[\s\S]*?border-bottom:\s*0;[\s\S]*?border-radius:\s*18px 18px 0 0;[\s\S]*?background:\s*rgb\(15,\s*23,\s*42\);/,
+        'notification filter capsules should stay pinned in an opaque top container while the list scrolls'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-filter-panel::before\s*\{[\s\S]*?inset:\s*0;[\s\S]*?background:\s*rgb\(15,\s*23,\s*42\);/,
+        'notification filter panel should mask rounded-corner bleed from cards scrolling underneath'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-filter-title\s*\{[\s\S]*?display:\s*flex;[\s\S]*?justify-content:\s*center;[\s\S]*?width:\s*100%;[\s\S]*?padding:\s*0 14px;[\s\S]*?margin:\s*0 0 16px;[\s\S]*?color:\s*#ffffff;[\s\S]*?font-size:\s*1\.34rem;[\s\S]*?font-weight:\s*800;[\s\S]*?text-align:\s*center;/,
+        'notification title should sit centered, higher, larger, and white above the filter capsule container'
+    );
+    assert.equal(
+        /\.notif-filter-title\s*\{[\s\S]*?margin:\s*-/m.test(notificationStyles),
+        false,
+        'notification title should not use negative margin that can be clipped by rounded containers'
+    );
+    assert.match(
+        notificationStyles,
+        /@media \(max-width:\s*768px\)\s*\{[\s\S]*?\.notif-filter-title\s*\{[\s\S]*?display:\s*none;[\s\S]*?margin:\s*0;/,
+        'mobile notification drawer should hide the standalone notification title'
+    );
+    assert.match(
+        notificationStyles,
+        /@media \(max-width:\s*768px\)\s*\{[\s\S]*?\.notif-filter-chip\s*\{[\s\S]*?width:\s*auto;[\s\S]*?justify-content:\s*center;[\s\S]*?font-size:\s*0\.72rem;/,
+        'mobile notification filter controls should keep the same capsule treatment instead of forced two-column blocks'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-filter-chip\[data-notif-category="security"\],[\s\S]*?\.notif-filter-chip\[data-notif-read-filter="unread"\]\s*\{[\s\S]*?--notif-chip-border:\s*rgba\(248,\s*113,\s*113,\s*0\.22\);[\s\S]*?--notif-chip-active-bg:\s*rgba\(248,\s*113,\s*113,\s*0\.1\);/,
+        'security and unread filter chips should share a muted red function accent'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-filter-chip\[data-notif-category="assignment"\]\s*\{[\s\S]*?--notif-chip-border:\s*rgba\(96,\s*165,\s*250,\s*0\.2\);[\s\S]*?--notif-chip-active-bg:\s*rgba\(96,\s*165,\s*250,\s*0\.1\);/,
+        'assignment filter chips should use a muted blue function accent'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-filter-chip\[data-notif-category="announcement"\]\s*\{[\s\S]*?--notif-chip-border:\s*rgba\(250,\s*204,\s*21,\s*0\.2\);[\s\S]*?--notif-chip-active-bg:\s*rgba\(250,\s*204,\s*21,\s*0\.1\);/,
+        'announcement filter chips should use a muted amber function accent'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-filter-chip\[data-notif-category="admin_notice"\]\s*\{[\s\S]*?--notif-chip-border:\s*rgba\(192,\s*132,\s*252,\s*0\.2\);[\s\S]*?--notif-chip-active-bg:\s*rgba\(192,\s*132,\s*252,\s*0\.1\);/,
+        'admin notice filter chips should use a muted purple function accent'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-filter-chip\[data-notif-read-filter="read"\],[\s\S]*?\.notif-mark-read-chip\s*\{[\s\S]*?--notif-chip-border:\s*rgba\(52,\s*211,\s*153,\s*0\.2\);[\s\S]*?--notif-chip-active-bg:\s*rgba\(52,\s*211,\s*153,\s*0\.1\);/,
+        'read and mark-all-read filter chips should use a muted green function accent'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-card-shell\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?width:\s*100%;[\s\S]*?min-height:\s*74px;/,
+        'notification card shells should keep a readable row height in the mobile drawer'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-card\s*\{[\s\S]*?width:\s*100%;[\s\S]*?min-height:\s*74px;[\s\S]*?min-width:\s*0;[\s\S]*?max-width:\s*100%;[\s\S]*?overflow-wrap:\s*anywhere;/,
         'notification cards should wrap long text inside the drawer width'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-card\s*\{[\s\S]*?--notif-read-rail-color:\s*#22c55e;[\s\S]*?--notif-card-surface-color:\s*rgb\(30,\s*40,\s*55\);[\s\S]*?background-color:\s*var\(--notif-card-surface-color\);[\s\S]*?border-left-width:\s*3px;[\s\S]*?border-left-color:\s*var\(--notif-read-rail-color\);/,
+        'read notification cards should use a visible rounded green card edge without a colored gradient wash'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-card\.unread\s*\{[\s\S]*?--notif-read-rail-color:\s*#ef4444;[\s\S]*?--notif-card-surface-color:\s*rgb\(60,\s*50,\s*90\);/,
+        'unread notification cards should switch only the left edge color to red'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-card-body\s*\{[\s\S]*?white-space:\s*pre-line;[\s\S]*?-webkit-line-clamp:\s*2;/,
+        'notification card details should preserve multiline security alert content'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-card\.expanded \.notif-card-body\s*\{[\s\S]*?display:\s*block;[\s\S]*?-webkit-line-clamp:\s*unset;[\s\S]*?-webkit-box-orient:\s*initial;[\s\S]*?overflow:\s*visible;/,
+        'expanded notification cards should fully reveal details on desktop and mobile'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-card\.is-pinned\s*\{[\s\S]*?--notif-card-surface-color:\s*rgb\(44,\s*43,\s*52\);[\s\S]*?border-color:\s*rgba\(250,\s*204,\s*21,\s*0\.58\);[\s\S]*?box-shadow:\s*0 0 0 1px rgba\(250,\s*204,\s*21,\s*0\.1\),\s*0 10px 22px rgba\(250,\s*204,\s*21,\s*0\.08\);/,
+        'pinned notification cards should keep a gold outline treatment without a yellow gradient'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-card-shell:not\(\.is-actions-open\):not\(\.is-swiping\):hover \.notif-card\.is-pinned\s*\{[\s\S]*?--notif-card-surface-color:\s*rgb\(44,\s*43,\s*52\);[\s\S]*?border-color:\s*rgba\(250,\s*204,\s*21,\s*0\.58\);/,
+        'pinned notification hover should preserve the pinned card outline treatment without gradients'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-drawer\.notif-drawer-loading \.notif-drawer-footer\s*\{[\s\S]*?display:\s*none;/,
+        'notification drawer should hide the close capsule while only the loading dots are visible'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-drawer\.notif-drawer-loading,[\s\S]*?\.notif-drawer\.notif-drawer-loading\.active\s*\{[\s\S]*?top:\s*0;[\s\S]*?bottom:\s*0;[\s\S]*?height:\s*100dvh;[\s\S]*?align-items:\s*stretch;[\s\S]*?justify-content:\s*center;[\s\S]*?z-index:\s*2200;/,
+        'notification loading state should stretch vertically without moving the drawer horizontally'
+    );
+    assert.equal(
+        notificationStyles.includes('.notif-drawer.notif-drawer-loading::after'),
+        false,
+        'notification loading should not draw a duplicate pseudo-element dot layer'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-drawer\.notif-drawer-loading \.notif-drawer-list\s*\{[\s\S]*?height:\s*100%;[\s\S]*?justify-content:\s*center;[\s\S]*?padding:\s*0;/,
+        'notification loading state should vertically center the three loading dots in the full-height drawer list'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-empty--loading\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?color:\s*rgba\(86,\s*126,\s*177,\s*0\.94\);/,
+        'notification loading dots should use a visible but restrained blue-gray color'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-loading-dots span\s*\{[\s\S]*?opacity:\s*0\.62;[\s\S]*?box-shadow:\s*0 0 6px rgba\(86,\s*126,\s*177,\s*0\.22\);/,
+        'notification loading dots should keep enough contrast without a loud style'
+    );
+    assert.match(
+        notificationStyles,
+        /@keyframes notifLoadingDots\s*\{[\s\S]*?0%, 80%, 100%\s*\{[\s\S]*?opacity:\s*0\.62;[\s\S]*?40%\s*\{[\s\S]*?opacity:\s*1;/,
+        'notification loading dot animation should keep a visible baseline opacity'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-drawer-footer\s*\{[\s\S]*?flex:\s*0 0 72px;[\s\S]*?align-items:\s*center;[\s\S]*?height:\s*72px;[\s\S]*?padding:\s*0 max\(16px, env\(safe-area-inset-right, 0px\)\) 0 max\(16px, env\(safe-area-inset-left, 0px\)\);/,
+        'notification footer should keep the close capsule centered in the fixed mobile footer block'
     );
 
     const notificationAssetMarkers = [
-        'css/notification-client.css?v=20260503_NOTIFICATION_MOBILE_HEADER_PIN_2',
-        'js/engagement-runtime-loader.js?v=20260501_ENGAGEMENT_ANNOUNCEMENT_DARK_CARD_AUTH_BACKDROP_1'
+        'css/notification-client.css?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1',
+        'js/engagement-runtime-loader.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1'
     ];
 
     for (const marker of notificationAssetMarkers) {
@@ -15022,6 +15250,27 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         'async function runAdminCommentsSmoke() {',
         'async function runAdminChatSmoke() {',
         'async function runNotificationSmoke() {',
+        'smokeState.notificationSelectCount = 0;',
+        'notificationSelectDelayMs',
+        '通知加载中不会显示收起通知按钮',
+        '通知加载三点在窗口中上下居中',
+        '通知三点加载完成后会保留入场动画',
+        '通知抽屉打开后不会重复拉取并二次刷新',
+        '通知卡片保持可读高度不会被压成横线',
+        '通知条左侧读态指示条颜色正确',
+        '通知筛选胶囊顶部显示通知标题',
+        '通知筛选胶囊按功能区分颜色',
+        '通知筛选胶囊固定在不透明顶部容器',
+        '通知中心底部收起胶囊在白块中上下居中',
+        '通知卡片左滑会露出置顶、删除、已读操作',
+        '通知卡片左滑松手后的桌面补发点击不会关回',
+        '通知卡片左滑后点击空白处会收回操作栏',
+        '通知卡片触控板横向滑动也会停留操作栏',
+        '电脑端通知条外壳点击也会展开详情',
+        '清除已读后未读通知补位不会重新播放入场动画',
+        '置顶通知有更明显的颜色区分',
+        '置顶通知鼠标悬停不会发生颜色闪变',
+        '异常登录安全提醒点击会展开内容',
         'function shouldRunMobileLayoutChecks() {',
         'function recordSelectorsNoHorizontalOverflow(label, selectors = [], tolerance = 6) {',
         "document.documentElement.setAttribute('data-local-smoke-status', status);",
@@ -15099,7 +15348,7 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         'js/admin-smoke-loader.js should gate the local smoke harness behind the smoke query flag'
     );
     assert.equal(
-        smokeLoaderSource.includes('js/local-smoke-fixtures.js?v=20260429_LOCAL_SMOKE_ADMIN_ACCESS_SESSION_1'),
+        smokeLoaderSource.includes('js/local-smoke-fixtures.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_SMOKE_1'),
         true,
         'js/admin-smoke-loader.js should inject the local smoke fixtures entry'
     );
@@ -15119,7 +15368,7 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         'admin-studio.html should load the lightweight local smoke loader'
     );
     assert.equal(
-        adminStudioHtml.includes('js/local-smoke-fixtures.js?v=20260429_LOCAL_SMOKE_ADMIN_ACCESS_SESSION_1'),
+        adminStudioHtml.includes('js/local-smoke-fixtures.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_SMOKE_1'),
         false,
         'admin-studio.html should not eagerly load the heavy local smoke fixtures entry'
     );
@@ -15139,12 +15388,12 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         'smoke-notifications.html should load the dedicated smoke harness stylesheet'
     );
     assert.equal(
-        smokeNotificationHtml.includes('js/local-smoke-fixtures.js?v=20260429_LOCAL_SMOKE_ADMIN_ACCESS_SESSION_1'),
+        smokeNotificationHtml.includes('js/local-smoke-fixtures.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_SMOKE_1'),
         true,
         'smoke-notifications.html should load the local smoke fixtures entry'
     );
     assert.equal(
-        smokeNotificationHtml.includes('notification-client.js?v=20260503_NOTIFICATION_MOBILE_HEADER_PIN_2'),
+        smokeNotificationHtml.includes('notification-client.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1'),
         true,
         'smoke-notifications.html should load the current notification runtime'
     );
@@ -15424,12 +15673,12 @@ test('announcement runtime renderers externalize decoration particles and physic
     }
 
     assert.equal(
-        indexSource.includes('./js/engagement-runtime-loader.js?v=20260501_ENGAGEMENT_ANNOUNCEMENT_DARK_CARD_AUTH_BACKDROP_1'),
+        indexSource.includes('./js/engagement-runtime-loader.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1'),
         true,
         'index.html should defer announcement loading through the shared engagement bootstrap'
     );
     assert.equal(
-        guestbookSource.includes('js/engagement-runtime-loader.js?v=20260501_ENGAGEMENT_ANNOUNCEMENT_DARK_CARD_AUTH_BACKDROP_1'),
+        guestbookSource.includes('js/engagement-runtime-loader.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1'),
         true,
         'guestbook.html should defer announcement loading through the shared engagement bootstrap'
     );
@@ -15441,7 +15690,7 @@ test('announcement runtime renderers externalize decoration particles and physic
 
     for (const source of [verifySource, shopSource, legacyIndexSource]) {
         assert.equal(
-            source.includes('js/engagement-runtime-loader.js?v=20260501_ENGAGEMENT_ANNOUNCEMENT_DARK_CARD_AUTH_BACKDROP_1'),
+            source.includes('js/engagement-runtime-loader.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1'),
             true,
             'announcement entry pages should defer announcement loading through the shared engagement bootstrap'
         );
@@ -15677,7 +15926,7 @@ test('admin studio modules emit unified command feedback for recent processing r
         'js/admin-command-center.js?v=20260428_ADMIN_PULSE_DOCK_SWITCH_STEADY_1',
         'js/admin-payments.js?v=20260421_ADMIN_PAYMENTS_CONTEXT_HELPER_P2',
         'js/admin-tickets.js?v=20260428_TICKETS_WORKSPACE_SCROLL_PRESERVE_1',
-        'js/admin-shop.js?v=20260430_SHOP_SAVE_SCHEMA_FALLBACK_1',
+        'js/admin-shop.js?v=20260504_SHOP_IMPORT_STOCK_SYNC_1',
         'admin-discounts.js?v=20260427_DISCOUNTS_BATCH_RESTORE_HINT_1',
         'js/admin-shell.js?v=20260426_ADMIN_SHELL_LOADING_DOTS_CENTER_P1',
         'admin-users.js?v=20260429_ADMIN_USERS_MODAL_STABILITY_1',
@@ -15744,7 +15993,7 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
         'profile modal loader should cache-bust the light backdrop material'
     );
     assert.equal(
-        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260503_WALLET_REDEEM_REVOKE_REASON_UI_1'),
+        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260504_USDT_DIRECT_CHECKOUT_1'),
         true,
         'wallet modal loader should cache-bust the latest wallet surface stylesheet'
     );

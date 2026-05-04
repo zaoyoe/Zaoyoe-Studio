@@ -140,6 +140,31 @@
         setGuestbookKeyboardSettling(true);
     }
 
+    function getGuestbookModalNativeViewportFrame() {
+        const vv = window.visualViewport;
+        const visualTop = Math.max(0, vv?.offsetTop || 0);
+        const visualLeft = Math.max(0, vv?.offsetLeft || 0);
+        const visualWidth = Math.max(320, Math.round(vv?.width || window.innerWidth || document.documentElement.clientWidth || 0));
+        const visualHeight = Math.max(0, vv?.height || 0);
+        const visualBottom = visualTop + visualHeight;
+        const overlayHeight = Math.max(320, Math.round(
+            visualHeight
+            || visualBottom
+            || window.innerHeight
+            || document.documentElement.clientHeight
+            || 0
+        ));
+
+        return {
+            top: Math.round(visualTop),
+            left: Math.round(visualLeft),
+            width: visualWidth,
+            overlayHeight,
+            visualHeight,
+            visualBottom
+        };
+    }
+
     function getGuestbookStableViewportProbe() {
         if (guestbookModalKeyboardState.stableViewportProbe?.isConnected) {
             return guestbookModalKeyboardState.stableViewportProbe;
@@ -164,30 +189,44 @@
             return;
         }
 
-        const vv = window.visualViewport;
-        const visualFrameHeight = Math.max(
-            0,
-            Math.round((vv?.height || 0) + (vv?.offsetTop || 0))
-        );
+        const frame = getGuestbookModalNativeViewportFrame();
         const stableViewportHeight = getGuestbookStableViewportHeight();
         const fallbackHeight = Math.max(
             Math.round(window.innerHeight || 0),
             Math.round(document.documentElement.clientHeight || 0),
-            Math.round(vv?.height || 0)
+            Math.round(frame.visualBottom || 0),
+            Math.round(frame.visualHeight || 0)
         );
-        const measuredHeight = visualFrameHeight || stableViewportHeight || fallbackHeight;
+        const measuredHeight = Math.max(0, Math.round(
+            frame.overlayHeight
+            || frame.visualBottom
+            || stableViewportHeight
+            || fallbackHeight
+        ));
 
         if (!measuredHeight) {
             return;
         }
-        if (!force && guestbookModalKeyboardState.overlayBaseHeight === measuredHeight) {
+        const baseHeight = Math.round(guestbookModalKeyboardState.overlayBaseHeight || 0);
+        const shouldPreserveKeyboardBase = overlay.classList.contains('active')
+            && baseHeight > measuredHeight;
+        const overlayHeight = shouldPreserveKeyboardBase ? baseHeight : measuredHeight;
+
+        setGuestbookModalRuntimeStyles(overlay, {
+            '--guestbook-modal-viewport-top': `${frame.top}px`,
+            '--guestbook-modal-viewport-left': `${frame.left}px`,
+            '--guestbook-modal-viewport-width': `${frame.width}px`,
+            '--guestbook-modal-overlay-height': `${overlayHeight}px`
+        });
+
+        if (shouldPreserveKeyboardBase) {
+            return;
+        }
+        if (!force && baseHeight >= measuredHeight) {
             return;
         }
 
         guestbookModalKeyboardState.overlayBaseHeight = measuredHeight;
-        setGuestbookModalRuntimeStyles(overlay, {
-            '--guestbook-modal-overlay-height': `${measuredHeight}px`
-        });
     }
 
     function restoreGuestbookModalOverlayBaseHeight() {
@@ -198,7 +237,10 @@
 
         guestbookModalKeyboardState.overlayBaseHeight = 0;
         setGuestbookModalRuntimeStyles(overlay, {
-            '--guestbook-modal-overlay-height': ''
+            '--guestbook-modal-overlay-height': '',
+            '--guestbook-modal-viewport-top': '',
+            '--guestbook-modal-viewport-left': '',
+            '--guestbook-modal-viewport-width': ''
         });
     }
 
@@ -564,6 +606,7 @@
             }
             guestbookModalKeyboardState.viewportRafId = requestAnimationFrame(() => {
                 guestbookModalKeyboardState.viewportRafId = null;
+                captureGuestbookModalOverlayBaseHeight();
                 syncGuestbookModalKeyboardDock();
             });
         };

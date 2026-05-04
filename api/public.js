@@ -94,6 +94,17 @@ function createRouteHandlersForScope(scope) {
             })
         };
     }
+    case 'engagement': {
+        const {
+            createPublicEngagementHandlers
+        } = require('../server/api-handlers/public/engagement');
+
+        return {
+            ...createPublicEngagementHandlers({
+                admin
+            })
+        };
+    }
     case 'shop': {
         const site = require('./_lib/site');
         const discountAssets = require('./_lib/discount-assets');

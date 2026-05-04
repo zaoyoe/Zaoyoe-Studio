@@ -353,7 +353,7 @@ function getSessionAgeMinutes(session) {
 function isCheckoutSessionEligibleOrder(order) {
     if (!order) return false;
     const provider = String(order.provider || '').trim().toLowerCase();
-    if (!['mock', 'afdian', 'hupijiao', 'zpay'].includes(provider)) return false;
+    if (!['mock', 'afdian', 'hupijiao', 'zpay', 'nowpayments'].includes(provider)) return false;
 
     const metadata = normalizeJsonObject(order.provider_metadata);
     if (order.checkout_session_id) return true;

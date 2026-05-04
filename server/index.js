@@ -31,6 +31,9 @@ const {
     createZpayWebhookHandler
 } = require('../api/_lib/payments/zpay-webhook');
 const {
+    createNowpaymentsWebhookHandler
+} = require('../api/_lib/payments/nowpayments-webhook');
+const {
     maybeIssueAffiliateDiscountAssetsForRecharge,
     maybeIssueRechargeDiscountAssets
 } = require('../api/_lib/discount-trigger-linkage');
@@ -185,6 +188,10 @@ const supabase = createClient(
     process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 const zpayWebhookHandler = createZpayWebhookHandler({
+    supabase,
+    env: process.env
+});
+const nowpaymentsWebhookHandler = createNowpaymentsWebhookHandler({
     supabase,
     env: process.env
 });
@@ -5052,6 +5059,9 @@ app.post('/api/payments/hupijiao/webhook', async (req, res) => {
 
 // GET or POST /api/payments/zpay/webhook
 app.all('/api/payments/zpay/webhook', zpayWebhookHandler);
+
+// POST /api/payments/nowpayments/webhook
+app.post('/api/payments/nowpayments/webhook', nowpaymentsWebhookHandler);
 
 // POST /api/afdian/webhook
 app.post('/api/afdian/webhook', async (req, res) => {

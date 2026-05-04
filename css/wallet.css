@@ -1314,7 +1314,7 @@ body.wallet-modal-lock {
     border-radius: 12px;
     top: 16px;
     /* Initial top */
-    height: 48px;
+    height: 54px;
     /* Initial height (approx) */
     pointer-events: none;
     /* Let clicks pass through */
@@ -1341,6 +1341,7 @@ body.wallet-modal-lock {
     display: flex;
     align-items: center;
     gap: 10px;
+    min-height: 54px;
     padding: 12px 14px;
     border-radius: 12px;
     cursor: pointer;
@@ -1352,6 +1353,7 @@ body.wallet-modal-lock {
     position: relative;
     z-index: 1;
     color: var(--wallet-sheet-soft);
+    line-height: 1.25;
     appearance: none;
     -webkit-appearance: none;
 }
@@ -1389,12 +1391,20 @@ body.wallet-modal-lock {
 }
 
 .menu-icon {
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-size: 18px;
+    line-height: 1;
     color: inherit;
 }
 
 .menu-text {
     font-size: 14px;
+    line-height: 1.25;
     color: inherit;
 }
 
@@ -2319,6 +2329,20 @@ body.wallet-modal-lock {
     background: linear-gradient(145deg, #2b2413, #332616);
 }
 
+.package-item.is-selected,
+.package-item.is-selected:hover {
+    transform: translateY(-2px);
+    border-color: rgba(251, 191, 36, 0.62);
+    box-shadow: 0 12px 28px rgba(251, 191, 36, 0.16);
+    background: linear-gradient(145deg, #2c2514, #332717);
+}
+
+.package-item.is-selected .pkg-price {
+    border-color: rgba(251, 191, 36, 0.52);
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.1);
+}
+
 .pkg-name {
     font-size: 11px;
     font-weight: 500;
@@ -2390,6 +2414,123 @@ body.wallet-modal-lock {
     font-weight: 700;
     transform: translateY(-2px);
     box-shadow: 0 4px 10px rgba(255, 215, 0, 0.3);
+}
+
+.wallet-recharge-payment-panel {
+    margin-top: 18px;
+    padding: 14px;
+    border-radius: 18px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.035);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 14px;
+}
+
+.wallet-recharge-payment-panel[hidden] {
+    display: none;
+}
+
+.wallet-recharge-selected-summary {
+    min-width: 0;
+    display: grid;
+    gap: 4px;
+}
+
+.wallet-recharge-selected-summary span {
+    color: rgba(255, 255, 255, 0.48);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.wallet-recharge-selected-summary strong {
+    color: #fff;
+    font-size: 15px;
+    font-weight: 800;
+    overflow-wrap: anywhere;
+}
+
+.wallet-recharge-selected-summary em {
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 12px;
+    font-style: normal;
+}
+
+.wallet-recharge-method-buttons {
+    display: flex;
+    align-items: stretch;
+    justify-content: flex-end;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.wallet-recharge-method-buttons--custom {
+    flex: 0 0 auto;
+}
+
+.wallet-recharge-method-btn {
+    min-width: 118px;
+    min-height: 54px;
+    padding: 10px 13px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: linear-gradient(145deg, rgba(255, 255, 255, 0.09), rgba(255, 255, 255, 0.04));
+    color: #fff;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    font: inherit;
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.wallet-recharge-method-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    border-color: rgba(251, 191, 36, 0.36);
+    box-shadow: 0 10px 18px rgba(249, 115, 22, 0.16);
+}
+
+.wallet-recharge-method-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.48;
+}
+
+.wallet-recharge-method-btn.is-processing {
+    opacity: 1;
+    border-color: rgba(251, 191, 36, 0.4);
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.11);
+}
+
+.wallet-recharge-method-icon {
+    width: 24px;
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+}
+
+.wallet-recharge-method-copy {
+    display: grid;
+    gap: 2px;
+    text-align: left;
+    min-width: 0;
+}
+
+.wallet-recharge-method-copy strong {
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1.15;
+}
+
+.wallet-recharge-method-copy small {
+    color: rgba(255, 255, 255, 0.54);
+    font-size: 10px;
+    line-height: 1.15;
+    white-space: nowrap;
 }
 
 .custom-recharge-section {
@@ -4067,6 +4208,21 @@ body.wallet-modal-lock {
         width: 100%;
     }
 
+    .wallet-recharge-payment-panel {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .wallet-recharge-method-buttons,
+    .wallet-recharge-method-buttons--custom {
+        width: 100%;
+        justify-content: stretch;
+    }
+
+    .wallet-recharge-method-btn {
+        flex: 1 1 140px;
+    }
+
     .pkg-points {
         font-size: 18px;
     }
@@ -4265,7 +4421,8 @@ body.wallet-modal-lock {
     }
 
     .custom-recharge-input,
-    .custom-recharge-btn {
+    .custom-recharge-btn,
+    .wallet-recharge-method-btn {
         width: 100%;
     }
 }
@@ -5337,7 +5494,12 @@ body.wallet-modal-lock {
 
 .wallet-payment-qr-success[hidden],
 .js-wallet-payment-qr-meta[hidden],
-.js-wallet-payment-qr-actions[hidden] {
+.js-wallet-payment-qr-actions[hidden],
+.wallet-crypto-countdown[hidden],
+.wallet-crypto-amount-hero[hidden],
+.wallet-crypto-network-strip[hidden],
+.wallet-crypto-copy-card[hidden],
+.wallet-crypto-warning[hidden] {
     display: none;
 }
 
@@ -5376,6 +5538,328 @@ body.wallet-modal-lock {
     margin-top: 0;
 }
 
+.wallet-crypto-checkout-modal {
+    max-width: 560px;
+    width: min(92vw, 560px);
+}
+
+.wallet-crypto-checkout-panel {
+    gap: 14px;
+}
+
+.wallet-crypto-title-icon {
+    color: #22c55e;
+}
+
+.wallet-crypto-countdown {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(148, 163, 184, 0.08);
+}
+
+.wallet-crypto-countdown span,
+.wallet-crypto-countdown small {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.62);
+}
+
+.wallet-crypto-countdown strong {
+    min-width: 0;
+    color: #e2e8f0;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 22px;
+    font-weight: 850;
+    letter-spacing: 0;
+    text-align: center;
+}
+
+.wallet-crypto-countdown.is-warning {
+    border-color: rgba(251, 191, 36, 0.32);
+    background: rgba(251, 191, 36, 0.1);
+}
+
+.wallet-crypto-countdown.is-warning strong {
+    color: #fde68a;
+}
+
+.wallet-crypto-countdown.is-expired {
+    border-color: rgba(248, 113, 113, 0.3);
+    background: rgba(248, 113, 113, 0.1);
+}
+
+.wallet-crypto-countdown.is-expired strong {
+    color: #fecaca;
+}
+
+.wallet-crypto-amount-hero {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 13px;
+    border: 1px solid rgba(34, 197, 94, 0.28);
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.14), rgba(20, 184, 166, 0.08));
+}
+
+.wallet-crypto-amount-hero span {
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.62);
+}
+
+.wallet-crypto-amount-hero b {
+    font-size: 15px;
+    color: #bbf7d0;
+}
+
+.wallet-crypto-primary-amount {
+    min-width: 0;
+    justify-self: center;
+    padding: 5px 9px;
+    border: 1px solid rgba(34, 197, 94, 0.24);
+    border-radius: 12px;
+    background: #ffffff;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.9),
+        0 0 0 4px rgba(34, 197, 94, 0.08),
+        0 8px 18px rgba(21, 128, 61, 0.08);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 25px;
+    font-weight: 850;
+    line-height: 1;
+    color: #065f46;
+    white-space: nowrap;
+    overflow-wrap: normal;
+}
+
+.wallet-crypto-inline-copy,
+.wallet-crypto-copy-btn {
+    appearance: none;
+    border: 1px solid rgba(34, 197, 94, 0.28);
+    border-radius: 10px;
+    background: rgba(34, 197, 94, 0.14);
+    color: #bbf7d0;
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+}
+
+.wallet-crypto-inline-copy {
+    padding: 8px 10px;
+}
+
+.wallet-crypto-copy-btn {
+    flex: 0 0 auto;
+    padding: 9px 12px;
+}
+
+.wallet-crypto-inline-copy:hover,
+.wallet-crypto-copy-btn:hover {
+    transform: translateY(-1px);
+    border-color: rgba(34, 197, 94, 0.45);
+    background: rgba(34, 197, 94, 0.2);
+}
+
+.wallet-crypto-inline-copy:disabled,
+.wallet-crypto-copy-btn:disabled,
+.wallet-crypto-checkout-modal .action-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.48;
+    transform: none;
+    box-shadow: none;
+}
+
+.wallet-crypto-qr-card {
+    min-height: 252px;
+}
+
+.wallet-payment-qr-card.is-timeout,
+.wallet-crypto-qr-card.is-timeout {
+    min-height: 286px;
+    border-color: rgba(248, 113, 113, 0.26);
+    background:
+        radial-gradient(circle at 30% 22%, rgba(96, 165, 250, 0.16), transparent 34%),
+        linear-gradient(180deg, rgba(30, 41, 59, 0.74), rgba(15, 23, 42, 0.9));
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.06),
+        0 18px 44px rgba(15, 23, 42, 0.26);
+}
+
+.wallet-payment-qr-image--crypto {
+    width: min(100%, 232px);
+}
+
+.wallet-crypto-timeout {
+    width: 100%;
+    min-height: 252px;
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 10px;
+    padding: 24px 20px;
+    text-align: center;
+    opacity: 0;
+    transform: translateY(18px) scale(0.94);
+    transition:
+        opacity 0.38s cubic-bezier(0.22, 1, 0.36, 1),
+        transform 0.42s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.wallet-crypto-timeout[hidden] {
+    display: none;
+}
+
+.wallet-crypto-timeout.is-visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+}
+
+.wallet-crypto-timeout-clock {
+    width: 132px;
+    height: 132px;
+    display: grid;
+    place-items: center;
+    color: #7fb4ff;
+    filter: drop-shadow(0 18px 28px rgba(96, 165, 250, 0.18));
+}
+
+.wallet-crypto-timeout-clock svg {
+    width: 100%;
+    height: 100%;
+}
+
+.wallet-crypto-timeout-body {
+    color: #6aa8ff;
+}
+
+.wallet-crypto-timeout-face {
+    filter: drop-shadow(0 5px 10px rgba(15, 23, 42, 0.08));
+}
+
+.wallet-crypto-timeout-hand,
+.wallet-crypto-timeout-drip,
+.wallet-crypto-timeout-tick {
+    color: #9db6d6;
+}
+
+.wallet-crypto-timeout-spark {
+    color: rgba(147, 197, 253, 0.72);
+}
+
+.wallet-crypto-timeout-spark--one {
+    transform-origin: 29px 46px;
+    animation: walletCryptoTimeoutSpark 2.4s ease-in-out infinite;
+}
+
+.wallet-crypto-timeout-spark--two {
+    transform-origin: 109px 34px;
+    animation: walletCryptoTimeoutSpark 2.4s ease-in-out 0.42s infinite;
+}
+
+.wallet-crypto-timeout-title {
+    color: #fda4af;
+    font-size: 28px;
+    font-weight: 850;
+    letter-spacing: 0;
+}
+
+.wallet-crypto-timeout p {
+    max-width: 330px;
+    margin: 0;
+    color: rgba(226, 232, 240, 0.72);
+    font-size: 13px;
+    line-height: 1.65;
+}
+
+.wallet-crypto-timeout small {
+    color: rgba(226, 232, 240, 0.62);
+    font-size: 12px;
+}
+
+.wallet-crypto-timeout small strong {
+    color: rgba(255, 255, 255, 0.86);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    letter-spacing: 0;
+}
+
+.wallet-crypto-network-strip {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(251, 191, 36, 0.24);
+    background: rgba(251, 191, 36, 0.08);
+}
+
+.wallet-crypto-network-strip span,
+.wallet-crypto-copy-card span {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.58);
+}
+
+.wallet-crypto-network-strip strong {
+    padding: 5px 9px;
+    border-radius: 999px;
+    background: rgba(251, 191, 36, 0.18);
+    color: #fde68a;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.wallet-crypto-network-strip small {
+    min-width: 0;
+    color: rgba(255, 255, 255, 0.74);
+    font-size: 13px;
+    overflow-wrap: anywhere;
+}
+
+.wallet-crypto-copy-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 13px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.045);
+}
+
+.wallet-crypto-copy-card > div {
+    display: grid;
+    min-width: 0;
+    gap: 5px;
+}
+
+.wallet-crypto-address-text {
+    min-width: 0;
+    color: rgba(255, 255, 255, 0.9);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    font-size: 13px;
+    font-weight: 650;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
+.wallet-crypto-warning {
+    display: grid;
+    gap: 6px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(248, 113, 113, 0.24);
+    background: rgba(248, 113, 113, 0.08);
+    color: rgba(254, 226, 226, 0.9);
+    font-size: 12px;
+    line-height: 1.55;
+}
+
 @keyframes walletPaymentQrDots {
     0%, 80%, 100% {
         transform: translateY(0);
@@ -5385,6 +5869,18 @@ body.wallet-modal-lock {
     40% {
         transform: translateY(-2px);
         opacity: 0.96;
+    }
+}
+
+@keyframes walletCryptoTimeoutSpark {
+    0%, 100% {
+        opacity: 0.48;
+        transform: scale(0.92);
+    }
+
+    45% {
+        opacity: 1;
+        transform: scale(1.08);
     }
 }
 
@@ -6296,6 +6792,13 @@ html[data-theme="light"] .balance-card.compact-premium-card,
     box-shadow: 0 14px 28px rgba(217, 119, 6, 0.12);
 }
 
+[data-theme="light"] .package-item.is-selected,
+[data-theme="light"] .package-item.is-selected:hover {
+    background: linear-gradient(145deg, #fffaf0, #fff4dc);
+    border-color: rgba(251, 191, 36, 0.42);
+    box-shadow: 0 14px 28px rgba(217, 119, 6, 0.12);
+}
+
 [data-theme="light"] .pkg-name {
     color: #94a3b8;
 }
@@ -6308,6 +6811,44 @@ html[data-theme="light"] .balance-card.compact-premium-card,
 [data-theme="light"] .package-item:not(:disabled):not(.is-dimmed):not(.is-processing):hover .pkg-price {
     color: #78350f;
     box-shadow: 0 8px 18px rgba(217, 119, 6, 0.14);
+}
+
+[data-theme="light"] .wallet-recharge-payment-panel {
+    background: linear-gradient(145deg, #ffffff, #f7fbff);
+    border-color: rgba(148, 163, 184, 0.16);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.94),
+        0 10px 24px rgba(148, 163, 184, 0.08);
+}
+
+[data-theme="light"] .wallet-recharge-selected-summary span {
+    color: #94a3b8;
+}
+
+[data-theme="light"] .wallet-recharge-selected-summary strong {
+    color: #0f172a;
+}
+
+[data-theme="light"] .wallet-recharge-selected-summary em,
+[data-theme="light"] .wallet-recharge-method-copy small {
+    color: #64748b;
+}
+
+[data-theme="light"] .wallet-recharge-method-btn {
+    background: #ffffff;
+    color: #0f172a;
+    border-color: rgba(148, 163, 184, 0.18);
+    box-shadow: 0 8px 18px rgba(148, 163, 184, 0.08);
+}
+
+[data-theme="light"] .wallet-recharge-method-btn:hover:not(:disabled) {
+    border-color: rgba(251, 191, 36, 0.34);
+    box-shadow: 0 12px 24px rgba(217, 119, 6, 0.12);
+}
+
+[data-theme="light"] .wallet-recharge-method-btn.is-processing {
+    background: #fff8ea;
+    color: #92400e;
 }
 
 [data-theme="light"] .wallet-discount-assets-refresh,
@@ -6855,6 +7396,214 @@ html:not([data-theme="dark"]) .wallet-order-action-btn-danger:focus-visible {
     box-shadow:
         0 0 0 10px rgba(34, 197, 94, 0.08),
         0 18px 36px rgba(34, 197, 94, 0.12);
+}
+
+[data-theme="light"] .wallet-crypto-amount-hero,
+html:not([data-theme="dark"]) .wallet-crypto-amount-hero {
+    background: linear-gradient(135deg, rgba(220, 252, 231, 0.88), rgba(240, 253, 250, 0.92));
+    border-color: rgba(34, 197, 94, 0.22);
+}
+
+[data-theme="light"] .wallet-crypto-amount-hero span,
+html:not([data-theme="dark"]) .wallet-crypto-amount-hero span,
+[data-theme="light"] .wallet-crypto-copy-card span,
+html:not([data-theme="dark"]) .wallet-crypto-copy-card span,
+[data-theme="light"] .wallet-crypto-network-strip span,
+html:not([data-theme="dark"]) .wallet-crypto-network-strip span {
+    color: #64748b;
+}
+
+[data-theme="light"] .wallet-crypto-primary-amount,
+html:not([data-theme="dark"]) .wallet-crypto-primary-amount {
+    color: #065f46;
+    background: #ffffff;
+    border-color: rgba(34, 197, 94, 0.24);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.86),
+        0 0 0 4px rgba(34, 197, 94, 0.08),
+        0 8px 18px rgba(21, 128, 61, 0.08);
+}
+
+[data-theme="light"] .wallet-crypto-amount-hero b,
+html:not([data-theme="dark"]) .wallet-crypto-amount-hero b {
+    color: #047857;
+}
+
+[data-theme="light"] .wallet-crypto-inline-copy,
+[data-theme="light"] .wallet-crypto-copy-btn,
+html:not([data-theme="dark"]) .wallet-crypto-inline-copy,
+html:not([data-theme="dark"]) .wallet-crypto-copy-btn {
+    background: rgba(34, 197, 94, 0.09);
+    border-color: rgba(34, 197, 94, 0.18);
+    color: #047857;
+}
+
+[data-theme="light"] .wallet-crypto-countdown,
+html:not([data-theme="dark"]) .wallet-crypto-countdown {
+    background: rgba(248, 250, 252, 0.94);
+    border-color: rgba(148, 163, 184, 0.2);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.88),
+        0 8px 18px rgba(148, 163, 184, 0.08);
+}
+
+[data-theme="light"] .wallet-crypto-countdown span,
+[data-theme="light"] .wallet-crypto-countdown small,
+html:not([data-theme="dark"]) .wallet-crypto-countdown span,
+html:not([data-theme="dark"]) .wallet-crypto-countdown small {
+    color: #64748b;
+}
+
+[data-theme="light"] .wallet-crypto-countdown strong,
+html:not([data-theme="dark"]) .wallet-crypto-countdown strong {
+    color: #334155;
+}
+
+[data-theme="light"] .wallet-crypto-countdown.is-warning,
+html:not([data-theme="dark"]) .wallet-crypto-countdown.is-warning {
+    background: rgba(254, 249, 195, 0.82);
+    border-color: rgba(245, 158, 11, 0.22);
+}
+
+[data-theme="light"] .wallet-crypto-countdown.is-warning strong,
+html:not([data-theme="dark"]) .wallet-crypto-countdown.is-warning strong {
+    color: #b45309;
+}
+
+[data-theme="light"] .wallet-crypto-countdown.is-expired,
+html:not([data-theme="dark"]) .wallet-crypto-countdown.is-expired {
+    background: rgba(254, 242, 242, 0.9);
+    border-color: rgba(248, 113, 113, 0.22);
+}
+
+[data-theme="light"] .wallet-crypto-countdown.is-expired strong,
+html:not([data-theme="dark"]) .wallet-crypto-countdown.is-expired strong {
+    color: #dc2626;
+}
+
+[data-theme="light"] .wallet-payment-qr-card.is-timeout,
+[data-theme="light"] .wallet-crypto-qr-card.is-timeout,
+html:not([data-theme="dark"]) .wallet-payment-qr-card.is-timeout,
+html:not([data-theme="dark"]) .wallet-crypto-qr-card.is-timeout {
+    background:
+        radial-gradient(circle at 30% 22%, rgba(147, 197, 253, 0.24), transparent 34%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(248, 250, 252, 0.96));
+    border-color: rgba(251, 113, 133, 0.2);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.8),
+        0 18px 44px rgba(148, 163, 184, 0.16);
+}
+
+[data-theme="light"] .wallet-crypto-timeout-clock,
+html:not([data-theme="dark"]) .wallet-crypto-timeout-clock {
+    color: #60a5fa;
+}
+
+[data-theme="light"] .wallet-crypto-timeout-body,
+html:not([data-theme="dark"]) .wallet-crypto-timeout-body {
+    color: #79b3ff;
+}
+
+[data-theme="light"] .wallet-crypto-timeout-hand,
+[data-theme="light"] .wallet-crypto-timeout-drip,
+[data-theme="light"] .wallet-crypto-timeout-tick,
+html:not([data-theme="dark"]) .wallet-crypto-timeout-hand,
+html:not([data-theme="dark"]) .wallet-crypto-timeout-drip,
+html:not([data-theme="dark"]) .wallet-crypto-timeout-tick {
+    color: #94a3b8;
+}
+
+[data-theme="light"] .wallet-crypto-timeout-title,
+html:not([data-theme="dark"]) .wallet-crypto-timeout-title {
+    color: #f43f5e;
+}
+
+[data-theme="light"] .wallet-crypto-timeout p,
+html:not([data-theme="dark"]) .wallet-crypto-timeout p {
+    color: #64748b;
+}
+
+[data-theme="light"] .wallet-crypto-timeout small,
+html:not([data-theme="dark"]) .wallet-crypto-timeout small {
+    color: #94a3b8;
+}
+
+[data-theme="light"] .wallet-crypto-timeout small strong,
+html:not([data-theme="dark"]) .wallet-crypto-timeout small strong {
+    color: #334155;
+}
+
+[data-theme="light"] .wallet-crypto-network-strip,
+html:not([data-theme="dark"]) .wallet-crypto-network-strip {
+    background: rgba(254, 249, 195, 0.72);
+    border-color: rgba(245, 158, 11, 0.18);
+}
+
+[data-theme="light"] .wallet-crypto-network-strip strong,
+html:not([data-theme="dark"]) .wallet-crypto-network-strip strong {
+    background: rgba(245, 158, 11, 0.12);
+    color: #92400e;
+}
+
+[data-theme="light"] .wallet-crypto-network-strip small,
+html:not([data-theme="dark"]) .wallet-crypto-network-strip small,
+[data-theme="light"] .wallet-crypto-address-text,
+html:not([data-theme="dark"]) .wallet-crypto-address-text {
+    color: #334155;
+}
+
+[data-theme="light"] .wallet-crypto-copy-card,
+html:not([data-theme="dark"]) .wallet-crypto-copy-card {
+    background: rgba(248, 250, 252, 0.94);
+    border-color: rgba(148, 163, 184, 0.18);
+}
+
+[data-theme="light"] .wallet-crypto-warning,
+html:not([data-theme="dark"]) .wallet-crypto-warning {
+    background: rgba(255, 241, 242, 0.86);
+    border-color: rgba(251, 113, 133, 0.18);
+    color: #9f1239;
+}
+
+@media (max-width: 600px) {
+    .wallet-crypto-countdown {
+        grid-template-columns: 1fr auto;
+    }
+
+    .wallet-crypto-countdown small {
+        grid-column: 1 / -1;
+    }
+
+    .wallet-crypto-amount-hero {
+        grid-template-columns: auto minmax(0, 1fr) auto auto;
+        gap: 6px;
+    }
+
+    .wallet-crypto-amount-hero span {
+        grid-column: auto;
+    }
+
+    .wallet-crypto-primary-amount {
+        padding: 5px 7px;
+        font-size: 20px;
+    }
+
+    .wallet-crypto-network-strip {
+        grid-template-columns: 1fr auto;
+    }
+
+    .wallet-crypto-network-strip small {
+        grid-column: 1 / -1;
+    }
+
+    .wallet-crypto-copy-card {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .wallet-crypto-copy-btn {
+        width: 100%;
+    }
 }
 
 [data-theme="light"] .wallet-toast {

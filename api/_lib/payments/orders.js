@@ -2405,6 +2405,7 @@ function resolveRequestedProviderKey({
 }) {
     const normalizedRequested = String(requestedProviderKey || '').trim().toLowerCase();
     const activeProviderKey = String(paymentChannels?.active_provider || 'afdian').trim().toLowerCase() || 'afdian';
+    const providers = paymentChannels?.providers || {};
     const mockConfigured = paymentChannels?.providers?.mock?.enabled !== false
         && (
             rechargeOptions?.mock_payment_enabled === true
@@ -2434,6 +2435,13 @@ function resolveRequestedProviderKey({
 
     if (normalizedRequested === 'mock') {
         return resolveMockProvider();
+    }
+
+    if (['afdian', 'hupijiao', 'zpay', 'nowpayments'].includes(normalizedRequested)) {
+        if (providers?.[normalizedRequested]?.enabled !== true) {
+            throw new Error(`${getPaymentProviderAdapter(normalizedRequested)?.label || '当前支付通道'}未启用`);
+        }
+        return normalizedRequested;
     }
 
     throw new Error('当前支付通道与前端请求不一致，请刷新页面后重试');

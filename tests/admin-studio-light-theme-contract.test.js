@@ -2913,7 +2913,7 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'admin studio should cache-bust the updated scroll lock runtime'
     );
     assert.equal(
-        readRepoFile('admin-studio.html').includes('css/admin-chat.css?v=20260502_ADMIN_CHAT_KEYBOARD_DOCK_6'),
+        readRepoFile('admin-studio.html').includes('css/admin-chat.css?v=20260504_USER_ONLINE_GREEN_1'),
         true,
         'admin studio should cache-bust the updated admin chat stylesheet'
     );

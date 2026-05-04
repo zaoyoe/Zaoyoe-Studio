@@ -851,6 +851,25 @@ function createShopHandlers({
             type: 'success',
             scope: 'user_personal',
             category: 'discount_notice',
+            actionLabel: '去商城使用',
+            actionUrl: '/shop.html',
+            sourceModule: 'discounts',
+            sourceEventId: `discount_${normalizedAction}:${normalizeClaimText(asset?.id || discount?.id, 120)}`,
+            priority: 45,
+            metadata: {
+                page_id: 'shop',
+                event_type: 'coupon_available',
+                action: normalizedAction,
+                action_path_label: '我的钱包 > 卡券',
+                action_path_url: 'wallet://cards',
+                action_path_kind: 'wallet',
+                wallet_view: 'cards',
+                discount_id: normalizeClaimText(discount?.id, 120),
+                discount_code: code,
+                discount_asset_id: normalizeClaimText(asset?.id, 120),
+                benefit_label: benefitLabel,
+                expires_at: resolveEffectiveExpiry(asset, discount)
+            },
             dedupeWindowMinutes: 0
         };
     }

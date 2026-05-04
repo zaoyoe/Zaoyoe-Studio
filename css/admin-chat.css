@@ -669,6 +669,11 @@
     color: #94a3b8;
 }
 
+.session-time--online {
+    color: #22c55e;
+    font-weight: 700;
+}
+
 .session-preview {
     font-size: 13px;
     color: #64748b;
@@ -2483,6 +2488,11 @@
 :root:not([data-theme="dark"]) .session-preview,
 :root:not([data-theme="dark"]) .chat-user-title span {
     color: #64748b;
+}
+
+:root:not([data-theme="dark"]) .session-time--online {
+    color: #16a34a;
+    font-weight: 700;
 }
 
 :root:not([data-theme="dark"]) .chat-user-status-chip {

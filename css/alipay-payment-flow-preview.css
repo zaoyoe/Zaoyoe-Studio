@@ -1,0 +1,163 @@
+:root {
+    --auth-sheet-overlay: rgba(15, 23, 42, 0.36);
+    --auth-sheet-overlay-filter: blur(18px) saturate(108%);
+    --auth-sheet-panel: #ffffff;
+    --auth-sheet-panel-strong: #ffffff;
+    --auth-sheet-surface: rgba(248, 250, 252, 0.92);
+    --auth-sheet-surface-strong: rgba(241, 245, 249, 0.96);
+    --auth-sheet-border: rgba(148, 163, 184, 0.18);
+    --auth-sheet-text: #0f172a;
+    --auth-sheet-muted: #64748b;
+    --auth-sheet-soft: #64748b;
+    --auth-sheet-accent: #5d8fce;
+    --auth-sheet-link-accent: #3b82f6;
+    --auth-sheet-blue-soft: rgba(93, 143, 206, 0.1);
+    --auth-sheet-blue-border: rgba(93, 143, 206, 0.26);
+    --auth-sheet-scrollbar-thumb: rgba(148, 163, 184, 0.36);
+    --auth-sheet-scrollbar-thumb-hover: rgba(100, 116, 139, 0.48);
+}
+
+html,
+body {
+    margin: 0;
+    min-height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background:
+        radial-gradient(circle at 18% 20%, rgba(148, 163, 184, 0.46), transparent 28%),
+        radial-gradient(circle at 76% 24%, rgba(125, 166, 230, 0.28), transparent 26%),
+        radial-gradient(circle at 70% 78%, rgba(245, 158, 11, 0.22), transparent 28%),
+        linear-gradient(135deg, #edf2f7, #cbd5e1);
+}
+
+body {
+    overflow: hidden;
+}
+
+.preview-watermark {
+    position: fixed;
+    left: 18px;
+    bottom: 18px;
+    z-index: 10001;
+    padding: 10px 12px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.76);
+    color: #475569;
+    font-size: 12px;
+    line-height: 1.5;
+    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.1);
+    backdrop-filter: blur(16px);
+}
+
+.preview-controls {
+    position: fixed;
+    right: 18px;
+    bottom: 18px;
+    z-index: 10004;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    max-width: min(560px, calc(100vw - 36px));
+    padding: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.82);
+    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.12);
+    backdrop-filter: blur(16px);
+}
+
+.preview-controls button {
+    min-height: 38px;
+    padding: 0 12px;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 12px;
+    background: #ffffff;
+    color: #334155;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 750;
+    cursor: pointer;
+}
+
+.preview-controls button:hover {
+    border-color: rgba(93, 143, 206, 0.34);
+    color: #0f172a;
+}
+
+.preview-loading {
+    position: fixed;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    color: #475569;
+    font-size: 14px;
+}
+
+.preview-toast {
+    position: fixed;
+    left: 50%;
+    bottom: 86px;
+    z-index: 10005;
+    min-width: 180px;
+    padding: 12px 16px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.94);
+    color: #0f172a;
+    box-shadow: 0 14px 34px rgba(15, 23, 42, 0.14);
+    text-align: center;
+    font-size: 13px;
+    font-weight: 800;
+    transform: translateX(-50%);
+}
+
+/* The production page has Font Awesome loaded. This preview uses the real class names
+   and adds tiny local fallbacks so icon-only spaces do not look empty. */
+.fas.fa-bolt::before,
+.fa-solid.fa-bolt::before {
+    content: "⚡";
+}
+
+.fas.fa-ticket-alt::before,
+.fa-solid.fa-ticket-alt::before {
+    content: "🎟";
+}
+
+.fas.fa-share-alt::before,
+.fa-solid.fa-share-alt::before {
+    content: "↗";
+}
+
+.fas.fa-coins::before,
+.fa-solid.fa-coins::before {
+    content: "₮";
+    font-weight: 900;
+}
+
+.fas.fa-qrcode::before,
+.fa-solid.fa-qrcode::before {
+    content: "▦";
+}
+
+.fas.fa-times::before,
+.fa-solid.fa-times::before {
+    content: "×";
+}
+
+.fa-brands.fa-alipay::before {
+    content: "支";
+    font-weight: 900;
+}
+
+@media (max-width: 700px) {
+    .preview-watermark {
+        display: none;
+    }
+
+    .preview-controls {
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+    }
+}

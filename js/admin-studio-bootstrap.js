@@ -388,8 +388,8 @@
                     key: 'chat.manage',
                     label: '客服消息',
                     icon: '💬',
-                    description: '处理客服消息与对话后台',
-                    modules: ['chat']
+                    description: '处理客服消息、机器人气泡触达与对话后台',
+                    modules: ['chat', 'engagement']
                 }
             ]
         },
@@ -497,6 +497,10 @@
         chat: {
             label: '客服消息',
             anyOf: ['chat.manage']
+        },
+        engagement: {
+            label: '客服系统',
+            anyOf: ['chat.manage', 'settings.manage']
         },
         shop: {
             label: '商城系统',

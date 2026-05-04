@@ -8,9 +8,12 @@ const {
 const {
     normalizeZpayConfig
 } = require('./zpay');
+const {
+    normalizeNowpaymentsConfig
+} = require('./nowpayments');
 
-const PROVIDER_KEYS = Object.freeze(['mock', 'afdian', 'hupijiao', 'zpay']);
-const NON_MOCK_PROVIDER_PRIORITY = Object.freeze(['zpay', 'hupijiao', 'afdian']);
+const PROVIDER_KEYS = Object.freeze(['mock', 'afdian', 'hupijiao', 'zpay', 'nowpayments']);
+const NON_MOCK_PROVIDER_PRIORITY = Object.freeze(['nowpayments', 'zpay', 'hupijiao', 'afdian']);
 const DEFAULT_SITE_ORIGIN = 'https://www.zaoyoe.com';
 const DEFAULT_AFDIAN_CHECKOUT_URL = 'https://afdian.com/a/zaoyoe';
 const DEFAULT_CUSTOM_RECHARGE_MIN_POINTS = 0.01;
@@ -23,20 +26,24 @@ const PROVIDER_SECRET_NAMES = Object.freeze({
     mock: [],
     afdian: ['afdian_token'],
     hupijiao: ['hupijiao_api_key', 'hupijiao_secret_key'],
-    zpay: ['zpay_pkey']
+    zpay: ['zpay_pkey'],
+    nowpayments: ['nowpayments_api_key', 'nowpayments_ipn_secret']
 });
 
 const SECRET_ENV_FALLBACKS = Object.freeze({
     afdian_token: ['AFDIAN_TOKEN'],
     hupijiao_api_key: ['HUPIJIAO_API_KEY'],
     hupijiao_secret_key: ['HUPIJIAO_SECRET_KEY'],
-    zpay_pkey: ['ZPAY_PKEY', 'ZPAY_KEY']
+    zpay_pkey: ['ZPAY_PKEY', 'ZPAY_KEY'],
+    nowpayments_api_key: ['NOWPAYMENTS_API_KEY'],
+    nowpayments_ipn_secret: ['NOWPAYMENTS_IPN_SECRET']
 });
 const PUBLIC_PROVIDER_FIELDS = Object.freeze({
     mock: ['enabled', 'display_name', 'description'],
     afdian: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder'],
     hupijiao: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder'],
-    zpay: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder']
+    zpay: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder'],
+    nowpayments: ['enabled', 'display_name', 'pay_currency', 'network_name', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder']
 });
 const PUBLIC_MOCK_RUNTIME_MESSAGES = Object.freeze({
     local_request_host: '当前环境允许使用模拟支付。',
@@ -52,7 +59,8 @@ const PROVIDER_DISPLAY_NAMES = Object.freeze({
     mock: '模拟支付',
     afdian: '爱发电',
     hupijiao: '虎皮椒',
-    zpay: '易支付'
+    zpay: '易支付',
+    nowpayments: 'USDT-BEP20'
 });
 
 function sanitizeOrigin(value, fallback = DEFAULT_SITE_ORIGIN) {
@@ -151,6 +159,12 @@ function mapProviderMissingFieldLabel(providerKey = '', fieldName = '') {
             pkey: '缺少 PKEY',
             notify_url: '缺少 notify_url'
         },
+        nowpayments: {
+            api_key: '缺少 API Key',
+            ipn_secret: '缺少 IPN Secret',
+            ipn_callback_url: '缺少 Webhook URL',
+            cny_to_usd_rate: '缺少 CNY 到 USD 汇率'
+        },
         hupijiao: {
             appid: '缺少商户号',
             appsecret: '缺少密钥',
@@ -205,6 +219,41 @@ function buildPaymentProviderActivationCheck(
         if (!hasCheckoutUrl(provider)) {
             issues.push('缺少 checkout_url');
         }
+        return {
+            providerKey: normalizedProviderKey,
+            label,
+            ready: issues.length === 0,
+            issues,
+            warnings
+        };
+    }
+
+    if (normalizedProviderKey === 'nowpayments') {
+        const normalizedConfig = normalizeNowpaymentsConfig({
+            channelConfig: provider,
+            secretValues: {
+                nowpayments_api_key: isSecretConfigured(secretStatus.nowpayments_api_key)
+                    ? '__configured__'
+                    : '',
+                nowpayments_ipn_secret: isSecretConfigured(secretStatus.nowpayments_ipn_secret)
+                    ? '__configured__'
+                    : ''
+            },
+            requestOrigin: provider.return_url || DEFAULT_SITE_ORIGIN,
+            env
+        });
+
+        normalizedConfig.missingFields.forEach((fieldName) => {
+            issues.push(mapProviderMissingFieldLabel(normalizedProviderKey, fieldName));
+        });
+
+        if (String(normalizedConfig.payCurrency || '').trim().toLowerCase() !== 'usdtbsc') {
+            warnings.push('当前 NOWPayments pay_currency 不是 usdtbsc，请确认是否仍要使用 BSC/BEP20。');
+        }
+        if (isProductionLikeRuntime(env) && normalizedConfig.ipnCallbackUrl && !isHttpsUrl(normalizedConfig.ipnCallbackUrl)) {
+            issues.push('Webhook URL 必须使用 HTTPS');
+        }
+
         return {
             providerKey: normalizedProviderKey,
             label,
@@ -406,6 +455,27 @@ function getDefaultPaymentChannelsConfig(options = {}) {
             order_query_title: '',
             order_query_hint: '',
             order_query_placeholder: ''
+        },
+        nowpayments: {
+            enabled: false,
+            display_name: 'USDT-BEP20',
+            api_base_url: 'https://api.nowpayments.io',
+            pay_currency: 'usdtbsc',
+            price_currency: 'usd',
+            network_name: 'BNB Smart Chain',
+            cny_to_usd_rate: Number(process.env.NOWPAYMENTS_CNY_TO_USD_RATE || '') || 0.14,
+            is_fixed_rate: true,
+            is_fee_paid_by_user: true,
+            return_url: origin,
+            ipn_callback_url: buildDefaultPaymentWebhookUrl(origin, 'nowpayments'),
+            success_url: origin,
+            cancel_url: origin,
+            package_hint: '请使用 USDT-BEP20 / BNB Smart Chain 完成付款，勿使用 ERC20、TRC20 或其他网络。',
+            custom_amount_hint: '请按页面显示的 USDT-BEP20 金额付款，网络请选择 BNB Smart Chain。',
+            order_query_enabled: false,
+            order_query_title: '',
+            order_query_hint: '',
+            order_query_placeholder: ''
         }
     };
 
@@ -475,6 +545,27 @@ function normalizePaymentChannelsConfig(raw, legacyRechargeOptions = null, optio
                 order_query_title: sanitizeText(sourceProviders.zpay?.order_query_title, defaults.providers.zpay.order_query_title, 80),
                 order_query_hint: sanitizeText(sourceProviders.zpay?.order_query_hint, defaults.providers.zpay.order_query_hint, 240),
                 order_query_placeholder: sanitizeText(sourceProviders.zpay?.order_query_placeholder, defaults.providers.zpay.order_query_placeholder, 80)
+            },
+            nowpayments: {
+                enabled: coerceBoolean(sourceProviders.nowpayments?.enabled, defaults.providers.nowpayments.enabled),
+                display_name: sanitizeText(sourceProviders.nowpayments?.display_name, defaults.providers.nowpayments.display_name, 40),
+                api_base_url: sanitizeText(sourceProviders.nowpayments?.api_base_url, defaults.providers.nowpayments.api_base_url, 500),
+                pay_currency: sanitizeText(sourceProviders.nowpayments?.pay_currency, defaults.providers.nowpayments.pay_currency, 40).toLowerCase() || defaults.providers.nowpayments.pay_currency,
+                price_currency: sanitizeText(sourceProviders.nowpayments?.price_currency, defaults.providers.nowpayments.price_currency, 20).toLowerCase() || defaults.providers.nowpayments.price_currency,
+                network_name: sanitizeText(sourceProviders.nowpayments?.network_name, defaults.providers.nowpayments.network_name, 80),
+                cny_to_usd_rate: coercePositiveNumber(sourceProviders.nowpayments?.cny_to_usd_rate, defaults.providers.nowpayments.cny_to_usd_rate),
+                is_fixed_rate: coerceBoolean(sourceProviders.nowpayments?.is_fixed_rate, defaults.providers.nowpayments.is_fixed_rate),
+                is_fee_paid_by_user: coerceBoolean(sourceProviders.nowpayments?.is_fee_paid_by_user, defaults.providers.nowpayments.is_fee_paid_by_user),
+                return_url: sanitizeText(sourceProviders.nowpayments?.return_url, defaults.providers.nowpayments.return_url, 500),
+                ipn_callback_url: sanitizeText(sourceProviders.nowpayments?.ipn_callback_url, defaults.providers.nowpayments.ipn_callback_url, 500),
+                success_url: sanitizeText(sourceProviders.nowpayments?.success_url, defaults.providers.nowpayments.success_url, 500),
+                cancel_url: sanitizeText(sourceProviders.nowpayments?.cancel_url, defaults.providers.nowpayments.cancel_url, 500),
+                package_hint: sanitizeText(sourceProviders.nowpayments?.package_hint, defaults.providers.nowpayments.package_hint, 240),
+                custom_amount_hint: sanitizeText(sourceProviders.nowpayments?.custom_amount_hint, defaults.providers.nowpayments.custom_amount_hint, 240),
+                order_query_enabled: coerceBoolean(sourceProviders.nowpayments?.order_query_enabled, defaults.providers.nowpayments.order_query_enabled),
+                order_query_title: sanitizeText(sourceProviders.nowpayments?.order_query_title, defaults.providers.nowpayments.order_query_title, 80),
+                order_query_hint: sanitizeText(sourceProviders.nowpayments?.order_query_hint, defaults.providers.nowpayments.order_query_hint, 240),
+                order_query_placeholder: sanitizeText(sourceProviders.nowpayments?.order_query_placeholder, defaults.providers.nowpayments.order_query_placeholder, 80)
             }
         }
     };
@@ -514,7 +605,8 @@ function sanitizePublicPaymentChannels(paymentChannels = {}) {
             mock: pickPublicProviderConfig('mock', providers.mock),
             afdian: pickPublicProviderConfig('afdian', providers.afdian),
             hupijiao: pickPublicProviderConfig('hupijiao', providers.hupijiao),
-            zpay: pickPublicProviderConfig('zpay', providers.zpay)
+            zpay: pickPublicProviderConfig('zpay', providers.zpay),
+            nowpayments: pickPublicProviderConfig('nowpayments', providers.nowpayments)
         }
     };
 }

@@ -110,6 +110,40 @@ function trackGuestbookAnalyticsEvent(eventName, payload = {}, options = {}) {
     });
 }
 
+async function notifyGuestbookCommentReply(payload = {}) {
+    const commentId = String(payload.commentId || '').trim();
+    const messageId = String(payload.messageId || '').trim();
+    if (!commentId || !messageId || !window.supabaseClient?.auth?.getSession) {
+        return;
+    }
+
+    try {
+        const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
+        const accessToken = session?.access_token || '';
+        if (!accessToken) return;
+
+        const parentId = String(payload.parentCommentId || payload.parentId || '').trim();
+        await fetch('/api/engagement/reply-notify', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${accessToken}`
+            },
+            body: JSON.stringify({
+                source: 'guestbook_comment',
+                comment_id: commentId,
+                parent_id: parentId,
+                message_id: messageId,
+                content_preview: String(payload.content || '').trim(),
+                site: String(payload.site || window.SiteConfig?.site || 'cn').trim() || 'cn'
+            })
+        });
+    } catch (error) {
+        console.debug('[Guestbook] Reply notification skipped:', error?.message || error);
+    }
+}
+
 function invalidateGuestbookCache() {
     guestbookCache.lastFetch = null;
     console.log('🗑️ Guestbook cache invalidated');
@@ -717,6 +751,12 @@ async function addCommentToMessage(messageId, content) {
         if (error) throw error;
 
         console.log('✅ Comment added:', data.id);
+        void notifyGuestbookCommentReply({
+            commentId: data.id,
+            messageId,
+            content,
+            site: window.SiteConfig?.site || 'cn'
+        });
 
         // Track this insert to skip Realtime refresh
         guestbookCache.recentInserts.add(data.id);
@@ -806,6 +846,13 @@ async function addReplyToComment(parentCommentId, messageId, content) {
         if (error) throw error;
 
         console.log('✅ Reply added:', data.id);
+        void notifyGuestbookCommentReply({
+            commentId: data.id,
+            messageId,
+            parentCommentId,
+            content,
+            site: window.SiteConfig?.site || 'cn'
+        });
 
         // Track this insert to skip Realtime refresh
         guestbookCache.recentInserts.add(data.id);

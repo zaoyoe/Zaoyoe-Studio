@@ -7051,6 +7051,7 @@ Example output format:
         data.forEach(p => {
             const el = document.createElement('div');
             el.className = 'product-select-item';
+            el.dataset.productId = p.id;
             // Use CSS class for hover/active state, remove inline styles conflict
 
             if (this.selectedProductId === p.id) {
@@ -7084,6 +7085,147 @@ Example output format:
         });
     },
 
+    normalizeInventoryStockCount: function (value) {
+        if (value === null || value === undefined || value === '') {
+            return null;
+        }
+
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) {
+            return null;
+        }
+
+        return Math.max(0, Math.trunc(numericValue));
+    },
+
+    patchImportTreeProductStock: function (productId, stockCount) {
+        const normalizedProductId = String(productId || '').trim();
+        const normalizedStockCount = this.normalizeInventoryStockCount(stockCount);
+        if (!normalizedProductId || normalizedStockCount === null) {
+            return false;
+        }
+
+        let patched = false;
+        document.querySelectorAll('.tree-product-item').forEach((item) => {
+            if (String(item?.dataset?.id || '').trim() !== normalizedProductId) {
+                return;
+            }
+
+            const stockBadge = item.querySelector('.tree-product-stock');
+            if (!stockBadge) {
+                return;
+            }
+
+            stockBadge.textContent = String(normalizedStockCount);
+            stockBadge.classList.toggle('tree-product-stock--empty', normalizedStockCount <= 0);
+            patched = true;
+        });
+
+        return patched;
+    },
+
+    patchInventoryProductListStock: function (productId, stockCount) {
+        const normalizedProductId = String(productId || '').trim();
+        const normalizedStockCount = this.normalizeInventoryStockCount(stockCount);
+        if (!normalizedProductId || normalizedStockCount === null) {
+            return false;
+        }
+
+        let patched = false;
+        document.querySelectorAll('.product-select-item').forEach((item) => {
+            if (String(item?.dataset?.productId || '').trim() !== normalizedProductId) {
+                return;
+            }
+
+            const meta = item.querySelector('.product-select-item-meta');
+            if (!meta) {
+                return;
+            }
+
+            meta.textContent = `库存: ${normalizedStockCount}`;
+            patched = true;
+        });
+
+        return patched;
+    },
+
+    syncProductStockAfterInventoryMutation: function ({ productId, stockCount = null, imported = 0, status = 'available' } = {}) {
+        const normalizedProductId = String(productId || '').trim();
+        if (!normalizedProductId) {
+            return null;
+        }
+
+        const exactStockCount = this.normalizeInventoryStockCount(stockCount);
+        const importedDelta = String(status || '').trim().toLowerCase() === 'available'
+            ? Math.max(0, Number.parseInt(String(imported || 0), 10) || 0)
+            : 0;
+        let nextStockCount = exactStockCount;
+
+        const patchProductRows = (rows) => {
+            let patched = false;
+            (Array.isArray(rows) ? rows : []).forEach((product) => {
+                if (String(product?.id || '').trim() !== normalizedProductId) {
+                    return;
+                }
+
+                if (nextStockCount === null) {
+                    const currentStockCount = this.normalizeInventoryStockCount(product.stock_count) || 0;
+                    nextStockCount = currentStockCount + importedDelta;
+                }
+
+                product.stock_count = nextStockCount;
+                patched = true;
+            });
+            return patched;
+        };
+
+        patchProductRows(this.allProductsForImport);
+        patchProductRows(this.deletedProductsForImport);
+
+        if (this.productGridCache instanceof Map && this.productGridCache.has(normalizedProductId)) {
+            const cachedProduct = this.productGridCache.get(normalizedProductId);
+            if (nextStockCount === null) {
+                const currentStockCount = this.normalizeInventoryStockCount(cachedProduct?.stock_count) || 0;
+                nextStockCount = currentStockCount + importedDelta;
+            }
+            this.productGridCache.set(normalizedProductId, {
+                ...cachedProduct,
+                stock_count: nextStockCount
+            });
+        }
+
+        if (nextStockCount === null) {
+            return null;
+        }
+
+        this.patchImportTreeProductStock(normalizedProductId, nextStockCount);
+        this.patchInventoryProductListStock(normalizedProductId, nextStockCount);
+        return nextStockCount;
+    },
+
+    refreshInventoryStockViews: async function ({ inventoryPage = null } = {}) {
+        const refreshTasks = [];
+
+        if (document.getElementById('productsGrid')) {
+            refreshTasks.push({ label: 'products', promise: this.loadProducts() });
+        }
+
+        if (document.getElementById('inventoryProductList')) {
+            refreshTasks.push({ label: 'inventoryProductList', promise: this.loadInventoryProductList() });
+        }
+
+        if (inventoryPage !== null && document.getElementById('inventoryTableBody')) {
+            refreshTasks.push({ label: 'inventoryList', promise: this.loadInventoryList(inventoryPage) });
+        }
+
+        const results = await Promise.allSettled(refreshTasks.map((task) => task.promise));
+        results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+                console.warn(`[ShopAdmin] Failed to refresh ${refreshTasks[index]?.label || 'inventory view'} after stock change:`, result.reason);
+            }
+        });
+    },
+
     importInventory: async function (btnElement) {
         if (!this.requireWritableSite({ label: '导入库存' })) {
             return;
@@ -7110,15 +7252,22 @@ Example output format:
 
         try {
             console.log(`[ShopAdmin] Importing ${lines.length} items...`);
-            await this.callAdminMutation('import_inventory', {
+            const result = await this.callAdminMutation('import_inventory', {
                 productId: this.selectedProductId,
                 lines,
                 importStatus,
                 batchId
             });
+            const imported = this.normalizeInventoryStockCount(result?.imported) || lines.length;
+            const stockCount = this.syncProductStockAfterInventoryMutation({
+                productId: this.selectedProductId,
+                stockCount: result?.stockCount,
+                imported,
+                status: importStatus
+            });
 
             this.finishActionButton(btnElement, '已导入');
-            const successMessage = `成功导入 ${lines.length} 条库存`;
+            const successMessage = `成功导入 ${imported} 条库存`;
             this.showActionToast(successMessage, 'success');
             this.emitCommandFeedback(successMessage, 'saved', { source: 'shop-inventory' });
 
@@ -7127,10 +7276,10 @@ Example output format:
             document.getElementById('lineCount').textContent = '0';
 
             // Refresh visuals
-            await this.loadProducts();
-
-            // Also refresh the inventory list selection to update stock count
-            await this.loadInventoryProductList();
+            await this.refreshInventoryStockViews();
+            if (stockCount !== null) {
+                this.patchImportTreeProductStock(this.selectedProductId, stockCount);
+            }
 
         } catch (err) {
             console.error('[ShopAdmin] Import Failed:', err);
@@ -7165,7 +7314,7 @@ Example output format:
             throw new Error('请输入有效的账号内容');
         }
 
-        await this.callAdminMutation('import_inventory', {
+        const result = await this.callAdminMutation('import_inventory', {
             productId: resolvedProductId,
             lines,
             importStatus: String(status || 'available').trim() || 'available',
@@ -7174,7 +7323,8 @@ Example output format:
 
         return {
             batchId: resolvedBatchId,
-            imported: lines.length
+            imported: this.normalizeInventoryStockCount(result?.imported) || lines.length,
+            stockCount: this.normalizeInventoryStockCount(result?.stockCount)
         };
     },
 
@@ -13266,9 +13416,15 @@ Example output format:
         });
 
         try {
-            const { batchId, imported } = await this.performInventoryImport({
+            const { batchId, imported, stockCount } = await this.performInventoryImport({
                 productId,
                 contentLines,
+                status
+            });
+            this.syncProductStockAfterInventoryMutation({
+                productId,
+                stockCount,
+                imported,
                 status
             });
             this.finishActionButton(importButton, '已导入');
@@ -13278,9 +13434,7 @@ Example output format:
             contentInput.value = '';
             this.updateLegacyImportLineCount();
             this.closeImportModal();
-            await this.loadInventoryList(this.inventoryPage);
-            await this.loadProducts();
-            await this.loadInventoryProductList();
+            await this.refreshInventoryStockViews({ inventoryPage: this.inventoryPage });
         } catch (err) {
             const failureMessage = '导入失败: ' + err.message;
             this.failActionButton(importButton, '导入失败');
@@ -13307,11 +13461,14 @@ Example output format:
                 count,
                 beforeDate: beforeDate ? new Date(beforeDate).toISOString() : null
             });
+            this.syncProductStockAfterInventoryMutation({
+                productId,
+                stockCount: result?.stockCount,
+                status: 'available'
+            });
             alert(result.message || '释放完成');
             this.closeReleaseModal();
-            await this.loadInventoryList(this.inventoryPage);
-            await this.loadProducts();
-            await this.loadInventoryProductList();
+            await this.refreshInventoryStockViews({ inventoryPage: this.inventoryPage });
         } catch (err) {
             alert('释放失败: ' + err.message);
         }
@@ -14426,9 +14583,15 @@ Example output format:
         });
 
         try {
-            const { batchId, imported } = await this.performInventoryImport({
+            const { batchId, imported, stockCount } = await this.performInventoryImport({
                 productId,
                 contentLines,
+                status
+            });
+            this.syncProductStockAfterInventoryMutation({
+                productId,
+                stockCount,
+                imported,
                 status
             });
             this.finishActionButton(actionButton, '已导入');
@@ -14441,11 +14604,9 @@ Example output format:
             document.getElementById('importViewLineCount').textContent = '(0个)';
 
             // Note: We don't clear selection so user can continue importing if needed.
-            await this.loadProducts();
-            await this.loadInventoryProductList();
-            if (this.currentTab === 'inventory') {
-                await this.loadInventoryList(this.inventoryPage);
-            }
+            await this.refreshInventoryStockViews({
+                inventoryPage: this.currentTab === 'inventory' ? this.inventoryPage : null
+            });
 
         } catch (err) {
             console.error('Import error:', err);

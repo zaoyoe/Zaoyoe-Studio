@@ -270,6 +270,16 @@ test('local preview server mounts the support api endpoint used by the support b
     assert.match(source, /loadHandler:\s*loadFreshSupportApiHandler/);
 });
 
+test('local preview server mounts engagement feed aliases used by the robot bubble runtime', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../scripts/local-preview-server.js'), 'utf8');
+
+    assert.match(source, /app\.all\('\/api\/engagement'/);
+    assert.match(source, /app\.all\('\/api\/engagement\/\*'/);
+    assert.match(source, /kind:\s*'engagement public api'/);
+    assert.match(source, /\/api\/public\/engagement/);
+    assert.match(source, /loadHandler:\s*loadFreshPublicApiHandler/);
+});
+
 test('local preview server seeds process env from loaded preview values without clobbering existing vars', () => {
     const originalUrl = process.env.SUPABASE_URL;
     const originalKey = process.env.SUPABASE_PUBLISHABLE_KEY;
@@ -368,6 +378,27 @@ test('local preview server smoke result store caches and expires run results', (
     } finally {
         Date.now = originalNow;
     }
+});
+
+test('local preview server smoke result store keeps terminal status over stale running updates', () => {
+    const store = createSmokeResultStore({ ttlMs: 1000 });
+
+    const passed = store.set('run-final', {
+        status: 'passed',
+        page: '/smoke-notifications.html',
+        text: 'Local Smoke: PASSED',
+        results: [{ label: 'notification smoke', pass: true, detail: '' }]
+    });
+    const staleRunning = store.set('run-final', {
+        status: 'running',
+        page: '/smoke-notifications.html',
+        text: 'Local Smoke: RUNNING',
+        results: [{ label: 'notification smoke', pass: true, detail: '' }]
+    });
+
+    assert.equal(staleRunning, passed);
+    assert.equal(store.get('run-final')?.status, 'passed');
+    assert.equal(store.get('run-final')?.text, 'Local Smoke: PASSED');
 });
 
 test('local preview server cache clearing ignores unrelated modules', () => {

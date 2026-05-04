@@ -33,7 +33,8 @@ let paymentChannelAccordionState = {
     mock: false,
     afdian: false,
     zpay: false,
-    hupijiao: false
+    hupijiao: false,
+    nowpayments: false
 };
 let discountTriggerRuleDraftCounter = 0;
 const ADMIN_CONFIG_TOGGLE_PULSE_CLASS = 'status-toggle--pulse';
@@ -2705,7 +2706,9 @@ function getDefaultPaymentChannelSecretStatus() {
         afdian_token: { configured: false, source: 'missing', updatedAt: null },
         hupijiao_api_key: { configured: false, source: 'missing', updatedAt: null },
         hupijiao_secret_key: { configured: false, source: 'missing', updatedAt: null },
-        zpay_pkey: { configured: false, source: 'missing', updatedAt: null }
+        zpay_pkey: { configured: false, source: 'missing', updatedAt: null },
+        nowpayments_api_key: { configured: false, source: 'missing', updatedAt: null },
+        nowpayments_ipn_secret: { configured: false, source: 'missing', updatedAt: null }
     };
 }
 
@@ -2729,7 +2732,8 @@ function getDefaultPaymentChannelActivationChecks() {
         mock: { providerKey: 'mock', label: '模拟支付', ready: true, issues: [], warnings: [] },
         afdian: { providerKey: 'afdian', label: '爱发电', ready: true, issues: [], warnings: [] },
         zpay: { providerKey: 'zpay', label: '易支付', ready: false, issues: [], warnings: [] },
-        hupijiao: { providerKey: 'hupijiao', label: '虎皮椒', ready: false, issues: [], warnings: [] }
+        hupijiao: { providerKey: 'hupijiao', label: '虎皮椒', ready: false, issues: [], warnings: [] },
+        nowpayments: { providerKey: 'nowpayments', label: 'USDT-BEP20', ready: false, issues: [], warnings: [] }
     };
 }
 
@@ -4237,7 +4241,7 @@ function getDefaultPaymentChannelsConfig() {
             : currentOrigin;
     };
     const resolvePreferredEnabledProviderKey = (providers = {}, fallback = 'afdian') => {
-        const candidateKeys = ['zpay', 'hupijiao', 'afdian', ...Object.keys(providers || {})];
+        const candidateKeys = ['nowpayments', 'zpay', 'hupijiao', 'afdian', ...Object.keys(providers || {})];
         const seen = new Set();
 
         for (const providerKey of candidateKeys) {
@@ -4264,7 +4268,7 @@ function getDefaultPaymentChannelsConfig() {
             }
         }
 
-        return ['mock', 'afdian', 'hupijiao', 'zpay'].includes(fallback) ? fallback : 'afdian';
+        return ['mock', 'afdian', 'hupijiao', 'zpay', 'nowpayments'].includes(fallback) ? fallback : 'afdian';
     };
 
     const providers = {
@@ -4310,6 +4314,27 @@ function getDefaultPaymentChannelsConfig() {
             notify_url: buildDefaultPaymentWebhookUrl('hupijiao'),
             package_hint: '虎皮椒通道已启用，正式回调与自动发货接入后即可完整使用。',
             custom_amount_hint: '虎皮椒通道已启用。自定义金额订单能力接入后，这里会直接拉起真实支付。',
+            order_query_enabled: false,
+            order_query_title: '',
+            order_query_hint: '',
+            order_query_placeholder: ''
+        },
+        nowpayments: {
+            enabled: false,
+            display_name: 'USDT-BEP20',
+            api_base_url: 'https://api.nowpayments.io',
+            pay_currency: 'usdtbsc',
+            price_currency: 'usd',
+            network_name: 'BNB Smart Chain',
+            cny_to_usd_rate: 0.14,
+            is_fixed_rate: true,
+            is_fee_paid_by_user: true,
+            return_url: currentOrigin,
+            ipn_callback_url: buildDefaultPaymentWebhookUrl('nowpayments'),
+            success_url: currentOrigin,
+            cancel_url: currentOrigin,
+            package_hint: '请使用 USDT-BEP20 / BNB Smart Chain 完成付款，勿使用 ERC20、TRC20 或其他网络。',
+            custom_amount_hint: '请按页面显示的 USDT-BEP20 金额付款，网络请选择 BNB Smart Chain。',
             order_query_enabled: false,
             order_query_title: '',
             order_query_hint: '',
@@ -5440,7 +5465,7 @@ function normalizePaymentChannelsConfig(raw) {
         ? source.providers
         : {};
     const resolvePreferredEnabledProviderKey = (providers = {}, fallback = defaults.active_provider) => {
-        const candidateKeys = ['zpay', 'hupijiao', 'afdian', ...Object.keys(providers || {})];
+        const candidateKeys = ['nowpayments', 'zpay', 'hupijiao', 'afdian', ...Object.keys(providers || {})];
         const seen = new Set();
 
         for (const providerKey of candidateKeys) {
@@ -5467,11 +5492,11 @@ function normalizePaymentChannelsConfig(raw) {
             }
         }
 
-        return ['mock', 'afdian', 'hupijiao', 'zpay'].includes(fallback) ? fallback : defaults.active_provider;
+        return ['mock', 'afdian', 'hupijiao', 'zpay', 'nowpayments'].includes(fallback) ? fallback : defaults.active_provider;
     };
 
     const normalized = {
-        active_provider: ['mock', 'afdian', 'hupijiao', 'zpay'].includes(source.active_provider)
+        active_provider: ['mock', 'afdian', 'hupijiao', 'zpay', 'nowpayments'].includes(source.active_provider)
             ? source.active_provider
             : resolvePreferredEnabledProviderKey(sourceProviders, defaults.active_provider),
         providers: {
@@ -5527,6 +5552,31 @@ function normalizePaymentChannelsConfig(raw) {
                 order_query_title: String(sourceProviders.hupijiao?.order_query_title || defaults.providers.hupijiao.order_query_title).trim(),
                 order_query_hint: String(sourceProviders.hupijiao?.order_query_hint || defaults.providers.hupijiao.order_query_hint).trim(),
                 order_query_placeholder: String(sourceProviders.hupijiao?.order_query_placeholder || defaults.providers.hupijiao.order_query_placeholder).trim()
+            },
+            nowpayments: {
+                enabled: sourceProviders.nowpayments?.enabled === true || String(sourceProviders.nowpayments?.enabled) === 'true',
+                display_name: String(sourceProviders.nowpayments?.display_name || defaults.providers.nowpayments.display_name).trim() || defaults.providers.nowpayments.display_name,
+                api_base_url: String(sourceProviders.nowpayments?.api_base_url || defaults.providers.nowpayments.api_base_url).trim() || defaults.providers.nowpayments.api_base_url,
+                pay_currency: String(sourceProviders.nowpayments?.pay_currency || defaults.providers.nowpayments.pay_currency).trim().toLowerCase() || defaults.providers.nowpayments.pay_currency,
+                price_currency: String(sourceProviders.nowpayments?.price_currency || defaults.providers.nowpayments.price_currency).trim().toLowerCase() || defaults.providers.nowpayments.price_currency,
+                network_name: String(sourceProviders.nowpayments?.network_name || defaults.providers.nowpayments.network_name).trim() || defaults.providers.nowpayments.network_name,
+                cny_to_usd_rate: Number(sourceProviders.nowpayments?.cny_to_usd_rate || defaults.providers.nowpayments.cny_to_usd_rate) || defaults.providers.nowpayments.cny_to_usd_rate,
+                is_fixed_rate: sourceProviders.nowpayments?.is_fixed_rate !== undefined
+                    ? (sourceProviders.nowpayments.is_fixed_rate === true || String(sourceProviders.nowpayments.is_fixed_rate) === 'true')
+                    : defaults.providers.nowpayments.is_fixed_rate,
+                is_fee_paid_by_user: sourceProviders.nowpayments?.is_fee_paid_by_user !== undefined
+                    ? (sourceProviders.nowpayments.is_fee_paid_by_user === true || String(sourceProviders.nowpayments.is_fee_paid_by_user) === 'true')
+                    : defaults.providers.nowpayments.is_fee_paid_by_user,
+                return_url: String(sourceProviders.nowpayments?.return_url || defaults.providers.nowpayments.return_url).trim() || defaults.providers.nowpayments.return_url,
+                ipn_callback_url: String(sourceProviders.nowpayments?.ipn_callback_url || defaults.providers.nowpayments.ipn_callback_url).trim() || defaults.providers.nowpayments.ipn_callback_url,
+                success_url: String(sourceProviders.nowpayments?.success_url || defaults.providers.nowpayments.success_url).trim() || defaults.providers.nowpayments.success_url,
+                cancel_url: String(sourceProviders.nowpayments?.cancel_url || defaults.providers.nowpayments.cancel_url).trim() || defaults.providers.nowpayments.cancel_url,
+                package_hint: String(sourceProviders.nowpayments?.package_hint || defaults.providers.nowpayments.package_hint).trim() || defaults.providers.nowpayments.package_hint,
+                custom_amount_hint: String(sourceProviders.nowpayments?.custom_amount_hint || defaults.providers.nowpayments.custom_amount_hint).trim() || defaults.providers.nowpayments.custom_amount_hint,
+                order_query_enabled: sourceProviders.nowpayments?.order_query_enabled === true || String(sourceProviders.nowpayments?.order_query_enabled) === 'true',
+                order_query_title: String(sourceProviders.nowpayments?.order_query_title || defaults.providers.nowpayments.order_query_title).trim(),
+                order_query_hint: String(sourceProviders.nowpayments?.order_query_hint || defaults.providers.nowpayments.order_query_hint).trim(),
+                order_query_placeholder: String(sourceProviders.nowpayments?.order_query_placeholder || defaults.providers.nowpayments.order_query_placeholder).trim()
             }
         }
     };
@@ -7535,7 +7585,8 @@ function getPaymentProviderDomRefs(providerKey) {
         mock: 'Mock',
         afdian: 'Afdian',
         zpay: 'Zpay',
-        hupijiao: 'Hupijiao'
+        hupijiao: 'Hupijiao',
+        nowpayments: 'Nowpayments'
     };
     const suffix = suffixMap[providerKey];
     if (!suffix) return null;
@@ -7608,7 +7659,8 @@ function applyPaymentChannelOverview(config) {
         mock: 'paymentProviderMockToggle',
         afdian: 'paymentProviderAfdianToggle',
         zpay: 'paymentProviderZpayToggle',
-        hupijiao: 'paymentProviderHupijiaoToggle'
+        hupijiao: 'paymentProviderHupijiaoToggle',
+        nowpayments: 'paymentProviderNowpaymentsToggle'
     };
 
     const descriptionMap = {
@@ -7625,6 +7677,11 @@ function applyPaymentChannelOverview(config) {
         hupijiao: [
             `${config.providers.hupijiao.merchant_id ? `商户号 ${config.providers.hupijiao.merchant_id}` : '商户号待填写'} · ${(paymentChannelSecretStatus?.hupijiao_api_key?.configured && paymentChannelSecretStatus?.hupijiao_secret_key?.configured) ? '密钥已配置' : '密钥待配置'}`,
             summarizePaymentChannelActivationState('hupijiao')
+        ].filter(Boolean).join(' · '),
+        nowpayments: [
+            `${(paymentChannelSecretStatus?.nowpayments_api_key?.configured && paymentChannelSecretStatus?.nowpayments_ipn_secret?.configured) ? 'API/IPN 已配置' : 'API/IPN 待配置'}`,
+            config.providers.nowpayments.pay_currency ? `币种 ${String(config.providers.nowpayments.pay_currency).toUpperCase()}` : '币种待确认',
+            summarizePaymentChannelActivationState('nowpayments')
         ].filter(Boolean).join(' · ')
     };
 
@@ -7658,7 +7715,9 @@ function handlePaymentChannelActiveChange(providerKey) {
     const toggleMap = {
         mock: 'paymentProviderMockToggle',
         afdian: 'paymentProviderAfdianToggle',
-        hupijiao: 'paymentProviderHupijiaoToggle'
+        zpay: 'paymentProviderZpayToggle',
+        hupijiao: 'paymentProviderHupijiaoToggle',
+        nowpayments: 'paymentProviderNowpaymentsToggle'
     };
     const toggleEl = document.getElementById(toggleMap[providerKey]);
     if (toggleEl && !toggleEl.classList.contains('active')) {
@@ -7682,6 +7741,20 @@ function renderPaymentChannelsConfig() {
     setValue('paymentProviderAfdianCheckoutUrl', config.providers.afdian.checkout_url);
     setValue('paymentProviderAfdianPackageHint', config.providers.afdian.package_hint);
     setValue('paymentProviderAfdianCustomHint', config.providers.afdian.custom_amount_hint);
+    setValue('paymentProviderNowpaymentsDisplayName', config.providers.nowpayments.display_name);
+    setValue('paymentProviderNowpaymentsApiBaseUrl', config.providers.nowpayments.api_base_url);
+    setValue('paymentProviderNowpaymentsPayCurrency', config.providers.nowpayments.pay_currency);
+    setValue('paymentProviderNowpaymentsPriceCurrency', config.providers.nowpayments.price_currency);
+    setValue('paymentProviderNowpaymentsNetworkName', config.providers.nowpayments.network_name);
+    setValue('paymentProviderNowpaymentsCnyUsdRate', config.providers.nowpayments.cny_to_usd_rate);
+    setValue('paymentProviderNowpaymentsFeePaidByUser', String(config.providers.nowpayments.is_fee_paid_by_user !== false));
+    setValue('paymentProviderNowpaymentsFixedRate', String(config.providers.nowpayments.is_fixed_rate !== false));
+    setValue('paymentProviderNowpaymentsReturnUrl', config.providers.nowpayments.return_url);
+    setValue('paymentProviderNowpaymentsIpnCallbackUrl', config.providers.nowpayments.ipn_callback_url);
+    setValue('paymentProviderNowpaymentsSuccessUrl', config.providers.nowpayments.success_url);
+    setValue('paymentProviderNowpaymentsCancelUrl', config.providers.nowpayments.cancel_url);
+    setValue('paymentProviderNowpaymentsPackageHint', config.providers.nowpayments.package_hint);
+    setValue('paymentProviderNowpaymentsCustomHint', config.providers.nowpayments.custom_amount_hint);
     setValue('paymentProviderZpayDisplayName', config.providers.zpay.display_name);
     setValue('paymentProviderZpayCheckoutUrl', config.providers.zpay.checkout_url);
     setValue('paymentProviderZpayPid', config.providers.zpay.pid);
@@ -7702,6 +7775,12 @@ function renderPaymentChannelsConfig() {
 
     const afdianStatus = document.getElementById('paymentProviderAfdianTokenStatus');
     if (afdianStatus) afdianStatus.textContent = getPaymentSecretStatusMessage('afdian_token');
+
+    const nowpaymentsApiKeyStatus = document.getElementById('paymentProviderNowpaymentsApiKeyStatus');
+    if (nowpaymentsApiKeyStatus) nowpaymentsApiKeyStatus.textContent = getPaymentSecretStatusMessage('nowpayments_api_key');
+
+    const nowpaymentsIpnSecretStatus = document.getElementById('paymentProviderNowpaymentsIpnSecretStatus');
+    if (nowpaymentsIpnSecretStatus) nowpaymentsIpnSecretStatus.textContent = getPaymentSecretStatusMessage('nowpayments_ipn_secret');
 
     const zpayPkeyStatus = document.getElementById('paymentProviderZpayPkeyStatus');
     if (zpayPkeyStatus) zpayPkeyStatus.textContent = getPaymentSecretStatusMessage('zpay_pkey');
@@ -18163,7 +18242,7 @@ async function toggleCustomRechargeEntryStatus() {
 function collectPaymentChannelsConfigFromForm() {
     const currentConfig = normalizePaymentChannelsConfig(systemConfigCache['payment_channels']);
     const activeSelect = document.getElementById('paymentChannelActiveSelect');
-    const activeProvider = ['mock', 'afdian', 'hupijiao', 'zpay'].includes(activeSelect?.value)
+    const activeProvider = ['mock', 'afdian', 'hupijiao', 'zpay', 'nowpayments'].includes(activeSelect?.value)
         ? activeSelect.value
         : currentConfig.active_provider;
 
@@ -18208,6 +18287,28 @@ function collectPaymentChannelsConfigFromForm() {
                 notify_url: document.getElementById('paymentProviderHupijiaoNotifyUrl')?.value?.trim() || currentConfig.providers.hupijiao.notify_url,
                 package_hint: document.getElementById('paymentProviderHupijiaoPackageHint')?.value?.trim() || currentConfig.providers.hupijiao.package_hint,
                 custom_amount_hint: document.getElementById('paymentProviderHupijiaoCustomHint')?.value?.trim() || currentConfig.providers.hupijiao.custom_amount_hint
+            },
+            nowpayments: {
+                ...currentConfig.providers.nowpayments,
+                enabled: document.getElementById('paymentProviderNowpaymentsToggle')?.classList.contains('active') ?? currentConfig.providers.nowpayments.enabled,
+                display_name: document.getElementById('paymentProviderNowpaymentsDisplayName')?.value?.trim() || currentConfig.providers.nowpayments.display_name,
+                api_base_url: document.getElementById('paymentProviderNowpaymentsApiBaseUrl')?.value?.trim() || currentConfig.providers.nowpayments.api_base_url,
+                pay_currency: (document.getElementById('paymentProviderNowpaymentsPayCurrency')?.value || '').trim().toLowerCase() || currentConfig.providers.nowpayments.pay_currency,
+                price_currency: (document.getElementById('paymentProviderNowpaymentsPriceCurrency')?.value || '').trim().toLowerCase() || currentConfig.providers.nowpayments.price_currency,
+                network_name: document.getElementById('paymentProviderNowpaymentsNetworkName')?.value?.trim() || currentConfig.providers.nowpayments.network_name,
+                cny_to_usd_rate: Number(document.getElementById('paymentProviderNowpaymentsCnyUsdRate')?.value) || currentConfig.providers.nowpayments.cny_to_usd_rate,
+                is_fee_paid_by_user: document.getElementById('paymentProviderNowpaymentsFeePaidByUser')?.value === 'false'
+                    ? false
+                    : currentConfig.providers.nowpayments.is_fee_paid_by_user !== false,
+                is_fixed_rate: document.getElementById('paymentProviderNowpaymentsFixedRate')?.value === 'false'
+                    ? false
+                    : currentConfig.providers.nowpayments.is_fixed_rate !== false,
+                return_url: document.getElementById('paymentProviderNowpaymentsReturnUrl')?.value?.trim() || currentConfig.providers.nowpayments.return_url,
+                ipn_callback_url: document.getElementById('paymentProviderNowpaymentsIpnCallbackUrl')?.value?.trim() || currentConfig.providers.nowpayments.ipn_callback_url,
+                success_url: document.getElementById('paymentProviderNowpaymentsSuccessUrl')?.value?.trim() || currentConfig.providers.nowpayments.success_url,
+                cancel_url: document.getElementById('paymentProviderNowpaymentsCancelUrl')?.value?.trim() || currentConfig.providers.nowpayments.cancel_url,
+                package_hint: document.getElementById('paymentProviderNowpaymentsPackageHint')?.value?.trim() || currentConfig.providers.nowpayments.package_hint,
+                custom_amount_hint: document.getElementById('paymentProviderNowpaymentsCustomHint')?.value?.trim() || currentConfig.providers.nowpayments.custom_amount_hint
             }
         }
     };
@@ -18224,7 +18325,9 @@ function clearPaymentChannelSecretInputs() {
         'paymentProviderAfdianToken',
         'paymentProviderZpayPkey',
         'paymentProviderHupijiaoApiKey',
-        'paymentProviderHupijiaoSecretKey'
+        'paymentProviderHupijiaoSecretKey',
+        'paymentProviderNowpaymentsApiKey',
+        'paymentProviderNowpaymentsIpnSecret'
     ].forEach((id) => {
         const input = document.getElementById(id);
         if (input) input.value = '';
@@ -18243,7 +18346,9 @@ async function savePaymentChannelSettings(options = {}) {
                 afdian_token: document.getElementById('paymentProviderAfdianToken')?.value?.trim() || '',
                 zpay_pkey: document.getElementById('paymentProviderZpayPkey')?.value?.trim() || '',
                 hupijiao_api_key: document.getElementById('paymentProviderHupijiaoApiKey')?.value?.trim() || '',
-                hupijiao_secret_key: document.getElementById('paymentProviderHupijiaoSecretKey')?.value?.trim() || ''
+                hupijiao_secret_key: document.getElementById('paymentProviderHupijiaoSecretKey')?.value?.trim() || '',
+                nowpayments_api_key: document.getElementById('paymentProviderNowpaymentsApiKey')?.value?.trim() || '',
+                nowpayments_ipn_secret: document.getElementById('paymentProviderNowpaymentsIpnSecret')?.value?.trim() || ''
             }
         };
 
@@ -18292,7 +18397,8 @@ async function togglePaymentProviderEnabled(providerKey) {
         mock: 'paymentProviderMockToggle',
         afdian: 'paymentProviderAfdianToggle',
         zpay: 'paymentProviderZpayToggle',
-        hupijiao: 'paymentProviderHupijiaoToggle'
+        hupijiao: 'paymentProviderHupijiaoToggle',
+        nowpayments: 'paymentProviderNowpaymentsToggle'
     };
     const toggleEl = document.getElementById(toggleMap[providerKey]);
     if (!toggleEl) return;
@@ -18309,7 +18415,7 @@ async function togglePaymentProviderEnabled(providerKey) {
 
     const activeSelect = document.getElementById('paymentChannelActiveSelect');
     if (!nextValue && activeSelect?.value === providerKey) {
-        const fallback = ['mock', 'zpay', 'hupijiao', 'afdian'].find((key) => key !== providerKey && document.getElementById(toggleMap[key])?.classList.contains('active'));
+        const fallback = ['mock', 'nowpayments', 'zpay', 'hupijiao', 'afdian'].find((key) => key !== providerKey && document.getElementById(toggleMap[key])?.classList.contains('active'));
         if (fallback) {
             activeSelect.value = fallback;
         } else {
@@ -18329,7 +18435,7 @@ async function toggleMockPaymentStatus() {
         currentConfig.active_provider = 'mock';
         currentConfig.providers.mock.enabled = true;
     } else if (currentConfig.active_provider === 'mock') {
-        const fallbackProvider = ['zpay', 'hupijiao', 'afdian'].find((providerKey) => currentConfig.providers[providerKey]?.enabled);
+        const fallbackProvider = ['nowpayments', 'zpay', 'hupijiao', 'afdian'].find((providerKey) => currentConfig.providers[providerKey]?.enabled);
         currentConfig.active_provider = fallbackProvider || 'afdian';
         if (!currentConfig.providers[currentConfig.active_provider]?.enabled) {
             currentConfig.providers[currentConfig.active_provider].enabled = true;

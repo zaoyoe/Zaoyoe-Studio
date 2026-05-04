@@ -12,7 +12,7 @@
         return;
     }
 
-    const src = 'js/local-smoke-fixtures.js?v=20260429_LOCAL_SMOKE_ADMIN_ACCESS_SESSION_1';
+    const src = 'js/local-smoke-fixtures.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_SMOKE_1';
     if (document.readyState === 'loading' && typeof document.write === 'function') {
         document.write(`<script src="${src}"><\/script>`);
         return;

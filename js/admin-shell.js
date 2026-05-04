@@ -963,6 +963,16 @@
             return false;
         }
 
+        if (normalizedModuleId === 'engagement') {
+            if (typeof window.handleAdminEngagementSiteChange === 'function') {
+                void Promise.resolve(window.handleAdminEngagementSiteChange(detail)).catch((error) => {
+                    console.warn('[AdminShell] Engagement site change handler failed:', error);
+                });
+                return true;
+            }
+            return false;
+        }
+
         if (normalizedModuleId === 'growth-center') {
             if (typeof window.handleAdminGrowthCenterSiteChange === 'function') {
                 void Promise.resolve(window.handleAdminGrowthCenterSiteChange(detail)).catch((error) => {

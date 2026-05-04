@@ -82,11 +82,16 @@ function buildSupabaseClient(envValues = {}) {
 }
 
 function resolveTargetProvider(paymentChannels = {}, explicitProvider = '', secretStatus = {}, env = process.env) {
-    if (explicitProvider === 'mock' || explicitProvider === 'afdian' || explicitProvider === 'hupijiao' || explicitProvider === 'zpay') {
+    if (explicitProvider === 'mock' || explicitProvider === 'afdian' || explicitProvider === 'hupijiao' || explicitProvider === 'zpay' || explicitProvider === 'nowpayments') {
         return explicitProvider;
     }
 
     const providers = paymentChannels?.providers || {};
+    const nowpaymentsReadiness = buildPaymentProviderActivationCheck('nowpayments', paymentChannels, secretStatus, env);
+    if (providers.nowpayments?.enabled === true && nowpaymentsReadiness.ready) {
+        return 'nowpayments';
+    }
+
     const zpayReadiness = buildPaymentProviderActivationCheck('zpay', paymentChannels, secretStatus, env);
     if (providers.zpay?.enabled === true && zpayReadiness.ready) {
         return 'zpay';

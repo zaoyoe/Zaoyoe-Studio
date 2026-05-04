@@ -507,7 +507,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
         'https://unpkg.com/@supabase/supabase-js@2',
         '/api/runtime/supabase-config',
         './js/runtime-supabase-config.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
-        './supabase-client.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
+        './supabase-client.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1',
         './js/site-config.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
         './js/homepage-contract.js?v=20260430_HOMEPAGE_BILINGUAL_FIELDS_1',
         './js/section-visibility.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
@@ -533,12 +533,12 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
     );
     assert.match(
         indexSource,
-        /<script src="\.\/js\/homepage-guestbook-modal-loader\.js\?v=20260502_HOME_GUESTBOOK_LOADER_STABLE_DOCK_1" defer><\/script>/,
+        /<script src="\.\/js\/homepage-guestbook-modal-loader\.js\?v=20260504_HOME_GUESTBOOK_LOADER_KEYBOARD_RETRACT_1" defer><\/script>/,
         'homepage should keep only a small guestbook intent loader on the first load path'
     );
     assert.match(
         guestbookLoaderSource,
-        /const HOMEPAGE_GUESTBOOK_RUNTIME_SOURCES = Object\.freeze\(\[[\s\S]*supabase-guestbook-functions\.js\?v=20260501_GUESTBOOK_DOM_READY_LATE_LOAD_1[\s\S]*homepage-guestbook-modal\.js\?v=20260503_HOME_GUESTBOOK_MODAL_CHROME_CLOSE_1/,
+        /const HOMEPAGE_GUESTBOOK_RUNTIME_SOURCES = Object\.freeze\(\[[\s\S]*supabase-guestbook-functions\.js\?v=20260501_GUESTBOOK_DOM_READY_LATE_LOAD_1[\s\S]*homepage-guestbook-modal\.js\?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1/,
         'guestbook intent loader should own the deferred runtime sources'
     );
     assert.match(
@@ -547,7 +547,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
         'guestbook intent loader should open the modal after loading deferred runtimes'
     );
     assert.equal(
-        indexSource.includes('./js/engagement-runtime-loader.js?v=20260501_ENGAGEMENT_ANNOUNCEMENT_DARK_CARD_AUTH_BACKDROP_1'),
+        indexSource.includes('./js/engagement-runtime-loader.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1'),
         true,
         'homepage should cache-bust the split engagement bootstrap'
     );

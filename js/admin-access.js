@@ -6,10 +6,25 @@
     const ADMIN_STUDIO_SESSION_ENDPOINT = '/api/admin/access/session';
     const DEFAULT_ADMIN_ACCESS_REST_TIMEOUT_MS = 6000;
     const DEFAULT_ADMIN_STUDIO_SESSION_TIMEOUT_MS = 6000;
+    const ADMIN_PRESENCE_CHANNEL = 'zaoyoe-admin-presence';
+    const ADMIN_PRESENCE_HEARTBEAT_MS = 30000;
+    const ADMIN_PRESENCE_TAB_KEY = 'zaoyoe_admin_presence_tab_v1';
+    const USER_PRESENCE_CHANNEL = 'zaoyoe-user-presence';
+    const USER_PRESENCE_HEARTBEAT_MS = 30000;
+    const USER_PRESENCE_TAB_KEY = 'zaoyoe_user_presence_tab_v1';
     let pendingAdminStudioSessionPromise = null;
     let pendingAdminStudioSessionUserId = '';
     let pendingWarmAdminStudioPromise = null;
     let pendingWarmAdminStudioUserId = '';
+    let adminPresenceChannel = null;
+    let adminPresenceHeartbeatTimer = null;
+    let adminPresenceStartedAt = '';
+    let adminPresenceClient = null;
+    let userPresenceChannel = null;
+    let userPresenceHeartbeatTimer = null;
+    let userPresenceStartedAt = '';
+    let userPresenceClient = null;
+    let userPresenceIdentity = null;
 
     function normalizeAccessPayload(payload = {}) {
         return {
@@ -342,6 +357,241 @@
         });
     }
 
+    function getAdminPresenceTabKey() {
+        try {
+            const existing = globalScope?.sessionStorage?.getItem(ADMIN_PRESENCE_TAB_KEY);
+            if (existing) return existing;
+
+            const generated = `admin-tab-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+            globalScope?.sessionStorage?.setItem(ADMIN_PRESENCE_TAB_KEY, generated);
+            return generated;
+        } catch (_) {
+            return `admin-tab-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        }
+    }
+
+    function getUserPresenceTabKey() {
+        try {
+            const existing = globalScope?.sessionStorage?.getItem(USER_PRESENCE_TAB_KEY);
+            if (existing) return existing;
+
+            const generated = `user-tab-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+            globalScope?.sessionStorage?.setItem(USER_PRESENCE_TAB_KEY, generated);
+            return generated;
+        } catch (_) {
+            return `user-tab-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+        }
+    }
+
+    function normalizeUserPresenceIdentity(options = {}) {
+        const user = options.user && typeof options.user === 'object' ? options.user : null;
+        const userId = String(options.userId || options.user_id || user?.id || '').trim();
+        const email = String(options.email || user?.email || '').trim().toLowerCase();
+        const sessionId = String(options.sessionId || options.session_id || '').trim();
+        const sessionIds = [
+            sessionId,
+            ...(Array.isArray(options.sessionIds) ? options.sessionIds : []),
+            ...(Array.isArray(options.session_ids) ? options.session_ids : [])
+        ]
+            .map((value) => String(value || '').trim())
+            .filter(Boolean);
+        const uniqueSessionIds = [...new Set(sessionIds)];
+
+        if (!userId && !email && !uniqueSessionIds.length) {
+            return null;
+        }
+
+        return {
+            userId,
+            email,
+            sessionId: uniqueSessionIds[0] || '',
+            sessionIds: uniqueSessionIds,
+            site: String(options.site || globalScope?.SiteConfig?.getCurrentSite?.() || '').trim(),
+            path: String(globalScope?.location?.pathname || '').trim()
+        };
+    }
+
+    function buildAdminPresencePayload() {
+        const now = new Date().toISOString();
+        if (!adminPresenceStartedAt) {
+            adminPresenceStartedAt = now;
+        }
+
+        return {
+            role: 'admin',
+            online_at: adminPresenceStartedAt,
+            last_seen_at: now
+        };
+    }
+
+    function buildUserPresencePayload() {
+        const now = new Date().toISOString();
+        if (!userPresenceStartedAt) {
+            userPresenceStartedAt = now;
+        }
+
+        const identity = userPresenceIdentity || {};
+        return {
+            role: 'user',
+            user_id: identity.userId || '',
+            email: identity.email || '',
+            session_id: identity.sessionId || '',
+            session_ids: Array.isArray(identity.sessionIds) ? identity.sessionIds : [],
+            site: identity.site || '',
+            page_path: identity.path || '',
+            online_at: userPresenceStartedAt,
+            last_seen_at: now
+        };
+    }
+
+    function markAdminPresenceActive() {
+        if (!adminPresenceChannel?.track) {
+            return Promise.resolve(false);
+        }
+
+        return Promise.resolve(adminPresenceChannel.track(buildAdminPresencePayload()))
+            .then(() => true)
+            .catch((error) => {
+                console.warn('[AdminPresence] Failed to update admin presence:', error);
+                return false;
+            });
+    }
+
+    function markUserPresenceActive() {
+        if (!userPresenceChannel?.track || !userPresenceIdentity) {
+            return Promise.resolve(false);
+        }
+
+        return Promise.resolve(userPresenceChannel.track(buildUserPresencePayload()))
+            .then(() => true)
+            .catch((error) => {
+                console.warn('[UserPresence] Failed to update user presence:', error);
+                return false;
+            });
+    }
+
+    function stopAdminPresence() {
+        if (adminPresenceHeartbeatTimer && typeof globalScope.clearInterval === 'function') {
+            globalScope.clearInterval(adminPresenceHeartbeatTimer);
+            adminPresenceHeartbeatTimer = null;
+        }
+
+        const channel = adminPresenceChannel;
+        adminPresenceChannel = null;
+        adminPresenceStartedAt = '';
+
+        try {
+            channel?.untrack?.();
+        } catch (_) {
+            // ignore best-effort presence cleanup
+        }
+
+        try {
+            adminPresenceClient?.removeChannel?.(channel);
+        } catch (_) {
+            // ignore best-effort channel cleanup
+        }
+
+        adminPresenceClient = null;
+    }
+
+    function stopUserPresence() {
+        if (userPresenceHeartbeatTimer && typeof globalScope.clearInterval === 'function') {
+            globalScope.clearInterval(userPresenceHeartbeatTimer);
+            userPresenceHeartbeatTimer = null;
+        }
+
+        const channel = userPresenceChannel;
+        userPresenceChannel = null;
+        userPresenceStartedAt = '';
+        userPresenceIdentity = null;
+
+        try {
+            channel?.untrack?.();
+        } catch (_) {
+            // ignore best-effort presence cleanup
+        }
+
+        try {
+            userPresenceClient?.removeChannel?.(channel);
+        } catch (_) {
+            // ignore best-effort channel cleanup
+        }
+
+        userPresenceClient = null;
+    }
+
+    function startAdminPresence(supabaseClient = globalScope?.supabaseClient || null) {
+        if (!supabaseClient?.channel) {
+            return null;
+        }
+
+        if (adminPresenceChannel) {
+            void markAdminPresenceActive();
+            return adminPresenceChannel;
+        }
+
+        adminPresenceClient = supabaseClient;
+        adminPresenceChannel = supabaseClient.channel(ADMIN_PRESENCE_CHANNEL, {
+            config: {
+                presence: {
+                    key: getAdminPresenceTabKey()
+                }
+            }
+        });
+
+        adminPresenceChannel.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                void markAdminPresenceActive();
+            }
+        });
+
+        if (typeof globalScope.setInterval === 'function') {
+            adminPresenceHeartbeatTimer = globalScope.setInterval(() => {
+                void markAdminPresenceActive();
+            }, ADMIN_PRESENCE_HEARTBEAT_MS);
+        }
+
+        return adminPresenceChannel;
+    }
+
+    function startUserPresence(supabaseClient = globalScope?.supabaseClient || null, options = {}) {
+        const identity = normalizeUserPresenceIdentity(options);
+        if (!supabaseClient?.channel || !identity) {
+            return null;
+        }
+
+        userPresenceIdentity = identity;
+
+        if (userPresenceChannel) {
+            void markUserPresenceActive();
+            return userPresenceChannel;
+        }
+
+        userPresenceClient = supabaseClient;
+        userPresenceChannel = supabaseClient.channel(USER_PRESENCE_CHANNEL, {
+            config: {
+                presence: {
+                    key: getUserPresenceTabKey()
+                }
+            }
+        });
+
+        userPresenceChannel.subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+                void markUserPresenceActive();
+            }
+        });
+
+        if (typeof globalScope.setInterval === 'function') {
+            userPresenceHeartbeatTimer = globalScope.setInterval(() => {
+                void markUserPresenceActive();
+            }, USER_PRESENCE_HEARTBEAT_MS);
+        }
+
+        return userPresenceChannel;
+    }
+
     async function resolveWithTimeout(factory, timeoutMs = 4000, fallback = null) {
         let timeoutId = 0;
         try {
@@ -655,6 +905,8 @@
     }
 
     const api = {
+        adminPresenceChannelName: ADMIN_PRESENCE_CHANNEL,
+        userPresenceChannelName: USER_PRESENCE_CHANNEL,
         clearAccessCache,
         clearCachedAdminStudioSession,
         clearAdminStudioSession,
@@ -664,8 +916,45 @@
         normalizeAccessPayload,
         openAdminStudio,
         sanitizeAdminStudioTarget,
+        startAdminPresence,
+        markAdminPresenceActive,
+        stopAdminPresence,
+        startUserPresence,
+        markUserPresenceActive,
+        stopUserPresence,
         warmAdminStudioEntry
     };
+
+    globalScope.ZaoyoeAdminPresence = {
+        channelName: ADMIN_PRESENCE_CHANNEL,
+        start: startAdminPresence,
+        markActive: markAdminPresenceActive,
+        stop: stopAdminPresence
+    };
+
+    globalScope.ZaoyoeUserPresence = {
+        channelName: USER_PRESENCE_CHANNEL,
+        start: startUserPresence,
+        markActive: markUserPresenceActive,
+        stop: stopUserPresence
+    };
+
+    if (typeof globalScope.addEventListener === 'function') {
+        globalScope.addEventListener('pagehide', () => {
+            stopAdminPresence();
+            stopUserPresence();
+        });
+        globalScope.addEventListener('beforeunload', () => {
+            stopAdminPresence();
+            stopUserPresence();
+        });
+        globalScope.addEventListener('visibilitychange', () => {
+            if (globalScope.document?.visibilityState === 'visible') {
+                void markAdminPresenceActive();
+                void markUserPresenceActive();
+            }
+        });
+    }
 
     const existingAdminAccess = globalScope.AdminAccess;
     if (existingAdminAccess?.__localSmokeAccess === true) {

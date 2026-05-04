@@ -20,6 +20,9 @@ class AdminChat {
         this.ticketChannel = null;
         this.paymentChannel = null;
         this.verificationChannel = null;
+        this.userPresenceChannel = null;
+        this.userPresenceStatusTimer = null;
+        this.userPresenceByKey = new Map();
         this.sessionSlaTimer = null;
         this.sessionQueueView = 'all';
         this.sessionQueueFilter = 'all';
@@ -120,11 +123,19 @@ class AdminChat {
                 this.supabase.removeChannel(this.verificationChannel);
                 this.verificationChannel = null;
             }
+            if (this.userPresenceChannel) {
+                this.supabase.removeChannel(this.userPresenceChannel);
+                this.userPresenceChannel = null;
+            }
         }
 
         if (this.sessionSlaTimer) {
             window.clearInterval(this.sessionSlaTimer);
             this.sessionSlaTimer = null;
+        }
+        if (this.userPresenceStatusTimer) {
+            window.clearInterval(this.userPresenceStatusTimer);
+            this.userPresenceStatusTimer = null;
         }
 
         if (this.sessionDeferredHydrationHandle) {
@@ -153,7 +164,160 @@ class AdminChat {
         document.removeEventListener('click', this.handleDocumentClick);
         window.removeEventListener('ops-alerts-config-updated', this.handleOpsAlertConfigUpdated);
         window.removeEventListener('resize', this.handleWindowResize);
+        window.ZaoyoeAdminPresence?.stop?.();
         this.detachMobileKeyboardDock();
+    }
+
+    startAdminPresence() {
+        window.ZaoyoeAdminPresence?.start?.(this.supabase);
+    }
+
+    getUserPresenceChannelName() {
+        return window.ZaoyoeUserPresence?.channelName || window.AdminAccess?.userPresenceChannelName || 'zaoyoe-user-presence';
+    }
+
+    getPresenceKeysForPayload(payload = {}) {
+        const keys = [];
+        const pushKey = (prefix, value) => {
+            const normalized = String(value || '').trim();
+            if (!normalized) return;
+            keys.push(`${prefix}:${prefix === 'email' ? normalized.toLowerCase() : normalized}`);
+        };
+
+        pushKey('user', payload.user_id || payload.userId);
+        pushKey('email', payload.email);
+        pushKey('session', payload.session_id || payload.sessionId);
+        (Array.isArray(payload.session_ids) ? payload.session_ids : [])
+            .forEach((value) => pushKey('session', value));
+
+        return [...new Set(keys)];
+    }
+
+    getPresenceKeysForSession(session = {}) {
+        const keys = [];
+        const pushKey = (prefix, value) => {
+            const normalized = String(value || '').trim();
+            if (!normalized) return;
+            keys.push(`${prefix}:${prefix === 'email' ? normalized.toLowerCase() : normalized}`);
+        };
+
+        pushKey('user', session.userId || session.profile?.id);
+        pushKey('email', this.resolveSessionContextEmail(session) || session.email || session.profile?.email);
+        pushKey('session', session.sessionId);
+        (Array.isArray(session.sessionIds) ? session.sessionIds : [])
+            .forEach((value) => pushKey('session', value));
+
+        return [...new Set(keys)];
+    }
+
+    getSessionPresenceState(session = {}) {
+        const states = this.getPresenceKeysForSession(session)
+            .map((key) => this.userPresenceByKey.get(key))
+            .filter(Boolean);
+        if (!states.length) {
+            return { online: false, lastSeenAt: '' };
+        }
+
+        const latest = states.sort((left, right) => Date.parse(right.lastSeenAt || 0) - Date.parse(left.lastSeenAt || 0))[0];
+        return {
+            online: states.some((state) => state.online),
+            lastSeenAt: latest?.lastSeenAt || ''
+        };
+    }
+
+    getSessionPresenceStatusItem(session = {}) {
+        if (this.isOpsAlertSession(session)) return null;
+        const presence = this.getSessionPresenceState(session);
+        const lastSeenAt = String(presence.lastSeenAt || '').trim();
+        const lastSeenTime = Date.parse(lastSeenAt);
+
+        if (presence.online) {
+            return { label: '状态', value: '在线', tone: 'success' };
+        }
+
+        if (!Number.isFinite(lastSeenTime)) {
+            return null;
+        }
+
+        const diffMins = Math.max(1, Math.floor((Date.now() - lastSeenTime) / 60000));
+        if (diffMins < 30) {
+            return { label: '状态', value: `${diffMins}分钟前活跃`, tone: 'warning' };
+        }
+        if (diffMins < 60) {
+            return { label: '状态', value: `${diffMins}分钟前`, tone: 'neutral' };
+        }
+        if (diffMins < 1440) {
+            return { label: '状态', value: `${Math.floor(diffMins / 60)}小时前`, tone: 'neutral' };
+        }
+        return { label: '状态', value: `${Math.floor(diffMins / 1440)}天前`, tone: 'neutral' };
+    }
+
+    applyUserPresenceToSessions() {
+        this.chatSessions = (Array.isArray(this.chatSessions) ? this.chatSessions : []).map((session) => {
+            const presence = this.getSessionPresenceState(session);
+            return {
+                ...session,
+                presenceOnline: presence.online,
+                presenceLastSeenAt: presence.lastSeenAt
+            };
+        });
+    }
+
+    refreshUserPresenceSnapshot() {
+        if (!this.userPresenceChannel || typeof this.userPresenceChannel.presenceState !== 'function') {
+            return;
+        }
+
+        const state = this.userPresenceChannel.presenceState() || {};
+        const nextPresenceByKey = new Map();
+        Object.values(state)
+            .flatMap((entries) => Array.isArray(entries) ? entries : [])
+            .filter((entry) => String(entry?.role || '') === 'user')
+            .forEach((entry) => {
+                const lastSeenAt = String(entry?.last_seen_at || entry?.online_at || new Date().toISOString()).trim();
+                this.getPresenceKeysForPayload(entry).forEach((key) => {
+                    const current = nextPresenceByKey.get(key);
+                    if (!current || Date.parse(lastSeenAt || 0) >= Date.parse(current.lastSeenAt || 0)) {
+                        nextPresenceByKey.set(key, {
+                            online: true,
+                            lastSeenAt
+                        });
+                    }
+                });
+            });
+
+        this.userPresenceByKey = nextPresenceByKey;
+        this.applyUserPresenceToSessions();
+        this.composeSessions();
+        this.syncCurrentSessionFromSessions();
+        this.renderSessionList(this.searchQuery);
+        if (this.currentSessionInfo && !this.isOpsAlertSession(this.currentSessionInfo)) {
+            this.renderUserContextHeaderStatus(this.currentUserContext);
+        }
+    }
+
+    subscribeToUserPresence() {
+        if (!this.supabase?.channel || this.userPresenceChannel) {
+            return;
+        }
+
+        this.userPresenceChannel = this.supabase
+            .channel(this.getUserPresenceChannelName())
+            .on('presence', { event: 'sync' }, () => {
+                this.refreshUserPresenceSnapshot();
+            })
+            .subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    this.refreshUserPresenceSnapshot();
+                }
+            });
+
+        this.userPresenceStatusTimer = window.setInterval(() => {
+            if (this.currentSessionInfo && !this.isOpsAlertSession(this.currentSessionInfo)) {
+                this.renderUserContextHeaderStatus(this.currentUserContext);
+            }
+            this.renderSessionList(this.searchQuery);
+        }, 15000);
     }
 
     isMobileKeyboardDockEnabled() {
@@ -2912,7 +3076,13 @@ class AdminChat {
 
         container.replaceChildren();
 
-        const items = context ? this.getUserContextHeaderStatusItems(context) : [];
+        const presenceItem = this.currentSessionInfo
+            ? this.getSessionPresenceStatusItem(this.currentSessionInfo)
+            : null;
+        const items = [
+            presenceItem,
+            ...(context ? this.getUserContextHeaderStatusItems(context) : [])
+        ].filter(Boolean).slice(0, 3);
         if (!items.length) {
             container.hidden = true;
             return;
@@ -6868,7 +7038,9 @@ class AdminChat {
         const container = this.targetContainer || document.getElementById('chat-admin-container');
         if (!container) return;
 
+        this.startAdminPresence();
         this.renderLayout(container);
+        this.subscribeToUserPresence();
         const restoredFromCache = this.restoreChatSessionCache();
         if (restoredFromCache) {
             this.composeSessions();
@@ -7284,6 +7456,7 @@ class AdminChat {
             ...session,
             replySummary: this.buildSessionReplySummary(session.lastUserMessageAt, session.lastAdminMessageAt)
         }));
+        this.applyUserPresenceToSessions();
     }
 
     async processOpsAlertData(rows) {
@@ -7315,10 +7488,15 @@ class AdminChat {
             || session.profile?.username
             || (resolvedEmail ? resolvedEmail.split('@')[0] : this.t('chat.guest', '访客'));
         let displaySub = resolvedEmail || this.t('chat.noEmail', '无邮箱');
+        const presenceStatus = this.getSessionPresenceStatusItem(session);
 
         if (!resolvedEmail) {
             const primarySessionId = String((session.sessionIds && session.sessionIds[0]) || session.sessionId || '').trim();
             displaySub = primarySessionId ? `${primarySessionId.slice(0, 8)}...` : this.t('chat.noEmail', '无邮箱');
+        }
+
+        if (presenceStatus?.value) {
+            displaySub = displaySub ? `${presenceStatus.value} · ${displaySub}` : presenceStatus.value;
         }
 
         const prioritySignals = this.getSessionPrioritySignals(session);
@@ -7439,9 +7617,16 @@ class AdminChat {
                     headerMainEl.appendChild(badgeEl);
                 }
 
+                const isOpsSession = this.isOpsAlertSession(session);
+                const presenceStatus = this.getSessionPresenceStatusItem(session);
+                const isPresenceOnline = presenceStatus?.value === '在线';
                 const timeEl = document.createElement('span');
-                timeEl.className = 'session-time';
-                timeEl.textContent = this.formatSessionTime(session.timestamp);
+                timeEl.className = `session-time${isPresenceOnline ? ' session-time--online' : ''}`;
+                timeEl.textContent = isOpsSession
+                    ? ''
+                    : isPresenceOnline
+                    ? '在线'
+                    : this.formatSessionTime(session.timestamp);
 
                 headerEl.appendChild(headerMainEl);
                 headerEl.appendChild(timeEl);
@@ -8050,6 +8235,7 @@ class AdminChat {
                     message_type: 'text',
                     is_admin: true
                 });
+            window.ZaoyoeAdminPresence?.markActive?.();
         } catch (err) {
             console.error('Failed to send:', err);
         }
@@ -8091,6 +8277,7 @@ class AdminChat {
                     message_type: 'image',
                     is_admin: true
                 });
+            window.ZaoyoeAdminPresence?.markActive?.();
 
             this.appendMessage({
                 content: imageUrl,

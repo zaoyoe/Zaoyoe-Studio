@@ -12,9 +12,9 @@ test('wallet loader and auth runtime prewarm the balance overview before modal o
     const authSource = readRepoFile('supabase-auth-functions.js');
 
     const loaderMarkers = [
-        "const VERSION = '20260503_WALLET_REDEEM_REVOKE_REASON_UI_1';",
+        "const VERSION = '20260504_USDT_DIRECT_CHECKOUT_1';",
         "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260430_WALLET_GUIDANCE_BILINGUAL_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260503_WALLET_REDEEM_REVOKE_REASON_UI_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260504_USDT_DIRECT_CHECKOUT_1';",
         'function ensurePointsServiceReady() {',
         'function warmWalletOverview(options = {}) {',
         'warmOverview: warmWalletOverview'
@@ -43,8 +43,13 @@ test('wallet sidebar highlight keeps mobile tabs instant while preserving deskto
 
     const modalMarkers = [
         'function resetWalletSidebarIndicatorState() {',
+        'let walletCssReady = false;',
+        'function waitForWalletCssReady(link, options = {}) {',
+        'function queueWalletSidebarIndicatorRefresh(targetItem = null) {',
         "sidebar?.classList.remove('wallet-sidebar--indicator-ready');",
         'const isCompactMobile = isWalletModalCompactMobile();',
+        'if (!walletCssReady) {',
+        'queueWalletSidebarIndicatorRefresh(activeItem);',
         'if (isCompactMobile) {',
         "left: '',",
         "height: '',",
@@ -62,6 +67,9 @@ test('wallet sidebar highlight keeps mobile tabs instant while preserving deskto
         '.wallet-sidebar.wallet-sidebar--indicator-ready .wallet-menu-item.active {',
         '[data-theme="light"] .wallet-sidebar.wallet-sidebar--indicator-ready .wallet-menu-item.active {',
         '.sidebar-indicator.sidebar-indicator--settling {',
+        'height: 54px;\n    /* Initial height (approx) */',
+        'min-height: 54px;',
+        'line-height: 1.25;',
         '/* 20260428_WALLET_MOBILE_LIGHT_CUE_1 */',
         '.sidebar-indicator {\n        display: none;',
         'width: clamp(58px, 14.5vw, 76px);',

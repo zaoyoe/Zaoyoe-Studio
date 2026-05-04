@@ -8143,9 +8143,17 @@ input[type="submit"],
 /* Homepage Guestbook Composer */
 #guestbookModal {
     --guestbook-modal-overlay-height: 100dvh;
+    --guestbook-modal-viewport-top: 0px;
+    --guestbook-modal-viewport-left: 0px;
+    --guestbook-modal-viewport-width: 100vw;
     --guestbook-modal-translate-y: 0px;
     --guestbook-modal-card-height: 420px;
     --guestbook-modal-card-max-height: calc(100svh - 56px);
+    top: var(--guestbook-modal-viewport-top) !important;
+    left: var(--guestbook-modal-viewport-left) !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: var(--guestbook-modal-viewport-width) !important;
     background: rgba(7, 9, 12, 0.28) !important;
     backdrop-filter: blur(14px) saturate(108%) !important;
     -webkit-backdrop-filter: blur(14px) saturate(108%) !important;

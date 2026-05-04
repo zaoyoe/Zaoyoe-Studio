@@ -23,7 +23,9 @@ const PAYMENT_SECRET_PROVIDER_MAP = Object.freeze({
     afdian_token: 'afdian',
     hupijiao_api_key: 'hupijiao',
     hupijiao_secret_key: 'hupijiao',
-    zpay_pkey: 'zpay'
+    zpay_pkey: 'zpay',
+    nowpayments_api_key: 'nowpayments',
+    nowpayments_ipn_secret: 'nowpayments'
 });
 
 function buildPaymentChannelActivationChecks(config = {}, secretStatus = {}, env = process.env) {
@@ -31,7 +33,8 @@ function buildPaymentChannelActivationChecks(config = {}, secretStatus = {}, env
         mock: buildPaymentProviderActivationCheck('mock', config, secretStatus, env),
         afdian: buildPaymentProviderActivationCheck('afdian', config, secretStatus, env),
         zpay: buildPaymentProviderActivationCheck('zpay', config, secretStatus, env),
-        hupijiao: buildPaymentProviderActivationCheck('hupijiao', config, secretStatus, env)
+        hupijiao: buildPaymentProviderActivationCheck('hupijiao', config, secretStatus, env),
+        nowpayments: buildPaymentProviderActivationCheck('nowpayments', config, secretStatus, env)
     };
 }
 

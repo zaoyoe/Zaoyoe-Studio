@@ -66,6 +66,10 @@
             "destination": "/api/public?scope=runtime&route=:path*"
         },
         {
+            "source": "/api/engagement/:path*",
+            "destination": "/api/public?scope=engagement&route=:path*"
+        },
+        {
             "source": "/api/shop/:path*",
             "destination": "/api/public?scope=shop&route=:path*"
         },

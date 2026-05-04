@@ -23,7 +23,8 @@
     <link rel="stylesheet" href="admin-studio.css?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1&googleOneCaseButtons=20260427_GOOGLE_ONE_CASE_BUTTONS_1&gallerySkeleton=20260427_GALLERY_SKELETON_BADGES_REMOVED_1&lightCardBorders=20260427_ADMIN_STUDIO_LIGHT_CARD_BORDER_CONTRAST_1&userCommerceImpact=20260428_ADMIN_STUDIO_USER_COMMERCE_IMPACT_WRAP_1&dashedButtonHover=20260428_ADMIN_STUDIO_DASHED_BUTTON_HOVER_BORDER_2&opsShiftReportLayout=20260428_OPS_ALERT_SHIFT_REPORT_HEAD_GRID_1&batchMenuMobile=20260428_ADMIN_BATCH_MENU_COMPACT_MOBILE_1&batchMenuDepth=20260428_ADMIN_BATCH_MENU_DENSE_DEPTH_1&discountsMobile=20260428_ADMIN_DISCOUNTS_MOBILE_SCROLL_PARITY_2&discountsGrid=20260428_ADMIN_DISCOUNTS_STATUS_GRID_1&discountDetailTitle=20260428_ADMIN_DISCOUNT_DETAIL_TITLE_LEFT_1&discountDetailModalFrame=20260428_ADMIN_DISCOUNT_DETAIL_MOBILE_DIALOG_FRAME_4&largeModalBreathing=20260428_ADMIN_STUDIO_LARGE_MODAL_MOBILE_BREATHING_2&userModalBreathing=20260428_ADMIN_STUDIO_USER_MODAL_MOBILE_BREATHING_1&userModalRails=20260430_ADMIN_STUDIO_CARD_RAIL_REAL_BORDER_1&analyticsNavStatusText=20260429_ADMIN_STUDIO_ANALYTICS_NAV_STATUS_TEXT_1&analyticsStaticStatusChips=20260429_ADMIN_STUDIO_ANALYTICS_STATIC_STATUS_CHIPS_1&analyticsStaticPanelNotes=20260429_ADMIN_STUDIO_ANALYTICS_STATIC_PANEL_NOTES_1&permissionCheckmark=20260429_ADMIN_USERS_PERMISSION_CHECKMARK_VISUAL_1&paymentsSkeletonParity=20260430_ADMIN_PAYMENTS_OVERVIEW_SKELETON_PARITY_1&commerceProductMetricsMobile=20260430_ADMIN_STUDIO_COMMERCE_PRODUCT_METRICS_2UP_1&verifyTaskUserDetailLink=20260430_ADMIN_ANALYTICS_VERIFY_TASK_USER_DETAIL_LINK_1&verifySubmitterDeepLink=20260430_ADMIN_ANALYTICS_VERIFY_SUBMITTER_DEEP_LINK_1&verifyLedgerDetailFallback=20260430_ADMIN_VERIFY_LEDGER_DETAIL_FALLBACK_1&productSiteGrid=20260430_ADMIN_STUDIO_PRODUCT_SITE_GRID_1&rootScrollbar=20260430_ADMIN_ROOT_SCROLLBAR_FULL_HIDE_1&announcementButtonFeedback=20260501_ADMIN_ANNOUNCEMENT_BUTTON_FEEDBACK_1&announcementPageOverrides=20260501_ADMIN_ANNOUNCEMENT_PAGE_OVERRIDES_1&announcementWorkflow=20260501_ADMIN_ANNOUNCEMENT_WORKFLOW_15&compactActionFeedback=20260501_ADMIN_COMPACT_ACTION_FEEDBACK_1&userValuePriorityMobile=20260502_ADMIN_STUDIO_USER_VALUE_PRIORITY_MOBILE_STACK_1&galleryEditFeedback=20260503_ADMIN_GALLERY_EDIT_FEEDBACK_1&delegatedActionFeedback=20260503_ADMIN_DELEGATED_ACTION_FEEDBACK_1&pointsCodeModalLight=20260503_ADMIN_POINTS_CODE_MODAL_LIGHT_1&pointsActionFeedback=20260503_ADMIN_POINTS_ACTION_FEEDBACK_1&toastAboveModal=20260503_ADMIN_TOAST_ABOVE_MODAL_1">
     <link rel="stylesheet" href="admin-sidebar.css?v=20260412_SIDEBAR_HEX_182634_1&batchMenuDepth=20260428_ADMIN_BATCH_MENU_DENSE_DEPTH_1&commentsExportFeedback=20260501_ADMIN_COMMENTS_EXPORT_FEEDBACK_1">
     <link rel="stylesheet" href="css/admin-command-center.css?v=20260428_ADMIN_PULSE_DOCK_MOBILE_HIDDEN_1">
-    <link rel="stylesheet" href="css/admin-chat.css?v=20260502_ADMIN_CHAT_KEYBOARD_DOCK_6" media="print" data-deferred-style="1">
+    <link rel="stylesheet" href="css/admin-chat.css?v=20260504_USER_ONLINE_GREEN_1" media="print" data-deferred-style="1">
+    <link rel="stylesheet" href="css/admin-engagement.css?v=20260504_ENGAGEMENT_PUBLISH_STATUS_SYNC_1" media="print" data-deferred-style="1">
 
 
     <!-- Cropper.js CSS -->
@@ -89,6 +90,10 @@
                 <div class="sidebar-item" data-module="chat" data-admin-action="switch-module" data-module-id="chat">
                     <i class="fas fa-comment-dots"></i>
                     <span>客服消息</span>
+                </div>
+                <div class="sidebar-item" data-module="engagement" data-admin-action="switch-module" data-module-id="engagement">
+                    <i class="fas fa-robot"></i>
+                    <span>客服系统</span>
                 </div>
                 <div class="sidebar-divider"></div>
                 <div class="sidebar-item" data-module="shop" data-admin-action="switch-module" data-module-id="shop">
@@ -182,6 +187,31 @@
             <div id="module-chat" class="module-container">
                 <div id="chat-admin-container" class="admin-studio-inline-style-attr-2">
                     <!-- Chat Interface injected by JS -->
+                </div>
+            </div>
+
+            <!-- ========== ENGAGEMENT MODULE ========== -->
+            <div id="module-engagement" class="module-container">
+                <div class="engagement-admin-shell">
+                    <header class="engagement-admin-header">
+                        <div>
+                            <p class="engagement-kicker">Robot Touchpoint Center</p>
+                            <h2><i class="fas fa-robot"></i> 客服系统</h2>
+                            <p>用公共页右下角客服机器人吐出气泡，把站长提醒、用户事件、优惠权益和权限变更送到正确页面。</p>
+                        </div>
+                        <button type="button" class="engagement-refresh-btn" data-engagement-action="refresh">
+                            <i class="fas fa-rotate"></i>
+                            <span>刷新</span>
+                        </button>
+                    </header>
+                    <div id="engagementOverview" class="engagement-overview" aria-live="polite">
+                        <div class="engagement-loading">
+                            <span class="admin-module-loading-dots admin-module-loading-dots--block" aria-hidden="true">
+                                <span></span><span></span><span></span>
+                            </span>
+                            <span>客服系统加载中...</span>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -1077,6 +1107,7 @@
                                             <select class="config-input" id="paymentChannelActiveSelect" data-admin-change-action="payments-change-active-provider">
                                                 <option value="mock">模拟支付</option>
                                                 <option value="afdian">爱发电</option>
+                                                <option value="nowpayments">USDT-BEP20</option>
                                                 <option value="zpay">易支付</option>
                                                 <option value="hupijiao">虎皮椒</option>
                                             </select>
@@ -1169,6 +1200,134 @@
                                                     </div>
                                                     <div class="config-input-wrapper">
                                                         <input type="password" class="config-input" id="paymentProviderAfdianToken" placeholder="留空表示保持现有密钥不变">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="payment-provider-accordion" id="paymentProviderAccordionNowpayments">
+                                            <div class="payment-provider-accordion-header" data-admin-action="payments-toggle-provider-panel" data-provider="nowpayments">
+                                                <div class="payment-provider-accordion-copy">
+                                                    <div class="payment-provider-accordion-title-line">
+                                                        <span class="payment-provider-accordion-title" id="paymentProviderHeaderNameNowpayments">USDT-BEP20</span>
+                                                        <span class="payment-provider-accordion-status" id="paymentProviderHeaderStatusNowpayments">已停用</span>
+                                                    </div>
+                                                    <div class="payment-provider-accordion-desc" id="paymentProviderHeaderDescNowpayments">NOWPayments 自动收款通道，默认使用 USDT-BEP20 / BNB Smart Chain。</div>
+                                                </div>
+                                                <div class="payment-provider-accordion-actions">
+                                                    <div class="status-toggle" id="paymentProviderNowpaymentsToggle" data-admin-action="payments-toggle-provider-enabled" data-provider="nowpayments"></div>
+                                                    <button type="button" class="payment-provider-expand-btn" data-admin-action="payments-toggle-provider-panel" data-provider="nowpayments">
+                                                        <i class="fas fa-chevron-down" id="paymentProviderChevronNowpayments"></i>
+                                                    </button>
+                                                </div>
+                                            </div>
+                                            <div class="payment-provider-accordion-body" id="paymentProviderPanelNowpayments">
+                                                <div class="config-row">
+                                                    <label>显示名称</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="text" class="config-input" id="paymentProviderNowpaymentsDisplayName" placeholder="USDT-BEP20">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>API 地址</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="url" class="config-input" id="paymentProviderNowpaymentsApiBaseUrl" placeholder="https://api.nowpayments.io">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>收款币种</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="text" class="config-input" id="paymentProviderNowpaymentsPayCurrency" placeholder="usdtbsc">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>计价币种</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="text" class="config-input" id="paymentProviderNowpaymentsPriceCurrency" placeholder="usd">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>网络名称</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="text" class="config-input" id="paymentProviderNowpaymentsNetworkName" placeholder="BNB Smart Chain">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>CNY 转 USD 汇率</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="number" step="0.0001" min="0" class="config-input" id="paymentProviderNowpaymentsCnyUsdRate" placeholder="0.14">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>手续费承担</label>
+                                                    <div class="config-input-wrapper">
+                                                        <select class="config-input" id="paymentProviderNowpaymentsFeePaidByUser">
+                                                            <option value="true">客户承担</option>
+                                                            <option value="false">商户承担</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>固定汇率</label>
+                                                    <div class="config-input-wrapper">
+                                                        <select class="config-input" id="paymentProviderNowpaymentsFixedRate">
+                                                            <option value="true">开启</option>
+                                                            <option value="false">关闭</option>
+                                                        </select>
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>回跳地址</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="url" class="config-input" id="paymentProviderNowpaymentsReturnUrl" placeholder="https://www.zaoyoe.com">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>通知地址</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="url" class="config-input" id="paymentProviderNowpaymentsIpnCallbackUrl" placeholder="https://www.zaoyoe.com/api/payments/nowpayments/webhook">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>支付成功地址</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="url" class="config-input" id="paymentProviderNowpaymentsSuccessUrl" placeholder="https://www.zaoyoe.com">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>取消支付地址</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="url" class="config-input" id="paymentProviderNowpaymentsCancelUrl" placeholder="https://www.zaoyoe.com">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>套餐购买提示</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="text" class="config-input" id="paymentProviderNowpaymentsPackageHint" placeholder="请使用 USDT-BEP20 / BNB Smart Chain 完成付款">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>自定义充值提示</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="text" class="config-input" id="paymentProviderNowpaymentsCustomHint" placeholder="请按页面显示的 USDT-BEP20 金额付款">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <div class="config-info">
+                                                        <div class="config-label">NOWPayments API Key</div>
+                                                        <div class="config-desc" id="paymentProviderNowpaymentsApiKeyStatus">未配置后台安全密钥</div>
+                                                    </div>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="password" class="config-input" id="paymentProviderNowpaymentsApiKey" placeholder="留空表示保持现有密钥不变">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <div class="config-info">
+                                                        <div class="config-label">NOWPayments IPN Secret</div>
+                                                        <div class="config-desc" id="paymentProviderNowpaymentsIpnSecretStatus">未配置后台安全密钥</div>
+                                                    </div>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="password" class="config-input" id="paymentProviderNowpaymentsIpnSecret" placeholder="留空表示保持现有密钥不变">
                                                     </div>
                                                 </div>
                                             </div>
@@ -11649,14 +11808,15 @@
     <script src="js/admin-studio-translate.js?v=20260421_TRANSLATE_BUDGET_P0"></script>
     <script src="js/admin-site-filter.js?v=20260427_ADMIN_SITE_SELECTOR_NO_KICKER_1&siteSwitcherOrder=20260428_ADMIN_SITE_SWITCHER_ORDER_1"></script>
     <script src="js/admin-tickets.js?v=20260428_TICKETS_WORKSPACE_SCROLL_PRESERVE_1&ticketsMobileLabels=20260428_TICKETS_MOBILE_TABLE_LABELS_1&ticketsBulkFeedback=20260501_ADMIN_TICKETS_BULK_FEEDBACK_1" data-cache-bust-ticket-mobile="js/admin-tickets.js?v=20260428_TICKETS_MOBILE_TABLE_LABELS_1&ticketsBulkFeedback=20260501_ADMIN_TICKETS_BULK_FEEDBACK_1"></script>
-    <script src="js/admin-access.js?v=20260429_ADMIN_ACCESS_SMOKE_PRESERVE_1"></script>
+    <script src="js/admin-access.js?v=20260504_ADMIN_PRESENCE_STATUS_1"></script>
+    <script src="js/admin-engagement.js?v=20260504_ENGAGEMENT_PUBLISH_STATUS_SYNC_1"></script>
 	<script src="admin-studio.js?v=20260427_ADMIN_GALLERY_AI_TAGS_HIDDEN_1&gallerySkeleton=20260427_GALLERY_SKELETON_BADGES_REMOVED_1&largeModalClose=20260428_ADMIN_STUDIO_LARGE_MODAL_CLOSE_MOBILE_10&largeModalBreathing=20260428_ADMIN_STUDIO_LARGE_MODAL_MOBILE_BREATHING_2&userModalBreathing=20260428_ADMIN_STUDIO_USER_MODAL_MOBILE_BREATHING_1&largeModalCloseTouch=20260430_ADMIN_STUDIO_LARGE_MODAL_CLOSE_TOUCH_1&lightboxCloseTouch=20260430_ADMIN_STUDIO_LIGHTBOX_CLOSE_TOUCH_1&verifyTaskUserDetailLink=20260430_ADMIN_ANALYTICS_VERIFY_TASK_USER_DETAIL_LINK_1&verifySubmitterDeepLink=20260430_ADMIN_ANALYTICS_VERIFY_SUBMITTER_DEEP_LINK_1&verifyLedgerDetailFallback=20260430_ADMIN_VERIFY_LEDGER_DETAIL_FALLBACK_1&promptUploadVariants=20260501_PROMPT_UPLOAD_FEATURED_1&announcementButtonFeedback=20260501_ADMIN_ANNOUNCEMENT_BUTTON_FEEDBACK_1&announcementPageOverrides=20260501_ADMIN_ANNOUNCEMENT_PAGE_OVERRIDES_1&announcementWorkflow=20260501_ADMIN_ANNOUNCEMENT_WORKFLOW_15&delegatedDeleteFeedback=20260501_ADMIN_DELEGATED_DELETE_FEEDBACK_1&toolbarActionFeedback=20260501_ADMIN_TOOLBAR_ACTION_FEEDBACK_1&promptLangSignal=20260503_PROMPT_LANG_SIGNAL_1&galleryPageLoad=20260503_ADMIN_GALLERY_PAGE_LOAD_2&galleryEditFeedback=20260503_ADMIN_GALLERY_EDIT_FEEDBACK_1&delegatedActionFeedback=20260503_ADMIN_DELEGATED_ACTION_FEEDBACK_1"></script>
     <script src="js/admin-scrollbar-auto-hide-helper.js?v=20260424_ADMIN_SCROLLBAR_AUTO_HIDE_HELPER_1"></script>
     <script src="js/shop-image-variants.js?v=20260430_RESPONSIVE_IMAGE_VARIANTS_1"></script>
-    <script src="js/admin-shop.js?v=20260430_SHOP_SAVE_SCHEMA_FALLBACK_1&productFilterMobile=20260428_ADMIN_SHOP_PRODUCT_FILTER_MOBILE_1&productImageCardVariants=20260430_PRODUCT_IMAGE_CARD_VARIANTS_1"></script>
+    <script src="js/admin-shop.js?v=20260504_SHOP_IMPORT_STOCK_SYNC_1&productFilterMobile=20260428_ADMIN_SHOP_PRODUCT_FILTER_MOBILE_1&productImageCardVariants=20260430_PRODUCT_IMAGE_CARD_VARIANTS_1"></script>
 </body>
 
 <!-- Admin Chat Script -->
-<script src="js/admin-chat.js?v=20260502_ADMIN_CHAT_KEYBOARD_DOCK_6"></script>
+<script src="js/admin-chat.js?v=20260504_OPS_SESSION_NO_ONLINE_1"></script>
 <script src="js/admin-real-smoke-loader.js?v=20260420_ADMIN_REAL_SMOKE_LOADER_1"></script>
 </html>

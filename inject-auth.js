@@ -58,6 +58,7 @@
     const submitState = {
         stabilizeTimerId: 0
     };
+    let userPresenceAuthBound = false;
 
     function isIOSMobile() {
         return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
@@ -1923,7 +1924,23 @@
         closeDropdown();
         if (typeof window.toggleNotifMenu === 'function') {
             window.toggleNotifMenu(event);
+            return;
         }
+
+        const warmNotifications = window.ZaoyoeEngagementRuntimeBootstrap?.warmNotifications;
+        if (typeof warmNotifications !== 'function') {
+            return;
+        }
+
+        Promise.resolve(warmNotifications())
+            .then(() => {
+                if (typeof window.toggleNotifMenu === 'function') {
+                    window.toggleNotifMenu();
+                }
+            })
+            .catch((error) => {
+                console.warn('⚠️ Failed to warm notification runtime:', error?.message || error);
+            });
     };
 
     window.updateNotificationBadges = function (hasUnread) {
@@ -1970,6 +1987,84 @@
         }
     }
 
+    function getInjectedAuthUserPresenceSessionIds(user = null) {
+        const userId = String(user?.id || '').trim();
+        if (!userId) return [];
+
+        const email = String(user?.email || '').trim();
+        return [...new Set([
+            `user_${userId}`,
+            email,
+            email.toLowerCase()
+        ].filter(Boolean))];
+    }
+
+    function getInjectedAuthGuestPresenceSessionId() {
+        try {
+            return String(localStorage.getItem('chat_session_id') || '').trim();
+        } catch (_) {
+            return '';
+        }
+    }
+
+    async function syncInjectedAuthUserPresence() {
+        const client = window.supabaseClient;
+        if (!client?.auth?.getUser) return;
+
+        try {
+            const { data: { user } = {} } = await client.auth.getUser();
+            if (user?.id) {
+                const adminAccess = await window.AdminAccess?.getCurrentAdminAccess?.({
+                    user,
+                    supabaseClient: client,
+                    forceRefresh: false
+                });
+
+                if (adminAccess?.isAdmin) {
+                    window.ZaoyoeUserPresence?.stop?.();
+                    return;
+                }
+
+                const sessionIds = getInjectedAuthUserPresenceSessionIds(user);
+                window.ZaoyoeUserPresence?.start?.(client, {
+                    user,
+                    sessionId: sessionIds[0] || '',
+                    sessionIds
+                });
+                return;
+            }
+
+            const guestSessionId = getInjectedAuthGuestPresenceSessionId();
+            if (guestSessionId) {
+                window.ZaoyoeUserPresence?.start?.(client, {
+                    sessionId: guestSessionId,
+                    sessionIds: [guestSessionId]
+                });
+            } else {
+                window.ZaoyoeUserPresence?.stop?.();
+            }
+        } catch (error) {
+            console.warn('[UserPresence] Failed to sync auth presence:', error?.message || error);
+        }
+    }
+
+    function bindInjectedAuthUserPresenceEvents() {
+        const client = window.supabaseClient;
+        if (userPresenceAuthBound || !client?.auth?.onAuthStateChange) return;
+        userPresenceAuthBound = true;
+
+        client.auth.onAuthStateChange((event) => {
+            if (event === 'SIGNED_OUT') {
+                window.ZaoyoeUserPresence?.stop?.();
+                return;
+            }
+
+            window.setTimeout(() => {
+                void syncInjectedAuthUserPresence();
+            }, 0);
+        });
+    }
+
     async function initAuth() {
         ensureStyles();
         ensureMarkup();
@@ -1985,6 +2080,8 @@
         exposeAuthApi();
 
         bindGlobalEvents();
+        bindInjectedAuthUserPresenceEvents();
+        void syncInjectedAuthUserPresence();
         updateSheetCopy(sheetState.view);
         updateTabState(sheetState.view);
 

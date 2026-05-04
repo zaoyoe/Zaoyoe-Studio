@@ -28,8 +28,18 @@ function isMissingNotificationColumnError(error) {
     return error?.code === '42703'
         || error?.code === '42P01'
         || (message.includes('column') && message.includes('does not exist'))
-        || (message.includes('schema cache') && message.includes('scope'))
-        || (message.includes('schema cache') && message.includes('category'));
+        || (message.includes('schema cache') && (
+            message.includes('scope')
+            || message.includes('category')
+            || message.includes('action_url')
+            || message.includes('action_label')
+            || message.includes('metadata')
+            || message.includes('priority')
+            || message.includes('expires_at')
+            || message.includes('dedupe_key')
+            || message.includes('source_module')
+            || message.includes('source_event_id')
+        ));
 }
 
 function isRoleActive(role = {}, nowMs = Date.now()) {
@@ -142,6 +152,14 @@ async function insertNotificationWithFallback(supabase, payload = {}) {
     const legacyPayload = { ...payload };
     delete legacyPayload.scope;
     delete legacyPayload.category;
+    delete legacyPayload.action_url;
+    delete legacyPayload.action_label;
+    delete legacyPayload.metadata;
+    delete legacyPayload.priority;
+    delete legacyPayload.expires_at;
+    delete legacyPayload.dedupe_key;
+    delete legacyPayload.source_module;
+    delete legacyPayload.source_event_id;
 
     return supabase
         .from('system_notifications')
@@ -155,6 +173,14 @@ async function notifyUsers(supabase, {
     type = 'info',
     scope = 'user_personal',
     category = 'general',
+    actionUrl = '',
+    actionLabel = '',
+    metadata = {},
+    priority = 0,
+    expiresAt = '',
+    dedupeKey = '',
+    sourceModule = '',
+    sourceEventId = '',
     dedupeWindowMinutes = 30
 }) {
     if (!supabase) {
@@ -210,7 +236,15 @@ async function notifyUsers(supabase, {
             type: notificationType,
             is_read: false,
             scope: notificationScope,
-            category: notificationCategory
+            category: notificationCategory,
+            action_url: normalizeText(actionUrl) || null,
+            action_label: normalizeText(actionLabel) || null,
+            metadata: metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {},
+            priority: Number(priority || 0) || 0,
+            expires_at: normalizeText(expiresAt) || null,
+            dedupe_key: normalizeText(dedupeKey) || null,
+            source_module: normalizeText(sourceModule) || notificationCategory,
+            source_event_id: normalizeText(sourceEventId) || ''
         });
 
         if (error) {

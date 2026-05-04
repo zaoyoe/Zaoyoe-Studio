@@ -227,7 +227,20 @@ async function handleApplySelection({ supabase, user, body, site }) {
                     content: buildNotificationContent(item.scope, item.days, 'block'),
                     type: 'warning',
                     scope: 'user_personal',
-                    category: 'admin_notice',
+                    category: 'permission_changed',
+                    actionLabel: '查看账号',
+                    actionUrl: '/index.html',
+                    sourceModule: 'users',
+                    sourceEventId: `block:${item.userId}:${item.scope}:${Date.now()}`,
+                    priority: 50,
+                    metadata: {
+                        page_id: 'home',
+                        site,
+                        event_type: 'permission_changed',
+                        action: 'block',
+                        block_scope: item.scope,
+                        days: item.days
+                    },
                     dedupeWindowMinutes: 0
                 });
             }
@@ -272,7 +285,19 @@ async function handleApplySelection({ supabase, user, body, site }) {
                     content: buildNotificationContent(item.scope, item.days, 'unblock'),
                     type: 'success',
                     scope: 'user_personal',
-                    category: 'admin_notice',
+                    category: 'permission_changed',
+                    actionLabel: '查看账号',
+                    actionUrl: '/index.html',
+                    sourceModule: 'users',
+                    sourceEventId: `unblock:${item.userId}:${item.scope}:${Date.now()}`,
+                    priority: 35,
+                    metadata: {
+                        page_id: 'home',
+                        site,
+                        event_type: 'permission_changed',
+                        action: 'unblock',
+                        block_scope: item.scope
+                    },
                     dedupeWindowMinutes: 0
                 });
             }
