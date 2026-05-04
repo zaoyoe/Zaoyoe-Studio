@@ -27,6 +27,8 @@ const discountsAssetsHandler = require('../server/api-handlers/admin/discounts/a
 const discountsDetailHandler = require('../server/api-handlers/admin/discounts/detail');
 const discountsListHandler = require('../server/api-handlers/admin/discounts/list');
 const discountsMutateHandler = require('../server/api-handlers/admin/discounts/mutate');
+const engagementOverviewHandler = require('../server/api-handlers/admin/engagement/overview');
+const engagementRulesHandler = require('../server/api-handlers/admin/engagement/rules');
 const marketingAssetsCenterHandler = require('../server/api-handlers/admin/marketing/assets-center');
 const homepageConfigHandler = require('../server/api-handlers/admin/homepage/config');
 const homepageContextHandler = require('../server/api-handlers/admin/homepage/context');
@@ -103,6 +105,8 @@ const ROUTE_HANDLERS = {
     'discounts/detail': discountsDetailHandler,
     'discounts/list': discountsListHandler,
     'discounts/mutate': discountsMutateHandler,
+    'engagement/overview': engagementOverviewHandler,
+    'engagement/rules': engagementRulesHandler,
     'marketing/assets-center': marketingAssetsCenterHandler,
     'homepage/config': homepageConfigHandler,
     'homepage/context': homepageContextHandler,

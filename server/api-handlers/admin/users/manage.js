@@ -100,6 +100,66 @@ function normalizeDiscountApplicableSite(value) {
     return normalized;
 }
 
+function buildPermissionChangeNotification({ action = 'update', permissions = [], expiresAt = null } = {}) {
+    const normalizedAction = sanitizeText(action, 40).toLowerCase();
+    const permissionCount = Array.isArray(permissions) ? permissions.length : 0;
+    const expiryLine = expiresAt
+        ? `有效期至：${expiresAt}`
+        : '有效期：长期有效';
+
+    if (normalizedAction === 'grant') {
+        return {
+            title: '账号权限已开通',
+            content: `管理员已为你的账号开通新的访问权限。\n权限数量：${permissionCount}\n${expiryLine}`,
+            type: 'success'
+        };
+    }
+
+    if (normalizedAction === 'revoke') {
+        return {
+            title: '账号权限已调整',
+            content: '管理员已收回你的后台访问权限；如需继续使用，请联系站长确认。',
+            type: 'warning'
+        };
+    }
+
+    return {
+        title: '账号权限已更新',
+        content: `你的账号权限配置发生变化。\n权限数量：${permissionCount}\n${expiryLine}`,
+        type: 'info'
+    };
+}
+
+async function notifyPermissionChange(supabase, {
+    userId,
+    action = 'update',
+    permissions = [],
+    expiresAt = null,
+    site = 'all'
+} = {}) {
+    const notification = buildPermissionChangeNotification({ action, permissions, expiresAt });
+    return notifyUsers(supabase, {
+        userIds: [userId],
+        ...notification,
+        scope: 'user_personal',
+        category: 'permission_changed',
+        actionLabel: '查看账号',
+        actionUrl: '/index.html',
+        sourceModule: 'users',
+        sourceEventId: `permission_changed:${sanitizeText(userId, 80)}:${Date.now()}`,
+        priority: 40,
+        metadata: {
+            page_id: 'home',
+            site,
+            event_type: 'permission_changed',
+            action,
+            permissions,
+            expires_at: expiresAt
+        },
+        dedupeWindowMinutes: 0
+    });
+}
+
 function isMissingDiscountEventsRelationError(error) {
     const message = sanitizeText(error?.message, 240).toLowerCase();
     return message.includes('discount_event_logs') && (
@@ -563,6 +623,14 @@ async function handleGrantAdmin({ supabase, user, body, site }) {
         }
     });
 
+    await notifyPermissionChange(supabase, {
+        userId,
+        action: 'grant',
+        permissions,
+        expiresAt,
+        site
+    });
+
     return {
         userId,
         roleInfo: await fetchCurrentRoleInfo(supabase, userId)
@@ -591,6 +659,14 @@ async function handleRevokeAdmin({ supabase, user, body, site }) {
         details: {}
     });
 
+    await notifyPermissionChange(supabase, {
+        userId,
+        action: 'revoke',
+        permissions: [],
+        expiresAt: null,
+        site
+    });
+
     return {
         userId,
         roleInfo: await fetchCurrentRoleInfo(supabase, userId)
@@ -616,6 +692,16 @@ async function handleUpdateAdminPermissions({ supabase, user, body, site }) {
             : {},
         site
     });
+
+    if (result.permissionAudit.hasChanges) {
+        await notifyPermissionChange(supabase, {
+            userId,
+            action: formState.isAdmin ? 'update' : 'revoke',
+            permissions: formState.isAdmin ? formState.permissions : [],
+            expiresAt: formState.isAdmin ? formState.expiresAt : null,
+            site
+        });
+    }
 
     return {
         userId,
@@ -778,6 +864,7 @@ async function mutatePointsForUser(supabase, {
         amount,
         site,
         reason: auditReason,
+        reference_id: referenceId,
         new_total: Number(rpcResult?.new_total || 0),
         deducted: Number(rpcResult?.deducted || 0),
         added: Number(rpcResult?.added || 0),
@@ -819,7 +906,20 @@ async function handleAdjustPoints({ supabase, user, body, site }) {
             content: `您的积分已${amount > 0 ? '增加' : '扣除'} ${Math.abs(amount)}。\n原因：${reason}`,
             type: amount > 0 ? 'success' : 'warning',
             scope: 'user_personal',
-            category: 'admin_notice',
+            category: 'points_adjusted',
+            actionLabel: '查看积分',
+            actionUrl: '/index.html#wallet',
+            sourceModule: 'points',
+            sourceEventId: result.reference_id,
+            priority: amount < 0 ? 35 : 25,
+            metadata: {
+                page_id: 'home',
+                site: pointsSite,
+                event_type: 'points_adjusted',
+                amount,
+                reason,
+                new_total: result.new_total
+            },
             dedupeWindowMinutes: 0
         });
 
@@ -1195,6 +1295,16 @@ async function handleSendNotification({ supabase, user, body, site }) {
         type,
         scope: 'user_personal',
         category: 'admin_notice',
+        actionLabel: sanitizeText(body.actionLabel || body.action_label, 80),
+        actionUrl: sanitizeText(body.actionUrl || body.action_url, 1000),
+        sourceModule: 'users',
+        sourceEventId: `admin_notice:${Date.now()}`,
+        priority: 20,
+        metadata: {
+            page_id: 'home',
+            site,
+            event_type: 'admin_notice'
+        },
         dedupeWindowMinutes: 0
     });
 

@@ -14,15 +14,70 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260503_WALLET_REDEEM_REVOKE_REASON_UI_1';
+    const walletCssHref = 'css/wallet.css?v=20260504_USDT_DIRECT_CHECKOUT_1';
+    let walletCssReady = false;
+    let walletCssReadyPromise = Promise.resolve();
+
+    function isWalletStylesheetLoaded(link) {
+        if (!link) return false;
+        try {
+            return !!link.sheet;
+        } catch (_error) {
+            return false;
+        }
+    }
+
+    function waitForWalletCssReady(link, options = {}) {
+        const forceAsync = options.forceAsync === true;
+
+        return new Promise((resolve) => {
+            if (!link) {
+                walletCssReady = true;
+                resolve();
+                return;
+            }
+
+            let settled = false;
+            const settle = () => {
+                if (settled) return;
+                settled = true;
+                walletCssReady = true;
+                resolve();
+            };
+
+            if (!forceAsync && isWalletStylesheetLoaded(link)) {
+                settle();
+                return;
+            }
+
+            link.addEventListener('load', settle, { once: true });
+            link.addEventListener('error', settle, { once: true });
+            requestAnimationFrame(() => {
+                if (isWalletStylesheetLoaded(link)) {
+                    settle();
+                }
+            });
+            setTimeout(() => {
+                if (isWalletStylesheetLoaded(link)) {
+                    settle();
+                }
+            }, 1200);
+        });
+    }
+
     const existingWalletCss = document.getElementById('wallet-modal-css');
     if (existingWalletCss) {
-        existingWalletCss.href = walletCssHref;
+        const needsHrefUpdate = existingWalletCss.getAttribute('href') !== walletCssHref;
+        if (needsHrefUpdate) {
+            existingWalletCss.href = walletCssHref;
+        }
+        walletCssReadyPromise = waitForWalletCssReady(existingWalletCss, { forceAsync: needsHrefUpdate });
     } else {
         const link = document.createElement('link');
         link.id = 'wallet-modal-css';
         link.rel = 'stylesheet';
         link.href = walletCssHref;
+        walletCssReadyPromise = waitForWalletCssReady(link, { forceAsync: true });
         document.head.appendChild(link);
     }
 
@@ -1570,6 +1625,26 @@
         };
     }
 
+    let walletSidebarIndicatorRefreshQueued = false;
+
+    function queueWalletSidebarIndicatorRefresh(targetItem = null) {
+        if (walletSidebarIndicatorRefreshQueued) return;
+
+        walletSidebarIndicatorRefreshQueued = true;
+        walletCssReadyPromise.then(() => {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    walletSidebarIndicatorRefreshQueued = false;
+                    const overlay = document.getElementById('wallet-modal-overlay');
+                    if (!overlay?.classList.contains('active')) return;
+
+                    const resolvedTarget = targetItem?.isConnected ? targetItem : null;
+                    window.WalletModal?.updateIndicatorPosition?.(resolvedTarget);
+                });
+            });
+        });
+    }
+
     function resetWalletSidebarIndicatorState() {
         const sidebar = document.querySelector('.wallet-sidebar');
         const indicator = document.querySelector('.sidebar-indicator');
@@ -1586,6 +1661,7 @@
         isOpen: false,
         modalEl: null,
         pendingRechargeAction: null,
+        selectedRechargePackage: null,
         lastOpenContext: null,
         promptCache: {}, // Local simple cache for titles
         verifyLogCache: {},
@@ -1868,7 +1944,7 @@
                     this.redeemCode();
                     break;
                 case 'custom-recharge':
-                    this.customRecharge();
+                    this.customRecharge(actionEl.dataset.walletPaymentMethod || '');
                     break;
                 case 'query-afdian-code':
                     this.queryAfdianCode();
@@ -1969,10 +2045,13 @@
                     this.toggleAffiliateMemberDetails({ currentTarget: actionEl, target: event.target });
                     break;
                 case 'buy-package':
-                    this.buyPackage(
+                    this.selectRechargePackage(
                         this.decodeActionValue(actionEl.dataset.walletPackageId),
                         this.decodeActionValue(actionEl.dataset.walletPackageName)
                     );
+                    break;
+                case 'pay-selected-recharge':
+                    this.paySelectedRechargePackage(actionEl.dataset.walletPaymentMethod || '');
                     break;
                 case 'daily-checkin-v2':
                     this.dailyCheckinV2();
@@ -2628,6 +2707,163 @@
                 : '0.00';
         },
 
+        formatPaymentSuccessWithPoints(pointsValue) {
+            const normalizedPoints = this.normalizeOptionalPointValue(pointsValue);
+            if (normalizedPoints !== null && normalizedPoints > 0) {
+                return this.tr('wallet.paymentSuccessWithPoints', '支付成功，积分+{points}', {
+                    points: this.formatPoints(normalizedPoints)
+                });
+            }
+            return this.tr('wallet.paymentSuccess', '支付成功');
+        },
+
+        formatCryptoAmount(value, fallback = '') {
+            const rawText = String(value ?? '').trim();
+            if (rawText && /^-?\d+(\.\d+)?$/.test(rawText)) {
+                return rawText.replace(/(\.\d*?[1-9])0+$/u, '$1').replace(/\.0+$/u, '');
+            }
+
+            const normalized = Number(value);
+            if (!Number.isFinite(normalized)) {
+                return fallback;
+            }
+
+            return normalized.toLocaleString(undefined, {
+                minimumFractionDigits: 0,
+                maximumFractionDigits: 8,
+                useGrouping: false
+            });
+        },
+
+        buildQrImageUrl(data, size = 280) {
+            const normalizedData = String(data || '').trim();
+            if (!normalizedData) return '';
+            const normalizedSize = Math.min(480, Math.max(180, Math.round(Number(size) || 280)));
+            return `https://api.qrserver.com/v1/create-qr-code/?size=${normalizedSize}x${normalizedSize}&data=${encodeURIComponent(normalizedData)}&margin=8`;
+        },
+
+        resolveCryptoCheckoutExpiresAt(providerSummary = {}) {
+            const candidates = [
+                providerSummary.expiration_estimate_date,
+                providerSummary.quote_expires_at,
+                providerSummary.quoteExpiresAt,
+                providerSummary.expires_at
+            ];
+            for (const candidate of candidates) {
+                const parsed = Date.parse(String(candidate || '').trim());
+                if (Number.isFinite(parsed) && parsed > Date.now() - 30000) {
+                    return new Date(parsed).toISOString();
+                }
+            }
+            return new Date(Date.now() + 5 * 60 * 1000).toISOString();
+        },
+
+        formatCountdownDuration(ms) {
+            const totalSeconds = Math.max(0, Math.ceil((Number(ms) || 0) / 1000));
+            const hours = Math.floor(totalSeconds / 3600);
+            const minutes = Math.floor((totalSeconds % 3600) / 60);
+            const seconds = totalSeconds % 60;
+            const pad = (value) => String(value).padStart(2, '0');
+            return hours > 0
+                ? `${pad(hours)}:${pad(minutes)}:${pad(seconds)}`
+                : `${pad(minutes)}:${pad(seconds)}`;
+        },
+
+        startCryptoCheckoutCountdown(detailOverlay, expiresAtIso = '') {
+            const expiresAtMs = Date.parse(String(expiresAtIso || '').trim());
+            const countdownEl = detailOverlay?.querySelector('.js-wallet-crypto-countdown');
+            const valueEl = detailOverlay?.querySelector('.js-wallet-crypto-countdown-value');
+            const qrVisualEl = detailOverlay?.querySelector('.js-wallet-payment-qr-visual');
+            const imageEl = detailOverlay?.querySelector('.js-wallet-payment-qr-image');
+            const successEl = detailOverlay?.querySelector('.js-wallet-payment-qr-success');
+            const timeoutEl = detailOverlay?.querySelector('.js-wallet-crypto-timeout');
+            if (!countdownEl || !valueEl || !Number.isFinite(expiresAtMs)) {
+                return () => {};
+            }
+
+            let timer = null;
+            let stopped = false;
+            let timeoutRendered = false;
+            const copyButtonsSelector = [
+                '.js-wallet-copy-usdt-amount',
+                '.js-wallet-copy-usdt-address'
+            ].join(',');
+
+            const stop = () => {
+                stopped = true;
+                if (timer) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
+            };
+
+            const render = () => {
+                if (stopped || !detailOverlay?.isConnected) {
+                    stop();
+                    return;
+                }
+
+                const remainingMs = expiresAtMs - Date.now();
+                const expired = remainingMs <= 0;
+                countdownEl.classList.toggle('is-expired', expired);
+                countdownEl.classList.toggle('is-warning', remainingMs > 0 && remainingMs <= 60000);
+                valueEl.textContent = expired
+                    ? this.tr('wallet.usdtQuoteExpired', '已过期')
+                    : this.formatCountdownDuration(remainingMs);
+                countdownEl.setAttribute('aria-label', expired
+                    ? this.tr('wallet.usdtQuoteExpired', '已过期')
+                    : this.tr('wallet.usdtQuoteCountdownA11y', '付款有效期剩余 {time}', {
+                        time: this.formatCountdownDuration(remainingMs)
+                    }));
+
+                if (expired) {
+                    if (!timeoutRendered) {
+                        timeoutRendered = true;
+                        qrVisualEl?.classList.add('is-timeout');
+                        if (successEl) {
+                            successEl.hidden = true;
+                            successEl.classList.remove('is-visible');
+                        }
+                        const revealTimeout = () => {
+                            if (!timeoutEl) {
+                                return;
+                            }
+                            timeoutEl.hidden = false;
+                            timeoutEl.classList.remove('is-visible');
+                            window.requestAnimationFrame(() => {
+                                timeoutEl.classList.add('is-visible');
+                            });
+                        };
+                        if (imageEl && !imageEl.hidden) {
+                            imageEl.classList.add('is-exiting');
+                            window.setTimeout(() => {
+                                if (stopped || !detailOverlay?.isConnected) {
+                                    return;
+                                }
+                                imageEl.hidden = true;
+                                imageEl.classList.remove('is-exiting');
+                                revealTimeout();
+                            }, 180);
+                        } else {
+                            revealTimeout();
+                        }
+                        detailOverlay._walletCryptoQuoteExpired = true;
+                        this.updateHostedPaymentQrStatus(detailOverlay, '', 'info', { hidden: true });
+                    }
+                    detailOverlay.querySelectorAll(copyButtonsSelector).forEach((button) => {
+                        button.disabled = true;
+                        button.setAttribute('aria-disabled', 'true');
+                    });
+                    return;
+                }
+
+                timer = window.setTimeout(render, 1000);
+            };
+
+            render();
+            return stop;
+        },
+
         isMobilePaymentBrowser() {
             const userAgent = String(window.navigator?.userAgent || '').trim().toLowerCase();
             if (!userAgent) return false;
@@ -2707,6 +2943,11 @@
                 return;
             }
 
+            if (detailOverlay?._walletCryptoQuoteExpired === true && options.allowAfterQuoteExpired !== true) {
+                statusEl.hidden = true;
+                return;
+            }
+
             const normalizedTone = ['success', 'error', 'info'].includes(tone) ? tone : 'info';
             const isHidden = !!options.hidden;
             const isLoading = !!options.loading;
@@ -2720,19 +2961,57 @@
             statusEl.innerHTML = this.buildHostedPaymentQrStatusMarkup(message, { loading: isLoading });
         },
 
-        resetHostedPaymentQrPresentation(detailOverlay) {
+        buildPaymentTimeoutPanel(options = {}) {
+            const paymentId = String(options.paymentId || '').trim();
+            const title = String(options.title || this.tr('wallet.paymentExpiredTitle', '付款已超时')).trim();
+            const copy = String(options.copy || '').trim();
+            return `
+                <div class="wallet-crypto-timeout js-wallet-crypto-timeout" hidden>
+                    <div class="wallet-crypto-timeout-clock" aria-hidden="true">
+                        <svg viewBox="0 0 140 140" fill="none">
+                            <path class="wallet-crypto-timeout-spark wallet-crypto-timeout-spark--one" d="M29 37L32 43L38 46L32 49L29 55L26 49L20 46L26 43L29 37Z" fill="currentColor"></path>
+                            <path class="wallet-crypto-timeout-spark wallet-crypto-timeout-spark--two" d="M109 28L111 32L115 34L111 36L109 40L107 36L103 34L107 32L109 28Z" fill="currentColor"></path>
+                            <path class="wallet-crypto-timeout-body" d="M48 33C59 25 77 25 91 32C106 40 111 56 104 70C99 81 91 87 91 100C91 112 85 121 76 121C66 121 63 111 62 99C60 85 53 84 42 81C28 78 20 67 22 54C24 45 33 38 48 33Z" fill="currentColor"></path>
+                            <path class="wallet-crypto-timeout-face" d="M47 44C59 37 77 37 91 44C99 48 102 57 98 66C94 75 82 78 67 76C51 74 37 70 34 62C31 54 36 48 47 44Z" fill="white"></path>
+                            <path class="wallet-crypto-timeout-hand" d="M67 56V66L87 67" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></path>
+                            <path class="wallet-crypto-timeout-drip" d="M91 68C91 80 86 88 84 98" stroke="currentColor" stroke-width="5" stroke-linecap="round"></path>
+                            <path class="wallet-crypto-timeout-tick" d="M47 56L53 58M61 49L62 55M77 50L75 56M91 57L85 60M62 68L56 68" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
+                            <circle cx="68" cy="66" r="5" fill="currentColor"></circle>
+                        </svg>
+                    </div>
+                    <div class="wallet-crypto-timeout-title">${this.escapeHtml(title)}</div>
+                    ${copy ? `<p>${this.escapeHtml(copy)}</p>` : ''}
+                    ${paymentId
+                        ? `<small>${this.tr('wallet.paymentOrderNo', '支付单号')} <strong>${this.escapeHtml(paymentId)}</strong></small>`
+                        : ''}
+                </div>
+            `;
+        },
+
+        resetHostedPaymentQrPresentation(detailOverlay, options = {}) {
             const modalEl = detailOverlay?.querySelector('.wallet-payment-qr-modal');
             const panelEl = detailOverlay?.querySelector('.wallet-payment-qr-panel');
             const imageEl = detailOverlay?.querySelector('.js-wallet-payment-qr-image');
             const fallbackEl = detailOverlay?.querySelector('.js-wallet-payment-qr-fallback');
             const successEl = detailOverlay?.querySelector('.js-wallet-payment-qr-success');
+            const timeoutEl = detailOverlay?.querySelector('.js-wallet-crypto-timeout');
+            const qrVisualEl = detailOverlay?.querySelector('.js-wallet-payment-qr-visual');
             const metaEl = detailOverlay?.querySelector('.js-wallet-payment-qr-meta');
             const actionsEl = detailOverlay?.querySelector('.js-wallet-payment-qr-actions');
+            const cryptoDetailEls = detailOverlay
+                ? Array.from(detailOverlay.querySelectorAll('.wallet-crypto-countdown, .wallet-crypto-amount-hero, .wallet-crypto-network-strip, .wallet-crypto-copy-card, .wallet-crypto-warning'))
+                : [];
+            const initialStatusMessage = String(options.initialStatusMessage || '').trim()
+                || this.tr('wallet.scanAlipayToPay', '请使用支付宝扫码支付。');
+            const initialStatusHidden = options.initialStatusHidden === true;
 
             if (modalEl) {
                 modalEl.classList.remove('is-success');
                 modalEl.style.height = '';
                 modalEl.style.minHeight = '';
+            }
+            if (detailOverlay) {
+                detailOverlay._walletCryptoQuoteExpired = false;
             }
             panelEl?.classList.remove('is-success');
             imageEl?.classList.remove('is-entering', 'is-exiting');
@@ -2747,13 +3026,93 @@
                 successEl.hidden = true;
                 successEl.classList.remove('is-visible');
             }
+            if (timeoutEl) {
+                timeoutEl.hidden = true;
+                timeoutEl.classList.remove('is-visible');
+            }
+            qrVisualEl?.classList.remove('is-timeout');
             if (metaEl) {
                 metaEl.hidden = false;
             }
             if (actionsEl) {
                 actionsEl.hidden = actionsEl.dataset.hasActions !== 'true';
             }
-            this.updateHostedPaymentQrStatus(detailOverlay, this.tr('wallet.scanAlipayToPay', '请使用支付宝扫码支付。'), 'info');
+            cryptoDetailEls.forEach((element) => {
+                element.hidden = false;
+            });
+            this.updateHostedPaymentQrStatus(detailOverlay, initialStatusMessage, 'info', {
+                hidden: initialStatusHidden
+            });
+        },
+
+        renderHostedPaymentQrTimeout(detailOverlay) {
+            const imageEl = detailOverlay?.querySelector('.js-wallet-payment-qr-image');
+            const fallbackEl = detailOverlay?.querySelector('.js-wallet-payment-qr-fallback');
+            const successEl = detailOverlay?.querySelector('.js-wallet-payment-qr-success');
+            const timeoutEl = detailOverlay?.querySelector('.js-wallet-crypto-timeout');
+            const qrVisualEl = detailOverlay?.querySelector('.js-wallet-payment-qr-visual');
+            const metaEl = detailOverlay?.querySelector('.js-wallet-payment-qr-meta');
+            const actionsEl = detailOverlay?.querySelector('.js-wallet-payment-qr-actions');
+
+            if (!timeoutEl) {
+                return false;
+            }
+
+            if (successEl) {
+                successEl.hidden = true;
+                successEl.classList.remove('is-visible');
+            }
+            if (metaEl) {
+                metaEl.hidden = true;
+            }
+            if (actionsEl) {
+                actionsEl.hidden = true;
+            }
+            this.updateHostedPaymentQrStatus(detailOverlay, '', 'info', { hidden: true });
+
+            const revealTimeout = () => {
+                if (imageEl) {
+                    imageEl.hidden = true;
+                    imageEl.classList.remove('is-exiting');
+                }
+                if (fallbackEl) {
+                    fallbackEl.hidden = true;
+                    fallbackEl.classList.remove('is-exiting');
+                }
+                qrVisualEl?.classList.add('is-timeout');
+                timeoutEl.hidden = false;
+                timeoutEl.classList.remove('is-visible');
+                window.requestAnimationFrame(() => {
+                    timeoutEl.classList.add('is-visible');
+                });
+            };
+
+            if (imageEl && !imageEl.hidden) {
+                imageEl.classList.add('is-exiting');
+                window.setTimeout(revealTimeout, 180);
+                return true;
+            }
+
+            if (fallbackEl && !fallbackEl.hidden) {
+                fallbackEl.classList.add('is-exiting');
+                window.setTimeout(revealTimeout, 180);
+                return true;
+            }
+
+            revealTimeout();
+            return true;
+        },
+
+        isHostedPaymentTimeoutStatus(statusResult = {}) {
+            const states = [
+                statusResult?.status,
+                statusResult?.checkout_session_status,
+                statusResult?.payment_order_status
+            ].map((value) => String(value || '').trim().toLowerCase());
+            if (states.some((state) => ['expired', 'timeout', 'timed_out'].includes(state))) {
+                return true;
+            }
+            return /超时|过期|失效|timeout|expired/i.test(String(statusResult?.message || ''));
         },
 
         animateHostedPaymentQrEntry(detailOverlay) {
@@ -2786,11 +3145,21 @@
             const imageEl = detailOverlay?.querySelector('.js-wallet-payment-qr-image');
             const fallbackEl = detailOverlay?.querySelector('.js-wallet-payment-qr-fallback');
             const successEl = detailOverlay?.querySelector('.js-wallet-payment-qr-success');
+            const timeoutEl = detailOverlay?.querySelector('.js-wallet-crypto-timeout');
+            const qrVisualEl = detailOverlay?.querySelector('.js-wallet-payment-qr-visual');
             const metaEl = detailOverlay?.querySelector('.js-wallet-payment-qr-meta');
             const actionsEl = detailOverlay?.querySelector('.js-wallet-payment-qr-actions');
+            const cryptoDetailEls = detailOverlay
+                ? Array.from(detailOverlay.querySelectorAll('.wallet-crypto-countdown, .wallet-crypto-amount-hero, .wallet-crypto-network-strip, .wallet-crypto-copy-card, .wallet-crypto-warning'))
+                : [];
 
             if (!panelEl || !successEl) {
                 return;
+            }
+
+            if (typeof detailOverlay?._walletCryptoCountdownCleanup === 'function') {
+                detailOverlay._walletCryptoCountdownCleanup();
+                detailOverlay._walletCryptoCountdownCleanup = null;
             }
 
             if (modalEl) {
@@ -2799,20 +3168,34 @@
                     modalEl.style.height = `${currentHeight}px`;
                     modalEl.style.minHeight = `${currentHeight}px`;
                 }
-                modalEl.classList.add('is-success');
             }
 
-            panelEl.classList.add('is-success');
-            if (metaEl) {
-                metaEl.hidden = true;
-            }
-            if (actionsEl) {
-                actionsEl.hidden = true;
-            }
-            this.updateHostedPaymentQrStatus(detailOverlay, '', 'info', { hidden: true });
-
-            successEl.hidden = false;
+            successEl.hidden = true;
             successEl.classList.remove('is-visible');
+
+            const enterSuccessLayout = () => {
+                modalEl?.classList.add('is-success');
+                panelEl.classList.add('is-success');
+                if (metaEl) {
+                    metaEl.hidden = true;
+                }
+                if (actionsEl) {
+                    actionsEl.hidden = true;
+                }
+                cryptoDetailEls.forEach((element) => {
+                    element.hidden = true;
+                });
+                if (timeoutEl) {
+                    timeoutEl.hidden = true;
+                    timeoutEl.classList.remove('is-visible');
+                }
+                qrVisualEl?.classList.remove('is-timeout');
+                this.updateHostedPaymentQrStatus(detailOverlay, '', 'info', { hidden: true });
+                successEl.hidden = false;
+                window.requestAnimationFrame(() => {
+                    successEl.classList.add('is-visible');
+                });
+            };
 
             const revealSuccess = () => {
                 if (imageEl) {
@@ -2823,9 +3206,7 @@
                     fallbackEl.hidden = true;
                     fallbackEl.classList.remove('is-exiting');
                 }
-                window.requestAnimationFrame(() => {
-                    successEl.classList.add('is-visible');
-                });
+                enterSuccessLayout();
             };
 
             if (imageEl && !imageEl.hidden) {
@@ -2887,11 +3268,17 @@
 
         startHostedPaymentQrPolling(detailOverlay, paymentResult = {}, options = {}) {
             const checkoutSessionId = String(paymentResult?.checkout_session_id || '').trim();
+            const initialStatusMessage = String(options.initialStatusMessage || '').trim()
+                || this.tr('wallet.scanAlipayToPay', '请使用支付宝扫码支付。');
+            const waitingMessage = String(options.waitingMessage || '').trim()
+                || this.tr('wallet.paymentWaiting', '请支付并保持此页面，正在等待支付结果同步');
+            const hideInitialStatus = options.hideInitialStatus === true;
             if (!checkoutSessionId) {
                 this.updateHostedPaymentQrStatus(
                     detailOverlay,
-                    this.tr('wallet.scanAlipayToPay', '请使用支付宝扫码支付。'),
-                    'info'
+                    initialStatusMessage,
+                    'info',
+                    { hidden: hideInitialStatus }
                 );
                 return;
             }
@@ -2949,11 +3336,14 @@
 
                 if ((Date.now() - startedAt) >= timeoutMs) {
                     stop();
-                    this.updateHostedPaymentQrStatus(
-                        detailOverlay,
-                        this.tr('wallet.paymentSyncTimeout', '暂未自动同步到支付结果。若你已完成付款，请稍后刷新钱包或在订单记录中查看，或联系人工客服。'),
-                        'info'
-                    );
+                    const timeoutRendered = this.renderHostedPaymentQrTimeout(detailOverlay);
+                    if (!timeoutRendered) {
+                        this.updateHostedPaymentQrStatus(
+                            detailOverlay,
+                            this.tr('wallet.paymentSyncTimeout', '暂未自动同步到支付结果。若你已完成付款，请稍后刷新钱包或在订单记录中查看，或联系人工客服。'),
+                            'info'
+                        );
+                    }
                     if (typeof options.onTimeout === 'function') {
                         options.onTimeout();
                     }
@@ -2963,7 +3353,7 @@
                 try {
                     this.updateHostedPaymentQrStatus(
                         detailOverlay,
-                        this.tr('wallet.paymentWaiting', '请支付并保持此页面，正在等待支付结果同步'),
+                        waitingMessage,
                         'info',
                         { loading: true }
                     );
@@ -2993,11 +3383,15 @@
 
                     if (paymentState === 'failed') {
                         stop();
-                        this.updateHostedPaymentQrStatus(
-                            detailOverlay,
-                            statusResult.message || this.tr('wallet.paymentFailedRetry', '支付未成功，请重新发起支付。'),
-                            'error'
-                        );
+                        if (!this.isHostedPaymentTimeoutStatus(statusResult)) {
+                            this.updateHostedPaymentQrStatus(
+                                detailOverlay,
+                                statusResult.message || this.tr('wallet.paymentFailedRetry', '支付未成功，请重新发起支付。'),
+                                'error'
+                            );
+                        } else {
+                            this.renderHostedPaymentQrTimeout(detailOverlay);
+                        }
                         if (typeof options.onFailed === 'function') {
                             options.onFailed(statusResult);
                         }
@@ -3016,7 +3410,7 @@
 
                     this.updateHostedPaymentQrStatus(
                         detailOverlay,
-                        this.tr('wallet.paymentWaiting', '请支付并保持此页面，正在等待支付结果同步'),
+                        waitingMessage,
                         'info',
                         { loading: true }
                     );
@@ -3026,7 +3420,7 @@
                     }
                     this.updateHostedPaymentQrStatus(
                         detailOverlay,
-                        this.tr('wallet.paymentWaiting', '请支付并保持此页面，正在等待支付结果同步'),
+                        waitingMessage,
                         'info',
                         { loading: true }
                     );
@@ -3036,12 +3430,17 @@
             };
 
             detailOverlay._walletPaymentQrCleanup = stop;
-            this.resetHostedPaymentQrPresentation(detailOverlay);
-            this.updateHostedPaymentQrStatus(
-                detailOverlay,
-                this.tr('wallet.scanAlipayToPay', '请使用支付宝扫码支付。'),
-                'info'
-            );
+            this.resetHostedPaymentQrPresentation(detailOverlay, {
+                initialStatusMessage,
+                initialStatusHidden: hideInitialStatus
+            });
+            if (!hideInitialStatus) {
+                this.updateHostedPaymentQrStatus(
+                    detailOverlay,
+                    initialStatusMessage,
+                    'info'
+                );
+            }
             scheduleNext(initialDelayMs);
         },
 
@@ -3123,6 +3522,7 @@
                                             </div>
                                             <div class="wallet-payment-qr-success-title">${this.tr('wallet.paymentSuccess', '支付成功')}</div>
                                         </div>
+                                        ${this.buildPaymentTimeoutPanel()}
                                     </div>
                                 `
                                 : `
@@ -3138,6 +3538,7 @@
                                             </div>
                                             <div class="wallet-payment-qr-success-title">${this.tr('wallet.paymentSuccess', '支付成功')}</div>
                                         </div>
+                                        ${this.buildPaymentTimeoutPanel()}
                                     </div>
                                 `}
                             <div class="meta-section js-wallet-payment-qr-meta">
@@ -3175,6 +3576,183 @@
 
             document.body.appendChild(detailOverlay);
             this.startHostedPaymentQrPolling(detailOverlay, paymentResult, options);
+            this.animateHostedPaymentQrEntry(detailOverlay);
+            return true;
+        },
+
+        tryPresentNowpaymentsCheckoutModal(paymentResult = {}, options = {}) {
+            const provider = String(paymentResult?.provider || '').trim().toLowerCase();
+            const mode = String(paymentResult?.mode || '').trim().toLowerCase();
+            if (provider !== 'nowpayments' || (mode && !['crypto_checkout', 'redirect'].includes(mode))) {
+                return false;
+            }
+
+            const providerSummary = paymentResult?.provider_summary && typeof paymentResult.provider_summary === 'object'
+                ? paymentResult.provider_summary
+                : {};
+            const payAddress = String(providerSummary.pay_address || '').trim();
+            const payAmount = this.formatCryptoAmount(providerSummary.pay_amount_text || providerSummary.pay_amount, '');
+            const payCurrencyRaw = String(providerSummary.pay_currency || 'usdtbsc').trim().toUpperCase();
+            const displayPayCurrency = payCurrencyRaw.includes('USDT') ? 'USDT' : payCurrencyRaw;
+            const networkName = String(providerSummary.network_name || 'BNB Smart Chain').trim() || 'BNB Smart Chain';
+            const networkCode = String(providerSummary.network_code || 'BSC/BEP20').trim() || 'BSC/BEP20';
+            const qrData = String(providerSummary.qr_data || payAddress).trim();
+            const qrImageUrl = this.buildQrImageUrl(qrData, 300);
+            if (!payAddress || !payAmount || !qrImageUrl) {
+                return false;
+            }
+
+            const modalTitle = String(options.title || paymentResult?.package_name || this.tr('wallet.usdtRechargeTitle', 'USDT 充值')).trim() || this.tr('wallet.usdtRechargeTitle', 'USDT 充值');
+            const paidAmount = Number(paymentResult?.paid_amount || providerSummary.expectedAmount || providerSummary.local_amount || 0) || 0;
+            const pointsAmount = Number(paymentResult?.points_amount || providerSummary.grantedPoints || 0) || 0;
+            const paymentId = String(providerSummary.payment_id || paymentResult?.provider_order_no || '').trim();
+            const expiresAtIso = this.resolveCryptoCheckoutExpiresAt(providerSummary);
+
+            const detailRows = [
+                paidAmount > 0
+                    ? `
+                        <div class="detail-row">
+                            <span class="detail-label">${this.tr('wallet.rechargeAmount', '充值金额')}</span>
+                            <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#fbbf24')}">¥${this.formatCny(paidAmount)}</span>
+                        </div>
+                    `
+                    : '',
+                pointsAmount > 0
+                    ? `
+                        <div class="detail-row">
+                            <span class="detail-label">${this.tr('wallet.pointsToReceive', '到账积分')}</span>
+                            <span class="detail-val wallet-detail-val--strong ${this.getWalletToneClass('#22c55e')}">${this.formatPoints(pointsAmount)}</span>
+                        </div>
+                    `
+                    : '',
+                paymentId
+                    ? `
+                        <div class="detail-row">
+                            <span class="detail-label">${this.tr('wallet.paymentOrderNo', '支付单号')}</span>
+                            <span class="detail-val">${this.escapeHtml(paymentId)}</span>
+                        </div>
+                    `
+                    : ''
+            ].filter(Boolean).join('');
+
+            const detailOverlay = document.createElement('div');
+            detailOverlay.className = 'wallet-order-modal-overlay';
+            detailOverlay.innerHTML = `
+                <div class="wallet-order-modal wallet-order-modal--compact wallet-payment-qr-modal wallet-crypto-checkout-modal">
+                    <div class="wallet-order-modal-header">
+                        <div class="wallet-order-modal-title wallet-payment-qr-title">
+                            <span class="wallet-payment-qr-title-icon wallet-crypto-title-icon">${this.renderWalletInlineIcon('fa-coins', '#22c55e')}</span>
+                            <span class="wallet-payment-qr-title-copy">
+                                <strong>${this.escapeHtml(modalTitle)}</strong>
+                                <small>${this.tr('wallet.usdtCheckoutSubtitle', '使用 USDT-BEP20 完成付款')}</small>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="wallet-order-modal-body wallet-order-modal-body--fade">
+                        <div class="wallet-payment-qr-panel wallet-crypto-checkout-panel">
+                            <div class="wallet-payment-qr-status js-wallet-payment-qr-status is-info" hidden></div>
+                            <div class="wallet-crypto-countdown js-wallet-crypto-countdown" role="timer" aria-live="polite">
+                                <span>${this.tr('wallet.usdtPaymentExpiresIn', '付款有效期')}</span>
+                                <strong class="js-wallet-crypto-countdown-value">--:--</strong>
+                                <small>${this.tr('wallet.usdtExpiredRestartHint', '超时请重新发起支付')}</small>
+                            </div>
+                            <div class="wallet-crypto-amount-hero">
+                                <span>${this.tr('wallet.usdtAmountToPay', '需支付')}</span>
+                                <strong class="wallet-crypto-primary-amount">${this.escapeHtml(payAmount)}</strong>
+                                <b>${this.escapeHtml(displayPayCurrency)}</b>
+                                <button type="button" class="wallet-crypto-inline-copy js-wallet-copy-usdt-amount">${this.tr('common.copy', '复制')}</button>
+                            </div>
+                            <div class="wallet-payment-qr-card wallet-crypto-qr-card js-wallet-payment-qr-visual">
+                                <img src="${this.escapeAttribute(qrImageUrl)}" alt="${this.escapeAttribute(this.tr('wallet.usdtAddressQrAlt', 'USDT-BEP20 收款地址二维码'))}" class="wallet-payment-qr-image wallet-payment-qr-image--crypto js-wallet-payment-qr-image" loading="eager" decoding="async" referrerpolicy="no-referrer">
+                                <div class="wallet-payment-qr-success js-wallet-payment-qr-success" hidden>
+                                    <div class="wallet-payment-qr-success-mark" aria-hidden="true">
+                                        <svg viewBox="0 0 24 24" fill="none">
+                                            <path d="M5 12.5L9.2 16.7L19 7" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="wallet-payment-qr-success-title">${this.tr('wallet.paymentSuccess', '支付成功')}</div>
+                                </div>
+                                <div class="wallet-crypto-timeout js-wallet-crypto-timeout" hidden>
+                                    <div class="wallet-crypto-timeout-clock" aria-hidden="true">
+                                        <svg viewBox="0 0 140 140" fill="none">
+                                            <path class="wallet-crypto-timeout-spark wallet-crypto-timeout-spark--one" d="M29 37L32 43L38 46L32 49L29 55L26 49L20 46L26 43L29 37Z" fill="currentColor"></path>
+                                            <path class="wallet-crypto-timeout-spark wallet-crypto-timeout-spark--two" d="M109 28L111 32L115 34L111 36L109 40L107 36L103 34L107 32L109 28Z" fill="currentColor"></path>
+                                            <path class="wallet-crypto-timeout-body" d="M48 33C59 25 77 25 91 32C106 40 111 56 104 70C99 81 91 87 91 100C91 112 85 121 76 121C66 121 63 111 62 99C60 85 53 84 42 81C28 78 20 67 22 54C24 45 33 38 48 33Z" fill="currentColor"></path>
+                                            <path class="wallet-crypto-timeout-face" d="M47 44C59 37 77 37 91 44C99 48 102 57 98 66C94 75 82 78 67 76C51 74 37 70 34 62C31 54 36 48 47 44Z" fill="white"></path>
+                                            <path class="wallet-crypto-timeout-hand" d="M67 56V66L87 67" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"></path>
+                                            <path class="wallet-crypto-timeout-drip" d="M91 68C91 80 86 88 84 98" stroke="currentColor" stroke-width="5" stroke-linecap="round"></path>
+                                            <path class="wallet-crypto-timeout-tick" d="M47 56L53 58M61 49L62 55M77 50L75 56M91 57L85 60M62 68L56 68" stroke="currentColor" stroke-width="3" stroke-linecap="round"></path>
+                                            <circle cx="68" cy="66" r="5" fill="currentColor"></circle>
+                                        </svg>
+                                    </div>
+                                    <div class="wallet-crypto-timeout-title">${this.tr('wallet.usdtPaymentExpiredTitle', '付款已超时')}</div>
+                                    <p>${this.tr('wallet.usdtPaymentExpiredCopy', '当前固定汇率报价已失效，请重新发起支付获取新的金额和地址。')}</p>
+                                    ${paymentId
+                                        ? `<small>${this.tr('wallet.paymentOrderNo', '支付单号')} <strong>${this.escapeHtml(paymentId)}</strong></small>`
+                                        : ''}
+                                </div>
+                            </div>
+                            <div class="wallet-crypto-network-strip">
+                                <span>${this.tr('wallet.paymentNetwork', '付款网络')}</span>
+                                <strong>${this.escapeHtml(networkCode)}</strong>
+                                <small>${this.escapeHtml(networkName)}</small>
+                            </div>
+                            <div class="wallet-crypto-copy-card">
+                                <div>
+                                    <span>${this.tr('wallet.usdtReceiveAddress', '收款地址')}</span>
+                                    <strong class="wallet-crypto-address-text">${this.escapeHtml(payAddress)}</strong>
+                                </div>
+                                <button type="button" class="wallet-crypto-copy-btn js-wallet-copy-usdt-address">${this.tr('common.copy', '复制')}</button>
+                            </div>
+                            <div class="wallet-crypto-warning">
+                                <div>${this.tr('wallet.usdtExactAmountWarning', '请复制上方精确金额付款，二维码仅包含收款地址。')}</div>
+                                <div>${this.tr('wallet.usdtNetworkWarning', '钱包网络必须选择 BSC/BEP20，其他网络无法自动到账。')}</div>
+                            </div>
+                            <div class="meta-section js-wallet-payment-qr-meta">
+                                ${detailRows}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            const closeModal = () => {
+                if (typeof detailOverlay._walletCryptoCountdownCleanup === 'function') {
+                    detailOverlay._walletCryptoCountdownCleanup();
+                    detailOverlay._walletCryptoCountdownCleanup = null;
+                }
+                this.stopHostedPaymentQrPolling(detailOverlay);
+                detailOverlay.remove();
+            };
+            detailOverlay.addEventListener('click', (event) => {
+                if (event.target === detailOverlay) {
+                    closeModal();
+                }
+            });
+            detailOverlay.querySelector('.js-wallet-order-close')?.addEventListener('click', closeModal);
+            detailOverlay.querySelectorAll('.js-wallet-copy-usdt-amount').forEach((button) => {
+                button.addEventListener('click', (event) => {
+                    this.copyToClipboard(payAmount, event, {
+                        successMessage: this.tr('wallet.usdtAmountCopied', '已复制精确 USDT 金额')
+                    });
+                });
+            });
+            detailOverlay.querySelectorAll('.js-wallet-copy-usdt-address').forEach((button) => {
+                button.addEventListener('click', (event) => {
+                    this.copyToClipboard(payAddress, event, {
+                        successMessage: this.tr('wallet.usdtAddressCopied', '已复制 USDT-BEP20 收款地址')
+                    });
+                });
+            });
+
+            document.body.appendChild(detailOverlay);
+            detailOverlay._walletCryptoCountdownCleanup = this.startCryptoCheckoutCountdown(detailOverlay, expiresAtIso);
+            this.startHostedPaymentQrPolling(detailOverlay, paymentResult, {
+                ...options,
+                hideInitialStatus: true,
+                waitingMessage: this.tr('wallet.usdtPaymentWaiting', '正在等待链上确认和平台回调，请保持此页面打开。'),
+                closeDelayMs: 3600
+            });
             this.animateHostedPaymentQrEntry(detailOverlay);
             return true;
         },
@@ -3906,6 +4484,11 @@
                                     </div>
                                 </div>
 
+                                <div class="wallet-recharge-payment-panel" id="wallet-recharge-payment-panel" hidden>
+                                    <div class="wallet-recharge-selected-summary" id="wallet-recharge-selected-summary"></div>
+                                    <div class="wallet-recharge-method-buttons" id="wallet-recharge-package-methods"></div>
+                                </div>
+
                                 <div class="custom-recharge-section" id="wallet-custom-recharge-section" hidden>
                                     <div class="custom-recharge-header">
                                         <div>
@@ -3923,7 +4506,7 @@
                                                inputmode="decimal"
                                                placeholder="请输入充值金额"
                                                ${this.buildDataAttributes({ 'wallet-enter-action': 'custom-recharge' })} />
-                                        <button class="custom-recharge-btn" id="wallet-custom-recharge-btn"${this.buildDataAttributes({ 'wallet-action': 'custom-recharge' })}>充值</button>
+                                        <div class="wallet-recharge-method-buttons wallet-recharge-method-buttons--custom" id="wallet-custom-recharge-methods"></div>
                                     </div>
                                     <div class="custom-recharge-meta" id="wallet-custom-recharge-meta" hidden></div>
                                 </div>
@@ -4232,6 +4815,20 @@
 
             if (!sidebar || !activeItem || !indicator || !sidebar.contains(activeItem)) {
                 sidebar?.classList.remove('wallet-sidebar--indicator-ready');
+                return;
+            }
+
+            if (!walletCssReady) {
+                indicator.classList.remove('sidebar-indicator--settling');
+                setInlineStyles(indicator, {
+                    left: '',
+                    top: '',
+                    width: '',
+                    height: '',
+                    opacity: '0'
+                });
+                sidebar.classList.remove('wallet-sidebar--indicator-ready');
+                queueWalletSidebarIndicatorRefresh(activeItem);
                 return;
             }
 
@@ -5090,7 +5687,7 @@
                     : currentOrigin;
             };
             const resolvePreferredActiveProviderKey = (providers = {}, fallback = 'afdian') => {
-                const candidateKeys = ['zpay', 'hupijiao', 'afdian', ...Object.keys(providers || {})];
+                const candidateKeys = ['nowpayments', 'zpay', 'hupijiao', 'afdian', ...Object.keys(providers || {})];
                 const seen = new Set();
 
                 for (const providerKey of candidateKeys) {
@@ -5117,7 +5714,7 @@
                     }
                 }
 
-                return ['mock', 'afdian', 'hupijiao', 'zpay'].includes(fallback) ? fallback : 'afdian';
+                return ['mock', 'afdian', 'hupijiao', 'zpay', 'nowpayments'].includes(fallback) ? fallback : 'afdian';
             };
 
             const providers = {
@@ -5167,6 +5764,18 @@
                     order_query_title: '',
                     order_query_hint: '',
                     order_query_placeholder: ''
+                },
+                nowpayments: {
+                    enabled: false,
+                    display_name: 'USDT-BEP20',
+                    pay_currency: 'usdtbsc',
+                    network_name: 'BNB Smart Chain',
+                    package_hint: this.tr('wallet.nowpaymentsPackageHint', '请使用 USDT-BEP20 / BNB Smart Chain 完成付款，勿使用 ERC20、TRC20 或其他网络。'),
+                    custom_amount_hint: this.tr('wallet.nowpaymentsCustomAmountHint', '请按页面显示的 USDT-BEP20 金额付款，网络请选择 BNB Smart Chain。'),
+                    order_query_enabled: false,
+                    order_query_title: '',
+                    order_query_hint: '',
+                    order_query_placeholder: ''
                 }
             };
             providers.afdian.order_query_title = this.tr('wallet.orderClaimTitle', providers.afdian.order_query_title);
@@ -5187,7 +5796,7 @@
                 ? source.providers
                 : {};
             const resolvePreferredActiveProviderKey = (providers = {}, fallback = defaults.active_provider) => {
-                const candidateKeys = ['zpay', 'hupijiao', 'afdian', ...Object.keys(providers || {})];
+                const candidateKeys = ['nowpayments', 'zpay', 'hupijiao', 'afdian', ...Object.keys(providers || {})];
                 const seen = new Set();
 
                 for (const providerKey of candidateKeys) {
@@ -5214,11 +5823,11 @@
                     }
                 }
 
-                return ['mock', 'afdian', 'hupijiao', 'zpay'].includes(fallback) ? fallback : defaults.active_provider;
+                return ['mock', 'afdian', 'hupijiao', 'zpay', 'nowpayments'].includes(fallback) ? fallback : defaults.active_provider;
             };
 
             const normalized = {
-                active_provider: ['mock', 'afdian', 'hupijiao', 'zpay'].includes(source.active_provider)
+                active_provider: ['mock', 'afdian', 'hupijiao', 'zpay', 'nowpayments'].includes(source.active_provider)
                     ? source.active_provider
                     : resolvePreferredActiveProviderKey(sourceProviders, defaults.active_provider),
                 providers: {
@@ -5274,6 +5883,18 @@
                         order_query_title: String(sourceProviders.hupijiao?.order_query_title || defaults.providers.hupijiao.order_query_title).trim(),
                         order_query_hint: String(sourceProviders.hupijiao?.order_query_hint || defaults.providers.hupijiao.order_query_hint).trim(),
                         order_query_placeholder: String(sourceProviders.hupijiao?.order_query_placeholder || defaults.providers.hupijiao.order_query_placeholder).trim()
+                    },
+                    nowpayments: {
+                        enabled: sourceProviders.nowpayments?.enabled === true || String(sourceProviders.nowpayments?.enabled) === 'true',
+                        display_name: String(sourceProviders.nowpayments?.display_name || defaults.providers.nowpayments.display_name).trim() || defaults.providers.nowpayments.display_name,
+                        pay_currency: String(sourceProviders.nowpayments?.pay_currency || defaults.providers.nowpayments.pay_currency).trim().toLowerCase() || defaults.providers.nowpayments.pay_currency,
+                        network_name: String(sourceProviders.nowpayments?.network_name || defaults.providers.nowpayments.network_name).trim() || defaults.providers.nowpayments.network_name,
+                        package_hint: String(sourceProviders.nowpayments?.package_hint || defaults.providers.nowpayments.package_hint).trim() || defaults.providers.nowpayments.package_hint,
+                        custom_amount_hint: String(sourceProviders.nowpayments?.custom_amount_hint || defaults.providers.nowpayments.custom_amount_hint).trim() || defaults.providers.nowpayments.custom_amount_hint,
+                        order_query_enabled: sourceProviders.nowpayments?.order_query_enabled === true || String(sourceProviders.nowpayments?.order_query_enabled) === 'true',
+                        order_query_title: String(sourceProviders.nowpayments?.order_query_title || defaults.providers.nowpayments.order_query_title).trim(),
+                        order_query_hint: String(sourceProviders.nowpayments?.order_query_hint || defaults.providers.nowpayments.order_query_hint).trim(),
+                        order_query_placeholder: String(sourceProviders.nowpayments?.order_query_placeholder || defaults.providers.nowpayments.order_query_placeholder).trim()
                     }
                 }
             };
@@ -5439,6 +6060,111 @@
             };
         },
 
+        getRechargePaymentProviderForMethod(methodKey = '', config = this.paymentChannelsConfig) {
+            const normalizedConfig = this.normalizePaymentChannelsConfig(config);
+            const normalizedMethod = String(methodKey || '').trim().toLowerCase();
+            const providerKey = normalizedMethod === 'usdt'
+                ? 'nowpayments'
+                : 'zpay';
+            const provider = normalizedConfig.providers?.[providerKey] || {};
+
+            return {
+                key: providerKey,
+                enabled: provider.enabled === true,
+                ...provider
+            };
+        },
+
+        getRechargePaymentMethods(config = this.paymentChannelsConfig) {
+            const alipayProvider = this.getRechargePaymentProviderForMethod('alipay', config);
+            const usdtProvider = this.getRechargePaymentProviderForMethod('usdt', config);
+
+            return [
+                {
+                    key: 'alipay',
+                    providerKey: alipayProvider.key,
+                    enabled: alipayProvider.enabled === true,
+                    label: this.tr('wallet.alipayPayment', '支付宝'),
+                    sublabel: alipayProvider.enabled === true
+                        ? this.tr('wallet.alipayPaymentSublabel', '即时跳转')
+                        : this.tr('wallet.alipayUnavailable', '未启用'),
+                    icon: 'fa-brands fa-alipay',
+                    provider: alipayProvider
+                },
+                {
+                    key: 'usdt',
+                    providerKey: usdtProvider.key,
+                    enabled: usdtProvider.enabled === true,
+                    label: this.tr('wallet.usdtPayment', 'USDT'),
+                    sublabel: usdtProvider.enabled === true
+                        ? (usdtProvider.network_name || 'BEP20')
+                        : this.tr('wallet.usdtUnavailable', '未启用'),
+                    icon: 'fa-solid fa-coins',
+                    provider: usdtProvider
+                }
+            ];
+        },
+
+        renderRechargePaymentMethodButtons({
+            action = 'pay-selected-recharge',
+            disabled = false,
+            compact = false,
+            paymentChannels = this.paymentChannelsConfig
+        } = {}) {
+            return this.getRechargePaymentMethods(paymentChannels).map((method) => {
+                const isDisabled = disabled || method.enabled !== true;
+                const title = method.enabled === true
+                    ? `${method.label} · ${method.sublabel}`
+                    : `${method.label}${this.tr('wallet.paymentMethodNotEnabled', '通道未启用')}`;
+
+                return `
+                    <button type="button"
+                            class="wallet-recharge-method-btn wallet-recharge-method-btn--${this.escapeAttribute(method.key)}${compact ? ' wallet-recharge-method-btn--compact' : ''}"
+                            ${isDisabled ? 'disabled' : ''}
+                            title="${this.escapeAttribute(title)}"
+                            ${this.buildDataAttributes({
+                                'wallet-action': action,
+                                'wallet-payment-method': method.key
+                            })}>
+                        <span class="wallet-recharge-method-icon" aria-hidden="true"><i class="${this.escapeAttribute(method.icon)}"></i></span>
+                        <span class="wallet-recharge-method-copy">
+                            <strong>${this.escapeHtml(method.label)}</strong>
+                            <small>${this.escapeHtml(method.sublabel)}</small>
+                        </span>
+                    </button>
+                `;
+            }).join('');
+        },
+
+        resolveRechargeProviderKeyForMethod(methodKey = '', {
+            paymentChannels = this.paymentChannelsConfig,
+            mockPayment = null
+        } = {}) {
+            const normalizedMethod = String(methodKey || '').trim().toLowerCase();
+            if (!normalizedMethod && mockPayment?.activeProviderRequested && mockPayment.allowed) {
+                return 'mock';
+            }
+
+            const fallbackMethod = normalizedMethod || (
+                this.getRechargePaymentProviderForMethod('alipay', paymentChannels).enabled
+                    ? 'alipay'
+                    : 'usdt'
+            );
+            const method = this.getRechargePaymentMethods(paymentChannels)
+                .find((candidate) => candidate.key === fallbackMethod);
+
+            if (!method) {
+                throw new Error(this.tr('wallet.paymentMethodInvalid', '请选择可用的支付方式'));
+            }
+            if (method.enabled !== true) {
+                throw new Error(this.tr('wallet.paymentMethodDisabled', '{method}通道未启用', {
+                    method: method.label
+                }));
+            }
+
+            return method.providerKey;
+        },
+
         getPaymentCheckoutUrl(providerKey, config = this.paymentChannelsConfig) {
             const normalizedConfig = this.normalizePaymentChannelsConfig(config);
             const provider = normalizedConfig.providers[providerKey] || {};
@@ -5476,6 +6202,124 @@
             requestWalletRechargeScrollCueUpdate();
         },
 
+        getSelectedRechargePackage() {
+            const selectedId = String(this.selectedRechargePackage?.id || '').trim();
+            const packages = Array.isArray(this._packagesCache) ? this._packagesCache : [];
+            if (!selectedId) return null;
+            return packages.find(pkg => String(pkg.id) === selectedId) || this.selectedRechargePackage || null;
+        },
+
+        ensureSelectedRechargePackage(packages = this._packagesCache) {
+            const list = Array.isArray(packages) ? packages : [];
+            if (!list.length) {
+                this.selectedRechargePackage = null;
+                return null;
+            }
+
+            const currentId = String(this.selectedRechargePackage?.id || '').trim();
+            const matched = currentId
+                ? list.find(pkg => String(pkg.id) === currentId)
+                : null;
+            const selected = matched || list[0];
+            this.selectedRechargePackage = {
+                id: selected.id,
+                name: selected.name,
+                name_en: selected.name_en || '',
+                price_cny: selected.price_cny,
+                points_amount: selected.points_amount,
+                bonus_points: selected.bonus_points || 0
+            };
+            return this.selectedRechargePackage;
+        },
+
+        updateRechargePackageSelectionUi() {
+            const selectedId = String(this.selectedRechargePackage?.id || '').trim();
+            document.querySelectorAll('#wallet-packages .package-item[data-wallet-action="buy-package"]').forEach((item) => {
+                const itemId = this.decodeActionValue(item.dataset.walletPackageId);
+                const selected = selectedId && String(itemId) === selectedId;
+                item.classList.toggle('is-selected', !!selected);
+                item.setAttribute('aria-pressed', selected ? 'true' : 'false');
+            });
+        },
+
+        renderSelectedRechargePaymentPanel(paymentChannels = this.paymentChannelsConfig) {
+            const panel = document.getElementById('wallet-recharge-payment-panel');
+            const summary = document.getElementById('wallet-recharge-selected-summary');
+            const methods = document.getElementById('wallet-recharge-package-methods');
+            if (!panel) return;
+
+            const selected = this.getSelectedRechargePackage();
+            panel.toggleAttribute('hidden', !selected);
+            if (!selected) {
+                if (summary) summary.textContent = '';
+                if (methods) methods.innerHTML = this.renderRechargePaymentMethodButtons({
+                    action: 'pay-selected-recharge',
+                    disabled: true,
+                    paymentChannels
+                });
+                requestWalletRechargeScrollCueUpdate();
+                return;
+            }
+
+            const displayName = this.isEnglishLanguage() && selected.name_en
+                ? selected.name_en
+                : (selected.name || this.tr('wallet.rechargePackage', '充值套餐'));
+            const pointsUnit = window.i18n?.t('wallet.pointsUnit') || '分';
+            const pointsText = `${this.formatPoints(selected.points_amount)} ${pointsUnit}`;
+            const priceText = `¥${this.formatCny(selected.price_cny)}`;
+
+            if (summary) {
+                summary.innerHTML = `
+                    <span>${this.tr('wallet.selectedRechargePackage', '已选套餐')}</span>
+                    <strong>${this.escapeHtml(displayName)}</strong>
+                    <em>${this.escapeHtml(pointsText)} · ${this.escapeHtml(priceText)}</em>
+                `;
+            }
+            if (methods) {
+                methods.innerHTML = this.renderRechargePaymentMethodButtons({
+                    action: 'pay-selected-recharge',
+                    paymentChannels
+                });
+            }
+
+            this.updateRechargePackageSelectionUi();
+            requestWalletRechargeScrollCueUpdate();
+        },
+
+        selectRechargePackage(packageId, packageName = '') {
+            const packages = Array.isArray(this._packagesCache) ? this._packagesCache : [];
+            const matched = packages.find(pkg => String(pkg.id) === String(packageId)) || {
+                id: packageId,
+                name: packageName,
+                price_cny: null,
+                points_amount: null,
+                bonus_points: 0
+            };
+
+            this.selectedRechargePackage = {
+                id: matched.id,
+                name: matched.name || packageName || this.tr('wallet.rechargePackage', '充值套餐'),
+                name_en: matched.name_en || '',
+                price_cny: matched.price_cny,
+                points_amount: matched.points_amount,
+                bonus_points: matched.bonus_points || 0
+            };
+
+            this.renderSelectedRechargePaymentPanel();
+        },
+
+        paySelectedRechargePackage(methodKey = '') {
+            const selected = this.getSelectedRechargePackage();
+            if (!selected?.id) {
+                this.showToast(this.tr('wallet.selectRechargePackageFirst', '请先选择一个充值套餐'), 'warning');
+                return;
+            }
+
+            this.buyPackage(selected.id, selected.name, {
+                paymentMethod: methodKey
+            });
+        },
+
         renderCustomRechargeSection(
             config = this.rechargeOptionsConfig,
             paymentChannels = this.paymentChannelsConfig,
@@ -5483,7 +6327,7 @@
         ) {
             const section = document.getElementById('wallet-custom-recharge-section');
             const input = document.getElementById('wallet-custom-recharge-input');
-            const button = document.getElementById('wallet-custom-recharge-btn');
+            const methods = document.getElementById('wallet-custom-recharge-methods');
             const subtitle = document.getElementById('wallet-custom-recharge-subtitle');
             const badge = document.getElementById('wallet-custom-recharge-badge');
             const meta = document.getElementById('wallet-custom-recharge-meta');
@@ -5516,11 +6360,13 @@
                 if (!isFeatureEnabled) input.value = '';
             }
 
-            if (button) {
-                button.disabled = !isFeatureEnabled || isSimulationBlocked;
-                button.textContent = isSimulationBlocked
-                    ? this.tr('wallet.unavailableNow', '当前环境不可用')
-                    : this.tr('wallet.rechargeNow', '充值');
+            if (methods) {
+                methods.innerHTML = this.renderRechargePaymentMethodButtons({
+                    action: 'custom-recharge',
+                    compact: true,
+                    disabled: !isFeatureEnabled || isSimulationBlocked,
+                    paymentChannels: normalizedPaymentChannels
+                });
             }
 
             if (subtitle) {
@@ -6662,6 +7508,7 @@
                 const pkgContainer = document.getElementById('wallet-packages');
                 if (pkgContainer) {
                     if (packages.length === 0) {
+                        this.selectedRechargePackage = null;
                         pkgContainer.innerHTML = `<div class="empty-text">${window.i18n?.t('wallet.noPackages') || '暂无套餐'}</div>`;
                     } else {
                         const isEnglish = window.i18n?.isEnglish?.();
@@ -6673,13 +7520,15 @@
                                 'wallet-action': 'buy-package',
                                 'wallet-package-id': this.encodeActionValue(pkg.id),
                                 'wallet-package-name': this.encodeActionValue(pkg.name)
-                            })}>
+                            })} aria-pressed="false">
                                 <div class="pkg-name">${displayName}</div>
                                 <div class="pkg-points">${this.formatPoints(pkg.points_amount)} ${pointsUnit}${pkg.bonus_points > 0 ? ` <span class="pkg-bonus">+${this.formatPoints(pkg.bonus_points)}</span>` : ''}</div>
                                 <div class="pkg-price" data-wallet-package-price>¥${pkg.price_cny}</div>
                             </button>
                         `}).join('');
+                        this.ensureSelectedRechargePackage(packages);
                     }
+                    this.renderSelectedRechargePaymentPanel(latestPaymentChannels);
                     requestWalletRechargeScrollCueUpdate();
                 }
 
@@ -6742,7 +7591,7 @@
         /**
          * Handle package purchase
          */
-        async buyPackage(packageId, packageName) {
+        async buyPackage(packageId, packageName, options = {}) {
             if (this.pendingRechargeAction) {
                 return;
             }
@@ -6750,25 +7599,33 @@
             const overlay = document.getElementById('wallet-modal-overlay');
             const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
             const paymentChannels = this.normalizePaymentChannelsConfig(this.paymentChannelsConfig);
-            const activeProvider = this.getActivePaymentProviderConfig(paymentChannels);
             const mockPayment = this.getMockPaymentAvailability({
                 rechargeOptions,
                 paymentChannels,
                 paymentRuntime: this.paymentRuntimeConfig
             });
-            const providerKey = mockPayment.activeProviderRequested && mockPayment.allowed
-                ? 'mock'
-                : activeProvider.key;
+            const selectedPaymentMethod = String(options.paymentMethod || '').trim().toLowerCase();
             const packageData = Array.isArray(this._packagesCache)
                 ? this._packagesCache.find(pkg => String(pkg.id) === String(packageId))
                 : null;
             const displayName = packageData?.name || packageName || this.tr('wallet.rechargePackage', '充值套餐');
-            const isMockFlow = providerKey === 'mock';
             const openContext = this.lastOpenContext && typeof this.lastOpenContext === 'object'
                 ? this.lastOpenContext
                 : {};
 
             try {
+                const providerKey = this.resolveRechargeProviderKeyForMethod(selectedPaymentMethod, {
+                    paymentChannels,
+                    mockPayment
+                });
+                const selectedProvider = providerKey === 'mock'
+                    ? this.getActivePaymentProviderConfig(paymentChannels)
+                    : this.getRechargePaymentProviderForMethod(
+                        selectedPaymentMethod || (providerKey === 'nowpayments' ? 'usdt' : 'alipay'),
+                        paymentChannels
+                    );
+                const isMockFlow = providerKey === 'mock';
+
                 if (providerKey === 'mock' && !mockPayment.allowed) {
                     throw new Error(mockPayment.message || this.tr('wallet.mockPaymentDisabled', '当前环境已禁用模拟支付，请切换到真实支付通道。'));
                 }
@@ -6789,6 +7646,7 @@
                 this.setRechargeActionPendingState({
                     kind: 'package',
                     packageId,
+                    paymentMethod: selectedPaymentMethod,
                     controlLabel: isMockFlow
                         ? this.tr('wallet.mockPaymentProcessing', '模拟支付中')
                         : this.tr('wallet.processingShort', '处理中'),
@@ -6840,10 +7698,32 @@
                     return;
                 }
 
+                if (paymentResult.mode === 'crypto_checkout' || String(paymentResult.provider || '').trim().toLowerCase() === 'nowpayments') {
+                    const cryptoModalShown = this.tryPresentNowpaymentsCheckoutModal(paymentResult, {
+                        title: displayName,
+                        onCompleted: async (statusResult = {}) => {
+                            this.showToast(
+                                this.formatPaymentSuccessWithPoints(statusResult.points_amount || paymentResult.points_amount || packageData?.points_amount || 0),
+                                'success'
+                            );
+                            this.invalidateOrderRecordsCache();
+                            this.loadOrders({
+                                searchQuery: this.orderSearchActiveQuery || this.orderSearchQuery,
+                                ignorePrefetch: true
+                            }).catch(e => console.error('Order reload after nowpayments package purchase failed:', e));
+                        },
+                        closeDelayMs: 3600
+                    });
+                    if (!cryptoModalShown) {
+                        throw new Error(paymentResult.message || this.tr('wallet.paymentChannelIncomplete', '当前支付通道暂未完成接入'));
+                    }
+                    return;
+                }
+
                 if (paymentResult.mode === 'redirect') {
                     if (!paymentResult.checkout_url) {
                         throw new Error(this.tr('wallet.paymentLinkMissing', '{provider}支付链接未配置', {
-                            provider: paymentResult.display_name || activeProvider.display_name || this.tr('wallet.paymentChannel', '当前支付通道')
+                            provider: paymentResult.display_name || selectedProvider.display_name || this.tr('wallet.paymentChannel', '当前支付通道')
                         }));
                     }
 
@@ -6872,7 +7752,7 @@
                     this.showToast(
                         paymentResult.message
                             || this.tr('wallet.paymentReady', '{provider}已准备就绪，请完成支付并按页面提示操作。', {
-                                provider: paymentResult.display_name || activeProvider.display_name || this.tr('wallet.paymentChannel', '当前支付通道')
+                                provider: paymentResult.display_name || selectedProvider.display_name || this.tr('wallet.paymentChannel', '当前支付通道')
                             }),
                         'success'
                     );
@@ -6890,7 +7770,7 @@
             }
         },
 
-        async customRecharge() {
+        async customRecharge(methodKey = '') {
             if (this.pendingRechargeAction) {
                 return;
             }
@@ -6900,15 +7780,12 @@
             const rawValue = input?.value ?? '';
             const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
             const paymentChannels = this.normalizePaymentChannelsConfig(this.paymentChannelsConfig);
-            const activeProvider = this.getActivePaymentProviderConfig(paymentChannels);
             const mockPayment = this.getMockPaymentAvailability({
                 rechargeOptions,
                 paymentChannels,
                 paymentRuntime: this.paymentRuntimeConfig
             });
-            const providerKey = mockPayment.activeProviderRequested && mockPayment.allowed
-                ? 'mock'
-                : activeProvider.key;
+            const selectedPaymentMethod = String(methodKey || '').trim().toLowerCase();
             const openContext = this.lastOpenContext && typeof this.lastOpenContext === 'object'
                 ? this.lastOpenContext
                 : {};
@@ -6923,19 +7800,30 @@
             const normalizedAmount = customRechargeRequest.normalizedPoints;
             const quotedAmountCny = customRechargeRequest.estimatedPaidAmount;
             const inputMode = customRechargeRequest.inputMode || 'points';
-            const pendingMessage = providerKey === 'mock'
-                ? this.tr('wallet.processingCustomMock', '正在处理 {points} {unit}（约 ¥{amount}）的模拟充值...', {
-                    points: this.formatPoints(normalizedAmount),
-                    unit: this.tr('wallet.pointsUnit', '积分'),
-                    amount: this.formatCny(quotedAmountCny)
-                })
-                : this.tr('wallet.creatingCustomPayment', '正在为 {points} {unit}（约 ¥{amount}）创建支付请求...', {
-                    points: this.formatPoints(normalizedAmount),
-                    unit: this.tr('wallet.pointsUnit', '积分'),
-                    amount: this.formatCny(quotedAmountCny)
-                });
 
             try {
+                const providerKey = this.resolveRechargeProviderKeyForMethod(selectedPaymentMethod, {
+                    paymentChannels,
+                    mockPayment
+                });
+                const selectedProvider = providerKey === 'mock'
+                    ? this.getActivePaymentProviderConfig(paymentChannels)
+                    : this.getRechargePaymentProviderForMethod(
+                        selectedPaymentMethod || (providerKey === 'nowpayments' ? 'usdt' : 'alipay'),
+                        paymentChannels
+                    );
+                const pendingMessage = providerKey === 'mock'
+                    ? this.tr('wallet.processingCustomMock', '正在处理 {points} {unit}（约 ¥{amount}）的模拟充值...', {
+                        points: this.formatPoints(normalizedAmount),
+                        unit: this.tr('wallet.pointsUnit', '积分'),
+                        amount: this.formatCny(quotedAmountCny)
+                    })
+                    : this.tr('wallet.creatingCustomPayment', '正在为 {points} {unit}（约 ¥{amount}）创建支付请求...', {
+                        points: this.formatPoints(normalizedAmount),
+                        unit: this.tr('wallet.pointsUnit', '积分'),
+                        amount: this.formatCny(quotedAmountCny)
+                    });
+
                 if (providerKey === 'mock' && !mockPayment.allowed) {
                     throw new Error(mockPayment.message || this.tr('wallet.mockPaymentDisabled', '当前环境已禁用模拟支付，请切换到真实支付通道。'));
                 }
@@ -6958,6 +7846,7 @@
 
                 this.setRechargeActionPendingState({
                     kind: 'custom',
+                    paymentMethod: selectedPaymentMethod,
                     controlLabel: providerKey === 'mock'
                         ? this.tr('wallet.mockPaymentProcessing', '模拟处理中')
                         : this.tr('wallet.processingShort', '处理中'),
@@ -6969,10 +7858,36 @@
                     points_amount: normalizedAmount
                 });
 
+                if (paymentResult.mode === 'crypto_checkout' || String(paymentResult.provider || '').trim().toLowerCase() === 'nowpayments') {
+                    const cryptoModalShown = this.tryPresentNowpaymentsCheckoutModal(paymentResult, {
+                        title: this.tr('wallet.customRecharge', '自定义充值'),
+                        onCompleted: async (statusResult = {}) => {
+                            if (input) {
+                                input.value = '';
+                            }
+                            this.showToast(
+                                this.formatPaymentSuccessWithPoints(statusResult.points_amount || paymentResult.points_amount || normalizedAmount),
+                                'success'
+                            );
+                            this.invalidateOrderRecordsCache();
+                            this.loadOrders({
+                                searchQuery: this.orderSearchActiveQuery || this.orderSearchQuery,
+                                ignorePrefetch: true
+                            }).catch(e => console.error('Order reload after nowpayments custom recharge failed:', e));
+                        },
+                        closeDelayMs: 3600
+                    });
+                    if (!cryptoModalShown) {
+                        throw new Error(paymentResult.message || this.tr('wallet.paymentChannelIncomplete', '当前支付通道暂未完成接入'));
+                    }
+                    this.rememberPendingCustomRechargeQuote(paymentResult);
+                    return;
+                }
+
                 if (paymentResult.mode === 'redirect') {
                     if (!paymentResult.checkout_url) {
                         throw new Error(this.tr('wallet.paymentLinkMissing', '{provider}支付链接未配置', {
-                            provider: paymentResult.display_name || activeProvider.display_name || this.tr('wallet.paymentChannel', '当前支付通道')
+                            provider: paymentResult.display_name || selectedProvider.display_name || this.tr('wallet.paymentChannel', '当前支付通道')
                         }));
                     }
 
@@ -7012,7 +7927,7 @@
                     this.showToast(
                         paymentResult.message
                             || this.tr('wallet.paymentReadyWithAmount', '{provider}已准备就绪，请按 ¥{amount} 完成支付后再返回查询订单。', {
-                                provider: paymentResult.display_name || activeProvider.display_name || this.tr('wallet.paymentChannel', '当前支付通道'),
+                                provider: paymentResult.display_name || selectedProvider.display_name || this.tr('wallet.paymentChannel', '当前支付通道'),
                                 amount: Number(paymentResult.paid_amount || 0).toFixed(2)
                             }),
                         'success'
@@ -7827,7 +8742,7 @@
             const overlay = document.getElementById('wallet-modal-overlay');
             const packageItems = Array.from(document.querySelectorAll('#wallet-packages .package-item[data-wallet-action="buy-package"]'));
             const customInput = document.getElementById('wallet-custom-recharge-input');
-            const customButton = document.getElementById('wallet-custom-recharge-btn');
+            const rechargeMethodButtons = Array.from(document.querySelectorAll('.wallet-recharge-method-btn'));
             const isPending = !!state;
 
             this.pendingRechargeAction = isPending ? { ...state } : null;
@@ -7859,16 +8774,12 @@
             });
 
             if (!isPending) {
-                if (customButton) {
-                    customButton.classList.remove('is-processing');
-                    customButton.removeAttribute('aria-busy');
-                }
-
                 this.renderCustomRechargeSection(
                     this.rechargeOptionsConfig,
                     this.paymentChannelsConfig,
                     this.paymentRuntimeConfig
                 );
+                this.renderSelectedRechargePaymentPanel(this.paymentChannelsConfig);
                 return;
             }
 
@@ -7876,20 +8787,25 @@
                 customInput.disabled = true;
             }
 
-            if (customButton) {
-                customButton.disabled = true;
-                customButton.classList.toggle('is-processing', state.kind === 'custom');
-                customButton.setAttribute('aria-busy', state.kind === 'custom' ? 'true' : 'false');
+            rechargeMethodButtons.forEach((button) => {
+                const method = String(button.dataset.walletPaymentMethod || '').trim().toLowerCase();
+                const isTarget = state.kind === 'custom'
+                    ? method === String(state.paymentMethod || '').trim().toLowerCase()
+                    : state.kind === 'package' && method === String(state.paymentMethod || '').trim().toLowerCase();
 
-                if (!customButton.dataset.defaultLabel) {
-                    customButton.dataset.defaultLabel = customButton.textContent.trim();
+                button.disabled = true;
+                button.classList.toggle('is-processing', isTarget);
+                button.setAttribute('aria-busy', isTarget ? 'true' : 'false');
+
+                if (!button.dataset.defaultLabel) {
+                    button.dataset.defaultLabel = button.innerHTML;
                 }
 
-                if (state.kind === 'custom') {
-                    customButton.innerHTML = this.buildRechargePendingMarkup(state.controlLabel || '处理中', { dotsOnly: true });
-                    customButton.setAttribute('aria-label', state.controlLabel || '处理中');
+                if (isTarget) {
+                    button.innerHTML = this.buildRechargePendingMarkup(state.controlLabel || '处理中', { dotsOnly: true });
+                    button.setAttribute('aria-label', state.controlLabel || '处理中');
                 }
-            }
+            });
         },
 
         /**

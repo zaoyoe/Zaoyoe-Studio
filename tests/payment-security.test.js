@@ -11,6 +11,13 @@ const {
 const {
     __testUtils: secretTestUtils
 } = require('../api/_lib/secrets');
+const {
+    buildNowpaymentsIpnSignature,
+    convertCnyAmountToPriceAmount,
+    createNowpaymentsPayment,
+    normalizeNowpaymentsPaymentStatus,
+    verifyNowpaymentsIpnSignature
+} = require('../api/_lib/payments/nowpayments');
 
 function withEnv(patch, callback) {
     const previous = {};
@@ -384,6 +391,44 @@ test('mock payment still requires backend config even when runtime override is e
     }), /未开启模拟支付/);
 });
 
+test('explicit enabled real payment providers can be selected independently from the active provider', () => {
+    assert.equal(paymentTestUtils.resolveRequestedProviderKey({
+        requestedProviderKey: 'nowpayments',
+        paymentChannels: {
+            active_provider: 'zpay',
+            providers: {
+                zpay: { enabled: true },
+                nowpayments: { enabled: true }
+            }
+        },
+        rechargeOptions: {
+            mock_payment_enabled: false
+        },
+        requestHost: 'www.zaoyoe.com',
+        env: {
+            VERCEL_ENV: 'production'
+        }
+    }), 'nowpayments');
+
+    assert.throws(() => paymentTestUtils.resolveRequestedProviderKey({
+        requestedProviderKey: 'nowpayments',
+        paymentChannels: {
+            active_provider: 'zpay',
+            providers: {
+                zpay: { enabled: true },
+                nowpayments: { enabled: false }
+            }
+        },
+        rechargeOptions: {
+            mock_payment_enabled: false
+        },
+        requestHost: 'www.zaoyoe.com',
+        env: {
+            VERCEL_ENV: 'production'
+        }
+    }), /未启用/);
+});
+
 test('admin secret encryption key must be independent', () => {
     assert.throws(() => withEnv({
         ADMIN_CONFIG_ENCRYPTION_KEY: 'shared-secret',
@@ -397,4 +442,88 @@ test('admin secret encryption key must be independent', () => {
 
     assert.equal(Buffer.isBuffer(encryptionKey), true);
     assert.equal(encryptionKey.length, 32);
+});
+
+test('nowpayments ipn signature sorts nested payloads before hmac verification', () => {
+    const payload = {
+        payment_status: 'finished',
+        order_id: 'NP123',
+        fee: {
+            withdrawalFee: 0,
+            depositFee: 0.01
+        },
+        price_amount: 1,
+        pay_currency: 'usdtbsc'
+    };
+    const signature = buildNowpaymentsIpnSignature(payload, 'ipn-secret');
+
+    assert.equal(verifyNowpaymentsIpnSignature(payload, 'ipn-secret', signature).valid, true);
+    assert.equal(verifyNowpaymentsIpnSignature({
+        ...payload,
+        price_amount: 2
+    }, 'ipn-secret', signature).valid, false);
+});
+
+test('nowpayments status and cny quote conversion stay conservative', () => {
+    assert.equal(normalizeNowpaymentsPaymentStatus('finished'), 'paid');
+    assert.equal(normalizeNowpaymentsPaymentStatus('partially_paid'), 'partially_paid');
+    assert.equal(normalizeNowpaymentsPaymentStatus('wrong_asset_confirmed'), 'wrong_asset');
+    assert.equal(convertCnyAmountToPriceAmount(10, {
+        priceCurrency: 'usd',
+        cnyToUsdRate: 0.14
+    }), 1.4);
+    assert.equal(convertCnyAmountToPriceAmount(0.01, {
+        priceCurrency: 'usd',
+        cnyToUsdRate: 0.14
+    }), 0.01);
+});
+
+test('nowpayments direct payment creation uses payment endpoint for hosted Chinese checkout', async () => {
+    let capturedUrl = '';
+    let capturedInit = null;
+    const result = await createNowpaymentsPayment({
+        channelConfig: {
+            api_base_url: 'https://api.nowpayments.io',
+            pay_currency: 'usdtbsc',
+            price_currency: 'usd',
+            ipn_callback_url: 'https://www.zaoyoe.com/api/payments/nowpayments/webhook',
+            is_fixed_rate: true,
+            is_fee_paid_by_user: true
+        },
+        secretValues: {
+            nowpayments_api_key: 'np-api-key',
+            nowpayments_ipn_secret: 'np-ipn-secret'
+        },
+        requestOrigin: 'https://www.zaoyoe.com',
+        orderId: 'NP_DIRECT_1',
+        priceAmount: '8.40',
+        orderDescription: 'Zaoyoe credits 60'
+    }, {
+        fetchImpl: async (url, init) => {
+            capturedUrl = url;
+            capturedInit = init;
+            return {
+                ok: true,
+                status: 200,
+                statusText: 'OK',
+                text: async () => JSON.stringify({
+                    payment_id: '5731943810',
+                    pay_address: '0x6776ad44D571c1b24930939F8ba0f0B5601e05d0',
+                    pay_amount: 8.55955247,
+                    pay_currency: 'usdtbsc'
+                })
+            };
+        }
+    });
+
+    assert.equal(capturedUrl, 'https://api.nowpayments.io/v1/payment');
+    assert.equal(capturedInit.method, 'POST');
+    assert.equal(capturedInit.headers['x-api-key'], 'np-api-key');
+    const payload = JSON.parse(capturedInit.body);
+    assert.equal(payload.order_id, 'NP_DIRECT_1');
+    assert.equal(payload.price_amount, '8.40');
+    assert.equal(payload.pay_currency, 'usdtbsc');
+    assert.equal(payload.is_fixed_rate, true);
+    assert.equal(payload.is_fee_paid_by_user, true);
+    assert.equal(result.response.data.pay_address, '0x6776ad44D571c1b24930939F8ba0f0B5601e05d0');
 });

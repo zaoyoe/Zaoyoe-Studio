@@ -74,10 +74,43 @@
     ]);
     const NOTIFICATION_PINNED_STORAGE_KEY = 'notifications_pinned_v1';
     const NOTIFICATION_FILTER_STORAGE_KEY = 'notifications_filters_v1';
+    const NOTIFICATION_LOADING_TEXT = '正在加载个人消息...';
+    const ADMIN_NOTIFICATION_LOADING_TEXT = '正在加载个人提醒...';
+    const NOTIFICATION_LOAD_ERROR_TEXT = '个人消息加载失败，请稍后重试';
+    const NOTIFICATION_CLIENT_READY_TIMEOUT_MS = 10000;
+    const NOTIFICATION_ADMIN_ACCESS_READY_TIMEOUT_MS = 1800;
+    const NOTIFICATION_READY_POLL_MS = 120;
+    const NOTIFICATION_RUNTIME_RETRY_MS = 1400;
+    const NOTIFICATION_SWIPE_OPEN_THRESHOLD_PX = 54;
+    const NOTIFICATION_SWIPE_MAX_OFFSET_PX = 188;
+    const NOTIFICATION_SWIPE_CLICK_SUPPRESS_MS = 520;
+    const NOTIFICATION_SWIPE_INTENT_THRESHOLD_PX = 14;
+    const NOTIFICATION_SWIPE_CLICK_DRAG_THRESHOLD_PX = 24;
+    const NOTIFICATION_TAP_ACTIVATE_THRESHOLD_PX = 10;
 
     // State
     let notifications = [];
     let unreadCount = 0;
+    let notificationsLoaded = false;
+    let notificationsLoading = false;
+    let notificationLoadError = '';
+    let notificationInitPromise = null;
+    let notificationFetchPromise = null;
+    let notificationActiveUserId = '';
+    let notificationRealtimeChannel = null;
+    let notificationRealtimeUserId = '';
+    let notifSwipeShell = null;
+    let notifSwipePointerId = null;
+    let notifSwipeStartX = 0;
+    let notifSwipeStartY = 0;
+    let notifSwipeDeltaX = 0;
+    let notifSwipeRawDeltaX = 0;
+    let notifSwipeRawDeltaY = 0;
+    let notifSwipeTracking = false;
+    let notifSwipeLocked = false;
+    let notifSwipePointerCaptureTarget = null;
+    let notifSwipeSuppressClickShell = null;
+    let notifSwipeSuppressClickUntil = 0;
     let notifScrollLocked = false;
     let notifSavedScrollY = 0;
     let notifTouchStartY = 0;
@@ -94,12 +127,121 @@
     let notificationChromeRepaintTimerIds = [];
     let notificationDrawerOpeningTimerId = null;
     let notificationDrawerClosingTimerId = null;
+    let notificationContentEntryTimerId = null;
+    let notificationRuntimeRetryTimerId = null;
     let currentNotificationViewer = {
         isAdmin: false
     };
 
     function normalizeText(value) {
         return String(value || '').trim();
+    }
+
+    function isSupabaseClientReady() {
+        return Boolean(
+            window.supabaseClient
+            && typeof window.supabaseClient.from === 'function'
+            && window.supabaseClient.auth
+            && typeof window.supabaseClient.auth.getUser === 'function'
+        );
+    }
+
+    function waitForRuntime(predicate, timeoutMs, pollMs = NOTIFICATION_READY_POLL_MS, eventName = '') {
+        if (typeof predicate === 'function' && predicate()) {
+            return Promise.resolve(true);
+        }
+
+        return new Promise((resolve) => {
+            const startedAt = Date.now();
+            let timerId = 0;
+            let settled = false;
+
+            const cleanup = () => {
+                if (timerId) {
+                    window.clearTimeout(timerId);
+                    timerId = 0;
+                }
+                if (eventName) {
+                    window.removeEventListener(eventName, checkReady);
+                }
+            };
+
+            const finish = (ready) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                resolve(Boolean(ready));
+            };
+
+            const schedule = () => {
+                timerId = window.setTimeout(checkReady, Math.max(40, Number(pollMs) || NOTIFICATION_READY_POLL_MS));
+            };
+
+            function checkReady() {
+                if (typeof predicate === 'function' && predicate()) {
+                    finish(true);
+                    return;
+                }
+                if ((Date.now() - startedAt) >= Math.max(0, Number(timeoutMs) || 0)) {
+                    finish(false);
+                    return;
+                }
+                schedule();
+            }
+
+            if (eventName) {
+                window.addEventListener(eventName, checkReady);
+            }
+            schedule();
+        });
+    }
+
+    async function waitForSupabaseClientReady() {
+        const ready = await waitForRuntime(
+            isSupabaseClientReady,
+            NOTIFICATION_CLIENT_READY_TIMEOUT_MS,
+            NOTIFICATION_READY_POLL_MS,
+            'zaoyoe:supabase-client-state'
+        );
+        return ready ? window.supabaseClient : null;
+    }
+
+    async function waitForAdminAccessRuntime() {
+        await waitForRuntime(
+            () => typeof window.AdminAccess?.getCurrentAdminAccess === 'function',
+            NOTIFICATION_ADMIN_ACCESS_READY_TIMEOUT_MS,
+            NOTIFICATION_READY_POLL_MS
+        );
+    }
+
+    function clearNotificationRuntimeRetryTimer() {
+        if (notificationRuntimeRetryTimerId) {
+            window.clearTimeout(notificationRuntimeRetryTimerId);
+            notificationRuntimeRetryTimerId = null;
+        }
+    }
+
+    function scheduleNotificationRuntimeRetry() {
+        if (notificationRuntimeRetryTimerId || notificationsLoaded) {
+            return;
+        }
+
+        notificationRuntimeRetryTimerId = window.setTimeout(() => {
+            notificationRuntimeRetryTimerId = null;
+            if (notificationsLoaded) {
+                return;
+            }
+            void window.initNotificationSystem?.({ forceRefresh: true });
+        }, NOTIFICATION_RUNTIME_RETRY_MS);
+    }
+
+    function keepNotificationDrawerLoadingAndRetry() {
+        if (notifications.length === 0) {
+            notificationsLoading = true;
+        }
+        notificationLoadError = '';
+        renderOpenNotificationDrawer();
+        scheduleNotificationRuntimeRetry();
     }
 
     function normalizeAdminNotificationFilterValue(value) {
@@ -289,6 +431,34 @@
             : EMPTY_PERSONAL_MESSAGE_TEXT;
     }
 
+    function getNotificationLoadingText() {
+        return currentNotificationViewer.isAdmin
+            ? ADMIN_NOTIFICATION_LOADING_TEXT
+            : NOTIFICATION_LOADING_TEXT;
+    }
+
+    function getNotificationLoadingHtml() {
+        const label = escapeHtml(getNotificationLoadingText());
+        return `
+            <div class="notif-empty notif-empty--loading" role="status" aria-label="${label}">
+                <span class="notif-loading-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+            </div>
+        `;
+    }
+
+    function renderNotificationLoadingState(list) {
+        const existingLoading = list?.querySelector?.('.notif-empty--loading');
+        if (existingLoading instanceof HTMLElement) {
+            existingLoading.setAttribute('aria-label', getNotificationLoadingText());
+            return;
+        }
+        list.innerHTML = getNotificationLoadingHtml();
+    }
+
+    function getNotificationLoadErrorText() {
+        return notificationLoadError || NOTIFICATION_LOAD_ERROR_TEXT;
+    }
+
     function matchesAnyPattern(value, patterns = []) {
         return patterns.some((pattern) => pattern.test(value));
     }
@@ -425,6 +595,7 @@
 
     async function resolveNotificationViewer() {
         try {
+            await waitForAdminAccessRuntime();
             const access = await window.AdminAccess?.getCurrentAdminAccess?.({ forceRefresh: true });
             currentNotificationViewer = {
                 isAdmin: Boolean(access?.isAdmin)
@@ -441,6 +612,17 @@
 
     function getDrawerListFromTarget(target) {
         if (!target || typeof target.closest !== 'function') return null;
+        const cardList = target.closest('.notif-card-list');
+        if (cardList instanceof HTMLElement) {
+            return cardList;
+        }
+
+        const module = target.closest('.notif-module-container');
+        const moduleCardList = module?.querySelector?.('.notif-card-list');
+        if (moduleCardList instanceof HTMLElement) {
+            return moduleCardList;
+        }
+
         return target.closest('#notifDrawerList');
     }
 
@@ -532,14 +714,6 @@
         drawer.className = 'notif-drawer';
         drawer.setAttribute('aria-label', PERSONAL_MESSAGE_TITLE);
         drawer.innerHTML = `
-            <div class="notif-drawer-header">
-                <div class="notif-drawer-actions">
-                    <div class="notif-clear-all" data-notif-action="clear-all" role="button" tabindex="0" aria-disabled="true">
-                        <i class="fas fa-times icon-x"></i>
-                        <span class="text-clear" data-i18n="nav.clearAll">全部清除</span>
-                    </div>
-                </div>
-            </div>
             <div class="notif-drawer-list" id="notifDrawerList">
                 <div class="notif-empty" data-i18n="nav.noNotifications">${getNotificationEmptyText()}</div>
             </div>
@@ -555,12 +729,21 @@
 
         // Attach Event Delegation
         const list = document.getElementById('notifDrawerList');
-        if (list) list.addEventListener('click', handleDrawerListClick);
+        if (list) {
+            list.addEventListener('click', handleDrawerListClick);
+            list.addEventListener('keydown', handleDrawerListKeydown);
+            list.addEventListener('pointerdown', handleNotificationCardPointerDown);
+            list.addEventListener('pointermove', handleNotificationCardPointerMove);
+            list.addEventListener('pointerup', handleNotificationCardPointerEnd);
+            list.addEventListener('pointercancel', handleNotificationCardPointerCancel);
+            list.addEventListener('wheel', handleNotificationCardWheel, { passive: false });
+        }
     }
 
     function handleDrawerClick(e) {
         const actionEl = e.target.closest('[data-notif-action]');
         if (!actionEl) {
+            closeNotificationActionRails();
             return;
         }
 
@@ -630,21 +813,46 @@
             return;
         }
 
+        const markReadBtn = e.target.closest('[data-notif-action="mark-read"]');
+        if (markReadBtn instanceof HTMLElement) {
+            e.preventDefault();
+            e.stopPropagation();
+            if (markReadBtn.getAttribute('aria-disabled') === 'true') {
+                return;
+            }
+            const shell = markReadBtn.closest('.notif-card-shell');
+            const card = shell?.querySelector('.notif-card') || null;
+            window.markNotificationRead?.(markReadBtn.dataset.notifId || '', card);
+            closeNotificationActionRails();
+            return;
+        }
+
+        const deleteBtn = e.target.closest('[data-notif-action="delete-notification"]');
+        if (deleteBtn instanceof HTMLElement) {
+            e.preventDefault();
+            e.stopPropagation();
+            const id = deleteBtn.dataset.notifId || '';
+            const shell = deleteBtn.closest('.notif-card-shell');
+            if (id && window.deleteNotification) {
+                window.deleteNotification(null, id, shell);
+            }
+            return;
+        }
+
+        const shell = getNotificationShellFromTarget(e.target);
+        if (shouldSuppressNotificationCardClick(shell)) {
+            e.preventDefault();
+            e.stopPropagation();
+            return;
+        }
+
         // 1. Handle Notification Click
-        const card = e.target.closest('.notif-card');
+        const card = e.target.closest('.notif-card') || shell?.querySelector?.('.notif-card');
         if (card) {
-            // Check if it was the Close Button
-            const closeBtn = e.target.closest('.notif-card-close');
-            if (closeBtn) {
-                e.preventDefault(); // Prevent default action
-                e.stopPropagation(); // Stop bubbling to card click
-
-                // Extract ID from card dataset
-                const id = card.dataset.id;
-
-                if (id && window.deleteNotification) {
-                    window.deleteNotification(null, id, card);
-                }
+            if (shell?.classList.contains('is-actions-open')) {
+                e.preventDefault();
+                e.stopPropagation();
+                closeNotificationActionRails();
                 return;
             }
 
@@ -654,7 +862,303 @@
             if (id && window.handleNotifClick) {
                 window.handleNotifClick(id, card);
             }
+            e.stopPropagation();
+            return;
         }
+
+        if (closeNotificationActionRails()) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }
+
+    function handleDrawerListKeydown(e) {
+        if (e.key !== 'Enter' && e.key !== ' ') {
+            return;
+        }
+        if (e.target?.closest?.('[data-notif-action]')) {
+            return;
+        }
+
+        const card = e.target?.closest?.('.notif-card');
+        const shell = getNotificationShellFromTarget(card || e.target);
+        if (!shell) {
+            return;
+        }
+
+        if (activateNotificationCardShell(shell)) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+    }
+
+    function getNotificationShellFromTarget(target) {
+        if (!target || typeof target.closest !== 'function') {
+            return null;
+        }
+        const shell = target.closest('.notif-card-shell');
+        return shell instanceof HTMLElement ? shell : null;
+    }
+
+    function closeNotificationActionRails(exceptShell = null) {
+        let closedCount = 0;
+        document.querySelectorAll('.notif-card-shell.is-actions-open').forEach((shell) => {
+            if (exceptShell && shell === exceptShell) {
+                return;
+            }
+            shell.classList.remove('is-actions-open');
+            shell.style.removeProperty('--notif-card-swipe-x');
+            closedCount += 1;
+        });
+        return closedCount > 0;
+    }
+
+    function shouldSuppressNotificationCardClick(shell) {
+        if (!notifSwipeSuppressClickShell) {
+            return false;
+        }
+
+        if (Date.now() > notifSwipeSuppressClickUntil) {
+            notifSwipeSuppressClickShell = null;
+            notifSwipeSuppressClickUntil = 0;
+            return false;
+        }
+
+        return !shell || shell === notifSwipeSuppressClickShell;
+    }
+
+    function suppressNextNotificationCardClick(shell) {
+        if (!(shell instanceof HTMLElement)) {
+            return;
+        }
+        notifSwipeSuppressClickShell = shell;
+        notifSwipeSuppressClickUntil = Date.now() + NOTIFICATION_SWIPE_CLICK_SUPPRESS_MS;
+    }
+
+    function stopNotificationActivationEvent(event) {
+        if (event?.cancelable) {
+            event.preventDefault();
+        }
+        event?.stopPropagation?.();
+    }
+
+    function activateNotificationCardShell(shell) {
+        if (!(shell instanceof HTMLElement) || shell.classList.contains('exit')) {
+            return false;
+        }
+
+        const card = shell.querySelector('.notif-card');
+        if (!(card instanceof HTMLElement)) {
+            return false;
+        }
+
+        if (shell.classList.contains('is-actions-open')) {
+            closeNotificationActionRails();
+            return true;
+        }
+
+        const id = card.dataset.id || '';
+        if (!id || typeof window.handleNotifClick !== 'function') {
+            return false;
+        }
+
+        window.handleNotifClick(id, card);
+        return true;
+    }
+
+    function resetNotificationSwipeState() {
+        if (notifSwipePointerCaptureTarget && notifSwipePointerId != null) {
+            try {
+                if (notifSwipePointerCaptureTarget.hasPointerCapture?.(notifSwipePointerId)) {
+                    notifSwipePointerCaptureTarget.releasePointerCapture?.(notifSwipePointerId);
+                }
+            } catch (_) {
+                // Ignore capture cleanup differences across browsers and synthetic smoke events.
+            }
+        }
+        if (notifSwipeShell) {
+            notifSwipeShell.classList.remove('is-swiping');
+            notifSwipeShell.style.removeProperty('--notif-card-swipe-x');
+        }
+        notifSwipeShell = null;
+        notifSwipePointerId = null;
+        notifSwipePointerCaptureTarget = null;
+        notifSwipeStartX = 0;
+        notifSwipeStartY = 0;
+        notifSwipeDeltaX = 0;
+        notifSwipeRawDeltaX = 0;
+        notifSwipeRawDeltaY = 0;
+        notifSwipeTracking = false;
+        notifSwipeLocked = false;
+    }
+
+    function handleNotificationCardPointerDown(event) {
+        if (event.button && event.button !== 0) {
+            return;
+        }
+        if (event.target?.closest?.('[data-notif-action]')) {
+            return;
+        }
+
+        const shell = getNotificationShellFromTarget(event.target);
+        if (!shell || shell.classList.contains('exit')) {
+            return;
+        }
+
+        notifSwipeShell = shell;
+        notifSwipePointerId = event.pointerId;
+        notifSwipePointerCaptureTarget = event.currentTarget instanceof HTMLElement ? event.currentTarget : shell;
+        try {
+            notifSwipePointerCaptureTarget?.setPointerCapture?.(event.pointerId);
+        } catch (_) {
+            // Some synthetic/local smoke events do not support pointer capture.
+        }
+        notifSwipeStartX = Number(event.clientX || 0);
+        notifSwipeStartY = Number(event.clientY || 0);
+        notifSwipeDeltaX = 0;
+        notifSwipeRawDeltaX = 0;
+        notifSwipeRawDeltaY = 0;
+        notifSwipeTracking = true;
+        notifSwipeLocked = false;
+    }
+
+    function handleNotificationCardPointerMove(event) {
+        if (!notifSwipeTracking || !notifSwipeShell || event.pointerId !== notifSwipePointerId) {
+            return;
+        }
+
+        const deltaX = Number(event.clientX || 0) - notifSwipeStartX;
+        const deltaY = Number(event.clientY || 0) - notifSwipeStartY;
+        notifSwipeRawDeltaX = deltaX;
+        notifSwipeRawDeltaY = deltaY;
+        if (!notifSwipeLocked) {
+            const intentThreshold = event.pointerType === 'mouse'
+                ? NOTIFICATION_SWIPE_INTENT_THRESHOLD_PX + 4
+                : NOTIFICATION_SWIPE_INTENT_THRESHOLD_PX;
+            if (Math.abs(deltaX) < intentThreshold && Math.abs(deltaY) < intentThreshold) {
+                return;
+            }
+            if (Math.abs(deltaY) > Math.abs(deltaX)) {
+                resetNotificationSwipeState();
+                return;
+            }
+            notifSwipeLocked = true;
+            notifSwipeShell.classList.add('is-swiping');
+            closeNotificationActionRails(notifSwipeShell);
+        }
+
+        if (event.cancelable) {
+            event.preventDefault();
+        }
+
+        const wasOpen = notifSwipeShell.classList.contains('is-actions-open');
+        const baseOffset = wasOpen ? -NOTIFICATION_SWIPE_MAX_OFFSET_PX : 0;
+        const offset = Math.max(-NOTIFICATION_SWIPE_MAX_OFFSET_PX, Math.min(0, baseOffset + deltaX));
+        notifSwipeDeltaX = offset;
+        notifSwipeShell.style.setProperty('--notif-card-swipe-x', `${Math.round(offset)}px`);
+    }
+
+    function getNotificationSwipeEndDelta(event) {
+        const hasClientX = event && typeof event.clientX === 'number';
+        const hasClientY = event && typeof event.clientY === 'number';
+        return {
+            x: hasClientX ? Number(event.clientX) - notifSwipeStartX : notifSwipeRawDeltaX,
+            y: hasClientY ? Number(event.clientY) - notifSwipeStartY : notifSwipeRawDeltaY
+        };
+    }
+
+    function handleNotificationCardPointerEnd(event) {
+        if (!notifSwipeTracking || !notifSwipeShell || event.pointerId !== notifSwipePointerId) {
+            return;
+        }
+
+        const shell = notifSwipeShell;
+        const endDelta = getNotificationSwipeEndDelta(event);
+        notifSwipeRawDeltaX = endDelta.x;
+        notifSwipeRawDeltaY = endDelta.y;
+
+        if (
+            !notifSwipeLocked
+            && Math.abs(endDelta.x) <= NOTIFICATION_TAP_ACTIVATE_THRESHOLD_PX
+            && Math.abs(endDelta.y) <= NOTIFICATION_TAP_ACTIVATE_THRESHOLD_PX
+        ) {
+            if (activateNotificationCardShell(shell)) {
+                suppressNextNotificationCardClick(shell);
+                stopNotificationActivationEvent(event);
+            }
+            resetNotificationSwipeState();
+            return;
+        }
+
+        const shouldOpen = notifSwipeLocked
+            ? notifSwipeDeltaX <= -NOTIFICATION_SWIPE_OPEN_THRESHOLD_PX
+                || endDelta.x <= -NOTIFICATION_SWIPE_OPEN_THRESHOLD_PX
+            : shell.classList.contains('is-actions-open');
+        const shouldSuppressClick = notifSwipeLocked
+            && (shouldOpen || Math.abs(notifSwipeRawDeltaX) >= NOTIFICATION_SWIPE_CLICK_DRAG_THRESHOLD_PX);
+
+        if (shouldSuppressClick) {
+            suppressNextNotificationCardClick(shell);
+            stopNotificationActivationEvent(event);
+        }
+
+        shell.classList.toggle('is-actions-open', shouldOpen);
+        shell.classList.remove('is-swiping');
+        shell.style.removeProperty('--notif-card-swipe-x');
+        if (shouldOpen) {
+            closeNotificationActionRails(shell);
+        }
+
+        resetNotificationSwipeState();
+    }
+
+    function handleNotificationCardPointerCancel(event) {
+        if (!notifSwipeTracking || !notifSwipeShell || event.pointerId !== notifSwipePointerId) {
+            resetNotificationSwipeState();
+            return;
+        }
+
+        const shell = notifSwipeShell;
+        if (notifSwipeLocked) {
+            const shouldOpen = notifSwipeDeltaX <= -NOTIFICATION_SWIPE_OPEN_THRESHOLD_PX
+                || notifSwipeRawDeltaX <= -NOTIFICATION_SWIPE_OPEN_THRESHOLD_PX;
+            shell.classList.toggle('is-actions-open', shouldOpen);
+            shell.classList.remove('is-swiping');
+            shell.style.removeProperty('--notif-card-swipe-x');
+            if (shouldOpen) {
+                closeNotificationActionRails(shell);
+                suppressNextNotificationCardClick(shell);
+            }
+        }
+
+        resetNotificationSwipeState();
+    }
+
+    function handleNotificationCardWheel(event) {
+        const shell = getNotificationShellFromTarget(event.target);
+        if (!shell || event.target?.closest?.('[data-notif-action]')) {
+            return;
+        }
+
+        const deltaX = Number(event.deltaX || 0);
+        const deltaY = Number(event.deltaY || 0);
+        if (Math.abs(deltaX) < 18 || Math.abs(deltaX) <= Math.abs(deltaY)) {
+            return;
+        }
+
+        if (event.cancelable) {
+            event.preventDefault();
+        }
+        event.stopPropagation?.();
+
+        if (deltaX > 0) {
+            closeNotificationActionRails(shell);
+            shell.classList.add('is-actions-open');
+        } else {
+            shell.classList.remove('is-actions-open');
+        }
+        shell.classList.remove('is-swiping');
+        shell.style.removeProperty('--notif-card-swipe-x');
     }
 
     // Toggle Drawer
@@ -670,6 +1174,11 @@
         if (drawer.classList.contains('active')) {
             closeDrawer();
         } else {
+            const shouldStartLoad = !notificationsLoaded || !notificationActiveUserId || notificationLoadError;
+            if (shouldStartLoad && !notifications.length) {
+                notificationsLoading = true;
+                notificationLoadError = '';
+            }
             clearNotificationDrawerMotionTimers();
             drawer.classList.remove('notif-drawer-closing');
             backdrop.classList.remove('notif-backdrop-closing');
@@ -677,6 +1186,9 @@
             backdrop.classList.add('active');
             lockNotificationBackgroundScroll();
             renderNotifications();
+            if (shouldStartLoad) {
+                void window.initNotificationSystem?.();
+            }
             notificationDrawerOpeningTimerId = window.setTimeout(() => {
                 drawer.classList.remove('notif-drawer-opening');
                 notificationDrawerOpeningTimerId = null;
@@ -776,6 +1288,9 @@
         const backdrop = document.getElementById('notifBackdrop');
         const wasOpen = drawer?.classList.contains('active') || backdrop?.classList.contains('active');
 
+        closeNotificationActionRails();
+        resetNotificationSwipeState();
+
         if (wasOpen && isMobileNotificationViewport()) {
             clearNotificationDrawerMotionTimers();
             drawer?.classList.remove('notif-drawer-opening');
@@ -805,27 +1320,157 @@
     }
 
     // Core Functions
-    window.initNotificationSystem = async function () {
-        const user = await getCurrentUser();
-        const wrapper = document.getElementById('navNotifWrapper');
+    window.initNotificationSystem = async function (options = {}) {
+        if (notificationInitPromise) {
+            return notificationInitPromise;
+        }
 
-        if (!user) {
-        if (wrapper) wrapper.hidden = true;
+        const forceRefresh = options?.forceRefresh === true;
+        if (!notificationsLoaded || !notificationActiveUserId || forceRefresh) {
+            notificationsLoading = notifications.length === 0 || !notificationsLoaded;
+            notificationLoadError = '';
+            renderOpenNotificationDrawer();
+        }
+
+        notificationInitPromise = (async () => {
+            const wrapper = document.getElementById('navNotifWrapper');
+            const client = await waitForSupabaseClientReady();
+            if (!client) {
+                keepNotificationDrawerLoadingAndRetry();
+                return [];
+            }
+            clearNotificationRuntimeRetryTimer();
+
+            const user = await getCurrentUser();
+            const userId = normalizeText(user?.id);
+
+            if (!userId) {
+                resetNotificationState();
+                if (wrapper) wrapper.hidden = true;
+                return [];
+            }
+
+            if (notificationActiveUserId && notificationActiveUserId !== userId) {
+                resetNotificationState({ keepRealtime: false });
+            }
+            notificationActiveUserId = userId;
+
+            await resolveNotificationViewer();
+
+            if (wrapper) wrapper.hidden = false;
+            if (notificationsLoaded && notificationActiveUserId === userId && !forceRefresh) {
+                setupNotificationRealtime(userId);
+                return notifications;
+            }
+
+            await fetchNotifications(userId, { forceRefresh });
+            setupNotificationRealtime(userId);
+            return notifications;
+        })().catch((error) => {
+            notificationLoadError = NOTIFICATION_LOAD_ERROR_TEXT;
+            notificationsLoading = false;
+            notificationsLoaded = false;
+            updateBadge();
+            renderOpenNotificationDrawer();
+            console.error('Failed to initialize notifications:', error);
+            return [];
+        }).finally(() => {
+            notificationInitPromise = null;
+        });
+
+        return notificationInitPromise;
+    };
+
+    function resetNotificationState(options = {}) {
+        const keepRealtime = options?.keepRealtime === true;
+        notifications = [];
+        unreadCount = 0;
+        notificationsLoaded = false;
+        notificationsLoading = false;
+        notificationLoadError = '';
+        notificationActiveUserId = '';
+        notificationFetchPromise = null;
+        clearNotificationRuntimeRetryTimer();
+
+        if (!keepRealtime) {
+            removeNotificationRealtimeChannel();
+        }
+
+        updateBadge();
+        renderOpenNotificationDrawer();
+    }
+
+    if (window.__ZAOYOE_LOCAL_SMOKE__) {
+        window.__resetNotificationSystemForSmoke = function () {
+            resetNotificationState({ keepRealtime: false });
+        };
+    }
+
+    window.addEventListener('zaoyoe:supabase-client-state', (event) => {
+        const status = normalizeText(event?.detail?.status).toLowerCase();
+        if (status !== 'ready') {
+            return;
+        }
+        clearNotificationRuntimeRetryTimer();
+        if (!notificationsLoaded || notificationLoadError || notificationsLoading) {
+            void window.initNotificationSystem?.({ forceRefresh: true });
+        }
+    });
+
+    async function getCurrentUser() {
+        if (!isSupabaseClientReady()) {
+            return null;
+        }
+
+        const { data, error } = await window.supabaseClient.auth.getUser();
+        if (error) {
+            console.warn('Failed to resolve notification user:', error?.message || error);
+            return null;
+        }
+
+        return data?.user || null;
+    }
+
+    function removeNotificationRealtimeChannel() {
+        if (!notificationRealtimeChannel) {
+            notificationRealtimeUserId = '';
             return;
         }
 
-        await resolveNotificationViewer();
+        const channel = notificationRealtimeChannel;
+        notificationRealtimeChannel = null;
+        notificationRealtimeUserId = '';
 
-        if (wrapper) wrapper.hidden = false;
-        fetchNotifications(user.id);
+        try {
+            if (typeof window.supabaseClient?.removeChannel === 'function') {
+                window.supabaseClient.removeChannel(channel);
+                return;
+            }
+            channel?.unsubscribe?.();
+        } catch (error) {
+            console.warn('Failed to remove notification realtime channel:', error?.message || error);
+        }
+    }
 
-        window.supabaseClient
-            .channel('public:system_notifications')
+    function setupNotificationRealtime(userId) {
+        const normalizedUserId = normalizeText(userId);
+        if (!normalizedUserId || !window.supabaseClient || typeof window.supabaseClient.channel !== 'function') {
+            return;
+        }
+
+        if (notificationRealtimeChannel && notificationRealtimeUserId === normalizedUserId) {
+            return;
+        }
+
+        removeNotificationRealtimeChannel();
+
+        notificationRealtimeChannel = window.supabaseClient
+            .channel(`public:system_notifications:${normalizedUserId}`)
             .on('postgres_changes', {
                 event: 'INSERT',
                 schema: 'public',
                 table: 'system_notifications',
-                filter: `user_id=eq.${user.id}`
+                filter: `user_id=eq.${normalizedUserId}`
             }, payload => {
                 if (!shouldIncludeNotification(payload.new)) {
                     return;
@@ -833,6 +1478,8 @@
                 const nextNotification = syncNotificationPinnedState([payload.new])[0] || payload.new;
                 notifications.unshift(nextNotification);
                 notifications = getSortedNotifications(notifications);
+                notificationsLoaded = true;
+                notificationLoadError = '';
                 if (nextNotification.is_read !== true) {
                     unreadCount++;
                 }
@@ -840,39 +1487,82 @@
                 renderNotifications();
             })
             .subscribe();
-    };
-
-    async function getCurrentUser() {
-        const { data: { user } } = await window.supabaseClient.auth.getUser();
-        return user;
+        notificationRealtimeUserId = normalizedUserId;
     }
 
-    async function fetchNotifications(userId) {
-        try {
-            const { data, error } = await window.supabaseClient
-                .from('system_notifications')
-                .select('*')
-                .eq('user_id', userId)
-                .order('created_at', { ascending: false })
-                .limit(50);
-
-            if (error) throw error;
-            notifications = syncNotificationPinnedState((data || []).filter((row) => shouldIncludeNotification(row)));
-            notifications = getSortedNotifications(notifications);
-            prunePinnedNotificationIds(notifications);
-            unreadCount = notifications.filter(n => !n.is_read).length;
-
-            updateBadge();
-            renderOpenNotificationDrawer();
-        } catch (err) {
-            console.error('Failed to load notifications:', err);
+    async function fetchNotifications(userId, options = {}) {
+        const normalizedUserId = normalizeText(userId);
+        if (!normalizedUserId || !isSupabaseClientReady()) {
+            return [];
         }
+
+        if (notificationFetchPromise) {
+            return notificationFetchPromise;
+        }
+
+        const forceRefresh = options?.forceRefresh === true;
+        if (notificationsLoaded && notificationActiveUserId === normalizedUserId && !forceRefresh) {
+            return notifications;
+        }
+
+        notificationsLoading = notifications.length === 0 || !notificationsLoaded;
+        notificationLoadError = '';
+        renderOpenNotificationDrawer();
+
+        const currentFetchPromise = (async () => {
+            try {
+                const { data, error } = await window.supabaseClient
+                    .from('system_notifications')
+                    .select('*')
+                    .eq('user_id', normalizedUserId)
+                    .order('created_at', { ascending: false })
+                    .limit(50);
+
+                if (error) throw error;
+                if (notificationActiveUserId !== normalizedUserId) {
+                    return notifications;
+                }
+
+                const shouldAnimateLoadedNotifications = notificationsLoading === true;
+                notifications = syncNotificationPinnedState((data || []).filter((row) => shouldIncludeNotification(row)));
+                notifications = getSortedNotifications(notifications);
+                prunePinnedNotificationIds(notifications);
+                unreadCount = notifications.filter(n => !n.is_read).length;
+                notificationsLoaded = true;
+                notificationsLoading = false;
+                notificationLoadError = '';
+
+                updateBadge();
+                renderOpenNotificationDrawer({
+                    animateCards: shouldAnimateLoadedNotifications,
+                    restartDrawerEntry: shouldAnimateLoadedNotifications
+                });
+                return notifications;
+            } catch (err) {
+                if (notificationActiveUserId === normalizedUserId) {
+                    notificationLoadError = NOTIFICATION_LOAD_ERROR_TEXT;
+                    notificationsLoaded = false;
+                    notificationsLoading = false;
+                    updateBadge();
+                    renderOpenNotificationDrawer();
+                }
+                console.error('Failed to load notifications:', err);
+                return [];
+            } finally {
+                if (notificationFetchPromise === currentFetchPromise) {
+                    notificationFetchPromise = null;
+                }
+            }
+        })();
+
+        notificationFetchPromise = currentFetchPromise;
+        return currentFetchPromise;
     }
 
-    function renderOpenNotificationDrawer() {
+    function renderOpenNotificationDrawer(options = {}) {
         const drawer = document.getElementById('notifDrawer');
         if (drawer?.classList.contains('active')) {
-            renderNotifications();
+            renderNotifications(options);
         }
     }
 
@@ -1008,20 +1698,9 @@
                 </button>
             `;
         }).join('');
-        const markReadDisabled = unreadCount <= 0;
-
         return `
             <div class="notif-filter-strip" data-notif-filter-strip="admin">
                 ${filterButtons}
-                <button
-                    type="button"
-                    class="notif-filter-chip notif-mark-read notif-mark-read-chip${markReadDisabled ? ' is-disabled' : ''}"
-                    data-notif-action="mark-all-read"
-                    aria-disabled="${markReadDisabled ? 'true' : 'false'}"
-                >
-                    <i class="fas fa-envelope-open-text"></i>
-                    <span>全部已读</span>
-                </button>
             </div>
         `;
     }
@@ -1038,6 +1717,7 @@
             read: safeNotifications.filter((notification) => notification?.is_read === true).length
         };
         const clearReadDisabled = countMap.read <= 0;
+        const markReadDisabled = unreadCount <= 0;
         const readFilterMeta = {
             all: '全部',
             unread: '未读',
@@ -1059,12 +1739,48 @@
                 `).join('')}
                 <button
                     type="button"
+                    class="notif-filter-chip notif-mark-read notif-mark-read-chip${markReadDisabled ? ' is-disabled' : ''}"
+                    data-notif-action="mark-all-read"
+                    aria-disabled="${markReadDisabled ? 'true' : 'false'}"
+                >
+                    <i class="fas fa-envelope-open-text"></i>
+                    <span>全部已读</span>
+                </button>
+                <button
+                    type="button"
                     class="notif-filter-chip notif-clear-read-chip${clearReadDisabled ? ' is-disabled' : ''}"
                     data-notif-action="clear-read"
                     aria-disabled="${clearReadDisabled ? 'true' : 'false'}"
                 >
                     <span>清除已读</span>
                 </button>
+            </div>
+        `;
+    }
+
+    function wrapNotificationFilterControls(...htmlParts) {
+        const html = htmlParts.filter(Boolean).join('');
+        if (!html.trim()) {
+            return '';
+        }
+
+        return `
+            <div class="notif-filter-panel" data-notif-filter-panel>
+                ${html}
+            </div>
+        `;
+    }
+
+    function wrapNotificationModule(filterHtml = '', contentHtml = '') {
+        return `
+            <div class="notif-module-shell" data-notif-module-shell>
+                <div class="notif-filter-title" data-notif-filter-title>通知</div>
+                <div class="notif-module-container" data-notif-module-container>
+                    ${filterHtml}
+                    <div class="notif-card-list" data-notif-card-list>
+                        ${contentHtml}
+                    </div>
+                </div>
             </div>
         `;
     }
@@ -1077,6 +1793,10 @@
         if (notificationDrawerOpeningTimerId) {
             window.clearTimeout(notificationDrawerOpeningTimerId);
             notificationDrawerOpeningTimerId = null;
+        }
+        if (notificationContentEntryTimerId) {
+            window.clearTimeout(notificationContentEntryTimerId);
+            notificationContentEntryTimerId = null;
         }
     }
 
@@ -1092,6 +1812,36 @@
         clearNotificationDrawerClosingTimer();
     }
 
+    function setNotificationDrawerLoadingState(isLoading) {
+        const drawer = document.getElementById('notifDrawer');
+        if (!drawer) {
+            return;
+        }
+
+        const active = isLoading === true;
+        drawer.classList.toggle('notif-drawer-loading', active);
+        drawer.setAttribute('aria-busy', active ? 'true' : 'false');
+    }
+
+    function playNotificationContentEntryAnimation() {
+        const drawer = document.getElementById('notifDrawer');
+        if (!drawer?.classList.contains('active')) {
+            return;
+        }
+
+        if (notificationContentEntryTimerId) {
+            window.clearTimeout(notificationContentEntryTimerId);
+            notificationContentEntryTimerId = null;
+        }
+        drawer.classList.remove('notif-drawer-content-entering');
+        void drawer.offsetHeight;
+        drawer.classList.add('notif-drawer-content-entering');
+        notificationContentEntryTimerId = window.setTimeout(() => {
+            drawer.classList.remove('notif-drawer-content-entering');
+            notificationContentEntryTimerId = null;
+        }, 760);
+    }
+
     function cancelNotificationDrawerOpeningAnimation() {
         clearNotificationDrawerOpeningTimer();
         document.getElementById('notifDrawer')?.classList.remove('notif-drawer-opening');
@@ -1102,11 +1852,30 @@
         if (!list) return;
 
         const shouldAnimateCards = Boolean(options?.animateCards);
+        const shouldRestartDrawerEntry = shouldAnimateCards && options?.restartDrawerEntry === true;
+        const isLoadingState = !notifications.length && notificationsLoading && !notificationLoadError;
+        setNotificationDrawerLoadingState(isLoadingState);
 
         if (!notifications.length) {
+            if (isLoadingState) {
+                renderNotificationLoadingState(list);
+                updateDrawerActionState();
+                return;
+            }
+
+            if (notificationLoadError) {
+                list.innerHTML = `<div class="notif-empty notif-empty--error">${getNotificationLoadErrorText()}</div>`;
+                updateDrawerActionState();
+                return;
+            }
+
             list.innerHTML = `<div class="notif-empty" data-i18n="nav.noNotifications">${getNotificationEmptyText()}</div>`;
             updateDrawerActionState();
             return;
+        }
+
+        if (shouldAnimateCards && !shouldRestartDrawerEntry) {
+            cancelNotificationDrawerOpeningAnimation();
         }
 
         notifications = getSortedNotifications(syncNotificationPinnedState(notifications));
@@ -1114,86 +1883,127 @@
         const filteredNotifications = getFilteredNotifications(notifications);
         const filterStripHtml = buildAdminNotificationFilterStrip(notifications);
         const readFilterStripHtml = buildNotificationReadFilterStrip(categoryFilteredNotifications);
-        const combinedFilterHtml = `${filterStripHtml}${readFilterStripHtml}`;
+        const combinedFilterHtml = wrapNotificationFilterControls(filterStripHtml, readFilterStripHtml);
         const displayList = filteredNotifications;
 
         if (!filteredNotifications.length) {
-            list.innerHTML = `
-                ${combinedFilterHtml}
+            list.innerHTML = wrapNotificationModule(combinedFilterHtml, `
                 <div class="notif-empty" data-i18n="nav.noNotifications">${getNotificationEmptyText()}</div>
-            `;
+            `);
             updateDrawerActionState();
             return;
         }
 
-        let html = `${combinedFilterHtml}${displayList.map((n, index) => {
+        let html = wrapNotificationModule(combinedFilterHtml, displayList.map((n, index) => {
             const visualMeta = getNotificationVisualMeta(n);
             const categoryBadgeHtml = visualMeta.categoryMeta
                 ? `<span class="notif-card-tag notif-card-tag--${escapeHtml(visualMeta.categoryMeta.tone)}">${escapeHtml(visualMeta.categoryMeta.label)}</span>`
                 : '';
             const pinnedClass = n.is_pinned ? ' is-pinned' : '';
             const pinLabel = n.is_pinned ? '取消置顶' : '置顶';
+            const readActionDisabled = n.is_read === true;
             const animClass = shouldAnimateCards ? ' notif-card-filter-enter' : '';
 
             return `
                 <div
-                    class="notif-card ${!n.is_read ? 'unread' : ''}${pinnedClass}${animClass}"
-                    data-id="${n.id}"
+                    class="notif-card-shell${animClass}"
+                    data-id="${escapeHtml(String(n.id || ''))}"
                     data-notif-category="${escapeHtml(visualMeta.categoryMeta?.key || normalizeNotificationCategory(n.category) || '')}"
                 >
-                    <div class="notif-card-close">
-                        <i class="fas fa-times"></i>
+                    <div class="notif-card-actions" aria-label="通知操作">
+                        <button
+                            type="button"
+                            class="notif-card-action notif-card-action--pin${n.is_pinned ? ' is-active' : ''}"
+                            data-notif-action="toggle-pin"
+                            data-notif-id="${escapeHtml(String(n.id || ''))}"
+                            aria-pressed="${n.is_pinned ? 'true' : 'false'}"
+                        >
+                            <i class="fas fa-thumbtack"></i>
+                            <span>${escapeHtml(pinLabel)}</span>
+                        </button>
+                        <button
+                            type="button"
+                            class="notif-card-action notif-card-action--delete"
+                            data-notif-action="delete-notification"
+                            data-notif-id="${escapeHtml(String(n.id || ''))}"
+                        >
+                            <i class="fas fa-trash-alt"></i>
+                            <span>删除</span>
+                        </button>
+                        <button
+                            type="button"
+                            class="notif-card-action notif-card-action--read${readActionDisabled ? ' is-disabled' : ''}"
+                            data-notif-action="mark-read"
+                            data-notif-id="${escapeHtml(String(n.id || ''))}"
+                            aria-disabled="${readActionDisabled ? 'true' : 'false'}"
+                        >
+                            <i class="fas fa-envelope-open-text"></i>
+                            <span>已读</span>
+                        </button>
                     </div>
+                    <div
+                        class="notif-card ${!n.is_read ? 'unread' : ''}${pinnedClass}"
+                        data-id="${escapeHtml(String(n.id || ''))}"
+                        data-notif-category="${escapeHtml(visualMeta.categoryMeta?.key || normalizeNotificationCategory(n.category) || '')}"
+                        role="button"
+                        tabindex="0"
+                        aria-expanded="false"
+                    >
                     <div class="notif-card-header">
-                        <div class="notif-card-icon ${visualMeta.typeClass}">
-                            <i class="fas ${visualMeta.iconClass}"></i>
-                        </div>
                         <div class="notif-card-info">
                             <div class="notif-card-title-row">
                                 <div class="notif-card-title">${escapeHtml(n.title)}</div>
                                 ${categoryBadgeHtml}
-                                <button
-                                    type="button"
-                                    class="notif-card-pin${n.is_pinned ? ' is-active' : ''}"
-                                    data-notif-action="toggle-pin"
-                                    data-notif-id="${escapeHtml(String(n.id || ''))}"
-                                    aria-pressed="${n.is_pinned ? 'true' : 'false'}"
-                                    title="${escapeHtml(pinLabel)}"
-                                >
-                                    <i class="fas fa-thumbtack"></i>
-                                </button>
                             </div>
                             <div class="notif-card-body">${escapeHtml(n.content)}</div>
                         </div>
                         <div class="notif-card-time">${formatTimeAgo(n.created_at)}</div>
                     </div>
+                    </div>
                 </div>
             `;
-        }).join('')}`;
+        }).join(''));
 
         list.innerHTML = html;
+        if (shouldRestartDrawerEntry) {
+            playNotificationContentEntryAnimation();
+        }
         updateDrawerActionState();
     }
 
     window.handleNotifClick = function (id, el) {
-        // Toggle expanded state to show full text
         if (el) {
-            el.classList.toggle('expanded');
+            const expanded = el.classList.toggle('expanded');
+            el.closest('.notif-card-shell')?.classList.toggle('is-expanded', expanded);
+            el.setAttribute('aria-expanded', expanded ? 'true' : 'false');
         }
 
-        const note = notifications.find(n => n.id === id);
-        if (note && !note.is_read) {
-            note.is_read = true;
-            unreadCount = Math.max(0, unreadCount - 1);
-            updateBadge();
-            if (el) el.classList.remove('unread');
+        window.markNotificationRead?.(id, el, { rerender: false });
+    };
 
+    window.markNotificationRead = function (id, el = null, options = {}) {
+        const note = notifications.find(n => n.id === id);
+        if (!note || note.is_read) {
+            return false;
+        }
+
+        note.is_read = true;
+        unreadCount = Math.max(0, unreadCount - 1);
+        updateBadge();
+        if (el) el.classList.remove('unread');
+        if (options?.rerender !== false) {
+            renderNotifications();
+        }
+
+        if (window.supabaseClient) {
             window.supabaseClient
                 .from('system_notifications')
                 .update({ is_read: true })
                 .eq('id', id)
                 .then(() => { });
         }
+
+        return true;
     };
 
     window.toggleNotificationPin = function (id) {
@@ -1223,7 +2033,7 @@
     window.deleteNotification = function (e, id, targetCard = null) {
         if (e) e.stopPropagation();
 
-        const card = targetCard || (e ? e.target.closest('.notif-card') : null);
+        const card = targetCard || (e ? (e.target.closest('.notif-card-shell') || e.target.closest('.notif-card')) : null);
 
         if (!card) return;
 
@@ -1289,7 +2099,7 @@
 
         if (confirm('确定要清除所有通知吗？')) {
             const listContainer = document.getElementById('notifDrawerList');
-            const cards = Array.from(listContainer.querySelectorAll('.notif-card'));
+            const cards = Array.from(listContainer.querySelectorAll('.notif-card-shell'));
 
             if (cards.length === 0) {
                 completeClearAll();
@@ -1353,7 +2163,7 @@
         const readIdSet = new Set(readIds);
         const listContainer = document.getElementById('notifDrawerList');
         const visibleReadCards = listContainer
-            ? Array.from(listContainer.querySelectorAll('.notif-card')).filter((card) => readIdSet.has(getNotificationId(card.dataset.id)))
+            ? Array.from(listContainer.querySelectorAll('.notif-card-shell')).filter((card) => readIdSet.has(getNotificationId(card.dataset.id)))
             : [];
 
         if (!visibleReadCards.length) {
@@ -1396,7 +2206,7 @@
             localStorage.removeItem('notifications_v1');
         }
 
-        renderNotifications({ animateCards: true });
+        renderNotifications({ animateCards: false });
         await deleteNotificationsByIds(Array.from(readIdSet));
         return true;
     }
@@ -1470,10 +2280,20 @@
         return date.getHours().toString().padStart(2, '0') + ':' + date.getMinutes().toString().padStart(2, '0');
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
-        setTimeout(initNotificationSystem, 1000);
-    });
+    function scheduleInitialNotificationInit() {
+        setTimeout(() => {
+            window.initNotificationSystem?.();
+        }, 1000);
+    }
 
-    window.refreshNotifications = initNotificationSystem;
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', scheduleInitialNotificationInit, { once: true });
+    } else {
+        scheduleInitialNotificationInit();
+    }
+
+    window.refreshNotifications = function () {
+        return window.initNotificationSystem?.({ forceRefresh: true });
+    };
 
 })();

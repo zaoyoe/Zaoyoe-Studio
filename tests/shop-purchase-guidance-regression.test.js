@@ -177,7 +177,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /js\/shop-client\.js\?v=20260503_SHOP_MOBILE_FRESH_ENTER_2/,
+        /js\/shop-client\.js\?v=20260504_SHOP_DISCOUNT_ENGAGEMENT_1/,
         'shop.html should load the purchase-guidance rich-text runtime with the visible yellow normalization fix'
     );
     assert.match(

@@ -3594,12 +3594,22 @@
         }
 
         .shop-discount-asset-card__summary {
+            position: relative;
             list-style: none;
             display: grid;
             gap: 6px;
-            padding: 10px 12px;
+            padding: 10px 58px 10px 12px;
             cursor: pointer;
             transition: background 0.2s ease;
+        }
+
+        .shop-discount-asset-card--collapsible .shop-discount-asset-card__disclosure {
+            position: absolute;
+            top: 50%;
+            right: 12px;
+            transform: translateY(-50%);
+            margin-left: 0;
+            max-width: none;
         }
 
         .shop-discount-asset-card__summary-reason {
@@ -3717,7 +3727,7 @@
             gap: 10px;
             width: 100%;
             border: 1px solid rgba(255, 255, 255, 0.08);
-            background: rgba(255, 255, 255, 0.03);
+            background: rgba(255, 255, 255, 0.025);
             color: #e2e8f0;
             border-radius: 12px;
             padding: 9px 12px;
@@ -3725,13 +3735,16 @@
             line-height: 1.35;
             text-align: left;
             cursor: pointer;
-            transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+            transition:
+                border-color 0.18s ease,
+                background 0.18s ease,
+                transform 0.18s ease;
         }
 
         .shop-discount-asset-card__target-link:hover {
             transform: translateY(-1px);
-            border-color: rgba(187, 247, 208, 0.18);
-            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(187, 247, 208, 0.22);
+            background: rgba(255, 255, 255, 0.04);
         }
 
         .shop-discount-asset-card__target-link:focus-visible {
@@ -3751,16 +3764,27 @@
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            min-height: 28px;
-            padding: 0 10px;
+            gap: 5px;
+            min-height: 24px;
+            padding: 0 2px;
             border-radius: 999px;
-            border: 1px solid rgba(187, 247, 208, 0.18);
-            background: rgba(187, 247, 208, 0.08);
+            border: 0;
+            background: transparent;
             font-size: 11px;
-            font-weight: 600;
+            font-weight: 650;
             color: rgba(187, 247, 208, 0.82);
             white-space: nowrap;
             text-align: right;
+        }
+
+        .shop-discount-asset-card__target-action::after {
+            content: '';
+            width: 5px;
+            height: 5px;
+            border-top: 1.5px solid currentColor;
+            border-right: 1.5px solid currentColor;
+            transform: rotate(45deg);
+            opacity: 0.82;
         }
 
         .shop-discount-asset-card__scope {
@@ -6962,6 +6986,50 @@ html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card__summary-
 html:not([data-theme="dark"]) body.shop-page .shop-price-waterfall__row-copy strong,
 html:not([data-theme="dark"]) body.shop-page .shop-price-waterfall__row-value {
     color: var(--shop-light-text);
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card__target-link {
+    background: #ffffff;
+    border-color: var(--shop-light-border);
+    box-shadow: none;
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card__target-link:hover {
+    background: #ffffff;
+    border-color: rgba(16, 185, 129, 0.24);
+    box-shadow: none;
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card__target-action {
+    background: transparent;
+    border-color: transparent;
+    color: #059669;
+    box-shadow: none;
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card__target-link:hover .shop-discount-asset-card__target-action {
+    background: transparent;
+    border-color: transparent;
+    color: #047857;
+    box-shadow: none;
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card__chevron {
+    background: rgba(23, 32, 51, 0.04);
+    box-shadow: inset 0 0 0 1px rgba(23, 32, 51, 0.12);
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card__chevron::before {
+    border-color: rgba(23, 32, 51, 0.72);
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card--collapsible[open] .shop-discount-asset-card__chevron {
+    background: rgba(34, 197, 94, 0.1);
+    box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.24);
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card--collapsible[open] .shop-discount-asset-card__chevron::before {
+    border-color: rgba(22, 163, 74, 0.9);
 }
 
 @supports (-webkit-touch-callout: none) {

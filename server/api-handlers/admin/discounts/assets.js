@@ -104,6 +104,23 @@ function buildDiscountAssignedNotification(discount = {}) {
         type: 'success',
         scope: 'user_personal',
         category: 'discount_notice',
+        actionLabel: '去商城使用',
+        actionUrl: '/shop.html',
+        sourceModule: 'discounts',
+        sourceEventId: `discount_assigned:${normalizeText(discount?.id, 120) || code}`,
+        priority: 45,
+        metadata: {
+            page_id: 'shop',
+            event_type: 'coupon_available',
+            action_path_label: '我的钱包 > 卡券',
+            action_path_url: 'wallet://cards',
+            action_path_kind: 'wallet',
+            wallet_view: 'cards',
+            discount_id: normalizeText(discount?.id, 120),
+            discount_code: code,
+            benefit_label: benefitLabel,
+            expires_at: normalizeOptionalIsoDate(discount?.expires_at)
+        },
         dedupeWindowMinutes: 0
     };
 }

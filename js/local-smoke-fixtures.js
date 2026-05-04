@@ -148,6 +148,8 @@
                 created_at: '2026-03-31T07:35:00+08:00'
             }
         ],
+        notificationSelectCount: 0,
+        notificationSelectDelayMs: 0,
         opsAlertsConfig: {
             enabled: true,
             routing: {
@@ -2315,7 +2317,7 @@
         };
     }
 
-    async function postSmokeResult(status = 'running') {
+    async function postSmokeResult(status = 'running', options = {}) {
         if (!smokeRunId || typeof globalScope.fetch !== 'function') {
             return;
         }
@@ -2327,7 +2329,7 @@
                     'Content-Type': 'application/json'
                 },
                 credentials: 'same-origin',
-                keepalive: true,
+                ...(options?.keepalive === false ? {} : { keepalive: true }),
                 body: JSON.stringify(buildSmokeResultPayload(status))
             });
         } catch (_) {
@@ -2335,10 +2337,10 @@
         }
     }
 
-    function finalizeResults() {
+    async function finalizeResults() {
         const finalStatus = smokeState.results.some((item) => !item.pass) ? 'failed' : 'passed';
         renderResults(finalStatus);
-        void postSmokeResult(finalStatus);
+        await postSmokeResult(finalStatus, { keepalive: false });
 
         if (minimalDomOutput) {
             const panel = createResultPanel();
@@ -4770,7 +4772,13 @@
                 return proxy;
             },
             then(resolve, reject) {
-                return Promise.resolve(execute()).then(resolve, reject);
+                const delayMs = table === 'system_notifications' && state.method === 'select'
+                    ? Math.max(0, Number(smokeState.notificationSelectDelayMs || 0))
+                    : 0;
+                const execution = delayMs > 0
+                    ? sleep(delayMs).then(() => execute())
+                    : Promise.resolve(execute());
+                return execution.then(resolve, reject);
             },
             catch(reject) {
                 return Promise.resolve(execute()).catch(reject);
@@ -4782,6 +4790,9 @@
 
         function execute() {
             const rows = getTableRows(table);
+            if (table === 'system_notifications' && state.method === 'select') {
+                smokeState.notificationSelectCount += 1;
+            }
 
             if (state.method === 'insert') {
                 const items = Array.isArray(state.values) ? state.values : [state.values];
@@ -10528,12 +10539,485 @@
         } catch (_) {
             // Ignore local storage availability in restricted smoke contexts.
         }
-        await globalScope.initNotificationSystem();
-        await waitFor(() => document.getElementById('notifBadge')?.hidden === false, { message: '通知数据未完成初始拉取' });
+        smokeState.notificationSelectCount = 0;
+        smokeState.notificationSelectDelayMs = 220;
+        globalScope.__resetNotificationSystemForSmoke?.();
         globalScope.toggleNotifMenu?.();
+        const drawer = await waitFor(() => document.getElementById('notifDrawer')?.classList.contains('active')
+            ? document.getElementById('notifDrawer')
+            : null, { message: '通知抽屉未打开' });
+        const loadingState = await waitFor(() => {
+            const loading = document.querySelector('#notifDrawerList .notif-empty--loading');
+            return loading instanceof HTMLElement ? loading : null;
+        }, { message: '通知抽屉未显示三点加载态' });
+        const loadingFooter = document.querySelector('.notif-drawer-footer');
+        const loadingFooterDisplay = loadingFooter instanceof HTMLElement
+            ? globalScope.getComputedStyle(loadingFooter).display
+            : '';
+        const loadingDotItems = Array.from(loadingState.querySelectorAll('.notif-loading-dots span'));
+        const firstLoadingDotStyle = loadingDotItems[0] instanceof HTMLElement
+            ? globalScope.getComputedStyle(loadingDotItems[0])
+            : null;
+        const firstLoadingDotOpacity = Number.parseFloat(firstLoadingDotStyle?.opacity || '0');
+        const firstLoadingDotVisible = firstLoadingDotOpacity >= 0.38
+            && !/^transparent$/i.test(String(firstLoadingDotStyle?.backgroundColor || '').trim());
+        const loadingDotsAnimated = loadingDotItems.length === 3
+            && String(firstLoadingDotStyle?.animationName || '').includes('notifLoadingDots')
+            && String(firstLoadingDotStyle?.animationDuration || '') !== '0s'
+            && firstLoadingDotVisible;
+        const loadingList = document.getElementById('notifDrawerList');
+        const loadingDots = loadingState.querySelector('.notif-loading-dots');
+        const loadingListRect = loadingList instanceof HTMLElement
+            ? loadingList.getBoundingClientRect()
+            : null;
+        const loadingDotsRect = loadingDots instanceof HTMLElement
+            ? loadingDots.getBoundingClientRect()
+            : null;
+        const loadingWindowHeight = Number(globalScope.innerHeight || document.documentElement?.clientHeight || 0);
+        const loadingCenterDelta = loadingDotsRect && loadingWindowHeight > 0
+            ? Math.abs((loadingDotsRect.top + loadingDotsRect.height / 2) - (loadingWindowHeight / 2))
+            : Number.POSITIVE_INFINITY;
+        const loadingCenterTolerance = loadingWindowHeight > 0
+            ? Math.max(24, loadingWindowHeight * 0.035)
+            : 0;
+        const clearAllHeaderAction = document.querySelector('[data-notif-action="clear-all"]');
+        recordResult(
+            '通知加载中不会显示收起通知按钮',
+            loadingState instanceof HTMLElement && loadingFooterDisplay === 'none',
+            `footerDisplay=${loadingFooterDisplay || 'missing'}`
+        );
+        recordResult(
+            '通知首次加载会显示跳动三点',
+            loadingDotsAnimated,
+            `dots=${loadingDotItems.length} animation=${firstLoadingDotStyle?.animationName || 'missing'} duration=${firstLoadingDotStyle?.animationDuration || 'missing'} opacity=${firstLoadingDotStyle?.opacity || 'missing'} color=${firstLoadingDotStyle?.backgroundColor || 'missing'}`
+        );
+        recordResult(
+            '通知加载三点在窗口中上下居中',
+            Number.isFinite(loadingCenterDelta) && loadingCenterDelta <= loadingCenterTolerance,
+            `delta=${Number.isFinite(loadingCenterDelta) ? loadingCenterDelta.toFixed(1) : 'missing'} tolerance=${loadingCenterTolerance.toFixed(1)} window=${loadingWindowHeight || 'missing'} list=${loadingListRect?.height?.toFixed?.(1) || 'missing'}`
+        );
+        recordResult(
+            '通知抽屉右上角不再显示清空 X 模块',
+            !(clearAllHeaderAction instanceof HTMLElement),
+            clearAllHeaderAction instanceof HTMLElement ? 'clear-all 仍在 DOM 中' : 'clear-all removed'
+        );
 
         const list = await waitFor(() => document.getElementById('notifDrawerList'));
         await waitFor(() => list.querySelectorAll('.notif-card').length > 0 ? list : null, { message: '通知抽屉未渲染通知卡片' });
+        smokeState.notificationSelectDelayMs = 0;
+        await waitFor(() => document.getElementById('notifBadge')?.hidden === false, { message: '通知数据未完成初始拉取' });
+        const fetchCountAfterInitialLoad = smokeState.notificationSelectCount;
+        const firstAnimatedCard = list.querySelector('.notif-card-shell');
+        const drawerEntryActive = drawer?.classList.contains('notif-drawer-content-entering') === true;
+        const firstCardEntryActive = firstAnimatedCard?.classList.contains('notif-card-filter-enter') === true;
+        recordResult(
+            '通知三点加载完成后会保留入场动画',
+            drawerEntryActive && firstCardEntryActive,
+            `drawer=${drawerEntryActive} card=${firstCardEntryActive}`
+        );
+        const fetchCountAfterDrawerOpen = smokeState.notificationSelectCount;
+        await globalScope.initNotificationSystem();
+        await sleep(80);
+        const fetchCountAfterRepeatInit = smokeState.notificationSelectCount;
+
+        recordResult(
+            '通知抽屉打开后不会重复拉取并二次刷新',
+            fetchCountAfterInitialLoad === 1
+                && fetchCountAfterDrawerOpen === fetchCountAfterInitialLoad
+                && fetchCountAfterRepeatInit === fetchCountAfterInitialLoad,
+            `fetch ${fetchCountAfterInitialLoad} -> ${fetchCountAfterDrawerOpen} -> ${fetchCountAfterRepeatInit}`
+        );
+
+        const cardLayouts = Array.from(list.querySelectorAll('.notif-card-shell'))
+            .map((shell) => {
+                const card = shell.querySelector('.notif-card');
+                const shellRect = shell.getBoundingClientRect();
+                const cardRect = card instanceof HTMLElement ? card.getBoundingClientRect() : null;
+                return {
+                    shellHeight: Number(shellRect?.height || 0),
+                    cardHeight: Number(cardRect?.height || 0)
+                };
+            });
+        const collapsedCardLayouts = cardLayouts.filter((layout) => layout.shellHeight < 56 || layout.cardHeight < 56);
+        recordResult(
+            '通知卡片保持可读高度不会被压成横线',
+            cardLayouts.length > 0 && collapsedCardLayouts.length === 0,
+            collapsedCardLayouts.length > 0
+                ? `collapsed=${collapsedCardLayouts.length} first=${collapsedCardLayouts[0].shellHeight.toFixed(1)}/${collapsedCardLayouts[0].cardHeight.toFixed(1)}`
+                : `cards=${cardLayouts.length} first=${cardLayouts[0]?.shellHeight.toFixed(1) || '0.0'}/${cardLayouts[0]?.cardHeight.toFixed(1) || '0.0'}`
+        );
+        {
+            const parseCssRgb = (value) => {
+                const match = String(value || '').match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)/i);
+                return match
+                    ? [Number(match[1]), Number(match[2]), Number(match[3])]
+                    : null;
+            };
+            const parseCssAlpha = (value) => {
+                const normalized = String(value || '').trim();
+                if (/^transparent$/i.test(normalized)) return 0;
+                if (/^rgba\(/i.test(normalized)) {
+                    const values = normalized.match(/[\d.]+/g) || [];
+                    const parsed = Number.parseFloat(values[3] || '1');
+                    return Number.isFinite(parsed) ? parsed : 1;
+                }
+                return /^rgb\(/i.test(normalized) ? 1 : 0;
+            };
+            const colorBrightness = (rgb) => Array.isArray(rgb)
+                ? ((rgb[0] * 299) + (rgb[1] * 587) + (rgb[2] * 114)) / 1000
+                : 0;
+            const isUnreadRailColor = (rgb) => Array.isArray(rgb)
+                && rgb[0] >= 200
+                && rgb[1] <= 120
+                && rgb[2] <= 130;
+            const isReadRailColor = (rgb) => Array.isArray(rgb)
+                && rgb[1] >= 150
+                && rgb[0] <= 120
+                && rgb[2] <= 130;
+            const usesProfileModalBackdrop = (value = '') => {
+                const normalized = String(value || '').trim();
+                return /--public-light-modal-backdrop|rgba?\(\s*34[,\s]+41[,\s]+52/i.test(normalized);
+            };
+            const unreadRailCard = list.querySelector('.notif-card.unread');
+            const readRailCard = list.querySelector('.notif-card:not(.unread)');
+            const unreadRailStyle = unreadRailCard instanceof HTMLElement
+                ? globalScope.getComputedStyle(unreadRailCard)
+                : null;
+            const readRailStyle = readRailCard instanceof HTMLElement
+                ? globalScope.getComputedStyle(readRailCard)
+                : null;
+            const unreadRailRgb = parseCssRgb(unreadRailStyle?.borderLeftColor || '');
+            const readRailRgb = parseCssRgb(readRailStyle?.borderLeftColor || '');
+            const unreadRailWidth = Number.parseFloat(unreadRailStyle?.borderLeftWidth || '0');
+            const readRailWidth = Number.parseFloat(readRailStyle?.borderLeftWidth || '0');
+            const unreadRailHasNoGradient = !/linear-gradient/i.test(String(unreadRailStyle?.backgroundImage || ''));
+            const readRailHasNoGradient = !/linear-gradient/i.test(String(readRailStyle?.backgroundImage || ''));
+            const filterTitle = list.querySelector('.notif-filter-title');
+            const filterTitleStyle = filterTitle instanceof HTMLElement
+                ? globalScope.getComputedStyle(filterTitle)
+                : null;
+            const filterTitleBrightness = colorBrightness(parseCssRgb(filterTitleStyle?.color || ''));
+            const shouldShowFilterTitle = globalScope.matchMedia
+                ? !globalScope.matchMedia('(max-width: 768px)').matches
+                : Number(globalScope.innerWidth || 0) > 768;
+            const getChipBorderColor = (selector) => {
+                const element = list.querySelector(selector);
+                return element instanceof HTMLElement
+                    ? globalScope.getComputedStyle(element).borderColor
+                    : '';
+            };
+            const functionalChipColors = [
+                getChipBorderColor('[data-notif-action="filter-category"][data-notif-category="all"]'),
+                getChipBorderColor('[data-notif-action="filter-category"][data-notif-category="assignment"]'),
+                getChipBorderColor('[data-notif-action="filter-category"][data-notif-category="security"]'),
+                getChipBorderColor('[data-notif-action="filter-category"][data-notif-category="announcement"]'),
+                getChipBorderColor('[data-notif-action="filter-category"][data-notif-category="admin_notice"]'),
+                getChipBorderColor('[data-notif-action="filter-read"][data-notif-read-filter="unread"]'),
+                getChipBorderColor('[data-notif-action="filter-read"][data-notif-read-filter="read"]')
+            ].filter(Boolean);
+            const uniqueFunctionalChipColors = new Set(functionalChipColors).size;
+            recordResult(
+                '通知条左侧读态指示条颜色正确',
+                isUnreadRailColor(unreadRailRgb)
+                    && isReadRailColor(readRailRgb)
+                    && unreadRailWidth >= 3
+                    && readRailWidth >= 3
+                    && unreadRailHasNoGradient
+                    && readRailHasNoGradient,
+                `unread=${unreadRailStyle?.borderLeftColor || 'missing'} read=${readRailStyle?.borderLeftColor || 'missing'} width=${unreadRailStyle?.borderLeftWidth || 'missing'}/${readRailStyle?.borderLeftWidth || 'missing'} gradient=${!unreadRailHasNoGradient}/${!readRailHasNoGradient}`
+            );
+            recordResult(
+                '通知筛选胶囊顶部显示通知标题',
+                filterTitle instanceof HTMLElement
+                    && filterTitle.textContent?.trim() === '通知'
+                    && (
+                        shouldShowFilterTitle
+                            ? filterTitleStyle?.display !== 'none'
+                                && parseCssAlpha(filterTitleStyle?.color || '') >= 0.95
+                                && filterTitleBrightness >= 245
+                            : filterTitleStyle?.display === 'none'
+                    ),
+                `text=${filterTitle?.textContent?.trim() || 'missing'} display=${filterTitleStyle?.display || 'missing'} color=${filterTitleStyle?.color || 'missing'} brightness=${filterTitleBrightness.toFixed(1)} viewport=${Number(globalScope.innerWidth || 0)}`
+            );
+            recordResult(
+                '通知筛选胶囊按功能区分颜色',
+                uniqueFunctionalChipColors >= 5,
+                `unique=${uniqueFunctionalChipColors} colors=${functionalChipColors.join('|') || 'missing'}`
+            );
+            const getTopLevelNotificationStyleRules = () => {
+                const rules = [];
+                Array.from(document.styleSheets || []).forEach((sheet) => {
+                    const href = String(sheet.href || '');
+                    if (href && !href.includes('notification-client.css')) return;
+                    try {
+                        Array.from(sheet.cssRules || []).forEach((rule) => {
+                            if (rule?.type === CSSRule.STYLE_RULE) {
+                                rules.push(rule);
+                            }
+                        });
+                    } catch (_) {
+                        // Cross-origin stylesheets are irrelevant for this local notification CSS check.
+                    }
+                });
+                return rules;
+            };
+            const topLevelNotificationRules = getTopLevelNotificationStyleRules();
+            const hasTopLevelRule = (selectorPart, matcher) => topLevelNotificationRules.some((rule) => {
+                const selectorText = String(rule?.selectorText || '');
+                return selectorText.includes(selectorPart) && matcher(rule.style || {});
+            });
+            const hasDesktopLightChipRule = hasTopLevelRule('html[data-theme="light"] .notif-filter-chip', (style) => {
+                const chipBgVar = typeof style.getPropertyValue === 'function'
+                    ? style.getPropertyValue('--notif-chip-bg')
+                    : '';
+                return colorBrightness(parseCssRgb(style.backgroundColor)) >= 210
+                    || colorBrightness(parseCssRgb(String(chipBgVar || ''))) >= 210;
+            });
+            const hasDesktopLightCardRule = hasTopLevelRule('html[data-theme="light"] .notif-card', (style) => {
+                return colorBrightness(parseCssRgb(style.backgroundColor)) >= 210;
+            });
+            const hasDesktopLightTitleRule = hasTopLevelRule('html[data-theme="light"] .notif-card-title', (style) => {
+                return colorBrightness(parseCssRgb(style.color)) <= 96;
+            });
+            const hasStickyFilterPanelRule = hasTopLevelRule('.notif-filter-panel', (style) => {
+                return String(style.position || '').trim() === 'sticky' && String(style.top || '').trim() === '0px';
+            });
+            const hasOpaqueFilterPanelRule = hasTopLevelRule('.notif-filter-panel', (style) => {
+                return parseCssAlpha(style.backgroundColor || style.background) >= 0.99;
+            });
+            const hasBackdropBlurRule = hasTopLevelRule('.notif-backdrop', (style) => {
+                return /blur\(/i.test(`${style.backdropFilter || ''} ${style.webkitBackdropFilter || ''}`);
+            });
+            const hasProfileBackdropRule = hasTopLevelRule('.notif-backdrop', (style) => {
+                return usesProfileModalBackdrop(`${style.background || ''} ${style.backgroundColor || ''}`);
+            });
+            const usesDesktopNotificationLayout = globalScope.matchMedia
+                ? !globalScope.matchMedia('(max-width: 768px)').matches
+                : Number(globalScope.innerWidth || 0) > 768;
+
+            if (usesDesktopNotificationLayout) {
+                const root = document.documentElement;
+                const originalTheme = root.getAttribute('data-theme');
+                root.setAttribute('data-theme', 'light');
+                await sleep(40);
+                const lightChip = list.querySelector('.notif-filter-chip');
+                const lightCard = list.querySelector('.notif-card');
+                const lightTitle = lightCard?.querySelector?.('.notif-card-title');
+                const backdrop = document.getElementById('notifBackdrop');
+                const filterPanel = list.querySelector('.notif-filter-panel');
+                const chipStyle = lightChip instanceof HTMLElement ? globalScope.getComputedStyle(lightChip) : null;
+                const cardStyle = lightCard instanceof HTMLElement ? globalScope.getComputedStyle(lightCard) : null;
+                const titleStyle = lightTitle instanceof HTMLElement ? globalScope.getComputedStyle(lightTitle) : null;
+                const backdropStyle = backdrop instanceof HTMLElement ? globalScope.getComputedStyle(backdrop) : null;
+                const filterPanelStyle = filterPanel instanceof HTMLElement ? globalScope.getComputedStyle(filterPanel) : null;
+                const chipLight = colorBrightness(parseCssRgb(chipStyle?.backgroundColor)) >= 210;
+                const cardLight = colorBrightness(parseCssRgb(cardStyle?.backgroundColor)) >= 210;
+                const titleDark = colorBrightness(parseCssRgb(titleStyle?.color)) <= 96;
+                const backdropFilter = `${backdropStyle?.backdropFilter || ''} ${backdropStyle?.webkitBackdropFilter || ''}`.trim();
+                const backdropBlurred = /blur\(/i.test(backdropFilter);
+                const backdropUsesProfileGlass = usesProfileModalBackdrop(backdropStyle?.backgroundColor);
+                const filterPanelSticky = filterPanelStyle?.position === 'sticky' && filterPanelStyle?.top === '0px';
+                const filterPanelOpaque = parseCssAlpha(filterPanelStyle?.backgroundColor) >= 0.99;
+                recordResult(
+                    '电脑端亮色通知抽屉使用浅色筛选和卡片',
+                    chipLight && cardLight && titleDark,
+                    `chip=${chipStyle?.backgroundColor || 'missing'} card=${cardStyle?.backgroundColor || 'missing'} title=${titleStyle?.color || 'missing'}`
+                );
+                recordResult(
+                    '通知筛选胶囊固定在不透明顶部容器',
+                    filterPanelSticky && filterPanelOpaque,
+                    `position=${filterPanelStyle?.position || 'missing'} top=${filterPanelStyle?.top || 'missing'} background=${filterPanelStyle?.backgroundColor || 'missing'}`
+                );
+                recordResult(
+                    '电脑端通知遮罩使用弹窗同款背景模糊',
+                    backdropBlurred && backdropUsesProfileGlass,
+                    `filter=${backdropFilter || 'missing'} background=${backdropStyle?.backgroundColor || 'missing'}`
+                );
+                if (originalTheme === null) {
+                    root.removeAttribute('data-theme');
+                } else {
+                    root.setAttribute('data-theme', originalTheme);
+                }
+            } else {
+                recordResult(
+                    '电脑端亮色通知抽屉使用浅色筛选和卡片',
+                    hasDesktopLightChipRule && hasDesktopLightCardRule && hasDesktopLightTitleRule,
+                    `desktopCssRules chip=${hasDesktopLightChipRule} card=${hasDesktopLightCardRule} title=${hasDesktopLightTitleRule} viewport=${Number(globalScope.innerWidth || 0)}`
+                );
+                recordResult(
+                    '通知筛选胶囊固定在不透明顶部容器',
+                    hasStickyFilterPanelRule && hasOpaqueFilterPanelRule,
+                    `desktopCssRule=${hasStickyFilterPanelRule} opaque=${hasOpaqueFilterPanelRule} viewport=${Number(globalScope.innerWidth || 0)}`
+                );
+                recordResult(
+                    '电脑端通知遮罩使用弹窗同款背景模糊',
+                    hasBackdropBlurRule && hasProfileBackdropRule,
+                    `desktopCssRule=${hasBackdropBlurRule} profileBackdrop=${hasProfileBackdropRule} viewport=${Number(globalScope.innerWidth || 0)}`
+                );
+            }
+        }
+        if (shouldRunMobileLayoutChecks()) {
+            const footer = document.querySelector('.notif-drawer-footer');
+            const closeButton = footer?.querySelector?.('.notif-close-btn');
+            if (footer instanceof HTMLElement && closeButton instanceof HTMLElement) {
+                const footerRect = footer.getBoundingClientRect();
+                const buttonRect = closeButton.getBoundingClientRect();
+                const centerDelta = Math.abs(
+                    (buttonRect.top + buttonRect.height / 2)
+                    - (footerRect.top + footerRect.height / 2)
+                );
+                recordResult(
+                    '通知中心底部收起胶囊在白块中上下居中',
+                    centerDelta <= 2,
+                    `delta=${centerDelta.toFixed(1)} footer=${footerRect.height.toFixed(1)} button=${buttonRect.height.toFixed(1)}`
+                );
+            } else {
+                recordResult('通知中心底部收起胶囊在白块中上下居中', false, '未找到底部收起按钮');
+            }
+        }
+
+        const createNotificationPointerEvent = (type, clientX, clientY, pointerId = 12, pointerType = 'touch') => {
+            if (typeof PointerEvent === 'function') {
+                return new PointerEvent(type, {
+                    bubbles: true,
+                    cancelable: true,
+                    pointerId,
+                    pointerType,
+                    button: 0,
+                    clientX,
+                    clientY
+                });
+            }
+
+            return new MouseEvent(type, {
+                bubbles: true,
+                cancelable: true,
+                button: 0,
+                clientX,
+                clientY
+            });
+        };
+
+        const swipeShell = list.querySelector('.notif-card-shell');
+        const swipeTarget = swipeShell?.querySelector('.notif-card') || swipeShell;
+        if (swipeShell instanceof HTMLElement && swipeTarget instanceof HTMLElement) {
+            swipeTarget.dispatchEvent(createNotificationPointerEvent('pointerdown', 260, 90));
+            swipeTarget.dispatchEvent(createNotificationPointerEvent('pointermove', 88, 92));
+            swipeTarget.dispatchEvent(createNotificationPointerEvent('pointerup', 88, 92));
+            await sleep(40);
+            const hasSwipeActions = ['toggle-pin', 'delete-notification', 'mark-read']
+                .every((action) => swipeShell.querySelector(`[data-notif-action="${action}"]`) instanceof HTMLElement);
+            const openAfterSwipe = swipeShell.classList.contains('is-actions-open');
+            recordResult(
+                '通知卡片左滑会露出置顶、删除、已读操作',
+                openAfterSwipe && hasSwipeActions,
+                `actions=${hasSwipeActions ? 'ready' : 'missing'} open=${openAfterSwipe}`
+            );
+            const actionsBackground = swipeShell.querySelector('.notif-card-actions') || swipeTarget;
+            actionsBackground.dispatchEvent(new MouseEvent('click', {
+                bubbles: true,
+                cancelable: true,
+                button: 0,
+                clientX: 88,
+                clientY: 92
+            }));
+            await sleep(40);
+            const openAfterSyntheticClick = swipeShell.classList.contains('is-actions-open');
+            recordResult(
+                '通知卡片左滑松手后的桌面补发点击不会关回',
+                openAfterSyntheticClick,
+                `open=${openAfterSyntheticClick}`
+            );
+            await sleep(560);
+            list.dispatchEvent(new MouseEvent('click', {
+                bubbles: true,
+                cancelable: true,
+                button: 0,
+                clientX: 12,
+                clientY: Math.max(180, list.getBoundingClientRect().bottom - 16)
+            }));
+            await sleep(40);
+            const openAfterBlankClick = swipeShell.classList.contains('is-actions-open');
+            recordResult(
+                '通知卡片左滑后点击空白处会收回操作栏',
+                !openAfterBlankClick,
+                `open=${openAfterBlankClick}`
+            );
+            swipeTarget.dispatchEvent(new WheelEvent('wheel', {
+                bubbles: true,
+                cancelable: true,
+                deltaX: 96,
+                deltaY: 2
+            }));
+            await sleep(40);
+            const openAfterHorizontalWheel = swipeShell.classList.contains('is-actions-open');
+            recordResult(
+                '通知卡片触控板横向滑动也会停留操作栏',
+                openAfterHorizontalWheel,
+                `open=${openAfterHorizontalWheel}`
+            );
+            list.dispatchEvent(new MouseEvent('click', {
+                bubbles: true,
+                cancelable: true,
+                button: 0,
+                clientX: 12,
+                clientY: Math.max(180, list.getBoundingClientRect().bottom - 16)
+            }));
+            await sleep(40);
+            swipeTarget.dispatchEvent(createNotificationPointerEvent('pointerdown', 260, 90, 13));
+            swipeTarget.dispatchEvent(createNotificationPointerEvent('pointermove', 88, 92, 13));
+            swipeTarget.dispatchEvent(createNotificationPointerEvent('pointercancel', 88, 92, 13));
+            await sleep(40);
+            const openAfterPointerCancel = swipeShell.classList.contains('is-actions-open');
+            recordResult(
+                '通知卡片左滑被浏览器取消时仍停留操作栏',
+                openAfterPointerCancel,
+                `open=${openAfterPointerCancel}`
+            );
+            await sleep(560);
+            list.dispatchEvent(new MouseEvent('click', {
+                bubbles: true,
+                cancelable: true,
+                button: 0,
+                clientX: 12,
+                clientY: Math.max(180, list.getBoundingClientRect().bottom - 16)
+            }));
+            await sleep(40);
+            swipeTarget.dispatchEvent(createNotificationPointerEvent('pointerdown', 260, 90, 15, 'mouse'));
+            swipeTarget.dispatchEvent(createNotificationPointerEvent('pointermove', 88, 92, 15, 'mouse'));
+            swipeTarget.dispatchEvent(createNotificationPointerEvent('pointerup', 88, 92, 15, 'mouse'));
+            await sleep(40);
+            list.dispatchEvent(new MouseEvent('click', {
+                bubbles: true,
+                cancelable: true,
+                button: 0,
+                clientX: 88,
+                clientY: 92
+            }));
+            await sleep(40);
+            const openAfterMouseDragListClick = swipeShell.classList.contains('is-actions-open');
+            recordResult(
+                '通知卡片鼠标拖动左滑松手后不会被列表补发点击关回',
+                openAfterMouseDragListClick,
+                `open=${openAfterMouseDragListClick}`
+            );
+            await sleep(560);
+            list.dispatchEvent(new MouseEvent('click', {
+                bubbles: true,
+                cancelable: true,
+                button: 0,
+                clientX: 12,
+                clientY: Math.max(180, list.getBoundingClientRect().bottom - 16)
+            }));
+            await sleep(40);
+        } else {
+            recordResult('通知卡片左滑会露出置顶、删除、已读操作', false, '未找到可滑动通知卡片');
+            recordResult('通知卡片左滑松手后的桌面补发点击不会关回', false, '未找到可滑动通知卡片');
+            recordResult('通知卡片左滑后点击空白处会收回操作栏', false, '未找到可滑动通知卡片');
+            recordResult('通知卡片触控板横向滑动也会停留操作栏', false, '未找到可滑动通知卡片');
+            recordResult('通知卡片左滑被浏览器取消时仍停留操作栏', false, '未找到可滑动通知卡片');
+            recordResult('通知卡片鼠标拖动左滑松手后不会被列表补发点击关回', false, '未找到可滑动通知卡片');
+        }
 
         const categoryChips = list.querySelectorAll('[data-notif-action="filter-category"]');
         const readChips = list.querySelectorAll('[data-notif-action="filter-read"]');
@@ -10548,8 +11032,48 @@
             const allSecurity = visibleCards.length > 0
                 && visibleCards.every((card) => card.getAttribute('data-notif-category') === 'security');
             recordResult('分类筛选只显示命中分类的提醒', allSecurity, `当前卡片 ${visibleCards.length} 条`);
+
+            const firstSecurityCard = visibleCards[0];
+            firstSecurityCard?.dispatchEvent?.(createNotificationPointerEvent('pointerdown', 240, 120, 14));
+            firstSecurityCard?.dispatchEvent?.(createNotificationPointerEvent('pointerup', 240, 120, 14));
+            await sleep(80);
+            const firstSecurityBody = firstSecurityCard?.querySelector?.('.notif-card-body');
+            const firstSecurityBodyStyle = firstSecurityBody instanceof HTMLElement
+                ? globalScope.getComputedStyle(firstSecurityBody)
+                : null;
+            const detailExpanded = firstSecurityCard?.classList.contains('expanded') === true
+                && firstSecurityBodyStyle?.display === 'block'
+                && firstSecurityBodyStyle?.overflow === 'visible'
+                && String(firstSecurityBodyStyle?.webkitLineClamp || '').trim() !== '2';
+            recordResult(
+                '异常登录安全提醒点击会展开内容',
+                detailExpanded,
+                `expanded=${firstSecurityCard?.classList.contains('expanded') === true} display=${firstSecurityBodyStyle?.display || 'unknown'} overflow=${firstSecurityBodyStyle?.overflow || 'unknown'}`
+            );
+
+            firstSecurityCard?.click?.();
+            await sleep(40);
+            const firstSecurityShell = firstSecurityCard?.closest?.('.notif-card-shell');
+            firstSecurityShell?.dispatchEvent?.(new MouseEvent('click', {
+                bubbles: true,
+                cancelable: true,
+                button: 0
+            }));
+            await sleep(60);
+            recordResult(
+                '电脑端通知条外壳点击也会展开详情',
+                firstSecurityCard?.classList.contains('expanded') === true,
+                `expanded=${firstSecurityCard?.classList.contains('expanded') === true}`
+            );
+
+            const allCategoryChip = list.querySelector('[data-notif-action="filter-category"][data-notif-category="all"]');
+            if (allCategoryChip instanceof HTMLElement) {
+                allCategoryChip.click();
+                await sleep(80);
+            }
         } else {
             recordResult('分类筛选只显示命中分类的提醒', false, '未找到 security 筛选按钮');
+            recordResult('异常登录安全提醒点击会展开内容', false, '未找到 security 筛选按钮');
         }
 
         const unreadChip = list.querySelector('[data-notif-action="filter-read"][data-notif-read-filter="unread"]');
@@ -10570,9 +11094,60 @@
             await sleep(50);
             const firstCard = list.querySelector('.notif-card');
             const isPinnedFirst = firstCard?.classList.contains('is-pinned') === true;
+            const pinnedCardStyle = firstCard instanceof HTMLElement
+                ? globalScope.getComputedStyle(firstCard)
+                : null;
+            const pinnedCardShadow = String(pinnedCardStyle?.boxShadow || '');
             recordResult('通知置顶会立即影响排序', isPinnedFirst, `首条通知 ${firstCard?.getAttribute('data-id') || 'unknown'}`);
+            recordResult(
+                '置顶通知有更明显的颜色区分',
+                isPinnedFirst && /250|217|rgb/i.test(pinnedCardShadow),
+                `shadow=${pinnedCardShadow || 'missing'}`
+            );
+            const firstPinnedShell = firstCard?.closest?.('.notif-card-shell');
+            if (firstPinnedShell instanceof HTMLElement) {
+                const pinnedActions = firstPinnedShell.querySelector('.notif-card-actions');
+                const pinnedBackgroundBeforeHover = `${pinnedCardStyle?.backgroundImage || ''}|${pinnedCardStyle?.backgroundColor || ''}|${pinnedCardStyle?.borderColor || ''}`.trim();
+                firstPinnedShell.dispatchEvent(new MouseEvent('mouseover', {
+                    bubbles: true,
+                    cancelable: true,
+                    button: 0,
+                    clientX: Math.round(firstPinnedShell.getBoundingClientRect().left + 12),
+                    clientY: Math.round(firstPinnedShell.getBoundingClientRect().top + 12)
+                }));
+                await sleep(40);
+                const pinnedActionsStyle = pinnedActions instanceof HTMLElement
+                    ? globalScope.getComputedStyle(pinnedActions)
+                    : null;
+                const pinnedCardHoverStyle = firstCard instanceof HTMLElement
+                    ? globalScope.getComputedStyle(firstCard)
+                    : null;
+                const pinnedActionsHidden = pinnedActionsStyle?.visibility === 'hidden'
+                    && Number.parseFloat(pinnedActionsStyle?.opacity || '1') === 0;
+                const pinnedHoverNotLifted = !String(pinnedCardHoverStyle?.transform || '').trim()
+                    || String(pinnedCardHoverStyle?.transform || '').trim() === 'none'
+                    || String(pinnedCardHoverStyle?.transform || '').trim() === 'matrix(1, 0, 0, 1, 0, 0)';
+                const pinnedBackgroundAfterHover = `${pinnedCardHoverStyle?.backgroundImage || ''}|${pinnedCardHoverStyle?.backgroundColor || ''}|${pinnedCardHoverStyle?.borderColor || ''}`.trim();
+                const pinnedHoverColorStable = pinnedBackgroundAfterHover === pinnedBackgroundBeforeHover;
+                recordResult(
+                    '置顶通知鼠标悬停不会露出下层操作栏',
+                    isPinnedFirst && pinnedActionsHidden && pinnedHoverNotLifted,
+                    `visibility=${pinnedActionsStyle?.visibility || 'missing'} opacity=${pinnedActionsStyle?.opacity || 'missing'} transform=${pinnedCardHoverStyle?.transform || 'missing'}`
+                );
+                recordResult(
+                    '置顶通知鼠标悬停不会发生颜色闪变',
+                    isPinnedFirst && pinnedHoverColorStable,
+                    `stable=${pinnedHoverColorStable}`
+                );
+            } else {
+                recordResult('置顶通知鼠标悬停不会露出下层操作栏', false, '未找到置顶通知外壳');
+                recordResult('置顶通知鼠标悬停不会发生颜色闪变', false, '未找到置顶通知外壳');
+            }
         } else {
             recordResult('通知置顶会立即影响排序', false, '未找到置顶按钮');
+            recordResult('置顶通知有更明显的颜色区分', false, '未找到置顶按钮');
+            recordResult('置顶通知鼠标悬停不会露出下层操作栏', false, '未找到置顶按钮');
+            recordResult('置顶通知鼠标悬停不会发生颜色闪变', false, '未找到置顶按钮');
         }
 
         if (shouldRunMobileLayoutChecks()) {
@@ -10604,11 +11179,44 @@
             );
         }
 
+        const resetAllCategoryChip = list.querySelector('[data-notif-action="filter-category"][data-notif-category="all"]');
+        if (resetAllCategoryChip instanceof HTMLElement) {
+            resetAllCategoryChip.click();
+            await sleep(60);
+        }
+        const resetAllReadChip = list.querySelector('[data-notif-action="filter-read"][data-notif-read-filter="all"]');
+        if (resetAllReadChip instanceof HTMLElement) {
+            resetAllReadChip.click();
+            await sleep(60);
+        }
+        const clearReadChip = list.querySelector('[data-notif-action="clear-read"]');
+        if (clearReadChip instanceof HTMLElement) {
+            const readCardsBeforeClear = list.querySelectorAll('.notif-card:not(.unread)').length;
+            clearReadChip.click();
+            await waitFor(() => {
+                const readCards = list.querySelectorAll('.notif-card:not(.unread)').length;
+                return readCards === 0 ? list : null;
+            }, { message: '清除已读后仍有已读通知卡片', timeoutMs: 2400 });
+            await sleep(80);
+            const remainingEnterCards = list.querySelectorAll('.notif-card-shell.notif-card-filter-enter').length;
+            const remainingUnreadCards = list.querySelectorAll('.notif-card.unread').length;
+            recordResult(
+                '清除已读后未读通知补位不会重新播放入场动画',
+                readCardsBeforeClear > 0 && remainingUnreadCards > 0 && remainingEnterCards === 0,
+                `beforeRead=${readCardsBeforeClear} remainingUnread=${remainingUnreadCards} entering=${remainingEnterCards}`
+            );
+        } else {
+            recordResult('清除已读后未读通知补位不会重新播放入场动画', false, '未找到清除已读按钮');
+        }
+
         await globalScope.markAllNotificationsRead?.();
         await sleep(80);
         const unreadBadgeVisible = document.getElementById('notifBadge')?.hidden === false;
         const unreadCards = list.querySelectorAll('.notif-card.unread').length;
         recordResult('全部已读会同步清空未读态', unreadCards === 0 && unreadBadgeVisible === false, `未读卡片 ${unreadCards} 条`);
+        const finalNotificationSmokeStatus = smokeState.results.some((item) => !item.pass) ? 'failed' : 'passed';
+        renderResults(finalNotificationSmokeStatus);
+        await postSmokeResult(finalNotificationSmokeStatus, { keepalive: false });
     }
 
     async function runAdminTicketsSmoke() {
@@ -10835,7 +11443,7 @@
         } catch (error) {
             recordResult('本地 smoke 运行异常', false, error?.message || String(error));
         } finally {
-            finalizeResults();
+            await finalizeResults();
         }
     }
 

@@ -10,6 +10,7 @@ window._pageLoadTime = Date.now();
 
 let SUPABASE_URL = '';
 let SUPABASE_KEY = '';
+const SUPABASE_SDK_FALLBACK_SRC = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
 
 function setSupabaseClientInitState(status, extra = {}) {
     const nextState = {
@@ -137,49 +138,91 @@ const guardStorage = {
     }
 };
 
-// ==================== Initialize Client ====================
-if (typeof supabase !== 'undefined' && supabase.createClient) {
+function isSupabaseSdkReady() {
+    return typeof supabase !== 'undefined' && typeof supabase.createClient === 'function';
+}
+
+function loadSupabaseSdkFallback() {
+    return new Promise((resolve, reject) => {
+        const existing = document.querySelector(`script[src="${SUPABASE_SDK_FALLBACK_SRC}"]`);
+        const script = existing || document.createElement('script');
+
+        const handleLoad = () => resolve(true);
+        const handleError = () => reject(new Error('Supabase fallback SDK failed to load'));
+
+        script.addEventListener('load', handleLoad, { once: true });
+        script.addEventListener('error', handleError, { once: true });
+
+        if (!existing) {
+            script.src = SUPABASE_SDK_FALLBACK_SRC;
+            script.async = false;
+            script.crossOrigin = 'anonymous';
+            document.head.appendChild(script);
+        }
+    });
+}
+
+function initializeSupabaseClientFromSdk() {
+    if (!isSupabaseSdkReady()) {
+        return false;
+    }
+
     if (!SUPABASE_URL || !SUPABASE_KEY) {
         console.error('❌ Supabase runtime config is missing. Make sure /api/runtime/supabase-config loads before supabase-client.js.');
         setSupabaseClientInitState('error', {
             reason: 'runtime_config_missing',
             message: 'Supabase runtime config is missing'
         });
-    } else {
-        try {
-            window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-                auth: {
-                    persistSession: true,
-                    autoRefreshToken: false,
-                    detectSessionInUrl: false,
-                    flowType: 'implicit',
-                    storage: guardStorage
-                },
-                global: {
-                    headers: CHAT_SESSION_ID ? { 'x-session-id': CHAT_SESSION_ID } : {}
-                }
-            });
-
-            // After Supabase init completes, simply unlock the normal storage adapter
-            setTimeout(() => {
-                guardStorage._locked = false;
-                console.log('🔓 Storage guard unlocked');
-            }, 3000);
-
-            setSupabaseClientInitState('ready');
-            console.log('✅ Supabase client initialized (with guard storage)');
-        } catch (error) {
-            console.error('❌ Failed to initialize Supabase client:', error);
-            setSupabaseClientInitState('error', {
-                reason: 'client_init_failed',
-                message: error?.message || 'Failed to initialize Supabase client'
-            });
-        }
+        return true;
     }
-} else {
-    console.error('❌ Supabase library not loaded. Make sure to include the CDN script first.');
-    setSupabaseClientInitState('error', {
-        reason: 'sdk_missing',
-        message: 'Supabase library not loaded'
-    });
+
+    try {
+        window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+            auth: {
+                persistSession: true,
+                autoRefreshToken: false,
+                detectSessionInUrl: false,
+                flowType: 'implicit',
+                storage: guardStorage
+            },
+            global: {
+                headers: CHAT_SESSION_ID ? { 'x-session-id': CHAT_SESSION_ID } : {}
+            }
+        });
+
+        // After Supabase init completes, simply unlock the normal storage adapter
+        setTimeout(() => {
+            guardStorage._locked = false;
+            console.log('🔓 Storage guard unlocked');
+        }, 3000);
+
+        setSupabaseClientInitState('ready');
+        console.log('✅ Supabase client initialized (with guard storage)');
+        return true;
+    } catch (error) {
+        console.error('❌ Failed to initialize Supabase client:', error);
+        setSupabaseClientInitState('error', {
+            reason: 'client_init_failed',
+            message: error?.message || 'Failed to initialize Supabase client'
+        });
+        return true;
+    }
+}
+
+// ==================== Initialize Client ====================
+if (!initializeSupabaseClientFromSdk()) {
+    console.warn('⚠️ Supabase library not loaded from primary CDN, trying fallback CDN...');
+    loadSupabaseSdkFallback()
+        .then(() => {
+            if (!initializeSupabaseClientFromSdk()) {
+                throw new Error('Supabase SDK is still unavailable after fallback load');
+            }
+        })
+        .catch((error) => {
+            console.error('❌ Supabase library not loaded. Make sure to include the CDN script first.', error);
+            setSupabaseClientInitState('error', {
+                reason: 'sdk_missing',
+                message: error?.message || 'Supabase library not loaded'
+            });
+        });
 }

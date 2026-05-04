@@ -99,6 +99,23 @@ INSERT INTO public.system_config (config_key, config_value, description) VALUES
             "notify_url": "",
             "package_hint": "虎皮椒通道已启用，正式回调与自动发货接入后即可完整使用。",
             "custom_amount_hint": "虎皮椒通道已启用。自定义金额订单能力接入后，这里会直接拉起真实支付。"
+        },
+        "nowpayments": {
+            "enabled": false,
+            "display_name": "USDT-BEP20",
+            "api_base_url": "https://api.nowpayments.io",
+            "pay_currency": "usdtbsc",
+            "price_currency": "usd",
+            "network_name": "BNB Smart Chain",
+            "cny_to_usd_rate": 0.14,
+            "is_fixed_rate": true,
+            "is_fee_paid_by_user": true,
+            "return_url": "https://www.zaoyoe.com",
+            "ipn_callback_url": "https://www.zaoyoe.com/api/payments/nowpayments/webhook",
+            "success_url": "https://www.zaoyoe.com",
+            "cancel_url": "https://www.zaoyoe.com",
+            "package_hint": "请使用 USDT-BEP20 / BNB Smart Chain 完成付款，勿使用 ERC20、TRC20 或其他网络。",
+            "custom_amount_hint": "请按页面显示的 USDT-BEP20 金额付款，网络请选择 BNB Smart Chain。"
         }
     }
 }'::jsonb, '支付通道配置')

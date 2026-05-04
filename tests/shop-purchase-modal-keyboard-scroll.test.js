@@ -70,6 +70,18 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
 
     assert.match(
         shopClientSource,
+        /shouldDockPurchaseModalForInput:\s*function\s*\(input, metrics = this\.getPurchaseModalViewportMetrics\(\)\) \{[\s\S]*const keyboardTop = Math\.max\(0, Math\.round\(\(metrics\.baseViewportHeight \|\| 0\) - bottomInset\)\);[\s\S]*return inputRect\.bottom > keyboardTop - bottomGuard;/,
+        'purchase modal should only dock upward when the focused input would be covered by the keyboard'
+    );
+
+    assert.match(
+        shopClientSource,
+        /const needsKeyboardDock = !!activeInput && this\.shouldDockPurchaseModalForInput\(activeInput, metrics\);[\s\S]*const shouldDock = needsKeyboardDock && \(this\.purchaseModalKeyboardDocked \? bottomInset > 8 : bottomInset > 24\);[\s\S]*if \(!this\.shouldDockPurchaseModalForInput\(liveInput, liveMetrics\)\) return;/,
+        'purchase modal should recheck focused-input coverage before running the first keyboard dock animation'
+    );
+
+    assert.match(
+        shopClientSource,
         /getPurchaseModalNativeViewportFrame:\s*function \(\) \{[\s\S]*const visualTop = Math\.max\(0, vv\?\.offsetTop \|\| 0\);[\s\S]*const visualLeft = Math\.max\(0, vv\?\.offsetLeft \|\| 0\);[\s\S]*const visualWidth = Math\.max\(320, Math\.round\(vv\?\.width[\s\S]*const overlayHeight = Math\.max\(320, Math\.round\([\s\S]*visualHeight[\s\S]*return \{[\s\S]*top: Math\.round\(visualTop\),[\s\S]*left: Math\.round\(visualLeft\),[\s\S]*width: visualWidth,[\s\S]*overlayHeight,/,
         'purchase modal should derive its overlay frame from visualViewport top/left/width/height'
     );

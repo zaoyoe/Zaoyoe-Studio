@@ -333,13 +333,20 @@ function createSmokeResultStore(options = {}) {
             }
 
             const now = Date.now();
+            const previousRecord = records.get(normalizedRunId);
+            const incomingStatus = String(payload.status || '').trim() || 'unknown';
+            const previousStatus = String(previousRecord?.status || '').trim().toLowerCase();
+            if ((previousStatus === 'passed' || previousStatus === 'failed') && incomingStatus.toLowerCase() === 'running') {
+                return previousRecord;
+            }
+
             const nextRecord = {
                 runId: normalizedRunId,
-                status: String(payload.status || '').trim() || 'unknown',
+                status: incomingStatus,
                 page: String(payload.page || '').trim() || '/',
                 text: String(payload.text || ''),
                 results: Array.isArray(payload.results) ? payload.results : [],
-                createdAt: Number(records.get(normalizedRunId)?.createdAt || now),
+                createdAt: Number(previousRecord?.createdAt || now),
                 updatedAt: now
             };
 
@@ -487,6 +494,28 @@ function createLocalPreviewApp(options = {}) {
         await dispatchLocalPreviewApiRequest(req, res, {
             kind: 'public api',
             buildHandlerUrl: buildLocalPreviewPublicHandlerUrl,
+            loadHandler: loadFreshPublicApiHandler,
+            repoRoot
+        });
+    });
+
+    app.all('/api/engagement', async (req, res) => {
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'engagement public api',
+            buildHandlerUrl: (rawUrl) => buildLocalPreviewPublicHandlerUrl(
+                String(rawUrl || '/api/engagement').replace(/^\/api\/engagement/, '/api/public/engagement')
+            ),
+            loadHandler: loadFreshPublicApiHandler,
+            repoRoot
+        });
+    });
+
+    app.all('/api/engagement/*', async (req, res) => {
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'engagement public api',
+            buildHandlerUrl: (rawUrl) => buildLocalPreviewPublicHandlerUrl(
+                String(rawUrl || '/api/engagement').replace(/^\/api\/engagement/, '/api/public/engagement')
+            ),
             loadHandler: loadFreshPublicApiHandler,
             repoRoot
         });

@@ -6,9 +6,9 @@
     }
     global.__zaoyoeWalletModalBootstrapLoaded = true;
 
-    const VERSION = '20260503_WALLET_REDEEM_REVOKE_REASON_UI_1';
+    const VERSION = '20260504_USDT_DIRECT_CHECKOUT_1';
     const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260430_WALLET_GUIDANCE_BILINGUAL_1';
-    const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260503_WALLET_REDEEM_REVOKE_REASON_UI_1';
+    const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260504_USDT_DIRECT_CHECKOUT_1';
     const POLL_INTERVAL_MS = 100;
     const MAX_WAIT_MS = 10000;
 

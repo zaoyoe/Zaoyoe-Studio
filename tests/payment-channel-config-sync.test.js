@@ -28,6 +28,7 @@ test('resolveTargetProvider prefers explicit provider and does not auto-switch t
     assert.equal(resolveTargetProvider({}, 'mock'), 'mock');
     assert.equal(resolveTargetProvider({}, 'zpay'), 'zpay');
     assert.equal(resolveTargetProvider({}, 'hupijiao'), 'hupijiao');
+    assert.equal(resolveTargetProvider({}, 'nowpayments'), 'nowpayments');
     assert.equal(resolveTargetProvider({
         providers: {
             zpay: { enabled: true, checkout_url: 'https://zpayz.cn', pid: '2026041807323142', notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook' },
@@ -40,6 +41,28 @@ test('resolveTargetProvider prefers explicit provider and does not auto-switch t
             hupijiao: { gateway_url: 'https://pay.example.com' }
         }
     }), 'afdian');
+    assert.equal(resolveTargetProvider({
+        providers: {
+            nowpayments: {
+                enabled: true,
+                pay_currency: 'usdtbsc',
+                ipn_callback_url: 'https://www.zaoyoe.com/api/payments/nowpayments/webhook'
+            },
+            zpay: {
+                enabled: true,
+                checkout_url: 'https://zpayz.cn',
+                pid: '2026041807323142',
+                notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook'
+            },
+            afdian: { enabled: true, checkout_url: 'https://afdian.com/a/zaoyoe' }
+        }
+    }, '', {
+        nowpayments_api_key: { configured: true },
+        nowpayments_ipn_secret: { configured: true },
+        zpay_pkey: { configured: true }
+    }, {
+        DEPLOYMENT_TIER: 'production'
+    }), 'nowpayments');
     assert.equal(resolveTargetProvider({
         providers: {
             zpay: {
@@ -143,6 +166,48 @@ test('buildSyncPlan supports explicitly switching the stored config to zpay', ()
     assert.equal(plan.targetProvider, 'zpay');
     assert.equal(plan.next.paymentChannels.active_provider, 'zpay');
     assert.equal(plan.next.paymentChannels.providers.zpay.enabled, true);
+    assert.equal(plan.next.rechargeOptions.mock_payment_enabled, false);
+    assert.equal(plan.targetProviderValidation.ready, true);
+});
+
+test('buildSyncPlan supports explicitly switching the stored config to nowpayments', () => {
+    const plan = buildSyncPlan(
+        {
+            active_provider: 'afdian',
+            providers: {
+                mock: { enabled: false, display_name: '模拟支付' },
+                afdian: { enabled: true, checkout_url: 'https://afdian.com/a/zaoyoe', display_name: '爱发电' },
+                nowpayments: {
+                    enabled: false,
+                    display_name: 'USDT-BEP20',
+                    pay_currency: 'usdtbsc',
+                    price_currency: 'usd',
+                    cny_to_usd_rate: 0.14,
+                    return_url: 'https://www.zaoyoe.com',
+                    ipn_callback_url: 'https://www.zaoyoe.com/api/payments/nowpayments/webhook'
+                }
+            }
+        },
+        {
+            custom_amount_enabled: true,
+            mock_payment_enabled: false
+        },
+        {
+            provider: 'nowpayments',
+            secretStatus: {
+                nowpayments_api_key: { configured: true },
+                nowpayments_ipn_secret: { configured: true }
+            },
+            env: {
+                DEPLOYMENT_TIER: 'production'
+            }
+        }
+    );
+
+    assert.equal(plan.changed, true);
+    assert.equal(plan.targetProvider, 'nowpayments');
+    assert.equal(plan.next.paymentChannels.active_provider, 'nowpayments');
+    assert.equal(plan.next.paymentChannels.providers.nowpayments.enabled, true);
     assert.equal(plan.next.rechargeOptions.mock_payment_enabled, false);
     assert.equal(plan.targetProviderValidation.ready, true);
 });

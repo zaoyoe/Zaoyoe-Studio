@@ -24,6 +24,15 @@ const {
     verifyZpaySign
 } = require('./zpay');
 const {
+    buildNowpaymentsOrderId,
+    convertCnyAmountToPriceAmount,
+    createNowpaymentsPayment,
+    normalizeNowpaymentsConfig,
+    normalizeNowpaymentsPaymentStatus,
+    updateNowpaymentsPaymentEstimate,
+    verifyNowpaymentsIpnSignature
+} = require('./nowpayments');
+const {
     loadStoredPaymentConfigs,
     resolvePaymentProviderSecrets
 } = require('./providers');
@@ -48,6 +57,53 @@ function sanitizeText(value, fallback = '', maxLength = 240) {
     if (typeof value !== 'string') return fallback;
     const normalized = value.trim();
     return normalized ? normalized.slice(0, maxLength) : fallback;
+}
+
+function sanitizeDisplayAmount(value, fallback = '', maxLength = 80) {
+    const normalized = String(value ?? '').trim();
+    return normalized ? normalized.slice(0, maxLength) : fallback;
+}
+
+function parseDateMs(value) {
+    const parsed = Date.parse(String(value || '').trim());
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function resolveNowpaymentsQuoteExpiresAt({
+    gatewayPayload = {},
+    integration = {},
+    channelConfig = {}
+} = {}) {
+    const explicitExpiry = sanitizeDisplayAmount(
+        gatewayPayload.expiration_estimate_date
+        || gatewayPayload.expiration_date
+        || gatewayPayload.valid_until
+        || gatewayPayload.quote_expires_at,
+        '',
+        80
+    );
+    if (parseDateMs(explicitExpiry)) return explicitExpiry;
+
+    if (integration?.isFixedRate !== true) return null;
+
+    const createdAt = sanitizeDisplayAmount(
+        gatewayPayload.created_at
+        || gatewayPayload.createdAt
+        || gatewayPayload.updated_at
+        || gatewayPayload.updatedAt,
+        '',
+        80
+    );
+    const baseMs = parseDateMs(createdAt) || Date.now();
+    const ttlSeconds = Math.min(
+        1800,
+        Math.max(
+            60,
+            Number(channelConfig.quote_ttl_seconds || integration.quoteTtlSeconds || 300) || 300
+        )
+    );
+
+    return new Date(baseMs + ttlSeconds * 1000).toISOString();
 }
 
 function pickFirstText(...values) {
@@ -713,6 +769,259 @@ const providerRegistry = {
                 message: sanitizeText(gatewayPayload.msg, gatewayCode === '1' ? 'success' : '易支付退款失败', 240),
                 responsePayload: gatewayPayload
             };
+        }
+    },
+    nowpayments: {
+        key: 'nowpayments',
+        label: 'USDT-BEP20',
+        supports: {
+            createCheckout: true,
+            webhook: true,
+            queryOrder: false,
+            autoCredit: true
+        },
+        async resolveRuntimeContext({ supabase, env = process.env, config = null, requestOrigin = '' } = {}) {
+            const effectiveRequestOrigin = requestOrigin || env.APP_BASE_URL;
+            const loaded = config
+                ? { paymentChannels: config }
+                : await loadStoredPaymentConfigs(supabase, {
+                    origin: effectiveRequestOrigin,
+                    afdianCheckoutUrl: env.PAYMENT_AFDIAN_URL
+                });
+            const secrets = await resolvePaymentProviderSecrets(supabase, 'nowpayments', env);
+            const integration = normalizeNowpaymentsConfig({
+                channelConfig: loaded.paymentChannels.providers.nowpayments,
+                secretValues: {
+                    nowpayments_api_key: secrets.nowpayments_api_key?.value || '',
+                    nowpayments_ipn_secret: secrets.nowpayments_ipn_secret?.value || ''
+                },
+                requestOrigin: effectiveRequestOrigin,
+                env
+            });
+
+            return {
+                provider: 'nowpayments',
+                channelConfig: loaded.paymentChannels.providers.nowpayments,
+                activeProvider: loaded.paymentChannels.active_provider,
+                implemented: true,
+                integration,
+                requestOrigin: effectiveRequestOrigin,
+                secretValues: {
+                    nowpayments_api_key: secrets.nowpayments_api_key?.value || '',
+                    nowpayments_ipn_secret: secrets.nowpayments_ipn_secret?.value || ''
+                },
+                secretMeta: secrets
+            };
+        },
+        buildEventKey({ providerOrderNo, transactionId, status, payload } = {}) {
+            return buildHashedEventKey('nowpayments', [
+                String(providerOrderNo || '').trim() || 'unknown',
+                String(transactionId || '').trim() || 'na',
+                String(status || '').trim().toLowerCase() || 'na'
+            ], payload);
+        },
+        async createCheckoutContext({
+            runtimeContext,
+            checkoutSession,
+            site,
+            packageId,
+            packageName,
+            paidPoints,
+            bonusPoints,
+            grantedPoints,
+            paidAmount,
+            isCustomRecharge,
+            customQuote
+        } = {}) {
+            const channelConfig = runtimeContext?.channelConfig || {};
+            const integration = runtimeContext?.integration || normalizeNowpaymentsConfig({
+                channelConfig,
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: runtimeContext?.requestOrigin || ''
+            });
+            const missingFields = Array.isArray(integration?.missingFields)
+                ? integration.missingFields
+                : [];
+            if (missingFields.length) {
+                return {
+                    supported: false,
+                    action: 'redirect',
+                    displayName: channelConfig.display_name || 'USDT-BEP20',
+                    message: `当前还缺少：${missingFields.join(', ')}。请先补齐 NOWPayments API Key / IPN Secret / Webhook URL。`
+                };
+            }
+
+            const normalizedAmount = roundCurrencyAmount(paidAmount);
+            if (!(normalizedAmount > 0)) {
+                return {
+                    supported: false,
+                    action: 'redirect',
+                    displayName: channelConfig.display_name || 'USDT-BEP20',
+                    message: 'NOWPayments 订单金额无效，暂时无法拉起支付。'
+                };
+            }
+
+            const priceAmount = convertCnyAmountToPriceAmount(normalizedAmount, integration);
+            if (!(priceAmount > 0)) {
+                return {
+                    supported: false,
+                    action: 'redirect',
+                    displayName: channelConfig.display_name || 'USDT-BEP20',
+                    message: 'NOWPayments 汇率配置无效，暂时无法拉起支付。'
+                };
+            }
+
+            const sessionId = String(checkoutSession?.id || '').trim();
+            const sessionKey = String(checkoutSession?.session_key || '').trim();
+            const orderId = buildNowpaymentsOrderId(sessionKey || sessionId || `${site}:${packageName}`);
+            const normalizedSite = normalizeSiteValue(site);
+            const title = isCustomRecharge
+                ? `Zaoyoe credits ${normalizePointValue(grantedPoints, 0)}`
+                : (String(packageName || '').trim() || `Zaoyoe credits ${normalizePointValue(grantedPoints, 0)}`);
+            const paymentResult = await createNowpaymentsPayment({
+                channelConfig,
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: runtimeContext?.requestOrigin || '',
+                orderId,
+                priceAmount: priceAmount.toFixed(2),
+                orderDescription: title
+            });
+            let gatewayPayload = paymentResult.response?.data || {};
+            const paymentId = sanitizeDisplayAmount(
+                gatewayPayload.payment_id
+                || gatewayPayload.id
+                || gatewayPayload.purchase_id,
+                '',
+                120
+            ) || null;
+            if (paymentId) {
+                try {
+                    const estimateResult = await updateNowpaymentsPaymentEstimate({
+                        channelConfig,
+                        secretValues: runtimeContext?.secretValues || {},
+                        requestOrigin: runtimeContext?.requestOrigin || '',
+                        paymentId
+                    });
+                    if (estimateResult.response?.data && typeof estimateResult.response.data === 'object') {
+                        gatewayPayload = {
+                            ...gatewayPayload,
+                            ...estimateResult.response.data
+                        };
+                    }
+                } catch (estimateError) {
+                    console.warn('[NOWPayments] Failed to refresh payment estimate:', estimateError.message);
+                }
+            }
+            const payAddress = sanitizeDisplayAmount(
+                gatewayPayload.pay_address
+                || gatewayPayload.payment_address
+                || gatewayPayload.address,
+                '',
+                240
+            );
+            const payAmountText = sanitizeDisplayAmount(gatewayPayload.pay_amount, '', 80);
+            const payAmountNumber = Number(gatewayPayload.pay_amount);
+            const resolvedPayCurrency = sanitizeDisplayAmount(
+                gatewayPayload.pay_currency || integration.payCurrency,
+                integration.payCurrency,
+                40
+            ).toLowerCase();
+            const quoteExpiresAt = resolveNowpaymentsQuoteExpiresAt({
+                gatewayPayload,
+                integration,
+                channelConfig
+            });
+            if (!payAddress || !(payAmountNumber > 0)) {
+                return {
+                    supported: false,
+                    action: 'crypto_checkout',
+                    displayName: channelConfig.display_name || 'USDT-BEP20',
+                    message: 'NOWPayments 未返回可用的 USDT 收款地址或应付金额，请稍后重试。'
+                };
+            }
+
+            return {
+                supported: true,
+                action: 'crypto_checkout',
+                displayName: channelConfig.display_name || 'USDT-BEP20',
+                checkoutUrl: '',
+                queryMode: 'provider_order_no',
+                providerOrderNo: orderId,
+                providerMetadata: {
+                    provider_order_no: orderId,
+                    payment_id: paymentId,
+                    pay_address: payAddress,
+                    pay_amount: payAmountNumber,
+                    pay_amount_text: payAmountText || String(payAmountNumber),
+                    pay_currency: resolvedPayCurrency,
+                    quote_expires_at: quoteExpiresAt,
+                    price_currency: integration.priceCurrency,
+                    price_amount: priceAmount,
+                    local_currency: 'cny',
+                    local_amount: normalizedAmount,
+                    cny_to_usd_rate: integration.cnyToUsdRate,
+                    is_fixed_rate: integration.isFixedRate,
+                    is_fee_paid_by_user: integration.isFeePaidByUser,
+                    network_name: channelConfig.network_name || 'BNB Smart Chain',
+                    checkout_mode: 'direct_payment',
+                    charge_type: isCustomRecharge ? 'custom' : 'package',
+                    paid_points: normalizePointValue(paidPoints, 0),
+                    bonus_points: normalizePointValue(bonusPoints, 0),
+                    credited_points: normalizePointValue(grantedPoints, 0),
+                    site: normalizedSite
+                },
+                summary: {
+                    grantedPoints: normalizePointValue(grantedPoints, 0),
+                    expectedAmount: normalizedAmount,
+                    price_amount: priceAmount,
+                    price_currency: integration.priceCurrency,
+                    pay_currency: resolvedPayCurrency,
+                    pay_amount: payAmountNumber,
+                    pay_amount_text: payAmountText || String(payAmountNumber),
+                    pay_address: payAddress,
+                    payment_id: paymentId,
+                    network_name: channelConfig.network_name || 'BNB Smart Chain',
+                    network_code: 'BSC/BEP20',
+                    qr_data: payAddress,
+                    expiration_estimate_date: quoteExpiresAt,
+                    quote_expires_at: quoteExpiresAt,
+                    quoteExpiresAt: quoteExpiresAt || customQuote?.expiresAt || null
+                },
+                message: (isCustomRecharge
+                    ? channelConfig.custom_amount_hint
+                    : channelConfig.package_hint)
+                    || 'USDT-BEP20 付款信息已生成，请按页面显示的精确金额完成转账。'
+            };
+        },
+        verifyWebhook({ payload, runtimeContext, secret, receivedSignature } = {}) {
+            const integration = runtimeContext?.integration || normalizeNowpaymentsConfig({
+                channelConfig: runtimeContext?.channelConfig || {},
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: runtimeContext?.requestOrigin || ''
+            });
+            const secretValue = sanitizeText(secret || integration.ipnSecret, '', 300);
+            if (!secretValue) {
+                return {
+                    supported: false,
+                    valid: false,
+                    reason: 'missing_secret',
+                    expectedSignature: '',
+                    receivedSignature: sanitizeText(receivedSignature, '', 160).toLowerCase()
+                };
+            }
+
+            const verification = verifyNowpaymentsIpnSignature(
+                payload || {},
+                secretValue,
+                receivedSignature
+            );
+            return {
+                supported: true,
+                ...verification
+            };
+        },
+        normalizeWebhookStatus(payload = {}) {
+            return normalizeNowpaymentsPaymentStatus(payload.payment_status);
         }
     },
     hupijiao: {

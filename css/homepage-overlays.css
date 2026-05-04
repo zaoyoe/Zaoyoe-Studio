@@ -269,9 +269,17 @@ html:not([data-theme="dark"]) #guestbookModal .guestbook-submit-btn.guestbook-co
 
 #guestbookModal {
     --guestbook-modal-overlay-height: 100dvh;
+    --guestbook-modal-viewport-top: 0px;
+    --guestbook-modal-viewport-left: 0px;
+    --guestbook-modal-viewport-width: 100vw;
     --guestbook-modal-translate-y: 0px;
     --guestbook-modal-card-height: 420px;
     --guestbook-modal-card-max-height: calc(100svh - 56px);
+    top: var(--guestbook-modal-viewport-top) !important;
+    left: var(--guestbook-modal-viewport-left) !important;
+    right: auto !important;
+    bottom: auto !important;
+    width: var(--guestbook-modal-viewport-width) !important;
     height: var(--guestbook-modal-overlay-height) !important;
     min-height: var(--guestbook-modal-overlay-height) !important;
     padding: 24px 18px 18px !important;

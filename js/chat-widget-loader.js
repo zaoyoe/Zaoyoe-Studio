@@ -6,10 +6,10 @@
     }
     global.__zaoyoeChatWidgetBootstrapLoaded = true;
 
-    const VERSION = '20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1';
+    const VERSION = '20260504_ENGAGEMENT_ROUTE_LINKS_1';
     const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';
     const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';
-    const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260503_CHAT_WIDGET_DESKTOP_NARROW_PEEK_1';
+    const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260504_ENGAGEMENT_ROUTE_LINKS_1';
     const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';
     const CHAT_WIDGET_SHELL_MODE_KEY = 'zaoyoe_chat_widget_last_shell_mode_v1';
     const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';
@@ -19,10 +19,12 @@
     const BOOTSTRAP_HANDOFF_MAX_WAIT_MS = 720;
     const BOOTSTRAP_HANDOFF_VISIBLE_DELAY_MS = 110;
     const BOOTSTRAP_HANDOFF_FADE_MS = 320;
+    const ENGAGEMENT_RUNTIME_WARM_DELAY_MS = 1400;
 
     let pollTimer = null;
     let startedAt = 0;
     let widgetWarmPromise = null;
+    let engagementRuntimeWarmScheduled = false;
     let pendingOpen = false;
     let placeholderFab = null;
     let placeholderSuppressed = false;
@@ -43,6 +45,7 @@
 /* 20260503_CHAT_WIDGET_SAFARI_HANDOFF_12 */
 /* 20260503_CHAT_WIDGET_DESKTOP_NARROW_PEEK_1 */
 /* 20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1 */
+/* 20260504_ENGAGEMENT_ROUTE_LINKS_1 */
 .chat-widget-fab {
     position: fixed;
     top: 85%;
@@ -2173,6 +2176,32 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
         ensureChatWidgetStyles();
         createPlaceholderFab();
         bindPlaceholderEvents();
+        scheduleEngagementRuntimeWarm();
+    }
+
+    function scheduleEngagementRuntimeWarm() {
+        if (engagementRuntimeWarmScheduled || hasWidgetInstance()) {
+            return;
+        }
+        engagementRuntimeWarmScheduled = true;
+
+        const warmRuntime = () => {
+            if (hasWidgetInstance()) {
+                return;
+            }
+            ensureChatWidgetReady({ open: false }).catch((error) => {
+                console.warn('[ChatWidgetLoader] Failed to warm engagement runtime:', error);
+            });
+        };
+
+        if (typeof global.requestIdleCallback === 'function') {
+            global.requestIdleCallback(warmRuntime, {
+                timeout: ENGAGEMENT_RUNTIME_WARM_DELAY_MS + 1600
+            });
+            return;
+        }
+
+        global.setTimeout(warmRuntime, ENGAGEMENT_RUNTIME_WARM_DELAY_MS);
     }
 
     if (document.readyState === 'loading') {

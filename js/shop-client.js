@@ -426,6 +426,7 @@ const ShopClient = {
     discountAssetsRequestCache: new Map(),
     discountAssetsPrefetchHandle: null,
     discountAssetsCacheUserKey: null,
+    shopDiscountEngagementSeenKeys: new Set(),
 
     getAccessToken: async function () {
         const client = window.supabaseClient || supabaseClient;
@@ -454,6 +455,12 @@ const ShopClient = {
         if (this.discountAssetsPrefetchHandle) {
             clearTimeout(this.discountAssetsPrefetchHandle);
             this.discountAssetsPrefetchHandle = null;
+        }
+
+        if (this.shopDiscountEngagementSeenKeys instanceof Set) {
+            this.shopDiscountEngagementSeenKeys.clear();
+        } else {
+            this.shopDiscountEngagementSeenKeys = new Set();
         }
     },
 
@@ -1431,6 +1438,191 @@ const ShopClient = {
         } catch (error) {
             console.debug('Background discount assets prefetch failed:', error?.message || error);
         }
+    },
+
+    getCurrentPurchaseDisplayName: function () {
+        if (!this.currentPurchase) return '';
+        return this.isEnglishShopLocale() && this.currentPurchase.productNameEn
+            ? this.currentPurchase.productNameEn
+            : (this.currentPurchase.productName || this.currentPurchase.productNameEn || '');
+    },
+
+    isDiscountRelevantToCurrentPurchase: function (item = {}) {
+        if (!this.currentPurchase) return false;
+
+        const scopeType = String(item?.scope_type || 'all').trim().toLowerCase() || 'all';
+        if (scopeType === 'all') return true;
+
+        const currentProductId = String(this.currentPurchase.productId || '').trim();
+        if (scopeType === 'product') {
+            return String(item?.scope_product_id || item?.scope_product?.id || '').trim() === currentProductId;
+        }
+
+        if (scopeType === 'category') {
+            const currentCategory = String(this.currentPurchase.productCategory || '').trim();
+            return Boolean(currentCategory && String(item?.scope_category || '').trim() === currentCategory);
+        }
+
+        return false;
+    },
+
+    estimateDiscountSavingsForEngagement: function (item = {}) {
+        const previewDiscountAmount = Number(item?.preview?.discount_amount);
+        if (Number.isFinite(previewDiscountAmount) && previewDiscountAmount > 0) {
+            return previewDiscountAmount;
+        }
+
+        const subtotal = Math.max(0, Number(this.getCurrentPurchaseSubtotal?.() || 0) || 0);
+        if (subtotal <= 0) return 0;
+
+        const preciseFinalTotal = this.getDiscountPrecisePreviewTotal(item);
+        if (Number.isFinite(preciseFinalTotal) && preciseFinalTotal >= 0) {
+            return Math.max(0, Number((subtotal - preciseFinalTotal).toFixed(2)));
+        }
+
+        const discountType = String(item?.discount_type || item?.discountType || '').trim().toLowerCase();
+        const discountValue = Number(item?.discount_value ?? item?.discountValue);
+        if (!Number.isFinite(discountValue) || discountValue <= 0) return 0;
+
+        if (discountType === 'fixed') {
+            return Math.min(subtotal, discountValue);
+        }
+        if (discountType === 'percent') {
+            return Math.max(0, Number((subtotal - (subtotal * discountValue / 100)).toFixed(2)));
+        }
+
+        return 0;
+    },
+
+    selectShopDiscountEngagementOffer: function () {
+        if (!this.currentPurchase) return null;
+
+        const ownedOffers = (Array.isArray(this.currentPurchase.availableDiscountAssets) ? this.currentPurchase.availableDiscountAssets : [])
+            .filter((item) => item?.available !== false && this.isDiscountRelevantToCurrentPurchase(item))
+            .map((item) => ({
+                type: 'owned',
+                item,
+                savings: this.estimateDiscountSavingsForEngagement(item)
+            }));
+        const claimableOffers = (Array.isArray(this.currentPurchase.claimableDiscounts) ? this.currentPurchase.claimableDiscounts : [])
+            .filter((item) => item?.can_claim !== false && this.isDiscountRelevantToCurrentPurchase(item))
+            .map((item) => ({
+                type: 'claimable',
+                item,
+                savings: this.estimateDiscountSavingsForEngagement(item)
+            }));
+
+        return [...ownedOffers, ...claimableOffers]
+            .sort((left, right) => {
+                const savingsDelta = Number(right.savings || 0) - Number(left.savings || 0);
+                if (savingsDelta) return savingsDelta;
+                if (left.type !== right.type) return left.type === 'owned' ? -1 : 1;
+                return String(left.item?.code || '').localeCompare(String(right.item?.code || ''));
+            })[0] || null;
+    },
+
+    buildShopDiscountEngagementBubble: function (offer = {}) {
+        const item = offer?.item || {};
+        const productId = String(this.currentPurchase?.productId || '').trim();
+        const code = String(item?.code || '').trim().toUpperCase();
+        const discountId = String(item?.discount_id || '').trim();
+        const assetId = String(item?.asset_id || '').trim();
+        const productName = this.getCurrentPurchaseDisplayName();
+        const benefitLabel = this.getDiscountBenefitLabel(item) || this.trShop('coupon', '优惠券');
+        const savings = Number(offer?.savings || 0);
+        const pointsLabel = this.isEnglishShopLocale()
+            ? (window.i18n?.t('shop.points') || 'points')
+            : (window.SiteConfig?.getPointsLabel?.() || window.i18n?.t('shop.points') || '积分');
+        const savingsText = savings > 0
+            ? (this.isEnglishShopLocale()
+                ? this.trShop('savedAmount', 'Save {amount}', { amount: `${this.formatShopPointValue(savings)} ${pointsLabel}` })
+                : `预计可省 ${this.formatShopPointValue(savings)} ${pointsLabel}`)
+            : '';
+        const title = offer.type === 'claimable'
+            ? (this.isEnglishShopLocale() ? 'Coupon available' : '有优惠券可以领取')
+            : (this.isEnglishShopLocale() ? 'Coupon ready to use' : '这件商品有可用优惠');
+        const content = offer.type === 'claimable'
+            ? (this.isEnglishShopLocale()
+                ? `${productName || 'This product'} has ${benefitLabel} available${savingsText ? `, ${savingsText}` : ''}. Claim it before checkout.`
+                : `${productName ? `「${productName}」` : '这件商品'}有 ${benefitLabel} 可领取${savingsText ? `，${savingsText}` : ''}，领取后可在结算时使用。`)
+            : (this.isEnglishShopLocale()
+                ? `${benefitLabel}${code ? ` (${code})` : ''} can be used for ${productName || 'this product'}${savingsText ? `, ${savingsText}` : ''}.`
+                : `${benefitLabel}${code ? `（${code}）` : ''} 可用于${productName ? `「${productName}」` : '当前商品'}${savingsText ? `，${savingsText}` : ''}。`);
+        const sourceEventId = [
+            'shop_discount_offer',
+            offer.type,
+            productId,
+            assetId || discountId || code
+        ].filter(Boolean).join(':');
+        const actionUrl = productId
+            ? `/shop.html?productId=${encodeURIComponent(productId)}`
+            : '/shop.html';
+
+        return {
+            id: sourceEventId,
+            source: 'client_event',
+            source_module: 'shop',
+            source_event_id: sourceEventId,
+            page_id: 'shop',
+            site: window.SiteConfig?.site || 'cn',
+            title,
+            content,
+            action_label: offer.type === 'claimable'
+                ? (this.isEnglishShopLocale() ? 'Claim' : '去领取')
+                : (this.isEnglishShopLocale() ? 'Use coupon' : '去使用'),
+            action_url: actionUrl,
+            tone: offer.type === 'claimable' ? 'success' : 'info',
+            priority: offer.type === 'claimable' ? 62 : 60,
+            dismiss_ttl_hours: 12,
+            metadata: {
+                event_type: offer.type === 'claimable' ? 'coupon_available' : 'product_discount_available',
+                product_id: productId,
+                product_name: productName || null,
+                discount_id: discountId || null,
+                discount_asset_id: assetId || null,
+                discount_code: code || null,
+                benefit_label: benefitLabel,
+                estimated_savings: savings,
+                source: 'shop_product_discount_assets'
+            }
+        };
+    },
+
+    showShopDiscountEngagementBubble: function (bubble = {}, options = {}) {
+        const sourceEventId = String(bubble?.source_event_id || bubble?.id || '').trim();
+        if (!sourceEventId) return;
+
+        if (!(this.shopDiscountEngagementSeenKeys instanceof Set)) {
+            this.shopDiscountEngagementSeenKeys = new Set();
+        }
+        if (this.shopDiscountEngagementSeenKeys.has(sourceEventId)) {
+            return;
+        }
+
+        const show = window.ZaoyoeEngagement?.show;
+        if (typeof show !== 'function') {
+            if (options.retry === false) return;
+            window.setTimeout(() => {
+                this.showShopDiscountEngagementBubble(bubble, { retry: false });
+            }, 900);
+            return;
+        }
+
+        this.shopDiscountEngagementSeenKeys.add(sourceEventId);
+        show(bubble);
+    },
+
+    maybeShowShopDiscountEngagement: function () {
+        const offer = this.selectShopDiscountEngagementOffer();
+        if (!offer) return;
+
+        const bubble = this.buildShopDiscountEngagementBubble(offer);
+        window.setTimeout(() => {
+            if (!this.currentPurchase || String(this.currentPurchase.productId || '').trim() !== String(bubble.metadata?.product_id || '').trim()) {
+                return;
+            }
+            this.showShopDiscountEngagementBubble(bubble);
+        }, 450);
     },
 
     scheduleVisibleDiscountAssetsPrefetch: function (products = []) {
@@ -4543,6 +4735,7 @@ const ShopClient = {
             this.currentPurchase.claimableDiscounts = Array.isArray(payload?.claimable_discounts) ? payload.claimable_discounts : [];
             this.currentPurchase.discountAssetsLoading = false;
             this.renderPurchaseDiscountAssets();
+            this.maybeShowShopDiscountEngagement();
         } catch (error) {
             this.currentPurchase.availableDiscountAssets = [];
             this.currentPurchase.claimableDiscounts = [];
@@ -8137,6 +8330,39 @@ const ShopClient = {
         };
     },
 
+    getPurchaseModalLayoutRect: function (element) {
+        const rect = element?.getBoundingClientRect?.();
+        if (!rect) return null;
+
+        const { overlay } = this.getPurchaseModalElements();
+        const visualTop = Math.max(0, window.visualViewport?.offsetTop || 0);
+        const overlayRect = overlay?.getBoundingClientRect?.();
+        const rectUsesVisualViewport = visualTop > 0
+            && overlayRect
+            && Math.abs(Math.round(overlayRect.top || 0)) < Math.abs(Math.round((overlayRect.top || 0) - visualTop));
+        const layoutOffsetTop = rectUsesVisualViewport ? visualTop : 0;
+
+        return {
+            top: Math.round(rect.top + layoutOffsetTop),
+            bottom: Math.round(rect.bottom + layoutOffsetTop),
+            height: Math.round(rect.height || 0)
+        };
+    },
+
+    shouldDockPurchaseModalForInput: function (input, metrics = this.getPurchaseModalViewportMetrics()) {
+        if (!input || !metrics) return false;
+
+        const bottomInset = Math.max(0, Math.round(metrics.bottomInset || 0));
+        if (bottomInset <= 24) return false;
+
+        const keyboardTop = Math.max(0, Math.round((metrics.baseViewportHeight || 0) - bottomInset));
+        const inputRect = this.getPurchaseModalLayoutRect(input);
+        if (!keyboardTop || !inputRect) return false;
+
+        const bottomGuard = Math.max(32, Math.min(72, Math.round((metrics.baseViewportHeight || 0) * 0.08)));
+        return inputRect.bottom > keyboardTop - bottomGuard;
+    },
+
     applyPurchaseModalKeyboardDock: function (bottomInset, animate = false) {
         const { overlay, card } = this.getPurchaseModalElements();
         if (!overlay || !card) return;
@@ -8223,7 +8449,8 @@ const ShopClient = {
         }
         const metrics = this.getPurchaseModalViewportMetrics();
         const bottomInset = metrics.bottomInset;
-        const shouldDock = !!activeInput && (this.purchaseModalKeyboardDocked ? bottomInset > 8 : bottomInset > 24);
+        const needsKeyboardDock = !!activeInput && this.shouldDockPurchaseModalForInput(activeInput, metrics);
+        const shouldDock = needsKeyboardDock && (this.purchaseModalKeyboardDocked ? bottomInset > 8 : bottomInset > 24);
         const nextInset = shouldDock ? bottomInset : 0;
         const previousInset = this.purchaseModalKeyboardLastBottomInset;
         const isInsetDroppingWhileFocused = this.purchaseModalKeyboardDocked && !!activeInput && nextInset > 24 && nextInset + 24 < previousInset;
@@ -8234,9 +8461,11 @@ const ShopClient = {
             if (!this.purchaseModalKeyboardInitialDockTimer) {
                 this.purchaseModalKeyboardInitialDockTimer = setTimeout(() => {
                     this.purchaseModalKeyboardInitialDockTimer = null;
-                    if (!this.getActivePurchaseModalInput()) return;
+                    const liveInput = this.getActivePurchaseModalInput();
+                    if (!liveInput) return;
                     const liveMetrics = this.getPurchaseModalViewportMetrics();
                     if (liveMetrics.bottomInset <= 24) return;
+                    if (!this.shouldDockPurchaseModalForInput(liveInput, liveMetrics)) return;
                     this.applyPurchaseModalKeyboardDock(liveMetrics.bottomInset, true);
                 }, 90);
             }
@@ -8933,6 +9162,25 @@ const ShopClient = {
         if (errorMessage.includes('积分') || errorMessage.includes('余额') || errorMessage.includes('nsufficient') || errorMessage.includes('balance')) {
             this.closeCartCheckoutModal();
             this.showShopToast(window.i18n?.t('shop.insufficientPoints') || '积分不足，请先充值', 'error');
+            window.ZaoyoeEngagement?.show?.({
+                id: 'shop_cart_insufficient_points',
+                source: 'client_event',
+                source_module: 'shop',
+                source_event_id: 'shop_cart_insufficient_points',
+                page_id: 'shop',
+                site: window.SiteConfig?.site || 'cn',
+                title: '积分不足',
+                content: '购物车结算需要更多积分，可以先去钱包充值后再回来下单。',
+                action_label: '去充值',
+                action_url: '/index.html#wallet',
+                tone: 'warning',
+                priority: 70,
+                dismiss_ttl_hours: 2,
+                metadata: {
+                    event_type: 'points_insufficient',
+                    source: 'cart_checkout'
+                }
+            });
             setTimeout(() => {
                 void openShopWalletModal('recharge', {
                     entry: 'shop_cart_insufficient_points',
@@ -9130,6 +9378,25 @@ const ShopClient = {
                 this.closePurchaseModal();
                 // Show a visible toast notification instead of native alert
                 this.showShopToast(`❌ ${window.i18n?.t('shop.insufficientPoints') || '积分不足，请先充值'}`, 'error');
+                window.ZaoyoeEngagement?.show?.({
+                    id: 'shop_insufficient_points',
+                    source: 'client_event',
+                    source_module: 'shop',
+                    source_event_id: 'shop_insufficient_points',
+                    page_id: 'shop',
+                    site: window.SiteConfig?.site || 'cn',
+                    title: '积分不足',
+                    content: '这件商品需要更多积分，可以先充值，完成后回到商城继续购买。',
+                    action_label: '去充值',
+                    action_url: '/index.html#wallet',
+                    tone: 'warning',
+                    priority: 70,
+                    dismiss_ttl_hours: 2,
+                    metadata: {
+                        event_type: 'points_insufficient',
+                        product_id: this.currentPurchase?.productId || null
+                    }
+                });
                 // Open wallet modal for recharging
                 setTimeout(() => {
                     void openShopWalletModal('recharge', {

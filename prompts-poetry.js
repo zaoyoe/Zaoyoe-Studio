@@ -1202,6 +1202,12 @@ async function checkAuthState() {
                 isAdmin = true;
             }
 
+            if (isAdmin) {
+                window.ZaoyoeAdminPresence?.start?.(window.supabaseClient);
+            } else {
+                window.ZaoyoeAdminPresence?.stop?.();
+            }
+
             if (identityName) {
                 identityName.innerHTML = isAdmin
                     ? `${displayName} <span class="admin-badge">✨</span>`
@@ -1298,6 +1304,7 @@ async function checkAuthState() {
             setPromptsDisplayState(switchAccountBtn, false, 'prompts-display-flex');
             setPromptsDisplayState(logoutBtn, false, 'prompts-display-flex');
             setPromptsDisplayState(adminStudioBtn, false, 'prompts-display-flex');
+            window.ZaoyoeAdminPresence?.stop?.();
         }
     } catch (error) {
         console.error('Auth check failed:', error);
@@ -8645,6 +8652,59 @@ async function checkUserBlockStatus(userId, scope = 'gallery') {
     return false;
 }
 
+function getCurrentPromptEngagementTitle() {
+    const promptId = String(currentPromptId || '').trim();
+    if (!promptId || !Array.isArray(PROMPTS)) return '';
+
+    const prompt = PROMPTS.find((item) => {
+        const itemSupabaseId = String(item?.supabaseId || '').trim();
+        const itemId = String(item?.id || '').trim();
+        return itemSupabaseId === promptId || itemId === promptId;
+    });
+
+    if (!prompt) return '';
+
+    try {
+        return getLocalizedField(prompt, 'title') || prompt.title || '';
+    } catch (_) {
+        return prompt.title || '';
+    }
+}
+
+async function notifyPromptCommentReply(payload = {}) {
+    const commentId = String(payload.commentId || '').trim();
+    const parentId = String(payload.parentId || '').trim();
+    if (!commentId || !parentId || !window.supabaseClient?.auth?.getSession) {
+        return;
+    }
+
+    try {
+        const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
+        const accessToken = session?.access_token || '';
+        if (!accessToken) return;
+
+        await fetch('/api/engagement/reply-notify', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${accessToken}`
+            },
+            body: JSON.stringify({
+                source: 'prompt_comment',
+                comment_id: commentId,
+                parent_id: parentId,
+                prompt_id: String(payload.promptId || '').trim(),
+                prompt_title: String(payload.promptTitle || '').trim(),
+                content_preview: String(payload.content || '').trim(),
+                site: String(payload.site || getPromptInteractionSite()).trim() || 'cn'
+            })
+        });
+    } catch (error) {
+        console.debug('[Prompts] Reply notification skipped:', error?.message || error);
+    }
+}
+
 async function submitComment() {
     if (!window.supabaseClient) return;
 
@@ -8750,6 +8810,18 @@ async function submitComment() {
         restoreCommentDraft(input, originalContent, originalParentId, originalReplyToName);
         alert("Failed to post comment");
         return;
+    }
+    window.ZaoyoeAdminPresence?.markActive?.();
+
+    if (originalParentId) {
+        void notifyPromptCommentReply({
+            commentId: data.id,
+            parentId: originalParentId,
+            promptId: currentPromptId,
+            promptTitle: getCurrentPromptEngagementTitle(),
+            content: originalContent || (imageUrl ? '[图片]' : ''),
+            site
+        });
     }
 
     // Build comment object with cached user data

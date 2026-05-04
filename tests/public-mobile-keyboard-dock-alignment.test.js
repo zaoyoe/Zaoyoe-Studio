@@ -130,6 +130,10 @@ test('mobile keyboard overlays use the customer-service light-lock dock contract
     assert.doesNotMatch(shopClient, /stableViewportHeight \+ 24 < fallbackBaseHeight/);
     assert.doesNotMatch(promptsPoetry, /stableViewportHeight \+ 24 < fallbackBaseHeight/);
     assert.doesNotMatch(homepageGuestbookModal, /stableViewportHeight \+ 24 < fallbackBaseHeight/);
+    assert.match(homepageGuestbookModal, /function getGuestbookModalNativeViewportFrame\(\) \{/);
+    assert.match(homepageGuestbookModal, /const shouldPreserveKeyboardBase = overlay\.classList\.contains\('active'\)[\s\S]*&& baseHeight > measuredHeight;/);
+    assert.match(homepageGuestbookModal, /'--guestbook-modal-viewport-top': `\$\{frame\.top\}px`,[\s\S]*'--guestbook-modal-overlay-height': `\$\{overlayHeight\}px`/);
+    assert.match(homepageGuestbookModal, /requestAnimationFrame\(\(\) => \{[\s\S]*captureGuestbookModalOverlayBaseHeight\(\);[\s\S]*syncGuestbookModalKeyboardDock\(\);/);
 });
 
 test('keyboard dock styles and cache keys are wired for affected public/admin surfaces', () => {
@@ -149,6 +153,8 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     const adminStudioHtml = readRepoFile('admin-studio.html');
 
     assert.match(styleCss, /--comment-modal-translate-y: 0px;/);
+    assert.match(styleCss, /#guestbookModal \{[\s\S]*--guestbook-modal-viewport-top: 0px;[\s\S]*top: var\(--guestbook-modal-viewport-top\) !important;[\s\S]*width: var\(--guestbook-modal-viewport-width\) !important;/);
+    assert.match(homepageOverlayCss, /#guestbookModal \{[\s\S]*--guestbook-modal-viewport-top: 0px;[\s\S]*top: var\(--guestbook-modal-viewport-top\) !important;[\s\S]*width: var\(--guestbook-modal-viewport-width\) !important;/);
     assert.match(styleCss, /#commentModal\.keyboard-docked \.comment-composer-sheet/);
     assert.match(profileCss, /--profile-modal-dock-height:/);
     assert.match(profileCss, /#profileModal\.active\.keyboard-active \.modal-content\.profile-modal/);
@@ -195,14 +201,14 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(adminChatCss, /--admin-chat-keyboard-dock-height/);
     assert.match(adminChatCss, /\.admin-chat-viewport-probe/);
 
-    assert.match(shopHtml, /shop-client\.js\?v=20260503_SHOP_MOBILE_FRESH_ENTER_2/);
+    assert.match(shopHtml, /shop-client\.js\?v=20260504_SHOP_DISCOUNT_ENGAGEMENT_1/);
     assert.match(guestbookHtml, /guestbook\.js\?v=20260503_COMMENT_MODAL_CHROME_CLOSE_1/);
     assert.match(shopHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
     assert.match(guestbookHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
-    assert.match(guestbookHtml, /homepage-guestbook-modal\.js\?v=20260503_HOME_GUESTBOOK_MODAL_CHROME_CLOSE_1/);
-    assert.match(adminStudioHtml, /admin-chat\.js\?v=20260502_ADMIN_CHAT_KEYBOARD_DOCK_6/);
+    assert.match(guestbookHtml, /homepage-guestbook-modal\.js\?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1/);
+    assert.match(adminStudioHtml, /admin-chat\.js\?v=20260504_OPS_SESSION_NO_ONLINE_1/);
     assert.match(adminStudioHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
-    assert.match(chatWidgetLoader, /const VERSION = '20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1';/);
+    assert.match(chatWidgetLoader, /const VERSION = '20260504_ENGAGEMENT_ROUTE_LINKS_1';/);
     assert.match(chatWidgetLoader, /<div class="chat-header-actions">[\s\S]*<button type="button" class="chat-header-mode-switch" tabindex="-1">常用入口<\/button>/);
     assert.match(chatWidgetLoader, /chat-widget-bootstrap-user-input \.chat-widget-bootstrap-user-emoji-btn \{[\s\S]*background: transparent;[\s\S]*box-shadow: none;/);
     assert.match(chatWidgetLoader, /chat-widget-bootstrap-user-input \.chat-send-btn \{[\s\S]*width: auto;[\s\S]*flex: 0 0 auto;/);
@@ -290,5 +296,5 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(chatWidget, /\.chat-window--bootstrap-adopting-content\.chat-window--bootstrap-content-ready > \*:not\(\.emoji-picker-popover\):not\(\.chat-bootstrap-content-snapshot\)[\s\S]*opacity: 1;[\s\S]*chat-widget-content-settle/);
     assert.match(chatWidgetCss, /\.chat-window--bootstrap-content-ready \.emoji-picker-popover:not\(\.active\) \{[\s\S]*opacity: 0 !important;/);
     assert.match(chatWidgetCss, /@keyframes chat-widget-loading-dots \{[\s\S]*transform: translateY\(-3px\);[\s\S]*opacity: 0\.96;/);
-    assert.match(walletLoader, /const VERSION = '20260503_WALLET_REDEEM_REVOKE_REASON_UI_1';/);
+    assert.match(walletLoader, /const VERSION = '20260504_USDT_DIRECT_CHECKOUT_1';/);
 });

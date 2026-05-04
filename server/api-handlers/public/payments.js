@@ -1,6 +1,9 @@
 const {
     createZpayWebhookHandler
 } = require('../../../api/_lib/payments/zpay-webhook');
+const {
+    createNowpaymentsWebhookHandler
+} = require('../../../api/_lib/payments/nowpayments-webhook');
 
 function createPaymentsHandlers({
     admin,
@@ -8,6 +11,7 @@ function createPaymentsHandlers({
     paymentProviders,
     paymentOrders,
     zpayWebhook,
+    nowpaymentsWebhook,
     env = process.env
 } = {}) {
     const {
@@ -37,6 +41,9 @@ function createPaymentsHandlers({
     const resolvedZpayWebhook = zpayWebhook || {
         createZpayWebhookHandler
     };
+    const resolvedNowpaymentsWebhook = nowpaymentsWebhook || {
+        createNowpaymentsWebhookHandler
+    };
 
     const parseBody = typeof parseJsonBody === 'function'
         ? parseJsonBody
@@ -61,6 +68,10 @@ function createPaymentsHandlers({
     }
 
     const zpayWebhookHandler = resolvedZpayWebhook.createZpayWebhookHandler({
+        getSupabase: getWebhookSupabaseClient,
+        env
+    });
+    const nowpaymentsWebhookHandler = resolvedNowpaymentsWebhook.createNowpaymentsWebhookHandler({
         getSupabase: getWebhookSupabaseClient,
         env
     });
@@ -303,6 +314,9 @@ function createPaymentsHandlers({
         },
         'zpay/webhook': async function paymentsZpayWebhookHandler(req, res) {
             return zpayWebhookHandler(req, res);
+        },
+        'nowpayments/webhook': async function paymentsNowpaymentsWebhookHandler(req, res) {
+            return nowpaymentsWebhookHandler(req, res);
         }
     };
 }
