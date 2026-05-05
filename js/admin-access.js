@@ -25,6 +25,7 @@
     let userPresenceStartedAt = '';
     let userPresenceClient = null;
     let userPresenceIdentity = null;
+    let userPresenceActivityPersistWarningShown = false;
 
     function normalizeAccessPayload(payload = {}) {
         return {
@@ -406,9 +407,84 @@
             email,
             sessionId: uniqueSessionIds[0] || '',
             sessionIds: uniqueSessionIds,
-            site: String(options.site || globalScope?.SiteConfig?.getCurrentSite?.() || '').trim(),
+            site: String(options.site || globalScope?.SiteConfig?.getCurrentSite?.() || globalScope?.SiteConfig?.site || '').trim(),
             path: String(globalScope?.location?.pathname || '').trim()
         };
+    }
+
+    function normalizePresencePageId(path = '') {
+        const normalized = String(path || globalScope?.location?.pathname || '/')
+            .trim()
+            .toLowerCase()
+            .replace(/[#?].*$/, '')
+            .replace(/\.html$/i, '')
+            .replace(/^\/+|\/+$/g, '');
+        const page = normalized.split('/').filter(Boolean).pop() || 'home';
+        const aliases = {
+            '': 'home',
+            index: 'home',
+            homepage: 'home',
+            prompts: 'prompts',
+            prompt: 'prompts',
+            shop: 'shop',
+            verify: 'verify',
+            guestbook: 'guestbook',
+            privacy: 'privacy',
+            'reset-password': 'reset-password'
+        };
+        return (aliases[page] || page || 'home').slice(0, 80);
+    }
+
+    function getPresenceSite(identity = {}) {
+        return String(
+            identity.site
+            || globalScope?.SiteConfig?.getCurrentSite?.()
+            || globalScope?.SiteConfig?.site
+            || 'cn'
+        ).trim() || 'cn';
+    }
+
+    async function persistUserPresenceActivityHeartbeat(payload = {}) {
+        const userId = String(payload.user_id || payload.userId || '').trim();
+        if (!userId || !userPresenceClient) {
+            return false;
+        }
+
+        const pageId = normalizePresencePageId(payload.page_path || payload.path);
+        const site = getPresenceSite(userPresenceIdentity || payload);
+        const lastActiveAt = String(payload.last_seen_at || new Date().toISOString()).trim();
+
+        try {
+            if (typeof userPresenceClient.rpc === 'function') {
+                const { error } = await userPresenceClient.rpc('fn_record_user_activity_heartbeat', {
+                    p_page_id: pageId,
+                    p_site: site,
+                    p_source_module: 'presence.heartbeat'
+                });
+                if (!error) {
+                    return true;
+                }
+            }
+
+            const { error } = await userPresenceClient
+                .from('engagement_user_activity')
+                .upsert({
+                    user_id: userId,
+                    last_active_at: lastActiveAt,
+                    last_page_id: pageId,
+                    site,
+                    source_module: 'presence.heartbeat'
+                }, { onConflict: 'user_id' });
+
+            if (error) throw error;
+            return true;
+        } catch (error) {
+            if (!userPresenceActivityPersistWarningShown) {
+                userPresenceActivityPersistWarningShown = true;
+                console.warn('[UserPresence] Failed to persist activity heartbeat:', error?.message || error);
+            }
+            return false;
+        }
     }
 
     function buildAdminPresencePayload() {
@@ -462,8 +538,12 @@
             return Promise.resolve(false);
         }
 
-        return Promise.resolve(userPresenceChannel.track(buildUserPresencePayload()))
-            .then(() => true)
+        const payload = buildUserPresencePayload();
+        return Promise.resolve(userPresenceChannel.track(payload))
+            .then(async () => {
+                await persistUserPresenceActivityHeartbeat(payload);
+                return true;
+            })
             .catch((error) => {
                 console.warn('[UserPresence] Failed to update user presence:', error);
                 return false;

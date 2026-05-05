@@ -5,6 +5,9 @@ const path = require('node:path');
 
 const walletScriptPath = path.resolve(__dirname, '../js/components/WalletModal.js');
 const walletStylesPath = path.resolve(__dirname, '../css/wallet.css');
+const usdtPreviewHtmlPath = path.resolve(__dirname, '../usdt_payment_flow_preview.html');
+const usdtPreviewRuntimePath = path.resolve(__dirname, '../js/usdt-payment-flow-preview-runtime.js');
+const usdtPreviewBootPath = path.resolve(__dirname, '../js/usdt-payment-flow-preview-boot.js');
 
 test('wallet recharge UI exposes pending feedback hooks for package and custom recharge actions', () => {
     const script = fs.readFileSync(walletScriptPath, 'utf8');
@@ -13,6 +16,8 @@ test('wallet recharge UI exposes pending feedback hooks for package and custom r
     assert.doesNotMatch(script, /id="wallet-recharge-progress"/);
     assert.match(script, /setRechargeActionPendingState\(state = null\)/);
     assert.match(script, /buildRechargePendingMarkup\(label = '处理中', options = \{\}\)/);
+    assert.doesNotMatch(script, /priceEl\.innerHTML\s*=\s*this\.buildRechargePendingMarkup/);
+    assert.match(script, /action === 'pay-selected-recharge'/);
     assert.match(script, /wallet-pending-dots/);
     assert.match(script, /wallet-recharge-package-loading/);
     assert.match(script, /wallet-recharge-package-loading-dots/);
@@ -25,8 +30,10 @@ test('wallet recharge UI exposes pending feedback hooks for package and custom r
     assert.match(script, /placeholder="请输入充值金额"/);
     assert.match(script, /id="wallet-recharge-payment-panel" hidden/);
     assert.match(script, /id="wallet-recharge-package-methods"/);
+    assert.match(script, /id="wallet-recharge-method-dock" hidden/);
+    assert.doesNotMatch(script, /wallet-recharge-method-dock-label/);
     assert.match(script, /id="wallet-custom-recharge-methods"/);
-    assert.match(script, /action:\s*'pay-selected-recharge'/);
+    assert.match(script, /action:\s*isPackageMode \? 'pay-selected-recharge' : 'custom-recharge'/);
     assert.match(script, /case 'pay-selected-recharge':/);
     assert.match(script, /'wallet-payment-method': method\.key/);
     assert.doesNotMatch(script, /前往\$\{providerLabel\}/);
@@ -38,12 +45,21 @@ test('wallet recharge UI exposes pending feedback hooks for package and custom r
     assert.match(script, /errorMessage: `请输入\$\{inputLabel\}`/);
     assert.match(script, /tryPresentHostedPaymentQrModal\(paymentResult,\s*\{/);
     assert.match(script, /tryPresentNowpaymentsCheckoutModal\(paymentResult,\s*\{/);
+    assert.match(script, /normalizePaymentSurchargeRate\(value, fallback = 0\)/);
+    assert.match(script, /estimatePaymentSurcharge\(provider = \{\}, baseAmount = null\)/);
+    assert.match(script, /resolveCryptoPaymentPricingSummary\(paymentResult = \{\}, providerSummary = \{\}, options = \{\}\)/);
+    assert.match(script, /resolvePaymentPricingSummary\(paymentResult = \{\}, providerSummary = \{\}\)/);
+    assert.match(script, /wallet-recharge-method-fee/);
+    assert.match(script, /payment_fee_amount/);
+    assert.match(script, /base_amount/);
     assert.match(script, /paymentResult\.mode === 'crypto_checkout'/);
     assert.match(script, /wallet-crypto-primary-amount/);
     assert.match(script, /wallet-crypto-countdown/);
     assert.match(script, /wallet-crypto-timeout/);
     assert.match(script, /js-wallet-crypto-timeout/);
     assert.match(script, /wallet\.usdtPaymentExpiredTitle/);
+    assert.match(script, /wallet\.usdtPaymentConfirmingTitle/);
+    assert.match(script, /wallet\.usdtPaymentConfirmingAfterQuoteExpired/);
     assert.match(script, /startCryptoCheckoutCountdown\(detailOverlay, expiresAtIso\)/);
     assert.match(script, /resolveCryptoCheckoutExpiresAt\(providerSummary\)/);
     assert.match(script, /buildPaymentTimeoutPanel\(options = \{\}\)/);
@@ -61,6 +77,22 @@ test('wallet recharge UI exposes pending feedback hooks for package and custom r
     assert.match(script, /qrcode_url/);
     assert.match(script, /pay_address/);
     assert.match(script, /pay_amount_text/);
+    assert.match(script, /const cryptoPricing = this\.resolveCryptoPaymentPricingSummary\(paymentResult, providerSummary/);
+    assert.match(script, /cryptoPricing\.totalText/);
+    assert.match(script, /cryptoPricing\.feeText/);
+    assert.match(script, /maxDecimals:\s*this\.getCryptoPayAmountPrecision\(providerSummary\)/);
+    assert.match(script, /fixedDecimals:\s*true/);
+    assert.match(script, /renderRechargePaymentMethodIcon\(method = \{\}\)/);
+    assert.match(script, /paymentMethodPayableWithFee/);
+    assert.match(script, /clearSelectedRechargePackageForCustomInput\(rawValue = ''\)/);
+    assert.match(script, /action:\s*isPackageMode \? 'pay-selected-recharge' : 'custom-recharge'/);
+    assert.match(script, /timeoutMs:\s*Infinity/);
+    assert.match(script, /deferTimeoutUntilQuoteExpired:\s*true/);
+    assert.match(script, /continueAfterQuoteExpired:\s*true/);
+    assert.match(script, /quoteExpiredWaitingMessage:/);
+    assert.match(script, /isCryptoCheckoutQuoteActive\(detailOverlay\)/);
+    assert.match(script, /请复制上方显示金额付款，二维码仅包含收款地址。/);
+    assert.doesNotMatch(script, /请复制上方精确金额付款/);
 });
 
 test('wallet mobile checkout uses same-tab redirect instead of popup-blocker error path', () => {
@@ -73,6 +105,25 @@ test('wallet mobile checkout uses same-tab redirect instead of popup-blocker err
     assert.doesNotMatch(script, /支付页面被浏览器拦截，请允许弹窗后重试/);
 });
 
+test('USDT payment flow preview can simulate slow post-expiry confirmation', () => {
+    const previewHtml = fs.readFileSync(usdtPreviewHtmlPath, 'utf8');
+    const previewRuntime = fs.readFileSync(usdtPreviewRuntimePath, 'utf8');
+    const previewBoot = fs.readFileSync(usdtPreviewBootPath, 'utf8');
+
+    assert.match(previewHtml, /id="previewSlowConfirm"/);
+    assert.match(previewHtml, /PAYMENT_METHOD_UNIFIED_1/);
+    assert.match(previewRuntime, /surcharge_rate:\s*0\.01/);
+    assert.match(previewRuntime, /pay_amount_precision:\s*2/);
+    assert.match(previewRuntime, /function buildPaymentPricing\(baseAmount, providerKey\)/);
+    assert.match(previewRuntime, /payment_fee_amount:\s*pricing\.paymentFeeAmount/);
+    assert.match(previewRuntime, /checkout_session_status:\s*"expired"/);
+    assert.match(previewRuntime, /预览环境继续等待后续链上确认/);
+    assert.match(previewBoot, /triggerUsdt\(options = \{\}\)/);
+    assert.match(previewBoot, /quoteTtlMs:\s*3000/);
+    assert.match(previewBoot, /statusMode:\s*"expired"/);
+    assert.match(previewBoot, /setStatusMode\("completed"\)/);
+});
+
 test('wallet recharge styles include visible processing states', () => {
     const styles = fs.readFileSync(walletStylesPath, 'utf8');
 
@@ -81,6 +132,15 @@ test('wallet recharge styles include visible processing states', () => {
     assert.match(styles, /\.package-item\.is-selected/);
     assert.match(styles, /\.custom-recharge-btn\.is-processing/);
     assert.match(styles, /\.wallet-recharge-method-btn/);
+    assert.match(styles, /\.wallet-recharge-method-dock/);
+    assert.match(styles, /\.wallet-recharge-method-buttons--dock/);
+    assert.match(styles, /\.wallet-recharge-method-btn--alipay:hover:not\(:disabled\)/);
+    assert.match(styles, /\.wallet-recharge-method-fee/);
+    assert.match(styles, /\.wallet-recharge-brand-icon--alipay/);
+    assert.match(styles, /\.wallet-recharge-brand-icon--usdt/);
+    assert.match(styles, /\.custom-recharge-section\.is-package-mode/);
+    assert.match(styles, /\.wallet-recharge-method-btn\.is-processing \.wallet-pending-badge/);
+    assert.match(styles, /rgba\(22,\s*119,\s*255,\s*0\.14\)/);
     assert.match(styles, /\.wallet-recharge-payment-panel/);
     assert.match(styles, /\.wallet-pending-dots/);
     assert.match(styles, /\.wallet-recharge-package-loading/);
@@ -91,14 +151,18 @@ test('wallet recharge styles include visible processing states', () => {
     assert.match(styles, /\.wallet-payment-qr-modal/);
     assert.match(styles, /\.wallet-payment-qr-image/);
     assert.match(styles, /\.wallet-payment-qr-status/);
+    assert.match(styles, /\.wallet-payment-qr-status\.is-reveal-pending/);
+    assert.match(styles, /\.wallet-payment-qr-status\.is-revealing/);
     assert.match(styles, /\.wallet-payment-qr-status\.is-success/);
     assert.match(styles, /\.wallet-crypto-checkout-modal/);
     assert.match(styles, /\.wallet-crypto-countdown/);
     assert.match(styles, /\.wallet-crypto-countdown\.is-expired/);
+    assert.match(styles, /\.wallet-crypto-countdown\.is-confirming/);
     assert.match(styles, /\.wallet-crypto-primary-amount/);
     assert.match(styles, /\.wallet-payment-qr-card\.is-timeout/);
     assert.match(styles, /\.wallet-crypto-qr-card\.is-timeout/);
     assert.match(styles, /\.wallet-crypto-timeout/);
+    assert.match(styles, /\.wallet-crypto-timeout--pending/);
     assert.match(styles, /@keyframes walletCryptoTimeoutSpark/);
     assert.match(styles, /\.wallet-crypto-copy-card/);
     assert.match(styles, /\.wallet-crypto-warning/);

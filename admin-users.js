@@ -29,6 +29,11 @@ let usersLoadPromise = null;
 let usersLoadRequestId = 0;
 let usersEnrichmentLoadPromise = null;
 let usersEnrichmentLoadRequestId = 0;
+let usersTagCenterPromise = null;
+let usersTagCenterCache = null;
+let usersActivityChannel = null;
+let usersActivityRefreshTimer = null;
+let usersActivityReloadTimer = null;
 
 function emitUsersCommandFeedback(message = '', feedbackState = 'saved', options = {}) {
     const normalizedMessage = String(message || '').trim();
@@ -211,6 +216,124 @@ function handleAdminUsersSiteChange() {
     return true;
 }
 
+function getUsersActivitySiteFilter() {
+    return window.AdminSiteFilter ? AdminSiteFilter.getSiteParam() : null;
+}
+
+function isUsersActivityRowInScope(row = {}) {
+    const siteFilter = getUsersActivitySiteFilter();
+    if (!siteFilter) return true;
+    return String(row?.site || '').trim() === siteFilter;
+}
+
+function scheduleUsersActivityReload() {
+    if (usersActivityReloadTimer) return;
+    usersActivityReloadTimer = window.setTimeout(() => {
+        usersActivityReloadTimer = null;
+        if (!isUsersModuleActive()) return;
+        void loadUsers({
+            force: true,
+            showLoading: false
+        });
+    }, 800);
+}
+
+function applyUsersActivityHeartbeatRow(row = {}, { render = true } = {}) {
+    const userId = String(row?.user_id || '').trim();
+    const lastActiveAt = String(row?.last_active_at || '').trim();
+    if (!userId || !lastActiveAt || !isUsersActivityRowInScope(row)) {
+        return false;
+    }
+
+    const nextTime = new Date(lastActiveAt).getTime();
+    if (!Number.isFinite(nextTime)) {
+        return false;
+    }
+
+    let changed = false;
+    let matched = false;
+    userState.users = userState.users.map((user) => {
+        if (String(user?.id || '').trim() !== userId) {
+            return user;
+        }
+
+        matched = true;
+        const currentTime = user.last_sign_in_at ? new Date(user.last_sign_in_at).getTime() : NaN;
+        if (Number.isFinite(currentTime) && currentTime >= nextTime) {
+            return user;
+        }
+
+        changed = true;
+        return {
+            ...user,
+            last_sign_in_at: lastActiveAt
+        };
+    });
+
+    if (!matched && getUsersActivitySiteFilter()) {
+        scheduleUsersActivityReload();
+    }
+
+    if (changed && render) {
+        renderUsersTable();
+    }
+
+    return changed;
+}
+
+async function refreshUsersActivityHeartbeats() {
+    if (!isUsersModuleActive() || !window.supabaseClient?.from) {
+        return false;
+    }
+
+    let query = window.supabaseClient
+        .from('engagement_user_activity')
+        .select('user_id, last_active_at, site')
+        .order('last_active_at', { ascending: false })
+        .limit(500);
+
+    const siteFilter = getUsersActivitySiteFilter();
+    if (siteFilter) {
+        query = query.eq('site', siteFilter);
+    }
+
+    const result = await fetchOptionalUsersRows(query, 'engagement_user_activity');
+    let changed = false;
+    (result.data || []).forEach((row) => {
+        changed = applyUsersActivityHeartbeatRow(row, { render: false }) || changed;
+    });
+
+    if (changed) {
+        renderUsersTable();
+    }
+
+    return changed;
+}
+
+function ensureUsersActivityLiveRefresh() {
+    if (window.supabaseClient?.channel && !usersActivityChannel) {
+        usersActivityChannel = window.supabaseClient
+            .channel(`admin-users-activity-${Date.now()}`)
+            .on(
+                'postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'engagement_user_activity' },
+                (payload) => applyUsersActivityHeartbeatRow(payload.new)
+            )
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'engagement_user_activity' },
+                (payload) => applyUsersActivityHeartbeatRow(payload.new)
+            )
+            .subscribe();
+    }
+
+    if (!usersActivityRefreshTimer) {
+        usersActivityRefreshTimer = window.setInterval(() => {
+            void refreshUsersActivityHeartbeats();
+        }, 30000);
+    }
+}
+
 // Predefined tags with labels and CSS classes (moved to top for initialization order)
 const TAG_CONFIG = {
     vip: { label: 'VIP', class: 'tag-vip' },
@@ -355,6 +478,55 @@ async function postAdminUsersManage(action, payload = {}) {
     });
 
     return parseAdminUsersApiResponse(response);
+}
+
+async function fetchUsersTagCenter() {
+    if (usersTagCenterCache) return usersTagCenterCache;
+    if (usersTagCenterPromise) return usersTagCenterPromise;
+
+    usersTagCenterPromise = (async () => {
+        try {
+            const response = await adminUsersApiFetch('/api/admin/engagement/segments', {
+                method: 'GET'
+            });
+            const payload = await parseAdminUsersApiResponse(response);
+            const tags = Array.isArray(payload?.tag_center?.tags) ? payload.tag_center.tags : [];
+            usersTagCenterCache = tags
+                .filter((tag) => tag?.enabled !== false)
+                .map((tag) => ({
+                    key: String(tag.key || tag.id || '').trim(),
+                    label: String(tag.name || tag.key || tag.id || '').trim(),
+                    source: String(tag.source || '').trim(),
+                    description: String(tag.description || tag.auto_rule || '').trim()
+                }))
+                .filter((tag) => tag.key);
+            return usersTagCenterCache;
+        } catch (error) {
+            console.warn('[AdminUsers] Failed to load engagement tag center:', error);
+            usersTagCenterCache = [];
+            return usersTagCenterCache;
+        } finally {
+            usersTagCenterPromise = null;
+        }
+    })();
+
+    return usersTagCenterPromise;
+}
+
+function getFallbackUserTagOptions() {
+    return Object.entries(TAG_CONFIG).map(([key, config]) => ({
+        key,
+        label: config.label || key,
+        source: 'local',
+        description: ''
+    }));
+}
+
+async function getUserTagOptions() {
+    const centerTags = await fetchUsersTagCenter();
+    const optionMap = new Map(getFallbackUserTagOptions().map((tag) => [tag.key, tag]));
+    centerTags.forEach((tag) => optionMap.set(tag.key, tag));
+    return Array.from(optionMap.values());
 }
 
 async function fetchAdminUserBlocks(userId) {
@@ -562,6 +734,7 @@ function activateUsersModule(context = {}, options = {}) {
     console.log('👥 Activating User Module...');
 
     bindUserModuleControls();
+    ensureUsersActivityLiveRefresh();
 
     if (!usersModuleInitialized) {
         usersModuleInitialized = true;
@@ -984,6 +1157,54 @@ function buildBasicUserListRow(profile = {}) {
     };
 }
 
+function isMissingOptionalUsersRelationError(error, relationName = '') {
+    const message = [
+        error?.message,
+        error?.details,
+        error?.hint,
+        error?.code
+    ].filter(Boolean).join(' ').toLowerCase();
+    const relation = String(relationName || '').trim().toLowerCase();
+    return message.includes('does not exist')
+        || message.includes('undefined table')
+        || message.includes('schema cache')
+        || (relation && message.includes(relation));
+}
+
+async function fetchOptionalUsersRows(query, relationName = '') {
+    try {
+        const { data, error } = await query;
+        if (error) throw error;
+        return {
+            data: Array.isArray(data) ? data : [],
+            error: null
+        };
+    } catch (error) {
+        if (isMissingOptionalUsersRelationError(error, relationName)) {
+            return {
+                data: [],
+                error
+            };
+        }
+        throw error;
+    }
+}
+
+function setLatestUserActivity(map, userId, timestamp) {
+    const normalizedUserId = String(userId || '').trim();
+    const normalizedTimestamp = String(timestamp || '').trim();
+    if (!normalizedUserId || !normalizedTimestamp) return;
+
+    const nextTime = new Date(normalizedTimestamp).getTime();
+    if (!Number.isFinite(nextTime)) return;
+
+    const existing = map.get(normalizedUserId);
+    const existingTime = existing ? new Date(existing).getTime() : NaN;
+    if (!Number.isFinite(existingTime) || nextTime > existingTime) {
+        map.set(normalizedUserId, normalizedTimestamp);
+    }
+}
+
 async function fetchUserListEnrichment(siteFilter = null) {
     let pointsQuery = window.supabaseClient.from('points_balance').select('user_id, total_balance');
     if (window.AdminSiteFilter) {
@@ -998,6 +1219,14 @@ async function fetchUserListEnrichment(siteFilter = null) {
         loginHistoryQuery = loginHistoryQuery.eq('site', siteFilter);
     }
 
+    let activityQuery = window.supabaseClient
+        .from('engagement_user_activity')
+        .select('user_id, last_active_at, site');
+
+    if (siteFilter) {
+        activityQuery = activityQuery.eq('site', siteFilter);
+    }
+
     const enrichmentTasks = [
         window.supabaseClient
             .from('blocked_users')
@@ -1009,7 +1238,8 @@ async function fetchUserListEnrichment(siteFilter = null) {
         window.supabaseClient
             .from('admin_roles')
             .select('user_id, role_name, permissions, expires_at'),
-        loginHistoryQuery
+        loginHistoryQuery,
+        fetchOptionalUsersRows(activityQuery, 'engagement_user_activity')
     ];
 
     if (siteFilter) {
@@ -1033,6 +1263,7 @@ async function fetchUserListEnrichment(siteFilter = null) {
         tagsResult,
         rolesResult,
         loginHistoryResult,
+        activityResult,
         commentsResult,
         messagesResult
     ] = await Promise.all(enrichmentTasks);
@@ -1042,6 +1273,7 @@ async function fetchUserListEnrichment(siteFilter = null) {
     const tags = tagsResult.data || [];
     const roles = rolesResult.data || [];
     const loginHistoryRows = loginHistoryResult.data || [];
+    const activityRows = activityResult.data || [];
 
     const blockedMap = new Map();
     blocks.forEach(b => blockedMap.set(b.user_id, b));
@@ -1060,13 +1292,15 @@ async function fetchUserListEnrichment(siteFilter = null) {
 
     const latestLoginMap = new Map();
     loginHistoryRows.forEach((row) => {
-        const userId = String(row?.user_id || '').trim();
-        const createdAt = String(row?.created_at || '').trim();
-        if (!userId || !createdAt) return;
-        const existing = latestLoginMap.get(userId);
-        if (!existing || new Date(createdAt).getTime() > new Date(existing).getTime()) {
-            latestLoginMap.set(userId, createdAt);
-        }
+        setLatestUserActivity(latestLoginMap, row?.user_id, row?.created_at);
+    });
+
+    const latestActivityMap = new Map();
+    loginHistoryRows.forEach((row) => {
+        setLatestUserActivity(latestActivityMap, row?.user_id, row?.created_at);
+    });
+    activityRows.forEach((row) => {
+        setLatestUserActivity(latestActivityMap, row?.user_id, row?.last_active_at);
     });
 
     const tagsMap = new Map();
@@ -1085,6 +1319,7 @@ async function fetchUserListEnrichment(siteFilter = null) {
     const activeUserIds = new Set();
     if (siteFilter) {
         loginHistoryRows.forEach(r => activeUserIds.add(r.user_id));
+        activityRows.forEach(r => activeUserIds.add(r.user_id));
         (commentsResult?.data || []).forEach(r => activeUserIds.add(r.user_id));
         (messagesResult?.data || []).forEach(r => activeUserIds.add(r.user_id));
         points.forEach(p => activeUserIds.add(p.user_id));
@@ -1094,6 +1329,7 @@ async function fetchUserListEnrichment(siteFilter = null) {
         blockedMap,
         pointsMap,
         latestLoginMap,
+        latestActivityMap,
         tagsMap,
         rolesMap,
         activeUserIds
@@ -1108,7 +1344,7 @@ function applyUserListEnrichmentToRow(user = {}, enrichment = {}) {
 
     return {
         ...user,
-        last_sign_in_at: enrichment.latestLoginMap?.get(id) || user.last_sign_in_at || null,
+        last_sign_in_at: enrichment.latestActivityMap?.get(id) || enrichment.latestLoginMap?.get(id) || user.last_sign_in_at || null,
         points: pointsTotal,
         total_earned: pointsTotal,
         vip_level: pointsTotal >= 1000 ? 'VIP' : null,
@@ -2434,13 +2670,14 @@ function animateUsersOverlayOut(overlay, onComplete, visibleClass = 'active') {
     }, 300);
 }
 
-function showBatchTagModal(count) {
+async function showBatchTagModal(count) {
+    const tagOptions = await getUserTagOptions();
     return new Promise((resolve) => {
         const modal = document.createElement('div');
         modal.className = 'modal-overlay';
 
-        const tagButtons = Object.entries(TAG_CONFIG)
-            .map(([key, config]) => `<button class="tag-option ${config.class}" type="button" data-batch-tag-value="${escapeHtml(key)}">${config.label}</button>`)
+        const tagButtons = tagOptions
+            .map((option) => `<button class="tag-option ${getTagClass(option.key)}" type="button" data-batch-tag-value="${escapeHtml(option.key)}" title="${escapeHtml(option.description || option.source || '')}">${escapeHtml(option.label || option.key)}</button>`)
             .join('');
 
         modal.innerHTML = `
@@ -2494,6 +2731,108 @@ function showBatchTagModal(count) {
                     resolve(null);
                 });
             }
+        });
+    });
+}
+
+async function batchImportTagsByEmail() {
+    const importPayload = await showEmailTagImportModal();
+    if (!importPayload) return;
+
+    showToast('正在按邮箱导入用户标签...', 'info');
+
+    try {
+        const result = await postAdminUsersManage('import_tags_by_email', importPayload);
+        const matched = Number(result?.matched || 0);
+        const missing = Array.isArray(result?.missing) ? result.missing : [];
+        const tagLabel = importPayload.tag ? getTagLabel(importPayload.tag) : (Array.isArray(result?.tags) ? result.tags.map(getTagLabel).join(' / ') : '标签');
+        const message = missing.length
+            ? `已为 ${matched} 条用户记录导入「${tagLabel}」，${missing.length} 个邮箱未匹配`
+            : `已为 ${matched} 条用户记录导入「${tagLabel}」`;
+        showToast(message, missing.length ? 'warning' : 'success');
+        emitUsersCommandFeedback(message, missing.length ? 'partial' : 'saved', { source: 'users-tag-import' });
+        loadUsers({ force: true, showLoading: false });
+    } catch (err) {
+        console.error('Import tags by email failed:', err);
+        const failureMessage = '按邮箱导入标签失败: ' + err.message;
+        showToast(failureMessage, 'error');
+        emitUsersCommandFeedback(failureMessage, 'failed', { source: 'users-tag-import' });
+    }
+}
+
+async function showEmailTagImportModal() {
+    const tagOptions = await getUserTagOptions();
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        const tagButtons = tagOptions
+            .map((option) => `<button class="tag-option ${getTagClass(option.key)}" type="button" data-import-tag-value="${escapeHtml(option.key)}">${escapeHtml(option.label || option.key)}</button>`)
+            .join('');
+
+        modal.innerHTML = `
+            <div class="modal-content users-batch-tag-modal users-email-tag-import-modal">
+                <div class="modal-header">
+                    <h3>按邮箱导入标签</h3>
+                </div>
+                <div class="modal-body users-batch-tag-body">
+                    <p class="users-batch-tag-note">适合运营名单导入。每行可写 <code>邮箱</code>，使用统一标签；也可写 <code>邮箱, 标签key</code> 为单行指定标签。</p>
+                    <div class="tag-options users-batch-tag-options">
+                        ${tagButtons}
+                    </div>
+                    <div class="users-batch-tag-custom">
+                        <input type="text" id="emailImportTagInput" class="users-batch-tag-input" placeholder="统一标签 key，例如 paid_user">
+                    </div>
+                    <textarea id="emailTagImportText" class="users-email-tag-import-textarea" rows="9" placeholder="user@example.com&#10;vip@example.com, high_value"></textarea>
+                    <div class="users-batch-expiry-actions">
+                        <button class="users-batch-expiry-btn users-batch-expiry-btn--secondary" type="button" data-email-tag-import-cancel="1">取消</button>
+                        <button class="users-batch-expiry-btn users-batch-expiry-btn--primary" type="button" data-email-tag-import-submit="1">导入标签</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        animateUsersOverlayIn(modal);
+
+        const tagInput = modal.querySelector('#emailImportTagInput');
+        const textInput = modal.querySelector('#emailTagImportText');
+
+        const close = (payload) => {
+            animateUsersOverlayOut(modal, () => {
+                modal.remove();
+                resolve(payload);
+            });
+        };
+
+        modal.addEventListener('click', (event) => {
+            const actionEl = event.target instanceof Element
+                ? event.target.closest('[data-import-tag-value],[data-email-tag-import-submit],[data-email-tag-import-cancel]')
+                : null;
+            if (!actionEl) {
+                if (event.target === modal) close(null);
+                return;
+            }
+            if (actionEl.hasAttribute('data-import-tag-value')) {
+                if (tagInput) tagInput.value = actionEl.getAttribute('data-import-tag-value') || '';
+                return;
+            }
+            if (actionEl.hasAttribute('data-email-tag-import-cancel')) {
+                close(null);
+                return;
+            }
+            const importText = String(textInput?.value || '').trim();
+            const tag = String(tagInput?.value || '').trim();
+            if (!importText) {
+                showToast('请先粘贴邮箱列表', 'error');
+                return;
+            }
+            if (!tag && !/[,，\t ]/.test(importText)) {
+                showToast('请填写统一标签，或在每行写「邮箱, 标签key」', 'error');
+                return;
+            }
+            close({
+                tag,
+                importText
+            });
         });
     });
 }
@@ -5161,9 +5500,9 @@ function buildUserProfileOverview(user, roleInfo, activeBans = []) {
     const overviewCards = [
         {
             label: '最近活跃',
-            value: user?.last_sign_in_at ? formatTimeAgo(user.last_sign_in_at) : '暂无登录',
+            value: user?.last_sign_in_at ? formatTimeAgo(user.last_sign_in_at) : '暂无活跃',
             meta: user?.last_sign_in_at
-                ? `最后登录 ${formatAdminDateTime(user.last_sign_in_at)}`
+                ? `最后活跃 ${formatAdminDateTime(user.last_sign_in_at)}`
                 : `注册于 ${formatAdminDateTime(user?.created_at)}`,
             tone: user?.last_sign_in_at ? 'accent' : 'neutral'
         },
@@ -11051,6 +11390,12 @@ window.filterTabByDate = filterTabByDate;
 window.openCustomDatePicker = openCustomDatePicker;
 window.batchRenewAdminAccess = batchRenewAdminAccess;
 window.batchSetAdminExpiry = batchSetAdminExpiry;
+window.batchAddTags = batchAddTags;
+window.batchImportTagsByEmail = batchImportTagsByEmail;
+window.batchSendNotification = batchSendNotification;
+window.batchAdjustPoints = batchAdjustPoints;
+window.batchExportUsers = batchExportUsers;
+window.batchBanUsers = batchBanUsers;
 window.handleAdminUsersSiteChange = handleAdminUsersSiteChange;
 window.openAdminUsersShellContext = openAdminUsersShellContext;
 

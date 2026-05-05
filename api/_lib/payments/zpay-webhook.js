@@ -22,6 +22,9 @@ const {
     maybeIssueRechargeDiscountAssets
 } = require('../discount-trigger-linkage');
 const {
+    syncPaymentStatusUserTags
+} = require('../user-tags');
+const {
     applyRateLimitHeaders,
     explainClientIpResolution,
     isIpAllowed,
@@ -33,6 +36,18 @@ const {
 const PAYMENT_ORDER_SNAPSHOT_SELECT = 'id, user_id, provider, provider_order_no, checkout_session_id, site, package_id, package_name, expected_amount, paid_amount, points_amount, status, sign_verified, amount_verified, provider_metadata, raw_payload, created_at, paid_at, claimed_at, verified_at, last_error';
 const zpayProvider = getPaymentProviderAdapter('zpay');
 const INTERNAL_PUBLIC_ROUTE_QUERY_KEYS = new Set(['scope', 'route', 'path']);
+
+async function safeSyncPaymentStatusUserTags(supabase, options = {}) {
+    try {
+        return await syncPaymentStatusUserTags(supabase, options);
+    } catch (error) {
+        console.warn('[ZPAY] Failed to sync engagement user tags:', error?.message || error);
+        return {
+            ok: false,
+            skipped: 'tag_sync_failed'
+        };
+    }
+}
 
 function getRequestHostName(req) {
     const rawHost = String(req?.headers?.host || req?.headers?.Host || '').trim().toLowerCase();
@@ -683,6 +698,13 @@ async function handleZpayWebhook({
                     supabase,
                     site: paymentOrder.site || currentSite,
                     rechargeReferenceId: `zpay_${orderNo}`
+                });
+
+                await safeSyncPaymentStatusUserTags(supabase, {
+                    userId: paymentOrder.user_id,
+                    status: 'completed',
+                    sourceEventId: paymentOrder.id,
+                    sourceModule: 'payments.zpay_webhook'
                 });
             }
         }

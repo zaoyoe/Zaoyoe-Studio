@@ -18191,6 +18191,29 @@ input:checked+.toggle-slider:before {
     margin-top: 8px;
 }
 
+.users-email-tag-import-modal {
+    max-width: 560px;
+}
+
+.users-email-tag-import-textarea {
+    width: 100%;
+    min-height: 180px;
+    margin-top: 14px;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+    color: var(--text-main);
+    line-height: 1.5;
+    resize: vertical;
+}
+
+.users-email-tag-import-textarea:focus {
+    outline: none;
+    border-color: rgba(59, 130, 246, 0.5);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
+}
+
 .users-batch-renew-modal {
     max-width: 520px;
 }

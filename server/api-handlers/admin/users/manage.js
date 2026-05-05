@@ -52,6 +52,16 @@ function requireUserIds(body = {}) {
     return userIds;
 }
 
+function normalizeEmail(value = '') {
+    const normalized = sanitizeText(value, 320).toLowerCase();
+    return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) ? normalized : '';
+}
+
+function normalizeEmailArray(value) {
+    const source = Array.isArray(value) ? value : String(value || '').split(/[\n,;|]+/);
+    return uniqueValues(source.map(normalizeEmail).filter(Boolean));
+}
+
 function requireNonZeroInt(value, fieldName = 'amount') {
     const parsed = Number.parseInt(value, 10);
     if (!Number.isFinite(parsed) || parsed === 0) {
@@ -1231,6 +1241,110 @@ async function handleRemoveTag({ supabase, user, body, site }) {
     };
 }
 
+function normalizeEmailTagImportEntries(body = {}) {
+    const defaultTag = normalizeTagValue(body.tag || body.defaultTag || body.default_tag);
+    const entries = [];
+
+    if (Array.isArray(body.entries)) {
+        body.entries.forEach((entry) => {
+            const email = normalizeEmail(entry?.email || entry?.user_email || entry?.userEmail);
+            const tag = normalizeTagValue(entry?.tag || defaultTag);
+            if (email && tag) {
+                entries.push({ email, tag });
+            }
+        });
+    }
+
+    normalizeEmailArray(body.emails || body.email_list || body.emailList).forEach((email) => {
+        if (defaultTag) {
+            entries.push({ email, tag: defaultTag });
+        }
+    });
+
+    String(body.importText || body.import_text || '')
+        .split(/\n+/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .forEach((line) => {
+            const [emailPart, tagPart] = line.split(/[\t,， ]+/);
+            const email = normalizeEmail(emailPart);
+            const tag = normalizeTagValue(tagPart || defaultTag);
+            if (email && tag) {
+                entries.push({ email, tag });
+            }
+        });
+
+    return Array.from(new Map(entries.map((entry) => [`${entry.email}:${entry.tag}`, entry])).values());
+}
+
+async function handleImportTagsByEmail({ supabase, user, body, site }) {
+    const entries = normalizeEmailTagImportEntries(body);
+    if (!entries.length) {
+        const error = new Error('At least one email and tag entry is required');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const emails = uniqueValues(entries.map((entry) => entry.email));
+    const { data, error } = await supabase
+        .from('profiles')
+        .select('id, email, username')
+        .in('email', emails);
+    if (error) throw error;
+
+    const profileByEmail = new Map((Array.isArray(data) ? data : [])
+        .filter((row) => row?.id && row?.email)
+        .map((row) => [normalizeEmail(row.email), row]));
+    const matchedEntries = entries
+        .map((entry) => ({
+            ...entry,
+            profile: profileByEmail.get(entry.email) || null
+        }))
+        .filter((entry) => entry.profile?.id);
+    const userIds = uniqueValues(matchedEntries.map((entry) => sanitizeText(entry.profile.id, 160)));
+
+    const profileMap = new Map((Array.isArray(data) ? data : [])
+        .filter((row) => row?.id)
+        .map((row) => [sanitizeText(row.id, 160), row]));
+    assertNoLockedTargets(profileMap, userIds);
+
+    const payload = matchedEntries.map((entry) => ({
+        user_id: sanitizeText(entry.profile.id, 160),
+        tag: entry.tag,
+        created_by: user.id
+    }));
+    if (payload.length) {
+        const { error: upsertError } = await supabase
+            .from('user_tags')
+            .upsert(payload, {
+                onConflict: 'user_id,tag'
+            });
+        if (upsertError) throw upsertError;
+    }
+
+    for (const entry of matchedEntries) {
+        await writeAdminAuditLog({
+            supabase,
+            adminId: user.id,
+            targetUserId: sanitizeText(entry.profile.id, 160),
+            module: 'users',
+            site,
+            actionType: 'import_tag_by_email',
+            details: {
+                email: entry.email,
+                tag: entry.tag
+            }
+        });
+    }
+
+    const matchedEmails = new Set(matchedEntries.map((entry) => entry.email));
+    return {
+        matched: matchedEntries.length,
+        missing: emails.filter((email) => !matchedEmails.has(email)),
+        tags: uniqueValues(matchedEntries.map((entry) => entry.tag))
+    };
+}
+
 async function handleAddNote({ supabase, user, body, site }) {
     const userId = requireSingleUserId(body);
     const content = sanitizeText(body.content, 4000);
@@ -1573,6 +1687,9 @@ module.exports = async (req, res) => {
             break;
         case 'remove_tag':
             payload = await handleRemoveTag({ supabase, user, body, site });
+            break;
+        case 'import_tags_by_email':
+            payload = await handleImportTagsByEmail({ supabase, user, body, site });
             break;
         case 'add_note':
             payload = await handleAddNote({ supabase, user, body, site });

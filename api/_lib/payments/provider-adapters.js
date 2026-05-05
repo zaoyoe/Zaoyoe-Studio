@@ -27,6 +27,7 @@ const {
     buildNowpaymentsOrderId,
     convertCnyAmountToPriceAmount,
     createNowpaymentsPayment,
+    formatNowpaymentsPayAmount,
     normalizeNowpaymentsConfig,
     normalizeNowpaymentsPaymentStatus,
     updateNowpaymentsPaymentEstimate,
@@ -919,8 +920,13 @@ const providerRegistry = {
                 '',
                 240
             );
-            const payAmountText = sanitizeDisplayAmount(gatewayPayload.pay_amount, '', 80);
-            const payAmountNumber = Number(gatewayPayload.pay_amount);
+            const rawPayAmountText = sanitizeDisplayAmount(gatewayPayload.pay_amount, '', 80);
+            const rawPayAmountNumber = Number(gatewayPayload.pay_amount);
+            const payAmountText = formatNowpaymentsPayAmount(
+                rawPayAmountText || rawPayAmountNumber,
+                integration.payAmountPrecision
+            );
+            const payAmountNumber = Number(payAmountText || rawPayAmountNumber);
             const resolvedPayCurrency = sanitizeDisplayAmount(
                 gatewayPayload.pay_currency || integration.payCurrency,
                 integration.payCurrency,
@@ -931,7 +937,7 @@ const providerRegistry = {
                 integration,
                 channelConfig
             });
-            if (!payAddress || !(payAmountNumber > 0)) {
+            if (!payAddress || !(rawPayAmountNumber > 0) || !(payAmountNumber > 0)) {
                 return {
                     supported: false,
                     action: 'crypto_checkout',
@@ -953,6 +959,10 @@ const providerRegistry = {
                     pay_address: payAddress,
                     pay_amount: payAmountNumber,
                     pay_amount_text: payAmountText || String(payAmountNumber),
+                    pay_amount_original: rawPayAmountNumber,
+                    pay_amount_text_original: rawPayAmountText || String(rawPayAmountNumber),
+                    pay_amount_precision: integration.payAmountPrecision,
+                    pay_amount_rounding: 'ceil',
                     pay_currency: resolvedPayCurrency,
                     quote_expires_at: quoteExpiresAt,
                     price_currency: integration.priceCurrency,
@@ -978,6 +988,10 @@ const providerRegistry = {
                     pay_currency: resolvedPayCurrency,
                     pay_amount: payAmountNumber,
                     pay_amount_text: payAmountText || String(payAmountNumber),
+                    pay_amount_original: rawPayAmountNumber,
+                    pay_amount_text_original: rawPayAmountText || String(rawPayAmountNumber),
+                    pay_amount_precision: integration.payAmountPrecision,
+                    pay_amount_rounding: 'ceil',
                     pay_address: payAddress,
                     payment_id: paymentId,
                     network_name: channelConfig.network_name || 'BNB Smart Chain',
@@ -990,7 +1004,7 @@ const providerRegistry = {
                 message: (isCustomRecharge
                     ? channelConfig.custom_amount_hint
                     : channelConfig.package_hint)
-                    || 'USDT-BEP20 付款信息已生成，请按页面显示的精确金额完成转账。'
+                    || 'USDT-BEP20 付款信息已生成，请按页面显示金额完成转账。'
             };
         },
         verifyWebhook({ payload, runtimeContext, secret, receivedSignature } = {}) {

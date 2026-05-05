@@ -38,6 +38,12 @@ const {
     maybeIssueRechargeDiscountAssets
 } = require('../api/_lib/discount-trigger-linkage');
 const {
+    AUTO_USER_TAGS,
+    markVerifyFailed,
+    removeUserTags,
+    syncPaymentStatusUserTags
+} = require('../api/_lib/user-tags');
+const {
     deriveHupijiaoPointBreakdown
 } = require('../api/_lib/payments/hupijiao-points');
 const {
@@ -141,6 +147,44 @@ const PENDING_JOB_SWEEP_INTERVAL_MS = Math.max(2000, Number(process.env.VERIFY_P
 const PENDING_JOB_SWEEP_BATCH_SIZE = Math.max(1, Number(process.env.VERIFY_PENDING_SWEEP_BATCH_SIZE || 20));
 const SHOP_DELIVERY_STRATEGY_CACHE_TTL_MS = Math.max(2000, Number(process.env.SHOP_DELIVERY_STRATEGY_CACHE_TTL_MS || 5000));
 const jobSyncLocks = new Map();
+
+async function safeSyncPaymentUserTags(options = {}) {
+    try {
+        return await syncPaymentStatusUserTags(supabase, options);
+    } catch (error) {
+        console.warn('[Payments] Failed to sync engagement user tags:', error?.message || error);
+        return {
+            ok: false,
+            skipped: 'tag_sync_failed'
+        };
+    }
+}
+
+async function safeSyncVerifyUserTags(options = {}) {
+    try {
+        const status = String(options.status || '').trim().toLowerCase();
+        if (status === 'failed') {
+            return await markVerifyFailed(supabase, options);
+        }
+        if (status === 'success') {
+            return await removeUserTags(supabase, {
+                userId: options.userId || options.user_id,
+                tags: AUTO_USER_TAGS.VERIFY_FAILED
+            });
+        }
+        return {
+            ok: false,
+            skipped: 'non_terminal_status'
+        };
+    } catch (error) {
+        console.warn('[Verify] Failed to sync engagement user tags:', error?.message || error);
+        return {
+            ok: false,
+            skipped: 'tag_sync_failed'
+        };
+    }
+}
+
 let pendingJobSweepTimer = null;
 let pendingJobSweepRunning = false;
 let shopDeliverySweepTimer = null;
@@ -2006,6 +2050,13 @@ async function applyAfdianPaymentIntentClaim({
         } catch (claimLinkError) {
             console.warn('[Afdian] Failed to reconcile checkout session for claim token:', claimLinkError.message);
         }
+
+        await safeSyncPaymentUserTags({
+            userId: String(user?.id || '').trim(),
+            status: 'completed',
+            sourceEventId: targetPaymentOrder.id,
+            sourceModule: 'payments.afdian_claim'
+        });
     }
 
     return {
@@ -2089,6 +2140,13 @@ async function tryFinalizeCustomRechargeFromQuote({
     } catch (linkError) {
         console.warn('[Afdian] Failed to reconcile checkout session after custom quote finalization:', linkError.message);
     }
+
+    await safeSyncPaymentUserTags({
+        userId: user.id,
+        status: 'completed',
+        sourceEventId: data.payment_order_id,
+        sourceModule: 'payments.afdian_query'
+    });
 
     return {
         code: data.code,
@@ -2523,6 +2581,13 @@ async function syncTrackedJobStatus({
             status: upstreamStatus === 'success' ? 'success' : 'failed',
             apiData: normalizedApiData,
             pointsDeducted
+        });
+
+        await safeSyncVerifyUserTags({
+            userId,
+            status: upstreamStatus === 'success' ? 'success' : 'failed',
+            sourceEventId: jobId,
+            sourceModule: 'verify'
         });
 
         return { pointsDeducted, record: existingRecord };
@@ -5029,6 +5094,13 @@ app.post('/api/payments/hupijiao/webhook', async (req, res) => {
                     site: paymentOrder.site || currentSite,
                     rechargeReferenceId: `hupijiao_${orderNo}`
                 });
+
+                await safeSyncPaymentUserTags({
+                    userId: paymentOrder.user_id,
+                    status: 'completed',
+                    sourceEventId: paymentOrder.id,
+                    sourceModule: 'payments.hupijiao_webhook'
+                });
             }
         }
 
@@ -5259,6 +5331,22 @@ app.post('/api/afdian/webhook', async (req, res) => {
                 });
             } catch (linkError) {
                 console.warn('[Afdian] Failed to link checkout session from webhook:', linkError.message);
+            }
+        }
+
+        if (signatureValid && amountValid && processResult?.payment_order_id) {
+            try {
+                const settledPaymentOrder = await loadPaymentOrderSnapshotByProviderOrderNo('afdian', orderNo);
+                if (settledPaymentOrder?.user_id) {
+                    await safeSyncPaymentUserTags({
+                        userId: settledPaymentOrder.user_id,
+                        status: 'completed',
+                        sourceEventId: settledPaymentOrder.id,
+                        sourceModule: 'payments.afdian_webhook'
+                    });
+                }
+            } catch (tagLookupError) {
+                console.warn('[Afdian] Payment tag sync skipped:', tagLookupError.message);
             }
         }
 

@@ -40,10 +40,10 @@ const SECRET_ENV_FALLBACKS = Object.freeze({
 });
 const PUBLIC_PROVIDER_FIELDS = Object.freeze({
     mock: ['enabled', 'display_name', 'description'],
-    afdian: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder'],
-    hupijiao: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder'],
-    zpay: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder'],
-    nowpayments: ['enabled', 'display_name', 'pay_currency', 'network_name', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder']
+    afdian: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder', 'surcharge_rate', 'surcharge_label'],
+    hupijiao: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder', 'surcharge_rate', 'surcharge_label'],
+    zpay: ['enabled', 'display_name', 'checkout_url', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder', 'surcharge_rate', 'surcharge_label'],
+    nowpayments: ['enabled', 'display_name', 'pay_currency', 'network_name', 'cny_to_usd_rate', 'pay_amount_precision', 'package_hint', 'custom_amount_hint', 'order_query_enabled', 'order_query_title', 'order_query_hint', 'order_query_placeholder', 'surcharge_rate', 'surcharge_label', 'is_fee_paid_by_user']
 });
 const PUBLIC_MOCK_RUNTIME_MESSAGES = Object.freeze({
     local_request_host: '当前环境允许使用模拟支付。',
@@ -113,6 +113,17 @@ function coercePositivePointNumber(value, fallback) {
 function coercePositiveInteger(value, fallback) {
     const parsed = Math.round(coerceFiniteNumber(value, fallback));
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function coercePrecisionInteger(value, fallback) {
+    const parsed = Math.round(coerceFiniteNumber(value, fallback));
+    return Number.isFinite(parsed) ? Math.min(8, Math.max(0, parsed)) : fallback;
+}
+
+function coerceSurchargeRate(value, fallback = 0) {
+    const parsed = coerceFiniteNumber(value, fallback);
+    if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+    return Math.min(0.1, Math.round(parsed * 10000) / 10000);
 }
 
 function hasCheckoutUrl(provider = {}) {
@@ -420,6 +431,8 @@ function getDefaultPaymentChannelsConfig(options = {}) {
             checkout_url: afdianCheckoutUrl,
             package_hint: '请在爱发电完成支付后，返回钱包输入订单号领取兑换码。',
             custom_amount_hint: '钱包会先生成本次应付金额，请按报价完成支付后返回输入订单号领取兑换码。',
+            surcharge_rate: 0,
+            surcharge_label: '通道手续费',
             order_query_enabled: true,
             order_query_title: '订单号认领',
             order_query_hint: '完成支付后，可在这里输入订单号查询兑换结果。',
@@ -435,6 +448,8 @@ function getDefaultPaymentChannelsConfig(options = {}) {
             notify_url: buildDefaultPaymentWebhookUrl(origin, 'hupijiao'),
             package_hint: '虎皮椒通道已启用，正式回调与自动发货接入后即可完整使用。',
             custom_amount_hint: '虎皮椒通道已启用。自定义金额下单能力接入后，这里会直接拉起真实支付。',
+            surcharge_rate: 0,
+            surcharge_label: '通道手续费',
             order_query_enabled: false,
             order_query_title: '',
             order_query_hint: '',
@@ -451,6 +466,8 @@ function getDefaultPaymentChannelsConfig(options = {}) {
             notify_url: buildDefaultPaymentWebhookUrl(origin, 'zpay'),
             package_hint: '易支付通道已启用，创建订单后会直接拉起收银台完成支付。',
             custom_amount_hint: '易支付通道已启用。自定义金额订单会按当前报价直接拉起收银台。',
+            surcharge_rate: coerceSurchargeRate(process.env.PAYMENT_ZPAY_SURCHARGE_RATE, 0.01),
+            surcharge_label: '通道手续费',
             order_query_enabled: false,
             order_query_title: '',
             order_query_hint: '',
@@ -464,6 +481,9 @@ function getDefaultPaymentChannelsConfig(options = {}) {
             price_currency: 'usd',
             network_name: 'BNB Smart Chain',
             cny_to_usd_rate: Number(process.env.NOWPAYMENTS_CNY_TO_USD_RATE || '') || 0.14,
+            pay_amount_precision: Number.isFinite(Number(process.env.NOWPAYMENTS_PAY_AMOUNT_PRECISION))
+                ? coercePrecisionInteger(process.env.NOWPAYMENTS_PAY_AMOUNT_PRECISION, 2)
+                : 2,
             is_fixed_rate: true,
             is_fee_paid_by_user: true,
             return_url: origin,
@@ -472,6 +492,8 @@ function getDefaultPaymentChannelsConfig(options = {}) {
             cancel_url: origin,
             package_hint: '请使用 USDT-BEP20 / BNB Smart Chain 完成付款，勿使用 ERC20、TRC20 或其他网络。',
             custom_amount_hint: '请按页面显示的 USDT-BEP20 金额付款，网络请选择 BNB Smart Chain。',
+            surcharge_rate: coerceSurchargeRate(process.env.PAYMENT_NOWPAYMENTS_SURCHARGE_RATE, 0.01),
+            surcharge_label: '通道手续费',
             order_query_enabled: false,
             order_query_title: '',
             order_query_hint: '',
@@ -510,6 +532,8 @@ function normalizePaymentChannelsConfig(raw, legacyRechargeOptions = null, optio
                 checkout_url: sanitizeText(sourceProviders.afdian?.checkout_url, defaults.providers.afdian.checkout_url, 500),
                 package_hint: sanitizeText(sourceProviders.afdian?.package_hint, defaults.providers.afdian.package_hint, 240),
                 custom_amount_hint: sanitizeText(sourceProviders.afdian?.custom_amount_hint, defaults.providers.afdian.custom_amount_hint, 240),
+                surcharge_rate: coerceSurchargeRate(sourceProviders.afdian?.surcharge_rate, defaults.providers.afdian.surcharge_rate),
+                surcharge_label: sanitizeText(sourceProviders.afdian?.surcharge_label, defaults.providers.afdian.surcharge_label, 40),
                 order_query_enabled: coerceBoolean(sourceProviders.afdian?.order_query_enabled, defaults.providers.afdian.order_query_enabled),
                 order_query_title: sanitizeText(sourceProviders.afdian?.order_query_title, defaults.providers.afdian.order_query_title, 80),
                 order_query_hint: sanitizeText(sourceProviders.afdian?.order_query_hint, defaults.providers.afdian.order_query_hint, 240),
@@ -525,6 +549,8 @@ function normalizePaymentChannelsConfig(raw, legacyRechargeOptions = null, optio
                 notify_url: sanitizeText(sourceProviders.hupijiao?.notify_url, defaults.providers.hupijiao.notify_url, 500),
                 package_hint: sanitizeText(sourceProviders.hupijiao?.package_hint, defaults.providers.hupijiao.package_hint, 240),
                 custom_amount_hint: sanitizeText(sourceProviders.hupijiao?.custom_amount_hint, defaults.providers.hupijiao.custom_amount_hint, 240),
+                surcharge_rate: coerceSurchargeRate(sourceProviders.hupijiao?.surcharge_rate, defaults.providers.hupijiao.surcharge_rate),
+                surcharge_label: sanitizeText(sourceProviders.hupijiao?.surcharge_label, defaults.providers.hupijiao.surcharge_label, 40),
                 order_query_enabled: coerceBoolean(sourceProviders.hupijiao?.order_query_enabled, defaults.providers.hupijiao.order_query_enabled),
                 order_query_title: sanitizeText(sourceProviders.hupijiao?.order_query_title, defaults.providers.hupijiao.order_query_title, 80),
                 order_query_hint: sanitizeText(sourceProviders.hupijiao?.order_query_hint, defaults.providers.hupijiao.order_query_hint, 240),
@@ -541,6 +567,8 @@ function normalizePaymentChannelsConfig(raw, legacyRechargeOptions = null, optio
                 notify_url: sanitizeText(sourceProviders.zpay?.notify_url, defaults.providers.zpay.notify_url, 500),
                 package_hint: sanitizeText(sourceProviders.zpay?.package_hint, defaults.providers.zpay.package_hint, 240),
                 custom_amount_hint: sanitizeText(sourceProviders.zpay?.custom_amount_hint, defaults.providers.zpay.custom_amount_hint, 240),
+                surcharge_rate: coerceSurchargeRate(sourceProviders.zpay?.surcharge_rate, defaults.providers.zpay.surcharge_rate),
+                surcharge_label: sanitizeText(sourceProviders.zpay?.surcharge_label, defaults.providers.zpay.surcharge_label, 40),
                 order_query_enabled: coerceBoolean(sourceProviders.zpay?.order_query_enabled, defaults.providers.zpay.order_query_enabled),
                 order_query_title: sanitizeText(sourceProviders.zpay?.order_query_title, defaults.providers.zpay.order_query_title, 80),
                 order_query_hint: sanitizeText(sourceProviders.zpay?.order_query_hint, defaults.providers.zpay.order_query_hint, 240),
@@ -554,6 +582,7 @@ function normalizePaymentChannelsConfig(raw, legacyRechargeOptions = null, optio
                 price_currency: sanitizeText(sourceProviders.nowpayments?.price_currency, defaults.providers.nowpayments.price_currency, 20).toLowerCase() || defaults.providers.nowpayments.price_currency,
                 network_name: sanitizeText(sourceProviders.nowpayments?.network_name, defaults.providers.nowpayments.network_name, 80),
                 cny_to_usd_rate: coercePositiveNumber(sourceProviders.nowpayments?.cny_to_usd_rate, defaults.providers.nowpayments.cny_to_usd_rate),
+                pay_amount_precision: 2,
                 is_fixed_rate: coerceBoolean(sourceProviders.nowpayments?.is_fixed_rate, defaults.providers.nowpayments.is_fixed_rate),
                 is_fee_paid_by_user: coerceBoolean(sourceProviders.nowpayments?.is_fee_paid_by_user, defaults.providers.nowpayments.is_fee_paid_by_user),
                 return_url: sanitizeText(sourceProviders.nowpayments?.return_url, defaults.providers.nowpayments.return_url, 500),
@@ -562,6 +591,8 @@ function normalizePaymentChannelsConfig(raw, legacyRechargeOptions = null, optio
                 cancel_url: sanitizeText(sourceProviders.nowpayments?.cancel_url, defaults.providers.nowpayments.cancel_url, 500),
                 package_hint: sanitizeText(sourceProviders.nowpayments?.package_hint, defaults.providers.nowpayments.package_hint, 240),
                 custom_amount_hint: sanitizeText(sourceProviders.nowpayments?.custom_amount_hint, defaults.providers.nowpayments.custom_amount_hint, 240),
+                surcharge_rate: coerceSurchargeRate(sourceProviders.nowpayments?.surcharge_rate, defaults.providers.nowpayments.surcharge_rate),
+                surcharge_label: sanitizeText(sourceProviders.nowpayments?.surcharge_label, defaults.providers.nowpayments.surcharge_label, 40),
                 order_query_enabled: coerceBoolean(sourceProviders.nowpayments?.order_query_enabled, defaults.providers.nowpayments.order_query_enabled),
                 order_query_title: sanitizeText(sourceProviders.nowpayments?.order_query_title, defaults.providers.nowpayments.order_query_title, 80),
                 order_query_hint: sanitizeText(sourceProviders.nowpayments?.order_query_hint, defaults.providers.nowpayments.order_query_hint, 240),

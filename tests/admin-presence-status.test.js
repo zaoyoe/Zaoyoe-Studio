@@ -63,6 +63,8 @@ test('admin chat user status uses shared realtime user presence before chat-mess
     const adminChatSource = readRepoFile('js/admin-chat.js');
     const chatWidgetSource = readRepoFile('js/components/ChatWidget.js');
     const adminChatStyles = readRepoFile('css/admin-chat.css');
+    const adminUsersSource = readRepoFile('admin-users.js');
+    const heartbeatMigration = readRepoFile('supabase/migrations/20260505_user_presence_activity_heartbeat.sql');
 
     assert.equal(
         adminAccessSource.includes("const USER_PRESENCE_CHANNEL = 'zaoyoe-user-presence';"),
@@ -75,6 +77,31 @@ test('admin chat user status uses shared realtime user presence before chat-mess
         'admin access should expose the shared user presence helper'
     );
     assert.equal(
+        adminAccessSource.includes("rpc('fn_record_user_activity_heartbeat'"),
+        true,
+        'public user presence should persist heartbeat activity through the server RPC'
+    );
+    assert.equal(
+        adminUsersSource.includes(".from('engagement_user_activity')"),
+        true,
+        'admin users should enrich active time from persisted user activity heartbeats'
+    );
+    assert.equal(
+        adminUsersSource.includes('ensureUsersActivityLiveRefresh();'),
+        true,
+        'admin users should keep visible active times refreshed while the module is open'
+    );
+    assert.equal(
+        heartbeatMigration.includes('CREATE OR REPLACE FUNCTION public.fn_record_user_activity_heartbeat'),
+        true,
+        'migration should create a secure heartbeat persistence RPC'
+    );
+    assert.equal(
+        heartbeatMigration.includes('latest_activity AS'),
+        true,
+        'admin users RPC should sort by persisted latest activity'
+    );
+    assert.equal(
         injectedAuthSource.includes('void syncInjectedAuthUserPresence();'),
         true,
         'public auth runtime should publish user presence after auth initialization'
@@ -85,6 +112,16 @@ test('admin chat user status uses shared realtime user presence before chat-mess
         'admin chat workspace should subscribe to realtime user presence'
     );
     assert.equal(
+        adminChatSource.includes('this.subscribeToUserActivity();'),
+        true,
+        'admin chat workspace should subscribe to persisted user activity heartbeats'
+    );
+    assert.equal(
+        adminChatSource.includes(".from('engagement_user_activity')"),
+        true,
+        'admin chat workspace should use persisted heartbeat activity when realtime presence is unavailable'
+    );
+    assert.equal(
         adminChatSource.includes('presenceOnline: presence.online'),
         true,
         'admin chat sessions should carry realtime user presence state'
@@ -93,6 +130,16 @@ test('admin chat user status uses shared realtime user presence before chat-mess
         chatWidgetSource.includes('this.subscribeToUserPresence();'),
         true,
         'legacy admin chat widget should subscribe to realtime user presence'
+    );
+    assert.equal(
+        chatWidgetSource.includes('this.subscribeToUserActivity();'),
+        true,
+        'legacy admin chat widget should subscribe to persisted user activity heartbeats'
+    );
+    assert.equal(
+        chatWidgetSource.includes(".from('engagement_user_activity')"),
+        true,
+        'legacy admin chat widget should use persisted heartbeat activity when realtime presence is unavailable'
     );
     assert.equal(
         chatWidgetSource.includes("session-time${isPresenceOnline ? ' session-time--online' : ''}"),

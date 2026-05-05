@@ -15,6 +15,7 @@ const {
     buildNowpaymentsIpnSignature,
     convertCnyAmountToPriceAmount,
     createNowpaymentsPayment,
+    formatNowpaymentsPayAmount,
     normalizeNowpaymentsPaymentStatus,
     verifyNowpaymentsIpnSignature
 } = require('../api/_lib/payments/nowpayments');
@@ -165,6 +166,30 @@ test('custom recharge quote preserves 1:1 decimal amounts at 0.01 precision', ()
     assert.ok(verified);
     assert.equal(verified.pointsAmount, 0.25);
     assert.equal(verified.paidAmount, 0.25);
+});
+
+test('payment pricing adds provider surcharge to the payable amount', () => {
+    const pricing = paymentTestUtils.buildPaymentPricing({
+        providerConfig: {
+            surcharge_rate: 0.01,
+            surcharge_label: '支付通道费'
+        },
+        baseAmount: 10
+    });
+    const unevenPricing = paymentTestUtils.buildPaymentPricing({
+        providerConfig: {
+            surcharge_rate: 0.01
+        },
+        baseAmount: 10.01
+    });
+
+    assert.equal(pricing.baseAmount, 10);
+    assert.equal(pricing.surchargeRate, 0.01);
+    assert.equal(pricing.surchargeAmount, 0.1);
+    assert.equal(pricing.payableAmount, 10.1);
+    assert.equal(pricing.surchargeLabel, '支付通道费');
+    assert.equal(unevenPricing.surchargeAmount, 0.11);
+    assert.equal(unevenPricing.payableAmount, 10.12);
 });
 
 test('misconfigured quote secret fails closed during verification', () => {
@@ -476,6 +501,8 @@ test('nowpayments status and cny quote conversion stay conservative', () => {
         priceCurrency: 'usd',
         cnyToUsdRate: 0.14
     }), 0.01);
+    assert.equal(formatNowpaymentsPayAmount(10.7066225), '10.71');
+    assert.equal(formatNowpaymentsPayAmount(10.7066, 2), '10.71');
 });
 
 test('nowpayments direct payment creation uses payment endpoint for hosted Chinese checkout', async () => {

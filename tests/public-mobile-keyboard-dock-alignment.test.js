@@ -206,9 +206,9 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(shopHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
     assert.match(guestbookHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
     assert.match(guestbookHtml, /homepage-guestbook-modal\.js\?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1/);
-    assert.match(adminStudioHtml, /admin-chat\.js\?v=20260504_OPS_SESSION_NO_ONLINE_1/);
+    assert.match(adminStudioHtml, /admin-chat\.js\?v=20260505_CHAT_USER_ACTIVITY_1/);
     assert.match(adminStudioHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
-    assert.match(chatWidgetLoader, /const VERSION = '20260504_ENGAGEMENT_ROUTE_LINKS_1';/);
+    assert.match(chatWidgetLoader, /const VERSION = '20260505_CHAT_USER_ACTIVITY_1';/);
     assert.match(chatWidgetLoader, /<div class="chat-header-actions">[\s\S]*<button type="button" class="chat-header-mode-switch" tabindex="-1">常用入口<\/button>/);
     assert.match(chatWidgetLoader, /chat-widget-bootstrap-user-input \.chat-widget-bootstrap-user-emoji-btn \{[\s\S]*background: transparent;[\s\S]*box-shadow: none;/);
     assert.match(chatWidgetLoader, /chat-widget-bootstrap-user-input \.chat-send-btn \{[\s\S]*width: auto;[\s\S]*flex: 0 0 auto;/);
@@ -296,5 +296,5 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(chatWidget, /\.chat-window--bootstrap-adopting-content\.chat-window--bootstrap-content-ready > \*:not\(\.emoji-picker-popover\):not\(\.chat-bootstrap-content-snapshot\)[\s\S]*opacity: 1;[\s\S]*chat-widget-content-settle/);
     assert.match(chatWidgetCss, /\.chat-window--bootstrap-content-ready \.emoji-picker-popover:not\(\.active\) \{[\s\S]*opacity: 0 !important;/);
     assert.match(chatWidgetCss, /@keyframes chat-widget-loading-dots \{[\s\S]*transform: translateY\(-3px\);[\s\S]*opacity: 0\.96;/);
-    assert.match(walletLoader, /const VERSION = '20260504_USDT_DIRECT_CHECKOUT_1';/);
+    assert.match(walletLoader, /const VERSION = '20260504_USDT_AMOUNT_PRECISION_TIMEOUT_1';/);
 });

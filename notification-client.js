@@ -1185,7 +1185,9 @@
             drawer.classList.add('active', 'notif-drawer-opening');
             backdrop.classList.add('active');
             lockNotificationBackgroundScroll();
-            renderNotifications();
+            renderNotifications(isMobileNotificationViewport()
+                ? { animateCards: true, restartDrawerEntry: true }
+                : {});
             if (shouldStartLoad) {
                 void window.initNotificationSystem?.();
             }
@@ -1837,9 +1839,12 @@
         void drawer.offsetHeight;
         drawer.classList.add('notif-drawer-content-entering');
         notificationContentEntryTimerId = window.setTimeout(() => {
+            drawer.querySelectorAll('.notif-card-filter-enter').forEach((card) => {
+                card.classList.remove('notif-card-filter-enter');
+            });
             drawer.classList.remove('notif-drawer-content-entering');
             notificationContentEntryTimerId = null;
-        }, 760);
+        }, isMobileNotificationViewport() ? NOTIFICATION_MOBILE_ENTRY_MS : 760);
     }
 
     function cancelNotificationDrawerOpeningAnimation() {

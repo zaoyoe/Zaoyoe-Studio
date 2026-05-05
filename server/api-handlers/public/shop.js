@@ -5,6 +5,21 @@ const {
 const {
     maybeIssueAffiliateDiscountAssetsForShopOrder
 } = require('../../../api/_lib/discount-trigger-linkage');
+const {
+    markUserAsPaid
+} = require('../../../api/_lib/user-tags');
+
+async function safeMarkShopBuyerAsPaid(supabase, options = {}) {
+    try {
+        return await markUserAsPaid(supabase, options);
+    } catch (error) {
+        console.warn('[Shop] Failed to sync engagement user tags:', error?.message || error);
+        return {
+            ok: false,
+            skipped: 'tag_sync_failed'
+        };
+    }
+}
 
 function createShopHandlers({
     admin,
@@ -2886,16 +2901,24 @@ function createShopHandlers({
                     ? responsePayload.data
                     : {};
                 const orderId = normalizeText(responseData.order_id || responseData.id, 160);
-                if (orderId && (requestAdminSupabase?.from || adminSupabase?.from || supabase?.from)) {
+                const systemSupabase = requestAdminSupabase || adminSupabase || supabase;
+                if (orderId && systemSupabase?.from) {
                     try {
                         await maybeIssueAffiliateDiscountAssetsForShopOrder({
-                            supabase: requestAdminSupabase || adminSupabase || supabase,
+                            supabase: systemSupabase,
                             site: payload.site,
                             orderId
                         });
                     } catch (linkageError) {
                         console.warn('[Shop] Affiliate discount linkage skipped:', linkageError.message);
                     }
+                }
+                if (systemSupabase?.from) {
+                    await safeMarkShopBuyerAsPaid(systemSupabase, {
+                        userId: user.id,
+                        sourceEventId: orderId,
+                        sourceModule: 'shop.purchase'
+                    });
                 }
                 let guidanceData = null;
                 try {

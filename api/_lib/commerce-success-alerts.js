@@ -3,6 +3,9 @@ const {
     enqueueOpsAlertJob,
     loadOpsAlertsRuntimeConfig
 } = require('./ops-alerts');
+const {
+    markUsersAsPaid
+} = require('./user-tags');
 
 const DEFAULT_COMMERCE_SUCCESS_MONITOR_CONFIG = Object.freeze({
     enabled: true,
@@ -124,7 +127,7 @@ async function fetchRecentSuccessfulRechargeOrders(client, sinceIso, config) {
     return fetchPagedRows(() => client
         .from('payment_orders')
         .select('id, user_id, provider, provider_order_no, site, package_name, expected_amount, paid_amount, points_amount, status, created_at, paid_at, claimed_at')
-        .eq('status', 'redeemed')
+        .in('status', ['paid', 'redeemed'])
         .gte('claimed_at', sinceIso)
         .order('claimed_at', { ascending: false }), config.page_size, config.max_pages);
 }
@@ -460,6 +463,18 @@ async function runCommerceSuccessSweep(supabase, options = {}) {
         ...(shopOrders || []).map((order) => normalizeText(order.user_id)),
         ...(paymentOrders || []).map((order) => normalizeText(order.user_id))
     ].filter(Boolean)));
+    let taggedUserCount = 0;
+    if (userIds.length) {
+        try {
+            const tagResult = await markUsersAsPaid(supabase, {
+                userIds,
+                sourceModule: 'commerce_success_monitor'
+            });
+            taggedUserCount = tagResult?.ok ? userIds.length : 0;
+        } catch (tagError) {
+            console.warn('[commerce-success-alerts] paid_user tag sync skipped:', tagError?.message || tagError);
+        }
+    }
     const profilesConfig = activeConfigs.reduce((accumulator, config) => ({
         page_size: Math.max(accumulator.page_size, Number(config.page_size || DEFAULT_COMMERCE_SUCCESS_MONITOR_CONFIG.page_size))
     }), {
@@ -525,6 +540,7 @@ async function runCommerceSuccessSweep(supabase, options = {}) {
         queued,
         deduped,
         skipped_no_channels: skippedNoChannels,
+        tagged_user_count: taggedUserCount,
         state_job_count: stateJobs.length,
         results
     };

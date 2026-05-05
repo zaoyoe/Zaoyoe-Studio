@@ -4075,6 +4075,9 @@ function bindAdminStudioDelegatedControls() {
             case 'users-batch-add-tags':
                 window.batchAddTags?.();
                 break;
+            case 'users-batch-import-tags':
+                window.batchImportTagsByEmail?.();
+                break;
             case 'users-batch-export':
                 window.batchExportUsers?.();
                 break;

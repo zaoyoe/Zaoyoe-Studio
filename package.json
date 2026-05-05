@@ -22,6 +22,8 @@
     "smoke:admin-local": "node scripts/admin-local-smoke.js --suite core",
     "smoke:admin-payments": "node scripts/admin-local-smoke.js --module payments --timeout-ms 150000 --virtual-time-budget-ms 220000",
     "smoke:admin-shop": "node scripts/admin-local-smoke.js --module shop --timeout-ms 90000 --virtual-time-budget-ms 120000",
+    "smoke:engagement-external": "node scripts/engagement-external-embed-smoke.js",
+    "smoke:engagement-public": "node scripts/engagement-public-visual-smoke.js",
     "smoke:payment": "node scripts/payment-smoke-test.js",
     "sub2api:docker:logs": "docker compose -f services/sub2api/deploy/docker-compose.local.yml logs -f sub2api",
     "sub2api:docker:restart": "docker compose -f services/sub2api/deploy/docker-compose.local.yml up -d --force-recreate sub2api",

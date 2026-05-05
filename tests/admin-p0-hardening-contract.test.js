@@ -14,9 +14,11 @@ test('admin users frontend routes sensitive actions through hardened admin APIs'
 
     assert.match(source, /\/api\/admin\/users\/manage/);
     assert.match(source, /\/api\/admin\/users\/blocks/);
+    assert.match(source, /import_tags_by_email/);
     assert.doesNotMatch(source, /from\('admin_roles'\)\.(?:insert|update|upsert|delete)/);
     assert.doesNotMatch(source, /from\('blocked_users'\)\.(?:insert|update|upsert|delete)/);
     assert.doesNotMatch(source, /from\('points_ledger'\)\.(?:insert|update|upsert|delete)/);
+    assert.doesNotMatch(source, /from\('user_tags'\)\.(?:insert|update|upsert|delete)/);
     assert.doesNotMatch(source, /from\('system_notifications'\)\.(?:insert|update|upsert|delete)/);
     assert.doesNotMatch(source, /rpc\('fn_admin_clear_user_data'/);
 });

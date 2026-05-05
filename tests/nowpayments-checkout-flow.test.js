@@ -89,9 +89,12 @@ test('NOWPayments adapter returns a direct crypto checkout summary for the Chine
         assert.equal(context.checkoutUrl, '');
         assert.match(context.providerOrderNo, /^NP[A-F0-9]+$/);
         assert.equal(context.providerMetadata.pay_address, '0x6776ad44D571c1b24930939F8ba0f0B5601e05d0');
-        assert.equal(context.providerMetadata.pay_amount_text, '8.55955248');
+        assert.equal(context.providerMetadata.pay_amount_text, '8.56');
+        assert.equal(context.providerMetadata.pay_amount_original, 8.55955248);
+        assert.equal(context.providerMetadata.pay_amount_precision, 2);
         assert.equal(context.summary.pay_address, '0x6776ad44D571c1b24930939F8ba0f0B5601e05d0');
-        assert.equal(context.summary.pay_amount_text, '8.55955248');
+        assert.equal(context.summary.pay_amount_text, '8.56');
+        assert.equal(context.summary.pay_amount_original, 8.55955248);
         assert.equal(context.summary.network_code, 'BSC/BEP20');
         assert.equal(context.summary.expiration_estimate_date, '2030-05-04T04:03:00.000Z');
     } finally {

@@ -12,13 +12,19 @@
                 enabled: true,
                 display_name: "支付宝",
                 checkout_url: "https://example.com/alipay-preview",
-                order_query_enabled: false
+                order_query_enabled: false,
+                surcharge_rate: 0.01,
+                surcharge_label: "通道手续费"
             },
             nowpayments: {
                 enabled: true,
                 display_name: "USDT",
                 network_name: "BEP20",
-                pay_currency: "usdtbsc"
+                pay_currency: "usdtbsc",
+                cny_to_usd_rate: 0.1425207511,
+                pay_amount_precision: 2,
+                surcharge_rate: 0.01,
+                surcharge_label: "通道手续费"
             },
             afdian: { enabled: false },
             mock: { enabled: false }
@@ -126,11 +132,45 @@
         return Number.isFinite(value) && value > 0 ? value : 100;
     }
 
+    function buildPaymentPricing(baseAmount, providerKey) {
+        const normalizedBaseAmount = Number(baseAmount);
+        const provider = paymentChannels.providers[providerKey] || {};
+        const rate = Math.min(0.1, Math.max(0, Number(provider.surcharge_rate) || 0));
+        const feeAmount = normalizedBaseAmount > 0 && rate > 0
+            ? Math.ceil((normalizedBaseAmount * rate - Number.EPSILON) * 100) / 100
+            : 0;
+        const payableAmount = Math.round((normalizedBaseAmount + feeAmount) * 100) / 100;
+
+        return {
+            baseAmount: normalizedBaseAmount,
+            paymentFeeAmount: feeAmount,
+            paymentFeeRate: rate,
+            paymentFeeLabel: provider.surcharge_label || "通道手续费",
+            payableAmount
+        };
+    }
+
+    function buildPaymentPricingPayload(pricing) {
+        return {
+            base_amount: pricing.baseAmount,
+            payment_fee_amount: pricing.paymentFeeAmount,
+            payment_fee_rate: pricing.paymentFeeRate,
+            payment_fee_label: pricing.paymentFeeLabel,
+            payable_amount: pricing.payableAmount
+        };
+    }
+
     function buildNowpaymentsResult(input = {}) {
         const pkg = input.package_id ? findPackage(input) : null;
-        const paidAmount = pkg ? Number(pkg.price_cny) : customAmount(input);
-        const pointsAmount = pkg ? Number(pkg.points_amount) : paidAmount;
-        const payAmount = (paidAmount * 0.1425207511).toFixed(8);
+        const baseAmount = pkg ? Number(pkg.price_cny) : customAmount(input);
+        const pricing = buildPaymentPricing(baseAmount, "nowpayments");
+        const paidAmount = pricing.payableAmount;
+        const pointsAmount = pkg ? Number(pkg.points_amount) : baseAmount;
+        const nowpaymentsProvider = paymentChannels.providers.nowpayments || {};
+        const payAmountPrecision = Math.min(8, Math.max(0, Math.round(Number(nowpaymentsProvider.pay_amount_precision) || 2)));
+        const payAmountFactor = 10 ** payAmountPrecision;
+        const payAmount = (Math.ceil((paidAmount * Number(nowpaymentsProvider.cny_to_usd_rate || 0.1425207511) - Number.EPSILON) * payAmountFactor) / payAmountFactor)
+            .toFixed(payAmountPrecision);
         const orderNo = String(++paymentCounter);
         const expiresAt = new Date(Date.now() + nextQuoteTtlMs).toISOString();
         nextQuoteTtlMs = 5 * 60 * 1000;
@@ -145,12 +185,17 @@
             checkout_session_id: `preview-usdt-${orderNo}`,
             provider_order_no: orderNo,
             paid_amount: paidAmount,
+            base_amount: pricing.baseAmount,
+            payment_fee_amount: pricing.paymentFeeAmount,
+            payment_fee_rate: pricing.paymentFeeRate,
+            payment_fee_label: pricing.paymentFeeLabel,
             points_amount: pointsAmount,
             provider_summary: {
                 payment_id: orderNo,
                 pay_address: "0x1551Ad7D1A433df2e827C09a7f8c1af7E5CE3fC3",
                 pay_amount: payAmount,
                 pay_amount_text: payAmount,
+                pay_amount_precision: payAmountPrecision,
                 pay_currency: "USDT",
                 network_code: "BSC/BEP20",
                 network_name: "BNB Smart Chain",
@@ -158,6 +203,12 @@
                 quote_expires_at: expiresAt,
                 expiration_estimate_date: expiresAt,
                 local_amount: paidAmount,
+                base_amount: pricing.baseAmount,
+                payment_fee_amount: pricing.paymentFeeAmount,
+                payment_fee_rate: pricing.paymentFeeRate,
+                payment_fee_label: pricing.paymentFeeLabel,
+                payable_amount: pricing.payableAmount,
+                payment_pricing: buildPaymentPricingPayload(pricing),
                 grantedPoints: pointsAmount
             }
         };
@@ -165,8 +216,10 @@
 
     function buildAlipayResult(input = {}) {
         const pkg = input.package_id ? findPackage(input) : null;
-        const paidAmount = pkg ? Number(pkg.price_cny) : customAmount(input);
-        const pointsAmount = pkg ? Number(pkg.points_amount) : paidAmount;
+        const baseAmount = pkg ? Number(pkg.price_cny) : customAmount(input);
+        const pricing = buildPaymentPricing(baseAmount, "zpay");
+        const paidAmount = pricing.payableAmount;
+        const pointsAmount = pkg ? Number(pkg.points_amount) : baseAmount;
         const orderNo = String(++paymentCounter);
         statusMode = "pending";
         lastPaymentPoints = pointsAmount;
@@ -179,11 +232,21 @@
             checkout_session_id: `preview-alipay-${orderNo}`,
             provider_order_no: orderNo,
             paid_amount: paidAmount,
+            base_amount: pricing.baseAmount,
+            payment_fee_amount: pricing.paymentFeeAmount,
+            payment_fee_rate: pricing.paymentFeeRate,
+            payment_fee_label: pricing.paymentFeeLabel,
             points_amount: pointsAmount,
             provider_summary: {
                 out_trade_no: orderNo,
                 qrcode_img_url: window.__walletPreviewQrDataUrl || "",
-                qrcode_url: "https://example.com/alipay-preview"
+                qrcode_url: "https://example.com/alipay-preview",
+                base_amount: pricing.baseAmount,
+                payment_fee_amount: pricing.paymentFeeAmount,
+                payment_fee_rate: pricing.paymentFeeRate,
+                payment_fee_label: pricing.paymentFeeLabel,
+                payable_amount: pricing.payableAmount,
+                payment_pricing: buildPaymentPricingPayload(pricing)
             },
             message: "支付宝付款信息已生成。"
         };
