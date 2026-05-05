@@ -5,6 +5,11 @@ const {
     getUserBalance
 } = require('../../api/_lib/payments/rpc');
 const {
+    AUTO_USER_TAGS,
+    markVerifyFailed,
+    removeUserTags
+} = require('../../api/_lib/user-tags');
+const {
     loadVerifyRuntimeConfig,
     selectVerifyCredentialForTask
 } = require('./_verify-provider-runtime');
@@ -17,6 +22,31 @@ const VERIFY_TASK_UNIT_COSTS = Object.freeze({
 const ACTIVE_TRACKED_JOB_STATUSES = Object.freeze(['queued', 'running', 'processing', 'pending']);
 const TERMINAL_TRACKED_JOB_STATUSES = Object.freeze(['success', 'failed']);
 const jobSyncLocks = new Map();
+
+async function safeSyncVerifyUserTags(supabase, options = {}) {
+    try {
+        const status = String(options.status || '').trim().toLowerCase();
+        if (status === 'failed') {
+            return await markVerifyFailed(supabase, options);
+        }
+        if (status === 'success') {
+            return await removeUserTags(supabase, {
+                userId: options.userId || options.user_id,
+                tags: AUTO_USER_TAGS.VERIFY_FAILED
+            });
+        }
+        return {
+            ok: false,
+            skipped: 'non_terminal_status'
+        };
+    } catch (error) {
+        console.warn('[Verify] Failed to sync engagement user tags:', error?.message || error);
+        return {
+            ok: false,
+            skipped: 'tag_sync_failed'
+        };
+    }
+}
 
 function getApiErrorDetail(payload) {
     if (!payload || typeof payload !== 'object') return null;
@@ -611,6 +641,13 @@ async function syncTrackedJobStatus({
             status: upstreamStatus === 'success' ? 'success' : 'failed',
             apiData: normalizedApiData,
             pointsDeducted
+        });
+
+        await safeSyncVerifyUserTags(supabase, {
+            userId,
+            status: upstreamStatus === 'success' ? 'success' : 'failed',
+            sourceEventId: jobId,
+            sourceModule: 'verify'
         });
 
         return { pointsDeducted, record: existingRecord };

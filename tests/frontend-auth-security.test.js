@@ -46,6 +46,7 @@ test('frontend auth flow no longer persists passwords in localStorage', () => {
 test('frontend auth flow uses the backend login-security endpoint and email-only remember state', () => {
     assert.match(authSource, /\/api\/auth\/login-security/);
     assert.match(authSource, /zaoyoe_remembered_login_email_v1/);
+    assert.match(authSource, /zaoyoe_remember_login_email_preference_v1/);
     assert.equal(authSource.includes('remembered_credentials'), true);
     assert.match(injectAuthSource, /记住邮箱/);
 });
@@ -110,7 +111,7 @@ test('google popup callback is handed to the lightweight auth callback before th
 test('public login modal waits for the auth sheet runtime before becoming visible', () => {
     assert.match(authSource, /function requestLoginModalOpen\(view = 'login'\)/);
     assert.match(authSource, /window\.addEventListener\('zaoyoe:auth-markup-ready', retryOpen, \{ once: true \}\)/);
-    assert.match(authSource, /sessionStorage\.setItem\('openLoginModal', 'true'\)/);
+    assert.match(authSource, /const pendingLoginModalKey = 'openLoginModal';[\s\S]*sessionStorage\.setItem\(pendingLoginModalKey, 'true'\)/);
     assert.doesNotMatch(
         authSource,
         /loginModal\.hidden = false;\s*loginModal\.setAttribute\('aria-hidden', 'false'\);\s*loginModal\.classList\.add\('active'\);/

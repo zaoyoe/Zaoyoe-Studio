@@ -6,10 +6,11 @@
     }
     global.__zaoyoeChatWidgetBootstrapLoaded = true;
 
-    const VERSION = '20260504_ENGAGEMENT_ROUTE_LINKS_1';
+    const VERSION = '20260505_CHAT_USER_ACTIVITY_1';
     const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';
     const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';
-    const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260504_ENGAGEMENT_ROUTE_LINKS_1';
+    const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260505_CHAT_USER_ACTIVITY_1';
+    const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=20260505_ENGAGEMENT_ENTRY_1';
     const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';
     const CHAT_WIDGET_SHELL_MODE_KEY = 'zaoyoe_chat_widget_last_shell_mode_v1';
     const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';
@@ -32,6 +33,95 @@
     let bootstrapLoadingShellRemoveTimer = null;
     let bootstrapScrollLockActive = false;
     let bootstrapDismissToken = 0;
+    let bootstrapScript = null;
+
+    function getBootstrapScript() {
+        if (bootstrapScript && bootstrapScript.isConnected) {
+            return bootstrapScript;
+        }
+        bootstrapScript = document.currentScript
+            || document.querySelector(`script[src*="js/chat-widget-loader.js?v=${VERSION}"]`)
+            || document.querySelector('script[src*="js/chat-widget-loader.js"]');
+        return bootstrapScript;
+    }
+
+    function getExternalEngagementConfig() {
+        const config = global.ZaoyoeExternalEngagementConfig || global.ZaoyoeEngagementExternalConfig || {};
+        return config && typeof config === 'object' && !Array.isArray(config) ? config : {};
+    }
+
+    function getLoaderAssetBase() {
+        const config = getExternalEngagementConfig();
+        const script = getBootstrapScript();
+        const configuredBase = String(config.assetBase || script?.dataset.assetBase || '').trim();
+        if (configuredBase) {
+            try {
+                return new URL(configuredBase, global.location.href).toString().replace(/\/?$/, '/');
+            } catch (_) {
+                return configuredBase.replace(/\/?$/, '/');
+            }
+        }
+
+        if (script?.src) {
+            try {
+                const scriptUrl = new URL(script.src, global.location.href);
+                const match = scriptUrl.pathname.match(/^(.*\/)js\/chat-widget-loader\.js$/);
+                if (match) {
+                    scriptUrl.pathname = match[1];
+                    scriptUrl.search = '';
+                    scriptUrl.hash = '';
+                    return scriptUrl.toString().replace(/\/?$/, '/');
+                }
+            } catch (_) {
+                // Fall through to relative loading.
+            }
+        }
+
+        return '';
+    }
+
+    function resolveAssetUrl(src = '') {
+        const rawSrc = String(src || '').trim();
+        if (!rawSrc || /^[a-z][a-z0-9+.-]*:/i.test(rawSrc) || rawSrc.startsWith('//')) {
+            return rawSrc;
+        }
+        const assetBase = getLoaderAssetBase();
+        if (!assetBase) return rawSrc;
+        return new URL(rawSrc.replace(/^\.\//, ''), assetBase).toString();
+    }
+
+    function findExistingScriptBySrc(src = '') {
+        const resolvedSrc = resolveAssetUrl(src);
+        return Array.from(document.scripts || []).find((script) => (
+            script.src === resolvedSrc
+            || script.getAttribute('src') === resolvedSrc
+            || script.getAttribute('src') === src
+        )) || null;
+    }
+
+    function shouldLoadFullChatWidgetStylesheet() {
+        const config = getExternalEngagementConfig();
+        return config.externalHost === true || config.external_host === true || String(config.pageId || config.page_id || '').trim() === 'gongyi';
+    }
+
+    function ensureFullChatWidgetStylesheet() {
+        if (!shouldLoadFullChatWidgetStylesheet()) {
+            return;
+        }
+        const href = resolveAssetUrl(CHAT_WIDGET_STYLE_SRC);
+        const existing = Array.from(document.querySelectorAll('link[rel="stylesheet"]')).find((link) => (
+            link.href === href
+            || link.getAttribute('href') === href
+            || link.getAttribute('href') === CHAT_WIDGET_STYLE_SRC
+        ));
+        if (existing) return;
+
+        const link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.href = href;
+        link.dataset.engagementExternalStyle = '1';
+        (document.head || document.documentElement).appendChild(link);
+    }
 
     function ensurePlaceholderPlacementStyles() {
         if (document.getElementById(CHAT_WIDGET_CRITICAL_STYLE_ID)) {
@@ -45,7 +135,7 @@
 /* 20260503_CHAT_WIDGET_SAFARI_HANDOFF_12 */
 /* 20260503_CHAT_WIDGET_DESKTOP_NARROW_PEEK_1 */
 /* 20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1 */
-/* 20260504_ENGAGEMENT_ROUTE_LINKS_1 */
+/* 20260505_ENGAGEMENT_ENTRY_1 */
 .chat-widget-fab {
     position: fixed;
     top: 85%;
@@ -1417,6 +1507,7 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
 
     function ensureChatWidgetStyles() {
         ensurePlaceholderPlacementStyles();
+        ensureFullChatWidgetStylesheet();
 
         if (typeof global.activateDeferredStyleGroup === 'function') {
             global.activateDeferredStyleGroup('homepage-chat');
@@ -1973,7 +2064,8 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
     }
 
     function loadScript(src) {
-        const existing = document.querySelector(`script[src="${src}"]`);
+        const resolvedSrc = resolveAssetUrl(src);
+        const existing = findExistingScriptBySrc(src);
         if (existing) {
             if (existing.dataset.loaded === '1' || existing.readyState === 'complete') {
                 return Promise.resolve(existing);
@@ -1985,7 +2077,7 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
 
         const script = existing || document.createElement('script');
         if (!existing) {
-            script.src = src;
+            script.src = resolvedSrc;
             script.async = false;
             script.dataset.loaded = '0';
         }
@@ -1995,7 +2087,7 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
                 script.dataset.loaded = '1';
                 resolve(script);
             };
-            const handleError = () => reject(new Error(`Failed to load ${src}`));
+            const handleError = () => reject(new Error(`Failed to load ${resolvedSrc}`));
 
             script.addEventListener('load', handleLoad, { once: true });
             script.addEventListener('error', handleError, { once: true });

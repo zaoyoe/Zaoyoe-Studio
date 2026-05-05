@@ -10,6 +10,7 @@ const NOWPAYMENTS_DEFAULT_PAY_CURRENCY = 'usdtbsc';
 const NOWPAYMENTS_DEFAULT_PRICE_CURRENCY = 'usd';
 const NOWPAYMENTS_DEFAULT_CNY_TO_USD_RATE = 0.14;
 const NOWPAYMENTS_DEFAULT_QUOTE_TTL_SECONDS = 300;
+const NOWPAYMENTS_DEFAULT_PAY_AMOUNT_PRECISION = 2;
 
 function sanitizeText(value, fallback = '', maxLength = 500) {
     if (typeof value !== 'string') return fallback;
@@ -54,6 +55,12 @@ function coercePositiveInteger(value, fallback = null) {
     return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed) : fallback;
 }
 
+function coercePrecisionInteger(value, fallback = NOWPAYMENTS_DEFAULT_PAY_AMOUNT_PRECISION) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(8, Math.max(0, Math.round(parsed)));
+}
+
 function roundCurrencyAmount(value, fallback = 0) {
     const parsed = Number(value);
     return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : fallback;
@@ -63,6 +70,20 @@ function roundUpCurrency(value, fallback = null) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
     return Math.ceil(parsed * 100) / 100;
+}
+
+function formatNowpaymentsPayAmount(value, precision = NOWPAYMENTS_DEFAULT_PAY_AMOUNT_PRECISION, fallback = '') {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+
+    const normalizedPrecision = coercePrecisionInteger(precision, NOWPAYMENTS_DEFAULT_PAY_AMOUNT_PRECISION);
+    const factor = 10 ** normalizedPrecision;
+    const rounded = Math.ceil((parsed - Number.EPSILON) * factor) / factor;
+    const fixedText = rounded.toFixed(normalizedPrecision);
+
+    return fixedText
+        .replace(/(\.\d*?[1-9])0+$/u, '$1')
+        .replace(/\.0+$/u, '');
 }
 
 function resolveCnyToUsdRate(channelConfig = {}, env = process.env) {
@@ -168,6 +189,7 @@ function normalizeNowpaymentsConfig({
         priceCurrency,
         cnyToUsdRate,
         quoteTtlSeconds,
+        payAmountPrecision: 2,
         isFixedRate: coerceBoolean(channelConfig.is_fixed_rate, true),
         isFeePaidByUser: coerceBoolean(channelConfig.is_fee_paid_by_user, true),
         missingFields,
@@ -428,6 +450,7 @@ module.exports = {
     NOWPAYMENTS_DEFAULT_API_BASE_URL,
     NOWPAYMENTS_DEFAULT_CNY_TO_USD_RATE,
     NOWPAYMENTS_DEFAULT_PAY_CURRENCY,
+    NOWPAYMENTS_DEFAULT_PAY_AMOUNT_PRECISION,
     NOWPAYMENTS_DEFAULT_PRICE_CURRENCY,
     NOWPAYMENTS_DEFAULT_QUOTE_TTL_SECONDS,
     buildNowpaymentsIpnSignature,
@@ -435,6 +458,7 @@ module.exports = {
     convertCnyAmountToPriceAmount,
     createNowpaymentsInvoice,
     createNowpaymentsPayment,
+    formatNowpaymentsPayAmount,
     normalizeNowpaymentsConfig,
     normalizeNowpaymentsPaymentStatus,
     requestNowpaymentsJson,

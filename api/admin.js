@@ -27,8 +27,14 @@ const discountsAssetsHandler = require('../server/api-handlers/admin/discounts/a
 const discountsDetailHandler = require('../server/api-handlers/admin/discounts/detail');
 const discountsListHandler = require('../server/api-handlers/admin/discounts/list');
 const discountsMutateHandler = require('../server/api-handlers/admin/discounts/mutate');
+const engagementAssetsHandler = require('../server/api-handlers/admin/engagement/assets');
+const engagementEntryHandler = require('../server/api-handlers/admin/engagement/entry');
+const engagementExternalHandler = require('../server/api-handlers/admin/engagement/external');
 const engagementOverviewHandler = require('../server/api-handlers/admin/engagement/overview');
 const engagementRulesHandler = require('../server/api-handlers/admin/engagement/rules');
+const engagementScenesHandler = require('../server/api-handlers/admin/engagement/scenes');
+const engagementSegmentsHandler = require('../server/api-handlers/admin/engagement/segments');
+const engagementTemplatesHandler = require('../server/api-handlers/admin/engagement/templates');
 const marketingAssetsCenterHandler = require('../server/api-handlers/admin/marketing/assets-center');
 const homepageConfigHandler = require('../server/api-handlers/admin/homepage/config');
 const homepageContextHandler = require('../server/api-handlers/admin/homepage/context');
@@ -105,8 +111,14 @@ const ROUTE_HANDLERS = {
     'discounts/detail': discountsDetailHandler,
     'discounts/list': discountsListHandler,
     'discounts/mutate': discountsMutateHandler,
+    'engagement/assets': engagementAssetsHandler,
+    'engagement/entry': engagementEntryHandler,
+    'engagement/external': engagementExternalHandler,
     'engagement/overview': engagementOverviewHandler,
     'engagement/rules': engagementRulesHandler,
+    'engagement/scenes': engagementScenesHandler,
+    'engagement/segments': engagementSegmentsHandler,
+    'engagement/templates': engagementTemplatesHandler,
     'marketing/assets-center': marketingAssetsCenterHandler,
     'homepage/config': homepageConfigHandler,
     'homepage/context': homepageContextHandler,

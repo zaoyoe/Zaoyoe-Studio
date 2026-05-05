@@ -9,6 +9,7 @@ const VALID_RULE_SITES = Object.freeze(new Set(['all', 'cn', 'intl']));
 const VALID_RULE_STATUSES = Object.freeze(new Set(['draft', 'published', 'paused', 'archived']));
 const VALID_RULE_PAGES = Object.freeze(new Set(['all', 'home', 'prompts', 'gongyi', 'shop', 'verify', 'guestbook']));
 const VALID_RULE_TONES = Object.freeze(new Set(['info', 'success', 'warning', 'alert', 'error', 'welcome', 'creative', 'calm', 'commerce', 'assistive', 'community']));
+const VALID_RULE_PLACEMENTS = Object.freeze(new Set(['robot_bubble', 'top_banner', 'inline_card', 'modal', 'floating_badge']));
 
 function sanitizeText(value, maxLength = 4000) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
@@ -41,6 +42,11 @@ function normalizeTone(value = 'info') {
     return VALID_RULE_TONES.has(normalized) ? normalized : 'info';
 }
 
+function normalizePlacement(value = 'robot_bubble') {
+    const normalized = sanitizeText(value, 80).toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'robot_bubble';
+    return VALID_RULE_PLACEMENTS.has(normalized) ? normalized : 'robot_bubble';
+}
+
 function normalizePageIds(value) {
     const source = Array.isArray(value)
         ? value
@@ -58,6 +64,93 @@ function normalizeMetadata(value) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
+function buildRuleGovernance(rule = {}) {
+    const pageIds = normalizePageIds(rule.page_ids || rule.pageIds);
+    const placement = normalizePlacement(rule.placement);
+    const tone = normalizeTone(rule.tone);
+    const priority = normalizeInteger(rule.priority, 0);
+    const actionLabel = sanitizeText(rule.action_label || rule.actionLabel, 80);
+    const actionUrl = sanitizeText(rule.action_url || rule.actionUrl, 1000);
+    const reasons = [];
+
+    if (pageIds.includes('all')) reasons.push('全站触达');
+    if (priority >= 30) reasons.push('高优先级');
+    if (['modal', 'top_banner'].includes(placement)) reasons.push('强展示形式');
+    if (['warning', 'alert', 'error'].includes(tone)) reasons.push('警示语气');
+    if (actionLabel && !actionUrl) reasons.push('按钮缺少链接');
+
+    const riskLevel = reasons.length >= 3 ? 'high' : (reasons.length >= 1 ? 'medium' : 'low');
+    return {
+        risk_level: riskLevel,
+        requires_review: riskLevel === 'high',
+        reasons
+    };
+}
+
+function getBatchAuditDetails(body = {}) {
+    const batchId = sanitizeText(body.batch_id || body.batchId, 160);
+    const batchAction = sanitizeText(body.batch_action || body.batchAction, 120);
+    const batchLabel = sanitizeText(body.batch_label || body.batchLabel, 180);
+    const batchSourceRuleId = sanitizeText(body.batch_source_rule_id || body.batchSourceRuleId, 160);
+    const batchPreviousStatus = sanitizeText(body.batch_previous_status || body.batchPreviousStatus, 80);
+    const batchPreviousEnabled = body.batch_previous_enabled === true || body.batchPreviousEnabled === true;
+    const rollbackBatchId = sanitizeText(body.rollback_batch_id || body.rollbackBatchId, 160);
+    const details = {};
+    if (batchId) details.batch_id = batchId;
+    if (batchAction) details.batch_action = batchAction;
+    if (batchLabel) details.batch_label = batchLabel;
+    if (batchSourceRuleId) details.batch_source_rule_id = batchSourceRuleId;
+    if (batchPreviousStatus) details.batch_previous_status = batchPreviousStatus;
+    if (body.batch_previous_enabled !== undefined || body.batchPreviousEnabled !== undefined) details.batch_previous_enabled = batchPreviousEnabled;
+    if (rollbackBatchId) details.rollback_batch_id = rollbackBatchId;
+    return details;
+}
+
+function isGovernanceAcknowledged(body = {}) {
+    return body.governance_acknowledged === true
+        || body.governanceAcknowledged === true
+        || body.risk_acknowledged === true
+        || body.riskAcknowledged === true;
+}
+
+function getGovernanceAckReason(body = {}) {
+    return sanitizeText(
+        body.governance_ack_reason
+            || body.governanceAckReason
+            || body.risk_ack_reason
+            || body.riskAckReason
+            || 'admin_studio_confirm',
+        240
+    ) || 'admin_studio_confirm';
+}
+
+function assertPublishGovernanceAcknowledged(rule = {}, body = {}) {
+    const governance = normalizeMetadata(rule.governance || rule.metadata?.governance);
+    if (rule.enabled === true && rule.status === 'published' && governance.requires_review === true && !isGovernanceAcknowledged(body)) {
+        const error = new Error('高风险触达规则需要二次确认后才能发布');
+        error.statusCode = 428;
+        error.code = 'ENGAGEMENT_GOVERNANCE_ACK_REQUIRED';
+        throw error;
+    }
+}
+
+function attachGovernanceReviewMetadata(payload = {}, body = {}, userId = '') {
+    if (!isGovernanceAcknowledged(body)) return payload;
+    const metadata = normalizeMetadata(payload.metadata);
+    return {
+        ...payload,
+        metadata: {
+            ...metadata,
+            governance_review: {
+                acknowledged: true,
+                acknowledged_by: userId || '',
+                acknowledged_at: new Date().toISOString(),
+                reason: getGovernanceAckReason(body)
+            }
+        }
+    };
+}
+
 function isMissingEngagementSchemaError(error) {
     const text = [
         error?.code,
@@ -73,14 +166,16 @@ function isMissingEngagementSchemaError(error) {
 }
 
 function normalizeRule(row = {}) {
-    return {
+    const metadata = normalizeMetadata(row.metadata);
+    const normalized = {
         id: sanitizeText(row.id, 160),
         name: sanitizeText(row.name || '未命名触达规则', 160) || '未命名触达规则',
         description: sanitizeText(row.description, 800),
         site: normalizeSite(row.site),
         page_ids: normalizePageIds(row.page_ids),
-        placement: sanitizeText(row.placement || 'robot_bubble', 80) || 'robot_bubble',
+        placement: normalizePlacement(row.placement),
         trigger_type: sanitizeText(row.trigger_type || 'page_view', 80) || 'page_view',
+        audience: normalizeMetadata(row.audience),
         title: sanitizeText(row.title, 160),
         content: sanitizeText(row.content, 1200),
         action_label: sanitizeText(row.action_label, 80),
@@ -94,10 +189,15 @@ function normalizeRule(row = {}) {
         status: normalizeStatus(row.status),
         starts_at: sanitizeText(row.starts_at, 120),
         ends_at: sanitizeText(row.ends_at, 120),
-        metadata: normalizeMetadata(row.metadata),
+        metadata,
         updated_at: sanitizeText(row.updated_at, 120),
         created_at: sanitizeText(row.created_at, 120)
     };
+    normalized.governance = normalizeMetadata(metadata.governance);
+    if (!normalized.governance.risk_level) {
+        normalized.governance = buildRuleGovernance(normalized);
+    }
+    return normalized;
 }
 
 function buildRulePayload(body = {}, userId = '') {
@@ -117,12 +217,12 @@ function buildRulePayload(body = {}, userId = '') {
     } else if (!enabled && status === 'published') {
         status = 'paused';
     }
-    return {
+    const payload = {
         name,
         description: sanitizeText(body.description, 800),
         site: normalizeSite(body.site),
         page_ids: normalizePageIds(body.page_ids || body.pageIds),
-        placement: 'robot_bubble',
+        placement: normalizePlacement(body.placement || body.display_type || body.displayType),
         trigger_type: sanitizeText(body.trigger_type || body.triggerType || 'page_view', 80) || 'page_view',
         audience: normalizeMetadata(body.audience),
         title,
@@ -141,12 +241,19 @@ function buildRulePayload(body = {}, userId = '') {
         metadata: normalizeMetadata(body.metadata),
         updated_by: userId || null
     };
+    payload.metadata = {
+        ...payload.metadata,
+        governance: buildRuleGovernance(payload)
+    };
+    const withReview = attachGovernanceReviewMetadata(payload, body, userId);
+    assertPublishGovernanceAcknowledged(withReview, body);
+    return withReview;
 }
 
 async function listRules(supabase, { site = 'all' } = {}) {
     let query = supabase
         .from('engagement_rules')
-        .select('id,name,description,site,page_ids,placement,trigger_type,title,content,action_label,action_url,tone,icon,priority,frequency,dismiss_ttl_hours,enabled,status,starts_at,ends_at,metadata,created_at,updated_at')
+        .select('id,name,description,site,page_ids,placement,trigger_type,audience,title,content,action_label,action_url,tone,icon,priority,frequency,dismiss_ttl_hours,enabled,status,starts_at,ends_at,metadata,created_at,updated_at')
         .order('updated_at', { ascending: false })
         .limit(100);
 
@@ -170,7 +277,7 @@ async function saveRule({ supabase, user, body }) {
             .from('engagement_rules')
             .update(payload)
             .eq('id', id)
-            .select('id,name,description,site,page_ids,placement,trigger_type,title,content,action_label,action_url,tone,icon,priority,frequency,dismiss_ttl_hours,enabled,status,starts_at,ends_at,metadata,created_at,updated_at')
+            .select('id,name,description,site,page_ids,placement,trigger_type,audience,title,content,action_label,action_url,tone,icon,priority,frequency,dismiss_ttl_hours,enabled,status,starts_at,ends_at,metadata,created_at,updated_at')
             .single();
     } else {
         response = await supabase
@@ -179,11 +286,12 @@ async function saveRule({ supabase, user, body }) {
                 ...payload,
                 created_by: user.id || null
             })
-            .select('id,name,description,site,page_ids,placement,trigger_type,title,content,action_label,action_url,tone,icon,priority,frequency,dismiss_ttl_hours,enabled,status,starts_at,ends_at,metadata,created_at,updated_at')
+            .select('id,name,description,site,page_ids,placement,trigger_type,audience,title,content,action_label,action_url,tone,icon,priority,frequency,dismiss_ttl_hours,enabled,status,starts_at,ends_at,metadata,created_at,updated_at')
             .single();
     }
 
     if (response.error) throw response.error;
+    const savedRule = normalizeRule(response.data);
     await writeAdminAuditLog({
         supabase,
         adminId: user.id,
@@ -191,15 +299,32 @@ async function saveRule({ supabase, user, body }) {
         site: payload.site,
         actionType: id ? 'engagement.rule.update' : 'engagement.rule.create',
         details: {
+            ...getBatchAuditDetails(body),
             rule_id: response.data?.id || id,
             name: payload.name,
             status: payload.status,
             enabled: payload.enabled,
-            page_ids: payload.page_ids
+            page_ids: payload.page_ids,
+            audience: payload.audience,
+            trigger_type: payload.trigger_type,
+            placement: payload.placement,
+            governance: savedRule.governance
         }
     });
 
-    return normalizeRule(response.data);
+    return savedRule;
+}
+
+async function loadRuleById(supabase, id = '') {
+    const normalizedId = sanitizeText(id, 160);
+    if (!normalizedId) return null;
+    const { data, error } = await supabase
+        .from('engagement_rules')
+        .select('id,name,description,site,page_ids,placement,trigger_type,audience,title,content,action_label,action_url,tone,icon,priority,frequency,dismiss_ttl_hours,enabled,status,starts_at,ends_at,metadata,created_at,updated_at')
+        .eq('id', normalizedId)
+        .single();
+    if (error) throw error;
+    return normalizeRule(data);
 }
 
 async function setRuleEnabled({ supabase, user, body }) {
@@ -211,18 +336,41 @@ async function setRuleEnabled({ supabase, user, body }) {
     }
 
     const enabled = normalizeBoolean(body.enabled, false);
+    let metadataPatch = null;
+    if (enabled) {
+        const currentRule = await loadRuleById(supabase, id);
+        const nextRule = {
+            ...(currentRule || {}),
+            enabled: true,
+            status: 'published'
+        };
+        nextRule.governance = buildRuleGovernance(nextRule);
+        assertPublishGovernanceAcknowledged(nextRule, body);
+        if (isGovernanceAcknowledged(body)) {
+            metadataPatch = attachGovernanceReviewMetadata({
+                metadata: {
+                    ...(currentRule?.metadata || {}),
+                    governance: nextRule.governance
+                }
+            }, body, user.id).metadata;
+        }
+    }
     const patch = {
         enabled,
         status: enabled ? 'published' : 'paused',
         updated_by: user.id || null
     };
+    if (metadataPatch) {
+        patch.metadata = metadataPatch;
+    }
     const { data, error } = await supabase
         .from('engagement_rules')
         .update(patch)
         .eq('id', id)
-        .select('id,name,description,site,page_ids,placement,trigger_type,title,content,action_label,action_url,tone,icon,priority,frequency,dismiss_ttl_hours,enabled,status,starts_at,ends_at,metadata,created_at,updated_at')
+        .select('id,name,description,site,page_ids,placement,trigger_type,audience,title,content,action_label,action_url,tone,icon,priority,frequency,dismiss_ttl_hours,enabled,status,starts_at,ends_at,metadata,created_at,updated_at')
         .single();
     if (error) throw error;
+    const normalizedRule = normalizeRule(data);
 
     await writeAdminAuditLog({
         supabase,
@@ -231,12 +379,17 @@ async function setRuleEnabled({ supabase, user, body }) {
         site: data?.site,
         actionType: enabled ? 'engagement.rule.publish' : 'engagement.rule.pause',
         details: {
+            ...getBatchAuditDetails(body),
             rule_id: id,
-            enabled
+            enabled,
+            name: normalizedRule.name,
+            placement: normalizedRule.placement,
+            trigger_type: normalizedRule.trigger_type,
+            governance: normalizedRule.governance
         }
     });
 
-    return normalizeRule(data);
+    return normalizedRule;
 }
 
 async function archiveRule({ supabase, user, body }) {
@@ -255,9 +408,10 @@ async function archiveRule({ supabase, user, body }) {
             updated_by: user.id || null
         })
         .eq('id', id)
-        .select('id,name,description,site,page_ids,placement,trigger_type,title,content,action_label,action_url,tone,icon,priority,frequency,dismiss_ttl_hours,enabled,status,starts_at,ends_at,metadata,created_at,updated_at')
+        .select('id,name,description,site,page_ids,placement,trigger_type,audience,title,content,action_label,action_url,tone,icon,priority,frequency,dismiss_ttl_hours,enabled,status,starts_at,ends_at,metadata,created_at,updated_at')
         .single();
     if (error) throw error;
+    const normalizedRule = normalizeRule(data);
 
     await writeAdminAuditLog({
         supabase,
@@ -266,11 +420,51 @@ async function archiveRule({ supabase, user, body }) {
         site: data?.site,
         actionType: 'engagement.rule.archive',
         details: {
-            rule_id: id
+            ...getBatchAuditDetails(body),
+            rule_id: id,
+            name: normalizedRule.name,
+            governance: normalizedRule.governance
         }
     });
 
-    return normalizeRule(data);
+    return normalizedRule;
+}
+
+async function pauseAllRules({ supabase, user, body }) {
+    const site = normalizeSite(body.site || 'all');
+    let query = supabase
+        .from('engagement_rules')
+        .update({
+            enabled: false,
+            status: 'paused',
+            updated_by: user.id || null
+        })
+        .eq('enabled', true)
+        .eq('status', 'published');
+
+    if (site !== 'all') {
+        query = query.in('site', ['all', site]);
+    }
+
+    const { data, error } = await query
+        .select('id,name,description,site,page_ids,placement,trigger_type,audience,title,content,action_label,action_url,tone,icon,priority,frequency,dismiss_ttl_hours,enabled,status,starts_at,ends_at,metadata,created_at,updated_at');
+    if (error) throw error;
+
+    const rows = Array.isArray(data) ? data.map(normalizeRule) : [];
+    await writeAdminAuditLog({
+        supabase,
+        adminId: user.id,
+        module: 'engagement',
+        site,
+        actionType: 'engagement.rule.pause_all',
+        details: {
+            site,
+            count: rows.length,
+            rule_ids: rows.map((rule) => rule.id).filter(Boolean)
+        }
+    });
+
+    return rows;
 }
 
 module.exports = async function engagementRulesHandler(req, res) {
@@ -305,6 +499,12 @@ module.exports = async function engagementRulesHandler(req, res) {
             rule = await setRuleEnabled({ supabase, user, body });
         } else if (action === 'archive_rule' || action === 'delete_rule') {
             rule = await archiveRule({ supabase, user, body });
+        } else if (action === 'pause_all') {
+            const rules = await pauseAllRules({ supabase, user, body });
+            return sendJson(res, 200, {
+                success: true,
+                rules
+            });
         } else {
             rule = await saveRule({ supabase, user, body });
         }

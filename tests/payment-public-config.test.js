@@ -135,6 +135,60 @@ test('public payment config normalizes legacy recharge ratios to the unified 1:1
     assert.equal(result.rechargeOptions.custom_amount_max_points, 1234);
 });
 
+test('public payment config exposes only safe surcharge settings for enabled channels', () => {
+    const result = buildPublicPaymentConfig(
+        {
+            active_provider: 'zpay',
+            providers: {
+                mock: { enabled: false, display_name: '模拟支付' },
+                afdian: { enabled: false, display_name: '爱发电', checkout_url: 'https://afdian.com/a/zaoyoe' },
+                zpay: {
+                    enabled: true,
+                    display_name: '易支付',
+                    checkout_url: 'https://zpayz.cn',
+                    pid: 'merchant-id',
+                    notify_url: 'https://verify.example.com/payments/zpay/webhook',
+                    surcharge_rate: 0.0125,
+                    surcharge_label: '支付通道费'
+                },
+                nowpayments: {
+                    enabled: true,
+                    display_name: 'USDT-BEP20',
+                    api_base_url: 'https://api.nowpayments.io',
+                    pay_currency: 'usdtbsc',
+                    network_name: 'BNB Smart Chain',
+                    cny_to_usd_rate: 0.1425,
+                    pay_amount_precision: 2,
+                    surcharge_rate: 0.01,
+                    surcharge_label: '链路手续费',
+                    is_fee_paid_by_user: true
+                }
+            }
+        },
+        {
+            custom_amount_enabled: true,
+            mock_payment_enabled: false
+        },
+        {
+            mock_payment: {
+                allowed: false,
+                reason: 'production_like_runtime'
+            }
+        }
+    );
+
+    assert.equal(result.paymentChannels.providers.zpay.surcharge_rate, 0.0125);
+    assert.equal(result.paymentChannels.providers.zpay.surcharge_label, '支付通道费');
+    assert.equal('pid' in result.paymentChannels.providers.zpay, false);
+    assert.equal('notify_url' in result.paymentChannels.providers.zpay, false);
+    assert.equal(result.paymentChannels.providers.nowpayments.surcharge_rate, 0.01);
+    assert.equal(result.paymentChannels.providers.nowpayments.surcharge_label, '链路手续费');
+    assert.equal(result.paymentChannels.providers.nowpayments.is_fee_paid_by_user, true);
+    assert.equal(result.paymentChannels.providers.nowpayments.cny_to_usd_rate, 0.1425);
+    assert.equal(result.paymentChannels.providers.nowpayments.pay_amount_precision, 2);
+    assert.equal('api_base_url' in result.paymentChannels.providers.nowpayments, false);
+});
+
 test('public payment config does not auto-promote hupijiao from partial gateway config while afdian remains available', () => {
     const result = buildPublicPaymentConfig(
         {

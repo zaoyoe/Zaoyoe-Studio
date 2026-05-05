@@ -87,7 +87,9 @@ INSERT INTO public.system_config (config_key, config_value, description) VALUES
             "display_name": "爱发电",
             "checkout_url": "https://afdian.com/a/zaoyoe",
             "package_hint": "请在爱发电完成支付后，返回钱包输入订单号领取兑换码。",
-            "custom_amount_hint": "建议在支付备注里填写要充值的积分数量，支付后返回钱包输入订单号领取兑换码。"
+            "custom_amount_hint": "建议在支付备注里填写要充值的积分数量，支付后返回钱包输入订单号领取兑换码。",
+            "surcharge_rate": 0,
+            "surcharge_label": "通道手续费"
         },
         "hupijiao": {
             "enabled": false,
@@ -98,7 +100,24 @@ INSERT INTO public.system_config (config_key, config_value, description) VALUES
             "return_url": "https://www.zaoyoe.com",
             "notify_url": "",
             "package_hint": "虎皮椒通道已启用，正式回调与自动发货接入后即可完整使用。",
-            "custom_amount_hint": "虎皮椒通道已启用。自定义金额订单能力接入后，这里会直接拉起真实支付。"
+            "custom_amount_hint": "虎皮椒通道已启用。自定义金额订单能力接入后，这里会直接拉起真实支付。",
+            "surcharge_rate": 0,
+            "surcharge_label": "通道手续费"
+        },
+        "zpay": {
+            "enabled": false,
+            "display_name": "易支付",
+            "checkout_url": "https://zpayz.cn",
+            "pid": "",
+            "payment_type": "alipay",
+            "channel_ids": "",
+            "return_url": "https://www.zaoyoe.com",
+            "notify_url": "https://www.zaoyoe.com/api/payments/zpay/webhook",
+            "package_hint": "易支付订单创建后会直接拉起收银台完成支付。",
+            "custom_amount_hint": "易支付会按当前报价创建订单并直接拉起收银台。",
+            "surcharge_rate": 0.01,
+            "surcharge_label": "通道手续费",
+            "order_query_enabled": false
         },
         "nowpayments": {
             "enabled": false,
@@ -108,6 +127,7 @@ INSERT INTO public.system_config (config_key, config_value, description) VALUES
             "price_currency": "usd",
             "network_name": "BNB Smart Chain",
             "cny_to_usd_rate": 0.14,
+            "pay_amount_precision": 2,
             "is_fixed_rate": true,
             "is_fee_paid_by_user": true,
             "return_url": "https://www.zaoyoe.com",
@@ -115,7 +135,9 @@ INSERT INTO public.system_config (config_key, config_value, description) VALUES
             "success_url": "https://www.zaoyoe.com",
             "cancel_url": "https://www.zaoyoe.com",
             "package_hint": "请使用 USDT-BEP20 / BNB Smart Chain 完成付款，勿使用 ERC20、TRC20 或其他网络。",
-            "custom_amount_hint": "请按页面显示的 USDT-BEP20 金额付款，网络请选择 BNB Smart Chain。"
+            "custom_amount_hint": "请按页面显示的 USDT-BEP20 金额付款，网络请选择 BNB Smart Chain。",
+            "surcharge_rate": 0.01,
+            "surcharge_label": "通道手续费"
         }
     }
 }'::jsonb, '支付通道配置')

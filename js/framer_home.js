@@ -98,6 +98,14 @@ const HOMEPAGE_FIRST_PAINT_SECTION_KEYS = new Set(['hero', 'prompts']);
 const HOMEPAGE_DEFERRED_SECTION_KEYS = HOME_DEFAULT_SECTION_ORDER.filter((sectionKey) => !HOMEPAGE_FIRST_PAINT_SECTION_KEYS.has(sectionKey));
 const HOMEPAGE_DEFERRED_SECTION_ROOT_MARGIN = '900px 0px';
 const HOMEPAGE_DEFERRED_SECTION_IDLE_TIMEOUT_MS = 1600;
+const HOMEPAGE_SECTION_SHELL_CARD_COUNTS = {
+  prompts: 10,
+  shop: 4,
+  gongyi: 3,
+  verify: 2,
+  guestbook: 6,
+  ticker: 2
+};
 
 function getHomepageRuntimeSite() {
   return HomepageContract?.normalizeSite?.(window.SiteConfig?.site) || (window.SiteConfig?.site === 'intl' ? 'intl' : 'cn');
@@ -1418,6 +1426,62 @@ function bindImageFallbacks(root, selector, onError) {
   });
 }
 
+function revealHomepageFadeInsInCurrentViewport(root) {
+  const viewportHeight = Number(window.innerHeight || document.documentElement?.clientHeight || 0);
+  const revealThreshold = viewportHeight > 0 ? viewportHeight * 0.95 : 0;
+
+  root?.querySelectorAll('.fade-in-up').forEach((el) => {
+    const rect = el.getBoundingClientRect();
+    if (rect.top <= revealThreshold) {
+      el.classList.add('visible');
+    }
+  });
+}
+
+function getHomepageSectionShellBaseClass(sectionKey) {
+  return sectionKey === 'ticker' ? 'ticker-section' : 'content-section';
+}
+
+function renderHomepageSectionShell(sectionKey, section) {
+  if (!section) return;
+  const normalizedSectionKey = String(sectionKey || '').trim().toLowerCase();
+  const baseClass = getHomepageSectionShellBaseClass(normalizedSectionKey);
+  const cardCount = HOMEPAGE_SECTION_SHELL_CARD_COUNTS[normalizedSectionKey] || 3;
+
+  if (
+    section.dataset.homepageShell === '1'
+    && section.dataset.homepageShellSection === normalizedSectionKey
+  ) {
+    setHomeSectionVisibility(section, true);
+    return;
+  }
+
+  setHomeSectionVisibility(section, true);
+  section.dataset.homepageShell = '1';
+  section.dataset.homepageShellSection = normalizedSectionKey;
+  section.dataset.homepageDeferredRender = '1';
+  section.className = `${baseClass} home-section-shell-section home-section-shell-section--${normalizedSectionKey}`;
+  section.innerHTML = `
+    <div class="home-section-shell" aria-hidden="true">
+      <div class="home-section-shell__header">
+        <span class="home-section-shell__line home-section-shell__line--title"></span>
+        <span class="home-section-shell__line home-section-shell__line--subtitle"></span>
+      </div>
+      <div class="home-section-shell__body home-section-shell__body--${normalizedSectionKey}">
+        ${Array.from({ length: cardCount }, (_, index) => (
+          `<span class="home-section-shell__tile home-section-shell__tile--${(index % 3) + 1}"></span>`
+        )).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function clearHomepageSectionShell(section) {
+  if (!section) return;
+  delete section.dataset.homepageShell;
+  delete section.dataset.homepageShellSection;
+}
+
 const FramerHome = {
   // Cached data
   cachedData: null,
@@ -1428,6 +1492,7 @@ const FramerHome = {
   verifyDemoRuntime: null,
   supplementalDataScheduled: false,
   supplementalDataPromise: null,
+  supplementalDataLoaded: false,
   deferredSectionRenderScheduled: false,
   deferredSectionRenderComplete: false,
   deferredSectionRenderObserver: null,
@@ -1598,6 +1663,7 @@ const FramerHome = {
       this.cachedData.ticker = await this.buildTickerData(this.config.ticker || {});
       this.renderPrompts();
       this.renderTicker();
+      this.scheduleScrollAnimationsInit();
 
       try {
         writeHomepagePrefetchCache({
@@ -1804,6 +1870,7 @@ const FramerHome = {
     }
 
     this.supplementalDataScheduled = true;
+    this.supplementalDataLoaded = false;
     this.supplementalDataPromise = new Promise((resolve) => {
       const kickoff = async () => {
         try {
@@ -1818,6 +1885,7 @@ const FramerHome = {
           this.cachedData.guestbook = guestbook;
           this.cachedData.shopCategories = shopCategories;
           this.cachedData.ticker = await this.buildTickerData(this.config.ticker || {});
+          this.supplementalDataLoaded = true;
 
           this.renderShop();
           this.renderGuestbook();
@@ -1840,6 +1908,8 @@ const FramerHome = {
             };
 
             window.addEventListener('zaoyoe:supabase-client-state', retryOnReady);
+          } else {
+            this.supplementalDataLoaded = true;
           }
         } finally {
           resolve();
@@ -3394,8 +3464,9 @@ const FramerHome = {
       }
 
       if (firstPaintOnly && !HOMEPAGE_FIRST_PAINT_SECTION_KEYS.has(sectionKey)) {
-        sectionEl.dataset.homepageDeferredRender = '1';
-        if (!isVisible) {
+        if (isVisible) {
+          renderHomepageSectionShell(sectionKey, sectionEl);
+        } else {
           setHomeSectionVisibility(sectionEl, false);
         }
         return;
@@ -3995,12 +4066,17 @@ const FramerHome = {
     }
 
     if (!prompts.length) {
-      setHomeSectionVisibility(section, false);
+      if (!isHomepagePromptSourceReady()) {
+        renderHomepageSectionShell('prompts', section);
+      } else {
+        setHomeSectionVisibility(section, false);
+      }
       return;
     }
     setHomeSectionVisibility(section, true);
 
     // Change section class to masonry style
+    clearHomepageSectionShell(section);
     section.className = 'prompts-masonry-section';
 
     // Match the number of columns to the actual card count to avoid empty tracks.
@@ -4110,6 +4186,9 @@ const FramerHome = {
       </div>
     `;
 
+    // Background prompt refreshes replace this markup after the observer may have run.
+    revealHomepageFadeInsInCurrentViewport(section);
+
     bindImageFallbacks(section, 'img[data-home-fallback-src]', (image) => {
       const fallbackSrc = image.dataset.homeFallbackSrc;
       if (!fallbackSrc || image.dataset.homeFallbackApplied === '1') {
@@ -4157,10 +4236,16 @@ const FramerHome = {
     }
 
     if (!products || products.length === 0) {
-      setHomeSectionVisibility(section, false);
+      if (!this.supplementalDataLoaded) {
+        renderHomepageSectionShell('shop', section);
+      } else {
+        setHomeSectionVisibility(section, false);
+      }
       return;
     }
     setHomeSectionVisibility(section, true);
+    clearHomepageSectionShell(section);
+    section.className = 'content-section';
 
     const baseSequenceWidth = (products.length * HOME_SHOP_CAROUSEL_CARD_WIDTH)
       + (Math.max(0, products.length - 1) * HOME_SHOP_CAROUSEL_GAP);
@@ -4303,6 +4388,8 @@ const FramerHome = {
     }
     this.destroyGongyiTerminalTyping();
     setHomeSectionVisibility(section, true);
+    clearHomepageSectionShell(section);
+    section.className = 'content-section';
 
     const accentByIndex = ['orange', 'green', 'blue', 'pink', 'slate'];
     const fallbackBrandSubtitle = resolveHomepageLocalizedText('', '', {
@@ -5084,6 +5171,8 @@ const FramerHome = {
     }
     this.destroyVerifyDemo();
     setHomeSectionVisibility(section, true);
+    clearHomepageSectionShell(section);
+    section.className = 'content-section';
 
     const isDynamicPreview = data.previewMode !== 'image';
     const previewMarkup = isDynamicPreview
@@ -5506,7 +5595,14 @@ const FramerHome = {
     const config = this.config.guestbook || {};
     const section = document.getElementById('guestbook-section');
 
+    if (!this.supplementalDataLoaded && messages.length === 0) {
+      renderHomepageSectionShell('guestbook', section);
+      return;
+    }
+
     setHomeSectionVisibility(section, true);
+    clearHomepageSectionShell(section);
+    section.className = 'content-section';
 
     const title = escapeHomeHtml(resolveHomepageLocalizedText(this.getLocalizedField(config, 'section_title'), 'home.guestbook.title', {
       zh: '留言板',
@@ -5598,6 +5694,9 @@ const FramerHome = {
     const data = this.cachedData.ticker;
     const section = document.getElementById('ticker-section');
     if (!section || !data) {
+      if (section && !this.supplementalDataLoaded) {
+        renderHomepageSectionShell('ticker', section);
+      }
       return;
     }
 
@@ -5615,6 +5714,8 @@ const FramerHome = {
       return;
     }
     setHomeSectionVisibility(section, true);
+    clearHomepageSectionShell(section);
+    section.className = 'ticker-section';
 
     const tickerSpeed = data.speed || 30;
 
@@ -6190,7 +6291,7 @@ function scheduleHomepageInit() {
   const waitForDeps = setInterval(() => {
     const promptsReady = isHomepagePromptSourceReady();
 
-    if (!promptsReady && Date.now() - startedAt < 2500) {
+    if (!promptsReady && Date.now() - startedAt < 500) {
       return;
     }
 

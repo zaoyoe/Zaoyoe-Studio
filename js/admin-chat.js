@@ -23,6 +23,10 @@ class AdminChat {
         this.userPresenceChannel = null;
         this.userPresenceStatusTimer = null;
         this.userPresenceByKey = new Map();
+        this.userActivityChannel = null;
+        this.userActivityRefreshTimer = null;
+        this.userActivityByKey = new Map();
+        this.userActivityFetchDisabled = false;
         this.sessionSlaTimer = null;
         this.sessionQueueView = 'all';
         this.sessionQueueFilter = 'all';
@@ -127,6 +131,10 @@ class AdminChat {
                 this.supabase.removeChannel(this.userPresenceChannel);
                 this.userPresenceChannel = null;
             }
+            if (this.userActivityChannel) {
+                this.supabase.removeChannel(this.userActivityChannel);
+                this.userActivityChannel = null;
+            }
         }
 
         if (this.sessionSlaTimer) {
@@ -136,6 +144,10 @@ class AdminChat {
         if (this.userPresenceStatusTimer) {
             window.clearInterval(this.userPresenceStatusTimer);
             this.userPresenceStatusTimer = null;
+        }
+        if (this.userActivityRefreshTimer) {
+            window.clearInterval(this.userActivityRefreshTimer);
+            this.userActivityRefreshTimer = null;
         }
 
         if (this.sessionDeferredHydrationHandle) {
@@ -211,16 +223,21 @@ class AdminChat {
     }
 
     getSessionPresenceState(session = {}) {
-        const states = this.getPresenceKeysForSession(session)
+        const keys = this.getPresenceKeysForSession(session);
+        const liveStates = keys
             .map((key) => this.userPresenceByKey.get(key))
             .filter(Boolean);
+        const activityStates = keys
+            .map((key) => this.userActivityByKey.get(key))
+            .filter(Boolean);
+        const states = [...liveStates, ...activityStates];
         if (!states.length) {
             return { online: false, lastSeenAt: '' };
         }
 
         const latest = states.sort((left, right) => Date.parse(right.lastSeenAt || 0) - Date.parse(left.lastSeenAt || 0))[0];
         return {
-            online: states.some((state) => state.online),
+            online: liveStates.some((state) => state.online),
             lastSeenAt: latest?.lastSeenAt || ''
         };
     }
@@ -318,6 +335,179 @@ class AdminChat {
             }
             this.renderSessionList(this.searchQuery);
         }, 15000);
+    }
+
+    getUserActivitySiteParam() {
+        return window.AdminSiteFilter?.getSiteParam?.() || null;
+    }
+
+    isUserActivityRowInScope(row = {}) {
+        const siteFilter = this.getUserActivitySiteParam();
+        if (!siteFilter) return true;
+        return String(row?.site || '').trim() === siteFilter;
+    }
+
+    isMissingUserActivityTableError(error = null) {
+        const raw = [
+            error?.code,
+            error?.message,
+            error?.details,
+            error?.hint
+        ].filter(Boolean).join(' ');
+        return /42P01|PGRST205|schema cache|does not exist|could not find/i.test(raw);
+    }
+
+    normalizeUserActivityLastSeenAt(value = '') {
+        const time = Date.parse(value || '');
+        return Number.isFinite(time) ? new Date(time).toISOString() : '';
+    }
+
+    upsertUserActivityStateForKeys(keys = [], lastActiveAt = '') {
+        const normalizedLastActiveAt = this.normalizeUserActivityLastSeenAt(lastActiveAt);
+        const nextTime = Date.parse(normalizedLastActiveAt || '');
+        if (!Number.isFinite(nextTime)) {
+            return false;
+        }
+
+        let changed = false;
+        [...new Set(Array.isArray(keys) ? keys : [])].forEach((key) => {
+            const normalizedKey = String(key || '').trim();
+            if (!normalizedKey) return;
+            const current = this.userActivityByKey.get(normalizedKey);
+            const currentTime = Date.parse(current?.lastSeenAt || '');
+            if (!current || !Number.isFinite(currentTime) || nextTime >= currentTime) {
+                this.userActivityByKey.set(normalizedKey, {
+                    online: false,
+                    lastSeenAt: normalizedLastActiveAt
+                });
+                changed = true;
+            }
+        });
+        return changed;
+    }
+
+    applyUserActivityRowsToSessions(rows = [], sessions = this.chatSessions) {
+        const sessionList = (Array.isArray(sessions) ? sessions : []).filter((session) => !this.isOpsAlertSession(session));
+        const sessionsByUserId = new Map();
+        sessionList.forEach((session) => {
+            const userId = String(session?.userId || session?.profile?.id || '').trim();
+            if (!userId) return;
+            const existing = sessionsByUserId.get(userId) || [];
+            existing.push(session);
+            sessionsByUserId.set(userId, existing);
+        });
+
+        let changed = false;
+        (Array.isArray(rows) ? rows : []).forEach((row) => {
+            if (!this.isUserActivityRowInScope(row)) return;
+            const userId = String(row?.user_id || row?.userId || '').trim();
+            const lastActiveAt = String(row?.last_active_at || row?.lastActiveAt || '').trim();
+            if (!userId || !lastActiveAt) return;
+
+            const matchedSessions = sessionsByUserId.get(userId) || [];
+            if (matchedSessions.length) {
+                matchedSessions.forEach((session) => {
+                    changed = this.upsertUserActivityStateForKeys(
+                        this.getPresenceKeysForSession(session),
+                        lastActiveAt
+                    ) || changed;
+                });
+                return;
+            }
+
+            changed = this.upsertUserActivityStateForKeys(
+                this.getPresenceKeysForPayload(row),
+                lastActiveAt
+            ) || changed;
+        });
+        return changed;
+    }
+
+    getUserActivitySessionIds(sessions = this.chatSessions) {
+        return [...new Set((Array.isArray(sessions) ? sessions : [])
+            .map((session) => String(session?.userId || session?.profile?.id || '').trim())
+            .filter(Boolean))];
+    }
+
+    async fetchUserActivityRowsForSessions(sessions = this.chatSessions) {
+        const userIds = this.getUserActivitySessionIds(sessions);
+        if (!userIds.length || !this.supabase?.from || this.userActivityFetchDisabled) {
+            return [];
+        }
+
+        try {
+            let query = this.supabase
+                .from('engagement_user_activity')
+                .select('user_id,last_active_at,site')
+                .in('user_id', userIds)
+                .order('last_active_at', { ascending: false });
+
+            const siteFilter = this.getUserActivitySiteParam();
+            if (siteFilter) {
+                query = query.eq('site', siteFilter);
+            }
+
+            const { data, error } = await query;
+            if (error) throw error;
+            return Array.isArray(data) ? data : [];
+        } catch (error) {
+            if (this.isMissingUserActivityTableError(error)) {
+                this.userActivityFetchDisabled = true;
+                return [];
+            }
+            console.warn('[AdminChat] Failed to fetch user activity heartbeats:', error);
+            return [];
+        }
+    }
+
+    renderUserActivityStatusRefresh() {
+        this.applyUserPresenceToSessions();
+        this.composeSessions();
+        this.syncCurrentSessionFromSessions();
+        this.renderSessionList(this.searchQuery);
+        if (this.currentSessionInfo && !this.isOpsAlertSession(this.currentSessionInfo)) {
+            this.renderUserContextHeaderStatus(this.currentUserContext);
+        }
+    }
+
+    async refreshUserActivityForSessions(sessions = this.chatSessions, { render = false } = {}) {
+        const rows = await this.fetchUserActivityRowsForSessions(sessions);
+        const changed = this.applyUserActivityRowsToSessions(rows, sessions);
+        if (changed && render) {
+            this.renderUserActivityStatusRefresh();
+        }
+        return rows;
+    }
+
+    handleUserActivityRealtime(row = {}) {
+        if (!row || !this.isUserActivityRowInScope(row)) return;
+        const changed = this.applyUserActivityRowsToSessions([row], this.chatSessions);
+        if (changed) {
+            this.renderUserActivityStatusRefresh();
+        }
+    }
+
+    subscribeToUserActivity() {
+        if (!this.supabase?.from || this.userActivityRefreshTimer) {
+            return;
+        }
+
+        if (this.supabase?.channel && !this.userActivityChannel) {
+            this.userActivityChannel = this.supabase
+                .channel(`admin-user-activity-${Date.now()}`)
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'engagement_user_activity' }, (payload) => {
+                    this.handleUserActivityRealtime(payload.new);
+                })
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'engagement_user_activity' }, (payload) => {
+                    this.handleUserActivityRealtime(payload.new);
+                })
+                .subscribe();
+        }
+
+        this.userActivityRefreshTimer = window.setInterval(() => {
+            void this.refreshUserActivityForSessions(this.chatSessions, { render: true });
+        }, 30000);
+        void this.refreshUserActivityForSessions(this.chatSessions, { render: true });
     }
 
     isMobileKeyboardDockEnabled() {
@@ -1593,7 +1783,7 @@ class AdminChat {
                 .map((profile) => [String(profile.email || '').toLowerCase(), profile])
         );
 
-        return safeSessions.map((session) => {
+        const profiledSessions = safeSessions.map((session) => {
             const fallbackKey = String(session?.sessionId || '').trim();
             const sessionIds = Array.isArray(session?.sessionIds) ? session.sessionIds : [];
             const fallbackEmail = this.resolveSessionEmail(session?.profile || null, fallbackKey, sessionIds);
@@ -1605,11 +1795,15 @@ class AdminChat {
 
             return {
                 ...session,
+                userId: String(session?.userId || profile?.id || '').trim(),
                 profile,
                 email,
                 nickname
             };
         });
+
+        await this.refreshUserActivityForSessions(profiledSessions, { render: false });
+        return profiledSessions;
     }
 
     resolveSessionEmail(profile, fallbackKey = '', sessionIds = []) {
@@ -7041,11 +7235,13 @@ class AdminChat {
         this.startAdminPresence();
         this.renderLayout(container);
         this.subscribeToUserPresence();
+        this.subscribeToUserActivity();
         const restoredFromCache = this.restoreChatSessionCache();
         if (restoredFromCache) {
             this.composeSessions();
             this.syncCurrentSessionFromSessions();
             this.renderSessionList(this.searchQuery);
+            void this.refreshUserActivityForSessions(this.chatSessions, { render: true });
         }
         this.bootstrapSessions();
 
@@ -7456,6 +7652,7 @@ class AdminChat {
             ...session,
             replySummary: this.buildSessionReplySummary(session.lastUserMessageAt, session.lastAdminMessageAt)
         }));
+        await this.refreshUserActivityForSessions(this.chatSessions, { render: false });
         this.applyUserPresenceToSessions();
     }
 
@@ -7626,7 +7823,7 @@ class AdminChat {
                     ? ''
                     : isPresenceOnline
                     ? '在线'
-                    : this.formatSessionTime(session.timestamp);
+                    : (presenceStatus?.value || this.formatSessionTime(session.timestamp));
 
                 headerEl.appendChild(headerMainEl);
                 headerEl.appendChild(timeEl);

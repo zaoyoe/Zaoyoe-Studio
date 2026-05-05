@@ -29,10 +29,13 @@ function clearAuthFeedback() {
 
 function requestLoginModalOpen(view = 'login') {
     const normalizedView = ['login', 'register', 'reset'].includes(view) ? view : 'login';
+    const pendingLoginModalKey = 'openLoginModal';
+    const pendingLoginModalViewKey = 'openLoginModalView';
 
     const clearPendingLoginModalRequest = () => {
         try {
-            sessionStorage.removeItem('openLoginModal');
+            sessionStorage.removeItem(pendingLoginModalKey);
+            sessionStorage.removeItem(pendingLoginModalViewKey);
         } catch (err) {
             console.warn('Failed to clear pending login modal request:', err);
         }
@@ -55,7 +58,8 @@ function requestLoginModalOpen(view = 'login') {
     }
 
     try {
-        sessionStorage.setItem('openLoginModal', 'true');
+        sessionStorage.setItem(pendingLoginModalKey, 'true');
+        sessionStorage.setItem(pendingLoginModalViewKey, normalizedView);
     } catch (err) {
         console.warn('Failed to queue login modal request:', err);
     }
@@ -204,6 +208,7 @@ const AUTH_ORIGIN_CACHE_KEY = 'zaoyoe_auth_origin_cache_v1';
 const PENDING_AUTH_ORIGIN_KEY = 'zaoyoe_pending_auth_origin_v1';
 const AUTH_ORIGIN_CACHE_TTL = 10 * 60 * 1000;
 const REMEMBERED_LOGIN_EMAIL_KEY = 'zaoyoe_remembered_login_email_v1';
+const REMEMBER_LOGIN_EMAIL_PREFERENCE_KEY = 'zaoyoe_remember_login_email_preference_v1';
 const POST_LOGIN_REDIRECT_STORAGE_KEY = 'zaoyoe_post_login_redirect_v1';
 const POST_LOGIN_REDIRECT_TTL_MS = 15 * 60 * 1000;
 const LEGACY_AUTH_SECRET_KEYS = Object.freeze([
@@ -273,10 +278,40 @@ function removeRememberedLoginEmail() {
     }
 }
 
+function readRememberLoginEmailPreference() {
+    try {
+        return localStorage.getItem(REMEMBER_LOGIN_EMAIL_PREFERENCE_KEY) !== 'false';
+    } catch (err) {
+        console.warn('Failed to read remembered login email preference:', err);
+        return true;
+    }
+}
+
+function persistRememberLoginEmailPreference(enabled) {
+    try {
+        localStorage.setItem(REMEMBER_LOGIN_EMAIL_PREFERENCE_KEY, enabled ? 'true' : 'false');
+    } catch (err) {
+        console.warn('Failed to persist remembered login email preference:', err);
+    }
+}
+
+function bindRememberLoginEmailPreference(rememberMeInput) {
+    if (!rememberMeInput || rememberMeInput.dataset.rememberEmailPreferenceBound === '1') return;
+    rememberMeInput.addEventListener('change', () => {
+        const shouldRemember = rememberMeInput.checked;
+        persistRememberLoginEmailPreference(shouldRemember);
+        if (!shouldRemember) {
+            removeRememberedLoginEmail();
+        }
+    });
+    rememberMeInput.dataset.rememberEmailPreferenceBound = '1';
+}
+
 function restoreRememberedLoginState() {
     clearLegacyRememberedAuthSecrets();
 
-    const remembered = readRememberedLoginEmail();
+    const shouldRememberEmail = readRememberLoginEmailPreference();
+    const remembered = shouldRememberEmail ? readRememberedLoginEmail() : null;
     const emailInput = document.getElementById('login-email');
     const rememberMeInput = document.getElementById('rememberMe');
 
@@ -287,7 +322,8 @@ function restoreRememberedLoginState() {
     }
 
     if (rememberMeInput) {
-        rememberMeInput.checked = Boolean(remembered?.email);
+        bindRememberLoginEmailPreference(rememberMeInput);
+        rememberMeInput.checked = shouldRememberEmail;
     }
 }
 
@@ -744,7 +780,8 @@ async function handleLogin(event) {
 
         clearLegacyRememberedAuthSecrets();
 
-        // 记住邮箱功能
+        // 记住邮箱功能：只保存邮箱，不保存密码。
+        persistRememberLoginEmailPreference(rememberMe);
         if (rememberMe) {
             persistRememberedLoginEmail(email);
         } else {
@@ -953,6 +990,14 @@ async function handleLogout(event) {
     // 🔒 停止会话超时监控
     stopSessionTimeoutMonitor();
 
+    let logoutEmail = '';
+    try {
+        const { data: { user } = {} } = await window.supabaseClient.auth.getUser();
+        logoutEmail = String(user?.email || '').trim();
+    } catch (error) {
+        console.warn('Failed to capture logout email for remembered login:', error?.message || error);
+    }
+
     try {
         await window.AdminAccess?.clearAdminStudioSession?.();
         await window.supabaseClient.auth.signOut();
@@ -961,6 +1006,9 @@ async function handleLogout(event) {
     }
 
     clearLegacyRememberedAuthSecrets();
+    if (logoutEmail && readRememberLoginEmailPreference()) {
+        persistRememberedLoginEmail(logoutEmail);
+    }
     console.log('🗑️ 已清除历史密码缓存');
 
     // 重置UI
@@ -3462,9 +3510,11 @@ async function initializeAuthPageBoot() {
     }
 
     if (sessionStorage.getItem('openLoginModal') === 'true') {
+        const pendingLoginModalView = sessionStorage.getItem('openLoginModalView');
         sessionStorage.removeItem('openLoginModal');
+        sessionStorage.removeItem('openLoginModalView');
         setTimeout(() => {
-            requestLoginModalOpen('login');
+            requestLoginModalOpen(pendingLoginModalView || 'login');
         }, 300);
     }
 

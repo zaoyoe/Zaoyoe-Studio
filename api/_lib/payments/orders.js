@@ -25,6 +25,9 @@ const {
     maybeIssueRechargeDiscountAssets
 } = require('../discount-trigger-linkage');
 const {
+    syncPaymentStatusUserTags
+} = require('../user-tags');
+const {
     deriveZpayPointBreakdown
 } = require('./zpay-points');
 
@@ -77,6 +80,18 @@ function toPointCents(value, fallback = 0) {
     return Number.isFinite(normalized) ? Math.round(normalized * 100) : fallback;
 }
 
+async function safeSyncPaymentStatusUserTags(supabase, options = {}) {
+    try {
+        return await syncPaymentStatusUserTags(supabase, options);
+    } catch (error) {
+        console.warn('[Payments] Failed to sync engagement user tags:', error?.message || error);
+        return {
+            ok: false,
+            skipped: 'tag_sync_failed'
+        };
+    }
+}
+
 function isPointStepAligned(value, step) {
     const normalizedValue = toPointCents(value, 0);
     const normalizedStep = toPointCents(step, 0);
@@ -90,6 +105,46 @@ function roundUpCurrency(value, fallback = null) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return fallback;
     return Math.ceil(parsed * 100) / 100;
+}
+
+function normalizeSurchargeRate(value, fallback = 0) {
+    const parsed = Number(value);
+    const fallbackParsed = Number(fallback);
+    const rate = Number.isFinite(parsed)
+        ? parsed
+        : (Number.isFinite(fallbackParsed) ? fallbackParsed : 0);
+    if (!(rate > 0)) return 0;
+    return Math.min(0.1, Math.round(rate * 10000) / 10000);
+}
+
+function buildPaymentPricing({ providerConfig = {}, baseAmount = 0 } = {}) {
+    const normalizedBaseAmount = normalizeCurrency(baseAmount, null);
+    const surchargeRate = normalizeSurchargeRate(providerConfig?.surcharge_rate, 0);
+    const surchargeLabel = sanitizeText(providerConfig?.surcharge_label, '通道手续费', 40) || '通道手续费';
+    const surchargeAmount = normalizedBaseAmount > 0 && surchargeRate > 0
+        ? roundUpCurrency(normalizedBaseAmount * surchargeRate, 0)
+        : 0;
+    const payableAmount = normalizedBaseAmount > 0
+        ? normalizeCurrency(normalizedBaseAmount + surchargeAmount, normalizedBaseAmount)
+        : normalizedBaseAmount;
+
+    return {
+        baseAmount: normalizedBaseAmount,
+        surchargeRate,
+        surchargeAmount: surchargeAmount || 0,
+        surchargeLabel,
+        payableAmount
+    };
+}
+
+function buildPaymentPricingPayload(pricing = {}) {
+    return {
+        base_amount: normalizeCurrency(pricing.baseAmount, null),
+        payment_fee_amount: normalizeCurrency(pricing.surchargeAmount, 0) || 0,
+        payment_fee_rate: normalizeSurchargeRate(pricing.surchargeRate, 0),
+        payment_fee_label: sanitizeText(pricing.surchargeLabel, '通道手续费', 40),
+        payable_amount: normalizeCurrency(pricing.payableAmount, null)
+    };
 }
 
 function encodeBase64Url(value) {
@@ -2203,6 +2258,13 @@ async function getPaymentRequestStatus({
         message = '付款后这里会自动刷新到账状态。';
     }
 
+    await safeSyncPaymentStatusUserTags(supabase, {
+        userId: normalizedUserId,
+        status,
+        sourceEventId: activePaymentOrder?.id || activeCheckoutSession.id || '',
+        sourceModule: 'payments'
+    });
+
     return {
         success: true,
         status,
@@ -2248,7 +2310,8 @@ async function createCheckoutSession({
     paidAmount = null,
     body = {},
     isCustomRecharge = false,
-    customQuote = null
+    customQuote = null,
+    paymentPricing = null
 }) {
     const normalizedSite = requireSupportedSite(site);
     const customQuotePayload = customQuote
@@ -2262,6 +2325,9 @@ async function createCheckoutSession({
             pricing_mode: customQuote.pricingMode || 'fixed_rate',
             points_per_cny: Number(customQuote.pointsPerCny) || null
         }
+        : null;
+    const pricingPayload = paymentPricing && typeof paymentPricing === 'object'
+        ? buildPaymentPricingPayload(paymentPricing)
         : null;
     const payload = {
         session_key: buildCheckoutSessionKey(providerKey),
@@ -2283,17 +2349,23 @@ async function createCheckoutSession({
                 points_amount: normalizePointValue(paidPoints, 0),
                 bonus_points: normalizePointValue(bonusPoints, 0),
                 granted_points: normalizePointValue(grantedPoints, 0),
+                base_amount: pricingPayload?.base_amount ?? paidAmount,
+                payment_fee_amount: pricingPayload?.payment_fee_amount ?? 0,
+                payment_fee_rate: pricingPayload?.payment_fee_rate ?? 0,
+                payment_fee_label: pricingPayload?.payment_fee_label || '通道手续费',
                 paid_amount: paidAmount,
                 site: normalizedSite,
                 is_custom_recharge: isCustomRecharge,
-                custom_quote: customQuotePayload
+                custom_quote: customQuotePayload,
+                payment_pricing: pricingPayload
             }
         },
         provider_metadata: {
             charge_type: isCustomRecharge ? 'custom' : 'package',
             custom_quote_id: customQuotePayload?.quote_id || null,
             custom_quote_expires_at: customQuotePayload?.expires_at || null,
-            custom_quote: customQuotePayload
+            custom_quote: customQuotePayload,
+            payment_pricing: pricingPayload
         },
         expires_at: getCheckoutSessionExpiryIso()
     };
@@ -2723,6 +2795,13 @@ async function completeMockPayment({
                 completed_at: nowIso
             }
         });
+
+        await safeSyncPaymentStatusUserTags(supabase, {
+            userId: user.id,
+            status: 'completed',
+            sourceEventId: pendingOrder.id,
+            sourceModule: 'payments.mock'
+        });
     } catch (runtimeError) {
         await supabase
             .from('payment_orders')
@@ -2770,6 +2849,13 @@ async function completeMockPayment({
                 order_no: orderNo,
                 failed_at: nowIso
             }
+        });
+
+        await safeSyncPaymentStatusUserTags(supabase, {
+            userId: user.id,
+            status: 'failed',
+            sourceEventId: pendingOrder.id,
+            sourceModule: 'payments.mock'
         });
 
         throw runtimeError;
@@ -2907,6 +2993,13 @@ async function createPaymentRequest({
         throw new Error('充值积分必须大于 0');
     }
 
+    const basePaidAmount = paidAmount;
+    const paymentPricing = buildPaymentPricing({
+        providerConfig: paymentChannels?.providers?.[providerKey] || {},
+        baseAmount: basePaidAmount
+    });
+    paidAmount = paymentPricing.payableAmount;
+
     const checkoutSession = await runPaymentWriteOperation(
         'create payment checkout session',
         (client) => createCheckoutSession({
@@ -2922,7 +3015,8 @@ async function createPaymentRequest({
             paidAmount,
             body,
             isCustomRecharge,
-            customQuote
+            customQuote,
+            paymentPricing
         })
     );
 
@@ -2967,6 +3061,7 @@ async function createPaymentRequest({
             bonusPoints,
             grantedPoints,
             paidAmount,
+            paymentPricing,
             customQuote,
             clientIp,
             userAgent
@@ -2987,6 +3082,19 @@ async function createPaymentRequest({
             throw new Error(checkoutContext?.message || `${adapter.label || '当前支付通道'}暂未完成接入`);
         }
 
+        const pricingPayload = buildPaymentPricingPayload(paymentPricing);
+        const checkoutSummary = {
+            ...(checkoutContext.summary || {}),
+            ...pricingPayload
+        };
+        const checkoutProviderMetadata = {
+            ...(checkoutContext.providerMetadata && typeof checkoutContext.providerMetadata === 'object'
+                ? checkoutContext.providerMetadata
+                : {}),
+            ...pricingPayload,
+            payment_pricing: pricingPayload
+        };
+
         const updatedSession = await runPaymentWriteOperation(
             'update payment checkout session',
             (client) => updateCheckoutSession(client, checkoutSession.id, {
@@ -2998,10 +3106,8 @@ async function createPaymentRequest({
                     display_name: checkoutContext.displayName || adapter.label || '当前支付通道',
                     action: checkoutContext.action || 'redirect',
                     provider_order_no: checkoutContext.providerOrderNo || null,
-                    summary: checkoutContext.summary || {},
-                    ...(checkoutContext.providerMetadata && typeof checkoutContext.providerMetadata === 'object'
-                        ? checkoutContext.providerMetadata
-                        : {})
+                    summary: checkoutSummary,
+                    ...checkoutProviderMetadata
                 },
                 error_message: null
             })
@@ -3060,15 +3166,19 @@ async function createPaymentRequest({
             package_name: packageName,
             points_amount: grantedPoints,
             paid_amount: paidAmount,
-        query_mode: checkoutContext.queryMode || '',
-        provider_order_no: checkoutContext.providerOrderNo
-            || pendingPaymentOrder?.provider_order_no
-            || null,
-        checkout_session_id: updatedSession?.id || checkoutSession.id,
+            base_amount: pricingPayload.base_amount,
+            payment_fee_amount: pricingPayload.payment_fee_amount,
+            payment_fee_rate: pricingPayload.payment_fee_rate,
+            payment_fee_label: pricingPayload.payment_fee_label,
+            query_mode: checkoutContext.queryMode || '',
+            provider_order_no: checkoutContext.providerOrderNo
+                || pendingPaymentOrder?.provider_order_no
+                || null,
+            checkout_session_id: updatedSession?.id || checkoutSession.id,
             checkout_session_key: updatedSession?.session_key || checkoutSession.session_key,
             checkout_session_status: updatedSession?.status || 'redirect_ready',
             message: checkoutContext.message || `${checkoutContext.displayName || adapter.label || '当前支付通道'}已准备就绪。`,
-            provider_summary: checkoutContext.summary || {},
+            provider_summary: checkoutSummary,
             custom_quote: customQuote
                 ? {
                     quote_id: customQuote.quoteId,
@@ -3076,7 +3186,10 @@ async function createPaymentRequest({
                     issued_at: customQuote.issuedAt,
                     expires_at: customQuote.expiresAt,
                     points_amount: customQuote.pointsAmount,
-                    paid_amount: customQuote.paidAmount,
+                    paid_amount: paidAmount,
+                    base_amount: pricingPayload.base_amount,
+                    payment_fee_amount: pricingPayload.payment_fee_amount,
+                    payment_fee_rate: pricingPayload.payment_fee_rate,
                     pricing_mode: customQuote.pricingMode,
                     points_per_cny: customQuote.pointsPerCny
                 }
@@ -3118,6 +3231,13 @@ async function createPaymentRequest({
             );
         }
 
+        await safeSyncPaymentStatusUserTags(paymentRuntimeSupabase || paymentWriteSupabase, {
+            userId: user.id,
+            status: 'failed',
+            sourceEventId: checkoutSession.id,
+            sourceModule: 'payments.create'
+        });
+
         throw error;
     }
 }
@@ -3125,6 +3245,8 @@ async function createPaymentRequest({
 module.exports = {
     __testUtils: {
         buildPaymentIntentClaimId,
+        buildPaymentPricing,
+        buildPaymentPricingPayload,
         createPendingPaymentOrderForCheckoutSession,
         getMockPaymentRuntimeState,
         getCustomRechargeQuoteSecret,

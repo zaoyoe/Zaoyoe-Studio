@@ -9162,7 +9162,7 @@ const ShopClient = {
         if (errorMessage.includes('积分') || errorMessage.includes('余额') || errorMessage.includes('nsufficient') || errorMessage.includes('balance')) {
             this.closeCartCheckoutModal();
             this.showShopToast(window.i18n?.t('shop.insufficientPoints') || '积分不足，请先充值', 'error');
-            window.ZaoyoeEngagement?.show?.({
+            const fallbackEngagement = {
                 id: 'shop_cart_insufficient_points',
                 source: 'client_event',
                 source_module: 'shop',
@@ -9180,7 +9180,19 @@ const ShopClient = {
                     event_type: 'points_insufficient',
                     source: 'cart_checkout'
                 }
+            };
+            const triggeredEngagement = window.ZaoyoeEngagement?.trigger?.('points_insufficient', {
+                source_module: 'shop',
+                source_event_id: 'shop_cart_insufficient_points',
+                source: 'cart_checkout'
             });
+            if (triggeredEngagement && typeof triggeredEngagement.then === 'function') {
+                triggeredEngagement.then((shown) => {
+                    if (!shown) window.ZaoyoeEngagement?.show?.(fallbackEngagement);
+                }).catch(() => window.ZaoyoeEngagement?.show?.(fallbackEngagement));
+            } else {
+                window.ZaoyoeEngagement?.show?.(fallbackEngagement);
+            }
             setTimeout(() => {
                 void openShopWalletModal('recharge', {
                     entry: 'shop_cart_insufficient_points',
@@ -9378,7 +9390,7 @@ const ShopClient = {
                 this.closePurchaseModal();
                 // Show a visible toast notification instead of native alert
                 this.showShopToast(`❌ ${window.i18n?.t('shop.insufficientPoints') || '积分不足，请先充值'}`, 'error');
-                window.ZaoyoeEngagement?.show?.({
+                const fallbackEngagement = {
                     id: 'shop_insufficient_points',
                     source: 'client_event',
                     source_module: 'shop',
@@ -9396,7 +9408,20 @@ const ShopClient = {
                         event_type: 'points_insufficient',
                         product_id: this.currentPurchase?.productId || null
                     }
+                };
+                const triggeredEngagement = window.ZaoyoeEngagement?.trigger?.('points_insufficient', {
+                    source_module: 'shop',
+                    source_event_id: `shop_insufficient_points:${String(this.currentPurchase?.productId || 'unknown')}`,
+                    source: 'product_purchase',
+                    product_id: this.currentPurchase?.productId || null
                 });
+                if (triggeredEngagement && typeof triggeredEngagement.then === 'function') {
+                    triggeredEngagement.then((shown) => {
+                        if (!shown) window.ZaoyoeEngagement?.show?.(fallbackEngagement);
+                    }).catch(() => window.ZaoyoeEngagement?.show?.(fallbackEngagement));
+                } else {
+                    window.ZaoyoeEngagement?.show?.(fallbackEngagement);
+                }
                 // Open wallet modal for recharging
                 setTimeout(() => {
                     void openShopWalletModal('recharge', {

@@ -4225,6 +4225,25 @@ function formatPaymentChannelSaveError(payload = {}) {
     return `${message}。${guidance}`;
 }
 
+function normalizePaymentChannelSurchargeRate(value, fallback = 0) {
+    const parsed = Number(value);
+    const fallbackParsed = Number(fallback);
+    const rate = Number.isFinite(parsed)
+        ? parsed
+        : (Number.isFinite(fallbackParsed) ? fallbackParsed : 0);
+    if (!(rate > 0)) return 0;
+    return Math.min(0.1, Math.round(rate * 10000) / 10000);
+}
+
+function formatPaymentChannelSurchargeRate(rate) {
+    const normalizedRate = normalizePaymentChannelSurchargeRate(rate, 0);
+    if (!(normalizedRate > 0)) return '';
+    return `${(normalizedRate * 100).toLocaleString(undefined, {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2
+    })}%手续费`;
+}
+
 function getDefaultPaymentChannelsConfig() {
     const rechargeOptions = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
     const currentOrigin = (() => {
@@ -4283,6 +4302,8 @@ function getDefaultPaymentChannelsConfig() {
             checkout_url: 'https://afdian.com/a/zaoyoe',
             package_hint: '请在爱发电完成支付后，返回钱包输入订单号领取兑换码。',
             custom_amount_hint: '钱包会先生成本次应付金额，请按报价完成支付后返回输入订单号领取兑换码。',
+            surcharge_rate: 0,
+            surcharge_label: '通道手续费',
             order_query_enabled: true,
             order_query_title: '订单号认领',
             order_query_hint: '完成支付后，可在这里输入订单号查询兑换结果。',
@@ -4299,6 +4320,8 @@ function getDefaultPaymentChannelsConfig() {
             notify_url: buildDefaultPaymentWebhookUrl('zpay'),
             package_hint: '易支付通道已启用，创建订单后会直接拉起收银台完成支付。',
             custom_amount_hint: '易支付通道已启用。自定义金额订单会按当前报价直接拉起收银台。',
+            surcharge_rate: 0.01,
+            surcharge_label: '通道手续费',
             order_query_enabled: false,
             order_query_title: '',
             order_query_hint: '',
@@ -4314,6 +4337,8 @@ function getDefaultPaymentChannelsConfig() {
             notify_url: buildDefaultPaymentWebhookUrl('hupijiao'),
             package_hint: '虎皮椒通道已启用，正式回调与自动发货接入后即可完整使用。',
             custom_amount_hint: '虎皮椒通道已启用。自定义金额订单能力接入后，这里会直接拉起真实支付。',
+            surcharge_rate: 0,
+            surcharge_label: '通道手续费',
             order_query_enabled: false,
             order_query_title: '',
             order_query_hint: '',
@@ -4327,6 +4352,7 @@ function getDefaultPaymentChannelsConfig() {
             price_currency: 'usd',
             network_name: 'BNB Smart Chain',
             cny_to_usd_rate: 0.14,
+            pay_amount_precision: 2,
             is_fixed_rate: true,
             is_fee_paid_by_user: true,
             return_url: currentOrigin,
@@ -4335,6 +4361,8 @@ function getDefaultPaymentChannelsConfig() {
             cancel_url: currentOrigin,
             package_hint: '请使用 USDT-BEP20 / BNB Smart Chain 完成付款，勿使用 ERC20、TRC20 或其他网络。',
             custom_amount_hint: '请按页面显示的 USDT-BEP20 金额付款，网络请选择 BNB Smart Chain。',
+            surcharge_rate: 0.01,
+            surcharge_label: '通道手续费',
             order_query_enabled: false,
             order_query_title: '',
             order_query_hint: '',
@@ -5515,6 +5543,8 @@ function normalizePaymentChannelsConfig(raw) {
                 checkout_url: String(sourceProviders.afdian?.checkout_url || defaults.providers.afdian.checkout_url).trim() || defaults.providers.afdian.checkout_url,
                 package_hint: String(sourceProviders.afdian?.package_hint || defaults.providers.afdian.package_hint).trim() || defaults.providers.afdian.package_hint,
                 custom_amount_hint: String(sourceProviders.afdian?.custom_amount_hint || defaults.providers.afdian.custom_amount_hint).trim() || defaults.providers.afdian.custom_amount_hint,
+                surcharge_rate: normalizePaymentChannelSurchargeRate(sourceProviders.afdian?.surcharge_rate, defaults.providers.afdian.surcharge_rate),
+                surcharge_label: String(sourceProviders.afdian?.surcharge_label || defaults.providers.afdian.surcharge_label).trim() || defaults.providers.afdian.surcharge_label,
                 order_query_enabled: sourceProviders.afdian?.order_query_enabled !== undefined
                     ? (sourceProviders.afdian.order_query_enabled === true || String(sourceProviders.afdian.order_query_enabled) === 'true')
                     : defaults.providers.afdian.order_query_enabled,
@@ -5533,6 +5563,8 @@ function normalizePaymentChannelsConfig(raw) {
                 notify_url: String(sourceProviders.zpay?.notify_url || defaults.providers.zpay.notify_url).trim(),
                 package_hint: String(sourceProviders.zpay?.package_hint || defaults.providers.zpay.package_hint).trim() || defaults.providers.zpay.package_hint,
                 custom_amount_hint: String(sourceProviders.zpay?.custom_amount_hint || defaults.providers.zpay.custom_amount_hint).trim() || defaults.providers.zpay.custom_amount_hint,
+                surcharge_rate: normalizePaymentChannelSurchargeRate(sourceProviders.zpay?.surcharge_rate, defaults.providers.zpay.surcharge_rate),
+                surcharge_label: String(sourceProviders.zpay?.surcharge_label || defaults.providers.zpay.surcharge_label).trim() || defaults.providers.zpay.surcharge_label,
                 order_query_enabled: sourceProviders.zpay?.order_query_enabled === true || String(sourceProviders.zpay?.order_query_enabled) === 'true',
                 order_query_title: String(sourceProviders.zpay?.order_query_title || defaults.providers.zpay.order_query_title).trim(),
                 order_query_hint: String(sourceProviders.zpay?.order_query_hint || defaults.providers.zpay.order_query_hint).trim(),
@@ -5548,6 +5580,8 @@ function normalizePaymentChannelsConfig(raw) {
                 notify_url: String(sourceProviders.hupijiao?.notify_url || defaults.providers.hupijiao.notify_url).trim(),
                 package_hint: String(sourceProviders.hupijiao?.package_hint || defaults.providers.hupijiao.package_hint).trim() || defaults.providers.hupijiao.package_hint,
                 custom_amount_hint: String(sourceProviders.hupijiao?.custom_amount_hint || defaults.providers.hupijiao.custom_amount_hint).trim() || defaults.providers.hupijiao.custom_amount_hint,
+                surcharge_rate: normalizePaymentChannelSurchargeRate(sourceProviders.hupijiao?.surcharge_rate, defaults.providers.hupijiao.surcharge_rate),
+                surcharge_label: String(sourceProviders.hupijiao?.surcharge_label || defaults.providers.hupijiao.surcharge_label).trim() || defaults.providers.hupijiao.surcharge_label,
                 order_query_enabled: sourceProviders.hupijiao?.order_query_enabled === true || String(sourceProviders.hupijiao?.order_query_enabled) === 'true',
                 order_query_title: String(sourceProviders.hupijiao?.order_query_title || defaults.providers.hupijiao.order_query_title).trim(),
                 order_query_hint: String(sourceProviders.hupijiao?.order_query_hint || defaults.providers.hupijiao.order_query_hint).trim(),
@@ -5561,6 +5595,7 @@ function normalizePaymentChannelsConfig(raw) {
                 price_currency: String(sourceProviders.nowpayments?.price_currency || defaults.providers.nowpayments.price_currency).trim().toLowerCase() || defaults.providers.nowpayments.price_currency,
                 network_name: String(sourceProviders.nowpayments?.network_name || defaults.providers.nowpayments.network_name).trim() || defaults.providers.nowpayments.network_name,
                 cny_to_usd_rate: Number(sourceProviders.nowpayments?.cny_to_usd_rate || defaults.providers.nowpayments.cny_to_usd_rate) || defaults.providers.nowpayments.cny_to_usd_rate,
+                pay_amount_precision: 2,
                 is_fixed_rate: sourceProviders.nowpayments?.is_fixed_rate !== undefined
                     ? (sourceProviders.nowpayments.is_fixed_rate === true || String(sourceProviders.nowpayments.is_fixed_rate) === 'true')
                     : defaults.providers.nowpayments.is_fixed_rate,
@@ -5573,6 +5608,8 @@ function normalizePaymentChannelsConfig(raw) {
                 cancel_url: String(sourceProviders.nowpayments?.cancel_url || defaults.providers.nowpayments.cancel_url).trim() || defaults.providers.nowpayments.cancel_url,
                 package_hint: String(sourceProviders.nowpayments?.package_hint || defaults.providers.nowpayments.package_hint).trim() || defaults.providers.nowpayments.package_hint,
                 custom_amount_hint: String(sourceProviders.nowpayments?.custom_amount_hint || defaults.providers.nowpayments.custom_amount_hint).trim() || defaults.providers.nowpayments.custom_amount_hint,
+                surcharge_rate: normalizePaymentChannelSurchargeRate(sourceProviders.nowpayments?.surcharge_rate, defaults.providers.nowpayments.surcharge_rate),
+                surcharge_label: String(sourceProviders.nowpayments?.surcharge_label || defaults.providers.nowpayments.surcharge_label).trim() || defaults.providers.nowpayments.surcharge_label,
                 order_query_enabled: sourceProviders.nowpayments?.order_query_enabled === true || String(sourceProviders.nowpayments?.order_query_enabled) === 'true',
                 order_query_title: String(sourceProviders.nowpayments?.order_query_title || defaults.providers.nowpayments.order_query_title).trim(),
                 order_query_hint: String(sourceProviders.nowpayments?.order_query_hint || defaults.providers.nowpayments.order_query_hint).trim(),
@@ -7669,18 +7706,24 @@ function applyPaymentChannelOverview(config) {
             : (hasMockOverrideCleanupNotice
                 ? mockRuntime.cleanup_message
                 : (config.providers.mock.description || '直接到账，适合短期过渡验证。')),
-        afdian: `历史手工认领通道 · ${paymentChannelSecretStatus?.afdian_token?.configured ? 'Token 已配置' : 'Token 待配置'}`,
+        afdian: [
+            `历史手工认领通道 · ${paymentChannelSecretStatus?.afdian_token?.configured ? 'Token 已配置' : 'Token 待配置'}`,
+            formatPaymentChannelSurchargeRate(config.providers.afdian.surcharge_rate)
+        ].filter(Boolean).join(' · '),
         zpay: [
             `${config.providers.zpay.pid ? `PID ${config.providers.zpay.pid}` : 'PID 待填写'} · ${paymentChannelSecretStatus?.zpay_pkey?.configured ? 'PKEY 已配置' : 'PKEY 待配置'}`,
+            formatPaymentChannelSurchargeRate(config.providers.zpay.surcharge_rate),
             summarizePaymentChannelActivationState('zpay')
         ].filter(Boolean).join(' · '),
         hupijiao: [
             `${config.providers.hupijiao.merchant_id ? `商户号 ${config.providers.hupijiao.merchant_id}` : '商户号待填写'} · ${(paymentChannelSecretStatus?.hupijiao_api_key?.configured && paymentChannelSecretStatus?.hupijiao_secret_key?.configured) ? '密钥已配置' : '密钥待配置'}`,
+            formatPaymentChannelSurchargeRate(config.providers.hupijiao.surcharge_rate),
             summarizePaymentChannelActivationState('hupijiao')
         ].filter(Boolean).join(' · '),
         nowpayments: [
             `${(paymentChannelSecretStatus?.nowpayments_api_key?.configured && paymentChannelSecretStatus?.nowpayments_ipn_secret?.configured) ? 'API/IPN 已配置' : 'API/IPN 待配置'}`,
             config.providers.nowpayments.pay_currency ? `币种 ${String(config.providers.nowpayments.pay_currency).toUpperCase()}` : '币种待确认',
+            formatPaymentChannelSurchargeRate(config.providers.nowpayments.surcharge_rate),
             summarizePaymentChannelActivationState('nowpayments')
         ].filter(Boolean).join(' · ')
     };
@@ -7747,6 +7790,7 @@ function renderPaymentChannelsConfig() {
     setValue('paymentProviderNowpaymentsPriceCurrency', config.providers.nowpayments.price_currency);
     setValue('paymentProviderNowpaymentsNetworkName', config.providers.nowpayments.network_name);
     setValue('paymentProviderNowpaymentsCnyUsdRate', config.providers.nowpayments.cny_to_usd_rate);
+    setValue('paymentProviderNowpaymentsSurchargeRate', config.providers.nowpayments.surcharge_rate);
     setValue('paymentProviderNowpaymentsFeePaidByUser', String(config.providers.nowpayments.is_fee_paid_by_user !== false));
     setValue('paymentProviderNowpaymentsFixedRate', String(config.providers.nowpayments.is_fixed_rate !== false));
     setValue('paymentProviderNowpaymentsReturnUrl', config.providers.nowpayments.return_url);
@@ -7760,6 +7804,7 @@ function renderPaymentChannelsConfig() {
     setValue('paymentProviderZpayPid', config.providers.zpay.pid);
     setValue('paymentProviderZpayType', config.providers.zpay.payment_type);
     setValue('paymentProviderZpayChannelIds', config.providers.zpay.channel_ids);
+    setValue('paymentProviderZpaySurchargeRate', config.providers.zpay.surcharge_rate);
     setValue('paymentProviderZpayReturnUrl', config.providers.zpay.return_url);
     setValue('paymentProviderZpayNotifyUrl', config.providers.zpay.notify_url);
     setValue('paymentProviderZpayPackageHint', config.providers.zpay.package_hint);
@@ -18245,6 +18290,14 @@ function collectPaymentChannelsConfigFromForm() {
     const activeProvider = ['mock', 'afdian', 'hupijiao', 'zpay', 'nowpayments'].includes(activeSelect?.value)
         ? activeSelect.value
         : currentConfig.active_provider;
+    const readSurchargeRate = (inputId, fallback = 0) => {
+        const input = document.getElementById(inputId);
+        const rawValue = input?.value;
+        if (rawValue === undefined || rawValue === null || String(rawValue).trim() === '') {
+            return normalizePaymentChannelSurchargeRate(fallback, 0);
+        }
+        return normalizePaymentChannelSurchargeRate(rawValue, fallback);
+    };
 
     const config = {
         active_provider: activeProvider,
@@ -18274,7 +18327,9 @@ function collectPaymentChannelsConfigFromForm() {
                 return_url: document.getElementById('paymentProviderZpayReturnUrl')?.value?.trim() || currentConfig.providers.zpay.return_url,
                 notify_url: document.getElementById('paymentProviderZpayNotifyUrl')?.value?.trim() || currentConfig.providers.zpay.notify_url,
                 package_hint: document.getElementById('paymentProviderZpayPackageHint')?.value?.trim() || currentConfig.providers.zpay.package_hint,
-                custom_amount_hint: document.getElementById('paymentProviderZpayCustomHint')?.value?.trim() || currentConfig.providers.zpay.custom_amount_hint
+                custom_amount_hint: document.getElementById('paymentProviderZpayCustomHint')?.value?.trim() || currentConfig.providers.zpay.custom_amount_hint,
+                surcharge_rate: readSurchargeRate('paymentProviderZpaySurchargeRate', currentConfig.providers.zpay.surcharge_rate),
+                surcharge_label: currentConfig.providers.zpay.surcharge_label || '通道手续费'
             },
             hupijiao: {
                 ...currentConfig.providers.hupijiao,
@@ -18297,6 +18352,7 @@ function collectPaymentChannelsConfigFromForm() {
                 price_currency: (document.getElementById('paymentProviderNowpaymentsPriceCurrency')?.value || '').trim().toLowerCase() || currentConfig.providers.nowpayments.price_currency,
                 network_name: document.getElementById('paymentProviderNowpaymentsNetworkName')?.value?.trim() || currentConfig.providers.nowpayments.network_name,
                 cny_to_usd_rate: Number(document.getElementById('paymentProviderNowpaymentsCnyUsdRate')?.value) || currentConfig.providers.nowpayments.cny_to_usd_rate,
+                pay_amount_precision: 2,
                 is_fee_paid_by_user: document.getElementById('paymentProviderNowpaymentsFeePaidByUser')?.value === 'false'
                     ? false
                     : currentConfig.providers.nowpayments.is_fee_paid_by_user !== false,
@@ -18308,7 +18364,9 @@ function collectPaymentChannelsConfigFromForm() {
                 success_url: document.getElementById('paymentProviderNowpaymentsSuccessUrl')?.value?.trim() || currentConfig.providers.nowpayments.success_url,
                 cancel_url: document.getElementById('paymentProviderNowpaymentsCancelUrl')?.value?.trim() || currentConfig.providers.nowpayments.cancel_url,
                 package_hint: document.getElementById('paymentProviderNowpaymentsPackageHint')?.value?.trim() || currentConfig.providers.nowpayments.package_hint,
-                custom_amount_hint: document.getElementById('paymentProviderNowpaymentsCustomHint')?.value?.trim() || currentConfig.providers.nowpayments.custom_amount_hint
+                custom_amount_hint: document.getElementById('paymentProviderNowpaymentsCustomHint')?.value?.trim() || currentConfig.providers.nowpayments.custom_amount_hint,
+                surcharge_rate: readSurchargeRate('paymentProviderNowpaymentsSurchargeRate', currentConfig.providers.nowpayments.surcharge_rate),
+                surcharge_label: currentConfig.providers.nowpayments.surcharge_label || '通道手续费'
             }
         }
     };

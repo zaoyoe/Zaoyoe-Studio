@@ -457,7 +457,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
             violations.push(`${relativePath} is missing css/chat-widget.css`);
         }
 
-        if (!source.includes('css/chat-widget.css?v=20260504_ENGAGEMENT_ROUTE_LINKS_1')) {
+        if (!source.includes('css/chat-widget.css?v=20260505_ENGAGEMENT_ENTRY_1')) {
             violations.push(`${relativePath} should cache-bust the scroll-lock chat widget stylesheet`);
         }
 
@@ -487,7 +487,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260504_ENGAGEMENT_ROUTE_LINKS_1';",
+        "const VERSION = '20260505_CHAT_USER_ACTIVITY_1';",
         "const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';",
         'function ensurePlaceholderPlacementStyles() {',
         '/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */',
@@ -509,7 +509,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'body.chat-widget-bootstrap-scroll-locked',
         "const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';",
         "const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';",
-        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260504_ENGAGEMENT_ROUTE_LINKS_1';",
+        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260505_CHAT_USER_ACTIVITY_1';",
         "const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';",
         'function getChatWidgetConstructor() {',
         'global.ChatWidget = ChatWidget;',
@@ -839,9 +839,9 @@ test('public pages wire wallet modal through the shared bootstrap loader', () =>
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260504_USDT_DIRECT_CHECKOUT_1';",
+        "const VERSION = '20260504_USDT_AMOUNT_PRECISION_TIMEOUT_1';",
         "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260430_WALLET_GUIDANCE_BILINGUAL_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260504_USDT_DIRECT_CHECKOUT_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260504_USDT_AMOUNT_PRECISION_TIMEOUT_1';",
         'function ensureWalletModalReady() {',
         'function warmWalletModal(options = {}) {',
         "function openWalletModal(view = 'balance', context = {}) {",
@@ -1861,7 +1861,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
     }
 
     assert.equal(
-        adminStudioHtml.includes('js/admin-chat.js?v=20260504_OPS_SESSION_NO_ONLINE_1'),
+        adminStudioHtml.includes('js/admin-chat.js?v=20260505_CHAT_USER_ACTIVITY_1'),
         true,
         'admin-studio.html should load the latest admin chat case action runtime'
     );
@@ -1873,7 +1873,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/chat-widget-loader.js?v=20260504_ENGAGEMENT_ROUTE_LINKS_1'),
+            source.includes('js/chat-widget-loader.js?v=20260505_CHAT_USER_ACTIVITY_1'),
             true,
             'public entry pages should load the lazy chat widget bootstrap'
         );
@@ -2166,7 +2166,7 @@ test('auth runtime renderers centralize avatar, google loading, and profile moda
             'auth entry pages should load the latest auth sheet stylesheet'
         );
         assert.equal(
-            source.includes('supabase-auth-functions.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1'),
+            source.includes('supabase-auth-functions.js?v=20260505_REMEMBER_EMAIL_AUTOFILL_1'),
             true,
             'auth entry pages should load the latest auth runtime script'
         );
@@ -2392,7 +2392,7 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
         );
         assert.match(
             source,
-            /inject-auth\.js\?v=20260504_USER_PRESENCE_STATUS_1/,
+            /inject-auth\.js\?v=20260505_REMEMBER_EMAIL_AUTOFILL_1/,
             'auth entry pages should load the latest injected auth runtime version'
         );
     }
@@ -2874,7 +2874,7 @@ test('theme bootstraps default first visits to light instead of system dark', ()
     for (const relativePath of injectedAuthEntryPages) {
         const source = readRepoFile(relativePath);
         assert.equal(
-            source.includes('inject-auth.js?v=20260504_USER_PRESENCE_STATUS_1'),
+            source.includes('inject-auth.js?v=20260505_REMEMBER_EMAIL_AUTOFILL_1'),
             true,
             `${relativePath} should cache-bust the injected auth light-default runtime`
         );
@@ -3855,7 +3855,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'index.html should load the latest framer_home stylesheet version'
     );
     assert.equal(
-        homepageSource.includes('./js/framer_home.js?v=20260501_HOME_HERO_ENTRY_EARLY_CENTER_1'),
+        homepageSource.includes('./js/framer_home.js?v=20260504_HOME_SECTION_SHELLS_1'),
         true,
         'index.html should load the latest framer_home script version'
     );
@@ -12996,7 +12996,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should load the latest guestbook runtime');
     assert.equal(shopSource.includes('js/shop-client.js?v=20260504_SHOP_DISCOUNT_ENGAGEMENT_1'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
-    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260504_USDT_DIRECT_CHECKOUT_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
+    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260504_USDT_AMOUNT_PRECISION_TIMEOUT_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
 
 test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {
@@ -14352,7 +14352,7 @@ test('analytics user drill-down carries commerce context into the user detail mo
 
     assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
     assert.equal(adminStudioHtml.includes('admin-homepage.js?v=20260421_HOMEPAGE_FEEDBACK_BRIDGE_P4'), true, 'admin-studio.html should reference the latest homepage admin runtime version');
-    assert.equal(adminStudioHtml.includes('admin-users.js?v=20260429_ADMIN_USERS_MODAL_STABILITY_1'), true, 'admin-studio.html should reference the latest admin users runtime version');
+    assert.equal(adminStudioHtml.includes('admin-users.js?v=20260505_USER_ACTIVITY_HEARTBEAT_1'), true, 'admin-studio.html should reference the latest admin users runtime version');
     assert.equal(adminStudioHtml.includes('admin-points.js?v=20260427_ADMIN_POINTS_BATCH_DETAIL_CUSTOM_STATUS_2'), true, 'admin-studio.html should reference the latest admin points runtime version');
     assert.equal(adminStudioHtml.includes('js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3&workflowRails=20260430_ADMIN_STUDIO_WORKFLOW_CARD_RAIL_VISIBILITY_1'), true, 'admin-studio.html should reference the latest growth center runtime version');
     assert.equal(adminStudioHtml.includes('js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2'), true, 'admin-studio.html should reference the latest ops alert report helper runtime version');
@@ -14441,7 +14441,7 @@ test('user detail tabs surface product commerce trace when opened from analytics
     }
 
     assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
-    assert.equal(adminStudioHtml.includes('admin-users.js?v=20260429_ADMIN_USERS_MODAL_STABILITY_1'), true, 'admin-studio.html should reference the latest admin users runtime version');
+    assert.equal(adminStudioHtml.includes('admin-users.js?v=20260505_USER_ACTIVITY_HEARTBEAT_1'), true, 'admin-studio.html should reference the latest admin users runtime version');
     assert.equal(adminStudioHtml.includes('admin-config.js?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'), true, 'admin-studio.html should reference the latest admin settings runtime version');
 });
 
@@ -14711,7 +14711,7 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
 
     const htmlMarkers = [
         'css/admin-chat.css?v=20260504_USER_ONLINE_GREEN_1',
-        'js/admin-chat.js?v=20260504_OPS_SESSION_NO_ONLINE_1'
+        'js/admin-chat.js?v=20260505_CHAT_USER_ACTIVITY_1'
     ];
 
     for (const marker of htmlMarkers) {
@@ -15929,7 +15929,7 @@ test('admin studio modules emit unified command feedback for recent processing r
         'js/admin-shop.js?v=20260504_SHOP_IMPORT_STOCK_SYNC_1',
         'admin-discounts.js?v=20260427_DISCOUNTS_BATCH_RESTORE_HINT_1',
         'js/admin-shell.js?v=20260426_ADMIN_SHELL_LOADING_DOTS_CENTER_P1',
-        'admin-users.js?v=20260429_ADMIN_USERS_MODAL_STABILITY_1',
+        'admin-users.js?v=20260505_USER_ACTIVITY_HEARTBEAT_1',
         'admin-homepage.js?v=20260421_HOMEPAGE_FEEDBACK_BRIDGE_P4',
         'admin-points.js?v=20260427_ADMIN_POINTS_BATCH_DETAIL_CUSTOM_STATUS_2',
         'js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3&workflowRails=20260430_ADMIN_STUDIO_WORKFLOW_CARD_RAIL_VISIBILITY_1',
@@ -15993,7 +15993,7 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
         'profile modal loader should cache-bust the light backdrop material'
     );
     assert.equal(
-        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260504_USDT_DIRECT_CHECKOUT_1'),
+        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260505_CRYPTO_DETAIL_USDT_1'),
         true,
         'wallet modal loader should cache-bust the latest wallet surface stylesheet'
     );

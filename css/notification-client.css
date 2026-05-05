@@ -42,8 +42,8 @@ body.notif-scroll-locked .chat-widget-fab {
 .notif-drawer {
     position: fixed;
     top: 54px;
-    right: -400px;
-    width: 380px;
+    right: -510px;
+    width: min(450px, calc(100vw - 40px));
     max-width: calc(100vw - 24px);
     max-height: calc(100vh - 78px);
     z-index: 2200;
@@ -1378,20 +1378,34 @@ html[data-theme="light"] .notif-card-tag--admin-notice {
         background: #000000;
     }
 
-.notif-drawer.notif-drawer-loading .notif-drawer-footer {
-    display: none;
-}
+    .notif-drawer.notif-drawer-loading .notif-drawer-footer {
+        display: none;
+    }
 
-.notif-drawer.notif-drawer-loading .notif-drawer-list {
-    align-items: center;
-    justify-content: center;
-    padding-top: 0;
-    padding-bottom: 0;
-}
+    .notif-drawer.notif-drawer-loading .notif-drawer-list {
+        align-items: center;
+        justify-content: center;
+        padding-top: 0;
+        padding-bottom: 0;
+    }
 
-.notif-drawer.notif-drawer-loading .notif-empty--loading {
-    min-height: 0;
-}
+    .notif-drawer.notif-drawer-loading .notif-empty--loading {
+        min-height: 0;
+    }
+
+    .notif-drawer.notif-drawer-loading,
+    .notif-drawer.notif-drawer-loading.active {
+        top: var(--nav-height, 0px);
+        bottom: auto;
+        height: calc(100vh - var(--nav-height, 0px));
+        height: calc(100dvh - var(--nav-height, 0px));
+    }
+
+    .notif-drawer.notif-drawer-loading.notif-drawer-opening .notif-empty--loading {
+        opacity: 0;
+        transform: translateY(-10px);
+        animation: notifMobileFadeInDown 0.5s ease 0.1s forwards;
+    }
 
     .notif-close-btn {
         min-width: 116px;
@@ -1488,6 +1502,53 @@ html[data-theme="light"] .notif-card-tag--admin-notice {
 
     .notif-card-shell.notif-card-filter-enter {
         animation: notifMobileCardFilterIn 0.34s ease both;
+    }
+
+    .notif-drawer.notif-drawer-content-entering .notif-module-shell {
+        opacity: 1;
+        transform: none;
+        animation: none;
+    }
+
+    .notif-drawer.notif-drawer-content-entering .notif-filter-panel,
+    .notif-drawer.notif-drawer-content-entering .notif-card-list > .notif-empty,
+    .notif-drawer.notif-drawer-content-entering .notif-card-list > .notif-card-shell {
+        opacity: 0;
+        transform: translateY(-10px);
+        animation: notifMobileFadeInDown 0.5s ease forwards;
+    }
+
+    .notif-drawer.notif-drawer-content-entering .notif-filter-panel {
+        animation-delay: 0.1s;
+    }
+
+    .notif-drawer.notif-drawer-content-entering .notif-card-list > .notif-empty,
+    .notif-drawer.notif-drawer-content-entering .notif-card-list > .notif-card-shell:nth-child(1) {
+        animation-delay: 0.2s;
+    }
+
+    .notif-drawer.notif-drawer-content-entering .notif-card-list > .notif-card-shell:nth-child(2) {
+        animation-delay: 0.3s;
+    }
+
+    .notif-drawer.notif-drawer-content-entering .notif-card-list > .notif-card-shell:nth-child(3) {
+        animation-delay: 0.4s;
+    }
+
+    .notif-drawer.notif-drawer-content-entering .notif-card-list > .notif-card-shell:nth-child(4) {
+        animation-delay: 0.5s;
+    }
+
+    .notif-drawer.notif-drawer-content-entering .notif-card-list > .notif-card-shell:nth-child(5) {
+        animation-delay: 0.6s;
+    }
+
+    .notif-drawer.notif-drawer-content-entering .notif-card-list > .notif-card-shell:nth-child(6) {
+        animation-delay: 0.7s;
+    }
+
+    .notif-drawer.notif-drawer-content-entering .notif-card-list > .notif-card-shell:nth-child(n+7) {
+        animation-delay: 0.76s;
     }
 
     .notif-card-title-row {

@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const Module = require('node:module');
 
@@ -316,4 +317,17 @@ test('payment channel settings allow switching zpay to primary after incoming pk
             assert.deepEqual(state.auditLogs[0].details.activation_warnings, []);
         });
     });
+});
+
+test('admin payment channel form keeps surcharge fields when saving zpay and nowpayments', () => {
+    const html = fs.readFileSync(path.resolve(__dirname, '../admin-studio.html'), 'utf8');
+    const script = fs.readFileSync(path.resolve(__dirname, '../admin-config.js'), 'utf8');
+
+    assert.match(html, /id="paymentProviderZpaySurchargeRate"/);
+    assert.match(html, /id="paymentProviderNowpaymentsSurchargeRate"/);
+    assert.match(script, /normalizePaymentChannelSurchargeRate\(value, fallback = 0\)/);
+    assert.match(script, /paymentProviderZpaySurchargeRate/);
+    assert.match(script, /paymentProviderNowpaymentsSurchargeRate/);
+    assert.match(script, /surcharge_rate:\s*readSurchargeRate\('paymentProviderZpaySurchargeRate'/);
+    assert.match(script, /surcharge_rate:\s*readSurchargeRate\('paymentProviderNowpaymentsSurchargeRate'/);
 });

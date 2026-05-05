@@ -33,6 +33,19 @@
         return document.querySelector(".wallet-order-modal-overlay");
     }
 
+    function closePaymentOverlay() {
+        const overlay = getPaymentOverlay();
+        if (!overlay) return;
+        if (typeof overlay._walletCryptoCountdownCleanup === "function") {
+            overlay._walletCryptoCountdownCleanup();
+            overlay._walletCryptoCountdownCleanup = null;
+        }
+        if (window.WalletModal?.stopHostedPaymentQrPolling) {
+            window.WalletModal.stopHostedPaymentQrPolling(overlay);
+        }
+        overlay.remove();
+    }
+
     function clickFirst(selector) {
         const el = document.querySelector(selector);
         if (!el) return false;
@@ -70,11 +83,20 @@
         );
     }
 
-    function triggerUsdt() {
+    function triggerUsdt(options = {}) {
         ensureWalletOpen().then(() => {
+            if (Number.isFinite(Number(options.quoteTtlMs))) {
+                window.__walletPreview.setNextQuoteTtl(Number(options.quoteTtlMs));
+            }
             window.__walletPreview.setStatusMode("pending");
             if (!clickFirst('#wallet-recharge-package-methods [data-wallet-payment-method="usdt"]')) {
                 showToast("USDT 按钮还没渲染完成");
+                return;
+            }
+            if (options.statusMode) {
+                window.setTimeout(() => {
+                    window.__walletPreview.setStatusMode(options.statusMode);
+                }, Math.max(50, Number(options.statusDelayMs || 250) || 250));
             }
         });
     }
@@ -99,6 +121,15 @@
             return;
         }
         restartCryptoCountdown(3000);
+    });
+    document.getElementById("previewSlowConfirm").addEventListener("click", () => {
+        closePaymentOverlay();
+        triggerUsdt({ quoteTtlMs: 3000, statusMode: "expired" });
+        showToast("预览：3 秒后进入确认中，稍后自动成功");
+        window.setTimeout(() => {
+            window.__walletPreview.setStatusMode("completed");
+            showToast("预览：平台回调成功，等待轮询刷新");
+        }, 9000);
     });
     document.getElementById("previewSuccess").addEventListener("click", () => {
         const overlay = getPaymentOverlay();

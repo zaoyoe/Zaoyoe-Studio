@@ -64,6 +64,17 @@
     --chat-preview-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05);
     --chat-preview-text: rgba(255, 255, 255, 0.9);
     --chat-preview-arrow: rgba(16, 18, 24, 0.96);
+    --engagement-accent-color: #6b9ece;
+    --engagement-title-color: #5f95cc;
+    --engagement-bubble-bg: #ffffff;
+    --engagement-text-color: #1f2937;
+    --engagement-accent-color-dark: #93c5fd;
+    --engagement-title-color-dark: #bfdbfe;
+    --engagement-bubble-bg-dark: #111827;
+    --engagement-text-color-dark: #e2e8f0;
+    --engagement-bubble-radius: 22px;
+    --engagement-bubble-max-width: 420px;
+    --engagement-bubble-shadow: 0 18px 44px rgba(15, 23, 42, 0.16), 0 2px 10px rgba(15, 23, 42, 0.08);
     --chat-mascot-head: #ffffff;
     --chat-mascot-ear: #ffffff;
     --chat-mascot-detail: #6b9ece;
@@ -422,22 +433,26 @@ body.chat-widget-bootstrap-scroll-locked {
     right: 16px;
     width: fit-content;
     min-width: min(220px, calc(100vw - 48px));
-    max-width: min(420px, calc(100vw - 48px));
+    max-width: min(var(--engagement-bubble-max-width, 420px), calc(100vw - 48px));
+    max-height: min(70dvh, calc(100vh - 128px));
+    overflow: auto;
+    overscroll-behavior: contain;
     padding: 18px 20px 16px;
     border: 1px solid rgba(148, 163, 184, 0.24);
-    background: rgba(255, 255, 255, 0.96);
-    color: #172033;
-    box-shadow: 0 18px 44px rgba(15, 23, 42, 0.16), 0 2px 10px rgba(15, 23, 42, 0.08);
+    border-radius: var(--engagement-bubble-radius, 22px);
+    background: color-mix(in srgb, var(--engagement-bubble-bg, #ffffff) 96%, transparent);
+    color: var(--engagement-text-color, #172033);
+    box-shadow: var(--engagement-bubble-shadow);
     cursor: default;
 }
 
 .chat-widget-fab .message-preview.engagement-preview::after {
-    border-top-color: rgba(255, 255, 255, 0.96);
+    border-top-color: var(--engagement-bubble-bg, #ffffff);
 }
 
 .engagement-preview .preview-sender {
     padding-right: 28px;
-    color: #5f95cc;
+    color: var(--engagement-title-color, #5f95cc);
     font-size: 13px;
     font-weight: 700;
     max-width: calc(100% - 28px);
@@ -447,7 +462,7 @@ body.chat-widget-bootstrap-scroll-locked {
 .engagement-preview .preview-text {
     display: block;
     margin-top: 8px;
-    color: #1f2937;
+    color: var(--engagement-text-color, #1f2937);
     font-size: 15px;
     line-height: 1.5;
     white-space: pre-line;
@@ -462,7 +477,7 @@ body.chat-widget-bootstrap-scroll-locked {
     border: 0;
     padding: 0;
     background: transparent;
-    color: #3f7fbd;
+    color: var(--engagement-accent-color, #3f7fbd);
     font: inherit;
     font-weight: 800;
     line-height: inherit;
@@ -474,11 +489,11 @@ body.chat-widget-bootstrap-scroll-locked {
 
 .engagement-preview__path-link:hover,
 .engagement-preview__path-link:focus-visible {
-    color: #2563eb;
+    color: color-mix(in srgb, var(--engagement-accent-color, #6b9ece) 78%, #0f172a);
 }
 
 .engagement-preview__path-link:focus-visible {
-    outline: 2px solid rgba(37, 99, 235, 0.24);
+    outline: 2px solid color-mix(in srgb, var(--engagement-accent-color, #6b9ece) 36%, transparent);
     outline-offset: 2px;
     border-radius: 4px;
 }
@@ -508,7 +523,7 @@ body.chat-widget-bootstrap-scroll-locked {
     border: 0;
     border-radius: 999px;
     padding: 8px 14px;
-    background: #6b9ece;
+    background: var(--engagement-accent-color, #6b9ece);
     color: #ffffff;
     font-size: 13px;
     font-weight: 700;
@@ -532,34 +547,297 @@ body.chat-widget-bootstrap-scroll-locked {
     background: #ef4444;
 }
 
+.engagement-surface {
+    position: fixed;
+    z-index: 10002;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    max-height: min(72dvh, calc(100vh - 36px));
+    overflow: auto;
+    overscroll-behavior: contain;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    background: color-mix(in srgb, var(--engagement-bubble-bg, #ffffff) 97%, transparent);
+    color: var(--engagement-text-color, #172033);
+    box-shadow: var(--engagement-bubble-shadow);
+    animation: engagement-surface-enter 0.24s ease both;
+}
+
+.engagement-surface.hiding {
+    animation: engagement-surface-exit 0.24s ease both;
+}
+
+.engagement-surface__close {
+    position: absolute;
+    top: 10px;
+    right: 12px;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(148, 163, 184, 0.12);
+    color: #64748b;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.engagement-surface__body {
+    min-width: 0;
+    flex: 1 1 auto;
+}
+
+.engagement-surface__body strong {
+    display: block;
+    margin: 0 34px 5px 0;
+    color: var(--engagement-title-color, #5f95cc);
+    font-size: 14px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+}
+
+.engagement-surface__body p {
+    margin: 0;
+    color: var(--engagement-text-color, #1f2937);
+    font-size: 14px;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+}
+
+.engagement-surface__action {
+    flex: 0 0 auto;
+    border: 0;
+    border-radius: 999px;
+    padding: 8px 14px;
+    background: var(--engagement-accent-color, #6b9ece);
+    color: #fff;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.engagement-surface--top_banner {
+    top: max(12px, env(safe-area-inset-top, 0px));
+    left: 50%;
+    width: min(760px, calc(100vw - 32px));
+    min-height: 58px;
+    padding: 14px 54px 14px 18px;
+    border-radius: min(var(--engagement-bubble-radius, 22px), 18px);
+    transform: translateX(-50%);
+}
+
+.engagement-surface--inline_card {
+    left: 18px;
+    bottom: max(22px, env(safe-area-inset-bottom, 0px));
+    width: min(360px, calc(100vw - 36px));
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 18px 18px 16px;
+    border-radius: min(var(--engagement-bubble-radius, 22px), 18px);
+}
+
+.engagement-surface--modal {
+    top: 50%;
+    left: 50%;
+    width: min(420px, calc(100vw - 36px));
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 24px 22px 20px;
+    border-radius: min(var(--engagement-bubble-radius, 22px), 20px);
+    transform: translate(-50%, -50%);
+}
+
+html[data-engagement-density="compact"] .chat-widget-fab .message-preview.engagement-preview,
+html[data-engagement-density="compact"] .engagement-surface {
+    padding-top: 12px;
+    padding-bottom: 12px;
+}
+
+html[data-engagement-density="spacious"] .chat-widget-fab .message-preview.engagement-preview,
+html[data-engagement-density="spacious"] .engagement-surface {
+    padding-top: 22px;
+    padding-bottom: 20px;
+}
+
+html[data-engagement-shadow="none"] {
+    --engagement-bubble-shadow: none;
+}
+
+html[data-engagement-shadow="elevated"] {
+    --engagement-bubble-shadow: 0 24px 68px rgba(15, 23, 42, 0.22), 0 6px 18px rgba(15, 23, 42, 0.1);
+}
+
+html[data-engagement-animation="none"] .chat-widget-fab .message-preview.engagement-preview,
+html[data-engagement-animation="none"] .engagement-surface {
+    animation: none;
+}
+
+html[data-engagement-animation="lively"] .chat-widget-fab .message-preview.engagement-preview,
+html[data-engagement-animation="lively"] .engagement-surface {
+    animation-duration: 0.36s;
+    animation-timing-function: cubic-bezier(0.2, 1.35, 0.34, 1);
+}
+
+.engagement-surface--modal::before {
+    content: "";
+    position: fixed;
+    inset: -100vh -100vw;
+    z-index: -1;
+    background: rgba(15, 23, 42, 0.34);
+    backdrop-filter: blur(2px);
+}
+
+.engagement-surface--floating_badge {
+    right: 18px;
+    bottom: max(92px, calc(env(safe-area-inset-bottom, 0px) + 92px));
+    width: min(260px, calc(100vw - 36px));
+    min-height: 52px;
+    padding: 12px 46px 12px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+}
+
+.engagement-surface--floating_badge .engagement-surface__body p {
+    display: none;
+}
+
+.engagement-surface--warning .engagement-surface__action,
+.engagement-surface--assistive .engagement-surface__action {
+    background: #f59e0b;
+}
+
+.engagement-surface--success .engagement-surface__action,
+.engagement-surface--commerce .engagement-surface__action {
+    background: #10b981;
+}
+
+.engagement-surface--alert .engagement-surface__action,
+.engagement-surface--error .engagement-surface__action {
+    background: #ef4444;
+}
+
+@media (max-width: 720px) {
+    .chat-widget-fab .message-preview.engagement-preview {
+        right: 8px;
+        min-width: min(190px, calc(100vw - 32px));
+        max-width: min(var(--engagement-bubble-max-width, 420px), calc(100vw - 32px));
+        max-height: min(64dvh, calc(100vh - 116px));
+        padding: 14px 16px 14px;
+    }
+
+    .engagement-preview .preview-sender {
+        font-size: 12px;
+    }
+
+    .engagement-preview .preview-text {
+        font-size: 14px;
+        line-height: 1.48;
+    }
+
+    .engagement-surface {
+        max-height: min(68dvh, calc(100vh - 28px));
+    }
+
+    .engagement-surface--top_banner {
+        top: max(10px, env(safe-area-inset-top, 0px));
+        width: calc(100vw - 20px);
+        min-height: 54px;
+        padding: 12px 48px 12px 14px;
+    }
+
+    .engagement-surface--inline_card {
+        left: 10px;
+        bottom: max(12px, env(safe-area-inset-bottom, 0px));
+        width: calc(100vw - 20px);
+    }
+
+    .engagement-surface--modal {
+        width: calc(100vw - 28px);
+        padding: 20px 18px 18px;
+    }
+
+    .engagement-surface--floating_badge {
+        right: 10px;
+        bottom: max(84px, calc(env(safe-area-inset-bottom, 0px) + 84px));
+        width: min(244px, calc(100vw - 20px));
+    }
+}
+
+@keyframes engagement-surface-enter {
+    from {
+        opacity: 0;
+        translate: 0 8px;
+    }
+    to {
+        opacity: 1;
+        translate: 0 0;
+    }
+}
+
+@keyframes engagement-surface-exit {
+    to {
+        opacity: 0;
+        translate: 0 8px;
+    }
+}
+
 [data-theme="dark"] .chat-widget-fab .message-preview.engagement-preview,
 html[data-theme="dark"] .chat-widget-fab .message-preview.engagement-preview {
     border-color: rgba(148, 163, 184, 0.22);
-    background: rgba(15, 23, 42, 0.94);
-    color: #f8fafc;
+    background: color-mix(in srgb, var(--engagement-bubble-bg-dark, #111827) 94%, transparent);
+    color: var(--engagement-text-color-dark, #e2e8f0);
     box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
 }
 
 [data-theme="dark"] .chat-widget-fab .message-preview.engagement-preview::after,
 html[data-theme="dark"] .chat-widget-fab .message-preview.engagement-preview::after {
-    border-top-color: rgba(15, 23, 42, 0.94);
+    border-top-color: color-mix(in srgb, var(--engagement-bubble-bg-dark, #111827) 94%, transparent);
+}
+
+[data-theme="dark"] .engagement-preview .preview-sender,
+html[data-theme="dark"] .engagement-preview .preview-sender {
+    color: var(--engagement-title-color-dark, #bfdbfe);
 }
 
 [data-theme="dark"] .engagement-preview .preview-text,
 html[data-theme="dark"] .engagement-preview .preview-text {
-    color: #e2e8f0;
+    color: var(--engagement-text-color-dark, #e2e8f0);
 }
 
 [data-theme="dark"] .engagement-preview__path-link,
 html[data-theme="dark"] .engagement-preview__path-link {
-    color: #93c5fd;
+    color: var(--engagement-accent-color-dark, #93c5fd);
 }
 
 [data-theme="dark"] .engagement-preview__path-link:hover,
 [data-theme="dark"] .engagement-preview__path-link:focus-visible,
 html[data-theme="dark"] .engagement-preview__path-link:hover,
 html[data-theme="dark"] .engagement-preview__path-link:focus-visible {
-    color: #bfdbfe;
+    color: color-mix(in srgb, var(--engagement-accent-color-dark, #93c5fd) 72%, #ffffff);
+}
+
+[data-theme="dark"] .engagement-surface,
+html[data-theme="dark"] .engagement-surface {
+    border-color: rgba(148, 163, 184, 0.22);
+    background: color-mix(in srgb, var(--engagement-bubble-bg-dark, #111827) 94%, transparent);
+    color: var(--engagement-text-color-dark, #e2e8f0);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.28);
+}
+
+[data-theme="dark"] .engagement-surface__body p,
+html[data-theme="dark"] .engagement-surface__body p {
+    color: var(--engagement-text-color-dark, #e2e8f0);
+}
+
+[data-theme="dark"] .engagement-surface__body strong,
+html[data-theme="dark"] .engagement-surface__body strong {
+    color: var(--engagement-title-color-dark, #bfdbfe);
+}
+
+[data-theme="dark"] .engagement-surface__close,
+html[data-theme="dark"] .engagement-surface__close {
+    background: rgba(148, 163, 184, 0.16);
+    color: #cbd5e1;
 }
 
 @keyframes preview-slide-up {

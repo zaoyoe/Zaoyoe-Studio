@@ -5,6 +5,14 @@ function createPublicEngagementHandlers({
         notifyUsers
     } = require('../../../api/_lib/admin-notifications');
     const {
+        CONFIG_KEY: EXTERNAL_EMBED_POLICY_CONFIG_KEY,
+        normalizeExternalEmbedPolicy
+    } = require('../../../api/_lib/engagement-external-policy');
+    const {
+        markUserActive,
+        syncInactiveUserTagForUser
+    } = require('../../../api/_lib/user-tags');
+    const {
         getOptionalSupabaseAdmin,
         parseJsonBody,
         requireAuthenticatedUser,
@@ -24,7 +32,19 @@ function createPublicEngagementHandlers({
     });
     const VALID_PAGES = Object.freeze(new Set(['home', 'prompts', 'gongyi', 'shop', 'verify', 'guestbook']));
     const VALID_EVENTS = Object.freeze(new Set(['view', 'click', 'dismiss', 'conversion']));
+    const VALID_PLACEMENTS = Object.freeze(new Set(['robot_bubble', 'top_banner', 'inline_card', 'modal', 'floating_badge']));
     const VALID_REPLY_SOURCES = Object.freeze(new Set(['prompt_comment', 'guestbook_comment']));
+    const AUDIENCE_SCOPE_TAGS = Object.freeze({
+        recharged: 'paid_user',
+        high_value: 'high_value',
+        inactive: 'inactive_user',
+        payment_failed: 'payment_failed',
+        verify_failed: 'verify_failed'
+    });
+    const ASSET_STYLE_CONFIG_KEY = 'engagement_asset_style_center';
+    const SUPPORT_ENTRY_CONFIG_KEY = 'engagement_support_entry_center';
+    let engagementCorsPolicyCache = null;
+    let engagementCorsPolicyCacheExpiresAt = 0;
 
     function sanitizeText(value, maxLength = 4000) {
         return String(value || '').trim().slice(0, Math.max(0, maxLength));
@@ -33,6 +53,11 @@ function createPublicEngagementHandlers({
     function normalizeSite(value = 'cn') {
         const normalized = sanitizeText(value, 20).toLowerCase();
         return normalized === 'intl' ? 'intl' : 'cn';
+    }
+
+    function normalizePlacement(value = 'robot_bubble') {
+        const normalized = sanitizeText(value, 80).toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'robot_bubble';
+        return VALID_PLACEMENTS.has(normalized) ? normalized : 'robot_bubble';
     }
 
     function normalizePageId(value = '') {
@@ -48,8 +73,224 @@ function createPublicEngagementHandlers({
         return [...new Set(source.map((item) => sanitizeText(item, 80).toLowerCase()).filter(Boolean))];
     }
 
+    function normalizeEmail(value = '') {
+        const normalized = sanitizeText(value, 240).toLowerCase();
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized) ? normalized : '';
+    }
+
+    function normalizeEmailArray(value) {
+        const source = Array.isArray(value) ? value : String(value || '').split(/[\n,;|]+/);
+        return [...new Set(source.map(normalizeEmail).filter(Boolean))];
+    }
+
+    function normalizeTagArray(value) {
+        const source = Array.isArray(value) ? value : String(value || '').split(/[\n,;|]+/);
+        return [...new Set(source.map((item) => sanitizeText(item, 80).toLowerCase()).filter(Boolean))];
+    }
+
     function normalizeMetadata(value) {
         return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    }
+
+    function isLocalPreviewOrigin(origin = '') {
+        return /^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?$/i.test(String(origin || '').trim());
+    }
+
+    function getOptionalCorsSupabase() {
+        try {
+            return typeof getOptionalSupabaseAdmin === 'function' ? getOptionalSupabaseAdmin() : null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    async function fetchEngagementCorsPolicy(supabase) {
+        const now = Date.now();
+        if (engagementCorsPolicyCache && engagementCorsPolicyCacheExpiresAt > now) {
+            return engagementCorsPolicyCache;
+        }
+
+        let policy = normalizeExternalEmbedPolicy({});
+        if (supabase?.from) {
+            try {
+                const { data, error } = await supabase
+                    .from('system_config')
+                    .select('config_value')
+                    .eq('config_key', EXTERNAL_EMBED_POLICY_CONFIG_KEY)
+                    .maybeSingle();
+                if (!error) {
+                    policy = normalizeExternalEmbedPolicy(data?.config_value || {});
+                } else if (!isMissingRelationOrColumnError(error, 'system_config')) {
+                    throw error;
+                }
+            } catch (error) {
+                console.warn('[Engagement] External CORS policy fallback:', error?.message || error);
+            }
+        }
+
+        engagementCorsPolicyCache = policy;
+        engagementCorsPolicyCacheExpiresAt = now + 60 * 1000;
+        return policy;
+    }
+
+    async function applyEngagementCors(req, res, supabase = null) {
+        const origin = sanitizeText(req?.headers?.origin || req?.headers?.Origin, 240);
+        if (!origin) return;
+        const policy = await fetchEngagementCorsPolicy(supabase);
+        if (!policy.enabled) return;
+        const allowedOrigins = new Set(policy.allowed_origins || []);
+        if (!allowedOrigins.has(origin) && !(policy.allow_local_preview && isLocalPreviewOrigin(origin))) return;
+        res.setHeader('Access-Control-Allow-Origin', origin);
+        res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization');
+        res.setHeader('Access-Control-Max-Age', '600');
+        res.setHeader('Vary', 'Origin');
+    }
+
+    async function handleEngagementOptions(req, res, supabase = null) {
+        await applyEngagementCors(req, res, supabase);
+        res.statusCode = 204;
+        res.end();
+        return true;
+    }
+
+    function normalizeHexColor(value = '', fallback = '#6b9ece') {
+        const normalized = sanitizeText(value, 24).toLowerCase();
+        return /^#[0-9a-f]{6}$/.test(normalized) ? normalized : fallback;
+    }
+
+    function normalizeInteger(value, fallback, { min = 0, max = 1000 } = {}) {
+        const parsed = Number.parseInt(value, 10);
+        if (!Number.isFinite(parsed)) return fallback;
+        return Math.min(Math.max(parsed, min), max);
+    }
+
+    function normalizeDismissTtlHours(value, fallback = 24) {
+        if (value === 0 || value === '0') return 0;
+        const parsed = Number(value);
+        if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+        const fallbackParsed = Number(fallback);
+        return Number.isFinite(fallbackParsed) && fallbackParsed >= 0 ? fallbackParsed : 24;
+    }
+
+    function normalizeAssetStyle(style = {}) {
+        const source = normalizeMetadata(style);
+        return {
+            enabled: source.enabled !== false,
+            preset: sanitizeText(source.preset || 'studio_blue', 80) || 'studio_blue',
+            accent_color: normalizeHexColor(source.accent_color || source.accentColor, '#6b9ece'),
+            title_color: normalizeHexColor(source.title_color || source.titleColor, '#5f95cc'),
+            bubble_background: normalizeHexColor(source.bubble_background || source.bubbleBackground, '#ffffff'),
+            text_color: normalizeHexColor(source.text_color || source.textColor, '#1f2937'),
+            radius_px: normalizeInteger(source.radius_px || source.radiusPx, 22, { min: 12, max: 32 }),
+            max_width_px: normalizeInteger(source.max_width_px || source.maxWidthPx, 420, { min: 260, max: 560 }),
+            density: sanitizeText(source.density || 'comfortable', 40) || 'comfortable',
+            shadow: sanitizeText(source.shadow || 'soft', 40) || 'soft',
+            animation: sanitizeText(source.animation || 'gentle', 40) || 'gentle',
+            robot_variant: sanitizeText(source.robot_variant || source.robotVariant || 'default', 40) || 'default'
+        };
+    }
+
+    function normalizeAsset(asset = {}) {
+        return {
+            id: sanitizeText(asset.id || asset.key, 120),
+            name: sanitizeText(asset.name || asset.title || '素材', 120) || '素材',
+            type: sanitizeText(asset.type || 'icon', 40) || 'icon',
+            icon: sanitizeText(asset.icon || 'fa-robot', 80) || 'fa-robot',
+            url: sanitizeText(asset.url || asset.image_url || asset.imageUrl, 1000),
+            tone: sanitizeText(asset.tone || 'info', 40) || 'info',
+            page_ids: normalizeStringArray(asset.page_ids || asset.pageIds || ['all']),
+            enabled: asset.enabled !== false
+        };
+    }
+
+    function normalizeAssetCenter(value = {}) {
+        const source = normalizeMetadata(value);
+        return {
+            style: normalizeAssetStyle(source.style || {}),
+            assets: Array.isArray(source.assets) ? source.assets.map(normalizeAsset).filter((asset) => asset.enabled) : []
+        };
+    }
+
+    function normalizeSupportActionIds(value, fallback = []) {
+        const validActions = new Set([
+            'code_status',
+            'redeem_code',
+            'afdian_lookup',
+            'shop_order_status',
+            'shop_order_content',
+            'discount_help',
+            'verify_task_status',
+            'verify_failure_help',
+            'verify_precheck',
+            'create_ticket',
+            'tg_support',
+            'live_chat'
+        ]);
+        const normalized = normalizeStringArray(value)
+            .map((item) => sanitizeText(item, 80).toLowerCase().replace(/[^a-z0-9_-]/g, ''))
+            .filter((item) => validActions.has(item));
+        return normalized.length ? normalized : fallback.filter((item) => validActions.has(item));
+    }
+
+    function normalizeSupportContext(context = {}) {
+        const id = sanitizeText(context.id || context.context_id || context.contextId || 'default', 80)
+            .toLowerCase()
+            .replace(/[^a-z0-9_-]/g, '') || 'default';
+        const fallbackShortcuts = id === 'shop'
+            ? ['shop_order_status', 'shop_order_content', 'discount_help', 'create_ticket', 'live_chat']
+            : id === 'verify'
+                ? ['verify_task_status', 'verify_failure_help', 'verify_precheck', 'create_ticket', 'live_chat']
+                : ['code_status', 'redeem_code', 'afdian_lookup', 'create_ticket', 'live_chat'];
+        return {
+            id,
+            label: sanitizeText(context.label || context.title || '常用入口', 80) || '常用入口',
+            intro: sanitizeText(context.intro || context.description, 500),
+            shortcuts: normalizeSupportActionIds(context.shortcuts || context.action_ids || context.actionIds, fallbackShortcuts).slice(0, 8),
+            enabled: context.enabled !== false
+        };
+    }
+
+    function normalizeSupportGuide(guide = {}) {
+        return {
+            id: sanitizeText(guide.id || guide.key, 120),
+            title: sanitizeText(guide.title || guide.name || '工单引导', 120) || '工单引导',
+            description: sanitizeText(guide.description || guide.desc, 500),
+            page_ids: normalizeStringArray(guide.page_ids || guide.pageIds || ['all']),
+            action_id: sanitizeText(guide.action_id || guide.actionId || 'create_ticket', 80).toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'create_ticket',
+            ticket_template: sanitizeText(guide.ticket_template || guide.ticketTemplate || guide.template, 800),
+            priority: Number(guide.priority || 0) || 0,
+            enabled: guide.enabled !== false
+        };
+    }
+
+    function normalizeSupportEntryCenter(value = {}) {
+        const source = normalizeMetadata(value);
+        return {
+            enabled: source.enabled !== false,
+            entry_label: sanitizeText(source.entry_label || source.entryLabel || '常用入口', 80) || '常用入口',
+            entry_label_en: sanitizeText(source.entry_label_en || source.entryLabelEn || 'Quick Help', 80) || 'Quick Help',
+            root_menus: normalizeStringArray(source.root_menus || source.rootMenus || ['exchange', 'shop', 'verify', 'human']),
+            telegram_url: sanitizeText(source.telegram_url || source.telegramUrl || 'https://t.me/zaoyoe', 1000) || 'https://t.me/zaoyoe',
+            ticket_enabled: source.ticket_enabled !== false && source.ticketEnabled !== false,
+            live_chat_enabled: source.live_chat_enabled !== false && source.liveChatEnabled !== false,
+            ticket_sla_hours: normalizeInteger(source.ticket_sla_hours || source.ticketSlaHours, 24, { min: 1, max: 168 }),
+            ticket_prompt: sanitizeText(source.ticket_prompt || source.ticketPrompt || '把“关联 ID + 问题描述”发我，我会帮你生成一条客服工单。', 500),
+            ticket_placeholder: sanitizeText(source.ticket_placeholder || source.ticketPlaceholder || '输入关联 ID 和问题描述', 160),
+            ticket_input_hint: sanitizeText(source.ticket_input_hint || source.ticketInputHint || '示例：order:订单号 卡密未到账、task:任务号 一直失败、code:兑换码 显示已使用', 500),
+            contexts: Array.isArray(source.contexts) ? source.contexts.map(normalizeSupportContext).filter((context) => context.enabled) : [],
+            guides: Array.isArray(source.guides) ? source.guides.map(normalizeSupportGuide).filter((guide) => guide.enabled) : [],
+            updated_at: sanitizeText(source.updated_at, 120)
+        };
+    }
+
+    function normalizeAudienceScope(value = 'all') {
+        const normalized = sanitizeText(value, 40).toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'all';
+        return normalized || 'all';
+    }
+
+    function normalizeTriggerType(value = 'page_view') {
+        return sanitizeText(value || 'page_view', 80).toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'page_view';
     }
 
     function createHttpError(message, statusCode = 400) {
@@ -121,6 +362,7 @@ function createPublicEngagementHandlers({
         const relation = sanitizeText(relationName).toLowerCase();
         return error?.code === '42P01'
             || error?.code === '42703'
+            || error?.code === 'PGRST204'
             || error?.code === 'PGRST205'
             || text.includes('schema cache')
             || (relation && text.includes(relation));
@@ -140,6 +382,91 @@ function createPublicEngagementHandlers({
             }
             return null;
         }
+    }
+
+    function collectUserTags(...sources) {
+        const collected = [];
+        sources.forEach((source) => {
+            if (!source) return;
+            if (Array.isArray(source) || typeof source === 'string') {
+                collected.push(...normalizeTagArray(source));
+                return;
+            }
+            const metadata = normalizeMetadata(source);
+            ['tags', 'user_tags', 'labels', 'segments'].forEach((key) => {
+                if (metadata[key]) {
+                    collected.push(...normalizeTagArray(metadata[key]));
+                }
+            });
+        });
+        return normalizeTagArray(collected);
+    }
+
+    async function getUserEngagementProfile(supabase, user = {}) {
+        const userId = sanitizeText(user?.id, 160);
+        const tableTags = userId ? await fetchUserTags(supabase, userId) : [];
+        const fallbackProfile = {
+            email: normalizeEmail(user?.email || user?.user_metadata?.email || user?.raw_user_meta_data?.email),
+            tags: collectUserTags(user?.user_metadata, user?.app_metadata, user?.raw_user_meta_data, tableTags)
+        };
+
+        if (!userId || !supabase) {
+            return fallbackProfile;
+        }
+
+        const profileSelects = [
+            'id,email,metadata,user_tags,tags',
+            'id,email,metadata',
+            'id,email'
+        ];
+
+        for (const fields of profileSelects) {
+            const { data, error } = await supabase
+                .from('profiles')
+                .select(fields)
+                .eq('id', userId)
+                .maybeSingle();
+
+            if (error) {
+                if (isMissingRelationOrColumnError(error, 'profiles')) {
+                    continue;
+                }
+                return fallbackProfile;
+            }
+
+            if (!data) {
+                return fallbackProfile;
+            }
+
+            return {
+                email: normalizeEmail(data.email) || fallbackProfile.email,
+                tags: collectUserTags(
+                    fallbackProfile.tags,
+                    tableTags,
+                    data.metadata,
+                    data.user_tags,
+                    data.tags
+                )
+            };
+        }
+
+        return fallbackProfile;
+    }
+
+    async function fetchUserTags(supabase, userId = '') {
+        const normalizedUserId = sanitizeText(userId, 160);
+        if (!normalizedUserId || !supabase) return [];
+        const { data, error } = await supabase
+            .from('user_tags')
+            .select('tag')
+            .eq('user_id', normalizedUserId);
+        if (error) {
+            if (isMissingRelationOrColumnError(error, 'user_tags')) {
+                return [];
+            }
+            return [];
+        }
+        return normalizeTagArray((Array.isArray(data) ? data : []).map((row) => row?.tag));
     }
 
     async function loadRowById(supabase, tableName, selectFields, rowId) {
@@ -219,8 +546,99 @@ function createPublicEngagementHandlers({
         return !pageIds.length || pageIds.includes('all') || pageIds.includes(pageId);
     }
 
+    function normalizeAudienceSegment(row = {}) {
+        const definition = normalizeMetadata(row.definition);
+        const scope = normalizeAudienceScope(definition.scope || row.key || 'all');
+        return {
+            key: sanitizeText(row.key, 160),
+            scope,
+            enabled: row.enabled !== false,
+            emails: normalizeEmailArray(definition.email_targets || definition.emails || []),
+            tags: normalizeTagArray(definition.tag_targets || definition.tags || [])
+        };
+    }
+
+    async function fetchAudienceSegments(supabase) {
+        const { data, error } = await supabase
+            .from('engagement_segments')
+            .select('key,definition,enabled')
+            .eq('enabled', true)
+            .limit(200);
+
+        if (error) {
+            if (isMissingRelationOrColumnError(error, 'engagement_segments')) {
+                return new Map();
+            }
+            throw error;
+        }
+
+        return (Array.isArray(data) ? data : []).reduce((segmentMap, row) => {
+            const segment = normalizeAudienceSegment(row);
+            if (segment.enabled && segment.scope) {
+                segmentMap.set(segment.scope, segment);
+            }
+            return segmentMap;
+        }, new Map());
+    }
+
+    function getAudienceSegmentForScope(scope = 'all', context = {}) {
+        const normalizedScope = normalizeAudienceScope(scope);
+        const segments = context.audienceSegments;
+        if (segments instanceof Map) {
+            return segments.get(normalizedScope) || null;
+        }
+        if (Array.isArray(segments)) {
+            return segments.find((segment) => normalizeAudienceScope(segment.scope || segment.key) === normalizedScope) || null;
+        }
+        return null;
+    }
+
+    function ruleMatchesAudience(row = {}, context = {}) {
+        const audience = normalizeMetadata(row.audience);
+        const scope = normalizeAudienceScope(audience.scope || audience.segment || audience.type || 'all');
+        const segment = getAudienceSegmentForScope(scope, context);
+        const targetEmails = normalizeEmailArray([
+            ...normalizeEmailArray(audience.email_targets || audience.emailTargets || audience.emails || audience.email),
+            ...(segment?.emails || [])
+        ]);
+        const targetTags = normalizeTagArray([
+            ...normalizeTagArray(audience.tag_targets || audience.tagTargets || audience.tags || audience.tag),
+            ...(segment?.tags || [])
+        ]);
+        if (targetEmails.length || targetTags.length) {
+            const userEmail = normalizeEmail(context.userEmail || context.email);
+            const userTags = normalizeTagArray(context.userTags || context.tags || []);
+            const matchesEmail = Boolean(userEmail && targetEmails.includes(userEmail));
+            const matchesTag = targetTags.some((tag) => userTags.includes(tag));
+            return matchesEmail || matchesTag;
+        }
+        if (!scope || scope === 'all') return true;
+        if (scope === 'visitors' || scope === 'visitor' || scope === 'guest') {
+            return !sanitizeText(context.userId, 160);
+        }
+        if (scope === 'authenticated' || scope === 'logged_in' || scope === 'login') {
+            return Boolean(sanitizeText(context.userId, 160));
+        }
+        if (scope === 'not_recharged') {
+            const userTags = normalizeTagArray(context.userTags || context.tags || []);
+            return Boolean(sanitizeText(context.userId, 160)) && !userTags.includes('paid_user');
+        }
+        if (AUDIENCE_SCOPE_TAGS[scope]) {
+            const userTags = normalizeTagArray(context.userTags || context.tags || []);
+            return userTags.includes(AUDIENCE_SCOPE_TAGS[scope]);
+        }
+        // Rich commercial segments need profile/order signals. Until those are wired,
+        // only logged-in users can qualify for them, preventing guest over-targeting.
+        return Boolean(sanitizeText(context.userId, 160));
+    }
+
+    function ruleMatchesFeedTrigger(row = {}, context = {}) {
+        return normalizeTriggerType(row.trigger_type || 'page_view') === normalizeTriggerType(context.triggerType || 'page_view');
+    }
+
     function normalizeRuleBubble(row = {}, context = {}) {
         const metadata = normalizeMetadata(row.metadata);
+        const triggerType = normalizeTriggerType(row.trigger_type || 'page_view');
         return {
             id: sanitizeText(row.id, 160),
             rule_id: sanitizeText(row.id, 160),
@@ -228,18 +646,25 @@ function createPublicEngagementHandlers({
             source: 'rule',
             source_module: sanitizeText(row.metadata?.source_module || 'engagement', 80) || 'engagement',
             source_event_id: sanitizeText(row.metadata?.source_event_id, 160),
+            trigger_type: triggerType,
             title: sanitizeText(row.title || row.name || '小助手提醒', 160) || '小助手提醒',
             content: sanitizeText(row.content, 1200),
             category: sanitizeText(metadata.category || 'engagement', 80) || 'engagement',
             page_id: context.pageId,
             site: context.site,
+            placement: normalizePlacement(row.placement || metadata.placement),
             priority: Number(row.priority || 0) || 0,
             action_label: sanitizeText(row.action_label, 80),
             action_url: sanitizeText(row.action_url, 1000),
-            dismiss_ttl_hours: Math.max(0, Number(row.dismiss_ttl_hours || 24) || 0),
+            dismiss_ttl_hours: normalizeDismissTtlHours(row.dismiss_ttl_hours, 24),
             tone: sanitizeText(row.tone || 'info', 40) || 'info',
             icon: sanitizeText(row.icon || 'robot', 40) || 'robot',
-            metadata
+            metadata: {
+                ...metadata,
+                trigger_type: triggerType,
+                feed_trigger_type: normalizeTriggerType(context.triggerType || 'page_view'),
+                feed_context: normalizeMetadata(context.triggerMetadata)
+            }
         };
     }
 
@@ -258,10 +683,11 @@ function createPublicEngagementHandlers({
             category,
             page_id: sanitizeText(metadata.page_id || context.pageId, 80) || context.pageId,
             site: sanitizeText(metadata.site || context.site, 20) || context.site,
+            placement: normalizePlacement(metadata.placement || metadata.display_type || metadata.displayType),
             priority: Number(row.priority || metadata.priority || 20) || 20,
             action_label: sanitizeText(row.action_label || metadata.action_label, 80),
             action_url: sanitizeText(row.action_url || metadata.action_url, 1000),
-            dismiss_ttl_hours: Math.max(0, Number(metadata.dismiss_ttl_hours || 24) || 0),
+            dismiss_ttl_hours: normalizeDismissTtlHours(metadata.dismiss_ttl_hours, 24),
             tone: sanitizeText(row.type || metadata.tone || 'info', 40) || 'info',
             icon: sanitizeText(metadata.icon || 'robot', 40) || 'robot',
             metadata
@@ -288,8 +714,10 @@ function createPublicEngagementHandlers({
         const now = new Date();
         return (Array.isArray(data) ? data : [])
             .filter((row) => isRuleActive(row, now))
+            .filter((row) => ruleMatchesFeedTrigger(row, context))
             .filter((row) => ruleMatchesContext(row, context))
-            .filter((row) => sanitizeText(row.placement || 'robot_bubble', 80) === 'robot_bubble')
+            .filter((row) => ruleMatchesAudience(row, context))
+            .filter((row) => VALID_PLACEMENTS.has(normalizePlacement(row.placement || 'robot_bubble')))
             .map((row) => normalizeRuleBubble(row, context));
     }
 
@@ -333,6 +761,36 @@ function createPublicEngagementHandlers({
                 return !Number.isFinite(expiresMs) || expiresMs > nowMs;
             })
             .map((row) => normalizeNotificationBubble(row, context));
+    }
+
+    async function fetchAssetStyleConfig(supabase) {
+        const { data, error } = await supabase
+            .from('system_config')
+            .select('config_value')
+            .eq('config_key', ASSET_STYLE_CONFIG_KEY)
+            .maybeSingle();
+        if (error) {
+            if (isMissingRelationOrColumnError(error, 'system_config')) {
+                return normalizeAssetCenter({});
+            }
+            throw error;
+        }
+        return normalizeAssetCenter(data?.config_value || {});
+    }
+
+    async function fetchSupportEntryConfig(supabase) {
+        const { data, error } = await supabase
+            .from('system_config')
+            .select('config_value')
+            .eq('config_key', SUPPORT_ENTRY_CONFIG_KEY)
+            .maybeSingle();
+        if (error) {
+            if (isMissingRelationOrColumnError(error, 'system_config')) {
+                return normalizeSupportEntryCenter({});
+            }
+            throw error;
+        }
+        return normalizeSupportEntryCenter(data?.config_value || {});
     }
 
     async function resolvePromptReplyNotification(supabase, actorUserId, body = {}) {
@@ -537,6 +995,11 @@ function createPublicEngagementHandlers({
     }
 
     async function replyNotifyHandler(req, res) {
+        const corsSupabase = getOptionalCorsSupabase();
+        if (req.method === 'OPTIONS') {
+            return handleEngagementOptions(req, res, corsSupabase);
+        }
+        await applyEngagementCors(req, res, corsSupabase);
         if (req.method !== 'POST') {
             res.setHeader('Allow', 'POST');
             return sendJson(res, 405, {
@@ -632,6 +1095,13 @@ function createPublicEngagementHandlers({
     }
 
     async function feedHandler(req, res) {
+        const supabase = typeof getOptionalSupabaseAdmin === 'function'
+            ? getOptionalSupabaseAdmin()
+            : null;
+        if (req.method === 'OPTIONS') {
+            return handleEngagementOptions(req, res, supabase);
+        }
+        await applyEngagementCors(req, res, supabase);
         if (req.method !== 'GET') {
             res.setHeader('Allow', 'GET');
             return sendJson(res, 405, {
@@ -639,10 +1109,6 @@ function createPublicEngagementHandlers({
                 message: 'Method not allowed'
             });
         }
-
-        const supabase = typeof getOptionalSupabaseAdmin === 'function'
-            ? getOptionalSupabaseAdmin()
-            : null;
 
         if (!supabase) {
             return sendJson(res, 503, {
@@ -652,17 +1118,43 @@ function createPublicEngagementHandlers({
         }
 
         const url = new URL(req.url || '/api/public/engagement/feed', 'http://localhost');
-        const context = {
-            pageId: normalizePageId(url.searchParams.get('page_id') || url.searchParams.get('page')),
-            site: normalizeSite(url.searchParams.get('site') || 'cn'),
-            readerKey: sanitizeText(url.searchParams.get('reader_key'), 160)
-        };
         const user = await getOptionalUser(req);
         const userId = sanitizeText(user?.id, 160);
+        const pageId = normalizePageId(url.searchParams.get('page_id') || url.searchParams.get('page'));
+        const site = normalizeSite(url.searchParams.get('site') || 'cn');
+        if (userId) {
+            await syncInactiveUserTagForUser(supabase, {
+                userId,
+                pageId,
+                site,
+                sourceModule: 'engagement.feed'
+            });
+        }
+        const [userProfile, audienceSegments] = await Promise.all([
+            getUserEngagementProfile(supabase, user || {}),
+            fetchAudienceSegments(supabase)
+        ]);
+        const context = {
+            pageId,
+            site,
+            readerKey: sanitizeText(url.searchParams.get('reader_key'), 160),
+            triggerType: normalizeTriggerType(url.searchParams.get('trigger_type') || url.searchParams.get('event_type') || 'page_view'),
+            triggerMetadata: {
+                source_module: sanitizeText(url.searchParams.get('source_module'), 80),
+                source_event_id: sanitizeText(url.searchParams.get('source_event_id'), 160),
+                event_context: sanitizeText(url.searchParams.get('event_context'), 1000)
+            },
+            userId,
+            userEmail: userProfile.email,
+            userTags: userProfile.tags,
+            audienceSegments
+        };
 
-        const [rules, notifications] = await Promise.all([
+        const [rules, notifications, assetCenter, supportEntry] = await Promise.all([
             fetchRuleBubbles(supabase, context),
-            fetchNotificationBubbles(supabase, userId, context)
+            context.triggerType === 'page_view' ? fetchNotificationBubbles(supabase, userId, context) : Promise.resolve([]),
+            fetchAssetStyleConfig(supabase),
+            fetchSupportEntryConfig(supabase)
         ]);
 
         const items = [...notifications, ...rules]
@@ -673,17 +1165,36 @@ function createPublicEngagementHandlers({
             })
             .slice(0, Math.max(1, Math.min(10, Number(url.searchParams.get('limit') || 5) || 5)));
 
+        if (userId) {
+            await markUserActive(supabase, {
+                userId,
+                pageId: context.pageId,
+                site: context.site,
+                sourceModule: 'engagement.feed'
+            });
+        }
+
         res.setHeader('Cache-Control', 'no-store');
         return sendJson(res, 200, {
             success: true,
             page_id: context.pageId,
             site: context.site,
+            trigger_type: context.triggerType,
+            asset_center: assetCenter,
+            support_entry: supportEntry,
             user_id: userId || null,
             items
         });
     }
 
     async function eventHandler(req, res) {
+        const supabase = typeof getOptionalSupabaseAdmin === 'function'
+            ? getOptionalSupabaseAdmin()
+            : null;
+        if (req.method === 'OPTIONS') {
+            return handleEngagementOptions(req, res, supabase);
+        }
+        await applyEngagementCors(req, res, supabase);
         if (req.method !== 'POST') {
             res.setHeader('Allow', 'POST');
             return sendJson(res, 405, {
@@ -691,10 +1202,6 @@ function createPublicEngagementHandlers({
                 message: 'Method not allowed'
             });
         }
-
-        const supabase = typeof getOptionalSupabaseAdmin === 'function'
-            ? getOptionalSupabaseAdmin()
-            : null;
 
         if (!supabase) {
             return sendJson(res, 202, {
@@ -720,6 +1227,14 @@ function createPublicEngagementHandlers({
         const site = normalizeSite(body.site || 'cn');
         const readerKey = sanitizeText(body.reader_key, 160);
         const metadata = normalizeMetadata(body.metadata);
+        if (userId) {
+            await markUserActive(supabase, {
+                userId,
+                pageId,
+                site,
+                sourceModule: 'engagement.event'
+            });
+        }
 
         let recorded = false;
         try {

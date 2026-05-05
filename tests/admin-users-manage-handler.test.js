@@ -419,6 +419,45 @@ test('users manage handler adjusts points through hardened RPCs and server notif
     });
 });
 
+test('users manage handler imports user tags by email for engagement segmentation', async () => {
+    await withUsersManageHandler({
+        tables: {
+            profiles: [
+                { id: 'user_1', email: 'buyer@example.com', username: 'buyer' },
+                { id: 'user_2', email: 'vip@example.com', username: 'vip' }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'import_tags_by_email',
+                tag: 'paid_user',
+                importText: [
+                    'buyer@example.com',
+                    'vip@example.com, high_value',
+                    'missing@example.com'
+                ].join('\n')
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().matched, 2);
+        assert.deepEqual(res.json().missing, ['missing@example.com']);
+        assert.deepEqual(
+            state.tables.user_tags.map((row) => ({ user_id: row.user_id, tag: row.tag })),
+            [
+                { user_id: 'user_1', tag: 'paid_user' },
+                { user_id: 'user_2', tag: 'high_value' }
+            ]
+        );
+        assert.equal(state.auditEntries[0]?.actionType, 'import_tag_by_email');
+    });
+});
+
 test('users manage handler blocks edits to locked super-admin accounts', async () => {
     await withUsersManageHandler({
         tables: {

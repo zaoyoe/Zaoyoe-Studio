@@ -106,6 +106,10 @@ class ChatWidget {
         this.userPresenceChannel = null;
         this.userPresenceStatusTimer = null;
         this.userPresenceByKey = new Map();
+        this.userActivityChannel = null;
+        this.userActivityRefreshTimer = null;
+        this.userActivityByKey = new Map();
+        this.userActivityFetchDisabled = false;
         this.adminOpsAlertPollTimer = null;
         this.adminSessionSlaTimer = null;
         this.adminSessionQueueView = 'all';
@@ -179,12 +183,20 @@ class ChatWidget {
         this._fabAmbientResumeTimer = null;
         this._onFabAmbientViewportChange = null;
         this.engagementViewedKeys = new Set();
+        this.engagementTriggeredKeys = new Set();
         this.engagementFeedLoaded = false;
         this.engagementFeedLoading = false;
         this.engagementActiveItem = null;
+        this.engagementSessionQuietUntil = new Map();
         this.engagementRefreshTimer = null;
+        this.engagementTimeTriggerTimer = null;
+        this.engagementScrollTriggerBound = false;
+        this.engagementClickTriggerBound = false;
         this.engagementRuntimeInitialized = false;
+        this.engagementSurfaceEscapeHandler = null;
         this.supportConfig = window.ZaoyoeSupportBotConfig || null;
+        this.engagementSupportEntry = null;
+        this.engagementSupportConfig = null;
         this.supportContextKey = this.getSupportContextKey();
         this.supportDisplayMode = 'chat';
         this.supportView = { type: 'root', id: '' };
@@ -851,11 +863,177 @@ class ChatWidget {
         return fallback;
     }
 
+    cloneSupportBotConfig(config = {}) {
+        try {
+            return JSON.parse(JSON.stringify(config || {}));
+        } catch (_) {
+            return { ...(config || {}) };
+        }
+    }
+
+    normalizeSupportActionIds(value, fallback = []) {
+        const validActions = new Set([
+            'code_status',
+            'redeem_code',
+            'afdian_lookup',
+            'shop_order_status',
+            'shop_order_content',
+            'discount_help',
+            'verify_task_status',
+            'verify_failure_help',
+            'verify_precheck',
+            'create_ticket',
+            'tg_support',
+            'live_chat'
+        ]);
+        const source = Array.isArray(value) ? value : String(value || '').split(/[\n,;|]+/);
+        const normalized = [...new Set(source
+            .map((item) => String(item || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, ''))
+            .filter((item) => validActions.has(item)))];
+        return normalized.length ? normalized : fallback.filter((item) => validActions.has(item));
+    }
+
+    normalizeEngagementSupportEntry(entry = {}) {
+        const source = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : {};
+        const contexts = Array.isArray(source.contexts) ? source.contexts : [];
+        return {
+            enabled: source.enabled !== false,
+            entry_label: String(source.entry_label || source.entryLabel || '常用入口').trim() || '常用入口',
+            entry_label_en: String(source.entry_label_en || source.entryLabelEn || 'Quick Help').trim() || 'Quick Help',
+            root_menus: Array.isArray(source.root_menus) && source.root_menus.length
+                ? source.root_menus.map((item) => String(item || '').trim()).filter(Boolean)
+                : ['exchange', 'shop', 'verify', 'human'],
+            telegram_url: String(source.telegram_url || source.telegramUrl || 'https://t.me/zaoyoe').trim() || 'https://t.me/zaoyoe',
+            ticket_enabled: source.ticket_enabled !== false && source.ticketEnabled !== false,
+            live_chat_enabled: source.live_chat_enabled !== false && source.liveChatEnabled !== false,
+            ticket_sla_hours: Number(source.ticket_sla_hours || source.ticketSlaHours || 24) || 24,
+            ticket_prompt: String(source.ticket_prompt || source.ticketPrompt || '把“关联 ID + 问题描述”发我，我会帮你生成一条客服工单。').trim(),
+            ticket_placeholder: String(source.ticket_placeholder || source.ticketPlaceholder || '输入关联 ID 和问题描述').trim(),
+            ticket_input_hint: String(source.ticket_input_hint || source.ticketInputHint || '示例：order:订单号 卡密未到账、task:任务号 一直失败、code:兑换码 显示已使用').trim(),
+            contexts: contexts.map((context) => {
+                const id = String(context?.id || context?.context_id || context?.contextId || 'default')
+                    .trim()
+                    .toLowerCase()
+                    .replace(/[^a-z0-9_-]/g, '') || 'default';
+                const fallbackShortcuts = id === 'shop'
+                    ? ['shop_order_status', 'shop_order_content', 'discount_help', 'create_ticket', 'live_chat']
+                    : id === 'verify'
+                        ? ['verify_task_status', 'verify_failure_help', 'verify_precheck', 'create_ticket', 'live_chat']
+                        : ['code_status', 'redeem_code', 'afdian_lookup', 'create_ticket', 'live_chat'];
+                return {
+                    id,
+                    label: String(context?.label || context?.title || '常用入口').trim() || '常用入口',
+                    intro: String(context?.intro || context?.description || '').trim(),
+                    shortcuts: this.normalizeSupportActionIds(context?.shortcuts || context?.action_ids || context?.actionIds, fallbackShortcuts).slice(0, 8),
+                    enabled: context?.enabled !== false
+                };
+            }).filter((context) => context.enabled)
+        };
+    }
+
+    buildEngagementSupportBotConfig(entry = {}) {
+        const normalized = this.normalizeEngagementSupportEntry(entry);
+        if (normalized.enabled === false) return null;
+
+        const base = this.cloneSupportBotConfig(window.ZaoyoeSupportBotConfig || this.supportConfig || {});
+        const config = {
+            ...base,
+            version: `${base.version || 'support'}+engagement-entry`,
+            rootMenus: normalized.root_menus,
+            contexts: {
+                ...(base.contexts || {})
+            },
+            menus: {
+                ...(base.menus || {})
+            },
+            actions: {
+                ...(base.actions || {})
+            }
+        };
+
+        normalized.contexts.forEach((context) => {
+            config.contexts[context.id] = {
+                title: {
+                    zh: context.label,
+                    en: context.id === 'default' ? normalized.entry_label_en : context.label
+                },
+                intro: {
+                    zh: context.intro || '优先帮你找到正确入口，能自助解决的先自助处理，需要人工时再提交工单。',
+                    en: context.intro || 'Start with the right self-serve entry, then submit a ticket if human support is needed.'
+                },
+                shortcuts: context.shortcuts
+            };
+        });
+
+        if (config.actions.create_ticket) {
+            config.actions.create_ticket = {
+                ...config.actions.create_ticket,
+                label: {
+                    zh: '提交问题工单',
+                    en: 'Submit Ticket'
+                },
+                prompt: {
+                    zh: normalized.ticket_prompt,
+                    en: config.actions.create_ticket.prompt?.en || 'Send the reference ID plus a problem description and I will create a support ticket.'
+                },
+                placeholder: {
+                    zh: normalized.ticket_placeholder,
+                    en: config.actions.create_ticket.placeholder?.en || 'Enter the reference ID and issue description'
+                },
+                inputHint: {
+                    zh: normalized.ticket_input_hint,
+                    en: config.actions.create_ticket.inputHint?.en || 'Example: order:ORDER_ID content not delivered'
+                }
+            };
+        }
+
+        if (config.actions.tg_support) {
+            config.actions.tg_support = {
+                ...config.actions.tg_support,
+                url: normalized.telegram_url
+            };
+        }
+
+        const disabledActions = new Set();
+        if (!normalized.ticket_enabled) disabledActions.add('create_ticket');
+        if (!normalized.live_chat_enabled) disabledActions.add('live_chat');
+        Object.keys(config.menus || {}).forEach((menuId) => {
+            const menu = config.menus[menuId];
+            if (Array.isArray(menu?.items)) {
+                menu.items = menu.items.filter((actionId) => !disabledActions.has(actionId));
+            }
+        });
+        Object.keys(config.contexts || {}).forEach((contextId) => {
+            const context = config.contexts[contextId];
+            if (Array.isArray(context?.shortcuts)) {
+                context.shortcuts = context.shortcuts.filter((actionId) => !disabledActions.has(actionId));
+            }
+        });
+
+        return config;
+    }
+
+    applyEngagementSupportEntry(entry = {}) {
+        const normalized = this.normalizeEngagementSupportEntry(entry);
+        this.engagementSupportEntry = normalized;
+        this.engagementSupportConfig = this.buildEngagementSupportBotConfig(normalized);
+        this.supportContextKey = this.getSupportContextKey();
+        this._supportRootPrewarmed = false;
+        this.syncSupportShellState?.();
+        if (!this.isAdmin && this.supportDisplayMode === 'support') {
+            this.renderSupportRootPanel?.({ activate: true });
+        }
+    }
+
     getSupportConfig() {
-        return window.ZaoyoeSupportBotConfig || this.supportConfig || null;
+        if (this.engagementSupportEntry?.enabled === false) return null;
+        return this.engagementSupportConfig || window.ZaoyoeSupportBotConfig || this.supportConfig || null;
     }
 
     getSupportContextKey() {
+        const pageId = typeof this.getEngagementPageId === 'function' ? this.getEngagementPageId() : '';
+        const config = this.engagementSupportConfig || window.ZaoyoeSupportBotConfig || this.supportConfig || null;
+        if (pageId && config?.contexts?.[pageId]) return pageId;
         const path = String(window.location.pathname || '').toLowerCase();
         if (/(^|\/)shop(?:\.html)?\/?$/.test(path)) return 'shop';
         if (/(^|\/)verify(?:\.html)?\/?$/.test(path)) return 'verify';
@@ -877,6 +1055,12 @@ class ChatWidget {
     }
 
     getSupportEntryLabel() {
+        if (this.engagementSupportEntry) {
+            const label = this.getCurrentLanguage() === 'zh'
+                ? this.engagementSupportEntry.entry_label
+                : this.engagementSupportEntry.entry_label_en;
+            if (label) return label;
+        }
         return this.getCurrentLanguage() === 'zh' ? '常用入口' : 'Quick Help';
     }
 
@@ -2979,16 +3163,21 @@ class ChatWidget {
     }
 
     getUserPresenceStateForSession(session = {}) {
-        const states = this.getUserPresenceKeysForSession(session)
+        const keys = this.getUserPresenceKeysForSession(session);
+        const liveStates = keys
             .map((key) => this.userPresenceByKey.get(key))
             .filter(Boolean);
+        const activityStates = keys
+            .map((key) => this.userActivityByKey.get(key))
+            .filter(Boolean);
+        const states = [...liveStates, ...activityStates];
         if (!states.length) {
             return { online: false, lastSeenAt: '' };
         }
 
         const latest = states.sort((left, right) => Date.parse(right.lastSeenAt || 0) - Date.parse(left.lastSeenAt || 0))[0];
         return {
-            online: states.some((state) => state.online),
+            online: liveStates.some((state) => state.online),
             lastSeenAt: latest?.lastSeenAt || ''
         };
     }
@@ -3066,6 +3255,185 @@ class ChatWidget {
                 this.renderSelectedSessionPresenceStatus(this.currentSessionInfo);
             }
         }, 15000);
+    }
+
+    getUserActivitySiteParam() {
+        return window.AdminSiteFilter?.getSiteParam?.() || null;
+    }
+
+    isUserActivityRowInScope(row = {}) {
+        const siteFilter = this.getUserActivitySiteParam();
+        if (!siteFilter) return true;
+        return String(row?.site || '').trim() === siteFilter;
+    }
+
+    isMissingUserActivityTableError(error = null) {
+        const raw = [
+            error?.code,
+            error?.message,
+            error?.details,
+            error?.hint
+        ].filter(Boolean).join(' ');
+        return /42P01|PGRST205|schema cache|does not exist|could not find/i.test(raw);
+    }
+
+    normalizeUserActivityLastSeenAt(value = '') {
+        const time = Date.parse(value || '');
+        return Number.isFinite(time) ? new Date(time).toISOString() : '';
+    }
+
+    upsertUserActivityStateForKeys(keys = [], lastActiveAt = '') {
+        const normalizedLastActiveAt = this.normalizeUserActivityLastSeenAt(lastActiveAt);
+        const nextTime = Date.parse(normalizedLastActiveAt || '');
+        if (!Number.isFinite(nextTime)) {
+            return false;
+        }
+
+        let changed = false;
+        [...new Set(Array.isArray(keys) ? keys : [])].forEach((key) => {
+            const normalizedKey = String(key || '').trim();
+            if (!normalizedKey) return;
+            const current = this.userActivityByKey.get(normalizedKey);
+            const currentTime = Date.parse(current?.lastSeenAt || '');
+            if (!current || !Number.isFinite(currentTime) || nextTime >= currentTime) {
+                this.userActivityByKey.set(normalizedKey, {
+                    online: false,
+                    lastSeenAt: normalizedLastActiveAt
+                });
+                changed = true;
+            }
+        });
+        return changed;
+    }
+
+    applyUserActivityRowsToAdminSessions(rows = [], sessions = this.sessions) {
+        const sessionList = (Array.isArray(sessions) ? sessions : []).filter((session) => !this.isOpsAlertSession(session));
+        const sessionsByUserId = new Map();
+        sessionList.forEach((session) => {
+            const userId = String(session?.userId || session?.profile?.id || '').trim();
+            if (!userId) return;
+            const existing = sessionsByUserId.get(userId) || [];
+            existing.push(session);
+            sessionsByUserId.set(userId, existing);
+        });
+
+        let changed = false;
+        (Array.isArray(rows) ? rows : []).forEach((row) => {
+            if (!this.isUserActivityRowInScope(row)) return;
+            const userId = String(row?.user_id || row?.userId || '').trim();
+            const lastActiveAt = String(row?.last_active_at || row?.lastActiveAt || '').trim();
+            if (!userId || !lastActiveAt) return;
+
+            const matchedSessions = sessionsByUserId.get(userId) || [];
+            if (matchedSessions.length) {
+                matchedSessions.forEach((session) => {
+                    changed = this.upsertUserActivityStateForKeys(
+                        this.getUserPresenceKeysForSession(session),
+                        lastActiveAt
+                    ) || changed;
+                });
+                return;
+            }
+
+            changed = this.upsertUserActivityStateForKeys(
+                this.getUserPresenceKeysForPayload(row),
+                lastActiveAt
+            ) || changed;
+        });
+        return changed;
+    }
+
+    getUserActivityAdminSessionIds(sessions = this.sessions) {
+        return [...new Set((Array.isArray(sessions) ? sessions : [])
+            .filter((session) => !this.isOpsAlertSession(session))
+            .map((session) => String(session?.userId || session?.profile?.id || '').trim())
+            .filter(Boolean))];
+    }
+
+    async fetchUserActivityRowsForAdminSessions(sessions = this.sessions) {
+        const userIds = this.getUserActivityAdminSessionIds(sessions);
+        if (!userIds.length || !this.supabase?.from || this.userActivityFetchDisabled) {
+            return [];
+        }
+
+        try {
+            let query = this.supabase
+                .from('engagement_user_activity')
+                .select('user_id,last_active_at,site')
+                .in('user_id', userIds)
+                .order('last_active_at', { ascending: false });
+
+            const siteFilter = this.getUserActivitySiteParam();
+            if (siteFilter) {
+                query = query.eq('site', siteFilter);
+            }
+
+            const { data, error } = await query;
+            if (error) throw error;
+            return Array.isArray(data) ? data : [];
+        } catch (error) {
+            if (this.isMissingUserActivityTableError(error)) {
+                this.userActivityFetchDisabled = true;
+                return [];
+            }
+            console.warn('[ChatWidget] Failed to fetch user activity heartbeats:', error);
+            return [];
+        }
+    }
+
+    renderUserActivityAdminStatusRefresh() {
+        this.applyUserPresenceToAdminSessions();
+        if (this.currentSessionKey) {
+            const nextCurrentSession = (Array.isArray(this.sessions) ? this.sessions : [])
+                .find((session) => session.id === this.currentSessionKey) || null;
+            if (nextCurrentSession) {
+                this.currentSessionInfo = nextCurrentSession;
+            }
+        }
+        this.renderAdminSessionList();
+        if (this.currentSessionInfo && !this.isOpsAlertSession(this.currentSessionInfo)) {
+            this.renderSelectedSessionPresenceStatus(this.currentSessionInfo);
+        }
+    }
+
+    async refreshUserActivityForAdminSessions(sessions = this.sessions, { render = false } = {}) {
+        const rows = await this.fetchUserActivityRowsForAdminSessions(sessions);
+        const changed = this.applyUserActivityRowsToAdminSessions(rows, sessions);
+        if (changed && render) {
+            this.renderUserActivityAdminStatusRefresh();
+        }
+        return rows;
+    }
+
+    handleUserActivityRealtime(row = {}) {
+        if (!row || !this.isUserActivityRowInScope(row)) return;
+        const changed = this.applyUserActivityRowsToAdminSessions([row], this.sessions);
+        if (changed) {
+            this.renderUserActivityAdminStatusRefresh();
+        }
+    }
+
+    subscribeToUserActivity() {
+        if (!this.supabase?.from || this.userActivityRefreshTimer) {
+            return;
+        }
+
+        if (this.supabase?.channel && !this.userActivityChannel) {
+            this.userActivityChannel = this.supabase
+                .channel(`chat-widget-user-activity-${Date.now()}`)
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'engagement_user_activity' }, (payload) => {
+                    this.handleUserActivityRealtime(payload.new);
+                })
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'engagement_user_activity' }, (payload) => {
+                    this.handleUserActivityRealtime(payload.new);
+                })
+                .subscribe();
+        }
+
+        this.userActivityRefreshTimer = setInterval(() => {
+            void this.refreshUserActivityForAdminSessions(this.sessions, { render: true });
+        }, 30000);
+        void this.refreshUserActivityForAdminSessions(this.sessions, { render: true });
     }
 
     async init() {
@@ -3651,8 +4019,9 @@ class ChatWidget {
         this.engagementRuntimeInitialized = true;
         window.ZaoyoeEngagement = {
             refresh: () => this.refreshEngagementFeed({ force: true }),
-            show: (item) => this.showEngagementBubble(item, { manual: true }),
-            dismiss: () => this.dismissEngagementBubble(this.engagementActiveItem, { eventType: 'dismiss' })
+            show: (item) => this.showEngagementItem(item, { manual: true }),
+            trigger: (triggerType, metadata = {}, options = {}) => this.triggerEngagementEvent(triggerType, metadata, options),
+            dismiss: () => this.dismissEngagementSurface(this.engagementActiveItem, { eventType: 'dismiss' })
         };
         window.setTimeout(() => {
             void this.refreshEngagementFeed();
@@ -3660,9 +4029,97 @@ class ChatWidget {
         this.engagementRefreshTimer = window.setInterval(() => {
             void this.refreshEngagementFeed();
         }, 90000);
+        this.scheduleEngagementAutomationTriggers();
+    }
+
+    normalizeEngagementTriggerType(value = 'page_view') {
+        return String(value || 'page_view').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'page_view';
+    }
+
+    getEngagementTriggerKey(triggerType = 'page_view', metadata = {}) {
+        const normalizedTrigger = this.normalizeEngagementTriggerType(triggerType);
+        const sourceEventId = String(
+            metadata?.source_event_id
+                || metadata?.sourceEventId
+                || metadata?.dedupe_key
+                || metadata?.dedupeKey
+                || metadata?.product_id
+                || metadata?.productId
+                || metadata?.target_id
+                || metadata?.targetId
+                || ''
+        ).trim();
+        return `${normalizedTrigger}:${this.getEngagementPageId()}:${sourceEventId || 'default'}`;
+    }
+
+    scheduleEngagementAutomationTriggers() {
+        if (this.engagementTimeTriggerTimer) return;
+        this.engagementTimeTriggerTimer = window.setTimeout(() => {
+            void this.triggerEngagementEvent('time_on_page', {
+                elapsed_seconds: 10,
+                source: 'runtime_timer'
+            });
+        }, 10000);
+
+        if (!this.engagementScrollTriggerBound) {
+            this.engagementScrollTriggerBound = true;
+            let ticking = false;
+            const handleScroll = () => {
+                if (ticking) return;
+                ticking = true;
+                window.requestAnimationFrame(() => {
+                    ticking = false;
+                    const doc = document.documentElement;
+                    const scrollTop = window.scrollY || doc.scrollTop || 0;
+                    const viewportHeight = window.innerHeight || doc.clientHeight || 0;
+                    const scrollHeight = Math.max(doc.scrollHeight || 0, document.body?.scrollHeight || 0, viewportHeight);
+                    const percent = scrollHeight > viewportHeight
+                        ? Math.round(((scrollTop + viewportHeight) / scrollHeight) * 100)
+                        : 100;
+                    if (percent >= 50) {
+                        window.removeEventListener('scroll', handleScroll);
+                        void this.triggerEngagementEvent('scroll_depth', {
+                            scroll_percent: Math.min(100, Math.max(0, percent)),
+                            source: 'runtime_scroll'
+                        });
+                    }
+                });
+            };
+            window.addEventListener('scroll', handleScroll, { passive: true });
+            handleScroll();
+        }
+
+        if (!this.engagementClickTriggerBound) {
+            this.engagementClickTriggerBound = true;
+            document.addEventListener('click', (event) => {
+                const target = event.target?.nodeType === 1 ? event.target : event.target?.parentElement;
+                const triggerElement = target?.closest?.('[data-engagement-trigger]');
+                if (!triggerElement) return;
+                const triggerType = this.normalizeEngagementTriggerType(triggerElement.dataset.engagementTrigger || 'click_action');
+                void this.triggerEngagementEvent(triggerType, {
+                    source: 'runtime_click',
+                    element_id: triggerElement.id || '',
+                    element_label: String(triggerElement.textContent || '').trim().slice(0, 120),
+                    source_event_id: triggerElement.dataset.engagementEventId || ''
+                }, {
+                    once: triggerElement.dataset.engagementTriggerOnce !== 'false'
+                });
+            }, true);
+        }
     }
 
     getEngagementPageId() {
+        const externalPageId = String(
+            window.ZaoyoeExternalEngagementConfig?.pageId
+                || window.ZaoyoeExternalEngagementConfig?.page_id
+                || window.ZaoyoeEngagementExternalConfig?.pageId
+                || window.ZaoyoeEngagementExternalConfig?.page_id
+                || document.documentElement?.dataset?.engagementPageId
+                || ''
+        ).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+        if (['home', 'prompts', 'gongyi', 'shop', 'verify', 'guestbook'].includes(externalPageId)) {
+            return externalPageId;
+        }
         const pathname = String(window.location?.pathname || '/').toLowerCase();
         if (/\/prompts(?:\.html)?\/?$/.test(pathname)) return 'prompts';
         if (/\/gongyi(?:\.html)?\/?$/.test(pathname)) return 'gongyi';
@@ -3725,12 +4182,42 @@ class ChatWidget {
         return true;
     }
 
+    isEngagementItemSessionQuiet(item = {}) {
+        const key = this.getEngagementItemKey(item);
+        if (!key || !this.engagementSessionQuietUntil?.has(key)) return false;
+        const quietUntil = Number(this.engagementSessionQuietUntil.get(key) || 0);
+        if (!Number.isFinite(quietUntil) || quietUntil <= Date.now()) {
+            this.engagementSessionQuietUntil.delete(key);
+            return false;
+        }
+        return true;
+    }
+
+    quietEngagementItemForSession(item = {}, durationMs = 15 * 60 * 1000) {
+        const key = this.getEngagementItemKey(item);
+        if (!key) return;
+        const normalizedDuration = Math.max(60 * 1000, Number(durationMs || 0) || 0);
+        this.engagementSessionQuietUntil.set(key, Date.now() + normalizedDuration);
+    }
+
+    normalizeEngagementDismissTtlHours(value, fallback = 24) {
+        if (value === 0 || value === '0') return 0;
+        const parsed = Number(value);
+        if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+        const fallbackParsed = Number(fallback);
+        return Number.isFinite(fallbackParsed) && fallbackParsed >= 0 ? fallbackParsed : 24;
+    }
+
     suppressEngagementItem(item = {}) {
         const key = this.getEngagementItemKey(item);
         if (!key) return;
-        const ttlHours = Math.max(0, Number(item.dismiss_ttl_hours || 24) || 0);
+        const ttlHours = this.normalizeEngagementDismissTtlHours(item.dismiss_ttl_hours, 24);
+        if (ttlHours <= 0) {
+            this.quietEngagementItemForSession(item, 30 * 60 * 1000);
+            return;
+        }
         const dismissedMap = this.getEngagementDismissedMap();
-        dismissedMap[key] = Date.now() + Math.max(1, ttlHours) * 60 * 60 * 1000;
+        dismissedMap[key] = Date.now() + ttlHours * 60 * 60 * 1000;
         this.persistEngagementDismissedMap(dismissedMap);
     }
 
@@ -3743,6 +4230,37 @@ class ChatWidget {
         }
     }
 
+    getEngagementExternalConfig() {
+        const config = window.ZaoyoeExternalEngagementConfig || window.ZaoyoeEngagementExternalConfig || {};
+        return config && typeof config === 'object' && !Array.isArray(config) ? config : {};
+    }
+
+    getEngagementApiOrigin() {
+        const config = this.getEngagementExternalConfig();
+        const rawOrigin = String(config.apiOrigin || config.api_origin || config.apiBase || config.api_base || '').trim();
+        if (!rawOrigin) return '';
+        try {
+            return new URL(rawOrigin, window.location.href).origin;
+        } catch (_) {
+            return '';
+        }
+    }
+
+    resolveEngagementApiUrl(pathname = '') {
+        const apiOrigin = this.getEngagementApiOrigin();
+        const path = String(pathname || '').trim();
+        if (!apiOrigin || !path.startsWith('/')) return path;
+        try {
+            return new URL(path, apiOrigin).toString();
+        } catch (_) {
+            return path;
+        }
+    }
+
+    getEngagementFetchCredentials() {
+        return this.getEngagementApiOrigin() ? 'omit' : 'same-origin';
+    }
+
     getEngagementApiUrls(route = '', params = null) {
         const normalizedRoute = String(route || '').trim().replace(/^\/+|\/+$/g, '');
         const query = params instanceof URLSearchParams
@@ -3753,8 +4271,8 @@ class ChatWidget {
         fallbackParams.set('scope', 'engagement');
         fallbackParams.set('route', normalizedRoute);
         return [
-            `/api/engagement/${encodeURIComponent(normalizedRoute)}${suffix}`,
-            `/api/public?${fallbackParams.toString()}`
+            this.resolveEngagementApiUrl(`/api/engagement/${encodeURIComponent(normalizedRoute)}${suffix}`),
+            this.resolveEngagementApiUrl(`/api/public?${fallbackParams.toString()}`)
         ];
     }
 
@@ -3763,6 +4281,9 @@ class ChatWidget {
         const title = String(normalized.title || '小助手提醒').trim() || '小助手提醒';
         const content = String(normalized.content || '').trim();
         if (!content) return null;
+        const metadata = normalized.metadata && typeof normalized.metadata === 'object' && !Array.isArray(normalized.metadata)
+            ? normalized.metadata
+            : {};
         return {
             ...normalized,
             id: String(normalized.id || normalized.notification_id || normalized.rule_id || '').trim(),
@@ -3772,6 +4293,7 @@ class ChatWidget {
             action_url: String(normalized.action_url || '').trim(),
             page_id: String(normalized.page_id || this.getEngagementPageId()).trim() || this.getEngagementPageId(),
             site: String(normalized.site || window.SiteConfig?.site || 'cn').trim().toLowerCase() || 'cn',
+            placement: this.normalizeEngagementPlacement(normalized.placement || metadata.placement || metadata.display_type || metadata.displayType),
             priority: Number(normalized.priority || 0) || 0,
             tone: String(normalized.tone || 'info').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'info',
             source: String(normalized.source || 'rule').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'rule',
@@ -3779,11 +4301,16 @@ class ChatWidget {
             source_event_id: String(normalized.source_event_id || '').trim(),
             notification_id: String(normalized.notification_id || '').trim(),
             rule_id: String(normalized.rule_id || '').trim(),
-            dismiss_ttl_hours: Math.max(0, Number(normalized.dismiss_ttl_hours || 24) || 0),
-            metadata: normalized.metadata && typeof normalized.metadata === 'object' && !Array.isArray(normalized.metadata)
-                ? normalized.metadata
-                : {}
+            dismiss_ttl_hours: this.normalizeEngagementDismissTtlHours(normalized.dismiss_ttl_hours, 24),
+            metadata
         };
+    }
+
+    normalizeEngagementPlacement(value = 'robot_bubble') {
+        const normalized = String(value || 'robot_bubble').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'robot_bubble';
+        return ['robot_bubble', 'top_banner', 'inline_card', 'modal', 'floating_badge'].includes(normalized)
+            ? normalized
+            : 'robot_bubble';
     }
 
     normalizeEngagementWalletView(view = '') {
@@ -3959,6 +4486,85 @@ class ChatWidget {
             : this.escapeHtml(previewText);
     }
 
+    normalizeEngagementHexColor(value = '', fallback = '#6b9ece') {
+        const normalized = String(value || '').trim().toLowerCase();
+        return /^#[0-9a-f]{6}$/.test(normalized) ? normalized : fallback;
+    }
+
+    getEngagementHexLuma(hexColor = '') {
+        const normalized = this.normalizeEngagementHexColor(hexColor, '#000000').replace('#', '');
+        const red = Number.parseInt(normalized.slice(0, 2), 16) || 0;
+        const green = Number.parseInt(normalized.slice(2, 4), 16) || 0;
+        const blue = Number.parseInt(normalized.slice(4, 6), 16) || 0;
+        return (0.2126 * red + 0.7152 * green + 0.0722 * blue) / 255;
+    }
+
+    deriveEngagementDarkPalette(style = {}) {
+        const bubbleBackground = this.normalizeEngagementHexColor(style.bubble_background, '#ffffff');
+        const textColor = this.normalizeEngagementHexColor(style.text_color, '#1f2937');
+        const titleColor = this.normalizeEngagementHexColor(style.title_color, '#5f95cc');
+        const accentColor = this.normalizeEngagementHexColor(style.accent_color, '#6b9ece');
+        const bubbleIsLight = this.getEngagementHexLuma(bubbleBackground) > 0.62;
+        const textIsDark = this.getEngagementHexLuma(textColor) < 0.45;
+        const titleIsDark = this.getEngagementHexLuma(titleColor) < 0.45;
+        const accentIsDark = this.getEngagementHexLuma(accentColor) < 0.38;
+        return {
+            bubble_background_dark: bubbleIsLight ? '#111827' : bubbleBackground,
+            text_color_dark: textIsDark ? '#e2e8f0' : textColor,
+            title_color_dark: titleIsDark ? '#bfdbfe' : titleColor,
+            accent_color_dark: accentIsDark ? '#93c5fd' : accentColor
+        };
+    }
+
+    normalizeEngagementAssetStyle(style = {}) {
+        const source = style && typeof style === 'object' && !Array.isArray(style) ? style : {};
+        const density = String(source.density || 'comfortable').trim().toLowerCase();
+        const shadow = String(source.shadow || 'soft').trim().toLowerCase();
+        const animation = String(source.animation || 'gentle').trim().toLowerCase();
+        const robotVariant = String(source.robot_variant || source.robotVariant || 'default').trim().toLowerCase();
+        const radius = Math.min(Math.max(Number.parseInt(source.radius_px || source.radiusPx || 22, 10) || 22, 12), 32);
+        const maxWidth = Math.min(Math.max(Number.parseInt(source.max_width_px || source.maxWidthPx || 420, 10) || 420, 260), 560);
+        const normalized = {
+            enabled: source.enabled !== false,
+            preset: String(source.preset || 'studio_blue').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'studio_blue',
+            accent_color: this.normalizeEngagementHexColor(source.accent_color || source.accentColor, '#6b9ece'),
+            title_color: this.normalizeEngagementHexColor(source.title_color || source.titleColor, '#5f95cc'),
+            bubble_background: this.normalizeEngagementHexColor(source.bubble_background || source.bubbleBackground, '#ffffff'),
+            text_color: this.normalizeEngagementHexColor(source.text_color || source.textColor, '#1f2937'),
+            radius_px: radius,
+            max_width_px: maxWidth,
+            density: ['compact', 'comfortable', 'spacious'].includes(density) ? density : 'comfortable',
+            shadow: ['none', 'soft', 'elevated'].includes(shadow) ? shadow : 'soft',
+            animation: ['none', 'gentle', 'lively'].includes(animation) ? animation : 'gentle',
+            robot_variant: ['default', 'rounded', 'minimal'].includes(robotVariant) ? robotVariant : 'default'
+        };
+        return {
+            ...normalized,
+            ...this.deriveEngagementDarkPalette(normalized)
+        };
+    }
+
+    applyEngagementAssetStyle(style = {}) {
+        const normalized = this.normalizeEngagementAssetStyle(style);
+        if (!normalized.enabled) return;
+        const root = document.documentElement;
+        root.style.setProperty('--engagement-accent-color', normalized.accent_color);
+        root.style.setProperty('--engagement-title-color', normalized.title_color);
+        root.style.setProperty('--engagement-bubble-bg', normalized.bubble_background);
+        root.style.setProperty('--engagement-text-color', normalized.text_color);
+        root.style.setProperty('--engagement-bubble-radius', `${normalized.radius_px}px`);
+        root.style.setProperty('--engagement-bubble-max-width', `${normalized.max_width_px}px`);
+        root.style.setProperty('--engagement-accent-color-dark', normalized.accent_color_dark);
+        root.style.setProperty('--engagement-title-color-dark', normalized.title_color_dark);
+        root.style.setProperty('--engagement-bubble-bg-dark', normalized.bubble_background_dark);
+        root.style.setProperty('--engagement-text-color-dark', normalized.text_color_dark);
+        root.dataset.engagementStylePreset = normalized.preset;
+        root.dataset.engagementDensity = normalized.density;
+        root.dataset.engagementShadow = normalized.shadow;
+        root.dataset.engagementAnimation = normalized.animation;
+        root.dataset.engagementRobot = normalized.robot_variant;
+    }
+
     getEngagementRouteTargetFromElement(element) {
         if (!element) return null;
         return {
@@ -3969,6 +4575,94 @@ class ChatWidget {
         };
     }
 
+    getEngagementClientTheme() {
+        const explicitTheme = String(document.documentElement?.getAttribute('data-theme') || '').trim().toLowerCase();
+        if (explicitTheme === 'dark' || explicitTheme === 'light') return explicitTheme;
+        return window.matchMedia?.('(prefers-color-scheme: dark)')?.matches ? 'dark' : 'light';
+    }
+
+    getEngagementClientDevice() {
+        const width = Math.round(window.innerWidth || document.documentElement?.clientWidth || 0);
+        if (width > 0 && width <= 720) return 'mobile';
+        if (width > 720 && width <= 1100) return 'tablet';
+        return 'desktop';
+    }
+
+    getEngagementExperienceContext(extra = {}) {
+        const root = document.documentElement;
+        const viewportWidth = Math.round(window.innerWidth || root?.clientWidth || 0);
+        const viewportHeight = Math.round(window.innerHeight || root?.clientHeight || 0);
+        const visualViewport = window.visualViewport;
+        return {
+            theme: this.getEngagementClientTheme(),
+            device: this.getEngagementClientDevice(),
+            viewport_width: viewportWidth,
+            viewport_height: viewportHeight,
+            visual_viewport_width: visualViewport ? Math.round(visualViewport.width || viewportWidth) : viewportWidth,
+            visual_viewport_height: visualViewport ? Math.round(visualViewport.height || viewportHeight) : viewportHeight,
+            pixel_ratio: Math.round((window.devicePixelRatio || 1) * 100) / 100,
+            page_path: String(window.location?.pathname || '/'),
+            page_origin: String(window.location?.origin || ''),
+            page_host: String(window.location?.host || ''),
+            page_id: this.getEngagementPageId(),
+            support_context: this.supportContextKey || this.getSupportContextKey?.() || 'default',
+            external_host: this.getEngagementExternalConfig().externalHost === true || this.getEngagementExternalConfig().external_host === true,
+            external_api_origin: this.getEngagementApiOrigin(),
+            style_preset: root?.dataset?.engagementStylePreset || 'studio_blue',
+            density: root?.dataset?.engagementDensity || 'comfortable',
+            shadow: root?.dataset?.engagementShadow || 'soft',
+            animation: root?.dataset?.engagementAnimation || 'gentle',
+            robot_variant: root?.dataset?.engagementRobot || 'default',
+            ...extra
+        };
+    }
+
+    measureEngagementElement(element, placement = '') {
+        if (!element?.getBoundingClientRect) {
+            return {};
+        }
+        const rect = element.getBoundingClientRect();
+        const viewportWidth = window.innerWidth || document.documentElement?.clientWidth || 0;
+        const viewportHeight = window.innerHeight || document.documentElement?.clientHeight || 0;
+        const edgeGap = Math.min(
+            Math.max(0, rect.left),
+            Math.max(0, viewportWidth - rect.right),
+            Math.max(0, rect.top),
+            Math.max(0, viewportHeight - rect.bottom)
+        );
+        return {
+            placement: this.normalizeEngagementPlacement(placement),
+            bubble_width: Math.round(rect.width || 0),
+            bubble_height: Math.round(rect.height || 0),
+            viewport_edge_gap: Math.round(edgeGap),
+            overflows_viewport: rect.left < 0 || rect.top < 0 || rect.right > viewportWidth || rect.bottom > viewportHeight,
+            bottom_gap: Math.round(Math.max(0, viewportHeight - rect.bottom)),
+            right_gap: Math.round(Math.max(0, viewportWidth - rect.right))
+        };
+    }
+
+    getEngagementElementMetrics(element, placement = '') {
+        return this.measureEngagementElement(element, placement);
+    }
+
+    async triggerEngagementEvent(triggerType = 'page_view', metadata = {}, options = {}) {
+        const normalizedTrigger = this.normalizeEngagementTriggerType(triggerType);
+        if (!normalizedTrigger || normalizedTrigger === 'page_view') {
+            return this.refreshEngagementFeed({ force: true });
+        }
+        const triggerMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {};
+        const triggerKey = this.getEngagementTriggerKey(normalizedTrigger, triggerMetadata);
+        if (options.once !== false && this.engagementTriggeredKeys.has(triggerKey)) {
+            return null;
+        }
+        this.engagementTriggeredKeys.add(triggerKey);
+        return this.refreshEngagementFeed({
+            force: true,
+            triggerType: normalizedTrigger,
+            metadata: triggerMetadata
+        });
+    }
+
     async refreshEngagementFeed(options = {}) {
         if (this.isOpen) return;
         if (this.engagementFeedLoading && options.force !== true) return;
@@ -3976,14 +4670,31 @@ class ChatWidget {
 
         try {
             const pageId = this.getEngagementPageId();
-            const site = String(window.SiteConfig?.site || 'cn').trim().toLowerCase() === 'intl' ? 'intl' : 'cn';
+            const externalSite = String(this.getEngagementExternalConfig().site || '').trim().toLowerCase();
+            const site = (externalSite || String(window.SiteConfig?.site || 'cn').trim().toLowerCase()) === 'intl' ? 'intl' : 'cn';
             const readerKey = this.getEngagementReaderKey();
+            const triggerType = this.normalizeEngagementTriggerType(options.triggerType || 'page_view');
+            const eventMetadata = options.metadata && typeof options.metadata === 'object' && !Array.isArray(options.metadata)
+                ? options.metadata
+                : {};
             const params = new URLSearchParams({
                 page_id: pageId,
                 site,
                 reader_key: readerKey,
+                trigger_type: triggerType,
                 limit: '6'
             });
+            const clientContext = this.getEngagementExperienceContext({
+                trigger_type: triggerType
+            });
+            const sourceModule = String(eventMetadata.source_module || eventMetadata.sourceModule || '').trim();
+            const sourceEventId = String(eventMetadata.source_event_id || eventMetadata.sourceEventId || '').trim();
+            if (sourceModule) params.set('source_module', sourceModule);
+            if (sourceEventId) params.set('source_event_id', sourceEventId);
+            if (Object.keys(eventMetadata).length) {
+                params.set('event_context', JSON.stringify(eventMetadata).slice(0, 1000));
+            }
+            params.set('client_context', JSON.stringify(clientContext).slice(0, 1000));
             const accessToken = await this.getEngagementAccessToken();
             const headers = accessToken ? { Authorization: `Bearer ${accessToken}` } : {};
             let payload = null;
@@ -3992,7 +4703,7 @@ class ChatWidget {
                 try {
                     const response = await fetch(url, {
                         headers,
-                        credentials: 'same-origin'
+                        credentials: this.getEngagementFetchCredentials()
                     });
                     const responsePayload = await response.json().catch(() => ({}));
                     if (!response.ok || responsePayload?.success === false) {
@@ -4007,19 +4718,25 @@ class ChatWidget {
             if (!payload) {
                 throw lastError || new Error('Engagement feed failed');
             }
+            this.applyEngagementAssetStyle(payload?.asset_center?.style || {});
+            this.applyEngagementSupportEntry(payload?.support_entry || {});
 
             const item = (Array.isArray(payload?.items) ? payload.items : [])
                 .map((entry) => this.normalizeEngagementItem(entry))
                 .filter(Boolean)
                 .filter((entry) => !this.isEngagementItemSuppressed(entry))
+                .filter((entry) => !this.isEngagementItemSessionQuiet(entry))
                 .sort((left, right) => Number(right.priority || 0) - Number(left.priority || 0))[0];
 
             this.engagementFeedLoaded = true;
             if (item) {
-                this.showEngagementBubble(item);
+                this.showEngagementItem(item);
+                return item;
             }
+            return null;
         } catch (error) {
             console.warn('[ChatWidget] Engagement feed skipped:', error?.message || error);
+            return null;
         } finally {
             this.engagementFeedLoading = false;
         }
@@ -4036,6 +4753,11 @@ class ChatWidget {
             headers.Authorization = `Bearer ${accessToken}`;
         }
         try {
+            const experienceContext = this.getEngagementExperienceContext({
+                placement: normalized.placement,
+                source: normalized.source,
+                event_type: eventType
+            });
             const body = JSON.stringify({
                 event_type: eventType,
                 rule_id: normalized.rule_id || null,
@@ -4047,7 +4769,9 @@ class ChatWidget {
                 source_event_id: normalized.source_event_id,
                 metadata: {
                     ...normalized.metadata,
+                    ...experienceContext,
                     ...metadata,
+                    placement: normalized.placement,
                     source: normalized.source,
                     title: normalized.title
                 }
@@ -4056,7 +4780,7 @@ class ChatWidget {
                 const response = await fetch(url, {
                     method: 'POST',
                     headers,
-                    credentials: 'same-origin',
+                    credentials: this.getEngagementFetchCredentials(),
                     body
                 });
                 if (response.ok) {
@@ -4072,6 +4796,7 @@ class ChatWidget {
         const normalized = this.normalizeEngagementItem(item);
         if (!normalized || !this.fab || this.isOpen) return;
 
+        this.removeEngagementSurfaceElements();
         const existingPreview = this.fab.querySelector('.message-preview');
         if (existingPreview) existingPreview.remove();
 
@@ -4090,6 +4815,12 @@ class ChatWidget {
         const preview = document.createElement('div');
         preview.className = `message-preview engagement-preview engagement-preview--${normalized.tone}`;
         preview.setAttribute('role', 'status');
+        preview.setAttribute('aria-live', 'polite');
+        preview.dataset.engagementPlacement = normalized.placement;
+        preview.dataset.engagementTone = normalized.tone;
+        preview.dataset.engagementPage = normalized.page_id;
+        preview.dataset.engagementSource = normalized.source;
+        preview.dataset.engagementSourceModule = normalized.source_module;
         preview.innerHTML = `
             <button type="button" class="engagement-preview__close" aria-label="关闭提醒">×</button>
             <div class="preview-sender">${this.escapeHtml(normalized.title)}</div>
@@ -4119,7 +4850,7 @@ class ChatWidget {
         this.fab.appendChild(preview);
         if (!this.engagementViewedKeys.has(viewKey) || options.manual === true) {
             this.engagementViewedKeys.add(viewKey);
-            void this.trackEngagementEvent(normalized, 'view');
+            void this.trackEngagementEvent(normalized, 'view', this.getEngagementElementMetrics(preview, normalized.placement));
         }
 
         setTimeout(() => {
@@ -4127,6 +4858,137 @@ class ChatWidget {
                 this.dismissEngagementBubble(normalized, { eventType: 'dismiss', passive: true });
             }
         }, 9000);
+    }
+
+    showEngagementItem(item = {}, options = {}) {
+        const normalized = this.normalizeEngagementItem(item);
+        if (!normalized || this.isOpen) return;
+        if (normalized.placement === 'robot_bubble') {
+            this.showEngagementBubble(normalized, options);
+            return;
+        }
+        this.showEngagementSurface(normalized, options);
+    }
+
+    removeEngagementSurfaceElements() {
+        if (this.engagementSurfaceEscapeHandler) {
+            document.removeEventListener('keydown', this.engagementSurfaceEscapeHandler, true);
+            this.engagementSurfaceEscapeHandler = null;
+        }
+        document.querySelectorAll('.engagement-surface').forEach((element) => element.remove());
+    }
+
+    bindEngagementSurfaceEscape(surface, item = {}) {
+        if (!surface || this.engagementSurfaceEscapeHandler) return;
+        this.engagementSurfaceEscapeHandler = (event) => {
+            if (event.key !== 'Escape' || !document.body.contains(surface)) return;
+            event.preventDefault();
+            this.dismissEngagementSurface(item, { eventType: 'dismiss' });
+        };
+        document.addEventListener('keydown', this.engagementSurfaceEscapeHandler, true);
+    }
+
+    renderEngagementSurfaceHtml(item = {}) {
+        const normalized = this.normalizeEngagementItem(item);
+        if (!normalized) return '';
+        const actionLabel = normalized.action_label || (normalized.action_url ? '查看详情' : '');
+        return `
+            <button type="button" class="engagement-surface__close" aria-label="关闭提醒">×</button>
+            <div class="engagement-surface__body">
+                <strong>${this.escapeHtml(normalized.title)}</strong>
+                <p>${this.renderEngagementContentHtml(normalized)}</p>
+            </div>
+            ${actionLabel ? `<button type="button" class="engagement-surface__action">${this.escapeHtml(actionLabel)}</button>` : ''}
+        `;
+    }
+
+    showEngagementSurface(item = {}, options = {}) {
+        const normalized = this.normalizeEngagementItem(item);
+        if (!normalized || this.isOpen) return;
+
+        this.removeEngagementSurfaceElements();
+        this.fab?.querySelector('.message-preview.engagement-preview')?.remove();
+
+        const viewKey = this.getEngagementItemKey(normalized);
+        const hasSeenInSession = this.engagementViewedKeys.has(viewKey);
+        this.engagementActiveItem = normalized;
+        const surface = document.createElement('aside');
+        surface.className = `engagement-surface engagement-surface--${normalized.placement} engagement-surface--${normalized.tone}`;
+        surface.setAttribute('role', normalized.placement === 'modal' ? 'dialog' : 'status');
+        surface.setAttribute('aria-live', normalized.placement === 'modal' ? 'assertive' : 'polite');
+        surface.dataset.engagementPlacement = normalized.placement;
+        surface.dataset.engagementTone = normalized.tone;
+        surface.dataset.engagementPage = normalized.page_id;
+        surface.dataset.engagementSource = normalized.source;
+        surface.dataset.engagementSourceModule = normalized.source_module;
+        if (normalized.placement === 'modal') {
+            surface.setAttribute('aria-modal', 'true');
+        }
+        surface.innerHTML = this.renderEngagementSurfaceHtml(normalized);
+        this.bindEngagementSurfaceEscape(surface, normalized);
+
+        surface.addEventListener('click', (event) => {
+            const eventTarget = event.target?.nodeType === 1 ? event.target : event.target?.parentElement;
+            const closeButton = eventTarget?.closest?.('.engagement-surface__close');
+            if (closeButton) {
+                this.dismissEngagementSurface(normalized, { eventType: 'dismiss' });
+                return;
+            }
+            const routeLink = eventTarget?.closest?.('.engagement-preview__path-link');
+            if (routeLink) {
+                event.preventDefault();
+                void this.activateEngagementItem(normalized, {
+                    actionTarget: this.getEngagementRouteTargetFromElement(routeLink)
+                });
+                return;
+            }
+            const actionButton = eventTarget?.closest?.('.engagement-surface__action');
+            if (actionButton || normalized.placement === 'floating_badge') {
+                event.preventDefault();
+                void this.activateEngagementItem(normalized);
+            }
+        });
+
+        document.body.appendChild(surface);
+        if (!hasSeenInSession || options.manual === true) {
+            this.engagementViewedKeys.add(viewKey);
+            void this.trackEngagementEvent(normalized, 'view', {
+                ...this.getEngagementElementMetrics(surface, normalized.placement),
+                placement: normalized.placement
+            });
+        }
+
+        if (normalized.placement !== 'modal') {
+            window.setTimeout(() => {
+                if (document.body.contains(surface) && this.engagementActiveItem?.id === normalized.id) {
+                    this.dismissEngagementSurface(normalized, { eventType: 'dismiss', passive: true });
+                }
+            }, normalized.placement === 'top_banner' ? 11000 : 13000);
+        }
+    }
+
+    dismissEngagementSurface(item = {}, options = {}) {
+        const normalized = this.normalizeEngagementItem(item || this.engagementActiveItem || {});
+        this.dismissEngagementBubble(normalized, {
+            ...options,
+            surfaceOnly: true
+        });
+        const surface = document.querySelector('.engagement-surface');
+        if (surface) {
+            surface.classList.add('hiding');
+            window.setTimeout(() => {
+                surface.remove();
+            }, 260);
+        }
+        if (normalized && options.passive === true) {
+            this.quietEngagementItemForSession(normalized, 15 * 60 * 1000);
+        } else if (normalized) {
+            this.suppressEngagementItem(normalized);
+            void this.trackEngagementEvent(normalized, options.eventType || 'dismiss', {
+                placement: normalized.placement
+            });
+        }
+        this.engagementActiveItem = null;
     }
 
     dismissEngagementBubble(item = {}, options = {}) {
@@ -4139,7 +5001,12 @@ class ChatWidget {
                 this._scheduleFabAmbientMotion();
             }, 400);
         }
-        if (normalized && options.passive !== true) {
+        if (options.surfaceOnly !== true) {
+            this.removeEngagementSurfaceElements();
+        }
+        if (normalized && options.passive === true && options.surfaceOnly !== true) {
+            this.quietEngagementItemForSession(normalized, 15 * 60 * 1000);
+        } else if (normalized && options.surfaceOnly !== true) {
             this.suppressEngagementItem(normalized);
             void this.trackEngagementEvent(normalized, options.eventType || 'dismiss');
         }
@@ -4172,6 +5039,140 @@ class ChatWidget {
         return false;
     }
 
+    normalizeEngagementAuthView(view = '') {
+        const normalized = String(view || '').trim().toLowerCase().replace(/\s+/g, '-');
+        const aliases = {
+            signin: 'login',
+            'sign-in': 'login',
+            signup: 'register',
+            'sign-up': 'register',
+            forgot: 'reset',
+            recover: 'reset',
+            forgotpassword: 'reset',
+            'forgot-password': 'reset',
+            resetpassword: 'reset',
+            'reset-password': 'reset'
+        };
+        const resolved = aliases[normalized] || normalized;
+        return ['login', 'register', 'reset'].includes(resolved) ? resolved : '';
+    }
+
+    getEngagementAuthViewFromLabel(label = '') {
+        const content = String(label || '').trim();
+        if (!content) return '';
+        if (/(注册|signup|sign\s*up|register)/iu.test(content)) {
+            return 'register';
+        }
+        if (/(重置|找回|忘记|reset|forgot|recover)/iu.test(content)) {
+            return 'reset';
+        }
+        if (/(登录|登入|signin|sign\s*in|login)/iu.test(content)) {
+            return 'login';
+        }
+        return '';
+    }
+
+    getEngagementAuthViewFromActionUrl(actionUrl = '', fallbackLabel = '', metadata = {}) {
+        const normalizedMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {};
+        const metadataView = this.normalizeEngagementAuthView(
+            normalizedMetadata.auth_view
+            || normalizedMetadata.authView
+            || normalizedMetadata.action_auth_view
+            || normalizedMetadata.actionAuthView
+            || ''
+        );
+        if (metadataView) {
+            return metadataView;
+        }
+
+        const labelView = this.getEngagementAuthViewFromLabel(fallbackLabel);
+        const rawUrl = String(actionUrl || '').trim();
+        if (!rawUrl) {
+            return labelView || '';
+        }
+
+        if (/^(auth|login):/i.test(rawUrl)) {
+            const authTarget = decodeURIComponent(
+                rawUrl
+                    .replace(/^(auth|login):(\/\/)?/i, '')
+                    .replace(/^\/+/, '')
+                    .split(/[?#/]/)[0]
+            );
+            const schemeView = this.normalizeEngagementAuthView(authTarget || 'login') || 'login';
+            return labelView && schemeView === 'login' ? labelView : schemeView;
+        }
+
+        let urlView = '';
+        try {
+            const targetUrl = new URL(rawUrl, window.location.origin);
+            if (targetUrl.origin === window.location.origin) {
+                const queryView = targetUrl.searchParams.get('auth_view')
+                    || targetUrl.searchParams.get('auth')
+                    || targetUrl.searchParams.get('modal')
+                    || targetUrl.searchParams.get('view')
+                    || '';
+                urlView = this.normalizeEngagementAuthView(queryView);
+
+                if (!urlView) {
+                    const hashView = decodeURIComponent(String(targetUrl.hash || '').replace(/^#/, '').trim());
+                    urlView = this.normalizeEngagementAuthView(hashView);
+                }
+
+                if (!urlView) {
+                    const normalizedPath = String(targetUrl.pathname || '').trim().toLowerCase();
+                    if (/\/register(?:\.html)?$/i.test(normalizedPath)) {
+                        urlView = 'register';
+                    } else if (/\/login(?:\.html)?$/i.test(normalizedPath)) {
+                        urlView = 'login';
+                    } else if (/\/reset(?:-password)?(?:\.html)?$/i.test(normalizedPath)) {
+                        urlView = 'reset';
+                    }
+                }
+            }
+        } catch (_) {
+            return labelView || '';
+        }
+
+        if (labelView && (!urlView || urlView === 'login')) {
+            return labelView;
+        }
+        return urlView || labelView || '';
+    }
+
+    async openEngagementAuthView(view = '', targetUrl = null) {
+        const authView = this.normalizeEngagementAuthView(view) || 'login';
+
+        try {
+            if (typeof window.requestLoginModalOpen === 'function') {
+                window.requestLoginModalOpen(authView);
+                this.clearUnread();
+                return true;
+            }
+            if (typeof window.openLoginModal === 'function') {
+                await Promise.resolve(window.openLoginModal(authView));
+                this.clearUnread();
+                return true;
+            }
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to open auth modal from engagement bubble:', error?.message || error);
+        }
+
+        try {
+            window.sessionStorage?.setItem('openLoginModal', 'true');
+            window.sessionStorage?.setItem('openLoginModalView', authView);
+        } catch (_) {
+            // Ignore storage failures and try the navigation fallback below.
+        }
+
+        if (targetUrl instanceof URL && ['http:', 'https:'].includes(targetUrl.protocol) && targetUrl.origin === window.location.origin) {
+            window.location.href = targetUrl.href;
+            this.clearUnread();
+            return true;
+        }
+
+        return false;
+    }
+
     async activateEngagementItem(item = {}, options = {}) {
         const normalized = this.normalizeEngagementItem(item);
         if (!normalized) return;
@@ -4187,9 +5188,30 @@ class ChatWidget {
         this.suppressEngagementItem(normalized);
         await this.trackEngagementEvent(normalized, 'click', {
             action_url: actionUrl || (walletView ? `wallet://${walletView}` : normalized.action_url),
-            route_label: routeLabel || null
+            route_label: routeLabel || null,
+            placement: normalized.placement
         });
-        this.dismissEngagementBubble(normalized, { passive: true });
+        this.dismissEngagementSurface(normalized, { passive: true });
+
+        const authView = this.getEngagementAuthViewFromActionUrl(
+            actionUrl,
+            actionTarget.label || normalized.action_label || normalized.title || '',
+            normalized.metadata || {}
+        );
+        if (authView) {
+            let authTargetUrl = null;
+            if (!/^(auth|login):/i.test(actionUrl) && actionUrl) {
+                try {
+                    authTargetUrl = new URL(actionUrl, window.location.origin);
+                } catch (_) {
+                    authTargetUrl = null;
+                }
+            }
+            const opened = await this.openEngagementAuthView(authView, authTargetUrl);
+            if (opened) {
+                return;
+            }
+        }
 
         if (walletView) {
             const opened = await this.openEngagementWalletView(walletView, {
@@ -4501,6 +5523,7 @@ class ChatWidget {
         // Subscribe to all messages for admin
         this.subscribeToAdminMessages();
         this.subscribeToUserPresence();
+        this.subscribeToUserActivity();
         this.startAdminOpsAlertPolling();
         this.startAdminSessionSlaTicker();
     }
@@ -10554,7 +11577,7 @@ class ChatWidget {
                 ? ''
                 : isPresenceOnline
                 ? presenceLabel
-                : this.formatTime(session.lastTime);
+                : (presenceLabel || this.formatTime(session.lastTime));
             const displayName = isOpsSession
                 ? '站内代办'
                 : (session.nickname.length > 12 ? `${session.nickname.slice(0, 12)}...` : session.nickname);
@@ -11222,7 +12245,7 @@ class ChatWidget {
                     lastMessage: msg.message_type === 'image' ? this.t('chat.image', '[图片]') : msg.content,
                     lastTime: msg.created_at,
                     isAdmin: msg.is_admin,
-                    userId: data.userId,
+                    userId: data.userId || String(userInfo?.id || '').trim(),
                     avatarUrl: userInfo?.avatar_url || null,
                     lastUserMessageAt: data.lastUserMessageAt || null,
                     lastAdminMessageAt: data.lastAdminMessageAt || null,
@@ -11232,6 +12255,7 @@ class ChatWidget {
 
             const initialSessions = buildSessionsFromProfileMaps();
             this.setAdminChatSessions(initialSessions);
+            void this.refreshUserActivityForAdminSessions(initialSessions, { render: true });
 
             const [profilesById, profilesByEmail] = await Promise.all([
                 userIds.length > 0 ? this.fetchChatProfiles('id', userIds) : Promise.resolve([]),
@@ -11247,6 +12271,7 @@ class ChatWidget {
             );
 
             const profiledSessions = buildSessionsFromProfileMaps(userMapById, userMapByEmail);
+            await this.refreshUserActivityForAdminSessions(profiledSessions, { render: false });
             this.setAdminChatSessions(profiledSessions);
 
             this.attachSessionTicketSummaries(profiledSessions)
@@ -11353,6 +12378,7 @@ class ChatWidget {
             };
         });
 
+        await this.refreshUserActivityForAdminSessions(nextChatSessions, { render: false });
         this.setAdminChatSessions(nextChatSessions);
         if (userIds.length > 0) {
             await this.refreshAdminSessionTicketSummariesForUserIds(userIds);

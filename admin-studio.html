@@ -24,7 +24,7 @@
     <link rel="stylesheet" href="admin-sidebar.css?v=20260412_SIDEBAR_HEX_182634_1&batchMenuDepth=20260428_ADMIN_BATCH_MENU_DENSE_DEPTH_1&commentsExportFeedback=20260501_ADMIN_COMMENTS_EXPORT_FEEDBACK_1">
     <link rel="stylesheet" href="css/admin-command-center.css?v=20260428_ADMIN_PULSE_DOCK_MOBILE_HIDDEN_1">
     <link rel="stylesheet" href="css/admin-chat.css?v=20260504_USER_ONLINE_GREEN_1" media="print" data-deferred-style="1">
-    <link rel="stylesheet" href="css/admin-engagement.css?v=20260504_ENGAGEMENT_PUBLISH_STATUS_SYNC_1" media="print" data-deferred-style="1">
+    <link rel="stylesheet" href="css/admin-engagement.css?v=20260505_ENGAGEMENT_RULE_BATCH_AUDIT_1" media="print" data-deferred-style="1">
 
 
     <!-- Cropper.js CSS -->
@@ -204,7 +204,7 @@
                             <span>刷新</span>
                         </button>
                     </header>
-                    <div id="engagementOverview" class="engagement-overview" aria-live="polite">
+                    <div id="engagementOverview" class="engagement-overview engagement-overview--loading" aria-live="polite">
                         <div class="engagement-loading">
                             <span class="admin-module-loading-dots admin-module-loading-dots--block" aria-hidden="true">
                                 <span></span><span></span><span></span>
@@ -1259,6 +1259,12 @@
                                                     </div>
                                                 </div>
                                                 <div class="config-row">
+                                                    <label>用户手续费率</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="number" step="0.0001" min="0" max="0.1" class="config-input" id="paymentProviderNowpaymentsSurchargeRate" placeholder="0.01">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
                                                     <label>手续费承担</label>
                                                     <div class="config-input-wrapper">
                                                         <select class="config-input" id="paymentProviderNowpaymentsFeePaidByUser">
@@ -1381,6 +1387,12 @@
                                                     <label>支付渠道 ID</label>
                                                     <div class="config-input-wrapper">
                                                         <input type="text" class="config-input" id="paymentProviderZpayChannelIds" placeholder="可留空，多个渠道用逗号分隔">
+                                                    </div>
+                                                </div>
+                                                <div class="config-row">
+                                                    <label>用户手续费率</label>
+                                                    <div class="config-input-wrapper">
+                                                        <input type="number" step="0.0001" min="0" max="0.1" class="config-input" id="paymentProviderZpaySurchargeRate" placeholder="0.01">
                                                     </div>
                                                 </div>
                                                 <div class="config-row">
@@ -7134,6 +7146,10 @@
                                         <i class="fas fa-tags"></i>
                                         <span>添加标签</span>
                                     </div>
+                                    <div class="batch-menu-item" data-admin-action="users-batch-import-tags">
+                                        <i class="fas fa-file-import"></i>
+                                        <span>邮箱导入标签</span>
+                                    </div>
                                     <div class="batch-menu-item" data-admin-action="users-batch-export">
                                         <i class="fas fa-download"></i>
                                         <span>导出数据</span>
@@ -11773,7 +11789,7 @@
     <script src="js/admin-shell.js?v=20260426_ADMIN_SHELL_LOADING_DOTS_CENTER_P1"></script>
     <script src="js/admin-studio-timing.js?v=20260430_ADMIN_STUDIO_TIMING_1"></script>
     <script src="js/ios-scroll-lock.js?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6"></script>
-    <script src="admin-users.js?v=20260429_ADMIN_USERS_MODAL_STABILITY_1&usersMobileClasses=20260428_ADMIN_USERS_MOBILE_TABLE_CLASSES_1&permissionCheckmark=20260429_ADMIN_USERS_PERMISSION_CHECKMARK_VISUAL_1&adminToggleListSync=20260429_ADMIN_USERS_ADMIN_TOGGLE_LIST_SYNC_1&verifyTaskUserDetailLink=20260430_ADMIN_ANALYTICS_VERIFY_TASK_USER_DETAIL_LINK_1&verifySubmitterDeepLink=20260430_ADMIN_ANALYTICS_VERIFY_SUBMITTER_DEEP_LINK_1&verifyLedgerDetailFallback=20260430_ADMIN_VERIFY_LEDGER_DETAIL_FALLBACK_1"></script>
+    <script src="admin-users.js?v=20260505_USER_ACTIVITY_HEARTBEAT_1&usersMobileClasses=20260428_ADMIN_USERS_MOBILE_TABLE_CLASSES_1&permissionCheckmark=20260429_ADMIN_USERS_PERMISSION_CHECKMARK_VISUAL_1&adminToggleListSync=20260429_ADMIN_USERS_ADMIN_TOGGLE_LIST_SYNC_1&verifyTaskUserDetailLink=20260430_ADMIN_ANALYTICS_VERIFY_TASK_USER_DETAIL_LINK_1&verifySubmitterDeepLink=20260430_ADMIN_ANALYTICS_VERIFY_SUBMITTER_DEEP_LINK_1&verifyLedgerDetailFallback=20260430_ADMIN_VERIFY_LEDGER_DETAIL_FALLBACK_1"></script>
     <script src="admin-points.js?v=20260427_ADMIN_POINTS_BATCH_DETAIL_CUSTOM_STATUS_2&pointsMobileClose=20260428_ADMIN_STUDIO_POINTS_MOBILE_FLOAT_CLOSE_REMOVED_1&pointsActionFeedback=20260503_ADMIN_POINTS_ACTION_FEEDBACK_2"></script>
     <script src="admin-discounts.js?v=20260427_DISCOUNTS_BATCH_RESTORE_HINT_1&discountsScroll=20260428_ADMIN_DISCOUNTS_HORIZONTAL_WHEEL_1&detailTitle=20260428_ADMIN_DISCOUNT_DETAIL_TITLE_LEFT_1&discountPercentCopy=20260430_ADMIN_DISCOUNTS_PERCENT_COPY_1&discountActionFeedback=20260501_ADMIN_DISCOUNT_ACTION_FEEDBACK_1&discountToastFeedback=20260503_ADMIN_DISCOUNT_TOAST_FEEDBACK_1"></script>
     <script src="js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3&workflowRails=20260430_ADMIN_STUDIO_WORKFLOW_CARD_RAIL_VISIBILITY_1"></script>
@@ -11808,8 +11824,8 @@
     <script src="js/admin-studio-translate.js?v=20260421_TRANSLATE_BUDGET_P0"></script>
     <script src="js/admin-site-filter.js?v=20260427_ADMIN_SITE_SELECTOR_NO_KICKER_1&siteSwitcherOrder=20260428_ADMIN_SITE_SWITCHER_ORDER_1"></script>
     <script src="js/admin-tickets.js?v=20260428_TICKETS_WORKSPACE_SCROLL_PRESERVE_1&ticketsMobileLabels=20260428_TICKETS_MOBILE_TABLE_LABELS_1&ticketsBulkFeedback=20260501_ADMIN_TICKETS_BULK_FEEDBACK_1" data-cache-bust-ticket-mobile="js/admin-tickets.js?v=20260428_TICKETS_MOBILE_TABLE_LABELS_1&ticketsBulkFeedback=20260501_ADMIN_TICKETS_BULK_FEEDBACK_1"></script>
-    <script src="js/admin-access.js?v=20260504_ADMIN_PRESENCE_STATUS_1"></script>
-    <script src="js/admin-engagement.js?v=20260504_ENGAGEMENT_PUBLISH_STATUS_SYNC_1"></script>
+    <script src="js/admin-access.js?v=20260505_USER_ACTIVITY_HEARTBEAT_1"></script>
+    <script src="js/admin-engagement.js?v=20260505_ENGAGEMENT_RULE_BATCH_AUDIT_1"></script>
 	<script src="admin-studio.js?v=20260427_ADMIN_GALLERY_AI_TAGS_HIDDEN_1&gallerySkeleton=20260427_GALLERY_SKELETON_BADGES_REMOVED_1&largeModalClose=20260428_ADMIN_STUDIO_LARGE_MODAL_CLOSE_MOBILE_10&largeModalBreathing=20260428_ADMIN_STUDIO_LARGE_MODAL_MOBILE_BREATHING_2&userModalBreathing=20260428_ADMIN_STUDIO_USER_MODAL_MOBILE_BREATHING_1&largeModalCloseTouch=20260430_ADMIN_STUDIO_LARGE_MODAL_CLOSE_TOUCH_1&lightboxCloseTouch=20260430_ADMIN_STUDIO_LIGHTBOX_CLOSE_TOUCH_1&verifyTaskUserDetailLink=20260430_ADMIN_ANALYTICS_VERIFY_TASK_USER_DETAIL_LINK_1&verifySubmitterDeepLink=20260430_ADMIN_ANALYTICS_VERIFY_SUBMITTER_DEEP_LINK_1&verifyLedgerDetailFallback=20260430_ADMIN_VERIFY_LEDGER_DETAIL_FALLBACK_1&promptUploadVariants=20260501_PROMPT_UPLOAD_FEATURED_1&announcementButtonFeedback=20260501_ADMIN_ANNOUNCEMENT_BUTTON_FEEDBACK_1&announcementPageOverrides=20260501_ADMIN_ANNOUNCEMENT_PAGE_OVERRIDES_1&announcementWorkflow=20260501_ADMIN_ANNOUNCEMENT_WORKFLOW_15&delegatedDeleteFeedback=20260501_ADMIN_DELEGATED_DELETE_FEEDBACK_1&toolbarActionFeedback=20260501_ADMIN_TOOLBAR_ACTION_FEEDBACK_1&promptLangSignal=20260503_PROMPT_LANG_SIGNAL_1&galleryPageLoad=20260503_ADMIN_GALLERY_PAGE_LOAD_2&galleryEditFeedback=20260503_ADMIN_GALLERY_EDIT_FEEDBACK_1&delegatedActionFeedback=20260503_ADMIN_DELEGATED_ACTION_FEEDBACK_1"></script>
     <script src="js/admin-scrollbar-auto-hide-helper.js?v=20260424_ADMIN_SCROLLBAR_AUTO_HIDE_HELPER_1"></script>
     <script src="js/shop-image-variants.js?v=20260430_RESPONSIVE_IMAGE_VARIANTS_1"></script>
@@ -11817,6 +11833,6 @@
 </body>
 
 <!-- Admin Chat Script -->
-<script src="js/admin-chat.js?v=20260504_OPS_SESSION_NO_ONLINE_1"></script>
+<script src="js/admin-chat.js?v=20260505_CHAT_USER_ACTIVITY_1"></script>
 <script src="js/admin-real-smoke-loader.js?v=20260420_ADMIN_REAL_SMOKE_LOADER_1"></script>
 </html>

@@ -26,22 +26,22 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'static hero title should render immediately and still be localized by i18n'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260501_HOME_HERO_ENTRY_EARLY_CENTER_1'),
+        indexSource.includes('./js/framer_home.js?v=20260504_HOME_SECTION_SHELLS_1'),
         true,
         'index.html should cache-bust the first-paint homepage runtime'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home_critical.css?v=20260502_NAV_LOGO_TAP_HIGHLIGHT_1'),
+        indexSource.includes('./css/framer_home_critical.css?v=20260504_HOME_SECTION_SHELLS_1'),
         true,
         'index.html should load a small blocking homepage critical stylesheet'
     );
     assert.match(
         indexSource,
-        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260502_NAV_LOGO_TAP_HIGHLIGHT_1" media="print" data-deferred-style="1">/,
+        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260504_HOME_SECTION_SHELLS_1" media="print" data-deferred-style="1">/,
         'index.html should defer the full homepage stylesheet after the first-paint shell'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home.css?v=20260502_NAV_LOGO_TAP_HIGHLIGHT_1'),
+        indexSource.includes('./css/framer_home.css?v=20260504_HOME_SECTION_SHELLS_1'),
         true,
         'index.html should keep cache-busting the full static hero stability styles'
     );
@@ -51,7 +51,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'homepage should load the cached nav auth fast-paint helper before the lower auth runtime'
     );
     assert.ok(
-        indexSource.indexOf('./js/nav-auth-fast-paint.js?v=20260501_NAV_AUTH_FAST_PAINT_1') < indexSource.indexOf('./supabase-auth-functions.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1'),
+        indexSource.indexOf('./js/nav-auth-fast-paint.js?v=20260501_NAV_AUTH_FAST_PAINT_1') < indexSource.indexOf('./supabase-auth-functions.js?v=20260505_REMEMBER_EMAIL_AUTOFILL_1'),
         'homepage nav auth fast-paint helper should run before Supabase auth hydration'
     );
     assert.match(
@@ -92,8 +92,11 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         /hydrateStaticHeroSection\(section, data, visibleEntries, heroSignature\)[\s\S]*Keep the seeded prism scene intact so its intro scale animation does not replay\./,
         'homepage runtime should hydrate the static hero in place so seeded prism cubes do not replay their intro animation'
     );
+    const renderHeroStart = framerSource.indexOf('renderHero() {');
+    const renderPromptsStart = framerSource.indexOf('renderPrompts()', renderHeroStart);
+    const renderHeroSegment = framerSource.slice(renderHeroStart, renderPromptsStart);
     assert.ok(
-        framerSource.indexOf('this.hydrateStaticHeroSection(section, data, visibleEntries, heroSignature)') < framerSource.indexOf('section.innerHTML = `'),
+        renderHeroSegment.indexOf('this.hydrateStaticHeroSection(section, data, visibleEntries, heroSignature)') < renderHeroSegment.indexOf('section.innerHTML = `'),
         'homepage runtime should attempt in-place hero hydration before falling back to replacing hero markup'
     );
     assert.match(
@@ -385,9 +388,9 @@ test('homepage defers below-fold section rendering off the first JS pass', () =>
         'homepage init should schedule below-fold rendering after the first-paint render pass'
     );
     assert.match(
-        renderAllSegment,
-        /const firstPaintOnly = renderPhase === 'first-paint';[\s\S]*sectionEl\.dataset\.homepageDeferredRender = '1';/,
-        'homepage renderAll should skip below-fold sections during first paint'
+        framerSource,
+        /function renderHomepageSectionShell\(sectionKey, section\)[\s\S]*section\.dataset\.homepageDeferredRender = '1';[\s\S]*if \(firstPaintOnly && !HOMEPAGE_FIRST_PAINT_SECTION_KEYS\.has\(sectionKey\)\) \{[\s\S]*renderHomepageSectionShell\(sectionKey, sectionEl\);/,
+        'homepage renderAll should mark below-fold sections for deferred render during first paint'
     );
     assert.match(
         framerSource,
