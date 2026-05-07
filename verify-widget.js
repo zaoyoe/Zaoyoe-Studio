@@ -119,6 +119,27 @@
         });
     }
 
+    function triggerVerifyEngagementEvent(triggerType = 'page_view', metadata = {}, options = {}) {
+        const trigger = window.ZaoyoeEngagement?.trigger;
+        if (typeof trigger !== 'function') return null;
+        const normalizedMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+            ? metadata
+            : {};
+        try {
+            return trigger(triggerType, {
+                source_module: 'verify_widget',
+                page_id: 'verify',
+                site: getCurrentSiteValue(),
+                ...normalizedMetadata
+            }, {
+                once: options.once !== false
+            });
+        } catch (error) {
+            console.debug('[VerifyEngagement] Trigger skipped:', triggerType, error?.message || error);
+            return null;
+        }
+    }
+
     function buildVerifySubmitButtonMarkup(label) {
         return `<i class="fas fa-paper-plane"></i> ${label}`;
     }
@@ -1309,7 +1330,7 @@
                                 </div>
                             </div>
 
-                            <aside class="verify-guide-card">
+                            <aside class="verify-guide-card" id="help" data-verify-help="1" tabindex="-1">
                                 <div class="verify-guide-head">
                                     <div class="verify-guide-badge">
                                         <i class="fas fa-book-open"></i>
@@ -1422,6 +1443,94 @@
             walletBalanceListenerBound = true;
         }
     }
+
+    function isVerifyHelpHash() {
+        const hash = decodeURIComponent(String(window.location.hash || '').replace(/^#/, '').trim()).toLowerCase();
+        return ['help', 'guide', 'verify-help', 'verify-guide'].includes(hash);
+    }
+
+    function isVerifyHistoryHash() {
+        const hash = decodeURIComponent(String(window.location.hash || '').replace(/^#/, '').trim()).toLowerCase();
+        return ['history', 'verify-history'].includes(hash);
+    }
+
+    function focusVerifyHelpFromEngagement() {
+        return new Promise((resolve) => {
+            const focusHelp = (retriesLeft = 12) => {
+                const target = document.getElementById('help')
+                    || document.querySelector('[data-verify-help="1"], .verify-guide-card');
+                if (!target) {
+                    if (retriesLeft <= 0) {
+                        resolve(false);
+                        return;
+                    }
+                    setTimeout(() => focusHelp(retriesLeft - 1), 120);
+                    return;
+                }
+
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                target.classList.remove('is-engagement-focus');
+                void target.offsetWidth;
+                target.classList.add('is-engagement-focus');
+                if (typeof target.focus === 'function') {
+                    target.focus({ preventScroll: true });
+                }
+                setTimeout(() => {
+                    target.classList.remove('is-engagement-focus');
+                }, 3200);
+                resolve(true);
+            };
+
+            focusHelp();
+        });
+    }
+
+    function focusVerifyHelpHash() {
+        if (!isVerifyHelpHash()) return;
+        void focusVerifyHelpFromEngagement();
+    }
+
+    function focusVerifyHistoryFromEngagement() {
+        return new Promise((resolve) => {
+            const focusHistory = (retriesLeft = 12) => {
+                const target = document.getElementById('verifyHistoryCard')
+                    || document.getElementById('verifyHistoryList')
+                    || document.querySelector('.verify-history-card, .verify-history-list');
+                if (!target) {
+                    if (retriesLeft <= 0) {
+                        resolve(false);
+                        return;
+                    }
+                    setTimeout(() => focusHistory(retriesLeft - 1), 120);
+                    return;
+                }
+
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                target.classList.remove('is-engagement-focus');
+                void target.offsetWidth;
+                target.classList.add('is-engagement-focus');
+                if (typeof target.focus === 'function') {
+                    target.focus({ preventScroll: true });
+                }
+                setTimeout(() => {
+                    target.classList.remove('is-engagement-focus');
+                }, 3200);
+                resolve(true);
+            };
+
+            focusHistory();
+        });
+    }
+
+    function focusVerifyHistoryHash() {
+        if (!isVerifyHistoryHash()) return;
+        void focusVerifyHistoryFromEngagement();
+    }
+
+    window.ZaoyoeVerifyFocusHelp = focusVerifyHelpFromEngagement;
+    window.ZaoyoeVerifyFocusHistory = focusVerifyHistoryFromEngagement;
+    window.addEventListener('hashchange', focusVerifyHelpHash);
+    window.addEventListener('hashchange', focusVerifyHistoryHash);
 
     function setupAuthListener() {
         if (!window.supabaseClient) return;
@@ -1904,6 +2013,13 @@
         const entry = parsed.entry;
         const totalCost = getTaskTypePrice(entry.taskType);
         if (userBalance < totalCost) {
+            triggerVerifyEngagementEvent('points_insufficient', {
+                source_event_id: `points_insufficient:verify:${normalizeTaskType(entry.taskType)}:${Date.now()}`,
+                source: 'verify_submit_precheck',
+                current_balance: userBalance,
+                points_cost: totalCost,
+                task_type: normalizeTaskType(entry.taskType)
+            });
             showSingleResult(
                 'error',
                 t('verify.insufficientPoints', '积分不足'),
@@ -2082,6 +2198,16 @@
             }, {
                 dedupeKey: `verify_submit:${String(jobId || '').trim()}`
             });
+            triggerVerifyEngagementEvent('verify_queue', {
+                source_event_id: `verify_queue:${String(jobId || '').trim()}`,
+                source: 'verify_submit',
+                job_id: String(jobId || '').trim(),
+                queue_position: data.queue_position ?? null,
+                estimated_wait_seconds: data.estimated_wait_seconds ?? null,
+                priority: entry.priority,
+                points_cost: totalCost,
+                task_type: entry.taskType
+            });
             persistPendingTask({
                 jobId,
                 email: entry.email,
@@ -2243,6 +2369,15 @@
                             }, {
                                 dedupeKey: resolvedJobId ? `verify_terminal:${resolvedJobId}:success` : ''
                             });
+                            triggerVerifyEngagementEvent('verify_success', {
+                                source_event_id: resolvedJobId ? `verify_success:${resolvedJobId}` : '',
+                                source: 'verify_terminal',
+                                job_id: resolvedJobId || null,
+                                duration_ms: resolvedDurationMs,
+                                priority: Number(taskInfo.priority ?? entry.priority ?? 0) || 0,
+                                points_cost: Number(taskInfo.pointsCost ?? CONFIG.pricePerVerify) || CONFIG.pricePerVerify,
+                                task_type: normalizeTaskType(taskInfo.taskType || entry.taskType || data?.task_type)
+                            });
                         } else {
                             trackVerifyAnalyticsEvent('verify_fail', {
                                 entityId: resolvedJobId || null,
@@ -2257,6 +2392,17 @@
                                 }
                             }, {
                                 dedupeKey: resolvedJobId ? `verify_terminal:${resolvedJobId}:failed` : ''
+                            });
+                            triggerVerifyEngagementEvent('verify_failed', {
+                                source_event_id: resolvedJobId ? `verify_failed:${resolvedJobId}` : '',
+                                source: 'verify_terminal',
+                                job_id: resolvedJobId || null,
+                                duration_ms: resolvedDurationMs,
+                                reason_code: String(data?.error || data?.code || 'failed').trim() || 'failed',
+                                stage_label: formatStageLabel(data?.stage_label),
+                                priority: Number(taskInfo.priority ?? entry.priority ?? 0) || 0,
+                                points_cost: Number(taskInfo.pointsCost ?? CONFIG.pricePerVerify) || CONFIG.pricePerVerify,
+                                task_type: normalizeTaskType(taskInfo.taskType || entry.taskType || data?.task_type)
                             });
                         }
 
@@ -2625,6 +2771,8 @@
         }
 
         render(container, isLoggedIn);
+        focusVerifyHelpHash();
+        focusVerifyHistoryHash();
         setupAuthListener();
         loadApiQuota();
 
@@ -2634,6 +2782,8 @@
 
         window.addEventListener('languageChanged', () => {
             render(container, !!currentUser);
+            focusVerifyHelpHash();
+            focusVerifyHistoryHash();
             if (CONFIG.enabled === false) applyMaintenanceState();
         });
     }

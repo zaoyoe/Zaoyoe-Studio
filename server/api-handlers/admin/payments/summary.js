@@ -381,6 +381,7 @@ function buildCheckoutSessionAnomaly(session) {
             provider_order_no: sessionRef,
             session_key: session.session_key || null,
             status,
+            user_id: session.user_id || null,
             severity: 'warning',
             title: '支付意图失败',
             message: String(session.error_message || '').trim() || '支付意图创建后未能顺利完成，请检查通道配置与跳转链路。',
@@ -398,6 +399,7 @@ function buildCheckoutSessionAnomaly(session) {
             provider_order_no: sessionRef,
             session_key: session.session_key || null,
             status,
+            user_id: session.user_id || null,
             severity: 'critical',
             title: '支付意图已完成但未回填',
             message: '支付意图已进入完成态，但最终 payment_order 尚未建立关联，建议人工复核。',
@@ -415,6 +417,7 @@ function buildCheckoutSessionAnomaly(session) {
             provider_order_no: sessionRef,
             session_key: session.session_key || null,
             status,
+            user_id: session.user_id || null,
             severity: ageMinutes >= 180 ? 'critical' : 'warning',
             title: '支付意图待回填',
             message: `支付入口已创建 ${ageMinutes} 分钟，但仍未匹配最终订单，建议检查 webhook 或认领链路。`,
@@ -1518,6 +1521,31 @@ async function fetchProfilesByIds(client, userIds = []) {
     );
 }
 
+function enrichItemsWithProfileEmails(items = [], profileMap = new Map()) {
+    if (!Array.isArray(items) || !items.length) {
+        return [];
+    }
+
+    return items.map((item) => {
+        const userId = String(item?.user_id || '').trim();
+        if (!userId) {
+            return item;
+        }
+
+        const existingEmail = String(item?.user_email || '').trim();
+        if (existingEmail) {
+            return item;
+        }
+
+        const profile = profileMap.get(userId) || null;
+        const email = String(profile?.email || '').trim();
+        return {
+            ...item,
+            user_email: email || null
+        };
+    });
+}
+
 async function fetchCheckoutSessions(client, sinceIso, untilIso, site) {
     try {
         return await fetchPagedRows(() => {
@@ -1758,6 +1786,7 @@ function buildQueryFailureTopicItems(rows) {
                 id: item.id,
                 provider: item.provider,
                 provider_order_no: item.order_no,
+                user_id: item.user_id || null,
                 status: item.outcome_code,
                 severity: meta.severity,
                 title: `查码失败 · ${meta.label}`,
@@ -2790,7 +2819,8 @@ module.exports = async function handler(req, res) {
         const recentProfileMap = view === 'ops'
             ? await fetchProfilesByIds(scopedClient, [
                 ...recentOrderCandidates.map((order) => order?.user_id),
-                ...recentCheckoutSessionCandidates.map((session) => session?.user_id)
+                ...recentCheckoutSessionCandidates.map((session) => session?.user_id),
+                ...(checkoutSessions || []).map((session) => session?.user_id)
             ])
             : new Map();
         const recentOrders = view === 'ops'
@@ -2890,13 +2920,13 @@ module.exports = async function handler(req, res) {
             ? enrichAnomaliesWithCases(duplicateWebhookTopicItems, anomalyCases)
             : [];
         const enrichedRecentAnomalies = view === 'ops'
-            ? enrichAnomaliesWithCases(combinedRecentAnomalies, anomalyCases)
+            ? enrichAnomaliesWithCases(enrichItemsWithProfileEmails(combinedRecentAnomalies, recentProfileMap), anomalyCases)
             : [];
         const enrichedExceptionTopicItems = view === 'ops'
-            ? enrichAnomaliesWithCases(exceptionTopics.items || [], anomalyCases)
+            ? enrichAnomaliesWithCases(enrichItemsWithProfileEmails(exceptionTopics.items || [], recentProfileMap), anomalyCases)
             : [];
         const enrichedExceptionTopicCountItems = view === 'ops'
-            ? enrichAnomaliesWithCases(exceptionTopics.countItems || exceptionTopics.items || [], anomalyCases)
+            ? enrichAnomaliesWithCases(enrichItemsWithProfileEmails(exceptionTopics.countItems || exceptionTopics.items || [], recentProfileMap), anomalyCases)
             : [];
         const displayExceptionTopicItems = view === 'ops'
             ? buildDisplayExceptionTopicItems(enrichedExceptionTopicCountItems)

@@ -10,7 +10,7 @@
 
     const SITE_ID = window.SiteConfig?.site || 'cn';
     const CACHE_PREFIX = `zaoyoe_${SITE_ID}_cache_`;
-    const CACHE_VERSION = 'v1'; // Bump this to invalidate all caches on update
+    const CACHE_VERSION = 'v2'; // Bump this to invalidate all caches on update
 
     /**
      * Load data with cache support

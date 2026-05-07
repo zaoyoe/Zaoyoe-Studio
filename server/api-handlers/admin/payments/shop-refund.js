@@ -13,6 +13,48 @@ function normalizeText(value) {
     return String(value || '').trim();
 }
 
+function isMissingNotificationColumnError(error) {
+    const message = String(error?.message || '').toLowerCase();
+    return error?.code === '42703'
+        || error?.code === '42P01'
+        || (message.includes('column') && message.includes('does not exist'))
+        || (message.includes('schema cache') && (
+            message.includes('scope')
+            || message.includes('category')
+            || message.includes('action_url')
+            || message.includes('action_label')
+            || message.includes('metadata')
+            || message.includes('priority')
+            || message.includes('source_module')
+            || message.includes('source_event_id')
+        ));
+}
+
+async function insertRefundStatusNotification(supabase, payload = {}) {
+    let response = await supabase
+        .from('system_notifications')
+        .insert(payload);
+
+    if (!response.error || !isMissingNotificationColumnError(response.error)) {
+        return response;
+    }
+
+    const legacyPayload = { ...payload };
+    delete legacyPayload.scope;
+    delete legacyPayload.category;
+    delete legacyPayload.action_url;
+    delete legacyPayload.action_label;
+    delete legacyPayload.metadata;
+    delete legacyPayload.priority;
+    delete legacyPayload.source_module;
+    delete legacyPayload.source_event_id;
+
+    response = await supabase
+        .from('system_notifications')
+        .insert(legacyPayload);
+    return response;
+}
+
 module.exports = async (req, res) => {
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
@@ -65,6 +107,35 @@ module.exports = async (req, res) => {
                     rpc_message: normalizeText(result?.message) || null
                 }
             });
+
+            try {
+                await insertRefundStatusNotification(supabase, {
+                    user_id: order.user_id,
+                    title: '退款进度已更新',
+                    content: `订单 ${String(order.id || '').slice(0, 8)} 已完成退款处理。\n${normalizeText(result?.message) || '退款成功'}`,
+                    type: 'success',
+                    is_read: false,
+                    scope: 'user_personal',
+                    category: 'refund_status',
+                    action_url: 'shop://orders',
+                    action_label: '查看订单',
+                    source_module: 'shop.refund',
+                    source_event_id: `refund_status:${normalizeText(order.id)}:refunded`,
+                    priority: 50,
+                    metadata: {
+                        page_id: 'shop',
+                        site: orderSite,
+                        event_type: 'refund_status',
+                        order_id: order.id,
+                        refund_status: 'refunded',
+                        refund_amount: order.price_paid ?? order.total_price ?? null,
+                        target_status: targetStatus,
+                        remark: remark || null
+                    }
+                });
+            } catch (notificationError) {
+                console.warn('[AdminAPI] Failed to insert refund notification:', notificationError.message || notificationError);
+            }
         }
 
         return sendJson(res, 200, {

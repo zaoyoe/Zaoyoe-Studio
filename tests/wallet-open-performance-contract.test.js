@@ -7,17 +7,20 @@ function readRepoFile(relativePath) {
     return fs.readFileSync(path.resolve(__dirname, '..', relativePath), 'utf8');
 }
 
-test('wallet loader and auth runtime prewarm the balance overview before modal open', () => {
+test('wallet loader and auth runtime prewarm the wallet shell before modal open', () => {
     const walletLoaderSource = readRepoFile('js/wallet-modal-loader.js');
     const authSource = readRepoFile('supabase-auth-functions.js');
 
     const loaderMarkers = [
-        "const VERSION = '20260504_USDT_AMOUNT_PRECISION_TIMEOUT_1';",
-        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260430_WALLET_GUIDANCE_BILINGUAL_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260504_USDT_AMOUNT_PRECISION_TIMEOUT_1';",
+        "const VERSION = '20260505_PAYMENT_ERROR_I18N_1';",
+        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260505_PAYMENT_ERROR_I18N_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260505_PAYMENT_ERROR_I18N_1';",
         'function ensurePointsServiceReady() {',
         'function warmWalletOverview(options = {}) {',
-        'warmOverview: warmWalletOverview'
+        'function warmWalletRuntime() {',
+        'warmOverview: warmWalletOverview',
+        'warmRuntime: warmWalletRuntime',
+        "global.dispatchEvent(new CustomEvent('zaoyoe:wallet-modal-bootstrap-ready'"
     ];
 
     for (const marker of loaderMarkers) {
@@ -25,11 +28,17 @@ test('wallet loader and auth runtime prewarm the balance overview before modal o
     }
 
     const authMarkers = [
+        'let walletRuntimeWarmHandle = null;',
+        "function warmSupabaseAuthWalletRuntime(reason = 'auth-ready') {",
         "function scheduleSupabaseAuthWalletWarmPrefetch(reason = 'auth-ready') {",
+        "const isDropdownWarmup = reason === 'dropdown-open';",
+        "ensureSupabaseAuthWalletModalRuntime({ prefetch: true })",
+        "ensureSupabaseAuthWalletModalRuntime({ prefetch: false })",
+        "walletRuntimeWarmHandle = window.requestIdleCallback(runRuntimeWarmup, { timeout: 2400 });",
+        "scheduleSupabaseAuthWalletWarmPrefetch('bootstrap-ready');",
         "scheduleSupabaseAuthWalletWarmPrefetch('dropdown-open');",
         "scheduleSupabaseAuthWalletWarmPrefetch('initial-session');",
-        "scheduleSupabaseAuthWalletWarmPrefetch('signed-in');",
-        "reason === 'dropdown-open'"
+        "scheduleSupabaseAuthWalletWarmPrefetch('signed-in');"
     ];
 
     for (const marker of authMarkers) {

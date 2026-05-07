@@ -66,7 +66,7 @@ function normalizeStyle(style = {}) {
         bubble_background: normalizeHexColor(style.bubble_background || style.bubbleBackground, '#ffffff'),
         text_color: normalizeHexColor(style.text_color || style.textColor, '#1f2937'),
         radius_px: normalizeInteger(style.radius_px || style.radiusPx, 22, { min: 12, max: 32 }),
-        max_width_px: normalizeInteger(style.max_width_px || style.maxWidthPx, 420, { min: 260, max: 560 }),
+        max_width_px: normalizeInteger(style.max_width_px || style.maxWidthPx, 520, { min: 260, max: 560 }),
         density: VALID_DENSITIES.has(density) ? density : 'comfortable',
         shadow: VALID_SHADOWS.has(shadow) ? shadow : 'soft',
         animation: VALID_ANIMATIONS.has(animation) ? animation : 'gentle',

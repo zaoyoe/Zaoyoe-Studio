@@ -37,7 +37,17 @@ function isMissingNotificationColumnError(error) {
         || error?.code === '42P01'
         || (message.includes('column') && message.includes('does not exist'))
         || (message.includes('schema cache') && message.includes('scope'))
-        || (message.includes('schema cache') && message.includes('category'));
+        || (message.includes('schema cache') && (
+            message.includes('category')
+            || message.includes('action_url')
+            || message.includes('action_label')
+            || message.includes('metadata')
+            || message.includes('priority')
+            || message.includes('expires_at')
+            || message.includes('dedupe_key')
+            || message.includes('source_module')
+            || message.includes('source_event_id')
+        ));
 }
 
 function normalizeTicketStatus(status) {
@@ -246,6 +256,14 @@ async function insertTicketResultNotification(supabase, payload = {}) {
     const legacyPayload = { ...payload };
     delete legacyPayload.scope;
     delete legacyPayload.category;
+    delete legacyPayload.action_url;
+    delete legacyPayload.action_label;
+    delete legacyPayload.metadata;
+    delete legacyPayload.priority;
+    delete legacyPayload.expires_at;
+    delete legacyPayload.dedupe_key;
+    delete legacyPayload.source_module;
+    delete legacyPayload.source_event_id;
     response = await supabase
         .from('system_notifications')
         .insert(legacyPayload);
@@ -440,7 +458,23 @@ async function processTicketWithContext({
             type: notifType,
             is_read: false,
             scope: 'user_personal',
-            category: 'ticket_result'
+            category: 'ticket_result',
+            action_url: 'support://tickets',
+            action_label: '查看工单',
+            source_module: 'tickets',
+            source_event_id: `ticket_updated:${sanitizeText(normalizedTicketId, 120)}:${normalizedNewStatus}`,
+            priority: normalizedNewStatus === 'REJECTED' ? 48 : 42,
+            metadata: {
+                page_id: ticket.order_id ? 'shop' : 'home',
+                site: sanitizeText(ticket.site || 'cn', 20).toLowerCase() || 'cn',
+                event_type: 'ticket_updated',
+                ticket_id: normalizedTicketId,
+                ticket_status: normalizedNewStatus,
+                ticket_status_label: getTicketStatusLabel(normalizedNewStatus),
+                order_id: sanitizeText(ticket.order_id, 160) || null,
+                refunded: normalizedDoRefund && !refundDuplicate,
+                refund_amount: refundAmount
+            }
         });
     } catch (notificationError) {
         console.warn('[AdminAPI] Failed to insert notification:', notificationError.message);

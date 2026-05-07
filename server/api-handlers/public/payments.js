@@ -5,6 +5,65 @@ const {
     createNowpaymentsWebhookHandler
 } = require('../../../api/_lib/payments/nowpayments-webhook');
 
+const PAYMENT_CREATION_ERROR_PATTERNS = Object.freeze([
+    {
+        code: 'payment_amount_too_small',
+        pattern: /amount\s*to\s+is\s+too\s+small|amountto\s+is\s+too\s+small|amount(?:\s+\w+)?\s+is\s+too\s+small|amount\s+too\s+small|min(?:imum)?[_\s-]*amount|below\s+minimum|less\s+than\s+(?:the\s+)?minimum|金额(?:过低|太低|低于)|低于.*最低/i
+    },
+    {
+        code: 'payment_amount_too_large',
+        pattern: /amount(?:\s+\w+)?\s+is\s+too\s+large|amount\s+too\s+large|max(?:imum)?[_\s-]*amount|above\s+maximum|exceeds\s+(?:the\s+)?maximum|金额(?:过高|太高|超出|超过)/i
+    },
+    {
+        code: 'payment_invalid_amount',
+        pattern: /invalid\s+amount|amount\s+invalid|invalid\s+price|price_amount|pay_amount|订单金额无效|支付金额无效|金额无效|汇率配置无效/i
+    },
+    {
+        code: 'payment_currency_unsupported',
+        pattern: /unsupported\s+(?:currency|coin|network)|(?:currency|coin|network)\s+(?:is\s+)?not\s+supported|pay_currency|price_currency|币种.*不支持|网络.*不支持|当前币种|当前网络/i
+    },
+    {
+        code: 'payment_gateway_config',
+        pattern: /config(?:uration)?\s+(?:missing|invalid|incomplete)|api\s*key|ipn|webhook|secret|配置不完整|缺少|未配置|密钥/i
+    },
+    {
+        code: 'payment_gateway_unavailable',
+        pattern: /service\s+unavailable|bad\s+gateway|gateway\s+timeout|temporarily\s+unavailable|timeout|rate\s+limit|too\s+many\s+requests|暂时无法|稍后重试|通道.*不可用|网关.*异常/i
+    }
+]);
+
+function classifyPaymentCreationErrorMessage(message = '') {
+    const rawMessage = String(message || '').trim();
+    if (!rawMessage) return '';
+
+    const match = PAYMENT_CREATION_ERROR_PATTERNS.find((item) => item.pattern.test(rawMessage));
+    return match?.code || '';
+}
+
+function isStablePaymentCreationErrorCode(code = '') {
+    const normalizedCode = String(code || '').trim();
+    return normalizedCode === 'rate_limited' || normalizedCode.startsWith('payment_');
+}
+
+function normalizePaymentCreationError(error, fallbackMessage = '创建支付请求失败') {
+    const rawMessage = String(error?.message || '').trim();
+    const rawCode = String(error?.code || '').trim();
+    const code = classifyPaymentCreationErrorMessage(rawMessage)
+        || (isStablePaymentCreationErrorCode(rawCode) ? rawCode : '')
+        || 'payment_create_failed';
+    const message = rawMessage || fallbackMessage;
+
+    return {
+        code,
+        message,
+        raw_message: rawMessage || null,
+        payment_error: {
+            code,
+            raw_message: rawMessage || null
+        }
+    };
+}
+
 function createPaymentsHandlers({
     admin,
     requestSecurity,
@@ -215,7 +274,7 @@ function createPaymentsHandlers({
             } catch (error) {
                 return sendJson(res, error.statusCode || 500, {
                     success: false,
-                    message: error.message || '创建支付请求失败'
+                    ...normalizePaymentCreationError(error, '创建支付请求失败')
                 });
             }
         },
@@ -322,5 +381,10 @@ function createPaymentsHandlers({
 }
 
 module.exports = {
+    __testUtils: {
+        classifyPaymentCreationErrorMessage,
+        isStablePaymentCreationErrorCode,
+        normalizePaymentCreationError
+    },
     createPaymentsHandlers
 };

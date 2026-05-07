@@ -26,7 +26,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'static hero title should render immediately and still be localized by i18n'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260504_HOME_SECTION_SHELLS_1'),
+        indexSource.includes('./js/framer_home.js?v=20260505_HOME_GUESTBOOK_PROFILE_NAME_1'),
         true,
         'index.html should cache-bust the first-paint homepage runtime'
     );
@@ -51,7 +51,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'homepage should load the cached nav auth fast-paint helper before the lower auth runtime'
     );
     assert.ok(
-        indexSource.indexOf('./js/nav-auth-fast-paint.js?v=20260501_NAV_AUTH_FAST_PAINT_1') < indexSource.indexOf('./supabase-auth-functions.js?v=20260505_REMEMBER_EMAIL_AUTOFILL_1'),
+        indexSource.indexOf('./js/nav-auth-fast-paint.js?v=20260501_NAV_AUTH_FAST_PAINT_1') < indexSource.indexOf('./supabase-auth-functions.js?v=20260506_ENGAGEMENT_ACTION_ROUTES_1'),
         'homepage nav auth fast-paint helper should run before Supabase auth hydration'
     );
     assert.match(
@@ -103,6 +103,33 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         criticalStyles,
         /\.hero-section\[data-home-static-hero="1"\]:not\(\[data-render-signature\]\) \.hero-carousel-track\s*\{[\s\S]*display:\s*grid;[\s\S]*justify-content:\s*center;/,
         'static hero carousel should match the runtime centered position before JS takes over'
+    );
+    assert.match(
+        framerStyles,
+        /\.hero-section\[data-home-hero-centering="1"\] \.hero-carousel\s*\{[\s\S]*20260507_HOME_HERO_CENTERING_LOCK_1[\s\S]*scroll-behavior:\s*auto !important;[\s\S]*scroll-snap-type:\s*none !important;/,
+        'full homepage CSS should keep the carousel centering lock when deferred styles hydrate'
+    );
+    assert.match(
+        framerStyles,
+        /\.hero-section\[data-home-hero-centering="1"\] \.entry-card-ui\s*\{[\s\S]*transition:\s*none !important;/,
+        'full homepage CSS should prevent entry card transition during hydration centering'
+    );
+    const hydrateHeroStart = framerSource.indexOf('hydrateStaticHeroSection(section, data, visibleEntries, heroSignature)');
+    const renderHeroMethodStart = framerSource.indexOf('renderHero() {', hydrateHeroStart);
+    const hydrateHeroSegment = framerSource.slice(hydrateHeroStart, renderHeroMethodStart);
+    assert.ok(
+        hydrateHeroSegment.indexOf("section.dataset.homeHeroCentering = '1';") < hydrateHeroSegment.indexOf('section.dataset.renderSignature = heroSignature;'),
+        'homepage runtime should hold the hero centering lock before switching the static hero into carousel layout'
+    );
+    assert.match(
+        framerSource,
+        /applyHeroCenteringLock[\s\S]*setHomeRuntimeStyle\(carousel,\s*\{[\s\S]*scrollBehavior:\s*'auto'[\s\S]*scrollSnapType:\s*'none'[\s\S]*releaseHeroCenteringLock[\s\S]*scrollBehavior:\s*null[\s\S]*scrollSnapType:\s*null/,
+        'homepage runtime should disable and then restore carousel scroll behavior with inline styles during initial centering'
+    );
+    assert.match(
+        framerSource,
+        /initCarousel\(options = \{\}\)[\s\S]*releaseHeroCenteringLock[\s\S]*requestAnimationFrame\(releaseHeroCenteringLock\);/,
+        'homepage runtime should release the hero centering lock only after the initial carousel center is applied'
     );
     assert.match(
         criticalStyles,
@@ -515,7 +542,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
         './js/homepage-contract.js?v=20260430_HOMEPAGE_BILINGUAL_FIELDS_1',
         './js/section-visibility.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
         './js/i18n.js?v=20260501_I18N_STABLE_LANG_CACHE_1',
-        './js/cache.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
+        './js/cache.js?v=20260505_HOME_GUESTBOOK_PROFILE_NAME_1',
         './js/homepage-prompts-data.js?v=20260501_HOME_PROMPTS_SUMMARY_1'
     ];
 
@@ -541,7 +568,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
     );
     assert.match(
         guestbookLoaderSource,
-        /const HOMEPAGE_GUESTBOOK_RUNTIME_SOURCES = Object\.freeze\(\[[\s\S]*supabase-guestbook-functions\.js\?v=20260501_GUESTBOOK_DOM_READY_LATE_LOAD_1[\s\S]*homepage-guestbook-modal\.js\?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1/,
+        /const HOMEPAGE_GUESTBOOK_RUNTIME_SOURCES = Object\.freeze\(\[[\s\S]*supabase-guestbook-functions\.js\?v=20260507_REPLY_REALTIME_1[\s\S]*homepage-guestbook-modal\.js\?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1/,
         'guestbook intent loader should own the deferred runtime sources'
     );
     assert.match(

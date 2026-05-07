@@ -533,6 +533,10 @@ test('discounts list handler batches large in-filter lookups to avoid oversized 
 });
 
 test('discounts list handler keeps aggregate counts in all-site view', async () => {
+    const baseTime = Date.now();
+    const previousIntlOrderAt = offsetIso(baseTime, { days: -20 });
+    const recentIntlOrderAt = offsetIso(baseTime, { days: -5 });
+
     await withDiscountsListHandler({
         discountRows: [
             {
@@ -567,7 +571,7 @@ test('discounts list handler keeps aggregate counts in all-site view', async () 
                 id: 'order_prev_user_intl',
                 discount_code: null,
                 user_id: 'user_intl',
-                created_at: '2026-03-18T08:00:00.000Z',
+                created_at: previousIntlOrderAt,
                 price_paid: 55,
                 total_price: 55,
                 site: 'intl',
@@ -578,7 +582,7 @@ test('discounts list handler keeps aggregate counts in all-site view', async () 
             {
                 discount_code: 'INTLSITE',
                 user_id: 'user_intl',
-                created_at: '2026-04-06T08:00:00.000Z',
+                created_at: recentIntlOrderAt,
                 price_paid: 50,
                 total_price: 70,
                 site: 'intl',
@@ -609,7 +613,7 @@ test('discounts list handler keeps aggregate counts in all-site view', async () 
             recent_refund_count: 0,
             recent_distinct_user_count: 1,
             recent_zero_total_count: 0,
-            last_used_at: '2026-04-06T08:00:00.000Z',
+            last_used_at: recentIntlOrderAt,
             top_product_names: ['INTL Product'],
             recent_discount_cost_gross: 20,
             recent_discount_cost_net: 20,

@@ -208,7 +208,7 @@ async function fetchAdminCommentsList({
     return parseAdminCommentsResponse(response);
 }
 
-async function moderateCommentsViaAdminApi({ items = [], site, action = 'delete_many' } = {}) {
+async function moderateCommentsViaAdminApi({ items = [], site, action = 'delete_many', reason = '' } = {}) {
     const response = await (window.AdminApi?.fetch || fetch)('/api/admin/comments/moderate', {
         method: 'POST',
         credentials: 'include',
@@ -218,7 +218,8 @@ async function moderateCommentsViaAdminApi({ items = [], site, action = 'delete_
         body: JSON.stringify({
             action,
             site,
-            items
+            items,
+            reason
         })
     });
 
@@ -4322,6 +4323,7 @@ async function batchDeleteComments(actionEl = null) {
     }
 
     if (!confirm(`确定要删除选中的 ${checked.length} 条评论吗？此操作无法撤销。`)) return;
+    const moderationReason = String(window.prompt('可选：填写移除原因（会通知用户）', '') || '').trim();
 
     const items = Array.from(checked).map(cb => ({
         id: cb.dataset.id,
@@ -4337,7 +4339,8 @@ async function batchDeleteComments(actionEl = null) {
         const payload = await moderateCommentsViaAdminApi({
             items,
             site: writableSite,
-            action: 'delete_many'
+            action: 'delete_many',
+            reason: moderationReason
         });
         const deleted = Number(payload?.deletedCount || 0);
         const cascadeDeleted = Number(payload?.cascadeDeletedCount || 0);
@@ -4375,6 +4378,7 @@ async function deleteComment(id, type, recordType = '', actionEl = null) {
     }
 
     if (!confirm('确定要删除这条评论吗？此操作无法撤销。')) return null;
+    const moderationReason = String(window.prompt('可选：填写移除原因（会通知用户）', '') || '').trim();
 
     const finishButtonFeedback = beginAdminCommentsActionButtonFeedback(actionEl, {
         loadingText: '删除中...',
@@ -4387,6 +4391,7 @@ async function deleteComment(id, type, recordType = '', actionEl = null) {
         const payload = await moderateCommentsViaAdminApi({
             site: writableSite,
             action: 'delete',
+            reason: moderationReason,
             items: [{
                 id,
                 type,

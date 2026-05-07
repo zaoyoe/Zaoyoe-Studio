@@ -10493,7 +10493,80 @@ body.guestbook-page .message-item {
     -webkit-column-break-inside: avoid !important;
     page-break-inside: avoid !important;
     margin-bottom: 20px !important;
+    padding: 22px 24px 18px !important;
     width: 100% !important;
+}
+
+body.guestbook-page .message-item .message-content {
+    margin-bottom: 12px !important;
+}
+
+body.guestbook-page .message-actions-bar {
+    grid-gap: 24px !important;
+    padding-top: 10px !important;
+    margin-bottom: 0 !important;
+}
+
+body.guestbook-page .message-item .action-btn,
+body.guestbook-page .message-item .like-btn,
+body.guestbook-page .message-item .comment-btn {
+    min-height: 30px;
+    padding: 4px 8px !important;
+    line-height: 1 !important;
+    box-sizing: border-box;
+}
+
+body.guestbook-page .message-actions-bar + .comment-section {
+    margin-top: 10px !important;
+}
+
+body.guestbook-page .comment-section {
+    padding: 8px 10px !important;
+}
+
+body.guestbook-page .comment-list {
+    margin: 0 !important;
+    padding: 6px 4px !important;
+}
+
+body.guestbook-page .comment-list:not(.collapsed) {
+    max-height: none !important;
+    overflow: visible !important;
+}
+
+body.guestbook-page .comment-item {
+    display: block !important;
+    margin-bottom: 6px !important;
+    padding: 0 !important;
+    border-bottom: 0 !important;
+}
+
+body.guestbook-page .comment-item:last-child {
+    margin-bottom: 0 !important;
+}
+
+body.guestbook-page .comment-row {
+    gap: 10px !important;
+    padding: 6px 10px !important;
+    transition:
+        border-color 0.16s ease,
+        box-shadow 0.16s ease,
+        color 0.16s ease !important;
+    transform: none !important;
+}
+
+body.guestbook-page .comment-header {
+    margin-bottom: 2px !important;
+}
+
+body.guestbook-page .comment-like-btn {
+    gap: 1px;
+    padding: 2px 4px !important;
+    line-height: 1 !important;
+}
+
+body.guestbook-page .comment-item--clickable:hover {
+    background-color: transparent !important;
 }
 
 @media (max-width: 768px) {
@@ -10815,7 +10888,7 @@ body.guestbook-page .comment-item--nested.comment-item--clickable:hover > .comme
         0 12px 28px rgba(2, 6, 23, 0.26),
         inset 3px 0 0 rgba(96, 165, 250, 0.22),
         inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
-    transform: translateX(1px);
+    transform: none !important;
 }
 
 body.guestbook-page .comment-mention {
@@ -11456,7 +11529,7 @@ html[data-theme="light"] body.guestbook-page .comment-item--nested.comment-item-
         0 10px 24px rgba(148, 163, 184, 0.12),
         inset 3px 0 0 rgba(107, 158, 206, 0.16),
         inset 0 1px 0 rgba(255, 255, 255, 0.88) !important;
-    transform: translateX(1px);
+    transform: none !important;
 }
 
 html[data-theme="light"] body.guestbook-page .comment-item--clickable:hover > .comment-row > .comment-main > .comment-header > .comment-author {

@@ -457,7 +457,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
             violations.push(`${relativePath} is missing css/chat-widget.css`);
         }
 
-        if (!source.includes('css/chat-widget.css?v=20260505_ENGAGEMENT_ENTRY_1')) {
+        if (!source.includes('css/chat-widget.css?v=20260507_CHAT_WIDGET_ADAPTIVE_BUBBLE_1')) {
             violations.push(`${relativePath} should cache-bust the scroll-lock chat widget stylesheet`);
         }
 
@@ -487,13 +487,20 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260505_CHAT_USER_ACTIVITY_1';",
+        "const VERSION = '20260507_ENGAGEMENT_BACKLOG_REALTIME_1';",
         "const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';",
         'function ensurePlaceholderPlacementStyles() {',
         '/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */',
         '/* 20260503_CHAT_WIDGET_SAFARI_HANDOFF_12 */',
         '/* 20260503_CHAT_WIDGET_DESKTOP_NARROW_PEEK_1 */',
         '/* 20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1 */',
+        '/* 20260507_ENGAGEMENT_BACKLOG_REALTIME_1 */',
+        'function activateChatWidgetStylesheetLinks() {',
+        "link.media = 'all';",
+        "link.dataset.deferredStyleActive = '1';",
+        'activateChatWidgetStylesheetLinks();',
+        '.chat-window:not([data-chat-widget-bootstrap-shell="1"]) {',
+        '.chat-window:not([data-chat-widget-bootstrap-shell="1"]).active {',
         '@media (max-width: 768px) and (hover: none) and (pointer: coarse) {',
         '-webkit-tap-highlight-color: transparent;',
         '--chat-mobile-fab-glass-bg: rgba(0, 0, 0, 0.48);',
@@ -509,7 +516,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'body.chat-widget-bootstrap-scroll-locked',
         "const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';",
         "const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';",
-        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260505_CHAT_USER_ACTIVITY_1';",
+        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260507_ENGAGEMENT_BACKLOG_REALTIME_1';",
         "const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';",
         'function getChatWidgetConstructor() {',
         'global.ChatWidget = ChatWidget;',
@@ -529,6 +536,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'let placeholderSuppressed = false;',
         'let bootstrapScrollLockActive = false;',
         'let bootstrapDismissToken = 0;',
+        'let runtimePendingOpenWatcher = null;',
         "overlay.addEventListener('click', dismissBootstrapLoadingShell);",
         'function dismissBootstrapLoadingShell(event = null) {',
         "event?.currentTarget?.classList?.contains('chat-widget-bootstrap-overlay')",
@@ -539,7 +547,8 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'const openDismissToken = bootstrapDismissToken;',
         'function restoreClosedRuntimeFabVisibility() {',
         'document.querySelector(\'.chat-widget-fab:not([data-chat-widget-placeholder="1"])\')',
-        "runtimeFab.classList.remove('chat-widget-fab--hidden', 'chat-widget-fab--disabled');",
+        "runtimeFab.classList.remove(",
+        "'chat-widget-fab--ambient-retracted'",
         'function setBootstrapLoadingPageFabHidden(hidden) {',
         "document.documentElement?.classList?.toggle('chat-widget-bootstrap-loading', active);",
         "document.body?.classList?.toggle('chat-widget-bootstrap-loading', active);",
@@ -567,6 +576,12 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         "fab.removeAttribute('data-chat-widget-loading');",
         "fab.dataset.chatWidgetPlaceholderSuppressed = suppressed ? '1' : '0';",
         "fab.classList.toggle('chat-widget-fab--hidden', Boolean(suppressed));",
+        'function queueRuntimeOpenWhenReady(widget = global.chatWidget) {',
+        'function requestRuntimePendingOpen() {',
+        "global.addEventListener?.('zaoyoe:chat-widget-runtime-pending-open', handleRuntimePendingOpenRequest);",
+        'function startChatWidgetBootstrapWhenBodyReady() {',
+        'if (document.body) {',
+        'requestPendingOpen: requestRuntimePendingOpen',
         'chat-window--bootstrap-adopting-content',
         'chat-window--bootstrap-content-ready',
         'chat-window--bootstrap-interaction-locked',
@@ -589,6 +604,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'data-chat-widget-bootstrap-shell',
         'chat-widget-bootstrap-shell--admin',
         'admin-mode-layout--narrow',
+        '.chat-widget-bootstrap-shell--admin.chat-window[data-chat-widget-bootstrap-adopted="1"]',
         'hasRecentAdminAccessCache()',
         'getAdminBootstrapShellMarkup()',
         'chat-widget-bootstrap-admin-loading',
@@ -619,6 +635,56 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     );
     assert.match(
         chatWidgetLoaderSource,
+        /function setPlaceholderLoadingState\(loading, options = \{\}\) \{[\s\S]*const lockInteraction = options\.lockInteraction === true;[\s\S]*fab\.classList\.toggle\('chat-widget-fab--disabled', \(Boolean\(loading\) && lockInteraction\) \|\| suppressed \|\| opening\);/,
+        'background warm loading should not make the placeholder FAB unclickable'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /fab\.className = 'chat-widget-fab chat-widget-fab--peek';/,
+        'fresh placeholder FAB should start visibly exposed after a hard refresh'
+    );
+    assert.doesNotMatch(
+        chatWidgetLoaderSource,
+        /fab\.className = 'chat-widget-fab chat-widget-fab--peek chat-widget-fab--ambient-retracted';/,
+        'fresh placeholder FAB should not start in the deeply retracted ambient state'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /function activateChatWidgetStylesheetLinks\(\) \{[\s\S]*link\.media = 'all';[\s\S]*link\.dataset\.deferredStyleActive = '1';[\s\S]*function ensureChatWidgetStyles\(\) \{[\s\S]*activateChatWidgetStylesheetLinks\(\);/,
+        'chat widget loader should activate the deferred chat stylesheet without waiting for the homepage deferred-style helper'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /\.chat-window:not\(\[data-chat-widget-bootstrap-shell="1"\]\) \{[\s\S]*position: fixed !important;[\s\S]*visibility: hidden !important;[\s\S]*pointer-events: none !important;[\s\S]*\.chat-window:not\(\[data-chat-widget-bootstrap-shell="1"\]\)\.active \{[\s\S]*visibility: visible !important;/,
+        'critical loader CSS should keep the real chat window fixed and out of normal page flow during hard refresh'
+    );
+    assert.match(
+        chatWidgetRuntimeSource,
+        /if \(shouldKeepHiddenForBootstrap\) \{[\s\S]*\} else \{[\s\S]*reusedFab\.classList\.remove\('chat-widget-fab--ambient-retracted'\);/,
+        'runtime adoption should not preserve an exposed placeholder as a retracted invisible FAB'
+    );
+    assert.doesNotMatch(
+        chatWidgetRuntimeSource,
+        /_scheduleFabAmbientMotion\(delayMs = null\) \{[\s\S]{0,180}this\._setFabAmbientRetracted\(true\);[\s\S]{0,120}if \(!this\._shouldRunFabAmbientMotion\(\)\) return;/,
+        'ambient FAB scheduling should not immediately retract the robot on first paint'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /return warmWidgetResources\(\{[\s\S]*lockInteraction: openRequested[\s\S]*\}\)\.then/,
+        'only an explicit open request should lock placeholder interaction during widget loading'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /function startChatWidgetBootstrapWhenBodyReady\(\) \{[\s\S]*if \(document\.body\) \{[\s\S]*startChatWidgetBootstrap\(\);[\s\S]*return;[\s\S]*document\.addEventListener\('DOMContentLoaded', startChatWidgetBootstrap, \{ once: true \}\);/,
+        'chat bootstrap should bind the placeholder immediately when the script runs after body exists'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /function requestRuntimePendingOpen\(\) \{[\s\S]*pendingOpen = true;[\s\S]*showBootstrapLoadingShell\(\);[\s\S]*queueRuntimeOpenWhenReady\(global\.chatWidget\);/,
+        'runtime FAB clicks before chat window initialization should still show the bootstrap loading shell'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
         /function dismissBootstrapLoadingShell\(event = null\) \{[\s\S]*clickedBootstrapOverlay[\s\S]*bootstrapDismissToken \+= 1;[\s\S]*pendingOpen = false;[\s\S]*hideBootstrapLoadingShell\(\{ dismissed: true \}\);/,
         'bootstrap loading overlay clicks should close the shell and cancel the pending open intent'
     );
@@ -634,7 +700,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     );
     assert.match(
         chatWidgetLoaderSource,
-        /function restoreClosedRuntimeFabVisibility\(\) \{[\s\S]*if \(widget\?\.isOpen\)[\s\S]*\.chat-widget-fab:not\(\[data-chat-widget-placeholder="1"\]\)[\s\S]*runtimeFab\.classList\.remove\('chat-widget-fab--hidden', 'chat-widget-fab--disabled'\);/,
+        /function restoreClosedRuntimeFabVisibility\(\) \{[\s\S]*if \(widget\?\.isOpen\)[\s\S]*\.chat-widget-fab:not\(\[data-chat-widget-placeholder="1"\]\)[\s\S]*runtimeFab\.classList\.remove\([\s\S]*'chat-widget-fab--hidden',[\s\S]*'chat-widget-fab--disabled',[\s\S]*'chat-widget-fab--ambient-retracted'/,
         'dismissed bootstrap loading should restore the real FAB when the placeholder was already adopted'
     );
     assert.match(
@@ -686,6 +752,56 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         chatWidgetLoaderSource,
         /const shouldRestoreClosedRuntimeFab = !pendingOpen;[\s\S]*global\.chatWidget = new ChatWidgetCtor\(global\.supabaseClient\);[\s\S]*openWidgetIfPending\(\);[\s\S]*if \(shouldRestoreClosedRuntimeFab\) \{[\s\S]*restoreClosedRuntimeFabVisibility\(\);/,
         'late closed-widget initialization should not leave a hidden FAB inherited from the loading handoff'
+    );
+    assert.match(
+        chatWidgetRuntimeSource,
+        /requestBootstrapPendingOpen\(\) \{[\s\S]*ZaoyoeChatWidgetBootstrap\?\.requestPendingOpen[\s\S]*zaoyoe:chat-widget-runtime-pending-open/,
+        'runtime FAB clicks should be able to request the shared bootstrap loading shell before chatWindow exists'
+    );
+    assert.match(
+        chatWidgetRuntimeSource,
+        /openChat\(\) \{[\s\S]*if \(!this\.chatWindow\) \{[\s\S]*this\._pendingOpenAfterInit = true;[\s\S]*this\.requestBootstrapPendingOpen\(\);/,
+        'openChat should give immediate loading feedback while runtime initialization is still pending'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /function shouldUseBootstrapDesktopEdgeSafeInset\(\) \{[\s\S]*const fullscreenElement = document\.fullscreenElement \|\| document\.webkitFullscreenElement;[\s\S]*return widthDelta <= 24 && heightDelta <= 24 && browserChromeHeight <= 96;/,
+        'bootstrap admin loading shell should use the same fullscreen desktop detection as the real chat workspace'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /\.chat-widget-bootstrap-shell--admin\.chat-window\.chat-widget-bootstrap-shell--desktop-edge-safe \{[\s\S]*--chat-admin-top-gap: clamp\(56px, 9vh, 96px\);[\s\S]*top: 50% !important;[\s\S]*transform: translateY\(calc\(-50% \+ 20px\)\) scale\(0\.95\) !important;[\s\S]*transform-origin: center right !important;/,
+        'fullscreen desktop admin bootstrap loading shell should start vertically centered like the real workspace'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /\.chat-widget-bootstrap-shell--admin\.chat-window\.chat-widget-bootstrap-shell--desktop-edge-safe\.is-active,[\s\S]*transform: translateY\(-50%\) scale\(1\) !important;/,
+        'fullscreen desktop admin bootstrap loading shell should settle at the vertical center'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /\.chat-window\.admin-mode-layout:not\(\[data-chat-widget-bootstrap-shell="1"\]\) \{[\s\S]*top: var\(--chat-admin-top-gap\) !important;[\s\S]*width: min\(1040px, calc\(100vw - 32px\)\) !important;[\s\S]*height: min\(760px, calc\(100vh - \(var\(--chat-admin-top-gap\) \+ var\(--chat-admin-bottom-gap\)\)\)\) !important;[\s\S]*flex-direction: row !important;/,
+        'critical admin handoff guard should match the real windowed workspace position, size, and two-column flow'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /\.chat-window\.admin-mode-layout\.chat-window--desktop-edge-safe:not\(\[data-chat-widget-bootstrap-shell="1"\]\) \{[\s\S]*top: 50% !important;[\s\S]*transform: translateY\(calc\(-50% \+ 20px\)\) scale\(0\.95\) !important;/,
+        'only fullscreen desktop admin guard should use vertical centering'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /@media \(max-width: 700px\) \{[\s\S]*\.chat-window\.admin-mode-layout:not\(\[data-chat-widget-bootstrap-shell="1"\]\) \{[\s\S]*left: 50% !important;[\s\S]*right: auto !important;[\s\S]*transform: translate3d\(-50%, calc\(-50% \+ 24px\), 0\) scale\(0\.94\) !important;[\s\S]*\.chat-window\.admin-mode-layout:not\(\[data-chat-widget-bootstrap-shell="1"\]\)\.active \{[\s\S]*transform: translate3d\(-50%, -50%, 0\) scale\(1\) !important;/,
+        'critical admin handoff guard should center narrow windowed admin workspaces instead of mixing left and right anchors'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /\.chat-widget-bootstrap-shell--admin\.chat-window\[data-chat-widget-bootstrap-adopted="1"\] \{[\s\S]*display: flex !important;[\s\S]*flex-direction: row !important;/,
+        'adopted admin bootstrap shell should stop using the loading-only column flow before interaction resumes'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /shell\.classList\.toggle\('chat-widget-bootstrap-shell--desktop-edge-safe', useEdgeSafeInset\);[\s\S]*global\.visualViewport\?\.addEventListener\?\.\('resize', handleBootstrapViewportModeChange, \{ passive: true \}\);/,
+        'bootstrap loading shell should keep its fullscreen desktop positioning in sync while the page is open'
     );
     assert.doesNotMatch(
         chatWidgetLoaderSource,
@@ -839,9 +955,9 @@ test('public pages wire wallet modal through the shared bootstrap loader', () =>
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260504_USDT_AMOUNT_PRECISION_TIMEOUT_1';",
-        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260430_WALLET_GUIDANCE_BILINGUAL_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260504_USDT_AMOUNT_PRECISION_TIMEOUT_1';",
+        "const VERSION = '20260505_PAYMENT_ERROR_I18N_1';",
+        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260505_PAYMENT_ERROR_I18N_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260505_PAYMENT_ERROR_I18N_1';",
         'function ensureWalletModalReady() {',
         'function warmWalletModal(options = {}) {',
         "function openWalletModal(view = 'balance', context = {}) {",
@@ -1179,6 +1295,16 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         /will-change:\s*transform,\s*filter;/,
         'chat FAB robot should prepare only the animated properties'
     );
+    assert.match(
+        fabPeekRobotRule,
+        /transform:\s*translateX\(8px\) scaleX\(0\.84\) scaleY\(1\.04\) rotate\(-4deg\);/,
+        'fresh desktop FAB should stay visibly exposed after hard refresh'
+    );
+    assert.doesNotMatch(
+        chatWidgetCss,
+        /translateX\(27px\)/,
+        'ambient desktop FAB state should not retract the robot until it is nearly invisible'
+    );
     assert.doesNotMatch(
         chatWidgetCss,
         /chat-widget-fab--disabled \.chat-widget-fab__robot|chat-widget-fab--disabled \.mascot-wrapper/,
@@ -1208,7 +1334,7 @@ test('public chat and shop scroll panels clamp accidental horizontal pan', () =>
         'long chat messages should wrap instead of widening the chat pane'
     );
     assert.equal(
-        optionalEnhancementsSource.includes('css/chat-widget.css?v=20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1'),
+        optionalEnhancementsSource.includes('css/chat-widget.css?v=20260507_CHAT_WIDGET_ADAPTIVE_BUBBLE_1'),
         true,
         'optional guestbook chat loader should request the Safari handoff chat FAB stylesheet'
     );
@@ -1284,7 +1410,10 @@ test('admin chat workspace stays inside the viewport on desktop overlays', () =>
         'height: min(760px, calc(100vh - (var(--chat-admin-top-gap) + var(--chat-admin-bottom-gap)))) !important;',
         'max-height: calc(100vh - (var(--chat-admin-top-gap) + var(--chat-admin-bottom-gap))) !important;',
         'top: var(--chat-admin-top-gap) !important;',
-        'bottom: auto !important;'
+        'right: 30px !important;',
+        'bottom: auto !important;',
+        'flex-direction: row !important;',
+        '.chat-window.admin-mode-layout.chat-widget-bootstrap-shell--admin[data-chat-widget-bootstrap-adopted="1"]'
     ];
 
     for (const marker of markers) {
@@ -1310,6 +1439,7 @@ test('admin chat workspace vertically centers fullscreen desktop windows', () =>
         "if (window.matchMedia('(display-mode: fullscreen)').matches) {",
         'return widthDelta <= 24 && heightDelta <= 24 && browserChromeHeight <= 96;',
         "_toggleElementClass(this.chatWindow, 'chat-window--desktop-edge-safe', useEdgeSafeInset);",
+        'top: var(--chat-admin-top-gap) !important;',
         '.chat-window.admin-mode-layout.chat-window--desktop-edge-safe {',
         '--chat-admin-top-gap: clamp(56px, 9vh, 96px);',
         'top: 50% !important;',
@@ -1546,7 +1676,12 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'chat-reply-templates',
         'chat-reply-templates__toggle',
         'chat-user-context-inline-trigger',
+        'chat-user-meta-row',
+        'syncChatUserMetaRowVisibility()',
+        'justify-content: space-between;',
         'admin-chat-header-actions',
+        'justify-content: flex-end;',
+        'margin-left: auto;',
         'has-user-context',
         'has-reply-templates',
         'scheduleAdminFloatingPanelOffsetSync()',
@@ -1559,7 +1694,13 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'admin-mode-layout--narrow',
         '--chat-admin-context-top',
         'top: var(--chat-admin-context-top, 128px);',
-        'bottom: 84px;',
+        'bottom: auto;',
+        'const expanded = hasTemplates && this.replyTemplateBarCollapsed === false;',
+        "className: 'chat-user-context-inline-trigger',",
+        "label: '用户 360',",
+        "className: 'chat-reply-templates__toggle',",
+        "label: '快捷回复',",
+        "statusContainer.hidden = false;",
         'right: 12px;',
         'ops-alert-toolbar--panel',
         'ops-alert-toolbar-trigger',
@@ -1873,7 +2014,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/chat-widget-loader.js?v=20260505_CHAT_USER_ACTIVITY_1'),
+            source.includes('js/chat-widget-loader.js?v=20260507_ENGAGEMENT_BACKLOG_REALTIME_1'),
             true,
             'public entry pages should load the lazy chat widget bootstrap'
         );
@@ -2166,7 +2307,7 @@ test('auth runtime renderers centralize avatar, google loading, and profile moda
             'auth entry pages should load the latest auth sheet stylesheet'
         );
         assert.equal(
-            source.includes('supabase-auth-functions.js?v=20260505_REMEMBER_EMAIL_AUTOFILL_1'),
+            source.includes('supabase-auth-functions.js?v=20260506_ENGAGEMENT_ACTION_ROUTES_1'),
             true,
             'auth entry pages should load the latest auth runtime script'
         );
@@ -3763,7 +3904,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'function setHomeSectionVisibility(section, visible)',
         'function getHomeLoopPixelsPerSecond(speedValue)',
         'function getHomeLoopDurationSeconds(cycleWidth, speedValue)',
-        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260430_HOME_GUESTBOOK_UGC_CARDS_1';",
+        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260505_HOME_GUESTBOOK_PROFILE_NAME_1';",
         "const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260430_HOME_TEXT_LANGUAGE_2';",
         "const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';",
         'async fetchVisiblePromptPool(options = {}) {',
@@ -3855,7 +3996,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'index.html should load the latest framer_home stylesheet version'
     );
     assert.equal(
-        homepageSource.includes('./js/framer_home.js?v=20260504_HOME_SECTION_SHELLS_1'),
+        homepageSource.includes('./js/framer_home.js?v=20260505_HOME_GUESTBOOK_PROFILE_NAME_1'),
         true,
         'index.html should load the latest framer_home script version'
     );
@@ -3921,14 +4062,14 @@ test('homepage subpages load the latest prefetch-home runtime script version', (
 
     for (const source of subpageSources) {
         assert.equal(
-            source.includes('./js/prefetch-home.js?v=20260430_HOME_GUESTBOOK_UGC_CARDS_1'),
+            source.includes('./js/prefetch-home.js?v=20260505_HOME_GUESTBOOK_PROFILE_NAME_1'),
             true,
             'subpages should load the latest prefetch-home script version'
         );
     }
 
     assert.equal(
-        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260430_HOME_GUESTBOOK_UGC_CARDS_1';"),
+        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260505_HOME_GUESTBOOK_PROFILE_NAME_1';"),
         true,
         'js/prefetch-home.js should version homepage prefetch payloads after the homepage P2 runtime changes'
     );
@@ -4130,7 +4271,10 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
         "overlay.classList.toggle('comment-modal-interactive', interactive)",
         "btn.classList.add('is-processing')",
         "icon.classList.add('like-icon-bounce')",
-        "messageContainer.classList.add('guestbook-message-container-ready')"
+        "messageContainer.classList.add('guestbook-message-container-ready')",
+        'window.maybeHandleGuestbookDeepLink = maybeHandleGuestbookDeepLink',
+        'Promise.resolve(loadGuestbookMessages())',
+        'finalizeGuestbookDeepLinkHandling();'
     ];
 
     for (const marker of delegatedMarkers) {
@@ -4159,12 +4303,12 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
     }
 
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260504_GUESTBOOK_KEYBOARD_RETRACT_1'),
+        guestbookHtml.includes('style.css?v=20260506_GUESTBOOK_COMPACT_SPACING_1'),
         true,
         'guestbook.html should reference the updated guestbook stylesheet version'
     );
     assert.equal(
-        guestbookHtml.includes('guestbook.js?v=20260503_COMMENT_MODAL_CHROME_CLOSE_1'),
+        guestbookHtml.includes('guestbook.js?v=20260507_GUESTBOOK_DEEPLINK_REPLAY_1'),
         true,
         'guestbook.html should reference the updated guestbook script version'
     );
@@ -4218,7 +4362,20 @@ test('supabase guestbook runtime renderers externalize error, empty state, delet
         "imagePreview.classList.toggle('index-guestbook-image-preview-hidden', !visible);",
         "return window.i18n?.t('guestbook.submitSuccess') || (isZh ? '留言成功' : 'Posted');",
         "submitButton.classList.remove('is-submitting', 'is-success');",
-        "submitButton.classList.add('is-success');"
+        "submitButton.classList.add('is-success');",
+        'function resolveGuestbookAuthorProfile({ user = null, profile = null, fallbackName = \'\', fallbackAvatar = \'\' } = {})',
+        'cachedProfile?.nickname',
+        'readGuestbookVisibleCurrentName()',
+        'async function fetchGuestbookRealtimeMessageSnapshot(messageId, commentId = null)',
+        ".rpc('fn_load_guestbook',",
+        'function replayGuestbookDeepLinkAfterRender(reason = \'guestbook_rendered\')',
+        "replayGuestbookDeepLinkAfterRender('guestbook_rpc_rendered');",
+        "replayGuestbookDeepLinkAfterRender('guestbook_fallback_rendered');",
+        'const realtimeSnapshot = await fetchGuestbookRealtimeMessageSnapshot(msgData.id);',
+        'const realtimeSnapshot = await fetchGuestbookRealtimeMessageSnapshot(commentData.message_id, commentData.id);',
+        'guestbookCache.recentInserts.add(data.id);',
+        'profile: data.profiles,',
+        'profiles: resolvedProfile,'
     ];
 
     for (const marker of runtimeMarkers) {
@@ -4250,7 +4407,7 @@ test('supabase guestbook runtime renderers externalize error, empty state, delet
     assert.match(archivedIndexSource, /style\.css\?v=[A-Za-z0-9_]+/, 'index_old.html should contain a cache-busted shared stylesheet reference');
     assert.equal(indexSource.includes('supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), false, 'index.html should not eagerly load the full guestbook runtime');
     assert.equal(indexSource.includes('./js/homepage-guestbook-modal-loader.js?v=20260504_HOME_GUESTBOOK_LOADER_KEYBOARD_RETRACT_1'), true, 'index.html should load the intent-based homepage guestbook modal loader');
-    assert.equal(guestbookHtml.includes('supabase-guestbook-functions.js?v=20260504_ENGAGEMENT_REPLY_NOTIFY_1'), true, 'guestbook.html should contain the DOM-ready-safe guestbook runtime');
+    assert.equal(guestbookHtml.includes('supabase-guestbook-functions.js?v=20260507_REPLY_REALTIME_1'), true, 'guestbook.html should contain the DOM-ready-safe guestbook runtime');
     assert.equal(archivedIndexSource.includes('supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should contain supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1');
 });
 
@@ -4326,7 +4483,7 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
         'index.html should load the latest homepage guestbook intent loader version'
     );
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260504_GUESTBOOK_KEYBOARD_RETRACT_1'),
+        guestbookHtml.includes('style.css?v=20260506_GUESTBOOK_COMPACT_SPACING_1'),
         true,
         'guestbook.html should load the latest shared stylesheet version'
     );
@@ -9178,7 +9335,7 @@ test('verify widget runtime renderers externalize progress, visibility, history 
     );
 
     assert.equal(
-        verifyPageSource.includes('verify-widget.css?v=20260428_PUBLIC_TOUCH_PAN_LOCK_1'),
+        verifyPageSource.includes('verify-widget.css?v=20260506_ENGAGEMENT_ACTION_ROUTES_1'),
         true,
         'verify.html should load the latest verify-widget stylesheet version'
     );
@@ -9188,7 +9345,7 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'verify.html should load the shared user event tracker before the verify widget runtime'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
+        verifyPageSource.includes('./verify-widget.js?v=20260506_ENGAGEMENT_ACTION_ROUTES_1'),
         true,
         'verify.html should load the latest verify-widget script version'
     );
@@ -12854,7 +13011,7 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'prompts.html should load the shared user event tracker'
     );
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260504_ENGAGEMENT_REPLY_NOTIFY_1&promptLangSignal=20260503_PROMPT_LANG_SIGNAL_1'),
+        promptsHtml.includes('prompts-poetry.js?v=20260507_REPLY_REALTIME_1&promptLangSignal=20260503_PROMPT_LANG_SIGNAL_1'),
         true,
         'prompts.html should load the latest prompts gallery runtime version'
     );
@@ -12992,11 +13149,11 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(shopSource.includes('js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), true, 'shop.html should load the shared user event tracker');
     assert.equal(indexSource.includes('./js/homepage-guestbook-modal-loader.js?v=20260504_HOME_GUESTBOOK_LOADER_KEYBOARD_RETRACT_1'), true, 'index.html should load the lazy guestbook modal bootstrap');
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), false, 'index.html should not eagerly load the full guestbook runtime');
-    assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260504_ENGAGEMENT_REPLY_NOTIFY_1'), true, 'guestbook.html should load the latest guestbook runtime');
+    assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260507_REPLY_REALTIME_1'), true, 'guestbook.html should load the latest guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should load the latest guestbook runtime');
     assert.equal(shopSource.includes('js/shop-client.js?v=20260504_SHOP_DISCOUNT_ENGAGEMENT_1'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
-    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260504_USDT_AMOUNT_PRECISION_TIMEOUT_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
+    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260505_PAYMENT_ERROR_I18N_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
 
 test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {
@@ -15993,7 +16150,7 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
         'profile modal loader should cache-bust the light backdrop material'
     );
     assert.equal(
-        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260505_CRYPTO_DETAIL_USDT_1'),
+        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260506_PAYMENT_METHOD_PAYABLE_ACCENT_1'),
         true,
         'wallet modal loader should cache-bust the latest wallet surface stylesheet'
     );

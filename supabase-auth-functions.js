@@ -81,6 +81,57 @@ function requestLoginModalOpen(view = 'login') {
 
 window.requestLoginModalOpen = requestLoginModalOpen;
 
+function requestProfileModalOpen() {
+    const pendingProfileModalKey = 'openProfileModal';
+
+    const clearPendingProfileModalRequest = () => {
+        try {
+            sessionStorage.removeItem(pendingProfileModalKey);
+        } catch (err) {
+            console.warn('Failed to clear pending profile modal request:', err);
+        }
+    };
+
+    const openWhenReady = () => {
+        if (typeof window.openProfileModal !== 'function') {
+            return false;
+        }
+
+        clearPendingProfileModalRequest();
+        Promise.resolve(window.openProfileModal()).catch((err) => {
+            console.warn('Failed to open profile modal:', err);
+        });
+        return true;
+    };
+
+    if (openWhenReady()) {
+        return true;
+    }
+
+    try {
+        sessionStorage.setItem(pendingProfileModalKey, 'true');
+    } catch (err) {
+        console.warn('Failed to queue profile modal request:', err);
+    }
+
+    const retryOpen = () => {
+        if (!openWhenReady()) return;
+        window.removeEventListener('zaoyoe:auth-markup-ready', retryOpen);
+        document.removeEventListener('DOMContentLoaded', retryOpen);
+    };
+
+    window.addEventListener('zaoyoe:auth-markup-ready', retryOpen, { once: true });
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', retryOpen, { once: true });
+    }
+    window.setTimeout(retryOpen, 80);
+    window.setTimeout(retryOpen, 300);
+    window.setTimeout(retryOpen, 900);
+    return false;
+}
+
+window.requestProfileModalOpen = requestProfileModalOpen;
+
 function hasActiveModalBehindLogin() {
     return !!document.querySelector([
         '#shopPurchaseModal.active',
@@ -349,6 +400,39 @@ function normalizeLoginSecurityState(payload) {
         remainingSeconds: Math.max(0, Number(security.remaining_seconds) || 0),
         retryAfterSeconds: Math.max(0, Number(payload?.retry_after_seconds) || 0)
     };
+}
+
+function triggerLoginRiskEngagement(securityState = {}, source = 'login_security') {
+    if (!securityState?.ipBlocked && !securityState?.accountLocked && !securityState?.rateLimited) {
+        return;
+    }
+
+    const trigger = window.ZaoyoeEngagement?.trigger;
+    if (typeof trigger !== 'function') {
+        return;
+    }
+
+    const riskType = securityState.ipBlocked
+        ? 'ip_blocked'
+        : (securityState.accountLocked ? 'account_locked' : 'rate_limited');
+    const riskDate = new Date().toISOString().slice(0, 10);
+
+    try {
+        void trigger('login_risk', {
+            source_module: 'auth.login_security',
+            source,
+            source_event_id: `login_risk:${riskType}:${riskDate}`,
+            page_id: 'home',
+            site: window.SiteConfig?.site || 'cn',
+            risk_type: riskType,
+            ip_block_reason: securityState.ipBlockReason || '',
+            ip_block_expires_at: securityState.ipBlockExpiresAt || null,
+            locked_until: securityState.lockedUntil || null,
+            remaining_seconds: Math.max(0, Number(securityState.remainingSeconds || securityState.retryAfterSeconds || 0) || 0)
+        }, { once: true });
+    } catch (error) {
+        console.debug('[AuthSecurity] Login risk engagement skipped:', error?.message || error);
+    }
 }
 
 async function requestLoginSecurityAction(action, email) {
@@ -744,11 +828,13 @@ async function handleLogin(event) {
         }
 
         if (preflightSecurity?.ipBlocked) {
+            triggerLoginRiskEngagement(preflightSecurity, 'preflight');
             showAuthFeedback(getIpBlockedMessage(), 'error', 'login');
             return;
         }
 
         if (preflightSecurity?.accountLocked) {
+            triggerLoginRiskEngagement(preflightSecurity, 'preflight');
             showAuthFeedback(buildLockedAccountMessage(preflightSecurity.remainingSeconds), 'error', 'login');
             return;
         }
@@ -843,12 +929,15 @@ async function handleLogin(event) {
         const securityState = error?.loginSecurity || null;
         let errorMessage = '登录失败';
         if (securityState?.rateLimited) {
+            triggerLoginRiskEngagement(securityState, 'record_failure');
             errorMessage = formatAuthText('auth.waitSecondsRetry', '请等待 {seconds} 秒后再试', {
                 seconds: Math.max(1, securityState.retryAfterSeconds || 60)
             });
         } else if (securityState?.ipBlocked) {
+            triggerLoginRiskEngagement(securityState, 'record_failure');
             errorMessage = getIpBlockedMessage();
         } else if (securityState?.accountLocked) {
+            triggerLoginRiskEngagement(securityState, 'record_failure');
             errorMessage = buildLockedAccountMessage(securityState.remainingSeconds);
         } else if (error.message.includes('Invalid login credentials')) {
             errorMessage = authT('auth.credentialsIncorrect', '用户名或密码错误');
@@ -1052,39 +1141,92 @@ async function ensureSupabaseAuthWalletModalRuntime(options = {}) {
 }
 
 let walletWarmPrefetchHandle = null;
+let walletRuntimeWarmHandle = null;
 let profileModalWarmHandle = null;
 let profileModalBootstrapScriptPromise = null;
 const PROFILE_MODAL_BOOTSTRAP_SRC = 'js/profile-modal-loader.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1';
 
-function scheduleSupabaseAuthWalletWarmPrefetch(reason = 'auth-ready') {
-    if (walletWarmPrefetchHandle) {
-        return;
+function warmSupabaseAuthWalletRuntime(reason = 'auth-ready') {
+    const loader = window.ZaoyoeWalletModalBootstrap;
+    if (!loader) {
+        return Promise.resolve(null);
     }
 
-    const runWarmPrefetch = () => {
-        walletWarmPrefetchHandle = null;
+    const warmTasks = [];
+    if (typeof loader.warmOverview === 'function') {
+        warmTasks.push(loader.warmOverview({ prefetch: true }));
+    }
+    warmTasks.push(
+        typeof loader.warmRuntime === 'function'
+            ? loader.warmRuntime({ reason })
+            : ensureSupabaseAuthWalletModalRuntime({ prefetch: false })
+    );
 
-        const loader = window.ZaoyoeWalletModalBootstrap;
-        if (!loader) {
+    return Promise.allSettled(warmTasks).then((results) => {
+        results.forEach((result) => {
+            if (result.status === 'rejected') {
+                console.warn(`⚠️ Wallet runtime warmup failed (${reason}):`, result.reason?.message || result.reason);
+            }
+        });
+        return window.WalletModal || null;
+    });
+}
+
+function scheduleSupabaseAuthWalletWarmPrefetch(reason = 'auth-ready') {
+    const isDropdownWarmup = reason === 'dropdown-open';
+
+    if (isDropdownWarmup) {
+        if (walletWarmPrefetchHandle) {
             return;
         }
 
-        const warmTask = reason === 'dropdown-open'
-            ? ensureSupabaseAuthWalletModalRuntime({ prefetch: true })
-            : (typeof loader.warmOverview === 'function'
-                ? loader.warmOverview({ prefetch: true })
-                : ensureSupabaseAuthWalletModalRuntime({ prefetch: true }));
+        const runWarmPrefetch = () => {
+            walletWarmPrefetchHandle = null;
 
+            const warmTask = ensureSupabaseAuthWalletModalRuntime({ prefetch: true });
+
+            void Promise.resolve(warmTask).catch((error) => {
+                console.warn(`⚠️ Wallet warm prefetch failed (${reason}):`, error?.message || error);
+            });
+        };
+
+        if (typeof window.requestIdleCallback === 'function') {
+            walletWarmPrefetchHandle = window.requestIdleCallback(runWarmPrefetch, { timeout: 900 });
+        } else {
+            walletWarmPrefetchHandle = window.setTimeout(runWarmPrefetch, 160);
+        }
+
+        return;
+    }
+
+    if (walletRuntimeWarmHandle) {
+        return;
+    }
+
+    const runRuntimeWarmup = () => {
+        walletRuntimeWarmHandle = null;
+
+        const warmTask = warmSupabaseAuthWalletRuntime(reason);
         void Promise.resolve(warmTask).catch((error) => {
-            console.warn(`⚠️ Wallet warm prefetch failed (${reason}):`, error?.message || error);
+            console.warn(`⚠️ Wallet runtime warmup failed (${reason}):`, error?.message || error);
         });
     };
 
     if (typeof window.requestIdleCallback === 'function') {
-        walletWarmPrefetchHandle = window.requestIdleCallback(runWarmPrefetch, { timeout: 900 });
+        walletRuntimeWarmHandle = window.requestIdleCallback(runRuntimeWarmup, { timeout: 2400 });
     } else {
-        walletWarmPrefetchHandle = window.setTimeout(runWarmPrefetch, 160);
+        walletRuntimeWarmHandle = window.setTimeout(runRuntimeWarmup, 900);
     }
+}
+
+if (!window.__zaoyoeWalletBootstrapReadyWarmupBound) {
+    window.addEventListener('zaoyoe:wallet-modal-bootstrap-ready', () => {
+        if (!window.__ZAOYOE_LAST_AUTH_USER__) {
+            return;
+        }
+        scheduleSupabaseAuthWalletWarmPrefetch('bootstrap-ready');
+    });
+    window.__zaoyoeWalletBootstrapReadyWarmupBound = true;
 }
 
 async function openSupabaseAuthWalletView(view = 'balance', context = {}) {

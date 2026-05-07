@@ -125,3 +125,95 @@ test('public payments status handler returns current checkout session state for 
         site: 'cn'
     });
 });
+
+test('public payments create handler exposes a stable code for gateway amount-too-small errors', async () => {
+    const handlers = createPaymentsHandlers({
+        admin: {
+            async requireAuthenticatedUser() {
+                return {
+                    user: {
+                        id: 'user_nowpayments_1'
+                    },
+                    requestSupabase: {
+                        label: 'request-client'
+                    },
+                    adminSupabase: {
+                        label: 'admin-client'
+                    }
+                };
+            },
+            async parseJsonBody() {
+                return {
+                    provider_key: 'nowpayments',
+                    package_id: 'pkg-small',
+                    site: 'cn'
+                };
+            },
+            sendJson(res, status, payload) {
+                res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                res.end(JSON.stringify(payload));
+            },
+            getOptionalSupabaseAdmin() {
+                return null;
+            }
+        },
+        requestSecurity: {
+            resolveClientIp() {
+                return '203.0.113.6';
+            },
+            async takeRateLimitToken() {
+                return {
+                    allowed: true,
+                    limit: 60,
+                    remaining: 59,
+                    retryAfterSeconds: 0
+                };
+            },
+            applyRateLimitHeaders() {}
+        },
+        paymentProviders: {},
+        paymentOrders: {
+            async createPaymentRequest() {
+                throw new Error('amountTo is too small');
+            }
+        },
+        zpayWebhook: {
+            createZpayWebhookHandler() {
+                return async function noopZpayWebhook(_req, res) {
+                    res.end('ok');
+                };
+            }
+        },
+        nowpaymentsWebhook: {
+            createNowpaymentsWebhookHandler() {
+                return async function noopNowpaymentsWebhook(_req, res) {
+                    res.end('ok');
+                };
+            }
+        },
+        env: {
+            APP_ENV: 'production'
+        }
+    });
+
+    const req = {
+        method: 'POST',
+        headers: {
+            host: 'www.zaoyoe.com'
+        }
+    };
+    const res = createMockResponse();
+
+    await handlers.create(req, res);
+    const payload = res.json();
+
+    assert.equal(res.statusCode, 500);
+    assert.equal(payload.success, false);
+    assert.equal(payload.code, 'payment_amount_too_small');
+    assert.equal(payload.message, 'amountTo is too small');
+    assert.equal(payload.raw_message, 'amountTo is too small');
+    assert.deepEqual(payload.payment_error, {
+        code: 'payment_amount_too_small',
+        raw_message: 'amountTo is too small'
+    });
+});

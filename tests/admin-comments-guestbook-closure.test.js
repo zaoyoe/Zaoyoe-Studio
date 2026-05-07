@@ -67,9 +67,12 @@ test('guestbook page consumes admin deep links and routes them through smart scr
     assert.match(source, /const params = new URLSearchParams\(window\.location\.search \|\| ''\);/);
     assert.match(source, /const messageId = String\(params\.get\('messageId'\) \|\| ''\)\.trim\(\);/);
     assert.match(source, /const commentId = String\(params\.get\('commentId'\) \|\| ''\)\.trim\(\);/);
-    assert.match(source, /function maybeHandleGuestbookDeepLink\(\)/);
-    assert.match(source, /window\.handleSmartScroll\(deepLink\.commentId, 'comment', deepLink\.messageId\);/);
-    assert.match(source, /window\.handleSmartScroll\(deepLink\.messageId, 'message'\);/);
+    assert.match(source, /async function maybeHandleGuestbookDeepLink\(options = \{\}\)/);
+    assert.match(source, /window\.handleSmartScroll\(deepLink\.commentId,\s*'comment',\s*deepLink\.messageId\)/);
+    assert.match(source, /window\.handleSmartScroll\(deepLink\.messageId,\s*'message'\)/);
+    assert.match(source, /window\.upsertGuestbookMessageDOM = function \(message, options = \{\}\)/);
+    assert.match(source, /forceRefresh: true,\s*forceExpanded: true/);
+    assert.match(source, /父留言已在当前视图，强制刷新评论树后再定位/);
     assert.match(source, /maybeHandleGuestbookDeepLink\(\);/);
 });
 

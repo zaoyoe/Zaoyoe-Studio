@@ -2521,6 +2521,11 @@ body.wallet-modal-lock {
     box-shadow: 0 12px 24px rgba(22, 119, 255, 0.16);
 }
 
+.wallet-recharge-method-btn--usdt:hover:not(:disabled) {
+    border-color: rgba(38, 161, 123, 0.38);
+    box-shadow: 0 12px 24px rgba(38, 161, 123, 0.16);
+}
+
 .wallet-recharge-method-btn:disabled {
     cursor: not-allowed;
     opacity: 0.48;
@@ -2598,11 +2603,39 @@ body.wallet-modal-lock {
 
 .wallet-recharge-method-fee {
     color: rgba(255, 255, 255, 0.68);
+    display: grid;
+    gap: 1px;
     font-size: 9px;
     font-weight: 700;
     line-height: 1.2;
     white-space: normal;
     overflow-wrap: anywhere;
+}
+
+.wallet-recharge-method-fee-line {
+    display: block;
+    min-width: 0;
+}
+
+.wallet-recharge-method-fee-line--payable {
+    display: flex;
+    align-items: baseline;
+    column-gap: 2px;
+    flex-wrap: wrap;
+}
+
+.wallet-recharge-method-fee-line--payable > span {
+    display: inline;
+}
+
+.wallet-recharge-method-fee-amount {
+    display: inline-block;
+    font-size: 10.5px;
+    font-weight: 900;
+    background: linear-gradient(180deg, #FFD700 0%, #FFA500 100%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
 }
 
 .wallet-recharge-method-btn--alipay .wallet-recharge-method-fee {
@@ -4315,7 +4348,8 @@ body.wallet-modal-lock {
     }
 
     .wallet-recharge-method-buttons--dock {
-        grid-template-columns: 1fr;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
     }
 
     .wallet-recharge-method-buttons,
@@ -4326,6 +4360,26 @@ body.wallet-modal-lock {
 
     .wallet-recharge-method-btn {
         flex: 1 1 140px;
+    }
+
+    .wallet-recharge-method-buttons--dock .wallet-recharge-method-btn {
+        min-height: 82px;
+        padding: 10px;
+        gap: 8px;
+    }
+
+    .wallet-recharge-method-buttons--dock .wallet-recharge-brand-icon {
+        width: 30px;
+        height: 30px;
+        font-size: 19px;
+    }
+
+    .wallet-recharge-method-buttons--dock .wallet-recharge-method-copy strong {
+        font-size: 12px;
+    }
+
+    .wallet-recharge-method-buttons--dock .wallet-recharge-method-copy small {
+        white-space: normal;
     }
 
     .pkg-points {
@@ -7034,6 +7088,12 @@ html:not([data-theme="dark"]) .wallet-recharge-method-btn--usdt .wallet-recharge
 html:not([data-theme="dark"]) .wallet-recharge-method-btn--alipay:hover:not(:disabled) {
     border-color: rgba(22, 119, 255, 0.34);
     box-shadow: 0 12px 24px rgba(22, 119, 255, 0.14);
+}
+
+[data-theme="light"] .wallet-recharge-method-btn--usdt:hover:not(:disabled),
+html:not([data-theme="dark"]) .wallet-recharge-method-btn--usdt:hover:not(:disabled) {
+    border-color: rgba(38, 161, 123, 0.34);
+    box-shadow: 0 12px 24px rgba(38, 161, 123, 0.14);
 }
 
 [data-theme="light"] .wallet-recharge-method-btn.is-processing {

@@ -31,6 +31,8 @@ function trackShopAnalyticsEvent(eventName, payload = {}, options = {}) {
     });
 }
 
+const SHOP_CART_ABANDON_ENGAGEMENT_DELAY_MS = 45000;
+
 function normalizeShopTrackingText(value, maxLength = 160) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
 }
@@ -427,6 +429,8 @@ const ShopClient = {
     discountAssetsPrefetchHandle: null,
     discountAssetsCacheUserKey: null,
     shopDiscountEngagementSeenKeys: new Set(),
+    productStockSnapshot: new Map(),
+    cartAbandonEngagementTimer: null,
 
     getAccessToken: async function () {
         const client = window.supabaseClient || supabaseClient;
@@ -1599,8 +1603,10 @@ const ShopClient = {
             return;
         }
 
+        const triggerType = String(bubble?.metadata?.event_type || '').trim();
+        const trigger = window.ZaoyoeEngagement?.trigger;
         const show = window.ZaoyoeEngagement?.show;
-        if (typeof show !== 'function') {
+        if (typeof trigger !== 'function' && typeof show !== 'function') {
             if (options.retry === false) return;
             window.setTimeout(() => {
                 this.showShopDiscountEngagementBubble(bubble, { retry: false });
@@ -1609,7 +1615,170 @@ const ShopClient = {
         }
 
         this.shopDiscountEngagementSeenKeys.add(sourceEventId);
-        show(bubble);
+        const fallbackShow = () => {
+            if (typeof show === 'function') show(bubble);
+        };
+        if (triggerType && typeof trigger === 'function') {
+            const triggeredEngagement = this.triggerShopEngagementEvent(triggerType, {
+                ...(bubble.metadata || {}),
+                source: bubble.metadata?.source || 'shop_product_discount_assets',
+                source_event_id: sourceEventId,
+                product_id: bubble.metadata?.product_id || null,
+                discount_id: bubble.metadata?.discount_id || null,
+                discount_asset_id: bubble.metadata?.discount_asset_id || null,
+                benefit_label: bubble.metadata?.benefit_label || '',
+                action_url: bubble.action_url || '',
+                action_label: bubble.action_label || ''
+            }, { once: true });
+            if (triggerType === 'product_discount_available' && Number(bubble.metadata?.estimated_savings || 0) > 0) {
+                this.triggerShopEngagementEvent('product_discount', {
+                    ...(bubble.metadata || {}),
+                    source: 'shop_product_discount_assets',
+                    source_event_id: `product_discount:${sourceEventId}`,
+                    product_id: bubble.metadata?.product_id || null,
+                    discount_id: bubble.metadata?.discount_id || null,
+                    discount_asset_id: bubble.metadata?.discount_asset_id || null,
+                    benefit_label: bubble.metadata?.benefit_label || '',
+                    estimated_savings: Number(bubble.metadata?.estimated_savings || 0) || null
+                }, { once: true });
+            }
+            if (triggeredEngagement && typeof triggeredEngagement.then === 'function') {
+                triggeredEngagement
+                    .then((shown) => {
+                        if (!shown) fallbackShow();
+                    })
+                    .catch(() => fallbackShow());
+                return;
+            }
+            if (triggeredEngagement) return;
+        }
+
+        fallbackShow();
+    },
+
+    triggerShopEngagementEvent: function (triggerType = 'page_view', metadata = {}, options = {}) {
+        const trigger = window.ZaoyoeEngagement?.trigger;
+        if (typeof trigger !== 'function') return null;
+        const normalizedMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+            ? metadata
+            : {};
+        try {
+            return trigger(triggerType, {
+                source_module: 'shop',
+                page_id: 'shop',
+                site: window.SiteConfig?.site || 'cn',
+                ...normalizedMetadata
+            }, {
+                once: options.once !== false
+            });
+        } catch (error) {
+            console.debug('[ShopEngagement] Trigger skipped:', triggerType, error?.message || error);
+            return null;
+        }
+    },
+
+    maybeTriggerProductRestockedEngagement: function (products = []) {
+        if (!(this.productStockSnapshot instanceof Map)) {
+            this.productStockSnapshot = new Map();
+        }
+
+        const currentSnapshot = new Map();
+        (Array.isArray(products) ? products : []).forEach((product) => {
+            const productId = String(product?.id || '').trim();
+            if (!productId) return;
+            const stockCount = Math.max(0, Math.trunc(Number(product?.stock_count ?? product?.stockCount ?? 0) || 0));
+            const previous = this.productStockSnapshot.get(productId);
+            currentSnapshot.set(productId, {
+                stockCount,
+                productName: String(product?.name || product?.title || '').trim(),
+                category: String(product?.category || '').trim(),
+                isActive: product?.is_active !== false
+            });
+
+            if (!previous || previous.stockCount > 0 || stockCount <= 0 || product?.is_active === false) {
+                return;
+            }
+
+            this.triggerShopEngagementEvent('product_restocked', {
+                source_module: 'shop.inventory',
+                source: 'shop_product_stock_refresh',
+                source_event_id: `product_restocked:${productId}:${stockCount}`,
+                product_id: productId,
+                product_name: String(product?.name || product?.title || '').trim() || null,
+                category: String(product?.category || '').trim() || null,
+                previous_stock_count: previous.stockCount,
+                stock_count: stockCount
+            }, { once: true });
+        });
+
+        this.productStockSnapshot = currentSnapshot;
+    },
+
+    getCartEngagementSnapshot: function () {
+        const entries = this.getCartEntries();
+        const productIds = entries.map((entry) => String(entry.productId || '').trim()).filter(Boolean);
+        const productNames = entries
+            .map((entry) => String(entry.displayName || this.getLocalizedProductName(entry.product) || '').trim())
+            .filter(Boolean);
+        const totalQuantity = entries.reduce((total, entry) => total + (Number(entry.quantity || 0) || 0), 0);
+        const totalPoints = entries.reduce((total, entry) => {
+            const unitPrice = Number(entry.finalUnitPrice ?? entry.unitPrice ?? entry.product?.price ?? 0) || 0;
+            return total + unitPrice * (Number(entry.quantity || 0) || 0);
+        }, 0);
+        return {
+            productIds,
+            productNames,
+            itemCount: entries.length,
+            totalQuantity,
+            totalPoints
+        };
+    },
+
+    clearCartAbandonEngagementTimer: function () {
+        if (!this.cartAbandonEngagementTimer) return;
+        window.clearTimeout(this.cartAbandonEngagementTimer);
+        this.cartAbandonEngagementTimer = null;
+    },
+
+    scheduleCartAbandonEngagement: function (delayMs = SHOP_CART_ABANDON_ENGAGEMENT_DELAY_MS) {
+        this.clearCartAbandonEngagementTimer();
+        if (!this.cartItems || this.cartItems.size === 0) return;
+        const safeDelay = Math.max(1000, Number(delayMs || SHOP_CART_ABANDON_ENGAGEMENT_DELAY_MS) || SHOP_CART_ABANDON_ENGAGEMENT_DELAY_MS);
+        this.cartAbandonEngagementTimer = window.setTimeout(() => {
+            this.cartAbandonEngagementTimer = null;
+            if (!this.cartItems || this.cartItems.size === 0 || this.cartOpen || this.cartCheckoutProcessing || this.purchaseProcessing) {
+                return;
+            }
+            const snapshot = this.getCartEngagementSnapshot();
+            if (!snapshot.itemCount) return;
+            this.triggerShopEngagementEvent('cart_abandoned', {
+                source_event_id: `cart_abandoned:${snapshot.productIds.slice().sort().join(',')}:${snapshot.totalQuantity}`,
+                source: 'cart_idle',
+                product_ids: snapshot.productIds,
+                product_names: snapshot.productNames.slice(0, 4),
+                item_count: snapshot.itemCount,
+                total_quantity: snapshot.totalQuantity,
+                total_points: snapshot.totalPoints
+            });
+        }, safeDelay);
+    },
+
+    triggerShopOrderEngagement: function (triggerType = 'order_delivered', metadata = {}) {
+        const normalizedMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+            ? metadata
+            : {};
+        const rawOrderIds = Array.isArray(normalizedMetadata.order_ids)
+            ? normalizedMetadata.order_ids
+            : [normalizedMetadata.order_id || normalizedMetadata.orderId];
+        const orderIds = rawOrderIds.map((item) => String(item || '').trim()).filter(Boolean);
+        const sourceEventId = String(normalizedMetadata.source_event_id || '').trim()
+            || `${triggerType}:${orderIds.join(',') || String(normalizedMetadata.product_id || normalizedMetadata.productId || 'unknown').trim()}`;
+        return this.triggerShopEngagementEvent(triggerType, {
+            source_event_id: sourceEventId,
+            source: normalizedMetadata.source || 'shop_order',
+            order_ids: orderIds,
+            ...normalizedMetadata
+        });
     },
 
     maybeShowShopDiscountEngagement: function () {
@@ -2691,6 +2860,8 @@ const ShopClient = {
                 if (drawerBody) drawerBody.scrollTop = 0;
                 if (drawer) drawer.scrollTop = 0;
             });
+        } else if (!this.cartOpen && this.cartItems.size > 0) {
+            this.scheduleCartAbandonEngagement();
         }
     },
 
@@ -2712,6 +2883,44 @@ const ShopClient = {
         }
         this.setCartOpen(false);
         this.renderCart();
+    },
+
+    isCartHashTarget: function (hash = window.location.hash || '') {
+        const normalizedHash = decodeURIComponent(String(hash || '').replace(/^#/, '').trim()).toLowerCase();
+        return normalizedHash === 'cart' || normalizedHash === 'shop-cart';
+    },
+
+    openCartFromEngagement: function () {
+        if (this.cartCheckoutProcessing) {
+            return false;
+        }
+        if (this.cartItems.size === 0) {
+            this.renderCart();
+            return false;
+        }
+
+        this.guardCartBackdropClose(260);
+        this.setCartOpen(true);
+        this.renderCart();
+
+        const drawer = document.getElementById('shopCartDrawer');
+        const drawerBody = drawer?.querySelector('.shop-cart-drawer__body');
+        window.requestAnimationFrame(() => {
+            if (drawerBody) {
+                drawerBody.scrollTop = 0;
+            }
+            if (drawer) {
+                drawer.scrollTop = 0;
+            }
+        });
+        return true;
+    },
+
+    syncCartHashFocusFromLocation: function () {
+        if (!this.isCartHashTarget()) {
+            return false;
+        }
+        return this.openCartFromEngagement();
     },
 
     guardCartBackdropClose: function (durationMs = 240) {
@@ -3180,6 +3389,7 @@ const ShopClient = {
         this.renderCart();
         this.playCartAnchorAddFeedback();
         this.showShopToast(`${this.getCartCopy().addedToast}：${this.getLocalizedProductName(product)}`, 'success');
+        this.scheduleCartAbandonEngagement();
         return addedQuantity;
     },
 
@@ -3239,6 +3449,7 @@ const ShopClient = {
         });
         this.updateCartSnapshot(normalizedId, product, { appliedDiscount });
         this.renderCart();
+        this.scheduleCartAbandonEngagement();
     },
 
     removeCartItem: function (productId) {
@@ -3250,6 +3461,9 @@ const ShopClient = {
         delete this.cartSnapshots[normalizedId];
         if (this.cartItems.size === 0) {
             this.setCartOpen(false);
+            this.clearCartAbandonEngagementTimer();
+        } else {
+            this.scheduleCartAbandonEngagement();
         }
         this.renderCart();
         if (product) {
@@ -3292,6 +3506,9 @@ const ShopClient = {
         }
         if (this.cartItems.size === 0) {
             this.setCartOpen(false);
+            this.clearCartAbandonEngagementTimer();
+        } else {
+            this.scheduleCartAbandonEngagement();
         }
         this.renderCart();
     },
@@ -5046,6 +5263,7 @@ const ShopClient = {
         this.scheduleDeferredUiBindings();
         this.restoreCartState();
         this.renderCart();
+        this.syncCartHashFocusFromLocation();
 
         // Read URL parameters
         const urlParams = new URLSearchParams(window.location.search);
@@ -9143,8 +9361,17 @@ const ShopClient = {
 
             this.closeCartCheckoutModal();
             this.setCartOpen(false);
+            this.clearCartAbandonEngagementTimer();
             this.renderCart();
             this.showSuccessModal(successPayload.content, warningMessage, successPayload.usageInstructions, successPayload.items);
+            this.triggerShopOrderEngagement('order_delivered', {
+                source_event_id: `shop_cart_order_delivered:${successPayload.orderIds.join(',')}`,
+                source: 'cart_checkout_success',
+                order_ids: successPayload.orderIds,
+                item_count: successPayload.items.length,
+                total_quantity: successes.reduce((total, item) => total + (Number(item.entry?.quantity || 0) || 0), 0),
+                remaining_points: successPayload.remainingPoints ?? null
+            });
 
             if (window.updateUserPointsUI && successPayload.remainingPoints != null) {
                 window.updateUserPointsUI(successPayload.remainingPoints);
@@ -9371,6 +9598,16 @@ const ShopClient = {
             ];
 
             this.showSuccessModal(finalContent, null, usageInstructions, successItems);
+            this.triggerShopOrderEngagement('order_delivered', {
+                source_event_id: `shop_order_delivered:${String(lastOrderId || this.currentPurchase?.productId || 'unknown').trim()}`,
+                source: 'product_purchase_success',
+                order_id: lastOrderId || null,
+                product_id: this.currentPurchase?.productId || null,
+                product_name: this.currentPurchase?.productName || null,
+                quantity: Number(this.currentPurchase?.quantity || 0) || 1,
+                total_points: totalPointsSpent || null,
+                remaining_points: remainingPoints ?? null
+            });
             this.purchaseProcessing = false;
 
             // Update Points UI
@@ -10318,5 +10555,10 @@ if (document.readyState === 'loading') {
     ShopClient.init();
 }
 
+window.addEventListener('hashchange', () => {
+    ShopClient.syncCartHashFocusFromLocation();
+});
+
 // Expose globally
 window.ShopClient = ShopClient;
+window.ZaoyoeShopOpenCartFromEngagement = (...args) => ShopClient.openCartFromEngagement(...args);

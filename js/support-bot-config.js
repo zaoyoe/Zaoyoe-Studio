@@ -79,10 +79,10 @@
                     en: 'Human Help'
                 },
                 description: {
-                    zh: '自助排查解决不了时，可以直接提交工单或转 Telegram。',
-                    en: 'If self-serve did not solve it, submit a ticket or continue in Telegram.'
+                    zh: '自助排查解决不了时，可以查看工单结果、继续提交工单，或转 Telegram。',
+                    en: 'If self-serve did not solve it, review ticket results, submit a ticket, or continue in Telegram.'
                 },
-                items: ['create_ticket', 'tg_support', 'live_chat']
+                items: ['ticket_history', 'create_ticket', 'tg_support', 'live_chat']
             }
         },
         actions: {
@@ -304,6 +304,18 @@
                 inputHint: {
                     zh: '示例：`order:订单号 卡密未到账`、`task:任务号 一直失败`、`code:兑换码 显示已使用`',
                     en: 'Example: `order:ORDER_ID content not delivered`, `task:TASK_ID keeps failing`, `code:CODE shows used`'
+                }
+            },
+            ticket_history: {
+                label: {
+                    zh: '查看工单结果',
+                    en: 'View Ticket Results'
+                },
+                mode: 'ticket_history',
+                requiresAuth: true,
+                prompt: {
+                    zh: '这里会列出你最近的工单处理状态、客服结论，以及仍待处理的记录。',
+                    en: 'View your recent ticket statuses, support outcomes, and any cases still waiting for review.'
                 }
             },
             tg_support: {

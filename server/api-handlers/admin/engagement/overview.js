@@ -5,11 +5,13 @@ const {
     buildExternalEmbedSnippet,
     normalizeExternalEmbedPolicy
 } = require('../../../../api/_lib/engagement-external-policy');
-
 const ASSET_STYLE_CONFIG_KEY = 'engagement_asset_style_center';
 const SUPPORT_ENTRY_CONFIG_KEY = 'engagement_support_entry_center';
 const PAGE_SCENE_CONFIG_KEY = 'engagement_page_scenes';
 const TAG_CENTER_CONFIG_KEY = 'engagement_user_tag_center';
+const OVERVIEW_TASK_TIMEOUT_MS = 6500;
+const OVERVIEW_AUTH_TIMEOUT_MS = 9000;
+const RULE_MANAGEMENT_LIST_LIMIT = 500;
 const VALID_TAG_SOURCES = Object.freeze(new Set(['manual', 'profile_metadata', 'auth_metadata', 'purchase', 'wallet', 'behavior', 'support']));
 const PAGE_SCENES = Object.freeze([
     {
@@ -17,47 +19,164 @@ const PAGE_SCENES = Object.freeze([
         label: '首页',
         tone: 'welcome',
         safe_zone: 'bottom-right',
-        events: ['new_user_welcome', 'points_low_balance', 'permission_changed']
+        events: ['new_user_welcome', 'profile_incomplete', 'daily_checkin_available', 'inactive_user_return', 'points_low_balance', 'points_adjusted', 'wallet_recharge_success', 'permission_changed', 'login_risk']
     },
     {
         id: 'prompts',
         label: '提示词',
         tone: 'creative',
         safe_zone: 'bottom-right',
-        events: ['points_insufficient', 'comment_replied', 'prompt_unlocked']
+        events: ['points_insufficient', 'comment_replied', 'prompt_unlocked', 'search_no_result', 'content_featured', 'content_moderated']
     },
     {
         id: 'gongyi',
         label: '公益站',
         tone: 'calm',
         safe_zone: 'bottom-right',
-        events: ['service_status', 'usage_rules', 'maintenance_notice']
+        events: ['service_status', 'usage_rules', 'maintenance_notice', 'community_rule', 'support_reply', 'ticket_updated']
     },
     {
         id: 'shop',
         label: '商城',
         tone: 'commerce',
         safe_zone: 'bottom-right',
-        events: ['coupon_available', 'product_discount', 'product_restocked', 'points_insufficient', 'order_status']
+        events: ['coupon_available', 'coupon_expiring', 'product_discount', 'product_discount_available', 'product_restocked', 'cart_abandoned', 'points_insufficient', 'payment_failed', 'order_paid', 'order_status', 'order_delivered', 'refund_status']
     },
     {
         id: 'verify',
         label: '验证',
         tone: 'assistive',
         safe_zone: 'bottom-right',
-        events: ['verify_failed', 'verify_queue', 'points_insufficient', 'service_status']
+        events: ['verify_failed', 'verify_success', 'verify_queue', 'verification_expiring', 'points_insufficient', 'service_status', 'support_reply', 'ticket_updated']
     },
     {
         id: 'guestbook',
         label: '留言板',
         tone: 'community',
         safe_zone: 'bottom-right',
-        events: ['comment_replied', 'message_replied', 'community_rule', 'content_featured']
+        events: ['comment_replied', 'message_replied', 'guestbook_mention', 'community_rule', 'content_featured', 'content_moderated']
     }
 ]);
+const DEFAULT_EVENT_PRIORITY_CENTER = Object.freeze({
+    first_wave: {
+        label: '首波优先',
+        events: ['login_risk', 'payment_failed', 'wallet_recharge_failed', 'verify_failed', 'support_reply', 'ticket_updated', 'refund_status', 'order_status', 'order_paid', 'order_delivered', 'content_moderated']
+    },
+    service: {
+        label: '常规服务',
+        events: ['verification_expiring', 'permission_changed', 'points_adjusted', 'points_insufficient', 'verify_queue', 'message_replied', 'comment_replied', 'guestbook_mention', 'service_status', 'maintenance_notice', 'usage_rules', 'community_rule']
+    },
+    marketing: {
+        label: '延后营销',
+        events: ['coupon_available', 'coupon_expiring', 'product_discount', 'product_discount_available', 'product_restocked', 'cart_abandoned', 'inactive_user_return']
+    },
+    guidance: {
+        label: '体验引导',
+        events: ['verify_success', 'prompt_unlocked', 'search_no_result', 'profile_incomplete', 'daily_checkin_available', 'new_user_welcome', 'points_low_balance', 'content_featured', 'wallet_recharge_success']
+    }
+});
+const NOTIFICATION_BRIDGE_EVENT_LABELS = Object.freeze({
+    comment_replied: '提示词评论回复',
+    message_replied: '留言板新评论',
+    guestbook_mention: '留言板评论回复',
+    coupon_available: '可领优惠券',
+    permission_changed: '账号权限变更',
+    points_adjusted: '积分变动',
+    content_featured: '内容精选',
+    ticket_updated: '工单进展',
+    refund_status: '退款进度'
+});
+const NOTIFICATION_BRIDGE_EVENT_TYPES = Object.freeze(new Set(Object.keys(NOTIFICATION_BRIDGE_EVENT_LABELS)));
 
 function sanitizeText(value, maxLength = 4000) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
+}
+
+function normalizeOverviewTaskError(error, label = 'overview') {
+    if (!error) return null;
+    return {
+        label: sanitizeText(label, 80) || 'overview',
+        code: sanitizeText(error.code || error.name || 'OVERVIEW_TASK_ERROR', 80),
+        statusCode: Number(error.statusCode || error.status || 0) || 0,
+        message: sanitizeText(error.message || error.details || String(error), 600),
+        details: sanitizeText(error.details || error.hint || '', 600)
+    };
+}
+
+async function runOverviewTask(label, taskFactory, fallbackValue, timeoutMs = OVERVIEW_TASK_TIMEOUT_MS) {
+    let timeoutId = 0;
+    const timeoutError = new Error(`${label} query timeout`);
+    timeoutError.code = 'ENGAGEMENT_OVERVIEW_TIMEOUT';
+    const taskPromise = Promise.resolve()
+        .then(taskFactory)
+        .then((value) => ({
+            ok: true,
+            label,
+            value,
+            error: null,
+            timed_out: false
+        }))
+        .catch((error) => ({
+            ok: false,
+            label,
+            value: fallbackValue,
+            error: normalizeOverviewTaskError(error, label),
+            timed_out: false
+        }));
+    const timeoutPromise = new Promise((resolve) => {
+        timeoutId = setTimeout(() => {
+            resolve({
+                ok: false,
+                label,
+                value: fallbackValue,
+                error: normalizeOverviewTaskError(timeoutError, label),
+                timed_out: true
+            });
+        }, timeoutMs);
+    });
+    try {
+        return await Promise.race([taskPromise, timeoutPromise]);
+    } finally {
+        if (timeoutId) clearTimeout(timeoutId);
+    }
+}
+
+function getOverviewQueryResult(task = {}, fallbackData = []) {
+    const value = task && task.value && typeof task.value === 'object' ? task.value : {};
+    if (Object.prototype.hasOwnProperty.call(value, 'data') || Object.prototype.hasOwnProperty.call(value, 'error')) {
+        return {
+            data: Array.isArray(value.data) ? value.data : fallbackData,
+            error: value.error || task.error || null
+        };
+    }
+    return {
+        data: fallbackData,
+        error: task.error || null
+    };
+}
+
+function buildOverviewHealth(tasks = [], queryResults = {}) {
+    const taskErrors = [];
+    tasks.forEach((task) => {
+        if (task?.error) taskErrors.push(task.error);
+    });
+    Object.entries(queryResults || {}).forEach(([label, result]) => {
+        if (result?.error) {
+            taskErrors.push(normalizeOverviewTaskError(result.error, label));
+        }
+    });
+    const uniqueErrors = Array.from(new Map(taskErrors
+        .filter(Boolean)
+        .map((error) => [`${error.label}:${error.code}:${error.message}`, error])).values());
+    return {
+        status: uniqueErrors.length ? 'degraded' : 'ready',
+        timeout_ms: OVERVIEW_TASK_TIMEOUT_MS,
+        degraded_tasks: uniqueErrors,
+        timed_out_tasks: tasks
+            .filter((task) => task?.timed_out)
+            .map((task) => sanitizeText(task.label, 80))
+            .filter(Boolean)
+    };
 }
 
 function isMissingEngagementSchemaError(error) {
@@ -76,6 +195,10 @@ function isMissingEngagementSchemaError(error) {
 
 function normalizeRule(row = {}) {
     const metadata = normalizeMetadata(row.metadata);
+    const repeatIntervalMinutes = normalizeRepeatIntervalMinutes(
+        metadata.repeat_interval_minutes ?? metadata.repeatIntervalMinutes,
+        2
+    );
     const normalized = {
         id: sanitizeText(row.id, 160),
         name: sanitizeText(row.name || '未命名触达规则', 160) || '未命名触达规则',
@@ -94,6 +217,7 @@ function normalizeRule(row = {}) {
         priority: Number(row.priority || 0) || 0,
         frequency: sanitizeText(row.frequency || 'once_per_day', 80) || 'once_per_day',
         dismiss_ttl_hours: Number(row.dismiss_ttl_hours || 24) || 24,
+        repeat_interval_minutes: repeatIntervalMinutes,
         enabled: row.enabled === true,
         status: sanitizeText(row.status || 'draft', 40) || 'draft',
         starts_at: sanitizeText(row.starts_at, 120),
@@ -136,8 +260,119 @@ function normalizeStringArray(value, maxLength = 80) {
     return [...new Set(source.map((item) => sanitizeText(item, maxLength)).filter(Boolean))];
 }
 
+function normalizeEventPriorityCenter(value = {}) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const fallback = DEFAULT_EVENT_PRIORITY_CENTER;
+    return {
+        first_wave: {
+            label: sanitizeText(source.first_wave?.label || fallback.first_wave.label, 80) || fallback.first_wave.label,
+            events: normalizeStringArray(source.first_wave?.events || fallback.first_wave.events)
+        },
+        service: {
+            label: sanitizeText(source.service?.label || fallback.service.label, 80) || fallback.service.label,
+            events: normalizeStringArray(source.service?.events || fallback.service.events)
+        },
+        marketing: {
+            label: sanitizeText(source.marketing?.label || fallback.marketing.label, 80) || fallback.marketing.label,
+            events: normalizeStringArray(source.marketing?.events || fallback.marketing.events)
+        },
+        guidance: {
+            label: sanitizeText(source.guidance?.label || fallback.guidance.label, 80) || fallback.guidance.label,
+            events: normalizeStringArray(source.guidance?.events || fallback.guidance.events)
+        }
+    };
+}
+
+function getNotificationBridgeEventLabel(eventType = '') {
+    const normalized = sanitizeText(eventType, 80) || '';
+    return NOTIFICATION_BRIDGE_EVENT_LABELS[normalized] || normalized || '未命名事件';
+}
+
+function buildNotificationBridgeDiagnostics(rules = []) {
+    const runningEventRules = (Array.isArray(rules) ? rules : [])
+        .filter((rule) => isRuleRunningNow(rule))
+        .filter((rule) => sanitizeText(rule?.trigger_type || 'page_view', 80) !== 'page_view');
+    const eventMap = new Map();
+
+    runningEventRules.forEach((rule) => {
+        const triggerType = sanitizeText(rule?.trigger_type, 80);
+        if (!NOTIFICATION_BRIDGE_EVENT_TYPES.has(triggerType)) return;
+        const pageIds = Array.isArray(rule?.page_ids)
+            ? rule.page_ids.map((pageId) => sanitizeText(pageId, 80)).filter(Boolean)
+            : [];
+        const existing = eventMap.get(triggerType) || {
+            event_type: triggerType,
+            label: getNotificationBridgeEventLabel(triggerType),
+            running_rules: 0,
+            page_ids: new Set(),
+            rule_names: []
+        };
+        existing.running_rules += 1;
+        pageIds.forEach((pageId) => existing.page_ids.add(pageId));
+        if (existing.rule_names.length < 4) {
+            existing.rule_names.push(sanitizeText(rule?.name || rule?.title || triggerType, 120) || triggerType);
+        }
+        eventMap.set(triggerType, existing);
+    });
+
+    const events = Array.from(eventMap.values())
+        .map((entry) => ({
+            event_type: entry.event_type,
+            label: entry.label,
+            running_rules: entry.running_rules,
+            page_ids: Array.from(entry.page_ids).sort(),
+            rule_names: [...new Set(entry.rule_names)].slice(0, 4)
+        }))
+        .sort((left, right) => {
+            const ruleDelta = Number(right.running_rules || 0) - Number(left.running_rules || 0);
+            if (ruleDelta) return ruleDelta;
+            return String(left.label || left.event_type || '').localeCompare(String(right.label || right.event_type || ''), 'zh-CN');
+        });
+
+    const multiRuleEvents = events.filter((entry) => Number(entry.running_rules || 0) > 1);
+    return {
+        status: multiRuleEvents.length > 0 ? 'warning' : (events.length > 0 ? 'ok' : 'idle'),
+        event_types_count: events.length,
+        running_rule_count: events.reduce((sum, entry) => sum + (Number(entry.running_rules || 0) || 0), 0),
+        multi_rule_event_types_count: multiRuleEvents.length,
+        events
+    };
+}
+
+function normalizeSceneEventPriorityCenter(value = {}, fallbackCenter = DEFAULT_EVENT_PRIORITY_CENTER) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const fallback = normalizeEventPriorityCenter(fallbackCenter);
+    return {
+        enabled: source.enabled === true,
+        first_wave: {
+            label: sanitizeText(source.first_wave?.label || fallback.first_wave.label, 80) || fallback.first_wave.label,
+            events: normalizeStringArray(source.first_wave?.events || fallback.first_wave.events)
+        },
+        service: {
+            label: sanitizeText(source.service?.label || fallback.service.label, 80) || fallback.service.label,
+            events: normalizeStringArray(source.service?.events || fallback.service.events)
+        },
+        marketing: {
+            label: sanitizeText(source.marketing?.label || fallback.marketing.label, 80) || fallback.marketing.label,
+            events: normalizeStringArray(source.marketing?.events || fallback.marketing.events)
+        },
+        guidance: {
+            label: sanitizeText(source.guidance?.label || fallback.guidance.label, 80) || fallback.guidance.label,
+            events: normalizeStringArray(source.guidance?.events || fallback.guidance.events)
+        }
+    };
+}
+
 function normalizeToken(value = '', fallback = '') {
     return sanitizeText(value, 120).toLowerCase().replace(/[^a-z0-9_-]/g, '') || fallback;
+}
+
+function normalizeTagKey(value = '', fallback = '') {
+    return sanitizeText(value, 120)
+        .toLowerCase()
+        .replace(/[^a-z0-9_\-\u4e00-\u9fa5]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        || fallback;
 }
 
 function normalizeBoolean(value, fallback = true) {
@@ -166,6 +401,22 @@ function normalizeInteger(value, fallback, { min = 0, max = 1000 } = {}) {
     return Math.min(Math.max(parsed, min), max);
 }
 
+function normalizeRepeatIntervalMinutes(value, fallback = 2) {
+    return normalizeInteger(value, fallback, { min: 0, max: 1440 });
+}
+
+function isRuleScheduledForFuture(rule = {}, now = new Date()) {
+    if (sanitizeText(rule.status || 'draft', 40) !== 'published') return false;
+    const startsAt = rule.starts_at ? new Date(rule.starts_at) : null;
+    return Boolean(startsAt && Number.isFinite(startsAt.getTime()) && startsAt > now);
+}
+
+function isRuleRunningNow(rule = {}, now = new Date()) {
+    return rule.enabled === true
+        && sanitizeText(rule.status || 'draft', 40) === 'published'
+        && !isRuleScheduledForFuture(rule, now);
+}
+
 function normalizeAssetStyle(style = {}) {
     const source = normalizeMetadata(style);
     return {
@@ -176,7 +427,7 @@ function normalizeAssetStyle(style = {}) {
         bubble_background: normalizeHexColor(source.bubble_background || source.bubbleBackground, '#ffffff'),
         text_color: normalizeHexColor(source.text_color || source.textColor, '#1f2937'),
         radius_px: normalizeInteger(source.radius_px || source.radiusPx, 22, { min: 12, max: 32 }),
-        max_width_px: normalizeInteger(source.max_width_px || source.maxWidthPx, 420, { min: 260, max: 560 }),
+        max_width_px: normalizeInteger(source.max_width_px || source.maxWidthPx, 520, { min: 260, max: 560 }),
         density: sanitizeText(source.density || 'comfortable', 40) || 'comfortable',
         shadow: sanitizeText(source.shadow || 'soft', 40) || 'soft',
         animation: sanitizeText(source.animation || 'gentle', 40) || 'gentle',
@@ -250,6 +501,7 @@ function normalizeSupportActionIds(value, fallback = []) {
         'verify_task_status',
         'verify_failure_help',
         'verify_precheck',
+        'ticket_history',
         'create_ticket',
         'tg_support',
         'live_chat'
@@ -376,7 +628,7 @@ function normalizeSupportEntryCenter(value = {}) {
 
 function normalizeTagDefinition(tag = {}) {
     const name = sanitizeText(tag.name || tag.title || '未命名标签', 120) || '未命名标签';
-    const key = normalizeToken(tag.key || tag.id || name, 'tag');
+    const key = normalizeTagKey(tag.key || tag.id || name, 'tag');
     const source = normalizeToken(tag.source || 'manual', 'manual');
     return {
         id: key,
@@ -485,9 +737,16 @@ function normalizeTagAutomation(value = {}) {
 function normalizeTagCenter(value = {}) {
     const defaults = getDefaultTagCenter();
     const source = normalizeMetadata(value);
-    const tagMap = new Map(defaults.tags.map((tag) => [tag.key, tag]));
+    const hiddenUserTags = normalizeStringArray(source.hidden_user_tags || source.hiddenUserTags || [], 120)
+        .map((item) => normalizeTagKey(item, ''))
+        .filter(Boolean);
+    const hiddenTagSet = new Set(hiddenUserTags);
+    const tagMap = new Map(defaults.tags
+        .filter((tag) => !hiddenTagSet.has(tag.key))
+        .map((tag) => [tag.key, tag]));
     if (Array.isArray(source.tags)) {
         source.tags.map(normalizeTagDefinition).forEach((tag) => {
+            if (hiddenTagSet.has(tag.key)) return;
             tagMap.set(tag.key, tag);
         });
     }
@@ -498,6 +757,7 @@ function normalizeTagCenter(value = {}) {
     return {
         sources: sources.length ? sources : defaults.sources,
         tags: tags.slice(0, 80),
+        hidden_user_tags: Array.from(hiddenTagSet).slice(0, 240),
         automation: normalizeTagAutomation(source.automation || {}),
         updated_at: sanitizeText(source.updated_at, 120)
     };
@@ -537,7 +797,8 @@ function normalizeSceneOverride(scene = {}) {
         safe_zone: sanitizeText(scene.safe_zone || scene.safeZone, 80),
         default_placement: sanitizeText(scene.default_placement || scene.defaultPlacement || scene.placement, 80),
         allow_marketing: scene.allow_marketing ?? scene.allowMarketing,
-        events: normalizeStringArray(scene.events)
+        events: normalizeStringArray(scene.events),
+        event_priority_center: normalizeSceneEventPriorityCenter(scene.event_priority_center || scene.eventPriorityCenter || {})
     };
 }
 
@@ -556,7 +817,8 @@ function mergePageSceneConfig(baseScenes = [], overrides = []) {
             safe_zone: sanitizeText(override.safe_zone, 80) || scene.safe_zone,
             default_placement: sanitizeText(override.default_placement, 80) || scene.default_placement || 'robot_bubble',
             allow_marketing: typeof override.allow_marketing === 'boolean' ? override.allow_marketing : true,
-            events: Array.isArray(override.events) && override.events.length ? override.events : scene.events
+            events: Array.isArray(override.events) && override.events.length ? override.events : scene.events,
+            event_priority_center: normalizeSceneEventPriorityCenter(override.event_priority_center || scene.event_priority_center || {})
         };
     });
 }
@@ -574,7 +836,10 @@ async function fetchPageSceneConfig(supabase) {
         }
         throw error;
     }
-    return Array.isArray(data?.config_value?.scenes) ? data.config_value.scenes : [];
+    return {
+        scenes: Array.isArray(data?.config_value?.scenes) ? data.config_value.scenes : [],
+        event_priority_center: normalizeEventPriorityCenter(data?.config_value?.event_priority_center || {})
+    };
 }
 
 async function fetchAssetStyleConfig(supabase) {
@@ -687,6 +952,31 @@ function getExternalEventHost(row = {}) {
     return isExternalEngagementEvent(row) ? 'external-host' : 'internal';
 }
 
+function normalizeExternalEventOrigin(value = '') {
+    const raw = sanitizeText(value, 240);
+    if (!raw) return '';
+    try {
+        return new URL(raw).origin;
+    } catch (_) {
+        return raw.replace(/\/+$/, '');
+    }
+}
+
+function getExternalEventApiOrigin(row = {}) {
+    const metadata = getEventMetadata(row);
+    return normalizeExternalEventOrigin(metadata.external_api_origin || metadata.externalApiOrigin || metadata.api_origin || metadata.apiOrigin);
+}
+
+function getHostFromOrigin(value = '') {
+    const raw = sanitizeText(value, 240);
+    if (!raw) return '';
+    try {
+        return new URL(raw).host;
+    } catch (_) {
+        return raw.replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
+    }
+}
+
 function buildExternalDeploymentAnalytics(eventRows = []) {
     const externalRows = (Array.isArray(eventRows) ? eventRows : []).filter(isExternalEngagementEvent);
     const counter = externalRows.reduce((accumulator, row) => {
@@ -695,6 +985,7 @@ function buildExternalDeploymentAnalytics(eventRows = []) {
     }, createEventCounter());
     const hostMap = new Map();
     const pageMap = new Map();
+    const apiOriginMap = new Map();
     const lastEvent = externalRows
         .map((row) => new Date(row?.created_at))
         .filter((date) => Number.isFinite(date.getTime()))
@@ -704,8 +995,12 @@ function buildExternalDeploymentAnalytics(eventRows = []) {
         const eventType = sanitizeText(row?.event_type || '', 40);
         const host = getExternalEventHost(row);
         const pageId = sanitizeText(row?.page_id || 'unknown', 80) || 'unknown';
+        const apiOrigin = getExternalEventApiOrigin(row);
         addEventToCounter(getCounterFromMap(hostMap, host, { host }), eventType);
         addEventToCounter(getCounterFromMap(pageMap, pageId, { page_id: pageId }), eventType);
+        if (apiOrigin) {
+            addEventToCounter(getCounterFromMap(apiOriginMap, apiOrigin, { api_origin: apiOrigin }), eventType);
+        }
     });
 
     const finalized = finalizePerformanceCounter(counter);
@@ -725,17 +1020,125 @@ function buildExternalDeploymentAnalytics(eventRows = []) {
         page_breakdown: Array.from(pageMap.values())
             .map(finalizePerformanceCounter)
             .sort((first, second) => (second.views - first.views) || (second.clicks - first.clicks))
+            .slice(0, 6),
+        api_origin_breakdown: Array.from(apiOriginMap.values())
+            .map(finalizePerformanceCounter)
+            .sort((first, second) => (second.views - first.views) || (second.clicks - first.clicks))
             .slice(0, 6)
+    };
+}
+
+function buildExternalDeploymentTroubleshooting(policy = {}, deployment = {}) {
+    const normalized = normalizeExternalEmbedPolicy(policy);
+    const allowedHosts = new Set((Array.isArray(normalized.allowed_origins) ? normalized.allowed_origins : [])
+        .map(getHostFromOrigin)
+        .filter(Boolean));
+    const hostRows = Array.isArray(deployment.host_breakdown) ? deployment.host_breakdown : [];
+    const apiRows = Array.isArray(deployment.api_origin_breakdown) ? deployment.api_origin_breakdown : [];
+    const eventCount = Number(deployment.event_count || 0) || 0;
+    const views = Number(deployment.views || deployment.funnel?.views || 0) || 0;
+    const lastEventDate = deployment.last_event_at ? new Date(deployment.last_event_at) : null;
+    const lastEventAgeHours = lastEventDate && Number.isFinite(lastEventDate.getTime())
+        ? Math.round(((Date.now() - lastEventDate.getTime()) / (60 * 60 * 1000)) * 10) / 10
+        : null;
+    const hasUnknownHost = hostRows.some((row) => sanitizeText(row.host || row.key, 160) === 'external-host');
+    const unlistedHosts = hostRows
+        .map((row) => sanitizeText(row.host || row.key, 160))
+        .filter((host) => host && host !== 'external-host' && allowedHosts.size > 0 && !allowedHosts.has(host));
+    const expectedApiOrigin = normalizeExternalEventOrigin(normalized.api_origin);
+    const unexpectedApiOrigins = apiRows
+        .map((row) => normalizeExternalEventOrigin(row.api_origin || row.key))
+        .filter((origin) => origin && expectedApiOrigin && origin !== expectedApiOrigin);
+    const checks = [];
+    const addCheck = (id, label, status, detail, action = '') => {
+        checks.push({
+            id,
+            label,
+            status,
+            detail,
+            action
+        });
+    };
+
+    addCheck(
+        'external_runtime_events',
+        '真实事件回流',
+        eventCount > 0 ? 'ok' : (normalized.enabled ? 'warning' : 'idle'),
+        eventCount > 0 ? `近 24 小时收到 ${eventCount} 条外部事件` : '近 24 小时还没有外部页面事件回流',
+        '在公益站打开页面，确认 Network 中 /api/engagement/feed 与 /api/engagement/event 返回 2xx'
+    );
+    addCheck(
+        'external_runtime_views',
+        '外部曝光上报',
+        views > 0 ? 'ok' : (eventCount > 0 ? 'warning' : 'idle'),
+        views > 0 ? `已收到 ${views} 次外部曝光` : '有外部事件时应至少看到 view 曝光事件',
+        '检查当前页面是否命中已发布规则，以及机器人气泡是否被频率冷却拦截'
+    );
+    addCheck(
+        'external_event_freshness',
+        '最近事件新鲜度',
+        lastEventAgeHours === null ? 'idle' : (lastEventAgeHours > 6 ? 'warning' : 'ok'),
+        lastEventAgeHours === null ? '暂无可判断的真实外部事件' : `最后外部事件距离现在约 ${lastEventAgeHours} 小时`,
+        '如果真实页面仍在访问但没有新事件，请优先检查脚本是否被缓存、拦截或移除'
+    );
+    addCheck(
+        'external_origin_identity',
+        '来源域名识别',
+        hasUnknownHost || unlistedHosts.length ? 'warning' : (hostRows.length ? 'ok' : 'idle'),
+        hasUnknownHost
+            ? '外部事件缺少 page_host/page_origin，无法准确识别来源域名'
+            : (unlistedHosts.length ? `发现未在白名单中的来源：${unlistedHosts.slice(0, 3).join('、')}` : '外部来源域名识别正常'),
+        '确认外部 embed 使用最新版脚本，并把真实公益站域名加入 CORS 白名单'
+    );
+    addCheck(
+        'external_api_origin_match',
+        'API Origin 一致性',
+        unexpectedApiOrigins.length ? 'warning' : (apiRows.length ? 'ok' : 'idle'),
+        unexpectedApiOrigins.length
+            ? `发现事件使用了不同 API Origin：${unexpectedApiOrigins.slice(0, 3).join('、')}`
+            : (apiRows.length ? '事件回传使用的 API Origin 与当前配置一致' : '暂无事件可判断 API Origin'),
+        '如切换了主站域名，请重新复制后台生成的公益站嵌入代码'
+    );
+
+    const status = checks.some((item) => item.status === 'blocked')
+        ? 'blocked'
+        : (checks.some((item) => item.status === 'warning') ? 'attention' : 'ready');
+
+    return {
+        status,
+        summary: status === 'ready'
+            ? '外部承载链路暂无异常'
+            : '外部承载链路需要排查',
+        recommended_actions: checks
+            .filter((item) => ['blocked', 'warning'].includes(item.status) && item.action)
+            .map((item) => item.action)
+            .slice(0, 5),
+        checks
     };
 }
 
 function buildExternalEmbedOverview(policy = {}, eventRows = []) {
     const normalized = normalizeExternalEmbedPolicy(policy);
+    const diagnostics = buildExternalEmbedDiagnostics(normalized);
+    const deployment = buildExternalDeploymentAnalytics(eventRows);
+    const troubleshooting = buildExternalDeploymentTroubleshooting(normalized, deployment);
+    const status = diagnostics.status === 'ready' && troubleshooting.status === 'ready'
+        ? 'ready'
+        : (troubleshooting.status === 'blocked' ? 'blocked' : 'attention');
     return {
         ...normalized,
         embed_snippet: buildExternalEmbedSnippet(normalized),
-        diagnostics: buildExternalEmbedDiagnostics(normalized),
-        deployment: buildExternalDeploymentAnalytics(eventRows)
+        diagnostics: {
+            ...diagnostics,
+            status,
+            troubleshooting,
+            recommended_actions: troubleshooting.recommended_actions,
+            checks: [
+                ...(Array.isArray(diagnostics.checks) ? diagnostics.checks : []),
+                ...troubleshooting.checks
+            ]
+        },
+        deployment
     };
 }
 
@@ -1206,7 +1609,9 @@ function buildEngagementAnalytics(eventRows = [], rules = []) {
 }
 
 function buildGovernanceSummary(rules = [], auditLogs = []) {
-    const runningRules = rules.filter((rule) => rule.enabled === true && rule.status === 'published');
+    const now = new Date();
+    const runningRules = rules.filter((rule) => isRuleRunningNow(rule, now));
+    const scheduledRules = rules.filter((rule) => isRuleScheduledForFuture(rule, now));
     const draftRules = rules.filter((rule) => rule.status === 'draft');
     const pausedRules = rules.filter((rule) => rule.status === 'paused');
     const archivedRules = rules.filter((rule) => rule.status === 'archived');
@@ -1222,6 +1627,7 @@ function buildGovernanceSummary(rules = [], auditLogs = []) {
 
     return {
         running_rules: runningRules.length,
+        scheduled_rules: scheduledRules.length,
         draft_rules: draftRules.length,
         paused_rules: pausedRules.length,
         archived_rules: archivedRules.length,
@@ -1245,7 +1651,7 @@ function buildGovernanceSummary(rules = [], auditLogs = []) {
 }
 
 function buildLifecycleDiagnostics({ schemaReady = false, rules = [], eventRows = [], auditLogs = [] } = {}) {
-    const runningRules = rules.filter((rule) => rule.enabled === true && rule.status === 'published');
+    const runningRules = rules.filter((rule) => isRuleRunningNow(rule));
     const runningPageViewRules = runningRules.filter((rule) => sanitizeText(rule.trigger_type || 'page_view', 80) === 'page_view');
     const runningEventRules = runningRules.filter((rule) => sanitizeText(rule.trigger_type || 'page_view', 80) !== 'page_view');
     const eventCounts = eventRows.reduce((counter, row) => {
@@ -1261,6 +1667,7 @@ function buildLifecycleDiagnostics({ schemaReady = false, rules = [], eventRows 
     const hasViews = eventCounts.views > 0;
     const hasInteraction = eventCounts.clicks > 0 || eventCounts.dismisses > 0 || eventCounts.conversions > 0;
     const dismissRate = percentage(eventCounts.dismisses, eventCounts.views);
+    const notificationBridge = buildNotificationBridgeDiagnostics(rules);
 
     const checklist = [
         {
@@ -1280,6 +1687,16 @@ function buildLifecycleDiagnostics({ schemaReady = false, rules = [], eventRows 
             label: '页面规则运行',
             status: hasPublishedPageRule ? 'ok' : 'warning',
             detail: hasPublishedPageRule ? `${runningPageViewRules.length} 条页面访问规则正在运行` : '普通页面访问不会展示事件型规则'
+        },
+        {
+            id: 'notification_bridge',
+            label: '通知桥接收口',
+            status: notificationBridge.status === 'warning' ? 'warning' : (notificationBridge.status === 'ok' ? 'ok' : 'idle'),
+            detail: notificationBridge.event_types_count > 0
+                ? (notificationBridge.multi_rule_event_types_count > 0
+                    ? `${notificationBridge.event_types_count} 类双通道事件已接入，其中 ${notificationBridge.multi_rule_event_types_count} 类仍挂了多条运行规则`
+                    : `${notificationBridge.event_types_count} 类双通道事件已接入，前台会按 source_event_id 收口展示`)
+                : '当前运行规则里暂无通知桥接事件'
         },
         {
             id: 'views',
@@ -1334,6 +1751,28 @@ function buildLifecycleDiagnostics({ schemaReady = false, rules = [], eventRows 
             detail: `当前关闭率 ${dismissRate}%，建议降低频率、缩短文案或减少全站触达。`
         });
     }
+    if (notificationBridge.multi_rule_event_types_count > 0) {
+        const examples = notificationBridge.events
+            .filter((entry) => Number(entry.running_rules || 0) > 1)
+            .slice(0, 3)
+            .map((entry) => `${entry.label}（${entry.running_rules} 条规则）`)
+            .join('、');
+        tips.push({
+            tone: 'warning',
+            title: '双通道事件仍有多规则并行',
+            detail: `${examples || '部分通知桥接事件'}会先写入通知，再桥接成规则气泡。建议统一文案、动作路径，并把同事件运行规则收敛到 1 条。`
+        });
+    } else if (notificationBridge.event_types_count > 0) {
+        const examples = notificationBridge.events
+            .slice(0, 4)
+            .map((entry) => entry.label)
+            .join('、');
+        tips.push({
+            tone: 'info',
+            title: '已识别通知桥接事件',
+            detail: `${notificationBridge.event_types_count} 类事件会同时经过通知与规则通道：${examples}${notificationBridge.event_types_count > 4 ? ' 等' : ''}。前台已做去重收口，后续建议统一两端文案语义。`
+        });
+    }
     if (auditLogs.length <= 0) {
         tips.push({
             tone: 'info',
@@ -1349,51 +1788,64 @@ function buildLifecycleDiagnostics({ schemaReady = false, rules = [], eventRows 
         last_event_at: lastEventAt ? lastEventAt.toISOString() : '',
         running_page_view_rules: runningPageViewRules.length,
         running_event_rules: runningEventRules.length,
+        notification_bridge: notificationBridge,
         checklist,
         tips: tips.slice(0, 4)
     };
 }
 
 async function fetchEngagementOverview(supabase) {
-    const [rulesResult, templatesResult, segmentsResult, eventsResult, auditLogs, sceneOverrides, assetCenter, supportEntry, tagCenter, externalEmbed] = await Promise.all([
-        supabase
+    const taskRows = await Promise.all([
+        runOverviewTask('rules', () => supabase
             .from('engagement_rules')
             .select('id,name,description,site,page_ids,placement,trigger_type,audience,title,content,action_label,action_url,tone,icon,priority,frequency,dismiss_ttl_hours,enabled,status,starts_at,ends_at,metadata,updated_at')
             .order('updated_at', { ascending: false })
-            .limit(12),
-        supabase
+            .limit(RULE_MANAGEMENT_LIST_LIMIT), { data: [], error: null }),
+        runOverviewTask('templates', () => supabase
             .from('engagement_templates')
             .select('id,key,name,description,category,page_ids,title,content,action_label,action_url,tone,metadata,created_at,updated_at')
             .order('updated_at', { ascending: false })
-            .limit(24),
-        supabase
+            .limit(24), { data: [], error: null }),
+        runOverviewTask('segments', () => supabase
             .from('engagement_segments')
             .select('id,key,name,description,definition,enabled,created_at,updated_at')
             .order('updated_at', { ascending: false })
-            .limit(50),
-        supabase
+            .limit(50), { data: [], error: null }),
+        runOverviewTask('events', () => supabase
             .from('engagement_events')
             .select('event_type,page_id,site,rule_id,notification_id,user_id,reader_key,source_module,source_event_id,metadata,created_at')
             .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
             .order('created_at', { ascending: false })
-            .limit(1000),
-        fetchEngagementAuditLogs(supabase),
-        fetchPageSceneConfig(supabase),
-        fetchAssetStyleConfig(supabase),
-        fetchSupportEntryConfig(supabase),
-        fetchTagCenterConfig(supabase),
-        fetchExternalEmbedPolicyConfig(supabase)
+            .limit(1000), { data: [], error: null }),
+        runOverviewTask('audit_logs', () => fetchEngagementAuditLogs(supabase), []),
+        runOverviewTask('page_scenes', () => fetchPageSceneConfig(supabase), {}),
+        runOverviewTask('asset_center', () => fetchAssetStyleConfig(supabase), getDefaultAssetCenter()),
+        runOverviewTask('support_entry', () => fetchSupportEntryConfig(supabase), getDefaultSupportEntryCenter()),
+        runOverviewTask('tag_center', () => fetchTagCenterConfig(supabase), getDefaultTagCenter()),
+        runOverviewTask('external_embed', () => fetchExternalEmbedPolicyConfig(supabase), normalizeExternalEmbedPolicy({}))
     ]);
-
-    if (rulesResult.error && !isMissingEngagementSchemaError(rulesResult.error)) throw rulesResult.error;
-    if (templatesResult.error && !isMissingEngagementSchemaError(templatesResult.error)) throw templatesResult.error;
-    if (segmentsResult.error && !isMissingEngagementSchemaError(segmentsResult.error)) throw segmentsResult.error;
-    if (eventsResult.error && !isMissingEngagementSchemaError(eventsResult.error)) throw eventsResult.error;
+    const taskMap = Object.fromEntries(taskRows.map((task) => [task.label, task]));
+    const rulesResult = getOverviewQueryResult(taskMap.rules);
+    const templatesResult = getOverviewQueryResult(taskMap.templates);
+    const segmentsResult = getOverviewQueryResult(taskMap.segments);
+    const eventsResult = getOverviewQueryResult(taskMap.events);
 
     const eventRows = Array.isArray(eventsResult.data) ? eventsResult.data : [];
     const rules = (Array.isArray(rulesResult.data) ? rulesResult.data : []).map(normalizeRule);
     const templates = (Array.isArray(templatesResult.data) ? templatesResult.data : []).map(normalizeTemplate);
     const segments = (Array.isArray(segmentsResult.data) ? segmentsResult.data : []).map(normalizeSegment);
+    const auditLogs = Array.isArray(taskMap.audit_logs?.value) ? taskMap.audit_logs.value : [];
+    const sceneOverrides = taskMap.page_scenes?.value && typeof taskMap.page_scenes.value === 'object' ? taskMap.page_scenes.value : {};
+    const assetCenter = taskMap.asset_center?.value || getDefaultAssetCenter();
+    const supportEntry = taskMap.support_entry?.value || getDefaultSupportEntryCenter();
+    const tagCenter = taskMap.tag_center?.value || getDefaultTagCenter();
+    const externalEmbed = taskMap.external_embed?.value || normalizeExternalEmbedPolicy({});
+    const overviewHealth = buildOverviewHealth(taskRows, {
+        rules: rulesResult,
+        templates: templatesResult,
+        segments: segmentsResult,
+        events: eventsResult
+    });
     const eventCounts = eventRows.reduce((accumulator, row) => {
         const type = sanitizeText(row?.event_type || 'unknown', 40) || 'unknown';
         accumulator[type] = (accumulator[type] || 0) + 1;
@@ -1404,11 +1856,13 @@ async function fetchEngagementOverview(supabase) {
 
     return {
         schema_ready: schemaReady,
-        page_scenes: mergePageSceneConfig(PAGE_SCENES, sceneOverrides),
+        page_scenes: mergePageSceneConfig(PAGE_SCENES, sceneOverrides.scenes || sceneOverrides),
+        event_priority_center: normalizeEventPriorityCenter(sceneOverrides.event_priority_center || {}),
         asset_center: assetCenter,
         support_entry: supportEntry,
         tag_center: tagCenter,
         external_embed: buildExternalEmbedOverview(externalEmbed, eventRows),
+        overview_health: overviewHealth,
         rules,
         templates,
         segments,
@@ -1427,7 +1881,8 @@ async function fetchEngagementOverview(supabase) {
             rules,
             eventRows,
             auditLogs: Array.isArray(auditLogs) ? auditLogs : []
-        })
+        }),
+        degraded: overviewHealth.status === 'degraded'
     };
 }
 
@@ -1441,9 +1896,24 @@ module.exports = async function engagementOverviewHandler(req, res) {
     }
 
     try {
-        const { supabase } = await requireAdmin(req, {
+        const authTask = await runOverviewTask('admin_auth', () => requireAdmin(req, {
             anyOf: ['chat.manage', 'settings.manage']
-        });
+        }), null, OVERVIEW_AUTH_TIMEOUT_MS);
+        if (!authTask.ok || !authTask.value?.supabase) {
+            const statusCode = authTask.timed_out ? 503 : (Number(authTask.error?.statusCode || 0) || 503);
+            return sendJson(res, statusCode, {
+                success: false,
+                message: authTask.timed_out
+                    ? '客服系统鉴权超时，请刷新页面或重新登录后再试'
+                    : (authTask.error?.message || '客服系统鉴权失败'),
+                overview_health: {
+                    status: 'blocked',
+                    degraded_tasks: authTask.error ? [authTask.error] : [],
+                    timed_out_tasks: authTask.timed_out ? ['admin_auth'] : []
+                }
+            });
+        }
+        const { supabase } = authTask.value;
         const overview = await fetchEngagementOverview(supabase);
         return sendJson(res, 200, {
             success: true,

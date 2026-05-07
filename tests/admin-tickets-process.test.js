@@ -455,6 +455,9 @@ test('ticket process syncs the result back into the linked chat session when the
         assert.match(state.chatMessages[0].content, /已经帮你处理好了/);
         assert.equal(state.notifications.length, 1);
         assert.equal(state.notifications[0].category, 'ticket_result');
+        assert.equal(state.notifications[0].metadata.event_type, 'ticket_updated');
+        assert.equal(state.notifications[0].source_module, 'tickets');
+        assert.equal(state.notifications[0].source_event_id, 'ticket_updated:ticket-chat-1:RESOLVED');
         assert.equal(state.auditLogs.length, 1);
         assert.deepEqual(state.auditLogs[0].details.linked_chat_session, payload.linkedChatSession);
     });

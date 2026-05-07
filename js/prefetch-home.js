@@ -12,7 +12,7 @@
     const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
     const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
     const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260430_HOME_GUESTBOOK_UGC_CARDS_1';
+    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260505_HOME_GUESTBOOK_PROFILE_NAME_1';
     const HOMEPAGE_GUESTBOOK_CARD_LIMIT = 6;
     const HOMEPAGE_PROMPT_LIVE_SELECT = [
         'id',
@@ -115,6 +115,36 @@
             return String(item?.[`${fieldBase}_en`] || '').trim() || getStrictLanguageFallback(fallbackByLanguage);
         }
         return getStrictLanguageFallback(fallbackByLanguage);
+    }
+
+    function normalizeGuestbookRpcMessages(source) {
+        if (Array.isArray(source?.messages)) {
+            return source.messages;
+        }
+        return Array.isArray(source) ? source : [];
+    }
+
+    async function fetchHomepageGuestbookMessages(limit = HOMEPAGE_GUESTBOOK_CARD_LIMIT) {
+        try {
+            const { data, error } = await window.supabaseClient
+                .rpc('fn_load_guestbook', {
+                    p_site: getCurrentSite(),
+                    p_limit: Math.max(limit, HOMEPAGE_GUESTBOOK_CARD_LIMIT),
+                    p_user_id: null
+                });
+            if (error) throw error;
+            return normalizeGuestbookRpcMessages(data).slice(0, limit);
+        } catch (error) {
+            console.warn('Homepage guestbook RPC prefetch failed, using direct fetch:', error?.message || error);
+            const { data, error: directError } = await window.supabaseClient
+                .from('guestbook_messages')
+                .select('id, content, image_url, like_count, created_at, user_id, profiles:user_id (username, avatar_url)')
+                .eq('site', getCurrentSite())
+                .order('created_at', { ascending: false })
+                .limit(limit);
+            if (directError) throw directError;
+            return Array.isArray(data) ? data : [];
+        }
     }
 
     function normalizeTextList(value) {
@@ -1024,25 +1054,18 @@
             const sectionOrder = Contract?.sortSectionsByDisplayOrder?.(rows) || ['hero', 'prompts', 'shop', 'gongyi', 'verify', 'guestbook', 'ticker'];
             const { items: promptPool, source: promptPoolSource } = await fetchVisiblePromptPool();
 
-            const [shopResult, guestbookResult] = await Promise.all([
+            const [shopResult, guestbookMessages] = await Promise.all([
                 window.supabaseClient
                     .from('shop_products')
                     .select('id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, category, display_order')
                     .eq('is_active', true)
                     .order('display_order', { ascending: false }),
-                window.supabaseClient
-                    .from('guestbook_messages')
-                    .select('id, content, image_url, like_count, created_at, user_id, profiles:user_id (username, avatar_url)')
-                    .eq('site', getCurrentSite())
-                    .order('created_at', { ascending: false })
-                    .limit(HOMEPAGE_GUESTBOOK_CARD_LIMIT)
+                fetchHomepageGuestbookMessages(HOMEPAGE_GUESTBOOK_CARD_LIMIT)
             ]);
 
             if (shopResult.error) throw shopResult.error;
-            if (guestbookResult.error) throw guestbookResult.error;
 
             const allProducts = Array.isArray(shopResult.data) ? shopResult.data : [];
-            const guestbookMessages = Array.isArray(guestbookResult.data) ? guestbookResult.data : [];
             const prompts = aggregatePrompts(config.prompts || {}, promptPool);
             const shop = aggregateShop(config.shop || {}, allProducts);
             const guestbook = aggregateGuestbook(config.guestbook || {}, guestbookMessages);

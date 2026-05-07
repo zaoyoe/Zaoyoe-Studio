@@ -2023,6 +2023,22 @@
         return item?.provider_order_no || '无订单号';
     }
 
+    function getPaymentInitiatorEmailLabel(item) {
+        const email = String(item?.user_email || '').trim();
+        if (email) return email;
+
+        const userId = String(item?.user_id || '').trim();
+        return userId ? '未绑定邮箱' : '匿名 / 未识别用户';
+    }
+
+    function renderPaymentInitiatorMeta(item) {
+        if (String(item?.type || '').trim().toLowerCase() !== 'session') {
+            return '';
+        }
+
+        return `<span><small>发起人邮箱</small><strong>${escapeHtml(getPaymentInitiatorEmailLabel(item))}</strong></span>`;
+    }
+
     function renderAnomalyOpsState(item) {
         const status = String(item?.ops_status || 'open').trim().toLowerCase();
         const tone = getAnomalyOpsTone(status);
@@ -2149,6 +2165,7 @@
                 <div class="payments-anomaly-meta">
                     <span><small>专题</small><strong>${escapeHtml(item.topic_label || '支付异常')}</strong></span>
                     <span><small>通道</small><strong>${escapeHtml(getProviderLabel(item.provider))}</strong></span>
+                    ${renderPaymentInitiatorMeta(item)}
                     <span><small>${escapeHtml(getAnomalyReferenceLabel(item))}</small><strong>${escapeHtml(getAnomalyReferenceValue(item))}</strong></span>
                     <span><small>时间</small><strong>${escapeHtml(formatDateTime(item.created_at))}</strong></span>
                 </div>
@@ -5374,6 +5391,7 @@
                 <div class="payments-anomaly-meta">
                     <span><small>类型</small><strong>${escapeHtml(getAnomalyTypeLabel(item))}</strong></span>
                     <span><small>通道</small><strong>${escapeHtml(getProviderLabel(item.provider))}</strong></span>
+                    ${renderPaymentInitiatorMeta(item)}
                     <span><small>${escapeHtml(getAnomalyReferenceLabel(item))}</small><strong>${escapeHtml(getAnomalyReferenceValue(item))}</strong></span>
                     <span><small>时间</small><strong>${escapeHtml(formatDateTime(item.created_at))}</strong></span>
                 </div>
@@ -6807,9 +6825,12 @@
             csv += `${(item.label || '').replace(/,/g, '，')},${item.inflow || 0},${item.outflow || 0},${item.net || 0}\n`;
         });
         csv += '\n=== 异常队列 ===\n';
-        csv += '标题,严重级别,通道,订单号,时间\n';
+        csv += '标题,严重级别,通道,发起人邮箱,订单号/会话,时间\n';
         (bundle.recent_anomalies || []).forEach((item) => {
-            csv += `${(item.title || '').replace(/,/g, '，')},${getSeverityLabel(item.severity)},${getProviderLabel(item.provider)},${(item.provider_order_no || '').replace(/,/g, '，')},${formatDateTime(item.created_at)}\n`;
+            const initiatorEmail = String(item?.type || '').trim().toLowerCase() === 'session'
+                ? (String(item.user_email || '').trim() || getPaymentInitiatorEmailLabel(item))
+                : String(item.user_email || '').trim();
+            csv += `${(item.title || '').replace(/,/g, '，')},${getSeverityLabel(item.severity)},${getProviderLabel(item.provider)},${initiatorEmail.replace(/,/g, '，')},${getAnomalyReferenceValue(item).replace(/,/g, '，')},${formatDateTime(item.created_at)}\n`;
         });
         csv += '\n=== 最近支付意图会话 ===\n';
         csv += '发起人邮箱,通道,套餐,会话Key,参考单号,站点,应付金额,到账积分,状态,匹配状态,创建时间\n';
@@ -6881,7 +6902,10 @@
                 标题: item.title,
                 严重级别: getSeverityLabel(item.severity),
                 通道: getProviderLabel(item.provider),
-                订单号: item.provider_order_no || '',
+                发起人邮箱: String(item?.type || '').trim().toLowerCase() === 'session'
+                    ? (String(item.user_email || '').trim() || getPaymentInitiatorEmailLabel(item))
+                    : String(item.user_email || '').trim(),
+                订单号或会话: getAnomalyReferenceValue(item),
                 时间: formatDateTime(item.created_at),
                 描述: item.message || ''
             }))), '异常队列');

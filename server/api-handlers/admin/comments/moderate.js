@@ -5,6 +5,7 @@ const {
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
+const { notifyUsers } = require('../../../../api/_lib/admin-notifications');
 const {
     applyCommentsSiteFilter,
     collectDescendantCommentIds,
@@ -31,6 +32,105 @@ function normalizeCommentItems(input) {
         .filter(item => item.id && (item.type === 'guestbook' || item.type === 'gallery'));
 }
 
+function normalizeText(value, maxLength = 200) {
+    return String(value || '').trim().slice(0, maxLength);
+}
+
+function collapsePreview(value, maxLength = 80) {
+    const normalized = normalizeText(value, maxLength * 2).replace(/\s+/g, ' ');
+    if (!normalized) return '';
+    return normalized.length > maxLength ? `${normalized.slice(0, Math.max(0, maxLength - 1)).trim()}…` : normalized;
+}
+
+function buildPromptActionUrl(promptId = '', commentId = '') {
+    const normalizedPromptId = normalizeText(promptId, 160);
+    if (!normalizedPromptId) return '/prompts.html';
+    const params = new URLSearchParams({ id: normalizedPromptId, comments: '1' });
+    if (commentId) {
+        params.set('commentId', normalizeText(commentId, 160));
+    }
+    return `/prompts.html?${params.toString()}`;
+}
+
+function buildGuestbookActionUrl(messageId = '', commentId = '') {
+    const params = new URLSearchParams();
+    if (messageId) {
+        params.set('messageId', normalizeText(messageId, 160));
+    }
+    if (commentId) {
+        params.set('commentId', normalizeText(commentId, 160));
+    }
+    const serialized = params.toString();
+    return serialized ? `/guestbook.html?${serialized}` : '/guestbook.html';
+}
+
+function buildContentModeratedCopy({ site = 'cn', targetLabel = '', preview = '', reason = '' } = {}) {
+    const normalizedReason = collapsePreview(reason, 72);
+    if (site === 'intl') {
+        const lines = [`Your ${targetLabel || 'content'} was removed.`];
+        if (normalizedReason) {
+            lines.push(`Reason: ${normalizedReason}`);
+        } else {
+            lines.push('It did not meet the community guidelines.');
+        }
+        if (preview) {
+            lines.push(`Content: ${preview}`);
+        }
+        return {
+            title: 'Your content was removed',
+            content: lines.join(' ')
+        };
+    }
+
+    const lines = [`你发布的${targetLabel || '内容'}已被移除。`];
+    if (normalizedReason) {
+        lines.push(`原因：${normalizedReason}`);
+    } else {
+        lines.push('请留意社区规范。');
+    }
+    if (preview) {
+        lines.push(`内容：${preview}`);
+    }
+    return {
+        title: '你发布的内容已被移除',
+        content: lines.join(' ')
+    };
+}
+
+function buildContentFeaturedCopy({ site = 'cn', preview = '' } = {}) {
+    if (site === 'intl') {
+        return {
+            title: 'Your comment was featured',
+            content: preview
+                ? `Your comment was featured: ${preview}`
+                : 'Your comment was featured and may help more users.'
+        };
+    }
+
+    return {
+        title: '你的评论被设为精选',
+        content: preview
+            ? `你的评论被设为精选：${preview}`
+            : '你的评论被设为精选，可能会帮助到更多用户。'
+    };
+}
+
+async function fetchGuestbookMessagesByIds(supabase, site, messageIds) {
+    const normalizedIds = uniqueIds(messageIds);
+    if (!normalizedIds.length) return [];
+
+    const { data, error } = await applyCommentsSiteFilter(
+        supabase
+            .from('guestbook_messages')
+            .select('id, user_id, content, site')
+            .in('id', normalizedIds),
+        site
+    );
+
+    if (error) throw error;
+    return data || [];
+}
+
 async function fetchGuestbookMessageIds(supabase, site, messageIds) {
     const normalizedIds = uniqueIds(messageIds);
     if (!normalizedIds.length) return [];
@@ -54,7 +154,7 @@ async function fetchGuestbookCommentsByIds(supabase, site, commentIds) {
     const { data, error } = await applyCommentsSiteFilter(
         supabase
             .from('guestbook_comments')
-            .select('id, message_id, parent_id')
+            .select('id, message_id, parent_id, user_id, content, site')
             .in('id', normalizedIds),
         site
     );
@@ -70,7 +170,7 @@ async function fetchGuestbookCommentsForMessageIds(supabase, site, messageIds) {
     const { data, error } = await applyCommentsSiteFilter(
         supabase
             .from('guestbook_comments')
-            .select('id, message_id, parent_id')
+            .select('id, message_id, parent_id, user_id, content, site')
             .in('message_id', normalizedIds),
         site
     );
@@ -98,6 +198,7 @@ async function deleteGuestbookLikes(supabase, site, targetType, targetIds) {
 }
 
 async function deleteGuestbookItems(supabase, site, { messageIds = [], commentIds = [] }) {
+    const selectedMessages = await fetchGuestbookMessagesByIds(supabase, site, messageIds);
     const selectedMessageIds = await fetchGuestbookMessageIds(supabase, site, messageIds);
     const selectedComments = await fetchGuestbookCommentsByIds(supabase, site, commentIds);
     const selectedCommentIds = selectedComments.map(comment => comment.id);
@@ -112,6 +213,7 @@ async function deleteGuestbookItems(supabase, site, { messageIds = [], commentId
         .map(comment => comment.id);
     const likeCommentIds = uniqueIds([...descendantCommentIds, ...messageCascadeCommentIds]);
     const deletedCommentIds = uniqueIds([...selectedCommentIds, ...likeCommentIds]);
+    const deletedCommentRows = threadComments.filter(comment => deletedCommentIds.includes(comment.id));
 
     await Promise.all([
         deleteGuestbookLikes(supabase, site, 'message', selectedMessageIds),
@@ -150,7 +252,9 @@ async function deleteGuestbookItems(supabase, site, { messageIds = [], commentId
         cascadeDeletedGuestbookComments: Math.max(0, deletedCommentIds.length - selectedCommentIds.length),
         cleanedGuestbookLikes: selectedMessageIds.length + likeCommentIds.length,
         deletedGuestbookMessageIds: selectedMessageIds,
-        deletedGuestbookCommentIds: deletedCommentIds
+        deletedGuestbookCommentIds: deletedCommentIds,
+        deletedGuestbookMessageRows: selectedMessages,
+        deletedGuestbookCommentRows: deletedCommentRows
     };
 }
 
@@ -166,7 +270,7 @@ async function deleteGalleryItems(supabase, site, galleryIds) {
     const { data: existingRows, error: lookupError } = await applyCommentsSiteFilter(
         supabase
             .from('prompt_comments')
-            .select('id')
+            .select('id, user_id, prompt_id, content, site, is_pinned')
             .in('id', normalizedIds),
         site
     );
@@ -191,10 +295,174 @@ async function deleteGalleryItems(supabase, site, galleryIds) {
 
     if (error) throw error;
 
-    return {
-        deletedGalleryComments: existingIds.length,
-        deletedGalleryIds: existingIds
-    };
+        return {
+            deletedGalleryComments: existingIds.length,
+            deletedGalleryIds: existingIds,
+            deletedGalleryRows: existingRows || []
+        };
+}
+
+async function fetchPromptTitlesByIds(supabase, promptIds = []) {
+    const normalizedIds = uniqueIds(promptIds);
+    if (!normalizedIds.length) return {};
+
+    const { data, error } = await supabase
+        .from('prompts')
+        .select('id, title, title_zh, title_en')
+        .in('id', normalizedIds);
+
+    if (error) throw error;
+
+    return (data || []).reduce((acc, row) => {
+        acc[row.id] = normalizeText(row.title_zh || row.title || row.title_en, 120);
+        return acc;
+    }, {});
+}
+
+async function notifyModeratedCommentOwners(supabase, site, {
+    guestbookMessageRows = [],
+    guestbookCommentRows = [],
+    galleryRows = [],
+    moderationReason = ''
+} = {}) {
+    const promptTitleMap = await fetchPromptTitlesByIds(
+        supabase,
+        galleryRows.map((row) => row.prompt_id)
+    );
+    const notifications = [];
+
+    (guestbookMessageRows || []).forEach((row) => {
+        const userId = normalizeText(row?.user_id, 160);
+        if (!userId) return;
+        const preview = collapsePreview(row?.content, 60);
+        const copy = buildContentModeratedCopy({ site, targetLabel: '留言', preview, reason: moderationReason });
+        notifications.push({
+            userIds: [userId],
+            title: copy.title,
+            content: copy.content,
+            type: 'warning',
+            scope: 'user_personal',
+            category: 'content_moderated',
+            actionLabel: site === 'intl' ? 'View details' : '查看详情',
+            actionUrl: buildGuestbookActionUrl(row.id),
+            sourceModule: 'comments.moderation',
+            sourceEventId: `content_moderated:guestbook_message:${row.id}`,
+            metadata: {
+                site,
+                page_id: 'guestbook',
+                event_type: 'content_moderated',
+                moderation_reason: normalizeText(moderationReason, 160),
+                content_type: 'guestbook_message',
+                message_id: row.id
+            },
+            dedupeWindowMinutes: 0
+        });
+    });
+
+    (guestbookCommentRows || []).forEach((row) => {
+        const userId = normalizeText(row?.user_id, 160);
+        if (!userId) return;
+        const preview = collapsePreview(row?.content, 60);
+        const copy = buildContentModeratedCopy({ site, targetLabel: '留言回复', preview, reason: moderationReason });
+        notifications.push({
+            userIds: [userId],
+            title: copy.title,
+            content: copy.content,
+            type: 'warning',
+            scope: 'user_personal',
+            category: 'content_moderated',
+            actionLabel: site === 'intl' ? 'View details' : '查看详情',
+            actionUrl: buildGuestbookActionUrl(row.message_id, row.id),
+            sourceModule: 'comments.moderation',
+            sourceEventId: `content_moderated:guestbook_comment:${row.id}`,
+            metadata: {
+                site,
+                page_id: 'guestbook',
+                event_type: 'content_moderated',
+                moderation_reason: normalizeText(moderationReason, 160),
+                content_type: 'guestbook_comment',
+                comment_id: row.id,
+                message_id: row.message_id
+            },
+            dedupeWindowMinutes: 0
+        });
+    });
+
+    (galleryRows || []).forEach((row) => {
+        const userId = normalizeText(row?.user_id, 160);
+        if (!userId) return;
+        const preview = collapsePreview(row?.content, 60);
+        const promptTitle = promptTitleMap[row.prompt_id] || '';
+        const copy = buildContentModeratedCopy({
+            site,
+            targetLabel: promptTitle ? `提示词评论《${promptTitle}》` : '提示词评论',
+            preview,
+            reason: moderationReason
+        });
+        notifications.push({
+            userIds: [userId],
+            title: copy.title,
+            content: copy.content,
+            type: 'warning',
+            scope: 'user_personal',
+            category: 'content_moderated',
+            actionLabel: site === 'intl' ? 'View details' : '查看详情',
+            actionUrl: buildPromptActionUrl(row.prompt_id, row.id),
+            sourceModule: 'comments.moderation',
+            sourceEventId: `content_moderated:prompt_comment:${row.id}`,
+            metadata: {
+                site,
+                page_id: 'prompts',
+                event_type: 'content_moderated',
+                moderation_reason: normalizeText(moderationReason, 160),
+                content_type: 'prompt_comment',
+                comment_id: row.id,
+                prompt_id: row.prompt_id,
+                prompt_title: promptTitle
+            },
+            dedupeWindowMinutes: 0
+        });
+    });
+
+    for (const payload of notifications) {
+        await notifyUsers(supabase, payload);
+    }
+}
+
+async function notifyFeaturedCommentOwner(supabase, site, row = {}) {
+    const userId = normalizeText(row?.user_id, 160);
+    const promptId = normalizeText(row?.prompt_id, 160);
+    if (!userId || !promptId) {
+        return;
+    }
+
+    const promptTitleMap = await fetchPromptTitlesByIds(supabase, [promptId]);
+    const promptTitle = promptTitleMap[promptId] || '';
+    const preview = collapsePreview(row?.content, 60);
+    const copy = buildContentFeaturedCopy({ site, preview });
+
+    await notifyUsers(supabase, {
+        userIds: [userId],
+        title: copy.title,
+        content: promptTitle ? `${copy.content}\n所属提示词：${promptTitle}` : copy.content,
+        type: 'success',
+        scope: 'user_personal',
+        category: 'content_featured',
+        actionLabel: site === 'intl' ? 'View comment' : '查看评论',
+        actionUrl: buildPromptActionUrl(promptId, row.id),
+        sourceModule: 'comments.featured',
+        sourceEventId: `content_featured:prompt_comment:${row.id}`,
+        metadata: {
+            site,
+            page_id: 'prompts',
+            event_type: 'content_featured',
+            content_type: 'prompt_comment',
+            comment_id: row.id,
+            prompt_id: promptId,
+            prompt_title: promptTitle
+        },
+        dedupeWindowMinutes: 0
+    });
 }
 
 async function cleanupCommentWorkflowArtifacts(supabase, site, {
@@ -323,7 +591,7 @@ async function toggleGalleryPinStatus(supabase, site, { commentId, promptId, nex
             .update({ is_pinned: nextPinnedState })
             .eq('id', normalizedCommentId)
             .eq('prompt_id', normalizedPromptId)
-            .select('id, prompt_id, is_pinned'),
+            .select('id, prompt_id, is_pinned, user_id, content, site'),
         site
     );
 
@@ -359,6 +627,7 @@ module.exports = async (req, res) => {
             fieldName: 'site'
         });
         const items = normalizeCommentItems(body);
+        const moderationReason = normalizeText(body.reason || body.moderationReason || body.deleteReason, 160);
 
         if (action !== 'delete' && action !== 'delete_many') {
             if (action !== 'toggle_pin') {
@@ -388,6 +657,10 @@ module.exports = async (req, res) => {
                     is_pinned: pinResult.is_pinned
                 }
             });
+
+            if (pinResult.is_pinned) {
+                await notifyFeaturedCommentOwner(supabase, site, pinResult);
+            }
 
             return sendJson(res, 200, {
                 success: true,
@@ -420,6 +693,12 @@ module.exports = async (req, res) => {
             guestbookCommentIds: guestbookResult.deletedGuestbookCommentIds,
             galleryCommentIds: galleryResult.deletedGalleryIds
         });
+        await notifyModeratedCommentOwners(supabase, site, {
+            guestbookMessageRows: guestbookResult.deletedGuestbookMessageRows,
+            guestbookCommentRows: guestbookResult.deletedGuestbookCommentRows,
+            galleryRows: galleryResult.deletedGalleryRows,
+            moderationReason
+        });
 
         const deletedCount =
             guestbookResult.deletedGuestbookMessages
@@ -441,6 +720,7 @@ module.exports = async (req, res) => {
                 deleted_guestbook_comments: guestbookResult.deletedGuestbookComments,
                 cascade_deleted_guestbook_comments: guestbookResult.cascadeDeletedGuestbookComments,
                 deleted_gallery_comments: galleryResult.deletedGalleryComments,
+                moderation_reason: moderationReason,
                 cleaned_guestbook_likes: guestbookResult.cleanedGuestbookLikes,
                 deleted_workflow_rows: workflowCleanup.deletedWorkflowRows,
                 deleted_workflow_notes: workflowCleanup.deletedNoteRows,

@@ -173,7 +173,7 @@ function createDeferredThenableQuery(name) {
     return query;
 }
 
-test('user modal summary keeps login history inside the active site scope', async () => {
+test('user modal summary keeps heartbeat activity inside the active site scope', async () => {
     const source = readRepoFile('admin-users.js');
     const functionSource = extractFunction(source, 'fetchUserModalSummaryEnrichment');
     const siteFilterCalls = [];
@@ -192,17 +192,31 @@ test('user modal summary keeps login history inside the active site scope', asyn
             ],
             error: null
         }, 'user_tags'),
-        user_login_history: createThenableQuery({
-            data: {
-                created_at: '2026-04-18T10:20:30.000Z'
-            },
+        engagement_user_activity: createThenableQuery({
+            data: [
+                {
+                    last_active_at: '2026-05-05T09:20:30.000Z',
+                    site: 'cn'
+                }
+            ],
             error: null
-        }, 'user_login_history')
+        }, 'engagement_user_activity')
     };
 
     const context = {
         console: {
             warn() {}
+        },
+        fetchOptionalUsersRows: async (query) => query,
+        getLatestUsersActivityTimestamp(...values) {
+            const latest = values
+                .flat()
+                .map((value) => String(value || '').trim())
+                .filter(Boolean)
+                .map((value) => ({ value, time: new Date(value).getTime() }))
+                .filter((entry) => Number.isFinite(entry.time))
+                .sort((left, right) => right.time - left.time)[0];
+            return latest ? latest.value : null;
         },
         window: {
             supabaseClient: {
@@ -231,14 +245,14 @@ test('user modal summary keeps login history inside the active site scope', asyn
 
     const result = await context.fetchUserModalSummaryEnrichment('user-1');
 
-    assert.deepEqual(siteFilterCalls, ['points_balance', 'user_login_history']);
+    assert.deepEqual(siteFilterCalls, ['points_balance', 'engagement_user_activity']);
     assert.equal(queries.points_balance.__state.siteFilterApplied, true);
-    assert.equal(queries.user_login_history.__state.siteFilterApplied, true);
+    assert.equal(queries.engagement_user_activity.__state.siteFilterApplied, true);
     assert.equal(queries.user_tags.__state.siteFilterApplied, false);
     assert.equal(result.points, 1050);
     assert.equal(result.vip_level, 'VIP');
     assert.deepEqual([...result.tags], ['vip', 'creator']);
-    assert.equal(result.last_sign_in_at, '2026-04-18T10:20:30.000Z');
+    assert.equal(result.last_sign_in_at, '2026-05-05T09:20:30.000Z');
 });
 
 function createAnalyticsClient(results = {}) {

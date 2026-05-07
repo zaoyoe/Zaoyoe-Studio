@@ -30,8 +30,46 @@ function setElementHidden(target, hidden, visibleDisplay = '') {
     }
 }
 
+function requestGuestbookLoginPrompt(message, options = {}) {
+    const normalizedMessage = String(
+        message || window.i18n?.t?.('auth.loginRequired') || '请先登录'
+    ).trim();
+
+    if (typeof window.requestGuestbookLogin === 'function') {
+        window.requestGuestbookLogin(normalizedMessage, options);
+        return;
+    }
+
+    if (typeof window.openLoginModalWithMessage === 'function') {
+        window.openLoginModalWithMessage(normalizedMessage, {
+            viewId: 'login',
+            type: 'error'
+        });
+        return;
+    }
+
+    if (typeof window.openLoginModal === 'function') {
+        window.openLoginModal('login', {
+            initialMessage: normalizedMessage,
+            initialMessageType: 'error'
+        });
+        return;
+    }
+
+    if (document.getElementById('loginModal') && typeof window.toggleLoginModal === 'function') {
+        window.toggleLoginModal('login');
+        return;
+    }
+
+    alert(normalizedMessage);
+}
+
 let guestbookDeepLinkHandled = false;
 let guestbookDeepLinkRetryTimer = null;
+let guestbookPendingDeepLinkTarget = null;
+let guestbookDeepLinkInFlight = false;
+let guestbookDeepLinkAttemptCount = 0;
+const GUESTBOOK_DEEP_LINK_MAX_ATTEMPTS = 6;
 
 function getGuestbookDeepLinkTarget() {
     const params = new URLSearchParams(window.location.search || '');
@@ -48,6 +86,37 @@ function getGuestbookDeepLinkTarget() {
     };
 }
 
+function normalizeGuestbookDeepLinkTarget(target = null) {
+    if (!target || typeof target !== 'object') {
+        return null;
+    }
+
+    const messageId = String(target.messageId || target.message_id || '').trim();
+    const commentId = String(target.commentId || target.comment_id || '').trim();
+    if (!messageId) {
+        return null;
+    }
+
+    return {
+        messageId,
+        commentId
+    };
+}
+
+function rememberGuestbookDeepLinkTarget(target = null) {
+    const normalizedTarget = normalizeGuestbookDeepLinkTarget(target);
+    if (normalizedTarget) {
+        const changed = !guestbookPendingDeepLinkTarget
+            || guestbookPendingDeepLinkTarget.messageId !== normalizedTarget.messageId
+            || guestbookPendingDeepLinkTarget.commentId !== normalizedTarget.commentId;
+        guestbookPendingDeepLinkTarget = normalizedTarget;
+        if (changed) {
+            guestbookDeepLinkAttemptCount = 0;
+        }
+    }
+    return guestbookPendingDeepLinkTarget;
+}
+
 function clearGuestbookDeepLinkRetryTimer() {
     if (guestbookDeepLinkRetryTimer) {
         clearTimeout(guestbookDeepLinkRetryTimer);
@@ -55,32 +124,72 @@ function clearGuestbookDeepLinkRetryTimer() {
     }
 }
 
-function maybeHandleGuestbookDeepLink() {
-    const deepLink = getGuestbookDeepLinkTarget();
-    if (!deepLink || guestbookDeepLinkHandled) {
-        return;
+function scheduleGuestbookDeepLinkRetry(delayMs = 180, options = {}) {
+    clearGuestbookDeepLinkRetryTimer();
+    guestbookDeepLinkRetryTimer = setTimeout(() => {
+        guestbookDeepLinkRetryTimer = null;
+        void maybeHandleGuestbookDeepLink(options);
+    }, Math.max(40, Number(delayMs) || 180));
+}
+
+async function maybeHandleGuestbookDeepLink(options = {}) {
+    const deepLink = rememberGuestbookDeepLinkTarget(getGuestbookDeepLinkTarget());
+    if (!deepLink || guestbookDeepLinkHandled || guestbookDeepLinkInFlight) {
+        return false;
     }
 
     if (typeof window.handleSmartScroll !== 'function') {
-        clearGuestbookDeepLinkRetryTimer();
-        guestbookDeepLinkRetryTimer = setTimeout(() => {
-            guestbookDeepLinkRetryTimer = null;
-            maybeHandleGuestbookDeepLink();
-        }, 120);
-        return;
+        scheduleGuestbookDeepLinkRetry(120, options);
+        return false;
     }
 
-    guestbookDeepLinkHandled = true;
+    guestbookDeepLinkInFlight = true;
+    guestbookDeepLinkAttemptCount += 1;
     clearGuestbookDeepLinkRetryTimer();
+    const startDelayMs = options.force === true ? 80 : 320;
 
-    setTimeout(() => {
-        if (deepLink.commentId) {
-            window.handleSmartScroll(deepLink.commentId, 'comment', deepLink.messageId);
-            return;
+    try {
+        await new Promise((resolve) => setTimeout(resolve, startDelayMs));
+        const focused = deepLink.commentId
+            ? await Promise.resolve(window.handleSmartScroll(deepLink.commentId, 'comment', deepLink.messageId))
+            : await Promise.resolve(window.handleSmartScroll(deepLink.messageId, 'message'));
+        if (focused !== false) {
+            guestbookDeepLinkHandled = true;
+            guestbookPendingDeepLinkTarget = null;
+            guestbookDeepLinkAttemptCount = 0;
+            return true;
         }
+    } finally {
+        guestbookDeepLinkInFlight = false;
+    }
 
-        window.handleSmartScroll(deepLink.messageId, 'message');
-    }, 320);
+    if (!guestbookDeepLinkHandled && guestbookDeepLinkAttemptCount < GUESTBOOK_DEEP_LINK_MAX_ATTEMPTS) {
+        scheduleGuestbookDeepLinkRetry(options.force === true ? 480 : 720, {
+            ...options,
+            force: true
+        });
+    }
+    return false;
+}
+
+window.maybeHandleGuestbookDeepLink = maybeHandleGuestbookDeepLink;
+
+function triggerGuestbookDeepLinkReplay(options = {}) {
+    if (guestbookDeepLinkHandled) return;
+    rememberGuestbookDeepLinkTarget(getGuestbookDeepLinkTarget());
+    void maybeHandleGuestbookDeepLink({
+        ...options,
+        force: true
+    });
+}
+
+function primeGuestbookDeepLinkHandling() {
+    rememberGuestbookDeepLinkTarget(getGuestbookDeepLinkTarget());
+    void maybeHandleGuestbookDeepLink();
+}
+
+function finalizeGuestbookDeepLinkHandling() {
+    triggerGuestbookDeepLinkReplay({ reason: 'guestbook_messages_ready' });
 }
 
 function applyGuestbookImageReadyState(image) {
@@ -278,8 +387,11 @@ function initGuestbookPage() {
     function waitForSupabase() {
         if (typeof window.supabaseClient !== 'undefined' && typeof loadGuestbookMessages === 'function') {
             console.log('✅ Supabase 已就绪，加载留言');
-            loadGuestbookMessages();
-            maybeHandleGuestbookDeepLink();
+            primeGuestbookDeepLinkHandling();
+            void Promise.resolve(loadGuestbookMessages())
+                .finally(() => {
+                    finalizeGuestbookDeepLinkHandling();
+                });
 
             console.log('🔌 首屏渲染后再启用 Supabase Realtime...');
             scheduleRealtimeSetup();
@@ -1015,6 +1127,55 @@ function initGuestbookPage() {
         return replacementCard;
     }
 
+    window.upsertGuestbookMessageDOM = function (message, options = {}) {
+        const normalizedMessageId = getMessageIdentity(message);
+        if (!normalizedMessageId || !message) return null;
+
+        const existingState = findMessageState(normalizedMessageId);
+        const nextMessage = {
+            ...message,
+            id: message.id || message.objectId || normalizedMessageId,
+            objectId: message.objectId || message.id || normalizedMessageId,
+            forceExpanded: options.forceExpanded === true
+                ? true
+                : Boolean(message.forceExpanded || existingState?.forceExpanded)
+        };
+
+        if (existingState) {
+            Object.keys(existingState).forEach((key) => {
+                delete existingState[key];
+            });
+            Object.assign(existingState, nextMessage);
+            return rerenderMessageCard(normalizedMessageId);
+        }
+
+        const currentCard = document.querySelector(`.message-item[data-message-id="${normalizedMessageId}"]`);
+        if (currentCard) {
+            allMessages.unshift(nextMessage);
+            const currentWrapper = currentCard.closest('.message-anim-wrapper') || currentCard;
+            const replacementElement = htmlToElement(createMessageCard(nextMessage, 0));
+            const replacementCard = replacementElement?.querySelector?.('.message-item') || null;
+            if (!replacementElement || !replacementCard) return null;
+            replacementCard.id = `msg-${normalizedMessageId}`;
+            replacementCard.setAttribute('data-message-id', normalizedMessageId);
+            if (currentCard.classList.contains('fetched-history')) {
+                replacementCard.classList.add('fetched-history');
+            }
+            if (currentWrapper.classList.contains('visible')) {
+                replacementElement.classList.add('visible');
+            }
+            currentWrapper.replaceWith(replacementElement);
+            stabilizeGuestbookMessageImages(replacementElement);
+            attachCommentHandlers();
+            return replacementCard;
+        }
+
+        return window.insertMessageToDOM(nextMessage, {
+            position: options.position || 'prepend',
+            markFetchedHistory: options.markFetchedHistory !== false
+        });
+    };
+
     window.renderGuestbookCommentInsert = function (messageId, comment, options = {}) {
         const normalizedMessageId = getMessageIdentity(messageId);
         if (!normalizedMessageId || !comment) return false;
@@ -1293,10 +1454,9 @@ function initGuestbookPage() {
             // Check Auth - Supabase
             const { data: { user } } = await window.supabaseClient.auth.getUser();
             if (!user) {
-                alert(window.i18n?.t('auth.loginRequired') || '请先登录后再评论');
-                if (typeof toggleLoginModal === 'function') {
-                    toggleLoginModal();
-                }
+                requestGuestbookLoginPrompt(window.i18n?.t?.('auth.loginRequired') || '请先登录后再评论', {
+                    closeComment: true
+                });
                 return;
             }
 
@@ -1953,10 +2113,7 @@ window.openCommentModal = async function (messageId, parentCommentId = null) {
     }
 
     if (!user) {
-        alert(window.i18n?.t('auth.loginRequired') || '请先登录后再评论');
-        if (typeof toggleLoginModal === 'function') {
-            toggleLoginModal();
-        }
+        requestGuestbookLoginPrompt(window.i18n?.t?.('auth.loginRequired') || '请先登录后再评论');
         return;
     }
 
@@ -2257,12 +2414,13 @@ function waitForElement(selector, timeout = 5000) {
  * @param {string} type - (可选) 类型 'message' | 'comment'
  * @returns {Promise<boolean>} 是否成功
  */
-async function fetchAndInsertSingleMessage(messageId, targetId = null, type = 'message') {
+async function fetchAndInsertSingleMessage(messageId, targetId = null, type = 'message', options = {}) {
     try {
         console.log(`🎣 拉取单条留言: ${messageId}`);
 
+        const forceRefresh = options.forceRefresh === true;
         const existingEarly = document.querySelector(`.message-item[data-message-id="${messageId}"]`);
-        if (existingEarly) {
+        if (existingEarly && !forceRefresh) {
             console.warn(`⚠️ [早期检查] 留言已存在，直接返回: ${messageId}`);
             return true;
         }
@@ -2405,12 +2563,22 @@ async function fetchAndInsertSingleMessage(messageId, targetId = null, type = 'm
                 isLiked: Boolean(window.guestbookCache?.userLikes?.has?.(`Message_${messageRecord.id}`))
             };
 
-        const insertedCard = typeof window.insertMessageToDOM === 'function'
-            ? window.insertMessageToDOM(formattedMessage, {
+        const shouldForceExpand = options.forceExpanded === true || (type === 'comment' && Boolean(targetId));
+        const insertedCard = typeof window.upsertGuestbookMessageDOM === 'function'
+            ? window.upsertGuestbookMessageDOM(formattedMessage, {
                 position: 'prepend',
-                markFetchedHistory: true
+                markFetchedHistory: true,
+                forceExpanded: shouldForceExpand
             })
-            : null;
+            : (typeof window.insertMessageToDOM === 'function' && !existingEarly
+                ? window.insertMessageToDOM({
+                    ...formattedMessage,
+                    forceExpanded: shouldForceExpand
+                }, {
+                    position: 'prepend',
+                    markFetchedHistory: true
+                })
+                : null);
 
         if (!insertedCard) {
             console.error('❌ 无法插入补拉留言到 DOM');
@@ -2435,12 +2603,12 @@ async function fetchAndInsertSingleMessage(messageId, targetId = null, type = 'm
  * @param {string} parentMessageId - 评论的父留言 ID（可选）
  */
 window.handleSmartScroll = async function (targetId, type = 'message', parentMessageId = null) {
-    if (!targetId) return;
+    if (!targetId) return false;
 
     // 特殊处理：滚动到顶部
     if (targetId === 'TOP') {
         window.scrollTo({ top: 0, behavior: 'smooth' });
-        return;
+        return true;
     }
 
     console.log(`🚀 [SmartScroll v6.0] 目标: ${type} #${targetId} (父ID: ${parentMessageId})`);
@@ -2467,12 +2635,25 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
         if (!parentCard) {
             console.log('🎣 父留言不在当前视图，启动局部打捞...');
             // ⚡ FIX: Pass targetId and type to ensure comment like count is updated
-            const success = await fetchAndInsertSingleMessage(parentMessageId, targetId, 'comment');
+            const success = await fetchAndInsertSingleMessage(parentMessageId, targetId, 'comment', {
+                forceExpanded: true
+            });
             if (success) {
                 // 等待插入完成
                 await new Promise(r => setTimeout(r, 500));
             }
+        } else {
+            console.log('🔄 父留言已在当前视图，强制刷新评论树后再定位...');
+            const success = await fetchAndInsertSingleMessage(parentMessageId, targetId, 'comment', {
+                forceRefresh: true,
+                forceExpanded: true
+            });
+            if (success) {
+                await new Promise(r => setTimeout(r, 300));
+            }
         }
+
+        targetElement = document.querySelector(selector);
     }
 
     // Case B: 留言本身不在 (挖坟点赞)
@@ -2484,6 +2665,7 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
             // 等待插入完成
             await new Promise(r => setTimeout(r, 500));
         }
+        targetElement = document.querySelector(selector);
     }
 
     // --- 4. 启动"守株待兔"（MutationObserver）---
@@ -2638,7 +2820,7 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
                 setInlineStyles(commentsSection, { contentVisibility: '' });
             }, 4000);
 
-            return;
+            return true;
         }
 
         // ✅ 桌面端：分两步清理，避免突然移除will-change导致的布局抖动
@@ -2654,7 +2836,9 @@ window.handleSmartScroll = async function (targetId, type = 'message', parentMes
             // 清理内联样式
             setInlineStyles(targetElement, { willChange: '' });
         }, 3700);
+        return true;
     } else {
+        return false;
     }
 };
 

@@ -766,11 +766,19 @@ test('payments summary exposes payment intent failures as dedicated exception to
                 id: 'session-failed-1',
                 session_key: 'PCS_ZPAY_FAILED_1',
                 provider: 'zpay',
+                user_id: 'user-intent-failed-1',
                 site: 'cn',
                 status: 'failed',
                 error_message: 'TypeError: fetch failed',
                 payment_order_id: null,
                 created_at: '2026-03-24T10:00:00.000Z'
+            }
+        ],
+        profiles: [
+            {
+                id: 'user-intent-failed-1',
+                email: 'intent-failed@example.com',
+                username: 'intent-failed'
             }
         ]
     };
@@ -796,7 +804,11 @@ test('payments summary exposes payment intent failures as dedicated exception to
         assert.equal(Boolean(intentTopicItem), true);
         assert.equal(intentTopicItem.title, '支付意图失败');
         assert.match(intentTopicItem.message, /fetch failed/);
-        assert.equal((payload.recent_anomalies || []).some((item) => item.title === '支付意图失败'), true);
+        assert.equal(intentTopicItem.user_id, 'user-intent-failed-1');
+        assert.equal(intentTopicItem.user_email, 'intent-failed@example.com');
+        const recentIntentFailure = (payload.recent_anomalies || []).find((item) => item.title === '支付意图失败');
+        assert.equal(Boolean(recentIntentFailure), true);
+        assert.equal(recentIntentFailure.user_email, 'intent-failed@example.com');
     });
 });
 

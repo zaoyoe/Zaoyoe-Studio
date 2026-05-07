@@ -43,6 +43,25 @@ function createPublicEngagementHandlers({
     });
     const ASSET_STYLE_CONFIG_KEY = 'engagement_asset_style_center';
     const SUPPORT_ENTRY_CONFIG_KEY = 'engagement_support_entry_center';
+    const PAGE_SCENE_CONFIG_KEY = 'engagement_page_scenes';
+    const DEFAULT_EVENT_PRIORITY_CENTER = Object.freeze({
+        first_wave: {
+            label: '首波优先',
+            events: ['login_risk', 'payment_failed', 'wallet_recharge_failed', 'verify_failed', 'support_reply', 'ticket_updated', 'refund_status', 'order_status', 'order_paid', 'order_delivered', 'content_moderated']
+        },
+        service: {
+            label: '常规服务',
+            events: ['verification_expiring', 'permission_changed', 'points_adjusted', 'points_insufficient', 'verify_queue', 'message_replied', 'comment_replied', 'guestbook_mention', 'service_status', 'maintenance_notice', 'usage_rules', 'community_rule']
+        },
+        marketing: {
+            label: '延后营销',
+            events: ['coupon_available', 'coupon_expiring', 'product_discount', 'product_discount_available', 'product_restocked', 'cart_abandoned', 'inactive_user_return']
+        },
+        guidance: {
+            label: '体验引导',
+            events: ['verify_success', 'prompt_unlocked', 'search_no_result', 'profile_incomplete', 'daily_checkin_available', 'new_user_welcome', 'points_low_balance', 'content_featured', 'wallet_recharge_success']
+        }
+    });
     let engagementCorsPolicyCache = null;
     let engagementCorsPolicyCacheExpiresAt = 0;
 
@@ -88,8 +107,80 @@ function createPublicEngagementHandlers({
         return [...new Set(source.map((item) => sanitizeText(item, 80).toLowerCase()).filter(Boolean))];
     }
 
+    function normalizeEventPriorityCenter(value = {}) {
+        const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+        const fallback = DEFAULT_EVENT_PRIORITY_CENTER;
+        return {
+            first_wave: {
+                label: sanitizeText(source.first_wave?.label || fallback.first_wave.label, 80) || fallback.first_wave.label,
+                events: normalizeTagArray(source.first_wave?.events || fallback.first_wave.events)
+            },
+            service: {
+                label: sanitizeText(source.service?.label || fallback.service.label, 80) || fallback.service.label,
+                events: normalizeTagArray(source.service?.events || fallback.service.events)
+            },
+            marketing: {
+                label: sanitizeText(source.marketing?.label || fallback.marketing.label, 80) || fallback.marketing.label,
+                events: normalizeTagArray(source.marketing?.events || fallback.marketing.events)
+            },
+            guidance: {
+                label: sanitizeText(source.guidance?.label || fallback.guidance.label, 80) || fallback.guidance.label,
+                events: normalizeTagArray(source.guidance?.events || fallback.guidance.events)
+            }
+        };
+    }
+
+    function normalizeSceneEventPriorityCenter(value = {}, fallbackCenter = DEFAULT_EVENT_PRIORITY_CENTER) {
+        const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+        const fallback = normalizeEventPriorityCenter(fallbackCenter);
+        return {
+            enabled: source.enabled === true,
+            first_wave: {
+                label: sanitizeText(source.first_wave?.label || fallback.first_wave.label, 80) || fallback.first_wave.label,
+                events: normalizeTagArray(source.first_wave?.events || fallback.first_wave.events)
+            },
+            service: {
+                label: sanitizeText(source.service?.label || fallback.service.label, 80) || fallback.service.label,
+                events: normalizeTagArray(source.service?.events || fallback.service.events)
+            },
+            marketing: {
+                label: sanitizeText(source.marketing?.label || fallback.marketing.label, 80) || fallback.marketing.label,
+                events: normalizeTagArray(source.marketing?.events || fallback.marketing.events)
+            },
+            guidance: {
+                label: sanitizeText(source.guidance?.label || fallback.guidance.label, 80) || fallback.guidance.label,
+                events: normalizeTagArray(source.guidance?.events || fallback.guidance.events)
+            }
+        };
+    }
+
+    function resolvePageEventPriorityCenter(config = {}, pageId = 'home') {
+        const normalizedPageId = normalizePageId(pageId);
+        const globalCenter = normalizeEventPriorityCenter(config?.event_priority_center || {});
+        const scenes = Array.isArray(config?.scenes) ? config.scenes : [];
+        const scene = scenes.find((entry) => normalizePageId(entry?.id || entry?.page_id || entry?.pageId || '') === normalizedPageId) || null;
+        const overrideCenter = normalizeSceneEventPriorityCenter(scene?.event_priority_center || scene?.eventPriorityCenter || {}, globalCenter);
+        return overrideCenter.enabled ? {
+            first_wave: { ...globalCenter.first_wave, ...(overrideCenter.first_wave || {}) },
+            service: { ...globalCenter.service, ...(overrideCenter.service || {}) },
+            marketing: { ...globalCenter.marketing, ...(overrideCenter.marketing || {}) },
+            guidance: { ...globalCenter.guidance, ...(overrideCenter.guidance || {}) }
+        } : globalCenter;
+    }
+
     function normalizeMetadata(value) {
         return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    }
+
+    function parseEventContext(value = '') {
+        const raw = sanitizeText(value, 1000);
+        if (!raw) return {};
+        try {
+            const parsed = JSON.parse(raw);
+            return normalizeMetadata(parsed);
+        } catch (_) {
+            return {};
+        }
     }
 
     function isLocalPreviewOrigin(origin = '') {
@@ -173,6 +264,10 @@ function createPublicEngagementHandlers({
         return Number.isFinite(fallbackParsed) && fallbackParsed >= 0 ? fallbackParsed : 24;
     }
 
+    function normalizeRepeatIntervalMinutes(value, fallback = 2) {
+        return normalizeInteger(value, fallback, { min: 0, max: 1440 });
+    }
+
     function normalizeAssetStyle(style = {}) {
         const source = normalizeMetadata(style);
         return {
@@ -183,7 +278,7 @@ function createPublicEngagementHandlers({
             bubble_background: normalizeHexColor(source.bubble_background || source.bubbleBackground, '#ffffff'),
             text_color: normalizeHexColor(source.text_color || source.textColor, '#1f2937'),
             radius_px: normalizeInteger(source.radius_px || source.radiusPx, 22, { min: 12, max: 32 }),
-            max_width_px: normalizeInteger(source.max_width_px || source.maxWidthPx, 420, { min: 260, max: 560 }),
+            max_width_px: normalizeInteger(source.max_width_px || source.maxWidthPx, 520, { min: 260, max: 560 }),
             density: sanitizeText(source.density || 'comfortable', 40) || 'comfortable',
             shadow: sanitizeText(source.shadow || 'soft', 40) || 'soft',
             animation: sanitizeText(source.animation || 'gentle', 40) || 'gentle',
@@ -223,6 +318,7 @@ function createPublicEngagementHandlers({
             'verify_task_status',
             'verify_failure_help',
             'verify_precheck',
+            'ticket_history',
             'create_ticket',
             'tg_support',
             'live_chat'
@@ -636,16 +732,25 @@ function createPublicEngagementHandlers({
         return normalizeTriggerType(row.trigger_type || 'page_view') === normalizeTriggerType(context.triggerType || 'page_view');
     }
 
+    function normalizeDeliveryFrequencyScope(value = '', triggerType = 'page_view') {
+        const normalized = sanitizeText(value, 40).toLowerCase().replace(/[^a-z0-9_-]/g, '');
+        if (['rule', 'event', 'session'].includes(normalized)) {
+            return normalized;
+        }
+        return normalizeTriggerType(triggerType || 'page_view') === 'page_view' ? 'rule' : 'event';
+    }
+
     function normalizeRuleBubble(row = {}, context = {}) {
         const metadata = normalizeMetadata(row.metadata);
         const triggerType = normalizeTriggerType(row.trigger_type || 'page_view');
-        return {
+        const frequencyScope = normalizeDeliveryFrequencyScope(metadata.frequency_scope || metadata.frequencyScope, triggerType);
+        const bubble = {
             id: sanitizeText(row.id, 160),
             rule_id: sanitizeText(row.id, 160),
             notification_id: '',
             source: 'rule',
             source_module: sanitizeText(row.metadata?.source_module || 'engagement', 80) || 'engagement',
-            source_event_id: sanitizeText(row.metadata?.source_event_id, 160),
+            source_event_id: sanitizeText(context.triggerMetadata?.source_event_id || row.metadata?.source_event_id, 160),
             trigger_type: triggerType,
             title: sanitizeText(row.title || row.name || '小助手提醒', 160) || '小助手提醒',
             content: sanitizeText(row.content, 1200),
@@ -654,16 +759,100 @@ function createPublicEngagementHandlers({
             site: context.site,
             placement: normalizePlacement(row.placement || metadata.placement),
             priority: Number(row.priority || 0) || 0,
+            frequency: sanitizeText(row.frequency || 'once_per_day', 80) || 'once_per_day',
+            frequency_scope: frequencyScope,
             action_label: sanitizeText(row.action_label, 80),
             action_url: sanitizeText(row.action_url, 1000),
             dismiss_ttl_hours: normalizeDismissTtlHours(row.dismiss_ttl_hours, 24),
+            repeat_interval_minutes: normalizeRepeatIntervalMinutes(metadata.repeat_interval_minutes ?? metadata.repeatIntervalMinutes, 2),
             tone: sanitizeText(row.tone || 'info', 40) || 'info',
             icon: sanitizeText(row.icon || 'robot', 40) || 'robot',
             metadata: {
                 ...metadata,
+                repeat_interval_minutes: normalizeRepeatIntervalMinutes(metadata.repeat_interval_minutes ?? metadata.repeatIntervalMinutes, 2),
+                frequency_scope: frequencyScope,
                 trigger_type: triggerType,
                 feed_trigger_type: normalizeTriggerType(context.triggerType || 'page_view'),
                 feed_context: normalizeMetadata(context.triggerMetadata)
+            }
+        };
+        return applyRuleEventContextOverrides(bubble, row, context);
+    }
+
+    function getPointsAdjustedSummaryLabel(eventContext = {}) {
+        const direction = sanitizeText(eventContext.adjustment_direction || eventContext.adjustmentDirection, 40).toLowerCase();
+        const kind = sanitizeText(eventContext.adjustment_kind || eventContext.adjustmentKind, 40).toLowerCase();
+        if (kind === 'correction') return '积分记录已修正';
+        if (direction === 'increase') return '积分已补发';
+        if (direction === 'decrease') return '积分已扣减';
+        return '积分有更新';
+    }
+
+    function buildPointsAdjustedRuleContent(baseContent = '', eventContext = {}) {
+        const normalizedBase = sanitizeText(baseContent, 1200);
+        const amountValue = Number(eventContext.amount);
+        const absoluteAmount = Number.isFinite(amountValue) ? Math.abs(amountValue) : 0;
+        const reason = sanitizeText(eventContext.reason, 160);
+        const newTotalValue = Number(eventContext.new_total ?? eventContext.newTotal);
+        const summaryLabel = getPointsAdjustedSummaryLabel(eventContext);
+        const detailLines = [];
+
+        if (absoluteAmount > 0) {
+            detailLines.push(`本次变动：${summaryLabel.replace(/^积分/, '')} ${absoluteAmount} 积分。`);
+        } else {
+            detailLines.push('本次积分状态有更新。');
+        }
+        if (reason) {
+            detailLines.push(`原因：${reason}`);
+        }
+        if (Number.isFinite(newTotalValue)) {
+            detailLines.push(`当前可用积分：${newTotalValue}`);
+        }
+
+        return [normalizedBase, detailLines.join('\n')]
+            .filter(Boolean)
+            .join('\n')
+            .trim();
+    }
+
+    function applyRuleEventContextOverrides(bubble = {}, row = {}, context = {}) {
+        const triggerType = normalizeTriggerType(bubble.trigger_type || row.trigger_type || context.triggerType || 'page_view');
+        if (triggerType !== 'points_adjusted') {
+            return bubble;
+        }
+
+        const eventContext = normalizeMetadata(context.triggerMetadata?.event_context);
+        if (!Object.keys(eventContext).length) {
+            return bubble;
+        }
+
+        const adjustmentDirection = sanitizeText(eventContext.adjustment_direction || eventContext.adjustmentDirection, 40).toLowerCase();
+        const adjustmentKind = sanitizeText(eventContext.adjustment_kind || eventContext.adjustmentKind, 40).toLowerCase();
+        const summaryLabel = getPointsAdjustedSummaryLabel(eventContext);
+        const tone = adjustmentKind === 'correction'
+            ? (adjustmentDirection === 'decrease' ? 'warning' : 'info')
+            : (adjustmentDirection === 'increase' ? 'success' : (adjustmentDirection === 'decrease' ? 'warning' : bubble.tone));
+        const priorityFloor = adjustmentDirection === 'decrease' ? 35 : (adjustmentKind === 'correction' ? 28 : 24);
+
+        return {
+            ...bubble,
+            title: ['你的积分有更新', '积分变动通知', '小助手提醒'].includes(bubble.title) ? summaryLabel : bubble.title,
+            content: buildPointsAdjustedRuleContent(bubble.content, eventContext),
+            tone: tone || bubble.tone,
+            priority: Math.max(Number(bubble.priority || 0) || 0, priorityFloor),
+            action_label: bubble.action_label || '查看积分',
+            action_url: bubble.action_url || 'wallet://balance',
+            metadata: {
+                ...bubble.metadata,
+                adjustment_direction: adjustmentDirection || bubble.metadata?.adjustment_direction || '',
+                adjustment_kind: adjustmentKind || bubble.metadata?.adjustment_kind || '',
+                action_path_label: bubble.metadata?.action_path_label || '我的钱包 > 积分',
+                action_path_url: bubble.metadata?.action_path_url || 'wallet://balance',
+                wallet_view: bubble.metadata?.wallet_view || 'balance',
+                feed_context: {
+                    ...normalizeMetadata(bubble.metadata?.feed_context),
+                    event_context: eventContext
+                }
             }
         };
     }
@@ -694,6 +883,211 @@ function createPublicEngagementHandlers({
         };
     }
 
+    function shouldSurfaceNotificationBubble(row = {}, context = {}) {
+        const normalizedRow = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
+        const metadata = normalizeMetadata(normalizedRow.metadata);
+        const category = sanitizeText(normalizedRow.category || metadata.category, 80).toLowerCase();
+        const triggerType = normalizeTriggerType(
+            metadata.trigger_type
+                || metadata.triggerType
+                || metadata.event_type
+                || metadata.eventType
+                || ''
+        );
+        // Moderation outcomes are still stored as notifications, but they should
+        // stay in the inbox/badge instead of interrupting users with a robot bubble.
+        if (category === 'content_moderated' || triggerType === 'content_moderated') {
+            return false;
+        }
+        return Boolean(normalizeNotificationBubble(normalizedRow, context));
+    }
+
+    function normalizeDeliveryFrequency(value = 'once_per_day') {
+        const normalized = sanitizeText(value || 'once_per_day', 80).toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'once_per_day';
+        return normalized || 'once_per_day';
+    }
+
+    function getRealtimeDeliveryFrequencyBucket(bubble = {}, context = {}) {
+        const frequency = normalizeDeliveryFrequency(bubble.frequency || 'once_per_day');
+        const frequencyScope = normalizeDeliveryFrequencyScope(
+            bubble.frequency_scope || bubble.frequencyScope || bubble.metadata?.frequency_scope || bubble.metadata?.frequencyScope,
+            bubble.trigger_type || context.triggerType || 'page_view'
+        );
+        if (frequency === 'once') {
+            return 'once';
+        }
+        if (frequency === 'once_per_session' || frequency === 'session' || frequencyScope === 'session') {
+            return `session:${sanitizeText(context.readerKey, 160) || 'unknown'}`;
+        }
+        if (frequency === 'always' || frequency === 'every_time') {
+            const intervalMinutes = normalizeRepeatIntervalMinutes(bubble.repeat_interval_minutes, 2) || 2;
+            const intervalMs = Math.max(60000, intervalMinutes * 60 * 1000);
+            return `interval:${intervalMinutes}:${Math.floor(Date.now() / intervalMs)}`;
+        }
+        return `day:${new Date().toISOString().slice(0, 10)}`;
+    }
+
+    function buildRealtimeDeliveryKey(bubble = {}, context = {}) {
+        const ruleId = sanitizeText(bubble.rule_id || bubble.id, 160);
+        if (!ruleId) return '';
+        const triggerType = normalizeTriggerType(bubble.trigger_type || context.triggerType || 'page_view');
+        const frequencyScope = normalizeDeliveryFrequencyScope(
+            bubble.frequency_scope || bubble.frequencyScope || bubble.metadata?.frequency_scope || bubble.metadata?.frequencyScope,
+            triggerType
+        );
+        const sourceEventId = sanitizeText(
+            context.triggerMetadata?.source_event_id
+                || bubble.source_event_id
+                || '',
+            160
+        ) || 'default';
+        const identityParts = [
+            'rule',
+            ruleId,
+            context.pageId || 'home',
+            context.site || 'cn',
+            triggerType,
+            frequencyScope
+        ];
+        if (frequencyScope === 'event') {
+            identityParts.push(sourceEventId);
+        } else if (frequencyScope === 'session') {
+            identityParts.push(sanitizeText(context.readerKey, 160) || 'unknown');
+        }
+        return sanitizeText([
+            ...identityParts,
+            getRealtimeDeliveryFrequencyBucket(bubble, context)
+        ].join(':'), 500);
+    }
+
+    function buildRealtimeDeliveryMetadata(bubble = {}, context = {}, deliveryKey = '') {
+        const bubbleMetadata = normalizeMetadata(bubble.metadata);
+        return {
+            realtime_delivery: true,
+            delivery_key: deliveryKey,
+            trigger_type: normalizeTriggerType(bubble.trigger_type || context.triggerType || 'page_view'),
+            frequency_scope: normalizeDeliveryFrequencyScope(
+                bubble.frequency_scope || bubble.frequencyScope || bubbleMetadata.frequency_scope || bubbleMetadata.frequencyScope,
+                bubble.trigger_type || context.triggerType || 'page_view'
+            ),
+            feed_context: normalizeMetadata(context.triggerMetadata),
+            bubble: {
+                ...bubble,
+                id: sanitizeText(bubble.rule_id || bubble.id, 160),
+                source: 'rule',
+                metadata: {
+                    ...bubbleMetadata,
+                    realtime_delivery: true,
+                    delivery_key: deliveryKey
+                }
+            }
+        };
+    }
+
+    async function createRealtimeRuleDeliveries(supabase, context = {}, bubbles = []) {
+        const userId = sanitizeText(context.userId, 160);
+        if (!userId || !supabase?.from || !Array.isArray(bubbles) || !bubbles.length) {
+            return { created: 0, skipped: 0 };
+        }
+
+        const candidates = bubbles
+            .map((bubble) => {
+                const deliveryKey = buildRealtimeDeliveryKey(bubble, context);
+                const ruleId = sanitizeText(bubble.rule_id || bubble.id, 160);
+                if (!deliveryKey || !ruleId) return null;
+                return {
+                    deliveryKey,
+                    payload: {
+                        rule_id: ruleId,
+                        notification_id: sanitizeText(bubble.notification_id, 160) || null,
+                        user_id: userId,
+                        reader_key: sanitizeText(context.readerKey, 160),
+                        page_id: sanitizeText(bubble.page_id || context.pageId, 80) || context.pageId,
+                        site: sanitizeText(bubble.site || context.site, 20) || context.site,
+                        status: 'delivered',
+                        delivery_key: deliveryKey,
+                        source_module: sanitizeText(bubble.source_module || 'engagement', 80) || 'engagement',
+                        source_event_id: sanitizeText(
+                            context.triggerMetadata?.source_event_id
+                                || bubble.source_event_id
+                                || deliveryKey,
+                            160
+                        ),
+                        metadata: buildRealtimeDeliveryMetadata(bubble, context, deliveryKey)
+                    }
+                };
+            })
+            .filter(Boolean);
+
+        if (!candidates.length) {
+            return { created: 0, skipped: 0 };
+        }
+
+        const deliveryKeys = [...new Set(candidates.map((candidate) => candidate.deliveryKey))];
+        let existingKeys = new Set();
+        const deliveriesByKey = new Map();
+        try {
+            const { data, error } = await supabase
+                .from('engagement_deliveries')
+                .select('id,delivery_key')
+                .eq('user_id', userId)
+                .in('delivery_key', deliveryKeys)
+                .limit(deliveryKeys.length);
+            if (error) throw error;
+            (Array.isArray(data) ? data : []).forEach((row) => {
+                const key = sanitizeText(row.delivery_key, 500);
+                if (!key) return;
+                existingKeys.add(key);
+                deliveriesByKey.set(key, {
+                    id: sanitizeText(row.id, 160),
+                    delivery_key: key
+                });
+            });
+        } catch (error) {
+            if (isMissingRelationOrColumnError(error, 'engagement_deliveries')) {
+                return { created: 0, skipped: candidates.length, deliveriesByKey };
+            }
+            throw error;
+        }
+
+        const payloads = candidates
+            .filter((candidate) => !existingKeys.has(candidate.deliveryKey))
+            .map((candidate) => candidate.payload);
+
+        if (!payloads.length) {
+            return { created: 0, skipped: candidates.length, deliveriesByKey };
+        }
+
+        try {
+            const { data, error } = await supabase
+                .from('engagement_deliveries')
+                .insert(payloads)
+                .select('id,delivery_key');
+            if (error) throw error;
+            (Array.isArray(data) ? data : []).forEach((row) => {
+                const key = sanitizeText(row.delivery_key, 500);
+                if (!key) return;
+                deliveriesByKey.set(key, {
+                    id: sanitizeText(row.id, 160),
+                    delivery_key: key
+                });
+            });
+            return {
+                created: Array.isArray(data) ? data.length : payloads.length,
+                skipped: candidates.length - payloads.length,
+                deliveriesByKey
+            };
+        } catch (error) {
+            if (error?.code === '23505') {
+                return { created: 0, skipped: candidates.length, deliveriesByKey };
+            }
+            if (isMissingRelationOrColumnError(error, 'engagement_deliveries')) {
+                return { created: 0, skipped: candidates.length, deliveriesByKey };
+            }
+            throw error;
+        }
+    }
+
     async function fetchRuleBubbles(supabase, context) {
         const { data, error } = await supabase
             .from('engagement_rules')
@@ -706,19 +1100,27 @@ function createPublicEngagementHandlers({
 
         if (error) {
             if (isMissingRelationOrColumnError(error, 'engagement_rules')) {
-                return [];
+                return { items: [], next_scheduled_rule_at: null };
             }
             throw error;
         }
 
         const now = new Date();
-        return (Array.isArray(data) ? data : [])
-            .filter((row) => isRuleActive(row, now))
+        const candidates = (Array.isArray(data) ? data : [])
             .filter((row) => ruleMatchesFeedTrigger(row, context))
             .filter((row) => ruleMatchesContext(row, context))
             .filter((row) => ruleMatchesAudience(row, context))
-            .filter((row) => VALID_PLACEMENTS.has(normalizePlacement(row.placement || 'robot_bubble')))
-            .map((row) => normalizeRuleBubble(row, context));
+            .filter((row) => VALID_PLACEMENTS.has(normalizePlacement(row.placement || 'robot_bubble')));
+        const nextScheduledRuleAt = candidates
+            .map((row) => (row.starts_at ? new Date(row.starts_at) : null))
+            .filter((date) => date && Number.isFinite(date.getTime()) && date > now)
+            .sort((first, second) => first.getTime() - second.getTime())[0] || null;
+        return {
+            items: candidates
+                .filter((row) => isRuleActive(row, now))
+                .map((row) => normalizeRuleBubble(row, context)),
+            next_scheduled_rule_at: nextScheduledRuleAt ? nextScheduledRuleAt.toISOString() : null
+        };
     }
 
     async function fetchNotificationBubbles(supabase, userId, context) {
@@ -754,6 +1156,7 @@ function createPublicEngagementHandlers({
 
         const nowMs = Date.now();
         return (Array.isArray(data) ? data : [])
+            .filter((row) => shouldSurfaceNotificationBubble(row, context))
             .filter((row) => {
                 const expiresAt = sanitizeText(row.expires_at, 120);
                 if (!expiresAt) return true;
@@ -791,6 +1194,27 @@ function createPublicEngagementHandlers({
             throw error;
         }
         return normalizeSupportEntryCenter(data?.config_value || {});
+    }
+
+    async function fetchPageSceneConfig(supabase) {
+        const { data, error } = await supabase
+            .from('system_config')
+            .select('config_value')
+            .eq('config_key', PAGE_SCENE_CONFIG_KEY)
+            .maybeSingle();
+        if (error) {
+            if (isMissingRelationOrColumnError(error, 'system_config')) {
+                return {
+                    scenes: [],
+                    event_priority_center: normalizeEventPriorityCenter({})
+                };
+            }
+            throw error;
+        }
+        return {
+            scenes: Array.isArray(data?.config_value?.scenes) ? data.config_value.scenes : [],
+            event_priority_center: normalizeEventPriorityCenter(data?.config_value?.event_priority_center || {})
+        };
     }
 
     async function resolvePromptReplyNotification(supabase, actorUserId, body = {}) {
@@ -956,7 +1380,7 @@ function createPublicEngagementHandlers({
 
         const site = normalizeSite(child.site || body.site || 'cn');
         const preview = collapsePreview(child.content || body.content_preview || body.content, 120);
-        const eventType = targetType === 'message' ? 'message_replied' : 'comment_replied';
+        const eventType = targetType === 'message' ? 'message_replied' : 'guestbook_mention';
         const copy = buildReplyCopy({
             site,
             pageId: 'guestbook',
@@ -1142,7 +1566,8 @@ function createPublicEngagementHandlers({
             triggerMetadata: {
                 source_module: sanitizeText(url.searchParams.get('source_module'), 80),
                 source_event_id: sanitizeText(url.searchParams.get('source_event_id'), 160),
-                event_context: sanitizeText(url.searchParams.get('event_context'), 1000)
+                event_context_raw: sanitizeText(url.searchParams.get('event_context'), 1000),
+                event_context: parseEventContext(url.searchParams.get('event_context'))
             },
             userId,
             userEmail: userProfile.email,
@@ -1150,12 +1575,39 @@ function createPublicEngagementHandlers({
             audienceSegments
         };
 
-        const [rules, notifications, assetCenter, supportEntry] = await Promise.all([
+        const [ruleFeed, notifications, assetCenter, supportEntry, pageSceneConfig] = await Promise.all([
             fetchRuleBubbles(supabase, context),
             context.triggerType === 'page_view' ? fetchNotificationBubbles(supabase, userId, context) : Promise.resolve([]),
             fetchAssetStyleConfig(supabase),
-            fetchSupportEntryConfig(supabase)
+            fetchSupportEntryConfig(supabase),
+            fetchPageSceneConfig(supabase)
         ]);
+        let rules = Array.isArray(ruleFeed) ? ruleFeed : (Array.isArray(ruleFeed?.items) ? ruleFeed.items : []);
+        let realtimeDeliveries = { created: 0, skipped: 0 };
+        if (userId && rules.length) {
+            try {
+                realtimeDeliveries = await createRealtimeRuleDeliveries(supabase, context, rules);
+                if (realtimeDeliveries?.deliveriesByKey instanceof Map) {
+                    rules = rules.map((rule) => {
+                        const deliveryKey = buildRealtimeDeliveryKey(rule, context);
+                        const delivery = realtimeDeliveries.deliveriesByKey.get(deliveryKey);
+                        if (!delivery?.id) return rule;
+                        return {
+                            ...rule,
+                            delivery_id: delivery.id,
+                            delivery_key: deliveryKey,
+                            metadata: {
+                                ...normalizeMetadata(rule.metadata),
+                                delivery_id: delivery.id,
+                                delivery_key: deliveryKey
+                            }
+                        };
+                    });
+                }
+            } catch (error) {
+                console.warn('[Engagement] Failed to create realtime deliveries:', error?.message || error);
+            }
+        }
 
         const items = [...notifications, ...rules]
             .sort((left, right) => {
@@ -1182,7 +1634,13 @@ function createPublicEngagementHandlers({
             trigger_type: context.triggerType,
             asset_center: assetCenter,
             support_entry: supportEntry,
+            event_priority_center: resolvePageEventPriorityCenter(pageSceneConfig, context.pageId),
+            next_scheduled_rule_at: ruleFeed?.next_scheduled_rule_at || null,
             user_id: userId || null,
+            realtime_deliveries: {
+                created: Number(realtimeDeliveries?.created || 0) || 0,
+                skipped: Number(realtimeDeliveries?.skipped || 0) || 0
+            },
             items
         });
     }
@@ -1223,10 +1681,15 @@ function createPublicEngagementHandlers({
         const userId = sanitizeText(user?.id, 160) || null;
         const ruleId = sanitizeText(body.rule_id, 160) || null;
         const notificationId = sanitizeText(body.notification_id, 160) || null;
+        const deliveryId = sanitizeText(body.delivery_id || body.deliveryId, 160) || null;
         const pageId = normalizePageId(body.page_id || body.page);
         const site = normalizeSite(body.site || 'cn');
         const readerKey = sanitizeText(body.reader_key, 160);
         const metadata = normalizeMetadata(body.metadata);
+        const eventMetadata = {
+            ...metadata,
+            delivery_id: deliveryId || sanitizeText(metadata.delivery_id || metadata.deliveryId, 160)
+        };
         if (userId) {
             await markUserActive(supabase, {
                 userId,
@@ -1250,7 +1713,7 @@ function createPublicEngagementHandlers({
                     event_type: eventType,
                     source_module: sanitizeText(body.source_module || metadata.source_module || 'engagement', 80) || 'engagement',
                     source_event_id: sanitizeText(body.source_event_id || metadata.source_event_id, 160),
-                    metadata
+                    metadata: eventMetadata
                 });
             if (error) throw error;
             recorded = true;
@@ -1260,12 +1723,33 @@ function createPublicEngagementHandlers({
             }
         }
 
-        if (notificationId && ['click', 'dismiss'].includes(eventType)) {
+        if (notificationId && ['click', 'conversion'].includes(eventType)) {
             await supabase
                 .from('system_notifications')
                 .update({ is_read: true })
                 .eq('id', notificationId)
                 .eq('user_id', userId || '');
+        }
+
+        if (deliveryId && userId) {
+            const nowIso = new Date().toISOString();
+            const deliveryPatch = eventType === 'view'
+                ? { status: 'viewed', viewed_at: nowIso }
+                : eventType === 'click'
+                    ? { status: 'clicked', clicked_at: nowIso }
+                    : eventType === 'dismiss'
+                        ? { status: 'dismissed', dismissed_at: nowIso }
+                        : null;
+            if (deliveryPatch) {
+                const { error } = await supabase
+                    .from('engagement_deliveries')
+                    .update(deliveryPatch)
+                    .eq('id', deliveryId)
+                    .eq('user_id', userId);
+                if (error && !isMissingRelationOrColumnError(error, 'engagement_deliveries')) {
+                    throw error;
+                }
+            }
         }
 
         return sendJson(res, 200, {

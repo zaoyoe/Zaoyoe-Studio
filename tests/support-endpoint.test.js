@@ -311,6 +311,138 @@ test('support code_status returns fn_check_code_status payload for the support b
     });
 });
 
+test('support ticket_history returns the current user ticket results and focuses the linked ticket', async () => {
+    const tickets = [
+        {
+            id: 'ticket-history-3',
+            user_id: 'user-support-history',
+            order_id: 'order-history-3',
+            issue_type: 'OTHER',
+            status: 'PENDING',
+            description: '想补充更多截图',
+            admin_notes: '',
+            created_at: '2026-03-30T10:00:00.000Z',
+            updated_at: '2026-03-30T10:10:00.000Z'
+        },
+        {
+            id: 'ticket-history-2',
+            user_id: 'user-support-history',
+            order_id: 'order-history-2',
+            issue_type: 'DELIVERY',
+            status: 'RESOLVED',
+            description: '订单未到账',
+            admin_notes: '已补发完成',
+            created_at: '2026-03-30T09:00:00.000Z',
+            updated_at: '2026-03-30T11:00:00.000Z'
+        },
+        {
+            id: 'ticket-history-1',
+            user_id: 'user-support-history',
+            order_id: '',
+            issue_type: 'ACCOUNT',
+            status: 'REJECTED',
+            description: '账号问题说明',
+            admin_notes: '信息不足，请补充订单号',
+            created_at: '2026-03-29T09:00:00.000Z',
+            updated_at: '2026-03-29T10:00:00.000Z'
+        },
+        {
+            id: 'ticket-history-other-user',
+            user_id: 'someone-else',
+            order_id: 'order-other',
+            issue_type: 'PAYMENT',
+            status: 'RESOLVED',
+            description: '不应该返回',
+            admin_notes: '不应该返回',
+            created_at: '2026-03-31T09:00:00.000Z',
+            updated_at: '2026-03-31T10:00:00.000Z'
+        }
+    ];
+
+    await withSupportHandler({
+        adminModule: {
+            async requireAuthenticatedUser() {
+                return {
+                    user: {
+                        id: 'user-support-history'
+                    },
+                    requestSupabase: {
+                        from() {
+                            throw new Error('ticket_history should query the admin supabase');
+                        }
+                    },
+                    adminSupabase: {
+                        from(table) {
+                            assert.equal(table, 'shop_tickets');
+                            return {
+                                select() {
+                                    const filters = {};
+                                    const buildRows = () => tickets.filter((row) => {
+                                        return Object.entries(filters).every(([field, value]) => String(row?.[field] || '') === String(value || ''));
+                                    });
+                                    const query = {
+                                        eq(field, value) {
+                                            filters[field] = value;
+                                            return query;
+                                        },
+                                        order() {
+                                            return query;
+                                        },
+                                        limit(count) {
+                                            return Promise.resolve({
+                                                data: buildRows().slice(0, count),
+                                                error: null
+                                            });
+                                        },
+                                        async maybeSingle() {
+                                            const rows = buildRows();
+                                            return {
+                                                data: rows[0] || null,
+                                                error: null
+                                            };
+                                        }
+                                    };
+                                    return query;
+                                }
+                            };
+                        }
+                    }
+                };
+            }
+        }
+    }, async (handler) => {
+        const req = {
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'ticket_history',
+                input: {
+                    ticket_id: 'ticket-history-2'
+                }
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.payload.focus_ticket_id, 'ticket-history-2');
+        assert.equal(payload.payload.limit, 6);
+        assert.deepEqual(payload.payload.tickets.map((ticket) => ticket.id), [
+            'ticket-history-2',
+            'ticket-history-3',
+            'ticket-history-1'
+        ]);
+        assert.equal(payload.payload.tickets[0].is_focus, true);
+        assert.equal(payload.payload.tickets[0].admin_notes, '已补发完成');
+        assert.equal(payload.payload.tickets[0].status, 'RESOLVED');
+        assert.equal(payload.payload.tickets[1].is_open, true);
+        assert.equal(payload.payload.tickets.some((ticket) => ticket.id === 'ticket-history-other-user'), false);
+    });
+});
+
 test('chat support code_status falls back to direct rpc when the support endpoint is unavailable', () => {
     const source = fs.readFileSync(path.resolve(__dirname, '../js/components/ChatWidget.js'), 'utf8');
 

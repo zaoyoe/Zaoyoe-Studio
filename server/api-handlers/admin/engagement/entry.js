@@ -17,6 +17,7 @@ const VALID_ACTION_IDS = Object.freeze(new Set([
     'verify_task_status',
     'verify_failure_help',
     'verify_precheck',
+    'ticket_history',
     'create_ticket',
     'tg_support',
     'live_chat'

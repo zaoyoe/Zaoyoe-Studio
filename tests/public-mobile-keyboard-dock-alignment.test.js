@@ -202,13 +202,13 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(adminChatCss, /\.admin-chat-viewport-probe/);
 
     assert.match(shopHtml, /shop-client\.js\?v=20260504_SHOP_DISCOUNT_ENGAGEMENT_1/);
-    assert.match(guestbookHtml, /guestbook\.js\?v=20260503_COMMENT_MODAL_CHROME_CLOSE_1/);
+    assert.match(guestbookHtml, /guestbook\.js\?v=20260507_GUESTBOOK_DEEPLINK_REPLAY_1/);
     assert.match(shopHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
     assert.match(guestbookHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
     assert.match(guestbookHtml, /homepage-guestbook-modal\.js\?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1/);
     assert.match(adminStudioHtml, /admin-chat\.js\?v=20260505_CHAT_USER_ACTIVITY_1/);
     assert.match(adminStudioHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
-    assert.match(chatWidgetLoader, /const VERSION = '20260505_CHAT_USER_ACTIVITY_1';/);
+    assert.match(chatWidgetLoader, /const VERSION = '20260507_ENGAGEMENT_BACKLOG_REALTIME_1';/);
     assert.match(chatWidgetLoader, /<div class="chat-header-actions">[\s\S]*<button type="button" class="chat-header-mode-switch" tabindex="-1">常用入口<\/button>/);
     assert.match(chatWidgetLoader, /chat-widget-bootstrap-user-input \.chat-widget-bootstrap-user-emoji-btn \{[\s\S]*background: transparent;[\s\S]*box-shadow: none;/);
     assert.match(chatWidgetLoader, /chat-widget-bootstrap-user-input \.chat-send-btn \{[\s\S]*width: auto;[\s\S]*flex: 0 0 auto;/);
@@ -223,7 +223,7 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(chatWidgetLoader, /function lockBootstrapLoadingPageScroll\(loadingShell\) \{[\s\S]*setBootstrapLoadingPageScrollLocked\(true\);[\s\S]*global\.iOSScrollLock\.lockLight\(shell, \{ restoreScrollDuringViewport: true \}\);/);
     assert.match(chatWidgetLoader, /function releaseBootstrapLoadingPageScroll\(options = \{\}\) \{[\s\S]*const preserveForHandoff = options\.preserveForHandoff === true;[\s\S]*global\.iOSScrollLock\.unlock\(\);/);
     assert.match(chatWidgetLoader, /syncBootstrapLoadingShellMode\(loadingShell\);[\s\S]*lockBootstrapLoadingPageScroll\(loadingShell\);[\s\S]*setBootstrapLoadingPageFabHidden\(true\);[\s\S]*openingPlaceholder\.dataset\.chatWidgetPlaceholderOpening = '1';[\s\S]*openingPlaceholder\.classList\.add\('chat-widget-fab--hidden'\);[\s\S]*suppressRuntimeFabDuringBootstrapLoading\(\);[\s\S]*loadingShell\.overlay\.classList\.add\('is-visible'\);/);
-    assert.match(chatWidgetLoader, /function restoreClosedRuntimeFabVisibility\(\) \{[\s\S]*if \(widget\?\.isOpen\)[\s\S]*\.chat-widget-fab:not\(\[data-chat-widget-placeholder="1"\]\)[\s\S]*runtimeFab\.classList\.remove\('chat-widget-fab--hidden', 'chat-widget-fab--disabled'\);/);
+    assert.match(chatWidgetLoader, /function restoreClosedRuntimeFabVisibility\(\) \{[\s\S]*if \(widget\?\.isOpen\)[\s\S]*\.chat-widget-fab:not\(\[data-chat-widget-placeholder="1"\]\)[\s\S]*runtimeFab\.classList\.remove\([\s\S]*'chat-widget-fab--hidden',[\s\S]*'chat-widget-fab--disabled',[\s\S]*'chat-widget-fab--ambient-retracted'/);
     assert.match(chatWidgetLoader, /function suppressRuntimeFabDuringBootstrapLoading\(\) \{[\s\S]*\.chat-widget-fab:not\(\[data-chat-widget-placeholder="1"\]\)[\s\S]*runtimeFab\.classList\.add\('chat-widget-fab--hidden', 'chat-widget-fab--disabled'\);/);
     assert.match(chatWidgetLoader, /if \(!fab\) \{[\s\S]*if \(suppressed\) \{[\s\S]*suppressRuntimeFabDuringBootstrapLoading\(\);[\s\S]*return;/);
     assert.match(chatWidgetLoader, /if \(!fab\) \{[\s\S]*if \(!suppressed\) \{[\s\S]*restoreClosedRuntimeFabVisibility\(\);/);
@@ -296,5 +296,5 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(chatWidget, /\.chat-window--bootstrap-adopting-content\.chat-window--bootstrap-content-ready > \*:not\(\.emoji-picker-popover\):not\(\.chat-bootstrap-content-snapshot\)[\s\S]*opacity: 1;[\s\S]*chat-widget-content-settle/);
     assert.match(chatWidgetCss, /\.chat-window--bootstrap-content-ready \.emoji-picker-popover:not\(\.active\) \{[\s\S]*opacity: 0 !important;/);
     assert.match(chatWidgetCss, /@keyframes chat-widget-loading-dots \{[\s\S]*transform: translateY\(-3px\);[\s\S]*opacity: 0\.96;/);
-    assert.match(walletLoader, /const VERSION = '20260504_USDT_AMOUNT_PRECISION_TIMEOUT_1';/);
+    assert.match(walletLoader, /const VERSION = '20260505_PAYMENT_ERROR_I18N_1';/);
 });

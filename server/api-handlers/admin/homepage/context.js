@@ -723,10 +723,21 @@ async function fetchHomepageShopCatalog(supabase) {
 
 async function fetchHomepageGuestbookCandidates(supabase, site) {
     try {
+        const normalizedSite = normalizeHomepageSite(site);
+        const { data: rpcData, error: rpcError } = await supabase.rpc('fn_load_guestbook', {
+            p_site: normalizedSite,
+            p_limit: 24,
+            p_user_id: null
+        });
+
+        if (!rpcError && Array.isArray(rpcData?.messages)) {
+            return rpcData.messages;
+        }
+
         const { data, error } = await supabase
             .from('guestbook_messages')
             .select('id, content, image_url, like_count, created_at, user_id, profiles:user_id (username, avatar_url)')
-            .eq('site', normalizeHomepageSite(site))
+            .eq('site', normalizedSite)
             .order('created_at', { ascending: false })
             .limit(24);
 
