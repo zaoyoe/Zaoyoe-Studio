@@ -70,7 +70,7 @@
         }, 800);
 
         scheduleOptionalTask(2200, () => {
-            loadStylesheet('css/chat-widget.css?v=20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1');
+            loadStylesheet('css/chat-widget.css?v=20260507_CHAT_WIDGET_ADAPTIVE_BUBBLE_1');
             loadScript('js/components/ChatWidget.js?v=20260505_CHAT_USER_ACTIVITY_1', initChatWidgetIfReady);
         }, 2200);
     }

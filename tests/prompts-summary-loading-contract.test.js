@@ -142,7 +142,7 @@ test('prompts gallery first paint uses summary data and lazy prompt details', ()
         'prompts.html should not keep the old unbound announcement close button'
     );
     assert.equal(
-        promptsHtml.includes('prompts-poetry.js?v=20260504_ENGAGEMENT_REPLY_NOTIFY_1&promptLangSignal=20260503_PROMPT_LANG_SIGNAL_1'),
+        promptsHtml.includes('prompts-poetry.js?v=20260507_REPLY_REALTIME_1&promptLangSignal=20260503_PROMPT_LANG_SIGNAL_1'),
         true,
         'prompts.html should cache-bust the split-data runtime'
     );

@@ -7,6 +7,7 @@ const {
 
 const VALID_TEMPLATE_PAGES = Object.freeze(new Set(['all', 'home', 'prompts', 'gongyi', 'shop', 'verify', 'guestbook']));
 const VALID_TEMPLATE_TONES = Object.freeze(new Set(['info', 'success', 'warning', 'alert', 'error', 'welcome', 'creative', 'calm', 'commerce', 'assistive', 'community']));
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function sanitizeText(value, maxLength = 4000) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
@@ -41,6 +42,10 @@ function normalizeMetadata(value) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
 }
 
+function isUuid(value = '') {
+    return UUID_PATTERN.test(sanitizeText(value, 160));
+}
+
 function normalizeTemplate(row = {}) {
     return {
         id: sanitizeText(row.id, 160),
@@ -58,6 +63,25 @@ function normalizeTemplate(row = {}) {
         updated_at: sanitizeText(row.updated_at, 120),
         created_at: sanitizeText(row.created_at, 120)
     };
+}
+
+function isTemplateStarterPayload(body = {}, payload = {}) {
+    const metadata = normalizeMetadata(body.metadata || payload.metadata);
+    return metadata.productized === true
+        || sanitizeText(metadata.starter_id || metadata.starterId, 160)
+        || sanitizeText(metadata.created_from || metadata.createdFrom, 160) === 'template_product_shelf';
+}
+
+async function loadTemplateByKey(supabase, key = '') {
+    const normalizedKey = sanitizeText(key, 160);
+    if (!normalizedKey) return null;
+    const { data, error } = await supabase
+        .from('engagement_templates')
+        .select('id,key,name,description,category,page_ids,title,content,action_label,action_url,tone,metadata,created_at,updated_at')
+        .eq('key', normalizedKey)
+        .maybeSingle();
+    if (error) throw error;
+    return data ? normalizeTemplate(data) : null;
 }
 
 function buildTemplatePayload(body = {}) {
@@ -95,15 +119,30 @@ async function listTemplates(supabase) {
 }
 
 async function saveTemplate({ supabase, user, body }) {
-    const id = sanitizeText(body.id || body.template_id || body.templateId, 160);
+    const rawId = sanitizeText(body.id || body.template_id || body.templateId, 160);
+    const id = isUuid(rawId) ? rawId : '';
     const payload = buildTemplatePayload(body);
+    const isStarterCreate = !id && isTemplateStarterPayload(body, payload);
     const query = id
         ? supabase.from('engagement_templates').update(payload).eq('id', id)
         : supabase.from('engagement_templates').insert(payload);
     const { data, error } = await query
         .select('id,key,name,description,category,page_ids,title,content,action_label,action_url,tone,metadata,created_at,updated_at')
         .single();
-    if (error) throw error;
+    if (error) {
+        const isDuplicateKey = error.code === '23505'
+            || sanitizeText(error.message, 500).includes('engagement_templates_key_key');
+        if (isStarterCreate && isDuplicateKey) {
+            const existing = await loadTemplateByKey(supabase, payload.key);
+            if (existing) {
+                return {
+                    template: existing,
+                    already_exists: true
+                };
+            }
+        }
+        throw error;
+    }
 
     await writeAdminAuditLog({
         supabase,
@@ -119,13 +158,21 @@ async function saveTemplate({ supabase, user, body }) {
         }
     });
 
-    return normalizeTemplate(data);
+    return {
+        template: normalizeTemplate(data),
+        already_exists: false
+    };
 }
 
 async function deleteTemplate({ supabase, user, body }) {
     const id = sanitizeText(body.id || body.template_id || body.templateId, 160);
     if (!id) {
         const error = new Error('template id is required');
+        error.statusCode = 400;
+        throw error;
+    }
+    if (!isUuid(id)) {
+        const error = new Error('template id must be a valid uuid');
         error.statusCode = 400;
         throw error;
     }
@@ -182,10 +229,11 @@ module.exports = async function engagementTemplatesHandler(req, res) {
             });
         }
 
-        const template = await saveTemplate({ supabase, user, body });
+        const result = await saveTemplate({ supabase, user, body });
         return sendJson(res, 200, {
             success: true,
-            template
+            template: result.template,
+            already_exists: result.already_exists === true
         });
     } catch (error) {
         return sendJson(res, error.statusCode || 500, {

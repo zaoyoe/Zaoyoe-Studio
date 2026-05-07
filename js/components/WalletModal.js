@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260505_CRYPTO_DETAIL_USDT_1';
+    const walletCssHref = 'css/wallet.css?v=20260506_PAYMENT_METHOD_PAYABLE_ACCENT_1';
     let walletCssReady = false;
     let walletCssReadyPromise = Promise.resolve();
 
@@ -1678,6 +1678,112 @@
         discountAssetsExpandedKey: '',
         discountAssetsRemovingId: '',
 
+        triggerWalletEngagementEvent(triggerType = 'page_view', metadata = {}, options = {}) {
+            const trigger = window.ZaoyoeEngagement?.trigger;
+            if (typeof trigger !== 'function') return null;
+            const normalizedMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+                ? metadata
+                : {};
+            try {
+                return trigger(triggerType, {
+                    source_module: 'wallet',
+                    page_id: 'home',
+                    site: window.SiteConfig?.site || 'cn',
+                    ...normalizedMetadata
+                }, {
+                    once: options.once !== false
+                });
+            } catch (error) {
+                console.debug('[WalletEngagement] Trigger skipped:', triggerType, error?.message || error);
+                return null;
+            }
+        },
+
+        buildWalletRechargeEngagementMetadata(paymentResult = {}, statusResult = {}, extra = {}) {
+            const source = {
+                ...(paymentResult && typeof paymentResult === 'object' && !Array.isArray(paymentResult) ? paymentResult : {}),
+                ...(statusResult && typeof statusResult === 'object' && !Array.isArray(statusResult) ? statusResult : {})
+            };
+            const normalizedExtra = extra && typeof extra === 'object' && !Array.isArray(extra) ? extra : {};
+            const checkoutSessionId = String(
+                source.checkout_session_id
+                || source.checkoutSessionId
+                || source.payment_order_id
+                || source.paymentOrderId
+                || source.provider_order_no
+                || source.providerOrderNo
+                || normalizedExtra.checkout_session_id
+                || ''
+            ).trim();
+            const provider = String(source.provider || normalizedExtra.provider || '').trim().toLowerCase();
+            const pointsAmount = Number(source.points_amount ?? normalizedExtra.points_amount ?? normalizedExtra.pointsAmount ?? 0) || 0;
+            const paidAmount = Number(source.paid_amount ?? normalizedExtra.paid_amount ?? normalizedExtra.paidAmount ?? 0) || 0;
+            return {
+                source_event_id: normalizedExtra.source_event_id || `${normalizedExtra.trigger_type || 'wallet_recharge'}:${checkoutSessionId || provider || normalizedExtra.package_id || normalizedExtra.kind || 'unknown'}`,
+                source: normalizedExtra.source || 'wallet_recharge',
+                checkout_session_id: checkoutSessionId || null,
+                provider: provider || null,
+                package_id: normalizedExtra.package_id || source.package_id || null,
+                package_name: normalizedExtra.package_name || source.package_name || null,
+                points_amount: pointsAmount || null,
+                paid_amount: paidAmount || null,
+                status: String(source.status || normalizedExtra.status || '').trim() || null,
+                message: String(source.message || normalizedExtra.message || '').trim() || null
+            };
+        },
+
+        triggerWalletRechargeSuccessEngagement(paymentResult = {}, statusResult = {}, extra = {}) {
+            const metadata = this.buildWalletRechargeEngagementMetadata(paymentResult, statusResult, {
+                ...extra,
+                trigger_type: 'wallet_recharge_success',
+                source: extra.source || 'wallet_recharge_success'
+            });
+            const result = this.triggerWalletEngagementEvent('wallet_recharge_success', metadata);
+            this.triggerWalletPaymentOrderLifecycleEngagement('order_paid', metadata, {
+                source: extra.source || 'wallet_recharge_success',
+                status: 'paid'
+            });
+            this.triggerWalletPaymentOrderLifecycleEngagement('order_status', metadata, {
+                source: extra.source || 'wallet_recharge_success',
+                status: statusResult?.payment_order_status || statusResult?.status || 'completed'
+            });
+            return result;
+        },
+
+        triggerWalletRechargeFailedEngagement(paymentResult = {}, statusResult = {}, extra = {}) {
+            const metadata = this.buildWalletRechargeEngagementMetadata(paymentResult, statusResult, {
+                ...extra,
+                trigger_type: 'wallet_recharge_failed',
+                source: extra.source || 'wallet_recharge_failed',
+                status: extra.status || statusResult?.status || 'failed'
+            });
+            const result = this.triggerWalletEngagementEvent('wallet_recharge_failed', metadata);
+            this.triggerWalletPaymentOrderLifecycleEngagement('payment_failed', metadata, {
+                source: extra.source || 'wallet_recharge_failed',
+                status: metadata.status || 'failed'
+            });
+            this.triggerWalletPaymentOrderLifecycleEngagement('order_status', metadata, {
+                source: extra.source || 'wallet_recharge_failed',
+                status: metadata.status || 'failed'
+            });
+            return result;
+        },
+
+        triggerWalletPaymentOrderLifecycleEngagement(triggerType = 'order_status', metadata = {}, extra = {}) {
+            const normalizedTrigger = String(triggerType || 'order_status').trim().toLowerCase() || 'order_status';
+            const source = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {};
+            const checkoutSessionId = String(source.checkout_session_id || source.payment_order_id || source.provider_order_no || '').trim();
+            const status = String(extra.status || source.status || '').trim().toLowerCase() || normalizedTrigger;
+            return this.triggerWalletEngagementEvent(normalizedTrigger, {
+                ...source,
+                source_module: 'wallet.payment_order',
+                source: String(extra.source || source.source || 'wallet_payment_order').trim() || 'wallet_payment_order',
+                source_event_id: `${normalizedTrigger}:${checkoutSessionId || source.provider || source.package_id || 'unknown'}:${status}`,
+                payment_status: status,
+                order_status: status
+            }, { once: true });
+        },
+
         escapeAttribute(text) {
             return String(text ?? '')
                 .replace(/&/g, '&amp;')
@@ -3007,8 +3113,87 @@
             return 'same-tab-fallback';
         },
 
+        classifyPaymentCreationErrorMessage(message = '') {
+            const rawMessage = String(message || '').trim();
+            if (!rawMessage) return '';
+
+            const patterns = [
+                {
+                    code: 'payment_amount_too_small',
+                    pattern: /amount\s*to\s+is\s+too\s+small|amountto\s+is\s+too\s+small|amount(?:\s+\w+)?\s+is\s+too\s+small|amount\s+too\s+small|min(?:imum)?[_\s-]*amount|below\s+minimum|less\s+than\s+(?:the\s+)?minimum|金额(?:过低|太低|低于)|低于.*最低/i
+                },
+                {
+                    code: 'payment_amount_too_large',
+                    pattern: /amount(?:\s+\w+)?\s+is\s+too\s+large|amount\s+too\s+large|max(?:imum)?[_\s-]*amount|above\s+maximum|exceeds\s+(?:the\s+)?maximum|金额(?:过高|太高|超出|超过)/i
+                },
+                {
+                    code: 'payment_invalid_amount',
+                    pattern: /invalid\s+amount|amount\s+invalid|invalid\s+price|price_amount|pay_amount|订单金额无效|支付金额无效|金额无效|汇率配置无效/i
+                },
+                {
+                    code: 'payment_currency_unsupported',
+                    pattern: /unsupported\s+(?:currency|coin|network)|(?:currency|coin|network)\s+(?:is\s+)?not\s+supported|pay_currency|price_currency|币种.*不支持|网络.*不支持|当前币种|当前网络/i
+                },
+                {
+                    code: 'payment_gateway_config',
+                    pattern: /config(?:uration)?\s+(?:missing|invalid|incomplete)|api\s*key|ipn|webhook|secret|配置不完整|缺少|未配置|密钥/i
+                },
+                {
+                    code: 'payment_gateway_unavailable',
+                    pattern: /service\s+unavailable|bad\s+gateway|gateway\s+timeout|temporarily\s+unavailable|timeout|rate\s+limit|too\s+many\s+requests|暂时无法|稍后重试|通道.*不可用|网关.*异常/i
+                }
+            ];
+
+            const match = patterns.find((item) => item.pattern.test(rawMessage));
+            return match?.code || '';
+        },
+
+        isKnownPaymentCreationErrorCode(code = '') {
+            return [
+                'payment_amount_too_small',
+                'payment_amount_too_large',
+                'payment_invalid_amount',
+                'payment_currency_unsupported',
+                'payment_gateway_config',
+                'payment_gateway_unavailable'
+            ].includes(String(code || '').trim());
+        },
+
+        resolvePaymentCreationErrorCode(error) {
+            const directCode = String(error?.code || error?.paymentError?.code || error?.payload?.code || error?.payload?.payment_error?.code || '').trim();
+            if (this.isKnownPaymentCreationErrorCode(directCode)) return directCode;
+
+            const rawMessage = String(error?.rawMessage || error?.paymentError?.raw_message || error?.payload?.raw_message || error?.payload?.message || error?.message || '').trim();
+            return this.classifyPaymentCreationErrorMessage(rawMessage);
+        },
+
+        resolveLocalizedPaymentCreationErrorMessage(error) {
+            const code = this.resolvePaymentCreationErrorCode(error);
+            switch (code) {
+            case 'payment_amount_too_small':
+                return this.tr('wallet.paymentErrorAmountTooSmall', '支付金额低于支付通道最低限额，请提高充值金额后重新发起支付。');
+            case 'payment_amount_too_large':
+                return this.tr('wallet.paymentErrorAmountTooLarge', '支付金额超过支付通道上限，请降低充值金额后重新发起支付。');
+            case 'payment_invalid_amount':
+                return this.tr('wallet.paymentErrorInvalidAmount', '支付金额无效，请重新选择套餐或调整充值金额。');
+            case 'payment_currency_unsupported':
+                return this.tr('wallet.paymentErrorCurrencyUnsupported', '当前支付币种或网络暂不支持，请切换支付方式后重试。');
+            case 'payment_gateway_config':
+                return this.tr('wallet.paymentErrorGatewayConfig', '支付通道配置暂不可用，请稍后重试或联系管理员。');
+            case 'payment_gateway_unavailable':
+                return this.tr('wallet.paymentErrorGatewayUnavailable', '支付通道暂时不可用，请稍后重试或切换其他支付方式。');
+            default:
+                return '';
+            }
+        },
+
         resolveFriendlyRechargeErrorMessage(error, fallback = '') {
             const fallbackMessage = fallback || this.tr('wallet.rechargeStartFailed', '充值发起失败，请稍后重试。');
+            const localizedPaymentError = this.resolveLocalizedPaymentCreationErrorMessage(error);
+            if (localizedPaymentError) {
+                return localizedPaymentError;
+            }
+
             const rawMessage = String(error?.message || '').trim();
             if (!rawMessage) {
                 return fallbackMessage;
@@ -6462,6 +6647,52 @@
             return '';
         },
 
+        renderRechargeMethodFeeMarkup(method = {}, surcharge = {}) {
+            const payableAmount = this.formatRechargeMethodPayableAmount(method, surcharge.totalAmount || surcharge.baseAmount);
+            const surchargeRateText = this.formatPaymentSurchargeRate(surcharge.rate);
+            const feeLabel = this.getPaymentSurchargeDisplayLabel(surcharge.label);
+            const lines = [];
+
+            if (payableAmount) {
+                lines.push(`
+                    <span class="wallet-recharge-method-fee-line wallet-recharge-method-fee-line--payable">
+                        <span>${this.escapeHtml(this.tr('wallet.payableAmount', '应付金额'))}</span>
+                        <span class="wallet-recharge-method-fee-amount">${this.escapeHtml(payableAmount)}</span>
+                    </span>
+                `);
+            }
+
+            if (surcharge.hasFee && surchargeRateText) {
+                lines.push(`
+                    <span class="wallet-recharge-method-fee-line">
+                        ${this.escapeHtml(this.tr('wallet.paymentMethodFeeRateHint', '含{rate}{label}', {
+                            rate: surchargeRateText,
+                            label: feeLabel
+                        }))}
+                    </span>
+                `);
+            } else if (!payableAmount && surchargeRateText) {
+                lines.push(`
+                    <span class="wallet-recharge-method-fee-line">
+                        ${this.escapeHtml(this.tr('wallet.paymentMethodFeeRateHint', '含{rate}{label}', {
+                            rate: surchargeRateText,
+                            label: feeLabel
+                        }))}
+                    </span>
+                `);
+            }
+
+            if (!lines.length) {
+                return '';
+            }
+
+            return `
+                <span class="wallet-recharge-method-fee">
+                    ${lines.join('')}
+                </span>
+            `;
+        },
+
         resolveCryptoPaymentPricingSummary(paymentResult = {}, providerSummary = {}, options = {}) {
             const fiatPricing = this.resolvePaymentPricingSummary(paymentResult, providerSummary);
             const displayCurrency = String(options.displayCurrency || providerSummary?.pay_currency || 'USDT')
@@ -6633,6 +6864,7 @@
                 const isDisabled = disabled || method.enabled !== true;
                 const surcharge = this.estimatePaymentSurcharge(method.provider, baseAmount);
                 const surchargeHint = this.formatRechargeMethodPayableHint(method, surcharge);
+                const surchargeMarkup = this.renderRechargeMethodFeeMarkup(method, surcharge);
                 const title = method.enabled === true
                     ? `${method.label} · ${method.sublabel}${surchargeHint ? ` · ${surchargeHint}` : ''}`
                     : `${method.label}${this.tr('wallet.paymentMethodNotEnabled', '通道未启用')}`;
@@ -6650,9 +6882,7 @@
                         <span class="wallet-recharge-method-copy">
                             <strong>${this.escapeHtml(method.label)}</strong>
                             <small>${this.escapeHtml(method.sublabel)}</small>
-                            ${surchargeHint
-                                ? `<span class="wallet-recharge-method-fee">${this.escapeHtml(surchargeHint)}</span>`
-                                : ''}
+                            ${surchargeMarkup}
                         </span>
                     </button>
                 `;
@@ -8183,12 +8413,14 @@
             const openContext = this.lastOpenContext && typeof this.lastOpenContext === 'object'
                 ? this.lastOpenContext
                 : {};
+            let resolvedProviderKey = '';
 
             try {
                 const providerKey = this.resolveRechargeProviderKeyForMethod(selectedPaymentMethod, {
                     paymentChannels,
                     mockPayment
                 });
+                resolvedProviderKey = providerKey;
                 const selectedProvider = providerKey === 'mock'
                     ? this.getActivePaymentProviderConfig(paymentChannels)
                     : this.getRechargePaymentProviderForMethod(
@@ -8254,6 +8486,12 @@
                             ? `recharge_success:${String(paymentResult.checkout_session_id).trim()}`
                             : ''
                     });
+                    this.triggerWalletRechargeSuccessEngagement(paymentResult, {}, {
+                        package_id: String(packageId || '').trim() || null,
+                        package_name: displayName,
+                        provider: providerKey,
+                        source: 'wallet_package_completed'
+                    });
                     this.showToast(
                         paymentResult.message || `✅ ${this.tr('wallet.packageRechargeSuccess', '已为你完成「{name}」', { name: displayName })}`,
                         'success'
@@ -8273,6 +8511,12 @@
                     const cryptoModalShown = this.tryPresentNowpaymentsCheckoutModal(paymentResult, {
                         title: displayName,
                         onCompleted: async (statusResult = {}) => {
+                            this.triggerWalletRechargeSuccessEngagement(paymentResult, statusResult, {
+                                package_id: String(packageId || '').trim() || null,
+                                package_name: displayName,
+                                provider: providerKey,
+                                source: 'wallet_package_crypto_completed'
+                            });
                             this.showToast(
                                 this.formatPaymentSuccessWithPoints(statusResult.points_amount || paymentResult.points_amount || packageData?.points_amount || 0),
                                 'success'
@@ -8282,6 +8526,14 @@
                                 searchQuery: this.orderSearchActiveQuery || this.orderSearchQuery,
                                 ignorePrefetch: true
                             }).catch(e => console.error('Order reload after nowpayments package purchase failed:', e));
+                        },
+                        onFailed: (statusResult = {}) => {
+                            this.triggerWalletRechargeFailedEngagement(paymentResult, statusResult, {
+                                package_id: String(packageId || '').trim() || null,
+                                package_name: displayName,
+                                provider: providerKey,
+                                source: 'wallet_package_crypto_failed'
+                            });
                         },
                         closeDelayMs: 3600
                     });
@@ -8301,6 +8553,12 @@
                     const qrModalShown = this.tryPresentHostedPaymentQrModal(paymentResult, {
                         title: displayName,
                         onCompleted: async (statusResult = {}) => {
+                            this.triggerWalletRechargeSuccessEngagement(paymentResult, statusResult, {
+                                package_id: String(packageId || '').trim() || null,
+                                package_name: displayName,
+                                provider: providerKey,
+                                source: 'wallet_package_qr_completed'
+                            });
                             this.showToast(
                                 statusResult.message || `✅ ${this.tr('wallet.packageRechargeSuccess', '已为你完成「{name}」', { name: displayName })}`,
                                 'success'
@@ -8310,6 +8568,22 @@
                                 searchQuery: this.orderSearchActiveQuery || this.orderSearchQuery,
                                 ignorePrefetch: true
                             }).catch(e => console.error('Order reload after zpay package purchase failed:', e));
+                        },
+                        onFailed: (statusResult = {}) => {
+                            this.triggerWalletRechargeFailedEngagement(paymentResult, statusResult, {
+                                package_id: String(packageId || '').trim() || null,
+                                package_name: displayName,
+                                provider: providerKey,
+                                source: 'wallet_package_qr_failed'
+                            });
+                        },
+                        onTimeout: () => {
+                            this.triggerWalletRechargeFailedEngagement(paymentResult, { status: 'timeout' }, {
+                                package_id: String(packageId || '').trim() || null,
+                                package_name: displayName,
+                                provider: providerKey,
+                                source: 'wallet_package_qr_timeout'
+                            });
                         },
                         closeDelayMs: 3000
                     });
@@ -8334,6 +8608,16 @@
 
             } catch (err) {
                 console.error('[WalletModal] Purchase failed:', err);
+                this.triggerWalletRechargeFailedEngagement({}, {
+                    status: 'failed',
+                    message: err?.message || ''
+                }, {
+                    source_event_id: `wallet_recharge_failed:${resolvedProviderKey || selectedPaymentMethod || 'package'}:${String(packageId || 'unknown').trim()}`,
+                    package_id: String(packageId || '').trim() || null,
+                    package_name: displayName,
+                    provider: resolvedProviderKey || selectedPaymentMethod || null,
+                    source: 'wallet_package_start_failed'
+                });
                 this.showToast(this.resolveFriendlyRechargeErrorMessage(err, this.tr('wallet.rechargeStartFailed', '充值发起失败，请稍后重试。')), 'error');
             } finally {
                 if (overlay) overlay.classList.remove('loading');
@@ -8369,6 +8653,7 @@
                 ? this.lastOpenContext
                 : {};
             const customRechargeRequest = this.resolveCustomRechargeRequest(rawValue, rechargeOptions);
+            let resolvedProviderKey = '';
 
             if (!customRechargeRequest.ok) {
                 this.showToast(customRechargeRequest.errorMessage || this.tr('wallet.invalidRechargeValue', '请输入有效的充值积分或金额'), 'error');
@@ -8385,6 +8670,7 @@
                     paymentChannels,
                     mockPayment
                 });
+                resolvedProviderKey = providerKey;
                 const selectedProvider = providerKey === 'mock'
                     ? this.getActivePaymentProviderConfig(paymentChannels)
                     : this.getRechargePaymentProviderForMethod(
@@ -8444,6 +8730,12 @@
                             if (input) {
                                 input.value = '';
                             }
+                            this.triggerWalletRechargeSuccessEngagement(paymentResult, statusResult, {
+                                provider: providerKey,
+                                source: 'wallet_custom_crypto_completed',
+                                points_amount: normalizedAmount,
+                                paid_amount: quotedAmountCny
+                            });
                             this.showToast(
                                 this.formatPaymentSuccessWithPoints(statusResult.points_amount || paymentResult.points_amount || normalizedAmount),
                                 'success'
@@ -8453,6 +8745,14 @@
                                 searchQuery: this.orderSearchActiveQuery || this.orderSearchQuery,
                                 ignorePrefetch: true
                             }).catch(e => console.error('Order reload after nowpayments custom recharge failed:', e));
+                        },
+                        onFailed: (statusResult = {}) => {
+                            this.triggerWalletRechargeFailedEngagement(paymentResult, statusResult, {
+                                provider: providerKey,
+                                source: 'wallet_custom_crypto_failed',
+                                points_amount: normalizedAmount,
+                                paid_amount: quotedAmountCny
+                            });
                         },
                         closeDelayMs: 3600
                     });
@@ -8476,6 +8776,12 @@
                             if (input) {
                                 input.value = '';
                             }
+                            this.triggerWalletRechargeSuccessEngagement(paymentResult, statusResult, {
+                                provider: providerKey,
+                                source: 'wallet_custom_qr_completed',
+                                points_amount: normalizedAmount,
+                                paid_amount: quotedAmountCny
+                            });
                             this.showToast(
                                 statusResult.message
                                     || `✅ ${this.tr('wallet.customRechargeSuccess', '自定义充值成功！ +{points} {unit}（¥{amount}）', {
@@ -8490,6 +8796,22 @@
                                 searchQuery: this.orderSearchActiveQuery || this.orderSearchQuery,
                                 ignorePrefetch: true
                             }).catch(e => console.error('Order reload after zpay custom recharge failed:', e));
+                        },
+                        onFailed: (statusResult = {}) => {
+                            this.triggerWalletRechargeFailedEngagement(paymentResult, statusResult, {
+                                provider: providerKey,
+                                source: 'wallet_custom_qr_failed',
+                                points_amount: normalizedAmount,
+                                paid_amount: quotedAmountCny
+                            });
+                        },
+                        onTimeout: () => {
+                            this.triggerWalletRechargeFailedEngagement(paymentResult, { status: 'timeout' }, {
+                                provider: providerKey,
+                                source: 'wallet_custom_qr_timeout',
+                                points_amount: normalizedAmount,
+                                paid_amount: quotedAmountCny
+                            });
                         },
                         closeDelayMs: 3000
                     });
@@ -8544,6 +8866,12 @@
                         ? `recharge_success:${String(paymentResult.checkout_session_id).trim()}`
                         : ''
                 });
+                this.triggerWalletRechargeSuccessEngagement(paymentResult, {}, {
+                    provider: providerKey,
+                    source: 'wallet_custom_completed',
+                    points_amount: normalizedAmount,
+                    paid_amount: paymentResult.paid_amount ?? quotedAmountCny
+                });
 
                 this.showToast(
                     paymentResult.message
@@ -8564,6 +8892,16 @@
                 this.loadData().catch(e => console.error('Wallet reload after custom recharge failed:', e));
             } catch (err) {
                 console.error('[WalletModal] Custom recharge failed:', err);
+                this.triggerWalletRechargeFailedEngagement({}, {
+                    status: 'failed',
+                    message: err?.message || ''
+                }, {
+                    source_event_id: `wallet_recharge_failed:${resolvedProviderKey || selectedPaymentMethod || methodKey || 'custom'}:${customRechargeRequest.normalizedPoints || 'unknown'}`,
+                    provider: resolvedProviderKey || selectedPaymentMethod || methodKey || null,
+                    source: 'wallet_custom_start_failed',
+                    points_amount: customRechargeRequest.normalizedPoints || null,
+                    paid_amount: customRechargeRequest.estimatedPaidAmount || null
+                });
                 this.showToast(this.resolveFriendlyRechargeErrorMessage(err, this.tr('wallet.rechargeStartFailed', '自定义充值发起失败，请稍后重试。')), 'error');
             } finally {
                 if (overlay) overlay.classList.remove('loading');

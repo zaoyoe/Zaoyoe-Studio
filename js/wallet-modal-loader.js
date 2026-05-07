@@ -6,9 +6,9 @@
     }
     global.__zaoyoeWalletModalBootstrapLoaded = true;
 
-    const VERSION = '20260504_USDT_AMOUNT_PRECISION_TIMEOUT_1';
-    const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260430_WALLET_GUIDANCE_BILINGUAL_1';
-    const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260504_USDT_AMOUNT_PRECISION_TIMEOUT_1';
+    const VERSION = '20260505_PAYMENT_ERROR_I18N_1';
+    const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260505_PAYMENT_ERROR_I18N_1';
+    const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260505_PAYMENT_ERROR_I18N_1';
     const POLL_INTERVAL_MS = 100;
     const MAX_WAIT_MS = 10000;
 
@@ -140,6 +140,10 @@
         });
     }
 
+    function warmWalletRuntime() {
+        return ensureWalletModalReady();
+    }
+
     function openWalletModal(view = 'balance', context = {}) {
         return ensureWalletModalReady().then((walletModal) => {
             walletModal?.open?.(view, context);
@@ -152,7 +156,16 @@
         ensurePointsService: ensurePointsServiceReady,
         ensure: ensureWalletModalReady,
         warmOverview: warmWalletOverview,
+        warmRuntime: warmWalletRuntime,
         warm: warmWalletModal,
         open: openWalletModal
     });
+
+    try {
+        global.dispatchEvent(new CustomEvent('zaoyoe:wallet-modal-bootstrap-ready', {
+            detail: { version: VERSION }
+        }));
+    } catch (_error) {
+        // Ignore environments without CustomEvent support.
+    }
 }(typeof window !== 'undefined' ? window : globalThis));

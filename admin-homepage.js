@@ -1239,8 +1239,10 @@ const HomepageAdmin = (() => {
     function invalidateHomepageRuntimeCaches(site = getHomepageReadSite()) {
         const safeSite = normalizeHomepageSite(site);
         try {
-            localStorage.removeItem(`zaoyoe_${safeSite}_cache_v1_homepage_config`);
-            localStorage.removeItem('zaoyoe_cache_v1_homepage_config');
+            ['v1', 'v2'].forEach((cacheVersion) => {
+                localStorage.removeItem(`zaoyoe_${safeSite}_cache_${cacheVersion}_homepage_config`);
+                localStorage.removeItem(`zaoyoe_cache_${cacheVersion}_homepage_config`);
+            });
             localStorage.setItem(getHomepageConfigLastUpdatedKey(safeSite), String(Date.now()));
             localStorage.removeItem(HOMEPAGE_CONFIG_LAST_UPDATED_KEY);
             console.log('[Homepage] Invalidated homepage_config cache');

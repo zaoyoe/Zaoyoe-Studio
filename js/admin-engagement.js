@@ -12,27 +12,170 @@
     };
 
     const EVENT_LABELS = {
+        page_view: '进入页面',
         new_user_welcome: '新用户欢迎',
+        profile_incomplete: '资料待完善',
+        daily_checkin_available: '签到提醒',
+        inactive_user_return: '回流唤醒',
         points_low_balance: '积分偏低',
+        points_adjusted: '积分变动',
         points_insufficient: '积分不足',
+        wallet_recharge_success: '充值成功',
+        wallet_recharge_failed: '充值失败',
         comment_replied: '评论被回复',
         message_replied: '留言被回复',
+        guestbook_mention: '留言提及',
         coupon_available: '可领优惠券',
+        coupon_expiring: '优惠券将过期',
         product_discount: '商品折扣',
+        product_discount_available: '商品折扣可用',
         product_restocked: '补货提醒',
+        cart_abandoned: '购物车挽回',
+        order_paid: '订单已支付',
         permission_changed: '权限变更',
         prompt_unlocked: '内容解锁',
+        search_no_result: '搜索无结果',
+        content_moderated: '内容处理结果',
         order_status: '订单状态',
+        order_delivered: '订单已交付',
+        refund_status: '退款状态',
         verify_failed: '验证失败',
+        verify_success: '验证成功',
         verify_queue: '验证排队',
+        verification_expiring: '验证即将过期',
         service_status: '服务状态',
         usage_rules: '使用规则',
         maintenance_notice: '维护公告',
         community_rule: '社区规则',
-        content_featured: '内容精选'
+        content_featured: '内容精选',
+        payment_failed: '支付失败',
+        support_reply: '客服回复',
+        ticket_updated: '工单进展',
+        login_risk: '登录风险'
     };
 
     const RULE_PAGE_OPTIONS = ['all', 'home', 'prompts', 'gongyi', 'shop', 'verify', 'guestbook'];
+    const SAFE_ZONE_OPTIONS = [
+        ['bottom-right', '右下角'],
+        ['bottom-left', '左下角'],
+        ['top-right', '右上角'],
+        ['top-left', '左上角']
+    ];
+    const PAGE_SCENE_EVENT_OPTIONS = [
+        'new_user_welcome',
+        'profile_incomplete',
+        'daily_checkin_available',
+        'inactive_user_return',
+        'points_low_balance',
+        'points_adjusted',
+        'points_insufficient',
+        'wallet_recharge_success',
+        'wallet_recharge_failed',
+        'comment_replied',
+        'message_replied',
+        'guestbook_mention',
+        'coupon_available',
+        'coupon_expiring',
+        'product_discount',
+        'product_discount_available',
+        'product_restocked',
+        'cart_abandoned',
+        'order_paid',
+        'permission_changed',
+        'prompt_unlocked',
+        'search_no_result',
+        'content_moderated',
+        'order_status',
+        'order_delivered',
+        'refund_status',
+        'payment_failed',
+        'verify_failed',
+        'verify_success',
+        'verify_queue',
+        'verification_expiring',
+        'service_status',
+        'usage_rules',
+        'maintenance_notice',
+        'community_rule',
+        'content_featured',
+        'support_reply',
+        'ticket_updated',
+        'login_risk'
+    ];
+    const EVENT_PRIORITY_CLASSES = Object.freeze({
+        first_wave: {
+            label: '首波优先',
+            shortLabel: '优先',
+            desc: '登录后首波窗口会优先挑这一类事件，适合风险、支付、售后、客服回应。',
+            tone: 'alert',
+            events: ['login_risk', 'payment_failed', 'wallet_recharge_failed', 'verify_failed', 'support_reply', 'ticket_updated', 'refund_status', 'order_status', 'order_paid', 'order_delivered', 'content_moderated']
+        },
+        service: {
+            label: '常规服务',
+            shortLabel: '服务',
+            desc: '首波优先级次于风险类，适合账户状态、规则说明、积分变化和留言回复。',
+            tone: 'info',
+            events: ['verification_expiring', 'permission_changed', 'points_adjusted', 'points_insufficient', 'verify_queue', 'message_replied', 'comment_replied', 'guestbook_mention', 'service_status', 'maintenance_notice', 'usage_rules', 'community_rule']
+        },
+        marketing: {
+            label: '延后营销',
+            shortLabel: '营销',
+            desc: '登录后不会抢首条提醒，通常会在用户看完首条或首波窗口结束后再出现。',
+            tone: 'warning',
+            events: ['coupon_available', 'coupon_expiring', 'product_discount', 'product_discount_available', 'product_restocked', 'cart_abandoned', 'inactive_user_return']
+        },
+        guidance: {
+            label: '体验引导',
+            shortLabel: '引导',
+            desc: '更适合做新手说明、资料补全、签到和功能路径提示，不应压过风险/售后提醒。',
+            tone: 'success',
+            events: ['verify_success', 'prompt_unlocked', 'search_no_result', 'profile_incomplete', 'daily_checkin_available', 'new_user_welcome', 'points_low_balance', 'content_featured', 'wallet_recharge_success']
+        }
+    });
+    const DEFAULT_PAGE_SCENES = Object.freeze([
+        {
+            id: 'home',
+            label: '首页',
+            tone: 'welcome',
+            safe_zone: 'bottom-right',
+            events: ['new_user_welcome', 'profile_incomplete', 'daily_checkin_available', 'inactive_user_return', 'points_low_balance', 'points_adjusted', 'wallet_recharge_success', 'permission_changed', 'login_risk']
+        },
+        {
+            id: 'prompts',
+            label: '提示词',
+            tone: 'creative',
+            safe_zone: 'bottom-right',
+            events: ['points_insufficient', 'comment_replied', 'prompt_unlocked', 'search_no_result', 'content_featured', 'content_moderated']
+        },
+        {
+            id: 'gongyi',
+            label: '公益站',
+            tone: 'calm',
+            safe_zone: 'bottom-right',
+            events: ['service_status', 'usage_rules', 'maintenance_notice', 'community_rule', 'support_reply', 'ticket_updated']
+        },
+        {
+            id: 'shop',
+            label: '商城',
+            tone: 'commerce',
+            safe_zone: 'bottom-right',
+            events: ['coupon_available', 'coupon_expiring', 'product_discount', 'product_discount_available', 'product_restocked', 'cart_abandoned', 'points_insufficient', 'payment_failed', 'order_paid', 'order_status', 'order_delivered', 'refund_status']
+        },
+        {
+            id: 'verify',
+            label: '验证',
+            tone: 'assistive',
+            safe_zone: 'bottom-right',
+            events: ['verify_failed', 'verify_success', 'verify_queue', 'verification_expiring', 'points_insufficient', 'service_status', 'support_reply', 'ticket_updated']
+        },
+        {
+            id: 'guestbook',
+            label: '留言板',
+            tone: 'community',
+            safe_zone: 'bottom-right',
+            events: ['comment_replied', 'message_replied', 'guestbook_mention', 'community_rule', 'content_featured', 'content_moderated']
+        }
+    ]);
     const RULE_TONE_OPTIONS = [
         ['info', '信息'],
         ['success', '成功'],
@@ -54,6 +197,7 @@
     const RULE_FILTER_STATUS_OPTIONS = [
         ['all', '全部状态'],
         ['running', '运行中'],
+        ['scheduled', '定时发布'],
         ['draft', '草稿'],
         ['published', '已发布'],
         ['paused', '已暂停'],
@@ -76,6 +220,14 @@
         ['priority_asc', '优先级低到高'],
         ['name_asc', '名称 A-Z']
     ];
+    const RULE_DUPLICATE_GROUP_COLORS = [
+        '#f59e0b',
+        '#3b82f6',
+        '#10b981',
+        '#8b5cf6',
+        '#ef4444',
+        '#14b8a6'
+    ];
     const AUDIENCE_SCOPE_OPTIONS = [
         ['all', '全部用户'],
         ['visitors', '游客'],
@@ -86,18 +238,244 @@
         ['high_value', '高价值用户'],
         ['inactive', '长期未活跃用户']
     ];
+    const SEGMENT_SCENARIO_OPTIONS = Object.freeze([
+        {
+            id: 'site_announcement',
+            label: '站点公告',
+            audienceScope: 'all',
+            eventKey: 'maintenance_notice'
+        },
+        {
+            id: 'visitor_register_prompt',
+            label: '游客注册引导',
+            audienceScope: 'visitors',
+            eventKey: 'new_user_welcome'
+        },
+        {
+            id: 'new_user_welcome',
+            label: '新用户欢迎',
+            audienceScope: 'new_users',
+            eventKey: 'new_user_welcome'
+        },
+        {
+            id: 'points_insufficient_help',
+            label: '积分不足提醒',
+            audienceScope: 'authenticated',
+            eventKey: 'points_insufficient'
+        },
+        {
+            id: 'coupon_available_notice',
+            label: '优惠券可领取',
+            audienceScope: 'authenticated',
+            eventKey: 'coupon_available'
+        },
+        {
+            id: 'payment_failed_recovery',
+            label: '支付失败挽回',
+            audienceScope: 'payment_failed',
+            tagKey: 'payment_failed',
+            eventKey: 'payment_failed'
+        },
+        {
+            id: 'wallet_recharge_thanks',
+            label: '充值成功关怀',
+            audienceScope: 'recharged',
+            tagKey: 'paid_user',
+            eventKey: 'wallet_recharge_success'
+        },
+        {
+            id: 'wallet_recharge_failed_help',
+            label: '充值失败帮助',
+            audienceScope: 'authenticated',
+            tagKey: 'payment_failed',
+            eventKey: 'wallet_recharge_failed'
+        },
+        {
+            id: 'cart_abandon_recovery',
+            label: '购物车挽回',
+            audienceScope: 'authenticated',
+            eventKey: 'cart_abandoned'
+        },
+        {
+            id: 'coupon_expiring_notice',
+            label: '优惠券过期提醒',
+            audienceScope: 'authenticated',
+            eventKey: 'coupon_expiring'
+        },
+        {
+            id: 'daily_checkin_reminder',
+            label: '每日签到提醒',
+            audienceScope: 'authenticated',
+            eventKey: 'daily_checkin_available'
+        },
+        {
+            id: 'profile_completion',
+            label: '资料完善引导',
+            audienceScope: 'authenticated',
+            eventKey: 'profile_incomplete'
+        },
+        {
+            id: 'verify_failed_help',
+            label: '验证失败帮助',
+            audienceScope: 'verify_failed',
+            tagKey: 'verify_failed',
+            eventKey: 'verify_failed'
+        },
+        {
+            id: 'inactive_user_return',
+            label: '长期未活跃回流',
+            audienceScope: 'inactive',
+            tagKey: 'inactive_user',
+            eventKey: 'page_view'
+        },
+        {
+            id: 'search_no_result_help',
+            label: '搜索无结果引导',
+            audienceScope: 'authenticated',
+            eventKey: 'search_no_result'
+        },
+        {
+            id: 'content_moderation_result',
+            label: '内容处理结果',
+            audienceScope: 'authenticated',
+            eventKey: 'content_moderated'
+        },
+        {
+            id: 'reply_notification',
+            label: '留言/评论回复',
+            audienceScope: 'authenticated',
+            eventKey: 'message_replied'
+        },
+        {
+            id: 'order_status_notice',
+            label: '订单状态提醒',
+            audienceScope: 'authenticated',
+            eventKey: 'order_status'
+        },
+        {
+            id: 'order_delivered_followup',
+            label: '交付完成回访',
+            audienceScope: 'authenticated',
+            eventKey: 'order_delivered'
+        },
+        {
+            id: 'refund_status_update',
+            label: '退款状态同步',
+            audienceScope: 'authenticated',
+            eventKey: 'refund_status'
+        },
+        {
+            id: 'paid_user_benefit',
+            label: '已充值用户权益',
+            audienceScope: 'recharged',
+            tagKey: 'paid_user',
+            eventKey: 'permission_changed'
+        },
+        {
+            id: 'high_value_care',
+            label: '高价值用户关怀',
+            audienceScope: 'high_value',
+            tagKey: 'high_value',
+            eventKey: 'product_discount'
+        },
+        {
+            id: 'service_status_notice',
+            label: '服务状态通知',
+            audienceScope: 'all',
+            eventKey: 'service_status'
+        },
+        {
+            id: 'ticket_progress_update',
+            label: '工单进展提醒',
+            audienceScope: 'authenticated',
+            eventKey: 'ticket_updated'
+        },
+        {
+            id: 'login_risk_alert',
+            label: '登录风险提醒',
+            audienceScope: 'authenticated',
+            eventKey: 'login_risk'
+        }
+    ]);
+    const SEGMENT_SCENARIO_ALIASES = Object.freeze({
+        站点公告: 'site_announcement',
+        新功能说明: 'site_announcement',
+        服务维护: 'service_status_notice',
+        注册引导: 'visitor_register_prompt',
+        游客限制说明: 'visitor_register_prompt',
+        新手福利: 'visitor_register_prompt',
+        新手引导: 'new_user_welcome',
+        首次充值说明: 'new_user_welcome',
+        使用路径: 'new_user_welcome',
+        积分不足: 'points_insufficient_help',
+        首充权益: 'points_insufficient_help',
+        套餐说明: 'points_insufficient_help',
+        充值成功: 'wallet_recharge_thanks',
+        充值失败: 'wallet_recharge_failed_help',
+        每日签到: 'daily_checkin_reminder',
+        资料完善: 'profile_completion',
+        可领优惠券: 'coupon_available_notice',
+        优惠券过期: 'coupon_expiring_notice',
+        购物车挽回: 'cart_abandon_recovery',
+        专属折扣: 'high_value_care',
+        高级权限: 'high_value_care',
+        优先客服: 'high_value_care',
+        回流优惠: 'inactive_user_return',
+        账户唤醒: 'inactive_user_return',
+        搜索无结果: 'search_no_result_help',
+        内容审核: 'content_moderation_result',
+        钱包入口: 'paid_user_benefit',
+        订单状态: 'order_status_notice',
+        交付完成: 'order_delivered_followup',
+        退款状态: 'refund_status_update',
+        消息回复: 'reply_notification',
+        工单进展: 'ticket_progress_update',
+        登录风险: 'login_risk_alert'
+    });
     const TRIGGER_TYPE_OPTIONS = [
         ['page_view', '进入页面'],
         ['time_on_page', '停留触发'],
         ['scroll_depth', '滚动触发'],
         ['click_action', '点击触发'],
+        ['new_user_welcome', '新用户欢迎'],
+        ['points_low_balance', '积分偏低'],
+        ['points_adjusted', '积分变动'],
         ['points_insufficient', '积分不足'],
         ['coupon_available', '可领优惠券'],
+        ['coupon_expiring', '优惠券将过期'],
         ['product_discount', '商品折扣'],
+        ['product_discount_available', '商品折扣可用'],
+        ['product_restocked', '补货提醒'],
+        ['cart_abandoned', '购物车挽回'],
         ['comment_replied', '评论被回复'],
         ['message_replied', '留言被回复'],
+        ['guestbook_mention', '留言提及'],
+        ['wallet_recharge_success', '充值成功'],
+        ['wallet_recharge_failed', '充值失败'],
+        ['payment_failed', '支付失败'],
+        ['order_paid', '订单已支付'],
+        ['order_status', '订单状态'],
+        ['order_delivered', '订单已交付'],
+        ['refund_status', '退款状态'],
+        ['permission_changed', '权限变更'],
+        ['prompt_unlocked', '内容解锁'],
         ['verify_failed', '验证失败'],
-        ['service_status', '服务状态']
+        ['verify_success', '验证成功'],
+        ['verify_queue', '验证排队'],
+        ['verification_expiring', '验证即将过期'],
+        ['profile_incomplete', '资料待完善'],
+        ['daily_checkin_available', '签到提醒'],
+        ['inactive_user_return', '回流唤醒'],
+        ['search_no_result', '搜索无结果'],
+        ['content_moderated', '内容处理结果'],
+        ['support_reply', '客服回复'],
+        ['ticket_updated', '工单进展'],
+        ['login_risk', '登录风险'],
+        ['service_status', '服务状态'],
+        ['usage_rules', '使用规则'],
+        ['maintenance_notice', '维护公告'],
+        ['community_rule', '社区规则'],
+        ['content_featured', '内容精选']
     ];
     const DISPLAY_PLACEMENT_OPTIONS = [
         ['robot_bubble', '机器人气泡'],
@@ -264,12 +642,14 @@
         },
         {
             id: 'new_user_welcome',
-            title: '新用户欢迎',
-            desc: '新注册用户首次回到首页时，给出钱包、商城和提示词入口。',
+            title: '新用户首访欢迎',
+            desc: '新注册用户首次进入首页时，给出钱包、商城和提示词入口。',
             icon: 'fa-seedling',
             triggerType: 'page_view',
             audienceScope: 'new_users',
             pageIds: ['home'],
+            semanticFamily: 'new_user_welcome',
+            intentLabel: '新用户欢迎',
             tone: 'welcome',
             titleText: '欢迎加入 zaoyoe',
             content: '你可以从提示词、商城和钱包开始。系统会在关键位置给你必要说明。',
@@ -278,6 +658,74 @@
             priority: 12,
             dismissTtlHours: 72,
             mode: '页面触发'
+        },
+        {
+            id: 'profile_completion',
+            title: '资料完善引导',
+            desc: '登录用户资料不完整时，提醒补充昵称、联系方式和售后识别信息。',
+            icon: 'fa-address-card',
+            triggerType: 'profile_incomplete',
+            audienceScope: 'authenticated',
+            pageIds: ['home'],
+            tone: 'welcome',
+            titleText: '完善资料后体验会更顺',
+            content: '补全资料后，我能更准确地识别你的订单、权益和客服上下文。',
+            actionLabel: '完善资料',
+            actionUrl: 'account://profile',
+            priority: 16,
+            dismissTtlHours: 48,
+            mode: '事件触发'
+        },
+        {
+            id: 'daily_checkin_reminder',
+            title: '每日签到提醒',
+            desc: '当用户当天还有签到权益时，用轻提示引导补充积分余额。',
+            icon: 'fa-calendar-check',
+            triggerType: 'daily_checkin_available',
+            audienceScope: 'authenticated',
+            pageIds: ['home'],
+            tone: 'success',
+            titleText: '今天的签到奖励还没领',
+            content: '签到可以补充积分余额，适合在使用提示词、验证或下单前先领取。',
+            actionLabel: '去签到',
+            actionUrl: 'wallet://checkin',
+            priority: 14,
+            dismissTtlHours: 22,
+            mode: '事件触发'
+        },
+        {
+            id: 'points_low_balance_notice',
+            title: '积分偏低预警',
+            desc: '积分即将不足但还未阻断操作时，提前提示充值、签到或套餐入口。',
+            icon: 'fa-gauge-simple-low',
+            triggerType: 'points_low_balance',
+            audienceScope: 'authenticated',
+            pageIds: ['home', 'prompts', 'shop', 'verify'],
+            tone: 'info',
+            titleText: '积分余额有点低',
+            content: '继续使用前可以先查看钱包，签到或充值都能减少中途被打断的情况。',
+            actionLabel: '查看积分',
+            actionUrl: 'wallet://balance',
+            priority: 18,
+            dismissTtlHours: 12,
+            mode: '事件触发'
+        },
+        {
+            id: 'points_adjusted_notice',
+            title: '积分变动通知',
+            desc: '客服后台补发、扣减或修正积分后，立即把变化原因和余额反馈给用户。',
+            icon: 'fa-hand-holding-dollar',
+            triggerType: 'points_adjusted',
+            audienceScope: 'authenticated',
+            pageIds: ['home', 'prompts', 'shop', 'verify'],
+            tone: 'info',
+            titleText: '你的积分有更新',
+            content: '客服刚刚调整了你的积分余额。可以查看钱包确认当前可用额度，再继续后续操作。',
+            actionLabel: '查看积分',
+            actionUrl: 'wallet://balance',
+            priority: 22,
+            dismissTtlHours: 8,
+            mode: '事件触发'
         },
         {
             id: 'points_insufficient_help',
@@ -297,13 +745,49 @@
             mode: '事件触发'
         },
         {
+            id: 'wallet_recharge_thanks',
+            title: '充值成功关怀',
+            desc: '充值成功后主动告知余额、订单和下一步可使用的权益入口。',
+            icon: 'fa-wallet',
+            triggerType: 'wallet_recharge_success',
+            audienceScope: 'recharged',
+            pageIds: ['home', 'shop'],
+            tone: 'success',
+            titleText: '充值已到账',
+            content: '积分已经更新，可以继续查看订单、解锁内容或使用验证服务。',
+            actionLabel: '查看钱包',
+            actionUrl: 'wallet://balance',
+            priority: 26,
+            dismissTtlHours: 24,
+            mode: '事件触发'
+        },
+        {
+            id: 'wallet_recharge_failed_help',
+            title: '充值失败帮助',
+            desc: '充值失败后给出重试、订单记录和客服排查入口，降低用户不确定感。',
+            icon: 'fa-credit-card',
+            triggerType: 'wallet_recharge_failed',
+            audienceScope: 'authenticated',
+            pageIds: ['home', 'shop'],
+            tone: 'warning',
+            titleText: '充值没有完成',
+            content: '这笔充值可能没有成功到账。你可以查看钱包记录，或把订单信息发给客服排查。',
+            actionLabel: '查看订单记录',
+            actionUrl: 'wallet://orders',
+            priority: 34,
+            dismissTtlHours: 6,
+            mode: '事件触发'
+        },
+        {
             id: 'coupon_available_notice',
-            title: '优惠券可领取',
+            title: '可领优惠券提醒',
             desc: '商城出现可领券商品时，引导用户前往钱包卡券或商品页。',
             icon: 'fa-ticket',
             triggerType: 'coupon_available',
             audienceScope: 'authenticated',
             pageIds: ['shop'],
+            semanticFamily: 'shop_discount_ready',
+            intentLabel: '商城优惠提醒',
             tone: 'commerce',
             titleText: '有优惠券可领取',
             content: '这件商品有可用优惠，可以先领取再下单。',
@@ -311,6 +795,97 @@
             actionUrl: 'wallet://cards',
             priority: 28,
             dismissTtlHours: 12,
+            mode: '事件触发'
+        },
+        {
+            id: 'coupon_expiring_notice',
+            title: '优惠券过期提醒',
+            desc: '用户持有的优惠券即将过期时，引导查看卡券并完成下单。',
+            icon: 'fa-hourglass-half',
+            triggerType: 'coupon_expiring',
+            audienceScope: 'authenticated',
+            pageIds: ['shop'],
+            tone: 'warning',
+            titleText: '有优惠券快过期了',
+            content: '你的部分优惠券即将失效，可以先查看卡券，再决定是否用于当前商品。',
+            actionLabel: '查看卡券',
+            actionUrl: 'wallet://cards',
+            priority: 31,
+            dismissTtlHours: 8,
+            mode: '事件触发'
+        },
+        {
+            id: 'cart_abandon_recovery',
+            title: '购物车挽回',
+            desc: '用户把商品留在购物车后离开或长时间未下单，提示继续完成购买。',
+            icon: 'fa-cart-shopping',
+            triggerType: 'cart_abandoned',
+            audienceScope: 'authenticated',
+            pageIds: ['shop'],
+            tone: 'commerce',
+            titleText: '购物车里还有未完成的商品',
+            content: '你刚才挑选的商品还在，可以继续结算，或先看看是否有可用优惠。',
+            actionLabel: '回到商城',
+            actionUrl: '/shop.html#cart',
+            priority: 29,
+            dismissTtlHours: 18,
+            mode: '事件触发'
+        },
+        {
+            id: 'order_status_notice',
+            title: '订单状态更新',
+            desc: '订单支付、处理中或状态变化时，引导用户查看钱包订单记录。',
+            icon: 'fa-receipt',
+            triggerType: 'order_status',
+            audienceScope: 'authenticated',
+            pageIds: ['shop', 'home'],
+            semanticFamily: 'order_lifecycle',
+            intentLabel: '订单进度提醒',
+            tone: 'info',
+            titleText: '订单状态已更新',
+            content: '你的订单有新的处理状态，可以在钱包订单记录里查看详情。',
+            actionLabel: '查看订单',
+            actionUrl: 'wallet://orders',
+            priority: 30,
+            dismissTtlHours: 12,
+            mode: '事件触发'
+        },
+        {
+            id: 'order_delivered_followup',
+            title: '订单交付完成提醒',
+            desc: '订单交付后提示查看内容、保存凭证或发起售后，形成服务闭环。',
+            icon: 'fa-box-open',
+            triggerType: 'order_delivered',
+            audienceScope: 'authenticated',
+            pageIds: ['shop', 'home'],
+            semanticFamily: 'order_lifecycle',
+            intentLabel: '订单进度提醒',
+            tone: 'success',
+            titleText: '订单已完成交付',
+            content: '你可以查看订单记录保存凭证。如果内容不符合预期，也可以继续联系站内客服。',
+            actionLabel: '查看订单',
+            actionUrl: 'wallet://orders',
+            priority: 27,
+            dismissTtlHours: 24,
+            mode: '事件触发'
+        },
+        {
+            id: 'refund_status_update',
+            title: '退款进度提醒',
+            desc: '退款进度发生变化时，通过机器人把用户带回订单记录和客服上下文。',
+            icon: 'fa-rotate-left',
+            triggerType: 'refund_status',
+            audienceScope: 'authenticated',
+            pageIds: ['shop', 'home'],
+            semanticFamily: 'order_lifecycle',
+            intentLabel: '订单进度提醒',
+            tone: 'info',
+            titleText: '退款进度有更新',
+            content: '你的退款申请有新的处理进展，可以查看订单记录，必要时继续补充说明。',
+            actionLabel: '查看记录',
+            actionUrl: 'wallet://orders',
+            priority: 33,
+            dismissTtlHours: 8,
             mode: '事件触发'
         },
         {
@@ -338,6 +913,8 @@
             triggerType: 'page_view',
             audienceScope: 'inactive',
             pageIds: ['home', 'shop'],
+            semanticFamily: 'inactive_return',
+            intentLabel: '回流唤醒',
             tone: 'welcome',
             titleText: '欢迎回来',
             content: '这里最近更新了一些内容和权益，你可以先看看钱包卡券或商城优惠。',
@@ -348,19 +925,72 @@
             mode: '页面触发'
         },
         {
+            id: 'high_value_care',
+            title: '高价值用户关怀',
+            desc: '高价值用户访问商城或首页时，展示专属权益、优先客服和折扣入口。',
+            icon: 'fa-gem',
+            triggerType: 'product_discount',
+            audienceScope: 'high_value',
+            pageIds: ['home', 'shop'],
+            tone: 'commerce',
+            titleText: '这里有你的专属权益',
+            content: '你可以优先查看专属折扣和客服支持，适合处理高价值订单或续费需求。',
+            actionLabel: '查看卡券',
+            actionUrl: 'wallet://cards',
+            priority: 38,
+            dismissTtlHours: 48,
+            mode: '事件触发'
+        },
+        {
             id: 'reply_notification',
-            title: '留言/评论被回复',
-            desc: '用户的留言或评论被回复后，通过机器人气泡带回对应页面。',
+            title: '留言回复提醒',
+            desc: '留言板内容被回复后，通过机器人气泡把用户带回对应页面。',
             icon: 'fa-comments',
             triggerType: 'message_replied',
             audienceScope: 'authenticated',
             pageIds: ['guestbook', 'prompts'],
+            semanticFamily: 'reply_followup',
+            intentLabel: '互动回复提醒',
             tone: 'community',
             titleText: '有人回复了你',
             content: '你的留言或评论有新回复，点击即可回到对应内容。',
             actionLabel: '查看回复',
             actionUrl: '/guestbook.html',
             priority: 32,
+            dismissTtlHours: 24,
+            mode: '事件触发'
+        },
+        {
+            id: 'search_no_result_help',
+            title: '搜索无结果引导',
+            desc: '提示词或内容搜索无结果时，给出改写建议、精选内容或客服入口。',
+            icon: 'fa-magnifying-glass-chart',
+            triggerType: 'search_no_result',
+            audienceScope: 'authenticated',
+            pageIds: ['prompts'],
+            tone: 'creative',
+            titleText: '没搜到合适内容？',
+            content: '可以换一个关键词，或者先看精选内容。我也可以帮你判断该怎么描述需求。',
+            actionLabel: '查看精选',
+            actionUrl: '/prompts.html#featured',
+            priority: 20,
+            dismissTtlHours: 6,
+            mode: '事件触发'
+        },
+        {
+            id: 'content_moderation_result',
+            title: '内容处理结果',
+            desc: '内容被处理、解锁或精选状态变化时，用机器人解释结果和下一步。',
+            icon: 'fa-file-circle-check',
+            triggerType: 'content_moderated',
+            audienceScope: 'authenticated',
+            pageIds: ['prompts', 'guestbook'],
+            tone: 'community',
+            titleText: '内容处理结果已更新',
+            content: '你的内容状态有变化，可以查看详情；如果有疑问，也可以继续联系站内客服。',
+            actionLabel: '查看内容',
+            actionUrl: '/prompts.html',
+            priority: 25,
             dismissTtlHours: 24,
             mode: '事件触发'
         },
@@ -380,6 +1010,356 @@
             priority: 35,
             dismissTtlHours: 3,
             mode: '事件触发'
+        },
+        {
+            id: 'verify_queue_help',
+            title: '验证排队说明',
+            desc: '验证队列拥堵或等待较久时，解释当前状态并引导查看帮助。',
+            icon: 'fa-list-check',
+            triggerType: 'verify_queue',
+            audienceScope: 'authenticated',
+            pageIds: ['verify'],
+            tone: 'assistive',
+            titleText: '验证正在排队',
+            content: '当前验证请求较多，你可以先确认资料是否完整，避免轮到处理时再次失败。',
+            actionLabel: '查看验证说明',
+            actionUrl: '/verify.html#help',
+            priority: 24,
+            dismissTtlHours: 4,
+            mode: '事件触发'
+        },
+        {
+            id: 'verify_success_confirmation',
+            title: '验证成功确认',
+            desc: '验证通过后提示权益可用范围，帮助用户继续完成下一步操作。',
+            icon: 'fa-circle-check',
+            triggerType: 'verify_success',
+            audienceScope: 'authenticated',
+            pageIds: ['verify', 'home'],
+            tone: 'success',
+            titleText: '验证已通过',
+            content: '验证状态已经更新，你可以继续使用相关权益或回到商城完成后续操作。',
+            actionLabel: '查看权益',
+            actionUrl: 'wallet://balance',
+            priority: 22,
+            dismissTtlHours: 24,
+            mode: '事件触发'
+        },
+        {
+            id: 'ticket_progress_update',
+            title: '工单进展提醒',
+            desc: '客服或售后工单有进展时，通过机器人说明状态并保留上下文入口。',
+            icon: 'fa-headset',
+            triggerType: 'ticket_updated',
+            audienceScope: 'authenticated',
+            pageIds: ['home', 'shop', 'verify'],
+            tone: 'info',
+            titleText: '客服工单有新进展',
+            content: '你的问题有新的处理记录，可以查看工单结果或继续补充信息。',
+            actionLabel: '查看工单',
+            actionUrl: 'support://tickets',
+            priority: 37,
+            dismissTtlHours: 12,
+            mode: '事件触发'
+        },
+        {
+            id: 'login_risk_alert',
+            title: '登录风险提醒',
+            desc: '账号出现异常登录、限流或安全状态变化时，引导用户检查资料和安全设置。',
+            icon: 'fa-user-shield',
+            triggerType: 'login_risk',
+            audienceScope: 'authenticated',
+            pageIds: ['home'],
+            tone: 'alert',
+            titleText: '账号安全需要确认',
+            content: '检测到账户安全状态变化。建议检查资料和登录信息，必要时联系站内客服。',
+            actionLabel: '检查账号',
+            actionUrl: 'account://profile',
+            priority: 42,
+            dismissTtlHours: 3,
+            mode: '事件触发'
+        },
+        {
+            id: 'new_user_welcome_event',
+            title: '新用户注册完成欢迎',
+            desc: '注册完成、首登或引导链路触发时，立即给新用户一条更明确的下一步路径。',
+            icon: 'fa-sparkles',
+            triggerType: 'new_user_welcome',
+            audienceScope: 'new_users',
+            pageIds: ['home', 'prompts'],
+            semanticFamily: 'new_user_welcome',
+            intentLabel: '新用户欢迎',
+            tone: 'welcome',
+            titleText: '欢迎，先从这里开始',
+            content: '账号已经准备好了。你可以先看看提示词和钱包入口，我会在关键操作前给你提醒。',
+            actionLabel: '查看提示词',
+            actionUrl: '/prompts.html',
+            priority: 18,
+            dismissTtlHours: 72,
+            mode: '事件触发'
+        },
+        {
+            id: 'inactive_return_event',
+            title: '回流用户到站欢迎',
+            desc: '用户被系统判定为回流时，主动提示近期更新、卡券或可继续的任务。',
+            icon: 'fa-person-walking-arrow-loop-left',
+            triggerType: 'inactive_user_return',
+            audienceScope: 'inactive',
+            pageIds: ['home', 'shop'],
+            semanticFamily: 'inactive_return',
+            intentLabel: '回流唤醒',
+            tone: 'welcome',
+            titleText: '欢迎回来，有些内容更新了',
+            content: '你可以先看钱包卡券、商城优惠或最近更新的内容，继续上次未完成的操作。',
+            actionLabel: '查看卡券',
+            actionUrl: 'wallet://cards',
+            priority: 26,
+            dismissTtlHours: 72,
+            mode: '事件触发'
+        },
+        {
+            id: 'comment_reply_followup',
+            title: '评论回复提醒',
+            desc: '提示词评论被回复时，把用户带回对应内容，减少错过互动。',
+            icon: 'fa-comment-dots',
+            triggerType: 'comment_replied',
+            audienceScope: 'authenticated',
+            pageIds: ['prompts', 'guestbook'],
+            semanticFamily: 'reply_followup',
+            intentLabel: '互动回复提醒',
+            tone: 'community',
+            titleText: '你的评论有新回复',
+            content: '有人回复了你的评论，可以回到内容页继续查看上下文。',
+            actionLabel: '查看回复',
+            actionUrl: '/prompts.html',
+            priority: 33,
+            dismissTtlHours: 24,
+            mode: '事件触发'
+        },
+        {
+            id: 'guestbook_mention_notice',
+            title: '留言提及提醒',
+            desc: '留言板出现提及或相关讨论时，提醒用户回到社区上下文。',
+            icon: 'fa-at',
+            triggerType: 'guestbook_mention',
+            audienceScope: 'authenticated',
+            pageIds: ['guestbook'],
+            tone: 'community',
+            titleText: '有人在留言里提到了你',
+            content: '留言板有一条和你相关的新内容，可以回去看看是否需要回复。',
+            actionLabel: '查看留言',
+            actionUrl: '/guestbook.html',
+            priority: 34,
+            dismissTtlHours: 24,
+            mode: '事件触发'
+        },
+        {
+            id: 'product_discount_available_notice',
+            title: '商品折扣可用提醒',
+            desc: '商品出现可用折扣但未必需要领券时，提示用户直接查看优惠。',
+            icon: 'fa-tags',
+            triggerType: 'product_discount_available',
+            audienceScope: 'authenticated',
+            pageIds: ['shop'],
+            semanticFamily: 'shop_discount_ready',
+            intentLabel: '商城优惠提醒',
+            tone: 'commerce',
+            titleText: '当前商品有可用折扣',
+            content: '这件商品现在可以享受优惠，适合先确认价格再下单。',
+            actionLabel: '查看商品',
+            actionUrl: '/shop.html',
+            priority: 30,
+            dismissTtlHours: 12,
+            mode: '事件触发'
+        },
+        {
+            id: 'product_restocked_notice',
+            title: '商品补货提醒',
+            desc: '关注或热销商品恢复库存后，引导用户及时回到商城。',
+            icon: 'fa-boxes-stacked',
+            triggerType: 'product_restocked',
+            audienceScope: 'authenticated',
+            pageIds: ['shop'],
+            tone: 'commerce',
+            titleText: '你关注的商品补货了',
+            content: '之前暂时不可用的商品已经恢复，可以回到商城继续查看。',
+            actionLabel: '去商城',
+            actionUrl: '/shop.html',
+            priority: 31,
+            dismissTtlHours: 18,
+            mode: '事件触发'
+        },
+        {
+            id: 'order_paid_confirmation',
+            title: '订单支付确认',
+            desc: '订单支付成功后，提示用户查看订单、等待交付或继续补充信息。',
+            icon: 'fa-money-check-dollar',
+            triggerType: 'order_paid',
+            audienceScope: 'authenticated',
+            pageIds: ['shop', 'home'],
+            semanticFamily: 'order_lifecycle',
+            intentLabel: '订单进度提醒',
+            tone: 'success',
+            titleText: '订单支付成功',
+            content: '支付已经完成，后续交付和状态变化会继续通过机器人提醒你。',
+            actionLabel: '查看订单',
+            actionUrl: 'wallet://orders',
+            priority: 35,
+            dismissTtlHours: 24,
+            mode: '事件触发'
+        },
+        {
+            id: 'permission_changed_notice',
+            title: '权限变更说明',
+            desc: '账号权限、封禁、解封或会员权益变化时，解释变化原因和可操作入口。',
+            icon: 'fa-id-badge',
+            triggerType: 'permission_changed',
+            audienceScope: 'authenticated',
+            pageIds: ['home', 'prompts', 'verify'],
+            tone: 'info',
+            titleText: '账号权限有更新',
+            content: '你的账号权限或权益状态发生变化，可以查看资料和钱包确认当前可用范围。',
+            actionLabel: '检查账号',
+            actionUrl: 'account://profile',
+            priority: 40,
+            dismissTtlHours: 8,
+            mode: '事件触发'
+        },
+        {
+            id: 'prompt_unlocked_guide',
+            title: '内容解锁引导',
+            desc: '提示词或权益内容解锁后，提示用户继续查看、收藏或使用。',
+            icon: 'fa-unlock-keyhole',
+            triggerType: 'prompt_unlocked',
+            audienceScope: 'authenticated',
+            pageIds: ['prompts'],
+            tone: 'creative',
+            titleText: '内容已解锁',
+            content: '你刚解锁的内容现在可以查看和使用，也可以回到提示词页继续探索。',
+            actionLabel: '查看内容',
+            actionUrl: '/prompts.html',
+            priority: 28,
+            dismissTtlHours: 24,
+            mode: '事件触发'
+        },
+        {
+            id: 'verification_expiring_notice',
+            title: '验证即将过期',
+            desc: '验证权益或认证状态临近过期时，提前提醒续验或查看说明。',
+            icon: 'fa-hourglass-end',
+            triggerType: 'verification_expiring',
+            audienceScope: 'authenticated',
+            pageIds: ['verify', 'home'],
+            tone: 'warning',
+            titleText: '验证状态即将过期',
+            content: '你的验证状态可能很快失效。建议提前查看说明，避免后续操作被打断。',
+            actionLabel: '查看验证',
+            actionUrl: '/verify.html#help',
+            priority: 34,
+            dismissTtlHours: 12,
+            mode: '事件触发'
+        },
+        {
+            id: 'usage_rules_notice',
+            title: '使用规则提醒',
+            desc: '站点规则、使用限制或页面说明更新时，在相关页面给出轻提醒。',
+            icon: 'fa-clipboard-list',
+            triggerType: 'usage_rules',
+            audienceScope: 'all',
+            pageIds: ['home', 'gongyi', 'verify'],
+            tone: 'calm',
+            titleText: '使用规则有说明',
+            content: '当前页面有一些使用规则和注意事项，先了解一下可以减少操作中断。',
+            actionLabel: '我知道了',
+            actionUrl: '',
+            priority: 12,
+            dismissTtlHours: 24,
+            mode: '事件触发'
+        },
+        {
+            id: 'maintenance_notice',
+            title: '维护公告提醒',
+            desc: '维护、降级、暂停服务或恢复服务时，用全站提醒解释影响范围。',
+            icon: 'fa-screwdriver-wrench',
+            triggerType: 'maintenance_notice',
+            audienceScope: 'all',
+            pageIds: ['all'],
+            tone: 'warning',
+            titleText: '维护公告',
+            content: '站点服务可能会有短暂调整。如果你遇到异常，可以稍后再试或联系站内客服。',
+            actionLabel: '我知道了',
+            actionUrl: '',
+            priority: 44,
+            dismissTtlHours: 6,
+            mode: '事件触发'
+        },
+        {
+            id: 'community_rule_notice',
+            title: '社区规则提醒',
+            desc: '留言、评论或公益站互动前，提示社区规范和内容边界。',
+            icon: 'fa-scale-balanced',
+            triggerType: 'community_rule',
+            audienceScope: 'all',
+            pageIds: ['guestbook', 'gongyi', 'prompts'],
+            tone: 'community',
+            titleText: '社区互动前看一下规则',
+            content: '为了让讨论更顺畅，请尽量保持清晰、友善，并避免提交无关或敏感内容。',
+            actionLabel: '我知道了',
+            actionUrl: '',
+            priority: 14,
+            dismissTtlHours: 48,
+            mode: '事件触发'
+        },
+        {
+            id: 'content_featured_notice',
+            title: '内容精选提醒',
+            desc: '内容被精选、推荐或进入榜单时，提醒作者查看表现和后续互动。',
+            icon: 'fa-star',
+            triggerType: 'content_featured',
+            audienceScope: 'authenticated',
+            pageIds: ['prompts', 'guestbook'],
+            tone: 'success',
+            titleText: '你的内容被精选了',
+            content: '这条内容获得了更多展示机会，可以回去看看互动情况。',
+            actionLabel: '查看内容',
+            actionUrl: '/prompts.html#featured',
+            priority: 29,
+            dismissTtlHours: 48,
+            mode: '事件触发'
+        },
+        {
+            id: 'support_reply_notice',
+            title: '客服回复提醒',
+            desc: '客服有新回复时，把用户带回订单、验证或当前上下文。',
+            icon: 'fa-headset',
+            triggerType: 'support_reply',
+            audienceScope: 'authenticated',
+            pageIds: ['home', 'shop', 'verify', 'gongyi'],
+            tone: 'info',
+            titleText: '客服有新回复',
+            content: '你的问题有新的客服回复，可以查看上下文并继续补充信息。',
+            actionLabel: '查看记录',
+            actionUrl: 'wallet://orders',
+            priority: 39,
+            dismissTtlHours: 12,
+            mode: '事件触发'
+        },
+        {
+            id: 'service_status_notice',
+            title: '服务状态通知',
+            desc: '站点维护、服务波动或规则更新时，用全站气泡降低用户误解。',
+            icon: 'fa-satellite-dish',
+            triggerType: 'service_status',
+            audienceScope: 'all',
+            pageIds: ['all'],
+            tone: 'calm',
+            titleText: '服务状态有更新',
+            content: '部分服务可能会短暂变化。你可以继续使用当前页面，遇到问题时我会提示下一步。',
+            actionLabel: '我知道了',
+            actionUrl: '',
+            priority: 10,
+            dismissTtlHours: 12,
+            mode: '事件触发'
         }
     ]);
     const PREVIEW_PAGE_OPTIONS = [
@@ -391,6 +1371,27 @@
         ['verify', '验证'],
         ['guestbook', '留言板']
     ];
+    const PREVIEW_EVENT_SAMPLE_OPTIONS = Object.freeze({
+        points_adjusted: [
+            ['credit_bonus', '补发积分'],
+            ['debit_manual', '扣减积分'],
+            ['correction_fix', '记录修正']
+        ],
+        ticket_updated: [
+            ['resolved_refund', '已解决并退款'],
+            ['rejected_followup', '已拒绝待补充'],
+            ['resolved_normal', '已解决无需退款']
+        ],
+        refund_status: [
+            ['refunded_success', '退款完成'],
+            ['refunded_with_remark', '退款附带说明']
+        ],
+        support_reply: [
+            ['order_followup', '订单跟进回复'],
+            ['verify_guidance', '验证说明回复'],
+            ['generic_checkin', '常规关怀回复']
+        ]
+    });
     const WORKSPACE_VIEWS = Object.freeze([
         ['dashboard', '触达看板', 'fa-gauge-high', '运营总览与风险入口'],
         ['rules', '触达规则', 'fa-bullseye', '创建、发布和暂停触达规则'],
@@ -404,15 +1405,30 @@
         ['audit', '审计记录', 'fa-shield-halved', '发布、暂停和高风险变更'],
         ['settings', '全局设置', 'fa-sliders', '总开关、频控和治理策略']
     ]);
+    const WORKSPACE_GROUPS = Object.freeze([
+        ['overview', '运营总览', 'fa-compass', '先看全局表现、归因和变更风险', ['dashboard', 'analytics', 'audit']],
+        ['orchestration', '触达编排', 'fa-sitemap', '规则、模板和自动化流程集中管理', ['rules', 'templates', 'automation']],
+        ['audience', '页面与人群', 'fa-window-maximize', '围绕页面、用户分群和客服入口配置触达', ['scenes', 'segments', 'entry']],
+        ['governance', '体验治理', 'fa-sliders', '素材样式和全局边界统一收口', ['assets', 'settings']]
+    ]);
     const CAPABILITY_GROUPS = Object.freeze([
         {
             id: 'points',
             title: '积分与套餐',
-            desc: '积分不足、积分调整、兑换成功、套餐到期',
+            desc: '积分不足、积分变动、充值成功、签到和套餐到期',
             icon: 'fa-coins',
             categories: ['points', 'membership'],
-            events: ['points_insufficient', 'points_low_balance'],
+            events: ['points_insufficient', 'points_low_balance', 'points_adjusted', 'wallet_recharge_success', 'daily_checkin_available'],
             pageIds: ['home', 'prompts', 'shop', 'verify']
+        },
+        {
+            id: 'lifecycle',
+            title: '用户旅程',
+            desc: '注册欢迎、资料完善、回流唤醒、搜索无结果引导',
+            icon: 'fa-route',
+            categories: ['onboarding', 'retention', 'welcome'],
+            events: ['new_user_welcome', 'profile_incomplete', 'inactive_user_return', 'search_no_result'],
+            pageIds: ['home', 'prompts']
         },
         {
             id: 'community',
@@ -426,28 +1442,37 @@
         {
             id: 'commerce',
             title: '商城经营',
-            desc: '可领优惠券、商品折扣、库存恢复、订单履约',
+            desc: '可领优惠券、商品折扣、库存恢复、购物车和订单履约',
             icon: 'fa-bag-shopping',
             categories: ['commerce'],
-            events: ['coupon_available', 'product_discount', 'product_restocked', 'order_status'],
+            events: ['coupon_available', 'coupon_expiring', 'product_discount', 'product_restocked', 'cart_abandoned', 'order_status', 'order_delivered'],
             pageIds: ['shop']
+        },
+        {
+            id: 'payments',
+            title: '支付与钱包',
+            desc: '充值成功、积分变动、支付失败、退款状态和钱包权益',
+            icon: 'fa-wallet',
+            categories: ['wallet', 'payments', 'commerce'],
+            events: ['wallet_recharge_success', 'wallet_recharge_failed', 'points_adjusted', 'payment_failed', 'refund_status'],
+            pageIds: ['home', 'shop']
         },
         {
             id: 'account',
             title: '账号权限',
-            desc: '管理员提升、权限限制、封禁解封、安全提醒',
+            desc: '管理员提升、权限限制、积分修正和安全提醒',
             icon: 'fa-user-shield',
-            categories: ['account', 'permission'],
-            events: ['permission_changed'],
+            categories: ['account', 'permission', 'security'],
+            events: ['permission_changed', 'points_adjusted', 'login_risk', 'profile_incomplete'],
             pageIds: ['home']
         },
         {
             id: 'operations',
             title: '站点运营',
-            desc: '首页公告、公益站规则、验证排队、服务维护',
+            desc: '首页公告、公益站规则、验证排队、工单进展、服务维护',
             icon: 'fa-satellite-dish',
             categories: ['operations', 'site', 'service', 'general'],
-            events: ['service_status', 'usage_rules', 'maintenance_notice', 'verify_queue'],
+            events: ['service_status', 'usage_rules', 'maintenance_notice', 'verify_queue', 'ticket_updated', 'support_reply'],
             pageIds: ['home', 'gongyi', 'verify']
         }
     ]);
@@ -455,46 +1480,64 @@
         {
             id: 'onboarding',
             title: '新手转化',
-            desc: '欢迎、注册、首次使用和新手路径说明。',
+            desc: '欢迎、注册、资料完善、首次使用和新手路径说明。',
             icon: 'fa-seedling',
-            categories: ['onboarding', 'welcome'],
-            events: ['new_user_welcome'],
+            categories: ['onboarding', 'welcome', 'retention'],
+            events: ['new_user_welcome', 'profile_incomplete', 'daily_checkin_available', 'points_adjusted'],
+            pageIds: ['home', 'prompts']
+        },
+        {
+            id: 'retention',
+            title: '活跃回流',
+            desc: '长期未活跃、搜索无结果、签到和内容推荐。',
+            icon: 'fa-heart-pulse',
+            categories: ['retention', 'lifecycle'],
+            events: ['inactive_user_return', 'search_no_result', 'daily_checkin_available', 'content_featured'],
             pageIds: ['home', 'prompts']
         },
         {
             id: 'commerce',
             title: '商城运营',
-            desc: '优惠券、折扣、补货、订单和积分购买提醒。',
+            desc: '优惠券、折扣、补货、购物车、订单和积分购买提醒。',
             icon: 'fa-bag-shopping',
             categories: ['commerce'],
-            events: ['coupon_available', 'product_discount', 'product_restocked', 'order_status', 'points_insufficient'],
+            events: ['coupon_available', 'coupon_expiring', 'product_discount', 'product_discount_available', 'product_restocked', 'cart_abandoned', 'order_paid', 'order_status', 'order_delivered', 'points_insufficient'],
             pageIds: ['shop']
+        },
+        {
+            id: 'wallet',
+            title: '支付钱包',
+            desc: '充值成功、积分变动、支付失败、退款进度和钱包权益说明。',
+            icon: 'fa-wallet',
+            categories: ['wallet', 'payments'],
+            events: ['wallet_recharge_success', 'wallet_recharge_failed', 'points_adjusted', 'payment_failed', 'refund_status'],
+            pageIds: ['home', 'shop']
         },
         {
             id: 'support',
             title: '客服引导',
-            desc: '验证失败、支付异常、服务状态和工单入口。',
+            desc: '验证失败、排队、客服回复、服务状态和工单入口。',
             icon: 'fa-headset',
             categories: ['support', 'assistive', 'service'],
-            events: ['verify_failed', 'verify_queue', 'service_status', 'payment_failed'],
+            events: ['verify_failed', 'verify_success', 'verify_queue', 'verification_expiring', 'service_status', 'payment_failed', 'support_reply', 'ticket_updated'],
             pageIds: ['verify', 'shop', 'gongyi']
         },
         {
             id: 'community',
             title: '社区互动',
-            desc: '留言回复、评论回复、社区规则和内容精选。',
+            desc: '留言回复、评论回复、提及、社区规则和内容精选。',
             icon: 'fa-comments',
             categories: ['community'],
-            events: ['message_replied', 'comment_replied', 'community_rule', 'content_featured'],
+            events: ['message_replied', 'comment_replied', 'guestbook_mention', 'community_rule', 'content_featured', 'content_moderated'],
             pageIds: ['guestbook', 'prompts']
         },
         {
             id: 'account',
             title: '账号治理',
-            desc: '权限变更、积分调整、安全限制和会员权益变化。',
+            desc: '权限变更、资料完善、安全限制和会员权益变化。',
             icon: 'fa-user-shield',
-            categories: ['account', 'permission', 'points', 'membership'],
-            events: ['permission_changed', 'points_low_balance', 'points_insufficient'],
+            categories: ['account', 'permission', 'points', 'membership', 'security'],
+            events: ['permission_changed', 'points_low_balance', 'points_adjusted', 'points_insufficient', 'profile_incomplete', 'login_risk'],
             pageIds: ['home', 'prompts', 'verify']
         },
         {
@@ -514,6 +1557,7 @@
             name: '新用户欢迎',
             category: 'onboarding',
             page_ids: ['home'],
+            trigger_type: 'new_user_welcome',
             tone: 'welcome',
             title: '欢迎加入 zaoyoe',
             content: '你可以从提示词、商城和钱包开始。遇到关键路径时，我会在这里给你说明。',
@@ -523,11 +1567,87 @@
             priority: 12
         },
         {
+            id: 'starter_profile_incomplete',
+            key: 'profile_incomplete',
+            name: '资料完善引导',
+            category: 'onboarding',
+            page_ids: ['home'],
+            trigger_type: 'profile_incomplete',
+            tone: 'welcome',
+            title: '完善资料后体验会更顺',
+            content: '补全昵称、联系信息和常用入口，我就能在后续提醒里给你更准确的路径。',
+            action_label: '完善资料',
+            action_url: 'account://profile',
+            description: '适合登录用户资料不完整、无法定位售后或权益时展示。',
+            priority: 16
+        },
+        {
+            id: 'starter_daily_checkin_available',
+            key: 'daily_checkin_available',
+            name: '每日签到提醒',
+            category: 'retention',
+            page_ids: ['home'],
+            trigger_type: 'daily_checkin_available',
+            tone: 'success',
+            title: '今天的签到奖励还没领',
+            content: '签到可以补充积分余额，适合在生成提示词、验证或下单前先领取。',
+            action_label: '去签到',
+            action_url: 'wallet://checkin',
+            description: '适合提升日活、低打扰地提醒用户领取每日权益。',
+            priority: 14
+        },
+        {
+            id: 'starter_inactive_user_return',
+            key: 'inactive_user_return',
+            name: '长期未活跃回流',
+            category: 'retention',
+            page_ids: ['home', 'prompts'],
+            trigger_type: 'inactive_user_return',
+            tone: 'info',
+            title: '欢迎回来，有些新内容适合你',
+            content: '最近上新了提示词、优惠权益和验证能力，我可以先带你从最常用的入口继续。',
+            action_label: '看看新内容',
+            action_url: '/prompts.html',
+            description: '适合沉默用户回访后展示，降低重新上手成本。',
+            priority: 15
+        },
+        {
+            id: 'starter_points_low_balance',
+            key: 'points_low_balance',
+            name: '积分偏低提醒',
+            category: 'account',
+            page_ids: ['prompts', 'verify', 'shop'],
+            trigger_type: 'points_low_balance',
+            tone: 'warning',
+            title: '积分余额有点低',
+            content: '继续生成、验证或购买前，建议先确认余额，避免关键步骤被打断。',
+            action_label: '查看积分',
+            action_url: 'wallet://balance',
+            description: '适合用户余额不足但还未失败前的预防式提醒。',
+            priority: 24
+        },
+        {
+            id: 'starter_points_adjusted',
+            key: 'points_adjusted_notice',
+            name: '积分变动通知',
+            category: 'account',
+            page_ids: ['home', 'prompts', 'shop', 'verify'],
+            trigger_type: 'points_adjusted',
+            tone: 'info',
+            title: '你的积分有更新',
+            content: '客服刚刚调整了你的积分余额。可以先查看钱包确认最新额度，再继续使用当前服务。',
+            action_label: '查看积分',
+            action_url: 'wallet://balance',
+            description: '适合客服补发、扣减或修正积分后，第一时间向用户解释变化。',
+            priority: 23
+        },
+        {
             id: 'starter_coupon_available',
             key: 'coupon_available',
             name: '商品可领券',
             category: 'commerce',
             page_ids: ['shop'],
+            trigger_type: 'coupon_available',
             tone: 'commerce',
             title: '有优惠券可领取',
             content: '这件商品当前有可用优惠，可以先领取再下单。',
@@ -537,11 +1657,117 @@
             priority: 28
         },
         {
+            id: 'starter_coupon_expiring',
+            key: 'coupon_expiring',
+            name: '优惠券过期提醒',
+            category: 'commerce',
+            page_ids: ['shop'],
+            trigger_type: 'coupon_expiring',
+            tone: 'warning',
+            title: '有优惠券快过期了',
+            content: '你的优惠权益即将失效，可以先确认适用商品，避免错过折扣。',
+            action_label: '查看卡券',
+            action_url: 'wallet://cards',
+            description: '适合优惠券到期前的低频提醒。',
+            priority: 30
+        },
+        {
+            id: 'starter_cart_abandoned',
+            key: 'cart_abandoned',
+            name: '购物车挽回',
+            category: 'commerce',
+            page_ids: ['shop'],
+            trigger_type: 'cart_abandoned',
+            tone: 'commerce',
+            title: '购物车里还有未完成的商品',
+            content: '如果你还在比较套餐，我可以帮你确认库存、优惠和交付说明。',
+            action_label: '回到购物车',
+            action_url: '/shop.html#cart',
+            description: '适合用户停留、离开或回访商城时提醒未完成购买。',
+            priority: 26
+        },
+        {
+            id: 'starter_product_restocked',
+            key: 'product_restocked',
+            name: '商品补货提醒',
+            category: 'commerce',
+            page_ids: ['shop'],
+            trigger_type: 'product_restocked',
+            tone: 'success',
+            title: '之前关注的商品已补货',
+            content: '库存已经恢复，可以继续下单；如果需要，我也可以帮你确认当前优惠。',
+            action_label: '查看商品',
+            action_url: '/shop.html',
+            description: '适合库存恢复、用户曾浏览或收藏商品时展示。',
+            priority: 27
+        },
+        {
+            id: 'starter_order_delivered',
+            key: 'order_delivered_followup',
+            name: '交付完成回访',
+            category: 'commerce',
+            page_ids: ['shop'],
+            trigger_type: 'order_delivered',
+            tone: 'success',
+            title: '订单已经完成交付',
+            content: '如果商品或权益没有正常到账，可以直接从这里进入客服核对。',
+            action_label: '查看订单',
+            action_url: 'shop://orders',
+            description: '适合订单交付后做确认、评价或售后入口提醒。',
+            priority: 22
+        },
+        {
+            id: 'starter_wallet_recharge_success',
+            key: 'wallet_recharge_success',
+            name: '充值成功关怀',
+            category: 'wallet',
+            page_ids: ['home', 'shop'],
+            trigger_type: 'wallet_recharge_success',
+            tone: 'success',
+            title: '充值已到账',
+            content: '积分已经进入钱包，可以继续购买商品、生成提示词或处理验证任务。',
+            action_label: '查看钱包',
+            action_url: 'wallet://balance',
+            description: '适合支付到账后给用户明确反馈和下一步建议。',
+            priority: 24
+        },
+        {
+            id: 'starter_wallet_recharge_failed',
+            key: 'wallet_recharge_failed',
+            name: '充值失败帮助',
+            category: 'wallet',
+            page_ids: ['home', 'shop'],
+            trigger_type: 'wallet_recharge_failed',
+            tone: 'warning',
+            title: '充值暂时没有完成',
+            content: '可能是支付渠道或回调延迟导致。我可以帮你核对订单，也可以引导你重新尝试。',
+            action_label: '查看支付记录',
+            action_url: 'wallet://transactions',
+            description: '适合支付失败、回调异常或用户回来后需要继续处理时展示。',
+            priority: 36
+        },
+        {
+            id: 'starter_refund_status',
+            key: 'refund_status_update',
+            name: '退款进度同步',
+            category: 'wallet',
+            page_ids: ['shop'],
+            trigger_type: 'refund_status',
+            tone: 'info',
+            title: '退款进度已更新',
+            content: '你的退款处理状态有变化，可以进入订单页查看明细；如有疑问我会继续帮你转人工。',
+            action_label: '查看订单',
+            action_url: 'shop://orders',
+            description: '适合退款申请、审核、成功或失败时通知用户。',
+            priority: 34
+        },
+        {
             id: 'starter_verify_failed',
             key: 'verify_failed_help',
             name: '验证失败帮助',
             category: 'support',
             page_ids: ['verify'],
+            trigger_type: 'verify_failed',
             tone: 'assistive',
             title: '验证未通过',
             content: '请检查上传内容和验证规则。如果多次失败，可以联系站内客服处理。',
@@ -551,11 +1777,57 @@
             priority: 35
         },
         {
+            id: 'starter_verify_queue',
+            key: 'verify_queue_waiting',
+            name: '验证排队说明',
+            category: 'support',
+            page_ids: ['verify'],
+            trigger_type: 'verify_queue',
+            tone: 'assistive',
+            title: '验证正在排队',
+            content: '当前任务较多，我会持续关注处理状态。你可以先检查材料是否完整，减少重复提交。',
+            action_label: '查看验证说明',
+            action_url: '/verify.html#help',
+            description: '适合验证排队、用户等待时降低焦虑。',
+            priority: 18
+        },
+        {
+            id: 'starter_verify_success',
+            key: 'verify_success_next_step',
+            name: '验证成功下一步',
+            category: 'support',
+            page_ids: ['verify'],
+            trigger_type: 'verify_success',
+            tone: 'success',
+            title: '验证已通过',
+            content: '当前任务已完成，你可以继续处理后续内容；如果需要发票、记录或售后，我也可以继续协助。',
+            action_label: '查看记录',
+            action_url: '/verify.html#history',
+            description: '适合验证通过后给用户确认和下一步入口。',
+            priority: 20
+        },
+        {
+            id: 'starter_ticket_updated',
+            key: 'ticket_progress_update',
+            name: '工单进展提醒',
+            category: 'support',
+            page_ids: ['home', 'verify', 'shop'],
+            trigger_type: 'ticket_updated',
+            tone: 'info',
+            title: '你的工单有新进展',
+            content: '客服已经更新处理进度。你可以查看详情，也可以继续补充截图、订单号或任务号。',
+            action_label: '查看工单',
+            action_url: 'support://tickets',
+            description: '适合工单状态变化、需要用户补充材料或已解决时展示。',
+            priority: 31
+        },
+        {
             id: 'starter_reply_notification',
             key: 'reply_notification',
             name: '留言/评论被回复',
             category: 'community',
             page_ids: ['guestbook', 'prompts'],
+            trigger_type: 'message_replied',
             tone: 'community',
             title: '有人回复了你',
             content: '你的留言或评论有新回复，点击即可回到对应内容。',
@@ -565,11 +1837,42 @@
             priority: 32
         },
         {
+            id: 'starter_search_no_result',
+            key: 'search_no_result_help',
+            name: '搜索无结果引导',
+            category: 'retention',
+            page_ids: ['prompts'],
+            trigger_type: 'search_no_result',
+            tone: 'creative',
+            title: '没搜到想要的内容？',
+            content: '可以换一个关键词，或告诉我你想生成的风格，我会帮你推荐相近提示词。',
+            action_label: '查看精选',
+            action_url: '/prompts.html#featured',
+            description: '适合搜索空结果页，帮助用户继续探索而不是离开。',
+            priority: 17
+        },
+        {
+            id: 'starter_content_moderated',
+            key: 'content_moderated_result',
+            name: '内容处理结果',
+            category: 'community',
+            page_ids: ['prompts', 'guestbook'],
+            trigger_type: 'content_moderated',
+            tone: 'warning',
+            title: '内容已处理完成',
+            content: '你的内容状态有更新。如果需要修改、申诉或补充说明，可以从这里继续处理。',
+            action_label: '查看详情',
+            action_url: '/guestbook.html',
+            description: '适合评论、留言或提示词内容审核处理结果。',
+            priority: 30
+        },
+        {
             id: 'starter_permission_changed',
             key: 'permission_changed_notice',
             name: '权限变更通知',
             category: 'account',
             page_ids: ['home'],
+            trigger_type: 'permission_changed',
             tone: 'warning',
             title: '账号权限已更新',
             content: '管理员已经调整了你的账号权限或积分状态，请查看账户中心确认。',
@@ -579,11 +1882,27 @@
             priority: 34
         },
         {
+            id: 'starter_login_risk',
+            key: 'login_risk_alert',
+            name: '登录风险提醒',
+            category: 'account',
+            page_ids: ['home'],
+            trigger_type: 'login_risk',
+            tone: 'alert',
+            title: '检测到异常登录风险',
+            content: '为了保护账户安全，建议你确认最近登录记录，并及时更新密码或联系方式。',
+            action_label: '查看账户安全',
+            action_url: 'account://security',
+            description: '适合异地登录、频繁失败或管理员风控提醒。',
+            priority: 38
+        },
+        {
             id: 'starter_maintenance_notice',
             key: 'maintenance_notice',
             name: '维护通知',
             category: 'operations',
             page_ids: ['all'],
+            trigger_type: 'maintenance_notice',
             tone: 'info',
             title: '服务维护提醒',
             content: '部分服务可能会短暂波动，如遇异常请稍后重试或联系在线客服。',
@@ -606,7 +1925,7 @@
                 bubble_background: '#ffffff',
                 text_color: '#1f2937',
                 radius_px: 22,
-                max_width_px: 420,
+                max_width_px: 520,
                 density: 'comfortable',
                 shadow: 'soft',
                 animation: 'gentle',
@@ -625,7 +1944,7 @@
                 bubble_background: '#f7fdf9',
                 text_color: '#163326',
                 radius_px: 20,
-                max_width_px: 420,
+                max_width_px: 520,
                 density: 'comfortable',
                 shadow: 'soft',
                 animation: 'gentle',
@@ -644,7 +1963,7 @@
                 bubble_background: '#f0fdfa',
                 text_color: '#164e63',
                 radius_px: 18,
-                max_width_px: 440,
+                max_width_px: 540,
                 density: 'compact',
                 shadow: 'soft',
                 animation: 'none',
@@ -663,7 +1982,7 @@
                 bubble_background: '#fffbeb',
                 text_color: '#3f2d12',
                 radius_px: 20,
-                max_width_px: 440,
+                max_width_px: 540,
                 density: 'comfortable',
                 shadow: 'elevated',
                 animation: 'gentle',
@@ -682,7 +2001,7 @@
                 bubble_background: '#111827',
                 text_color: '#f8fafc',
                 radius_px: 22,
-                max_width_px: 420,
+                max_width_px: 520,
                 density: 'compact',
                 shadow: 'elevated',
                 animation: 'none',
@@ -690,9 +2009,111 @@
             }
         }
     ]);
-    const ENGAGEMENT_RUNTIME_VERSION = '20260505_ENGAGEMENT_RULE_BATCH_AUDIT_1';
+    const SCENE_PRIORITY_PRESET_PACKS = Object.freeze({
+        home: [
+            {
+                id: 'home_balanced',
+                name: '首页平衡型',
+                description: '优先账户、风险和资料类提醒，营销触达自然后置，适合大多数首页。',
+                applyLabel: '套用平衡型',
+                allow_marketing: true,
+                events: ['new_user_welcome', 'profile_incomplete', 'daily_checkin_available', 'points_adjusted', 'permission_changed', 'login_risk', 'inactive_user_return'],
+                event_priority_center: {
+                    enabled: true,
+                    first_wave: { events: ['login_risk', 'permission_changed', 'points_adjusted'] },
+                    service: { events: ['new_user_welcome', 'profile_incomplete'] },
+                    guidance: { events: ['daily_checkin_available'] },
+                    marketing: { events: ['inactive_user_return'] }
+                }
+            },
+            {
+                id: 'home_quiet',
+                name: '首页安静型',
+                description: '更克制，只保留登录后真正值得先看的提醒，减少首页第一印象压力。',
+                applyLabel: '套用安静型',
+                allow_marketing: false,
+                events: ['profile_incomplete', 'points_adjusted', 'permission_changed', 'login_risk'],
+                event_priority_center: {
+                    enabled: true,
+                    first_wave: { events: ['login_risk', 'permission_changed'] },
+                    service: { events: ['points_adjusted'] },
+                    guidance: { events: ['profile_incomplete'] },
+                    marketing: { events: [] }
+                }
+            }
+        ],
+        shop: [
+            {
+                id: 'shop_trade_guard',
+                name: '商城交易保障',
+                description: '先保交易、支付和退款体验，再承接优惠与挽回提醒，适合成熟商城。',
+                applyLabel: '套用交易保障',
+                allow_marketing: true,
+                events: ['payment_failed', 'order_paid', 'order_status', 'order_delivered', 'refund_status', 'coupon_available', 'coupon_expiring', 'cart_abandoned'],
+                event_priority_center: {
+                    enabled: true,
+                    first_wave: { events: ['payment_failed', 'order_status', 'refund_status', 'order_paid'] },
+                    service: { events: ['order_delivered'] },
+                    guidance: { events: [] },
+                    marketing: { events: ['coupon_available', 'coupon_expiring', 'cart_abandoned'] }
+                }
+            },
+            {
+                id: 'shop_conversion',
+                name: '商城转化增强',
+                description: '在不打断交易安全的前提下，让优惠券、折扣和挽回更积极一点。',
+                applyLabel: '套用转化增强',
+                allow_marketing: true,
+                events: ['payment_failed', 'order_status', 'refund_status', 'coupon_available', 'product_discount_available', 'product_restocked', 'cart_abandoned'],
+                event_priority_center: {
+                    enabled: true,
+                    first_wave: { events: ['payment_failed', 'order_status', 'refund_status'] },
+                    service: { events: [] },
+                    guidance: { events: [] },
+                    marketing: { events: ['coupon_available', 'product_discount_available', 'product_restocked', 'cart_abandoned'] }
+                }
+            }
+        ],
+        verify: [
+            {
+                id: 'verify_exception_first',
+                name: '验证异常优先',
+                description: '把失败、排队和临期提醒顶到最前，适合验证链路更敏感的站点。',
+                applyLabel: '套用异常优先',
+                allow_marketing: false,
+                events: ['verify_failed', 'verify_queue', 'verification_expiring', 'verify_success', 'support_reply', 'ticket_updated'],
+                event_priority_center: {
+                    enabled: true,
+                    first_wave: { events: ['verify_failed', 'verify_queue', 'verification_expiring', 'ticket_updated'] },
+                    service: { events: ['support_reply'] },
+                    guidance: { events: ['verify_success'] },
+                    marketing: { events: [] }
+                }
+            },
+            {
+                id: 'verify_supportive',
+                name: '验证陪伴型',
+                description: '降低压迫感，让成功、客服回复和排队说明更柔和地接住用户。',
+                applyLabel: '套用陪伴型',
+                allow_marketing: false,
+                events: ['verify_failed', 'verify_success', 'verify_queue', 'support_reply', 'ticket_updated', 'service_status'],
+                event_priority_center: {
+                    enabled: true,
+                    first_wave: { events: ['verify_failed', 'ticket_updated'] },
+                    service: { events: ['verify_queue', 'support_reply', 'service_status'] },
+                    guidance: { events: ['verify_success'] },
+                    marketing: { events: [] }
+                }
+            }
+        ]
+    });
+    const ENGAGEMENT_RUNTIME_VERSION = '20260506_ENGAGEMENT_TAG_MANUAL_SYNC_1';
+    const ENGAGEMENT_FEED_BROADCAST_CHANNEL = 'engagement-feed-invalidations';
+    const ENGAGEMENT_FEED_BROADCAST_EVENT = 'engagement_feed_changed';
     const SAVE_LOCK_STALE_MS = 15000;
     const RULE_BATCH_LIMIT = 30;
+    const RULE_LIST_PAGE_SIZE = 8;
+    const ENGAGEMENT_WHEEL_LINE_HEIGHT = 16;
 
     const state = {
         initialized: false,
@@ -701,17 +2122,24 @@
         activeView: 'dashboard',
         focusedPageId: '',
         focusedCapabilityId: '',
+        pendingFocusedPageScroll: false,
         ruleSearchQuery: '',
         ruleStatusFilter: 'all',
         ruleHealthFilter: 'all',
         rulePageFilter: 'all',
+        ruleAudienceFilter: 'all',
+        ruleDuplicateFilter: false,
         ruleSort: 'updated_desc',
+        rulePage: 1,
         ruleBatchResult: null,
         ruleDraft: null,
         templateCategoryFilter: '',
         previewDevice: 'desktop',
         previewTheme: 'light',
         previewPageId: 'auto',
+        previewEventSample: 'credit_bonus',
+        scenePreviewEvent: '',
+        automationPreviewSamples: {},
         templateDraftRef: '',
         editingTemplateRef: '',
         editingSegmentRef: '',
@@ -719,9 +2147,13 @@
         editingAssetId: '',
         editingSupportContextId: '',
         editingUserTagRef: '',
-        editingRuleId: ''
+        editingRuleId: '',
+        segmentTagsSyncing: false
     };
     let ruleSearchRenderTimer = 0;
+    let engagementFeedBroadcastTimer = 0;
+    let pendingEngagementFeedBroadcast = null;
+    let engagementFeedBroadcastSequence = 0;
     globalScope.__adminEngagementRuntimeVersion = ENGAGEMENT_RUNTIME_VERSION;
 
     function escapeHtml(value) {
@@ -735,6 +2167,15 @@
 
     function normalizeToken(value, fallback = '') {
         return String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || fallback;
+    }
+
+    function normalizeUserTagKey(value, fallback = '') {
+        return String(value || '')
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9_\-\u4e00-\u9fa5]+/g, '_')
+            .replace(/^_+|_+$/g, '')
+            || fallback;
     }
 
     function normalizeNumericInput(value, fallback = 0, min = 0, max = Number.MAX_SAFE_INTEGER) {
@@ -754,9 +2195,211 @@
         return document.getElementById('module-engagement')?.classList.contains('active') === true;
     }
 
+    function normalizeEngagementWheelDelta(delta = 0, deltaMode = 0) {
+        const value = Number(delta);
+        if (!Number.isFinite(value)) return 0;
+        if (deltaMode === 1) return value * ENGAGEMENT_WHEEL_LINE_HEIGHT;
+        if (deltaMode === 2) {
+            return value * Math.max(1, Number(globalScope.innerHeight || document.documentElement?.clientHeight || 800));
+        }
+        return value;
+    }
+
+    function getEngagementWheelRootScroller() {
+        return document.scrollingElement || document.documentElement || document.body;
+    }
+
+    function canScrollEngagementElement(element, deltaY = 0) {
+        if (!(element instanceof Element)) return false;
+        const scrollTop = Number(element.scrollTop || 0) || 0;
+        const scrollHeight = Number(element.scrollHeight || 0) || 0;
+        const clientHeight = Number(element.clientHeight || 0) || 0;
+        if (scrollHeight <= clientHeight + 1) return false;
+        if (deltaY < 0) return scrollTop > 1;
+        if (deltaY > 0) return scrollTop + clientHeight < scrollHeight - 1;
+        return false;
+    }
+
+    function getEngagementScrollableAncestor(target, boundary = null) {
+        if (!(target instanceof Element)) return null;
+        const boundaryElement = boundary instanceof Element ? boundary : null;
+        let current = target;
+        while (current && current !== boundaryElement && current !== document.body && current !== document.documentElement) {
+            if (current instanceof HTMLElement) {
+                const style = globalScope.getComputedStyle?.(current);
+                const overflowY = String(style?.overflowY || '').toLowerCase();
+                if (/(auto|scroll|overlay)/.test(overflowY) && current.scrollHeight > current.clientHeight + 1) {
+                    return current;
+                }
+            }
+            current = current.parentElement;
+        }
+        return null;
+    }
+
+    function handleEngagementWheel(event) {
+        if (!event || event.defaultPrevented || event.ctrlKey || event.metaKey) return;
+        const moduleEl = document.getElementById('module-engagement');
+        if (!(moduleEl instanceof HTMLElement) || !isEngagementModuleVisible()) return;
+        if (!(event.target instanceof Element) || !moduleEl.contains(event.target)) return;
+
+        const deltaY = normalizeEngagementWheelDelta(event.deltaY, event.deltaMode);
+        const deltaX = normalizeEngagementWheelDelta(event.deltaX, event.deltaMode);
+        if (!deltaY || Math.abs(deltaY) <= Math.abs(deltaX)) return;
+
+        const scrollable = getEngagementScrollableAncestor(event.target, moduleEl);
+        if (scrollable && canScrollEngagementElement(scrollable, deltaY)) return;
+
+        const rootScroller = getEngagementWheelRootScroller();
+        if (!canScrollEngagementElement(rootScroller, deltaY)) return;
+        const maxScrollTop = Math.max(0, Number(rootScroller.scrollHeight || 0) - Number(rootScroller.clientHeight || 0));
+        const nextScrollTop = Math.max(0, Math.min(maxScrollTop, Number(rootScroller.scrollTop || 0) + deltaY));
+        if (Math.abs(nextScrollTop - Number(rootScroller.scrollTop || 0)) < 0.5) return;
+
+        event.preventDefault?.();
+        rootScroller.scrollTop = nextScrollTop;
+    }
+
     function getCurrentSite() {
         return String(globalScope.AdminSiteFilter?.getSiteFilter?.() || 'all').trim().toLowerCase() || 'all';
     }
+
+    function normalizeEngagementBroadcastPageIds(value, fallback = ['all']) {
+        const source = Array.isArray(value) ? value : (value ? [value] : []);
+        const normalized = [...new Set(source
+            .map((pageId) => normalizeToken(pageId, ''))
+            .filter(Boolean))];
+        return normalized.length ? normalized : fallback;
+    }
+
+    function collectEngagementBroadcastPageIds(...sources) {
+        const pageIds = sources.flatMap((source) => normalizeEngagementBroadcastPageIds(source, []));
+        const unique = [...new Set(pageIds.filter(Boolean))];
+        if (!unique.length || unique.includes('all')) {
+            return ['all'];
+        }
+        return unique;
+    }
+
+    function getEngagementMutationBroadcastPages(request = {}, result = {}) {
+        const rules = [
+            result?.rule,
+            result?.deleted_rule,
+            ...(Array.isArray(result?.rules) ? result.rules : [])
+        ].filter(Boolean);
+        return collectEngagementBroadcastPageIds(
+            request.page_ids,
+            request.pageIds,
+            request.rule?.page_ids,
+            request.rule?.pageIds,
+            request.asset?.page_ids,
+            request.asset?.pageIds,
+            request.scene?.page_id,
+            request.scene?.pageId,
+            rules.flatMap((rule) => rule?.page_ids || rule?.pageIds || [])
+        );
+    }
+
+    function mergeEngagementFeedBroadcastPayload(previous = null, next = {}) {
+        if (!previous) return next;
+        const previousPages = normalizeEngagementBroadcastPageIds(previous.page_ids, []);
+        const nextPages = normalizeEngagementBroadcastPageIds(next.page_ids, []);
+        return {
+            ...previous,
+            ...next,
+            reason: next.reason || previous.reason || 'engagement_config_changed',
+            site: previous.site === next.site ? (next.site || previous.site) : 'all',
+            page_ids: previousPages.includes('all') || nextPages.includes('all')
+                ? ['all']
+                : [...new Set([...previousPages, ...nextPages])],
+            sequence: next.sequence
+        };
+    }
+
+    function sendPendingEngagementFeedBroadcast() {
+        const payload = pendingEngagementFeedBroadcast;
+        pendingEngagementFeedBroadcast = null;
+        engagementFeedBroadcastTimer = 0;
+        const realtimeClient = globalScope?.supabaseClient || globalScope?.supabase || null;
+        if (!payload || !realtimeClient?.channel) {
+            return;
+        }
+
+        let channel = null;
+        let cleanupTimer = 0;
+        const cleanup = () => {
+            if (cleanupTimer) {
+                globalScope.clearTimeout?.(cleanupTimer);
+                cleanupTimer = 0;
+            }
+            if (!channel) return;
+            const activeChannel = channel;
+            channel = null;
+            try {
+                if (typeof realtimeClient.removeChannel === 'function') {
+                    realtimeClient.removeChannel(activeChannel);
+                } else {
+                    activeChannel.unsubscribe?.();
+                }
+            } catch (error) {
+                console.warn('[AdminEngagement] Failed to close engagement feed broadcast channel:', error?.message || error);
+            }
+        };
+
+        try {
+            channel = realtimeClient.channel(ENGAGEMENT_FEED_BROADCAST_CHANNEL, {
+                config: { broadcast: { self: false } }
+            });
+            cleanupTimer = globalScope.setTimeout?.(cleanup, 5000) || 0;
+            channel.subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    Promise.resolve(channel.send({
+                        type: 'broadcast',
+                        event: ENGAGEMENT_FEED_BROADCAST_EVENT,
+                        payload: {
+                            ...payload,
+                            broadcasted_at: new Date().toISOString()
+                        }
+                    })).catch((error) => {
+                        console.warn('[AdminEngagement] Engagement feed broadcast failed:', error?.message || error);
+                    }).finally(cleanup);
+                    return;
+                }
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                    cleanup();
+                }
+            });
+        } catch (error) {
+            cleanup();
+            console.warn('[AdminEngagement] Engagement feed broadcast setup failed:', error?.message || error);
+        }
+    }
+
+    function broadcastEngagementFeedChange(reason = 'engagement_config_changed', payload = {}) {
+        const realtimeClient = globalScope?.supabaseClient || globalScope?.supabase || null;
+        if (!realtimeClient?.channel) {
+            return false;
+        }
+        const nextPayload = {
+            source: 'admin_engagement',
+            reason: String(reason || 'engagement_config_changed').trim() || 'engagement_config_changed',
+            site: normalizeToken(payload.site || getCurrentSite(), 'all'),
+            page_ids: normalizeEngagementBroadcastPageIds(payload.page_ids || payload.pageIds || payload.pages, ['all']),
+            action: String(payload.action || '').trim(),
+            sequence: ++engagementFeedBroadcastSequence
+        };
+        pendingEngagementFeedBroadcast = mergeEngagementFeedBroadcastPayload(pendingEngagementFeedBroadcast, nextPayload);
+        if (engagementFeedBroadcastTimer) {
+            globalScope.clearTimeout?.(engagementFeedBroadcastTimer);
+        }
+        engagementFeedBroadcastTimer = globalScope.setTimeout?.(sendPendingEngagementFeedBroadcast, 220) || 0;
+        if (!engagementFeedBroadcastTimer) {
+            sendPendingEngagementFeedBroadcast();
+        }
+        return true;
+    }
+
+    globalScope.broadcastEngagementFeedChange = broadcastEngagementFeedChange;
 
     function getPageLabel(pageId) {
         const normalized = normalizeToken(pageId, 'all');
@@ -765,11 +2408,449 @@
 
     function getEventLabel(eventKey) {
         const normalized = String(eventKey || '').trim();
-        return EVENT_LABELS[normalized] || normalized.replace(/_/g, ' ') || '事件';
+        return EVENT_LABELS[normalized] || '自定义事件';
+    }
+
+    function getEventPriorityClass(eventKey = '', priorityCenter = null) {
+        const normalized = normalizeToken(eventKey, '');
+        const center = priorityCenter && typeof priorityCenter === 'object' && !Array.isArray(priorityCenter)
+            ? priorityCenter
+            : getEventPriorityCenter();
+        const groups = Object.entries(center);
+        for (const [groupId, group] of groups) {
+            if (Array.isArray(group.events) && group.events.includes(normalized)) {
+                return {
+                    id: groupId,
+                    ...group
+                };
+            }
+        }
+        return {
+            id: 'service',
+            ...(center.service || getEventPriorityCenter().service)
+        };
+    }
+
+    function getEventPriorityCenter() {
+        const source = state.payload?.event_priority_center && typeof state.payload.event_priority_center === 'object' && !Array.isArray(state.payload.event_priority_center)
+            ? state.payload.event_priority_center
+            : {};
+        return {
+            first_wave: {
+                ...EVENT_PRIORITY_CLASSES.first_wave,
+                ...(source.first_wave || {}),
+                events: Array.isArray(source.first_wave?.events) && source.first_wave.events.length ? source.first_wave.events : [...EVENT_PRIORITY_CLASSES.first_wave.events]
+            },
+            service: {
+                ...EVENT_PRIORITY_CLASSES.service,
+                ...(source.service || {}),
+                events: Array.isArray(source.service?.events) && source.service.events.length ? source.service.events : [...EVENT_PRIORITY_CLASSES.service.events]
+            },
+            marketing: {
+                ...EVENT_PRIORITY_CLASSES.marketing,
+                ...(source.marketing || {}),
+                events: Array.isArray(source.marketing?.events) && source.marketing.events.length ? source.marketing.events : [...EVENT_PRIORITY_CLASSES.marketing.events]
+            },
+            guidance: {
+                ...EVENT_PRIORITY_CLASSES.guidance,
+                ...(source.guidance || {}),
+                events: Array.isArray(source.guidance?.events) && source.guidance.events.length ? source.guidance.events : [...EVENT_PRIORITY_CLASSES.guidance.events]
+            }
+        };
+    }
+
+    function normalizeSceneEventPriorityCenter(source = {}, fallbackCenter = getEventPriorityCenter()) {
+        const rawSource = source && typeof source === 'object' && !Array.isArray(source) ? source : {};
+        const fallback = fallbackCenter && typeof fallbackCenter === 'object' && !Array.isArray(fallbackCenter)
+            ? fallbackCenter
+            : getEventPriorityCenter();
+        return {
+            enabled: rawSource.enabled === true,
+            first_wave: {
+                ...(fallback.first_wave || EVENT_PRIORITY_CLASSES.first_wave),
+                ...(rawSource.first_wave || {}),
+                events: Array.isArray(rawSource.first_wave?.events) && rawSource.first_wave.events.length
+                    ? rawSource.first_wave.events.map((eventKey) => normalizeToken(eventKey, '')).filter(Boolean)
+                    : [...(fallback.first_wave?.events || EVENT_PRIORITY_CLASSES.first_wave.events)]
+            },
+            service: {
+                ...(fallback.service || EVENT_PRIORITY_CLASSES.service),
+                ...(rawSource.service || {}),
+                events: Array.isArray(rawSource.service?.events) && rawSource.service.events.length
+                    ? rawSource.service.events.map((eventKey) => normalizeToken(eventKey, '')).filter(Boolean)
+                    : [...(fallback.service?.events || EVENT_PRIORITY_CLASSES.service.events)]
+            },
+            marketing: {
+                ...(fallback.marketing || EVENT_PRIORITY_CLASSES.marketing),
+                ...(rawSource.marketing || {}),
+                events: Array.isArray(rawSource.marketing?.events) && rawSource.marketing.events.length
+                    ? rawSource.marketing.events.map((eventKey) => normalizeToken(eventKey, '')).filter(Boolean)
+                    : [...(fallback.marketing?.events || EVENT_PRIORITY_CLASSES.marketing.events)]
+            },
+            guidance: {
+                ...(fallback.guidance || EVENT_PRIORITY_CLASSES.guidance),
+                ...(rawSource.guidance || {}),
+                events: Array.isArray(rawSource.guidance?.events) && rawSource.guidance.events.length
+                    ? rawSource.guidance.events.map((eventKey) => normalizeToken(eventKey, '')).filter(Boolean)
+                    : [...(fallback.guidance?.events || EVENT_PRIORITY_CLASSES.guidance.events)]
+            }
+        };
+    }
+
+    function getSceneEventPriorityCenter(scene = {}) {
+        const center = normalizeSceneEventPriorityCenter(scene?.event_priority_center || {}, getEventPriorityCenter());
+        return center.enabled ? center : getEventPriorityCenter();
+    }
+
+    function getScenePriorityPresetPacks(pageId = '') {
+        const normalizedPageId = normalizeToken(pageId, 'home');
+        return Array.isArray(SCENE_PRIORITY_PRESET_PACKS[normalizedPageId]) ? SCENE_PRIORITY_PRESET_PACKS[normalizedPageId] : [];
+    }
+
+    function getSceneAnalyticsSummary(pageId = '') {
+        const normalizedPageId = normalizeToken(pageId, 'home');
+        const rows = Array.isArray(state.payload?.analytics?.page_breakdown) ? state.payload.analytics.page_breakdown : [];
+        const row = rows.find((entry) => normalizeToken(entry?.page_id, '') === normalizedPageId) || {};
+        return {
+            pageId: normalizedPageId,
+            views: Number(row.views || 0) || 0,
+            clicks: Number(row.clicks || 0) || 0,
+            dismisses: Number(row.dismisses || 0) || 0,
+            conversions: Number(row.conversions || 0) || 0,
+            ctr: Number(row.ctr || 0) || 0,
+            dismissRate: Number(row.dismiss_rate || 0) || 0
+        };
+    }
+
+    function rankScenePriorityPresets(pageId = '', presets = []) {
+        const normalizedPageId = normalizeToken(pageId, 'home');
+        const currentScene = getSceneByPageId(normalizedPageId);
+        const analytics = getSceneAnalyticsSummary(normalizedPageId);
+        const currentMarketingEnabled = currentScene?.allow_marketing !== false;
+        return (Array.isArray(presets) ? presets : []).map((preset) => {
+            let score = 0;
+            let reason = '适合作为当前页面的起步配置。';
+            if (normalizedPageId === 'home') {
+                if (analytics.dismissRate >= 45 || analytics.views >= 50 && analytics.ctr < 1.2) {
+                    score += preset.id === 'home_quiet' ? 4 : 1;
+                    reason = preset.id === 'home_quiet'
+                        ? '首页关闭率偏高，先用更克制的首波节奏更稳。'
+                        : reason;
+                } else {
+                    score += preset.id === 'home_balanced' ? 4 : 1;
+                    reason = preset.id === 'home_balanced'
+                        ? '首页表现稳定，平衡型更适合兼顾服务提醒和轻运营。'
+                        : reason;
+                }
+            }
+            if (normalizedPageId === 'shop') {
+                if (analytics.dismissRate >= 40 || analytics.views >= 30 && analytics.ctr < 1) {
+                    score += preset.id === 'shop_trade_guard' ? 4 : 1;
+                    reason = preset.id === 'shop_trade_guard'
+                        ? '商城当前更需要先稳住交易与售后体验，再谈转化。'
+                        : reason;
+                } else {
+                    score += preset.id === 'shop_conversion' ? 4 : 1;
+                    reason = preset.id === 'shop_conversion'
+                        ? '商城点击和关闭表现还不错，可以把转化型提醒往前提一点。'
+                        : reason;
+                }
+            }
+            if (normalizedPageId === 'verify') {
+                if (analytics.dismissRate >= 35 || analytics.views >= 20 && analytics.ctr < 1) {
+                    score += preset.id === 'verify_supportive' ? 4 : 1;
+                    reason = preset.id === 'verify_supportive'
+                        ? '验证页打扰感偏高，先用更柔和的陪伴型节奏更合适。'
+                        : reason;
+                } else {
+                    score += preset.id === 'verify_exception_first' ? 4 : 1;
+                    reason = preset.id === 'verify_exception_first'
+                        ? '验证链路需要更快处理异常，异常优先更贴合当前场景。'
+                        : reason;
+                }
+            }
+            if (preset.allow_marketing === false && currentMarketingEnabled === false) {
+                score += 1;
+            }
+            if (preset.allow_marketing !== false && currentMarketingEnabled !== false) {
+                score += 1;
+            }
+            return {
+                ...preset,
+                recommendation_score: score,
+                recommendation_reason: reason
+            };
+        }).sort((left, right) => {
+            const scoreDelta = Number(right.recommendation_score || 0) - Number(left.recommendation_score || 0);
+            if (scoreDelta) return scoreDelta;
+            return String(left.name || '').localeCompare(String(right.name || ''), 'zh-CN');
+        });
+    }
+
+    function getScenePriorityGuidance(pageId = '') {
+        const normalizedPageId = normalizeToken(pageId, 'home');
+        const scene = getSceneByPageId(normalizedPageId);
+        const analytics = getSceneAnalyticsSummary(normalizedPageId);
+        const tips = [];
+
+        if (analytics.dismissRate >= 45) {
+            tips.push({
+                tone: 'warning',
+                title: '当前页面关闭率偏高',
+                detail: `近 24 小时关闭率 ${formatPercent(analytics.dismissRate)}，不建议把营销提醒继续放进首波。`,
+                action: '更适合先用更克制的分诊，优先保留风险、账户和售后事件。',
+                buttonLabel: normalizedPageId === 'home' ? '一键切到首页安静型' : (normalizedPageId === 'shop' ? '一键切到商城交易保障' : '一键切到验证陪伴型'),
+                actionType: 'preset',
+                actionValue: normalizedPageId === 'home' ? 'home_quiet' : (normalizedPageId === 'shop' ? 'shop_trade_guard' : 'verify_supportive')
+            });
+        }
+        if (analytics.views >= 30 && analytics.ctr < 1) {
+            tips.push({
+                tone: 'warning',
+                title: '当前页面点击率偏低',
+                detail: `CTR ${formatPercent(analytics.ctr)}，说明用户对当前首波提醒响应有限。`,
+                action: '先减少首波事件数量，再优化文案和 CTA 会更稳。',
+                buttonLabel: normalizedPageId === 'home' ? '改成首页安静型' : (normalizedPageId === 'shop' ? '改成商城交易保障' : '改成验证陪伴型'),
+                actionType: 'preset',
+                actionValue: normalizedPageId === 'home' ? 'home_quiet' : (normalizedPageId === 'shop' ? 'shop_trade_guard' : 'verify_supportive')
+            });
+        }
+        if (scene.allow_marketing === false) {
+            tips.push({
+                tone: 'info',
+                title: '当前页面已关闭营销触达',
+                detail: '这个页面更适合服务型和异常型提醒。',
+                action: '页面分诊里可以把营销类事件继续留空，避免产生配置和运行期语义冲突。'
+            });
+        }
+        if (normalizedPageId === 'verify') {
+            tips.push({
+                tone: 'info',
+                title: '验证页建议异常优先',
+                detail: '验证失败、排队、到期和客服跟进，通常比成功或引导类提醒更值得先看到。',
+                action: '首波里尽量不要混入营销型事件，避免用户在关键流程里分心。',
+                buttonLabel: '套用验证异常优先',
+                actionType: 'preset',
+                actionValue: 'verify_exception_first'
+            });
+        }
+        if (normalizedPageId === 'shop' && analytics.ctr >= 1.5 && analytics.dismissRate < 35) {
+            tips.push({
+                tone: 'success',
+                title: '商城页承接转化条件不错',
+                detail: `当前 CTR ${formatPercent(analytics.ctr)}，关闭率 ${formatPercent(analytics.dismissRate)}。`,
+                action: '可以适度把优惠券、折扣和挽回类提醒后移但保留，不必一刀切禁掉。',
+                buttonLabel: '套用商城转化增强',
+                actionType: 'preset',
+                actionValue: 'shop_conversion'
+            });
+        }
+
+        return tips.slice(0, 3);
+    }
+
+    function renderScenePriorityGuidance(pageId = '') {
+        const tips = getScenePriorityGuidance(pageId);
+        if (!tips.length) return '';
+        return `
+            <div class="engagement-scene-guidance">
+                ${tips.map((tip) => `
+                    <article class="engagement-scene-guidance__item" data-tone="${escapeHtml(tip.tone || 'info')}">
+                        <strong>${escapeHtml(tip.title || '分诊建议')}</strong>
+                        <p>${escapeHtml(tip.detail || '')}</p>
+                        <span>${escapeHtml(tip.action || '')}</span>
+                        ${tip.buttonLabel ? `
+                            <button
+                                type="button"
+                                class="engagement-scene-guidance__action"
+                                data-engagement-action="apply-scene-guidance-action"
+                                data-scene-guidance-action-type="${escapeHtml(tip.actionType || '')}"
+                                data-scene-guidance-action-value="${escapeHtml(tip.actionValue || '')}"
+                                data-page-id="${escapeHtml(pageId)}">${escapeHtml(tip.buttonLabel)}</button>
+                        ` : ''}
+                    </article>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function getSceneSaveRiskWarnings(scene = {}) {
+        const pageId = normalizeToken(scene?.page_id || scene?.id, 'home');
+        const analytics = getSceneAnalyticsSummary(pageId);
+        const effectivePriorityCenter = scene?.event_priority_center?.enabled === true
+            ? normalizeSceneEventPriorityCenter(scene.event_priority_center || {}, getEventPriorityCenter())
+            : getEventPriorityCenter();
+        const firstWaveEvents = Array.isArray(effectivePriorityCenter?.first_wave?.events)
+            ? effectivePriorityCenter.first_wave.events.map((eventKey) => normalizeToken(eventKey, '')).filter(Boolean)
+            : [];
+        const marketingEventFamily = new Set((EVENT_PRIORITY_CLASSES.marketing?.events || [])
+            .map((eventKey) => normalizeToken(eventKey, ''))
+            .filter(Boolean));
+        const firstWaveMarketingEvents = firstWaveEvents.filter((eventKey) => marketingEventFamily.has(eventKey));
+        const warnings = [];
+
+        if (firstWaveMarketingEvents.length && analytics.dismissRate >= 45) {
+            warnings.push(`当前页面近 24 小时关闭率 ${formatPercent(analytics.dismissRate)}，但首波仍包含营销事件：${firstWaveMarketingEvents.map((eventKey) => getEventLabel(eventKey)).join('、')}。`);
+        }
+        if (firstWaveMarketingEvents.length && analytics.views >= 30 && analytics.ctr < 1) {
+            warnings.push(`当前页面 CTR 只有 ${formatPercent(analytics.ctr)}，继续把营销事件放进首波，可能会进一步拉低响应。`);
+        }
+        if (pageId === 'verify' && firstWaveMarketingEvents.length) {
+            warnings.push('验证页首波里混入营销事件，容易打断关键流程。');
+        }
+
+        return warnings;
+    }
+
+    function getSceneSaveRiskLevel(scene = {}) {
+        const pageId = normalizeToken(scene?.page_id || scene?.id, 'home');
+        const warnings = getSceneSaveRiskWarnings(scene);
+        if (!warnings.length) return 'safe';
+        if (pageId === 'verify') return 'high';
+        if (warnings.length >= 2) return 'high';
+        return 'warning';
+    }
+
+    function confirmSceneSaveRisk(scene = {}) {
+        const warnings = getSceneSaveRiskWarnings(scene);
+        if (!warnings.length) return true;
+        const pageLabel = getPageLabel(scene?.page_id || scene?.id || 'home');
+        const riskLevel = getSceneSaveRiskLevel(scene);
+        const title = riskLevel === 'high'
+            ? `${pageLabel}当前配置存在高风险首波触达：`
+            : `${pageLabel}当前配置存在首波触达风险：`;
+        const footer = riskLevel === 'high'
+            ? '这是高风险保存，确认已经复核页面节奏后继续吗？'
+            : '仍然保存这个页面场景吗？';
+        return confirmRuleBatchAction([
+            title,
+            ...warnings.map((warning) => `- ${warning}`),
+            '',
+            footer
+        ].join('\n'));
+    }
+
+    function renderEventPriorityBadge(eventKey = '') {
+        const priorityClass = getEventPriorityClass(eventKey);
+        return `<span class="engagement-event-priority-badge" data-tier="${escapeHtml(priorityClass.id)}">${escapeHtml(priorityClass.shortLabel || priorityClass.label)}</span>`;
+    }
+
+    function renderEventPriorityBadgeById(groupId = '') {
+        const center = getEventPriorityCenter();
+        const group = center[groupId] || center.service;
+        return `<span class="engagement-event-priority-badge" data-tier="${escapeHtml(groupId || 'service')}">${escapeHtml(group.shortLabel || group.label)}</span>`;
+    }
+
+    function renderEventPriorityLegend() {
+        const center = getEventPriorityCenter();
+        return `
+            <div class="engagement-event-priority-legend" aria-label="登录首波分诊说明">
+                ${Object.entries(center).map(([groupId, group]) => `
+                    <article class="engagement-event-priority-legend__item" data-tier="${escapeHtml(groupId)}">
+                        <strong>${escapeHtml(group.label)}</strong>
+                        <p>${escapeHtml(group.desc)}</p>
+                    </article>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    function getSegmentScenarioOption(scenarioId = '') {
+        const rawScenario = String(scenarioId || '').trim();
+        if (!rawScenario) return null;
+        const normalizedScenario = SEGMENT_SCENARIO_ALIASES[rawScenario] || rawScenario;
+        return SEGMENT_SCENARIO_OPTIONS.find((option) => option.id === normalizedScenario) || null;
+    }
+
+    function normalizeSegmentScenarioValue(scenarioId = '') {
+        const rawScenario = String(scenarioId || '').trim();
+        if (!rawScenario) return '';
+        const option = getSegmentScenarioOption(rawScenario);
+        return option ? option.id : rawScenario;
+    }
+
+    function getSegmentScenarioLabel(scenarioId = '') {
+        const rawScenario = String(scenarioId || '').trim();
+        if (!rawScenario) return '自定义场景';
+        const option = getSegmentScenarioOption(rawScenario);
+        return option ? option.label : rawScenario;
+    }
+
+    function getUserTagLabel(tagKey = '') {
+        const normalizedTag = normalizeUserTagKey(tagKey, '');
+        if (!normalizedTag) return '用户标签';
+        const tag = getUserTagCenter().tags.find((item) => normalizeUserTagKey(item?.key || item?.id, '') === normalizedTag);
+        return tag?.name || tagKey;
+    }
+
+    function getSafeZoneLabel(safeZone = '') {
+        return getOptionLabel(SAFE_ZONE_OPTIONS, safeZone || 'bottom-right') || '右下角';
     }
 
     function getTriggerTypeLabel(triggerType = '') {
         return getOptionLabel(TRIGGER_TYPE_OPTIONS, normalizeToken(triggerType, 'page_view')) || '进入页面';
+    }
+
+    function getAutomationBlueprintIntentFamily(blueprint = {}) {
+        return normalizeToken(blueprint?.semanticFamily || blueprint?.id, '');
+    }
+
+    function getAutomationBlueprintIntentLabel(blueprint = {}) {
+        return String(blueprint?.intentLabel || blueprint?.title || '自动化意图').trim() || '自动化意图';
+    }
+
+    function getAutomationIntentGroups() {
+        const groupMap = new Map();
+        AUTOMATION_BLUEPRINTS.forEach((blueprint) => {
+            const familyId = getAutomationBlueprintIntentFamily(blueprint);
+            if (!familyId) return;
+            if (!groupMap.has(familyId)) {
+                groupMap.set(familyId, {
+                    familyId,
+                    label: getAutomationBlueprintIntentLabel(blueprint),
+                    blueprints: []
+                });
+            }
+            groupMap.get(familyId).blueprints.push(blueprint);
+        });
+        return Array.from(groupMap.values())
+            .filter((group) => group.blueprints.length > 1)
+            .sort((first, second) => second.blueprints.length - first.blueprints.length || first.label.localeCompare(second.label, 'zh-CN'));
+    }
+
+    function getAutomationIntentGroupForBlueprint(blueprint = {}) {
+        const familyId = getAutomationBlueprintIntentFamily(blueprint);
+        if (!familyId) return null;
+        return getAutomationIntentGroups().find((group) => group.familyId === familyId) || null;
+    }
+
+    function getAutomationBlueprintDisplayGroups() {
+        const duplicatedFamilyIds = new Set(getAutomationIntentGroups().map((group) => group.familyId));
+        const groups = [];
+        const handledFamilies = new Set();
+        AUTOMATION_BLUEPRINTS.forEach((blueprint) => {
+            const familyId = getAutomationBlueprintIntentFamily(blueprint);
+            if (duplicatedFamilyIds.has(familyId)) {
+                if (handledFamilies.has(familyId)) return;
+                const intentGroup = getAutomationIntentGroupForBlueprint(blueprint);
+                if (!intentGroup) return;
+                groups.push({
+                    type: 'intent_group',
+                    familyId,
+                    label: intentGroup.label,
+                    blueprints: intentGroup.blueprints
+                });
+                handledFamilies.add(familyId);
+                return;
+            }
+            groups.push({
+                type: 'single',
+                familyId,
+                label: getAutomationBlueprintIntentLabel(blueprint),
+                blueprints: [blueprint]
+            });
+        });
+        return groups;
     }
 
     function getPlacementLabel(placement = '') {
@@ -854,6 +2935,291 @@
         };
     }
 
+    function getRuleRepeatIntervalMinutes(source = {}, fallback = 2) {
+        const metadata = source?.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
+            ? source.metadata
+            : {};
+        const parsed = Number.parseInt(
+            source?.repeat_interval_minutes
+                ?? source?.repeatIntervalMinutes
+                ?? metadata.repeat_interval_minutes
+                ?? metadata.repeatIntervalMinutes
+                ?? fallback,
+            10
+        );
+        const fallbackParsed = Number.parseInt(fallback, 10);
+        const normalizedFallback = Number.isFinite(fallbackParsed) ? Math.min(Math.max(fallbackParsed, 0), 1440) : 2;
+        if (!Number.isFinite(parsed)) return normalizedFallback;
+        return Math.min(Math.max(parsed, 0), 1440);
+    }
+
+    function parseRuleDate(value = '') {
+        const raw = String(value || '').trim();
+        if (!raw) return null;
+        const localMatch = raw.match(/^(\d{4})[-/](\d{2})[-/](\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?)?$/);
+        if (localMatch) {
+            const [, yearText, monthText, dayText, hourText = '0', minuteText = '0', secondText = '0'] = localMatch;
+            const year = Number.parseInt(yearText, 10);
+            const month = Number.parseInt(monthText, 10);
+            const day = Number.parseInt(dayText, 10);
+            const hour = Number.parseInt(hourText, 10);
+            const minute = Number.parseInt(minuteText, 10);
+            const second = Number.parseInt(secondText, 10);
+            const date = new Date(year, month - 1, day, hour, minute, second, 0);
+            if (
+                Number.isFinite(date.getTime())
+                && date.getFullYear() === year
+                && date.getMonth() === month - 1
+                && date.getDate() === day
+                && date.getHours() === hour
+                && date.getMinutes() === minute
+                && date.getSeconds() === second
+            ) {
+                return date;
+            }
+            return null;
+        }
+        const date = new Date(raw);
+        return Number.isFinite(date.getTime()) ? date : null;
+    }
+
+    function formatRuleDateTimeLocal(value = '') {
+        const date = parseRuleDate(value);
+        if (!date) return '';
+        const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+        return local.toISOString().slice(0, 16);
+    }
+
+    function normalizeRuleDateTimePayload(value = '') {
+        const date = parseRuleDate(value);
+        return date ? date.toISOString() : '';
+    }
+
+    function getRuleDateTimeLocalValue(value = '') {
+        return formatRuleDateTimeLocal(value);
+    }
+
+    function getRuleNowDateTimeLocalValue() {
+        return formatRuleDateTimeLocal(new Date().toISOString());
+    }
+
+    function isRuleDateTimeInFuture(value = '') {
+        const localValue = getRuleDateTimeLocalValue(value);
+        const nowValue = getRuleNowDateTimeLocalValue();
+        return Boolean(localValue && nowValue && localValue > nowValue);
+    }
+
+    function normalizeRuleStatusForSchedule(status = 'draft', startsAt = '') {
+        const normalizedStatus = normalizeToken(status, 'draft');
+        if (normalizedStatus === 'draft' && normalizeRuleDateTimePayload(startsAt)) {
+            return 'published';
+        }
+        return normalizedStatus;
+    }
+
+    function getRulePublishAtControlValue(form = document.getElementById('engagementRuleForm')) {
+        if (!(form instanceof HTMLFormElement)) return '';
+        const hiddenInput = form.querySelector('[data-engagement-publish-at-value]');
+        const hiddenValue = hiddenInput instanceof HTMLInputElement ? formatRuleDateTimeLocal(hiddenInput.value) : '';
+        if (hiddenValue) return hiddenValue;
+
+        const dateInput = form.querySelector('[data-engagement-datetime-date]');
+        const timeInput = form.querySelector('[data-engagement-datetime-time]');
+        const composedValue = composeRuleDateTimeLocal(
+            dateInput instanceof HTMLInputElement ? dateInput.value : '',
+            timeInput instanceof HTMLInputElement ? timeInput.value : ''
+        );
+        if (composedValue) return composedValue;
+
+        const label = form.querySelector('[data-engagement-datetime-label]');
+        const labelValue = label?.textContent?.trim() || '';
+        if (labelValue && labelValue !== '立即发布') {
+            return formatRuleDateTimeLocal(labelValue);
+        }
+        return '';
+    }
+
+    function syncRulePublishAtHiddenValue(form = document.getElementById('engagementRuleForm')) {
+        if (!(form instanceof HTMLFormElement)) return '';
+        const localValue = getRulePublishAtControlValue(form);
+        const hiddenInput = form.querySelector('[data-engagement-publish-at-value]');
+        if (hiddenInput instanceof HTMLInputElement && localValue) {
+            hiddenInput.value = localValue;
+        }
+        return localValue;
+    }
+
+    function getRuleDateTimeParts(value = '') {
+        const localValue = formatRuleDateTimeLocal(value);
+        if (!localValue) {
+            return { date: '', time: '' };
+        }
+        const [date = '', time = ''] = localValue.split('T');
+        return { date, time };
+    }
+
+    function formatRuleDateTimeDisplay(value = '') {
+        const localValue = formatRuleDateTimeLocal(value);
+        if (!localValue) return '立即发布';
+        const [date = '', time = ''] = localValue.split('T');
+        return `${date.replaceAll('-', '/')} ${time}`;
+    }
+
+    function getRulePublishQuickOptions() {
+        return [
+            ['immediate', '立即发布'],
+            ['plus_10m', '10 分钟后'],
+            ['plus_30m', '30 分钟后'],
+            ['plus_2h', '2 小时后'],
+            ['tomorrow_9', '明天 09:00']
+        ];
+    }
+
+    function getRulePublishQuickValue(key = '') {
+        const now = new Date();
+        if (key === 'plus_10m') return formatRuleDateTimeLocal(new Date(now.getTime() + 10 * 60 * 1000).toISOString());
+        if (key === 'plus_30m') return formatRuleDateTimeLocal(new Date(now.getTime() + 30 * 60 * 1000).toISOString());
+        if (key === 'plus_2h') return formatRuleDateTimeLocal(new Date(now.getTime() + 2 * 60 * 60 * 1000).toISOString());
+        if (key === 'tomorrow_9') {
+            const tomorrowMorning = new Date(now);
+            tomorrowMorning.setDate(now.getDate() + 1);
+            tomorrowMorning.setHours(9, 0, 0, 0);
+            return formatRuleDateTimeLocal(tomorrowMorning.toISOString());
+        }
+        return '';
+    }
+
+    function composeRuleDateTimeLocal(dateText = '', timeText = '') {
+        const dateValue = String(dateText || '').trim();
+        const timeValue = String(timeText || '').trim();
+        if (!dateValue && !timeValue) return '';
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue)) return null;
+        if (timeValue && !/^\d{2}:\d{2}$/.test(timeValue)) return null;
+        const normalizedTime = timeValue || '09:00';
+        const [year, month, day] = dateValue.split('-').map((item) => Number.parseInt(item, 10));
+        const [hour, minute] = normalizedTime.split(':').map((item) => Number.parseInt(item, 10));
+        const date = new Date(year, month - 1, day, hour, minute, 0, 0);
+        if (!Number.isFinite(date.getTime())) return null;
+        if (
+            date.getFullYear() !== year
+            || date.getMonth() !== month - 1
+            || date.getDate() !== day
+            || date.getHours() !== hour
+            || date.getMinutes() !== minute
+        ) {
+            return null;
+        }
+        return formatRuleDateTimeLocal(date.toISOString());
+    }
+
+    function renderRulePublishDateTimePicker(value = '') {
+        const normalizedValue = formatRuleDateTimeLocal(value);
+        const parts = getRuleDateTimeParts(normalizedValue);
+        const quickOptions = getRulePublishQuickOptions();
+        return `
+            <div class="engagement-field engagement-field--publish-at">
+                <span>发布时间</span>
+                <input name="starts_at" type="hidden" value="${escapeHtml(normalizedValue)}" data-engagement-publish-at-value>
+                <div class="engagement-datetime ${normalizedValue ? 'has-value' : ''}" data-engagement-datetime-picker>
+                    <button type="button" class="engagement-datetime__trigger" data-engagement-datetime-trigger aria-expanded="false">
+                        <span class="engagement-datetime__main">
+                            <i class="fas fa-calendar-days" aria-hidden="true"></i>
+                            <strong data-engagement-datetime-label>${escapeHtml(formatRuleDateTimeDisplay(normalizedValue))}</strong>
+                        </span>
+                        <span class="engagement-datetime__chevron" aria-hidden="true"></span>
+                    </button>
+                    <div class="engagement-datetime__panel" data-engagement-datetime-panel hidden>
+                        <div class="engagement-datetime__fields">
+                            <label>
+                                <span>日期</span>
+                                <input type="text" inputmode="numeric" maxlength="10" placeholder="YYYY-MM-DD" value="${escapeHtml(parts.date)}" data-engagement-datetime-date>
+                            </label>
+                            <label>
+                                <span>时间</span>
+                                <input type="text" inputmode="numeric" maxlength="5" placeholder="HH:mm" value="${escapeHtml(parts.time)}" data-engagement-datetime-time>
+                            </label>
+                        </div>
+                        <div class="engagement-datetime__quick" aria-label="快速选择发布时间">
+                            ${quickOptions.map(([key, label]) => `
+                                <button type="button" data-engagement-datetime-quick="${escapeHtml(key)}">${escapeHtml(label)}</button>
+                            `).join('')}
+                        </div>
+                        <div class="engagement-datetime__actions">
+                            <button type="button" data-engagement-datetime-clear>清空</button>
+                            <button type="button" data-engagement-datetime-apply>应用时间</button>
+                        </div>
+                    </div>
+                </div>
+                <small>留空立即发布，设置未来时间则到点自动生效。</small>
+            </div>
+        `;
+    }
+
+    function renderRuleEffectiveStatusNote(effectiveStatusInfo = {}) {
+        const tone = normalizeToken(effectiveStatusInfo.tone || 'draft', 'draft');
+        const icon = effectiveStatusInfo.icon || 'fa-pen';
+        const label = effectiveStatusInfo.label || '草稿';
+        const detail = effectiveStatusInfo.detail || '草稿状态不会在前台展示';
+        return `
+            <span>生效状态</span>
+            <div class="engagement-rule-status-note__card" data-tone="${escapeHtml(tone)}">
+                <span class="engagement-rule-status-note__icon">
+                    <i class="fas ${escapeHtml(icon)}" aria-hidden="true"></i>
+                </span>
+                <span class="engagement-rule-status-note__copy">
+                    <strong>${escapeHtml(label)}</strong>
+                    <small>${escapeHtml(detail)}</small>
+                </span>
+            </div>
+        `;
+    }
+
+    function isRuleScheduledForFuture(rule = {}) {
+        const status = normalizeToken(rule.status, 'draft');
+        return status === 'published' && isRuleDateTimeInFuture(rule.starts_at || rule.startsAt);
+    }
+
+    function isRuleRunningNow(rule = {}) {
+        return rule?.enabled === true
+            && normalizeToken(rule?.status, 'draft') === 'published'
+            && !isRuleScheduledForFuture(rule);
+    }
+
+    function getRuleEffectiveStatusInfo(rule = {}) {
+        const status = normalizeToken(rule.status, 'draft');
+        const startsAt = parseRuleDate(rule.starts_at || rule.startsAt);
+        if (status === 'published' && isRuleDateTimeInFuture(rule.starts_at || rule.startsAt)) {
+            return {
+                tone: 'scheduled',
+                icon: 'fa-clock',
+                label: '定时发布',
+                detail: `${startsAt.toLocaleString('zh-CN')} 自动生效`
+            };
+        }
+        if (status === 'published') {
+            return {
+                tone: 'running',
+                icon: 'fa-bolt',
+                label: '发布即启用',
+                detail: '保存后立即进入前台候选'
+            };
+        }
+        if (status === 'paused') {
+            return {
+                tone: 'paused',
+                icon: 'fa-pause',
+                label: '暂停中',
+                detail: '暂停状态不会在前台展示'
+            };
+        }
+        return {
+            tone: 'draft',
+            icon: 'fa-pen',
+            label: getOptionLabel(RULE_STATUS_OPTIONS, status) || '草稿',
+            detail: '草稿状态不会在前台展示'
+        };
+    }
+
     function getRiskLabel(riskLevel = '') {
         const normalized = normalizeToken(riskLevel, 'low');
         if (normalized === 'high') return '高风险';
@@ -900,6 +3266,21 @@
         return WORKSPACE_VIEWS.find(([id]) => id === normalized) || WORKSPACE_VIEWS[0];
     }
 
+    function getWorkspaceGroup(groupId = '') {
+        const normalized = normalizeToken(groupId, 'overview');
+        return WORKSPACE_GROUPS.find(([id]) => id === normalized) || WORKSPACE_GROUPS[0];
+    }
+
+    function getWorkspaceGroupForView(viewId = '') {
+        const normalizedView = getWorkspaceView(viewId)[0];
+        return WORKSPACE_GROUPS.find(([, , , , views]) => Array.isArray(views) && views.includes(normalizedView)) || WORKSPACE_GROUPS[0];
+    }
+
+    function getWorkspaceGroupViews(groupId = '') {
+        const [, , , , views] = getWorkspaceGroup(groupId);
+        return Array.isArray(views) ? views.map((viewId) => getWorkspaceView(viewId)) : [];
+    }
+
     function getCapabilityById(capabilityId = '') {
         const normalized = normalizeToken(capabilityId, '');
         return CAPABILITY_GROUPS.find((capability) => capability.id === normalized) || null;
@@ -918,7 +3299,7 @@
         const scenes = Array.isArray(payload.page_scenes) ? payload.page_scenes : [];
         const assets = Array.isArray(payload.asset_center?.assets) ? payload.asset_center.assets : [];
         const supportContexts = Array.isArray(payload.support_entry?.contexts) ? payload.support_entry.contexts : [];
-        const runningRules = rules.filter((rule) => rule?.enabled && rule?.status === 'published').length;
+        const runningRules = rules.filter((rule) => isRuleRunningNow(rule)).length;
         switch (viewId) {
             case 'dashboard':
                 return `${formatNumber(metrics.views)} 曝光`;
@@ -944,6 +3325,29 @@
                 return `${formatNumber(governance.high_risk_rules)} 风险`;
             default:
                 return '规划中';
+        }
+    }
+
+    function getWorkspaceGroupMetric(groupId = '', payload = {}) {
+        const normalizedGroup = getWorkspaceGroup(groupId)[0];
+        const metrics = payload.metrics || {};
+        const rules = Array.isArray(payload.rules) ? payload.rules : [];
+        const auditLogs = Array.isArray(payload.audit_logs) ? payload.audit_logs : [];
+        const scenes = Array.isArray(payload.page_scenes)
+            ? payload.page_scenes
+            : (Array.isArray(state.payload?.page_scenes) ? state.payload.page_scenes : []);
+        const runningRules = rules.filter((rule) => isRuleRunningNow(rule)).length;
+        switch (normalizedGroup) {
+            case 'overview':
+                return `${formatNumber(metrics.views)} 曝光 · ${formatNumber(metrics.clicks)} 点击`;
+            case 'orchestration':
+                return `${formatNumber(runningRules)} 运行规则 · ${formatNumber(AUTOMATION_BLUEPRINTS.length)} 蓝图`;
+            case 'audience':
+                return `${formatNumber(scenes.length)} 页面 · ${formatNumber(AUDIENCE_SEGMENTS.length)} 分群`;
+            case 'governance':
+                return `${formatNumber(auditLogs.length)} 审计 · ${formatNumber(payload.governance?.high_risk_rules || 0)} 风险`;
+            default:
+                return '按业务目标管理';
         }
     }
 
@@ -1085,15 +3489,165 @@
         `;
     }
 
+    function isOverviewTimeoutError(error) {
+        const message = String(error?.message || '').toLowerCase();
+        return error?.name === 'AbortError'
+            || message.includes('请求超时')
+            || message.includes('timeout')
+            || message.includes('timed out');
+    }
+
+    function createDegradedOverviewPayload(error = {}) {
+        const message = String(error?.message || '客服系统总览请求超时').trim() || '客服系统总览请求超时';
+        return {
+            success: true,
+            schema_ready: false,
+            degraded: true,
+            offline: true,
+            page_scenes: DEFAULT_PAGE_SCENES.map((scene) => ({ ...scene })),
+            event_priority_center: {
+                first_wave: { ...EVENT_PRIORITY_CLASSES.first_wave, events: [...EVENT_PRIORITY_CLASSES.first_wave.events] },
+                service: { ...EVENT_PRIORITY_CLASSES.service, events: [...EVENT_PRIORITY_CLASSES.service.events] },
+                marketing: { ...EVENT_PRIORITY_CLASSES.marketing, events: [...EVENT_PRIORITY_CLASSES.marketing.events] },
+                guidance: { ...EVENT_PRIORITY_CLASSES.guidance, events: [...EVENT_PRIORITY_CLASSES.guidance.events] }
+            },
+            rules: [],
+            templates: [],
+            segments: [],
+            audit_logs: [],
+            metrics: {
+                last_24h_events: 0,
+                views: 0,
+                clicks: 0,
+                dismisses: 0,
+                conversions: 0,
+                active_rules: 0
+            },
+            analytics: {
+                funnel: [],
+                attribution: [],
+                page_breakdown: [],
+                rule_breakdown: [],
+                placement_breakdown: [],
+                action_breakdown: [],
+                trigger_breakdown: [],
+                audience_breakdown: [],
+                device_breakdown: [],
+                source_breakdown: [],
+                experience_quality: {
+                    measured_views: 0,
+                    overflow_views: 0,
+                    tight_edge_views: 0
+                }
+            },
+            asset_center: {
+                style: {
+                    enabled: true,
+                    preset: 'studio_blue',
+                    accent_color: '#6b9ece',
+                    title_color: '#5f95cc',
+                    bubble_background: '#ffffff',
+                    text_color: '#1f2937',
+                    radius_px: 22,
+                    max_width_px: 520,
+                    density: 'comfortable',
+                    shadow: 'soft',
+                    animation: 'gentle',
+                    robot_variant: 'default'
+                },
+                assets: []
+            },
+            support_entry: {
+                enabled: true,
+                entry_label: '常用入口',
+                entry_label_en: 'Quick Help',
+                root_menus: ['exchange', 'shop', 'verify', 'human'],
+                telegram_url: 'https://t.me/zaoyoe',
+                ticket_enabled: true,
+                live_chat_enabled: true,
+                ticket_sla_hours: 24,
+                ticket_prompt: '把“关联 ID + 问题描述”发我，我会帮你生成一条客服工单。',
+                ticket_placeholder: '输入关联 ID 和问题描述',
+                ticket_input_hint: '示例：order:订单号 卡密未到账、task:任务号 一直失败、code:兑换码 显示已使用',
+                contexts: [
+                    {
+                        id: 'default',
+                        label: '常用入口',
+                        intro: '优先帮用户处理兑换、发放和任务状态问题。',
+                        shortcuts: ['code_status', 'redeem_code', 'afdian_lookup', 'create_ticket', 'live_chat'],
+                        enabled: true
+                    }
+                ],
+                guides: []
+            },
+            tag_center: {
+                sources: USER_TAG_SOURCE_OPTIONS.map(([value]) => value),
+                tags: [],
+                automation: {}
+            },
+            external_embed: {
+                diagnostics: {
+                    status: 'attention',
+                    recommended_actions: ['总览数据超时，先使用本地默认配置渲染工作台。']
+                }
+            },
+            governance: {
+                high_risk_rules: 0,
+                running_rules: 0,
+                paused_rules: 0,
+                archived_rules: 0
+            },
+            diagnostics: {
+                status: 'attention',
+                notification_bridge: {
+                    status: 'idle',
+                    event_types_count: 0,
+                    running_rule_count: 0,
+                    multi_rule_event_types_count: 0,
+                    events: []
+                },
+                checklist: [],
+                tips: [{
+                    tone: 'warning',
+                    title: '实时数据暂时不可用',
+                    detail: '已先进入降级工作台，规则、模板和样式入口不会因为 overview 超时整页消失。'
+                }]
+            },
+            overview_health: {
+                status: 'degraded',
+                timeout_ms: 30000,
+                degraded_tasks: [{
+                    label: 'overview',
+                    code: 'CLIENT_OVERVIEW_TIMEOUT',
+                    message
+                }],
+                timed_out_tasks: ['overview']
+            }
+        };
+    }
+
     async function fetchOverview() {
         const response = await engagementAdminFetch(buildAdminUrl('engagement/overview', {
             site: getCurrentSite()
         }), {
-            method: 'GET'
+            method: 'GET',
+            timeoutMs: 30000
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload?.success === false) {
             throw new Error(buildRequestErrorMessage(response, payload, '客服系统接口异常'));
+        }
+        return payload;
+    }
+
+    async function fetchSegmentsAndTagCenter() {
+        const response = await engagementAdminFetch(buildAdminUrl('engagement/segments'), {
+            method: 'GET',
+            timeoutMs: 15000
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload?.success === false) {
+            throw new Error(buildRequestErrorMessage(response, payload, '用户标签同步失败'));
         }
         return payload;
     }
@@ -1110,6 +3664,10 @@
         if (!response.ok || result?.success === false) {
             throw new Error(buildRequestErrorMessage(response, result, '规则保存失败'));
         }
+        broadcastEngagementFeedChange('rule_changed', {
+            action: payload.action,
+            page_ids: getEngagementMutationBroadcastPages(payload, result)
+        });
         return result;
     }
 
@@ -1140,6 +3698,10 @@
         if (!response.ok || result?.success === false) {
             throw new Error(buildRequestErrorMessage(response, result, '用户分群保存失败'));
         }
+        broadcastEngagementFeedChange('segment_changed', {
+            action: payload.action,
+            page_ids: ['all']
+        });
         return result;
     }
 
@@ -1155,6 +3717,10 @@
         if (!response.ok || result?.success === false) {
             throw new Error(buildRequestErrorMessage(response, result, '页面场景保存失败'));
         }
+        broadcastEngagementFeedChange('scene_changed', {
+            action: payload.action,
+            page_ids: getEngagementMutationBroadcastPages(payload, result)
+        });
         return result;
     }
 
@@ -1170,6 +3736,10 @@
         if (!response.ok || result?.success === false) {
             throw new Error(buildRequestErrorMessage(response, result, '素材与样式保存失败'));
         }
+        broadcastEngagementFeedChange('asset_center_changed', {
+            action: payload.action,
+            page_ids: getEngagementMutationBroadcastPages(payload, result)
+        });
         return result;
     }
 
@@ -1185,6 +3755,10 @@
         if (!response.ok || result?.success === false) {
             throw new Error(buildRequestErrorMessage(response, result, '客服入口保存失败'));
         }
+        broadcastEngagementFeedChange('support_entry_changed', {
+            action: payload.action,
+            page_ids: ['all']
+        });
         return result;
     }
 
@@ -1238,6 +3812,18 @@
     }
 
     function renderSchemaNotice(payload = {}) {
+        if (payload.offline === true) {
+            return `
+                <section class="engagement-state engagement-state--warning">
+                    <i class="fas fa-triangle-exclamation"></i>
+                    <div>
+                        <strong>实时数据暂时超时</strong>
+                        <p>已先进入降级工作台，规则、模板、页面场景和样式入口仍可查看；点击重新加载可恢复实时统计。</p>
+                    </div>
+                </section>
+            `;
+        }
+
         if (payload.schema_ready !== false) {
             return `
                 <section class="engagement-state engagement-state--ready">
@@ -1371,7 +3957,10 @@
                 safe_zone: 'bottom-right',
                 default_placement: 'robot_bubble',
                 allow_marketing: true,
-                events: []
+                events: [],
+                event_priority_center: {
+                    enabled: false
+                }
             };
     }
 
@@ -1402,7 +3991,7 @@
                 bubble_background: normalizeHexColor(center.style?.bubble_background, '#ffffff'),
                 text_color: normalizeHexColor(center.style?.text_color, '#1f2937'),
                 radius_px: Number(center.style?.radius_px || 22) || 22,
-                max_width_px: Number(center.style?.max_width_px || 420) || 420,
+                max_width_px: Number(center.style?.max_width_px || 520) || 520,
                 density: center.style?.density || 'comfortable',
                 shadow: center.style?.shadow || 'soft',
                 animation: center.style?.animation || 'gentle',
@@ -1540,6 +4129,9 @@
         const sourceAutomation = center.automation && typeof center.automation === 'object' && !Array.isArray(center.automation)
             ? center.automation
             : {};
+        const hiddenTagSet = new Set((Array.isArray(center.hidden_user_tags) ? center.hidden_user_tags : [])
+            .map((tagKey) => normalizeUserTagKey(tagKey, ''))
+            .filter(Boolean));
         const fallbackTags = [
             {
                 key: 'paid_user',
@@ -1582,18 +4174,25 @@
                 enabled: true
             }
         ];
-        const tagMap = new Map(fallbackTags.map((item) => [normalizeToken(item.key || item.id, ''), item]));
+        const tagMap = new Map(fallbackTags
+            .filter((item) => !hiddenTagSet.has(normalizeUserTagKey(item.key || item.id, '')))
+            .map((item) => [normalizeUserTagKey(item.key || item.id, ''), item]));
         if (Array.isArray(center.tags)) {
             center.tags.forEach((item) => {
-                const key = normalizeToken(item?.key || item?.id, '');
-                if (key) {
-                    tagMap.set(key, item);
+                const key = normalizeUserTagKey(item?.key || item?.id, '');
+                if (key && !hiddenTagSet.has(key)) {
+                    tagMap.set(key, {
+                        ...item,
+                        id: key,
+                        key
+                    });
                 }
             });
         }
         return {
             sources: Array.isArray(center.sources) && center.sources.length ? center.sources : USER_TAG_SOURCE_OPTIONS.map(([value]) => value),
             tags: Array.from(tagMap.values()),
+            hidden_user_tags: Array.from(hiddenTagSet),
             automation: {
                 high_value: {
                     enabled: sourceAutomation.high_value?.enabled !== false,
@@ -1621,15 +4220,62 @@
     }
 
     function getEditableUserTag() {
-        const tagRef = normalizeToken(state.editingUserTagRef, '');
+        const tagRef = normalizeUserTagKey(state.editingUserTagRef, '');
         if (!tagRef) return null;
-        return getUserTagCenter().tags.find((tag) => normalizeToken(tag?.key || tag?.id, '') === tagRef) || null;
+        return getUserTagCenter().tags.find((tag) => normalizeUserTagKey(tag?.key || tag?.id, '') === tagRef) || null;
     }
 
     function getRuleDraft() {
         return state.ruleDraft && typeof state.ruleDraft === 'object' && !Array.isArray(state.ruleDraft)
             ? state.ruleDraft
             : null;
+    }
+
+    function getTemplateRuleMetadata(ruleSource = {}, templateDraft = null) {
+        if (templateDraft) {
+            return {
+                source_template_id: String(templateDraft.id || '').trim(),
+                source_template_key: String(templateDraft.key || '').trim(),
+                source_template_name: String(templateDraft.name || templateDraft.title || '').trim(),
+                template_category: normalizeToken(templateDraft.category, 'general')
+            };
+        }
+        const metadata = ruleSource?.metadata && typeof ruleSource.metadata === 'object' && !Array.isArray(ruleSource.metadata)
+            ? ruleSource.metadata
+            : {};
+        const templateId = String(metadata.source_template_id || metadata.template_id || metadata.templateId || '').trim();
+        const templateKey = normalizeToken(metadata.source_template_key || metadata.template_key || metadata.templateKey || '', '');
+        if (!templateId && !templateKey) return null;
+        return {
+            source_template_id: templateId,
+            source_template_key: templateKey,
+            source_template_name: String(metadata.source_template_name || metadata.template_name || metadata.templateName || '').trim(),
+            template_category: normalizeToken(metadata.template_category || metadata.templateCategory || '', '')
+        };
+    }
+
+    function getAutomationDraftMetadata(ruleSource = {}) {
+        const metadata = ruleSource?.metadata && typeof ruleSource.metadata === 'object' && !Array.isArray(ruleSource.metadata)
+            ? ruleSource.metadata
+            : {};
+        const blueprintId = normalizeToken(
+            metadata.automation_blueprint_id || metadata.automationBlueprintId || metadata.blueprint_id || '',
+            ''
+        );
+        if (!blueprintId) return null;
+        return {
+            source_module: String(metadata.source_module || metadata.sourceModule || 'engagement.automation_blueprint').trim() || 'engagement.automation_blueprint',
+            automation_blueprint_id: blueprintId,
+            automation_blueprint_title: String(metadata.automation_blueprint_title || metadata.automationBlueprintTitle || metadata.blueprint_title || ruleSource.source_name || '').trim(),
+            automation_mode: String(metadata.automation_mode || metadata.automationMode || '').trim()
+        };
+    }
+
+    function getRuleLinkageMetadata(ruleSource = {}, templateDraft = null) {
+        return {
+            ...(getTemplateRuleMetadata(ruleSource, templateDraft) || {}),
+            ...(getAutomationDraftMetadata(ruleSource) || {})
+        };
     }
 
     function isTemplateInCapability(template = {}, capability = null) {
@@ -1685,8 +4331,19 @@
 
     function isTemplateStarterInstalled(starter = {}, templates = []) {
         const starterKey = normalizeToken(starter.key, '');
+        const starterId = normalizeToken(starter.id, '');
         if (!starterKey) return false;
-        return (Array.isArray(templates) ? templates : []).some((template) => normalizeToken(template?.key || template?.id, '') === starterKey);
+        return (Array.isArray(templates) ? templates : []).some((template) => {
+            const metadata = template?.metadata && typeof template.metadata === 'object' && !Array.isArray(template.metadata)
+                ? template.metadata
+                : {};
+            const templateKey = normalizeToken(template?.key || template?.id, '');
+            const metadataStarterId = normalizeToken(metadata.starter_id || metadata.starterId, '');
+            const metadataStarterKey = normalizeToken(metadata.starter_key || metadata.starterKey, '');
+            return templateKey === starterKey
+                || (starterId && metadataStarterId === starterId)
+                || (starterKey && metadataStarterKey === starterKey);
+        });
     }
 
     function getTemplateLinkedRules(template = {}) {
@@ -1722,7 +4379,7 @@
         return {
             ...metrics,
             rules: linkedRules.length,
-            running_rules: linkedRules.filter((rule) => rule.enabled === true && normalizeToken(rule.status, 'draft') === 'published').length,
+            running_rules: linkedRules.filter((rule) => isRuleRunningNow(rule)).length,
             ctr: getMetricRate(metrics.clicks, metrics.views),
             dismiss_rate: getMetricRate(metrics.dismisses, metrics.views)
         };
@@ -1788,9 +4445,8 @@
     }
 
     function getRuleStatusLabel(rule = {}) {
-        if (rule.enabled && rule.status === 'published') {
-            return '运行中';
-        }
+        if (isRuleScheduledForFuture(rule)) return '定时发布';
+        if (isRuleRunningNow(rule)) return '运行中';
         const status = normalizeToken(rule.status, 'draft');
         return getOptionLabel(RULE_FILTER_STATUS_OPTIONS, status) || '草稿';
     }
@@ -1801,7 +4457,11 @@
     }
 
     function getAudienceLabel(audience = {}) {
-        return getOptionLabel(AUDIENCE_SCOPE_OPTIONS, getAudienceScope(audience)) || '全部用户';
+        return getOptionLabel(getAudienceScopeOptions(), getAudienceScope(audience)) || '全部用户';
+    }
+
+    function getRuleAudienceFilterOptions() {
+        return getAudienceScopeOptions();
     }
 
     function isRuleVisibleForStatus(rule = {}, statusFilter = 'all') {
@@ -1810,9 +4470,20 @@
             return true;
         }
         if (normalizedStatus === 'running') {
-            return rule.enabled === true && rule.status === 'published';
+            return isRuleRunningNow(rule);
+        }
+        if (normalizedStatus === 'scheduled') {
+            return isRuleScheduledForFuture(rule);
         }
         return normalizeToken(rule.status, 'draft') === normalizedStatus;
+    }
+
+    function isRuleVisibleForAudience(rule = {}, audienceFilter = 'all') {
+        const normalizedAudience = normalizeToken(audienceFilter, 'all');
+        if (!normalizedAudience || normalizedAudience === 'all') {
+            return true;
+        }
+        return getAudienceScope(rule.audience) === normalizedAudience;
     }
 
     function isRuleVisibleForSearch(rule = {}, searchQuery = '') {
@@ -1855,6 +4526,159 @@
         return code === normalizedHealth || tone === normalizedHealth;
     }
 
+    function normalizeRuleDuplicateText(value = '') {
+        return String(value || '').trim().replace(/\s+/g, ' ');
+    }
+
+    function normalizeRuleDuplicateList(value = [], fallback = ['all']) {
+        const source = Array.isArray(value) ? value : fallback;
+        const normalized = source.map((item) => normalizeToken(item, '')).filter(Boolean);
+        return (normalized.length ? [...new Set(normalized)] : fallback).sort();
+    }
+
+    function getRuleDuplicateKey(rule = {}) {
+        const audienceScope = getAudienceScope(rule.audience);
+        const signature = {
+            name: normalizeRuleDuplicateText(rule.name),
+            site: normalizeToken(rule.site, 'all'),
+            status: normalizeToken(rule.status, 'draft'),
+            enabled: rule.enabled === true,
+            page_ids: normalizeRuleDuplicateList(rule.page_ids),
+            audience_scope: audienceScope,
+            trigger_type: normalizeToken(rule.trigger_type, 'page_view'),
+            placement: normalizeToken(rule.placement, 'robot_bubble'),
+            title: normalizeRuleDuplicateText(rule.title),
+            content: normalizeRuleDuplicateText(rule.content),
+            action_label: normalizeRuleDuplicateText(rule.action_label),
+            action_url: normalizeRuleDuplicateText(rule.action_url),
+            tone: normalizeToken(rule.tone, 'info'),
+            priority: Number(rule.priority || 0) || 0,
+            repeat_interval_minutes: getRuleRepeatIntervalMinutes(rule, 2),
+            dismiss_ttl_hours: Number(rule.dismiss_ttl_hours || 24) || 24
+        };
+        return JSON.stringify(signature);
+    }
+
+    function getRuleDuplicateGroups(rules = []) {
+        const groupMap = new Map();
+        (Array.isArray(rules) ? rules : []).forEach((rule) => {
+            const ruleId = String(rule?.id || '').trim();
+            if (!ruleId) return;
+            if (normalizeToken(rule?.status, 'draft') === 'archived') return;
+            const key = getRuleDuplicateKey(rule);
+            if (!groupMap.has(key)) groupMap.set(key, []);
+            groupMap.get(key).push(rule);
+        });
+        return Array.from(groupMap.values())
+            .filter((group) => group.length > 1)
+            .sort((first, second) => second.length - first.length);
+    }
+
+    function getDuplicateRuleIds(rules = []) {
+        return new Set(getRuleDuplicateGroups(rules).flatMap((group) => group.map((rule) => String(rule?.id || '').trim()).filter(Boolean)));
+    }
+
+    function getRuleDuplicateGroupColor(index = 0) {
+        return RULE_DUPLICATE_GROUP_COLORS[Math.abs(Number(index || 0) || 0) % RULE_DUPLICATE_GROUP_COLORS.length] || RULE_DUPLICATE_GROUP_COLORS[0];
+    }
+
+    function getRuleDuplicateGroupMeta(rules = []) {
+        const duplicateMeta = new Map();
+        getRuleDuplicateGroups(rules).forEach((group, groupIndex) => {
+            const color = getRuleDuplicateGroupColor(groupIndex);
+            group.forEach((rule, itemIndex) => {
+                const ruleId = String(rule?.id || '').trim();
+                if (!ruleId) return;
+                duplicateMeta.set(ruleId, {
+                    groupIndex: groupIndex + 1,
+                    itemIndex: itemIndex + 1,
+                    groupSize: group.length,
+                    color
+                });
+            });
+        });
+        return duplicateMeta;
+    }
+
+    function groupDuplicateRulesForDisplay(sourceRules = [], visibleRules = []) {
+        const visibleRows = Array.isArray(visibleRules) ? visibleRules : [];
+        if (state.ruleDuplicateFilter !== true) return visibleRows;
+        const visibleById = new Map(visibleRows.map((rule) => [String(rule?.id || '').trim(), rule]));
+        const usedIds = new Set();
+        const groupedRows = [];
+        getRuleDuplicateGroups(sourceRules).forEach((group) => {
+            group.forEach((rule) => {
+                const ruleId = String(rule?.id || '').trim();
+                if (!ruleId || !visibleById.has(ruleId) || usedIds.has(ruleId)) return;
+                groupedRows.push(visibleById.get(ruleId));
+                usedIds.add(ruleId);
+            });
+        });
+        visibleRows.forEach((rule) => {
+            const ruleId = String(rule?.id || '').trim();
+            if (ruleId && !usedIds.has(ruleId)) {
+                groupedRows.push(rule);
+            }
+        });
+        return groupedRows;
+    }
+
+    function reconcileDuplicateRuleFilter(rules = []) {
+        const duplicateGroups = getRuleDuplicateGroups(rules);
+        if (state.ruleDuplicateFilter === true && duplicateGroups.length <= 0) {
+            state.ruleDuplicateFilter = false;
+        }
+        return duplicateGroups;
+    }
+
+    function resetRulePagination() {
+        state.rulePage = 1;
+    }
+
+    function getRuleListPagination(totalRows = 0) {
+        const total = Math.max(0, Number(totalRows || 0) || 0);
+        const totalPages = Math.max(1, Math.ceil(total / RULE_LIST_PAGE_SIZE));
+        const requestedPage = Math.max(1, Number.parseInt(state.rulePage || '1', 10) || 1);
+        const page = Math.min(requestedPage, totalPages);
+        if (state.rulePage !== page) {
+            state.rulePage = page;
+        }
+        const startIndex = total > 0 ? (page - 1) * RULE_LIST_PAGE_SIZE : 0;
+        const endIndex = total > 0 ? Math.min(total, startIndex + RULE_LIST_PAGE_SIZE) : 0;
+        return {
+            page,
+            totalPages,
+            startIndex,
+            endIndex,
+            hasPrevious: page > 1,
+            hasNext: page < totalPages
+        };
+    }
+
+    function renderRulePaginationControls(pagination = {}) {
+        const page = Math.max(1, Number(pagination.page || 1) || 1);
+        const totalPages = Math.max(1, Number(pagination.totalPages || 1) || 1);
+        if (totalPages <= 1) return '';
+        return `
+            <div class="engagement-rule-pagination" aria-label="规则分页">
+                <button type="button" data-engagement-action="rule-page-prev" ${pagination.hasPrevious ? '' : 'disabled'} aria-label="上一页">
+                    <i class="fas fa-chevron-left" aria-hidden="true"></i>
+                </button>
+                <span>${escapeHtml(formatNumber(page))} / ${escapeHtml(formatNumber(totalPages))} 页</span>
+                <button type="button" data-engagement-action="rule-page-next" ${pagination.hasNext ? '' : 'disabled'} aria-label="下一页">
+                    <i class="fas fa-chevron-right" aria-hidden="true"></i>
+                </button>
+            </div>
+        `;
+    }
+
+    function setRulePage(nextPage = 1) {
+        state.rulePage = Math.max(1, Number.parseInt(nextPage || '1', 10) || 1);
+        renderOverview(state.payload || {});
+        document.querySelector('[data-engagement-rule-toolbar]')?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+        return true;
+    }
+
     function sortRulesForManagement(rules = []) {
         const rows = Array.isArray(rules) ? rules.slice() : [];
         const sortMode = normalizeToken(state.ruleSort, 'updated_desc');
@@ -1877,11 +4701,14 @@
     function getManagedRules(rules = []) {
         const rows = getRulesForFocusedPage(rules);
         const pageFilter = normalizeToken(state.rulePageFilter, 'all');
+        const duplicateRuleIds = state.ruleDuplicateFilter ? getDuplicateRuleIds(rows) : null;
         return sortRulesForManagement(rows.filter((rule) => (
             isRuleVisibleForPage(rule, pageFilter)
             && isRuleVisibleForStatus(rule, state.ruleStatusFilter)
             && isRuleVisibleForHealth(rule, state.ruleHealthFilter)
+            && isRuleVisibleForAudience(rule, state.ruleAudienceFilter)
             && isRuleVisibleForSearch(rule, state.ruleSearchQuery)
+            && (!duplicateRuleIds || duplicateRuleIds.has(String(rule?.id || '').trim()))
         )));
     }
 
@@ -1892,7 +4719,7 @@
     function getRuleBatchSummary(rows = getCurrentManagedRules()) {
         const sourceRows = Array.isArray(rows) ? rows : [];
         const activeRows = sourceRows.filter((rule) => String(rule?.id || '').trim());
-        const runningRows = activeRows.filter((rule) => rule.enabled === true && normalizeToken(rule.status, '') === 'published');
+        const runningRows = activeRows.filter((rule) => isRuleRunningNow(rule));
         const attentionRows = activeRows.filter((rule) => {
             const health = getRuleHealth(rule);
             return ['danger', 'warning', 'attention'].includes(normalizeToken(health.tone, ''));
@@ -2009,6 +4836,150 @@
         `;
     }
 
+    function renderSceneEventPicker(selectedEvents = []) {
+        const selected = new Set((Array.isArray(selectedEvents) && selectedEvents.length ? selectedEvents : ['new_user_welcome'])
+            .map((eventKey) => normalizeToken(eventKey, ''))
+            .filter(Boolean));
+        const knownOptions = PAGE_SCENE_EVENT_OPTIONS.map((eventKey) => [eventKey, getEventLabel(eventKey)]);
+        selected.forEach((eventKey) => {
+            if (!knownOptions.some(([optionValue]) => optionValue === eventKey)) {
+                knownOptions.push([eventKey, getEventLabel(eventKey)]);
+            }
+        });
+        const hiddenInputs = Array.from(selected).map((eventKey) => `
+            <input type="hidden" name="events" value="${escapeHtml(eventKey)}" data-engagement-scene-event-value>
+        `).join('');
+
+        return `
+            <div class="engagement-scene-event-picker" data-engagement-scene-event-picker>
+                <div class="engagement-scene-event-picker__values" data-engagement-scene-event-values>${hiddenInputs}</div>
+                ${knownOptions.map(([eventKey, eventLabel]) => {
+                    const isSelected = selected.has(eventKey);
+                    const priorityClass = getEventPriorityClass(eventKey);
+                    return `
+                        <button type="button"
+                            class="engagement-page-choice ${isSelected ? 'is-selected' : ''}"
+                            data-engagement-scene-event-toggle
+                            data-value="${escapeHtml(eventKey)}"
+                            title="${escapeHtml(`${eventLabel} · ${priorityClass.label}`)}"
+                            aria-pressed="${isSelected ? 'true' : 'false'}">
+                            <i class="fas fa-check" aria-hidden="true"></i>
+                            <span>${escapeHtml(eventLabel)}</span>
+                            ${renderEventPriorityBadge(eventKey)}
+                        </button>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    function renderEventPriorityPicker(groupId = '', selectedEvents = [], scopeId = 'global') {
+        const selected = new Set((Array.isArray(selectedEvents) ? selectedEvents : [])
+            .map((eventKey) => normalizeToken(eventKey, ''))
+            .filter(Boolean));
+        const hiddenInputs = Array.from(selected).map((eventKey) => `
+            <input type="hidden" name="${escapeHtml(groupId)}_events" value="${escapeHtml(eventKey)}" data-engagement-event-priority-value>
+        `).join('');
+        return `
+            <div class="engagement-scene-event-picker" data-engagement-event-priority-picker data-priority-group="${escapeHtml(groupId)}" data-priority-scope="${escapeHtml(scopeId)}">
+                <div class="engagement-scene-event-picker__values" data-engagement-event-priority-values>${hiddenInputs}</div>
+                ${PAGE_SCENE_EVENT_OPTIONS.map((eventKey) => {
+                    const isSelected = selected.has(eventKey);
+                    const priorityClass = getEventPriorityClass(eventKey);
+                    return `
+                        <button type="button"
+                            class="engagement-page-choice ${isSelected ? 'is-selected' : ''}"
+                            data-engagement-event-priority-toggle
+                            data-priority-group="${escapeHtml(groupId)}"
+                            data-priority-scope="${escapeHtml(scopeId)}"
+                            data-value="${escapeHtml(eventKey)}"
+                            aria-pressed="${isSelected ? 'true' : 'false'}">
+                            <i class="fas fa-check" aria-hidden="true"></i>
+                            <span>${escapeHtml(getEventLabel(eventKey))}</span>
+                            ${renderEventPriorityBadgeById(groupId)}
+                        </button>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    function renderSegmentTagPicker(selectedTags = []) {
+        const selected = new Set((Array.isArray(selectedTags) ? selectedTags : [])
+            .map((tagKey) => normalizeUserTagKey(tagKey, ''))
+            .filter(Boolean));
+        const optionMap = new Map();
+        getUserTagCenter().tags.forEach((tag) => {
+            const tagKey = normalizeUserTagKey(tag?.key || tag?.id, '');
+            if (tagKey && !optionMap.has(tagKey)) {
+                optionMap.set(tagKey, tag?.name || tag?.key || tag?.id || '用户标签');
+            }
+        });
+        const knownOptions = Array.from(optionMap.entries());
+        selected.forEach((tagKey) => {
+            if (!knownOptions.some(([optionValue]) => optionValue === tagKey)) {
+                knownOptions.push([tagKey, getUserTagLabel(tagKey)]);
+            }
+        });
+        const hiddenInputs = Array.from(selected).map((tagKey) => `
+            <input type="hidden" name="tag_targets" value="${escapeHtml(tagKey)}" data-engagement-segment-tag-value>
+        `).join('');
+
+        return `
+            <div class="engagement-segment-tag-picker" data-engagement-segment-tag-picker>
+                <div class="engagement-segment-tag-picker__values" data-engagement-segment-tag-values>${hiddenInputs}</div>
+                ${knownOptions.map(([tagKey, tagLabel]) => {
+                    const isSelected = selected.has(tagKey);
+                    return `
+                        <button type="button"
+                            class="engagement-page-choice ${isSelected ? 'is-selected' : ''}"
+                            data-engagement-segment-tag-toggle
+                            data-value="${escapeHtml(tagKey)}"
+                            title="${escapeHtml(tagKey)}"
+                            aria-pressed="${isSelected ? 'true' : 'false'}">
+                            <i class="fas fa-check" aria-hidden="true"></i>
+                            <span>${escapeHtml(tagLabel)}</span>
+                        </button>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    function renderSegmentScenarioPicker(selectedScenarios = []) {
+        const selected = new Set((Array.isArray(selectedScenarios) ? selectedScenarios : [])
+            .map((scenarioId) => normalizeSegmentScenarioValue(scenarioId))
+            .filter(Boolean));
+        const knownOptions = SEGMENT_SCENARIO_OPTIONS.map((option) => [option.id, option.label]);
+        selected.forEach((scenarioId) => {
+            if (!knownOptions.some(([optionValue]) => optionValue === scenarioId)) {
+                knownOptions.push([scenarioId, getSegmentScenarioLabel(scenarioId)]);
+            }
+        });
+        const hiddenInputs = Array.from(selected).map((scenarioId) => `
+            <input type="hidden" name="examples" value="${escapeHtml(scenarioId)}" data-engagement-segment-scenario-value>
+        `).join('');
+
+        return `
+            <div class="engagement-segment-scenario-picker" data-engagement-segment-scenario-picker>
+                <div class="engagement-segment-scenario-picker__values" data-engagement-segment-scenario-values>${hiddenInputs}</div>
+                ${knownOptions.map(([scenarioId, scenarioLabel]) => {
+                    const isSelected = selected.has(scenarioId);
+                    return `
+                        <button type="button"
+                            class="engagement-page-choice ${isSelected ? 'is-selected' : ''}"
+                            data-engagement-segment-scenario-toggle
+                            data-value="${escapeHtml(scenarioId)}"
+                            aria-pressed="${isSelected ? 'true' : 'false'}">
+                            <i class="fas fa-check" aria-hidden="true"></i>
+                            <span>${escapeHtml(scenarioLabel)}</span>
+                        </button>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
     function renderCustomSwitch({ name, checked = false, label = '' } = {}) {
         const normalizedName = String(name || '').trim();
         return `
@@ -2027,6 +4998,22 @@
         `;
     }
 
+    function getTemplatePreferredTriggerType(source = {}) {
+        const metadata = source?.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
+            ? source.metadata
+            : {};
+        return normalizeToken(
+            source.trigger_type
+                || source.triggerType
+                || metadata.starter_trigger_type
+                || metadata.preferred_trigger_type
+                || metadata.trigger_type
+                || metadata.triggerType
+                || 'page_view',
+            'page_view'
+        );
+    }
+
     function getInitialRulePreviewData() {
         const rule = getEditableRule();
         const ruleDraft = rule ? null : getRuleDraft();
@@ -2042,14 +5029,107 @@
             status: source.status || 'draft',
             page_ids: pageIds.length ? pageIds : ['all'],
             audience: source.audience || { scope: 'all' },
-            trigger_type: source.trigger_type || 'page_view',
+            trigger_type: getTemplatePreferredTriggerType(source),
             placement: source.placement || 'robot_bubble',
             title: source.title || source.name || '',
             content: source.content || '',
             tone: source.tone || 'info',
             action_label: source.action_label || '',
             action_url: source.action_url || '',
+            starts_at: source.starts_at || source.startsAt || '',
             enabled: Boolean(source.enabled)
+        };
+    }
+
+    function getInitialTemplatePreviewData() {
+        const template = getEditableTemplate() || {};
+        const pageIds = Array.isArray(template.page_ids)
+            ? template.page_ids.map((pageId) => normalizeToken(pageId, '')).filter(Boolean)
+            : ['all'];
+        return {
+            name: template.name || '',
+            site: getCurrentSite(),
+            status: 'draft',
+            page_ids: pageIds.length ? pageIds : ['all'],
+            audience: { scope: 'all' },
+            trigger_type: getTemplatePreferredTriggerType(template),
+            placement: 'robot_bubble',
+            title: template.title || template.name || '',
+            content: template.content || '',
+            tone: template.tone || 'info',
+            action_label: template.action_label || '',
+            action_url: template.action_url || '',
+            enabled: false
+        };
+    }
+
+    function getScenePreviewEventOptions(events = []) {
+        const normalizedEvents = Array.isArray(events)
+            ? events.map((eventKey) => normalizeToken(eventKey, '')).filter(Boolean)
+            : [];
+        return normalizedEvents.map((eventKey) => [eventKey, getEventLabel(eventKey)]);
+    }
+
+    function normalizeScenePreviewEvent(events = [], value = '') {
+        const options = getScenePreviewEventOptions(events);
+        const normalizedValue = normalizeToken(value, '');
+        if (options.some(([eventKey]) => eventKey === normalizedValue)) {
+            return normalizedValue;
+        }
+        return options[0]?.[0] || 'new_user_welcome';
+    }
+
+    function getScenePreviewBlueprint(triggerType = '', pageId = '') {
+        const normalizedTriggerType = normalizeToken(triggerType, '');
+        const normalizedPageId = normalizeToken(pageId, 'home');
+        return AUTOMATION_BLUEPRINTS.find((blueprint) => (
+            normalizeToken(blueprint.triggerType, '') === normalizedTriggerType
+            && Array.isArray(blueprint.pageIds)
+            && blueprint.pageIds.some((candidate) => {
+                const normalizedCandidate = normalizeToken(candidate, '');
+                return normalizedCandidate === normalizedPageId || normalizedCandidate === 'all';
+            })
+        )) || AUTOMATION_BLUEPRINTS.find((blueprint) => normalizeToken(blueprint.triggerType, '') === normalizedTriggerType) || null;
+    }
+
+    function getScenePreviewFallbackCopy(scene = {}, triggerType = '') {
+        const pageLabel = getPageLabel(scene.page_id || scene.id || 'home');
+        const eventLabel = getEventLabel(triggerType);
+        const allowsMarketing = scene.allow_marketing !== false;
+        return {
+            title: `${pageLabel} · ${eventLabel}`,
+            content: allowsMarketing
+                ? `当用户在${pageLabel}触发“${eventLabel}”时，机器人会在这里给出服务或运营提醒。`
+                : `当用户在${pageLabel}触发“${eventLabel}”时，机器人会在这里给出服务型提醒，营销转化提示会被收敛。`,
+            actionLabel: '',
+            actionUrl: ''
+        };
+    }
+
+    function collectScenePreviewFormData() {
+        const form = document.getElementById('engagementSceneForm');
+        const scene = form instanceof HTMLFormElement
+            ? collectSceneFormPayload(form).scene
+            : getEditableScene();
+        const pageId = normalizeToken(scene.page_id || scene.id || 'home', 'home');
+        const events = Array.isArray(scene.events) ? scene.events : [];
+        const triggerType = normalizeScenePreviewEvent(events, state.scenePreviewEvent || '');
+        const blueprint = getScenePreviewBlueprint(triggerType, pageId);
+        const fallback = getScenePreviewFallbackCopy(scene, triggerType);
+        return {
+            site: getCurrentSite(),
+            status: 'published',
+            page_ids: [pageId],
+            audience: { scope: 'all' },
+            trigger_type: triggerType,
+            placement: scene.default_placement || 'robot_bubble',
+            title: blueprint?.titleText || fallback.title,
+            content: blueprint?.content || fallback.content,
+            tone: scene.tone || blueprint?.tone || 'info',
+            action_label: blueprint?.actionLabel || fallback.actionLabel,
+            action_url: blueprint?.actionUrl || fallback.actionUrl,
+            enabled: true,
+            scene
         };
     }
 
@@ -2061,7 +5141,6 @@
         }
         return `
             <div class="engagement-governance-notice" data-risk="${escapeHtml(riskLevel)}">
-                <i class="fas ${riskLevel === 'high' ? 'fa-triangle-exclamation' : 'fa-shield-halved'}" aria-hidden="true"></i>
                 <div>
                     <strong>${escapeHtml(getRiskLabel(riskLevel))}</strong>
                     <p>${escapeHtml(reasons.length ? reasons.join('、') : '当前规则触达范围较克制')}</p>
@@ -2104,16 +5183,16 @@
     function renderRulePreviewPanel() {
         const initial = getInitialRulePreviewData();
         const pageId = resolvePreviewPageId(initial.page_ids);
-        const title = initial.title || initial.name || '小助手提醒';
-        const content = initial.content || '这里会实时显示用户将在客服机器人旁看到的气泡内容。';
+        const previewCopy = buildRulePreviewCopy(initial);
+        const title = previewCopy.title;
+        const content = previewCopy.content;
         const actionLabel = initial.action_label || (initial.action_url ? '查看详情' : '');
         const tone = normalizeToken(initial.tone, 'info');
         const audienceLabel = getAudienceLabel(initial.audience);
         const triggerTypeLabel = getTriggerTypeLabel(initial.trigger_type);
         const placementLabel = getPlacementLabel(initial.placement);
-        const statusLabel = initial.enabled && initial.status === 'published'
-            ? '运行中'
-            : getOptionLabel(RULE_STATUS_OPTIONS, initial.status || 'draft');
+        const statusLabel = getRuleStatusLabel(initial);
+        const previewSampleLabel = previewCopy.sampleLabel || '';
 
         return `
             <section class="engagement-section engagement-rule-preview-panel"
@@ -2144,6 +5223,10 @@
                             label: '页面环境'
                         })}
                     </label>
+                    <label class="engagement-preview-page-field" data-engagement-preview-sample-field ${previewSampleLabel ? '' : 'hidden'}>
+                        <span>事件样本</span>
+                        ${renderRulePreviewSampleSelect(initial.trigger_type)}
+                    </label>
                 </div>
                 <div class="engagement-preview-stage" data-engagement-preview-stage>
                     <div class="engagement-preview-page">
@@ -2173,10 +5256,538 @@
                     <span data-engagement-preview-audience>${escapeHtml(audienceLabel)}</span>
                     <span data-engagement-preview-trigger>${escapeHtml(triggerTypeLabel)}</span>
                     <span data-engagement-preview-placement>${escapeHtml(placementLabel)}</span>
+                    <span data-engagement-preview-sample-label ${previewSampleLabel ? '' : 'hidden'}>${escapeHtml(previewSampleLabel)}</span>
                     <span data-engagement-preview-status>${escapeHtml(statusLabel)}</span>
                 </div>
             </section>
         `;
+    }
+
+    function renderTemplatePreviewPanel() {
+        const initial = getInitialTemplatePreviewData();
+        const pageId = resolvePreviewPageId(initial.page_ids);
+        const previewCopy = buildRulePreviewCopy(initial);
+        const title = previewCopy.title;
+        const content = previewCopy.content;
+        const actionLabel = initial.action_label || (initial.action_url ? '查看详情' : '');
+        const triggerTypeLabel = getTriggerTypeLabel(initial.trigger_type);
+        const toneLabel = getOptionLabel(RULE_TONE_OPTIONS, initial.tone || 'info');
+        const previewSampleLabel = previewCopy.sampleLabel || '';
+
+        return `
+            <section class="engagement-section engagement-rule-preview-panel engagement-template-preview-panel"
+                data-engagement-template-preview-shell
+                data-preview-device="${escapeHtml(state.previewDevice)}"
+                data-preview-theme="${escapeHtml(state.previewTheme)}">
+                <div class="engagement-section__head">
+                    <div>
+                        <h3>模板实时预览</h3>
+                        <p>预览模板在客服机器人里的实际样子；动态事件会按样本模拟上下文差异。</p>
+                    </div>
+                </div>
+                <div class="engagement-preview-controls" aria-label="模板预览控制">
+                    <div class="engagement-preview-control-group" aria-label="设备">
+                        ${renderPreviewModeButton('device', 'desktop', '桌面', 'fa-display')}
+                        ${renderPreviewModeButton('device', 'mobile', '移动', 'fa-mobile-screen')}
+                    </div>
+                    <div class="engagement-preview-control-group" aria-label="主题">
+                        ${renderPreviewModeButton('theme', 'light', '浅色', 'fa-sun')}
+                        ${renderPreviewModeButton('theme', 'dark', '深色', 'fa-moon')}
+                    </div>
+                    <label class="engagement-preview-page-field">
+                        <span>页面环境</span>
+                        ${renderCustomSelect({
+                            name: 'preview_page_id',
+                            value: state.previewPageId || 'auto',
+                            options: PREVIEW_PAGE_OPTIONS,
+                            label: '页面环境'
+                        })}
+                    </label>
+                    <label class="engagement-preview-page-field" data-engagement-template-preview-sample-field ${previewSampleLabel ? '' : 'hidden'}>
+                        <span>事件样本</span>
+                        ${renderRulePreviewSampleSelect(initial.trigger_type)}
+                    </label>
+                </div>
+                <div class="engagement-preview-stage" data-engagement-preview-stage>
+                    <div class="engagement-preview-page">
+                        <div class="engagement-preview-page__top">
+                            <span data-engagement-template-preview-page-label>${escapeHtml(getPageLabel(pageId))}</span>
+                            <span data-engagement-template-preview-trigger>${escapeHtml(triggerTypeLabel)}</span>
+                        </div>
+                        <div class="engagement-preview-page__lines" aria-hidden="true">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                        <div class="engagement-preview-robot">
+                            <i class="fas fa-robot" aria-hidden="true"></i>
+                        </div>
+                        <article class="engagement-preview-bubble" data-engagement-template-preview-bubble data-tone="${escapeHtml(normalizeToken(initial.tone, 'info'))}" data-placement="robot_bubble">
+                            <button type="button" class="engagement-preview-bubble__close" aria-label="关闭预览气泡">×</button>
+                            <strong data-engagement-template-preview-title>${escapeHtml(title)}</strong>
+                            <p data-engagement-template-preview-content>${escapeHtml(content)}</p>
+                            <a href="${escapeHtml(initial.action_url || '#')}" data-engagement-template-preview-action ${actionLabel ? '' : 'hidden'}>${escapeHtml(actionLabel)}</a>
+                        </article>
+                    </div>
+                </div>
+                <div class="engagement-preview-meta">
+                    <span data-engagement-template-preview-device-label>${state.previewDevice === 'mobile' ? '移动端' : '桌面端'}</span>
+                    <span data-engagement-template-preview-theme-label>${state.previewTheme === 'dark' ? '深色' : '浅色'}</span>
+                    <span data-engagement-template-preview-tone>${escapeHtml(toneLabel)}</span>
+                    <span data-engagement-template-preview-page>${escapeHtml(getPageLabel(pageId))}</span>
+                    <span data-engagement-template-preview-sample-label ${previewSampleLabel ? '' : 'hidden'}>${escapeHtml(previewSampleLabel)}</span>
+                </div>
+            </section>
+        `;
+    }
+
+    function renderScenePreviewPanel() {
+        const initial = collectScenePreviewFormData();
+        const pageId = normalizeToken((initial.page_ids || [])[0] || 'home', 'home');
+        const previewCopy = buildRulePreviewCopy(initial);
+        const priorityClass = getEventPriorityClass(initial.trigger_type);
+        const title = previewCopy.title;
+        const content = previewCopy.content;
+        const actionLabel = initial.action_label || (initial.action_url ? '查看详情' : '');
+        const safeZoneLabel = getSafeZoneLabel(initial.scene?.safe_zone || 'bottom-right');
+        const placementLabel = getPlacementLabel(initial.placement);
+        const triggerTypeLabel = getTriggerTypeLabel(initial.trigger_type);
+        const toneLabel = getOptionLabel(RULE_TONE_OPTIONS, initial.tone || 'info');
+        const sampleLabel = previewCopy.sampleLabel || '';
+        const eventOptions = getScenePreviewEventOptions(initial.scene?.events || []).length
+            ? getScenePreviewEventOptions(initial.scene?.events || [])
+            : [[initial.trigger_type, getEventLabel(initial.trigger_type)]];
+
+        return `
+            <section class="engagement-section engagement-rule-preview-panel engagement-scene-preview-panel"
+                data-engagement-scene-preview-shell
+                data-preview-device="${escapeHtml(state.previewDevice)}"
+                data-preview-theme="${escapeHtml(state.previewTheme)}">
+                <div class="engagement-section__head">
+                    <div>
+                        <h3>页面场景预演</h3>
+                        <p>直接看当前页面允许触发的默认提醒长什么样，避免运营只是在列表里勾选事件。</p>
+                    </div>
+                </div>
+                <div class="engagement-preview-controls" aria-label="页面场景预演控制">
+                    <div class="engagement-preview-control-group" aria-label="设备">
+                        ${renderPreviewModeButton('device', 'desktop', '桌面', 'fa-display')}
+                        ${renderPreviewModeButton('device', 'mobile', '移动', 'fa-mobile-screen')}
+                    </div>
+                    <div class="engagement-preview-control-group" aria-label="主题">
+                        ${renderPreviewModeButton('theme', 'light', '浅色', 'fa-sun')}
+                        ${renderPreviewModeButton('theme', 'dark', '深色', 'fa-moon')}
+                    </div>
+                    <label class="engagement-preview-page-field">
+                        <span>场景事件</span>
+                        ${renderCustomSelect({
+                            name: 'scene_preview_event',
+                            value: normalizeScenePreviewEvent(initial.scene?.events || [], state.scenePreviewEvent || ''),
+                            options: eventOptions,
+                            label: '场景事件'
+                        })}
+                    </label>
+                    <label class="engagement-preview-page-field" data-engagement-scene-preview-sample-field ${sampleLabel ? '' : 'hidden'}>
+                        <span>事件样本</span>
+                        ${renderRulePreviewSampleSelect(initial.trigger_type, 'scene_preview_sample')}
+                    </label>
+                </div>
+                <div class="engagement-preview-stage" data-engagement-preview-stage>
+                    <div class="engagement-preview-page">
+                        <div class="engagement-preview-page__top">
+                            <span data-engagement-scene-preview-page-label>${escapeHtml(getPageLabel(pageId))}</span>
+                            <span data-engagement-scene-preview-safe-zone>${escapeHtml(safeZoneLabel)}</span>
+                        </div>
+                        <div class="engagement-preview-page__lines" aria-hidden="true">
+                            <span></span>
+                            <span></span>
+                            <span></span>
+                        </div>
+                        <div class="engagement-preview-robot">
+                            <i class="fas fa-robot" aria-hidden="true"></i>
+                        </div>
+                        <article class="engagement-preview-bubble" data-engagement-scene-preview-bubble data-tone="${escapeHtml(normalizeToken(initial.tone, 'info'))}" data-placement="${escapeHtml(initial.placement || 'robot_bubble')}">
+                            <button type="button" class="engagement-preview-bubble__close" aria-label="关闭预演气泡">×</button>
+                            <strong data-engagement-scene-preview-title>${escapeHtml(title)}</strong>
+                            <p data-engagement-scene-preview-content>${escapeHtml(content)}</p>
+                            <a href="${escapeHtml(initial.action_url || '#')}" data-engagement-scene-preview-action ${actionLabel ? '' : 'hidden'}>${escapeHtml(actionLabel)}</a>
+                        </article>
+                    </div>
+                </div>
+                <div class="engagement-preview-meta">
+                    <span data-engagement-scene-preview-device-label>${state.previewDevice === 'mobile' ? '移动端' : '桌面端'}</span>
+                    <span data-engagement-scene-preview-theme-label>${state.previewTheme === 'dark' ? '深色' : '浅色'}</span>
+                    <span data-engagement-scene-preview-trigger>${escapeHtml(triggerTypeLabel)}</span>
+                    <span data-engagement-scene-preview-tier>${escapeHtml(priorityClass.label)}</span>
+                    <span data-engagement-scene-preview-placement>${escapeHtml(placementLabel)}</span>
+                    <span data-engagement-scene-preview-tone>${escapeHtml(toneLabel)}</span>
+                    <span data-engagement-scene-preview-marketing>${initial.scene?.allow_marketing === false ? '仅服务触达' : '服务 + 营销触达'}</span>
+                    <span data-engagement-scene-preview-sample-label ${sampleLabel ? '' : 'hidden'}>${escapeHtml(sampleLabel)}</span>
+                </div>
+            </section>
+        `;
+    }
+
+    function getRulePreviewSampleOptions(triggerType = '') {
+        return PREVIEW_EVENT_SAMPLE_OPTIONS[normalizeToken(triggerType, 'page_view')] || [];
+    }
+
+    function normalizeRulePreviewSample(triggerType = '', sampleId = '') {
+        const options = getRulePreviewSampleOptions(triggerType);
+        if (!options.length) return '';
+        const normalizedSample = normalizeToken(sampleId, options[0][0]);
+        return options.some(([value]) => value === normalizedSample) ? normalizedSample : options[0][0];
+    }
+
+    function renderRulePreviewSampleSelect(triggerType = '', name = 'preview_event_sample') {
+        const options = getRulePreviewSampleOptions(triggerType);
+        if (!options.length) return '';
+        return renderCustomSelect({
+            name,
+            value: normalizeRulePreviewSample(triggerType, state.previewEventSample || options[0][0]),
+            options,
+            label: '事件样本'
+        });
+    }
+
+    function getRulePreviewSampleContext(triggerType = '', sampleId = '') {
+        const normalizedTrigger = normalizeToken(triggerType, 'page_view');
+        const normalizedSample = normalizeRulePreviewSample(normalizedTrigger, sampleId);
+        const sampleMaps = {
+            points_adjusted: {
+                credit_bonus: {
+                    label: '样本：补发积分',
+                    amount: 80,
+                    reason: '客服补发活动积分',
+                    new_total: 268,
+                    adjustment_kind: 'credit',
+                    adjustment_direction: 'increase'
+                },
+                debit_manual: {
+                    label: '样本：扣减积分',
+                    amount: -30,
+                    reason: '客服扣减重复到账积分',
+                    new_total: 158,
+                    adjustment_kind: 'debit',
+                    adjustment_direction: 'decrease'
+                },
+                correction_fix: {
+                    label: '样本：记录修正',
+                    amount: 12,
+                    reason: '客服修正历史积分记录',
+                    new_total: 200,
+                    adjustment_kind: 'correction',
+                    adjustment_direction: 'increase'
+                }
+            },
+            ticket_updated: {
+                resolved_refund: {
+                    label: '样本：已解决并退款',
+                    ticket_status: 'RESOLVED',
+                    ticket_status_label: '已解决',
+                    refunded: true,
+                    refund_amount: 88,
+                    admin_reply: '已帮你核对订单并退回对应积分，可以重新下单。',
+                    order_id: 'SHOP-2026-0188'
+                },
+                rejected_followup: {
+                    label: '样本：已拒绝待补充',
+                    ticket_status: 'REJECTED',
+                    ticket_status_label: '已拒绝',
+                    refunded: false,
+                    refund_amount: 0,
+                    admin_reply: '当前资料不足，请补充截图和订单号后重新提交。',
+                    order_id: 'SHOP-2026-0251'
+                },
+                resolved_normal: {
+                    label: '样本：已解决无需退款',
+                    ticket_status: 'RESOLVED',
+                    ticket_status_label: '已解决',
+                    refunded: false,
+                    refund_amount: 0,
+                    admin_reply: '问题已经处理完成，当前权益状态已恢复正常。',
+                    order_id: ''
+                }
+            },
+            refund_status: {
+                refunded_success: {
+                    label: '样本：退款完成',
+                    order_id: 'SHOP-2026-0312',
+                    refund_status: 'refunded',
+                    refund_amount: 56,
+                    remark: '',
+                    result_message: '退款成功，积分已原路退回。'
+                },
+                refunded_with_remark: {
+                    label: '样本：退款附带说明',
+                    order_id: 'SHOP-2026-0318',
+                    refund_status: 'refunded',
+                    refund_amount: 188,
+                    remark: '由于重复下单，本次已全额处理退款。',
+                    result_message: '退款成功，若仍有疑问可继续联系客服。'
+                }
+            },
+            support_reply: {
+                order_followup: {
+                    label: '样本：订单跟进回复',
+                    reply_preview: '我这边已经帮你核对订单状态，预计今天内完成发货。',
+                    session_id: 'chat-order-followup',
+                    page_hint: 'shop'
+                },
+                verify_guidance: {
+                    label: '样本：验证说明回复',
+                    reply_preview: '验证失败主要是材料不清晰，重新上传正面截图就可以。',
+                    session_id: 'chat-verify-guide',
+                    page_hint: 'verify'
+                },
+                generic_checkin: {
+                    label: '样本：常规关怀回复',
+                    reply_preview: '我先帮你记录这个问题，稍后继续跟进处理进展。',
+                    session_id: 'chat-generic-checkin',
+                    page_hint: 'home'
+                }
+            }
+        };
+        const sampleMap = sampleMaps[normalizedTrigger];
+        if (!sampleMap) {
+            return null;
+        }
+        return sampleMap[normalizedSample] || Object.values(sampleMap)[0] || null;
+    }
+
+    function getPointsAdjustedPreviewSummaryLabel(sample = {}) {
+        const direction = normalizeToken(sample.adjustment_direction || '', '');
+        const kind = normalizeToken(sample.adjustment_kind || '', '');
+        if (kind === 'correction') return '积分记录已修正';
+        if (direction === 'increase') return '积分已补发';
+        if (direction === 'decrease') return '积分已扣减';
+        return '积分有更新';
+    }
+
+    function buildPointsAdjustedPreviewContent(baseContent = '', sample = {}) {
+        const lines = [];
+        const normalizedBase = String(baseContent || '').trim();
+        const summaryLabel = getPointsAdjustedPreviewSummaryLabel(sample);
+        const amountValue = Number(sample.amount);
+        const absoluteAmount = Number.isFinite(amountValue) ? Math.abs(amountValue) : 0;
+        if (normalizedBase) {
+            lines.push(normalizedBase);
+        }
+        if (absoluteAmount > 0) {
+            lines.push(`本次变动：${summaryLabel.replace(/^积分/, '')} ${absoluteAmount} 积分。`);
+        } else {
+            lines.push('本次积分状态有更新。');
+        }
+        if (sample.reason) {
+            lines.push(`原因：${sample.reason}`);
+        }
+        if (Number.isFinite(Number(sample.new_total))) {
+            lines.push(`当前可用积分：${Number(sample.new_total)}`);
+        }
+        return lines.filter(Boolean).join('\n').trim();
+    }
+
+    function buildTicketUpdatedPreviewContent(baseContent = '', sample = {}) {
+        const lines = [];
+        const normalizedBase = String(baseContent || '').trim();
+        if (normalizedBase) {
+            lines.push(normalizedBase);
+        }
+        if (sample.ticket_status_label) {
+            lines.push(`当前状态：${sample.ticket_status_label}`);
+        }
+        if (sample.admin_reply) {
+            lines.push(`客服说明：${sample.admin_reply}`);
+        }
+        if (sample.refunded && Number(sample.refund_amount) > 0) {
+            lines.push(`已退回 ${Number(sample.refund_amount)} 积分。`);
+        }
+        if (sample.order_id) {
+            lines.push(`关联订单：${sample.order_id}`);
+        }
+        return lines.filter(Boolean).join('\n').trim();
+    }
+
+    function buildRefundStatusPreviewContent(baseContent = '', sample = {}) {
+        const lines = [];
+        const normalizedBase = String(baseContent || '').trim();
+        if (normalizedBase) {
+            lines.push(normalizedBase);
+        }
+        if (sample.order_id) {
+            lines.push(`订单号：${sample.order_id}`);
+        }
+        if (Number(sample.refund_amount) > 0) {
+            lines.push(`退款金额：${Number(sample.refund_amount)} 积分`);
+        }
+        if (sample.result_message) {
+            lines.push(`结果：${sample.result_message}`);
+        }
+        if (sample.remark) {
+            lines.push(`说明：${sample.remark}`);
+        }
+        return lines.filter(Boolean).join('\n').trim();
+    }
+
+    function buildSupportReplyPreviewContent(baseContent = '', sample = {}) {
+        const lines = [];
+        const normalizedBase = String(baseContent || '').trim();
+        if (sample.reply_preview) {
+            lines.push(`最新回复：${sample.reply_preview}`);
+        } else if (normalizedBase) {
+            lines.push(normalizedBase);
+        }
+        if (normalizedBase && sample.reply_preview) {
+            lines.push(normalizedBase);
+        }
+        if (sample.page_hint === 'shop') {
+            lines.push('上下文：订单处理跟进');
+        } else if (sample.page_hint === 'verify') {
+            lines.push('上下文：验证失败说明');
+        } else if (sample.page_hint === 'home') {
+            lines.push('上下文：常规客服回访');
+        }
+        return lines.filter(Boolean).join('\n').trim();
+    }
+
+    function buildRulePreviewCopy(previewData = {}) {
+        const normalized = previewData && typeof previewData === 'object' ? previewData : {};
+        const title = normalized.title || normalized.name || '小助手提醒';
+        const content = normalized.content || '这里会实时显示用户将在客服机器人旁看到的气泡内容。';
+        const triggerType = normalizeToken(normalized.trigger_type, 'page_view');
+        const sample = getRulePreviewSampleContext(triggerType, state.previewEventSample || '');
+        if (!sample) {
+            return {
+                title,
+                content,
+                sampleLabel: ''
+            };
+        }
+
+        let nextTitle = title;
+        let nextContent = content;
+        if (triggerType === 'points_adjusted') {
+            nextTitle = ['你的积分有更新', '积分变动通知', '小助手提醒'].includes(title)
+                ? getPointsAdjustedPreviewSummaryLabel(sample)
+                : title;
+            nextContent = buildPointsAdjustedPreviewContent(content, sample);
+        } else if (triggerType === 'ticket_updated') {
+            nextTitle = ['客服工单有新进展', '小助手提醒'].includes(title)
+                ? `工单${sample.ticket_status_label || '状态'}已更新`
+                : title;
+            nextContent = buildTicketUpdatedPreviewContent(content, sample);
+        } else if (triggerType === 'refund_status') {
+            nextTitle = ['退款进度有更新', '小助手提醒'].includes(title)
+                ? '退款进度已更新'
+                : title;
+            nextContent = buildRefundStatusPreviewContent(content, sample);
+        } else if (triggerType === 'support_reply') {
+            nextTitle = ['客服有新回复', '小助手提醒'].includes(title)
+                ? '客服有新回复'
+                : title;
+            nextContent = buildSupportReplyPreviewContent(content, sample);
+        }
+        return {
+            title: nextTitle,
+            content: nextContent,
+            sampleLabel: sample.label || ''
+        };
+    }
+
+    function buildRulePreviewCopyForSample(previewData = {}, sampleId = '') {
+        const previousSample = state.previewEventSample;
+        state.previewEventSample = normalizeRulePreviewSample(previewData.trigger_type, sampleId || previousSample || '');
+        const previewCopy = buildRulePreviewCopy(previewData);
+        state.previewEventSample = previousSample;
+        return previewCopy;
+    }
+
+    function buildAutomationBlueprintPreviewData(blueprint = {}) {
+        return {
+            name: blueprint.title || '',
+            site: getCurrentSite(),
+            status: 'draft',
+            page_ids: Array.isArray(blueprint.pageIds) && blueprint.pageIds.length ? blueprint.pageIds : ['all'],
+            audience: { scope: blueprint.audienceScope || 'all' },
+            trigger_type: blueprint.triggerType || 'page_view',
+            placement: 'robot_bubble',
+            title: blueprint.titleText || blueprint.title || '',
+            content: blueprint.content || '',
+            tone: blueprint.tone || 'info',
+            action_label: blueprint.actionLabel || '',
+            action_url: blueprint.actionUrl || '',
+            enabled: false
+        };
+    }
+
+    function getAutomationPreviewSampleValue(blueprint = {}) {
+        const blueprintId = normalizeToken(blueprint.id, '');
+        const triggerType = normalizeToken(blueprint.triggerType, 'page_view');
+        const stored = state.automationPreviewSamples && typeof state.automationPreviewSamples === 'object'
+            ? state.automationPreviewSamples[blueprintId]
+            : '';
+        return normalizeRulePreviewSample(triggerType, stored || '');
+    }
+
+    function cycleAutomationPreviewSample(automationId = '') {
+        const blueprintId = normalizeToken(automationId, '');
+        const blueprint = AUTOMATION_BLUEPRINTS.find((item) => item.id === blueprintId);
+        if (!blueprint) return false;
+        const options = getRulePreviewSampleOptions(blueprint.triggerType);
+        if (options.length <= 1) return false;
+        const currentValue = getAutomationPreviewSampleValue(blueprint);
+        const currentIndex = Math.max(0, options.findIndex(([value]) => value === currentValue));
+        const nextValue = options[(currentIndex + 1) % options.length]?.[0] || options[0][0];
+        state.automationPreviewSamples = {
+            ...(state.automationPreviewSamples || {}),
+            [blueprintId]: nextValue
+        };
+        renderOverview(state.payload || {});
+        return true;
+    }
+
+    function buildAutomationBlueprintPreview(blueprint = {}) {
+        const previewData = buildAutomationBlueprintPreviewData(blueprint);
+        const triggerType = normalizeToken(previewData.trigger_type, 'page_view');
+        const sampleValue = getAutomationPreviewSampleValue(blueprint);
+        const previousSample = state.previewEventSample;
+        state.previewEventSample = sampleValue || previousSample;
+        const previewCopy = buildRulePreviewCopy(previewData);
+        state.previewEventSample = previousSample;
+        return {
+            ...previewCopy,
+            sampleValue,
+            hasDynamicSamples: getRulePreviewSampleOptions(triggerType).length > 1
+        };
+    }
+
+    function buildSceneCardPreview(scene = {}) {
+        const pageId = normalizeToken(scene.id || scene.page_id || 'home', 'home');
+        const events = Array.isArray(scene.events) ? scene.events : [];
+        const triggerType = normalizeScenePreviewEvent(events, events[0] || '');
+        const blueprint = getScenePreviewBlueprint(triggerType, pageId);
+        const previewData = {
+            site: getCurrentSite(),
+            status: 'published',
+            page_ids: [pageId],
+            audience: { scope: 'all' },
+            trigger_type: triggerType,
+            placement: scene.default_placement || 'robot_bubble',
+            title: blueprint?.titleText || `${getPageLabel(pageId)} · ${getEventLabel(triggerType)}`,
+            content: blueprint?.content || getScenePreviewFallbackCopy(scene, triggerType).content,
+            tone: scene.tone || blueprint?.tone || 'info',
+            action_label: blueprint?.actionLabel || '',
+            action_url: blueprint?.actionUrl || '',
+            enabled: true
+        };
+        const sampleId = getRulePreviewSampleOptions(triggerType)[0]?.[0] || '';
+        const previewCopy = buildRulePreviewCopyForSample(previewData, sampleId);
+        return {
+            triggerType,
+            title: previewCopy.title,
+            content: String(previewCopy.content || '').replace(/\s+/g, ' ').trim(),
+            sampleLabel: previewCopy.sampleLabel || ''
+        };
     }
 
     function renderRuleComposer() {
@@ -2195,7 +5806,8 @@
             ? (draftPages.length ? draftPages : ['all'])
             : (focusedPageId ? [focusedPageId] : (templatePages.length ? templatePages : ['all']));
         const selectedPages = new Set(defaultPages);
-        const status = draftSource.status || 'draft';
+        const draftStartsAtSource = draftSource.starts_at || draftSource.startsAt || '';
+        const status = normalizeRuleStatusForSchedule(draftSource.status || 'draft', draftStartsAtSource);
         const site = draftSource.site || getCurrentSite();
         const normalizedSite = ['cn', 'intl'].includes(site) ? site : 'all';
         const draftName = rule || ruleDraft
@@ -2208,8 +5820,15 @@
         const draftTone = draftSource.tone || 'info';
         const draftPriority = draftSource.priority ?? 0;
         const draftDismissTtlHours = draftSource.dismiss_ttl_hours || 24;
+        const draftRepeatIntervalMinutes = getRuleRepeatIntervalMinutes(draftSource, 2);
+        const draftStartsAt = formatRuleDateTimeLocal(draftStartsAtSource);
+        const effectiveStatusInfo = getRuleEffectiveStatusInfo({
+            ...draftSource,
+            status,
+            starts_at: draftStartsAtSource
+        });
         const draftAudienceScope = getAudienceScope(draftSource.audience);
-        const draftTriggerType = normalizeToken(draftSource.trigger_type || 'page_view', 'page_view');
+        const draftTriggerType = getTemplatePreferredTriggerType(draftSource);
         const draftPlacement = normalizeToken(draftSource.placement || 'robot_bubble', 'robot_bubble');
         const draftGovernance = getRuleGovernance({
             ...draftSource,
@@ -2221,6 +5840,8 @@
             action_url: draftActionUrl,
             trigger_type: draftTriggerType
         });
+        const draftGovernanceNotice = renderRuleGovernanceNotice(draftGovernance);
+        const triggerPriorityClass = getEventPriorityClass(draftTriggerType);
         const ruleDraftNotice = !rule && ruleDraft
             ? `
                 <div class="engagement-rule-copy-note">
@@ -2261,7 +5882,7 @@
                 ${ruleDraftNotice}
                 ${templateDraftNotice}
                 ${focusedPageNotice}
-                ${renderRuleGovernanceNotice(draftGovernance)}
+                <div data-engagement-rule-governance-slot ${draftGovernanceNotice ? '' : 'hidden'}>${draftGovernanceNotice}</div>
                 <form id="engagementRuleForm" class="engagement-rule-form" data-engagement-managed-form data-engagement-runtime="${escapeHtml(ENGAGEMENT_RUNTIME_VERSION)}" autocomplete="off" novalidate>
                     <input type="hidden" name="id" value="${escapeHtml(rule?.id || '')}">
                     <div class="engagement-form-grid">
@@ -2304,6 +5925,7 @@
                                 options: TRIGGER_TYPE_OPTIONS,
                                 label: '触发类型'
                             })}
+                            <small class="engagement-field__hint">登录首波分诊：${escapeHtml(triggerPriorityClass.label)}。${escapeHtml(triggerPriorityClass.desc)}</small>
                         </label>
                         <label class="engagement-field engagement-field--placement">
                             <span>展示形式</span>
@@ -2349,25 +5971,25 @@
                             <span>按钮链接</span>
                             <input name="action_url" type="text" maxlength="1000" value="${escapeHtml(draftActionUrl || '')}" placeholder="/shop.html">
                         </label>
+                        ${renderRulePublishDateTimePicker(draftStartsAt)}
+                        <label class="engagement-field engagement-field--repeat">
+                            <span>重复提醒间隔（分钟）</span>
+                            <input name="repeat_interval_minutes" type="number" min="0" max="1440" value="${escapeHtml(draftRepeatIntervalMinutes)}">
+                        </label>
                         <label class="engagement-field engagement-field--ttl">
                             <span>关闭冷却（小时）</span>
                             <input name="dismiss_ttl_hours" type="number" min="1" max="720" value="${escapeHtml(draftDismissTtlHours)}">
                         </label>
-                        <div class="engagement-form-block engagement-form-block--switch engagement-field--switch">
-                            <span>启用状态</span>
-                            ${renderCustomSwitch({
-                                name: 'enabled',
-                                checked: Boolean(rule ? rule.enabled : (draftSource.enabled || status === 'published')),
-                                label: '发布后立即启用'
-                            })}
+                        <div class="engagement-rule-status-note engagement-field--status-note" data-engagement-rule-status-note data-tone="${escapeHtml(effectiveStatusInfo.tone)}">
+                            ${renderRuleEffectiveStatusNote(effectiveStatusInfo)}
                         </div>
-                    </div>
-                    <div class="engagement-form-actions">
-                        <div class="engagement-form-error" data-engagement-form-error role="alert" data-tone="error" hidden></div>
-                        <button type="button" class="engagement-refresh-btn" data-engagement-action="submit-rule" data-engagement-runtime="${escapeHtml(ENGAGEMENT_RUNTIME_VERSION)}">
-                            <i class="fas fa-save"></i>
-                            <span>${rule ? '保存规则' : '创建规则'}</span>
-                        </button>
+                        <div class="engagement-form-actions engagement-field--rule-actions">
+                            <div class="engagement-form-error" data-engagement-form-error role="alert" data-tone="error" hidden></div>
+                            <button type="button" class="engagement-refresh-btn" data-engagement-action="submit-rule" data-engagement-runtime="${escapeHtml(ENGAGEMENT_RUNTIME_VERSION)}">
+                                <i class="fas fa-save"></i>
+                                <span>${rule ? '保存规则' : '创建规则'}</span>
+                            </button>
+                        </div>
                     </div>
                 </form>
             </section>
@@ -2394,6 +6016,9 @@
                         const tone = normalizeToken(scene.tone, 'info');
                         const isFocused = pageId && pageId === state.focusedPageId;
                         const events = Array.isArray(scene.events) ? scene.events : [];
+                        const preview = buildSceneCardPreview(scene);
+                        const scenePriorityCenter = getSceneEventPriorityCenter(scene);
+                        const hasPriorityOverride = scene?.event_priority_center?.enabled === true;
                         return `
                             <article class="engagement-page-card ${isFocused ? 'is-focused' : ''}"
                                 role="button"
@@ -2409,11 +6034,21 @@
                                     </span>
                                     <div>
                                         <h4>${escapeHtml(scene.label || getPageLabel(pageId))}</h4>
-                                        <p>${escapeHtml(scene.safe_zone || 'bottom-right')}</p>
+                                        <p>${escapeHtml(getSafeZoneLabel(scene.safe_zone || 'bottom-right'))}</p>
                                     </div>
                                 </div>
                                 <div class="engagement-chip-row">
                                     ${events.map((eventKey) => `<span>${escapeHtml(getEventLabel(eventKey))}</span>`).join('')}
+                                </div>
+                                <div class="engagement-page-card__preview" data-tone="${escapeHtml(tone)}">
+                                    <strong>${escapeHtml(preview.title)}</strong>
+                                    <p>${escapeHtml(preview.content)}</p>
+                                    <div class="engagement-page-card__preview-meta">
+                                        <span>${escapeHtml(getEventLabel(preview.triggerType))}</span>
+                                        <span>${escapeHtml(getEventPriorityClass(preview.triggerType, scenePriorityCenter).label)}</span>
+                                        ${hasPriorityOverride ? '<span>页面分诊覆盖</span>' : ''}
+                                        ${preview.sampleLabel ? `<span>${escapeHtml(preview.sampleLabel)}</span>` : ''}
+                                    </div>
                                 </div>
                                 <div class="engagement-card-action-row">
                                     <span class="engagement-page-card__action">配置规则 <i class="fas fa-arrow-right" aria-hidden="true"></i></span>
@@ -2432,7 +6067,10 @@
     function renderSceneComposer() {
         const scene = getEditableScene();
         const pageId = normalizeToken(scene.id || scene.page_id || state.editingScenePageId || state.focusedPageId || 'home', 'home');
-        const eventsText = Array.isArray(scene.events) ? scene.events.join('\n') : '';
+        const selectedEvents = Array.isArray(scene.events) ? scene.events.map((eventKey) => normalizeToken(eventKey, '')).filter(Boolean) : [];
+        const priorityCenter = normalizeSceneEventPriorityCenter(scene.event_priority_center || {}, getEventPriorityCenter());
+        const presetPacks = rankScenePriorityPresets(pageId, getScenePriorityPresetPacks(pageId));
+        const analyticsSummary = getSceneAnalyticsSummary(pageId);
         const scenePageOptions = RULE_PAGE_OPTIONS
             .filter((item) => item !== 'all')
             .map((item) => [item, getPageLabel(item)]);
@@ -2479,7 +6117,12 @@
                         </label>
                         <label class="engagement-field">
                             <span>安全位置</span>
-                            <input name="safe_zone" type="text" maxlength="80" value="${escapeHtml(scene.safe_zone || 'bottom-right')}" placeholder="bottom-right">
+                            ${renderCustomSelect({
+                                name: 'safe_zone',
+                                value: scene.safe_zone || 'bottom-right',
+                                options: SAFE_ZONE_OPTIONS,
+                                label: '安全位置'
+                            })}
                         </label>
                         <div class="engagement-form-block engagement-form-block--switch">
                             <span>营销触达</span>
@@ -2489,16 +6132,103 @@
                                 label: '允许活动、优惠和转化提示'
                             })}
                         </div>
-                        <label class="engagement-field engagement-form-field--full">
-                            <span>可用事件（一行一个事件 key）</span>
-                            <textarea name="events" rows="3" maxlength="1200" placeholder="coupon_available">${escapeHtml(eventsText)}</textarea>
-                        </label>
+                        <div class="engagement-field engagement-form-field--full">
+                            <span>可用事件</span>
+                            ${renderSceneEventPicker(selectedEvents)}
+                            <small class="engagement-field__hint">登录首波只会优先挑“首波优先”事件；服务、引导和营销类会按节奏后置。</small>
+                        </div>
+                        <div class="engagement-field engagement-form-field--full">
+                            <span>页面首波分诊</span>
+                            <div class="engagement-priority-override-panel">
+                                ${renderScenePriorityGuidance(pageId)}
+                                <div class="engagement-form-block engagement-form-block--switch">
+                                    <span>页面覆盖</span>
+                                    ${renderCustomSwitch({
+                                        name: 'scene_priority_override_enabled',
+                                        checked: priorityCenter.enabled === true,
+                                        label: '当前页面使用独立的首波分诊顺序'
+                                    })}
+                                </div>
+                                <small class="engagement-field__hint">关闭时继承全局首波分诊；开启后只覆盖当前页面登录首波的事件分档。</small>
+                                <div class="engagement-priority-override-grid ${priorityCenter.enabled === true ? '' : 'is-disabled'}" data-engagement-scene-priority-override-grid>
+                                    ${Object.entries(priorityCenter).filter(([groupId]) => groupId !== 'enabled').map(([groupId, group]) => `
+                                        <div class="engagement-priority-group-block" data-tier="${escapeHtml(groupId)}">
+                                            <div class="engagement-priority-group-block__head">
+                                                <div>
+                                                    <strong>${escapeHtml(group.label)}</strong>
+                                                    <p>${escapeHtml(group.desc)}</p>
+                                                </div>
+                                                ${renderEventPriorityBadgeById(groupId)}
+                                            </div>
+                                            ${renderEventPriorityPicker(groupId, group.events || [], `scene:${pageId}`)}
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
                     </div>
+                    ${renderEventPriorityLegend()}
                     <div class="engagement-form-actions">
+                        ${presetPacks.length ? `
+                            <div class="engagement-scene-preset-row">
+                                ${presetPacks.map((preset, index) => `
+                                    <article class="engagement-scene-preset-card">
+                                        <div>
+                                            <div class="engagement-scene-preset-card__head">
+                                                <strong>${escapeHtml(preset.name)}</strong>
+                                                ${index === 0 ? '<span class="engagement-scene-preset-card__badge">推荐</span>' : ''}
+                                            </div>
+                                            <p>${escapeHtml(index === 0 ? preset.recommendation_reason || preset.description : preset.description)}</p>
+                                            <div class="engagement-chip-row">
+                                                <span>${escapeHtml(preset.allow_marketing === false ? '仅服务触达' : '服务 + 营销')}</span>
+                                                ${index === 0 && analyticsSummary.views ? `<span>${escapeHtml(formatNumber(analyticsSummary.views))} 曝光</span>` : ''}
+                                                ${index === 0 && analyticsSummary.views ? `<span>CTR ${escapeHtml(formatPercent(analyticsSummary.ctr))}</span>` : ''}
+                                                ${Array.isArray(preset.events) ? preset.events.slice(0, 3).map((eventKey) => `<span>${escapeHtml(getEventLabel(eventKey))}</span>`).join('') : ''}
+                                            </div>
+                                        </div>
+                                        <button type="button" class="engagement-scene-preset-card__action" data-engagement-action="apply-scene-priority-preset" data-scene-priority-preset-id="${escapeHtml(preset.id)}" data-page-id="${escapeHtml(pageId)}">${escapeHtml(preset.applyLabel || '套用预设')}</button>
+                                    </article>
+                                `).join('')}
+                            </div>
+                        ` : ''}
                         <button type="button" class="engagement-link-btn" data-engagement-action="reset-scene">恢复首页场景</button>
                         <button type="button" class="engagement-refresh-btn" data-engagement-action="submit-scene">
                             <i class="fas fa-save"></i>
                             <span>保存场景</span>
+                        </button>
+                    </div>
+                </form>
+            </section>
+        `;
+    }
+
+    function renderEventPriorityCenterComposer() {
+        const center = getEventPriorityCenter();
+        return `
+            <section class="engagement-section engagement-management-composer">
+                <div class="engagement-section__head">
+                    <div>
+                        <h3>首波分诊配置</h3>
+                        <p>配置登录后的首波事件分档。前台会先收集候选提醒，再优先展示“首波优先”中的高价值事件。</p>
+                    </div>
+                </div>
+                <form id="engagementEventPriorityForm" class="engagement-rule-form engagement-management-form" autocomplete="off" novalidate>
+                    ${Object.entries(center).map(([groupId, group]) => `
+                        <div class="engagement-priority-group-block" data-tier="${escapeHtml(groupId)}">
+                            <div class="engagement-priority-group-block__head">
+                                <div>
+                                    <strong>${escapeHtml(group.label)}</strong>
+                                    <p>${escapeHtml(group.desc)}</p>
+                                </div>
+                                ${renderEventPriorityBadgeById(groupId)}
+                            </div>
+                            ${renderEventPriorityPicker(groupId, group.events || [], 'global')}
+                        </div>
+                    `).join('')}
+                    <div class="engagement-form-actions">
+                        <button type="button" class="engagement-refresh-btn" data-engagement-action="submit-event-priority-center">
+                            <i class="fas fa-save"></i>
+                            <span>保存分诊配置</span>
                         </button>
                     </div>
                 </form>
@@ -2592,7 +6322,7 @@
         const activeCategory = getTemplateProductCategoryById(state.templateCategoryFilter);
         const recommendedStarters = TEMPLATE_STARTERS
             .filter((starter) => !activeCategory || isTemplateInProductCategory(starter, activeCategory))
-            .slice(0, 6);
+            .slice(0, activeCategory ? 12 : 18);
 
         return `
             <section class="engagement-section engagement-template-product-shelf">
@@ -2803,19 +6533,58 @@
         `;
     }
 
-    function renderRuleManagementToolbar(totalCount = 0, visibleCount = 0) {
+    function renderRuleDuplicateNotice(duplicateGroups = []) {
+        const groups = Array.isArray(duplicateGroups) ? duplicateGroups : [];
+        if (!groups.length) return '';
+        const duplicateRules = groups.reduce((count, group) => count + group.length, 0);
+        const examples = groups
+            .slice(0, 2)
+            .map((group) => `${group[0]?.name || '未命名规则'} x${group.length}`)
+            .join('、');
+        const actionLabel = state.ruleDuplicateFilter === true ? '正在查看' : `查看重复 ${formatNumber(duplicateRules)}`;
+        return `
+            <div class="engagement-rule-duplicate-notice">
+                <i class="fas fa-clone" aria-hidden="true"></i>
+                <div>
+                    <strong>发现 ${escapeHtml(formatNumber(groups.length))} 组完全重复规则</strong>
+                    <p>${escapeHtml(examples || '重复规则会让运营判断和批量治理变复杂。')}，建议管理员保留一条，归档多余草稿或暂停重复运行规则。</p>
+                </div>
+                <button type="button" data-engagement-action="focus-duplicate-rules" ${state.ruleDuplicateFilter === true ? 'disabled' : ''}>${escapeHtml(actionLabel)}</button>
+            </div>
+        `;
+    }
+
+    function renderRuleManagementToolbar(totalCount = 0, visibleCount = 0, rules = [], duplicateGroups = null, pagination = null) {
         const pageFilterOptions = [
             ['all', '全部页面'],
             ...RULE_PAGE_OPTIONS.filter((pageId) => pageId !== 'all').map((pageId) => [pageId, getPageLabel(pageId)])
         ];
+        const audienceFilterOptions = getRuleAudienceFilterOptions(rules);
+        const duplicateGroupRows = Array.isArray(duplicateGroups) ? duplicateGroups : getRuleDuplicateGroups(rules);
         const batchSummary = getRuleBatchSummary();
         const hasActiveFilter = Boolean(
             String(state.ruleSearchQuery || '').trim()
             || normalizeToken(state.ruleStatusFilter, 'all') !== 'all'
             || normalizeToken(state.ruleHealthFilter, 'all') !== 'all'
             || normalizeToken(state.rulePageFilter, 'all') !== 'all'
+            || normalizeToken(state.ruleAudienceFilter, 'all') !== 'all'
+            || state.ruleDuplicateFilter === true
             || normalizeToken(state.ruleSort, 'updated_desc') !== 'updated_desc'
         );
+        const duplicateFilterPill = state.ruleDuplicateFilter === true
+            ? `
+                <span class="engagement-rule-toolbar__filter-pill" title="当前只显示完全重复的触达规则">
+                    <i class="fas fa-clone" aria-hidden="true"></i>
+                    <span>仅重复规则</span>
+                </span>
+            `
+            : '';
+        const pageInfo = pagination && typeof pagination === 'object'
+            ? pagination
+            : getRuleListPagination(visibleCount);
+        const countLabel = visibleCount > 0
+            ? `显示 ${formatNumber(pageInfo.startIndex + 1)}-${formatNumber(pageInfo.endIndex)} / ${formatNumber(visibleCount)} 条${visibleCount !== totalCount ? `（共 ${formatNumber(totalCount)}）` : ''}`
+            : `0 / ${formatNumber(totalCount)} 条`;
 
         return `
             <div class="engagement-rule-toolbar" data-engagement-rule-toolbar>
@@ -2846,6 +6615,12 @@
                         label: '页面'
                     })}
                     ${renderCustomSelect({
+                        name: 'rule_audience_filter',
+                        value: state.ruleAudienceFilter || 'all',
+                        options: audienceFilterOptions,
+                        label: '用户分群'
+                    })}
+                    ${renderCustomSelect({
                         name: 'rule_sort',
                         value: state.ruleSort || 'updated_desc',
                         options: RULE_SORT_OPTIONS,
@@ -2853,7 +6628,9 @@
                     })}
                 </div>
                 <div class="engagement-rule-toolbar__meta">
-                    <span>${escapeHtml(formatNumber(visibleCount))} / ${escapeHtml(formatNumber(totalCount))} 条</span>
+                    ${duplicateFilterPill}
+                    <span>${escapeHtml(countLabel)}</span>
+                    ${renderRulePaginationControls(pageInfo)}
                     ${hasActiveFilter ? `<button type="button" data-engagement-action="clear-rule-filters">清除筛选</button>` : ''}
                 </div>
                 <div class="engagement-rule-batch-actions" aria-label="当前筛选规则批量操作">
@@ -2871,6 +6648,7 @@
                         <span>归档需关注 ${escapeHtml(formatNumber(Math.min(batchSummary.attention, RULE_BATCH_LIMIT)))}</span>
                     </button>
                 </div>
+                ${renderRuleDuplicateNotice(duplicateGroupRows)}
                 ${state.ruleBatchResult ? renderRuleBatchResult(state.ruleBatchResult) : ''}
             </div>
         `;
@@ -2879,8 +6657,12 @@
     function renderRules(rules = []) {
         const focusedPageId = getFocusedPageId();
         const totalRules = getRulesForFocusedPage(rules);
+        const duplicateGroups = reconcileDuplicateRuleFilter(totalRules);
         const visibleRules = getManagedRules(rules);
-        const rows = visibleRules.slice(0, 8);
+        const visibleRows = groupDuplicateRulesForDisplay(totalRules, visibleRules);
+        const pagination = getRuleListPagination(visibleRows.length);
+        const duplicateMeta = getRuleDuplicateGroupMeta(totalRules);
+        const rows = visibleRows.slice(pagination.startIndex, pagination.endIndex);
         const focusedPageHeader = focusedPageId
             ? `
                 <div class="engagement-filter-pill">
@@ -2899,7 +6681,7 @@
                     </div>
                     ${focusedPageHeader}
                 </div>
-                ${renderRuleManagementToolbar(totalRules.length, visibleRules.length)}
+                ${renderRuleManagementToolbar(totalRules.length, visibleRules.length, totalRules, duplicateGroups, pagination)}
                 <div class="engagement-list">
                     ${rows.length ? rows.map((rule) => {
                         const status = getRuleStatusLabel(rule);
@@ -2912,8 +6694,13 @@
                         const governance = getRuleGovernance(rule);
                         const health = getRuleHealth(rule);
                         const ruleMetrics = health.metrics || createRuleMetricsCounter();
+                        const duplicateGroup = duplicateMeta.get(String(rule?.id || '').trim());
+                        const duplicateClass = duplicateGroup ? ' is-duplicate-group' : '';
+                        const duplicateAttributes = duplicateGroup
+                            ? ` data-duplicate-group="${escapeHtml(duplicateGroup.groupIndex)}" style="--duplicate-group-color:${escapeHtml(duplicateGroup.color)}"`
+                            : '';
                         return `
-                            <article class="engagement-list-item engagement-rule-item" data-rule-health="${escapeHtml(health.tone || 'idle')}">
+                            <article class="engagement-list-item engagement-rule-item${duplicateClass}" data-rule-health="${escapeHtml(health.tone || 'idle')}"${duplicateAttributes}>
                                 <div class="engagement-rule-item__body">
                                     <div class="engagement-rule-item__main">
                                         <strong>${escapeHtml(rule.name || '未命名规则')}</strong>
@@ -2944,6 +6731,9 @@
                                     </button>
                                     <button type="button" title="归档" data-engagement-action="archive-rule" data-rule-id="${escapeHtml(rule.id || '')}">
                                         <i class="fas fa-box-archive"></i>
+                                    </button>
+                                    <button type="button" title="删除" data-engagement-action="delete-rule" data-rule-id="${escapeHtml(rule.id || '')}">
+                                        <i class="fas fa-trash"></i>
                                     </button>
                                 </div>
                             </article>
@@ -2998,7 +6788,7 @@
     function renderUserTagCenter() {
         const center = getUserTagCenter();
         const tag = getEditableUserTag();
-        const tagKey = normalizeToken(tag?.key || tag?.id || '', '');
+        const tagKey = normalizeUserTagKey(tag?.key || tag?.id || '', '');
         const automation = center.automation || {};
         return `
             <section class="engagement-section engagement-tag-center">
@@ -3056,7 +6846,7 @@
                     </form>
                     <div class="engagement-tag-list" aria-label="用户标签列表">
                         ${center.tags.length ? center.tags.map((item) => {
-                            const key = normalizeToken(item.key || item.id, '');
+                            const key = normalizeUserTagKey(item.key || item.id, '');
                             return `
                                 <article class="engagement-tag-card ${tagKey === key ? 'is-focused' : ''}">
                                     <div>
@@ -3188,9 +6978,9 @@
     function renderSegmentComposer() {
         const segment = getEditableSegment();
         const selectedPages = new Set(Array.isArray(segment?.pageIds) && segment.pageIds.length ? segment.pageIds : ['all']);
-        const examplesText = Array.isArray(segment?.examples) ? segment.examples.join('\n') : '';
+        const selectedScenarios = Array.isArray(segment?.examples) ? segment.examples : [];
+        const selectedTags = Array.isArray(segment?.tags) ? segment.tags : [];
         const emailTargetsText = Array.isArray(segment?.emails) ? segment.emails.join('\n') : '';
-        const tagTargetsText = Array.isArray(segment?.tags) ? segment.tags.join('\n') : '';
         const segmentId = segment?.source === 'managed' ? (segment.dbId || '') : '';
         return `
             <section class="engagement-section engagement-management-composer engagement-segment-composer">
@@ -3203,22 +6993,13 @@
                 </div>
                 <form id="engagementSegmentForm" class="engagement-rule-form engagement-management-form" autocomplete="off" novalidate>
                     <input type="hidden" name="id" value="${escapeHtml(segmentId)}">
+                    <input type="hidden" name="key" value="${escapeHtml(segment?.key || segment?.id || '')}">
+                    <input type="hidden" name="scope" value="${escapeHtml(segment?.id || segment?.key || '')}">
+                    <input type="hidden" name="icon" value="${escapeHtml(segment?.icon || 'fa-users')}">
                     <div class="engagement-form-grid engagement-management-grid">
-                        <label class="engagement-field engagement-field--name">
+                        <label class="engagement-field engagement-field--name engagement-form-field--full">
                             <span>分群名称</span>
                             <input name="name" type="text" maxlength="160" value="${escapeHtml(segment?.title || '')}" placeholder="例如：有失败支付记录用户" required>
-                        </label>
-                        <label class="engagement-field">
-                            <span>分群 key</span>
-                            <input name="key" type="text" maxlength="120" value="${escapeHtml(segment?.key || segment?.id || '')}" placeholder="payment_failed_users">
-                        </label>
-                        <label class="engagement-field">
-                            <span>匹配 scope</span>
-                            <input name="scope" type="text" maxlength="80" value="${escapeHtml(segment?.id || segment?.key || '')}" placeholder="payment_failed_users">
-                        </label>
-                        <label class="engagement-field">
-                            <span>图标</span>
-                            <input name="icon" type="text" maxlength="80" value="${escapeHtml(segment?.icon || 'fa-users')}" placeholder="fa-users">
                         </label>
                     </div>
                     <div class="engagement-form-block">
@@ -3234,14 +7015,20 @@
                             <span>指定用户邮箱（一行一个，可选）</span>
                             <textarea name="email_targets" rows="3" maxlength="1600" placeholder="user@example.com">${escapeHtml(emailTargetsText)}</textarea>
                         </label>
-                        <label class="engagement-field engagement-form-field--full">
-                            <span>用户标签（一行一个，可选）</span>
-                            <textarea name="tag_targets" rows="3" maxlength="1200" placeholder="vip&#10;paid_user">${escapeHtml(tagTargetsText)}</textarea>
-                        </label>
-                        <label class="engagement-field engagement-form-field--full">
-                            <span>典型触达场景（一行一个）</span>
-                            <textarea name="examples" rows="3" maxlength="1200" placeholder="积分不足">${escapeHtml(examplesText)}</textarea>
-                        </label>
+                        <div class="engagement-form-block engagement-form-field--full">
+                            <div class="engagement-form-block__head">
+                                <span>选择用户标签 Tags</span>
+                                <button type="button" class="engagement-link-btn" data-engagement-action="sync-segment-tags">
+                                    <i class="fas fa-rotate" aria-hidden="true"></i>
+                                    <span>同步用户管理标签</span>
+                                </button>
+                            </div>
+                            ${renderSegmentTagPicker(selectedTags)}
+                        </div>
+                        <div class="engagement-form-block engagement-form-field--full">
+                            <span>触达场景</span>
+                            ${renderSegmentScenarioPicker(selectedScenarios)}
+                        </div>
                         <div class="engagement-form-block engagement-form-block--switch">
                             <span>启用状态</span>
                             ${renderCustomSwitch({
@@ -3296,7 +7083,7 @@
                                 </div>
                             </div>
                             <div class="engagement-chip-row">
-                                ${(Array.isArray(segment.examples) ? segment.examples : []).map((example) => `<span>${escapeHtml(example)}</span>`).join('')}
+                                ${(Array.isArray(segment.examples) ? segment.examples : []).map((example) => `<span>${escapeHtml(getSegmentScenarioLabel(example))}</span>`).join('')}
                                 ${emailCount ? `<span>${escapeHtml(emailCount)} 邮箱</span>` : ''}
                                 ${tagCount ? `<span>${escapeHtml(tagCount)} 标签</span>` : ''}
                             </div>
@@ -3413,6 +7200,118 @@
         `;
     }
 
+    function renderAutomationIntentNotice() {
+        const groups = getAutomationIntentGroups();
+        if (!groups.length) return '';
+        return `
+            <div class="engagement-rule-duplicate-notice engagement-automation-intent-notice" aria-label="自动化蓝图同义提醒">
+                <i class="fas fa-layer-group" aria-hidden="true"></i>
+                <div>
+                    <strong>发现 ${formatNumber(groups.length)} 组“同一意图、不同触发”的自动化</strong>
+                    <p>${escapeHtml(groups.map((group) => `${group.label}（${group.blueprints.map((blueprint) => blueprint.title).join(' / ')}）`).join('；'))}</p>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderAutomationBlueprintCard(blueprint = {}) {
+        const status = getAutomationBlueprintStatus(blueprint.id);
+        const health = status.health || {};
+        const hasCreatedRule = status.total > 0;
+        const intentGroup = getAutomationIntentGroupForBlueprint(blueprint);
+        const preview = buildAutomationBlueprintPreview(blueprint);
+        const primaryRuleId = String(status.primaryRule?.id || '').trim();
+        const primaryRuleEnabled = status.primaryRule?.enabled === true && normalizeToken(status.primaryRule?.status, '') === 'published';
+        const statusText = hasCreatedRule
+            ? `已创建 ${formatNumber(status.total)} 条`
+            : '未创建';
+        const activeText = status.running > 0
+            ? `${formatNumber(status.running)} 运行中`
+            : `${formatNumber(status.drafts)} 草稿`;
+        return `
+            <article class="engagement-automation-card${hasCreatedRule ? ' is-created' : ''}"
+                role="button"
+                tabindex="0"
+                data-engagement-action="focus-automation"
+                data-engagement-automation-card
+                data-automation-id="${escapeHtml(blueprint.id)}"
+                data-created-count="${escapeHtml(status.total)}"
+                data-health="${escapeHtml(health.tone || 'idle')}"
+                aria-label="${hasCreatedRule ? '打开' : '创建'}${escapeHtml(blueprint.title)}自动化规则">
+                <div class="engagement-automation-card__head">
+                    <span class="engagement-automation-card__icon">
+                        <i class="fas ${escapeHtml(blueprint.icon)}" aria-hidden="true"></i>
+                    </span>
+                    <div>
+                        <strong>${escapeHtml(blueprint.title)}</strong>
+                        <p>${escapeHtml(blueprint.desc)}</p>
+                        ${intentGroup ? `
+                            <div class="engagement-automation-card__intent" aria-label="${escapeHtml(blueprint.title)}意图说明">
+                                <span>同一意图</span>
+                                <strong>${escapeHtml(getAutomationBlueprintIntentLabel(blueprint))}</strong>
+                                <em>${escapeHtml(blueprint.mode || '自动化')}</em>
+                            </div>
+                        ` : ''}
+                    </div>
+                </div>
+                <div class="engagement-chip-row">
+                    <span>${escapeHtml(blueprint.mode)}</span>
+                    <span>${escapeHtml(getTriggerTypeLabel(blueprint.triggerType))}</span>
+                    <span>${escapeHtml(getAudienceLabel({ scope: blueprint.audienceScope }))}</span>
+                </div>
+                <div class="engagement-automation-card__preview" aria-label="${escapeHtml(blueprint.title)}样本文案预览">
+                    <strong>${escapeHtml(preview.title || blueprint.titleText || blueprint.title)}</strong>
+                    <p>${escapeHtml(preview.content || blueprint.content || '')}</p>
+                    <div class="engagement-chip-row">
+                        ${preview.sampleLabel ? `<span>${escapeHtml(preview.sampleLabel)}</span>` : '<span>默认样本</span>'}
+                        ${preview.hasDynamicSamples ? `
+                            <button type="button"
+                                data-engagement-action="cycle-automation-preview-sample"
+                                data-automation-id="${escapeHtml(blueprint.id)}"
+                                title="切换事件样本">
+                                <i class="fas fa-repeat" aria-hidden="true"></i>
+                                <span>切换样本</span>
+                            </button>
+                        ` : ''}
+                    </div>
+                </div>
+                <div class="engagement-automation-card__status" aria-label="${escapeHtml(blueprint.title)}规则状态">
+                    <span>${escapeHtml(statusText)}</span>
+                    <span>${escapeHtml(activeText)}</span>
+                </div>
+                <div class="engagement-automation-card__metrics" aria-label="${escapeHtml(blueprint.title)}近24小时数据">
+                    <span><strong>${escapeHtml(formatNumber(status.metrics.views))}</strong> 曝光</span>
+                    <span><strong>${escapeHtml(formatNumber(status.metrics.clicks))}</strong> 点击</span>
+                    <span><strong>${escapeHtml(formatNumber(status.metrics.dismisses))}</strong> 关闭</span>
+                </div>
+                <div class="engagement-automation-card__health" data-health="${escapeHtml(health.tone || 'idle')}" aria-label="${escapeHtml(blueprint.title)}健康状态">
+                    <i class="fas ${escapeHtml(health.icon || 'fa-circle-info')}" aria-hidden="true"></i>
+                    <div>
+                        <strong>${escapeHtml(health.label || '待配置')}</strong>
+                        <p>${escapeHtml(health.detail || '创建规则后开始观察曝光和点击。')}</p>
+                    </div>
+                </div>
+                <div class="engagement-automation-card__actions">
+                    <span class="engagement-automation-card__action">预览草稿 <i class="fas fa-arrow-right" aria-hidden="true"></i></span>
+                    ${hasCreatedRule ? `
+                        <span class="engagement-automation-card__quickops" aria-label="${escapeHtml(blueprint.title)}快捷操作">
+                            <button type="button" title="${primaryRuleEnabled ? '暂停规则' : '发布规则'}" data-engagement-action="toggle-automation-rule" data-automation-id="${escapeHtml(blueprint.id)}" data-rule-id="${escapeHtml(primaryRuleId)}" data-rule-enabled="${primaryRuleEnabled ? 'false' : 'true'}">
+                                <i class="fas ${primaryRuleEnabled ? 'fa-pause' : 'fa-play'}" aria-hidden="true"></i>
+                            </button>
+                            <button type="button" title="复制为草稿" data-engagement-action="copy-automation-rule" data-automation-id="${escapeHtml(blueprint.id)}" data-rule-id="${escapeHtml(primaryRuleId)}">
+                                <i class="fas fa-copy" aria-hidden="true"></i>
+                            </button>
+                        </span>
+                    ` : ''}
+                    <button type="button" class="engagement-automation-card__create" data-engagement-action="create-automation-rule" data-automation-id="${escapeHtml(blueprint.id)}">
+                        <i class="fas ${hasCreatedRule ? 'fa-pen' : 'fa-plus'}" aria-hidden="true"></i>
+                        <span>${hasCreatedRule ? '编辑规则' : '创建规则'}</span>
+                    </button>
+                </div>
+            </article>
+        `;
+    }
+
     function renderAutomationFlowMatrix() {
         const rows = getAutomationFlowRows();
         return `
@@ -3453,87 +7352,66 @@
     }
 
     function renderAutomationBlueprints() {
+        const displayGroups = getAutomationBlueprintDisplayGroups();
+        const intentGroups = displayGroups.filter((group) => group.type === 'intent_group');
+        const singleBlueprints = displayGroups
+            .filter((group) => group.type === 'single')
+            .map((group) => group.blueprints[0])
+            .filter(Boolean);
         return `
             <section class="engagement-section">
                 <div class="engagement-section__head">
                     <div>
                         <h3>自动化流程蓝图</h3>
-                        <p>把常见运营事件预设成规则草稿。页面触发可直接发布，事件触发会等待对应业务事件送入机器人通知管道。</p>
+                        <p>先按“意图”浏览，再进入具体触发蓝图。这里不再折叠节点，避免来回展开影响判断。</p>
                     </div>
                 </div>
-                <div class="engagement-automation-grid">
-                    ${AUTOMATION_BLUEPRINTS.map((blueprint) => {
-                        const status = getAutomationBlueprintStatus(blueprint.id);
-                        const health = status.health || {};
-                        const hasCreatedRule = status.total > 0;
-                        const primaryRuleId = String(status.primaryRule?.id || '').trim();
-                        const primaryRuleEnabled = status.primaryRule?.enabled === true && normalizeToken(status.primaryRule?.status, '') === 'published';
-                        const statusText = hasCreatedRule
-                            ? `已创建 ${formatNumber(status.total)} 条`
-                            : '未创建';
-                        const activeText = status.running > 0
-                            ? `${formatNumber(status.running)} 运行中`
-                            : `${formatNumber(status.drafts)} 草稿`;
+                ${renderAutomationIntentNotice()}
+                <div class="engagement-automation-blueprint-sections">
+                    ${intentGroups.length ? `
+                        <section class="engagement-automation-blueprint-section">
+                            <header class="engagement-automation-blueprint-section__head">
+                                <strong>同意图蓝图</strong>
+                                <span>${escapeHtml(formatNumber(intentGroups.length))} 组</span>
+                            </header>
+                            <div class="engagement-automation-grid">
+                    ${intentGroups.map((group) => {
+                        const leadBlueprint = group.blueprints[0] || {};
+                        const triggerSummary = group.blueprints.map((blueprint) => blueprint.mode).filter(Boolean).join(' / ');
                         return `
-                        <article class="engagement-automation-card${hasCreatedRule ? ' is-created' : ''}"
-                            role="button"
-                            tabindex="0"
-                            data-engagement-action="focus-automation"
-                            data-engagement-automation-card
-                            data-automation-id="${escapeHtml(blueprint.id)}"
-                            data-created-count="${escapeHtml(status.total)}"
-                            data-health="${escapeHtml(health.tone || 'idle')}"
-                            aria-label="${hasCreatedRule ? '打开' : '创建'}${escapeHtml(blueprint.title)}自动化规则">
-                            <div class="engagement-automation-card__head">
-                                <span class="engagement-automation-card__icon">
-                                    <i class="fas ${escapeHtml(blueprint.icon)}" aria-hidden="true"></i>
-                                </span>
-                                <div>
-                                    <strong>${escapeHtml(blueprint.title)}</strong>
-                                    <p>${escapeHtml(blueprint.desc)}</p>
-                                </div>
-                            </div>
-                            <div class="engagement-chip-row">
-                                <span>${escapeHtml(blueprint.mode)}</span>
-                                <span>${escapeHtml(getTriggerTypeLabel(blueprint.triggerType))}</span>
-                                <span>${escapeHtml(getAudienceLabel({ scope: blueprint.audienceScope }))}</span>
-                            </div>
-                            <div class="engagement-automation-card__status" aria-label="${escapeHtml(blueprint.title)}规则状态">
-                                <span>${escapeHtml(statusText)}</span>
-                                <span>${escapeHtml(activeText)}</span>
-                            </div>
-                            <div class="engagement-automation-card__metrics" aria-label="${escapeHtml(blueprint.title)}近24小时数据">
-                                <span><strong>${escapeHtml(formatNumber(status.metrics.views))}</strong> 曝光</span>
-                                <span><strong>${escapeHtml(formatNumber(status.metrics.clicks))}</strong> 点击</span>
-                                <span><strong>${escapeHtml(formatNumber(status.metrics.dismisses))}</strong> 关闭</span>
-                            </div>
-                            <div class="engagement-automation-card__health" data-health="${escapeHtml(health.tone || 'idle')}" aria-label="${escapeHtml(blueprint.title)}健康状态">
-                                <i class="fas ${escapeHtml(health.icon || 'fa-circle-info')}" aria-hidden="true"></i>
-                                <div>
-                                    <strong>${escapeHtml(health.label || '待配置')}</strong>
-                                    <p>${escapeHtml(health.detail || '创建规则后开始观察曝光和点击。')}</p>
-                                </div>
-                            </div>
-                            <div class="engagement-automation-card__actions">
-                                <span class="engagement-automation-card__action">预览草稿 <i class="fas fa-arrow-right" aria-hidden="true"></i></span>
-                                ${hasCreatedRule ? `
-                                    <span class="engagement-automation-card__quickops" aria-label="${escapeHtml(blueprint.title)}快捷操作">
-                                        <button type="button" title="${primaryRuleEnabled ? '暂停规则' : '发布规则'}" data-engagement-action="toggle-automation-rule" data-automation-id="${escapeHtml(blueprint.id)}" data-rule-id="${escapeHtml(primaryRuleId)}" data-rule-enabled="${primaryRuleEnabled ? 'false' : 'true'}">
-                                            <i class="fas ${primaryRuleEnabled ? 'fa-pause' : 'fa-play'}" aria-hidden="true"></i>
-                                        </button>
-                                        <button type="button" title="复制为草稿" data-engagement-action="copy-automation-rule" data-automation-id="${escapeHtml(blueprint.id)}" data-rule-id="${escapeHtml(primaryRuleId)}">
-                                            <i class="fas fa-copy" aria-hidden="true"></i>
-                                        </button>
+                            <section class="engagement-automation-intent-group"
+                                data-automation-intent-group="${escapeHtml(normalizeToken(group.familyId, ''))}"
+                                data-automation-intent-family="${escapeHtml(normalizeToken(group.familyId, ''))}">
+                                <div class="engagement-automation-intent-group__summary" aria-label="${escapeHtml(group.label)}蓝图组">
+                                    <span class="engagement-automation-intent-group__icon">
+                                        <i class="fas ${escapeHtml(leadBlueprint.icon || 'fa-layer-group')}" aria-hidden="true"></i>
                                     </span>
-                                ` : ''}
-                                <button type="button" class="engagement-automation-card__create" data-engagement-action="create-automation-rule" data-automation-id="${escapeHtml(blueprint.id)}">
-                                    <i class="fas ${hasCreatedRule ? 'fa-pen' : 'fa-plus'}" aria-hidden="true"></i>
-                                    <span>${hasCreatedRule ? '编辑规则' : '创建规则'}</span>
-                                </button>
-                            </div>
-                        </article>
+                                    <span class="engagement-automation-intent-group__copy">
+                                        <strong>${escapeHtml(group.label)}</strong>
+                                        <span>${escapeHtml(formatNumber(group.blueprints.length))} 条蓝图 · ${escapeHtml(triggerSummary || '多触发')}</span>
+                                    </span>
+                                    <span class="engagement-automation-intent-group__note">统一意图，不重复折叠</span>
+                                </div>
+                                <div class="engagement-automation-intent-group__cards">
+                                    ${group.blueprints.map((blueprint) => renderAutomationBlueprintCard(blueprint)).join('')}
+                                </div>
+                            </section>
                         `;
                     }).join('')}
+                            </div>
+                        </section>
+                    ` : ''}
+                    ${singleBlueprints.length ? `
+                        <section class="engagement-automation-blueprint-section">
+                            <header class="engagement-automation-blueprint-section__head">
+                                <strong>独立蓝图</strong>
+                                <span>${escapeHtml(formatNumber(singleBlueprints.length))} 条</span>
+                            </header>
+                            <div class="engagement-automation-grid">
+                                ${singleBlueprints.map((blueprint) => renderAutomationBlueprintCard(blueprint)).join('')}
+                            </div>
+                        </section>
+                    ` : ''}
                 </div>
             </section>
         `;
@@ -3805,7 +7683,7 @@
         const scenes = Array.isArray(payload.page_scenes) ? payload.page_scenes : [];
         const supportContexts = Array.isArray(payload.support_entry?.contexts) ? payload.support_entry.contexts : [];
         const analyticsRows = Array.isArray(payload.analytics?.page_breakdown) ? payload.analytics.page_breakdown : [];
-        const runningRules = rules.filter((rule) => rule?.enabled === true && rule?.status === 'published');
+        const runningRules = rules.filter((rule) => isRuleRunningNow(rule));
 
         return RULE_PAGE_OPTIONS.filter((pageId) => pageId !== 'all').map((pageId) => {
             const scene = scenes.find((item) => normalizeToken(item?.id || item?.page_id, '') === pageId) || null;
@@ -3849,7 +7727,7 @@
         const diagnostics = payload.diagnostics || {};
         const externalEmbed = payload.external_embed || {};
         const externalDiagnostics = externalEmbed.diagnostics || {};
-        const runningRules = rules.filter((rule) => rule?.enabled === true && rule?.status === 'published');
+        const runningRules = rules.filter((rule) => isRuleRunningNow(rule));
         const pageRows = getLaunchPageRows(payload);
         const measuredViews = Number(experienceQuality.measured_views || 0) || 0;
         const overflowViews = Number(experienceQuality.overflow_views || 0) || 0;
@@ -3988,8 +7866,12 @@
 
     function renderLifecycleDiagnostics(payload = {}) {
         const diagnostics = payload.diagnostics || {};
+        const bridgeDiagnostics = diagnostics.notification_bridge && typeof diagnostics.notification_bridge === 'object'
+            ? diagnostics.notification_bridge
+            : {};
         const checklist = Array.isArray(diagnostics.checklist) ? diagnostics.checklist : [];
         const tips = Array.isArray(diagnostics.tips) ? diagnostics.tips : [];
+        const bridgeRows = Array.isArray(bridgeDiagnostics.events) ? bridgeDiagnostics.events : [];
         const lastEventLabel = diagnostics.last_event_at
             ? new Date(diagnostics.last_event_at).toLocaleString('zh-CN')
             : '暂无事件';
@@ -4024,6 +7906,24 @@
                             <article data-tone="${escapeHtml(tip.tone || 'info')}">
                                 <strong>${escapeHtml(tip.title || '诊断建议')}</strong>
                                 <p>${escapeHtml(tip.detail || '')}</p>
+                            </article>
+                        `).join('')}
+                    </div>
+                ` : ''}
+                ${bridgeRows.length ? `
+                    <div class="engagement-diagnostic-tips">
+                        <article data-tone="${escapeHtml(bridgeDiagnostics.status === 'warning' ? 'warning' : 'info')}">
+                            <strong>通知桥接事件 ${escapeHtml(formatNumber(bridgeDiagnostics.event_types_count || bridgeRows.length))} 类</strong>
+                            <p>${escapeHtml(
+                                bridgeDiagnostics.multi_rule_event_types_count > 0
+                                    ? `${bridgeDiagnostics.running_rule_count || 0} 条运行规则分布在 ${bridgeDiagnostics.event_types_count || bridgeRows.length} 类双通道事件里，其中 ${bridgeDiagnostics.multi_rule_event_types_count} 类还挂了多条规则。`
+                                    : `${bridgeDiagnostics.running_rule_count || 0} 条运行规则命中了通知桥接事件，前台会优先保留规则气泡并按 source_event_id 去重。`
+                            )}</p>
+                        </article>
+                        ${bridgeRows.slice(0, 6).map((row) => `
+                            <article data-tone="${escapeHtml(Number(row.running_rules || 0) > 1 ? 'warning' : 'info')}">
+                                <strong>${escapeHtml(row.label || row.event_type || '未命名事件')}</strong>
+                                <p>${escapeHtml(`${formatNumber(row.running_rules || 0)} 条运行规则 · 页面 ${Array.isArray(row.page_ids) && row.page_ids.length ? row.page_ids.map((pageId) => getPageLabel(pageId)).join(' / ') : '未分配'}${Array.isArray(row.rule_names) && row.rule_names.length ? ` · ${row.rule_names.join('、')}` : ''}`)}</p>
                             </article>
                         `).join('')}
                     </div>
@@ -4520,7 +8420,7 @@
                 <div class="engagement-review-list">
                     ${reviewRows.length ? reviewRows.map((rule) => {
                         const governance = getRuleGovernance(rule);
-                        const isRunning = rule.enabled === true && normalizeToken(rule.status, '') === 'published';
+                        const isRunning = isRuleRunningNow(rule);
                         return `
                             <article class="engagement-review-row" data-risk="${escapeHtml(governance.risk_level)}">
                                 <i class="fas fa-shield-halved" aria-hidden="true"></i>
@@ -4590,6 +8490,16 @@
     function renderExternalEmbedPanel(payload = {}) {
         const external = getExternalEmbedConfig(payload);
         const diagnostics = external.diagnostics || {};
+        const diagnosticsStatus = String(diagnostics.status || 'attention').trim();
+        const diagnosticsStatusLabel = {
+            ready: '可部署',
+            attention: '需排查',
+            blocked: '已阻断'
+        }[diagnosticsStatus] || '需排查';
+        const troubleshooting = diagnostics.troubleshooting && typeof diagnostics.troubleshooting === 'object' ? diagnostics.troubleshooting : {};
+        const troubleshootingChecks = Array.isArray(troubleshooting.checks) ? troubleshooting.checks : [];
+        const riskChecks = troubleshootingChecks.filter((check) => ['blocked', 'warning'].includes(String(check.status || '').trim()));
+        const recommendedActions = Array.isArray(diagnostics.recommended_actions) ? diagnostics.recommended_actions : [];
         const deployment = external.deployment || {};
         const deploymentFunnel = deployment.funnel && typeof deployment.funnel === 'object' ? deployment.funnel : deployment;
         const deploymentStatus = String(deployment.status || 'waiting').trim();
@@ -4628,12 +8538,12 @@
                         <h3>外部承载与公益站嵌入</h3>
                         <p>管理公益站等外部页面的 CORS 白名单、主站 API 地址、静态资源地址和可复制嵌入代码。</p>
                     </div>
-                    <span class="engagement-status-pill" data-status="${escapeHtml(diagnostics.status || 'attention')}">
-                        ${escapeHtml(diagnostics.status === 'ready' ? '可部署' : '待检查')}
+                    <span class="engagement-status-pill" data-status="${escapeHtml(diagnosticsStatus)}">
+                        ${escapeHtml(diagnosticsStatusLabel)}
                     </span>
                 </div>
                 <div class="engagement-external-grid">
-                    <form id="engagementExternalEmbedForm" class="engagement-management-form">
+                    <form id="engagementExternalEmbedForm" class="engagement-rule-form engagement-management-form engagement-external-form" autocomplete="off" novalidate>
                         <div class="engagement-form-grid engagement-form-grid--external">
                             <label class="engagement-field engagement-field--switch">
                                 <span>外部承载开关</span>
@@ -4673,7 +8583,7 @@
                             </label>
                         </div>
                         <div class="engagement-form-actions">
-                            <button type="button" class="engagement-primary-btn" data-engagement-action="submit-external-embed">
+                            <button type="button" class="engagement-primary-btn engagement-external-submit-btn" data-engagement-action="submit-external-embed">
                                 <i class="fas fa-save"></i>
                                 保存外部承载
                             </button>
@@ -4691,72 +8601,110 @@
                             </button>
                         </div>
                         <textarea id="engagementExternalEmbedSnippet" class="engagement-code-textarea" readonly>${escapeHtml(snippet)}</textarea>
-                        <div class="engagement-external-probe">
-                            <strong>预检地址</strong>
-                            <p>${escapeHtml(diagnostics.preflight_url || `${external.api_origin}/api/engagement/feed`)}</p>
-                        </div>
-                        <div class="engagement-external-command">
-                            <strong>本地模拟验收</strong>
-                            <code>${escapeHtml(diagnostics.smoke_command || 'npm run smoke:engagement-external')}</code>
-                        </div>
-                        <div class="engagement-external-observability" data-status="${escapeHtml(deploymentStatus)}">
-                            <div class="engagement-external-observability__head">
-                                <div>
-                                    <strong>真实部署回流</strong>
-                                    <p>统计公益站等外部页面近 24 小时的曝光、点击、关闭和转化事件。</p>
-                                </div>
-                                <span>${escapeHtml(deploymentStatusLabel)}</span>
-                            </div>
-                            <div class="engagement-external-observability__metrics">
-                                <article>
-                                    <strong>${escapeHtml(formatNumber(deploymentFunnel.views))}</strong>
-                                    <span>外部曝光</span>
-                                </article>
-                                <article>
-                                    <strong>${escapeHtml(formatNumber(deploymentFunnel.clicks))}</strong>
-                                    <span>外部点击</span>
-                                </article>
-                                <article>
-                                    <strong>${escapeHtml(formatNumber(deploymentFunnel.dismisses))}</strong>
-                                    <span>外部关闭</span>
-                                </article>
-                                <article>
-                                    <strong>${escapeHtml(formatNumber(deploymentFunnel.conversions))}</strong>
-                                    <span>外部转化</span>
-                                </article>
-                            </div>
-                            <div class="engagement-external-observability__meta">
-                                <span>CTR ${escapeHtml(formatPercent(deploymentFunnel.ctr))}</span>
-                                <span>事件 ${escapeHtml(formatNumber(deployment.event_count))}</span>
-                                <span>最后事件：${escapeHtml(lastExternalEventLabel)}</span>
-                            </div>
-                            <div class="engagement-external-observability__breakdowns">
-                                <div>
-                                    <b>来源域名</b>
-                                    ${renderDeploymentRows(hostRows, 'host', '暂无外部域名回流')}
-                                </div>
-                                <div>
-                                    <b>页面分布</b>
-                                    ${renderDeploymentRows(pageRows, 'page_id', '暂无外部页面回流')}
-                                </div>
-                            </div>
-                        </div>
-                        <div class="engagement-external-checks">
-                            ${checks.length ? checks.map((check) => `
-                                <article data-status="${escapeHtml(check.status || 'idle')}">
-                                    <i class="fas ${escapeHtml(getDiagnosticStatusIcon(check.status))}" aria-hidden="true"></i>
-                                    <div>
-                                        <strong>${escapeHtml(check.label || '检查项')}</strong>
-                                        <p>${escapeHtml(check.detail || '')}</p>
+                        <details class="engagement-external-details">
+                            <summary>
+                                <span>
+                                    <strong>排障与回流观测</strong>
+                                    <small>${escapeHtml(riskChecks.length ? `${riskChecks.length} 项需处理 · ${deploymentStatusLabel}` : deploymentStatusLabel)}</small>
+                                </span>
+                                <i class="fas fa-chevron-down engagement-external-details__chevron" aria-hidden="true"></i>
+                            </summary>
+                            <div class="engagement-external-details__body">
+                                <div class="engagement-external-details__quick">
+                                    <div class="engagement-external-probe">
+                                        <strong>预检地址</strong>
+                                        <p>${escapeHtml(diagnostics.preflight_url || `${external.api_origin}/api/engagement/feed`)}</p>
                                     </div>
-                                </article>
-                            `).join('') : `<div class="engagement-empty">保存配置后会显示外部承载诊断。</div>`}
-                        </div>
-                        ${deploymentSteps.length ? `
-                            <ol class="engagement-external-steps">
-                                ${deploymentSteps.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}
-                            </ol>
-                        ` : ''}
+                                    <div class="engagement-external-command">
+                                        <strong>本地模拟验收</strong>
+                                        <code>${escapeHtml(diagnostics.smoke_command || 'npm run smoke:engagement-external')}</code>
+                                    </div>
+                                </div>
+                                <div class="engagement-external-troubleshoot" data-status="${escapeHtml(troubleshooting.status || diagnosticsStatus)}">
+                                    <div class="engagement-external-troubleshoot__head">
+                                        <div>
+                                            <strong>异常诊断</strong>
+                                            <p>${escapeHtml(troubleshooting.summary || '检查外部脚本、CORS、API Origin 与真实事件回流。')}</p>
+                                        </div>
+                                        <span>${escapeHtml(riskChecks.length ? `${riskChecks.length} 项需处理` : '暂无异常')}</span>
+                                    </div>
+                                    <div class="engagement-external-troubleshoot__checks">
+                                        ${(riskChecks.length ? riskChecks : troubleshootingChecks.slice(0, 3)).map((check) => `
+                                            <article data-status="${escapeHtml(check.status || 'idle')}">
+                                                <i class="fas ${escapeHtml(getDiagnosticStatusIcon(check.status))}" aria-hidden="true"></i>
+                                                <div>
+                                                    <strong>${escapeHtml(check.label || '诊断项')}</strong>
+                                                    <p>${escapeHtml(check.detail || '')}</p>
+                                                </div>
+                                            </article>
+                                        `).join('') || `<p>暂无外部异常诊断数据。</p>`}
+                                    </div>
+                                    ${recommendedActions.length ? `
+                                        <ol class="engagement-external-troubleshoot__actions">
+                                            ${recommendedActions.map((action) => `<li>${escapeHtml(action)}</li>`).join('')}
+                                        </ol>
+                                    ` : ''}
+                                </div>
+                                <div class="engagement-external-observability" data-status="${escapeHtml(deploymentStatus)}">
+                                    <div class="engagement-external-observability__head">
+                                        <div>
+                                            <strong>真实部署回流</strong>
+                                            <p>统计公益站等外部页面近 24 小时的曝光、点击、关闭和转化事件。</p>
+                                        </div>
+                                        <span>${escapeHtml(deploymentStatusLabel)}</span>
+                                    </div>
+                                    <div class="engagement-external-observability__metrics">
+                                        <article>
+                                            <strong>${escapeHtml(formatNumber(deploymentFunnel.views))}</strong>
+                                            <span>外部曝光</span>
+                                        </article>
+                                        <article>
+                                            <strong>${escapeHtml(formatNumber(deploymentFunnel.clicks))}</strong>
+                                            <span>外部点击</span>
+                                        </article>
+                                        <article>
+                                            <strong>${escapeHtml(formatNumber(deploymentFunnel.dismisses))}</strong>
+                                            <span>外部关闭</span>
+                                        </article>
+                                        <article>
+                                            <strong>${escapeHtml(formatNumber(deploymentFunnel.conversions))}</strong>
+                                            <span>外部转化</span>
+                                        </article>
+                                    </div>
+                                    <div class="engagement-external-observability__meta">
+                                        <span>CTR ${escapeHtml(formatPercent(deploymentFunnel.ctr))}</span>
+                                        <span>事件 ${escapeHtml(formatNumber(deployment.event_count))}</span>
+                                        <span>最后事件：${escapeHtml(lastExternalEventLabel)}</span>
+                                    </div>
+                                    <div class="engagement-external-observability__breakdowns">
+                                        <div>
+                                            <b>来源域名</b>
+                                            ${renderDeploymentRows(hostRows, 'host', '暂无外部域名回流')}
+                                        </div>
+                                        <div>
+                                            <b>页面分布</b>
+                                            ${renderDeploymentRows(pageRows, 'page_id', '暂无外部页面回流')}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="engagement-external-checks">
+                                    ${checks.length ? checks.map((check) => `
+                                        <article data-status="${escapeHtml(check.status || 'idle')}">
+                                            <i class="fas ${escapeHtml(getDiagnosticStatusIcon(check.status))}" aria-hidden="true"></i>
+                                            <div>
+                                                <strong>${escapeHtml(check.label || '检查项')}</strong>
+                                                <p>${escapeHtml(check.detail || '')}</p>
+                                            </div>
+                                        </article>
+                                    `).join('') : `<div class="engagement-empty">保存配置后会显示外部承载诊断。</div>`}
+                                </div>
+                                ${deploymentSteps.length ? `
+                                    <ol class="engagement-external-steps">
+                                        ${deploymentSteps.map((step) => `<li>${escapeHtml(step)}</li>`).join('')}
+                                    </ol>
+                                ` : ''}
+                            </div>
+                        </details>
                     </div>
                 </div>
             </section>
@@ -4794,11 +8742,34 @@
         `;
     }
 
+    function renderWorkspaceGroupNav(payload = {}) {
+        const activeGroup = getWorkspaceGroupForView(state.activeView);
+        return `
+            <nav class="engagement-workspace-group-nav" aria-label="客服系统一级导航">
+                ${WORKSPACE_GROUPS.map(([id, label, icon, desc]) => {
+                    const isActive = activeGroup[0] === id;
+                    return `
+                        <button type="button"
+                            class="engagement-workspace-group-tab ${isActive ? 'is-active' : ''}"
+                            data-engagement-workspace-group="${escapeHtml(id)}"
+                            aria-pressed="${isActive ? 'true' : 'false'}"
+                            title="${escapeHtml(desc)}">
+                            <span class="engagement-workspace-group-tab__label">${escapeHtml(label)}</span>
+                        </button>
+                    `;
+                }).join('')}
+            </nav>
+        `;
+    }
+
     function renderWorkspaceNav(payload = {}) {
         const activeView = getWorkspaceView(state.activeView);
+        const activeGroup = getWorkspaceGroupForView(activeView[0]);
+        const groupViews = getWorkspaceGroupViews(activeGroup[0]);
         return `
-            <nav class="engagement-workspace-nav" aria-label="用户触达中心导航">
-                ${WORKSPACE_VIEWS.map(([id, label, icon, desc]) => {
+            <section class="engagement-workspace-nav-shell">
+                <nav class="engagement-workspace-nav" aria-label="客服系统二级导航">
+                ${groupViews.map(([id, label, icon, desc]) => {
                     const isActive = activeView[0] === id;
                     return `
                         <button type="button"
@@ -4806,13 +8777,12 @@
                             data-engagement-workspace-view="${escapeHtml(id)}"
                             aria-pressed="${isActive ? 'true' : 'false'}"
                             title="${escapeHtml(desc)}">
-                            <i class="fas ${escapeHtml(icon)}" aria-hidden="true"></i>
                             <span class="engagement-workspace-tab__label">${escapeHtml(label)}</span>
-                            <span class="engagement-workspace-tab__metric">${escapeHtml(getWorkspaceViewMetric(id, payload))}</span>
                         </button>
                     `;
                 }).join('')}
-            </nav>
+                </nav>
+            </section>
         `;
     }
 
@@ -4916,7 +8886,7 @@
                         </label>
                         <label class="engagement-field">
                             <span>最大宽度</span>
-                            <input name="max_width_px" type="number" min="260" max="560" value="${escapeHtml(style.max_width_px || 420)}">
+                            <input name="max_width_px" type="number" min="260" max="560" value="${escapeHtml(style.max_width_px || 520)}">
                         </label>
                         <label class="engagement-field">
                             <span>密度</span>
@@ -4963,7 +8933,7 @@
                             })}
                         </div>
                     </div>
-                    <div class="engagement-asset-preview" style="--preview-accent:${escapeHtml(style.accent_color)};--preview-title:${escapeHtml(style.title_color)};--preview-bg:${escapeHtml(style.bubble_background)};--preview-text:${escapeHtml(style.text_color)};--preview-radius:${escapeHtml(style.radius_px || 22)}px;--preview-width:${escapeHtml(style.max_width_px || 420)}px">
+                    <div class="engagement-asset-preview" style="--preview-accent:${escapeHtml(style.accent_color)};--preview-title:${escapeHtml(style.title_color)};--preview-bg:${escapeHtml(style.bubble_background)};--preview-text:${escapeHtml(style.text_color)};--preview-radius:${escapeHtml(style.radius_px || 22)}px;--preview-width:${escapeHtml(style.max_width_px || 520)}px">
                         <div class="engagement-asset-preview__bubble">
                             <strong>优惠券已到账</strong>
                             <p>0.8折优惠券已发放到你的钱包。请前往“我的钱包 > 卡券”查看。</p>
@@ -5352,7 +9322,10 @@
         return `
             <div class="engagement-workspace-view engagement-workspace-view--templates">
                 ${renderTemplateProductShelf(templates)}
-                ${renderTemplateComposer()}
+                <div class="engagement-two-column">
+                    ${renderTemplateComposer()}
+                    ${renderTemplatePreviewPanel()}
+                </div>
                 <div class="engagement-two-column">
                     ${renderTemplates(templates)}
                     ${renderTemplatePerformanceInsights(templates)}
@@ -5365,7 +9338,11 @@
     function renderScenesWorkspace(payload = {}) {
         return `
             <div class="engagement-workspace-view engagement-workspace-view--scenes">
-                ${renderSceneComposer()}
+                <div class="engagement-two-column">
+                    ${renderSceneComposer()}
+                    ${renderScenePreviewPanel()}
+                </div>
+                ${renderEventPriorityCenterComposer()}
                 ${renderPageScenes(payload.page_scenes || [])}
                 ${renderCapabilityMap()}
             </div>
@@ -5513,6 +9490,26 @@
         }
     }
 
+    function renderOverviewHealthNotice(payload = {}) {
+        const health = payload.overview_health && typeof payload.overview_health === 'object' ? payload.overview_health : {};
+        const degradedTasks = Array.isArray(health.degraded_tasks) ? health.degraded_tasks : [];
+        const timedOutTasks = Array.isArray(health.timed_out_tasks) ? health.timed_out_tasks : [];
+        if (health.status !== 'degraded' || (!degradedTasks.length && !timedOutTasks.length)) return '';
+        const taskNames = (timedOutTasks.length ? timedOutTasks : degradedTasks.map((item) => item.label))
+            .filter(Boolean)
+            .slice(0, 4);
+        return `
+            <section class="engagement-overview-health" data-status="degraded">
+                <i class="fas fa-triangle-exclamation" aria-hidden="true"></i>
+                <div>
+                    <strong>部分数据延迟</strong>
+                    <p>${escapeHtml(taskNames.length ? `${taskNames.join('、')} 暂时降级，已先展示可用数据。` : '部分后台数据暂时降级，已先展示可用数据。')}</p>
+                </div>
+                <button type="button" class="engagement-link-btn" data-engagement-action="refresh">重新加载</button>
+            </section>
+        `;
+    }
+
     function renderOverview(payload = {}) {
         const container = getOverviewContainer();
         if (!container) return;
@@ -5521,32 +9518,37 @@
         state.activeView = getWorkspaceView(state.activeView)[0];
         container.classList.remove('engagement-overview--loading');
         container.innerHTML = `
+            ${renderWorkspaceGroupNav(payload)}
             ${renderWorkspaceNav(payload)}
+            ${renderOverviewHealthNotice(payload)}
             ${renderWorkspaceView(payload)}
         `;
         bindEngagementDirectHandlers(container);
         updateRulePreviewFromForm();
+        updateTemplatePreviewFromForm();
+        updateScenePreviewFromForm();
 
-        if (state.focusedPageId) {
+        if (state.focusedPageId && state.pendingFocusedPageScroll === true) {
+            state.pendingFocusedPageScroll = false;
             const focused = container.querySelector(`[data-engagement-page="${state.focusedPageId}"]`);
             focused?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
         }
     }
 
     function collectRuleFormPayload(form) {
+        syncRulePublishAtHiddenValue(form);
         const formData = new FormData(form);
         const pageIds = formData.getAll('page_ids').map((item) => String(item || '').trim()).filter(Boolean);
-        const enabled = String(formData.get('enabled') || '').trim() === 'true';
         const audienceScope = normalizeToken(formData.get('audience_scope') || 'all', 'all');
         const triggerType = normalizeToken(formData.get('trigger_type') || 'page_view', 'page_view');
         const placement = normalizeToken(formData.get('placement') || 'robot_bubble', 'robot_bubble');
-        const templateDraft = getTemplateDraft();
-        let status = String(formData.get('status') || 'draft').trim();
-        if (enabled && status !== 'published') {
-            status = 'published';
-        } else if (!enabled && status === 'published') {
-            status = 'paused';
-        }
+        const currentRule = getEditableRule();
+        const ruleDraft = currentRule ? null : getRuleDraft();
+        const templateDraft = currentRule || ruleDraft ? null : getTemplateDraft();
+        const ruleSource = currentRule || ruleDraft || {};
+        const startsAt = normalizeRuleDateTimePayload(getRulePublishAtControlValue(form) || formData.get('starts_at'));
+        const status = normalizeRuleStatusForSchedule(formData.get('status') || 'draft', startsAt);
+        const enabled = status === 'published';
         const payload = {
             action: 'save_rule',
             id: String(formData.get('id') || '').trim(),
@@ -5563,6 +9565,10 @@
             tone: String(formData.get('tone') || 'info').trim(),
             action_label: String(formData.get('action_label') || '').trim(),
             action_url: String(formData.get('action_url') || '').trim(),
+            starts_at: startsAt,
+            repeat_interval_minutes: getRuleRepeatIntervalMinutes({
+                repeat_interval_minutes: formData.get('repeat_interval_minutes')
+            }, 2),
             dismiss_ttl_hours: Number.parseInt(formData.get('dismiss_ttl_hours') || '24', 10) || 24,
             enabled
         };
@@ -5574,6 +9580,13 @@
                 template_category: normalizeToken(templateDraft.category, 'general')
             };
         }
+        const linkageMetadata = getRuleLinkageMetadata(ruleSource, templateDraft);
+        if (Object.keys(linkageMetadata).length) {
+            payload.metadata = {
+                ...(payload.metadata || {}),
+                ...linkageMetadata
+            };
+        }
         return payload;
     }
 
@@ -5582,15 +9595,18 @@
         if (!(form instanceof HTMLFormElement)) {
             return getInitialRulePreviewData();
         }
+        syncRulePublishAtHiddenValue(form);
         const formData = new FormData(form);
         const pageIds = formData.getAll('page_ids').map((item) => String(item || '').trim()).filter(Boolean);
         const audienceScope = normalizeToken(formData.get('audience_scope') || 'all', 'all');
         const triggerType = normalizeToken(formData.get('trigger_type') || 'page_view', 'page_view');
         const placement = normalizeToken(formData.get('placement') || 'robot_bubble', 'robot_bubble');
+        const startsAt = normalizeRuleDateTimePayload(getRulePublishAtControlValue(form) || formData.get('starts_at'));
+        const status = normalizeRuleStatusForSchedule(formData.get('status') || 'draft', startsAt);
         return {
             name: String(formData.get('name') || '').trim(),
             site: String(formData.get('site') || 'all').trim(),
-            status: String(formData.get('status') || 'draft').trim(),
+            status,
             page_ids: pageIds.length ? pageIds : ['all'],
             audience: { scope: audienceScope },
             trigger_type: triggerType,
@@ -5600,8 +9616,75 @@
             tone: String(formData.get('tone') || 'info').trim(),
             action_label: String(formData.get('action_label') || '').trim(),
             action_url: String(formData.get('action_url') || '').trim(),
-            enabled: String(formData.get('enabled') || '').trim() === 'true'
+            starts_at: startsAt,
+            repeat_interval_minutes: getRuleRepeatIntervalMinutes({
+                repeat_interval_minutes: formData.get('repeat_interval_minutes')
+            }, 2),
+            enabled: status === 'published'
         };
+    }
+
+    function collectTemplatePreviewFormData() {
+        const form = document.getElementById('engagementTemplateForm');
+        if (!(form instanceof HTMLFormElement)) {
+            return getInitialTemplatePreviewData();
+        }
+        const formData = new FormData(form);
+        const pageIds = formData.getAll('page_ids').map((item) => String(item || '').trim()).filter(Boolean);
+        const editableTemplate = getEditableTemplate();
+        const currentMetadata = editableTemplate?.metadata && typeof editableTemplate.metadata === 'object' && !Array.isArray(editableTemplate.metadata)
+            ? editableTemplate.metadata
+            : {};
+        const draftTemplate = {
+            name: String(formData.get('name') || '').trim(),
+            key: String(formData.get('key') || '').trim(),
+            page_ids: pageIds.length ? pageIds : ['all'],
+            title: String(formData.get('title') || '').trim(),
+            content: String(formData.get('content') || '').trim(),
+            tone: String(formData.get('tone') || 'info').trim(),
+            action_label: String(formData.get('action_label') || '').trim(),
+            action_url: String(formData.get('action_url') || '').trim(),
+            metadata: currentMetadata
+        };
+        return {
+            name: draftTemplate.name,
+            site: getCurrentSite(),
+            status: 'draft',
+            page_ids: draftTemplate.page_ids,
+            audience: { scope: 'all' },
+            trigger_type: getTemplatePreferredTriggerType(draftTemplate),
+            placement: 'robot_bubble',
+            title: draftTemplate.title || draftTemplate.name,
+            content: draftTemplate.content,
+            tone: draftTemplate.tone || 'info',
+            action_label: draftTemplate.action_label,
+            action_url: draftTemplate.action_url,
+            enabled: false
+        };
+    }
+
+    function collectRuleGovernanceFormData(form) {
+        if (!(form instanceof HTMLFormElement)) return {};
+        const formData = new FormData(form);
+        const pageIds = formData.getAll('page_ids').map((item) => String(item || '').trim()).filter(Boolean);
+        return {
+            page_ids: pageIds.length ? pageIds : ['all'],
+            placement: normalizeToken(formData.get('placement') || 'robot_bubble', 'robot_bubble'),
+            tone: normalizeToken(formData.get('tone') || 'info', 'info'),
+            priority: Number.parseInt(formData.get('priority') || '0', 10) || 0,
+            action_label: String(formData.get('action_label') || '').trim(),
+            action_url: String(formData.get('action_url') || '').trim()
+        };
+    }
+
+    function updateRuleGovernanceFromForm() {
+        const slot = document.querySelector('[data-engagement-rule-governance-slot]');
+        const form = document.getElementById('engagementRuleForm');
+        if (!(slot instanceof HTMLElement) || !(form instanceof HTMLFormElement)) return false;
+        const markup = renderRuleGovernanceNotice(getRuleGovernance(collectRuleGovernanceFormData(form)));
+        slot.innerHTML = markup;
+        slot.hidden = !markup;
+        return true;
     }
 
     function updatePreviewControlState(shell) {
@@ -5619,18 +9702,40 @@
         });
     }
 
+    function updateRuleEffectiveStatusNote(previewData = collectRulePreviewFormData()) {
+        const form = document.getElementById('engagementRuleForm');
+        const publishAtValue = form instanceof HTMLFormElement ? getRulePublishAtControlValue(form) : '';
+        const effectiveStatusData = publishAtValue
+            ? {
+                ...previewData,
+                status: normalizeRuleStatusForSchedule(previewData.status || 'draft', publishAtValue),
+                starts_at: publishAtValue,
+                enabled: true
+            }
+            : previewData;
+        const effectiveStatusInfo = getRuleEffectiveStatusInfo(effectiveStatusData);
+        const statusNote = document.querySelector('[data-engagement-rule-status-note]');
+        if (statusNote instanceof HTMLElement) {
+            statusNote.dataset.tone = effectiveStatusInfo.tone;
+            statusNote.innerHTML = renderRuleEffectiveStatusNote(effectiveStatusInfo);
+        }
+        return effectiveStatusInfo;
+    }
+
     function updateRulePreviewFromForm() {
+        updateRuleGovernanceFromForm();
+        enforceRuleScheduledStatusSelect();
+        const previewData = collectRulePreviewFormData();
+        updateRuleEffectiveStatusNote(previewData);
         const shell = document.querySelector('[data-engagement-rule-preview-shell]');
         if (!(shell instanceof HTMLElement)) return false;
 
-        const previewData = collectRulePreviewFormData();
         const pageId = resolvePreviewPageId(previewData.page_ids);
-        const title = previewData.title || previewData.name || '小助手提醒';
-        const content = previewData.content || '这里会实时显示用户将在客服机器人旁看到的气泡内容。';
+        const previewCopy = buildRulePreviewCopy(previewData);
+        const title = previewCopy.title;
+        const content = previewCopy.content;
         const actionLabel = previewData.action_label || (previewData.action_url ? '查看详情' : '');
-        const statusLabel = previewData.enabled && previewData.status === 'published'
-            ? '运行中'
-            : getOptionLabel(RULE_STATUS_OPTIONS, previewData.status || 'draft');
+        const statusLabel = getRuleStatusLabel(previewData);
         const audienceLabel = getAudienceLabel(previewData.audience);
         const triggerTypeLabel = getTriggerTypeLabel(previewData.trigger_type);
         const placementLabel = getPlacementLabel(previewData.placement);
@@ -5639,6 +9744,8 @@
         const siteLabel = getOptionLabel([['all', '全站'], ['cn', 'CN'], ['intl', 'INTL']], previewData.site || 'all');
         const bubble = shell.querySelector('[data-engagement-preview-bubble]');
         const action = shell.querySelector('[data-engagement-preview-action]');
+        const sampleField = shell.querySelector('[data-engagement-preview-sample-field]');
+        const sampleLabelEl = shell.querySelector('[data-engagement-preview-sample-label]');
 
         updatePreviewControlState(shell);
         if (bubble instanceof HTMLElement) {
@@ -5665,11 +9772,155 @@
         if (deviceEl) deviceEl.textContent = deviceLabel;
         const themeEl = shell.querySelector('[data-engagement-preview-theme-label]');
         if (themeEl) themeEl.textContent = themeLabel;
+        if (sampleField instanceof HTMLElement) {
+            const sampleOptions = getRulePreviewSampleOptions(previewData.trigger_type);
+            sampleField.hidden = !sampleOptions.length;
+            sampleField.innerHTML = sampleOptions.length
+                ? `<span>事件样本</span>${renderRulePreviewSampleSelect(previewData.trigger_type)}`
+                : '';
+        }
+        if (sampleLabelEl instanceof HTMLElement) {
+            sampleLabelEl.hidden = !previewCopy.sampleLabel;
+            sampleLabelEl.textContent = previewCopy.sampleLabel || '';
+        }
         if (action instanceof HTMLAnchorElement) {
             action.textContent = actionLabel;
             action.href = previewData.action_url || '#';
             action.hidden = !actionLabel;
         }
+        return true;
+    }
+
+    function updateTemplatePreviewFromForm() {
+        const previewData = collectTemplatePreviewFormData();
+        const shell = document.querySelector('[data-engagement-template-preview-shell]');
+        if (!(shell instanceof HTMLElement)) return false;
+
+        const pageId = resolvePreviewPageId(previewData.page_ids);
+        const previewCopy = buildRulePreviewCopy(previewData);
+        const title = previewCopy.title;
+        const content = previewCopy.content;
+        const actionLabel = previewData.action_label || (previewData.action_url ? '查看详情' : '');
+        const deviceLabel = state.previewDevice === 'mobile' ? '移动端' : '桌面端';
+        const themeLabel = state.previewTheme === 'dark' ? '深色' : '浅色';
+        const toneLabel = getOptionLabel(RULE_TONE_OPTIONS, previewData.tone || 'info');
+        const triggerTypeLabel = getTriggerTypeLabel(previewData.trigger_type);
+        const bubble = shell.querySelector('[data-engagement-template-preview-bubble]');
+        const action = shell.querySelector('[data-engagement-template-preview-action]');
+        const sampleField = shell.querySelector('[data-engagement-template-preview-sample-field]');
+        const sampleLabelEl = shell.querySelector('[data-engagement-template-preview-sample-label]');
+
+        updatePreviewControlState(shell);
+        if (bubble instanceof HTMLElement) {
+            bubble.dataset.tone = normalizeToken(previewData.tone, 'info');
+            bubble.dataset.placement = 'robot_bubble';
+        }
+        const titleEl = shell.querySelector('[data-engagement-template-preview-title]');
+        if (titleEl) titleEl.textContent = title;
+        const contentEl = shell.querySelector('[data-engagement-template-preview-content]');
+        if (contentEl) contentEl.textContent = content;
+        const pageLabelEl = shell.querySelector('[data-engagement-template-preview-page-label]');
+        if (pageLabelEl) pageLabelEl.textContent = getPageLabel(pageId);
+        const triggerEl = shell.querySelector('[data-engagement-template-preview-trigger]');
+        if (triggerEl) triggerEl.textContent = triggerTypeLabel;
+        const deviceEl = shell.querySelector('[data-engagement-template-preview-device-label]');
+        if (deviceEl) deviceEl.textContent = deviceLabel;
+        const themeEl = shell.querySelector('[data-engagement-template-preview-theme-label]');
+        if (themeEl) themeEl.textContent = themeLabel;
+        const toneEl = shell.querySelector('[data-engagement-template-preview-tone]');
+        if (toneEl) toneEl.textContent = toneLabel;
+        const pageMetaEl = shell.querySelector('[data-engagement-template-preview-page]');
+        if (pageMetaEl) pageMetaEl.textContent = getPageLabel(pageId);
+        if (sampleField instanceof HTMLElement) {
+            const sampleOptions = getRulePreviewSampleOptions(previewData.trigger_type);
+            sampleField.hidden = !sampleOptions.length;
+            sampleField.innerHTML = sampleOptions.length
+                ? `<span>事件样本</span>${renderRulePreviewSampleSelect(previewData.trigger_type)}`
+                : '';
+        }
+        if (sampleLabelEl instanceof HTMLElement) {
+            sampleLabelEl.hidden = !previewCopy.sampleLabel;
+            sampleLabelEl.textContent = previewCopy.sampleLabel || '';
+        }
+        if (action instanceof HTMLAnchorElement) {
+            action.textContent = actionLabel;
+            action.href = previewData.action_url || '#';
+            action.hidden = !actionLabel;
+        }
+        return true;
+    }
+
+    function updateScenePreviewFromForm() {
+        const previewData = collectScenePreviewFormData();
+        state.scenePreviewEvent = normalizeScenePreviewEvent(previewData.scene?.events || [], state.scenePreviewEvent || previewData.trigger_type || '');
+        syncScenePriorityOverrideStateFromForm(previewData.scene || {});
+        const shell = document.querySelector('[data-engagement-scene-preview-shell]');
+        if (!(shell instanceof HTMLElement)) return false;
+
+        const pageId = normalizeToken((previewData.page_ids || [])[0] || 'home', 'home');
+        const previewCopy = buildRulePreviewCopy(previewData);
+        const title = previewCopy.title;
+        const content = previewCopy.content;
+        const actionLabel = previewData.action_label || (previewData.action_url ? '查看详情' : '');
+        const deviceLabel = state.previewDevice === 'mobile' ? '移动端' : '桌面端';
+        const themeLabel = state.previewTheme === 'dark' ? '深色' : '浅色';
+        const triggerTypeLabel = getTriggerTypeLabel(previewData.trigger_type);
+        const placementLabel = getPlacementLabel(previewData.placement);
+        const toneLabel = getOptionLabel(RULE_TONE_OPTIONS, previewData.tone || 'info');
+        const bubble = shell.querySelector('[data-engagement-scene-preview-bubble]');
+        const action = shell.querySelector('[data-engagement-scene-preview-action]');
+        const sampleField = shell.querySelector('[data-engagement-scene-preview-sample-field]');
+        const sampleLabelEl = shell.querySelector('[data-engagement-scene-preview-sample-label]');
+
+        updatePreviewControlState(shell);
+        if (bubble instanceof HTMLElement) {
+            bubble.dataset.tone = normalizeToken(previewData.tone, 'info');
+            bubble.dataset.placement = normalizeToken(previewData.placement, 'robot_bubble');
+        }
+        const titleEl = shell.querySelector('[data-engagement-scene-preview-title]');
+        if (titleEl) titleEl.textContent = title;
+        const contentEl = shell.querySelector('[data-engagement-scene-preview-content]');
+        if (contentEl) contentEl.textContent = content;
+        const pageLabelEl = shell.querySelector('[data-engagement-scene-preview-page-label]');
+        if (pageLabelEl) pageLabelEl.textContent = getPageLabel(pageId);
+        const safeZoneEl = shell.querySelector('[data-engagement-scene-preview-safe-zone]');
+        if (safeZoneEl) safeZoneEl.textContent = getSafeZoneLabel(previewData.scene?.safe_zone || 'bottom-right');
+        const triggerEl = shell.querySelector('[data-engagement-scene-preview-trigger]');
+        if (triggerEl) triggerEl.textContent = triggerTypeLabel;
+        const placementEl = shell.querySelector('[data-engagement-scene-preview-placement]');
+        if (placementEl) placementEl.textContent = placementLabel;
+        const toneEl = shell.querySelector('[data-engagement-scene-preview-tone]');
+        if (toneEl) toneEl.textContent = toneLabel;
+        const marketingEl = shell.querySelector('[data-engagement-scene-preview-marketing]');
+        if (marketingEl) marketingEl.textContent = previewData.scene?.allow_marketing === false ? '仅服务触达' : '服务 + 营销触达';
+        const deviceEl = shell.querySelector('[data-engagement-scene-preview-device-label]');
+        if (deviceEl) deviceEl.textContent = deviceLabel;
+        const themeEl = shell.querySelector('[data-engagement-scene-preview-theme-label]');
+        if (themeEl) themeEl.textContent = themeLabel;
+        if (sampleField instanceof HTMLElement) {
+            const sampleOptions = getRulePreviewSampleOptions(previewData.trigger_type);
+            sampleField.hidden = !sampleOptions.length;
+            sampleField.innerHTML = sampleOptions.length
+                ? `<span>事件样本</span>${renderRulePreviewSampleSelect(previewData.trigger_type, 'scene_preview_sample')}`
+                : '';
+        }
+        if (sampleLabelEl instanceof HTMLElement) {
+            sampleLabelEl.hidden = !previewCopy.sampleLabel;
+            sampleLabelEl.textContent = previewCopy.sampleLabel || '';
+        }
+        if (action instanceof HTMLAnchorElement) {
+            action.textContent = actionLabel;
+            action.href = previewData.action_url || '#';
+            action.hidden = !actionLabel;
+        }
+        return true;
+    }
+
+    function syncScenePriorityOverrideStateFromForm(scene = {}) {
+        const grid = document.querySelector('[data-engagement-scene-priority-override-grid]');
+        if (!(grid instanceof HTMLElement)) return false;
+        const enabled = scene?.event_priority_center?.enabled === true;
+        grid.classList.toggle('is-disabled', !enabled);
         return true;
     }
 
@@ -5725,6 +9976,124 @@
         }
     }
 
+    function getEngagementActionBusyLabel(action = '', fallback = '处理中...') {
+        const normalized = normalizeToken(action, '');
+        const labels = {
+            refresh: '刷新中...',
+            'submit-template': '保存中...',
+            'delete-template': '删除中...',
+            'create-template-starter': '写入中...',
+            'submit-user-tag': '保存中...',
+            'delete-user-tag': '删除中...',
+            'submit-tag-automation': '保存中...',
+            'run-inactive-sweep': '扫描中...',
+            'sync-segment-tags': '同步中...',
+            'submit-segment': '保存中...',
+            'delete-segment': '删除中...',
+            'create-automation-rule': '创建中...',
+            'create-missing-automation-rules': '批量创建中...',
+            'publish-automation-drafts': '发布中...',
+            'pause-running-automation-rules': '暂停中...',
+            'toggle-automation-rule': '处理中...',
+            'submit-scene': '保存中...',
+            'submit-asset-style': '保存中...',
+            'apply-asset-style-preset': '套用中...',
+            'submit-asset': '保存中...',
+            'delete-asset': '删除中...',
+            'submit-entry-settings': '保存中...',
+            'submit-entry-context': '保存中...',
+            'submit-external-embed': '保存中...',
+            'copy-external-embed-snippet': '复制中...',
+            'batch-pause-filtered-rules': '批量暂停中...',
+            'batch-copy-filtered-rules': '批量复制中...',
+            'batch-archive-attention-rules': '批量归档中...',
+            'batch-archive-high-risk-rules': '批量归档中...',
+            'rollback-audit-batch': '回滚中...',
+            'toggle-rule': '处理中...',
+            'archive-rule': '归档中...',
+            'delete-rule': '删除中...',
+            'pause-all-rules': '暂停中...',
+            'restore-latest-pause-all-rules': '恢复中...'
+        };
+        return labels[normalized] || fallback;
+    }
+
+    function shouldShowEngagementBusyLabel(actionEl) {
+        if (!(actionEl instanceof HTMLElement)) return true;
+        return String(actionEl.textContent || '').trim().length > 0;
+    }
+
+    function startEngagementActionFeedback(actionEl, label = '处理中...') {
+        if (!(actionEl instanceof HTMLElement)) return false;
+        if (actionEl.dataset.engagementActionBusy === 'true') return false;
+        if (actionEl instanceof HTMLButtonElement && actionEl.disabled) return false;
+        const showBusyLabel = shouldShowEngagementBusyLabel(actionEl);
+
+        actionEl.dataset.engagementActionBusy = 'true';
+        actionEl.dataset.engagementActionOriginalHtml = actionEl.innerHTML;
+        actionEl.classList.add('is-engagement-action-busy');
+        actionEl.setAttribute('aria-busy', 'true');
+
+        if (actionEl instanceof HTMLButtonElement) {
+            actionEl.dataset.engagementActionWasDisabled = actionEl.disabled ? 'true' : 'false';
+            actionEl.disabled = true;
+        }
+
+        if (actionEl.matches('button')) {
+            if (!showBusyLabel) {
+                actionEl.dataset.engagementActionOriginalAriaLabel = actionEl.getAttribute('aria-label') || '';
+                actionEl.setAttribute('aria-label', label);
+            }
+            actionEl.innerHTML = showBusyLabel
+                ? `
+                    <i class="fas fa-spinner fa-spin" aria-hidden="true"></i>
+                    <span>${escapeHtml(label)}</span>
+                `
+                : '<i class="fas fa-spinner fa-spin" aria-hidden="true"></i>';
+        }
+        return true;
+    }
+
+    function clearEngagementActionFeedback(actionEl) {
+        if (!(actionEl instanceof HTMLElement)) return;
+        if (actionEl.dataset.engagementActionBusy !== 'true') return;
+
+        if (Object.prototype.hasOwnProperty.call(actionEl.dataset, 'engagementActionOriginalHtml')) {
+            actionEl.innerHTML = actionEl.dataset.engagementActionOriginalHtml || '';
+        }
+        if (actionEl instanceof HTMLButtonElement) {
+            actionEl.disabled = actionEl.dataset.engagementActionWasDisabled === 'true';
+        }
+        if (Object.prototype.hasOwnProperty.call(actionEl.dataset, 'engagementActionOriginalAriaLabel')) {
+            const originalAriaLabel = actionEl.dataset.engagementActionOriginalAriaLabel || '';
+            if (originalAriaLabel) {
+                actionEl.setAttribute('aria-label', originalAriaLabel);
+            } else {
+                actionEl.removeAttribute('aria-label');
+            }
+        }
+        actionEl.classList.remove('is-engagement-action-busy');
+        actionEl.removeAttribute('aria-busy');
+        delete actionEl.dataset.engagementActionBusy;
+        delete actionEl.dataset.engagementActionOriginalHtml;
+        delete actionEl.dataset.engagementActionWasDisabled;
+        delete actionEl.dataset.engagementActionOriginalAriaLabel;
+    }
+
+    function runEngagementAsyncAction(actionEl, taskFactory, errorMessage = '客服系统操作失败', busyLabel = '') {
+        const label = busyLabel || getEngagementActionBusyLabel(actionEl?.dataset?.engagementAction, '处理中...');
+        if (!startEngagementActionFeedback(actionEl, label)) return false;
+        void Promise.resolve()
+            .then(taskFactory)
+            .catch((error) => {
+                showActionError(error, errorMessage);
+            })
+            .finally(() => {
+                clearEngagementActionFeedback(actionEl);
+            });
+        return true;
+    }
+
     function upsertRuleInPayload(rule = {}) {
         if (!rule || typeof rule !== 'object' || !String(rule.id || '').trim()) {
             return;
@@ -5742,6 +10111,76 @@
         };
     }
 
+    function mergeSegmentsAndTagCenterIntoPayload(payload = {}) {
+        const currentPayload = state.payload && typeof state.payload === 'object'
+            ? state.payload
+            : {};
+        state.payload = {
+            ...currentPayload,
+            segments: Array.isArray(payload.segments) ? payload.segments : (currentPayload.segments || []),
+            tag_center: payload.tag_center || currentPayload.tag_center
+        };
+    }
+
+    function rerenderSegmentTagPicker() {
+        const form = document.getElementById('engagementSegmentForm');
+        const picker = form?.querySelector?.('[data-engagement-segment-tag-picker]');
+        if (!(picker instanceof HTMLElement)) return false;
+        const selectedTags = getSelectedSegmentTags(picker);
+        picker.outerHTML = renderSegmentTagPicker(selectedTags);
+        return true;
+    }
+
+    async function refreshSegmentsAndTagCenter({ renderMode = 'overview', showSuccess = false } = {}) {
+        if (state.segmentTagsSyncing) return false;
+        state.segmentTagsSyncing = true;
+        try {
+            const payload = await fetchSegmentsAndTagCenter();
+            mergeSegmentsAndTagCenterIntoPayload(payload);
+            if (renderMode === 'picker' && rerenderSegmentTagPicker()) {
+                if (showSuccess) showFeedback('已刷新用户标签中心', 'success');
+                return true;
+            }
+            if (renderMode !== 'none' && state.activeView === 'segments') {
+                renderOverview(state.payload || {});
+            }
+            if (showSuccess) showFeedback('已刷新用户标签中心', 'success');
+            return true;
+        } finally {
+            state.segmentTagsSyncing = false;
+        }
+    }
+
+    async function syncUserManagementTagsToTagCenter({ renderMode = 'picker', showSuccess = true } = {}) {
+        if (state.segmentTagsSyncing) return false;
+        state.segmentTagsSyncing = true;
+        try {
+            const beforeKeys = new Set(getUserTagCenter().tags.map((tag) => normalizeUserTagKey(tag?.key || tag?.id, '')).filter(Boolean));
+            const result = await mutateSegment({ action: 'sync_user_tags' });
+            state.payload = {
+                ...(state.payload || {}),
+                tag_center: result?.tag_center || state.payload?.tag_center
+            };
+            const afterKeys = getUserTagCenter().tags.map((tag) => normalizeUserTagKey(tag?.key || tag?.id, '')).filter(Boolean);
+            const addedCount = afterKeys.filter((key) => !beforeKeys.has(key)).length;
+            if (renderMode === 'picker' && rerenderSegmentTagPicker()) {
+                if (showSuccess) {
+                    showFeedback(addedCount ? `已同步用户管理标签，新增 ${formatNumber(addedCount)} 个` : '已同步用户管理标签', 'success');
+                }
+                return true;
+            }
+            if (renderMode !== 'none' && state.activeView === 'segments') {
+                renderOverview(state.payload || {});
+            }
+            if (showSuccess) {
+                showFeedback(addedCount ? `已同步用户管理标签，新增 ${formatNumber(addedCount)} 个` : '已同步用户管理标签', 'success');
+            }
+            return true;
+        } finally {
+            state.segmentTagsSyncing = false;
+        }
+    }
+
     function upsertRulesInPayload(rules = []) {
         const rows = Array.isArray(rules) ? rules.filter((rule) => rule && String(rule.id || '').trim()) : [];
         if (!rows.length) return;
@@ -5756,6 +10195,21 @@
                 ...rows,
                 ...currentRules.filter((rule) => !updatedIds.has(String(rule?.id || '').trim()))
             ].slice(0, 100)
+        };
+        state.governanceRefreshHint = Date.now();
+    }
+
+    function removeRuleFromPayload(ruleId = '') {
+        const normalizedId = String(ruleId || '').trim();
+        if (!normalizedId) return;
+        const currentPayload = state.payload && typeof state.payload === 'object'
+            ? state.payload
+            : {};
+        const currentRules = Array.isArray(currentPayload.rules) ? currentPayload.rules : [];
+        const nextRules = currentRules.filter((rule) => String(rule?.id || '').trim() !== normalizedId);
+        state.payload = {
+            ...currentPayload,
+            rules: nextRules
         };
         state.governanceRefreshHint = Date.now();
     }
@@ -5825,6 +10279,10 @@
 
     function collectTemplateFormPayload(form) {
         const formData = new FormData(form);
+        const template = getEditableTemplate();
+        const metadata = template?.metadata && typeof template.metadata === 'object' && !Array.isArray(template.metadata)
+            ? template.metadata
+            : {};
         return {
             id: String(formData.get('id') || '').trim(),
             key: String(formData.get('key') || '').trim(),
@@ -5836,7 +10294,8 @@
             content: String(formData.get('content') || '').trim(),
             action_label: String(formData.get('action_label') || '').trim(),
             action_url: String(formData.get('action_url') || '').trim(),
-            tone: normalizeToken(formData.get('tone') || 'info', 'info')
+            tone: normalizeToken(formData.get('tone') || 'info', 'info'),
+            metadata
         };
     }
 
@@ -5851,8 +10310,8 @@
             icon: String(formData.get('icon') || 'fa-users').trim() || 'fa-users',
             page_ids: formData.getAll('page_ids').map((item) => String(item || '').trim()).filter(Boolean),
             email_targets: splitEmailLines(formData.get('email_targets')),
-            tag_targets: splitManagementLines(formData.get('tag_targets')),
-            examples: splitManagementLines(formData.get('examples')),
+            tag_targets: formData.getAll('tag_targets').map((item) => normalizeUserTagKey(item, '')).filter(Boolean),
+            examples: formData.getAll('examples').map((item) => normalizeSegmentScenarioValue(item)).filter(Boolean),
             enabled: String(formData.get('enabled') || '').trim() === 'true'
         };
     }
@@ -5861,8 +10320,8 @@
         const formData = new FormData(form);
         return {
             action: 'save_tag',
-            id: normalizeToken(formData.get('id') || '', ''),
-            key: normalizeToken(formData.get('key') || '', ''),
+            id: normalizeUserTagKey(formData.get('id') || '', ''),
+            key: normalizeUserTagKey(formData.get('key') || '', ''),
             name: String(formData.get('name') || '').trim(),
             source: normalizeToken(formData.get('source') || 'manual', 'manual'),
             description: String(formData.get('description') || '').trim(),
@@ -5906,6 +10365,7 @@
     function collectSceneFormPayload(form) {
         const formData = new FormData(form);
         const pageId = normalizeToken(formData.get('page_id') || 'home', 'home');
+        const scenePriorityEnabled = String(formData.get('scene_priority_override_enabled') || '').trim() === 'true';
         return {
             scene: {
                 id: pageId,
@@ -5913,9 +10373,53 @@
                 label: String(formData.get('label') || getPageLabel(pageId)).trim(),
                 tone: normalizeToken(formData.get('tone') || 'info', 'info'),
                 default_placement: normalizeToken(formData.get('default_placement') || 'robot_bubble', 'robot_bubble'),
-                safe_zone: String(formData.get('safe_zone') || 'bottom-right').trim() || 'bottom-right',
+                safe_zone: normalizeToken(formData.get('safe_zone') || 'bottom-right', 'bottom-right'),
                 allow_marketing: String(formData.get('allow_marketing') || '').trim() === 'true',
-                events: splitManagementLines(formData.get('events')).map((item) => normalizeToken(item, '')).filter(Boolean)
+                events: formData.getAll('events').map((item) => normalizeToken(item, '')).filter(Boolean),
+                event_priority_center: {
+                    enabled: scenePriorityEnabled,
+                    first_wave: {
+                        label: getEventPriorityCenter().first_wave.label,
+                        events: formData.getAll('first_wave_events').map((item) => normalizeToken(item, '')).filter(Boolean)
+                    },
+                    service: {
+                        label: getEventPriorityCenter().service.label,
+                        events: formData.getAll('service_events').map((item) => normalizeToken(item, '')).filter(Boolean)
+                    },
+                    marketing: {
+                        label: getEventPriorityCenter().marketing.label,
+                        events: formData.getAll('marketing_events').map((item) => normalizeToken(item, '')).filter(Boolean)
+                    },
+                    guidance: {
+                        label: getEventPriorityCenter().guidance.label,
+                        events: formData.getAll('guidance_events').map((item) => normalizeToken(item, '')).filter(Boolean)
+                    }
+                }
+            }
+        };
+    }
+
+    function collectEventPriorityCenterFormPayload(form) {
+        const formData = new FormData(form);
+        return {
+            action: 'save_event_priority_center',
+            event_priority_center: {
+                first_wave: {
+                    label: getEventPriorityCenter().first_wave.label,
+                    events: formData.getAll('first_wave_events').map((item) => normalizeToken(item, '')).filter(Boolean)
+                },
+                service: {
+                    label: getEventPriorityCenter().service.label,
+                    events: formData.getAll('service_events').map((item) => normalizeToken(item, '')).filter(Boolean)
+                },
+                marketing: {
+                    label: getEventPriorityCenter().marketing.label,
+                    events: formData.getAll('marketing_events').map((item) => normalizeToken(item, '')).filter(Boolean)
+                },
+                guidance: {
+                    label: getEventPriorityCenter().guidance.label,
+                    events: formData.getAll('guidance_events').map((item) => normalizeToken(item, '')).filter(Boolean)
+                }
             }
         };
     }
@@ -5932,7 +10436,7 @@
                 bubble_background: normalizeHexColor(formData.get('bubble_background'), '#ffffff'),
                 text_color: normalizeHexColor(formData.get('text_color'), '#1f2937'),
                 radius_px: Number.parseInt(formData.get('radius_px') || '22', 10) || 22,
-                max_width_px: Number.parseInt(formData.get('max_width_px') || '420', 10) || 420,
+                max_width_px: Number.parseInt(formData.get('max_width_px') || '520', 10) || 520,
                 density: normalizeToken(formData.get('density') || 'comfortable', 'comfortable'),
                 shadow: normalizeToken(formData.get('shadow') || 'soft', 'soft'),
                 animation: normalizeToken(formData.get('animation') || 'gentle', 'gentle'),
@@ -6087,7 +10591,7 @@
             return false;
         }
         const templates = Array.isArray(state.payload?.templates) ? state.payload.templates : [];
-        const existing = templates.find((template) => normalizeToken(template?.key || template?.id, '') === normalizeToken(starter.key, ''));
+        const existing = templates.find((template) => isTemplateStarterInstalled(starter, [template]));
         if (existing) {
             state.editingTemplateRef = String(existing.id || existing.key || '').trim();
             state.activeView = 'templates';
@@ -6095,12 +10599,20 @@
             showFeedback('模板库中已存在这条推荐模板', 'info');
             return true;
         }
+        const {
+            id: starterInternalId,
+            priority: starterPriority,
+            ...starterTemplatePayload
+        } = starter;
         const result = await mutateTemplate({
-            ...starter,
+            ...starterTemplatePayload,
             metadata: {
                 productized: true,
-                starter_id: starter.id,
+                starter_id: starterInternalId,
+                starter_key: starter.key,
                 starter_category: starter.category,
+                starter_priority: starterPriority,
+                starter_trigger_type: starter.trigger_type || starter.key || 'page_view',
                 created_from: 'template_product_shelf'
             }
         });
@@ -6108,7 +10620,7 @@
         state.editingTemplateRef = String(result?.template?.id || '').trim();
         state.templateCategoryFilter = starter.category || state.templateCategoryFilter;
         state.activeView = 'templates';
-        showFeedback('推荐模板已写入模板库', 'success');
+        showFeedback(result?.already_exists ? '模板库中已存在这条推荐模板' : '推荐模板已写入模板库', result?.already_exists ? 'info' : 'success');
         renderOverview(state.payload || {});
         return true;
     }
@@ -6170,9 +10682,9 @@
     }
 
     async function deleteUserTag(tagRef = '') {
-        const tagKey = normalizeToken(tagRef, '');
+        const tagKey = normalizeUserTagKey(tagRef, '');
         if (!tagKey) return false;
-        const tag = getUserTagCenter().tags.find((item) => normalizeToken(item.key || item.id, '') === tagKey);
+        const tag = getUserTagCenter().tags.find((item) => normalizeUserTagKey(item.key || item.id, '') === tagKey);
         const confirmed = typeof globalScope.confirm === 'function'
             ? globalScope.confirm(`确定删除「${tag?.name || tagKey}」标签定义吗？`)
             : true;
@@ -6185,7 +10697,7 @@
             ...(state.payload || {}),
             tag_center: result?.tag_center || state.payload?.tag_center
         };
-        if (normalizeToken(state.editingUserTagRef, '') === tagKey) {
+        if (normalizeUserTagKey(state.editingUserTagRef, '') === tagKey) {
             state.editingUserTagRef = '';
         }
         state.activeView = 'segments';
@@ -6194,7 +10706,7 @@
         return true;
     }
 
-    async function saveTagAutomationFromForm(form) {
+    async function persistTagAutomationFromForm(form, { showSuccess = true, render = true } = {}) {
         if (!(form instanceof HTMLFormElement)) return false;
         const payload = collectTagAutomationFormPayload(form);
         const result = await mutateSegment(payload);
@@ -6203,12 +10715,36 @@
             tag_center: result?.tag_center || state.payload?.tag_center
         };
         state.activeView = 'segments';
-        showFeedback('自动分群阈值已保存', 'success');
-        renderOverview(state.payload || {});
+        if (showSuccess) {
+            showFeedback('自动分群阈值已保存', 'success');
+        }
+        if (render) {
+            renderOverview(state.payload || {});
+        }
         return true;
     }
 
-    async function runInactiveUserSweep() {
+    async function saveTagAutomationFromForm(form) {
+        return persistTagAutomationFromForm(form, {
+            showSuccess: true,
+            render: true
+        });
+    }
+
+    async function runInactiveUserSweep(form = document.getElementById('engagementTagAutomationForm')) {
+        if (form instanceof HTMLFormElement) {
+            const payload = collectTagAutomationFormPayload(form);
+            const inactiveEnabled = payload?.tag_center?.automation?.inactive?.enabled === true;
+            if (!inactiveEnabled) {
+                showFeedback('长期未活跃扫描未启用，请先打开阈值开关', 'info');
+                return false;
+            }
+            await persistTagAutomationFromForm(form, {
+                showSuccess: false,
+                render: false
+            });
+        }
+
         const result = await mutateSegment({
             action: 'run_inactive_sweep',
             limit: 500
@@ -6219,6 +10755,9 @@
             skipped ? '长期未活跃扫描未启用，请先打开阈值开关' : `长期未活跃扫描完成，新增/刷新 ${formatNumber(tagged)} 个用户标签`,
             skipped ? 'info' : 'success'
         );
+        if (!skipped && state.activeView === 'segments') {
+            renderOverview(state.payload || {});
+        }
         return true;
     }
 
@@ -6252,12 +10791,75 @@
     async function saveSceneFromForm(form) {
         if (!(form instanceof HTMLFormElement)) return false;
         const payload = collectSceneFormPayload(form);
+        const confirmed = confirmSceneSaveRisk(payload.scene);
+        if (!confirmed) {
+            showFeedback('页面场景保存已取消', 'info');
+            return false;
+        }
+        state.scenePreviewEvent = normalizeScenePreviewEvent(payload.scene.events || [], state.scenePreviewEvent || '');
         await mutateScene(payload);
         state.editingScenePageId = payload.scene.page_id;
         state.focusedPageId = payload.scene.page_id;
         state.activeView = 'scenes';
         showFeedback('页面场景已保存', 'success');
         await refreshAdminEngagementModule();
+        return true;
+    }
+
+    function applyScenePriorityPreset(presetId = '', pageId = '') {
+        const normalizedPageId = normalizeToken(pageId || state.editingScenePageId || 'home', 'home');
+        const preset = getScenePriorityPresetPacks(normalizedPageId).find((item) => normalizeToken(item.id, '') === normalizeToken(presetId, ''));
+        if (!preset) return false;
+        const payload = state.payload && typeof state.payload === 'object' && !Array.isArray(state.payload) ? state.payload : createDegradedOverviewPayload({});
+        const scenes = Array.isArray(payload.page_scenes) ? payload.page_scenes.slice() : [];
+        const currentScene = getSceneByPageId(normalizedPageId);
+        const nextScene = {
+            ...currentScene,
+            id: normalizedPageId,
+            page_id: normalizedPageId,
+            allow_marketing: preset.allow_marketing !== false,
+            events: Array.isArray(preset.events) ? preset.events.map((eventKey) => normalizeToken(eventKey, '')).filter(Boolean) : currentScene.events,
+            event_priority_center: normalizeSceneEventPriorityCenter({
+                enabled: true,
+                ...(preset.event_priority_center || {})
+            }, getEventPriorityCenter())
+        };
+        const existingIndex = scenes.findIndex((scene) => normalizeToken(scene?.id || scene?.page_id, '') === normalizedPageId);
+        if (existingIndex >= 0) {
+            scenes.splice(existingIndex, 1, nextScene);
+        } else {
+            scenes.push(nextScene);
+        }
+        state.payload = {
+            ...payload,
+            page_scenes: scenes
+        };
+        state.editingScenePageId = normalizedPageId;
+        state.scenePreviewEvent = normalizeScenePreviewEvent(nextScene.events || [], state.scenePreviewEvent || '');
+        state.activeView = 'scenes';
+        renderOverview(state.payload || {});
+        updateScenePreviewFromForm();
+        showFeedback(`已套用「${preset.name}」，保存后生效`, 'success');
+        return true;
+    }
+
+    function applySceneGuidanceAction(actionType = '', actionValue = '', pageId = '') {
+        const normalizedActionType = normalizeToken(actionType, '');
+        if (normalizedActionType === 'preset') {
+            return applyScenePriorityPreset(actionValue, pageId);
+        }
+        return false;
+    }
+
+    async function saveEventPriorityCenterFromForm(form) {
+        if (!(form instanceof HTMLFormElement)) return false;
+        const result = await mutateScene(collectEventPriorityCenterFormPayload(form));
+        state.payload = {
+            ...(state.payload || {}),
+            event_priority_center: result?.event_priority_center || state.payload?.event_priority_center
+        };
+        showFeedback('首波分诊配置已保存', 'success');
+        renderOverview(state.payload || {});
         return true;
     }
 
@@ -6498,6 +11100,7 @@
             icon: sourceRule.icon || 'robot',
             priority: Number(sourceRule.priority || 0) || 0,
             frequency: sourceRule.frequency || 'once_per_day',
+            repeat_interval_minutes: getRuleRepeatIntervalMinutes(sourceRule, 2),
             dismiss_ttl_hours: Number(sourceRule.dismiss_ttl_hours || 24) || 24,
             starts_at: sourceRule.starts_at || '',
             ends_at: sourceRule.ends_at || '',
@@ -6637,6 +11240,9 @@
             state.ruleStatusFilter = 'draft';
             state.ruleHealthFilter = 'all';
             state.rulePageFilter = 'all';
+            state.ruleAudienceFilter = 'all';
+            state.ruleDuplicateFilter = false;
+            resetRulePagination();
         }
         finishRuleBatchAction(buildRuleBatchResult({
             context,
@@ -6656,6 +11262,23 @@
         state.ruleStatusFilter = 'all';
         state.ruleHealthFilter = normalizeToken(healthFilter, 'all');
         state.rulePageFilter = 'all';
+        state.ruleAudienceFilter = 'all';
+        state.ruleDuplicateFilter = false;
+        resetRulePagination();
+        renderOverview(state.payload || {});
+        document.querySelector('[data-engagement-rule-toolbar]')?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
+        return true;
+    }
+
+    function focusDuplicateRules() {
+        state.activeView = 'rules';
+        state.ruleSearchQuery = '';
+        state.ruleStatusFilter = 'all';
+        state.ruleHealthFilter = 'all';
+        state.rulePageFilter = 'all';
+        state.ruleAudienceFilter = 'all';
+        state.ruleDuplicateFilter = true;
+        resetRulePagination();
         renderOverview(state.payload || {});
         document.querySelector('[data-engagement-rule-toolbar]')?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
         return true;
@@ -6705,6 +11328,7 @@
         }));
         state.activeView = 'rules';
         state.ruleHealthFilter = 'high_risk';
+        resetRulePagination();
         renderOverview(state.payload || {});
         return results.length > 0;
     }
@@ -6783,7 +11407,7 @@
         return results.length > 0;
     }
 
-    async function toggleRule(ruleId = '', enabled = false) {
+    async function toggleRule(ruleId = '', enabled = false, options = {}) {
         const normalizedId = String(ruleId || '').trim();
         if (!normalizedId) return false;
         const currentRule = getRuleById(normalizedId);
@@ -6809,8 +11433,12 @@
             ...governanceAck
         });
         upsertRuleInPayload(result?.rule);
-        showFeedback(enabled ? '触达规则已发布' : '触达规则已暂停', 'success');
-        renderOverview(state.payload || {});
+        if (options?.showFeedback !== false) {
+            showFeedback(options?.successMessage || (enabled ? '触达规则已发布' : '触达规则已暂停'), 'success');
+        }
+        if (options?.render !== false) {
+            renderOverview(state.payload || {});
+        }
         return true;
     }
 
@@ -6826,6 +11454,31 @@
             state.editingRuleId = '';
         }
         showFeedback('触达规则已归档', 'success');
+        renderOverview(state.payload || {});
+        return true;
+    }
+
+    async function deleteRule(ruleId = '') {
+        const normalizedId = String(ruleId || '').trim();
+        if (!normalizedId) return false;
+        const rule = getRuleById(normalizedId);
+        const ruleName = rule?.name || '这条触达规则';
+        const confirmed = typeof globalScope.confirm === 'function'
+            ? globalScope.confirm(`确定永久删除「${ruleName}」吗？删除后不可恢复。`)
+            : true;
+        if (!confirmed) return false;
+        const result = await mutateRule({
+            action: 'delete_rule',
+            id: normalizedId
+        });
+        const deletedId = String(result?.deleted_id || result?.deleted_rule?.id || normalizedId).trim();
+        removeRuleFromPayload(deletedId || normalizedId);
+        if (state.editingRuleId === normalizedId || state.editingRuleId === deletedId) {
+            state.editingRuleId = '';
+            state.ruleDraft = null;
+            state.templateDraftRef = '';
+        }
+        showFeedback('触达规则已删除', 'success');
         renderOverview(state.payload || {});
         return true;
     }
@@ -6970,9 +11623,11 @@
         if (!normalizedPageId) return false;
         state.focusedPageId = normalizedPageId;
         state.rulePageFilter = 'all';
+        resetRulePagination();
         state.editingRuleId = '';
         state.ruleDraft = null;
         state.activeView = 'rules';
+        state.pendingFocusedPageScroll = true;
         renderOverview(state.payload || {});
         document.getElementById('engagementRuleForm')?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
         showFeedback(`已切到${getPageLabel(normalizedPageId)}触达规则`, 'info');
@@ -6982,6 +11637,8 @@
     function clearPageFocus() {
         if (!state.focusedPageId) return false;
         state.focusedPageId = '';
+        state.pendingFocusedPageScroll = false;
+        resetRulePagination();
         renderOverview(state.payload || {});
         return true;
     }
@@ -7059,7 +11716,7 @@
     }
 
     function editUserTag(tagRef = '') {
-        const normalizedRef = normalizeToken(tagRef, '');
+        const normalizedRef = normalizeUserTagKey(tagRef, '');
         if (!normalizedRef) return false;
         state.editingUserTagRef = normalizedRef;
         state.activeView = 'segments';
@@ -7078,6 +11735,7 @@
     function editScene(pageId = '') {
         const normalizedPageId = normalizeToken(pageId || 'home', 'home');
         state.editingScenePageId = normalizedPageId;
+        state.scenePreviewEvent = '';
         state.focusedPageId = normalizedPageId;
         state.activeView = 'scenes';
         renderOverview(state.payload || {});
@@ -7087,6 +11745,7 @@
 
     function resetSceneComposer() {
         state.editingScenePageId = 'home';
+        state.scenePreviewEvent = '';
         state.activeView = 'scenes';
         renderOverview(state.payload || {});
         return true;
@@ -7149,6 +11808,7 @@
             action_label: '',
             action_url: '',
             priority: 0,
+            repeat_interval_minutes: 2,
             dismiss_ttl_hours: 24
         };
         state.editingRuleId = '';
@@ -7164,6 +11824,8 @@
         const pageIds = Array.isArray(blueprint.pageIds) && blueprint.pageIds.length
             ? blueprint.pageIds.filter((pageId) => RULE_PAGE_OPTIONS.includes(pageId))
             : ['all'];
+        const semanticFamily = getAutomationBlueprintIntentFamily(blueprint);
+        const intentLabel = getAutomationBlueprintIntentLabel(blueprint);
         return {
             action: 'save_rule',
             id: '',
@@ -7182,29 +11844,108 @@
             action_label: blueprint.actionLabel || '',
             action_url: blueprint.actionUrl || '',
             priority: Number(blueprint.priority || 0) || 0,
+            repeat_interval_minutes: 2,
             dismiss_ttl_hours: Number(blueprint.dismissTtlHours || 24) || 24,
             metadata: {
                 source_module: 'engagement.automation_blueprint',
                 automation_blueprint_id: blueprint.id || '',
                 automation_blueprint_title: blueprint.title || '',
-                automation_mode: blueprint.mode || ''
+                automation_mode: blueprint.mode || '',
+                automation_semantic_family: semanticFamily,
+                automation_intent_label: intentLabel
             }
         };
+    }
+
+    function getAutomationRuleIntentFamily(rule = {}) {
+        const metadata = rule?.metadata && typeof rule.metadata === 'object' && !Array.isArray(rule.metadata)
+            ? rule.metadata
+            : {};
+        const explicitFamily = normalizeToken(
+            metadata.automation_semantic_family || metadata.automationSemanticFamily || '',
+            ''
+        );
+        if (explicitFamily) return explicitFamily;
+        const blueprintId = getAutomationBlueprintMetadataId(rule);
+        if (!blueprintId) return '';
+        const blueprint = AUTOMATION_BLUEPRINTS.find((item) => item.id === blueprintId);
+        return blueprint ? getAutomationBlueprintIntentFamily(blueprint) : '';
+    }
+
+    function getAutomationRuleIntentLabel(rule = {}) {
+        const metadata = rule?.metadata && typeof rule.metadata === 'object' && !Array.isArray(rule.metadata)
+            ? rule.metadata
+            : {};
+        const explicitLabel = String(metadata.automation_intent_label || metadata.automationIntentLabel || '').trim();
+        if (explicitLabel) return explicitLabel;
+        const blueprintId = getAutomationBlueprintMetadataId(rule);
+        if (!blueprintId) return '';
+        const blueprint = AUTOMATION_BLUEPRINTS.find((item) => item.id === blueprintId);
+        return blueprint ? getAutomationBlueprintIntentLabel(blueprint) : '';
+    }
+
+    function getAutomationIntentSiblingRunningRules(automationId = '', excludedRuleId = '') {
+        const normalizedAutomationId = normalizeToken(automationId, '');
+        const normalizedExcludedRuleId = String(excludedRuleId || '').trim();
+        if (!normalizedAutomationId) return [];
+        const blueprint = AUTOMATION_BLUEPRINTS.find((item) => item.id === normalizedAutomationId);
+        const semanticFamily = blueprint ? getAutomationBlueprintIntentFamily(blueprint) : '';
+        if (!semanticFamily) return [];
+        const rules = Array.isArray(state.payload?.rules) ? state.payload.rules : [];
+        return rules.filter((rule) => {
+            const ruleId = String(rule?.id || '').trim();
+            if (!ruleId || ruleId === normalizedExcludedRuleId) return false;
+            if (!isRuleRunningNow(rule)) return false;
+            return getAutomationRuleIntentFamily(rule) === semanticFamily;
+        });
+    }
+
+    function getAutomationBlueprintMetadataId(rule = {}) {
+        const metadata = rule?.metadata && typeof rule.metadata === 'object' && !Array.isArray(rule.metadata)
+            ? rule.metadata
+            : {};
+        return normalizeToken(
+            metadata.automation_blueprint_id || metadata.automationBlueprintId || metadata.blueprint_id || '',
+            ''
+        );
+    }
+
+    function areRulePageSetsEqual(first = [], second = []) {
+        const firstPages = normalizeRuleDuplicateList(first);
+        const secondPages = normalizeRuleDuplicateList(second);
+        return firstPages.length === secondPages.length
+            && firstPages.every((pageId, index) => pageId === secondPages[index]);
+    }
+
+    function ruleMatchesAutomationBlueprintShape(rule = {}, blueprint = {}) {
+        if (!rule || !blueprint?.id) return false;
+        const expected = buildAutomationRulePayload(blueprint);
+        const expectedName = `${blueprint.title || ''}自动化`;
+        return normalizeRuleDuplicateText(rule.name) === normalizeRuleDuplicateText(expectedName)
+            && normalizeToken(rule.site, getCurrentSite()) === normalizeToken(expected.site, getCurrentSite())
+            && areRulePageSetsEqual(rule.page_ids, expected.page_ids)
+            && getAudienceScope(rule.audience) === getAudienceScope(expected.audience)
+            && normalizeToken(rule.trigger_type, 'page_view') === normalizeToken(expected.trigger_type, 'page_view')
+            && normalizeToken(rule.placement, 'robot_bubble') === normalizeToken(expected.placement, 'robot_bubble')
+            && normalizeRuleDuplicateText(rule.title) === normalizeRuleDuplicateText(expected.title)
+            && normalizeRuleDuplicateText(rule.content) === normalizeRuleDuplicateText(expected.content)
+            && normalizeRuleDuplicateText(rule.action_label) === normalizeRuleDuplicateText(expected.action_label)
+            && normalizeRuleDuplicateText(rule.action_url) === normalizeRuleDuplicateText(expected.action_url)
+            && normalizeToken(rule.tone, 'info') === normalizeToken(expected.tone, 'info')
+            && Number(rule.priority || 0) === Number(expected.priority || 0)
+            && getRuleRepeatIntervalMinutes(rule, 2) === getRuleRepeatIntervalMinutes(expected, 2)
+            && Number(rule.dismiss_ttl_hours || 24) === Number(expected.dismiss_ttl_hours || 24);
     }
 
     function getAutomationBlueprintRules(blueprintId = '') {
         const normalizedId = normalizeToken(blueprintId, '');
         if (!normalizedId) return [];
+        const blueprint = AUTOMATION_BLUEPRINTS.find((item) => item.id === normalizedId);
         const rules = Array.isArray(state.payload?.rules) ? state.payload.rules : [];
         return rules.filter((rule) => {
-            const metadata = rule?.metadata && typeof rule.metadata === 'object' && !Array.isArray(rule.metadata)
-                ? rule.metadata
-                : {};
-            const ruleBlueprintId = normalizeToken(
-                metadata.automation_blueprint_id || metadata.automationBlueprintId || metadata.blueprint_id || '',
-                ''
-            );
-            return ruleBlueprintId === normalizedId;
+            const ruleBlueprintId = getAutomationBlueprintMetadataId(rule);
+            return ruleBlueprintId === normalizedId
+                || (!ruleBlueprintId && blueprint && ruleMatchesAutomationBlueprintShape(rule, blueprint));
         });
     }
 
@@ -7441,7 +12182,7 @@
 
     function getAutomationBlueprintStatus(blueprintId = '') {
         const rules = getAutomationBlueprintRules(blueprintId);
-        const running = rules.filter((rule) => rule.enabled === true && normalizeToken(rule.status, '') === 'published');
+        const running = rules.filter((rule) => isRuleRunningNow(rule));
         const drafts = rules.filter((rule) => normalizeToken(rule.status, '') === 'draft');
         const paused = rules.filter((rule) => ['paused', 'archived'].includes(normalizeToken(rule.status, '')));
         const primaryRule = running[0] || drafts[0] || rules[0] || null;
@@ -7493,18 +12234,7 @@
         if (getAutomationBlueprintStatus(normalizedId).total > 0) {
             return focusExistingAutomationRule(normalizedId);
         }
-        const payload = buildAutomationRulePayload(blueprint);
-        const result = await mutateRule(payload);
-        const savedRule = result?.rule || {};
-        upsertRuleInPayload(savedRule);
-        state.ruleDraft = null;
-        state.templateDraftRef = '';
-        state.editingRuleId = String(savedRule.id || '').trim();
-        state.activeView = 'rules';
-        showFeedback(`已创建「${blueprint.title}」规则草稿，可继续编辑后发布`, 'success');
-        renderOverview(state.payload || {});
-        document.getElementById('engagementRuleForm')?.scrollIntoView?.({ block: 'start', behavior: 'smooth' });
-        return true;
+        return focusAutomationBlueprint(normalizedId);
     }
 
     async function toggleAutomationRuleFromBlueprint(automationId = '', enabled = false) {
@@ -7515,7 +12245,38 @@
             showFeedback('这个自动化蓝图还没有规则，请先创建规则草稿', 'info');
             return false;
         }
-        return toggleRule(ruleId, enabled);
+        if (enabled) {
+            const siblingRunningRules = getAutomationIntentSiblingRunningRules(normalizedId, ruleId);
+            if (siblingRunningRules.length) {
+                const primaryRule = getRuleById(ruleId) || status.primaryRule || {};
+                const intentLabel = getAutomationRuleIntentLabel(primaryRule)
+                    || getAutomationBlueprintIntentLabel(AUTOMATION_BLUEPRINTS.find((item) => item.id === normalizedId) || {})
+                    || '同一意图';
+                const siblingLabels = siblingRunningRules
+                    .map((rule) => `- ${rule.name || rule.title || '未命名规则'}`)
+                    .join('\n');
+                const confirmed = confirmRuleBatchAction([
+                    `「${intentLabel}」已有 ${siblingRunningRules.length} 条运行中规则。`,
+                    '继续后会自动暂停这些同意图规则，避免同一事件重复通知：',
+                    siblingLabels
+                ].join('\n'));
+                if (!confirmed) {
+                    showFeedback('自动化规则发布已取消', 'info');
+                    return false;
+                }
+                for (const siblingRule of siblingRunningRules) {
+                    const siblingRuleId = String(siblingRule?.id || '').trim();
+                    if (!siblingRuleId) continue;
+                    await toggleRule(siblingRuleId, false, {
+                        showFeedback: false,
+                        render: false
+                    });
+                }
+            }
+        }
+        return toggleRule(ruleId, enabled, {
+            successMessage: enabled ? '自动化规则已发布，同意图重复规则已自动收口' : '自动化规则已暂停'
+        });
     }
 
     function copyAutomationRuleFromBlueprint(automationId = '') {
@@ -7638,7 +12399,7 @@
     async function pauseRunningAutomationRules() {
         const summary = getAutomationFlowSummary();
         const rows = summary.automationRules
-            .filter((rule) => rule.enabled === true && normalizeToken(rule.status, '') === 'published')
+            .filter((rule) => isRuleRunningNow(rule))
             .slice(0, RULE_BATCH_LIMIT);
         if (!rows.length) {
             showFeedback('当前没有运行中的自动化规则', 'info');
@@ -7700,29 +12461,44 @@
         selectEl.querySelector('.engagement-select__menu')?.setAttribute('aria-hidden', isOpen ? 'true' : 'false');
     }
 
+    function syncEngagementSelectValue(selectEl, value = '') {
+        if (!(selectEl instanceof HTMLElement)) return false;
+        const normalizedValue = String(value || '').trim();
+        const input = selectEl.querySelector('[data-engagement-select-input]');
+        const valueEl = selectEl.querySelector('.engagement-select__value');
+        const optionEl = Array.from(selectEl.querySelectorAll('[data-engagement-select-option]'))
+            .find((item) => item instanceof HTMLElement && String(item.dataset.value || '').trim() === normalizedValue);
+        const label = optionEl?.querySelector('span')?.textContent?.trim() || normalizedValue;
+        if (input instanceof HTMLInputElement) {
+            input.value = normalizedValue;
+        }
+        if (valueEl instanceof HTMLElement) {
+            valueEl.textContent = label;
+        }
+        selectEl.querySelectorAll('[data-engagement-select-option]').forEach((item) => {
+            const isSelected = item === optionEl;
+            item.classList.toggle('is-selected', isSelected);
+            item.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+        });
+        return true;
+    }
+
     function chooseEngagementSelectOption(optionEl) {
         if (!(optionEl instanceof HTMLElement)) return;
         const selectEl = optionEl.closest('.engagement-select');
         if (!(selectEl instanceof HTMLElement)) return;
 
         const value = String(optionEl.dataset.value || '').trim();
-        const label = optionEl.querySelector('span')?.textContent?.trim() || value;
         const input = selectEl.querySelector('[data-engagement-select-input]');
-        const valueEl = selectEl.querySelector('.engagement-select__value');
 
-        if (input) input.value = value;
-        if (valueEl) valueEl.textContent = label;
-        selectEl.querySelectorAll('[data-engagement-select-option]').forEach((item) => {
-            const isSelected = item === optionEl;
-            item.classList.toggle('is-selected', isSelected);
-            item.setAttribute('aria-selected', isSelected ? 'true' : 'false');
-        });
+        syncEngagementSelectValue(selectEl, value);
         closeEngagementSelects();
         if (handleColorPresetSelectChange(input)) return;
         if (handleRuleManagementSelectChange(input)) return;
         if (handleRulePreviewSelectChange(input)) return;
         if (input instanceof HTMLInputElement && input.name === 'page_id' && input.closest('#engagementSceneForm')) {
             state.editingScenePageId = normalizeToken(input.value || 'home', 'home');
+            state.scenePreviewEvent = '';
             state.activeView = 'scenes';
             renderOverview(state.payload || {});
             return;
@@ -7734,6 +12510,112 @@
             return;
         }
         updateRulePreviewFromForm();
+        updateTemplatePreviewFromForm();
+        updateScenePreviewFromForm();
+    }
+
+    function closeEngagementDateTimePickers(exceptPicker = null) {
+        document.querySelectorAll('[data-engagement-datetime-picker]').forEach((picker) => {
+            if (!(picker instanceof HTMLElement) || picker === exceptPicker) return;
+            picker.classList.remove('is-open');
+            picker.querySelector('[data-engagement-datetime-trigger]')?.setAttribute('aria-expanded', 'false');
+            const panel = picker.querySelector('[data-engagement-datetime-panel]');
+            if (panel instanceof HTMLElement) {
+                panel.hidden = true;
+            }
+        });
+    }
+
+    function syncEngagementDateTimePicker(picker, value = '') {
+        if (!(picker instanceof HTMLElement)) return;
+        const normalizedValue = formatRuleDateTimeLocal(value);
+        const input = picker.querySelector('[data-engagement-publish-at-value]');
+        const label = picker.querySelector('[data-engagement-datetime-label]');
+        const dateInput = picker.querySelector('[data-engagement-datetime-date]');
+        const timeInput = picker.querySelector('[data-engagement-datetime-time]');
+        const parts = getRuleDateTimeParts(normalizedValue);
+        const form = picker.closest('form');
+        const statusSelect = form?.querySelector?.('[data-engagement-select="status"]');
+        const statusInput = statusSelect?.querySelector?.('[data-engagement-select-input]');
+
+        picker.classList.toggle('has-value', Boolean(normalizedValue));
+        picker.classList.remove('is-invalid');
+        if (
+            normalizedValue
+            && statusSelect instanceof HTMLElement
+            && statusInput instanceof HTMLInputElement
+            && normalizeToken(statusInput.value, 'draft') === 'draft'
+        ) {
+            syncEngagementSelectValue(statusSelect, 'published');
+        }
+        if (input instanceof HTMLInputElement) {
+            input.value = normalizedValue;
+        }
+        if (label instanceof HTMLElement) {
+            label.textContent = formatRuleDateTimeDisplay(normalizedValue);
+        }
+        if (dateInput instanceof HTMLInputElement) {
+            dateInput.value = parts.date;
+        }
+        if (timeInput instanceof HTMLInputElement) {
+            timeInput.value = parts.time;
+        }
+        updateRulePreviewFromForm();
+    }
+
+    function enforceRuleScheduledStatusSelect(form = document.getElementById('engagementRuleForm')) {
+        if (!(form instanceof HTMLFormElement)) return false;
+        const startsAtValue = syncRulePublishAtHiddenValue(form);
+        const statusSelect = form.querySelector('[data-engagement-select="status"]');
+        const statusInput = statusSelect?.querySelector?.('[data-engagement-select-input]');
+        if (
+            normalizeRuleDateTimePayload(startsAtValue)
+            && statusSelect instanceof HTMLElement
+            && statusInput instanceof HTMLInputElement
+            && normalizeToken(statusInput.value, 'draft') === 'draft'
+        ) {
+            return syncEngagementSelectValue(statusSelect, 'published');
+        }
+        return false;
+    }
+
+    function toggleEngagementDateTimePicker(triggerEl) {
+        if (!(triggerEl instanceof HTMLElement)) return;
+        const picker = triggerEl.closest('[data-engagement-datetime-picker]');
+        if (!(picker instanceof HTMLElement)) return;
+        const isOpen = picker.classList.contains('is-open');
+        closeEngagementSelects();
+        closeEngagementDateTimePickers(isOpen ? null : picker);
+        picker.classList.toggle('is-open', !isOpen);
+        triggerEl.setAttribute('aria-expanded', isOpen ? 'false' : 'true');
+        const panel = picker.querySelector('[data-engagement-datetime-panel]');
+        if (panel instanceof HTMLElement) {
+            panel.hidden = isOpen;
+        }
+    }
+
+    function applyEngagementDateTimePicker(picker) {
+        if (!(picker instanceof HTMLElement)) return;
+        const dateInput = picker.querySelector('[data-engagement-datetime-date]');
+        const timeInput = picker.querySelector('[data-engagement-datetime-time]');
+        const nextValue = composeRuleDateTimeLocal(
+            dateInput instanceof HTMLInputElement ? dateInput.value : '',
+            timeInput instanceof HTMLInputElement ? timeInput.value : ''
+        );
+        if (nextValue === null) {
+            picker.classList.add('is-invalid');
+            return;
+        }
+        syncEngagementDateTimePicker(picker, nextValue);
+        closeEngagementDateTimePickers();
+    }
+
+    function handleEngagementDateTimeManualInput(inputEl) {
+        if (!(inputEl instanceof HTMLElement)) return false;
+        const picker = inputEl.closest('[data-engagement-datetime-picker]');
+        if (!(picker instanceof HTMLElement)) return false;
+        picker.classList.remove('is-invalid');
+        return true;
     }
 
     function updateColorFieldSwatch(colorField, value = '') {
@@ -7769,20 +12651,37 @@
             state.ruleHealthFilter = normalizeToken(value, 'all');
         } else if (input.name === 'rule_page_filter') {
             state.rulePageFilter = normalizeToken(value, 'all');
+        } else if (input.name === 'rule_audience_filter') {
+            state.ruleAudienceFilter = normalizeToken(value, 'all');
         } else if (input.name === 'rule_sort') {
             state.ruleSort = normalizeToken(value, 'updated_desc');
         } else {
             return false;
         }
+        resetRulePagination();
         renderOverview(state.payload || {});
         return true;
     }
 
     function handleRulePreviewSelectChange(input) {
         if (!(input instanceof HTMLInputElement)) return false;
-        if (input.name !== 'preview_page_id') return false;
-        state.previewPageId = normalizeToken(input.value, 'auto');
+        if (input.name === 'preview_page_id') {
+            state.previewPageId = normalizeToken(input.value, 'auto');
+        } else if (input.name === 'preview_event_sample') {
+            const previewData = collectRulePreviewFormData();
+            state.previewEventSample = normalizeRulePreviewSample(previewData.trigger_type, input.value || '');
+        } else if (input.name === 'scene_preview_event') {
+            const scenePreviewData = collectScenePreviewFormData();
+            state.scenePreviewEvent = normalizeScenePreviewEvent(scenePreviewData.scene?.events || [], input.value || '');
+        } else if (input.name === 'scene_preview_sample') {
+            const scenePreviewData = collectScenePreviewFormData();
+            state.previewEventSample = normalizeRulePreviewSample(scenePreviewData.trigger_type, input.value || '');
+        } else {
+            return false;
+        }
         updateRulePreviewFromForm();
+        updateTemplatePreviewFromForm();
+        updateScenePreviewFromForm();
         return true;
     }
 
@@ -7808,7 +12707,10 @@
         state.ruleStatusFilter = 'all';
         state.ruleHealthFilter = 'all';
         state.rulePageFilter = 'all';
+        state.ruleAudienceFilter = 'all';
+        state.ruleDuplicateFilter = false;
         state.ruleSort = 'updated_desc';
+        resetRulePagination();
         renderOverview(state.payload || {});
     }
 
@@ -7823,6 +12725,8 @@
             return false;
         }
         updateRulePreviewFromForm();
+        updateTemplatePreviewFromForm();
+        updateScenePreviewFromForm();
         return true;
     }
 
@@ -7901,6 +12805,185 @@
         }
     }
 
+    function getSelectedSceneEvents(pickerEl) {
+        return Array.from(pickerEl.querySelectorAll('[data-engagement-scene-event-toggle].is-selected'))
+            .map((item) => String(item.dataset.value || '').trim())
+            .filter(Boolean);
+    }
+
+    function syncSceneEventPicker(pickerEl, selectedEvents = []) {
+        if (!(pickerEl instanceof HTMLElement)) return;
+        const normalizedEvents = selectedEvents.length ? selectedEvents : ['new_user_welcome'];
+        const selected = new Set(normalizedEvents);
+
+        pickerEl.querySelectorAll('[data-engagement-scene-event-toggle]').forEach((button) => {
+            const isSelected = selected.has(String(button.dataset.value || '').trim());
+            button.classList.toggle('is-selected', isSelected);
+            button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+        });
+
+        const valuesEl = pickerEl.querySelector('[data-engagement-scene-event-values]');
+        if (valuesEl) {
+            valuesEl.innerHTML = Array.from(selected).map((eventKey) => (
+                `<input type="hidden" name="events" value="${escapeHtml(eventKey)}" data-engagement-scene-event-value>`
+            )).join('');
+        }
+    }
+
+    function toggleSceneEventChoice(buttonEl) {
+        if (!(buttonEl instanceof HTMLElement)) return;
+        const pickerEl = buttonEl.closest('[data-engagement-scene-event-picker]');
+        if (!(pickerEl instanceof HTMLElement)) return;
+
+        const eventKey = String(buttonEl.dataset.value || '').trim();
+        let selectedEvents = getSelectedSceneEvents(pickerEl);
+        if (selectedEvents.includes(eventKey)) {
+            selectedEvents = selectedEvents.filter((item) => item !== eventKey);
+        } else {
+            selectedEvents.push(eventKey);
+        }
+        if (!selectedEvents.length) {
+            selectedEvents = ['new_user_welcome'];
+        }
+
+        syncSceneEventPicker(pickerEl, selectedEvents);
+        state.scenePreviewEvent = normalizeScenePreviewEvent(selectedEvents, state.scenePreviewEvent || eventKey);
+        updateScenePreviewFromForm();
+    }
+
+    function getSelectedEventPriorityEvents(pickerEl) {
+        return Array.from(pickerEl.querySelectorAll('[data-engagement-event-priority-toggle].is-selected'))
+            .map((item) => String(item.dataset.value || '').trim())
+            .filter(Boolean);
+    }
+
+    function syncEventPriorityPicker(pickerEl, groupId = '', selectedEvents = []) {
+        if (!(pickerEl instanceof HTMLElement)) return;
+        const selected = new Set((Array.isArray(selectedEvents) ? selectedEvents : []).map((eventKey) => normalizeToken(eventKey, '')).filter(Boolean));
+        pickerEl.querySelectorAll('[data-engagement-event-priority-toggle]').forEach((button) => {
+            const isSelected = selected.has(String(button.dataset.value || '').trim());
+            button.classList.toggle('is-selected', isSelected);
+            button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+        });
+        const valuesEl = pickerEl.querySelector('[data-engagement-event-priority-values]');
+        if (valuesEl) {
+            valuesEl.innerHTML = Array.from(selected).map((eventKey) => (
+                `<input type="hidden" name="${escapeHtml(groupId)}_events" value="${escapeHtml(eventKey)}" data-engagement-event-priority-value>`
+            )).join('');
+        }
+    }
+
+    function toggleEventPriorityChoice(buttonEl) {
+        if (!(buttonEl instanceof HTMLElement)) return;
+        const pickerEl = buttonEl.closest('[data-engagement-event-priority-picker]');
+        if (!(pickerEl instanceof HTMLElement)) return;
+        const groupId = String(buttonEl.dataset.priorityGroup || pickerEl.dataset.priorityGroup || '').trim();
+        const scopeId = String(buttonEl.dataset.priorityScope || pickerEl.dataset.priorityScope || 'global').trim() || 'global';
+        const eventKey = String(buttonEl.dataset.value || '').trim();
+        if (!groupId || !eventKey) return;
+
+        document.querySelectorAll(`[data-engagement-event-priority-picker][data-priority-scope="${scopeId}"] [data-engagement-event-priority-toggle][data-value="${eventKey}"]`).forEach((otherButton) => {
+            if (!(otherButton instanceof HTMLElement)) return;
+            const otherPicker = otherButton.closest('[data-engagement-event-priority-picker]');
+            const otherGroupId = String(otherButton.dataset.priorityGroup || otherPicker?.dataset.priorityGroup || '').trim();
+            if (!otherPicker || !otherGroupId) return;
+            const otherSelected = getSelectedEventPriorityEvents(otherPicker).filter((item) => item !== eventKey);
+            syncEventPriorityPicker(otherPicker, otherGroupId, otherSelected);
+        });
+
+        const selectedEvents = getSelectedEventPriorityEvents(pickerEl);
+        if (!selectedEvents.includes(eventKey)) {
+            selectedEvents.push(eventKey);
+        }
+        syncEventPriorityPicker(pickerEl, groupId, selectedEvents);
+    }
+
+    function getSelectedSegmentTags(pickerEl) {
+        return Array.from(pickerEl.querySelectorAll('[data-engagement-segment-tag-toggle].is-selected'))
+            .map((item) => normalizeUserTagKey(item.dataset.value || '', ''))
+            .filter(Boolean);
+    }
+
+    function syncSegmentTagPicker(pickerEl, selectedTags = []) {
+        if (!(pickerEl instanceof HTMLElement)) return;
+        const selected = new Set(selectedTags
+            .map((tagKey) => normalizeUserTagKey(tagKey, ''))
+            .filter(Boolean));
+
+        pickerEl.querySelectorAll('[data-engagement-segment-tag-toggle]').forEach((button) => {
+            const tagKey = normalizeUserTagKey(button.dataset.value || '', '');
+            const isSelected = selected.has(tagKey);
+            button.classList.toggle('is-selected', isSelected);
+            button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+        });
+
+        const valuesEl = pickerEl.querySelector('[data-engagement-segment-tag-values]');
+        if (valuesEl) {
+            valuesEl.innerHTML = Array.from(selected).map((tagKey) => (
+                `<input type="hidden" name="tag_targets" value="${escapeHtml(tagKey)}" data-engagement-segment-tag-value>`
+            )).join('');
+        }
+    }
+
+    function toggleSegmentTagChoice(buttonEl) {
+        if (!(buttonEl instanceof HTMLElement)) return;
+        const pickerEl = buttonEl.closest('[data-engagement-segment-tag-picker]');
+        if (!(pickerEl instanceof HTMLElement)) return;
+
+        const tagKey = normalizeUserTagKey(buttonEl.dataset.value || '', '');
+        let selectedTags = getSelectedSegmentTags(pickerEl);
+        if (selectedTags.includes(tagKey)) {
+            selectedTags = selectedTags.filter((item) => item !== tagKey);
+        } else {
+            selectedTags.push(tagKey);
+        }
+
+        syncSegmentTagPicker(pickerEl, selectedTags);
+    }
+
+    function getSelectedSegmentScenarios(pickerEl) {
+        return Array.from(pickerEl.querySelectorAll('[data-engagement-segment-scenario-toggle].is-selected'))
+            .map((item) => normalizeSegmentScenarioValue(item.dataset.value || ''))
+            .filter(Boolean);
+    }
+
+    function syncSegmentScenarioPicker(pickerEl, selectedScenarios = []) {
+        if (!(pickerEl instanceof HTMLElement)) return;
+        const selected = new Set(selectedScenarios
+            .map((scenarioId) => normalizeSegmentScenarioValue(scenarioId))
+            .filter(Boolean));
+
+        pickerEl.querySelectorAll('[data-engagement-segment-scenario-toggle]').forEach((button) => {
+            const scenarioId = normalizeSegmentScenarioValue(button.dataset.value || '');
+            const isSelected = selected.has(scenarioId);
+            button.classList.toggle('is-selected', isSelected);
+            button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
+        });
+
+        const valuesEl = pickerEl.querySelector('[data-engagement-segment-scenario-values]');
+        if (valuesEl) {
+            valuesEl.innerHTML = Array.from(selected).map((scenarioId) => (
+                `<input type="hidden" name="examples" value="${escapeHtml(scenarioId)}" data-engagement-segment-scenario-value>`
+            )).join('');
+        }
+    }
+
+    function toggleSegmentScenarioChoice(buttonEl) {
+        if (!(buttonEl instanceof HTMLElement)) return;
+        const pickerEl = buttonEl.closest('[data-engagement-segment-scenario-picker]');
+        if (!(pickerEl instanceof HTMLElement)) return;
+
+        const scenarioId = normalizeSegmentScenarioValue(buttonEl.dataset.value || '');
+        let selectedScenarios = getSelectedSegmentScenarios(pickerEl);
+        if (selectedScenarios.includes(scenarioId)) {
+            selectedScenarios = selectedScenarios.filter((item) => item !== scenarioId);
+        } else {
+            selectedScenarios.push(scenarioId);
+        }
+
+        syncSegmentScenarioPicker(pickerEl, selectedScenarios);
+    }
+
     function toggleSupportActionChoice(buttonEl) {
         if (!(buttonEl instanceof HTMLElement)) return;
         const pickerEl = buttonEl.closest('[data-engagement-support-action-picker]');
@@ -7938,6 +13021,7 @@
         event?.preventDefault?.();
         event?.stopPropagation?.();
         closeEngagementSelects();
+        closeEngagementDateTimePickers();
         return handleEngagementRuleFormSubmit(actionEl.closest('form'));
     }
 
@@ -8019,6 +13103,11 @@
             state.initialized = true;
             return true;
         } catch (error) {
+            if (isOverviewTimeoutError(error)) {
+                renderOverview(createDegradedOverviewPayload(error));
+                state.initialized = true;
+                return true;
+            }
             renderError(error);
             return false;
         } finally {
@@ -8043,6 +13132,7 @@
         if (pageId) {
             state.focusedPageId = pageId;
             state.activeView = 'scenes';
+            state.pendingFocusedPageScroll = true;
         }
         return initAdminEngagementModule({
             force: true,
@@ -8050,12 +13140,26 @@
         });
     }
 
+    document.addEventListener('wheel', handleEngagementWheel, { passive: false, capture: true });
+
     document.addEventListener('click', (event) => {
+        const workspaceGroup = event.target?.closest?.('[data-engagement-workspace-group]');
+        if (workspaceGroup) {
+            event.preventDefault();
+            closeEngagementSelects();
+            const [, , , , views] = getWorkspaceGroup(workspaceGroup.dataset.engagementWorkspaceGroup);
+            const nextView = Array.isArray(views) && views.length ? views[0] : 'dashboard';
+            state.activeView = getWorkspaceView(nextView)[0];
+            renderOverview(state.payload || {});
+            return;
+        }
+
         const workspaceView = event.target?.closest?.('[data-engagement-workspace-view]');
         if (workspaceView) {
             event.preventDefault();
             closeEngagementSelects();
-            state.activeView = getWorkspaceView(workspaceView.dataset.engagementWorkspaceView)[0];
+            const nextView = getWorkspaceView(workspaceView.dataset.engagementWorkspaceView)[0];
+            state.activeView = nextView;
             renderOverview(state.payload || {});
             return;
         }
@@ -8064,6 +13168,41 @@
         if (previewAction) {
             event.preventDefault();
             return;
+        }
+
+        const dateTimeTrigger = event.target?.closest?.('[data-engagement-datetime-trigger]');
+        if (dateTimeTrigger) {
+            event.preventDefault();
+            toggleEngagementDateTimePicker(dateTimeTrigger);
+            return;
+        }
+
+        const dateTimeQuick = event.target?.closest?.('[data-engagement-datetime-quick]');
+        if (dateTimeQuick) {
+            event.preventDefault();
+            const picker = dateTimeQuick.closest('[data-engagement-datetime-picker]');
+            syncEngagementDateTimePicker(picker, getRulePublishQuickValue(dateTimeQuick.dataset.engagementDatetimeQuick || ''));
+            closeEngagementDateTimePickers();
+            return;
+        }
+
+        const dateTimeApply = event.target?.closest?.('[data-engagement-datetime-apply]');
+        if (dateTimeApply) {
+            event.preventDefault();
+            applyEngagementDateTimePicker(dateTimeApply.closest('[data-engagement-datetime-picker]'));
+            return;
+        }
+
+        const dateTimeClear = event.target?.closest?.('[data-engagement-datetime-clear]');
+        if (dateTimeClear) {
+            event.preventDefault();
+            syncEngagementDateTimePicker(dateTimeClear.closest('[data-engagement-datetime-picker]'), '');
+            closeEngagementDateTimePickers();
+            return;
+        }
+
+        if (!event.target?.closest?.('[data-engagement-datetime-picker]')) {
+            closeEngagementDateTimePickers();
         }
 
         const selectOption = event.target?.closest?.('[data-engagement-select-option]');
@@ -8104,6 +13243,38 @@
             return;
         }
 
+        const segmentTagToggle = event.target?.closest?.('[data-engagement-segment-tag-toggle]');
+        if (segmentTagToggle) {
+            event.preventDefault();
+            closeEngagementSelects();
+            toggleSegmentTagChoice(segmentTagToggle);
+            return;
+        }
+
+        const segmentScenarioToggle = event.target?.closest?.('[data-engagement-segment-scenario-toggle]');
+        if (segmentScenarioToggle) {
+            event.preventDefault();
+            closeEngagementSelects();
+            toggleSegmentScenarioChoice(segmentScenarioToggle);
+            return;
+        }
+
+        const sceneEventToggle = event.target?.closest?.('[data-engagement-scene-event-toggle]');
+        if (sceneEventToggle) {
+            event.preventDefault();
+            closeEngagementSelects();
+            toggleSceneEventChoice(sceneEventToggle);
+            return;
+        }
+
+        const eventPriorityToggle = event.target?.closest?.('[data-engagement-event-priority-toggle]');
+        if (eventPriorityToggle) {
+            event.preventDefault();
+            closeEngagementSelects();
+            toggleEventPriorityChoice(eventPriorityToggle);
+            return;
+        }
+
         if (!event.target?.closest?.('.engagement-select')) {
             closeEngagementSelects();
         }
@@ -8114,7 +13285,16 @@
         const action = actionEl.dataset.engagementAction;
         if (action === 'refresh') {
             event.preventDefault();
-            void refreshAdminEngagementModule();
+            runEngagementAsyncAction(actionEl, () => refreshAdminEngagementModule(), '客服系统刷新失败');
+            return;
+        }
+        if (action === 'sync-segment-tags') {
+            event.preventDefault();
+            runEngagementAsyncAction(
+                actionEl,
+                () => syncUserManagementTagsToTagCenter({ renderMode: 'picker', showSuccess: true }),
+                '用户标签同步失败'
+            );
             return;
         }
         if (action === 'focus-page') {
@@ -8138,9 +13318,7 @@
         if (action === 'submit-template') {
             event.preventDefault();
             closeEngagementSelects();
-            void saveTemplateFromForm(document.getElementById('engagementTemplateForm')).catch((error) => {
-                showActionError(error, '消息模板保存失败');
-            });
+            runEngagementAsyncAction(actionEl, () => saveTemplateFromForm(document.getElementById('engagementTemplateForm')), '消息模板保存失败');
             return;
         }
         if (action === 'edit-template') {
@@ -8152,9 +13330,7 @@
         if (action === 'delete-template') {
             event.preventDefault();
             closeEngagementSelects();
-            void deleteTemplate(actionEl.dataset.templateId).catch((error) => {
-                showActionError(error, '消息模板删除失败');
-            });
+            runEngagementAsyncAction(actionEl, () => deleteTemplate(actionEl.dataset.templateId), '消息模板删除失败');
             return;
         }
         if (action === 'reset-template') {
@@ -8184,9 +13360,7 @@
         if (action === 'create-template-starter') {
             event.preventDefault();
             closeEngagementSelects();
-            void createTemplateFromStarter(actionEl.dataset.templateStarterId).catch((error) => {
-                showActionError(error, '推荐模板写入失败');
-            });
+            runEngagementAsyncAction(actionEl, () => createTemplateFromStarter(actionEl.dataset.templateStarterId), '推荐模板写入失败');
             return;
         }
         if (action === 'clear-rule-draft') {
@@ -8216,9 +13390,7 @@
         if (action === 'submit-user-tag') {
             event.preventDefault();
             closeEngagementSelects();
-            void saveUserTagFromForm(document.getElementById('engagementUserTagForm')).catch((error) => {
-                showActionError(error, '用户标签保存失败');
-            });
+            runEngagementAsyncAction(actionEl, () => saveUserTagFromForm(document.getElementById('engagementUserTagForm')), '用户标签保存失败');
             return;
         }
         if (action === 'edit-user-tag') {
@@ -8230,25 +13402,19 @@
         if (action === 'delete-user-tag') {
             event.preventDefault();
             closeEngagementSelects();
-            void deleteUserTag(actionEl.dataset.tagKey).catch((error) => {
-                showActionError(error, '用户标签删除失败');
-            });
+            runEngagementAsyncAction(actionEl, () => deleteUserTag(actionEl.dataset.tagKey), '用户标签删除失败');
             return;
         }
         if (action === 'submit-tag-automation') {
             event.preventDefault();
             closeEngagementSelects();
-            void saveTagAutomationFromForm(document.getElementById('engagementTagAutomationForm')).catch((error) => {
-                showActionError(error, '自动分群阈值保存失败');
-            });
+            runEngagementAsyncAction(actionEl, () => saveTagAutomationFromForm(document.getElementById('engagementTagAutomationForm')), '自动分群阈值保存失败');
             return;
         }
         if (action === 'run-inactive-sweep') {
             event.preventDefault();
             closeEngagementSelects();
-            void runInactiveUserSweep().catch((error) => {
-                showActionError(error, '长期未活跃扫描失败');
-            });
+            runEngagementAsyncAction(actionEl, () => runInactiveUserSweep(document.getElementById('engagementTagAutomationForm')), '长期未活跃扫描失败');
             return;
         }
         if (action === 'reset-user-tag') {
@@ -8260,9 +13426,7 @@
         if (action === 'submit-segment') {
             event.preventDefault();
             closeEngagementSelects();
-            void saveSegmentFromForm(document.getElementById('engagementSegmentForm')).catch((error) => {
-                showActionError(error, '用户分群保存失败');
-            });
+            runEngagementAsyncAction(actionEl, () => saveSegmentFromForm(document.getElementById('engagementSegmentForm')), '用户分群保存失败');
             return;
         }
         if (action === 'edit-segment') {
@@ -8274,9 +13438,7 @@
         if (action === 'delete-segment') {
             event.preventDefault();
             closeEngagementSelects();
-            void deleteSegment(actionEl.dataset.segmentId).catch((error) => {
-                showActionError(error, '用户分群删除失败');
-            });
+            runEngagementAsyncAction(actionEl, () => deleteSegment(actionEl.dataset.segmentId), '用户分群删除失败');
             return;
         }
         if (action === 'reset-segment') {
@@ -8291,6 +13453,13 @@
             focusAutomationBlueprint(actionEl.dataset.automationId);
             return;
         }
+        if (action === 'cycle-automation-preview-sample') {
+            event.preventDefault();
+            event.stopPropagation();
+            closeEngagementSelects();
+            cycleAutomationPreviewSample(actionEl.dataset.automationId);
+            return;
+        }
         if (action === 'focus-automation-rule') {
             event.preventDefault();
             event.stopPropagation();
@@ -8302,45 +13471,35 @@
             event.preventDefault();
             event.stopPropagation();
             closeEngagementSelects();
-            void createAutomationRuleFromBlueprint(actionEl.dataset.automationId).catch((error) => {
-                showActionError(error, '自动化规则创建失败');
-            });
+            runEngagementAsyncAction(actionEl, () => createAutomationRuleFromBlueprint(actionEl.dataset.automationId), '自动化规则创建失败');
             return;
         }
         if (action === 'create-missing-automation-rules') {
             event.preventDefault();
             event.stopPropagation();
             closeEngagementSelects();
-            void createMissingAutomationRules().catch((error) => {
-                showActionError(error, '批量创建自动化规则失败');
-            });
+            runEngagementAsyncAction(actionEl, () => createMissingAutomationRules(), '批量创建自动化规则失败');
             return;
         }
         if (action === 'publish-automation-drafts') {
             event.preventDefault();
             event.stopPropagation();
             closeEngagementSelects();
-            void publishAutomationDraftRules().catch((error) => {
-                showActionError(error, '批量发布自动化草稿失败');
-            });
+            runEngagementAsyncAction(actionEl, () => publishAutomationDraftRules(), '批量发布自动化草稿失败');
             return;
         }
         if (action === 'pause-running-automation-rules') {
             event.preventDefault();
             event.stopPropagation();
             closeEngagementSelects();
-            void pauseRunningAutomationRules().catch((error) => {
-                showActionError(error, '批量暂停自动化规则失败');
-            });
+            runEngagementAsyncAction(actionEl, () => pauseRunningAutomationRules(), '批量暂停自动化规则失败');
             return;
         }
         if (action === 'toggle-automation-rule') {
             event.preventDefault();
             event.stopPropagation();
             closeEngagementSelects();
-            void toggleAutomationRuleFromBlueprint(actionEl.dataset.automationId, actionEl.dataset.ruleEnabled === 'true').catch((error) => {
-                showActionError(error, '自动化规则状态更新失败');
-            });
+            runEngagementAsyncAction(actionEl, () => toggleAutomationRuleFromBlueprint(actionEl.dataset.automationId, actionEl.dataset.ruleEnabled === 'true'), '自动化规则状态更新失败');
             return;
         }
         if (action === 'copy-automation-rule') {
@@ -8356,12 +13515,32 @@
             editScene(actionEl.dataset.pageId || actionEl.dataset.engagementPage);
             return;
         }
+        if (action === 'apply-scene-priority-preset') {
+            event.preventDefault();
+            closeEngagementSelects();
+            applyScenePriorityPreset(actionEl.dataset.scenePriorityPresetId, actionEl.dataset.pageId || actionEl.dataset.engagementPage);
+            return;
+        }
+        if (action === 'apply-scene-guidance-action') {
+            event.preventDefault();
+            closeEngagementSelects();
+            applySceneGuidanceAction(
+                actionEl.dataset.sceneGuidanceActionType,
+                actionEl.dataset.sceneGuidanceActionValue,
+                actionEl.dataset.pageId || actionEl.dataset.engagementPage
+            );
+            return;
+        }
         if (action === 'submit-scene') {
             event.preventDefault();
             closeEngagementSelects();
-            void saveSceneFromForm(document.getElementById('engagementSceneForm')).catch((error) => {
-                showActionError(error, '页面场景保存失败');
-            });
+            runEngagementAsyncAction(actionEl, () => saveSceneFromForm(document.getElementById('engagementSceneForm')), '页面场景保存失败');
+            return;
+        }
+        if (action === 'submit-event-priority-center') {
+            event.preventDefault();
+            closeEngagementSelects();
+            runEngagementAsyncAction(actionEl, () => saveEventPriorityCenterFromForm(document.getElementById('engagementEventPriorityForm')), '首波分诊配置保存失败');
             return;
         }
         if (action === 'reset-scene') {
@@ -8373,25 +13552,19 @@
         if (action === 'submit-asset-style') {
             event.preventDefault();
             closeEngagementSelects();
-            void saveAssetStyleFromForm(document.getElementById('engagementAssetStyleForm')).catch((error) => {
-                showActionError(error, '气泡视觉样式保存失败');
-            });
+            runEngagementAsyncAction(actionEl, () => saveAssetStyleFromForm(document.getElementById('engagementAssetStyleForm')), '气泡视觉样式保存失败');
             return;
         }
         if (action === 'apply-asset-style-preset') {
             event.preventDefault();
             closeEngagementSelects();
-            void applyAssetStylePreset(actionEl.dataset.assetStylePreset).catch((error) => {
-                showActionError(error, '样式预设套用失败');
-            });
+            runEngagementAsyncAction(actionEl, () => applyAssetStylePreset(actionEl.dataset.assetStylePreset), '样式预设套用失败');
             return;
         }
         if (action === 'submit-asset') {
             event.preventDefault();
             closeEngagementSelects();
-            void saveAssetFromForm(document.getElementById('engagementAssetForm')).catch((error) => {
-                showActionError(error, '触达素材保存失败');
-            });
+            runEngagementAsyncAction(actionEl, () => saveAssetFromForm(document.getElementById('engagementAssetForm')), '触达素材保存失败');
             return;
         }
         if (action === 'edit-asset') {
@@ -8403,9 +13576,7 @@
         if (action === 'delete-asset') {
             event.preventDefault();
             closeEngagementSelects();
-            void deleteAsset(actionEl.dataset.assetId).catch((error) => {
-                showActionError(error, '触达素材删除失败');
-            });
+            runEngagementAsyncAction(actionEl, () => deleteAsset(actionEl.dataset.assetId), '触达素材删除失败');
             return;
         }
         if (action === 'reset-asset') {
@@ -8417,17 +13588,13 @@
         if (action === 'submit-entry-settings') {
             event.preventDefault();
             closeEngagementSelects();
-            void saveEntrySettingsFromForm(document.getElementById('engagementEntrySettingsForm')).catch((error) => {
-                showActionError(error, '客服入口配置保存失败');
-            });
+            runEngagementAsyncAction(actionEl, () => saveEntrySettingsFromForm(document.getElementById('engagementEntrySettingsForm')), '客服入口配置保存失败');
             return;
         }
         if (action === 'submit-entry-context') {
             event.preventDefault();
             closeEngagementSelects();
-            void saveEntryContextFromForm(document.getElementById('engagementEntryContextForm')).catch((error) => {
-                showActionError(error, '页面客服入口保存失败');
-            });
+            runEngagementAsyncAction(actionEl, () => saveEntryContextFromForm(document.getElementById('engagementEntryContextForm')), '页面客服入口保存失败');
             return;
         }
         if (action === 'edit-entry-context') {
@@ -8439,15 +13606,13 @@
         if (action === 'submit-external-embed') {
             event.preventDefault();
             closeEngagementSelects();
-            void saveExternalEmbedFromForm(document.getElementById('engagementExternalEmbedForm')).catch((error) => {
-                showActionError(error, '外部承载配置保存失败');
-            });
+            runEngagementAsyncAction(actionEl, () => saveExternalEmbedFromForm(document.getElementById('engagementExternalEmbedForm')), '外部承载配置保存失败');
             return;
         }
         if (action === 'copy-external-embed-snippet') {
             event.preventDefault();
             closeEngagementSelects();
-            void copyExternalEmbedSnippet();
+            runEngagementAsyncAction(actionEl, () => copyExternalEmbedSnippet(), '公益站嵌入代码复制失败');
             return;
         }
         if (action === 'clear-rule-filters') {
@@ -8456,36 +13621,40 @@
             clearRuleFilters();
             return;
         }
+        if (action === 'rule-page-prev') {
+            event.preventDefault();
+            closeEngagementSelects();
+            setRulePage((Number(state.rulePage || 1) || 1) - 1);
+            return;
+        }
+        if (action === 'rule-page-next') {
+            event.preventDefault();
+            closeEngagementSelects();
+            setRulePage((Number(state.rulePage || 1) || 1) + 1);
+            return;
+        }
         if (action === 'batch-pause-filtered-rules') {
             event.preventDefault();
             closeEngagementSelects();
-            void batchPauseFilteredRules().catch((error) => {
-                showActionError(error, '批量暂停规则失败');
-            });
+            runEngagementAsyncAction(actionEl, () => batchPauseFilteredRules(), '批量暂停规则失败');
             return;
         }
         if (action === 'batch-copy-filtered-rules') {
             event.preventDefault();
             closeEngagementSelects();
-            void batchCopyFilteredRulesToDraft().catch((error) => {
-                showActionError(error, '批量复制规则失败');
-            });
+            runEngagementAsyncAction(actionEl, () => batchCopyFilteredRulesToDraft(), '批量复制规则失败');
             return;
         }
         if (action === 'batch-archive-attention-rules') {
             event.preventDefault();
             closeEngagementSelects();
-            void batchArchiveAttentionRules().catch((error) => {
-                showActionError(error, '批量归档规则失败');
-            });
+            runEngagementAsyncAction(actionEl, () => batchArchiveAttentionRules(), '批量归档规则失败');
             return;
         }
         if (action === 'batch-archive-high-risk-rules') {
             event.preventDefault();
             closeEngagementSelects();
-            void batchArchiveHighRiskRules().catch((error) => {
-                showActionError(error, '批量归档高风险规则失败');
-            });
+            runEngagementAsyncAction(actionEl, () => batchArchiveHighRiskRules(), '批量归档高风险规则失败');
             return;
         }
         if (action === 'focus-rule-health-filter') {
@@ -8494,12 +13663,16 @@
             focusRuleHealthFilter(actionEl.dataset.ruleHealthFilter);
             return;
         }
+        if (action === 'focus-duplicate-rules') {
+            event.preventDefault();
+            closeEngagementSelects();
+            focusDuplicateRules();
+            return;
+        }
         if (action === 'rollback-audit-batch') {
             event.preventDefault();
             closeEngagementSelects();
-            void rollbackAuditBatch(actionEl.dataset.batchId).catch((error) => {
-                showActionError(error, '批量回滚失败');
-            });
+            runEngagementAsyncAction(actionEl, () => rollbackAuditBatch(actionEl.dataset.batchId), '批量回滚失败');
             return;
         }
         if (action === 'set-preview-option') {
@@ -8533,32 +13706,30 @@
         }
         if (action === 'toggle-rule') {
             event.preventDefault();
-            void toggleRule(actionEl.dataset.ruleId, actionEl.dataset.ruleEnabled === 'true').catch((error) => {
-                showActionError(error, '触达规则状态更新失败');
-            });
+            runEngagementAsyncAction(actionEl, () => toggleRule(actionEl.dataset.ruleId, actionEl.dataset.ruleEnabled === 'true'), '触达规则状态更新失败');
             return;
         }
         if (action === 'archive-rule') {
             event.preventDefault();
-            void archiveRule(actionEl.dataset.ruleId).catch((error) => {
-                showActionError(error, '触达规则归档失败');
-            });
+            runEngagementAsyncAction(actionEl, () => archiveRule(actionEl.dataset.ruleId), '触达规则归档失败');
+            return;
+        }
+        if (action === 'delete-rule') {
+            event.preventDefault();
+            closeEngagementSelects();
+            runEngagementAsyncAction(actionEl, () => deleteRule(actionEl.dataset.ruleId), '触达规则删除失败');
             return;
         }
         if (action === 'pause-all-rules') {
             event.preventDefault();
             closeEngagementSelects();
-            void pauseAllRules().catch((error) => {
-                showActionError(error, '暂停全部触达失败');
-            });
+            runEngagementAsyncAction(actionEl, () => pauseAllRules(), '暂停全部触达失败');
             return;
         }
         if (action === 'restore-latest-pause-all-rules') {
             event.preventDefault();
             closeEngagementSelects();
-            void restoreLatestPauseAllRules().catch((error) => {
-                showActionError(error, '恢复最近暂停失败');
-            });
+            runEngagementAsyncAction(actionEl, () => restoreLatestPauseAllRules(), '恢复最近暂停失败');
             return;
         }
     });
@@ -8567,6 +13738,7 @@
         const searchInput = event.target?.closest?.('[data-engagement-rule-search]');
         if (searchInput instanceof HTMLInputElement) {
             state.ruleSearchQuery = searchInput.value;
+            resetRulePagination();
             scheduleRuleSearchRender(searchInput);
             return;
         }
@@ -8575,9 +13747,23 @@
             updateColorFieldSwatch(colorInput.closest('[data-engagement-color-field]'), colorInput.value);
             return;
         }
+        const dateTimeManualInput = event.target?.closest?.('[data-engagement-datetime-date], [data-engagement-datetime-time]');
+        if (dateTimeManualInput instanceof HTMLInputElement && handleEngagementDateTimeManualInput(dateTimeManualInput)) {
+            return;
+        }
         const previewField = event.target?.closest?.('#engagementRuleForm input, #engagementRuleForm textarea');
         if (previewField instanceof HTMLElement) {
             updateRulePreviewFromForm();
+            return;
+        }
+        const templatePreviewField = event.target?.closest?.('#engagementTemplateForm input, #engagementTemplateForm textarea');
+        if (templatePreviewField instanceof HTMLElement) {
+            updateTemplatePreviewFromForm();
+            return;
+        }
+        const scenePreviewField = event.target?.closest?.('#engagementSceneForm input, #engagementSceneForm textarea');
+        if (scenePreviewField instanceof HTMLElement) {
+            updateScenePreviewFromForm();
         }
     });
 
@@ -8597,7 +13783,7 @@
         }
 
         const formId = form.getAttribute('id') || '';
-        if (!['engagementRuleForm', 'engagementTemplateForm', 'engagementSegmentForm', 'engagementSceneForm', 'engagementAssetStyleForm', 'engagementAssetForm', 'engagementEntrySettingsForm', 'engagementEntryContextForm', 'engagementExternalEmbedForm'].includes(formId)) {
+        if (!['engagementRuleForm', 'engagementTemplateForm', 'engagementSegmentForm', 'engagementSceneForm', 'engagementEventPriorityForm', 'engagementAssetStyleForm', 'engagementAssetForm', 'engagementEntrySettingsForm', 'engagementEntryContextForm', 'engagementExternalEmbedForm'].includes(formId)) {
             return;
         }
         event.preventDefault();
@@ -8616,6 +13802,10 @@
         } else if (formId === 'engagementSceneForm') {
             void saveSceneFromForm(form).catch((error) => {
                 showActionError(error, '页面场景保存失败');
+            });
+        } else if (formId === 'engagementEventPriorityForm') {
+            void saveEventPriorityCenterFromForm(form).catch((error) => {
+                showActionError(error, '首波分诊配置保存失败');
             });
         } else if (formId === 'engagementAssetStyleForm') {
             void saveAssetStyleFromForm(form).catch((error) => {
@@ -8641,8 +13831,15 @@
     }, true);
 
     document.addEventListener('keydown', (event) => {
+        const dateTimeManualInput = event.target?.closest?.('[data-engagement-datetime-date], [data-engagement-datetime-time]');
+        if (event.key === 'Enter' && dateTimeManualInput instanceof HTMLInputElement) {
+            event.preventDefault();
+            applyEngagementDateTimePicker(dateTimeManualInput.closest('[data-engagement-datetime-picker]'));
+            return;
+        }
         if (event.key === 'Escape') {
             closeEngagementSelects();
+            closeEngagementDateTimePickers();
             return;
         }
         if (event.key === 'Enter' || event.key === ' ') {

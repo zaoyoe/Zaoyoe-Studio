@@ -6,6 +6,7 @@ const {
     DEFAULT_USER_TAG_AUTOMATION,
     getUserCommerceMetrics,
     getUserLastActivityAt,
+    listKnownUserTagDefinitions,
     loadUserTagAutomationConfig,
     markPaymentFailed,
     markUserActive,
@@ -77,8 +78,20 @@ function createUserTagSupabaseStub(options = {}) {
     function createSelectBuilder(table) {
         const filters = [];
         let limitCount = null;
+        let rangeFrom = null;
+        let rangeTo = null;
+        const selectRows = () => {
+            let rows = filterRows(table, filters, limitCount);
+            if (Number.isFinite(rangeFrom) && Number.isFinite(rangeTo)) {
+                rows = rows.slice(rangeFrom, rangeTo + 1);
+            }
+            return rows;
+        };
         const builder = {
             select() {
+                return builder;
+            },
+            order() {
                 return builder;
             },
             eq(column, value) {
@@ -101,12 +114,17 @@ function createUserTagSupabaseStub(options = {}) {
                 limitCount = Number(value);
                 return builder;
             },
+            range(from, to) {
+                rangeFrom = Number(from);
+                rangeTo = Number(to);
+                return builder;
+            },
             maybeSingle() {
-                const rows = filterRows(table, filters, limitCount);
+                const rows = selectRows();
                 return Promise.resolve({ data: rows[0] || null, error: null });
             },
             then(resolve, reject) {
-                return Promise.resolve({ data: filterRows(table, filters, limitCount), error: null }).then(resolve, reject);
+                return Promise.resolve({ data: selectRows(), error: null }).then(resolve, reject);
             }
         };
         return builder;
@@ -175,6 +193,29 @@ function createUserTagSupabaseStub(options = {}) {
         }
     };
 }
+
+test('known user tag definitions merge user-management tags into engagement segments', async () => {
+    const supabase = createUserTagSupabaseStub({
+        rows: [
+            { user_id: 'user-1', tag: 'payment_failed' },
+            { user_id: 'user-2', tag: '用户' },
+            { user_id: 'user-3', tag: '关注' },
+            { user_id: 'user-4', tag: '测试' },
+            { user_id: 'user-5', tag: 'custom_tag' },
+            { user_id: 'user-6', tag: 'creator' }
+        ]
+    });
+
+    const definitions = await listKnownUserTagDefinitions(supabase);
+    const byKey = new Map(definitions.map((definition) => [definition.key, definition]));
+
+    assert.equal(byKey.get('用户')?.name, '用户');
+    assert.equal(byKey.get('关注')?.name, '关注');
+    assert.equal(byKey.get('测试')?.name, '测试');
+    assert.equal(byKey.get('creator')?.name, '创作者');
+    assert.equal(byKey.get('payment_failed')?.name, '支付失败用户');
+    assert.equal(byKey.get('custom_tag')?.name, 'custom_tag');
+});
 
 test('user tag helper normalizes and upserts commercial engagement tags', async () => {
     const supabase = createUserTagSupabaseStub();

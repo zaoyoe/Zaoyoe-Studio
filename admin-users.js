@@ -1134,7 +1134,7 @@ function buildBasicUserListRow(profile = {}) {
     const username = getUserProfileUsername(profile);
     const accountFlags = classifyUserAccount({ email, username });
     const created = profile.out_created_at || profile.created_at || null;
-    const lastActive = profile.out_last_active_at || profile.out_last_sign_in_at || profile.last_sign_in_at || null;
+    const lastActive = profile.out_last_active_at || profile.last_active_at || null;
 
     return {
         id,
@@ -1205,19 +1205,32 @@ function setLatestUserActivity(map, userId, timestamp) {
     }
 }
 
+function getLatestUsersActivityTimestamp(...values) {
+    const latest = values
+        .flat()
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+        .map((value) => ({
+            value,
+            time: new Date(value).getTime()
+        }))
+        .filter((entry) => Number.isFinite(entry.time))
+        .sort((left, right) => right.time - left.time)[0];
+    return latest ? latest.value : null;
+}
+
 async function fetchUserListEnrichment(siteFilter = null) {
     let pointsQuery = window.supabaseClient.from('points_balance').select('user_id, total_balance');
     if (window.AdminSiteFilter) {
         pointsQuery = AdminSiteFilter.applySiteFilter(pointsQuery);
     }
 
-    let loginHistoryQuery = window.supabaseClient
-        .from('user_login_history')
-        .select('user_id, created_at');
-
-    if (siteFilter) {
-        loginHistoryQuery = loginHistoryQuery.eq('site', siteFilter);
-    }
+    const loginHistoryTask = siteFilter
+        ? window.supabaseClient
+            .from('user_login_history')
+            .select('user_id, created_at')
+            .eq('site', siteFilter)
+        : Promise.resolve({ data: [] });
 
     let activityQuery = window.supabaseClient
         .from('engagement_user_activity')
@@ -1238,7 +1251,7 @@ async function fetchUserListEnrichment(siteFilter = null) {
         window.supabaseClient
             .from('admin_roles')
             .select('user_id, role_name, permissions, expires_at'),
-        loginHistoryQuery,
+        loginHistoryTask,
         fetchOptionalUsersRows(activityQuery, 'engagement_user_activity')
     ];
 
@@ -1290,15 +1303,7 @@ async function fetchUserListEnrichment(siteFilter = null) {
         pointsMap.set(userId, current);
     });
 
-    const latestLoginMap = new Map();
-    loginHistoryRows.forEach((row) => {
-        setLatestUserActivity(latestLoginMap, row?.user_id, row?.created_at);
-    });
-
     const latestActivityMap = new Map();
-    loginHistoryRows.forEach((row) => {
-        setLatestUserActivity(latestActivityMap, row?.user_id, row?.created_at);
-    });
     activityRows.forEach((row) => {
         setLatestUserActivity(latestActivityMap, row?.user_id, row?.last_active_at);
     });
@@ -1328,7 +1333,6 @@ async function fetchUserListEnrichment(siteFilter = null) {
     return {
         blockedMap,
         pointsMap,
-        latestLoginMap,
         latestActivityMap,
         tagsMap,
         rolesMap,
@@ -1344,7 +1348,7 @@ function applyUserListEnrichmentToRow(user = {}, enrichment = {}) {
 
     return {
         ...user,
-        last_sign_in_at: enrichment.latestActivityMap?.get(id) || enrichment.latestLoginMap?.get(id) || user.last_sign_in_at || null,
+        last_sign_in_at: enrichment.latestActivityMap?.get(id) || user.last_sign_in_at || null,
         points: pointsTotal,
         total_earned: pointsTotal,
         vip_level: pointsTotal >= 1000 ? 'VIP' : null,
@@ -4880,26 +4884,25 @@ async function fetchUserModalSummaryEnrichment(userId) {
         .from('points_balance')
         .select('user_id, total_balance')
         .eq('user_id', userId);
-    let loginHistoryQuery = window.supabaseClient
-        .from('user_login_history')
-        .select('created_at')
-        .eq('user_id', userId);
+    let activityQuery = window.supabaseClient
+        .from('engagement_user_activity')
+        .select('last_active_at, site')
+        .eq('user_id', userId)
+        .order('last_active_at', { ascending: false })
+        .limit(1);
 
     if (window.AdminSiteFilter?.applySiteFilter) {
         pointsQuery = window.AdminSiteFilter.applySiteFilter(pointsQuery);
-        loginHistoryQuery = window.AdminSiteFilter.applySiteFilter(loginHistoryQuery);
+        activityQuery = window.AdminSiteFilter.applySiteFilter(activityQuery);
     }
 
-    const [pointsResult, tagsResult, loginResult] = await Promise.all([
+    const [pointsResult, tagsResult, activityResult] = await Promise.all([
         pointsQuery,
         window.supabaseClient
             .from('user_tags')
             .select('tag')
             .eq('user_id', userId),
-        loginHistoryQuery
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle()
+        fetchOptionalUsersRows(activityQuery, 'engagement_user_activity')
     ]);
 
     if (pointsResult?.error) {
@@ -4908,21 +4911,21 @@ async function fetchUserModalSummaryEnrichment(userId) {
     if (tagsResult?.error) {
         console.warn('Failed to load user modal tags summary:', tagsResult.error);
     }
-    if (loginResult?.error) {
-        console.warn('Failed to load user modal login summary:', loginResult.error);
-    }
-
     const pointRows = Array.isArray(pointsResult?.data)
         ? pointsResult.data
         : (pointsResult?.data ? [pointsResult.data] : []);
     const pointsBalance = pointRows.reduce((sum, row) => sum + Number(row?.total_balance || 0), 0);
+    const activityRows = Array.isArray(activityResult?.data) ? activityResult.data : [];
+    const latestActiveAt = getLatestUsersActivityTimestamp(
+        activityRows.map((row) => row?.last_active_at)
+    );
 
     return {
         points: pointsBalance,
         total_earned: pointsBalance,
         vip_level: pointsBalance >= 1000 ? 'VIP' : null,
         tags: (tagsResult?.data || []).map((item) => item.tag).filter(Boolean),
-        last_sign_in_at: loginResult?.data?.created_at || null
+        last_sign_in_at: latestActiveAt
     };
 }
 
@@ -4940,13 +4943,18 @@ function syncUserSummaryAfterModalWarm(userId, nextUser = {}, roleInfo = null) {
         }
         : null;
 
+    const latestActiveAt = getLatestUsersActivityTimestamp(
+        nextUser.last_sign_in_at,
+        userState.users[userIndex].last_sign_in_at
+    );
+
     userState.users[userIndex] = {
         ...userState.users[userIndex],
         points: Number(nextUser.points || 0),
         total_earned: Number(nextUser.total_earned || nextUser.points || 0),
         vip_level: nextUser.vip_level || null,
         tags: Array.isArray(nextUser.tags) ? nextUser.tags : [],
-        last_sign_in_at: nextUser.last_sign_in_at || userState.users[userIndex].last_sign_in_at || null,
+        last_sign_in_at: latestActiveAt,
         is_banned: nextUser.is_banned === true,
         block_info: nextUser.block_info || null,
         is_admin: Boolean(roleInfo?.is_admin) || isLockedSuperAdminEmail(nextUser.email),

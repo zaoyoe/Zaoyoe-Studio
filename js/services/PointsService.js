@@ -532,7 +532,12 @@
 
             const responsePayload = await response.json().catch(() => ({}));
             if (!response.ok || responsePayload?.success === false) {
-                throw new Error(responsePayload?.message || '创建支付请求失败');
+                const error = new Error(responsePayload?.message || '创建支付请求失败');
+                error.code = String(responsePayload?.code || responsePayload?.payment_error?.code || '').trim();
+                error.rawMessage = String(responsePayload?.raw_message || responsePayload?.payment_error?.raw_message || responsePayload?.message || '').trim();
+                error.payload = responsePayload || null;
+                error.paymentError = responsePayload?.payment_error || null;
+                throw error;
             }
 
             return responsePayload;

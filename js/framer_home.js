@@ -65,7 +65,7 @@ const HOMEPAGE_DEFERRED_OVERLAY_STYLE_GROUP = 'homepage-overlays';
 const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
 const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
 const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260430_HOME_GUESTBOOK_UGC_CARDS_1';
+const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260505_HOME_GUESTBOOK_PROFILE_NAME_1';
 const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260430_HOME_TEXT_LANGUAGE_2';
 const HOMEPAGE_PROMPT_LIVE_SELECT = [
   'id',
@@ -3155,12 +3155,13 @@ const FramerHome = {
         return prefetchData.slice(0, 24);
       }
 
-      const cachedMessages = await Cache.loadWithCache('guestbook_messages', liveFetch, 10);
+      const cachedMessages = await Cache.loadWithCache('guestbook_messages_profile_name_v1', liveFetch, 10);
       if (Array.isArray(cachedMessages) && cachedMessages.length > 0) {
         return cachedMessages;
       }
 
       window.Cache?.invalidateCache?.('guestbook_messages');
+      window.Cache?.invalidateCache?.('guestbook_messages_profile_name_v1');
       return await liveFetch();
     } catch (error) {
       console.error('Failed to fetch guestbook:', error);
@@ -3905,6 +3906,7 @@ const FramerHome = {
       }
     });
 
+    section.dataset.homeHeroCentering = '1';
     section.dataset.renderSignature = heroSignature;
     section.dataset.homeHeroHydrated = '1';
     this.writeHeroTextCache(data);
@@ -3919,7 +3921,7 @@ const FramerHome = {
       });
     });
     observeHomepageSectionImpression(section, 'hero');
-    this.initCarousel();
+    this.initCarousel({ section });
     return true;
   },
 
@@ -3973,6 +3975,7 @@ const FramerHome = {
       backgroundRepeat: data.customImage ? 'no-repeat' : ''
     });
 
+    section.dataset.homeHeroCentering = '1';
     section.innerHTML = `
       <div class="hero-prism-preview-bg" aria-hidden="true">
         <div class="hero-prism-preview-effect-layer"></div>
@@ -4025,7 +4028,7 @@ const FramerHome = {
     observeHomepageSectionImpression(section, 'hero');
 
     // Initialize carousel interactions
-    this.initCarousel();
+    this.initCarousel({ section });
   },
 
   /**
@@ -5792,18 +5795,41 @@ const FramerHome = {
   /**
    * Initialize hero carousel with horizontal scroll and scaling
    */
-  initCarousel() {
+  initCarousel(options = {}) {
     const carousel = document.querySelector('.hero-carousel');
     const track = document.querySelector('.hero-carousel-track');
     const cards = document.querySelectorAll('.hero-carousel .entry-card');
     const thumb = document.querySelector('.hero-progress-thumb');
+    const heroSection = options.section instanceof HTMLElement
+      ? options.section
+      : carousel?.closest?.('.hero-section');
+    const applyHeroCenteringLock = () => {
+      if (heroSection?.dataset?.homeHeroCentering === '1') {
+        setHomeRuntimeStyle(carousel, {
+          scrollBehavior: 'auto',
+          scrollSnapType: 'none'
+        });
+      }
+    };
+    const releaseHeroCenteringLock = () => {
+      setHomeRuntimeStyle(carousel, {
+        scrollBehavior: null,
+        scrollSnapType: null
+      });
+      if (heroSection?.dataset?.homeHeroCentering === '1') {
+        delete heroSection.dataset.homeHeroCentering;
+      }
+    };
 
     console.log('🎠 initCarousel called', { carousel, track, cards: cards.length, thumb });
 
     if (!carousel || !track || cards.length === 0) {
       console.warn('⚠️ Carousel elements not found, skipping init');
+      releaseHeroCenteringLock();
       return;
     }
+
+    applyHeroCenteringLock();
 
     console.log('✅ Carousel elements found, binding events...');
     console.log('📏 Carousel dimensions:', {
@@ -5936,6 +5962,7 @@ const FramerHome = {
     requestAnimationFrame(() => {
       applyInitialCenter();
       isInitializing = false;
+      requestAnimationFrame(releaseHeroCenteringLock);
     });
 
     // Track scroll activity for thumb glow effect

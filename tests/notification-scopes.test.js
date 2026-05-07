@@ -137,6 +137,37 @@ test('notifyUsers applies personal notification scope defaults and dedupes withi
     assert.equal(state.systemNotifications.length, 1);
 });
 
+test('notifyUsers prefers source event identity over repeated copy matching', async () => {
+    const state = {
+        adminRoles: [],
+        systemNotifications: []
+    };
+    const supabase = createSupabaseStub(state);
+
+    const first = await notifyUsers(supabase, {
+        userIds: ['user-1'],
+        title: '订单提醒',
+        content: '订单 A 已完成。',
+        sourceModule: 'shop',
+        sourceEventId: 'order-1',
+        dedupeWindowMinutes: 60
+    });
+
+    const second = await notifyUsers(supabase, {
+        userIds: ['user-1'],
+        title: '新的订单提醒',
+        content: '同一订单的文案发生了变化。',
+        sourceModule: 'shop',
+        sourceEventId: 'order-1',
+        dedupeWindowMinutes: 60
+    });
+
+    assert.equal(first.created, 1);
+    assert.equal(second.created, 0);
+    assert.equal(second.skipped, 1);
+    assert.equal(state.systemNotifications.length, 1);
+});
+
 test('notifyActiveAdmins defaults to admin personal notification scope', async () => {
     const state = {
         adminRoles: [

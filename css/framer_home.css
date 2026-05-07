@@ -1433,6 +1433,12 @@ html[lang^="en"] .hero-subtitle {
     pointer-events: auto;
 }
 
+.hero-section[data-home-hero-centering="1"] .hero-carousel {
+    /* 20260507_HOME_HERO_CENTERING_LOCK_1: keep hydration centering invisible. */
+    scroll-behavior: auto !important;
+    scroll-snap-type: none !important;
+}
+
 /* Enable scroll-snap only after user interaction */
 .hero-carousel.is-snapping {
     scroll-snap-type: x mandatory;
@@ -1471,6 +1477,10 @@ html[lang^="en"] .hero-subtitle {
 
 .hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card-ui {
     opacity: 0.7;
+}
+
+.hero-section[data-home-hero-centering="1"] .entry-card-ui {
+    transition: none !important;
 }
 
 .hero-section[data-home-static-hero="1"]:not([data-render-signature]) .entry-card:nth-child(1) .home-entry-card-icon {
@@ -2086,7 +2096,7 @@ body.home-page .framer-footer {
 
     /* Mobile Entry Cards - Scrollable carousel */
     .hero-carousel {
-        scroll-snap-type: x mandatory;
+        scroll-snap-type: none;
         scroll-padding-inline: calc(50vw - 70px);
         -webkit-overflow-scrolling: touch;
     }

@@ -3394,6 +3394,12 @@ class AdminChat {
         return this.resolveSessionEmail(session?.profile || null, session?.sessionId || '', session?.sessionIds || []);
     }
 
+    hasKnownUserIdentityForSession(session = {}) {
+        const userId = String(session?.userId || session?.profile?.id || '').trim();
+        const email = this.resolveSessionContextEmail(session);
+        return Boolean(userId || email);
+    }
+
     buildUserContextCacheKey(session = {}) {
         const userId = String(session?.userId || session?.profile?.id || '').trim();
         const email = this.resolveSessionContextEmail(session).toLowerCase();
@@ -7817,13 +7823,16 @@ class AdminChat {
                 const isOpsSession = this.isOpsAlertSession(session);
                 const presenceStatus = this.getSessionPresenceStatusItem(session);
                 const isPresenceOnline = presenceStatus?.value === '在线';
+                const inactiveActivityFallback = this.hasKnownUserIdentityForSession(session)
+                    ? this.t('chat.noActiveRecord', '暂无活跃')
+                    : this.formatSessionTime(session.timestamp);
                 const timeEl = document.createElement('span');
                 timeEl.className = `session-time${isPresenceOnline ? ' session-time--online' : ''}`;
                 timeEl.textContent = isOpsSession
                     ? ''
                     : isPresenceOnline
                     ? '在线'
-                    : (presenceStatus?.value || this.formatSessionTime(session.timestamp));
+                    : (presenceStatus?.value || inactiveActivityFallback);
 
                 headerEl.appendChild(headerMainEl);
                 headerEl.appendChild(timeEl);

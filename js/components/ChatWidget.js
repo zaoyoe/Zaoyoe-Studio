@@ -110,6 +110,20 @@ class ChatWidget {
         this.userActivityRefreshTimer = null;
         this.userActivityByKey = new Map();
         this.userActivityFetchDisabled = false;
+        this.engagementNotificationChannel = null;
+        this.engagementNotificationChannelUserId = '';
+        this.engagementNotificationRefreshTimer = null;
+        this.engagementDeliveryChannel = null;
+        this.engagementDeliveryChannelUserId = '';
+        this.engagementUserTagsChannel = null;
+        this.engagementUserTagsChannelUserId = '';
+        this.engagementUserTagsRefreshTimer = null;
+        this.engagementFeedBroadcastChannel = null;
+        this.engagementFeedBroadcastRefreshTimer = null;
+        this.engagementFeedInvalidationsChannel = null;
+        this.engagementFeedInvalidationsRefreshTimer = null;
+        this.engagementScheduledRuleRefreshTimer = null;
+        this.engagementAuthSubscription = null;
         this.adminOpsAlertPollTimer = null;
         this.adminSessionSlaTimer = null;
         this.adminSessionQueueView = 'all';
@@ -187,8 +201,30 @@ class ChatWidget {
         this.engagementFeedLoaded = false;
         this.engagementFeedLoading = false;
         this.engagementActiveItem = null;
+        this.engagementPendingItems = [];
+        this.engagementPendingFlushTimer = null;
+        this.engagementDisplayQuietUntil = 0;
+        this.engagementAuthBurstUntil = 0;
+        this.engagementAuthBurstCollectUntil = 0;
+        this.engagementAuthBurstDisplayedCount = 0;
+        this.engagementEventPriorityCenter = null;
         this.engagementSessionQuietUntil = new Map();
+        this.engagementSemanticFamilyMap = {
+            new_user_welcome: 'new_user_welcome',
+            inactive_user_return: 'inactive_return',
+            message_replied: 'reply_followup',
+            comment_replied: 'reply_followup',
+            coupon_available: 'shop_discount_ready',
+            product_discount_available: 'shop_discount_ready',
+            order_paid: 'order_lifecycle',
+            order_status: 'order_lifecycle',
+            order_delivered: 'order_lifecycle',
+            refund_status: 'order_lifecycle'
+        };
         this.engagementRefreshTimer = null;
+        this.engagementFollowupRefreshTimers = new Set();
+        this.engagementConditionEvaluationTimer = null;
+        this.engagementConditionEvaluationInFlight = false;
         this.engagementTimeTriggerTimer = null;
         this.engagementScrollTriggerBound = false;
         this.engagementClickTriggerBound = false;
@@ -203,6 +239,7 @@ class ChatWidget {
         this.supportPendingActionId = '';
         this.supportLastMenuId = '';
         this.supportInlineState = { actionId: '', value: '', result: '', error: '', loading: false };
+        this.supportTicketHistoryState = { context: {}, payload: null, error: '', loading: false };
         this._supportPanelPrewarmHandle = null;
         this._supportRootPrewarmed = false;
         this._lastRenderedUserHistoryMessages = [];
@@ -882,6 +919,7 @@ class ChatWidget {
             'verify_task_status',
             'verify_failure_help',
             'verify_precheck',
+            'ticket_history',
             'create_ticket',
             'tg_support',
             'live_chat'
@@ -995,7 +1033,10 @@ class ChatWidget {
         }
 
         const disabledActions = new Set();
-        if (!normalized.ticket_enabled) disabledActions.add('create_ticket');
+        if (!normalized.ticket_enabled) {
+            disabledActions.add('create_ticket');
+            disabledActions.add('ticket_history');
+        }
         if (!normalized.live_chat_enabled) disabledActions.add('live_chat');
         Object.keys(config.menus || {}).forEach((menuId) => {
             const menu = config.menus[menuId];
@@ -1090,6 +1131,38 @@ class ChatWidget {
         };
 
         return this.supportInlineState;
+    }
+
+    normalizeSupportTicketHistoryContext(context = {}) {
+        const source = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
+        return {
+            ticketId: String(source.ticketId || source.ticket_id || '').trim(),
+            orderId: String(source.orderId || source.order_id || '').trim(),
+            ticketStatus: String(source.ticketStatus || source.ticket_status || '').trim().toLowerCase(),
+            ticketStatusLabel: String(source.ticketStatusLabel || source.ticket_status_label || '').trim()
+        };
+    }
+
+    getSupportTicketHistoryState() {
+        if (!this.supportTicketHistoryState || typeof this.supportTicketHistoryState !== 'object') {
+            this.supportTicketHistoryState = { context: {}, payload: null, error: '', loading: false };
+        }
+        return this.supportTicketHistoryState;
+    }
+
+    setSupportTicketHistoryState(nextState = {}) {
+        const baseState = this.getSupportTicketHistoryState();
+        const nextContext = nextState.context !== undefined
+            ? this.normalizeSupportTicketHistoryContext(nextState.context)
+            : baseState.context;
+
+        this.supportTicketHistoryState = {
+            ...baseState,
+            ...nextState,
+            context: nextContext
+        };
+
+        return this.supportTicketHistoryState;
     }
 
     clearSupportPanelPrewarmHandle() {
@@ -1935,6 +2008,160 @@ class ChatWidget {
         `;
     }
 
+    buildSupportTicketHistoryMeta(ticket = {}) {
+        const metaParts = [
+            this.getSupportIssueTypeLabel(ticket.issue_type),
+            ticket.order_id ? `${this.getCurrentLanguage() === 'zh' ? '订单' : 'Order'} ${this.truncateText(ticket.order_id, 12)}` : '',
+            this.formatSupportPanelDate(ticket.updated_at || ticket.created_at)
+        ].filter(Boolean);
+
+        return metaParts.join(' · ');
+    }
+
+    renderSupportTicketHistoryPanel() {
+        if (!this.supportPanel) return;
+
+        const state = this.getSupportTicketHistoryState();
+        const context = this.normalizeSupportTicketHistoryContext(state.context);
+        const payload = state.payload && typeof state.payload === 'object' ? state.payload : {};
+        const tickets = Array.isArray(payload.tickets) ? payload.tickets : [];
+        const focusTicketId = String(payload.focus_ticket_id || context.ticketId || '').trim();
+        const focusTicket = focusTicketId
+            ? tickets.find((ticket) => String(ticket?.id || '').trim() === focusTicketId)
+            : null;
+        const intro = focusTicket
+            ? (this.getCurrentLanguage() === 'zh'
+                ? `已为你定位到工单 ${String(focusTicket.id || '').slice(0, 8)} 的最新结果。`
+                : `Focused on the latest update for ticket ${String(focusTicket.id || '').slice(0, 8)}.`)
+            : (this.getCurrentLanguage() === 'zh'
+                ? '这里会列出你最近的工单处理结果，以及仍待处理的记录。'
+                : 'This panel shows your latest ticket outcomes and anything still waiting for review.');
+
+        let listMarkup = `
+            <div class="chat-support-ticket-empty">
+                ${this.escapeHtml(this.getCurrentLanguage() === 'zh'
+                    ? '当前账号下还没有可展示的工单记录。'
+                    : 'There are no ticket records to show for this account yet.')}
+            </div>
+        `;
+        if (state.loading) {
+            listMarkup = `
+                <div class="chat-support-ticket-empty">
+                    ${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '正在加载工单结果...' : 'Loading ticket results...')}
+                </div>
+            `;
+        } else if (tickets.length) {
+            listMarkup = `
+                <div class="chat-support-ticket-list">
+                    ${tickets.map((ticket) => {
+                        const normalizedStatus = String(ticket?.status || '').trim().toLowerCase();
+                        const statusLabel = this.getSupportStatusLabel(normalizedStatus);
+                        const statusTone = ['resolved', 'success'].includes(normalizedStatus)
+                            ? 'resolved'
+                            : (normalizedStatus === 'rejected' ? 'rejected' : 'pending');
+                        const description = String(ticket?.description || '').trim();
+                        const adminNotes = String(ticket?.admin_notes || '').trim();
+                        const noteText = adminNotes
+                            || (this.getCurrentLanguage() === 'zh'
+                                ? '客服还在处理中，你可以稍后回来查看结果。'
+                                : 'Support is still reviewing this ticket. Check back again later.');
+                        return `
+                            <article class="chat-support-ticket-item${ticket?.is_focus ? ' is-focus' : ''}">
+                                <div class="chat-support-ticket-row">
+                                    <div class="chat-support-ticket-heading">
+                                        <div class="chat-support-ticket-title">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? `工单 ${String(ticket?.id || '').slice(0, 8)}` : `Ticket ${String(ticket?.id || '').slice(0, 8)}`)}</div>
+                                        <div class="chat-support-ticket-meta">${this.escapeHtml(this.buildSupportTicketHistoryMeta(ticket))}</div>
+                                    </div>
+                                    <span class="chat-support-ticket-status chat-support-ticket-status--${statusTone}">${this.escapeHtml(statusLabel)}</span>
+                                </div>
+                                ${ticket?.is_focus
+                                    ? `<div class="chat-support-ticket-flag">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '当前提醒对应工单' : 'Linked to the current reminder')}</div>`
+                                    : ''}
+                                ${description
+                                    ? `<div class="chat-support-ticket-copy"><span class="chat-support-ticket-copy-label">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '问题描述' : 'Issue')}</span>${this.escapeHtml(this.truncateText(description, 180))}</div>`
+                                    : ''}
+                                <div class="chat-support-ticket-copy"><span class="chat-support-ticket-copy-label">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '处理结果' : 'Result')}</span>${this.escapeHtml(this.truncateText(noteText, 220))}</div>
+                            </article>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+        }
+
+        const errorMarkup = !state.loading && state.error
+            ? `
+                <div class="chat-support-result chat-support-result--error">
+                    <div class="chat-support-result-label">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '加载失败' : 'Load Failed')}</div>
+                    <div class="chat-support-result-body">${this.escapeHtml(state.error)}</div>
+                </div>
+            `
+            : '';
+
+        this.supportView = { type: 'action', id: 'ticket_history' };
+        this.setSupportDisplayMode('support');
+        this.updateSupportInputState('');
+        this.supportPanel.innerHTML = `
+            <div class="chat-support-card chat-support-card--fullscreen">
+                <div class="chat-support-eyebrow">${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '工单结果' : 'Ticket Results')}</div>
+                <div class="chat-support-title">${this.escapeHtml(this.getSupportActionLabel('ticket_history'))}</div>
+                <p class="chat-support-body">${this.escapeHtml(intro)}</p>
+                <div class="chat-support-section">
+                    <div class="chat-support-section-title">${this.escapeHtml(this.getCurrentLanguage() === 'zh'
+                        ? `最近 ${Number(payload.limit || 6)} 条记录`
+                        : `Latest ${Number(payload.limit || 6)} tickets`)}</div>
+                    ${listMarkup}
+                </div>
+                ${errorMarkup}
+                <div class="chat-support-footer chat-support-footer--stack">
+                    <button type="button" class="chat-support-btn chat-support-btn--secondary" data-support-ticket-history-refresh="1">
+                        ${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '刷新结果' : 'Refresh')}
+                    </button>
+                    <button type="button" class="chat-support-btn" data-support-action-id="create_ticket">
+                        ${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '提交新工单' : 'Submit Ticket')}
+                    </button>
+                    <button type="button" class="chat-support-link-btn" data-support-root="1">
+                        ${this.escapeHtml(this.getCurrentLanguage() === 'zh' ? '返回主菜单' : 'Back')}
+                    </button>
+                </div>
+            </div>
+        `;
+    }
+
+    async openSupportTicketHistoryPanel(context = {}) {
+        const normalizedContext = this.normalizeSupportTicketHistoryContext(context);
+        this.supportLastMenuId = this.supportLastMenuId || 'human';
+        this.getSupportInlineState('');
+        this.setSupportTicketHistoryState({
+            context: normalizedContext,
+            payload: null,
+            error: '',
+            loading: true
+        });
+        this.renderSupportTicketHistoryPanel();
+
+        try {
+            const payload = await this.callSupportApi('ticket_history', {
+                ticket_id: normalizedContext.ticketId || '',
+                order_id: normalizedContext.orderId || ''
+            });
+            this.setSupportTicketHistoryState({
+                context: normalizedContext,
+                payload,
+                error: '',
+                loading: false
+            });
+        } catch (error) {
+            this.setSupportTicketHistoryState({
+                context: normalizedContext,
+                payload: null,
+                error: error?.message || (this.getCurrentLanguage() === 'zh' ? '工单记录加载失败' : 'Failed to load tickets'),
+                loading: false
+            });
+        }
+
+        this.renderSupportTicketHistoryPanel();
+    }
+
     async openSupportAction(actionId, nextPanelState = null) {
         const action = this.getSupportAction(actionId);
         if (!action) return;
@@ -1962,6 +2189,11 @@ class ChatWidget {
 
         if (action.mode === 'static' || action.mode === 'link') {
             this.renderSupportStaticPanel(actionId);
+            return;
+        }
+
+        if (action.mode === 'ticket_history') {
+            await this.openSupportTicketHistoryPanel(nextPanelState?.context || {});
             return;
         }
 
@@ -2077,6 +2309,9 @@ class ChatWidget {
         const normalized = String(status || '').trim().toLowerCase();
         const labels = {
             pending: this.getCurrentLanguage() === 'zh' ? '待处理' : 'Pending',
+            open: this.getCurrentLanguage() === 'zh' ? '待处理' : 'Pending',
+            resolved: this.getCurrentLanguage() === 'zh' ? '已解决' : 'Resolved',
+            rejected: this.getCurrentLanguage() === 'zh' ? '已拒绝' : 'Rejected',
             used: this.getCurrentLanguage() === 'zh' ? '已使用' : 'Used',
             revoked: this.getCurrentLanguage() === 'zh' ? '已撤销' : 'Revoked',
             locked: this.getCurrentLanguage() === 'zh' ? '已锁定' : 'Locked',
@@ -2092,6 +2327,32 @@ class ChatWidget {
             paid: this.getCurrentLanguage() === 'zh' ? '已支付' : 'Paid'
         };
         return labels[normalized] || (normalized || (this.getCurrentLanguage() === 'zh' ? '未知' : 'Unknown'));
+    }
+
+    getSupportIssueTypeLabel(issueType = '') {
+        const normalized = String(issueType || '').trim().toLowerCase();
+        const labels = {
+            delivery: this.getCurrentLanguage() === 'zh' ? '履约问题' : 'Delivery',
+            verification: this.getCurrentLanguage() === 'zh' ? '验证问题' : 'Verification',
+            refund: this.getCurrentLanguage() === 'zh' ? '退款问题' : 'Refund',
+            payment: this.getCurrentLanguage() === 'zh' ? '支付问题' : 'Payment',
+            order: this.getCurrentLanguage() === 'zh' ? '订单问题' : 'Order',
+            account: this.getCurrentLanguage() === 'zh' ? '账号问题' : 'Account',
+            other: this.getCurrentLanguage() === 'zh' ? '其他问题' : 'Other'
+        };
+        return labels[normalized] || (this.getCurrentLanguage() === 'zh' ? '其他问题' : 'Other');
+    }
+
+    formatSupportPanelDate(value) {
+        if (!value) return this.getCurrentLanguage() === 'zh' ? '时间未知' : 'Unknown time';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return String(value);
+        return date.toLocaleString(this.getCurrentLanguage() === 'zh' ? 'zh-CN' : 'en-US', {
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
     }
 
     formatSupportResult(actionId, payload) {
@@ -2297,7 +2558,9 @@ class ChatWidget {
     }
 
     handleSupportPanelClick(event) {
-        const button = event.target instanceof Element ? event.target.closest('[data-support-action-id], [data-support-menu-id], [data-support-root], [data-support-open-link]') : null;
+        const button = event.target instanceof Element
+            ? event.target.closest('[data-support-action-id], [data-support-menu-id], [data-support-root], [data-support-open-link], [data-support-ticket-history-refresh]')
+            : null;
         if (!button) return;
 
         if (button.hasAttribute('data-support-root')) {
@@ -2320,7 +2583,58 @@ class ChatWidget {
         const url = button.getAttribute('data-support-open-link');
         if (url) {
             window.open(url, '_blank', 'noopener');
+            return;
         }
+
+        if (button.hasAttribute('data-support-ticket-history-refresh')) {
+            void this.openSupportTicketHistoryPanel(this.getSupportTicketHistoryState().context);
+        }
+    }
+
+    setSupportAssistButtonLoading(button = null, label = '') {
+        if (!button || button.dataset.supportAssistLoading === '1') return button;
+
+        const loadingLabel = String(label || this.t('chat.loading', '加载中...'));
+        const rect = typeof button.getBoundingClientRect === 'function'
+            ? button.getBoundingClientRect()
+            : null;
+        button.dataset.supportAssistLoading = '1';
+        button.dataset.supportAssistOriginalHtml = button.innerHTML;
+        button.dataset.supportAssistOriginalMinWidth = button.style.minWidth || '';
+        button.dataset.supportAssistOriginalAriaLabel = button.getAttribute('aria-label') || '';
+        button.dataset.supportAssistHadAriaLabel = button.hasAttribute('aria-label') ? '1' : '0';
+        button.dataset.supportAssistWasDisabled = button.disabled === true ? '1' : '0';
+        if (rect?.width > 0) {
+            button.style.minWidth = `${Math.ceil(rect.width)}px`;
+        }
+        button.classList.add('is-loading');
+        button.setAttribute('aria-busy', 'true');
+        button.setAttribute('aria-label', loadingLabel);
+        button.disabled = true;
+        button.innerHTML = this.getChatInlineLoadingDotsMarkup(loadingLabel);
+        return button;
+    }
+
+    clearSupportAssistButtonLoading(button = null) {
+        if (!button || button.dataset?.supportAssistLoading !== '1') return;
+
+        button.innerHTML = button.dataset.supportAssistOriginalHtml || '';
+        button.style.minWidth = button.dataset.supportAssistOriginalMinWidth || '';
+        button.classList.remove('is-loading');
+        button.removeAttribute('aria-busy');
+        if (button.dataset.supportAssistHadAriaLabel === '1') {
+            button.setAttribute('aria-label', button.dataset.supportAssistOriginalAriaLabel || '');
+        } else {
+            button.removeAttribute('aria-label');
+        }
+        button.disabled = button.dataset.supportAssistWasDisabled === '1';
+
+        delete button.dataset.supportAssistLoading;
+        delete button.dataset.supportAssistOriginalHtml;
+        delete button.dataset.supportAssistOriginalMinWidth;
+        delete button.dataset.supportAssistOriginalAriaLabel;
+        delete button.dataset.supportAssistHadAriaLabel;
+        delete button.dataset.supportAssistWasDisabled;
     }
 
     handleSupportAssistMessageClick(event) {
@@ -2349,7 +2663,11 @@ class ChatWidget {
             }
             : null;
 
-        this.openSupportAction(actionId, panelState);
+        const loadingButton = this.setSupportAssistButtonLoading(button, this.t('chat.loading', '加载中...'));
+        void this.openSupportAction(actionId, panelState).catch((error) => {
+            console.warn('[ChatWidget] Failed to open support assist action:', error?.message || error);
+            this.clearSupportAssistButtonLoading(loadingButton);
+        });
     }
 
     _detectRefreshRate() {
@@ -2557,9 +2875,6 @@ class ChatWidget {
                 this.userContextPanelCollapsed = true;
                 this.replyTemplateBarCollapsed = true;
                 this.opsAlertToolbarCollapsed = true;
-            } else {
-                this.replyTemplateBarCollapsed = false;
-                this.opsAlertToolbarCollapsed = false;
             }
         }
 
@@ -2900,6 +3215,9 @@ class ChatWidget {
                 sessionId: primarySessionId,
                 sessionIds: this.userSessionIds
             });
+            this.syncEngagementNotificationSubscription(user);
+            this.syncEngagementDeliverySubscription(user);
+            this.syncEngagementUserTagsSubscription(user);
             return { user, sessionId: primarySessionId, sessionIds: this.getActiveUserSessionIds() };
         }
 
@@ -2912,6 +3230,9 @@ class ChatWidget {
             sessionId: guestSessionId,
             sessionIds: [guestSessionId]
         });
+        this.syncEngagementNotificationSubscription(null);
+        this.syncEngagementDeliverySubscription(null);
+        this.syncEngagementUserTagsSubscription(null);
         return { user: null, sessionId: guestSessionId, sessionIds: this.getActiveUserSessionIds() };
     }
 
@@ -3414,7 +3735,7 @@ class ChatWidget {
     }
 
     subscribeToUserActivity() {
-        if (!this.supabase?.from || this.userActivityRefreshTimer) {
+        if (!this.supabase?.from) {
             return;
         }
 
@@ -3430,10 +3751,12 @@ class ChatWidget {
                 .subscribe();
         }
 
-        this.userActivityRefreshTimer = setInterval(() => {
+        if (!this.userActivityRefreshTimer) {
+            this.userActivityRefreshTimer = setInterval(() => {
+                void this.refreshUserActivityForAdminSessions(this.sessions, { render: true });
+            }, 30000);
             void this.refreshUserActivityForAdminSessions(this.sessions, { render: true });
-        }, 30000);
-        void this.refreshUserActivityForAdminSessions(this.sessions, { render: true });
+        }
     }
 
     async init() {
@@ -3475,6 +3798,8 @@ class ChatWidget {
                         const action = this.getSupportAction(this.supportView.id);
                         if (action?.mode === 'static' || action?.mode === 'link') {
                             this.renderSupportStaticPanel(this.supportView.id);
+                        } else if (action?.mode === 'ticket_history') {
+                            this.renderSupportTicketHistoryPanel();
                         } else {
                             this.renderSupportActionPanel(this.supportView.id);
                         }
@@ -3541,10 +3866,8 @@ class ChatWidget {
             const lastActive = new Date(lastActiveTime);
             const now = new Date();
             const diffMinutes = Math.floor((now - lastActive) / (1000 * 60));
-            const presenceIsFreshest = Number.isFinite(presenceLastSeenTime)
-                && presenceLastSeenTime >= (Number.isFinite(messageLastSeenTime) ? messageLastSeenTime : 0);
 
-            if (this.adminPresenceOnline || (!presenceIsFreshest && diffMinutes < 15)) {
+            if (this.adminPresenceOnline) {
                 statusText.innerText = this.t('chat.adminOnline', '管理员在线');
                 statusDot.className = "status-dot online";
             } else if (diffMinutes < 1) {
@@ -3587,6 +3910,7 @@ class ChatWidget {
         shell.classList.remove('chat-window--bootstrap-content-ready');
         shell.classList.toggle('admin-mode-layout', normalizedMode === 'admin');
         shell.classList.remove('admin-mode-layout--narrow');
+        shell.classList.remove('chat-widget-bootstrap-shell--desktop-edge-safe');
         shell.classList.toggle('chat-widget-bootstrap-shell--admin', normalizedMode === 'admin');
         shell.classList.toggle('chat-widget-bootstrap-shell--user', normalizedMode !== 'admin');
         return shell;
@@ -3642,6 +3966,14 @@ class ChatWidget {
             <div class="${stateClass}" role="status" aria-label="${loadingLabel}">
                 <span class="chat-loading-dots" aria-hidden="true"><span></span><span></span><span></span></span>
             </div>
+        `;
+    }
+
+    getChatInlineLoadingDotsMarkup(label = '') {
+        const loadingLabel = this.escapeHtml(String(label || this.t('chat.loading', '加载中...')));
+        return `
+            <span class="chat-loading-dots chat-loading-dots--inline" aria-hidden="true"><span></span><span></span><span></span></span>
+            <span class="chat-loading-dots__label">${loadingLabel}</span>
         `;
     }
 
@@ -3866,6 +4198,7 @@ class ChatWidget {
             if (shouldKeepHiddenForBootstrap) {
                 reusedFab.setAttribute('aria-hidden', 'true');
             } else {
+                reusedFab.classList.remove('chat-widget-fab--ambient-retracted');
                 reusedFab.removeAttribute('aria-hidden');
             }
             reusedFab.setAttribute('aria-label', this.t('chat.openChat', '打开支持助手'));
@@ -3978,7 +4311,6 @@ class ChatWidget {
 
     _scheduleFabAmbientMotion(delayMs = null) {
         this._clearFabAmbientMotionTimers();
-        this._setFabAmbientRetracted(true);
 
         if (!this._shouldRunFabAmbientMotion()) return;
 
@@ -4014,6 +4346,998 @@ class ChatWidget {
 
     // ===== Engagement Robot Bubble Runtime =====
 
+    clearEngagementNotificationRefreshTimer() {
+        if (this.engagementNotificationRefreshTimer) {
+            window.clearTimeout(this.engagementNotificationRefreshTimer);
+            this.engagementNotificationRefreshTimer = null;
+        }
+    }
+
+    stopEngagementNotificationSubscription() {
+        this.clearEngagementNotificationRefreshTimer();
+        if (this.engagementNotificationChannel && this.supabase?.removeChannel) {
+            try {
+                this.supabase.removeChannel(this.engagementNotificationChannel);
+            } catch (error) {
+                console.warn('[ChatWidget] Failed to remove engagement notification channel:', error?.message || error);
+            }
+        }
+        this.engagementNotificationChannel = null;
+        this.engagementNotificationChannelUserId = '';
+    }
+
+    syncEngagementNotificationSubscription(user = this.currentUser) {
+        const userId = String(user?.id || '').trim();
+        if (this.engagementNotificationChannelUserId === userId && this.engagementNotificationChannel) {
+            return;
+        }
+
+        this.stopEngagementNotificationSubscription();
+
+        if (!userId || !this.supabase?.channel) {
+            return;
+        }
+
+        this.engagementNotificationChannelUserId = userId;
+        this.engagementNotificationChannel = this.supabase
+            .channel(`engagement-user-notifications-${userId}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'system_notifications',
+                    filter: `user_id=eq.${userId}`
+                },
+                (payload) => this.handleEngagementNotificationRealtime(payload)
+            )
+            .subscribe((status) => {
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    console.warn('[ChatWidget] Engagement notification realtime degraded:', status);
+                }
+            });
+    }
+
+    getEngagementRealtimeRow(payload = {}) {
+        const nextRow = payload?.new && typeof payload.new === 'object' && !Array.isArray(payload.new) ? payload.new : null;
+        const previousRow = payload?.old && typeof payload.old === 'object' && !Array.isArray(payload.old) ? payload.old : null;
+        return nextRow || previousRow || {};
+    }
+
+    normalizeEngagementNotificationRow(row = {}) {
+        const source = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
+        const metadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
+            ? source.metadata
+            : {};
+        const category = String(source.category || metadata.category || 'user_notice').trim() || 'user_notice';
+        return this.normalizeEngagementItem({
+            id: `notification:${String(source.id || '').trim()}`,
+            notification_id: String(source.id || '').trim(),
+            source: 'notification',
+            source_module: String(source.source_module || metadata.source_module || category).trim() || category,
+            source_event_id: String(source.source_event_id || metadata.source_event_id || '').trim(),
+            title: String(source.title || '小助手提醒').trim() || '小助手提醒',
+            content: String(source.content || '').trim(),
+            category,
+            page_id: String(metadata.page_id || this.getEngagementPageId()).trim() || this.getEngagementPageId(),
+            site: String(metadata.site || window.SiteConfig?.site || 'cn').trim().toLowerCase() || 'cn',
+            placement: metadata.placement || metadata.display_type || metadata.displayType || 'robot_bubble',
+            priority: Number(source.priority || metadata.priority || 20) || 20,
+            action_label: String(source.action_label || metadata.action_label || '').trim(),
+            action_url: String(source.action_url || metadata.action_url || '').trim(),
+            dismiss_ttl_hours: metadata.dismiss_ttl_hours ?? 24,
+            tone: String(source.type || metadata.tone || 'info').trim() || 'info',
+            icon: String(metadata.icon || 'robot').trim() || 'robot',
+            metadata
+        });
+    }
+
+    getSystemNotificationAutomationTriggerTypes() {
+        return new Set([
+            'cart_abandoned',
+            'comment_replied',
+            'coupon_available',
+            'coupon_expiring',
+            'content_featured',
+            'daily_checkin_available',
+            'guestbook_mention',
+            'inactive_user_return',
+            'login_risk',
+            'maintenance_notice',
+            'message_replied',
+            'new_user_welcome',
+            'order_delivered',
+            'order_paid',
+            'order_status',
+            'payment_failed',
+            'permission_changed',
+            'points_adjusted',
+            'points_insufficient',
+            'points_low_balance',
+            'product_discount',
+            'product_discount_available',
+            'product_restocked',
+            'profile_incomplete',
+            'prompt_unlocked',
+            'refund_status',
+            'search_no_result',
+            'service_status',
+            'support_reply',
+            'ticket_updated',
+            'usage_rules',
+            'verification_expiring',
+            'verify_failed',
+            'verify_queue',
+            'verify_success',
+            'wallet_recharge_failed',
+            'wallet_recharge_success',
+            'community_rule'
+        ]);
+    }
+
+    getSystemNotificationAutomationTriggerType(item = {}) {
+        const normalized = this.normalizeEngagementItem(item);
+        if (!normalized) return '';
+        const metadata = normalized.metadata && typeof normalized.metadata === 'object' && !Array.isArray(normalized.metadata)
+            ? normalized.metadata
+            : {};
+        const triggerType = this.normalizeEngagementTriggerType(
+            metadata.trigger_type
+                || metadata.triggerType
+                || metadata.event_type
+                || metadata.eventType
+                || ''
+        );
+        return this.getSystemNotificationAutomationTriggerTypes().has(triggerType) ? triggerType : '';
+    }
+
+    shouldSurfaceSystemNotificationBubble(item = {}) {
+        const normalized = this.normalizeEngagementItem(item);
+        if (!normalized) return false;
+        const metadata = normalized.metadata && typeof normalized.metadata === 'object' && !Array.isArray(normalized.metadata)
+            ? normalized.metadata
+            : {};
+        const notificationCategory = String(normalized.category || metadata.category || '').trim().toLowerCase();
+        const triggerType = this.normalizeEngagementTriggerType(
+            metadata.trigger_type
+                || metadata.triggerType
+                || metadata.event_type
+                || metadata.eventType
+                || ''
+        );
+        if (notificationCategory === 'content_moderated' || triggerType === 'content_moderated') {
+            return false;
+        }
+        return true;
+    }
+
+    shouldSurfaceEngagementItem(item = {}) {
+        const normalized = this.normalizeEngagementItem(item);
+        if (!normalized) return false;
+        if (normalized.source === 'notification' && !this.shouldSurfaceSystemNotificationBubble(normalized)) {
+            return false;
+        }
+        return true;
+    }
+
+    async showAutomationForSystemNotification(item = {}) {
+        const normalized = this.normalizeEngagementItem(item);
+        if (!normalized) return false;
+        const triggerType = this.getSystemNotificationAutomationTriggerType(normalized);
+        if (!triggerType) return false;
+
+        const metadata = normalized.metadata && typeof normalized.metadata === 'object' && !Array.isArray(normalized.metadata)
+            ? normalized.metadata
+            : {};
+        const result = await this.triggerEngagementEvent(triggerType, {
+            ...metadata,
+            source_module: String(metadata.source_module || normalized.source_module || 'system_notifications').trim() || 'system_notifications',
+            source_event_id: String(normalized.source_event_id || metadata.source_event_id || normalized.notification_id || '').trim(),
+            notification_id: normalized.notification_id || '',
+            notification_category: String(metadata.category || normalized.category || '').trim(),
+            notification_title: normalized.title || '',
+            page_id: normalized.page_id || this.getEngagementPageId(),
+            site: normalized.site || this.getEngagementBroadcastSite()
+        }, { once: true });
+        return Boolean(result);
+    }
+
+    showRealtimeEngagementItem(item = {}, options = {}) {
+        const normalized = this.normalizeEngagementItem(item);
+        if (!normalized) return false;
+        if (!this.shouldSurfaceEngagementItem(normalized)) {
+            return false;
+        }
+        const activeKey = this.engagementActiveItem ? this.getEngagementItemKey(this.engagementActiveItem) : '';
+        const nextKey = this.getEngagementItemKey(normalized);
+        const activeSemanticKey = this.engagementActiveItem ? this.getEngagementSemanticDedupeKey(this.engagementActiveItem) : '';
+        const nextSemanticKey = this.getEngagementSemanticDedupeKey(normalized);
+        if (activeKey && nextKey && activeKey === nextKey) return false;
+        if (activeSemanticKey && nextSemanticKey && activeSemanticKey === nextSemanticKey) return false;
+        if (this.isEngagementItemSuppressed(normalized) || this.isEngagementItemSessionQuiet(normalized)) {
+            return false;
+        }
+        if (this.isOpen || this.engagementActiveItem || this.isEngagementDisplayCoolingDown()) {
+            const queued = this.queuePendingEngagementItem(normalized, options);
+            this.schedulePendingEngagementFlush();
+            if (queued) {
+                this.scheduleEngagementFollowupRefresh(260);
+            }
+            return queued;
+        }
+        this.showEngagementItem(normalized, {
+            ...options,
+            realtime: true
+        });
+        this.scheduleEngagementFollowupRefresh(260);
+        return true;
+    }
+
+    queuePendingEngagementItem(item = {}, options = {}) {
+        const normalized = this.normalizeEngagementItem(item);
+        if (!normalized) return false;
+        const key = this.getEngagementItemKey(normalized);
+        const semanticKey = this.getEngagementSemanticDedupeKey(normalized);
+        if (!key || this.isEngagementItemSuppressed(normalized) || this.isEngagementItemSessionQuiet(normalized)) {
+            return false;
+        }
+        const existingSemanticEntry = semanticKey ? this.getPendingEngagementSemanticEntry(semanticKey) : null;
+        if (existingSemanticEntry) {
+            const existingItem = this.normalizeEngagementItem(existingSemanticEntry.item || {});
+            if (existingItem && this.compareEngagementDisplayPriority(existingItem, normalized) <= 0) {
+                return false;
+            }
+        }
+        const queuedItem = {
+            key,
+            semanticKey,
+            item: normalized,
+            options: {
+                ...options,
+                queued: true
+            },
+            queuedAt: Date.now()
+        };
+        this.engagementPendingItems = [
+            queuedItem,
+            ...this.engagementPendingItems.filter((entry) => entry?.key !== key && (!semanticKey || entry?.semanticKey !== semanticKey))
+        ]
+            .sort((left, right) => {
+                const priorityDelta = this.compareEngagementDisplayPriority(left.item || {}, right.item || {});
+                if (priorityDelta) return priorityDelta;
+                return Number(right.queuedAt || 0) - Number(left.queuedAt || 0);
+            })
+            .slice(0, 8);
+        return true;
+    }
+
+    clearPendingEngagementFlushTimer() {
+        if (!this.engagementPendingFlushTimer) return;
+        window.clearTimeout(this.engagementPendingFlushTimer);
+        this.engagementPendingFlushTimer = null;
+    }
+
+    isEngagementDisplayCoolingDown() {
+        return Number(this.engagementDisplayQuietUntil || 0) > Date.now();
+    }
+
+    getEngagementDisplayCooldownRemainingMs() {
+        return Math.max(0, Number(this.engagementDisplayQuietUntil || 0) - Date.now());
+    }
+
+    beginEngagementDisplayCooldown(delayMs = 1800) {
+        const normalizedDelay = Math.max(0, Number(delayMs || 0) || 0);
+        this.engagementDisplayQuietUntil = Date.now() + normalizedDelay;
+        return normalizedDelay;
+    }
+
+    beginEngagementAuthBurst(durationMs = 10000, collectMs = 1200) {
+        const normalizedDuration = Math.max(0, Number(durationMs || 0) || 0);
+        const normalizedCollect = Math.max(0, Number(collectMs || 0) || 0);
+        this.engagementAuthBurstUntil = Date.now() + normalizedDuration;
+        this.engagementAuthBurstCollectUntil = Date.now() + Math.min(normalizedDuration, normalizedCollect);
+        this.engagementAuthBurstDisplayedCount = 0;
+        return normalizedDuration;
+    }
+
+    isEngagementAuthBurstActive() {
+        return Number(this.engagementAuthBurstUntil || 0) > Date.now();
+    }
+
+    isEngagementAuthBurstCollecting() {
+        return Number(this.engagementAuthBurstCollectUntil || 0) > Date.now();
+    }
+
+    getEngagementAuthBurstRemainingMs() {
+        return Math.max(0, Number(this.engagementAuthBurstUntil || 0) - Date.now());
+    }
+
+    getEngagementAuthBurstHoldingRemainingMs() {
+        if (this.isEngagementAuthBurstCollecting()) {
+            return Math.max(0, Number(this.engagementAuthBurstCollectUntil || 0) - Date.now());
+        }
+        if (this.isEngagementAuthBurstActive() && Number(this.engagementAuthBurstDisplayedCount || 0) >= 1) {
+            return this.getEngagementAuthBurstRemainingMs();
+        }
+        return 0;
+    }
+
+    shouldThrottleEngagementForAuthBurst(options = {}) {
+        if (options?.manual === true) return false;
+        if (this.isEngagementAuthBurstCollecting()) return true;
+        return this.isEngagementAuthBurstActive() && Number(this.engagementAuthBurstDisplayedCount || 0) >= 1;
+    }
+
+    markEngagementDisplayStarted(options = {}) {
+        if (options?.manual === true) return;
+        if (this.isEngagementAuthBurstActive()) {
+            this.engagementAuthBurstDisplayedCount += 1;
+        }
+    }
+
+    getEngagementRespirationDelayMs(options = {}) {
+        if (options?.eventType === 'click' || options?.eventType === 'action') {
+            return 2800;
+        }
+        if (options?.eventType === 'dismiss' && options?.passive !== true) {
+            return 2400;
+        }
+        return 1800;
+    }
+
+    getEngagementNextDisplayDelayMs(options = {}) {
+        const cooldownDelay = this.getEngagementDisplayCooldownRemainingMs();
+        const authBurstDelay = this.shouldThrottleEngagementForAuthBurst(options)
+            ? this.getEngagementAuthBurstHoldingRemainingMs()
+            : 0;
+        return Math.max(120, cooldownDelay, authBurstDelay);
+    }
+
+    getEngagementUrgencyRank(item = {}) {
+        const normalized = this.normalizeEngagementItem(item);
+        if (!normalized) return 0;
+        const triggerType = String(normalized.trigger_type || '').trim().toLowerCase();
+        const priorityCenter = this.getEngagementEventPriorityCenter();
+        const priorityGroups = [
+            ['first_wave', 4],
+            ['service', 3],
+            ['guidance', 2],
+            ['marketing', 1]
+        ];
+        for (const [groupId, rank] of priorityGroups) {
+            const events = Array.isArray(priorityCenter?.[groupId]?.events) ? priorityCenter[groupId].events : [];
+            if (events.includes(triggerType)) return rank;
+        }
+        if (normalized.source === 'notification') return 2;
+        return 0;
+    }
+
+    normalizeEngagementEventPriorityCenter(value = {}) {
+        const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+        const fallback = {
+            first_wave: {
+                label: '首波优先',
+                events: ['login_risk', 'payment_failed', 'wallet_recharge_failed', 'verify_failed', 'support_reply', 'ticket_updated', 'refund_status', 'order_status', 'order_paid', 'order_delivered', 'content_moderated']
+            },
+            service: {
+                label: '常规服务',
+                events: ['verification_expiring', 'permission_changed', 'points_adjusted', 'points_insufficient', 'verify_queue', 'message_replied', 'comment_replied', 'guestbook_mention', 'service_status', 'maintenance_notice', 'usage_rules', 'community_rule']
+            },
+            marketing: {
+                label: '延后营销',
+                events: ['coupon_available', 'coupon_expiring', 'product_discount', 'product_discount_available', 'product_restocked', 'cart_abandoned', 'inactive_user_return']
+            },
+            guidance: {
+                label: '体验引导',
+                events: ['verify_success', 'prompt_unlocked', 'search_no_result', 'profile_incomplete', 'daily_checkin_available', 'new_user_welcome', 'points_low_balance', 'content_featured', 'wallet_recharge_success']
+            }
+        };
+        const normalizeEvents = (input) => {
+            const list = Array.isArray(input) ? input : [];
+            return [...new Set(list
+                .map((entry) => String(entry || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, ''))
+                .filter(Boolean))];
+        };
+        return {
+            first_wave: {
+                label: String(source.first_wave?.label || fallback.first_wave.label).trim() || fallback.first_wave.label,
+                events: normalizeEvents(source.first_wave?.events || fallback.first_wave.events)
+            },
+            service: {
+                label: String(source.service?.label || fallback.service.label).trim() || fallback.service.label,
+                events: normalizeEvents(source.service?.events || fallback.service.events)
+            },
+            marketing: {
+                label: String(source.marketing?.label || fallback.marketing.label).trim() || fallback.marketing.label,
+                events: normalizeEvents(source.marketing?.events || fallback.marketing.events)
+            },
+            guidance: {
+                label: String(source.guidance?.label || fallback.guidance.label).trim() || fallback.guidance.label,
+                events: normalizeEvents(source.guidance?.events || fallback.guidance.events)
+            }
+        };
+    }
+
+    getEngagementEventPriorityCenter() {
+        if (!this.engagementEventPriorityCenter) {
+            this.engagementEventPriorityCenter = this.normalizeEngagementEventPriorityCenter({});
+        }
+        return this.engagementEventPriorityCenter;
+    }
+
+    compareEngagementDisplayPriority(left = {}, right = {}) {
+        const urgencyDelta = this.getEngagementUrgencyRank(right) - this.getEngagementUrgencyRank(left);
+        if (urgencyDelta) return urgencyDelta;
+        const priorityDelta = Number(right.priority || 0) - Number(left.priority || 0);
+        if (priorityDelta) return priorityDelta;
+        const sourceWeight = (item = {}) => (String(item.source || '') === 'notification' ? 2 : (String(item.source || '') === 'rule' ? 1 : 0));
+        const sourceDelta = sourceWeight(right) - sourceWeight(left);
+        if (sourceDelta) return sourceDelta;
+        return 0;
+    }
+
+    selectPreferredEngagementFeedItem(existingItem = {}, nextItem = {}) {
+        const existingNormalized = this.normalizeEngagementItem(existingItem);
+        const nextNormalized = this.normalizeEngagementItem(nextItem);
+        if (!existingNormalized) return nextNormalized;
+        if (!nextNormalized) return existingNormalized;
+
+        const existingBridgeKey = this.getEngagementBridgeDedupeKey(existingNormalized);
+        const nextBridgeKey = this.getEngagementBridgeDedupeKey(nextNormalized);
+        if (existingBridgeKey && existingBridgeKey === nextBridgeKey) {
+            if (existingNormalized.source === 'notification' && nextNormalized.source === 'rule') {
+                return nextNormalized;
+            }
+            if (existingNormalized.source === 'rule' && nextNormalized.source === 'notification') {
+                return existingNormalized;
+            }
+        }
+
+        return this.compareEngagementDisplayPriority(existingNormalized, nextNormalized) > 0
+            ? nextNormalized
+            : existingNormalized;
+    }
+
+    dedupeEngagementFeedItems(items = []) {
+        const dedupedItems = [];
+        const bridgeIndexByKey = new Map();
+
+        (Array.isArray(items) ? items : [])
+            .map((entry) => this.normalizeEngagementItem(entry))
+            .filter(Boolean)
+            .forEach((item) => {
+                const bridgeKey = this.getEngagementBridgeDedupeKey(item);
+                if (!bridgeKey) {
+                    dedupedItems.push(item);
+                    return;
+                }
+                const existingIndex = bridgeIndexByKey.get(bridgeKey);
+                if (existingIndex === undefined) {
+                    bridgeIndexByKey.set(bridgeKey, dedupedItems.length);
+                    dedupedItems.push(item);
+                    return;
+                }
+                dedupedItems[existingIndex] = this.selectPreferredEngagementFeedItem(dedupedItems[existingIndex], item);
+            });
+
+        return dedupedItems;
+    }
+
+    schedulePendingEngagementFlush(delayMs = null) {
+        this.clearPendingEngagementFlushTimer();
+        if (this.isOpen || this.engagementActiveItem || !Array.isArray(this.engagementPendingItems) || !this.engagementPendingItems.length) {
+            return false;
+        }
+        const waitMs = delayMs === null
+            ? this.getEngagementNextDisplayDelayMs()
+            : Math.max(120, Number(delayMs || 0) || 0);
+        this.engagementPendingFlushTimer = window.setTimeout(() => {
+            this.engagementPendingFlushTimer = null;
+            this.flushPendingEngagementItems();
+        }, waitMs);
+        return true;
+    }
+
+    removePendingEngagementItemByKey(key = '') {
+        const normalizedKey = String(key || '').trim();
+        if (!normalizedKey || !Array.isArray(this.engagementPendingItems) || !this.engagementPendingItems.length) {
+            return false;
+        }
+        const previousLength = this.engagementPendingItems.length;
+        this.engagementPendingItems = this.engagementPendingItems.filter((entry) => entry?.key !== normalizedKey);
+        return this.engagementPendingItems.length !== previousLength;
+    }
+
+    flushPendingEngagementItems() {
+        if (this.isOpen || this.engagementActiveItem || !Array.isArray(this.engagementPendingItems) || !this.engagementPendingItems.length) {
+            return false;
+        }
+        if (this.isEngagementDisplayCoolingDown() || this.shouldThrottleEngagementForAuthBurst()) {
+            this.schedulePendingEngagementFlush();
+            return false;
+        }
+        this.engagementPendingItems = this.engagementPendingItems
+            .slice()
+            .sort((left, right) => {
+                const priorityDelta = this.compareEngagementDisplayPriority(left.item || {}, right.item || {});
+                if (priorityDelta) return priorityDelta;
+                return Number(right.queuedAt || 0) - Number(left.queuedAt || 0);
+            });
+        while (this.engagementPendingItems.length) {
+            const entry = this.engagementPendingItems.shift();
+            const normalized = this.normalizeEngagementItem(entry?.item || {});
+            if (!normalized || this.isEngagementItemSuppressed(normalized) || this.isEngagementItemSessionQuiet(normalized)) {
+                continue;
+            }
+            if (this.shouldThrottleEngagementForAuthBurst(entry?.options || {})) {
+                this.queuePendingEngagementItem(normalized, entry?.options || {});
+                this.schedulePendingEngagementFlush(this.getEngagementNextDisplayDelayMs(entry?.options || {}));
+                return false;
+            }
+            this.showEngagementItem(normalized, {
+                ...(entry?.options || {}),
+                queued: true
+            });
+            return true;
+        }
+        return false;
+    }
+
+    handleEngagementNotificationRealtime(payload = {}) {
+        if (payload?.eventType && payload.eventType !== 'INSERT') {
+            return;
+        }
+        const row = this.getEngagementRealtimeRow(payload);
+        if (!row.id || row.is_read === true || String(row.scope || '').trim() === 'admin_personal') {
+            return;
+        }
+        if (String(row.user_id || '').trim() !== this.engagementNotificationChannelUserId) {
+            return;
+        }
+
+        const item = this.normalizeEngagementNotificationRow(row);
+        if (!this.shouldSurfaceSystemNotificationBubble(item)) {
+            return;
+        }
+        const triggerType = this.getSystemNotificationAutomationTriggerType(item);
+        if (triggerType) {
+            const fallbackDelayMs = 160;
+            let fallbackTimer = null;
+            let fallbackShown = false;
+            const showFallback = () => {
+                fallbackTimer = null;
+                if (fallbackShown) return false;
+                fallbackShown = this.showRealtimeEngagementItem(item, {
+                    source: 'system_notifications',
+                    bridge_fallback: true
+                }) === true;
+                return fallbackShown;
+            };
+            void this.showAutomationForSystemNotification(item).then((shown) => {
+                if (fallbackTimer) {
+                    window.clearTimeout(fallbackTimer);
+                    fallbackTimer = null;
+                }
+                if (shown) {
+                    this.suppressEngagementItem(item);
+                    return;
+                }
+                if (!fallbackShown) {
+                    showFallback();
+                }
+            }).catch((error) => {
+                if (fallbackTimer) {
+                    window.clearTimeout(fallbackTimer);
+                    fallbackTimer = null;
+                }
+                console.warn('[ChatWidget] Failed to bridge notification into engagement automation:', error?.message || error);
+                if (!fallbackShown) {
+                    showFallback();
+                }
+            });
+            fallbackTimer = window.setTimeout(showFallback, fallbackDelayMs);
+            return;
+        }
+        this.showRealtimeEngagementItem(item, { source: 'system_notifications' });
+    }
+
+    stopEngagementDeliverySubscription() {
+        if (this.engagementDeliveryChannel && this.supabase?.removeChannel) {
+            try {
+                this.supabase.removeChannel(this.engagementDeliveryChannel);
+            } catch (error) {
+                console.warn('[ChatWidget] Failed to remove engagement delivery channel:', error?.message || error);
+            }
+        }
+        this.engagementDeliveryChannel = null;
+        this.engagementDeliveryChannelUserId = '';
+    }
+
+    syncEngagementDeliverySubscription(user = this.currentUser) {
+        const userId = String(user?.id || '').trim();
+        if (this.engagementDeliveryChannelUserId === userId && this.engagementDeliveryChannel) {
+            return;
+        }
+
+        this.stopEngagementDeliverySubscription();
+
+        if (!userId || !this.supabase?.channel) {
+            return;
+        }
+
+        this.engagementDeliveryChannelUserId = userId;
+        this.engagementDeliveryChannel = this.supabase
+            .channel(`engagement-user-deliveries-${userId}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'engagement_deliveries',
+                    filter: `user_id=eq.${userId}`
+                },
+                (payload) => this.handleEngagementDeliveryRealtime(payload)
+            )
+            .subscribe((status) => {
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    console.warn('[ChatWidget] Engagement delivery realtime degraded:', status);
+                }
+            });
+    }
+
+    normalizeEngagementDeliveryRow(row = {}) {
+        const source = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
+        const metadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
+            ? source.metadata
+            : {};
+        const bubble = metadata.bubble && typeof metadata.bubble === 'object' && !Array.isArray(metadata.bubble)
+            ? metadata.bubble
+            : {};
+        const bubbleMetadata = bubble.metadata && typeof bubble.metadata === 'object' && !Array.isArray(bubble.metadata)
+            ? bubble.metadata
+            : {};
+        const { bubble: _bubble, ...deliveryMetadata } = metadata;
+        return this.normalizeEngagementItem({
+            ...bubble,
+            id: String(bubble.id || source.rule_id || source.notification_id || source.id || '').trim(),
+            delivery_id: String(source.id || '').trim(),
+            rule_id: String(source.rule_id || bubble.rule_id || '').trim(),
+            notification_id: String(source.notification_id || bubble.notification_id || '').trim(),
+            source: String(bubble.source || (source.rule_id ? 'rule' : 'notification')).trim() || 'rule',
+            page_id: String(source.page_id || bubble.page_id || this.getEngagementPageId()).trim() || this.getEngagementPageId(),
+            site: String(source.site || bubble.site || window.SiteConfig?.site || 'cn').trim().toLowerCase() || 'cn',
+            source_module: String(source.source_module || bubble.source_module || 'engagement').trim() || 'engagement',
+            source_event_id: String(source.source_event_id || bubble.source_event_id || metadata.delivery_key || '').trim(),
+            delivery_key: String(source.delivery_key || metadata.delivery_key || '').trim(),
+            metadata: {
+                ...bubbleMetadata,
+                ...deliveryMetadata,
+                delivery_id: String(source.id || '').trim(),
+                delivered_at: String(source.delivered_at || '').trim()
+            }
+        });
+    }
+
+    shouldApplyEngagementDeliveryRealtime(row = {}) {
+        const source = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
+        if (!source.id || String(source.user_id || '').trim() !== this.engagementDeliveryChannelUserId) {
+            return false;
+        }
+        const status = String(source.status || 'delivered').trim().toLowerCase();
+        if (status && !['delivered', 'viewed', 'clicked', 'dismissed', 'expired'].includes(status)) {
+            return false;
+        }
+        const expiresAt = String(source.expires_at || '').trim();
+        if (expiresAt) {
+            const expiresMs = new Date(expiresAt).getTime();
+            if (Number.isFinite(expiresMs) && expiresMs <= Date.now()) {
+                return false;
+            }
+        }
+        const site = String(source.site || 'all').trim().toLowerCase() || 'all';
+        if (site !== 'all' && site !== this.getEngagementBroadcastSite()) {
+            return false;
+        }
+        const pageId = String(source.page_id || 'all').trim().toLowerCase() || 'all';
+        return pageId === 'all' || pageId === this.getEngagementPageId();
+    }
+
+    handleEngagementDeliveryRealtime(payload = {}) {
+        if (payload?.eventType && payload.eventType !== 'INSERT') {
+            const row = this.getEngagementRealtimeRow(payload);
+            if (this.shouldApplyEngagementDeliveryRealtime(row)) {
+                this.handleEngagementDeliveryStatusRealtime(row);
+            }
+            return;
+        }
+        const row = this.getEngagementRealtimeRow(payload);
+        if (!this.shouldApplyEngagementDeliveryRealtime(row)) {
+            return;
+        }
+        const item = this.normalizeEngagementDeliveryRow(row);
+        this.showRealtimeEngagementItem(item, { source: 'engagement_deliveries' });
+    }
+
+    handleEngagementDeliveryStatusRealtime(row = {}) {
+        const item = this.normalizeEngagementDeliveryRow(row);
+        if (!item) return false;
+        const key = this.getEngagementItemKey(item);
+        this.removePendingEngagementItemByKey(key);
+        const status = String(row.status || '').trim().toLowerCase();
+        if (!['clicked', 'dismissed', 'expired'].includes(status)) {
+            return false;
+        }
+        const activeKey = this.engagementActiveItem ? this.getEngagementItemKey(this.engagementActiveItem) : '';
+        if (key && activeKey && key === activeKey) {
+            this.dismissEngagementSurface(this.engagementActiveItem, { passive: true });
+            return true;
+        }
+        return false;
+    }
+
+    clearEngagementUserTagsRefreshTimer() {
+        if (this.engagementUserTagsRefreshTimer) {
+            window.clearTimeout(this.engagementUserTagsRefreshTimer);
+            this.engagementUserTagsRefreshTimer = null;
+        }
+    }
+
+    stopEngagementUserTagsSubscription() {
+        this.clearEngagementUserTagsRefreshTimer();
+        if (this.engagementUserTagsChannel && this.supabase?.removeChannel) {
+            try {
+                this.supabase.removeChannel(this.engagementUserTagsChannel);
+            } catch (error) {
+                console.warn('[ChatWidget] Failed to remove engagement user tags channel:', error?.message || error);
+            }
+        }
+        this.engagementUserTagsChannel = null;
+        this.engagementUserTagsChannelUserId = '';
+    }
+
+    syncEngagementUserTagsSubscription(user = this.currentUser) {
+        const userId = String(user?.id || '').trim();
+        if (this.engagementUserTagsChannelUserId === userId && this.engagementUserTagsChannel) {
+            return;
+        }
+
+        this.stopEngagementUserTagsSubscription();
+
+        if (!userId || !this.supabase?.channel) {
+            return;
+        }
+
+        this.engagementUserTagsChannelUserId = userId;
+        this.engagementUserTagsChannel = this.supabase
+            .channel(`engagement-user-tags-${userId}`)
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'user_tags',
+                    filter: `user_id=eq.${userId}`
+                },
+                (payload) => this.handleEngagementUserTagsRealtime(payload)
+            )
+            .subscribe((status) => {
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    console.warn('[ChatWidget] Engagement user tags realtime degraded:', status);
+                }
+            });
+    }
+
+    handleEngagementUserTagsRealtime(payload = {}) {
+        const nextRow = payload?.new && typeof payload.new === 'object' && !Array.isArray(payload.new) ? payload.new : null;
+        const previousRow = payload?.old && typeof payload.old === 'object' && !Array.isArray(payload.old) ? payload.old : null;
+        const rowUserId = String(nextRow?.user_id || previousRow?.user_id || '').trim();
+        if (!rowUserId || rowUserId !== this.engagementUserTagsChannelUserId) {
+            return;
+        }
+
+        this.clearEngagementUserTagsRefreshTimer();
+        this.engagementUserTagsRefreshTimer = window.setTimeout(() => {
+            this.engagementUserTagsRefreshTimer = null;
+            void this.refreshEngagementFeed({ force: true }).catch((error) => {
+                console.warn('[ChatWidget] Failed to refresh engagement feed after user tag change:', error?.message || error);
+            });
+        }, 160);
+    }
+
+    clearEngagementFeedBroadcastRefreshTimer() {
+        if (this.engagementFeedBroadcastRefreshTimer) {
+            window.clearTimeout(this.engagementFeedBroadcastRefreshTimer);
+            this.engagementFeedBroadcastRefreshTimer = null;
+        }
+    }
+
+    stopEngagementFeedBroadcastSubscription() {
+        this.clearEngagementFeedBroadcastRefreshTimer();
+        if (this.engagementFeedBroadcastChannel && this.supabase?.removeChannel) {
+            try {
+                this.supabase.removeChannel(this.engagementFeedBroadcastChannel);
+            } catch (error) {
+                console.warn('[ChatWidget] Failed to remove engagement feed broadcast channel:', error?.message || error);
+            }
+        }
+        this.engagementFeedBroadcastChannel = null;
+    }
+
+    syncEngagementFeedBroadcastSubscription() {
+        if (this.engagementFeedBroadcastChannel || !this.supabase?.channel) {
+            return;
+        }
+
+        this.engagementFeedBroadcastChannel = this.supabase
+            .channel('engagement-feed-invalidations', {
+                config: { broadcast: { self: false } }
+            })
+            .on(
+                'broadcast',
+                { event: 'engagement_feed_changed' },
+                (payload) => this.handleEngagementFeedBroadcast(payload?.payload || payload)
+            )
+            .subscribe((status) => {
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    console.warn('[ChatWidget] Engagement feed broadcast degraded:', status);
+                }
+            });
+    }
+
+    normalizeEngagementBroadcastList(value) {
+        const source = Array.isArray(value) ? value : (value ? [value] : []);
+        return [...new Set(source.map((entry) => String(entry || '').trim().toLowerCase()).filter(Boolean))];
+    }
+
+    getEngagementBroadcastSite() {
+        const externalSite = String(this.getEngagementExternalConfig().site || '').trim().toLowerCase();
+        return (externalSite || String(window.SiteConfig?.site || 'cn').trim().toLowerCase()) === 'intl' ? 'intl' : 'cn';
+    }
+
+    shouldApplyEngagementFeedBroadcast(message = {}) {
+        const source = message && typeof message === 'object' && !Array.isArray(message) ? message : {};
+        const site = String(source.site || '').trim().toLowerCase();
+        if (site && site !== 'all' && site !== this.getEngagementBroadcastSite()) {
+            return false;
+        }
+
+        const pageIds = this.normalizeEngagementBroadcastList(source.page_ids || source.pageIds || source.pages);
+        if (!pageIds.length || pageIds.includes('all')) {
+            return true;
+        }
+
+        return pageIds.includes(this.getEngagementPageId());
+    }
+
+    handleEngagementFeedBroadcast(message = {}) {
+        if (!this.shouldApplyEngagementFeedBroadcast(message)) {
+            return;
+        }
+
+        this.clearEngagementFeedBroadcastRefreshTimer();
+        this.engagementFeedBroadcastRefreshTimer = window.setTimeout(() => {
+            this.engagementFeedBroadcastRefreshTimer = null;
+            void this.refreshEngagementFeed({ force: true }).catch((error) => {
+                console.warn('[ChatWidget] Failed to refresh engagement feed after broadcast:', error?.message || error);
+            });
+        }, 180);
+    }
+
+    clearEngagementFeedInvalidationsRefreshTimer() {
+        if (this.engagementFeedInvalidationsRefreshTimer) {
+            window.clearTimeout(this.engagementFeedInvalidationsRefreshTimer);
+            this.engagementFeedInvalidationsRefreshTimer = null;
+        }
+    }
+
+    stopEngagementFeedInvalidationsSubscription() {
+        this.clearEngagementFeedInvalidationsRefreshTimer();
+        if (this.engagementFeedInvalidationsChannel && this.supabase?.removeChannel) {
+            try {
+                this.supabase.removeChannel(this.engagementFeedInvalidationsChannel);
+            } catch (error) {
+                console.warn('[ChatWidget] Failed to remove engagement feed invalidations channel:', error?.message || error);
+            }
+        }
+        this.engagementFeedInvalidationsChannel = null;
+    }
+
+    shouldApplyEngagementFeedInvalidationRealtime(row = {}) {
+        const source = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
+        if (!source.id) return false;
+        const site = String(source.site || 'all').trim().toLowerCase() || 'all';
+        if (site !== 'all' && site !== this.getEngagementBroadcastSite()) {
+            return false;
+        }
+
+        const pageIds = this.normalizeEngagementBroadcastList(source.page_ids || source.pageIds || source.pages);
+        return !pageIds.length || pageIds.includes('all') || pageIds.includes(this.getEngagementPageId());
+    }
+
+    syncEngagementFeedInvalidationsSubscription() {
+        if (this.engagementFeedInvalidationsChannel || !this.supabase?.channel) {
+            return;
+        }
+
+        this.engagementFeedInvalidationsChannel = this.supabase
+            .channel('engagement-feed-invalidations-db')
+            .on(
+                'postgres_changes',
+                {
+                    event: '*',
+                    schema: 'public',
+                    table: 'engagement_feed_invalidations'
+                },
+                (payload) => this.handleEngagementFeedInvalidationRealtime(payload)
+            )
+            .subscribe((status) => {
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+                    console.warn('[ChatWidget] Engagement feed invalidations realtime degraded:', status);
+                }
+            });
+    }
+
+    handleEngagementFeedInvalidationRealtime(payload = {}) {
+        const row = this.getEngagementRealtimeRow(payload);
+        if (!this.shouldApplyEngagementFeedInvalidationRealtime(row)) {
+            return;
+        }
+
+        this.clearEngagementFeedInvalidationsRefreshTimer();
+        this.engagementFeedInvalidationsRefreshTimer = window.setTimeout(() => {
+            this.engagementFeedInvalidationsRefreshTimer = null;
+            void this.refreshEngagementFeed({ force: true }).catch((error) => {
+                console.warn('[ChatWidget] Failed to refresh engagement feed after invalidation realtime:', error?.message || error);
+            });
+        }, 80);
+    }
+
+    bindEngagementAuthStateListener() {
+        if (this.engagementAuthSubscription || !this.supabase?.auth?.onAuthStateChange) {
+            return;
+        }
+
+        try {
+            const { data } = this.supabase.auth.onAuthStateChange((_authEvent, session) => {
+                const previousUserId = String(this.currentUser?.id || '').trim();
+                const user = session?.user || null;
+                const nextUserId = String(user?.id || '').trim();
+                this.currentUser = user;
+                if (nextUserId && nextUserId !== previousUserId) {
+                    this.beginEngagementAuthBurst(10000, 1200);
+                    this.schedulePendingEngagementFlush(1400);
+                }
+                this.syncEngagementNotificationSubscription(user);
+                this.syncEngagementDeliverySubscription(user);
+                this.syncEngagementUserTagsSubscription(user);
+                this.scheduleEngagementConditionEvaluation('auth_change', 650);
+                void this.refreshEngagementFeed({ force: true }).catch((error) => {
+                    console.warn('[ChatWidget] Failed to refresh engagement feed after auth change:', error?.message || error);
+                });
+            });
+            this.engagementAuthSubscription = data?.subscription || null;
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to bind engagement auth state listener:', error?.message || error);
+        }
+    }
+
+    async bootstrapEngagementPersonalSubscriptions() {
+        if (!this.supabase?.auth?.getUser) {
+            return;
+        }
+
+        try {
+            const { data: { user } = {} } = await this.supabase.auth.getUser();
+            this.currentUser = user || null;
+            this.syncEngagementNotificationSubscription(user || null);
+            this.syncEngagementDeliverySubscription(user || null);
+            this.syncEngagementUserTagsSubscription(user || null);
+            this.scheduleEngagementConditionEvaluation('bootstrap', 900);
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to bootstrap engagement personal realtime:', error?.message || error);
+        }
+    }
+
     initEngagementRuntime() {
         if (this.engagementRuntimeInitialized) return;
         this.engagementRuntimeInitialized = true;
@@ -4023,32 +5347,480 @@ class ChatWidget {
             trigger: (triggerType, metadata = {}, options = {}) => this.triggerEngagementEvent(triggerType, metadata, options),
             dismiss: () => this.dismissEngagementSurface(this.engagementActiveItem, { eventType: 'dismiss' })
         };
+        this.bindEngagementAuthStateListener();
+        void this.bootstrapEngagementPersonalSubscriptions();
+        this.syncEngagementFeedBroadcastSubscription();
+        this.syncEngagementFeedInvalidationsSubscription();
         window.setTimeout(() => {
             void this.refreshEngagementFeed();
         }, 1400);
+        this.scheduleEngagementConditionEvaluation('runtime_init', 1800);
+        // Realtime subscriptions drive freshness; this is a degraded-network safety sweep.
         this.engagementRefreshTimer = window.setInterval(() => {
             void this.refreshEngagementFeed();
-        }, 90000);
+        }, 300000);
         this.scheduleEngagementAutomationTriggers();
+    }
+
+    scheduleEngagementConditionEvaluation(reason = 'runtime', delayMs = 1200) {
+        if (!this.supabase?.auth?.getSession || typeof window === 'undefined') {
+            return;
+        }
+        if (this.engagementConditionEvaluationTimer) {
+            window.clearTimeout(this.engagementConditionEvaluationTimer);
+        }
+        const normalizedDelay = Math.max(0, Number(delayMs || 0) || 0);
+        this.engagementConditionEvaluationTimer = window.setTimeout(() => {
+            this.engagementConditionEvaluationTimer = null;
+            void this.runEngagementConditionEvaluators(reason).catch((error) => {
+                console.warn('[ChatWidget] Engagement condition evaluators skipped:', error?.message || error);
+            });
+        }, normalizedDelay);
+    }
+
+    getEngagementLocalDateKey(date = new Date()) {
+        const value = date instanceof Date ? date : new Date(date);
+        if (!Number.isFinite(value.getTime())) return '';
+        return [
+            value.getFullYear(),
+            String(value.getMonth() + 1).padStart(2, '0'),
+            String(value.getDate()).padStart(2, '0')
+        ].join('-');
+    }
+
+    normalizeEngagementDateKey(value = '') {
+        const raw = String(value || '').trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return raw;
+        const parsed = raw ? new Date(raw) : null;
+        return parsed && Number.isFinite(parsed.getTime()) ? this.getEngagementLocalDateKey(parsed) : '';
+    }
+
+    async runEngagementConditionEvaluators(reason = 'runtime') {
+        if (this.engagementConditionEvaluationInFlight || !this.supabase?.auth?.getSession) {
+            return;
+        }
+        this.engagementConditionEvaluationInFlight = true;
+
+        try {
+            const { data: { session } = {} } = await this.supabase.auth.getSession();
+            const user = session?.user || this.currentUser || null;
+            if (!user?.id) return;
+            this.currentUser = user;
+
+            const context = {
+                reason,
+                page_id: this.getEngagementPageId(),
+                site: this.getEngagementBroadcastSite()
+            };
+            await Promise.allSettled([
+                this.evaluateNewUserWelcomeAutomation(user, context),
+                this.evaluateDailyCheckinAvailableAutomation(user, context),
+                this.evaluateProfileIncompleteAutomation(user, context),
+                this.evaluateInactiveUserReturnAutomation(user, context),
+                this.evaluatePointsLowBalanceAutomation(user, context),
+                this.evaluateCouponExpiringAutomation(user, context),
+                this.evaluateVerificationExpiringAutomation(user, context)
+            ]);
+        } finally {
+            this.engagementConditionEvaluationInFlight = false;
+        }
+    }
+
+    getEngagementDaysSince(value = '') {
+        const timestamp = value ? new Date(value).getTime() : 0;
+        if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
+        return Math.max(0, Math.floor((Date.now() - timestamp) / 86400000));
+    }
+
+    getEngagementNumber(value, fallback = 0) {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : fallback;
+    }
+
+    getEngagementConditionConfig() {
+        const config = window.ZaoyoeEngagementAutomationConfig || window.ZaoyoeEngagementConditionConfig || {};
+        return config && typeof config === 'object' && !Array.isArray(config) ? config : {};
+    }
+
+    getEngagementLowBalanceThreshold() {
+        const config = this.getEngagementConditionConfig();
+        const value = config.points_low_balance_threshold ?? config.pointsLowBalanceThreshold ?? 20;
+        return Math.max(0, this.getEngagementNumber(value, 20));
+    }
+
+    getEngagementVerificationExpiryDays() {
+        const config = this.getEngagementConditionConfig();
+        const value = config.verification_expiry_days ?? config.verificationExpiryDays ?? 30;
+        return Math.max(1, this.getEngagementNumber(value, 30));
+    }
+
+    getEngagementVerificationExpiryLeadDays() {
+        const config = this.getEngagementConditionConfig();
+        const value = config.verification_expiring_lead_days ?? config.verificationExpiringLeadDays ?? 3;
+        return Math.max(1, this.getEngagementNumber(value, 3));
+    }
+
+    async getEngagementPointsService() {
+        if (window.PointsService?.getBalance) {
+            return window.PointsService;
+        }
+        const ensurePointsService = window.ZaoyoeWalletModalBootstrap?.ensurePointsService;
+        if (typeof ensurePointsService !== 'function') {
+            return null;
+        }
+        try {
+            const pointsService = await ensurePointsService();
+            return pointsService?.getBalance ? pointsService : null;
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to load points service for engagement evaluators:', error?.message || error);
+            return null;
+        }
+    }
+
+    async evaluateNewUserWelcomeAutomation(user = {}, context = {}) {
+        const userId = String(user?.id || '').trim();
+        if (!userId) return null;
+
+        const createdAt = String(user.created_at || user.createdAt || '').trim();
+        const ageDays = this.getEngagementDaysSince(createdAt);
+        if (ageDays === null || ageDays > 7) {
+            return null;
+        }
+
+        const site = String(context.site || this.getEngagementBroadcastSite()).trim().toLowerCase() || 'cn';
+        return this.triggerEngagementEvent('new_user_welcome', {
+            source_module: 'engagement.condition_evaluator',
+            evaluator: 'new_user_welcome',
+            source_event_id: `new_user_welcome:${userId}`,
+            page_id: context.page_id || this.getEngagementPageId(),
+            site,
+            account_age_days: ageDays,
+            reason: context.reason || 'runtime'
+        }, { once: true });
+    }
+
+    async evaluateDailyCheckinAvailableAutomation(user = {}, context = {}) {
+        const userId = String(user?.id || '').trim();
+        if (!userId || !this.supabase?.rpc) return null;
+
+        const now = new Date();
+        const site = String(context.site || this.getEngagementBroadcastSite()).trim().toLowerCase() || 'cn';
+        const { data, error } = await this.supabase.rpc('fn_get_checkin_data', {
+            p_user_id: userId,
+            p_site: site,
+            p_year: now.getFullYear(),
+            p_month: now.getMonth() + 1
+        });
+        if (error || data?.success === false) {
+            return null;
+        }
+
+        const currentDate = this.normalizeEngagementDateKey(data?.current_date) || this.getEngagementLocalDateKey(now);
+        const checkedDates = new Set((Array.isArray(data?.checked_dates) ? data.checked_dates : [])
+            .map((entry) => this.normalizeEngagementDateKey(entry))
+            .filter(Boolean));
+        if (!currentDate || checkedDates.has(currentDate)) {
+            return null;
+        }
+
+        return this.triggerEngagementEvent('daily_checkin_available', {
+            source_module: 'engagement.condition_evaluator',
+            evaluator: 'daily_checkin_available',
+            source_event_id: `daily_checkin_available:${site}:${currentDate}:${userId}`,
+            page_id: context.page_id || this.getEngagementPageId(),
+            site,
+            current_date: currentDate,
+            consecutive_days: Number(data?.consecutive_days || 0) || 0,
+            reason: context.reason || 'runtime'
+        }, { once: true });
+    }
+
+    async fetchEngagementUserActivitySnapshot(user = {}) {
+        const userId = String(user?.id || '').trim();
+        if (!userId || !this.supabase?.from) return null;
+
+        const { data, error } = await this.supabase
+            .from('engagement_user_activity')
+            .select('last_active_at,last_page_id,site')
+            .eq('user_id', userId)
+            .maybeSingle();
+        if (error) return null;
+        return data && typeof data === 'object' && !Array.isArray(data) ? data : null;
+    }
+
+    async evaluateInactiveUserReturnAutomation(user = {}, context = {}) {
+        const userId = String(user?.id || '').trim();
+        if (!userId) return null;
+
+        const activity = await this.fetchEngagementUserActivitySnapshot(user);
+        const inactiveDays = this.getEngagementDaysSince(activity?.last_active_at);
+        if (inactiveDays === null || inactiveDays < 14) {
+            return null;
+        }
+
+        const site = String(context.site || activity?.site || this.getEngagementBroadcastSite()).trim().toLowerCase() || 'cn';
+        const currentDate = this.getEngagementLocalDateKey(new Date());
+        return this.triggerEngagementEvent('inactive_user_return', {
+            source_module: 'engagement.condition_evaluator',
+            evaluator: 'inactive_user_return',
+            source_event_id: `inactive_user_return:${site}:${currentDate}:${userId}`,
+            page_id: context.page_id || this.getEngagementPageId(),
+            site,
+            inactive_days: inactiveDays,
+            last_active_at: String(activity?.last_active_at || ''),
+            last_page_id: String(activity?.last_page_id || ''),
+            reason: context.reason || 'runtime'
+        }, { once: true });
+    }
+
+    async evaluatePointsLowBalanceAutomation(user = {}, context = {}) {
+        const userId = String(user?.id || '').trim();
+        if (!userId) return null;
+
+        const site = String(context.site || this.getEngagementBroadcastSite()).trim().toLowerCase() || 'cn';
+        const pointsService = await this.getEngagementPointsService();
+        if (!pointsService?.getBalance) return null;
+
+        const balance = await pointsService.getBalance({ site });
+        if (balance?._load_failed) return null;
+
+        const totalBalance = this.getEngagementNumber(balance?.total_balance, Number.NaN);
+        const threshold = this.getEngagementLowBalanceThreshold();
+        if (!Number.isFinite(totalBalance) || totalBalance < 0 || totalBalance > threshold) {
+            return null;
+        }
+
+        const currentDate = this.getEngagementLocalDateKey(new Date());
+        const balanceBucket = totalBalance <= 0 ? 'empty' : `lte_${Math.ceil(threshold)}`;
+        return this.triggerEngagementEvent('points_low_balance', {
+            source_module: 'engagement.condition_evaluator',
+            evaluator: 'points_low_balance',
+            source_event_id: `points_low_balance:${site}:${currentDate}:${userId}:${balanceBucket}`,
+            page_id: context.page_id || this.getEngagementPageId(),
+            site,
+            total_balance: totalBalance,
+            paid_balance: this.getEngagementNumber(balance?.paid_balance, 0),
+            bonus_balance: this.getEngagementNumber(balance?.bonus_balance, 0),
+            threshold,
+            reason: context.reason || 'runtime'
+        }, { once: true });
+    }
+
+    getEngagementExpiringCouponCandidate(payload = {}) {
+        const availableAssets = Array.isArray(payload?.available_assets) ? payload.available_assets : [];
+        const now = Date.now();
+        const maxLeadHours = Math.max(1, this.getEngagementNumber(
+            this.getEngagementConditionConfig().coupon_expiring_lead_hours
+                ?? this.getEngagementConditionConfig().couponExpiringLeadHours,
+            72
+        ));
+        const maxLeadMs = maxLeadHours * 60 * 60 * 1000;
+
+        return availableAssets
+            .map((asset) => {
+                const expiresAt = String(asset?.effective_expires_at || asset?.expires_at || '').trim();
+                const expiresMs = expiresAt ? new Date(expiresAt).getTime() : 0;
+                return {
+                    asset,
+                    expiresAt,
+                    expiresMs
+                };
+            })
+            .filter((entry) => Number.isFinite(entry.expiresMs) && entry.expiresMs > now && entry.expiresMs - now <= maxLeadMs)
+            .sort((left, right) => left.expiresMs - right.expiresMs)[0] || null;
+    }
+
+    async evaluateCouponExpiringAutomation(user = {}, context = {}) {
+        const userId = String(user?.id || '').trim();
+        if (!userId) return null;
+
+        const site = String(context.site || this.getEngagementBroadcastSite()).trim().toLowerCase() || 'cn';
+        const pointsService = await this.getEngagementPointsService();
+        if (!pointsService?.getWalletDiscountAssets) return null;
+
+        const payload = await pointsService.getWalletDiscountAssets({ site, force: false });
+        const candidate = this.getEngagementExpiringCouponCandidate(payload);
+        if (!candidate?.asset) return null;
+
+        const assetId = String(candidate.asset.asset_id || candidate.asset.id || candidate.asset.discount_id || candidate.asset.code || 'coupon').trim();
+        const expiryDate = this.normalizeEngagementDateKey(candidate.expiresAt) || this.getEngagementLocalDateKey(new Date(candidate.expiresMs));
+        return this.triggerEngagementEvent('coupon_expiring', {
+            source_module: 'engagement.condition_evaluator',
+            evaluator: 'coupon_expiring',
+            source_event_id: `coupon_expiring:${site}:${assetId}:${expiryDate}`,
+            page_id: context.page_id || this.getEngagementPageId(),
+            site,
+            asset_id: assetId,
+            discount_id: String(candidate.asset.discount_id || ''),
+            benefit_label: String(candidate.asset.benefit_label || ''),
+            expires_at: candidate.expiresAt,
+            hours_until_expiry: Math.max(0, Math.ceil((candidate.expiresMs - Date.now()) / 3600000)),
+            reason: context.reason || 'runtime'
+        }, { once: true });
+    }
+
+    async evaluateVerificationExpiringAutomation(user = {}, context = {}) {
+        const userId = String(user?.id || '').trim();
+        if (!userId || !this.supabase?.from) return null;
+
+        const site = String(context.site || this.getEngagementBroadcastSite()).trim().toLowerCase() || 'cn';
+        const { data, error } = await this.supabase
+            .from('verification_logs')
+            .select('id,verification_id,status,site,created_at')
+            .eq('user_id', userId)
+            .eq('site', site)
+            .in('status', ['success', 'completed', 'passed'])
+            .order('created_at', { ascending: false })
+            .limit(1);
+        if (error || !Array.isArray(data) || !data.length) return null;
+
+        const latest = data[0] || {};
+        const verifiedAtMs = latest.created_at ? new Date(latest.created_at).getTime() : 0;
+        if (!Number.isFinite(verifiedAtMs) || verifiedAtMs <= 0) return null;
+
+        const expiryDays = this.getEngagementVerificationExpiryDays();
+        const leadDays = Math.min(expiryDays, this.getEngagementVerificationExpiryLeadDays());
+        const expiresAtMs = verifiedAtMs + expiryDays * 86400000;
+        const nowMs = Date.now();
+        const daysUntilExpiry = Math.ceil((expiresAtMs - nowMs) / 86400000);
+        if (daysUntilExpiry < 0 || daysUntilExpiry > leadDays) return null;
+
+        const expiryDate = this.getEngagementLocalDateKey(new Date(expiresAtMs));
+        return this.triggerEngagementEvent('verification_expiring', {
+            source_module: 'engagement.condition_evaluator',
+            evaluator: 'verification_expiring',
+            source_event_id: `verification_expiring:${site}:${userId}:${expiryDate}`,
+            page_id: context.page_id || this.getEngagementPageId(),
+            site,
+            verification_log_id: String(latest.id || ''),
+            verification_id: String(latest.verification_id || ''),
+            verified_at: String(latest.created_at || ''),
+            inferred_expires_at: new Date(expiresAtMs).toISOString(),
+            days_until_expiry: Math.max(0, daysUntilExpiry),
+            expiry_days: expiryDays,
+            lead_days: leadDays,
+            reason: context.reason || 'runtime'
+        }, { once: true });
+    }
+
+    isEngagementProfileNameIncomplete(value = '', email = '') {
+        const name = String(value || '').trim();
+        if (name.length < 2) return true;
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        if (!normalizedEmail) return false;
+        const emailLocalPart = normalizedEmail.split('@')[0] || '';
+        return name.toLowerCase() === normalizedEmail || name.toLowerCase() === emailLocalPart;
+    }
+
+    async fetchEngagementProfileSnapshot(user = {}) {
+        const userId = String(user?.id || '').trim();
+        if (!userId || !this.supabase?.from) return null;
+
+        const { data, error } = await this.supabase
+            .from('profiles')
+            .select('username,avatar_url')
+            .eq('id', userId)
+            .maybeSingle();
+        if (error) return null;
+        return data && typeof data === 'object' && !Array.isArray(data) ? data : {};
+    }
+
+    async evaluateProfileIncompleteAutomation(user = {}, context = {}) {
+        const userId = String(user?.id || '').trim();
+        if (!userId) return null;
+
+        const metadata = user.user_metadata && typeof user.user_metadata === 'object' && !Array.isArray(user.user_metadata)
+            ? user.user_metadata
+            : {};
+        const profile = await this.fetchEngagementProfileSnapshot(user);
+        if (profile === null) {
+            return null;
+        }
+        const email = String(user.email || metadata.email || '').trim();
+        const displayName = String(
+            profile?.username
+                || metadata.display_name
+                || metadata.full_name
+                || metadata.name
+                || metadata.user_name
+                || ''
+        ).trim();
+        if (!this.isEngagementProfileNameIncomplete(displayName, email)) {
+            return null;
+        }
+
+        const site = String(context.site || this.getEngagementBroadcastSite()).trim().toLowerCase() || 'cn';
+        return this.triggerEngagementEvent('profile_incomplete', {
+            source_module: 'engagement.condition_evaluator',
+            evaluator: 'profile_incomplete',
+            source_event_id: `profile_incomplete:${userId}:display_name`,
+            page_id: context.page_id || this.getEngagementPageId(),
+            site,
+            missing_fields: ['display_name'],
+            has_avatar: Boolean(profile?.avatar_url || metadata.avatar_url || metadata.picture),
+            reason: context.reason || 'runtime'
+        }, { once: true });
     }
 
     normalizeEngagementTriggerType(value = 'page_view') {
         return String(value || 'page_view').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'page_view';
     }
 
-    getEngagementTriggerKey(triggerType = 'page_view', metadata = {}) {
-        const normalizedTrigger = this.normalizeEngagementTriggerType(triggerType);
-        const sourceEventId = String(
-            metadata?.source_event_id
-                || metadata?.sourceEventId
-                || metadata?.dedupe_key
-                || metadata?.dedupeKey
-                || metadata?.product_id
-                || metadata?.productId
-                || metadata?.target_id
-                || metadata?.targetId
+    getEngagementTriggerSourceEventId(metadata = {}) {
+        const source = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {};
+        return String(
+            source.source_event_id
+                || source.sourceEventId
+                || source.dedupe_key
+                || source.dedupeKey
+                || source.order_id
+                || source.orderId
+                || source.payment_order_id
+                || source.paymentOrderId
+                || source.checkout_session_id
+                || source.checkoutSessionId
+                || source.task_id
+                || source.taskId
+                || source.job_id
+                || source.jobId
+                || source.comment_id
+                || source.commentId
+                || source.message_id
+                || source.messageId
+                || source.coupon_id
+                || source.couponId
+                || source.element_id
+                || source.elementId
+                || source.product_id
+                || source.productId
+                || source.target_id
+                || source.targetId
+                || source.id
                 || ''
         ).trim();
+    }
+
+    prepareEngagementTriggerMetadata(triggerType = 'page_view', metadata = {}) {
+        const normalizedTrigger = this.normalizeEngagementTriggerType(triggerType);
+        const source = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? { ...metadata } : {};
+        if (this.getEngagementTriggerSourceEventId(source)) {
+            return source;
+        }
+        if (normalizedTrigger && normalizedTrigger !== 'page_view') {
+            source.source_event_id = [
+                normalizedTrigger,
+                this.getEngagementPageId(),
+                Date.now().toString(36),
+                Math.random().toString(36).slice(2, 8)
+            ].join(':');
+            source.source_event_id_generated = true;
+        }
+        return source;
+    }
+
+    getEngagementTriggerKey(triggerType = 'page_view', metadata = {}) {
+        const normalizedTrigger = this.normalizeEngagementTriggerType(triggerType);
+        const sourceEventId = this.getEngagementTriggerSourceEventId(metadata);
         return `${normalizedTrigger}:${this.getEngagementPageId()}:${sourceEventId || 'default'}`;
     }
 
@@ -4060,6 +5832,9 @@ class ChatWidget {
                 source: 'runtime_timer'
             });
         }, 10000);
+        window.setTimeout(() => {
+            this.triggerEngagementPageContextRules();
+        }, 2600);
 
         if (!this.engagementScrollTriggerBound) {
             this.engagementScrollTriggerBound = true;
@@ -4106,6 +5881,31 @@ class ChatWidget {
                 });
             }, true);
         }
+    }
+
+    triggerEngagementPageContextRules() {
+        const pageId = this.getEngagementPageId();
+        const site = this.getEngagementBroadcastSite();
+        const currentDate = this.getEngagementLocalDateKey(new Date());
+        const eventEntries = [];
+
+        if (['home', 'gongyi', 'verify'].includes(pageId)) {
+            eventEntries.push(['usage_rules', 'page_usage_rules']);
+        }
+        if (['guestbook', 'prompts', 'gongyi'].includes(pageId)) {
+            eventEntries.push(['community_rule', 'page_community_rule']);
+        }
+
+        eventEntries.forEach(([triggerType, source]) => {
+            void this.triggerEngagementEvent(triggerType, {
+                source_module: 'engagement.page_context',
+                source,
+                source_event_id: `${triggerType}:${site}:${pageId}:${currentDate}`,
+                page_id: pageId,
+                site,
+                context_date: currentDate
+            }, { once: true });
+        });
     }
 
     getEngagementPageId() {
@@ -4161,43 +5961,229 @@ class ChatWidget {
     }
 
     getEngagementItemKey(item = {}) {
+        const metadata = item?.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata)
+            ? item.metadata
+            : {};
+        const id = String(item.id || item.notification_id || item.rule_id || '').trim();
+        const source = String(item.source || 'engagement').trim() || 'engagement';
+        const deliveryId = String(item.delivery_id || item.deliveryId || metadata.delivery_id || '').trim();
+        if (id && deliveryId) {
+            return `${source}:${id}:delivery:${deliveryId}`;
+        }
+        const deliveryKey = String(item.delivery_key || item.deliveryKey || metadata.delivery_key || '').trim();
+        if (id && deliveryKey) {
+            return `${source}:${id}:delivery:${deliveryKey}`;
+        }
+        const sourceEventId = String(item.source_event_id || item.sourceEventId || metadata.source_event_id || '').trim();
+        if (id && sourceEventId) {
+            return `${source}:${id}:event:${sourceEventId}`;
+        }
+        if (id) {
+            return `${source}:${id}`;
+        }
+        const pageId = String(item.page_id || this.getEngagementPageId()).trim() || 'home';
+        return `${source}:anonymous:${pageId}`;
+    }
+
+    getEngagementLegacyPageItemKey(item = {}) {
         const id = String(item.id || item.notification_id || item.rule_id || '').trim();
         const pageId = String(item.page_id || this.getEngagementPageId()).trim() || 'home';
         return `${String(item.source || 'engagement').trim() || 'engagement'}:${id}:${pageId}`;
     }
 
-    isEngagementItemSuppressed(item = {}) {
-        const key = this.getEngagementItemKey(item);
-        if (!key) return false;
-        const dismissedMap = this.getEngagementDismissedMap();
-        const expiresAt = dismissedMap[key];
-        if (!expiresAt) return false;
-        const expiresMs = Number(expiresAt);
-        if (!Number.isFinite(expiresMs)) return false;
-        if (expiresMs <= Date.now()) {
-            delete dismissedMap[key];
-            this.persistEngagementDismissedMap(dismissedMap);
-            return false;
+    getEngagementSemanticFamily(item = {}) {
+        const normalized = item && typeof item === 'object' && !Array.isArray(item) ? item : {};
+        const metadata = normalized.metadata && typeof normalized.metadata === 'object' && !Array.isArray(normalized.metadata)
+            ? normalized.metadata
+            : {};
+        const explicitFamily = String(
+            normalized.semantic_family
+                || normalized.semanticFamily
+                || metadata.semantic_family
+                || metadata.semanticFamily
+                || ''
+        ).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '');
+        if (explicitFamily) return explicitFamily;
+        const triggerType = String(normalized.trigger_type || normalized.triggerType || metadata.trigger_type || metadata.triggerType || '').trim().toLowerCase();
+        return this.engagementSemanticFamilyMap?.[triggerType] || '';
+    }
+
+    getEngagementSemanticDedupeKey(item = {}) {
+        const normalized = this.normalizeEngagementItem(item);
+        if (!normalized) return '';
+        const semanticFamily = this.getEngagementSemanticFamily(normalized);
+        const sourceEventId = String(normalized.source_event_id || normalized.delivery_key || normalized.delivery_id || '').trim();
+        if (!semanticFamily || !sourceEventId) return '';
+        return `${semanticFamily}:${sourceEventId}`;
+    }
+
+    getEngagementBridgeTriggerType(item = {}) {
+        const normalized = this.normalizeEngagementItem(item);
+        if (!normalized) return '';
+        if (normalized.source === 'notification') {
+            return this.getSystemNotificationAutomationTriggerType(normalized);
         }
-        return true;
+        return this.normalizeEngagementTriggerType(
+            normalized.trigger_type
+                || normalized.triggerType
+                || normalized.metadata?.trigger_type
+                || normalized.metadata?.triggerType
+                || normalized.metadata?.event_type
+                || normalized.metadata?.eventType
+                || ''
+        );
+    }
+
+    getEngagementBridgeDedupeKey(item = {}) {
+        const normalized = this.normalizeEngagementItem(item);
+        if (!normalized) return '';
+        const triggerType = this.getEngagementBridgeTriggerType(normalized);
+        const sourceEventId = String(normalized.source_event_id || normalized.metadata?.source_event_id || '').trim();
+        if (!triggerType || !sourceEventId) return '';
+        return `bridge:${triggerType}:${sourceEventId}`;
+    }
+
+    getPendingEngagementSemanticEntry(semanticKey = '') {
+        const normalizedSemanticKey = String(semanticKey || '').trim();
+        if (!normalizedSemanticKey || !Array.isArray(this.engagementPendingItems) || !this.engagementPendingItems.length) {
+            return null;
+        }
+        return this.engagementPendingItems.find((entry) => String(entry?.semanticKey || '').trim() === normalizedSemanticKey) || null;
+    }
+
+    getEngagementItemSuppressionKeys(item = {}) {
+        const metadata = item?.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata)
+            ? item.metadata
+            : {};
+        const keys = [
+            this.getEngagementItemKey(item),
+            this.getEngagementSemanticDedupeKey(item),
+            this.getEngagementBridgeDedupeKey(item)
+        ].filter(Boolean);
+        const hasEventScopedIdentity = Boolean(
+            String(item.source_event_id || item.sourceEventId || metadata.source_event_id || '').trim()
+            || String(item.delivery_key || item.deliveryKey || metadata.delivery_key || '').trim()
+            || String(item.delivery_id || item.deliveryId || metadata.delivery_id || '').trim()
+        );
+        if (!hasEventScopedIdentity) {
+            keys.push(this.getEngagementLegacyPageItemKey(item));
+        }
+        return [...new Set(keys)];
+    }
+
+    isEngagementItemSuppressed(item = {}) {
+        const keys = this.getEngagementItemSuppressionKeys(item);
+        if (!keys.length) return false;
+        const dismissedMap = this.getEngagementDismissedMap();
+        let changed = false;
+        let isSuppressed = false;
+        keys.forEach((key) => {
+            const expiresAt = dismissedMap[key];
+            if (!expiresAt) return;
+            const expiresMs = Number(expiresAt);
+            if (!Number.isFinite(expiresMs) || expiresMs <= Date.now()) {
+                delete dismissedMap[key];
+                changed = true;
+                return;
+            }
+            isSuppressed = true;
+        });
+        if (changed) {
+            this.persistEngagementDismissedMap(dismissedMap);
+        }
+        return isSuppressed;
+    }
+
+    persistEngagementItemQuiet(item = {}, durationMs = 15 * 60 * 1000) {
+        const keys = this.getEngagementItemSuppressionKeys(item);
+        if (!keys.length) return;
+        const normalizedDuration = Math.max(0, Number(durationMs || 0) || 0);
+        if (normalizedDuration <= 0) return;
+        const dismissedMap = this.getEngagementDismissedMap();
+        const nextExpiresAt = Date.now() + normalizedDuration;
+        keys.forEach((key) => {
+            const currentExpiresAt = Number(dismissedMap[key] || 0) || 0;
+            dismissedMap[key] = Math.max(currentExpiresAt, nextExpiresAt);
+        });
+        this.persistEngagementDismissedMap(dismissedMap);
+    }
+
+    normalizeEngagementRepeatIntervalMinutes(value, fallback = 2) {
+        const parsed = Number.parseInt(value, 10);
+        const fallbackParsed = Number.parseInt(fallback, 10);
+        const normalizedFallback = Number.isFinite(fallbackParsed) ? Math.min(Math.max(fallbackParsed, 0), 1440) : 2;
+        if (!Number.isFinite(parsed)) return normalizedFallback;
+        return Math.min(Math.max(parsed, 0), 1440);
+    }
+
+    scheduleEngagementFollowupRefresh(delayMs = 800) {
+        const normalizedDelay = Math.max(0, Number(delayMs || 0) || 0);
+        const refreshTimer = window.setTimeout(() => {
+            this.engagementFollowupRefreshTimers?.delete(refreshTimer);
+            if (this.isOpen) return;
+            void this.refreshEngagementFeed({ force: true }).catch((error) => {
+                console.warn('[ChatWidget] Failed to refresh engagement follow-up feed:', error?.message || error);
+            });
+        }, normalizedDelay);
+        this.engagementFollowupRefreshTimers?.add(refreshTimer);
+    }
+
+    clearEngagementScheduledRuleRefreshTimer() {
+        if (this.engagementScheduledRuleRefreshTimer) {
+            window.clearTimeout(this.engagementScheduledRuleRefreshTimer);
+            this.engagementScheduledRuleRefreshTimer = null;
+        }
+    }
+
+    scheduleEngagementScheduledRuleRefresh(nextStartsAt = '') {
+        this.clearEngagementScheduledRuleRefreshTimer();
+        const scheduledAt = nextStartsAt ? new Date(nextStartsAt) : null;
+        if (!scheduledAt || !Number.isFinite(scheduledAt.getTime())) return;
+        const delayMs = Math.min(2147480000, Math.max(250, scheduledAt.getTime() - Date.now() + 350));
+        this.engagementScheduledRuleRefreshTimer = window.setTimeout(() => {
+            this.engagementScheduledRuleRefreshTimer = null;
+            if (this.isOpen) return;
+            void this.refreshEngagementFeed({ force: true }).catch((error) => {
+                console.warn('[ChatWidget] Failed to refresh scheduled engagement feed:', error?.message || error);
+            });
+        }, delayMs);
+    }
+
+    quietEngagementItemForRepeatInterval(item = {}) {
+        const normalized = this.normalizeEngagementItem(item);
+        if (!normalized) return;
+        const repeatIntervalMinutes = this.normalizeEngagementRepeatIntervalMinutes(normalized.repeat_interval_minutes, 2);
+        if (repeatIntervalMinutes <= 0) return;
+        const durationMs = repeatIntervalMinutes * 60 * 1000;
+        this.quietEngagementItemForSession(normalized, durationMs);
+        this.persistEngagementItemQuiet(normalized, durationMs);
+        this.scheduleEngagementFollowupRefresh(durationMs + 250);
     }
 
     isEngagementItemSessionQuiet(item = {}) {
-        const key = this.getEngagementItemKey(item);
-        if (!key || !this.engagementSessionQuietUntil?.has(key)) return false;
-        const quietUntil = Number(this.engagementSessionQuietUntil.get(key) || 0);
-        if (!Number.isFinite(quietUntil) || quietUntil <= Date.now()) {
-            this.engagementSessionQuietUntil.delete(key);
-            return false;
-        }
-        return true;
+        const keys = this.getEngagementItemSuppressionKeys(item);
+        if (!keys.length) return false;
+        let isQuiet = false;
+        keys.forEach((key) => {
+            if (!this.engagementSessionQuietUntil?.has(key)) return;
+            const quietUntil = Number(this.engagementSessionQuietUntil.get(key) || 0);
+            if (!Number.isFinite(quietUntil) || quietUntil <= Date.now()) {
+                this.engagementSessionQuietUntil.delete(key);
+                return;
+            }
+            isQuiet = true;
+        });
+        return isQuiet;
     }
 
     quietEngagementItemForSession(item = {}, durationMs = 15 * 60 * 1000) {
-        const key = this.getEngagementItemKey(item);
-        if (!key) return;
+        const keys = this.getEngagementItemSuppressionKeys(item);
+        if (!keys.length) return;
         const normalizedDuration = Math.max(60 * 1000, Number(durationMs || 0) || 0);
-        this.engagementSessionQuietUntil.set(key, Date.now() + normalizedDuration);
+        const quietUntil = Date.now() + normalizedDuration;
+        keys.forEach((key) => {
+            this.engagementSessionQuietUntil.set(key, quietUntil);
+        });
     }
 
     normalizeEngagementDismissTtlHours(value, fallback = 24) {
@@ -4209,15 +6195,19 @@ class ChatWidget {
     }
 
     suppressEngagementItem(item = {}) {
-        const key = this.getEngagementItemKey(item);
-        if (!key) return;
+        const keys = this.getEngagementItemSuppressionKeys(item);
+        if (!keys.length) return;
         const ttlHours = this.normalizeEngagementDismissTtlHours(item.dismiss_ttl_hours, 24);
         if (ttlHours <= 0) {
             this.quietEngagementItemForSession(item, 30 * 60 * 1000);
             return;
         }
         const dismissedMap = this.getEngagementDismissedMap();
-        dismissedMap[key] = Date.now() + ttlHours * 60 * 60 * 1000;
+        const nextExpiresAt = Date.now() + ttlHours * 60 * 60 * 1000;
+        keys.forEach((key) => {
+            const currentExpiresAt = Number(dismissedMap[key] || 0) || 0;
+            dismissedMap[key] = Math.max(currentExpiresAt, nextExpiresAt);
+        });
         this.persistEngagementDismissedMap(dismissedMap);
     }
 
@@ -4289,6 +6279,7 @@ class ChatWidget {
             id: String(normalized.id || normalized.notification_id || normalized.rule_id || '').trim(),
             title,
             content,
+            trigger_type: String(normalized.trigger_type || normalized.triggerType || metadata.trigger_type || metadata.triggerType || '').trim().toLowerCase(),
             action_label: String(normalized.action_label || '').trim(),
             action_url: String(normalized.action_url || '').trim(),
             page_id: String(normalized.page_id || this.getEngagementPageId()).trim() || this.getEngagementPageId(),
@@ -4299,9 +6290,19 @@ class ChatWidget {
             source: String(normalized.source || 'rule').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'rule',
             source_module: String(normalized.source_module || 'engagement').trim() || 'engagement',
             source_event_id: String(normalized.source_event_id || '').trim(),
+            delivery_id: String(normalized.delivery_id || normalized.deliveryId || metadata.delivery_id || '').trim(),
+            delivery_key: String(normalized.delivery_key || normalized.deliveryKey || metadata.delivery_key || '').trim(),
             notification_id: String(normalized.notification_id || '').trim(),
             rule_id: String(normalized.rule_id || '').trim(),
+            frequency: String(normalized.frequency || metadata.frequency || 'once_per_day').trim().toLowerCase() || 'once_per_day',
             dismiss_ttl_hours: this.normalizeEngagementDismissTtlHours(normalized.dismiss_ttl_hours, 24),
+            repeat_interval_minutes: this.normalizeEngagementRepeatIntervalMinutes(
+                normalized.repeat_interval_minutes
+                    ?? normalized.repeatIntervalMinutes
+                    ?? metadata.repeat_interval_minutes
+                    ?? metadata.repeatIntervalMinutes,
+                2
+            ),
             metadata
         };
     }
@@ -4316,6 +6317,11 @@ class ChatWidget {
     normalizeEngagementWalletView(view = '') {
         const normalized = String(view || '').trim().toLowerCase().replace(/_/g, '-').replace(/^view-/, '');
         const aliases = {
+            order: 'orders',
+            transaction: 'orders',
+            transactions: 'orders',
+            'shop-orders': 'orders',
+            'order-history': 'orders',
             card: 'cards',
             coupon: 'cards',
             coupons: 'cards',
@@ -4323,7 +6329,11 @@ class ChatWidget {
             'discount-assets': 'cards',
             discounts: 'cards',
             'wallet-card': 'cards',
-            'wallet-cards': 'cards'
+            'wallet-cards': 'cards',
+            point: 'balance',
+            points: 'balance',
+            credit: 'balance',
+            credits: 'balance'
         };
         const viewId = aliases[normalized] || normalized;
         return ['balance', 'cards', 'recharge', 'orders', 'affiliate', 'checkin'].includes(viewId) ? viewId : '';
@@ -4339,6 +6349,17 @@ class ChatWidget {
                 .replace(/^\/+/, '')
                 .split(/[?#/]/)[0];
             return this.normalizeEngagementWalletView(decodeURIComponent(walletTarget || 'balance'));
+        }
+
+        if (/^shop:/i.test(rawUrl)) {
+            const shopTarget = rawUrl
+                .replace(/^shop:(\/\/)?/i, '')
+                .replace(/^\/+/, '')
+                .split(/[?#/]/)[0];
+            const resolvedView = this.normalizeEngagementWalletView(decodeURIComponent(shopTarget || 'orders'));
+            if (resolvedView === 'orders') {
+                return resolvedView;
+            }
         }
 
         try {
@@ -4523,7 +6544,7 @@ class ChatWidget {
         const animation = String(source.animation || 'gentle').trim().toLowerCase();
         const robotVariant = String(source.robot_variant || source.robotVariant || 'default').trim().toLowerCase();
         const radius = Math.min(Math.max(Number.parseInt(source.radius_px || source.radiusPx || 22, 10) || 22, 12), 32);
-        const maxWidth = Math.min(Math.max(Number.parseInt(source.max_width_px || source.maxWidthPx || 420, 10) || 420, 260), 560);
+        const maxWidth = Math.min(Math.max(Number.parseInt(source.max_width_px || source.maxWidthPx || 520, 10) || 520, 260), 560);
         const normalized = {
             enabled: source.enabled !== false,
             preset: String(source.preset || 'studio_blue').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'studio_blue',
@@ -4645,26 +6666,829 @@ class ChatWidget {
         return this.measureEngagementElement(element, placement);
     }
 
+    getEngagementFeedbackTarget(element = null, root = null) {
+        const source = element?.nodeType === 1 ? element : element?.parentElement;
+        return source?.closest?.('.engagement-preview__action, .engagement-surface__action, .engagement-preview__path-link')
+            || root?.querySelector?.('.engagement-preview__action, .engagement-surface__action')
+            || null;
+    }
+
+    setEngagementActionLoading(element = null, root = null, label = '') {
+        const target = this.getEngagementFeedbackTarget(element, root);
+        if (!target || target.dataset.engagementActionLoading === '1') return target;
+
+        const loadingLabel = String(label || this.t('chat.loading', '加载中...'));
+        const rect = typeof target.getBoundingClientRect === 'function'
+            ? target.getBoundingClientRect()
+            : null;
+        target.dataset.engagementActionLoading = '1';
+        target.dataset.engagementOriginalHtml = target.innerHTML;
+        target.dataset.engagementOriginalMinWidth = target.style.minWidth || '';
+        target.dataset.engagementOriginalAriaLabel = target.getAttribute('aria-label') || '';
+        target.dataset.engagementHadAriaLabel = target.hasAttribute('aria-label') ? '1' : '0';
+        target.dataset.engagementWasDisabled = target.disabled === true ? '1' : '0';
+        if (rect?.width > 0) {
+            target.style.minWidth = `${Math.ceil(rect.width)}px`;
+        }
+        target.classList.add('is-loading');
+        target.setAttribute('aria-busy', 'true');
+        target.setAttribute('aria-label', loadingLabel);
+        if ('disabled' in target) {
+            target.disabled = true;
+        }
+        target.innerHTML = this.getChatInlineLoadingDotsMarkup(loadingLabel);
+        return target;
+    }
+
+    clearEngagementActionLoading(element = null) {
+        if (!element || element.dataset?.engagementActionLoading !== '1') return;
+
+        element.innerHTML = element.dataset.engagementOriginalHtml || '';
+        element.style.minWidth = element.dataset.engagementOriginalMinWidth || '';
+        element.classList.remove('is-loading');
+        element.removeAttribute('aria-busy');
+        if (element.dataset.engagementHadAriaLabel === '1') {
+            element.setAttribute('aria-label', element.dataset.engagementOriginalAriaLabel || '');
+        } else {
+            element.removeAttribute('aria-label');
+        }
+        if ('disabled' in element) {
+            element.disabled = element.dataset.engagementWasDisabled === '1';
+        }
+
+        delete element.dataset.engagementActionLoading;
+        delete element.dataset.engagementOriginalHtml;
+        delete element.dataset.engagementOriginalMinWidth;
+        delete element.dataset.engagementOriginalAriaLabel;
+        delete element.dataset.engagementHadAriaLabel;
+        delete element.dataset.engagementWasDisabled;
+    }
+
+    isEngagementGuestbookPath(pathname = '') {
+        return /\/guestbook(?:\.html)?\/?$/i.test(String(pathname || '').trim());
+    }
+
+    getEngagementRouteMetadataContexts(metadata = {}) {
+        const source = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+            ? metadata
+            : {};
+        const feedContext = source.feed_context && typeof source.feed_context === 'object' && !Array.isArray(source.feed_context)
+            ? source.feed_context
+            : {};
+        const eventContext = feedContext.event_context && typeof feedContext.event_context === 'object' && !Array.isArray(feedContext.event_context)
+            ? feedContext.event_context
+            : {};
+        const directEventContext = source.event_context && typeof source.event_context === 'object' && !Array.isArray(source.event_context)
+            ? source.event_context
+            : {};
+        return [source, feedContext, eventContext, directEventContext];
+    }
+
+    getEngagementRouteMetadataValue(metadata = {}, candidateKeys = []) {
+        const keys = Array.isArray(candidateKeys) ? candidateKeys : [candidateKeys];
+        const contexts = this.getEngagementRouteMetadataContexts(metadata);
+        for (const context of contexts) {
+            for (const key of keys) {
+                const value = context?.[key];
+                if (value === undefined || value === null) continue;
+                const normalized = String(value).trim();
+                if (normalized) {
+                    return normalized;
+                }
+            }
+        }
+        return '';
+    }
+
+    getEngagementSupportTarget(actionUrl = '', metadata = {}) {
+        const source = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+            ? metadata
+            : {};
+        const rawActionUrl = String(actionUrl || '').trim();
+        if (!/^support:/i.test(rawActionUrl)) {
+            return null;
+        }
+
+        let supportPath = '';
+        let targetUrl = null;
+        try {
+            targetUrl = new URL(rawActionUrl, window.location.origin);
+            supportPath = decodeURIComponent([
+                String(targetUrl.hostname || '').trim(),
+                String(targetUrl.pathname || '').replace(/^\/+/, '').trim()
+            ].filter(Boolean).join('/')).toLowerCase();
+        } catch (_) {
+            supportPath = decodeURIComponent(
+                rawActionUrl
+                    .replace(/^support:(\/\/)?/i, '')
+                    .replace(/^\/+/, '')
+                    .split(/[?#]/)[0]
+            ).toLowerCase();
+        }
+
+        if (!['tickets', 'ticket-history', 'ticket_history'].includes(supportPath)) {
+            return null;
+        }
+
+        return {
+            type: 'ticket_history',
+            ticketId: String(
+                targetUrl?.searchParams?.get('ticketId')
+                    || targetUrl?.searchParams?.get('ticket_id')
+                    || this.getEngagementRouteMetadataValue(source, ['ticketId', 'ticket_id'])
+                    || ''
+            ).trim(),
+            orderId: String(
+                targetUrl?.searchParams?.get('orderId')
+                    || targetUrl?.searchParams?.get('order_id')
+                    || this.getEngagementRouteMetadataValue(source, ['orderId', 'order_id'])
+                    || ''
+            ).trim(),
+            ticketStatus: String(
+                this.getEngagementRouteMetadataValue(source, ['ticketStatus', 'ticket_status'])
+                    || ''
+            ).trim(),
+            ticketStatusLabel: String(
+                this.getEngagementRouteMetadataValue(source, ['ticketStatusLabel', 'ticket_status_label'])
+                    || ''
+            ).trim()
+        };
+    }
+
+    async openSupportTicketHistoryFromEngagement(target = {}) {
+        await this.openChat();
+        await this.openSupportAction('ticket_history', {
+            context: target
+        });
+        this.clearUnread();
+        return true;
+    }
+
+    getEngagementGuestbookReplyTarget(actionUrl = '', metadata = {}) {
+        const source = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+            ? metadata
+            : {};
+        let targetUrl = null;
+        let urlTargetsGuestbook = false;
+
+        const rawActionUrl = String(actionUrl || '').trim();
+        if (rawActionUrl) {
+            try {
+                targetUrl = new URL(rawActionUrl, window.location.origin);
+                urlTargetsGuestbook = targetUrl.origin === window.location.origin
+                    && this.isEngagementGuestbookPath(targetUrl.pathname);
+            } catch (_) {
+                targetUrl = null;
+            }
+        }
+
+        const metadataPageId = String(source.page_id || source.pageId || source.page || '').trim().toLowerCase();
+        const metadataSource = String(source.source || '').trim().toLowerCase();
+        const metadataSourceModule = String(source.source_module || source.sourceModule || '').trim().toLowerCase();
+        const metadataTargetsGuestbook = metadataPageId === 'guestbook'
+            || metadataSource === 'guestbook_comment'
+            || metadataSourceModule === 'guestbook';
+
+        if (!urlTargetsGuestbook && !metadataTargetsGuestbook) {
+            return null;
+        }
+
+        const messageId = String(
+            targetUrl?.searchParams?.get('messageId')
+                || targetUrl?.searchParams?.get('message_id')
+                || this.getEngagementRouteMetadataValue(source, ['messageId', 'message_id'])
+                || ''
+        ).trim();
+        const commentId = String(
+            targetUrl?.searchParams?.get('commentId')
+                || targetUrl?.searchParams?.get('comment_id')
+                || this.getEngagementRouteMetadataValue(source, ['commentId', 'comment_id'])
+                || ''
+        ).trim();
+
+        if (!messageId) {
+            return null;
+        }
+
+        return {
+            messageId,
+            commentId,
+            targetUrl,
+            urlTargetsGuestbook
+        };
+    }
+
+    isCurrentEngagementGuestbookPage() {
+        return this.isEngagementGuestbookPath(window.location?.pathname || '')
+            || (this.getEngagementPageId() === 'guestbook' && typeof window.handleSmartScroll === 'function');
+    }
+
+    waitForGuestbookSmartScroll(timeoutMs = 5200) {
+        if (typeof window.handleSmartScroll === 'function') {
+            return Promise.resolve(window.handleSmartScroll);
+        }
+
+        const startedAt = Date.now();
+        return new Promise((resolve) => {
+            const check = () => {
+                if (typeof window.handleSmartScroll === 'function') {
+                    resolve(window.handleSmartScroll);
+                    return;
+                }
+                if (Date.now() - startedAt >= timeoutMs) {
+                    resolve(null);
+                    return;
+                }
+                window.setTimeout(check, 80);
+            };
+            check();
+        });
+    }
+
+    async focusGuestbookReplyFromEngagement(target = {}) {
+        if (!this.isCurrentEngagementGuestbookPage()) {
+            return false;
+        }
+
+        const smartScroll = await this.waitForGuestbookSmartScroll();
+        if (typeof smartScroll !== 'function') {
+            throw new Error('Guestbook smart scroll is not ready');
+        }
+
+        const focused = target.commentId
+            ? await Promise.resolve(smartScroll(target.commentId, 'comment', target.messageId))
+            : await Promise.resolve(smartScroll(target.messageId, 'message'));
+        if (focused === false) {
+            return false;
+        }
+        this.clearUnread();
+        return true;
+    }
+
+    isEngagementPromptsPath(pathname = '') {
+        return /\/prompts(?:\.html)?\/?$/i.test(String(pathname || '').trim());
+    }
+
+    getEngagementPromptReplyTarget(actionUrl = '', metadata = {}) {
+        const source = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+            ? metadata
+            : {};
+        let targetUrl = null;
+        let urlTargetsPrompts = false;
+
+        const rawActionUrl = String(actionUrl || '').trim();
+        if (rawActionUrl) {
+            try {
+                targetUrl = new URL(rawActionUrl, window.location.origin);
+                urlTargetsPrompts = targetUrl.origin === window.location.origin
+                    && this.isEngagementPromptsPath(targetUrl.pathname);
+            } catch (_) {
+                targetUrl = null;
+            }
+        }
+
+        const metadataPageId = String(source.page_id || source.pageId || source.page || '').trim().toLowerCase();
+        const metadataSource = String(source.source || '').trim().toLowerCase();
+        const metadataSourceModule = String(source.source_module || source.sourceModule || '').trim().toLowerCase();
+        const metadataTargetsPrompts = metadataPageId === 'prompts'
+            || metadataSource === 'prompt_comment'
+            || metadataSourceModule === 'prompts'
+            || metadataSourceModule === 'prompt';
+
+        if (!urlTargetsPrompts && !metadataTargetsPrompts) {
+            return null;
+        }
+
+        const promptId = String(
+            targetUrl?.searchParams?.get('id')
+                || targetUrl?.searchParams?.get('promptId')
+                || targetUrl?.searchParams?.get('prompt_id')
+                || this.getEngagementRouteMetadataValue(source, ['promptId', 'prompt_id', 'id'])
+                || ''
+        ).trim();
+        const commentId = String(
+            targetUrl?.searchParams?.get('commentId')
+                || targetUrl?.searchParams?.get('comment_id')
+                || this.getEngagementRouteMetadataValue(source, ['commentId', 'comment_id'])
+                || ''
+        ).trim();
+
+        if (!promptId) {
+            return null;
+        }
+
+        return {
+            promptId,
+            commentId,
+            targetUrl,
+            urlTargetsPrompts
+        };
+    }
+
+    isCurrentEngagementPromptsPage() {
+        return this.isEngagementPromptsPath(window.location?.pathname || '')
+            || (this.getEngagementPageId() === 'prompts' && typeof window.ZaoyoePromptsFocusCommentFromEngagement === 'function');
+    }
+
+    waitForPromptsCommentFocus(timeoutMs = 2600) {
+        if (typeof window.ZaoyoePromptsFocusCommentFromEngagement === 'function') {
+            return Promise.resolve(window.ZaoyoePromptsFocusCommentFromEngagement);
+        }
+
+        const startedAt = Date.now();
+        return new Promise((resolve) => {
+            const check = () => {
+                if (typeof window.ZaoyoePromptsFocusCommentFromEngagement === 'function') {
+                    resolve(window.ZaoyoePromptsFocusCommentFromEngagement);
+                    return;
+                }
+                if (Date.now() - startedAt >= timeoutMs) {
+                    resolve(null);
+                    return;
+                }
+                window.setTimeout(check, 80);
+            };
+            check();
+        });
+    }
+
+    async focusPromptReplyFromEngagement(target = {}) {
+        if (!this.isCurrentEngagementPromptsPage()) {
+            return false;
+        }
+
+        const focusComment = await this.waitForPromptsCommentFocus();
+        if (typeof focusComment !== 'function') {
+            throw new Error('Prompt comment focus is not ready');
+        }
+
+        const focused = await Promise.resolve(focusComment({
+            promptId: target.promptId,
+            commentId: target.commentId
+        }));
+        if (!focused) {
+            return false;
+        }
+        this.clearUnread();
+        return true;
+    }
+
+    buildEngagementReplyNavigationUrl(targetUrl = null, routeTargets = {}) {
+        if (!(targetUrl instanceof URL)) {
+            return targetUrl;
+        }
+        const nextUrl = new URL(targetUrl.href);
+        const guestbookReplyTarget = routeTargets.guestbookReplyTarget && typeof routeTargets.guestbookReplyTarget === 'object'
+            ? routeTargets.guestbookReplyTarget
+            : null;
+        const promptReplyTarget = routeTargets.promptReplyTarget && typeof routeTargets.promptReplyTarget === 'object'
+            ? routeTargets.promptReplyTarget
+            : null;
+
+        if (guestbookReplyTarget && this.isEngagementGuestbookPath(nextUrl.pathname)) {
+            if (guestbookReplyTarget.messageId && !nextUrl.searchParams.get('messageId')) {
+                nextUrl.searchParams.set('messageId', guestbookReplyTarget.messageId);
+            }
+            if (guestbookReplyTarget.commentId && !nextUrl.searchParams.get('commentId')) {
+                nextUrl.searchParams.set('commentId', guestbookReplyTarget.commentId);
+            }
+        }
+
+        if (promptReplyTarget && this.isEngagementPromptsPath(nextUrl.pathname)) {
+            if (promptReplyTarget.promptId && !nextUrl.searchParams.get('id')) {
+                nextUrl.searchParams.set('id', promptReplyTarget.promptId);
+            }
+            if (promptReplyTarget.commentId && !nextUrl.searchParams.get('commentId')) {
+                nextUrl.searchParams.set('commentId', promptReplyTarget.commentId);
+            }
+            if (promptReplyTarget.commentId && !nextUrl.searchParams.get('comments')) {
+                nextUrl.searchParams.set('comments', '1');
+            }
+        }
+
+        return nextUrl;
+    }
+
+    isEngagementVerifyPath(pathname = '') {
+        return /\/verify(?:\.html)?\/?$/i.test(String(pathname || '').trim());
+    }
+
+    getEngagementVerifyHelpTarget(actionUrl = '', metadata = {}) {
+        const source = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+            ? metadata
+            : {};
+        const rawActionUrl = String(actionUrl || '').trim();
+        let targetUrl = null;
+        let urlTargetsVerify = false;
+        let targetSection = '';
+        const helpSections = ['help', 'guide', 'verify-help', 'verify-guide'];
+        const historySections = ['history', 'verify-history'];
+
+        if (rawActionUrl) {
+            try {
+                targetUrl = new URL(rawActionUrl, window.location.origin);
+                const hash = decodeURIComponent(String(targetUrl.hash || '').replace(/^#/, '').trim()).toLowerCase();
+                if (targetUrl.origin === window.location.origin && this.isEngagementVerifyPath(targetUrl.pathname)) {
+                    if (helpSections.includes(hash)) {
+                        urlTargetsVerify = true;
+                        targetSection = 'help';
+                    } else if (historySections.includes(hash)) {
+                        urlTargetsVerify = true;
+                        targetSection = 'history';
+                    }
+                }
+            } catch (_) {
+                targetUrl = null;
+            }
+        }
+
+        const metadataPageId = String(source.page_id || source.pageId || source.page || '').trim().toLowerCase();
+        const metadataSection = String(source.section || source.target_section || source.targetSection || '').trim().toLowerCase();
+        const metadataTargetsVerify = metadataPageId === 'verify'
+            && (helpSections.includes(metadataSection) || historySections.includes(metadataSection));
+
+        if (!urlTargetsVerify && !metadataTargetsVerify) {
+            return null;
+        }
+
+        return {
+            targetUrl,
+            section: targetSection || (historySections.includes(metadataSection) ? 'history' : 'help')
+        };
+    }
+
+    isCurrentEngagementVerifyPage() {
+        return this.isEngagementVerifyPath(window.location?.pathname || '')
+            || this.getEngagementPageId() === 'verify';
+    }
+
+    waitForVerifyHelpFocus(timeoutMs = 2200) {
+        if (typeof window.ZaoyoeVerifyFocusHelp === 'function') {
+            return Promise.resolve(window.ZaoyoeVerifyFocusHelp);
+        }
+
+        const startedAt = Date.now();
+        return new Promise((resolve) => {
+            const check = () => {
+                if (typeof window.ZaoyoeVerifyFocusHelp === 'function') {
+                    resolve(window.ZaoyoeVerifyFocusHelp);
+                    return;
+                }
+                if (Date.now() - startedAt >= timeoutMs) {
+                    resolve(null);
+                    return;
+                }
+                window.setTimeout(check, 80);
+            };
+            check();
+        });
+    }
+
+    waitForVerifyHistoryFocus(timeoutMs = 2200) {
+        if (typeof window.ZaoyoeVerifyFocusHistory === 'function') {
+            return Promise.resolve(window.ZaoyoeVerifyFocusHistory);
+        }
+
+        const startedAt = Date.now();
+        return new Promise((resolve) => {
+            const check = () => {
+                if (typeof window.ZaoyoeVerifyFocusHistory === 'function') {
+                    resolve(window.ZaoyoeVerifyFocusHistory);
+                    return;
+                }
+                if (Date.now() - startedAt >= timeoutMs) {
+                    resolve(null);
+                    return;
+                }
+                window.setTimeout(check, 80);
+            };
+            check();
+        });
+    }
+
+    async focusVerifyHelpFromEngagement(target = {}) {
+        if (!this.isCurrentEngagementVerifyPage()) {
+            return false;
+        }
+
+        const section = String(target?.section || 'help').trim().toLowerCase() === 'history'
+            ? 'history'
+            : 'help';
+        const focusHandler = section === 'history'
+            ? await this.waitForVerifyHistoryFocus()
+            : await this.waitForVerifyHelpFocus();
+        if (typeof focusHandler === 'function') {
+            const focused = await Promise.resolve(focusHandler({ source: 'engagement_bubble' }));
+            if (focused) {
+                this.clearUnread();
+                return true;
+            }
+        }
+
+        const focusTarget = section === 'history'
+            ? (document.getElementById('verifyHistoryCard')
+                || document.getElementById('verifyHistoryList')
+                || document.querySelector('.verify-history-card, .verify-history-list, #verify-widget-container'))
+            : (document.getElementById('help')
+                || document.querySelector('[data-verify-help="1"], .verify-guide-card, #verify-widget-container'));
+        if (!focusTarget?.scrollIntoView) {
+            return false;
+        }
+        focusTarget.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        focusTarget.classList?.remove?.('is-engagement-focus');
+        void focusTarget.offsetWidth;
+        focusTarget.classList?.add?.('is-engagement-focus');
+        window.setTimeout(() => focusTarget.classList?.remove?.('is-engagement-focus'), 3200);
+        this.clearUnread();
+        return true;
+    }
+
+    isEngagementShopPath(pathname = '') {
+        return /\/shop(?:\.html)?\/?$/i.test(String(pathname || '').trim());
+    }
+
+    getEngagementShopCartTarget(actionUrl = '', metadata = {}) {
+        const source = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+            ? metadata
+            : {};
+        const rawActionUrl = String(actionUrl || '').trim();
+        if (!rawActionUrl) {
+            return null;
+        }
+
+        try {
+            const targetUrl = new URL(rawActionUrl, window.location.origin);
+            const hash = decodeURIComponent(String(targetUrl.hash || '').replace(/^#/, '').trim()).toLowerCase();
+            if (targetUrl.origin !== window.location.origin || !this.isEngagementShopPath(targetUrl.pathname)) {
+                return null;
+            }
+            if (!['cart', 'shop-cart'].includes(hash)) {
+                return null;
+            }
+            return {
+                targetUrl,
+                section: 'cart',
+                pageId: String(source.page_id || source.pageId || source.page || '').trim().toLowerCase() || 'shop'
+            };
+        } catch (_) {
+            return null;
+        }
+    }
+
+    isCurrentEngagementShopPage() {
+        return this.isEngagementShopPath(window.location?.pathname || '')
+            || this.getEngagementPageId() === 'shop';
+    }
+
+    async focusShopCartFromEngagement() {
+        if (!this.isCurrentEngagementShopPage()) {
+            return false;
+        }
+
+        const openCart = typeof window.ZaoyoeShopOpenCartFromEngagement === 'function'
+            ? window.ZaoyoeShopOpenCartFromEngagement
+            : (typeof window.ShopClient?.openCartFromEngagement === 'function'
+                ? window.ShopClient.openCartFromEngagement.bind(window.ShopClient)
+                : null);
+        if (typeof openCart !== 'function') {
+            return false;
+        }
+
+        const opened = await Promise.resolve(openCart({ source: 'engagement_bubble' }));
+        if (!opened) {
+            return false;
+        }
+        this.clearUnread();
+        return true;
+    }
+
+    normalizeEngagementAccountView(view = '') {
+        const normalized = String(view || '').trim().toLowerCase().replace(/_/g, '-').replace(/^view-/, '');
+        const aliases = {
+            account: 'profile',
+            me: 'profile',
+            user: 'profile',
+            member: 'profile',
+            settings: 'profile',
+            setting: 'profile',
+            profile: 'profile',
+            security: 'security',
+            safe: 'security',
+            password: 'security',
+            'account-security': 'security'
+        };
+        const viewId = aliases[normalized] || normalized;
+        return ['profile', 'security'].includes(viewId) ? viewId : '';
+    }
+
+    getEngagementAccountViewFromActionUrl(actionUrl = '', metadata = {}) {
+        const normalizedMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {};
+        const metadataView = this.normalizeEngagementAccountView(
+            normalizedMetadata.account_view
+                || normalizedMetadata.accountView
+                || normalizedMetadata.profile_view
+                || normalizedMetadata.profileView
+                || ''
+        );
+        if (metadataView) {
+            return metadataView;
+        }
+
+        const rawUrl = String(actionUrl || '').trim();
+        if (!rawUrl) {
+            return '';
+        }
+
+        if (/^profile:/i.test(rawUrl)) {
+            return 'profile';
+        }
+
+        if (/^account:/i.test(rawUrl)) {
+            const accountTarget = decodeURIComponent(
+                rawUrl
+                    .replace(/^account:(\/\/)?/i, '')
+                    .replace(/^\/+/, '')
+                    .split(/[?#/]/)[0]
+            );
+            return this.normalizeEngagementAccountView(accountTarget || 'profile') || 'profile';
+        }
+
+        try {
+            const targetUrl = new URL(rawUrl, window.location.origin);
+            if (targetUrl.origin !== window.location.origin) {
+                return '';
+            }
+            const queryView = targetUrl.searchParams.get('account_view')
+                || targetUrl.searchParams.get('account')
+                || targetUrl.searchParams.get('profile_view')
+                || '';
+            const hashView = decodeURIComponent(String(targetUrl.hash || '').replace(/^#/, '').trim());
+            return this.normalizeEngagementAccountView(queryView)
+                || this.normalizeEngagementAccountView(hashView)
+                || '';
+        } catch (_) {
+            return '';
+        }
+    }
+
+    async openEngagementAccountView(view = '', targetUrl = null) {
+        const accountView = this.normalizeEngagementAccountView(view);
+        if (!['profile', 'security'].includes(accountView)) {
+            return false;
+        }
+
+        const applyProfileView = async () => {
+            if (accountView !== 'security') {
+                return true;
+            }
+            const startedAt = Date.now();
+            while (Date.now() - startedAt < 2200) {
+                const profileModal = document.getElementById('profileModal');
+                const canSwitch = typeof window.switchProfileTab === 'function'
+                    && profileModal
+                    && profileModal.classList.contains('active');
+                if (canSwitch) {
+                    window.switchProfileTab('security');
+                    return true;
+                }
+                await new Promise((resolve) => window.setTimeout(resolve, 80));
+            }
+            return false;
+        };
+
+        try {
+            if (typeof window.requestProfileModalOpen === 'function') {
+                window.requestProfileModalOpen();
+                await applyProfileView();
+                this.clearUnread();
+                return true;
+            }
+            if (typeof window.openProfileModal === 'function') {
+                await Promise.resolve(window.openProfileModal());
+                await applyProfileView();
+                this.clearUnread();
+                return true;
+            }
+            if (typeof window.ZaoyoeProfileModalBootstrap?.ensure === 'function') {
+                await window.ZaoyoeProfileModalBootstrap.ensure();
+                if (typeof window.openProfileModal === 'function') {
+                    await Promise.resolve(window.openProfileModal());
+                    await applyProfileView();
+                    this.clearUnread();
+                    return true;
+                }
+            }
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to open profile modal from engagement bubble:', error?.message || error);
+        }
+
+        try {
+            window.sessionStorage?.setItem('openProfileModal', 'true');
+        } catch (_) {
+            // Ignore storage failures and try the navigation fallback below.
+        }
+
+        if (targetUrl instanceof URL && ['http:', 'https:'].includes(targetUrl.protocol) && targetUrl.origin === window.location.origin) {
+            window.location.href = targetUrl.href;
+            this.clearUnread();
+            return true;
+        }
+
+        return false;
+    }
+
+    getEngagementActionLoadingLabel(item = {}, actionTarget = {}) {
+        const normalized = this.normalizeEngagementItem(item);
+        const actionUrl = String(actionTarget?.action_url || normalized?.action_url || '').trim();
+        const metadata = normalized
+            ? {
+                ...normalized.metadata,
+                page_id: normalized.page_id,
+                source: normalized.source,
+                source_module: normalized.source_module
+            }
+            : {};
+        const guestbookTarget = normalized
+            ? this.getEngagementGuestbookReplyTarget(actionUrl, {
+                ...metadata
+            })
+            : null;
+        const promptTarget = normalized
+            ? this.getEngagementPromptReplyTarget(actionUrl, metadata)
+            : null;
+        const verifyHelpTarget = normalized
+            ? this.getEngagementVerifyHelpTarget(actionUrl, metadata)
+            : null;
+        const shopCartTarget = normalized
+            ? this.getEngagementShopCartTarget(actionUrl, metadata)
+            : null;
+
+        if ((guestbookTarget && this.isCurrentEngagementGuestbookPage())
+            || (promptTarget && this.isCurrentEngagementPromptsPage())
+            || (verifyHelpTarget && this.isCurrentEngagementVerifyPage())
+            || (shopCartTarget && this.isCurrentEngagementShopPage())) {
+            return '定位中...';
+        }
+        return this.t('chat.loading', '加载中...');
+    }
+
+    async activateEngagementItemWithFeedback(item = {}, options = {}) {
+        const root = options.rootElement?.nodeType === 1
+            ? options.rootElement
+            : options.sourceElement?.closest?.('.engagement-preview, .engagement-surface') || null;
+        if (root?.dataset?.engagementActivating === '1') return;
+
+        const actionTarget = options.actionTarget && typeof options.actionTarget === 'object' && !Array.isArray(options.actionTarget)
+            ? options.actionTarget
+            : {};
+        const feedbackTarget = this.setEngagementActionLoading(
+            options.feedbackElement || options.sourceElement,
+            root,
+            this.getEngagementActionLoadingLabel(item, actionTarget)
+        );
+        if (root?.dataset) {
+            root.dataset.engagementActivating = '1';
+        }
+        root?.classList?.add('is-activating');
+
+        try {
+            await this.activateEngagementItem(item, {
+                actionTarget
+            });
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to activate engagement item:', error?.message || error);
+            this.clearEngagementActionLoading(feedbackTarget);
+            if (root?.dataset) {
+                delete root.dataset.engagementActivating;
+            }
+            root?.classList?.remove('is-activating');
+        }
+    }
+
     async triggerEngagementEvent(triggerType = 'page_view', metadata = {}, options = {}) {
         const normalizedTrigger = this.normalizeEngagementTriggerType(triggerType);
         if (!normalizedTrigger || normalizedTrigger === 'page_view') {
             return this.refreshEngagementFeed({ force: true });
         }
-        const triggerMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {};
+        const triggerMetadata = this.prepareEngagementTriggerMetadata(normalizedTrigger, metadata);
         const triggerKey = this.getEngagementTriggerKey(normalizedTrigger, triggerMetadata);
         if (options.once !== false && this.engagementTriggeredKeys.has(triggerKey)) {
             return null;
         }
-        this.engagementTriggeredKeys.add(triggerKey);
-        return this.refreshEngagementFeed({
+        const result = await this.refreshEngagementFeed({
             force: true,
             triggerType: normalizedTrigger,
             metadata: triggerMetadata
         });
+        if (options.once !== false && result) {
+            this.engagementTriggeredKeys.add(triggerKey);
+        }
+        return result;
     }
 
     async refreshEngagementFeed(options = {}) {
-        if (this.isOpen) return;
+        const requestedTriggerType = this.normalizeEngagementTriggerType(options.triggerType || 'page_view');
+        if (this.isOpen && requestedTriggerType === 'page_view') return null;
         if (this.engagementFeedLoading && options.force !== true) return;
         this.engagementFeedLoading = true;
 
@@ -4673,7 +7497,7 @@ class ChatWidget {
             const externalSite = String(this.getEngagementExternalConfig().site || '').trim().toLowerCase();
             const site = (externalSite || String(window.SiteConfig?.site || 'cn').trim().toLowerCase()) === 'intl' ? 'intl' : 'cn';
             const readerKey = this.getEngagementReaderKey();
-            const triggerType = this.normalizeEngagementTriggerType(options.triggerType || 'page_view');
+            const triggerType = requestedTriggerType;
             const eventMetadata = options.metadata && typeof options.metadata === 'object' && !Array.isArray(options.metadata)
                 ? options.metadata
                 : {};
@@ -4720,18 +7544,31 @@ class ChatWidget {
             }
             this.applyEngagementAssetStyle(payload?.asset_center?.style || {});
             this.applyEngagementSupportEntry(payload?.support_entry || {});
+            this.engagementEventPriorityCenter = this.normalizeEngagementEventPriorityCenter(payload?.event_priority_center || {});
+            this.scheduleEngagementScheduledRuleRefresh(payload?.next_scheduled_rule_at || '');
 
-            const item = (Array.isArray(payload?.items) ? payload.items : [])
-                .map((entry) => this.normalizeEngagementItem(entry))
+            const item = this.dedupeEngagementFeedItems(Array.isArray(payload?.items) ? payload.items : [])
                 .filter(Boolean)
+                .filter((entry) => this.shouldSurfaceEngagementItem(entry))
                 .filter((entry) => !this.isEngagementItemSuppressed(entry))
                 .filter((entry) => !this.isEngagementItemSessionQuiet(entry))
-                .sort((left, right) => Number(right.priority || 0) - Number(left.priority || 0))[0];
+                .sort((left, right) => {
+                    const priorityDelta = this.compareEngagementDisplayPriority(left, right);
+                    if (priorityDelta) return priorityDelta;
+                    return Number(right.priority || 0) - Number(left.priority || 0);
+                });
 
             this.engagementFeedLoaded = true;
-            if (item) {
-                this.showEngagementItem(item);
-                return item;
+            if (item.length) {
+                const [nextItem, ...backlogItems] = item;
+                backlogItems.forEach((entry) => {
+                    this.queuePendingEngagementItem(entry, {
+                        source: 'engagement_feed_backlog',
+                        queued: true
+                    });
+                });
+                this.showEngagementItem(nextItem);
+                return nextItem;
             }
             return null;
         } catch (error) {
@@ -4760,6 +7597,7 @@ class ChatWidget {
             });
             const body = JSON.stringify({
                 event_type: eventType,
+                delivery_id: normalized.delivery_id || null,
                 rule_id: normalized.rule_id || null,
                 notification_id: normalized.notification_id || null,
                 page_id: normalized.page_id,
@@ -4822,10 +7660,12 @@ class ChatWidget {
         preview.dataset.engagementSource = normalized.source;
         preview.dataset.engagementSourceModule = normalized.source_module;
         preview.innerHTML = `
-            <button type="button" class="engagement-preview__close" aria-label="关闭提醒">×</button>
             <div class="preview-sender">${this.escapeHtml(normalized.title)}</div>
             <div class="preview-text">${this.renderEngagementContentHtml(normalized)}</div>
-            ${normalized.action_label ? `<button type="button" class="engagement-preview__action">${this.escapeHtml(normalized.action_label)}</button>` : ''}
+            <div class="engagement-preview__actions">
+                ${normalized.action_label ? `<button type="button" class="engagement-preview__action">${this.escapeHtml(normalized.action_label)}</button>` : ''}
+                <button type="button" class="engagement-preview__close" aria-label="关闭提醒">关闭</button>
+            </div>
         `;
 
         preview.addEventListener('click', (event) => {
@@ -4839,30 +7679,104 @@ class ChatWidget {
             const routeLink = eventTarget?.closest?.('.engagement-preview__path-link');
             if (routeLink) {
                 event.preventDefault();
-                void this.activateEngagementItem(normalized, {
+                void this.activateEngagementItemWithFeedback(normalized, {
+                    rootElement: preview,
+                    sourceElement: routeLink,
                     actionTarget: this.getEngagementRouteTargetFromElement(routeLink)
                 });
                 return;
             }
-            void this.activateEngagementItem(normalized);
+            const actionButton = eventTarget?.closest?.('.engagement-preview__action');
+            void this.activateEngagementItemWithFeedback(normalized, {
+                rootElement: preview,
+                sourceElement: actionButton || eventTarget,
+                feedbackElement: actionButton || null
+            });
+        });
+
+        const autoDismissDelayMs = 9000;
+        let autoDismissTimer = null;
+        let autoDismissStartedAt = 0;
+        let autoDismissRemainingMs = autoDismissDelayMs;
+        let isAutoDismissPaused = false;
+        const canAutoDismiss = () => preview.parentNode && this.engagementActiveItem?.id === normalized.id;
+        const clearAutoDismissTimer = () => {
+            if (autoDismissTimer) {
+                window.clearTimeout(autoDismissTimer);
+                autoDismissTimer = null;
+            }
+        };
+        const scheduleAutoDismiss = (delayMs = autoDismissRemainingMs) => {
+            clearAutoDismissTimer();
+            autoDismissRemainingMs = Math.max(0, delayMs);
+            autoDismissStartedAt = Date.now();
+            autoDismissTimer = window.setTimeout(() => {
+                autoDismissTimer = null;
+                if (!canAutoDismiss()) return;
+                if (isAutoDismissPaused || preview.matches?.(':hover')) {
+                    isAutoDismissPaused = true;
+                    autoDismissRemainingMs = 1200;
+                    return;
+                }
+                this.dismissEngagementBubble(normalized, { eventType: 'dismiss', passive: true });
+            }, autoDismissRemainingMs);
+        };
+        const pauseAutoDismiss = () => {
+            if (isAutoDismissPaused) return;
+            isAutoDismissPaused = true;
+            if (autoDismissTimer) {
+                const elapsedMs = Date.now() - autoDismissStartedAt;
+                autoDismissRemainingMs = Math.max(1200, autoDismissRemainingMs - elapsedMs);
+            }
+            clearAutoDismissTimer();
+        };
+        const resumeAutoDismiss = () => {
+            if (!isAutoDismissPaused) return;
+            isAutoDismissPaused = false;
+            if (canAutoDismiss()) {
+                scheduleAutoDismiss(autoDismissRemainingMs);
+            }
+        };
+        preview.addEventListener('mouseenter', pauseAutoDismiss);
+        preview.addEventListener('mouseleave', resumeAutoDismiss);
+        preview.addEventListener('focusin', pauseAutoDismiss);
+        preview.addEventListener('focusout', () => {
+            if (!preview.contains(document.activeElement)) {
+                resumeAutoDismiss();
+            }
         });
 
         this.fab.appendChild(preview);
-        if (!this.engagementViewedKeys.has(viewKey) || options.manual === true) {
+        const shouldTrackView = normalized.source === 'rule' || !hasSeenInSession || options.manual === true;
+        if (shouldTrackView) {
             this.engagementViewedKeys.add(viewKey);
+            this.quietEngagementItemForRepeatInterval(normalized);
             void this.trackEngagementEvent(normalized, 'view', this.getEngagementElementMetrics(preview, normalized.placement));
         }
 
-        setTimeout(() => {
-            if (preview.parentNode && this.engagementActiveItem?.id === normalized.id) {
-                this.dismissEngagementBubble(normalized, { eventType: 'dismiss', passive: true });
-            }
-        }, 9000);
+        scheduleAutoDismiss();
     }
 
     showEngagementItem(item = {}, options = {}) {
         const normalized = this.normalizeEngagementItem(item);
-        if (!normalized || this.isOpen) return;
+        if (!normalized) return;
+        const activeSemanticKey = this.engagementActiveItem ? this.getEngagementSemanticDedupeKey(this.engagementActiveItem) : '';
+        const nextSemanticKey = this.getEngagementSemanticDedupeKey(normalized);
+        if (activeSemanticKey && nextSemanticKey && activeSemanticKey === nextSemanticKey) {
+            return;
+        }
+        if (this.isOpen) {
+            this.queuePendingEngagementItem(normalized, options);
+            this.schedulePendingEngagementFlush();
+            return;
+        }
+        if (this.engagementActiveItem || this.isEngagementDisplayCoolingDown() || this.shouldThrottleEngagementForAuthBurst(options)) {
+            this.queuePendingEngagementItem(normalized, options);
+            this.schedulePendingEngagementFlush(this.getEngagementNextDisplayDelayMs(options));
+            return;
+        }
+        this.clearPendingEngagementFlushTimer();
+        this.markEngagementDisplayStarted(options);
         if (normalized.placement === 'robot_bubble') {
             this.showEngagementBubble(normalized, options);
             return;
@@ -4937,7 +7851,9 @@ class ChatWidget {
             const routeLink = eventTarget?.closest?.('.engagement-preview__path-link');
             if (routeLink) {
                 event.preventDefault();
-                void this.activateEngagementItem(normalized, {
+                void this.activateEngagementItemWithFeedback(normalized, {
+                    rootElement: surface,
+                    sourceElement: routeLink,
                     actionTarget: this.getEngagementRouteTargetFromElement(routeLink)
                 });
                 return;
@@ -4945,13 +7861,19 @@ class ChatWidget {
             const actionButton = eventTarget?.closest?.('.engagement-surface__action');
             if (actionButton || normalized.placement === 'floating_badge') {
                 event.preventDefault();
-                void this.activateEngagementItem(normalized);
+                void this.activateEngagementItemWithFeedback(normalized, {
+                    rootElement: surface,
+                    sourceElement: actionButton || eventTarget,
+                    feedbackElement: actionButton || null
+                });
             }
         });
 
         document.body.appendChild(surface);
-        if (!hasSeenInSession || options.manual === true) {
+        const shouldTrackView = normalized.source === 'rule' || !hasSeenInSession || options.manual === true;
+        if (shouldTrackView) {
             this.engagementViewedKeys.add(viewKey);
+            this.quietEngagementItemForRepeatInterval(normalized);
             void this.trackEngagementEvent(normalized, 'view', {
                 ...this.getEngagementElementMetrics(surface, normalized.placement),
                 placement: normalized.placement
@@ -4981,7 +7903,8 @@ class ChatWidget {
             }, 260);
         }
         if (normalized && options.passive === true) {
-            this.quietEngagementItemForSession(normalized, 15 * 60 * 1000);
+            this.quietEngagementItemForRepeatInterval(normalized);
+            this.scheduleEngagementFollowupRefresh(520);
         } else if (normalized) {
             this.suppressEngagementItem(normalized);
             void this.trackEngagementEvent(normalized, options.eventType || 'dismiss', {
@@ -4989,6 +7912,8 @@ class ChatWidget {
             });
         }
         this.engagementActiveItem = null;
+        this.beginEngagementDisplayCooldown(this.getEngagementRespirationDelayMs(options));
+        this.schedulePendingEngagementFlush();
     }
 
     dismissEngagementBubble(item = {}, options = {}) {
@@ -5005,12 +7930,17 @@ class ChatWidget {
             this.removeEngagementSurfaceElements();
         }
         if (normalized && options.passive === true && options.surfaceOnly !== true) {
-            this.quietEngagementItemForSession(normalized, 15 * 60 * 1000);
+            this.quietEngagementItemForRepeatInterval(normalized);
+            this.scheduleEngagementFollowupRefresh(720);
         } else if (normalized && options.surfaceOnly !== true) {
             this.suppressEngagementItem(normalized);
             void this.trackEngagementEvent(normalized, options.eventType || 'dismiss');
         }
         this.engagementActiveItem = null;
+        if (options.surfaceOnly !== true) {
+            this.beginEngagementDisplayCooldown(this.getEngagementRespirationDelayMs(options));
+            this.schedulePendingEngagementFlush();
+        }
     }
 
     async openEngagementWalletView(view = '', context = {}) {
@@ -5185,13 +8115,75 @@ class ChatWidget {
             || this.getEngagementWalletViewFromActionUrl(actionUrl)
             || (!actionUrl ? metadataWalletView : '');
         const routeLabel = String(actionTarget.label || actionTarget.route_label || '').trim();
+        const routeMetadata = {
+            ...normalized.metadata,
+            page_id: normalized.page_id,
+            source: normalized.source,
+            source_module: normalized.source_module
+        };
+        const guestbookReplyTarget = this.getEngagementGuestbookReplyTarget(actionUrl, {
+            ...routeMetadata
+        });
+        const promptReplyTarget = this.getEngagementPromptReplyTarget(actionUrl, routeMetadata);
+        const verifyHelpTarget = this.getEngagementVerifyHelpTarget(actionUrl, routeMetadata);
+        const shopCartTarget = this.getEngagementShopCartTarget(actionUrl, routeMetadata);
+        const supportTarget = this.getEngagementSupportTarget(actionUrl, routeMetadata);
+        const accountView = this.getEngagementAccountViewFromActionUrl(actionUrl, normalized.metadata || {});
         this.suppressEngagementItem(normalized);
         await this.trackEngagementEvent(normalized, 'click', {
             action_url: actionUrl || (walletView ? `wallet://${walletView}` : normalized.action_url),
             route_label: routeLabel || null,
             placement: normalized.placement
         });
+
+        if (guestbookReplyTarget && this.isCurrentEngagementGuestbookPage()) {
+            const focused = await this.focusGuestbookReplyFromEngagement(guestbookReplyTarget);
+            if (focused) {
+                this.dismissEngagementSurface(normalized, { passive: true });
+                return;
+            }
+        }
+
+        if (promptReplyTarget && this.isCurrentEngagementPromptsPage()) {
+            const focused = await this.focusPromptReplyFromEngagement(promptReplyTarget);
+            if (focused) {
+                this.dismissEngagementSurface(normalized, { passive: true });
+                return;
+            }
+        }
+
+        if (verifyHelpTarget && this.isCurrentEngagementVerifyPage()) {
+            const focused = await this.focusVerifyHelpFromEngagement(verifyHelpTarget);
+            if (focused) {
+                this.dismissEngagementSurface(normalized, { passive: true });
+                return;
+            }
+        }
+
+        if (shopCartTarget && this.isCurrentEngagementShopPage()) {
+            const focused = await this.focusShopCartFromEngagement(shopCartTarget);
+            if (focused) {
+                this.dismissEngagementSurface(normalized, { passive: true });
+                return;
+            }
+        }
+
         this.dismissEngagementSurface(normalized, { passive: true });
+
+        if (accountView) {
+            let accountTargetUrl = null;
+            if (!/^account:/i.test(actionUrl) && !/^profile:/i.test(actionUrl) && actionUrl) {
+                try {
+                    accountTargetUrl = new URL(actionUrl, window.location.origin);
+                } catch (_) {
+                    accountTargetUrl = null;
+                }
+            }
+            const opened = await this.openEngagementAccountView(accountView, accountTargetUrl);
+            if (opened) {
+                return;
+            }
+        }
 
         const authView = this.getEngagementAuthViewFromActionUrl(
             actionUrl,
@@ -5226,6 +8218,18 @@ class ChatWidget {
             }
         }
 
+        if (supportTarget?.type === 'ticket_history') {
+            const opened = await this.openSupportTicketHistoryFromEngagement({
+                ticketId: supportTarget.ticketId,
+                orderId: supportTarget.orderId,
+                ticketStatus: supportTarget.ticketStatus,
+                ticketStatusLabel: supportTarget.ticketStatusLabel
+            });
+            if (opened) {
+                return;
+            }
+        }
+
         if (actionUrl) {
             let targetUrl = null;
             try {
@@ -5241,6 +8245,10 @@ class ChatWidget {
                 return;
             }
             if (targetUrl.origin === window.location.origin) {
+                targetUrl = this.buildEngagementReplyNavigationUrl(targetUrl, {
+                    guestbookReplyTarget,
+                    promptReplyTarget
+                });
                 window.location.href = targetUrl.href;
                 return;
             }
@@ -5459,8 +8467,11 @@ class ChatWidget {
                         <span class="chat-user-name">${this.t('chat.selectConversation', '选择一个会话')}</span>
                         <span class="chat-user-id"></span>
                         <div class="chat-user-status-chips" id="chatUserStatusChips" hidden></div>
+                        <div class="chat-user-meta-row" id="chatUserMetaRow" hidden>
+                            <div class="user-status-indicator" id="chatUserPresenceStatus" hidden></div>
+                            <div class="admin-chat-header-actions" id="adminChatHeaderActions" hidden></div>
+                        </div>
                     </div>
-                    <div class="admin-chat-header-actions" id="adminChatHeaderActions" hidden></div>
                 </div>
                 <div class="chat-context-panel" id="chatContextPanel" hidden></div>
                 <div class="chat-messages" id="chatMessages">
@@ -5683,9 +8694,11 @@ class ChatWidget {
                 height: min(760px, calc(100vh - (var(--chat-admin-top-gap) + var(--chat-admin-bottom-gap)))) !important;
                 max-height: calc(100vh - (var(--chat-admin-top-gap) + var(--chat-admin-bottom-gap))) !important;
                 top: var(--chat-admin-top-gap) !important;
+                right: 30px !important;
                 bottom: auto !important;
                 display: flex;
-                flex-direction: row;
+                flex-direction: row !important;
+                transform-origin: bottom right !important;
                 border-radius: 20px;
                 overflow: hidden;
                 background: rgba(8, 10, 16, 0.98) !important;
@@ -5696,6 +8709,11 @@ class ChatWidget {
                 box-shadow: 
                     0 24px 60px rgba(0, 0, 0, 0.24),
                     inset 0 1px 0 rgba(255, 255, 255, 0.08) !important;
+            }
+
+            .chat-window.admin-mode-layout.chat-widget-bootstrap-shell--admin[data-chat-widget-bootstrap-adopted="1"] {
+                display: flex !important;
+                flex-direction: row !important;
             }
 
             .chat-window.admin-mode-layout.chat-window--desktop-edge-safe {
@@ -6434,6 +9452,9 @@ class ChatWidget {
                 gap: 6px;
                 margin-top: 4px;
             }
+            .user-status-indicator[hidden] {
+                display: none !important;
+            }
             .user-status-indicator .status-dot {
                 width: 8px;
                 height: 8px;
@@ -6452,6 +9473,26 @@ class ChatWidget {
             .user-status-indicator .status-text {
                 font-size: 11px;
                 color: rgba(255, 255, 255, 0.5);
+            }
+            .chat-user-meta-row {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                justify-content: space-between;
+                flex-wrap: nowrap;
+                margin-top: 8px;
+                width: 100%;
+                min-width: 0;
+            }
+            .chat-user-meta-row:empty {
+                display: none;
+            }
+            .chat-user-meta-row[hidden] {
+                display: none !important;
+            }
+            .chat-user-meta-row .user-status-indicator {
+                margin-top: 0;
+                flex: 0 0 auto;
             }
             .chat-user-context-inline-trigger {
                 appearance: none;
@@ -6711,7 +9752,8 @@ class ChatWidget {
                 position: absolute;
                 left: 16px;
                 right: 16px;
-                bottom: 84px;
+                top: var(--chat-admin-context-top, 128px);
+                bottom: auto;
                 margin: 0;
                 padding: 12px;
                 border-radius: 18px;
@@ -7209,7 +10251,7 @@ class ChatWidget {
             }
             .admin-chat-header-actions {
                 display: none;
-                align-items: flex-start;
+                align-items: center;
                 justify-content: flex-end;
                 gap: 8px;
                 flex-wrap: wrap;
@@ -7291,7 +10333,7 @@ class ChatWidget {
             }
 
             .admin-chat-area.has-reply-templates .chat-messages {
-                padding-bottom: calc(20px + var(--chat-admin-reply-height, 148px));
+                padding-top: calc(20px + var(--chat-admin-reply-height, 148px));
             }
             
             .empty-state {
@@ -8872,9 +11914,9 @@ class ChatWidget {
                 grid-template-columns: auto minmax(0, 1fr) auto;
                 grid-template-areas:
                     "back name name"
-                    "back email status"
+                    "back email email"
                     "back chips chips"
-                    "back actions actions";
+                    "back meta meta";
                 column-gap: 12px;
                 row-gap: 6px;
                 align-items: center;
@@ -8898,27 +11940,36 @@ class ChatWidget {
                 white-space: nowrap;
                 padding-right: 6px;
             }
+            .chat-window.admin-mode-layout.admin-mode-layout--narrow .chat-user-meta-row {
+                grid-area: meta;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 8px;
+                flex-wrap: nowrap;
+                min-width: 0;
+                width: 100%;
+                margin-top: 0;
+            }
             .chat-window.admin-mode-layout.admin-mode-layout--narrow .admin-chat-header-actions {
-                grid-area: actions;
-                justify-self: start;
+                justify-self: end;
                 align-self: start;
-                justify-content: flex-start;
+                justify-content: flex-end;
                 gap: 6px;
                 flex-wrap: nowrap;
                 max-width: none;
                 margin-top: 0;
                 margin-bottom: 1px;
-                margin-left: 0;
+                margin-left: auto;
             }
             .chat-window.admin-mode-layout.admin-mode-layout--narrow .user-status-indicator {
-                grid-area: status;
-                justify-self: end;
-                align-self: end;
+                justify-self: start;
+                align-self: center;
                 gap: 8px;
                 flex-wrap: nowrap;
                 margin-top: 0;
                 min-width: 0;
-                margin-bottom: 2px;
+                margin-bottom: 0;
             }
             .chat-window.admin-mode-layout.admin-mode-layout--narrow .user-status-indicator .status-text {
                 white-space: nowrap;
@@ -11573,11 +14624,14 @@ class ChatWidget {
             const preview = previewText.length > 20 ? `${previewText.slice(0, 20)}...` : previewText;
             const presenceLabel = isOpsSession ? '' : this.getUserPresenceLabelForSession(session);
             const isPresenceOnline = presenceLabel === this.t('chat.online', '在线');
+            const inactiveActivityFallback = this.hasKnownUserIdentityForSession(session)
+                ? this.t('chat.noActiveRecord', '暂无活跃')
+                : this.formatTime(session.lastTime);
             const time = isOpsSession
                 ? ''
                 : isPresenceOnline
                 ? presenceLabel
-                : (presenceLabel || this.formatTime(session.lastTime));
+                : (presenceLabel || inactiveActivityFallback);
             const displayName = isOpsSession
                 ? '站内代办'
                 : (session.nickname.length > 12 ? `${session.nickname.slice(0, 12)}...` : session.nickname);
@@ -13804,7 +16858,7 @@ class ChatWidget {
         const nextCollapsed = Boolean(collapsed);
         this.userContextPanelCollapsed = nextCollapsed;
 
-        if (!nextCollapsed && this.isNarrowAdminMode()) {
+        if (!nextCollapsed) {
             this.replyTemplateBarCollapsed = true;
             this.opsAlertToolbarCollapsed = true;
         }
@@ -13826,31 +16880,50 @@ class ChatWidget {
             toggleText.textContent = this.userContextPanelCollapsed ? '展开' : '收起';
         }
 
+        this.syncReplyTemplateBarCollapsedState();
         this.syncUserContextInlineTrigger();
         this.syncUserContextPanelVisibility();
+        if (!nextCollapsed && this.userContextPanel) {
+            const panelKind = String(this.userContextPanel.dataset.panelKind || '').trim();
+            if (['context', 'state'].includes(panelKind)) {
+                this.userContextPanel.hidden = false;
+                this.userContextPanel.closest('.admin-chat-area')?.classList.add('has-user-context');
+            }
+        }
         this.scheduleAdminFloatingPanelOffsetSync();
     }
 
     setReplyTemplateBarCollapsed(collapsed = false) {
-        const nextCollapsed = this.isNarrowAdminMode() ? Boolean(collapsed) : false;
+        const nextCollapsed = Boolean(collapsed);
         this.replyTemplateBarCollapsed = nextCollapsed;
-        if (!nextCollapsed && this.isNarrowAdminMode()) {
+        if (!nextCollapsed) {
             this.userContextPanelCollapsed = true;
             this.opsAlertToolbarCollapsed = true;
         }
         this.syncReplyTemplateBarCollapsedState();
         this.syncUserContextInlineTrigger();
         this.syncUserContextPanelVisibility();
+        this.syncReplyTemplateBarCollapsedState();
+        if (!nextCollapsed && this.replyTemplateBar) {
+            this.userContextPanel?.closest('.admin-chat-area')?.classList.remove('has-user-context');
+            if (this.userContextPanel) {
+                this.userContextPanel.hidden = true;
+            }
+            this.replyTemplateBar.hidden = false;
+            this.replyTemplateBar.classList.remove('is-collapsed');
+            this.replyTemplateBar.closest('.admin-chat-area')?.classList.add('has-reply-templates');
+        }
         this.scheduleAdminFloatingPanelOffsetSync();
     }
 
     setOpsAlertToolbarCollapsed(collapsed = false) {
-        const nextCollapsed = this.isNarrowAdminMode() ? Boolean(collapsed) : false;
+        const nextCollapsed = Boolean(collapsed);
         this.opsAlertToolbarCollapsed = nextCollapsed;
-        if (!nextCollapsed && this.isNarrowAdminMode()) {
+        if (!nextCollapsed) {
             this.userContextPanelCollapsed = true;
             this.replyTemplateBarCollapsed = true;
         }
+        this.syncReplyTemplateBarCollapsedState();
         this.renderOpsAlertToolbarPanel();
         this.syncUserContextInlineTrigger();
         this.scheduleAdminFloatingPanelOffsetSync();
@@ -13932,6 +17005,17 @@ class ChatWidget {
         return nonDefaultFilterCount || this.getOpsAlertReadTargetAlerts().length;
     }
 
+    syncChatUserMetaRowVisibility() {
+        const metaRow = this.chatHeader?.querySelector('#chatUserMetaRow');
+        if (!metaRow) return;
+
+        const status = metaRow.querySelector('.user-status-indicator');
+        const actions = metaRow.querySelector('#adminChatHeaderActions');
+        const hasStatus = Boolean(status && !status.hidden && String(status.textContent || '').trim());
+        const hasActions = Boolean(actions && !actions.hidden && actions.childElementCount > 0);
+        metaRow.hidden = !(hasStatus || hasActions);
+    }
+
     syncReplyTemplateBarCollapsedState() {
         const bar = this.replyTemplateBar;
         if (!bar) return;
@@ -13939,7 +17023,7 @@ class ChatWidget {
         const chatArea = bar.closest('.admin-chat-area');
         const templateCount = Number(bar.dataset.templateCount || 0) || 0;
         const hasTemplates = templateCount > 0;
-        const expanded = hasTemplates && (!this.isNarrowAdminMode() || this.replyTemplateBarCollapsed === false);
+        const expanded = hasTemplates && this.replyTemplateBarCollapsed === false;
 
         bar.classList.toggle('is-collapsed', hasTemplates && !expanded);
         bar.hidden = !expanded;
@@ -13954,12 +17038,12 @@ class ChatWidget {
 
         actionsContainer.replaceChildren();
 
-        if (!this.isNarrowAdminMode()) {
-            actionsContainer.hidden = true;
-            return;
-        }
-
         if (this.isOpsAlertSessionSelected()) {
+            if (!this.isNarrowAdminMode()) {
+                actionsContainer.hidden = true;
+                this.syncChatUserMetaRowVisibility();
+                return;
+            }
             actionsContainer.appendChild(this.buildHeaderActionButton({
                 className: 'ops-alert-toolbar-trigger',
                 label: '筛选',
@@ -13972,13 +17056,26 @@ class ChatWidget {
                 }
             }));
             actionsContainer.hidden = false;
+            this.syncChatUserMetaRowVisibility();
             return;
         }
 
         if (!this.currentSessionInfo || this.isOpsAlertSession(this.currentSessionInfo)) {
             actionsContainer.hidden = true;
+            this.syncChatUserMetaRowVisibility();
             return;
         }
+
+        actionsContainer.appendChild(this.buildHeaderActionButton({
+            className: 'chat-user-context-inline-trigger',
+            label: '用户 360',
+            icon: this.userContextPanelCollapsed ? 'fa-chevron-down' : 'fa-chevron-up',
+            active: !this.userContextPanelCollapsed,
+            ariaLabel: '展开用户 360',
+            onClick: () => {
+                this.setUserContextPanelCollapsed(!this.userContextPanelCollapsed);
+            }
+        }));
 
         const replyCount = this.getHeaderReplyTemplateCount();
         if (replyCount > 0 && !this.input?.disabled) {
@@ -13995,18 +17092,8 @@ class ChatWidget {
             }));
         }
 
-        actionsContainer.appendChild(this.buildHeaderActionButton({
-            className: 'chat-user-context-inline-trigger',
-            label: '用户 360',
-            icon: this.userContextPanelCollapsed ? 'fa-chevron-down' : 'fa-chevron-up',
-            active: !this.userContextPanelCollapsed,
-            ariaLabel: '展开用户 360',
-            onClick: () => {
-                this.setUserContextPanelCollapsed(!this.userContextPanelCollapsed);
-            }
-        }));
-
         actionsContainer.hidden = actionsContainer.childElementCount === 0;
+        this.syncChatUserMetaRowVisibility();
     }
 
     syncUserContextPanelVisibility() {
@@ -14017,18 +17104,15 @@ class ChatWidget {
 
         const chatArea = panel.closest('.admin-chat-area');
         const panelKind = String(panel.dataset.panelKind || '').trim();
-        const isNarrow = this.isNarrowAdminMode();
-        const hideCollapsedContext = isNarrow
-            && ['context', 'state'].includes(panelKind)
+        const hideCollapsedContext = ['context', 'state'].includes(panelKind)
             && this.userContextPanelCollapsed;
-        const hideCollapsedOpsFilter = isNarrow
+        const hideCollapsedOpsFilter = this.isNarrowAdminMode()
             && panelKind === 'ops-filter'
             && this.opsAlertToolbarCollapsed;
 
         const shouldShow = Boolean(panelKind) && !hideCollapsedContext && !hideCollapsedOpsFilter;
         panel.hidden = !shouldShow;
         chatArea?.classList.toggle('has-user-context', shouldShow);
-        this.syncUserContextInlineTrigger();
     }
 
     buildUserContextActionSignature(action = {}) {
@@ -14126,6 +17210,12 @@ class ChatWidget {
 
     resolveUserContextEmail(session = {}) {
         return this.resolveSessionEmail(null, session.email || session.id, session.sessionIds || []);
+    }
+
+    hasKnownUserIdentityForSession(session = {}) {
+        const userId = String(session?.userId || session?.profile?.id || '').trim();
+        const email = this.resolveUserContextEmail(session);
+        return Boolean(userId || email);
     }
 
     buildUserContextCacheKey(session = {}) {
@@ -14874,9 +17964,7 @@ class ChatWidget {
         this._focusInputWithoutScroll(this.input);
         this.input.setSelectionRange(this.input.value.length, this.input.value.length);
         this.input.dispatchEvent(new Event('input', { bubbles: true }));
-        if (this.isNarrowAdminMode()) {
-            this.setReplyTemplateBarCollapsed(true);
-        }
+        this.setReplyTemplateBarCollapsed(true);
     }
 
     renderReplyTemplateBar(context = null) {
@@ -15656,11 +18744,9 @@ class ChatWidget {
         if (this.isOpsAlertSession(sessionInfo)) {
             this.currentSessionInfo = null;
             this.currentUserContext = null;
-            if (this.isNarrowAdminMode()) {
-                this.userContextPanelCollapsed = true;
-                this.replyTemplateBarCollapsed = true;
-                this.opsAlertToolbarCollapsed = true;
-            }
+            this.userContextPanelCollapsed = true;
+            this.replyTemplateBarCollapsed = true;
+            this.opsAlertToolbarCollapsed = true;
             this.renderUser360Context(null);
             this.chatHeader.querySelector('.chat-user-name').textContent = '站内代办';
             this.chatHeader.querySelector('.chat-user-id').textContent = '站外告警同步 / 可认领、备注、关闭并跳转处理页';
@@ -15672,7 +18758,9 @@ class ChatWidget {
                 statusContainer.className = 'user-status-indicator';
                 this.chatHeader.querySelector('.chat-user-info').appendChild(statusContainer);
             }
+            statusContainer.hidden = false;
             statusContainer.innerHTML = '<span class="status-dot online"></span><span class="status-text">固定系统联系人</span>';
+            this.syncUserContextInlineTrigger();
             this.scheduleAdminFloatingPanelOffsetSync();
 
             this.chatWindow.classList.add('chat-active');
@@ -15685,11 +18773,9 @@ class ChatWidget {
         this.setAdminReplyReadonly(false);
         this.currentSessionInfo = sessionInfo;
         this.currentUserContext = null;
-        if (this.isNarrowAdminMode()) {
-            this.userContextPanelCollapsed = true;
-            this.replyTemplateBarCollapsed = true;
-            this.opsAlertToolbarCollapsed = true;
-        }
+        this.userContextPanelCollapsed = true;
+        this.replyTemplateBarCollapsed = true;
+        this.opsAlertToolbarCollapsed = true;
         this.renderReplyTemplateBar({
             sessionId,
             userId: sessionInfo?.userId || '',
@@ -15746,33 +18832,37 @@ class ChatWidget {
 
         const presence = this.getUserPresenceStateForSession(sessionInfo);
         const presenceLastSeen = Date.parse(presence.lastSeenAt || '');
-        const fallbackLastSeen = Date.parse(sessionInfo.lastLogin || sessionInfo.lastTime || '');
-        const lastActivity = new Date(Math.max(
-            Number.isFinite(presenceLastSeen) ? presenceLastSeen : 0,
-            Number.isFinite(fallbackLastSeen) ? fallbackLastSeen : 0
-        ));
-        const now = new Date();
-        const diffMins = Math.floor((now - lastActivity) / 60000);
 
         let statusClass, statusText;
-        if (presence.online || diffMins < 5) {
+        if (presence.online) {
             statusClass = 'online';
             statusText = this.t('chat.online', '在线');
-        } else if (diffMins < 30) {
-            statusClass = 'away';
-            statusText = this.t('chat.activeMinutesAgo', '{minutes}分钟前活跃').replace('{minutes}', diffMins);
-        } else if (diffMins < 60) {
-            statusClass = 'away';
-            statusText = this.t('chat.minutesAgo', '{minutes}分钟前').replace('{minutes}', diffMins);
-        } else if (diffMins < 1440) {
+        } else if (!Number.isFinite(presenceLastSeen)) {
             statusClass = 'offline';
-            statusText = this.t('chat.hoursAgo', '{hours}小时前').replace('{hours}', Math.floor(diffMins / 60));
+            statusText = this.t('chat.noActiveRecord', '暂无活跃记录');
         } else {
-            statusClass = 'offline';
-            statusText = this.t('chat.daysAgo', '{days}天前').replace('{days}', Math.floor(diffMins / 1440));
+            const diffMins = Math.max(1, Math.floor((Date.now() - presenceLastSeen) / 60000));
+            if (diffMins < 5) {
+                statusClass = 'online';
+                statusText = this.t('chat.online', '在线');
+            } else if (diffMins < 30) {
+                statusClass = 'away';
+                statusText = this.t('chat.activeMinutesAgo', '{minutes}分钟前活跃').replace('{minutes}', diffMins);
+            } else if (diffMins < 60) {
+                statusClass = 'away';
+                statusText = this.t('chat.minutesAgo', '{minutes}分钟前').replace('{minutes}', diffMins);
+            } else if (diffMins < 1440) {
+                statusClass = 'offline';
+                statusText = this.t('chat.hoursAgo', '{hours}小时前').replace('{hours}', Math.floor(diffMins / 60));
+            } else {
+                statusClass = 'offline';
+                statusText = this.t('chat.daysAgo', '{days}天前').replace('{days}', Math.floor(diffMins / 1440));
+            }
         }
 
+        statusContainer.hidden = false;
         statusContainer.innerHTML = `<span class="status-dot ${statusClass}"></span><span class="status-text">${statusText}</span>`;
+        this.syncUserContextInlineTrigger();
     }
 
     // Lock scroll during preloading
@@ -16268,12 +19358,12 @@ class ChatWidget {
                 action_label: '打开客服',
                 metadata: {
                     page_id: 'home',
-                    event_type: 'message_replied',
+                    event_type: 'support_reply',
                     session_id: sessionId
                 },
                 priority: 60,
                 source_module: 'chat',
-                source_event_id: `chat_reply:${sessionId}:${Date.now()}`
+                source_event_id: `support_reply:${sessionId}:${Date.now()}`
             });
 
             if (error) {
@@ -16489,12 +19579,38 @@ class ChatWidget {
         style.textContent = `
             /* User Mode Glassmorphism Enhancement */
             .chat-window:not(.admin-mode-layout) {
+                position: fixed !important;
+                right: 30px !important;
+                bottom: 100px !important;
+                width: 380px !important;
+                height: 600px !important;
+                max-width: calc(100vw - 32px) !important;
+                max-height: 80vh !important;
+                min-width: 0 !important;
+                min-height: 0 !important;
+                display: flex !important;
+                flex-direction: column !important;
+                overflow: hidden !important;
+                box-sizing: border-box !important;
+                z-index: 9998 !important;
+                opacity: 0 !important;
+                visibility: hidden !important;
+                pointer-events: none !important;
+                transform: translateY(20px) scale(0.95) !important;
+                transform-origin: bottom right !important;
                 background: var(--chat-shell-bg, rgba(10, 13, 20, 0.98)) !important;
                 background-image: none !important;
                 backdrop-filter: var(--chat-shell-filter, none) !important;
                 -webkit-backdrop-filter: var(--chat-shell-filter, none) !important;
                 border: 1px solid var(--chat-shell-border, rgba(255, 255, 255, 0.16)) !important;
                 box-shadow: var(--chat-shell-shadow, 0 26px 70px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.06)) !important;
+            }
+
+            .chat-window:not(.admin-mode-layout).active {
+                opacity: 1 !important;
+                visibility: visible !important;
+                pointer-events: all !important;
+                transform: translateY(0) scale(1) !important;
             }
 
             html[data-theme="light"] .chat-window:not(.admin-mode-layout) {
@@ -17162,12 +20278,31 @@ class ChatWidget {
             document.body.classList.remove('chat-widget-open');
             this._runChatCloseChromeCleanup();
             this._finalizeChatClose();
+            window.setTimeout(() => {
+                this.flushPendingEngagementItems();
+            }, 520);
+        }
+    }
+
+    requestBootstrapPendingOpen() {
+        try {
+            if (typeof window.ZaoyoeChatWidgetBootstrap?.requestPendingOpen === 'function') {
+                window.ZaoyoeChatWidgetBootstrap.requestPendingOpen();
+                return;
+            }
+
+            window.dispatchEvent(new CustomEvent('zaoyoe:chat-widget-runtime-pending-open', {
+                detail: { source: 'chat-widget-runtime' }
+            }));
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to request bootstrap pending open:', error);
         }
     }
 
     openChat() {
         if (!this.chatWindow) {
             this._pendingOpenAfterInit = true;
+            this.requestBootstrapPendingOpen();
             return this.ready || Promise.resolve(this);
         }
 

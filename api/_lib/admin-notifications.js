@@ -100,6 +100,9 @@ async function hasRecentMatchingNotification(supabase, {
     content,
     scope = 'unspecified',
     category = 'general',
+    dedupeKey = '',
+    sourceModule = '',
+    sourceEventId = '',
     dedupeWindowMinutes = 30
 }) {
     const normalizedUserId = normalizeText(userId);
@@ -107,8 +110,39 @@ async function hasRecentMatchingNotification(supabase, {
     const normalizedContent = normalizeText(content);
     const normalizedScope = normalizeNotificationScope(scope);
     const normalizedCategory = normalizeNotificationCategory(category);
+    const normalizedDedupeKey = normalizeText(dedupeKey);
+    const normalizedSourceModule = normalizeText(sourceModule);
+    const normalizedSourceEventId = normalizeText(sourceEventId);
 
-    if (!normalizedUserId || !normalizedTitle || !normalizedContent || !(dedupeWindowMinutes > 0)) {
+    if (!normalizedUserId) {
+        return false;
+    }
+
+    if (normalizedDedupeKey || normalizedSourceEventId) {
+        let identityQuery = supabase
+            .from('system_notifications')
+            .select('id, dedupe_key, source_module, source_event_id')
+            .eq('user_id', normalizedUserId);
+
+        if (normalizedDedupeKey) {
+            identityQuery = identityQuery.eq('dedupe_key', normalizedDedupeKey);
+        } else {
+            identityQuery = identityQuery.eq('source_event_id', normalizedSourceEventId);
+            if (normalizedSourceModule) {
+                identityQuery = identityQuery.eq('source_module', normalizedSourceModule);
+            }
+        }
+
+        const identityResponse = await identityQuery;
+        if (!identityResponse.error) {
+            return Array.isArray(identityResponse.data) && identityResponse.data.length > 0;
+        }
+        if (!isMissingNotificationColumnError(identityResponse.error)) {
+            throw identityResponse.error;
+        }
+    }
+
+    if (!normalizedTitle || !normalizedContent || !(dedupeWindowMinutes > 0)) {
         return false;
     }
 
@@ -222,6 +256,9 @@ async function notifyUsers(supabase, {
             content: normalizedContent,
             scope: notificationScope,
             category: notificationCategory,
+            dedupeKey,
+            sourceModule,
+            sourceEventId,
             dedupeWindowMinutes
         });
         if (exists) {

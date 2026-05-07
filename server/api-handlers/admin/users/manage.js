@@ -62,6 +62,72 @@ function normalizeEmailArray(value) {
     return uniqueValues(source.map(normalizeEmail).filter(Boolean));
 }
 
+function normalizePointsAdjustmentKind(reason = '', amount = 0) {
+    const normalizedReason = sanitizeText(reason, 500).toLowerCase();
+    const correctionHints = ['修正', '纠正', '校正', '更正', 'fix', 'correct', 'adjust', 'reconcile', 'manual'];
+    const creditHints = ['补发', '补偿', '返还', '奖励', '赠送', '退款返积分', 'bonus', 'reward', 'grant', 'compensat', 'refund'];
+    const debitHints = ['扣除', '扣减', '撤销', '罚', '惩罚', '消费', '回收', 'deduct', 'revoke', 'penalty', 'consume'];
+
+    if (correctionHints.some((hint) => normalizedReason.includes(hint))) {
+        return 'correction';
+    }
+    if (amount > 0 || creditHints.some((hint) => normalizedReason.includes(hint))) {
+        return 'credit';
+    }
+    if (amount < 0 || debitHints.some((hint) => normalizedReason.includes(hint))) {
+        return 'debit';
+    }
+    return 'adjustment';
+}
+
+function buildPointsAdjustedNotificationCopy(amount = 0, reason = '', newTotal = 0) {
+    const normalizedAmount = Number(amount || 0) || 0;
+    const absoluteAmount = Math.abs(normalizedAmount);
+    const reasonText = sanitizeText(reason, 500);
+    const adjustmentKind = normalizePointsAdjustmentKind(reasonText, normalizedAmount);
+    const adjustmentDirection = normalizedAmount > 0 ? 'increase' : (normalizedAmount < 0 ? 'decrease' : 'neutral');
+    let title = '积分有更新';
+    let type = 'info';
+    let priority = 28;
+    let summary = absoluteAmount > 0 ? `本次变动：${absoluteAmount} 积分。` : '本次积分记录已更新。';
+
+    if (adjustmentKind === 'correction') {
+        title = '积分记录已修正';
+        type = normalizedAmount < 0 ? 'warning' : 'info';
+        priority = normalizedAmount < 0 ? 33 : 28;
+        summary = absoluteAmount > 0
+            ? `客服刚刚修正了你的积分记录，本次调整 ${absoluteAmount} 积分。`
+            : '客服刚刚修正了你的积分记录。';
+    } else if (adjustmentDirection === 'increase') {
+        title = '积分已补发';
+        type = 'success';
+        priority = 24;
+        summary = `客服刚刚为你补发了 ${absoluteAmount} 积分。`;
+    } else if (adjustmentDirection === 'decrease') {
+        title = '积分已扣减';
+        type = 'warning';
+        priority = 35;
+        summary = `客服刚刚为你扣减了 ${absoluteAmount} 积分。`;
+    }
+
+    const lines = [summary];
+    if (reasonText) {
+        lines.push(`原因：${reasonText}`);
+    }
+    if (Number.isFinite(Number(newTotal))) {
+        lines.push(`当前可用积分：${Number(newTotal)}`);
+    }
+
+    return {
+        title,
+        content: lines.join('\n'),
+        type,
+        priority,
+        adjustmentKind,
+        adjustmentDirection
+    };
+}
+
 function requireNonZeroInt(value, fieldName = 'amount') {
     const parsed = Number.parseInt(value, 10);
     if (!Number.isFinite(parsed) || parsed === 0) {
@@ -909,26 +975,32 @@ async function handleAdjustPoints({ supabase, user, body, site }) {
             site: pointsSite,
             index
         });
+        const notificationCopy = buildPointsAdjustedNotificationCopy(amount, reason, result.new_total);
 
         await notifyUsers(supabase, {
             userIds: [userId],
-            title: '积分变动通知',
-            content: `您的积分已${amount > 0 ? '增加' : '扣除'} ${Math.abs(amount)}。\n原因：${reason}`,
-            type: amount > 0 ? 'success' : 'warning',
+            title: notificationCopy.title,
+            content: notificationCopy.content,
+            type: notificationCopy.type,
             scope: 'user_personal',
             category: 'points_adjusted',
             actionLabel: '查看积分',
-            actionUrl: '/index.html#wallet',
+            actionUrl: 'wallet://balance',
             sourceModule: 'points',
             sourceEventId: result.reference_id,
-            priority: amount < 0 ? 35 : 25,
+            priority: notificationCopy.priority,
             metadata: {
                 page_id: 'home',
                 site: pointsSite,
                 event_type: 'points_adjusted',
                 amount,
                 reason,
-                new_total: result.new_total
+                new_total: result.new_total,
+                adjustment_kind: notificationCopy.adjustmentKind,
+                adjustment_direction: notificationCopy.adjustmentDirection,
+                action_path_label: '我的钱包 > 积分',
+                action_path_url: 'wallet://balance',
+                wallet_view: 'balance'
             },
             dedupeWindowMinutes: 0
         });

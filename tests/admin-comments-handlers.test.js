@@ -404,6 +404,7 @@ async function withCommentsHandler(relativePath, options, callback) {
             guestbook_likes: deepClone(options?.tables?.guestbook_likes || []),
             blocked_users: deepClone(options?.tables?.blocked_users || []),
             prompt_comments: deepClone(options?.tables?.prompt_comments || []),
+            system_notifications: deepClone(options?.tables?.system_notifications || []),
             profiles: deepClone(options?.tables?.profiles || []),
             prompts: deepClone(options?.tables?.prompts || []),
             comment_likes: deepClone(options?.tables?.comment_likes || []),
@@ -1275,9 +1276,12 @@ test('comments moderate handler rejects all-site writes before mutating records'
 test('comments moderate handler deletes guestbook reply trees, clears likes, and writes audit', async () => {
     await withCommentsHandler('../server/api-handlers/admin/comments/moderate.js', {
         tables: {
+            guestbook_messages: [
+                { id: 'm1', site: 'cn', user_id: 'u1', content: 'root message' }
+            ],
             guestbook_comments: [
-                { id: 'c1', site: 'cn', message_id: 'm1', parent_id: null },
-                { id: 'c2', site: 'cn', message_id: 'm1', parent_id: 'c1' }
+                { id: 'c1', site: 'cn', message_id: 'm1', parent_id: null, user_id: 'u2', content: 'reply one' },
+                { id: 'c2', site: 'cn', message_id: 'm1', parent_id: 'c1', user_id: 'u3', content: 'reply two' }
             ],
             guestbook_likes: [
                 { id: 'l1', site: 'cn', target_type: 'comment', target_id: 'c1' },
@@ -1294,6 +1298,7 @@ test('comments moderate handler deletes guestbook reply trees, clears likes, and
             body: {
                 action: 'delete_many',
                 site: 'cn',
+                reason: '命中社区规范：广告引流',
                 items: [{ id: 'c1', type: 'guestbook', recordType: 'comment' }]
             }
         }, res);
@@ -1310,6 +1315,15 @@ test('comments moderate handler deletes guestbook reply trees, clears likes, and
         assert.equal(state.auditCalls.length, 1);
         assert.equal(state.auditCalls[0].actionType, 'comments.delete');
         assert.equal(state.auditCalls[0].site, 'cn');
+        assert.equal(state.auditCalls[0].details.moderation_reason, '命中社区规范：广告引流');
+        assert.equal(state.tables.system_notifications.length, 2);
+        assert.deepEqual(
+            state.tables.system_notifications.map((row) => row.user_id).sort(),
+            ['u2', 'u3']
+        );
+        assert.ok(state.tables.system_notifications.every((row) => row.category === 'content_moderated'));
+        assert.ok(state.tables.system_notifications.every((row) => String(row.content || '').includes('原因：命中社区规范：广告引流')));
+        assert.ok(state.tables.system_notifications.every((row) => row.metadata?.moderation_reason === '命中社区规范：广告引流'));
     });
 });
 
@@ -1317,9 +1331,12 @@ test('comments moderate handler toggles gallery pin state per site and writes au
     await withCommentsHandler('../server/api-handlers/admin/comments/moderate.js', {
         tables: {
             prompt_comments: [
-                { id: 'g1', site: 'cn', prompt_id: 'p1', is_pinned: true },
-                { id: 'g2', site: 'cn', prompt_id: 'p1', is_pinned: false },
-                { id: 'g3', site: 'intl', prompt_id: 'p1', is_pinned: true }
+                { id: 'g1', site: 'cn', prompt_id: 'p1', is_pinned: true, user_id: 'u1', content: 'already pinned' },
+                { id: 'g2', site: 'cn', prompt_id: 'p1', is_pinned: false, user_id: 'u2', content: 'pin me' },
+                { id: 'g3', site: 'intl', prompt_id: 'p1', is_pinned: true, user_id: 'u3', content: 'intl pinned' }
+            ],
+            prompts: [
+                { id: 'p1', title: 'Prompt One', title_zh: '提示词一', title_en: 'Prompt One' }
             ]
         }
     }, async ({ handler, state }) => {
@@ -1348,6 +1365,9 @@ test('comments moderate handler toggles gallery pin state per site and writes au
         assert.equal(state.auditCalls.length, 1);
         assert.equal(state.auditCalls[0].actionType, 'comments.pin');
         assert.equal(state.auditCalls[0].site, 'cn');
+        assert.equal(state.tables.system_notifications.length, 1);
+        assert.equal(state.tables.system_notifications[0].user_id, 'u2');
+        assert.equal(state.tables.system_notifications[0].category, 'content_featured');
     });
 });
 

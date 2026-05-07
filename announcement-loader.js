@@ -441,6 +441,62 @@
         }
     }
 
+    function getEngagementAnnouncementPageId(currentPage = '') {
+        const normalizedPage = normalizeAnnouncementPageId(currentPage);
+        if (!normalizedPage || normalizedPage === 'index') return 'home';
+        if (normalizedPage === 'gongyi' || normalizedPage === 'prompts' || normalizedPage === 'shop' || normalizedPage === 'verify' || normalizedPage === 'guestbook') {
+            return normalizedPage;
+        }
+        return 'home';
+    }
+
+    function triggerAnnouncementMaintenanceEngagement(config = {}, currentPage = '', ackKey = '') {
+        const trigger = window.ZaoyoeEngagement?.trigger;
+        if (typeof trigger !== 'function') {
+            window.setTimeout(() => {
+                const retryTrigger = window.ZaoyoeEngagement?.trigger;
+                if (typeof retryTrigger === 'function') {
+                    triggerAnnouncementMaintenanceEngagement(config, currentPage, ackKey);
+                }
+            }, 1800);
+            return;
+        }
+
+        const announcementId = String(config.announcement_id || ackKey || '').trim();
+        const pageId = getEngagementAnnouncementPageId(currentPage);
+        const announcementType = String(config.announcement_type || config.type || 'banner').trim();
+        const announcementScope = normalizeAnnouncementPageId(config.announcement_scope) || 'all';
+        const contentText = [
+            config.title,
+            config.message,
+            config.content,
+            config.description,
+            announcementType
+        ].map((item) => String(item || '').trim().toLowerCase()).filter(Boolean).join(' ');
+        const triggerTypes = new Set(['maintenance_notice', 'service_status']);
+        if (/rule|rules|policy|terms|规范|规则|须知|说明/.test(contentText)) {
+            triggerTypes.add('usage_rules');
+        }
+        if (/community|comment|guestbook|reply|留言|评论|社区|互动/.test(contentText) || ['guestbook', 'prompts', 'gongyi'].includes(pageId)) {
+            triggerTypes.add('community_rule');
+        }
+        try {
+            triggerTypes.forEach((triggerType) => {
+                void trigger(triggerType, {
+                    source_module: 'announcements',
+                    source_event_id: `${triggerType}:${announcementId || pageId}`,
+                    page_id: pageId,
+                    site: window.SiteConfig?.site || 'cn',
+                    announcement_id: announcementId,
+                    announcement_type: announcementType,
+                    announcement_scope: announcementScope
+                }, { once: true });
+            });
+        } catch (error) {
+            console.debug('📢 [Loader] 维护公告触达事件跳过:', error?.message || error);
+        }
+    }
+
     async function fetchAnnouncementConfigFromPublicApi() {
         const response = await fetch('/api/public?scope=config&route=notifications', {
             method: 'GET',
@@ -559,6 +615,7 @@
                     currentPage
                 });
                 void recordAnnouncementEvent(pageConfig, currentPage, ackKey, 'view');
+                triggerAnnouncementMaintenanceEngagement(pageConfig, currentPage, ackKey);
                 console.log('📢 [Loader] 公告已显示:', type, color, size);
             }
         } catch (err) {

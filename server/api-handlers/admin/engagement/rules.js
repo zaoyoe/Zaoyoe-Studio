@@ -10,9 +10,15 @@ const VALID_RULE_STATUSES = Object.freeze(new Set(['draft', 'published', 'paused
 const VALID_RULE_PAGES = Object.freeze(new Set(['all', 'home', 'prompts', 'gongyi', 'shop', 'verify', 'guestbook']));
 const VALID_RULE_TONES = Object.freeze(new Set(['info', 'success', 'warning', 'alert', 'error', 'welcome', 'creative', 'calm', 'commerce', 'assistive', 'community']));
 const VALID_RULE_PLACEMENTS = Object.freeze(new Set(['robot_bubble', 'top_banner', 'inline_card', 'modal', 'floating_badge']));
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const RULE_MANAGEMENT_LIST_LIMIT = 500;
 
 function sanitizeText(value, maxLength = 4000) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
+}
+
+function isUuid(value = '') {
+    return UUID_PATTERN.test(sanitizeText(value, 160));
 }
 
 function normalizeBoolean(value, fallback = false) {
@@ -62,6 +68,10 @@ function normalizePageIds(value) {
 
 function normalizeMetadata(value) {
     return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+}
+
+function normalizeRepeatIntervalMinutes(value, fallback = 2) {
+    return normalizeInteger(value, fallback, { min: 0, max: 1440 });
 }
 
 function buildRuleGovernance(rule = {}) {
@@ -167,6 +177,10 @@ function isMissingEngagementSchemaError(error) {
 
 function normalizeRule(row = {}) {
     const metadata = normalizeMetadata(row.metadata);
+    const repeatIntervalMinutes = normalizeRepeatIntervalMinutes(
+        metadata.repeat_interval_minutes ?? metadata.repeatIntervalMinutes,
+        2
+    );
     const normalized = {
         id: sanitizeText(row.id, 160),
         name: sanitizeText(row.name || '未命名触达规则', 160) || '未命名触达规则',
@@ -185,6 +199,7 @@ function normalizeRule(row = {}) {
         priority: normalizeInteger(row.priority, 0),
         frequency: sanitizeText(row.frequency || 'once_per_day', 80) || 'once_per_day',
         dismiss_ttl_hours: normalizeInteger(row.dismiss_ttl_hours, 24, { min: 1, max: 720 }),
+        repeat_interval_minutes: repeatIntervalMinutes,
         enabled: row.enabled === true,
         status: normalizeStatus(row.status),
         starts_at: sanitizeText(row.starts_at, 120),
@@ -210,13 +225,13 @@ function buildRulePayload(body = {}, userId = '') {
         throw error;
     }
 
-    let status = normalizeStatus(body.status);
-    const enabled = normalizeBoolean(body.enabled, status === 'published');
-    if (enabled && status !== 'published') {
-        status = 'published';
-    } else if (!enabled && status === 'published') {
-        status = 'paused';
-    }
+    const status = normalizeStatus(body.status);
+    const enabled = status === 'published';
+    const metadata = normalizeMetadata(body.metadata);
+    const repeatIntervalMinutes = normalizeRepeatIntervalMinutes(
+        body.repeat_interval_minutes ?? body.repeatIntervalMinutes ?? metadata.repeat_interval_minutes ?? metadata.repeatIntervalMinutes,
+        2
+    );
     const payload = {
         name,
         description: sanitizeText(body.description, 800),
@@ -238,7 +253,10 @@ function buildRulePayload(body = {}, userId = '') {
         status,
         starts_at: sanitizeText(body.starts_at || body.startsAt, 120) || null,
         ends_at: sanitizeText(body.ends_at || body.endsAt, 120) || null,
-        metadata: normalizeMetadata(body.metadata),
+        metadata: {
+            ...metadata,
+            repeat_interval_minutes: repeatIntervalMinutes
+        },
         updated_by: userId || null
     };
     payload.metadata = {
@@ -255,7 +273,7 @@ async function listRules(supabase, { site = 'all' } = {}) {
         .from('engagement_rules')
         .select('id,name,description,site,page_ids,placement,trigger_type,audience,title,content,action_label,action_url,tone,icon,priority,frequency,dismiss_ttl_hours,enabled,status,starts_at,ends_at,metadata,created_at,updated_at')
         .order('updated_at', { ascending: false })
-        .limit(100);
+        .limit(RULE_MANAGEMENT_LIST_LIMIT);
 
     const normalizedSite = normalizeSite(site);
     if (normalizedSite !== 'all') {
@@ -268,7 +286,8 @@ async function listRules(supabase, { site = 'all' } = {}) {
 }
 
 async function saveRule({ supabase, user, body }) {
-    const id = sanitizeText(body.id || body.rule_id || body.ruleId, 160);
+    const rawId = sanitizeText(body.id || body.rule_id || body.ruleId, 160);
+    const id = isUuid(rawId) ? rawId : '';
     const payload = buildRulePayload(body, user.id);
 
     let response;
@@ -317,7 +336,7 @@ async function saveRule({ supabase, user, body }) {
 
 async function loadRuleById(supabase, id = '') {
     const normalizedId = sanitizeText(id, 160);
-    if (!normalizedId) return null;
+    if (!normalizedId || !isUuid(normalizedId)) return null;
     const { data, error } = await supabase
         .from('engagement_rules')
         .select('id,name,description,site,page_ids,placement,trigger_type,audience,title,content,action_label,action_url,tone,icon,priority,frequency,dismiss_ttl_hours,enabled,status,starts_at,ends_at,metadata,created_at,updated_at')
@@ -331,6 +350,11 @@ async function setRuleEnabled({ supabase, user, body }) {
     const id = sanitizeText(body.id || body.rule_id || body.ruleId, 160);
     if (!id) {
         const error = new Error('rule id is required');
+        error.statusCode = 400;
+        throw error;
+    }
+    if (!isUuid(id)) {
+        const error = new Error('rule id must be a valid uuid');
         error.statusCode = 400;
         throw error;
     }
@@ -399,6 +423,11 @@ async function archiveRule({ supabase, user, body }) {
         error.statusCode = 400;
         throw error;
     }
+    if (!isUuid(id)) {
+        const error = new Error('rule id must be a valid uuid');
+        error.statusCode = 400;
+        throw error;
+    }
 
     const { data, error } = await supabase
         .from('engagement_rules')
@@ -423,6 +452,50 @@ async function archiveRule({ supabase, user, body }) {
             ...getBatchAuditDetails(body),
             rule_id: id,
             name: normalizedRule.name,
+            governance: normalizedRule.governance
+        }
+    });
+
+    return normalizedRule;
+}
+
+async function deleteRule({ supabase, user, body }) {
+    const id = sanitizeText(body.id || body.rule_id || body.ruleId, 160);
+    if (!id) {
+        const error = new Error('rule id is required');
+        error.statusCode = 400;
+        throw error;
+    }
+    if (!isUuid(id)) {
+        const error = new Error('rule id must be a valid uuid');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const { data, error } = await supabase
+        .from('engagement_rules')
+        .delete()
+        .eq('id', id)
+        .select('id,name,description,site,page_ids,placement,trigger_type,audience,title,content,action_label,action_url,tone,icon,priority,frequency,dismiss_ttl_hours,enabled,status,starts_at,ends_at,metadata,created_at,updated_at')
+        .single();
+    if (error) throw error;
+    const normalizedRule = normalizeRule(data);
+
+    await writeAdminAuditLog({
+        supabase,
+        adminId: user.id,
+        module: 'engagement',
+        site: data?.site,
+        actionType: 'engagement.rule.delete',
+        details: {
+            rule_id: id,
+            name: normalizedRule.name,
+            status: normalizedRule.status,
+            enabled: normalizedRule.enabled,
+            page_ids: normalizedRule.page_ids,
+            audience: normalizedRule.audience,
+            trigger_type: normalizedRule.trigger_type,
+            placement: normalizedRule.placement,
             governance: normalizedRule.governance
         }
     });
@@ -497,8 +570,15 @@ module.exports = async function engagementRulesHandler(req, res) {
         let rule;
         if (action === 'set_enabled' || action === 'toggle_rule') {
             rule = await setRuleEnabled({ supabase, user, body });
-        } else if (action === 'archive_rule' || action === 'delete_rule') {
+        } else if (action === 'archive_rule') {
             rule = await archiveRule({ supabase, user, body });
+        } else if (action === 'delete_rule') {
+            const deletedRule = await deleteRule({ supabase, user, body });
+            return sendJson(res, 200, {
+                success: true,
+                deleted_id: deletedRule.id,
+                deleted_rule: deletedRule
+            });
         } else if (action === 'pause_all') {
             const rules = await pauseAllRules({ supabase, user, body });
             return sendJson(res, 200, {

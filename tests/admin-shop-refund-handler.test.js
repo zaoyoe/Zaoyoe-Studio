@@ -60,7 +60,8 @@ async function withShopRefundHandler(options, callback) {
         queryFilters: [],
         fromCalls: [],
         rpcCalls: [],
-        auditCalls: []
+        auditCalls: [],
+        notifications: []
     };
 
     delete require.cache[handlerPath];
@@ -75,6 +76,14 @@ async function withShopRefundHandler(options, callback) {
                                 state.fromCalls.push(table);
                                 if (table === 'shop_orders') {
                                     return createShopOrdersQueryMock(state);
+                                }
+                                if (table === 'system_notifications') {
+                                    return {
+                                        async insert(payload) {
+                                            state.notifications.push(payload);
+                                            return { data: null, error: null };
+                                        }
+                                    };
                                 }
                                 throw new Error(`Unexpected table mock request: ${table}`);
                             },
@@ -196,7 +205,7 @@ test('shop refund handler proxies rpc refund through admin api and writes audit 
 
         assert.equal(res.statusCode, 200);
         assert.equal(res.json().success, true);
-        assert.deepEqual(state.fromCalls, ['shop_orders']);
+        assert.deepEqual(state.fromCalls, ['shop_orders', 'system_notifications']);
         assert.equal(state.rpcCalls.length, 1);
         assert.equal(state.rpcCalls[0].fn, 'fn_admin_refund_order');
         assert.deepEqual(state.rpcCalls[0].params, {
@@ -209,6 +218,10 @@ test('shop refund handler proxies rpc refund through admin api and writes audit 
         assert.equal(state.auditCalls[0].site, 'intl');
         assert.equal(state.auditCalls[0].module, 'shop');
         assert.equal(state.auditCalls[0].actionType, 'shop.order.refund');
+        assert.equal(state.notifications.length, 1);
+        assert.equal(state.notifications[0].category, 'refund_status');
+        assert.equal(state.notifications[0].metadata.event_type, 'refund_status');
+        assert.equal(state.notifications[0].source_event_id, 'refund_status:order_2:refunded');
     });
 });
 

@@ -723,6 +723,116 @@ function normalizeTicketCreateInput(input) {
     };
 }
 
+function normalizeTicketStatus(value) {
+    const normalized = normalizeText(value, 40).toUpperCase();
+    return !normalized || normalized === 'OPEN' ? 'PENDING' : normalized;
+}
+
+function normalizeTicketHistoryInput(input) {
+    if (input && typeof input === 'object' && !Array.isArray(input)) {
+        return {
+            ticketId: normalizeText(input.ticket_id || input.ticketId, 120),
+            orderId: normalizeText(input.order_id || input.orderId, 120)
+        };
+    }
+
+    return {
+        ticketId: normalizeText(input, 120),
+        orderId: ''
+    };
+}
+
+function shapeTicketHistoryRow(ticket = {}, focusTicketId = '') {
+    const normalizedStatus = normalizeTicketStatus(ticket.status);
+    const normalizedTicketId = normalizeText(ticket.id, 120);
+    return {
+        id: normalizedTicketId,
+        order_id: normalizeText(ticket.order_id, 120) || '',
+        issue_type: normalizeText(ticket.issue_type, 60).toUpperCase() || 'OTHER',
+        status: normalizedStatus,
+        description: normalizeText(ticket.description, 1500),
+        admin_notes: normalizeText(ticket.admin_notes, 1500),
+        created_at: normalizeText(ticket.created_at, 80) || '',
+        updated_at: normalizeText(ticket.updated_at, 80) || '',
+        is_open: !['RESOLVED', 'REJECTED'].includes(normalizedStatus),
+        is_focus: Boolean(focusTicketId) && normalizedTicketId === focusTicketId
+    };
+}
+
+async function loadTicketHistoryRows({ adminSupabase, userId, input }) {
+    const normalizedInput = normalizeTicketHistoryInput(input);
+    const ticketFields = 'id, user_id, order_id, issue_type, status, description, admin_notes, created_at, updated_at';
+    const historyLimit = 6;
+    const focusTicketId = normalizedInput.ticketId;
+
+    const historyQuery = adminSupabase
+        .from('shop_tickets')
+        .select(ticketFields)
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false })
+        .limit(historyLimit);
+
+    const { data: historyRows, error: historyError } = await historyQuery;
+    if (historyError) {
+        throw createError(historyError.message || '工单记录查询失败', 500, 'ticket_history_failed');
+    }
+
+    let focusTicket = null;
+    if (focusTicketId) {
+        const { data, error } = await queryMaybeSingle(
+            adminSupabase
+                .from('shop_tickets')
+                .select(ticketFields)
+                .eq('user_id', userId)
+                .eq('id', focusTicketId)
+        );
+
+        if (error) {
+            const message = normalizeText(error.message, 240).toLowerCase();
+            if (!(error.code === 'PGRST116' || message.includes('0 rows') || message.includes('no rows'))) {
+                throw createError(error.message || '工单详情查询失败', 500, 'ticket_history_failed');
+            }
+        } else if (data) {
+            focusTicket = data;
+        }
+    }
+
+    const mergedRows = [];
+    const seenTicketIds = new Set();
+    const pushTicket = (ticket) => {
+        const normalizedTicketId = normalizeText(ticket?.id, 120);
+        if (!normalizedTicketId || seenTicketIds.has(normalizedTicketId)) {
+            return;
+        }
+        seenTicketIds.add(normalizedTicketId);
+        mergedRows.push(shapeTicketHistoryRow(ticket, focusTicketId));
+    };
+
+    if (focusTicket) {
+        pushTicket(focusTicket);
+    }
+
+    (Array.isArray(historyRows) ? historyRows : []).forEach(pushTicket);
+
+    if (normalizedInput.orderId) {
+        mergedRows.sort((left, right) => {
+            const leftMatch = left.order_id === normalizedInput.orderId ? 1 : 0;
+            const rightMatch = right.order_id === normalizedInput.orderId ? 1 : 0;
+            return rightMatch - leftMatch;
+        });
+    }
+
+    return {
+        success: true,
+        payload: {
+            focus_ticket_id: focusTicketId || '',
+            order_id: normalizedInput.orderId || '',
+            limit: historyLimit,
+            tickets: mergedRows.slice(0, historyLimit)
+        }
+    };
+}
+
 async function fetchProfileEmailByUserId(supabase, userId) {
     const normalizedUserId = normalizeText(userId, 120);
     if (!supabase?.from || !normalizedUserId) {
@@ -805,6 +915,14 @@ async function handleCreateTicket({ requestSupabase, adminSupabase, user, input 
     };
 }
 
+async function handleTicketHistory({ adminSupabase, user, input }) {
+    return loadTicketHistoryRows({
+        adminSupabase,
+        userId: user.id,
+        input
+    });
+}
+
 module.exports = async function handler(req, res) {
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
@@ -866,6 +984,9 @@ module.exports = async function handler(req, res) {
                 break;
             case 'create_ticket':
                 result = await handleCreateTicket({ requestSupabase, adminSupabase, user, input });
+                break;
+            case 'ticket_history':
+                result = await handleTicketHistory({ adminSupabase, user, input });
                 break;
             default:
                 throw createError('Unsupported support action', 400, 'unsupported_action');

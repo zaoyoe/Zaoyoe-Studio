@@ -7,8 +7,8 @@
     global.__zaoyoeExternalEngagementEmbedLoaded = true;
 
     const VERSION = '20260505_GONGYI_EXTERNAL_ENGAGEMENT_1';
-    const CHAT_WIDGET_LOADER_SRC = 'js/chat-widget-loader.js?v=20260505_CHAT_USER_ACTIVITY_1';
-    const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=20260505_ENGAGEMENT_ENTRY_1';
+    const CHAT_WIDGET_LOADER_SRC = 'js/chat-widget-loader.js?v=20260507_ENGAGEMENT_BACKLOG_REALTIME_1';
+    const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=20260507_CHAT_WIDGET_ADAPTIVE_BUBBLE_1';
     const DEFAULT_PAGE_ID = 'gongyi';
     const DEFAULT_SITE = 'cn';
 

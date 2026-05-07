@@ -7134,7 +7134,7 @@ html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card--collapsi
         right: -8px !important;
         width: 64px !important;
         height: 48px !important;
-        transform: translateX(16px) scaleX(0.84) scaleY(1.04) rotate(-4deg) !important;
+        transform: translateX(8px) scaleX(0.84) scaleY(1.04) rotate(-4deg) !important;
         transition:
             transform 420ms cubic-bezier(0.22, 1, 0.36, 1),
             filter 240ms ease;
@@ -7143,7 +7143,7 @@ html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card--collapsi
     }
 
     body.shop-page .chat-widget-fab.chat-widget-fab--peek.chat-widget-fab--ambient-retracted .chat-widget-fab__robot {
-        transform: translateX(27px) scaleX(0.78) scaleY(1.07) rotate(-5deg) !important;
+        transform: translateX(18px) scaleX(0.8) scaleY(1.06) rotate(-5deg) !important;
     }
 
     body.shop-page .chat-widget-fab.chat-widget-fab--peek:hover .chat-widget-fab__robot {

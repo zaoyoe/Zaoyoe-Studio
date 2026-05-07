@@ -5,6 +5,9 @@ const path = require('node:path');
 
 const walletScriptPath = path.resolve(__dirname, '../js/components/WalletModal.js');
 const walletStylesPath = path.resolve(__dirname, '../css/wallet.css');
+const pointsServicePath = path.resolve(__dirname, '../js/services/PointsService.js');
+const zhLocalePath = path.resolve(__dirname, '../lang/zh.json');
+const enLocalePath = path.resolve(__dirname, '../lang/en.json');
 const usdtPreviewHtmlPath = path.resolve(__dirname, '../usdt_payment_flow_preview.html');
 const usdtPreviewRuntimePath = path.resolve(__dirname, '../js/usdt-payment-flow-preview-runtime.js');
 const usdtPreviewBootPath = path.resolve(__dirname, '../js/usdt-payment-flow-preview-boot.js');
@@ -83,6 +86,8 @@ test('wallet recharge UI exposes pending feedback hooks for package and custom r
     assert.match(script, /maxDecimals:\s*this\.getCryptoPayAmountPrecision\(providerSummary\)/);
     assert.match(script, /fixedDecimals:\s*true/);
     assert.match(script, /renderRechargePaymentMethodIcon\(method = \{\}\)/);
+    assert.match(script, /renderRechargeMethodFeeMarkup\(method = \{\}, surcharge = \{\}\)/);
+    assert.match(script, /wallet-recharge-method-fee-amount/);
     assert.match(script, /paymentMethodPayableWithFee/);
     assert.match(script, /clearSelectedRechargePackageForCustomInput\(rawValue = ''\)/);
     assert.match(script, /action:\s*isPackageMode \? 'pay-selected-recharge' : 'custom-recharge'/);
@@ -103,6 +108,25 @@ test('wallet mobile checkout uses same-tab redirect instead of popup-blocker err
     assert.match(script, /window\.location\.assign\(url\)/);
     assert.match(script, /this\.openPaymentCheckoutUrl\(paymentResult\.checkout_url\)/);
     assert.doesNotMatch(script, /支付页面被浏览器拦截，请允许弹窗后重试/);
+});
+
+test('wallet localizes payment intent creation errors from stable gateway codes', () => {
+    const script = fs.readFileSync(walletScriptPath, 'utf8');
+    const pointsService = fs.readFileSync(pointsServicePath, 'utf8');
+    const zh = JSON.parse(fs.readFileSync(zhLocalePath, 'utf8'));
+    const en = JSON.parse(fs.readFileSync(enLocalePath, 'utf8'));
+
+    assert.match(script, /resolveLocalizedPaymentCreationErrorMessage\(error\)/);
+    assert.match(script, /classifyPaymentCreationErrorMessage\(message = ''\)/);
+    assert.match(script, /amount\\s\*to\\s\+is\\s\+too\\s\+small/);
+    assert.match(script, /case 'payment_amount_too_small':/);
+    assert.match(script, /wallet\.paymentErrorAmountTooSmall/);
+    assert.match(pointsService, /error\.code = String\(responsePayload\?\.code \|\| responsePayload\?\.payment_error\?\.code \|\| ''\)\.trim\(\);/);
+    assert.match(pointsService, /error\.rawMessage = String\(responsePayload\?\.raw_message \|\| responsePayload\?\.payment_error\?\.raw_message/);
+    assert.equal(zh.wallet.paymentErrorAmountTooSmall, '支付金额低于支付通道最低限额，请提高充值金额后重新发起支付。');
+    assert.equal(en.wallet.paymentErrorAmountTooSmall, "The payment amount is below this channel's minimum. Increase the recharge amount and start payment again.");
+    assert.equal(Boolean(zh.wallet.paymentErrorGatewayUnavailable), true);
+    assert.equal(Boolean(en.wallet.paymentErrorGatewayUnavailable), true);
 });
 
 test('USDT payment flow preview can simulate slow post-expiry confirmation', () => {
@@ -134,8 +158,11 @@ test('wallet recharge styles include visible processing states', () => {
     assert.match(styles, /\.wallet-recharge-method-btn/);
     assert.match(styles, /\.wallet-recharge-method-dock/);
     assert.match(styles, /\.wallet-recharge-method-buttons--dock/);
+    assert.match(styles, /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
     assert.match(styles, /\.wallet-recharge-method-btn--alipay:hover:not\(:disabled\)/);
+    assert.match(styles, /\.wallet-recharge-method-btn--usdt:hover:not\(:disabled\)/);
     assert.match(styles, /\.wallet-recharge-method-fee/);
+    assert.match(styles, /\.wallet-recharge-method-fee-amount/);
     assert.match(styles, /\.wallet-recharge-brand-icon--alipay/);
     assert.match(styles, /\.wallet-recharge-brand-icon--usdt/);
     assert.match(styles, /\.custom-recharge-section\.is-package-mode/);

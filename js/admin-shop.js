@@ -6852,9 +6852,12 @@ Example output format:
             }
 
             try {
+                const validationPayload = id
+                    ? this.buildExistingProductUpsertPayload(id, payload)
+                    : payload;
                 const validation = await this.validateProductPayloadViaAdminApi({
                     productId: id,
-                    payload,
+                    payload: validationPayload,
                     pendingCategory: this.pendingCategory && payload.category === this.pendingCategory.name
                         ? this.pendingCategory
                         : null

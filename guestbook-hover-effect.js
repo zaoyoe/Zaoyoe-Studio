@@ -1,25 +1,32 @@
-// Enhanced hover interaction for message cards with magnetic effect
+// Enhanced hover interaction for message cards with stable thread highlighting.
 document.addEventListener('DOMContentLoaded', function () {
-    // Thread line highlight - only highlight current comment's own border
-    const nestedComments = document.querySelectorAll('.comment-item--nested');
+    document.addEventListener('pointerover', function (event) {
+        const comment = event.target?.closest?.('.comment-item--nested');
+        if (!comment) return;
 
-    nestedComments.forEach(comment => {
-        comment.addEventListener('mouseover', function (e) {
-            // Stop propagation so parents don't get the event
-            e.stopPropagation();
+        const relatedTarget = event.relatedTarget;
+        if (relatedTarget instanceof Node && comment.contains(relatedTarget)) {
+            return;
+        }
 
-            // Remove highlight from all other comments first to be safe
-            document.querySelectorAll('.thread-highlight').forEach(el => {
-                el.classList.remove('thread-highlight');
-            });
-
-            // Add highlight to this comment
-            this.classList.add('thread-highlight');
+        document.querySelectorAll('.thread-highlight').forEach(element => {
+            if (element !== comment) {
+                element.classList.remove('thread-highlight');
+            }
         });
 
-        comment.addEventListener('mouseout', function (e) {
-            e.stopPropagation();
-            this.classList.remove('thread-highlight');
-        });
+        comment.classList.add('thread-highlight');
+    });
+
+    document.addEventListener('pointerout', function (event) {
+        const comment = event.target?.closest?.('.comment-item--nested');
+        if (!comment) return;
+
+        const relatedTarget = event.relatedTarget;
+        if (relatedTarget instanceof Node && comment.contains(relatedTarget)) {
+            return;
+        }
+
+        comment.classList.remove('thread-highlight');
     });
 });

@@ -5,14 +5,20 @@ const {
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
 const {
+    listKnownUserTagDefinitions,
     sweepInactiveUserTags
 } = require('../../../../api/_lib/user-tags');
 
 const TAG_CENTER_CONFIG_KEY = 'engagement_user_tag_center';
 const VALID_TAG_SOURCES = Object.freeze(new Set(['manual', 'profile_metadata', 'auth_metadata', 'purchase', 'wallet', 'behavior', 'support']));
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 function sanitizeText(value, maxLength = 4000) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
+}
+
+function isUuid(value = '') {
+    return UUID_PATTERN.test(sanitizeText(value, 160));
 }
 
 function slugify(value = '', fallback = 'segment') {
@@ -43,6 +49,14 @@ function normalizeToken(value = '', fallback = '') {
     return sanitizeText(value, 120).toLowerCase().replace(/[^a-z0-9_-]/g, '') || fallback;
 }
 
+function normalizeTagKey(value = '', fallback = '') {
+    return sanitizeText(value, 120)
+        .toLowerCase()
+        .replace(/[^a-z0-9_\-\u4e00-\u9fa5]+/g, '_')
+        .replace(/^_+|_+$/g, '')
+        || fallback;
+}
+
 function normalizeNumber(value, fallback = 0, min = 0, max = Number.MAX_SAFE_INTEGER) {
     const parsed = Number(value);
     const fallbackParsed = Number(fallback);
@@ -60,7 +74,7 @@ function normalizeEmailArray(value, maxLength = 240) {
 
 function normalizeTagDefinition(tag = {}) {
     const name = sanitizeText(tag.name || tag.title || '未命名标签', 120) || '未命名标签';
-    const key = normalizeToken(tag.key || tag.id || name, slugify(name, 'tag'));
+    const key = normalizeTagKey(tag.key || tag.id || name, slugify(name, 'tag'));
     const source = normalizeToken(tag.source || 'manual', 'manual');
     return {
         id: key,
@@ -70,6 +84,25 @@ function normalizeTagDefinition(tag = {}) {
         source: VALID_TAG_SOURCES.has(source) ? source : 'manual',
         auto_rule: sanitizeText(tag.auto_rule || tag.autoRule, 800),
         enabled: normalizeBoolean(tag.enabled, true)
+    };
+}
+
+function mergeTagCenterWithUserTags(tagCenter = {}, userTagDefinitions = []) {
+    const normalizedCenter = normalizeTagCenter(tagCenter);
+    const hiddenTags = new Set(normalizedCenter.hidden_user_tags || []);
+    const tagMap = new Map(normalizedCenter.tags.map((tag) => [tag.key, tag]));
+    (Array.isArray(userTagDefinitions) ? userTagDefinitions : []).forEach((tag) => {
+        const normalizedTag = normalizeTagDefinition(tag);
+        if (!normalizedTag.key || hiddenTags.has(normalizedTag.key) || tagMap.has(normalizedTag.key)) return;
+        tagMap.set(normalizedTag.key, {
+            ...normalizedTag,
+            description: normalizedTag.description || '来自用户管理 Tags',
+            source: normalizedTag.source || 'manual'
+        });
+    });
+    return {
+        ...normalizedCenter,
+        tags: Array.from(tagMap.values()).slice(0, 120)
     };
 }
 
@@ -177,9 +210,16 @@ function normalizeTagAutomation(value = {}) {
 function normalizeTagCenter(value = {}) {
     const defaults = getDefaultTagCenter();
     const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-    const tagMap = new Map(defaults.tags.map((tag) => [tag.key, tag]));
+    const hiddenUserTags = normalizeStringArray(source.hidden_user_tags || source.hiddenUserTags || [], 120)
+        .map((item) => normalizeTagKey(item, ''))
+        .filter(Boolean);
+    const hiddenTagSet = new Set(hiddenUserTags);
+    const tagMap = new Map(defaults.tags
+        .filter((tag) => !hiddenTagSet.has(tag.key))
+        .map((tag) => [tag.key, tag]));
     if (Array.isArray(source.tags)) {
         source.tags.map(normalizeTagDefinition).forEach((tag) => {
+            if (hiddenTagSet.has(tag.key)) return;
             tagMap.set(tag.key, tag);
         });
     }
@@ -190,6 +230,7 @@ function normalizeTagCenter(value = {}) {
     return {
         sources: sources.length ? sources : defaults.sources,
         tags: Array.from(new Map(tags.map((tag) => [tag.key, tag])).values()).slice(0, 80),
+        hidden_user_tags: Array.from(hiddenTagSet).slice(0, 240),
         automation: normalizeTagAutomation(source.automation || {}),
         updated_at: sanitizeText(source.updated_at, 120)
     };
@@ -253,32 +294,67 @@ async function listSegments(supabase) {
     return (Array.isArray(data) ? data : []).map(normalizeSegment);
 }
 
-async function loadTagCenter(supabase) {
+async function loadTagCenter(supabase, options = {}) {
+    const includeUserTags = options.includeUserTags === true;
     const { data, error } = await supabase
         .from('system_config')
         .select('config_value')
         .eq('config_key', TAG_CENTER_CONFIG_KEY)
         .maybeSingle();
-    if (error) throw error;
-    return normalizeTagCenter(data?.config_value || {});
+    if (error) {
+        const text = sanitizeText(error?.message || error?.details || '', 500).toLowerCase();
+        if (error.code === '42P01' || text.includes('system_config')) {
+            const userTags = includeUserTags
+                ? await listKnownUserTagDefinitions(supabase, { limit: 5000 })
+                : [];
+            return mergeTagCenterWithUserTags(getDefaultTagCenter(), userTags);
+        }
+        throw error;
+    }
+    const tagCenter = normalizeTagCenter(data?.config_value || {});
+    if (!includeUserTags) {
+        return tagCenter;
+    }
+    const userTags = await listKnownUserTagDefinitions(supabase, { limit: 5000 });
+    return mergeTagCenterWithUserTags(tagCenter, userTags);
 }
 
 async function saveTagCenter({ supabase, user, body }) {
-    const current = await loadTagCenter(supabase);
+    const current = await loadTagCenter(supabase, { includeUserTags: false });
     const action = normalizeToken(body.action, 'save_tag');
     let nextCenter = current;
 
     if (action === 'delete_tag') {
-        const tagKey = normalizeToken(body.key || body.id || body.tag_key || body.tagKey, '');
+        const tagKey = normalizeTagKey(body.key || body.id || body.tag_key || body.tagKey, '');
+        if (!tagKey) {
+            const error = new Error('tag key is required');
+            error.statusCode = 400;
+            throw error;
+        }
         nextCenter = {
             ...current,
+            hidden_user_tags: [...new Set([...(current.hidden_user_tags || []), tagKey].filter(Boolean))],
             tags: current.tags.filter((tag) => tag.key !== tagKey)
+        };
+    } else if (action === 'sync_user_tags') {
+        const userTags = await listKnownUserTagDefinitions(supabase, { limit: 5000 });
+        const tagMap = new Map(current.tags.map((item) => [item.key, item]));
+        const syncedTagKeys = new Set();
+        userTags.map(normalizeTagDefinition).forEach((tag) => {
+            if (!tag.key) return;
+            syncedTagKeys.add(tag.key);
+            tagMap.set(tag.key, tag);
+        });
+        nextCenter = {
+            ...current,
+            hidden_user_tags: (current.hidden_user_tags || []).filter((key) => !syncedTagKeys.has(key)),
+            tags: Array.from(tagMap.values())
         };
     } else if (action === 'save_tag_center') {
         nextCenter = normalizeTagCenter(body.tag_center || body.tagCenter || body);
     } else {
         const tag = normalizeTagDefinition(body.tag || body);
-        const previousKey = normalizeToken(body.id || body.tag_id || body.tagId, '');
+        const previousKey = normalizeTagKey(body.id || body.tag_id || body.tagId, '');
         const tagMap = new Map(current.tags.map((item) => [item.key, item]));
         if (previousKey && previousKey !== tag.key) {
             tagMap.delete(previousKey);
@@ -286,6 +362,7 @@ async function saveTagCenter({ supabase, user, body }) {
         tagMap.set(tag.key, tag);
         nextCenter = {
             ...current,
+            hidden_user_tags: (current.hidden_user_tags || []).filter((key) => key !== tag.key),
             tags: Array.from(tagMap.values())
         };
     }
@@ -324,7 +401,8 @@ async function saveTagCenter({ supabase, user, body }) {
 }
 
 async function saveSegment({ supabase, user, body }) {
-    const id = sanitizeText(body.id || body.segment_id || body.segmentId, 160);
+    const rawId = sanitizeText(body.id || body.segment_id || body.segmentId, 160);
+    const id = isUuid(rawId) ? rawId : '';
     const payload = buildSegmentPayload(body);
     const query = id
         ? supabase.from('engagement_segments').update(payload).eq('id', id)
@@ -354,6 +432,11 @@ async function deleteSegment({ supabase, user, body }) {
     const id = sanitizeText(body.id || body.segment_id || body.segmentId, 160);
     if (!id) {
         const error = new Error('segment id is required');
+        error.statusCode = 400;
+        throw error;
+    }
+    if (!isUuid(id)) {
+        const error = new Error('segment id must be a valid uuid');
         error.statusCode = 400;
         throw error;
     }
@@ -413,7 +496,7 @@ module.exports = async function engagementSegmentsHandler(req, res) {
                 deleted: result.id
             });
         }
-        if (action === 'save_tag' || action === 'delete_tag' || action === 'save_tag_center') {
+        if (action === 'save_tag' || action === 'delete_tag' || action === 'save_tag_center' || action === 'sync_user_tags') {
             const tagCenter = await saveTagCenter({ supabase, user, body });
             return sendJson(res, 200, {
                 success: true,

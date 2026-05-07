@@ -6,11 +6,11 @@
     }
     global.__zaoyoeChatWidgetBootstrapLoaded = true;
 
-    const VERSION = '20260505_CHAT_USER_ACTIVITY_1';
+    const VERSION = '20260507_ENGAGEMENT_BACKLOG_REALTIME_1';
     const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';
     const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';
-    const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260505_CHAT_USER_ACTIVITY_1';
-    const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=20260505_ENGAGEMENT_ENTRY_1';
+    const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260507_ENGAGEMENT_BACKLOG_REALTIME_1';
+    const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=20260507_CHAT_WIDGET_ADAPTIVE_BUBBLE_1';
     const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';
     const CHAT_WIDGET_SHELL_MODE_KEY = 'zaoyoe_chat_widget_last_shell_mode_v1';
     const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';
@@ -34,6 +34,7 @@
     let bootstrapScrollLockActive = false;
     let bootstrapDismissToken = 0;
     let bootstrapScript = null;
+    let runtimePendingOpenWatcher = null;
 
     function getBootstrapScript() {
         if (bootstrapScript && bootstrapScript.isConnected) {
@@ -123,6 +124,18 @@
         (document.head || document.documentElement).appendChild(link);
     }
 
+    function activateChatWidgetStylesheetLinks() {
+        const links = Array.from(document.querySelectorAll('link[href*="css/chat-widget.css"]'));
+        links.forEach((link) => {
+            if (!(link instanceof HTMLLinkElement)) {
+                return;
+            }
+
+            link.media = 'all';
+            link.dataset.deferredStyleActive = '1';
+        });
+    }
+
     function ensurePlaceholderPlacementStyles() {
         if (document.getElementById(CHAT_WIDGET_CRITICAL_STYLE_ID)) {
             return;
@@ -135,7 +148,8 @@
 /* 20260503_CHAT_WIDGET_SAFARI_HANDOFF_12 */
 /* 20260503_CHAT_WIDGET_DESKTOP_NARROW_PEEK_1 */
 /* 20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1 */
-/* 20260505_ENGAGEMENT_ENTRY_1 */
+/* 20260505_ENGAGEMENT_BUBBLE_READABILITY_1 */
+/* 20260507_ENGAGEMENT_BACKLOG_REALTIME_1 */
 .chat-widget-fab {
     position: fixed;
     top: 85%;
@@ -174,6 +188,139 @@ body.chat-widget-bootstrap-scroll-locked {
     overscroll-behavior: none !important;
 }
 
+.chat-window:not([data-chat-widget-bootstrap-shell="1"]) {
+    position: fixed !important;
+    right: 30px !important;
+    bottom: 100px !important;
+    width: 380px !important;
+    height: 600px !important;
+    max-width: calc(100vw - 32px) !important;
+    max-height: 80vh !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    box-sizing: border-box !important;
+    z-index: 9998 !important;
+    opacity: 0 !important;
+    visibility: hidden !important;
+    pointer-events: none !important;
+    transform: translateY(20px) scale(0.95) !important;
+    transform-origin: bottom right !important;
+}
+
+.chat-window:not([data-chat-widget-bootstrap-shell="1"]).active {
+    opacity: 1 !important;
+    visibility: visible !important;
+    pointer-events: all !important;
+    transform: translateY(0) scale(1) !important;
+}
+
+.chat-window.admin-mode-layout:not([data-chat-widget-bootstrap-shell="1"]) {
+    --chat-admin-top-gap: clamp(18px, 4vh, 36px);
+    --chat-admin-bottom-gap: 24px;
+    top: var(--chat-admin-top-gap) !important;
+    right: 30px !important;
+    bottom: auto !important;
+    width: min(1040px, calc(100vw - 32px)) !important;
+    height: min(760px, calc(100vh - (var(--chat-admin-top-gap) + var(--chat-admin-bottom-gap)))) !important;
+    max-width: 97vw !important;
+    max-height: calc(100vh - (var(--chat-admin-top-gap) + var(--chat-admin-bottom-gap))) !important;
+    display: flex !important;
+    flex-direction: row !important;
+    transform: translateY(20px) scale(0.95) !important;
+    transform-origin: bottom right !important;
+}
+
+.chat-window.admin-mode-layout:not([data-chat-widget-bootstrap-shell="1"]).active {
+    transform: translateY(0) scale(1) !important;
+}
+
+.chat-window.admin-mode-layout.chat-window--desktop-edge-safe:not([data-chat-widget-bootstrap-shell="1"]) {
+    --chat-admin-top-gap: clamp(56px, 9vh, 96px);
+    top: 50% !important;
+    transform: translateY(calc(-50% + 20px)) scale(0.95) !important;
+    transform-origin: center right !important;
+}
+
+.chat-window.admin-mode-layout.chat-window--desktop-edge-safe:not([data-chat-widget-bootstrap-shell="1"]).active {
+    transform: translateY(-50%) scale(1) !important;
+}
+
+@media (max-width: 700px) {
+    .chat-window.admin-mode-layout:not([data-chat-widget-bootstrap-shell="1"]) {
+        top: 50% !important;
+        left: 50% !important;
+        right: auto !important;
+        bottom: auto !important;
+        width: min(460px, max(97vw, calc(100vw - 16px))) !important;
+        max-width: 97vw !important;
+        height: min(640px, 84vh) !important;
+        max-height: 82vh !important;
+        border-radius: 20px !important;
+        transform: translate3d(-50%, calc(-50% + 24px), 0) scale(0.94) !important;
+        transform-origin: center center !important;
+    }
+
+    .chat-window.admin-mode-layout:not([data-chat-widget-bootstrap-shell="1"]).active {
+        transform: translate3d(-50%, -50%, 0) scale(1) !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .chat-window.admin-mode-layout:not([data-chat-widget-bootstrap-shell="1"]) {
+        top: 50% !important;
+        left: 50% !important;
+        right: auto !important;
+        bottom: auto !important;
+        width: 97vw !important;
+        max-width: 97vw !important;
+        height: 78vh !important;
+        max-height: 78vh !important;
+        border-radius: 16px !important;
+        transform: translate3d(-50%, calc(-50% + 24px), 0) scale(0.94) !important;
+        transform-origin: center center !important;
+    }
+
+    .chat-window.admin-mode-layout:not([data-chat-widget-bootstrap-shell="1"]).active {
+        transform: translate3d(-50%, -50%, 0) scale(1) !important;
+    }
+}
+
+.chat-overlay {
+    position: fixed !important;
+    inset: 0 !important;
+    display: none;
+    opacity: 0;
+    pointer-events: none;
+    z-index: 9997;
+}
+
+.chat-overlay.visible {
+    display: block !important;
+    pointer-events: auto;
+}
+
+@media (max-width: 700px) {
+    .chat-window:not(.admin-mode-layout):not([data-chat-widget-bootstrap-shell="1"]) {
+        top: 50% !important;
+        left: 50% !important;
+        right: auto !important;
+        bottom: auto !important;
+        width: min(460px, max(97vw, calc(100vw - 16px))) !important;
+        max-width: 97vw !important;
+        height: 70vh !important;
+        max-height: 600px !important;
+        transform: translate3d(-50%, calc(-50% + 24px), 0) scale(0.94) !important;
+        transform-origin: center center !important;
+    }
+
+    .chat-window:not(.admin-mode-layout):not([data-chat-widget-bootstrap-shell="1"]).active {
+        transform: translate3d(-50%, -50%, 0) scale(1) !important;
+    }
+}
+
 @media (hover: hover) and (pointer: fine) {
     .chat-widget-fab {
         transition:
@@ -206,7 +353,7 @@ body.chat-widget-bootstrap-scroll-locked {
     right: -8px;
     width: 64px;
     height: 48px;
-    transform: translateX(16px) scaleX(0.84) scaleY(1.04) rotate(-4deg);
+    transform: translateX(8px) scaleX(0.84) scaleY(1.04) rotate(-4deg);
     transform-origin: 100% 50%;
     transition:
         transform 420ms cubic-bezier(0.22, 1, 0.36, 1),
@@ -356,7 +503,7 @@ body.chat-widget-bootstrap-scroll-locked {
         right: -8px !important;
         width: 64px !important;
         height: 48px !important;
-        transform: translateX(16px) scaleX(0.84) scaleY(1.04) rotate(-4deg) !important;
+        transform: translateX(8px) scaleX(0.84) scaleY(1.04) rotate(-4deg) !important;
         transition:
             transform 420ms cubic-bezier(0.22, 1, 0.36, 1),
             filter 240ms ease;
@@ -365,7 +512,7 @@ body.chat-widget-bootstrap-scroll-locked {
     }
 
     body.shop-page .chat-widget-fab.chat-widget-fab--peek.chat-widget-fab--ambient-retracted .chat-widget-fab__robot {
-        transform: translateX(27px) scaleX(0.78) scaleY(1.07) rotate(-5deg) !important;
+        transform: translateX(18px) scaleX(0.8) scaleY(1.06) rotate(-5deg) !important;
     }
 
     body.shop-page .chat-widget-fab.chat-widget-fab--peek:hover .chat-widget-fab__robot {
@@ -556,10 +703,28 @@ html[data-theme="light"] .chat-widget-bootstrap-overlay.is-active {
     flex-direction: column !important;
 }
 
+.chat-widget-bootstrap-shell--admin.chat-window[data-chat-widget-bootstrap-adopted="1"] {
+    display: flex !important;
+    flex-direction: row !important;
+}
+
+.chat-widget-bootstrap-shell--admin.chat-window.chat-widget-bootstrap-shell--desktop-edge-safe {
+    --chat-admin-top-gap: clamp(56px, 9vh, 96px);
+    top: 50% !important;
+    transform: translateY(calc(-50% + 20px)) scale(0.95) !important;
+    transform-origin: center right !important;
+}
+
 .chat-widget-bootstrap-shell--admin.chat-window.is-active,
 .chat-widget-bootstrap-shell--admin.chat-window.is-handoff,
 .chat-widget-bootstrap-shell--admin.chat-window.is-handoff:not(.is-active) {
     transform: translateY(0) scale(1) !important;
+}
+
+.chat-widget-bootstrap-shell--admin.chat-window.chat-widget-bootstrap-shell--desktop-edge-safe.is-active,
+.chat-widget-bootstrap-shell--admin.chat-window.chat-widget-bootstrap-shell--desktop-edge-safe.is-handoff,
+.chat-widget-bootstrap-shell--admin.chat-window.chat-widget-bootstrap-shell--desktop-edge-safe.is-handoff:not(.is-active) {
+    transform: translateY(-50%) scale(1) !important;
 }
 
 .chat-widget-bootstrap-user-header {
@@ -1508,6 +1673,7 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
     function ensureChatWidgetStyles() {
         ensurePlaceholderPlacementStyles();
         ensureFullChatWidgetStylesheet();
+        activateChatWidgetStylesheetLinks();
 
         if (typeof global.activateDeferredStyleGroup === 'function') {
             global.activateDeferredStyleGroup('homepage-chat');
@@ -1616,6 +1782,83 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
         `;
     }
 
+    function isBootstrapNarrowViewport() {
+        if (typeof global.matchMedia === 'function') {
+            try {
+                return global.matchMedia('(max-width: 700px)').matches;
+            } catch (_) {
+                // Fall back to viewport measurements below.
+            }
+        }
+
+        const viewportWidth = Math.max(
+            global.innerWidth || 0,
+            document.documentElement?.clientWidth || 0
+        );
+        return viewportWidth > 0 && viewportWidth <= 700;
+    }
+
+    function isBootstrapTouchPrimaryInput() {
+        if (navigator.maxTouchPoints > 0) return true;
+        if (typeof global.matchMedia === 'function') {
+            try {
+                if (global.matchMedia('(pointer: coarse)').matches) {
+                    return true;
+                }
+            } catch (_) {
+                // Fall back to touch event support below.
+            }
+        }
+        return 'ontouchstart' in global;
+    }
+
+    function shouldUseBootstrapDesktopEdgeSafeInset() {
+        if (isBootstrapNarrowViewport() || isBootstrapTouchPrimaryInput()) {
+            return false;
+        }
+
+        const fullscreenElement = document.fullscreenElement || document.webkitFullscreenElement;
+        if (fullscreenElement) return true;
+
+        if (typeof global.matchMedia === 'function') {
+            try {
+                if (global.matchMedia('(display-mode: fullscreen)').matches) {
+                    return true;
+                }
+            } catch (error) {
+                console.warn('[ChatWidgetLoader] Failed to evaluate fullscreen display-mode:', error);
+            }
+        }
+
+        const screenWidth = Math.max(global.screen?.width || 0, global.screen?.availWidth || 0);
+        const screenHeight = Math.max(global.screen?.height || 0, global.screen?.availHeight || 0);
+        const viewportWidth = Math.max(global.innerWidth || 0, document.documentElement?.clientWidth || 0);
+        const viewportHeight = Math.max(global.innerHeight || 0, document.documentElement?.clientHeight || 0);
+        const outerWidth = Math.max(global.outerWidth || 0, viewportWidth);
+        const outerHeight = Math.max(global.outerHeight || 0, viewportHeight);
+        const widthDelta = screenWidth ? Math.abs(screenWidth - outerWidth) : Number.POSITIVE_INFINITY;
+        const heightDelta = screenHeight ? Math.abs(screenHeight - outerHeight) : Number.POSITIVE_INFINITY;
+        const browserChromeHeight = Math.max(0, outerHeight - viewportHeight);
+
+        return widthDelta <= 24 && heightDelta <= 24 && browserChromeHeight <= 96;
+    }
+
+    function syncBootstrapLoadingShellViewportMode(shell = bootstrapLoadingShell?.shell) {
+        if (!shell) {
+            return;
+        }
+
+        const useEdgeSafeInset = shell.classList.contains('chat-widget-bootstrap-shell--admin')
+            && shouldUseBootstrapDesktopEdgeSafeInset();
+        shell.classList.toggle('chat-widget-bootstrap-shell--desktop-edge-safe', useEdgeSafeInset);
+    }
+
+    function handleBootstrapViewportModeChange() {
+        if (bootstrapLoadingShell?.shell?.isConnected) {
+            syncBootstrapLoadingShellViewportMode(bootstrapLoadingShell.shell);
+        }
+    }
+
     function syncBootstrapLoadingShellMode(loadingShell, mode = getPreferredBootstrapShellMode()) {
         if (!loadingShell?.shell) {
             return;
@@ -1627,6 +1870,7 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
             return;
         }
         if (shell.dataset.chatWidgetBootstrapMode === normalizedMode && shell.innerHTML.trim()) {
+            syncBootstrapLoadingShellViewportMode(shell);
             return;
         }
 
@@ -1635,6 +1879,7 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
         shell.classList.toggle('chat-widget-bootstrap-shell--user', normalizedMode !== 'admin');
         shell.classList.toggle('admin-mode-layout', normalizedMode === 'admin');
         shell.classList.toggle('admin-mode-layout--narrow', normalizedMode === 'admin');
+        syncBootstrapLoadingShellViewportMode(shell);
         loadingShell.overlay?.classList.toggle('chat-widget-bootstrap-overlay--admin', normalizedMode === 'admin');
         loadingShell.overlay?.classList.toggle('chat-widget-bootstrap-overlay--user', normalizedMode !== 'admin');
         shell.innerHTML = normalizedMode === 'admin'
@@ -1879,6 +2124,9 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
         const existingPlaceholder = document.querySelector('.chat-widget-fab[data-chat-widget-placeholder="1"]');
         if (existingPlaceholder) {
             placeholderFab = existingPlaceholder;
+            if (!placeholderSuppressed && existingPlaceholder.dataset.chatWidgetPlaceholderOpening !== '1') {
+                existingPlaceholder.classList.remove('chat-widget-fab--ambient-retracted');
+            }
             if (placeholderSuppressed) {
                 setPlaceholderSuppressed(true);
             }
@@ -1886,7 +2134,7 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
         }
 
         const fab = document.createElement('div');
-        fab.className = 'chat-widget-fab chat-widget-fab--peek chat-widget-fab--ambient-retracted';
+        fab.className = 'chat-widget-fab chat-widget-fab--peek';
         fab.setAttribute('data-chat-widget-placeholder', '1');
         fab.setAttribute('role', 'button');
         fab.setAttribute('tabindex', '0');
@@ -1929,7 +2177,11 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
             return false;
         }
 
-        runtimeFab.classList.remove('chat-widget-fab--hidden', 'chat-widget-fab--disabled');
+        runtimeFab.classList.remove(
+            'chat-widget-fab--hidden',
+            'chat-widget-fab--disabled',
+            'chat-widget-fab--ambient-retracted'
+        );
         runtimeFab.removeAttribute('aria-hidden');
         runtimeFab.removeAttribute('aria-busy');
         return true;
@@ -2036,15 +2288,16 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
         }
     }
 
-    function setPlaceholderLoadingState(loading) {
+    function setPlaceholderLoadingState(loading, options = {}) {
         const fab = createPlaceholderFab();
         if (!fab) {
             return;
         }
 
+        const lockInteraction = options.lockInteraction === true;
         const suppressed = fab.dataset.chatWidgetPlaceholderSuppressed === '1';
         const opening = fab.dataset.chatWidgetPlaceholderOpening === '1';
-        fab.classList.toggle('chat-widget-fab--disabled', Boolean(loading) || suppressed || opening);
+        fab.classList.toggle('chat-widget-fab--disabled', (Boolean(loading) && lockInteraction) || suppressed || opening);
         if (suppressed || opening) {
             fab.removeAttribute('data-chat-widget-loading');
             if (loading || opening) {
@@ -2101,9 +2354,11 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
         return promise;
     }
 
-    function warmWidgetResources() {
+    function warmWidgetResources(options = {}) {
         if (!widgetWarmPromise) {
-            setPlaceholderLoadingState(true);
+            setPlaceholderLoadingState(true, {
+                lockInteraction: options.lockInteraction === true
+            });
             widgetWarmPromise = Promise.all([
                 loadScript(SUPPORT_CONFIG_SRC),
                 loadScript(ADMIN_WORKBENCH_SRC),
@@ -2169,6 +2424,40 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
         hideBootstrapLoadingShell();
     }
 
+    function queueRuntimeOpenWhenReady(widget = global.chatWidget) {
+        if (!widget || runtimePendingOpenWatcher) {
+            return;
+        }
+
+        const readyDismissToken = bootstrapDismissToken;
+        runtimePendingOpenWatcher = Promise.resolve(widget.ready || widget)
+            .then(() => {
+                runtimePendingOpenWatcher = null;
+                if (readyDismissToken !== bootstrapDismissToken) {
+                    return;
+                }
+                openWidgetIfPending();
+            })
+            .catch((error) => {
+                runtimePendingOpenWatcher = null;
+                if (readyDismissToken === bootstrapDismissToken) {
+                    pendingOpen = false;
+                    hideBootstrapLoadingShell();
+                }
+                console.error('[ChatWidgetLoader] Failed while waiting for runtime open:', error);
+            });
+    }
+
+    function requestRuntimePendingOpen() {
+        pendingOpen = true;
+        showBootstrapLoadingShell();
+        queueRuntimeOpenWhenReady(global.chatWidget);
+    }
+
+    function handleRuntimePendingOpenRequest() {
+        requestRuntimePendingOpen();
+    }
+
     function tryInitChatWidget() {
         if (global.chatWidget) {
             const shouldRestoreClosedRuntimeFab = !pendingOpen;
@@ -2211,7 +2500,9 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
         ensureChatWidgetStyles();
         createPlaceholderFab();
 
-        return warmWidgetResources().then(() => {
+        return warmWidgetResources({
+            lockInteraction: openRequested
+        }).then(() => {
             if (tryInitChatWidget()) {
                 return global.chatWidget || null;
             }
@@ -2271,6 +2562,15 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
         scheduleEngagementRuntimeWarm();
     }
 
+    function startChatWidgetBootstrapWhenBodyReady() {
+        if (document.body) {
+            startChatWidgetBootstrap();
+            return;
+        }
+
+        document.addEventListener('DOMContentLoaded', startChatWidgetBootstrap, { once: true });
+    }
+
     function scheduleEngagementRuntimeWarm() {
         if (engagementRuntimeWarmScheduled || hasWidgetInstance()) {
             return;
@@ -2296,15 +2596,17 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
         global.setTimeout(warmRuntime, ENGAGEMENT_RUNTIME_WARM_DELAY_MS);
     }
 
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', startChatWidgetBootstrap, { once: true });
-    } else {
-        startChatWidgetBootstrap();
-    }
+    global.addEventListener?.('zaoyoe:chat-widget-runtime-pending-open', handleRuntimePendingOpenRequest);
+    global.addEventListener?.('resize', handleBootstrapViewportModeChange, { passive: true });
+    global.visualViewport?.addEventListener?.('resize', handleBootstrapViewportModeChange, { passive: true });
+    document.addEventListener?.('fullscreenchange', handleBootstrapViewportModeChange, { passive: true });
+    document.addEventListener?.('webkitfullscreenchange', handleBootstrapViewportModeChange, { passive: true });
+    startChatWidgetBootstrapWhenBodyReady();
 
     global.ZaoyoeChatWidgetBootstrap = Object.freeze({
         version: VERSION,
         warm: () => ensureChatWidgetReady({ open: false }),
-        open: () => ensureChatWidgetReady({ open: true })
+        open: () => ensureChatWidgetReady({ open: true }),
+        requestPendingOpen: requestRuntimePendingOpen
     });
 }(typeof window !== 'undefined' ? window : globalThis));

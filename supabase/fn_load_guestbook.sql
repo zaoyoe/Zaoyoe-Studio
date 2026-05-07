@@ -49,12 +49,22 @@ BEGIN
                     m.created_at,
                     m.user_id,
                     json_build_object(
-                        'id', p.id,
-                        'username', COALESCE(p.username, 'Anonymous'),
-                        'avatar_url', p.avatar_url
+                        'id', COALESCE(p.id, au.id),
+                        'username', COALESCE(
+                            NULLIF(BTRIM(p.username), ''),
+                            NULLIF(BTRIM(au.raw_user_meta_data->>'full_name'), ''),
+                            NULLIF(BTRIM(au.raw_user_meta_data->>'name'), ''),
+                            NULLIF(split_part(COALESCE(au.email, ''), '@', 1), ''),
+                            'Anonymous'
+                        ),
+                        'avatar_url', COALESCE(
+                            NULLIF(BTRIM(p.avatar_url), ''),
+                            NULLIF(BTRIM(au.raw_user_meta_data->>'avatar_url'), '')
+                        )
                     ) AS profiles
                 FROM public.guestbook_messages m
                 LEFT JOIN public.profiles p ON p.id = m.user_id
+                LEFT JOIN auth.users au ON au.id = m.user_id
                 WHERE m.site = p_site
                 ORDER BY m.created_at DESC
                 LIMIT p_limit
@@ -71,13 +81,23 @@ BEGIN
                     c.created_at,
                     c.user_id,
                     json_build_object(
-                        'id', cp.id,
-                        'username', COALESCE(cp.username, 'Anonymous'),
-                        'avatar_url', cp.avatar_url
+                        'id', COALESCE(cp.id, cau.id),
+                        'username', COALESCE(
+                            NULLIF(BTRIM(cp.username), ''),
+                            NULLIF(BTRIM(cau.raw_user_meta_data->>'full_name'), ''),
+                            NULLIF(BTRIM(cau.raw_user_meta_data->>'name'), ''),
+                            NULLIF(split_part(COALESCE(cau.email, ''), '@', 1), ''),
+                            'Anonymous'
+                        ),
+                        'avatar_url', COALESCE(
+                            NULLIF(BTRIM(cp.avatar_url), ''),
+                            NULLIF(BTRIM(cau.raw_user_meta_data->>'avatar_url'), '')
+                        )
                     ) AS profiles,
                     COALESCE(lk.like_count, 0) AS like_count
                 FROM public.guestbook_comments c
                 LEFT JOIN public.profiles cp ON cp.id = c.user_id
+                LEFT JOIN auth.users cau ON cau.id = c.user_id
                 LEFT JOIN (
                     SELECT target_id, COUNT(*) AS like_count
                     FROM public.guestbook_likes

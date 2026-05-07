@@ -1240,7 +1240,7 @@ body.mobile-menu-open .framer-nav,
     }
 
     .hero-carousel {
-        scroll-snap-type: x mandatory;
+        scroll-snap-type: none;
         scroll-padding-inline: calc(50vw - 70px);
         overflow-x: auto;
         overflow-y: hidden;

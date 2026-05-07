@@ -502,6 +502,34 @@
     opacity: 0.8;
 }
 
+.verify-guide-card.is-engagement-focus,
+.verify-history-card.is-engagement-focus {
+    animation: verify-guide-engagement-focus 2.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes verify-guide-engagement-focus {
+    0% {
+        box-shadow:
+            0 0 0 0 rgba(107, 158, 206, 0.42),
+            inset 0 1px 0 rgba(255, 255, 255, 0.03),
+            0 18px 40px rgba(0, 0, 0, 0.18);
+    }
+
+    34% {
+        box-shadow:
+            0 0 0 8px rgba(107, 158, 206, 0.18),
+            0 0 0 18px rgba(52, 199, 89, 0.08),
+            inset 0 1px 0 rgba(255, 255, 255, 0.05),
+            0 22px 54px rgba(31, 82, 128, 0.22);
+    }
+
+    100% {
+        box-shadow:
+            inset 0 1px 0 rgba(255, 255, 255, 0.03),
+            0 18px 40px rgba(0, 0, 0, 0.18);
+    }
+}
+
 .verify-guide-head {
     display: flex;
     flex-direction: column;

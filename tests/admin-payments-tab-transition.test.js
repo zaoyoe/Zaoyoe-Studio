@@ -462,6 +462,10 @@ test('payments ops tab auto-recovers after switching during initial overview loa
                     {
                         type: 'session',
                         id: 'topic_1',
+                        provider: 'mock',
+                        session_key: 'PCS_TOPIC_1',
+                        user_id: 'user_1',
+                        user_email: 'intent-buyer@example.com',
                         topic_key: 'checkout_unlinked',
                         title: '支付意图已完成但未回填',
                         message: '需要人工补查回填链路。',
@@ -475,10 +479,13 @@ test('payments ops tab auto-recovers after switching during initial overview loa
                     {
                         type: 'session',
                         id: 'anomaly_1',
+                        user_id: 'user_1',
+                        user_email: 'intent-buyer@example.com',
                         title: '未回填异常',
                         message: '当前订单没有成功关联支付意图。',
                         severity: 'warning',
                         provider: 'mock',
+                        session_key: 'PCS_ANOMALY_1',
                         provider_order_no: 'ORD-1',
                         created_at: '2026-04-18T12:00:00.000Z',
                         ops_status: 'open',
@@ -532,7 +539,10 @@ test('payments ops tab auto-recovers after switching during initial overview loa
     assert.match(elements['paymentsOpsAlertQueue'].innerHTML, /支付告警待处理/);
     assert.match(elements['paymentsExceptionTopics'].innerHTML, /全部专题/);
     assert.match(elements['paymentsExceptionTopics'].innerHTML, /支付意图异常/);
+    assert.match(elements['paymentsExceptionTopicList'].innerHTML, /发起人邮箱/);
+    assert.match(elements['paymentsExceptionTopicList'].innerHTML, /intent-buyer@example\.com/);
     assert.match(elements['paymentsAnomalyList'].innerHTML, /未回填异常/);
+    assert.match(elements['paymentsAnomalyList'].innerHTML, /intent-buyer@example\.com/);
     assert.match(elements['paymentsOrdersTable'].innerHTML, /buyer@example\.com/);
     assert.match(elements['paymentsOrdersTable'].innerHTML, /analytics-open-user-detail/);
     assert.match(elements['paymentsOrdersTable'].innerHTML, /ZPEC42F4\.\.\.7A2438/);

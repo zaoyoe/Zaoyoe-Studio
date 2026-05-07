@@ -6,6 +6,30 @@ const AUTO_USER_TAGS = Object.freeze({
     INACTIVE_USER: 'inactive_user'
 });
 const TAG_CENTER_CONFIG_KEY = 'engagement_user_tag_center';
+const USER_MANAGEMENT_TAG_LABELS = Object.freeze({
+    vip: 'VIP',
+    creator: '创作者',
+    risk: '需关注',
+    spam: '广告号',
+    user: '用户',
+    用户: '用户',
+    关注: '关注',
+    测试: '测试',
+    paid_user: '已充值用户',
+    high_value: '高价值用户',
+    payment_failed: '支付失败用户',
+    verify_failed: '验证失败用户',
+    inactive_user: '长期未活跃用户'
+});
+const USER_MANAGEMENT_FALLBACK_TAGS = Object.freeze([
+    '用户',
+    '关注',
+    '测试',
+    'vip',
+    'creator',
+    'risk',
+    'spam'
+]);
 const DEFAULT_USER_TAG_AUTOMATION = Object.freeze({
     high_value: Object.freeze({
         enabled: true,
@@ -44,6 +68,13 @@ function normalizeTagValue(value = '') {
         .toLowerCase()
         .replace(/[^a-z0-9_\-\u4e00-\u9fa5]+/g, '_')
         .replace(/^_+|_+$/g, '');
+}
+
+function getKnownUserTagLabel(tag = '') {
+    const rawTag = sanitizeText(tag, 120);
+    return USER_MANAGEMENT_TAG_LABELS[rawTag]
+        || USER_MANAGEMENT_TAG_LABELS[normalizeTagValue(rawTag)]
+        || rawTag;
 }
 
 function normalizeUniqueStrings(value = [], normalizer = sanitizeText) {
@@ -538,6 +569,55 @@ async function removeUserTags(supabase, options = {}) {
     }
 }
 
+async function listKnownUserTagDefinitions(supabase, options = {}) {
+    const limit = normalizeNumber(options.limit, 5000, 1, 10000);
+    const includeFallback = options.includeFallback === true || options.include_fallback === true;
+    const tagMap = new Map();
+    const addTag = (value) => {
+        const rawTag = sanitizeText(value, 120);
+        const key = normalizeTagValue(rawTag);
+        if (!key || tagMap.has(key)) return;
+        tagMap.set(key, {
+            id: key,
+            key,
+            name: getKnownUserTagLabel(rawTag) || key,
+            description: '来自用户管理 Tags',
+            source: 'manual',
+            auto_rule: '',
+            enabled: true
+        });
+    };
+
+    if (includeFallback) {
+        USER_MANAGEMENT_FALLBACK_TAGS.forEach(addTag);
+    }
+
+    if (!supabase?.from) {
+        return Array.from(tagMap.values());
+    }
+
+    const pageSize = 1000;
+    for (let offset = 0; offset < limit; offset += pageSize) {
+        const rows = await fetchOptionalRows(() => {
+            let query = supabase
+                .from('user_tags')
+                .select('tag');
+            if (typeof query?.order === 'function') {
+                query = query.order('tag', { ascending: true });
+            }
+            if (typeof query?.range === 'function') {
+                return query.range(offset, Math.min(limit - 1, offset + pageSize - 1));
+            }
+            return withOptionalLimit(query, limit);
+        });
+
+        rows.forEach((row) => addTag(row?.tag));
+        if (!rows.length || rows.length < pageSize) break;
+    }
+
+    return Array.from(tagMap.values());
+}
+
 async function markUserAsPaid(supabase, options = {}) {
     const result = await upsertUserTags(supabase, {
         ...options,
@@ -794,6 +874,7 @@ module.exports = {
     getUserCommerceMetrics,
     getUserLastActivityAt,
     isMissingUserTagsError,
+    listKnownUserTagDefinitions,
     loadUserTagAutomationConfig,
     markPaymentFailed,
     markUserActive,

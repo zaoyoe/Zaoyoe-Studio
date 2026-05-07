@@ -2696,6 +2696,71 @@ function highlightComment(commentEl) {
     }, 3000);
 }
 
+function findPromptForEngagementTarget(promptId) {
+    const targetId = String(promptId || '').trim();
+    if (!targetId || typeof PROMPTS === 'undefined' || !Array.isArray(PROMPTS)) {
+        return null;
+    }
+
+    const targetIdNum = Number.parseInt(targetId, 10);
+    return PROMPTS.find(p => String(p.supabaseId) === targetId)
+        || (!Number.isNaN(targetIdNum) ? PROMPTS.find(p => p.supabaseId === targetIdNum) : null)
+        || (!Number.isNaN(targetIdNum) ? PROMPTS.find(p => p.id === targetIdNum) : null)
+        || null;
+}
+
+function focusPromptCommentFromEngagement(target = {}) {
+    const promptId = String(target?.promptId || target?.prompt_id || target?.id || '').trim();
+    const commentId = String(target?.commentId || target?.comment_id || '').trim();
+
+    if (!promptId) {
+        return Promise.resolve(false);
+    }
+
+    return new Promise((resolve) => {
+        const openAndFocus = (retriesLeft = 12) => {
+            if (typeof PROMPTS === 'undefined' || !Array.isArray(PROMPTS) || PROMPTS.length === 0) {
+                if (retriesLeft <= 0) {
+                    resolve(false);
+                    return;
+                }
+                setTimeout(() => openAndFocus(retriesLeft - 1), 250);
+                return;
+            }
+
+            const prompt = findPromptForEngagementTarget(promptId);
+            if (!prompt) {
+                if (retriesLeft <= 0) {
+                    resolve(false);
+                    return;
+                }
+                setTimeout(() => openAndFocus(retriesLeft - 1), 250);
+                return;
+            }
+
+            openPromptModal(prompt.id);
+            if (!commentId) {
+                setTimeout(() => resolve(true), 320);
+                return;
+            }
+
+            setTimeout(() => {
+                if (!isCommentMode) {
+                    toggleCommentMode();
+                }
+                setTimeout(() => {
+                    scrollToComment(commentId);
+                    resolve(true);
+                }, 900);
+            }, 700);
+        };
+
+        openAndFocus();
+    });
+}
+
+window.ZaoyoePromptsFocusCommentFromEngagement = focusPromptCommentFromEngagement;
+
 // ========================================
 // DYNAMIC NAVIGATION (AI-Driven Categories)
 // ========================================
@@ -4416,6 +4481,7 @@ async function filterBySearch(query) {
     }
 
     if (!shouldPromptSearchHydrateDetails(normalizedQuery)) {
+        triggerPromptSearchNoResultEngagement(normalizedQuery, 'local_short_query');
         applySearchResults(new Set(), searchingForColor);
         return;
     }
@@ -4432,6 +4498,7 @@ async function filterBySearch(query) {
     }
 
     if (!shouldPromptSearchUseAiFallback(normalizedQuery)) {
+        triggerPromptSearchNoResultEngagement(normalizedQuery, 'local_hydrated');
         applySearchResults(new Set(), searchingForColor);
         return;
     }
@@ -4441,6 +4508,7 @@ async function filterBySearch(query) {
     if (!isAdmin && !checkAISearchRateLimit()) {
         console.log('⏳ AI search rate limited');
         showSearchCooldownMessage();
+        triggerPromptSearchNoResultEngagement(normalizedQuery, 'ai_rate_limited');
         applySearchResults(new Set(), searchingForColor); // Show no results
         return;
     }
@@ -4457,7 +4525,55 @@ async function filterBySearch(query) {
         applySearchResults(aiResults, searchingForColor);
     } else {
         console.log('❌ AI search: no results found');
+        triggerPromptSearchNoResultEngagement(normalizedQuery, 'ai_no_result');
         applySearchResults(new Set(), searchingForColor);
+    }
+}
+
+function triggerPromptSearchNoResultEngagement(query = '', source = 'prompts_search') {
+    const normalizedQuery = normalizePromptSearchText(query).slice(0, 120);
+    if (normalizedQuery.length < 2) return;
+
+    const trigger = window.ZaoyoeEngagement?.trigger;
+    if (typeof trigger !== 'function') return;
+
+    try {
+        void trigger('search_no_result', {
+            source_module: 'prompts.search',
+            source,
+            source_event_id: `search_no_result:prompts:${normalizedQuery}`,
+            page_id: 'prompts',
+            site: window.SiteConfig?.site || 'cn',
+            search_query: normalizedQuery
+        }, { once: true });
+    } catch (error) {
+        console.debug('[PromptsSearch] Engagement no-result trigger skipped:', error?.message || error);
+    }
+}
+
+function triggerPromptUnlockEngagement(triggerType = 'prompt_unlocked', promptId = '', metadata = {}) {
+    const normalizedPromptId = String(promptId || '').trim();
+    const trigger = window.ZaoyoeEngagement?.trigger;
+    if (typeof trigger !== 'function') return;
+
+    const source = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+        ? metadata
+        : {};
+    const sourceEventId = String(source.source_event_id || '').trim()
+        || `${triggerType}:prompts:${normalizedPromptId || 'unknown'}`;
+
+    try {
+        void trigger(triggerType, {
+            source_module: 'prompts.unlock',
+            source: String(source.source || 'prompt_unlock').trim() || 'prompt_unlock',
+            source_event_id: sourceEventId,
+            page_id: 'prompts',
+            site: window.SiteConfig?.site || 'cn',
+            prompt_id: normalizedPromptId || null,
+            ...source
+        }, { once: true });
+    } catch (error) {
+        console.debug('[PromptsUnlock] Engagement trigger skipped:', triggerType, error?.message || error);
     }
 }
 
@@ -6363,14 +6479,31 @@ async function handleUnlockPrompt() {
                 }, {
                     eventType: 'conversion'
                 });
+                triggerPromptUnlockEngagement('prompt_unlocked', currentPromptId, {
+                    source: 'unlock_success',
+                    source_event_id: `prompt_unlocked:prompts:${String(currentPromptId || '').trim() || 'unknown'}`,
+                    category: promptMetadata.category || null,
+                    points_cost: _unlockPrice,
+                    new_balance: data.new_balance ?? null
+                });
             }
             setPromptUnlocked();
             console.log('[Unlock] Success! New Balance:', data.new_balance);
         } else {
             const errMsg = data?.error || '解锁失败';
-            alert(errMsg);
+            const hasInsufficientPoints = errMsg.includes('积分不足') || errMsg.includes('Insufficient');
             // If insufficient points, open wallet modal for recharging
-            if (errMsg.includes('积分不足') || errMsg.includes('Insufficient')) {
+            if (hasInsufficientPoints) {
+                triggerPromptUnlockEngagement('points_insufficient', currentPromptId, {
+                    source: 'unlock_insufficient_points',
+                    source_event_id: `points_insufficient:prompts:${String(currentPromptId || '').trim() || 'unknown'}:${Date.now()}`,
+                    category: promptMetadata.category || null,
+                    points_cost: _unlockPrice,
+                    error_message: errMsg
+                });
+            }
+            alert(errMsg);
+            if (hasInsufficientPoints) {
                 await openPromptUnlockRecharge({
                     entry: 'unlock_insufficient_points',
                     sourceModule: 'prompt_gallery',
@@ -8652,59 +8785,6 @@ async function checkUserBlockStatus(userId, scope = 'gallery') {
     return false;
 }
 
-function getCurrentPromptEngagementTitle() {
-    const promptId = String(currentPromptId || '').trim();
-    if (!promptId || !Array.isArray(PROMPTS)) return '';
-
-    const prompt = PROMPTS.find((item) => {
-        const itemSupabaseId = String(item?.supabaseId || '').trim();
-        const itemId = String(item?.id || '').trim();
-        return itemSupabaseId === promptId || itemId === promptId;
-    });
-
-    if (!prompt) return '';
-
-    try {
-        return getLocalizedField(prompt, 'title') || prompt.title || '';
-    } catch (_) {
-        return prompt.title || '';
-    }
-}
-
-async function notifyPromptCommentReply(payload = {}) {
-    const commentId = String(payload.commentId || '').trim();
-    const parentId = String(payload.parentId || '').trim();
-    if (!commentId || !parentId || !window.supabaseClient?.auth?.getSession) {
-        return;
-    }
-
-    try {
-        const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
-        const accessToken = session?.access_token || '';
-        if (!accessToken) return;
-
-        await fetch('/api/engagement/reply-notify', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${accessToken}`
-            },
-            body: JSON.stringify({
-                source: 'prompt_comment',
-                comment_id: commentId,
-                parent_id: parentId,
-                prompt_id: String(payload.promptId || '').trim(),
-                prompt_title: String(payload.promptTitle || '').trim(),
-                content_preview: String(payload.content || '').trim(),
-                site: String(payload.site || getPromptInteractionSite()).trim() || 'cn'
-            })
-        });
-    } catch (error) {
-        console.debug('[Prompts] Reply notification skipped:', error?.message || error);
-    }
-}
-
 async function submitComment() {
     if (!window.supabaseClient) return;
 
@@ -8812,17 +8892,6 @@ async function submitComment() {
         return;
     }
     window.ZaoyoeAdminPresence?.markActive?.();
-
-    if (originalParentId) {
-        void notifyPromptCommentReply({
-            commentId: data.id,
-            parentId: originalParentId,
-            promptId: currentPromptId,
-            promptTitle: getCurrentPromptEngagementTitle(),
-            content: originalContent || (imageUrl ? '[图片]' : ''),
-            site
-        });
-    }
 
     // Build comment object with cached user data
     const newComment = {

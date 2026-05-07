@@ -21,6 +21,132 @@ function onGuestbookDomReady(callback) {
     callback();
 }
 
+let guestbookLoginRequestTimer = null;
+
+function getGuestbookLoginMessage(fallback = '请先登录') {
+    return window.i18n?.t?.('auth.loginRequired') || fallback;
+}
+
+function hasGuestbookAuthSheetApi() {
+    return typeof window.openLoginModalWithMessage === 'function' ||
+        typeof window.openLoginModal === 'function' ||
+        (
+            !!document.getElementById('loginModal') &&
+            (
+                typeof window.openAuthModal === 'function' ||
+                typeof window.toggleLoginModal === 'function'
+            )
+        );
+}
+
+function closeActiveGuestbookLoginSurfaces(options = {}) {
+    let delay = 0;
+    const guestbookModal = document.getElementById('guestbookModal');
+    const commentModal = document.getElementById('commentModal');
+
+    if (options.closeComposer !== false && guestbookModal?.classList.contains('active')) {
+        if (typeof window.closeGuestbookModal === 'function') {
+            window.closeGuestbookModal();
+        } else {
+            guestbookModal.classList.remove('active');
+        }
+        delay = Math.max(delay, 180);
+    }
+
+    if (options.closeComment !== false && commentModal?.classList.contains('active')) {
+        if (typeof window.closeCommentModal === 'function') {
+            window.closeCommentModal();
+        } else {
+            commentModal.classList.remove('active');
+        }
+        delay = Math.max(delay, 180);
+    }
+
+    return delay;
+}
+
+function waitForGuestbookAuthSheetApi(timeoutMs = 1200) {
+    if (hasGuestbookAuthSheetApi()) {
+        return Promise.resolve(true);
+    }
+
+    return new Promise((resolve) => {
+        const startedAt = Date.now();
+        const check = () => {
+            if (hasGuestbookAuthSheetApi()) {
+                resolve(true);
+                return;
+            }
+
+            if (Date.now() - startedAt >= timeoutMs) {
+                resolve(false);
+                return;
+            }
+
+            requestAnimationFrame(check);
+        };
+
+        requestAnimationFrame(check);
+    });
+}
+
+async function openGuestbookLoginSheet(message) {
+    const normalizedMessage = String(message || getGuestbookLoginMessage()).trim();
+
+    if (typeof window.openLoginModalWithMessage === 'function') {
+        await window.openLoginModalWithMessage(normalizedMessage, {
+            viewId: 'login',
+            type: 'error'
+        });
+        return;
+    }
+
+    if (typeof window.openLoginModal === 'function') {
+        await window.openLoginModal('login', {
+            initialMessage: normalizedMessage,
+            initialMessageType: 'error'
+        });
+        return;
+    }
+
+    if (document.getElementById('loginModal') && typeof window.openAuthModal === 'function') {
+        window.openAuthModal('login');
+        window.showAuthMessage?.(normalizedMessage, 'error', 'login');
+        return;
+    }
+
+    if (document.getElementById('loginModal') && typeof window.toggleLoginModal === 'function') {
+        if (!window.isAuthModalOpen?.()) {
+            window.toggleLoginModal('login');
+        }
+        window.showAuthMessage?.(normalizedMessage, 'error', 'login');
+        return;
+    }
+
+    alert(normalizedMessage);
+}
+
+window.requestGuestbookLogin = function requestGuestbookLogin(message, options = {}) {
+    const normalizedMessage = String(message || getGuestbookLoginMessage()).trim();
+    const delay = closeActiveGuestbookLoginSurfaces(options);
+
+    if (guestbookLoginRequestTimer) {
+        clearTimeout(guestbookLoginRequestTimer);
+    }
+
+    guestbookLoginRequestTimer = setTimeout(() => {
+        guestbookLoginRequestTimer = null;
+        requestAnimationFrame(() => {
+            waitForGuestbookAuthSheetApi()
+                .then(() => openGuestbookLoginSheet(normalizedMessage))
+                .catch((error) => {
+                    console.warn('Failed to open guestbook login sheet:', error?.message || error);
+                    alert(normalizedMessage);
+                });
+        });
+    }, delay);
+};
+
 // ==================== 敏感词过滤 ====================
 let sensitiveWordsCache = null;
 let sensitiveWordsCacheTime = null;
@@ -83,6 +209,144 @@ const guestbookCache = {
 // Expose cache globally for debugging
 window.guestbookCache = guestbookCache;
 
+function normalizeGuestbookProfileRecord(profile) {
+    if (Array.isArray(profile)) {
+        return profile[0] || {};
+    }
+    return profile && typeof profile === 'object' ? profile : {};
+}
+
+function cleanGuestbookProfileText(value) {
+    return String(value || '').trim();
+}
+
+function isGuestbookAnonymousName(value) {
+    return cleanGuestbookProfileText(value).toLowerCase() === 'anonymous';
+}
+
+function getGuestbookUserId(user) {
+    return cleanGuestbookProfileText(user?.id || user?.objectId || user?.userId || user?.user_id);
+}
+
+function isSameGuestbookUser(candidate, user) {
+    if (!candidate || !user) return false;
+
+    const userId = getGuestbookUserId(user);
+    const candidateId = getGuestbookUserId(candidate);
+    if (userId && candidateId && userId === candidateId) {
+        return true;
+    }
+
+    const userEmail = cleanGuestbookProfileText(user?.email || user?.username).toLowerCase();
+    const candidateEmail = cleanGuestbookProfileText(candidate?.email || candidate?.username).toLowerCase();
+    return Boolean(userEmail && candidateEmail && userEmail === candidateEmail);
+}
+
+function readGuestbookCachedAuthProfile(user) {
+    const snapshots = [];
+
+    if (window.__ZAOYOE_LAST_AUTH_USER__) {
+        snapshots.push({
+            ...window.__ZAOYOE_LAST_AUTH_USER__,
+            nickname: window.__ZAOYOE_LAST_AUTH_USER__.nickname || window.__ZAOYOE_LAST_AUTH_DISPLAY_NAME__ || ''
+        });
+    }
+
+    if (window.__ZAOYOE_PENDING_AUTH_USER__?.user) {
+        snapshots.push(window.__ZAOYOE_PENDING_AUTH_USER__.user);
+    }
+
+    try {
+        if (typeof localStorage === 'undefined') {
+            return snapshots.find(snapshot => isSameGuestbookUser(snapshot, user)) || null;
+        }
+        const raw = localStorage.getItem('cached_user_profile');
+        if (raw) {
+            snapshots.push(JSON.parse(raw));
+        }
+    } catch (error) {
+        console.warn('⚠️ Failed to read cached guestbook auth profile:', error.message);
+    }
+
+    return snapshots.find(snapshot => isSameGuestbookUser(snapshot, user)) || null;
+}
+
+function readGuestbookVisibleCurrentName() {
+    const dropdownUsername = document.getElementById('dropdownUsername');
+    const dropdownText = dropdownUsername
+        ? Array.from(dropdownUsername.childNodes)
+            .filter((node) => node.nodeType === Node.TEXT_NODE)
+            .map((node) => node.textContent)
+            .join(' ')
+        : '';
+
+    const candidates = [
+        document.getElementById('authBtnText')?.textContent,
+        dropdownText,
+        document.getElementById('profileMobileHeroName')?.textContent,
+        document.getElementById('profileMobileNicknameValue')?.textContent
+    ];
+
+    const placeholders = new Set(['sign in', 'login', 'user', '登录', '登录 / 注册', '请登录']);
+
+    return candidates
+        .map(cleanGuestbookProfileText)
+        .find((value) => value
+            && value !== 'Loading...'
+            && value !== '加载中...'
+            && value !== '加载失败'
+            && !placeholders.has(value.toLowerCase())) || '';
+}
+
+function pickGuestbookDisplayName(...candidates) {
+    for (const candidate of candidates) {
+        const value = cleanGuestbookProfileText(candidate);
+        if (value && !isGuestbookAnonymousName(value)) {
+            return value;
+        }
+    }
+
+    const anonymousFallback = candidates
+        .map(cleanGuestbookProfileText)
+        .find(isGuestbookAnonymousName);
+
+    return anonymousFallback || 'Anonymous';
+}
+
+function resolveGuestbookAuthorProfile({ user = null, profile = null, fallbackName = '', fallbackAvatar = '' } = {}) {
+    const normalizedProfile = normalizeGuestbookProfileRecord(profile);
+    const cachedProfile = user ? readGuestbookCachedAuthProfile(user) : null;
+    const visibleCurrentName = user ? readGuestbookVisibleCurrentName() : '';
+    const metadata = user?.user_metadata || {};
+    const emailPrefix = cleanGuestbookProfileText(user?.email).split('@')[0] || '';
+
+    const username = pickGuestbookDisplayName(
+        normalizedProfile.username,
+        normalizedProfile.display_name,
+        cachedProfile?.nickname,
+        cachedProfile?.displayName,
+        cachedProfile?.display_name,
+        visibleCurrentName,
+        metadata.full_name,
+        metadata.name,
+        fallbackName,
+        cachedProfile?.username,
+        emailPrefix
+    );
+
+    return {
+        id: normalizedProfile.id || getGuestbookUserId(user) || null,
+        username,
+        avatar_url: cleanGuestbookProfileText(normalizedProfile.avatar_url)
+            || cleanGuestbookProfileText(normalizedProfile.avatarUrl)
+            || cleanGuestbookProfileText(cachedProfile?.avatarUrl)
+            || cleanGuestbookProfileText(cachedProfile?.avatar_url)
+            || cleanGuestbookProfileText(metadata.avatar_url)
+            || cleanGuestbookProfileText(fallbackAvatar)
+            || null
+    };
+}
+
 function trackGuestbookAnalyticsEvent(eventName, payload = {}, options = {}) {
     const tracker = window.UserEventTracker;
     if (!tracker || typeof tracker.track !== 'function') {
@@ -110,43 +374,24 @@ function trackGuestbookAnalyticsEvent(eventName, payload = {}, options = {}) {
     });
 }
 
-async function notifyGuestbookCommentReply(payload = {}) {
-    const commentId = String(payload.commentId || '').trim();
-    const messageId = String(payload.messageId || '').trim();
-    if (!commentId || !messageId || !window.supabaseClient?.auth?.getSession) {
-        return;
-    }
-
-    try {
-        const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
-        const accessToken = session?.access_token || '';
-        if (!accessToken) return;
-
-        const parentId = String(payload.parentCommentId || payload.parentId || '').trim();
-        await fetch('/api/engagement/reply-notify', {
-            method: 'POST',
-            credentials: 'same-origin',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${accessToken}`
-            },
-            body: JSON.stringify({
-                source: 'guestbook_comment',
-                comment_id: commentId,
-                parent_id: parentId,
-                message_id: messageId,
-                content_preview: String(payload.content || '').trim(),
-                site: String(payload.site || window.SiteConfig?.site || 'cn').trim() || 'cn'
-            })
-        });
-    } catch (error) {
-        console.debug('[Guestbook] Reply notification skipped:', error?.message || error);
-    }
-}
-
 function invalidateGuestbookCache() {
     guestbookCache.lastFetch = null;
     console.log('🗑️ Guestbook cache invalidated');
+}
+
+function invalidateGuestbookMessageRuntimeCaches() {
+    window.Cache?.invalidateCache?.('guestbook_messages');
+    window.Cache?.invalidateCache?.('guestbook_messages_profile_name_v1');
+}
+
+function replayGuestbookDeepLinkAfterRender(reason = 'guestbook_rendered') {
+    if (typeof window.maybeHandleGuestbookDeepLink !== 'function') {
+        return;
+    }
+    void window.maybeHandleGuestbookDeepLink({
+        force: true,
+        reason
+    });
 }
 
 // ==================== 加载留言板 (Supabase 版本) ====================
@@ -167,6 +412,7 @@ async function loadGuestbookMessages(forceRefresh = false, scrollTargetId = null
     if (cacheValid && guestbookCache.messages.length > 0) {
         console.log('📦 Using cached messages');
         displayMessages(guestbookCache.messages);
+        replayGuestbookDeepLinkAfterRender('guestbook_cache_rendered');
         return;
     }
 
@@ -217,6 +463,7 @@ async function loadGuestbookMessages(forceRefresh = false, scrollTargetId = null
                     guestbookCache.lastFetch = Date.now();
 
                     displayMessages(messagesWithComments);
+                    replayGuestbookDeepLinkAfterRender('guestbook_prefetch_rendered');
 
                     if (scrollTargetId) {
                         setTimeout(() => {
@@ -284,6 +531,7 @@ async function loadGuestbookMessages(forceRefresh = false, scrollTargetId = null
 
                 console.log(`✅ Loaded ${messages.length} messages (single RPC)`);
                 displayMessages(messagesWithComments);
+                replayGuestbookDeepLinkAfterRender('guestbook_rpc_rendered');
             }
         } catch (rpcErr) {
             console.warn('⚠️ RPC not available, using fallback:', rpcErr.message);
@@ -387,6 +635,7 @@ async function loadGuestbookMessages(forceRefresh = false, scrollTargetId = null
 
             console.log(`✅ Loaded ${messages.length} messages (parallel fallback)`);
             displayMessages(messagesWithComments);
+            replayGuestbookDeepLinkAfterRender('guestbook_fallback_rendered');
         }
 
         // Scroll to target if specified
@@ -424,6 +673,99 @@ function buildCommentTree(comments) {
     });
 
     return roots;
+}
+
+function mergeGuestbookRpcUserLikes(userLikes = []) {
+    if (!Array.isArray(userLikes) || userLikes.length === 0) return;
+
+    const likeKeys = userLikes
+        .map((like) => {
+            const targetType = cleanGuestbookProfileText(like?.target_type);
+            const targetId = cleanGuestbookProfileText(like?.target_id);
+            if (!targetType || !targetId) return '';
+            const normalizedType = targetType.charAt(0).toUpperCase() + targetType.slice(1);
+            return `${normalizedType}_${targetId}`;
+        })
+        .filter(Boolean);
+
+    if (likeKeys.length === 0) return;
+
+    guestbookCache.userLikes = new Set([
+        ...guestbookCache.userLikes,
+        ...likeKeys
+    ]);
+}
+
+function enrichGuestbookRealtimeComments(comments = []) {
+    const commentMap = new Map(
+        comments.map(comment => [cleanGuestbookProfileText(comment?.id), comment])
+    );
+
+    return comments.map(comment => {
+        const parentId = cleanGuestbookProfileText(comment?.parent_id);
+        const parent = parentId ? commentMap.get(parentId) : null;
+        return {
+            ...comment,
+            parentUserName: parent?.profiles?.username || comment?.parentUserName || comment?.parent_user_name || null
+        };
+    });
+}
+
+async function fetchGuestbookRealtimeMessageSnapshot(messageId, commentId = null) {
+    const normalizedMessageId = cleanGuestbookProfileText(messageId);
+    if (!normalizedMessageId || !window.supabaseClient?.rpc) return null;
+
+    try {
+        const currentSite = window.SiteConfig?.site || 'cn';
+        let currentUserId = null;
+
+        try {
+            const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
+            currentUserId = session?.user?.id || null;
+        } catch (sessionError) {
+            console.debug('[Guestbook] Realtime snapshot session unavailable:', sessionError?.message || sessionError);
+        }
+
+        const { data: rpcData, error } = await window.supabaseClient
+            .rpc('fn_load_guestbook', {
+                p_site: currentSite,
+                p_limit: 100,
+                p_user_id: currentUserId
+            });
+
+        if (error || !rpcData) {
+            throw error || new Error('Empty guestbook realtime snapshot');
+        }
+
+        const messages = Array.isArray(rpcData.messages) ? rpcData.messages : [];
+        const message = messages.find(item => cleanGuestbookProfileText(item?.id) === normalizedMessageId);
+        if (!message) return null;
+
+        mergeGuestbookRpcUserLikes(rpcData.user_likes || []);
+
+        const comments = enrichGuestbookRealtimeComments(
+            (Array.isArray(rpcData.comments) ? rpcData.comments : [])
+                .filter(comment => cleanGuestbookProfileText(comment?.message_id) === normalizedMessageId)
+        );
+        const commentsTree = buildCommentTree(comments);
+        const normalizedCommentId = cleanGuestbookProfileText(commentId);
+        const comment = normalizedCommentId
+            ? comments.find(item => cleanGuestbookProfileText(item?.id) === normalizedCommentId) || null
+            : null;
+
+        return {
+            message: {
+                ...message,
+                comments: commentsTree
+            },
+            comment,
+            comments,
+            commentsTree
+        };
+    } catch (error) {
+        console.warn('⚠️ Failed to fetch guestbook realtime snapshot:', error?.message || error);
+        return null;
+    }
 }
 
 // ==================== 显示留言 ====================
@@ -515,15 +857,21 @@ function displayMessages(messages) {
 
 // Format message for UI compatibility with existing guestbook.js
 function formatMessageForUI(msg) {
+    const resolvedProfile = resolveGuestbookAuthorProfile({
+        profile: msg.profiles,
+        fallbackName: msg.username || msg.name || msg.author || '',
+        fallbackAvatar: msg.avatar_url || msg.avatarUrl || ''
+    });
+
     return {
         objectId: msg.id,
         id: msg.id,
         content: msg.content,
         image: msg.image_url,
         imageUrl: msg.image_url,
-        name: msg.profiles?.username || 'Anonymous',
-        username: msg.profiles?.username || 'Anonymous',
-        avatarUrl: msg.profiles?.avatar_url || `https://ui-avatars.com/api/?name=User&background=random`,
+        name: resolvedProfile.username,
+        username: resolvedProfile.username,
+        avatarUrl: resolvedProfile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(resolvedProfile.username || 'User')}&background=random`,
         userId: msg.user_id,
         authorId: msg.user_id,
         likes: msg.like_count || 0,
@@ -535,13 +883,19 @@ function formatMessageForUI(msg) {
 }
 
 function formatCommentForUI(comment) {
+    const resolvedProfile = resolveGuestbookAuthorProfile({
+        profile: comment.profiles,
+        fallbackName: comment.username || comment.name || comment.author || '',
+        fallbackAvatar: comment.avatar_url || comment.avatarUrl || ''
+    });
+
     return {
         objectId: comment.id,
         id: comment.id,
         content: comment.content,
-        name: comment.profiles?.username || 'Anonymous',
-        username: comment.profiles?.username || 'Anonymous',
-        avatarUrl: comment.profiles?.avatar_url || `https://ui-avatars.com/api/?name=User&background=random`,
+        name: resolvedProfile.username,
+        username: resolvedProfile.username,
+        avatarUrl: resolvedProfile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(resolvedProfile.username || 'User')}&background=random`,
         userId: comment.user_id,
         authorId: comment.user_id,
         parentId: comment.parent_id,
@@ -621,7 +975,9 @@ async function addMessage(content, imageUrl = '', options = {}) {
     }
 
     if (!user) {
-        alert('请先登录');
+        window.requestGuestbookLogin?.(getGuestbookLoginMessage('请先登录后再留言'), {
+            closeComposer: true
+        });
         return false;
     }
 
@@ -673,8 +1029,10 @@ async function addMessage(content, imageUrl = '', options = {}) {
         if (error) throw error;
 
         console.log('✅ Message added:', data.id);
+        guestbookCache.recentInserts.add(data.id);
+        setTimeout(() => guestbookCache.recentInserts.delete(data.id), 5000);
         invalidateGuestbookCache();
-        window.Cache?.invalidateCache?.('guestbook_messages');
+        invalidateGuestbookMessageRuntimeCaches();
         trackGuestbookAnalyticsEvent('guestbook_post', {
             entityId: String(data.id || '').trim() || null,
             eventValue: content ? String(content).trim().length : 0,
@@ -691,13 +1049,15 @@ async function addMessage(content, imageUrl = '', options = {}) {
             eventType: 'engagement',
             dedupeKey: String(data.id || '').trim() ? `guestbook_post:${String(data.id).trim()}` : ''
         });
+        const resolvedProfile = resolveGuestbookAuthorProfile({
+            user,
+            profile: data.profiles,
+            fallbackName: content ? '' : 'Anonymous'
+        });
         return {
             ...data,
             like_count: data.like_count || 0,
-            profiles: {
-                username: data.profiles?.username || user.user_metadata?.full_name || user.email?.split('@')[0] || '匿名用户',
-                avatar_url: data.profiles?.avatar_url || user.user_metadata?.avatar_url || null
-            }
+            profiles: resolvedProfile
         };
 
     } catch (error) {
@@ -712,7 +1072,9 @@ async function addCommentToMessage(messageId, content) {
     const { data: { user } } = await window.supabaseClient.auth.getUser();
 
     if (!user) {
-        alert('请先登录');
+        window.requestGuestbookLogin?.(getGuestbookLoginMessage('请先登录后再评论'), {
+            closeComment: true
+        });
         return false;
     }
 
@@ -751,12 +1113,6 @@ async function addCommentToMessage(messageId, content) {
         if (error) throw error;
 
         console.log('✅ Comment added:', data.id);
-        void notifyGuestbookCommentReply({
-            commentId: data.id,
-            messageId,
-            content,
-            site: window.SiteConfig?.site || 'cn'
-        });
 
         // Track this insert to skip Realtime refresh
         guestbookCache.recentInserts.add(data.id);
@@ -765,24 +1121,25 @@ async function addCommentToMessage(messageId, content) {
         // Get user profile for display
         const { data: profile } = await window.supabaseClient
             .from('profiles')
-            .select('username, avatar_url')
+            .select('id, username, avatar_url')
             .eq('id', user.id)
             .single();
+        const resolvedProfile = resolveGuestbookAuthorProfile({
+            user,
+            profile
+        });
 
         const formattedComment = typeof formatCommentForUI === 'function'
             ? formatCommentForUI({
                 ...data,
-                profiles: {
-                    username: profile?.username || 'Anonymous',
-                    avatar_url: profile?.avatar_url || null
-                },
+                profiles: resolvedProfile,
                 replies: []
             })
             : {
                 id: data.id,
                 content: content,
-                name: profile?.username || 'Anonymous',
-                avatarUrl: profile?.avatar_url,
+                name: resolvedProfile.username,
+                avatarUrl: resolvedProfile.avatar_url,
                 timestamp: '刚刚',
                 likes: 0,
                 isLiked: false,
@@ -807,7 +1164,9 @@ async function addReplyToComment(parentCommentId, messageId, content) {
     const { data: { user } } = await window.supabaseClient.auth.getUser();
 
     if (!user) {
-        alert('请先登录');
+        window.requestGuestbookLogin?.(getGuestbookLoginMessage('请先登录后再评论'), {
+            closeComment: true
+        });
         return false;
     }
 
@@ -846,13 +1205,6 @@ async function addReplyToComment(parentCommentId, messageId, content) {
         if (error) throw error;
 
         console.log('✅ Reply added:', data.id);
-        void notifyGuestbookCommentReply({
-            commentId: data.id,
-            messageId,
-            parentCommentId,
-            content,
-            site: window.SiteConfig?.site || 'cn'
-        });
 
         // Track this insert to skip Realtime refresh
         guestbookCache.recentInserts.add(data.id);
@@ -861,9 +1213,13 @@ async function addReplyToComment(parentCommentId, messageId, content) {
         // Get user profile for display
         const { data: profile } = await window.supabaseClient
             .from('profiles')
-            .select('username, avatar_url')
+            .select('id, username, avatar_url')
             .eq('id', user.id)
             .single();
+        const resolvedProfile = resolveGuestbookAuthorProfile({
+            user,
+            profile
+        });
 
         // Get parent comment author name for @mention
         const parentComment = document.querySelector(`[data-comment-id="${parentCommentId}"]`);
@@ -872,18 +1228,15 @@ async function addReplyToComment(parentCommentId, messageId, content) {
         const formattedReply = typeof formatCommentForUI === 'function'
             ? formatCommentForUI({
                 ...data,
-                profiles: {
-                    username: profile?.username || 'Anonymous',
-                    avatar_url: profile?.avatar_url || null
-                },
+                profiles: resolvedProfile,
                 parentUserName: parentAuthorName,
                 replies: []
             })
             : {
                 id: data.id,
                 content: content,
-                name: profile?.username || 'Anonymous',
-                avatarUrl: profile?.avatar_url,
+                name: resolvedProfile.username,
+                avatarUrl: resolvedProfile.avatar_url,
                 timestamp: '刚刚',
                 likes: 0,
                 isLiked: false,
@@ -909,7 +1262,7 @@ async function toggleLike(type, targetId) {
     const { data: { user } } = await window.supabaseClient.auth.getUser();
 
     if (!user) {
-        alert('请先登录');
+        window.requestGuestbookLogin?.(getGuestbookLoginMessage('请先登录后再点赞'));
         return null;
     }
 
@@ -1017,7 +1370,7 @@ async function deleteMessage(messageId) {
 
     const { data: { user } } = await window.supabaseClient.auth.getUser();
     if (!user) {
-        alert('请先登录');
+        window.requestGuestbookLogin?.(getGuestbookLoginMessage('请先登录后再删除留言'));
         return;
     }
 
@@ -1287,21 +1640,50 @@ async function insertNewMessageFromRealtime(msgData) {
             return;
         }
 
+        const realtimeSnapshot = await fetchGuestbookRealtimeMessageSnapshot(msgData.id);
+        if (realtimeSnapshot?.message) {
+            const formattedSnapshotMsg = typeof formatMessageForUI === 'function'
+                ? formatMessageForUI(realtimeSnapshot.message)
+                : {
+                    id: realtimeSnapshot.message.id,
+                    objectId: realtimeSnapshot.message.id,
+                    content: realtimeSnapshot.message.content,
+                    image: realtimeSnapshot.message.image_url,
+                    imageUrl: realtimeSnapshot.message.image_url,
+                    name: realtimeSnapshot.message.profiles?.username || 'Anonymous',
+                    username: realtimeSnapshot.message.profiles?.username || 'Anonymous',
+                    avatarUrl: realtimeSnapshot.message.profiles?.avatar_url || null,
+                    userId: realtimeSnapshot.message.user_id,
+                    authorId: realtimeSnapshot.message.user_id,
+                    likes: realtimeSnapshot.message.like_count || 0,
+                    isLiked: isLiked('Message', realtimeSnapshot.message.id),
+                    comments: [],
+                    createdAt: realtimeSnapshot.message.created_at,
+                    timestamp: formatTime(realtimeSnapshot.message.created_at)
+                };
+
+            if (typeof window.insertMessageToDOM === 'function') {
+                window.insertMessageToDOM(formattedSnapshotMsg, { position: 'prepend' });
+                console.log('✅ New message inserted from Realtime snapshot');
+                return;
+            }
+        }
+
         // Fetch user profile
         const { data: profile } = await window.supabaseClient
             .from('profiles')
-            .select('username, avatar_url')
+            .select('id, username, avatar_url')
             .eq('id', msgData.user_id)
             .single();
+        const resolvedProfile = resolveGuestbookAuthorProfile({
+            user: window.__ZAOYOE_LAST_AUTH_USER__?.id === msgData.user_id ? window.__ZAOYOE_LAST_AUTH_USER__ : null,
+            profile
+        });
 
         const formattedMsg = typeof formatMessageForUI === 'function'
             ? formatMessageForUI({
                 ...msgData,
-                profiles: {
-                    id: msgData.user_id,
-                    username: profile?.username || 'Anonymous',
-                    avatar_url: profile?.avatar_url || null
-                },
+                profiles: resolvedProfile,
                 comments: []
             })
             : {
@@ -1310,9 +1692,9 @@ async function insertNewMessageFromRealtime(msgData) {
                 content: msgData.content,
                 image: msgData.image_url,
                 imageUrl: msgData.image_url,
-                name: profile?.username || 'Anonymous',
-                username: profile?.username || 'Anonymous',
-                avatarUrl: profile?.avatar_url || null,
+                name: resolvedProfile.username,
+                username: resolvedProfile.username,
+                avatarUrl: resolvedProfile.avatar_url || null,
                 userId: msgData.user_id,
                 authorId: msgData.user_id,
                 likes: msgData.like_count || 0,
@@ -1339,33 +1721,58 @@ async function insertNewCommentFromRealtime(commentData) {
     console.log('💬 Inserting new comment from Realtime:', commentData.id);
 
     try {
-        // Fetch user profile
-        const { data: profile } = await window.supabaseClient
-            .from('profiles')
-            .select('username, avatar_url')
-            .eq('id', commentData.user_id)
-            .single();
+        const realtimeSnapshot = await fetchGuestbookRealtimeMessageSnapshot(commentData.message_id, commentData.id);
+        let formattedComment = null;
 
-        const formattedComment = typeof formatCommentForUI === 'function'
-            ? formatCommentForUI({
-                ...commentData,
-                profiles: {
-                    username: profile?.username || 'Anonymous',
-                    avatar_url: profile?.avatar_url || null
-                },
-                replies: []
-            })
-            : {
-                id: commentData.id,
-                content: commentData.content,
-                name: profile?.username || 'Anonymous',
-                avatarUrl: profile?.avatar_url,
-                timestamp: '刚刚',
-                likes: 0,
-                isLiked: false,
-                parentUserName: null,
-                replies: []
-            };
+        if (realtimeSnapshot?.comment) {
+            formattedComment = typeof formatCommentForUI === 'function'
+                ? formatCommentForUI({
+                    ...realtimeSnapshot.comment,
+                    replies: []
+                })
+                : {
+                    id: realtimeSnapshot.comment.id,
+                    content: realtimeSnapshot.comment.content,
+                    name: realtimeSnapshot.comment.profiles?.username || 'Anonymous',
+                    avatarUrl: realtimeSnapshot.comment.profiles?.avatar_url || null,
+                    timestamp: formatTime(realtimeSnapshot.comment.created_at),
+                    likes: realtimeSnapshot.comment.like_count || 0,
+                    isLiked: isLiked('Comment', realtimeSnapshot.comment.id),
+                    parentUserName: realtimeSnapshot.comment.parentUserName || null,
+                    replies: []
+                };
+        }
+
+        // Fetch user profile
+        if (!formattedComment) {
+            const { data: profile } = await window.supabaseClient
+                .from('profiles')
+                .select('id, username, avatar_url')
+                .eq('id', commentData.user_id)
+                .single();
+            const resolvedProfile = resolveGuestbookAuthorProfile({
+                user: window.__ZAOYOE_LAST_AUTH_USER__?.id === commentData.user_id ? window.__ZAOYOE_LAST_AUTH_USER__ : null,
+                profile
+            });
+
+            formattedComment = typeof formatCommentForUI === 'function'
+                ? formatCommentForUI({
+                    ...commentData,
+                    profiles: resolvedProfile,
+                    replies: []
+                })
+                : {
+                    id: commentData.id,
+                    content: commentData.content,
+                    name: resolvedProfile.username,
+                    avatarUrl: resolvedProfile.avatar_url,
+                    timestamp: '刚刚',
+                    likes: 0,
+                    isLiked: false,
+                    parentUserName: null,
+                    replies: []
+                };
+        }
 
         // If it's a reply (has parent_id), insert after parent comment
         // Pass autoScroll=false to prevent auto-scrolling for Realtime events
@@ -1761,7 +2168,7 @@ onGuestbookDomReady(function () {
         }
         syncHomepagePrefetchCache(message);
         syncGuestbookPrefetchCache(message);
-        window.Cache?.invalidateCache?.('guestbook_messages');
+        invalidateGuestbookMessageRuntimeCaches();
         void refreshGuestbookPrefetch(userId, message);
     }
 
@@ -1812,10 +2219,9 @@ onGuestbookDomReady(function () {
 
                 if (!user) {
                     resetGuestbookSubmitFlow();
-                    alert('请先登录后再留言');
-                    if (typeof toggleLoginModal === 'function') {
-                        toggleLoginModal();
-                    }
+                    window.requestGuestbookLogin?.(getGuestbookLoginMessage('请先登录后再留言'), {
+                        closeComposer: true
+                    });
                     return;
                 }
 
