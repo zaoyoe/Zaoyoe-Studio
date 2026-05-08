@@ -26,7 +26,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'static hero title should render immediately and still be localized by i18n'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260505_HOME_GUESTBOOK_PROFILE_NAME_1'),
+        indexSource.includes('./js/framer_home.js?v=20260508_HOME_BILINGUAL_RUNTIME_1'),
         true,
         'index.html should cache-bust the first-paint homepage runtime'
     );

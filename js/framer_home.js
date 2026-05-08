@@ -65,8 +65,8 @@ const HOMEPAGE_DEFERRED_OVERLAY_STYLE_GROUP = 'homepage-overlays';
 const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
 const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
 const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260505_HOME_GUESTBOOK_PROFILE_NAME_1';
-const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260430_HOME_TEXT_LANGUAGE_2';
+const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260508_HOME_BILINGUAL_RUNTIME_1';
+const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';
 const HOMEPAGE_PROMPT_LIVE_SELECT = [
   'id',
   'title',
@@ -148,15 +148,28 @@ function containsHomeCjkText(value) {
 function getHomepageLanguageFallback(i18nKey, fallbackByLanguage = {}) {
   const lang = getHomepageRuntimeLanguage();
   const translated = i18nKey ? window.i18n?.t?.(i18nKey) : '';
-  return (translated && translated !== i18nKey ? translated : '') || fallbackByLanguage[lang] || fallbackByLanguage.zh || '';
+  return (translated && translated !== i18nKey ? translated : '') || getHomepageStrictLanguageFallback(fallbackByLanguage);
 }
 
 function resolveHomepageLocalizedText(value, i18nKey, fallbackByLanguage = {}) {
   const normalized = String(value || '').trim();
-  if (getHomepageRuntimeLanguage() === 'en' && containsHomeCjkText(normalized)) {
-    return getHomepageLanguageFallback(i18nKey, fallbackByLanguage);
+  const fallback = getHomepageLanguageFallback(i18nKey, fallbackByLanguage);
+  const currentLang = getHomepageRuntimeLanguage();
+
+  if (currentLang === 'en' && containsHomeCjkText(normalized)) {
+    return fallback;
   }
-  return normalized || getHomepageLanguageFallback(i18nKey, fallbackByLanguage);
+
+  if (
+    currentLang === 'zh'
+    && normalized
+    && !containsHomeCjkText(normalized)
+    && containsHomeCjkText(fallback)
+  ) {
+    return fallback;
+  }
+
+  return normalized || fallback;
 }
 
 function getHomepageStrictLanguageFallback(fallbackByLanguage = {}) {
@@ -248,10 +261,23 @@ function normalizeHomepageTextList(value) {
 
 function resolveHomepageLocalizedTextList(value, fallbackItems = []) {
   const normalized = normalizeHomepageTextList(value);
-  if (getHomepageRuntimeLanguage() === 'en' && normalized.some((item) => containsHomeCjkText(item))) {
-    return normalizeHomepageTextList(fallbackItems);
+  const fallbackList = normalizeHomepageTextList(fallbackItems);
+  const currentLang = getHomepageRuntimeLanguage();
+
+  if (currentLang === 'en' && normalized.some((item) => containsHomeCjkText(item))) {
+    return fallbackList;
   }
-  return normalized.length > 0 ? normalized : normalizeHomepageTextList(fallbackItems);
+
+  if (
+    currentLang === 'zh'
+    && normalized.length > 0
+    && normalized.every((item) => !containsHomeCjkText(item))
+    && fallbackList.some((item) => containsHomeCjkText(item))
+  ) {
+    return fallbackList;
+  }
+
+  return normalized.length > 0 ? normalized : fallbackList;
 }
 
 function filterHomepageDataTextList(value) {

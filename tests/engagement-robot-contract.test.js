@@ -1660,6 +1660,29 @@ test('business events trigger customer robot automation rules', () => {
     assert.match(verifyWidget, /triggerVerifyEngagementEvent\('verify_failed'[\s\S]*reason_code/);
 });
 
+test('robot bubbles protect ordinary users from ops notices while surfacing CN admin ops alerts', () => {
+    const chatWidget = readRepoFile('js/components/ChatWidget.js');
+    const publicHandler = readRepoFile('server/api-handlers/public/engagement.js');
+
+    assert.match(publicHandler, /function isCnAdminBubbleContext\(context = \{\}\)/);
+    assert.match(publicHandler, /function isOpsLikeNotification\(row = \{\}\)/);
+    assert.match(publicHandler, /scope === 'admin_personal'[\s\S]*return adminBubbleContext/);
+    assert.match(publicHandler, /opsLike && !adminBubbleContext/);
+    assert.match(publicHandler, /function fetchOpsAlertBubbles\(supabase, context\)/);
+    assert.match(publicHandler, /\.from\('ops_alert_jobs'\)/);
+    assert.match(publicHandler, /\[\.\.\.opsAlerts, \.\.\.notifications, \.\.\.rules\]/);
+
+    assert.match(chatWidget, /isCnAdminEngagementBubbleContext\(\)/);
+    assert.match(chatWidget, /isOpsLikeSystemNotification\(item = \{\}\)/);
+    assert.match(chatWidget, /scope === 'admin_personal'[\s\S]*return cnAdminBubble/);
+    assert.match(chatWidget, /buildOpsAlertEngagementItem\(alert = \{\}\)/);
+    assert.match(chatWidget, /showOpsAlertEngagementBubble\(alert = \{\}, options = \{\}\)/);
+    assert.match(chatWidget, /openOpsAlertEngagementTarget\(item = \{\}\)/);
+    assert.match(chatWidget, /normalized\.source === 'ops_alert' \|\| \/\^ops-alert:\/i\.test\(actionUrl\)/);
+    assert.match(chatWidget, /\['notification', 'ops_alert'\]\.includes\(normalized\.source\)/);
+    assert.match(chatWidget, /this\.showOpsAlertEngagementBubble\(normalized, \{ realtime: true \}\)/);
+});
+
 test('customer robot realtime covers feed invalidations and user tag audience changes', () => {
     const chatWidget = readRepoFile('js/components/ChatWidget.js');
     const engagementJs = readRepoFile('js/admin-engagement.js');

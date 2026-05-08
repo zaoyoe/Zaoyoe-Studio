@@ -89,6 +89,8 @@ test('homepage hero runtime avoids Chinese title fallback in English language mo
     assert.match(framerSource, /function resolveHomepageLocalizedTextList\(value, fallbackItems = \[\]\)/);
     assert.match(framerSource, /function resolveHomepageHeroText\(value, i18nKey, fallbackByLanguage = \{\}\)/);
     assert.match(framerSource, /getHomepageRuntimeLanguage\(\) === 'en' && containsHomeCjkText\(normalized\)/);
+    assert.match(framerSource, /currentLang === 'zh'[\s\S]*!containsHomeCjkText\(normalized\)[\s\S]*containsHomeCjkText\(fallback\)/);
+    assert.match(framerSource, /currentLang === 'zh'[\s\S]*normalized\.every\(\(item\) => !containsHomeCjkText\(item\)\)[\s\S]*fallbackList\.some\(\(item\) => containsHomeCjkText\(item\)\)/);
     assert.match(framerSource, /text: resolveHomepageLocalizedText\(this\.getLocalizedField\(item, 'text'\) \|\| item\?\.text, entryFallback\.i18nKey/);
     assert.match(framerSource, /resolveHomepageLocalizedText\(this\.getLocalizedField\(config, 'section_title'\), 'home\.prompts\.title'/);
     assert.match(framerSource, /resolveHomepageLocalizedText\(this\.getLocalizedField\(config, 'section_title'\), 'home\.shop\.title'/);
@@ -106,6 +108,8 @@ test('homepage hero runtime avoids Chinese title fallback in English language mo
     assert.match(prefetchSource, /function resolveLocalizedTextList\(value, fallbackItems = \[\]\)/);
     assert.match(prefetchSource, /function resolveHeroText\(value, i18nKey, fallbackByLanguage = \{\}\)/);
     assert.match(prefetchSource, /getCurrentLanguage\(\) === 'en' && containsCjkText\(normalized\)/);
+    assert.match(prefetchSource, /currentLang === 'zh'[\s\S]*!containsCjkText\(normalized\)[\s\S]*containsCjkText\(fallback\)/);
+    assert.match(prefetchSource, /currentLang === 'zh'[\s\S]*normalized\.every\(\(item\) => !containsCjkText\(item\)\)[\s\S]*fallbackList\.some\(\(item\) => containsCjkText\(item\)\)/);
     assert.match(prefetchSource, /text: resolveLocalizedText\(getLocalizedField\(item, 'text'\) \|\| item\?\.text, entryFallback\.i18nKey/);
     assert.match(prefetchSource, /resolveLocalizedText\(getLocalizedField\(config, 'section_title'\), 'home\.verify\.title'/);
     assert.match(prefetchSource, /features: resolveLocalizedTextList\(config\.features, defaultFeatures\)/);
