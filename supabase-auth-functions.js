@@ -2537,14 +2537,24 @@ function createGoogleRedirectState() {
     return state;
 }
 
-function buildGoogleImplicitAuthUrl(state) {
+function buildGoogleImplicitAuthRedirectUri(mode = 'same-tab') {
+    if (String(mode || '').trim().toLowerCase() === 'popup') {
+        return new URL('/auth-callback.html', window.location.origin).toString();
+    }
+    return window.location.origin;
+}
+
+function buildGoogleImplicitAuthUrl(state, options = {}) {
     const clientId = resolveGoogleClientId();
     if (!clientId) {
         throw new Error('当前站点未配置 Google Client ID');
     }
+    const redirectMode = String(options?.mode || '').trim().toLowerCase() === 'popup'
+        ? 'popup'
+        : 'same-tab';
     const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
     authUrl.searchParams.set('client_id', clientId);
-    authUrl.searchParams.set('redirect_uri', window.location.origin);
+    authUrl.searchParams.set('redirect_uri', buildGoogleImplicitAuthRedirectUri(redirectMode));
     authUrl.searchParams.set('response_type', 'id_token');
     authUrl.searchParams.set('scope', 'openid email profile');
     authUrl.searchParams.set('state', state);
@@ -3107,7 +3117,7 @@ function startGoogleSameTabRedirectLogin() {
 // Fallback: Open Google OAuth in a popup window when One Tap is blocked
 function openGooglePopupFallback() {
     const popupState = createGooglePopupState();
-    const authUrl = buildGoogleImplicitAuthUrl(popupState);
+    const authUrl = buildGoogleImplicitAuthUrl(popupState, { mode: 'popup' });
 
     const width = 500, height = 600;
     // Calculate center relative to the entire browser window (including its toolbars)
