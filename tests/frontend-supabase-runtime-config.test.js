@@ -4062,7 +4062,7 @@ test('homepage subpages load the latest prefetch-home runtime script version', (
 
     for (const source of subpageSources) {
         assert.equal(
-            source.includes('./js/prefetch-home.js?v=20260508_HOME_BILINGUAL_RUNTIME_1'),
+            source.includes('./js/prefetch-home.js?v=20260508_HOME_BILINGUAL_RUNTIME_2'),
             true,
             'subpages should load the latest prefetch-home script version'
         );
@@ -8083,7 +8083,7 @@ test('admin studio centralizes module permissions and gates sidebar modules thro
     );
     assert.match(
         adminStudioSource,
-        /js\/admin-studio-bootstrap\.js\?v=20260503_ADMIN_CLIPBOARD_FALLBACK_1/,
+        /js\/admin-studio-bootstrap\.js\?v=20260508_SITE_LAYOUT_BOOTSTRAP_1/,
         'admin-studio.html should load the cache-busted admin studio bootstrap without legacy chat prewarm'
     );
     assert.match(
@@ -9521,7 +9521,7 @@ test('homepage admin runtime renderers externalize retry, visibility, tab indica
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-homepage.js?v=20260421_HOMEPAGE_FEEDBACK_BRIDGE_P4'),
+        adminStudioSource.includes('admin-homepage.js?v=20260508_SITE_LAYOUT_RUNTIME_2'),
         true,
         'admin-studio.html should load the latest homepage admin script version'
     );
@@ -11626,7 +11626,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         'js/admin-analytics-ai-controller.js?v=20260405_ANALYTICS_AI_CONTROLLER_1',
         'js/admin-analytics-export-builders.js?v=20260405_ANALYTICS_EXPORT_BUILDERS_1',
         'js/admin-analytics-ai-export.js?v=20260421_ANALYTICS_AI_BUDGET_P0',
-        'js/admin-studio-bootstrap.js?v=20260503_ADMIN_CLIPBOARD_FALLBACK_1',
+        'js/admin-studio-bootstrap.js?v=20260508_SITE_LAYOUT_BOOTSTRAP_1',
         'admin-studio.css?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1',
         'class="charts-grid analytics-growth-insight-grid"',
         'class="chart-card glass-panel analytics-growth-card analytics-growth-card--full"',
@@ -14508,7 +14508,7 @@ test('analytics user drill-down carries commerce context into the user detail mo
     }
 
     assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
-    assert.equal(adminStudioHtml.includes('admin-homepage.js?v=20260421_HOMEPAGE_FEEDBACK_BRIDGE_P4'), true, 'admin-studio.html should reference the latest homepage admin runtime version');
+    assert.equal(adminStudioHtml.includes('admin-homepage.js?v=20260508_SITE_LAYOUT_RUNTIME_2'), true, 'admin-studio.html should reference the latest homepage admin runtime version');
     assert.equal(adminStudioHtml.includes('admin-users.js?v=20260505_USER_ACTIVITY_HEARTBEAT_1'), true, 'admin-studio.html should reference the latest admin users runtime version');
     assert.equal(adminStudioHtml.includes('admin-points.js?v=20260427_ADMIN_POINTS_BATCH_DETAIL_CUSTOM_STATUS_2'), true, 'admin-studio.html should reference the latest admin points runtime version');
     assert.equal(adminStudioHtml.includes('js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3&workflowRails=20260430_ADMIN_STUDIO_WORKFLOW_CARD_RAIL_VISIBILITY_1'), true, 'admin-studio.html should reference the latest growth center runtime version');
@@ -16087,7 +16087,7 @@ test('admin studio modules emit unified command feedback for recent processing r
         'admin-discounts.js?v=20260427_DISCOUNTS_BATCH_RESTORE_HINT_1',
         'js/admin-shell.js?v=20260426_ADMIN_SHELL_LOADING_DOTS_CENTER_P1',
         'admin-users.js?v=20260505_USER_ACTIVITY_HEARTBEAT_1',
-        'admin-homepage.js?v=20260421_HOMEPAGE_FEEDBACK_BRIDGE_P4',
+        'admin-homepage.js?v=20260508_SITE_LAYOUT_RUNTIME_2',
         'admin-points.js?v=20260427_ADMIN_POINTS_BATCH_DETAIL_CUSTOM_STATUS_2',
         'js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3&workflowRails=20260430_ADMIN_STUDIO_WORKFLOW_CARD_RAIL_VISIBILITY_1',
         'admin-comments.js?v=20260421_COMMENTS_MODULE_BRIDGE_HELPERS_P3',

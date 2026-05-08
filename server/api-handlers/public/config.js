@@ -1,6 +1,12 @@
 const {
     fetchDirectVerifyQuotaState
 } = require('../_verify-provider-runtime');
+const {
+    SITE_LAYOUT_CONFIG_KEY,
+    SITE_LAYOUT_PAGE_OPTIONS,
+    normalizeSiteLayouts,
+    normalizeSiteLayoutSite
+} = require('../_site-layout');
 
 function createPublicConfigHandlers({
     admin
@@ -207,6 +213,53 @@ function createPublicConfigHandlers({
         });
     }
 
+    async function siteLayoutHandler(req, res) {
+        if (req.method !== 'GET') {
+            res.setHeader('Allow', 'GET');
+            return sendJson(res, 405, {
+                success: false,
+                message: 'Method not allowed'
+            });
+        }
+
+        const supabase = typeof getOptionalSupabaseAdmin === 'function'
+            ? getOptionalSupabaseAdmin()
+            : null;
+
+        if (!supabase) {
+            return sendJson(res, 503, {
+                success: false,
+                message: 'Site layout config is unavailable'
+            });
+        }
+
+        const url = new URL(req.url || '', 'http://localhost');
+        const requestedSite = normalizeSiteLayoutSite(url.searchParams.get('site'));
+        const query = supabase
+            .from('system_config')
+            .select('config_value, updated_at')
+            .eq('config_key', SITE_LAYOUT_CONFIG_KEY);
+        const { data, error } = await (typeof query.maybeSingle === 'function'
+            ? query.maybeSingle()
+            : query.single());
+
+        if (error && error.code !== 'PGRST116') {
+            throw error;
+        }
+
+        const layouts = normalizeSiteLayouts(data?.config_value);
+
+        res.setHeader('Cache-Control', 'no-store');
+        return sendJson(res, 200, {
+            success: true,
+            site: requestedSite,
+            layout: layouts[requestedSite],
+            layouts,
+            page_options: SITE_LAYOUT_PAGE_OPTIONS,
+            updated_at: data?.updated_at || null
+        });
+    }
+
     async function announcementEventHandler(req, res) {
         if (req.method !== 'POST') {
             res.setHeader('Allow', 'POST');
@@ -321,6 +374,16 @@ function createPublicConfigHandlers({
                 return sendJson(res, error.statusCode || 500, {
                     success: false,
                     message: error.message || 'Public config request failed'
+                });
+            }
+        },
+        'site-layout': async (req, res) => {
+            try {
+                return await siteLayoutHandler(req, res);
+            } catch (error) {
+                return sendJson(res, error.statusCode || 500, {
+                    success: false,
+                    message: error.message || 'Public site layout request failed'
                 });
             }
         },

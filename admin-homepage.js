@@ -15,7 +15,8 @@ const HomepageAdmin = (() => {
     let homepageHealthBySite = { cn: null, intl: null };
     let homepageContextBySite = { cn: null, intl: null };
     let homepageContextLoadingBySite = { cn: null, intl: null };
-    let currentSection = 'hero';
+    let siteLayoutConfigBySite = { cn: null, intl: null };
+    let currentSection = 'overview';
     let currentReadSite = 'all';
     let initialized = false;
     let loadingPromise = null;
@@ -45,8 +46,18 @@ const HomepageAdmin = (() => {
         ? [...HomepageContract.MANAGED_SECTION_ORDER]
         : ['hero', 'prompts', 'shop', 'gongyi', 'verify', 'guestbook', 'ticker'];
     const HOMEPAGE_OVERVIEW_SECTION = 'overview';
-    const HOMEPAGE_DEFAULT_SECTION = HOMEPAGE_MANAGED_SECTIONS[0] || 'hero';
+    const HOMEPAGE_DEFAULT_SECTION = HOMEPAGE_OVERVIEW_SECTION;
     const HOMEPAGE_TAB_SECTIONS = Object.freeze([HOMEPAGE_OVERVIEW_SECTION, ...HOMEPAGE_MANAGED_SECTIONS]);
+    const HOMEPAGE_SITE_LAYOUT_PAGE_OPTIONS = Object.freeze([
+        { key: 'home', label: '首页', path: '/' },
+        { key: 'shop', label: '商城', path: '/shop.html' },
+        { key: 'prompts', label: '提示词', path: '/prompts.html' },
+        { key: 'verify', label: '验证', path: '/verify.html' },
+        { key: 'guestbook', label: '留言板', path: '/guestbook.html' },
+        { key: 'gongyi', label: '公益站', path: 'https://gongyi.zaoyoe.com' }
+    ]);
+    const HOMEPAGE_SITE_LAYOUT_PAGE_KEYS = new Set(HOMEPAGE_SITE_LAYOUT_PAGE_OPTIONS.map((option) => option.key));
+    const HOMEPAGE_SITE_LAYOUT_LOGO_MODES = new Set(['follow_root', 'custom']);
     const HOMEPAGE_SECTION_LOCALIZED_FIELDS = Object.freeze({
         hero: ['title', 'subtitle'],
         prompts: ['section_title', 'section_subtitle'],
@@ -96,6 +107,81 @@ const HomepageAdmin = (() => {
 
     function getHomepageSiteLocaleSuffix(site) {
         return normalizeHomepageSite(site) === 'intl' ? 'en' : 'zh';
+    }
+
+    function normalizeHomepageSiteLayoutPageKey(value, fallback = 'home') {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (HOMEPAGE_SITE_LAYOUT_PAGE_KEYS.has(normalized)) {
+            return normalized;
+        }
+        return HOMEPAGE_SITE_LAYOUT_PAGE_KEYS.has(fallback) ? fallback : 'home';
+    }
+
+    function buildDefaultHomepageSiteLayout(site = 'cn') {
+        const normalizedSite = normalizeHomepageSite(site);
+        if (normalizedSite === 'intl') {
+            return {
+                root_page_key: 'shop',
+                logo_target_mode: 'follow_root',
+                logo_page_key: 'shop'
+            };
+        }
+        return {
+            root_page_key: 'home',
+            logo_target_mode: 'follow_root',
+            logo_page_key: 'home'
+        };
+    }
+
+    function normalizeHomepageSiteLayoutRecord(value, site = 'cn') {
+        const defaults = buildDefaultHomepageSiteLayout(site);
+        const source = value && typeof value === 'object' && !Array.isArray(value)
+            ? value
+            : {};
+        const rootPageKey = normalizeHomepageSiteLayoutPageKey(source.root_page_key, defaults.root_page_key);
+        const logoTargetMode = HOMEPAGE_SITE_LAYOUT_LOGO_MODES.has(String(source.logo_target_mode || '').trim().toLowerCase())
+            ? String(source.logo_target_mode || '').trim().toLowerCase()
+            : defaults.logo_target_mode;
+        const logoPageKey = normalizeHomepageSiteLayoutPageKey(
+            source.logo_page_key,
+            logoTargetMode === 'custom' ? defaults.logo_page_key : rootPageKey
+        );
+
+        return {
+            root_page_key: rootPageKey,
+            logo_target_mode: logoTargetMode,
+            logo_page_key: logoTargetMode === 'custom' ? logoPageKey : rootPageKey
+        };
+    }
+
+    function normalizeHomepageSiteLayouts(value) {
+        const source = value && typeof value === 'object' && !Array.isArray(value)
+            ? value
+            : {};
+        return {
+            cn: normalizeHomepageSiteLayoutRecord(source.cn, 'cn'),
+            intl: normalizeHomepageSiteLayoutRecord(source.intl, 'intl')
+        };
+    }
+
+    function getHomepageSiteLayout(site = currentReadSite || getHomepageReadSite()) {
+        const normalizedSite = normalizeHomepageSite(site);
+        if (normalizedSite === 'all') {
+            return null;
+        }
+        return siteLayoutConfigBySite[normalizedSite]
+            ? normalizeHomepageSiteLayoutRecord(siteLayoutConfigBySite[normalizedSite], normalizedSite)
+            : buildDefaultHomepageSiteLayout(normalizedSite);
+    }
+
+    function resolveHomepageSiteLayoutPageOption(pageKey = 'home') {
+        const normalizedKey = normalizeHomepageSiteLayoutPageKey(pageKey, 'home');
+        return HOMEPAGE_SITE_LAYOUT_PAGE_OPTIONS.find((option) => option.key === normalizedKey)
+            || HOMEPAGE_SITE_LAYOUT_PAGE_OPTIONS[0];
+    }
+
+    function getHomepageSiteLayoutPageLabel(pageKey = 'home') {
+        return resolveHomepageSiteLayoutPageOption(pageKey)?.label || '首页';
     }
 
     function ensureHomepageLocalizedFallback(content, fieldBase, site) {
@@ -347,6 +433,43 @@ const HomepageAdmin = (() => {
         );
 
         return parseHomepageAdminResponse(response);
+    }
+
+    async function fetchHomepageSiteLayout(site = getHomepageReadSite()) {
+        const normalizedSite = normalizeHomepageSite(site);
+        const response = await (window.AdminApi?.fetch || fetch)(
+            `/api/admin/homepage/layout?site=${encodeURIComponent(normalizedSite)}`,
+            {
+                credentials: 'include'
+            }
+        );
+
+        return parseHomepageAdminResponse(response);
+    }
+
+    async function saveHomepageSiteLayout(site, layout) {
+        const response = await (window.AdminApi?.fetch || fetch)('/api/admin/homepage/layout', {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                site: normalizeHomepageSite(site),
+                layout
+            })
+        });
+
+        return parseHomepageAdminResponse(response);
+    }
+
+    function applyHomepageSiteLayoutPayload(payload = {}) {
+        const layouts = normalizeHomepageSiteLayouts(payload.layouts || {});
+        siteLayoutConfigBySite = {
+            cn: layouts.cn,
+            intl: layouts.intl
+        };
+        return siteLayoutConfigBySite;
     }
 
     function buildHomepageConfigRecord(row = {}) {
@@ -1504,9 +1627,12 @@ const HomepageAdmin = (() => {
 
     async function loadAllConfig() {
         currentReadSite = getHomepageReadSite();
+        const siteLayoutPromise = fetchHomepageSiteLayout(currentReadSite);
         const result = await fetchHomepageConfigRows(currentReadSite);
+        const siteLayoutResult = await siteLayoutPromise;
         const rows = Array.isArray(result.rows) ? result.rows : [];
         const publishedRows = Array.isArray(result.published_rows) ? result.published_rows : rows;
+        applyHomepageSiteLayoutPayload(siteLayoutResult);
 
         if (isHomepageAggregateMode(currentReadSite)) {
             configCacheBySite = { cn: {}, intl: {} };
@@ -1925,6 +2051,178 @@ const HomepageAdmin = (() => {
                 button.setAttribute('aria-pressed', isSelected ? 'true' : 'false');
             }
         });
+    }
+
+    function buildHomepageSiteLayoutSelectOptions() {
+        return HOMEPAGE_SITE_LAYOUT_PAGE_OPTIONS.map((option) => ({
+            value: option.key,
+            label: `${option.label} · ${option.path}`
+        }));
+    }
+
+    function buildHomepageSiteLayoutAggregateCards() {
+        return ['cn', 'intl'].map((siteKey) => {
+            const layout = getHomepageSiteLayout(siteKey);
+            const rootOption = resolveHomepageSiteLayoutPageOption(layout?.root_page_key || 'home');
+            const logoOption = resolveHomepageSiteLayoutPageOption(layout?.logo_page_key || rootOption.key);
+            const logoSummary = layout?.logo_target_mode === 'custom'
+                ? `${logoOption.label} · ${logoOption.path}`
+                : `跟随根路径 · ${rootOption.path}`;
+
+            return `
+                <div class="hp-aggregate-site-card">
+                    <div class="hp-aggregate-site-card__header">
+                        <span class="hp-aggregate-site-card__site">${escapeHomepageHtml(getHomepageSiteLabel(siteKey))}</span>
+                        <span class="status-badge active">布局已启用</span>
+                    </div>
+                    <div class="hp-aggregate-site-card__lines">
+                        <div class="hp-aggregate-site-card__line">
+                            <span class="hp-aggregate-site-card__label">根路径 /</span>
+                            <span class="hp-aggregate-site-card__value">${escapeHomepageHtml(rootOption.label)} · ${escapeHomepageHtml(rootOption.path)}</span>
+                        </div>
+                        <div class="hp-aggregate-site-card__line">
+                            <span class="hp-aggregate-site-card__label">Logo</span>
+                            <span class="hp-aggregate-site-card__value">${escapeHomepageHtml(logoSummary)}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function buildHomepageSiteLayoutOpsCard(site = currentReadSite) {
+        const aggregateMode = isHomepageAggregateMode(site);
+        const layout = getHomepageSiteLayout(site);
+        const rootOption = resolveHomepageSiteLayoutPageOption(layout?.root_page_key || 'home');
+        const logoOption = resolveHomepageSiteLayoutPageOption(layout?.logo_page_key || rootOption.key);
+        const pageOptions = buildHomepageSiteLayoutSelectOptions();
+
+        if (aggregateMode) {
+            return [
+                '<section class="hp-ops-card" data-homepage-site-layout-card="readonly">',
+                '    <div class="hp-ops-card__head">',
+                '        <div>',
+                '            <div class="hp-ops-card__eyebrow">站点布局</div>',
+                '            <strong>CN / INTL 入口策略</strong>',
+                '        </div>',
+                '        <span class="status-badge banned">只读对比</span>',
+                '    </div>',
+                '    <div class="hp-inline-note hp-inline-note--muted">',
+                '        <i class="fas fa-compass"></i>',
+                '        <span>这里决定根路径 `/` 和 Logo 的实际跳转目标。切换到具体站点后即可编辑，不会影响另一站。</span>',
+                '    </div>',
+                '    <div class="hp-aggregate-readonly-grid">',
+                buildHomepageSiteLayoutAggregateCards(),
+                '    </div>',
+                '</section>'
+            ].join('');
+        }
+
+        return [
+            '<section class="hp-ops-card" data-homepage-site-layout-card="editable">',
+            '    <div class="hp-ops-card__head">',
+            '        <div>',
+            '            <div class="hp-ops-card__eyebrow">站点布局</div>',
+            `            <strong>${escapeHomepageHtml(getHomepageSiteLabel(site))} 入口与品牌跳转</strong>`,
+            '        </div>',
+            '        <span class="status-badge active">运行时生效</span>',
+            '    </div>',
+            '    <div class="hp-inline-note hp-inline-note--muted">',
+            '        <i class="fas fa-compass"></i>',
+            '        <span>这里控制站点根路径 `/` 默认打开谁，以及用户点击 Logo 后回到哪里。下方 Hero / 商城 / 验证等标签页继续负责首页内容本身。</span>',
+            '    </div>',
+            '    <div class="hp-ops-form-grid hp-ops-form-grid--compact">',
+            '        <div class="hp-field">',
+            '            <label>根路径 `/` 打开时</label>',
+            buildHomepageCustomSelect({
+                id: 'hp-site-layout-root-page',
+                value: rootOption.key,
+                options: pageOptions
+            }),
+            '        </div>',
+            '        <div class="hp-field">',
+            '            <label>Logo 点击后</label>',
+            buildHomepageCustomSelect({
+                id: 'hp-site-layout-logo-mode',
+                value: layout?.logo_target_mode === 'custom' ? 'custom' : 'follow_root',
+                options: [
+                    { value: 'follow_root', label: '跟随根路径' },
+                    { value: 'custom', label: '单独指定' }
+                ]
+            }),
+            '        </div>',
+            '        <div class="hp-field" id="hp-site-layout-logo-page-field">',
+            '            <label>Logo 自定义目标</label>',
+            buildHomepageCustomSelect({
+                id: 'hp-site-layout-logo-page',
+                value: logoOption.key,
+                options: pageOptions
+            }),
+            '        </div>',
+            '    </div>',
+            '    <div class="hp-ops-metrics">',
+            '        <div class="hp-ops-metric">',
+            '            <span>当前根入口</span>',
+            `            <strong>${escapeHomepageHtml(rootOption.path)}</strong>`,
+            '        </div>',
+            '        <div class="hp-ops-metric">',
+            '            <span>当前 Logo</span>',
+            `            <strong>${escapeHomepageHtml(layout?.logo_target_mode === 'custom' ? logoOption.path : rootOption.path)}</strong>`,
+            '        </div>',
+            '        <div class="hp-ops-metric">',
+            '            <span>首页资产</span>',
+            `            <strong>${layout?.root_page_key === 'home' ? '承担主入口' : '保留但不承接 /'}</strong>`,
+            '        </div>',
+            '    </div>',
+            '    <div class="hp-ops-actions">',
+            '        <button type="button" class="btn-sm btn-primary" id="hp-site-layout-save-btn">保存站点布局</button>',
+            '    </div>',
+            '</section>'
+        ].join('');
+    }
+
+    function syncHomepageSiteLayoutControlState(root = document) {
+        const scope = root?.querySelector?.('#hp-ops-shell') || document.getElementById('hp-ops-shell') || root;
+        if (!scope) return;
+        const logoModeField = scope.querySelector('#hp-site-layout-logo-mode');
+        const logoPageField = scope.querySelector('#hp-site-layout-logo-page-field');
+        const showLogoTarget = logoModeField?.value === 'custom';
+        if (logoPageField) {
+            logoPageField.hidden = !showLogoTarget;
+        }
+    }
+
+    async function saveHomepageSiteLayoutForCurrentSite() {
+        const site = requireWritableHomepageSite({ label: '保存站点布局' });
+        if (!site) {
+            return false;
+        }
+
+        const shell = document.getElementById('hp-ops-shell');
+        const rootPageKey = normalizeHomepageSiteLayoutPageKey(
+            shell?.querySelector('#hp-site-layout-root-page')?.value,
+            getHomepageSiteLayout(site)?.root_page_key || 'home'
+        );
+        const logoTargetMode = HOMEPAGE_SITE_LAYOUT_LOGO_MODES.has(String(shell?.querySelector('#hp-site-layout-logo-mode')?.value || '').trim().toLowerCase())
+            ? String(shell?.querySelector('#hp-site-layout-logo-mode')?.value || '').trim().toLowerCase()
+            : 'follow_root';
+        const logoPageKey = normalizeHomepageSiteLayoutPageKey(
+            shell?.querySelector('#hp-site-layout-logo-page')?.value,
+            logoTargetMode === 'custom' ? (getHomepageSiteLayout(site)?.logo_page_key || rootPageKey) : rootPageKey
+        );
+
+        const result = await saveHomepageSiteLayout(site, {
+            root_page_key: rootPageKey,
+            logo_target_mode: logoTargetMode,
+            logo_page_key: logoTargetMode === 'custom' ? logoPageKey : rootPageKey
+        });
+        applyHomepageSiteLayoutPayload(result);
+        renderAllSections();
+        switchSection(currentSection);
+        showHomepageActionToast(`${getHomepageSiteLabel(site)} 站点布局已保存`, 'success', {
+            source: 'homepage-site-layout'
+        });
+        return true;
     }
 
     function renderHomepageOpsShell() {
@@ -2516,7 +2814,23 @@ const HomepageAdmin = (() => {
             </div>
         `;
 
+        const opsGrid = shell.querySelector('.hp-ops-shell__grid');
+        if (opsGrid) {
+            opsGrid.insertAdjacentHTML('afterbegin', buildHomepageSiteLayoutOpsCard(site));
+        }
+
         bindHomepageCustomSelects(shell);
+        syncHomepageSiteLayoutControlState(shell);
+
+        shell.querySelector('#hp-site-layout-logo-mode')?.addEventListener('change', () => {
+            syncHomepageSiteLayoutControlState(shell);
+        });
+        shell.querySelector('#hp-site-layout-save-btn')?.addEventListener('click', (event) => {
+            runHomepageOpsActionButton(event.currentTarget, {
+                busyText: '保存中...',
+                action: () => saveHomepageSiteLayoutForCurrentSite()
+            });
+        });
 
         shell.querySelector('#hp-refresh-config-btn')?.addEventListener('click', (event) => {
             runHomepageOpsActionButton(event.currentTarget, {

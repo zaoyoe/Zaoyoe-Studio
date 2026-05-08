@@ -449,9 +449,9 @@
                 },
                 {
                     key: 'homepage.manage',
-                    label: '主页内容',
+                    label: '站点布局',
                     icon: '🏠',
-                    description: '主页运营位、专题与内容编排',
+                    description: '站点入口、品牌跳转与首页内容编排',
                     modules: ['homepage']
                 }
             ]
@@ -511,7 +511,7 @@
             anyOf: ['discounts.manage']
         },
         homepage: {
-            label: '主页内容',
+            label: '站点布局',
             anyOf: ['homepage.manage']
         },
         users: {

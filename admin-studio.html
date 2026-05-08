@@ -107,7 +107,7 @@
                 </div>
                 <div class="sidebar-item" data-module="homepage" data-admin-action="switch-module" data-module-id="homepage">
                     <i class="fas fa-home"></i>
-                    <span>主页内容</span>
+                    <span>站点布局</span>
                 </div>
                 <div class="sidebar-item" data-module="users" data-admin-action="switch-module" data-module-id="users">
                     <i class="fas fa-users-cog"></i>
@@ -8456,11 +8456,11 @@
 
                 <!-- Homepage Tabs -->
                 <nav class="admin-tabs" id="homepageTabsNav">
-                    <button class="admin-tab" data-hp-section="overview"
+                    <button class="admin-tab active" data-hp-section="overview"
                         data-admin-action="homepage-switch-section">
-                        总览
+                        布局总览
                     </button>
-                    <button class="admin-tab active" data-hp-section="hero"
+                    <button class="admin-tab" data-hp-section="hero"
                         data-admin-action="homepage-switch-section">
                         Hero
                     </button>
@@ -8499,14 +8499,14 @@
                 <div id="hp-section-content" class="admin-studio-inline-style-attr-3">
 
                     <!-- ===== OVERVIEW Section ===== -->
-                    <div class="hp-section-view" data-hp-view="overview" hidden>
+                    <div class="hp-section-view active" data-hp-view="overview">
                         <div class="module-content">
                             <div id="hp-overview-shell-host"></div>
                         </div>
                     </div>
 
                     <!-- ===== HERO Section ===== -->
-                    <div class="hp-section-view active" data-hp-view="hero">
+                    <div class="hp-section-view" data-hp-view="hero">
                         <div class="module-content">
                             <div class="hp-control-bar">
                                 <div class="hp-ctrl-item">
@@ -11779,7 +11779,7 @@
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <!-- Chart.js for Analytics -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="js/admin-studio-bootstrap.js?v=20260503_ADMIN_CLIPBOARD_FALLBACK_1"></script>
+    <script src="js/admin-studio-bootstrap.js?v=20260508_SITE_LAYOUT_BOOTSTRAP_1"></script>
     <script src="js/admin-vendor-loader.js?v=20260421_ADMIN_VENDOR_LOADER_P2"></script>
     <script src="js/admin-shell.js?v=20260426_ADMIN_SHELL_LOADING_DOTS_CENTER_P1"></script>
     <script src="js/admin-studio-timing.js?v=20260430_ADMIN_STUDIO_TIMING_1"></script>
@@ -11815,7 +11815,7 @@
     <script src="js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2"></script>
     <script src="admin-config.js?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1&announcementButtonFeedback=20260501_ADMIN_ANNOUNCEMENT_BUTTON_FEEDBACK_1&announcementPageOverrides=20260501_ADMIN_ANNOUNCEMENT_PAGE_OVERRIDES_1&announcementWorkflow=20260501_ADMIN_ANNOUNCEMENT_WORKFLOW_15&announcementWorkflowFeedback=20260501_ADMIN_ANNOUNCEMENT_WORKFLOW_FEEDBACK_1"></script>
     <script src="js/homepage-contract.js?v=20260430_HOMEPAGE_BILINGUAL_FIELDS_1"></script>
-    <script src="admin-homepage.js?v=20260421_HOMEPAGE_FEEDBACK_BRIDGE_P4"></script>
+    <script src="admin-homepage.js?v=20260508_SITE_LAYOUT_RUNTIME_2"></script>
     <script src="js/admin-studio-translate.js?v=20260421_TRANSLATE_BUDGET_P0"></script>
     <script src="js/admin-site-filter.js?v=20260427_ADMIN_SITE_SELECTOR_NO_KICKER_1&siteSwitcherOrder=20260428_ADMIN_SITE_SWITCHER_ORDER_1"></script>
     <script src="js/admin-tickets.js?v=20260428_TICKETS_WORKSPACE_SCROLL_PRESERVE_1&ticketsMobileLabels=20260428_TICKETS_MOBILE_TABLE_LABELS_1&ticketsBulkFeedback=20260501_ADMIN_TICKETS_BULK_FEEDBACK_1" data-cache-bust-ticket-mobile="js/admin-tickets.js?v=20260428_TICKETS_MOBILE_TABLE_LABELS_1&ticketsBulkFeedback=20260501_ADMIN_TICKETS_BULK_FEEDBACK_1"></script>
