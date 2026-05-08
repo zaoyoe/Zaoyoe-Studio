@@ -267,6 +267,12 @@
         "title": "资源商城",
         "allCategories": "全部",
         "points": "积分",
+        "categoryLabels": {
+            "communityAccess": "公益站",
+            "virtualCard": "虚拟卡",
+            "account": "账号",
+            "other": "其他"
+        },
         "stock": "库存",
         "outOfStock": "售罄",
         "soldOutClickHint": "已售罄",

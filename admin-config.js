@@ -1688,6 +1688,11 @@ function buildAdminAuditConfigRowMarkup(row) {
         row.severity ? escapeConfigHtml(row.severity.toUpperCase()) : 'INFO'
     ];
     const detailChips = [
+        row.site
+            ? buildAdminAuditMonitorInfoChip('站点', row.site, {
+                displayValue: formatAdminSettingsSiteContextLabel(row.site, row.site) || String(row.site).toUpperCase()
+            })
+            : '',
         row.updated_provider_labels?.length
             ? buildAdminAuditMonitorInfoChip('通道', row.updated_provider_labels.join('、'), {
                 displayValue: summarizeAdminAuditMonitorList(row.updated_provider_labels, 2)
@@ -1749,6 +1754,10 @@ function renderAdminAuditMonitorWorkspace() {
     if (meta) {
         if (state.status === 'ready') {
             const parts = [];
+            const siteMetaPrefix = buildAdminSettingsSiteContextMetaPrefix(state.site_context);
+            if (siteMetaPrefix) {
+                parts.push(siteMetaPrefix.slice(0, -1));
+            }
             if (Number(state.alert_summary?.active_problem_count || 0) > 0) {
                 parts.push(`${formatVerifyMonitorInteger(state.alert_summary.active_problem_count)} 条待跟进`);
             }
@@ -1803,22 +1812,23 @@ function renderAdminAuditMonitorLists() {
     const accessPagination = state.recent_access_pagination || getDefaultAdminAuditMonitorState().recent_access_pagination;
     const anomalyPagination = state.anomaly_pagination || getDefaultAdminAuditMonitorState().anomaly_pagination;
     const configPagination = state.config_event_pagination || getDefaultAdminAuditMonitorState().config_event_pagination;
+    const siteMetaPrefix = buildAdminSettingsSiteContextMetaPrefix(state.site_context);
 
     if (accessMeta) {
         accessMeta.textContent = state.status === 'ready'
-            ? `最近 ${formatVerifyMonitorInteger(state.access_summary?.access_count || 0)} 条访问样本 · 第 ${formatVerifyMonitorInteger(accessPagination.page || 1)} / ${formatVerifyMonitorInteger(accessPagination.total_pages || 1)} 页`
+            ? `${siteMetaPrefix}${siteMetaPrefix ? ' ' : ''}最近 ${formatVerifyMonitorInteger(state.access_summary?.access_count || 0)} 条访问样本 · 第 ${formatVerifyMonitorInteger(accessPagination.page || 1)} / ${formatVerifyMonitorInteger(accessPagination.total_pages || 1)} 页`
             : (state.status === 'loading' ? '正在同步...' : '等待加载');
     }
 
     if (anomalyMeta) {
         anomalyMeta.textContent = state.status === 'ready'
-            ? `最近 ${formatVerifyMonitorInteger(state.access_summary?.anomaly_count || 0)} 条异常信号 · 第 ${formatVerifyMonitorInteger(anomalyPagination.page || 1)} / ${formatVerifyMonitorInteger(anomalyPagination.total_pages || 1)} 页`
+            ? `${siteMetaPrefix}${siteMetaPrefix ? ' ' : ''}最近 ${formatVerifyMonitorInteger(state.access_summary?.anomaly_count || 0)} 条异常信号 · 第 ${formatVerifyMonitorInteger(anomalyPagination.page || 1)} / ${formatVerifyMonitorInteger(anomalyPagination.total_pages || 1)} 页`
             : (state.status === 'loading' ? '正在同步...' : '等待加载');
     }
 
     if (configMeta) {
         configMeta.textContent = state.status === 'ready'
-            ? `最近 ${formatVerifyMonitorInteger(state.config_summary?.config_change_count || 0)} 条配置审计 · 第 ${formatVerifyMonitorInteger(configPagination.page || 1)} / ${formatVerifyMonitorInteger(configPagination.total_pages || 1)} 页`
+            ? `${siteMetaPrefix}${siteMetaPrefix ? ' ' : ''}最近 ${formatVerifyMonitorInteger(state.config_summary?.config_change_count || 0)} 条配置审计 · 第 ${formatVerifyMonitorInteger(configPagination.page || 1)} / ${formatVerifyMonitorInteger(configPagination.total_pages || 1)} 页`
             : (state.status === 'loading' ? '正在同步...' : '等待加载');
     }
 
@@ -2815,6 +2825,7 @@ function getDefaultOpsAlertMonitorState() {
     return {
         status: 'idle',
         fetched_at: '',
+        site_context: 'all',
         summary: {
             lookback_hours: 7 * 24,
             total_job_count: 0,
@@ -2954,6 +2965,7 @@ function getDefaultAdminAuditMonitorState() {
     return {
         status: 'idle',
         fetched_at: '',
+        site_context: 'all',
         access_summary: {
             access_count: 0,
             distinct_admin_count: 0,
@@ -6955,8 +6967,9 @@ async function warmSingleSystemConfigDomainInBackground(domain, options = {}) {
         return null;
     }
 
+    const warmKey = buildSettingsDomainWarmKey(normalizedDomain);
     const force = options.force === true;
-    const lastLoadedAt = settingsDomainLastLoadedAt.get(normalizedDomain) || 0;
+    const lastLoadedAt = settingsDomainLastLoadedAt.get(warmKey) || 0;
     const canReuseWarmCache = !force
         && lastLoadedAt
         && (Date.now() - lastLoadedAt) <= SETTINGS_MODULE_WARM_TTL_MS;
@@ -6965,25 +6978,25 @@ async function warmSingleSystemConfigDomainInBackground(domain, options = {}) {
         return true;
     }
 
-    if (settingsDomainWarmPromises.has(normalizedDomain) && !force) {
-        return settingsDomainWarmPromises.get(normalizedDomain);
+    if (settingsDomainWarmPromises.has(warmKey) && !force) {
+        return settingsDomainWarmPromises.get(warmKey);
     }
 
     const warmPromise = (async () => {
         const settledResults = await loadSystemConfigDomains([normalizedDomain]);
         const loadResult = settledResults[0] || null;
         if (loadResult?.status === 'fulfilled') {
-            settingsDomainLastLoadedAt.set(normalizedDomain, Date.now());
+            settingsDomainLastLoadedAt.set(warmKey, Date.now());
         }
         return loadResult;
     })();
 
-    settingsDomainWarmPromises.set(normalizedDomain, warmPromise);
+    settingsDomainWarmPromises.set(warmKey, warmPromise);
 
     try {
         return await warmPromise;
     } finally {
-        settingsDomainWarmPromises.delete(normalizedDomain);
+        settingsDomainWarmPromises.delete(warmKey);
     }
 }
 
@@ -7416,6 +7429,58 @@ async function initSystemConfig() {
 }
 
 const ADMIN_SYSTEM_CONFIG_DOMAINS = ['commerce', 'affiliate', 'governance', 'growth', 'verify'];
+const ADMIN_SITE_SCOPED_SYSTEM_CONFIG_KEYS = new Set([
+    'payment_channels',
+    'recharge_options',
+    'affiliate_program',
+    'affiliate_poster'
+]);
+
+function getAdminSettingsSiteFilterValue() {
+    return window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+}
+
+function normalizeAdminSettingsSiteContext(value = '', fallback = 'all') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'cn' || normalized === 'intl' || normalized === 'all') {
+        return normalized;
+    }
+    const fallbackValue = String(fallback || '').trim().toLowerCase();
+    if (fallbackValue === 'cn' || fallbackValue === 'intl' || fallbackValue === 'all') {
+        return fallbackValue;
+    }
+    return 'all';
+}
+
+function formatAdminSettingsSiteContextLabel(value = '', fallback = '') {
+    const normalized = normalizeAdminSettingsSiteContext(value, fallback || '');
+    if (normalized === 'cn') return 'CN';
+    if (normalized === 'intl') return 'INTL';
+    if (normalized === 'all') return '全站';
+    return '';
+}
+
+function buildAdminSettingsSiteContextMetaPrefix(value = '', fallback = '') {
+    const normalized = normalizeAdminSettingsSiteContext(value, fallback || '');
+    if (normalized !== 'cn' && normalized !== 'intl') {
+        return '';
+    }
+    return `当前站点：${formatAdminSettingsSiteContextLabel(normalized)}。`;
+}
+
+function buildSettingsDomainWarmKey(domain = '') {
+    return `${String(domain || '').trim().toLowerCase()}::${getAdminSettingsSiteFilterValue()}`;
+}
+
+function isAdminSiteScopedSystemConfigKey(key = '') {
+    return ADMIN_SITE_SCOPED_SYSTEM_CONFIG_KEYS.has(String(key || '').trim());
+}
+
+function requireWritableAdminSettingsSite(label = '保存当前配置') {
+    return window.AdminSiteFilter?.requireWritableSite?.({
+        label
+    }) || null;
+}
 
 async function parseAdminConfigApiResponse(response) {
     let payload = {};
@@ -7434,7 +7499,10 @@ async function parseAdminConfigApiResponse(response) {
 }
 
 async function fetchSystemConfigDomain(domain) {
-    const response = await (window.AdminApi?.fetch || fetch)(`/api/admin/settings/system-config?domain=${encodeURIComponent(domain)}`, {
+    const searchParams = new URLSearchParams();
+    searchParams.set('domain', domain);
+    searchParams.set('site', getAdminSettingsSiteFilterValue());
+    const response = await (window.AdminApi?.fetch || fetch)(`/api/admin/settings/system-config?${searchParams.toString()}`, {
         method: 'GET',
         credentials: 'include',
         headers: await getAdminConfigApiHeaders()
@@ -7483,7 +7551,12 @@ function renderPackagesConfig() {
 function getPaymentSecretStatusMessage(secretName) {
     const status = paymentChannelSecretStatus?.[secretName];
     if (status?.configured) {
-        return `已配置后台安全密钥${status.updatedAt ? ` · 更新于 ${new Date(status.updatedAt).toLocaleString('zh-CN')}` : ''}`;
+        const sourceLabel = status.source === 'stored_site'
+            ? '当前站点独立密钥'
+            : (status.source === 'stored'
+                ? '沿用全局兼容密钥'
+                : (status.source === 'environment' ? '环境变量密钥' : '已配置后台安全密钥'));
+        return `${sourceLabel}${status.updatedAt ? ` · 更新于 ${new Date(status.updatedAt).toLocaleString('zh-CN')}` : ''}`;
     }
     return '未配置后台安全密钥';
 }
@@ -15044,6 +15117,14 @@ function buildLocalOpsAlertMonitorItemDisplayState(item = {}, category = {}) {
     const caseStatus = String(normalizedItem.case_status || '').trim().toLowerCase() || 'open';
     const caseTone = getOpsAlertCaseStatusTone(caseStatus);
     const recentEvents = getOpsAlertCaseRecentEvents(normalizedItem);
+    const siteContext = normalizeAdminSettingsSiteContext(
+        normalizedItem.site
+            || (Array.isArray(normalizedItem.site_labels) && normalizedItem.site_labels.length === 1
+                ? normalizedItem.site_labels[0]
+                : ''),
+        ''
+    );
+    const siteLabel = formatAdminSettingsSiteContextLabel(siteContext, '');
     const metaParts = [
         normalizedItem.reference_label && normalizedItem.reference_value
             ? `${normalizedItem.reference_label}：${normalizedItem.reference_value}`
@@ -15061,6 +15142,9 @@ function buildLocalOpsAlertMonitorItemDisplayState(item = {}, category = {}) {
         message: String(normalizedItem.message || '').trim(),
         topBadges: [
             { label: severity === 'critical' ? 'critical' : 'warning', tone: severityTone },
+            siteLabel
+                ? { label: `站点 ${siteLabel}`, tone: 'neutral' }
+                : null,
             riskLevel
                 ? {
                     label: `风险 ${getOpsAlertMonitorRiskLevelLabel(riskLevel)}${Number.isFinite(Number(normalizedItem.risk_score)) ? ` · ${formatVerifyMonitorInteger(normalizedItem.risk_score)}` : ''}`,
@@ -16717,12 +16801,13 @@ function buildLocalOpsAlertMonitorPanelState(state = {}, filters = getOpsAlertMo
     const summary = normalizedState.summary && typeof normalizedState.summary === 'object' && !Array.isArray(normalizedState.summary)
         ? normalizedState.summary
         : getDefaultOpsAlertMonitorState().summary;
+    const siteMetaPrefix = buildAdminSettingsSiteContextMetaPrefix(normalizedState.site_context);
 
     if (normalizedState.status === 'loading') {
         return {
             status: 'loading',
             metaIcon: 'fas fa-rotate fa-spin',
-            metaText: '正在汇总支付、工单、库存、履约与商城风控五类告警...',
+            metaText: `${siteMetaPrefix}${siteMetaPrefix ? ' ' : ''}正在汇总支付、工单、库存、履约与商城风控五类告警...`,
             emptyMessage: '正在加载集中告警处理面板...'
         };
     }
@@ -16731,7 +16816,7 @@ function buildLocalOpsAlertMonitorPanelState(state = {}, filters = getOpsAlertMo
         return {
             status: 'error',
             metaIcon: 'fas fa-triangle-exclamation',
-            metaText: normalizedState.message || '集中告警处理面板加载失败。',
+            metaText: `${siteMetaPrefix}${siteMetaPrefix ? ' ' : ''}${normalizedState.message || '集中告警处理面板加载失败。'}`,
             emptyMessage: normalizedState.message || '集中告警处理面板加载失败。'
         };
     }
@@ -16747,7 +16832,7 @@ function buildLocalOpsAlertMonitorPanelState(state = {}, filters = getOpsAlertMo
         return {
             status: 'empty',
             metaIcon: 'fas fa-filter-circle-xmark',
-            metaText: `${staleMessage ? `${staleMessage}；` : ''}当前筛选：${filteredSummaryLabel}。这组条件下没有命中的集中告警，请调整筛选后重试。`,
+            metaText: `${siteMetaPrefix}${siteMetaPrefix ? ' ' : ''}${staleMessage ? `${staleMessage}；` : ''}当前筛选：${filteredSummaryLabel}。这组条件下没有命中的集中告警，请调整筛选后重试。`,
             emptyMessage: '当前筛选条件下没有可展示的集中告警卡片。'
         };
     }
@@ -16758,7 +16843,7 @@ function buildLocalOpsAlertMonitorPanelState(state = {}, filters = getOpsAlertMo
     return {
         status: 'ready',
         metaIcon: filteredActiveCount > 0 ? 'fas fa-siren-on' : 'fas fa-circle-check',
-        metaText: `${staleMessage ? `${staleMessage}；` : ''}${readyMetaText}`,
+        metaText: `${siteMetaPrefix}${siteMetaPrefix ? ' ' : ''}${staleMessage ? `${staleMessage}；` : ''}${readyMetaText}`,
         emptyMessage: ''
     };
 }
@@ -17378,6 +17463,14 @@ const ADMIN_ANNOUNCEMENT_NOTIFICATION_META = Object.freeze({
 
 async function saveConfig(key, value) {
     try {
+        const isSiteScoped = isAdminSiteScopedSystemConfigKey(key);
+        const writableSite = isSiteScoped
+            ? requireWritableAdminSettingsSite('保存当前站点配置')
+            : null;
+        if (isSiteScoped && !writableSite) {
+            return false;
+        }
+
         const response = await (window.AdminApi?.fetch || fetch)('/api/admin/settings/system-config', {
             method: 'POST',
             credentials: 'include',
@@ -17385,6 +17478,7 @@ async function saveConfig(key, value) {
             body: JSON.stringify({
                 key,
                 value,
+                site: isSiteScoped ? writableSite : undefined,
                 meta: key === 'notifications'
                     ? { announcementNotification: ADMIN_ANNOUNCEMENT_NOTIFICATION_META }
                     : undefined
@@ -17484,7 +17578,8 @@ async function loadPaymentChannelSettings(force = false) {
     loadPaymentChannelSettings._loadingPromise = (async () => {
         try {
             const headers = await getAdminConfigApiHeaders();
-            const response = await fetch('/api/admin/settings/payment-channels', {
+            const site = getAdminSettingsSiteFilterValue();
+            const response = await fetch(`/api/admin/settings/payment-channels?site=${encodeURIComponent(site)}`, {
                 method: 'GET',
                 headers
             });
@@ -17712,6 +17807,7 @@ async function loadOpsAlertHealth(force = false) {
 
 async function fetchOpsAlertMonitorPayload(headers = {}) {
     return requireOpsAlertWorkbenchMethod('fetchAdminWorkbenchOpsAlertMonitor')(headers, {
+        site: getAdminSettingsSiteFilterValue(),
         timeoutMs: OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS,
         retryCount: OPS_ALERT_MONITOR_FETCH_RETRY_COUNT,
         retryDelayMs: OPS_ALERT_MONITOR_FETCH_RETRY_DELAY_MS,
@@ -17778,10 +17874,13 @@ function hasOpsAlertMonitorSnapshotData(state = {}) {
 }
 
 function getOpsAlertMonitorFallbackSnapshot(currentState = opsAlertMonitorState || getDefaultOpsAlertMonitorState()) {
-    if (hasOpsAlertMonitorSnapshotData(currentState)) {
+    const requestedSiteContext = normalizeAdminSettingsSiteContext(getAdminSettingsSiteFilterValue(), 'all');
+    const currentSiteContext = normalizeAdminSettingsSiteContext(currentState?.site_context, requestedSiteContext);
+    const lastReadySiteContext = normalizeAdminSettingsSiteContext(opsAlertMonitorLastReadyState?.site_context, requestedSiteContext);
+    if (hasOpsAlertMonitorSnapshotData(currentState) && currentSiteContext === requestedSiteContext) {
         return currentState;
     }
-    if (hasOpsAlertMonitorSnapshotData(opsAlertMonitorLastReadyState)) {
+    if (hasOpsAlertMonitorSnapshotData(opsAlertMonitorLastReadyState) && lastReadySiteContext === requestedSiteContext) {
         return opsAlertMonitorLastReadyState;
     }
     return null;
@@ -18394,11 +18493,16 @@ function clearPaymentChannelSecretInputs() {
 
 async function savePaymentChannelSettings(options = {}) {
     try {
+        const writableSite = requireWritableAdminSettingsSite('保存支付通道配置');
+        if (!writableSite) {
+            return false;
+        }
         const config = options.configOverride
             ? normalizePaymentChannelsConfig(options.configOverride)
             : collectPaymentChannelsConfigFromForm();
         const headers = await getAdminConfigApiHeaders();
         const body = {
+            site: writableSite,
             config,
             secrets: {
                 afdian_token: document.getElementById('paymentProviderAfdianToken')?.value?.trim() || '',
@@ -25025,6 +25129,7 @@ async function loadAdminAuditMonitor(force = false) {
         try {
             const headers = await getAdminConfigApiHeaders();
             const requestUrl = new URL('/api/admin/settings/admin-audit-monitor', window.location.origin);
+            requestUrl.searchParams.set('site', getAdminSettingsSiteFilterValue());
             requestUrl.searchParams.set('accessPage', String(accessPage));
             requestUrl.searchParams.set('accessPageSize', String(accessPageSize));
             requestUrl.searchParams.set('anomalyPage', String(anomalyPage));
@@ -25044,6 +25149,7 @@ async function loadAdminAuditMonitor(force = false) {
             adminAuditMonitorState = {
                 status: 'ready',
                 fetched_at: String(payload.fetched_at || '').trim(),
+                site_context: normalizeAdminSettingsSiteContext(payload.site_context, getAdminSettingsSiteFilterValue()),
                 access_summary: payload.access_summary || getDefaultAdminAuditMonitorState().access_summary,
                 config_summary: payload.config_summary || getDefaultAdminAuditMonitorState().config_summary,
                 alert_summary: payload.alert_summary || getDefaultAdminAuditMonitorState().alert_summary,
@@ -25064,6 +25170,7 @@ async function loadAdminAuditMonitor(force = false) {
             console.warn('[Config] Admin audit monitor load failed:', error.message);
             adminAuditMonitorState = {
                 ...getDefaultAdminAuditMonitorState(),
+                site_context: normalizeAdminSettingsSiteContext(getAdminSettingsSiteFilterValue(), 'all'),
                 status: 'error',
                 message: error.message || '加载管理员访问审计失败'
             };

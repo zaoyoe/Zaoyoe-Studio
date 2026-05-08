@@ -237,12 +237,13 @@ test('wallet overview handler returns balance and recent visible history via ser
     assert.equal(payload.success, true);
     assert.equal(payload.balance.total_balance, 20);
     assert.equal(payload.balance_scope, 'site');
-    assert.equal(payload.site_balances.cn.total_balance, 20);
+    assert.equal('site_balances' in payload, false);
+    assert.equal('other_site_balances' in payload, false);
     assert.equal(payload.recent_history.length, 1);
     assert.equal(payload.recent_history[0].id, 'ledger-1');
   });
 
-test('wallet overview handler exposes other site balances when current site balance is empty', async () => {
+test('wallet overview handler keeps other site balances private when current site balance is empty', async () => {
     const handlers = createHandlers({
         pointsBalance: [
             { user_id: 'user-wallet-1', site: 'intl', paid_balance: 6, bonus_balance: 4, total_balance: 10 }
@@ -263,9 +264,8 @@ test('wallet overview handler exposes other site balances when current site bala
     assert.equal(payload.success, true);
     assert.equal(payload.balance.total_balance, 0);
     assert.equal(payload.current_site_has_account, false);
-    assert.equal(payload.other_site_balances.length, 1);
-    assert.equal(payload.other_site_balances[0].site, 'intl');
-    assert.equal(payload.other_site_balances[0].total_balance, 10);
+    assert.equal('site_balances' in payload, false);
+    assert.equal('other_site_balances' in payload, false);
 });
 
 test('wallet overview handler remains compatible when points_ledger.is_visible is missing', async () => {

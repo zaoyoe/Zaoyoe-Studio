@@ -1879,7 +1879,8 @@ async function attemptZpayPaymentStatusRefresh({
 
     const runtimeContext = await adapter.resolveRuntimeContext({
         supabase,
-        env
+        env,
+        site: paymentOrder?.site || checkoutSession?.site || providerMetadata.site || ''
     });
     const liveOrder = await adapter.queryOrder({
         runtimeContext,
@@ -2523,6 +2524,7 @@ async function ensureMockPaymentAvailable({
     supabase,
     paymentChannels = null,
     rechargeOptions = null,
+    site = 'cn',
     env = process.env,
     requestHost = ''
 }) {
@@ -2531,6 +2533,7 @@ async function ensureMockPaymentAvailable({
 
     if (!effectivePaymentChannels || !effectiveRechargeOptions) {
         const loadedConfigs = await loadStoredPaymentConfigs(supabase, {
+            site,
             origin: env?.APP_BASE_URL,
             afdianCheckoutUrl: env?.PAYMENT_AFDIAN_URL
         });
@@ -2568,6 +2571,7 @@ async function completeMockPayment({
         supabase,
         paymentChannels,
         rechargeOptions,
+        site,
         env,
         requestHost
     });
@@ -3046,7 +3050,8 @@ async function createPaymentRequest({
             supabase: paymentRuntimeSupabase,
             env,
             config: paymentChannels,
-            requestOrigin
+            requestOrigin,
+            site
         });
 
         const checkoutContext = await adapter.createCheckoutContext({

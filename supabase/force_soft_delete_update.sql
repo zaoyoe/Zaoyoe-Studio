@@ -6,18 +6,25 @@ ALTER TABLE points_ledger
 ADD COLUMN IF NOT EXISTS is_visible BOOLEAN DEFAULT TRUE;
 
 -- 2. 重建清除函数（确保逻辑是 UPDATE 而不是 DELETE）
-CREATE OR REPLACE FUNCTION fn_clear_user_history()
+DROP FUNCTION IF EXISTS fn_clear_user_history();
+DROP FUNCTION IF EXISTS fn_clear_user_history(TEXT);
+
+CREATE OR REPLACE FUNCTION fn_clear_user_history(p_site TEXT DEFAULT 'cn')
 RETURNS INTEGER AS $$
 DECLARE
     deleted_count INTEGER;
     v_user_id UUID;
+    v_site TEXT;
 BEGIN
     v_user_id := auth.uid();
+    v_site := COALESCE(NULLIF(BTRIM(p_site), ''), 'cn');
     
     -- 核心逻辑：UPDATE 设置不可见，而不是 DELETE
     UPDATE points_ledger 
     SET is_visible = false 
-    WHERE user_id = v_user_id AND is_visible = true;
+    WHERE user_id = v_user_id
+      AND site = v_site
+      AND is_visible = true;
     
     GET DIAGNOSTICS deleted_count = ROW_COUNT;
     return deleted_count;
@@ -25,7 +32,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- 3. 授予权限（确保函数可执行）
-GRANT EXECUTE ON FUNCTION fn_clear_user_history() TO authenticated;
+GRANT EXECUTE ON FUNCTION fn_clear_user_history(TEXT) TO authenticated;
 GRANT UPDATE ON points_ledger TO authenticated; -- 需要 UPDATE 权限才能软删除 (即使是 SECURITY DEFINER 有时也需要，或者确保 RLS 允许)
 
 -- 4. 添加 RLS 策略允许用户 UPDATE 自己的记录（is_visible 字段）

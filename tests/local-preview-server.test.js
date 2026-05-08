@@ -30,11 +30,13 @@ test('local preview server serves Supabase runtime config from local env files',
     fs.mkdirSync(path.join(tempRoot, 'server'), { recursive: true });
     fs.writeFileSync(path.join(tempRoot, 'server/.env.staging'), [
         'SUPABASE_URL=https://staging.supabase.co',
-        'SUPABASE_PUBLISHABLE_KEY=staging-key'
+        'SUPABASE_PUBLISHABLE_KEY=staging-key',
+        'GOOGLE_CLIENT_ID_CN=staging-google-cn'
     ].join('\n'));
     fs.writeFileSync(path.join(tempRoot, '.env.local'), [
         'SUPABASE_URL=https://local.supabase.co',
-        'SUPABASE_PUBLISHABLE_KEY=local-key'
+        'SUPABASE_PUBLISHABLE_KEY=local-key',
+        'GOOGLE_CLIENT_ID_INTL=local-google-intl'
     ].join('\n'));
     fs.writeFileSync(path.join(tempRoot, 'index.html'), '<!doctype html><title>preview</title>');
 
@@ -46,6 +48,8 @@ test('local preview server serves Supabase runtime config from local env files',
     assert.match(body, /__ZAOYOE_SUPABASE_CONFIG__/);
     assert.match(body, /https:\/\/local\.supabase\.co/);
     assert.match(body, /local-key/);
+    assert.match(body, /staging-google-cn/);
+    assert.match(body, /local-google-intl/);
 });
 
 test('local preview server includes pulled vercel env ahead of generic local env files', () => {

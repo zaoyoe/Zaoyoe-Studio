@@ -9,7 +9,7 @@
  *   SiteConfig.currency      → '¥' | '$'
  *   SiteConfig.currencyCode  → 'CNY' | 'USD'
  *   SiteConfig.getPriceField() → 'price_points' | 'price_points_intl'
- *   SiteConfig.getPointsLabel() → '积分' | 'Points'
+ *   SiteConfig.getPointsLabel() → 跟随当前语言返回 '积分' | 'Points'
  *   SiteConfig.isCN()        → true | false
  *   SiteConfig.isIntl()      → true | false
  */
@@ -90,9 +90,26 @@
             return products.filter((product) => this.isProductAvailableForCurrentSite(product));
         },
 
-        /** 获取积分显示名称 (统一为积分) */
-        getPointsLabel: function () {
-            return this.site === 'intl' ? 'Points' : '积分';
+        /** 获取积分显示名称（优先跟随当前页面语言，未就绪时再回退到站点） */
+        getPointsLabel: function (options = {}) {
+            const lowercaseEnglish = options?.lowercaseEnglish === true;
+            const currentLanguage = String(
+                window.i18n?.getCurrentLanguage?.()
+                || document.documentElement?.lang
+                || ''
+            ).trim().toLowerCase();
+
+            if (currentLanguage === 'zh') {
+                return '积分';
+            }
+
+            if (currentLanguage === 'en') {
+                return lowercaseEnglish ? 'points' : 'Points';
+            }
+
+            return this.site === 'intl'
+                ? (lowercaseEnglish ? 'points' : 'Points')
+                : '积分';
         },
 
         /** 是否为国内站 */

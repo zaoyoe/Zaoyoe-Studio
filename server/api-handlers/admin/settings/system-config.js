@@ -1,6 +1,8 @@
 const {
+    normalizeAdminSite,
     parseJsonBody,
     requireAdmin,
+    requireWritableAdminSite,
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
@@ -8,6 +10,11 @@ const {
     listActiveAdminUserIds,
     notifyUsers
 } = require('../../../../api/_lib/admin-notifications');
+const {
+    isSiteScopedSystemConfigKey,
+    resolveSiteScopedSystemConfigForRead,
+    upsertSiteScopedSystemConfigValue
+} = require('../../_site-scoped-system-config');
 
 const SYSTEM_CONFIG_DOMAIN_KEY_MAP = Object.freeze({
     commerce: [
@@ -280,15 +287,21 @@ module.exports = async (req, res) => {
             const url = new URL(req.url || '', 'http://localhost');
             const domains = normalizeRequestedDomains(url.searchParams.getAll('domain'));
             const keys = resolveConfigKeysForDomains(domains);
+            const site = normalizeAdminSite(url.searchParams.get('site') || req.adminSite, { defaultValue: 'all' }) || 'all';
             const rows = await fetchSystemConfigRows(supabase, keys);
 
             return sendJson(res, 200, {
                 success: true,
+                site,
                 domains,
                 keys,
                 meta: buildDomainMeta(),
                 configs: rows.reduce((accumulator, row) => {
-                    accumulator[row.config_key] = row.config_value;
+                    accumulator[row.config_key] = resolveSiteScopedSystemConfigForRead(
+                        row.config_key,
+                        row.config_value,
+                        site
+                    );
                     return accumulator;
                 }, {})
             });
@@ -324,11 +337,17 @@ module.exports = async (req, res) => {
         }
 
         const value = body.value;
+        const site = isSiteScopedSystemConfigKey(key)
+            ? requireWritableAdminSite(body.site || req.adminSite, { fieldName: 'site' })
+            : (normalizeAdminSite(body.site || req.adminSite, { defaultValue: 'all' }) || 'all');
+        const storedValue = isSiteScopedSystemConfigKey(key)
+            ? upsertSiteScopedSystemConfigValue(previousValue, site, value)
+            : value;
         const { error } = await supabase
             .from('system_config')
             .upsert({
                 config_key: key,
-                config_value: value,
+                config_value: storedValue,
                 updated_by: user.id,
                 updated_at: new Date().toISOString()
             }, {
@@ -347,7 +366,7 @@ module.exports = async (req, res) => {
                     supabase,
                     user,
                     previousValue,
-                    value
+                    storedValue
                 );
             } catch (notificationError) {
                 warning = sanitizeText(notificationError?.message || 'Announcement notification failed', 400);
@@ -361,6 +380,8 @@ module.exports = async (req, res) => {
             actionType: 'system_config.update',
             details: {
                 config_key: key,
+                site,
+                site_scoped: isSiteScopedSystemConfigKey(key),
                 config_value: value
             }
         });
@@ -368,7 +389,9 @@ module.exports = async (req, res) => {
         return sendJson(res, 200, {
             success: true,
             key,
+            site,
             value,
+            stored_value: storedValue,
             announcementNotification,
             warning
         });

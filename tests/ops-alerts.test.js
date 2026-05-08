@@ -1606,6 +1606,7 @@ test('buildExternalAlertText renders payment config changed details', () => {
         severity: 'critical',
         title: '支付配置已变更（admin@example.com）',
         payload: {
+            site: 'intl',
             admin_email: 'admin@example.com',
             action_label: '支付通道配置更新',
             active_provider: 'mock',
@@ -1619,6 +1620,7 @@ test('buildExternalAlertText renders payment config changed details', () => {
     });
 
     assert.match(text, /支付配置告警/);
+    assert.match(text, /站点：INTL/);
     assert.match(text, /操作人：admin@example.com/);
     assert.match(text, /变更类型：支付通道配置更新/);
     assert.match(text, /当前生效通道：模拟支付/);
@@ -1634,6 +1636,7 @@ test('buildExternalAlertText renders payment config incident details', () => {
         severity: 'critical',
         title: '支付配置异常升级（3 次）',
         payload: {
+            site: 'intl',
             lookback_minutes: 20,
             incident_change_count: 3,
             distinct_admin_count: 2,
@@ -1649,6 +1652,7 @@ test('buildExternalAlertText renders payment config incident details', () => {
     });
 
     assert.match(text, /支付配置事故/);
+    assert.match(text, /站点：INTL/);
     assert.match(text, /观察窗口：最近 20 分钟/);
     assert.match(text, /命中次数：3 次/);
     assert.match(text, /涉及管理员：2 位/);
@@ -1666,6 +1670,7 @@ test('buildExternalAlertText renders payment config incident recovery details', 
         severity: 'warning',
         title: '支付配置事故已恢复',
         payload: {
+            site: 'intl',
             recovery_summary: '支付配置集中事故阈值已解除，当前仍保留 1 次单次高风险改动',
             incident_started_at: '2026-03-25T10:00:00.000Z',
             incident_recovered_at: '2026-03-25T10:32:00.000Z',
@@ -1682,6 +1687,7 @@ test('buildExternalAlertText renders payment config incident recovery details', 
     });
 
     assert.match(text, /支付配置事故恢复/);
+    assert.match(text, /站点：INTL/);
     assert.match(text, /恢复结论：支付配置集中事故阈值已解除，当前仍保留 1 次单次高风险改动/);
     assert.match(text, new RegExp(`上次升级：${formatShanghaiTimestamp('2026-03-25T10:00:00.000Z')}`));
     assert.match(text, new RegExp(`恢复时间：${formatShanghaiTimestamp('2026-03-25T10:32:00.000Z')}`));
@@ -1701,6 +1707,7 @@ test('buildExternalAlertText renders payment config recovery details', () => {
         severity: 'warning',
         title: '支付配置风险已恢复（已切回真实支付）',
         payload: {
+            site: 'intl',
             recovery_summary: '当前活动通道已切回 爱发电',
             previous_admin_email: 'admin@example.com',
             recovery_admin_email: 'owner@example.com',
@@ -1709,6 +1716,7 @@ test('buildExternalAlertText renders payment config recovery details', () => {
             current_active_provider: 'afdian',
             current_active_provider_label: '爱发电',
             current_enabled_provider_labels: ['爱发电', '虎皮椒'],
+            restored_secret_source: 'stored_site',
             incident_started_at: '2026-03-25T10:00:00.000Z',
             incident_recovered_at: '2026-03-25T10:18:00.000Z',
             incident_duration_minutes: 18,
@@ -1718,11 +1726,13 @@ test('buildExternalAlertText renders payment config recovery details', () => {
     });
 
     assert.match(text, /支付配置恢复/);
+    assert.match(text, /站点：INTL/);
     assert.match(text, /恢复结论：当前活动通道已切回 爱发电/);
     assert.match(text, /上次操作人：admin@example.com/);
     assert.match(text, /修复人：owner@example.com/);
     assert.match(text, /当前生效通道：爱发电/);
     assert.match(text, /当前启用通道：爱发电、虎皮椒/);
+    assert.match(text, /当前密钥来源：后台密钥库/);
     assert.match(text, /持续时长：18 分钟/);
     assert.match(text, /处理入口：后台设置 -> 管理员访问 \/ Admin Audit Logs -> 支付配置审计/);
 });

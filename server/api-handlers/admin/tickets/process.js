@@ -1,9 +1,10 @@
+const adminHelpers = require('../../../../api/_lib/admin');
 const {
     parseJsonBody,
     requireAdmin,
     sendJson,
     writeAdminAuditLog
-} = require('../../../../api/_lib/admin');
+} = adminHelpers;
 const {
     applyShopOrderRefund
 } = require('../../../../api/_lib/shop/admin-refunds');
@@ -44,6 +45,7 @@ function isMissingNotificationColumnError(error) {
             || message.includes('metadata')
             || message.includes('priority')
             || message.includes('expires_at')
+            || message.includes('site')
             || message.includes('dedupe_key')
             || message.includes('source_module')
             || message.includes('source_event_id')
@@ -68,6 +70,14 @@ function buildTicketProcessError(statusCode, message, extra = {}) {
     error.statusCode = Number(statusCode) || 500;
     Object.assign(error, extra || {});
     return error;
+}
+
+function normalizeTicketAdminSite(value, defaultValue = 'all') {
+    if (typeof adminHelpers.normalizeAdminSite === 'function') {
+        return adminHelpers.normalizeAdminSite(value, { defaultValue }) || defaultValue;
+    }
+    const normalized = String(value || '').trim().toLowerCase();
+    return ['all', 'cn', 'intl'].includes(normalized) ? normalized : defaultValue;
 }
 
 function buildLinkedOpsAlertResolution({ ticketId = '', newStatus = '', adminReply = '', doRefund = false, refundAmount = 0 }) {
@@ -204,6 +214,7 @@ async function syncLinkedCommentWorkflow({
 async function syncLinkedChatSessionConversation({
     supabase,
     ticket = {},
+    site = 'cn',
     ticketId = '',
     newStatus = '',
     adminReply = '',
@@ -228,6 +239,7 @@ async function syncLinkedChatSessionConversation({
         .insert({
             session_id: linkedContext.session_id,
             user_id: sanitizeText(ticket.user_id, 120) || null,
+            site: sanitizeText(site || ticket.site || 'cn', 20).toLowerCase() || 'cn',
             content,
             message_type: 'ticket_update',
             is_admin: true
@@ -261,6 +273,7 @@ async function insertTicketResultNotification(supabase, payload = {}) {
     delete legacyPayload.metadata;
     delete legacyPayload.priority;
     delete legacyPayload.expires_at;
+    delete legacyPayload.site;
     delete legacyPayload.dedupe_key;
     delete legacyPayload.source_module;
     delete legacyPayload.source_event_id;
@@ -357,7 +370,8 @@ async function processTicketWithContext({
     adminReply = '',
     internalNote = '',
     doRefund = false,
-    source = 'ticket.process'
+    source = 'ticket.process',
+    adminSite = 'all'
 } = {}) {
     const normalizedTicketId = String(ticketId || '').trim();
     const normalizedNewStatus = String(newStatus || '').trim().toUpperCase();
@@ -385,11 +399,14 @@ async function processTicketWithContext({
         throw buildTicketProcessError(400, '只有解决工单时才能执行退款');
     }
 
-    const { data: ticket, error: ticketError } = await supabase
+    let ticketQuery = supabase
         .from('shop_tickets')
         .select('*')
-        .eq('id', normalizedTicketId)
-        .single();
+        .eq('id', normalizedTicketId);
+    if (adminSite !== 'all') {
+        ticketQuery = ticketQuery.eq('site', adminSite);
+    }
+    const { data: ticket, error: ticketError } = await ticketQuery.single();
 
     if (ticketError || !ticket) {
         throw buildTicketProcessError(404, '找不到该工单数据');
@@ -422,15 +439,18 @@ async function processTicketWithContext({
         refundDuplicate = refundResult.duplicate === true;
     }
 
-    const { data: updatedRows, error: updateError } = await supabase
+    let updateQuery = supabase
         .from('shop_tickets')
         .update({
             status: normalizedNewStatus,
             admin_notes: normalizedAdminReply || null,
             updated_at: new Date().toISOString()
         })
-        .eq('id', normalizedTicketId)
-        .select('*');
+        .eq('id', normalizedTicketId);
+    if (adminSite !== 'all') {
+        updateQuery = updateQuery.eq('site', adminSite);
+    }
+    const { data: updatedRows, error: updateError } = await updateQuery.select('*');
 
     if (updateError || !updatedRows?.length) {
         throw buildTicketProcessError(400, updateError?.message || '更新失败：工单不存在或您没有管理员权限修改它');
@@ -453,6 +473,7 @@ async function processTicketWithContext({
     try {
         await insertTicketResultNotification(supabase, {
             user_id: ticket.user_id,
+            site: sanitizeText(ticket.site || adminSite || 'cn', 20).toLowerCase() || 'cn',
             title: notifTitle,
             content: notifContent,
             type: notifType,
@@ -505,6 +526,7 @@ async function processTicketWithContext({
         linkedChatSession = await syncLinkedChatSessionConversation({
             supabase,
             ticket: updatedTicket,
+            site: sanitizeText(updatedTicket.site || ticket.site || adminSite || 'cn', 20).toLowerCase() || 'cn',
             ticketId: normalizedTicketId,
             newStatus: normalizedNewStatus,
             adminReply: normalizedAdminReply,
@@ -540,6 +562,7 @@ async function processTicketWithContext({
             details: {
                 ticket_id: normalizedTicketId,
                 order_id: ticket.order_id,
+                site: ticket.site || (adminSite !== 'all' ? adminSite : null),
                 ticket_status: normalizedNewStatus,
                 ticket_status_label: getTicketStatusLabel(normalizedNewStatus),
                 note: normalizedInternalNote,
@@ -557,6 +580,7 @@ async function processTicketWithContext({
         details: {
             ticket_id: normalizedTicketId,
             order_id: ticket.order_id,
+            site: ticket.site || (adminSite !== 'all' ? adminSite : null),
             previous_status: currentStatus,
             previous_status_label: getTicketStatusLabel(currentStatus),
             new_status: normalizedNewStatus,
@@ -601,6 +625,7 @@ async function adminTicketsProcessHandler(req, res) {
     try {
         const { supabase, user } = await requireAdmin(req, { permission: 'tickets.manage' });
         const body = await parseJsonBody(req);
+        const adminSite = normalizeTicketAdminSite(body.site || req.adminSite, 'all');
         const result = await processTicketWithContext({
             supabase,
             user,
@@ -609,7 +634,8 @@ async function adminTicketsProcessHandler(req, res) {
             adminReply: body.adminReply,
             internalNote: body.internalNote,
             doRefund: body.doRefund,
-            source: 'ticket.process'
+            source: 'ticket.process',
+            adminSite
         });
 
         return sendJson(res, 200, result);

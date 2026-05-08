@@ -547,3 +547,44 @@ test('tickets list handler supports filtering my tickets and unassigned tickets'
         assert.equal(unassignedPayload.rows[0].id, 'ticket-unassigned-1');
     });
 });
+
+test('tickets list handler isolates cn and intl tickets by the current admin site', async () => {
+    await withHandler({
+        tickets: [{
+            id: 'ticket-cn-1',
+            user_id: 'user-cn-1',
+            site: 'cn',
+            order_id: '',
+            issue_type: 'OTHER',
+            status: 'PENDING',
+            description: '国内站工单',
+            created_at: '2026-04-04T12:00:00.000Z',
+            updated_at: '2026-04-04T12:00:00.000Z'
+        }, {
+            id: 'ticket-intl-1',
+            user_id: 'user-intl-1',
+            site: 'intl',
+            order_id: '',
+            issue_type: 'OTHER',
+            status: 'PENDING',
+            description: '国际站工单',
+            created_at: '2026-04-04T11:00:00.000Z',
+            updated_at: '2026-04-04T11:00:00.000Z'
+        }]
+    }, async (handler) => {
+        const req = {
+            method: 'GET',
+            url: '/api/admin/tickets/list?status=pending&page=1&pageSize=10&site=intl',
+            headers: {}
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(payload.success, true);
+        assert.equal(payload.filters.site, 'intl');
+        assert.equal(payload.rows.length, 1);
+        assert.equal(payload.rows[0].id, 'ticket-intl-1');
+    });
+});

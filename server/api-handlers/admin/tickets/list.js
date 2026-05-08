@@ -1,7 +1,8 @@
+const adminHelpers = require('../../../../api/_lib/admin');
 const {
     requireAdmin,
     sendJson
-} = require('../../../../api/_lib/admin');
+} = adminHelpers;
 const {
     loadOpsAlertsRuntimeConfig
 } = require('../../../../api/_lib/ops-alerts');
@@ -62,6 +63,18 @@ function normalizeAssigneeFilter(value) {
 function normalizeBooleanFlag(value) {
     const normalized = normalizeText(value, 20).toLowerCase();
     return ['1', 'true', 'yes', 'on'].includes(normalized);
+}
+
+function normalizeTicketAdminSite(value, defaultValue = 'all') {
+    if (typeof adminHelpers.normalizeAdminSite === 'function') {
+        return adminHelpers.normalizeAdminSite(value, { defaultValue }) || defaultValue;
+    }
+    const normalized = String(value || '').trim().toLowerCase();
+    return ['all', 'cn', 'intl'].includes(normalized) ? normalized : defaultValue;
+}
+
+function applyTicketSiteFilter(query, adminSite = 'all') {
+    return adminSite === 'all' ? query : query.eq('site', adminSite);
 }
 
 function normalizeTicketStatus(value) {
@@ -506,7 +519,7 @@ function applyDerivedFilters(rows = [], filters = {}) {
     });
 }
 
-async function queryTicketRows(supabase, { statusFilter, page, pageSize, query, loadAllRows = false }) {
+async function queryTicketRows(supabase, { statusFilter, page, pageSize, query, loadAllRows = false, adminSite = 'all' }) {
     const normalizedQuery = normalizeText(query, 255);
     const statusValues = getStatusValuesForFilter(statusFilter);
 
@@ -517,6 +530,7 @@ async function queryTicketRows(supabase, { statusFilter, page, pageSize, query, 
             .from('shop_tickets')
             .select('id, user_id, order_id, issue_type, status, description, admin_notes, created_at, updated_at', { count: 'exact' })
             .order('created_at', { ascending: false });
+        queryBuilder = applyTicketSiteFilter(queryBuilder, adminSite);
 
         if (statusValues.length === 1) {
             queryBuilder = queryBuilder.eq('status', statusValues[0]);
@@ -540,6 +554,7 @@ async function queryTicketRows(supabase, { statusFilter, page, pageSize, query, 
         .from('shop_tickets')
         .select('id, user_id, order_id, issue_type, status, description, admin_notes, created_at, updated_at')
         .order('created_at', { ascending: false });
+    queryBuilder = applyTicketSiteFilter(queryBuilder, adminSite);
 
     if (statusValues.length === 1) {
         queryBuilder = queryBuilder.eq('status', statusValues[0]);
@@ -583,6 +598,7 @@ module.exports = async function adminTicketsListHandler(req, res) {
         const overdueOnly = normalizeBooleanFlag(searchParams.get('overdue'));
         const priorityFilter = normalizePriorityFilter(searchParams.get('priority'));
         const assigneeFilter = normalizeAssigneeFilter(searchParams.get('assignee'));
+        const adminSite = normalizeTicketAdminSite(searchParams.get('site') || req.adminSite, 'all');
         const loadAllRows = overdueOnly || priorityFilter === 'high' || assigneeFilter !== 'all';
 
         const runtime = await loadOpsAlertsRuntimeConfig(supabase).catch(() => null);
@@ -595,7 +611,8 @@ module.exports = async function adminTicketsListHandler(req, res) {
             page,
             pageSize,
             query,
-            loadAllRows
+            loadAllRows,
+            adminSite
         });
 
         const rows = Array.isArray(ticketCollection.rows) ? ticketCollection.rows : [];
@@ -629,6 +646,7 @@ module.exports = async function adminTicketsListHandler(req, res) {
         return sendJson(res, 200, {
             success: true,
             filters: {
+                site: adminSite,
                 status: statusFilter,
                 query,
                 overdueOnly,

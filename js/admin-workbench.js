@@ -5743,6 +5743,12 @@ async function fetchAdminWorkbenchOpsAlertMonitor(headers = {}, options = {}) {
 
     const endpoint = String(options.endpoint || '/api/admin/settings/ops-alert-monitor').trim()
         || '/api/admin/settings/ops-alert-monitor';
+    const normalizedSite = ['all', 'cn', 'intl'].includes(String(options.site || '').trim().toLowerCase())
+        ? String(options.site || '').trim().toLowerCase()
+        : '';
+    const requestTarget = normalizedSite
+        ? `${endpoint}${endpoint.includes('?') ? '&' : '?'}site=${encodeURIComponent(normalizedSite)}`
+        : endpoint;
     const timeoutMs = Number(options.timeoutMs || 0);
     const AbortControllerImpl = typeof options.AbortController === 'function'
         ? options.AbortController
@@ -5763,7 +5769,7 @@ async function fetchAdminWorkbenchOpsAlertMonitor(headers = {}, options = {}) {
             : 0;
 
         try {
-            const response = await fetchImpl(endpoint, {
+            const response = await fetchImpl(requestTarget, {
                 method: 'GET',
                 headers,
                 signal: controller?.signal
@@ -5799,9 +5805,13 @@ function normalizeAdminWorkbenchOpsAlertMonitorPayload(payload = {}, options = {
     const normalizeShiftReport = typeof options.normalizeShiftReport === 'function'
         ? options.normalizeShiftReport
         : ((report) => report && typeof report === 'object' && !Array.isArray(report) ? report : {});
+    const normalizedSiteContext = ['all', 'cn', 'intl'].includes(String(source.site_context || '').trim().toLowerCase())
+        ? String(source.site_context || '').trim().toLowerCase()
+        : 'all';
 
     return {
         fetched_at: source.fetched_at || '',
+        site_context: normalizedSiteContext,
         summary: {
             ...defaultSummary,
             ...(source.summary && typeof source.summary === 'object' && !Array.isArray(source.summary)

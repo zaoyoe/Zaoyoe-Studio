@@ -200,6 +200,7 @@ test('buildPaymentConfigChangedAlerts flags payment channel updates and secret d
             admin_email: 'admin@example.com',
             created_at: '2026-03-25T09:55:00.000Z',
             details: {
+                site: 'intl',
                 active_provider: 'mock',
                 updated_providers: ['mock', 'hupijiao'],
                 updated_secrets: ['hupijiao_secret_key']
@@ -230,6 +231,8 @@ test('buildPaymentConfigChangedAlerts flags payment channel updates and secret d
     assert.equal(alerts.length, 2);
     assert.equal(alerts[0].alertType, 'payment_config_changed');
     assert.equal(alerts[0].severity, 'critical');
+    assert.equal(alerts[0].payload.site, 'intl');
+    assert.match(alerts[0].content, /站点：INTL/);
     assert.match(alerts[0].content, /当前活动通道已切换为模拟支付/);
     assert.match(alerts[1].content, /删除密钥：hupijiao_secret_key/);
 });
@@ -243,6 +246,7 @@ test('buildPaymentConfigIncidentAlerts escalates clustered risky changes', () =>
             admin_email: 'admin@example.com',
             created_at: '2026-03-25T09:45:00.000Z',
             details: {
+                site: 'intl',
                 active_provider: 'mock',
                 updated_providers: ['mock', 'hupijiao'],
                 updated_secrets: ['hupijiao_secret_key']
@@ -255,6 +259,7 @@ test('buildPaymentConfigIncidentAlerts escalates clustered risky changes', () =>
             admin_email: 'owner@example.com',
             created_at: '2026-03-25T09:50:00.000Z',
             details: {
+                site: 'intl',
                 secret_name: 'hupijiao_secret_key'
             }
         }
@@ -269,12 +274,93 @@ test('buildPaymentConfigIncidentAlerts escalates clustered risky changes', () =>
     assert.equal(alerts.length, 1);
     assert.equal(alerts[0].alertType, 'payment_config_incident');
     assert.equal(alerts[0].severity, 'critical');
+    assert.equal(alerts[0].payload.site, 'intl');
+    assert.match(alerts[0].content, /站点：INTL/);
     assert.match(alerts[0].content, /最近 20 分钟内连续发生多次高风险支付配置改动/);
     assert.match(alerts[0].content, /变更类型：支付密钥删除；支付通道配置更新/);
     assert.match(alerts[0].content, /涉及通道：模拟支付、虎皮椒/);
     assert.match(alerts[0].content, /涉及密钥：虎皮椒 Secret Key/);
     assert.equal(alerts[0].payload.incident_change_count, 2);
     assert.equal(alerts[0].payload.distinct_admin_count, 2);
+});
+
+test('runPaymentConfigChangedSweep isolates payment config incidents by site', async () => {
+    const state = {
+        jobs: [],
+        auditRows: [
+            {
+                id: 'audit-cn-risk-1',
+                action_type: 'admin.payment_channels.upsert',
+                admin_id: 'admin-cn-1',
+                admin_email: 'cn-admin@example.com',
+                created_at: '2026-03-25T09:45:00.000Z',
+                details: {
+                    site: 'cn',
+                    active_provider: 'mock',
+                    updated_providers: ['mock', 'hupijiao']
+                }
+            },
+            {
+                id: 'audit-intl-risk-1',
+                action_type: 'admin.payment_channels.secret.delete',
+                admin_id: 'admin-intl-1',
+                admin_email: 'intl-admin@example.com',
+                created_at: '2026-03-25T09:50:00.000Z',
+                details: {
+                    site: 'intl',
+                    secret_name: 'hupijiao_secret_key'
+                }
+            }
+        ]
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createOpsRuntime();
+
+    const cnResult = await runPaymentConfigChangedSweep(supabase, {
+        runtime,
+        site: 'cn',
+        currentPaymentChannels: {
+            active_provider: 'mock',
+            providers: {
+                mock: { enabled: true },
+                afdian: { enabled: true },
+                hupijiao: { enabled: true }
+            }
+        },
+        currentSecretStatus: {
+            hupijiao_secret_key: { configured: true, source: 'stored_site' }
+        },
+        now: '2026-03-25T10:00:00.000Z'
+    });
+
+    const intlResult = await runPaymentConfigChangedSweep(supabase, {
+        runtime,
+        site: 'intl',
+        currentPaymentChannels: {
+            active_provider: 'hupijiao',
+            providers: {
+                mock: { enabled: false },
+                afdian: { enabled: true },
+                hupijiao: { enabled: true }
+            }
+        },
+        currentSecretStatus: {
+            hupijiao_secret_key: { configured: false, source: 'missing' }
+        },
+        now: '2026-03-25T10:00:00.000Z'
+    });
+
+    assert.equal(cnResult.site, 'cn');
+    assert.equal(cnResult.change_count, 1);
+    assert.equal(cnResult.incident_count, 0);
+    assert.equal(intlResult.site, 'intl');
+    assert.equal(intlResult.change_count, 1);
+    assert.equal(intlResult.incident_count, 0);
+    assert.equal(state.jobs.length, 2);
+    assert.deepEqual(
+        state.jobs.map((job) => job.payload?.site),
+        ['cn', 'intl']
+    );
 });
 
 test('runPaymentConfigChangedSweep enqueues payment config alerts with stable dedupe', async () => {
@@ -429,6 +515,7 @@ test('buildPaymentConfigRecoveredAlerts emits recoveries when mock mode is rolle
             alert_type: 'payment_config_changed',
             created_at: '2026-03-25T09:20:00.000Z',
             payload: {
+                site: 'intl',
                 action_type: 'admin.payment_channels.upsert',
                 admin_email: 'ops@example.com',
                 active_provider: 'mock',
@@ -441,6 +528,7 @@ test('buildPaymentConfigRecoveredAlerts emits recoveries when mock mode is rolle
             alert_type: 'payment_config_changed',
             created_at: '2026-03-25T09:25:00.000Z',
             payload: {
+                site: 'intl',
                 action_type: 'admin.payment_channels.secret.delete',
                 admin_email: 'ops@example.com',
                 secret_name: 'hupijiao_secret_key',
@@ -454,6 +542,7 @@ test('buildPaymentConfigRecoveredAlerts emits recoveries when mock mode is rolle
             admin_email: 'owner@example.com',
             created_at: '2026-03-25T09:31:00.000Z',
             details: {
+                site: 'intl',
                 active_provider: 'afdian',
                 updated_providers: ['afdian', 'hupijiao']
             }
@@ -464,6 +553,7 @@ test('buildPaymentConfigRecoveredAlerts emits recoveries when mock mode is rolle
             admin_email: 'owner@example.com',
             created_at: '2026-03-25T09:34:00.000Z',
             details: {
+                site: 'intl',
                 active_provider: 'afdian',
                 updated_providers: ['afdian', 'hupijiao'],
                 updated_secrets: ['hupijiao_secret_key']
@@ -488,6 +578,8 @@ test('buildPaymentConfigRecoveredAlerts emits recoveries when mock mode is rolle
 
     assert.equal(alerts.length, 2);
     assert.equal(alerts[0].alertType, 'payment_config_recovered');
+    assert.equal(alerts[0].payload.site, 'intl');
+    assert.match(alerts[0].content, /站点：INTL/);
     assert.match(alerts[0].content, /当前生效通道：爱发电/);
     assert.equal(alerts[1].payload.restored_secret_name, 'hupijiao_secret_key');
     assert.match(alerts[1].content, /当前密钥来源：后台密钥库/);
@@ -502,6 +594,7 @@ test('buildPaymentConfigIncidentRecoveryAlerts emits a recovery notice after clu
             admin_email: 'admin@example.com',
             created_at: '2026-03-25T10:12:00.000Z',
             details: {
+                site: 'intl',
                 active_provider: 'hupijiao',
                 updated_providers: ['hupijiao'],
                 updated_secrets: ['hupijiao_secret_key']
@@ -517,7 +610,8 @@ test('buildPaymentConfigIncidentRecoveryAlerts emits a recovery notice after clu
             alert_type: 'payment_config_incident',
             created_at: '2026-03-25T10:00:00.000Z',
             payload: {
-                target_id: 'payment_config_incident:global',
+                target_id: 'payment_config_incident:intl',
+                site: 'intl',
                 incident_change_count: 3,
                 distinct_admin_count: 2
             }
@@ -530,6 +624,8 @@ test('buildPaymentConfigIncidentRecoveryAlerts emits a recovery notice after clu
     assert.equal(alerts[0].alertType, 'payment_config_incident_recovered');
     assert.equal(alerts[0].severity, 'warning');
     assert.equal(alerts[0].allowedChannels.join(','), 'feishu');
+    assert.equal(alerts[0].payload.site, 'intl');
+    assert.match(alerts[0].content, /站点：INTL/);
     assert.match(alerts[0].content, /支付配置已退出集中事故状态/);
     assert.match(alerts[0].content, /当前剩余高风险改动：1 次/);
     assert.equal(alerts[0].payload.active_change_count, 1);
@@ -644,7 +740,8 @@ test('runPaymentConfigChangedSweep enqueues incident recovery notices without du
                 severity: 'critical',
                 created_at: '2026-03-25T10:00:00.000Z',
                 payload: {
-                    target_id: 'payment_config_incident:global',
+                    target_id: 'payment_config_incident:cn',
+                    site: 'cn',
                     incident_change_count: 3,
                     distinct_admin_count: 2
                 }

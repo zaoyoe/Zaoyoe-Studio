@@ -51,7 +51,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'homepage should load the cached nav auth fast-paint helper before the lower auth runtime'
     );
     assert.ok(
-        indexSource.indexOf('./js/nav-auth-fast-paint.js?v=20260501_NAV_AUTH_FAST_PAINT_1') < indexSource.indexOf('./supabase-auth-functions.js?v=20260506_ENGAGEMENT_ACTION_ROUTES_1'),
+        indexSource.indexOf('./js/nav-auth-fast-paint.js?v=20260501_NAV_AUTH_FAST_PAINT_1') < indexSource.indexOf('./supabase-auth-functions.js?v=20260508_SITE_SCOPED_GOOGLE_CLIENT_IDS_1'),
         'homepage nav auth fast-paint helper should run before Supabase auth hydration'
     );
     assert.match(
@@ -536,7 +536,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
     const deferredScripts = [
         'https://unpkg.com/@supabase/supabase-js@2',
         '/api/runtime/supabase-config',
-        './js/runtime-supabase-config.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
+        './js/runtime-supabase-config.js?v=20260508_SITE_SCOPED_GOOGLE_CLIENT_IDS_1',
         './supabase-client.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1',
         './js/site-config.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
         './js/homepage-contract.js?v=20260430_HOMEPAGE_BILINGUAL_FIELDS_1',

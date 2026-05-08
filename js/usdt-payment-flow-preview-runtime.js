@@ -101,7 +101,7 @@
     const originalFetch = window.fetch?.bind(window);
     window.fetch = async function previewFetch(input, init) {
         const url = typeof input === "string" ? input : String(input?.url || "");
-        if (url === "/api/payments/config" || url.endsWith("/api/payments/config")) {
+        if (url === "/api/payments/config" || url.startsWith("/api/payments/config?") || url.endsWith("/api/payments/config")) {
             return new Response(JSON.stringify({
                 success: true,
                 config: paymentChannels,

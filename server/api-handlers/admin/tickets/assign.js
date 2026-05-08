@@ -1,9 +1,10 @@
+const adminHelpers = require('../../../../api/_lib/admin');
 const {
     parseJsonBody,
     requireAdmin,
     sendJson,
     writeAdminAuditLog
-} = require('../../../../api/_lib/admin');
+} = adminHelpers;
 
 function normalizeText(value, maxLength = 4000) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
@@ -27,6 +28,14 @@ function isMissingRelationError(error, relationName = '') {
         || normalizedMessage.includes('could not find')
         || normalizedMessage.includes('undefined table')
     );
+}
+
+function normalizeTicketAdminSite(value, defaultValue = 'all') {
+    if (typeof adminHelpers.normalizeAdminSite === 'function') {
+        return adminHelpers.normalizeAdminSite(value, { defaultValue }) || defaultValue;
+    }
+    const normalized = String(value || '').trim().toLowerCase();
+    return ['all', 'cn', 'intl'].includes(normalized) ? normalized : defaultValue;
 }
 
 async function fetchAuditRows(supabase, tableName = 'admin_audit_logs_view', selection = 'id, action_type, details, created_at, admin_id, admin_email') {
@@ -110,6 +119,7 @@ module.exports = async function adminTicketsAssignHandler(req, res) {
         const body = await parseJsonBody(req);
         const ticketIds = normalizeTicketIds(body.ticketIds);
         const operation = normalizeText(body.operation, 40).toLowerCase();
+        const adminSite = normalizeTicketAdminSite(body.site || req.adminSite, 'all');
 
         if (!ticketIds.length) {
             return sendJson(res, 400, {
@@ -125,10 +135,15 @@ module.exports = async function adminTicketsAssignHandler(req, res) {
             });
         }
 
-        const { data: tickets, error: ticketError } = await supabase
+        let ticketQuery = supabase
             .from('shop_tickets')
             .select('id, user_id, order_id, status')
             .in('id', ticketIds);
+        if (adminSite !== 'all') {
+            ticketQuery = ticketQuery.eq('site', adminSite);
+        }
+
+        const { data: tickets, error: ticketError } = await ticketQuery;
 
         if (ticketError) {
             throw ticketError;
@@ -178,6 +193,7 @@ module.exports = async function adminTicketsAssignHandler(req, res) {
                 details: {
                     ticket_id: ticketId,
                     order_id: normalizeText(ticket?.order_id, 120) || null,
+                    site: adminSite === 'all' ? null : adminSite,
                     operation,
                     assigned: operation === 'assign_self',
                     assignee_id: nextAssigneeId || null,

@@ -230,6 +230,8 @@ test('buildPlatformEnvChecklist renders the expected Vercel and Railway variable
     const checklist = buildPlatformEnvChecklist({
         SUPABASE_URL: 'https://demo.supabase.co',
         SUPABASE_PUBLISHABLE_KEY: 'pk_demo',
+        GOOGLE_CLIENT_ID_CN: 'google-cn-client',
+        GOOGLE_CLIENT_ID_INTL: 'google-intl-client',
         SUPABASE_SERVICE_ROLE_KEY: 'sr_demo',
         ADMIN_CONFIG_ENCRYPTION_KEY: 'enc_demo',
         PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: 'quote_demo',
@@ -247,6 +249,13 @@ test('buildPlatformEnvChecklist renders the expected Vercel and Railway variable
     assert.equal(checklist.vercel[0].value, 'https://demo.supabase.co');
     assert.equal(checklist.vercel[1].name, 'SUPABASE_PUBLISHABLE_KEY');
     assert.match(checklist.vercel[1].value, /^set, fingerprint=/);
+    assert.deepEqual(
+        checklist.vercel.slice(2, 4),
+        [
+            { name: 'GOOGLE_CLIENT_ID_CN', value: 'google-cn-client' },
+            { name: 'GOOGLE_CLIENT_ID_INTL', value: 'google-intl-client' }
+        ]
+    );
     assert.deepEqual(
         checklist.railway.map((item) => item.name),
         [

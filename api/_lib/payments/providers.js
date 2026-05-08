@@ -1,6 +1,7 @@
 const {
     PAYMENT_CHANNEL_SECRET_KEYS,
-    getStoredAdminSecret
+    resolveStoredPaymentSecret,
+    normalizePaymentSecretSite
 } = require('../secrets');
 const {
     normalizeHupijiaoConfig
@@ -11,6 +12,14 @@ const {
 const {
     normalizeNowpaymentsConfig
 } = require('./nowpayments');
+const {
+    resolveSiteRequestOrigin,
+    classifyManagedSite
+} = require('./site-origins');
+const {
+    normalizeSiteScopedSystemConfigSite,
+    resolveSiteScopedSystemConfigForRead
+} = require('../../../server/api-handlers/_site-scoped-system-config');
 
 const PROVIDER_KEYS = Object.freeze(['mock', 'afdian', 'hupijiao', 'zpay', 'nowpayments']);
 const NON_MOCK_PROVIDER_PRIORITY = Object.freeze(['nowpayments', 'zpay', 'hupijiao', 'afdian']);
@@ -718,15 +727,47 @@ async function loadStoredPaymentConfigs(supabase, options = {}) {
         configMap[item.config_key] = item.config_value;
     });
 
+    const fallbackRuntimeSite = normalizeSiteScopedSystemConfigSite(
+        classifyManagedSite(options.requestHost || '')
+        || classifyManagedSite(options.origin || '')
+        || classifyManagedSite(options.appBaseUrl || ''),
+        {
+            fallback: 'cn'
+        }
+    );
+    const inferredSite = normalizeSiteScopedSystemConfigSite(options.site || fallbackRuntimeSite, {
+        allowAll: true,
+        fallback: fallbackRuntimeSite
+    });
+    const effectiveSite = inferredSite === 'all' ? fallbackRuntimeSite : inferredSite;
+    const requestOrigin = resolveSiteRequestOrigin({
+        site: effectiveSite,
+        requestHost: options.requestHost || '',
+        appBaseUrl: options.origin || options.appBaseUrl || process.env.APP_BASE_URL
+    });
+    const resolvedPaymentChannels = resolveSiteScopedSystemConfigForRead(
+        'payment_channels',
+        configMap.payment_channels || null,
+        inferredSite
+    );
+    const resolvedRechargeOptions = resolveSiteScopedSystemConfigForRead(
+        'recharge_options',
+        configMap.recharge_options || null,
+        inferredSite
+    );
+
     return {
         rawPaymentChannels: configMap.payment_channels || null,
         rawRechargeOptions: configMap.recharge_options || null,
         paymentChannels: normalizePaymentChannelsConfig(
-            configMap.payment_channels,
-            configMap.recharge_options,
-            options
+            resolvedPaymentChannels,
+            resolvedRechargeOptions,
+            {
+                ...options,
+                origin: requestOrigin
+            }
         ),
-        rechargeOptions: normalizeRechargeOptionsConfig(configMap.recharge_options)
+        rechargeOptions: normalizeRechargeOptionsConfig(resolvedRechargeOptions)
     };
 }
 
@@ -743,32 +784,41 @@ function getEnvSecretValue(secretName, env = process.env) {
     return '';
 }
 
-async function resolvePaymentProviderSecrets(supabase, providerKey, env = process.env) {
+async function resolvePaymentProviderSecrets(supabase, providerKey, env = process.env, options = {}) {
     const secretNames = getProviderSecretNames(providerKey);
     const result = {};
+    const requestedSite = normalizePaymentSecretSite(options.site, { allowEmpty: true });
 
     for (const secretName of secretNames) {
-        const secretKey = PAYMENT_CHANNEL_SECRET_KEYS[secretName];
-        const storedSecret = secretKey ? await getStoredAdminSecret(supabase, secretKey).catch(() => null) : null;
+        const storedSecret = await resolveStoredPaymentSecret(supabase, secretName, {
+            site: requestedSite
+        }).catch(() => null);
         const envValue = getEnvSecretValue(secretName, env);
         const storedValue = String(storedSecret?.value || '').trim();
         const value = storedValue || envValue;
 
         result[secretName] = {
             value,
-            source: storedValue ? 'stored' : (envValue ? 'environment' : 'missing'),
-            updatedAt: storedSecret?.updated_at || null
+            source: storedValue
+                ? (storedSecret?.scope === 'site' ? 'stored_site' : 'stored')
+                : (envValue ? 'environment' : 'missing'),
+            updatedAt: storedSecret?.updated_at || null,
+            site: storedSecret?.site || null,
+            scope: storedSecret?.scope || null,
+            secretKey: storedSecret?.secret_key || null
         };
     }
 
     return result;
 }
 
-async function buildPaymentSecretStatus(supabase, env = process.env) {
+async function buildPaymentSecretStatus(supabase, env = process.env, options = {}) {
+    const requestedSite = normalizePaymentSecretSite(options.site, { allowEmpty: true });
     const entries = await Promise.all(
         Object.keys(PAYMENT_CHANNEL_SECRET_KEYS).map(async (secretName) => {
-            const secretKey = PAYMENT_CHANNEL_SECRET_KEYS[secretName];
-            const storedSecret = await getStoredAdminSecret(supabase, secretKey).catch(() => null);
+            const storedSecret = await resolveStoredPaymentSecret(supabase, secretName, {
+                site: requestedSite
+            }).catch(() => null);
             const envValue = getEnvSecretValue(secretName, env);
             const storedValue = String(storedSecret?.value || '').trim();
 
@@ -776,8 +826,13 @@ async function buildPaymentSecretStatus(supabase, env = process.env) {
                 secretName,
                 {
                     configured: Boolean(storedValue || envValue),
-                    source: storedValue ? 'stored' : (envValue ? 'environment' : 'missing'),
-                    updatedAt: storedSecret?.updated_at || null
+                    source: storedValue
+                        ? (storedSecret?.scope === 'site' ? 'stored_site' : 'stored')
+                        : (envValue ? 'environment' : 'missing'),
+                    updatedAt: storedSecret?.updated_at || null,
+                    site: storedSecret?.site || null,
+                    scope: storedSecret?.scope || null,
+                    secretKey: storedSecret?.secret_key || PAYMENT_CHANNEL_SECRET_KEYS[secretName]
                 }
             ];
         })

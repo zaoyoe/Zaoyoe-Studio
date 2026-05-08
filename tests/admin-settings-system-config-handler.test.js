@@ -132,12 +132,34 @@ async function withSystemConfigHandler(options, callback) {
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../../../../api/_lib/admin') {
             return {
+                normalizeAdminSite(value, options = {}) {
+                    const normalized = String(Array.isArray(value) ? value[0] : (value || '')).trim().toLowerCase();
+                    const normalizedDefault = Object.prototype.hasOwnProperty.call(options, 'defaultValue')
+                        ? String(options.defaultValue || '').trim().toLowerCase()
+                        : '';
+                    if (normalized === 'cn' || normalized === 'intl' || normalized === 'all') {
+                        return normalized;
+                    }
+                    return normalizedDefault;
+                },
                 async requireAdmin(req, config = {}) {
                     state.requireAdminCalls.push({ req, config });
                     return {
                         supabase: createSupabaseDouble(state),
                         user: { id: 'admin_1', email: 'admin@example.com' }
                     };
+                },
+                requireWritableAdminSite(value, options = {}) {
+                    const rawSite = String(Array.isArray(value) ? value[0] : (value || '')).trim().toLowerCase();
+                    if (rawSite === 'cn' || rawSite === 'intl') {
+                        return rawSite;
+                    }
+
+                    const error = new Error(options.message || (rawSite
+                        ? `Writable admin site must be cn or intl; received ${rawSite}`
+                        : 'Writable admin site is required'));
+                    error.statusCode = 400;
+                    throw error;
                 },
                 async parseJsonBody(req) {
                     return req.body || {};

@@ -667,7 +667,7 @@ GRANT EXECUTE ON FUNCTION public.fn_purchase_shop_item(UUID, UUID, VARCHAR, INT,
 REVOKE ALL ON FUNCTION public.fn_purchase_shop_item(UUID, UUID, VARCHAR, INT, VARCHAR) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.fn_purchase_shop_item(UUID, UUID, VARCHAR, INT, VARCHAR) TO authenticated, service_role;
 
-CREATE OR REPLACE FUNCTION public.fn_clear_user_history()
+CREATE OR REPLACE FUNCTION public.fn_clear_user_history(p_site TEXT DEFAULT 'cn')
 RETURNS INTEGER
 LANGUAGE plpgsql
 SECURITY DEFINER
@@ -676,6 +676,7 @@ AS $$
 DECLARE
     deleted_count INTEGER;
     v_user_id UUID := auth.uid();
+    v_site TEXT := COALESCE(NULLIF(BTRIM(p_site), ''), 'cn');
 BEGIN
     IF v_user_id IS NULL THEN
         RAISE EXCEPTION '请先登录';
@@ -684,6 +685,7 @@ BEGIN
     UPDATE public.points_ledger
     SET is_visible = false
     WHERE user_id = v_user_id
+      AND site = v_site
       AND is_visible = true;
 
     GET DIAGNOSTICS deleted_count = ROW_COUNT;
@@ -691,7 +693,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.fn_clear_user_history() FROM PUBLIC;
-GRANT EXECUTE ON FUNCTION public.fn_clear_user_history() TO authenticated;
+REVOKE ALL ON FUNCTION public.fn_clear_user_history(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.fn_clear_user_history(TEXT) TO authenticated;
 
 REVOKE UPDATE ON public.points_ledger FROM authenticated;

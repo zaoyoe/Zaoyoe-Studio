@@ -237,3 +237,136 @@ test('payment config endpoint strips provider operational fields and runtime ove
         });
     });
 });
+
+test('payment config endpoint resolves site-scoped payment config for explicit site query', async () => {
+    const supabase = {
+        from(table) {
+            assert.equal(table, 'system_config');
+            return {
+                select() {
+                    return this;
+                },
+                in(column, values) {
+                    assert.equal(column, 'config_key');
+                    assert.deepEqual(values, ['payment_channels', 'recharge_options']);
+                    return Promise.resolve({
+                        data: [
+                            {
+                                config_key: 'payment_channels',
+                                config_value: {
+                                    __site_scoped: true,
+                                    default: {
+                                        active_provider: 'afdian',
+                                        providers: {
+                                            mock: { enabled: true, display_name: '模拟支付', description: 'mock' },
+                                            afdian: { enabled: true, display_name: '爱发电', checkout_url: 'https://afdian.com/a/cn-store' }
+                                        }
+                                    },
+                                    sites: {
+                                        intl: {
+                                            active_provider: 'nowpayments',
+                                            providers: {
+                                                mock: { enabled: true, display_name: '模拟支付', description: 'mock' },
+                                                afdian: { enabled: false, display_name: '爱发电', checkout_url: 'https://afdian.com/a/cn-store' },
+                                                nowpayments: {
+                                                    enabled: true,
+                                                    display_name: 'USDT-BEP20',
+                                                    pay_currency: 'usdtbsc',
+                                                    network_name: 'BNB Smart Chain',
+                                                    cny_to_usd_rate: 0.14,
+                                                    package_hint: 'INTL USDT',
+                                                    custom_amount_hint: 'INTL custom'
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                config_key: 'recharge_options',
+                                config_value: {
+                                    __site_scoped: true,
+                                    default: {
+                                        custom_amount_enabled: false,
+                                        mock_payment_enabled: false
+                                    },
+                                    sites: {
+                                        intl: {
+                                            custom_amount_enabled: true,
+                                            mock_payment_enabled: false
+                                        }
+                                    }
+                                }
+                            }
+                        ],
+                        error: null
+                    });
+                }
+            };
+        }
+    };
+
+    await withEnv({
+        SUPABASE_SERVICE_ROLE_KEY: 'service-role-key'
+    }, async () => {
+        await withConfigHandler({
+            adminModule: {
+                getSupabaseAdmin() {
+                    return supabase;
+                },
+                getOptionalSupabaseAdmin() {
+                    return supabase;
+                },
+                getSupabasePublicClient() {
+                    return supabase;
+                },
+                sendJson(res, status, payload) {
+                    res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                    res.end(JSON.stringify(payload));
+                }
+            },
+            requestSecurityModule: {
+                resolveClientIp() {
+                    return '203.0.113.8';
+                },
+                async takeRateLimitToken() {
+                    return {
+                        allowed: true,
+                        limit: 120,
+                        remaining: 119,
+                        resetAt: Date.now() + 60_000
+                    };
+                },
+                applyRateLimitHeaders() {}
+            },
+            ordersModule: {
+                getMockPaymentRuntimeState() {
+                    return {
+                        allowed: false,
+                        reason: 'production_like_runtime'
+                    };
+                }
+            }
+        }, async (handler) => {
+            const req = {
+                method: 'GET',
+                url: '/api/payments/config?site=intl',
+                headers: {
+                    host: 'localhost:3000'
+                }
+            };
+            const res = createMockResponse();
+
+            await handler(req, res);
+            const payload = res.json();
+
+            assert.equal(res.statusCode, 200);
+            assert.equal(payload.success, true);
+            assert.equal(payload.site, 'intl');
+            assert.equal(payload.config.active_provider, 'nowpayments');
+            assert.equal(payload.config.providers.nowpayments.display_name, 'USDT-BEP20');
+            assert.equal(payload.recharge_options.custom_amount_enabled, true);
+            assert.equal(payload.recharge_options.mock_payment_enabled, false);
+        });
+    });
+});

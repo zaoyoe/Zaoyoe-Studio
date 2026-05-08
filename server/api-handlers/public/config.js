@@ -7,6 +7,12 @@ const {
     normalizeSiteLayouts,
     normalizeSiteLayoutSite
 } = require('../_site-layout');
+const {
+    PUBLIC_SITE_SYSTEM_CONFIG_KEYS,
+    isPublicSiteSystemConfigKey,
+    resolveSiteScopedSystemConfigForRead,
+    resolveSiteScopedSystemConfigRequestSite
+} = require('../_site-scoped-system-config');
 
 function createPublicConfigHandlers({
     admin
@@ -260,6 +266,71 @@ function createPublicConfigHandlers({
         });
     }
 
+    async function siteSystemConfigHandler(req, res) {
+        if (req.method !== 'GET') {
+            res.setHeader('Allow', 'GET');
+            return sendJson(res, 405, {
+                success: false,
+                message: 'Method not allowed'
+            });
+        }
+
+        const supabase = typeof getOptionalSupabaseAdmin === 'function'
+            ? getOptionalSupabaseAdmin()
+            : null;
+
+        if (!supabase) {
+            return sendJson(res, 503, {
+                success: false,
+                message: 'Site system config is unavailable'
+            });
+        }
+
+        const url = new URL(req.url || '', 'http://localhost');
+        const site = resolveSiteScopedSystemConfigRequestSite(req, url, { fallback: 'cn' });
+        const requestedKeys = Array.from(new Set(
+            url.searchParams
+                .getAll('key')
+                .map((entry) => sanitizeText(entry, 120))
+                .filter((key) => isPublicSiteSystemConfigKey(key))
+        ));
+        const keys = requestedKeys.length
+            ? requestedKeys
+            : Array.from(PUBLIC_SITE_SYSTEM_CONFIG_KEYS);
+        const { data, error } = await supabase
+            .from('system_config')
+            .select('config_key, config_value, updated_at')
+            .in('config_key', keys)
+            .order('config_key', { ascending: true });
+
+        if (error) {
+            throw error;
+        }
+
+        const configs = {};
+        let updatedAt = null;
+
+        (Array.isArray(data) ? data : []).forEach((row) => {
+            configs[row.config_key] = resolveSiteScopedSystemConfigForRead(
+                row.config_key,
+                row.config_value,
+                site
+            );
+            if (!updatedAt || String(row.updated_at || '') > String(updatedAt || '')) {
+                updatedAt = row.updated_at || updatedAt;
+            }
+        });
+
+        res.setHeader('Cache-Control', 'no-store');
+        return sendJson(res, 200, {
+            success: true,
+            site,
+            keys,
+            configs,
+            updated_at: updatedAt
+        });
+    }
+
     async function announcementEventHandler(req, res) {
         if (req.method !== 'POST') {
             res.setHeader('Allow', 'POST');
@@ -384,6 +455,16 @@ function createPublicConfigHandlers({
                 return sendJson(res, error.statusCode || 500, {
                     success: false,
                     message: error.message || 'Public site layout request failed'
+                });
+            }
+        },
+        'site-system-config': async (req, res) => {
+            try {
+                return await siteSystemConfigHandler(req, res);
+            } catch (error) {
+                return sendJson(res, error.statusCode || 500, {
+                    success: false,
+                    message: error.message || 'Public site system config request failed'
                 });
             }
         },

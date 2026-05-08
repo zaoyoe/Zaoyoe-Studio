@@ -70,6 +70,22 @@ async function withPaymentChannelsHandler(state, callback) {
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../../../../api/_lib/admin') {
             return {
+                normalizeAdminSite(value, options = {}) {
+                    const normalized = String(value || '').trim().toLowerCase();
+                    if (normalized === 'cn' || normalized === 'intl' || normalized === 'all') {
+                        return normalized;
+                    }
+                    return options.defaultValue || '';
+                },
+                requireWritableAdminSite(value, options = {}) {
+                    const normalized = String(value || '').trim().toLowerCase();
+                    if (normalized === 'cn' || normalized === 'intl') {
+                        return normalized;
+                    }
+                    const error = new Error(options.message || 'Writable admin site is required');
+                    error.statusCode = 400;
+                    throw error;
+                },
                 async requireAdmin() {
                     return {
                         supabase: state.supabase,
@@ -138,6 +154,18 @@ function createSupabaseStub(state) {
             }
 
             return {
+                select() {
+                    return this;
+                },
+                eq() {
+                    return this;
+                },
+                maybeSingle() {
+                    return Promise.resolve({
+                        data: null,
+                        error: { code: 'PGRST116' }
+                    });
+                },
                 upsert(payload) {
                     state.savedConfigs.push(payload);
                     return Promise.resolve({ error: null });
@@ -194,6 +222,7 @@ test('payment channel settings allow switching zpay to primary without webhook a
                     host: 'www.zaoyoe.com'
                 },
                 body: {
+                    site: 'cn',
                     config: {
                         active_provider: 'zpay',
                         providers: {
@@ -280,6 +309,7 @@ test('payment channel settings allow switching zpay to primary after incoming pk
                     host: 'www.zaoyoe.com'
                 },
                 body: {
+                    site: 'intl',
                     config: {
                         active_provider: 'zpay',
                         providers: {
@@ -310,9 +340,10 @@ test('payment channel settings allow switching zpay to primary after incoming pk
             assert.deepEqual(payload.activation_checks.zpay.warnings, []);
             assert.equal(state.savedConfigs.length, 2);
             assert.equal(state.savedSecrets.length, 1);
-            assert.equal(state.savedSecrets[0].secretKey, 'payment_provider_zpay_pkey');
+            assert.equal(state.savedSecrets[0].secretKey, 'payment_provider_zpay_pkey__intl');
             assert.equal(state.auditLogs.length, 1);
             assert.equal(state.auditLogs[0].actionType, 'admin.payment_channels.upsert');
+            assert.equal(state.auditLogs[0].details.site, 'intl');
             assert.deepEqual(state.auditLogs[0].details.activation_issues, []);
             assert.deepEqual(state.auditLogs[0].details.activation_warnings, []);
         });

@@ -657,13 +657,62 @@ const ShopClient = {
 
     getProductCategoryLabelMap: function () {
         return {
-            '公益站': 'Community Access',
-            '虚拟卡': 'Virtual Card',
-            '账号': 'Account',
-            '账户': 'Account',
-            '其他': 'Other',
-            '其它': 'Other'
+            communityAccess: {
+                zh: '公益站',
+                en: 'Community Access',
+                aliases: ['公益站', 'community access', 'community_access', 'community-access', 'community', 'gongyi']
+            },
+            virtualCard: {
+                zh: '虚拟卡',
+                en: 'Virtual Card',
+                aliases: ['虚拟卡', 'virtual card', 'virtual cards', 'virtual_card', 'virtual-card']
+            },
+            account: {
+                zh: '账号',
+                en: 'Account',
+                aliases: ['账号', '账户', 'account', 'accounts']
+            },
+            other: {
+                zh: '其他',
+                en: 'Other',
+                aliases: ['其他', '其它', 'other', 'others', 'misc', 'uncategorized']
+            }
         };
+    },
+
+    normalizeProductCategoryAliasKey: function (value = '') {
+        return String(value || '')
+            .trim()
+            .toLowerCase()
+            .replace(/[_-]+/g, ' ')
+            .replace(/\s+/g, ' ');
+    },
+
+    getProductCategoryTranslationKey: function (category) {
+        const candidates = [
+            category?.key,
+            category?.name_key,
+            category?.slug,
+            category?.code,
+            category?.name,
+            category
+        ];
+        const categoryLabelMap = this.getProductCategoryLabelMap();
+
+        for (const candidate of candidates) {
+            const normalizedCandidate = this.normalizeProductCategoryAliasKey(candidate);
+            if (!normalizedCandidate) continue;
+
+            const matchedEntry = Object.entries(categoryLabelMap).find(([, definition]) => {
+                const aliases = Array.isArray(definition?.aliases) ? definition.aliases : [];
+                return aliases.some((alias) => this.normalizeProductCategoryAliasKey(alias) === normalizedCandidate);
+            });
+            if (matchedEntry) {
+                return matchedEntry[0];
+            }
+        }
+
+        return '';
     },
 
     getLocalizedProductName: function (product) {
@@ -709,14 +758,47 @@ const ShopClient = {
     getLocalizedProductCategoryLabel: function (category) {
         const normalized = String(category?.name || category || '').trim();
         if (!normalized) return '';
+        const translationKey = this.getProductCategoryTranslationKey(category);
+        const categoryDefinition = translationKey ? this.getProductCategoryLabelMap()[translationKey] : null;
+
         if (this.isEnglishShopLocale()) {
-            const explicitEnglish = String(category?.name_en || '').trim();
+            const explicitEnglish = String(category?.name_en || category?.label_en || '').trim();
             if (explicitEnglish) {
                 return this.resolveShopDataText(explicitEnglish, normalized);
             }
-            return this.getProductCategoryLabelMap()[normalized] || normalized;
+            const translatedEnglish = translationKey
+                ? (window.i18n?.t(`shop.categoryLabels.${translationKey}`) || categoryDefinition?.en || normalized)
+                : normalized;
+            return this.resolveShopDataText(translatedEnglish, normalized);
+        }
+
+        const explicitChinese = String(category?.name_zh || category?.label_zh || '').trim();
+        if (explicitChinese) {
+            return explicitChinese;
+        }
+        if (translationKey) {
+            return window.i18n?.t(`shop.categoryLabels.${translationKey}`) || categoryDefinition?.zh || normalized;
         }
         return normalized;
+    },
+
+    getShopPointsLabel: function ({ lowercaseEnglish = false } = {}) {
+        const fromSiteConfig = window.SiteConfig?.getPointsLabel?.({ lowercaseEnglish });
+        if (fromSiteConfig) {
+            return fromSiteConfig;
+        }
+
+        const translated = window.i18n?.t('shop.points');
+        if (translated) {
+            return lowercaseEnglish && String(translated).trim().toLowerCase() === 'points'
+                ? 'points'
+                : translated;
+        }
+
+        if (this.isEnglishShopLocale()) {
+            return lowercaseEnglish ? 'points' : 'Points';
+        }
+        return '积分';
     },
 
     shouldShowProductCardDescription: function (product) {
@@ -726,9 +808,7 @@ const ShopClient = {
     formatShopPoints: function (value) {
         const numericValue = Number(value || 0) || 0;
         const formattedValue = this.formatShopPointValue(numericValue);
-        const pointsLabel = this.isEnglishShopLocale()
-            ? (window.i18n?.t('shop.points') || 'Points')
-            : (window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分');
+        const pointsLabel = this.getShopPointsLabel();
         return `${formattedValue} ${pointsLabel}`;
     },
 
@@ -790,9 +870,7 @@ const ShopClient = {
         }
 
         if (discountType === 'fixed') {
-            const pointsLabel = this.isEnglishShopLocale()
-                ? (window.i18n?.t('shop.points') || 'Points')
-                : (window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分');
+            const pointsLabel = this.getShopPointsLabel();
             return this.isEnglishShopLocale()
                 ? this.trShop('fixedOff', '{amount} {unit} off', { amount: this.formatShopPointValue(discountValue), unit: pointsLabel })
                 : `立减 ${this.formatShopPointValue(discountValue)} ${pointsLabel}`;
@@ -1534,9 +1612,7 @@ const ShopClient = {
         const productName = this.getCurrentPurchaseDisplayName();
         const benefitLabel = this.getDiscountBenefitLabel(item) || this.trShop('coupon', '优惠券');
         const savings = Number(offer?.savings || 0);
-        const pointsLabel = this.isEnglishShopLocale()
-            ? (window.i18n?.t('shop.points') || 'points')
-            : (window.SiteConfig?.getPointsLabel?.() || window.i18n?.t('shop.points') || '积分');
+        const pointsLabel = this.getShopPointsLabel({ lowercaseEnglish: this.isEnglishShopLocale() });
         const savingsText = savings > 0
             ? (this.isEnglishShopLocale()
                 ? this.trShop('savedAmount', 'Save {amount}', { amount: `${this.formatShopPointValue(savings)} ${pointsLabel}` })
@@ -1917,7 +1993,7 @@ const ShopClient = {
 
         return {
             currentPrice,
-            priceHtml: `${originalPriceHtml}${formattedCurrentPrice} <span data-i18n="shop.points">${window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分'}</span>`,
+            priceHtml: `${originalPriceHtml}${formattedCurrentPrice} <span data-i18n="shop.points">${this.getShopPointsLabel()}</span>`,
             flashSaleBadgeHtml,
             flashShadowClass,
             agentBadgeHtml
@@ -2085,7 +2161,7 @@ const ShopClient = {
             anchorHint: '点开购物车',
             anchorEmptyTitle: '购物车为空',
             anchorEmptyBody: '先加入几件，再统一看看数量和总积分。',
-            drawerEyebrow: 'Floating Cart',
+            drawerEyebrow: '浮动购物车',
             drawerTitle: '购物车',
             drawerBody: '先继续逛商品，再统一结算。',
             emptyTitle: '购物车还是空的',
@@ -2103,7 +2179,7 @@ const ShopClient = {
             usagePill: '使用说明',
             removeLabel: '移除',
             cartTitle: '购物车',
-            checkoutReviewEyebrow: 'Cart Review',
+            checkoutReviewEyebrow: '购物车确认',
             checkoutReviewTitle: '统一确认',
             checkoutReviewHint: '购物车会按当前顺序逐个兑换，已经挂在商品上的优惠券会继续跟着该商品提交。',
             checkoutReviewNotice: '统一结算会沿用现有下单链路逐个提交。已选优惠会保留到对应商品上，但购物车里仍不支持重新组合或叠加优惠券。',
@@ -3611,7 +3687,7 @@ const ShopClient = {
 
         const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
         const isEn = currentLang === 'en';
-        const pointsLabel = window.i18n?.t('shop.points') || (isEn ? 'points' : '积分');
+        const pointsLabel = this.getShopPointsLabel({ lowercaseEnglish: isEn });
         const discountLabel = isEn ? 'Discount' : '优惠';
         const displayName = (currentLang === 'en' && this.currentPurchase.productNameEn)
             ? this.currentPurchase.productNameEn
@@ -4023,7 +4099,7 @@ const ShopClient = {
     },
 
     setDiscountAppliedMessage: function ({ discountAmount = 0, finalTotal = null, benefitLabel = '', selectionCount = 0 } = {}) {
-        const pointsLabel = window.i18n?.t('shop.points') || (this.isEnglishShopLocale() ? 'Points' : '积分');
+        const pointsLabel = this.getShopPointsLabel();
         const normalizedDiscountAmount = Number(discountAmount);
         const normalizedFinalTotal = Number(finalTotal);
         const normalizedSelectionCount = Math.max(0, Number(selectionCount || 0) || 0);
@@ -10381,9 +10457,7 @@ const ShopClient = {
                 const icon = order.shop_products?.icon_url || 'fas fa-box';
                 const displayName = this.getLocalizedProductName(order.shop_products)
                     || (window.i18n?.t('shop.unknownProduct') || '未知商品');
-                const pointsLabel = this.isEnglishShopLocale()
-                    ? (window.i18n?.t('shop.points') || 'Points')
-                    : (window.SiteConfig?.getPointsLabel() || window.i18n?.t('shop.points') || '积分');
+                const pointsLabel = this.getShopPointsLabel();
                 const safeIcon = this.escapeAttribute(icon);
                 const iconHtml = icon.startsWith('http')
                     ? `<img src="${safeIcon}" class="shop-order-history-icon shop-order-history-icon--image" alt="">`

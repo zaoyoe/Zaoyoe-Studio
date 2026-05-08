@@ -464,9 +464,12 @@ async function handleZpayWebhook({
             return sendPlainText(res, 400, 'missing out_trade_no');
         }
 
+        const attachData = parseZpayParam(payload.param);
+        const currentSite = getCurrentSite(req, attachData.site);
         const runtimeContext = await zpayProvider.resolveRuntimeContext({
             supabase,
-            env
+            env,
+            site: currentSite
         });
         const signatureCheck = zpayProvider.verifyWebhook({
             payload,
@@ -483,8 +486,6 @@ async function handleZpayWebhook({
 
         const signatureValid = signatureCheck.valid === true;
         const paymentState = normalizeZpayPaymentStatus(payload.trade_status, payload.status);
-        const attachData = parseZpayParam(payload.param);
-        const currentSite = getCurrentSite(req, attachData.site);
         const amount = roundCurrencyAmount(payload.money || 0);
         const paymentOrder = await loadPaymentOrderSnapshotByProviderOrderNo(supabase, 'zpay', orderNo);
         const expectedAmount = roundCurrencyAmount(paymentOrder?.expected_amount ?? 0);

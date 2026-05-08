@@ -243,6 +243,17 @@ function createAdminModule(state) {
                 user: state.user
             };
         },
+        normalizeAdminSite(value, options = {}) {
+            const rawValue = Array.isArray(value) ? value[0] : value;
+            const normalized = String(rawValue || '').trim().toLowerCase();
+            const fallback = Object.prototype.hasOwnProperty.call(options, 'defaultValue')
+                ? String(options.defaultValue || '').trim().toLowerCase()
+                : '';
+            if (!normalized) return fallback;
+            if (normalized === 'global') return 'all';
+            if (['all', 'cn', 'intl'].includes(normalized)) return normalized;
+            return fallback;
+        },
         sendJson(res, status, payload) {
             res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
             res.end(JSON.stringify(payload));
@@ -554,6 +565,17 @@ test('ops alert monitor handler can build assignable admins without scanning aut
                             },
                             user: state.user
                         };
+                    },
+                    normalizeAdminSite(value, options = {}) {
+                        const rawValue = Array.isArray(value) ? value[0] : value;
+                        const normalized = String(rawValue || '').trim().toLowerCase();
+                        const fallback = Object.prototype.hasOwnProperty.call(options, 'defaultValue')
+                            ? String(options.defaultValue || '').trim().toLowerCase()
+                            : '';
+                        if (!normalized) return fallback;
+                        if (normalized === 'global') return 'all';
+                        if (['all', 'cn', 'intl'].includes(normalized)) return normalized;
+                        return fallback;
                     },
                     sendJson(res, status, payload) {
                         res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -1148,6 +1170,66 @@ test('ops alert monitor handler treats payment config incident recovery as a pay
         assert.equal(payments.active_count, 0);
         assert.equal(payments.latest_state, 'recovered');
         assert.equal(payments.latest_title, '支付配置事故已恢复');
+    });
+});
+
+test('ops alert monitor handler filters site-scoped payment alerts by admin site context', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('payment_config_incident', {
+                id: 'payment-config-incident-cn',
+                severity: 'critical',
+                title: '支付配置异常升级（CN）',
+                content: '支付配置事故\n站点：CN\n风险信号：当前活动通道已切换为模拟支付',
+                payload: {
+                    site: 'cn',
+                    target_id: 'payment_config_incident:cn'
+                },
+                created_at: hoursAgo(2)
+            }),
+            buildJob('payment_config_incident', {
+                id: 'payment-config-incident-intl',
+                severity: 'critical',
+                title: '支付配置异常升级（INTL）',
+                content: '支付配置事故\n站点：INTL\n风险信号：支付密钥已删除',
+                payload: {
+                    site: 'intl',
+                    target_id: 'payment_config_incident:intl'
+                },
+                created_at: hoursAgo(1)
+            }),
+            buildJob('security_admin_login_anomaly', {
+                id: 'security-global-1',
+                severity: 'critical',
+                title: '管理员异常登录（global@example.com）',
+                content: '管理员异常登录\n登录 IP：203.0.113.9',
+                payload: {
+                    target_id: 'admin-user-1',
+                    admin_email: 'global@example.com',
+                    client_ip: '203.0.113.9'
+                },
+                created_at: hoursAgo(0.5)
+            })
+        ]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {}, url: '/api/admin/settings/ops-alert-monitor?site=intl' };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.site_context, 'intl');
+        assert.equal(payload.summary.total_job_count, 2);
+        const payments = payload.categories.find((item) => item.key === 'payments');
+        assert.equal(payments.active_count, 1);
+        assert.equal(payments.items.length, 1);
+        assert.equal(payments.items[0].title, '支付配置异常升级（INTL）');
+        assert.equal(payments.items[0].site, 'intl');
+        const security = payload.categories.find((item) => item.key === 'security');
+        assert.equal(security.active_count, 1);
+        assert.equal(security.items[0].title, '管理员异常登录（global@example.com）');
     });
 });
 

@@ -1,9 +1,13 @@
+const adminHelpers = require('../../../../api/_lib/admin');
 const {
     parseJsonBody,
     requireAdmin,
     sendJson,
     writeAdminAuditLog
-} = require('../../../../api/_lib/admin');
+} = adminHelpers;
+const {
+    normalizeSiteValue
+} = require('../../../../api/_lib/site');
 const {
     buildLinkedTicketDescription
 } = require('../../../../js/admin-ticket-links');
@@ -24,23 +28,36 @@ function normalizeSource(value) {
     return sanitizeText(value, 80).toLowerCase();
 }
 
-async function resolveTicketUserId(supabase, body = {}) {
+function normalizeTicketAdminSite(value, defaultValue = '') {
+    if (typeof adminHelpers.normalizeAdminSite === 'function') {
+        return adminHelpers.normalizeAdminSite(value, { defaultValue }) || defaultValue;
+    }
+    const normalized = String(value || '').trim().toLowerCase();
+    return ['all', 'cn', 'intl'].includes(normalized) ? normalized : defaultValue;
+}
+
+async function resolveTicketUserId(supabase, body = {}, requestedSiteHint = '') {
+    const requestedSite = normalizeSiteValue(requestedSiteHint, { fallback: '', allowEmpty: true });
     const explicitUserId = sanitizeText(body.user_id || body.userId, 120);
     if (explicitUserId) {
         return {
             userId: explicitUserId,
             orderId: sanitizeText(body.order_id || body.orderId, 120),
-            paymentOrderId: sanitizeText(body.payment_order_id || body.paymentOrderId, 120)
+            paymentOrderId: sanitizeText(body.payment_order_id || body.paymentOrderId, 120),
+            site: requestedSite || normalizeSiteValue(body.site, { fallback: 'cn' })
         };
     }
 
     const explicitOrderId = sanitizeText(body.order_id || body.orderId, 120);
     if (explicitOrderId && isUuid(explicitOrderId)) {
-        const { data, error } = await supabase
+        let orderQuery = supabase
             .from('shop_orders')
-            .select('id, user_id')
-            .eq('id', explicitOrderId)
-            .maybeSingle();
+            .select('id, user_id, site')
+            .eq('id', explicitOrderId);
+        if (requestedSite) {
+            orderQuery = orderQuery.eq('site', requestedSite);
+        }
+        const { data, error } = await orderQuery.maybeSingle();
 
         if (error) {
             throw new Error(error.message || '读取订单归属失败');
@@ -50,18 +67,22 @@ async function resolveTicketUserId(supabase, body = {}) {
             return {
                 userId: sanitizeText(data.user_id, 120),
                 orderId: sanitizeText(data.id, 120),
-                paymentOrderId: sanitizeText(body.payment_order_id || body.paymentOrderId, 120)
+                paymentOrderId: sanitizeText(body.payment_order_id || body.paymentOrderId, 120),
+                site: normalizeSiteValue(data.site || requestedSite, { fallback: 'cn' })
             };
         }
     }
 
     const explicitPaymentOrderId = sanitizeText(body.payment_order_id || body.paymentOrderId, 120);
     if (explicitPaymentOrderId && isUuid(explicitPaymentOrderId)) {
-        const { data, error } = await supabase
+        let paymentQuery = supabase
             .from('payment_orders')
-            .select('id, user_id')
-            .eq('id', explicitPaymentOrderId)
-            .maybeSingle();
+            .select('id, user_id, site')
+            .eq('id', explicitPaymentOrderId);
+        if (requestedSite) {
+            paymentQuery = paymentQuery.eq('site', requestedSite);
+        }
+        const { data, error } = await paymentQuery.maybeSingle();
 
         if (error) {
             throw new Error(error.message || '读取支付单归属失败');
@@ -71,7 +92,8 @@ async function resolveTicketUserId(supabase, body = {}) {
             return {
                 userId: sanitizeText(data.user_id, 120),
                 orderId: explicitOrderId,
-                paymentOrderId: sanitizeText(data.id, 120)
+                paymentOrderId: sanitizeText(data.id, 120),
+                site: normalizeSiteValue(data.site || requestedSite, { fallback: 'cn' })
             };
         }
     }
@@ -79,8 +101,24 @@ async function resolveTicketUserId(supabase, body = {}) {
     return {
         userId: '',
         orderId: explicitOrderId,
-        paymentOrderId: explicitPaymentOrderId
+        paymentOrderId: explicitPaymentOrderId,
+        site: requestedSite || normalizeSiteValue(body.site, { fallback: 'cn' })
     };
+}
+
+function resolveWritableTicketSite(req = {}, body = {}, resolved = {}) {
+    const candidates = [
+        body?.site,
+        req?.adminSite,
+        resolved?.site
+    ];
+    for (const candidate of candidates) {
+        const normalized = normalizeTicketAdminSite(candidate, '');
+        if (normalized === 'cn' || normalized === 'intl') {
+            return normalized;
+        }
+    }
+    return '';
 }
 
 module.exports = async (req, res) => {
@@ -94,13 +132,20 @@ module.exports = async (req, res) => {
         const body = await parseJsonBody(req);
         const source = normalizeSource(body.source || body.source_type || body.sourceType);
         const actorLabel = sanitizeText(user?.email, 255) || sanitizeText(user?.id, 120) || 'unknown';
-        const resolved = await resolveTicketUserId(supabase, body);
+        const resolved = await resolveTicketUserId(supabase, body, body.site || req.adminSite);
         const userId = sanitizeText(resolved.userId, 120);
+        const writableSite = resolveWritableTicketSite(req, body, resolved);
 
         if (!userId) {
             return sendJson(res, 400, {
                 success: false,
                 message: '当前告警缺少可归属用户，暂不支持直接转为售后工单'
+            });
+        }
+        if (!writableSite) {
+            return sendJson(res, 400, {
+                success: false,
+                message: '请选择要创建工单的站点'
             });
         }
 
@@ -114,6 +159,7 @@ module.exports = async (req, res) => {
 
         const insertPayload = {
             user_id: userId,
+            site: writableSite,
             issue_type: 'OTHER',
             status: 'PENDING',
             description
@@ -144,6 +190,7 @@ module.exports = async (req, res) => {
             details: {
                 ticket_id: data.id,
                 order_id: data.order_id || null,
+                site: writableSite,
                 source,
                 source_alert_type: normalizeAlertType(body.alert_type || body.alertType),
                 source_target_id: sanitizeText(body.target_id || body.targetId, 200) || null,

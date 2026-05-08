@@ -645,9 +645,11 @@ async function queryGatewayOrder(supabase, target, providerKey, env = process.en
         throw error;
     }
 
+    const runtimeSite = String(target?.site || normalizeJsonObject(target?.provider_metadata).site || '').trim().toLowerCase();
     const runtimeContext = await adapter.resolveRuntimeContext({
         supabase,
-        env
+        env,
+        site: runtimeSite
     });
     const liveOrder = await adapter.queryOrder({
         runtimeContext,
@@ -1713,9 +1715,11 @@ async function applyGatewayRefundDecision(supabase, target, note, actorId, env =
         throw error;
     }
 
+    const runtimeSite = String(target?.site || normalizeJsonObject(target?.provider_metadata).site || '').trim().toLowerCase();
     const runtimeContext = await adapter.resolveRuntimeContext({
         supabase,
-        env
+        env,
+        site: runtimeSite
     });
     const resolvedProviderOrderNo = snapshot.providerOrderNo || target.provider_order_no;
     const attemptId = buildAdminRefundAttemptId(target.id, resolvedProviderOrderNo, actorId, meta.key);

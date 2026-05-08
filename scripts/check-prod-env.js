@@ -4,7 +4,9 @@ const vm = require('vm');
 const dotenv = require('dotenv');
 const { createClient } = require('@supabase/supabase-js');
 const {
-    getFirstEnvValue
+    getFirstEnvValue,
+    PUBLIC_GOOGLE_CLIENT_ID_CN_ENV_NAMES,
+    PUBLIC_GOOGLE_CLIENT_ID_INTL_ENV_NAMES
 } = require('../api/_lib/public-runtime-config');
 const {
     describeAfdianAllowlist,
@@ -496,6 +498,8 @@ function renderChecklistValue(value, { sensitive = false } = {}) {
 function buildPlatformEnvChecklist(env = process.env) {
     const supabaseUrl = getFirstEnvValue(PUBLIC_SUPABASE_URL_ENV_NAMES, env);
     const publishableKey = getFirstEnvValue(PUBLIC_SUPABASE_KEY_ENV_NAMES, env);
+    const googleClientIdCn = getFirstEnvValue(PUBLIC_GOOGLE_CLIENT_ID_CN_ENV_NAMES, env);
+    const googleClientIdIntl = getFirstEnvValue(PUBLIC_GOOGLE_CLIENT_ID_INTL_ENV_NAMES, env);
     const serviceRoleKey = String(env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
     const adminEncryptionKey = String(env.ADMIN_CONFIG_ENCRYPTION_KEY || '').trim();
     const adminStudioAccessSecret = String(env.ADMIN_STUDIO_ACCESS_SECRET || '').trim();
@@ -512,6 +516,8 @@ function buildPlatformEnvChecklist(env = process.env) {
         vercel: [
             { name: 'SUPABASE_URL', value: renderChecklistValue(supabaseUrl) },
             { name: 'SUPABASE_PUBLISHABLE_KEY', value: renderChecklistValue(publishableKey, { sensitive: true }) },
+            { name: 'GOOGLE_CLIENT_ID_CN', value: renderChecklistValue(googleClientIdCn) },
+            { name: 'GOOGLE_CLIENT_ID_INTL', value: renderChecklistValue(googleClientIdIntl) },
             { name: 'SUPABASE_SERVICE_ROLE_KEY', value: renderChecklistValue(serviceRoleKey, { sensitive: true }) },
             { name: 'ADMIN_CONFIG_ENCRYPTION_KEY', value: renderChecklistValue(adminEncryptionKey, { sensitive: true }) },
             { name: 'PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET', value: renderChecklistValue(quoteSecret, { sensitive: true }) },

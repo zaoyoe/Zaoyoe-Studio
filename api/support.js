@@ -15,6 +15,9 @@ const {
 const {
     buildTicketCreatedAlert
 } = require('./_lib/ticket-alerts');
+const {
+    normalizeSiteValue
+} = require('./_lib/site');
 
 function normalizeText(value, maxLength = 256) {
     return String(value || '').trim().slice(0, maxLength);
@@ -94,20 +97,46 @@ function normalizeRefType(value) {
     }
 }
 
-function normalizeReferenceInput(input) {
+function normalizeReferenceInput(input, fallbackSite = 'cn') {
+    const normalizedFallbackSite = normalizeSiteValue(fallbackSite, { fallback: 'cn' });
     if (input && typeof input === 'object' && !Array.isArray(input)) {
         return {
             value: normalizeText(input.value || input.ref_id || input.refId || input.id || input.input || '', 160),
             refType: normalizeRefType(input.ref_type || input.refType || input.type || ''),
-            site: normalizeText(input.site, 20).toLowerCase() || 'cn'
+            site: normalizeSiteValue(input.site, { fallback: normalizedFallbackSite })
         };
     }
 
     return {
         value: normalizeText(input, 160),
         refType: '',
-        site: 'cn'
+        site: normalizedFallbackSite
     };
+}
+
+function resolveSupportRequestSite(req = {}, body = {}, input = null) {
+    const explicitSite = normalizeSiteValue(
+        body?.site || body?.siteId || input?.site || input?.site_id,
+        { fallback: '' , allowEmpty: true }
+    );
+    if (explicitSite) {
+        return explicitSite;
+    }
+
+    const hints = [
+        req?.headers?.origin,
+        req?.headers?.referer,
+        req?.headers?.host,
+        req?.headers?.Host
+    ]
+        .map((value) => String(value || '').trim().toLowerCase())
+        .filter(Boolean);
+
+    if (hints.some((value) => value.includes('zaoyoe.xyz'))) {
+        return 'intl';
+    }
+
+    return 'cn';
 }
 
 async function queryMaybeSingle(query) {
@@ -122,7 +151,7 @@ async function queryMaybeSingle(query) {
     };
 }
 
-async function findShopOrderSummary(requestSupabase, orderId) {
+async function findShopOrderSummary(requestSupabase, orderId, site = 'cn') {
     if (!requestSupabase?.from || !isUuid(orderId)) return null;
 
     const { data, error } = await queryMaybeSingle(
@@ -130,6 +159,7 @@ async function findShopOrderSummary(requestSupabase, orderId) {
             .from('shop_orders')
             .select('id, snapshot_product_name, delivery_status, delivery_task_id, delivery_last_error, created_at, delivery_updated_at, delivery_completed_at')
             .eq('id', orderId)
+            .eq('site', normalizeSiteValue(site, { fallback: 'cn' }))
     );
 
     if (error) {
@@ -180,8 +210,9 @@ async function findVerificationLogByTaskId(requestSupabase, userId, taskId, site
     return (data || []).find((row) => normalizeText(parseVerifyHistoryMessage(row.message)?.job_id, 120) === taskId) || null;
 }
 
-async function detectReferencePayload({ requestSupabase, user, input }) {
-    const normalized = normalizeReferenceInput(input);
+async function detectReferencePayload({ requestSupabase, user, input, site = 'cn' }) {
+    const fallbackSite = normalizeSiteValue(site, { fallback: 'cn' });
+    const normalized = normalizeReferenceInput(input, fallbackSite);
     const rawValue = normalized.value;
 
     if (!rawValue) {
@@ -199,7 +230,7 @@ async function detectReferencePayload({ requestSupabase, user, input }) {
     }
 
     if (normalized.refType === 'order_id' || (!normalized.refType && isUuid(rawValue))) {
-        const order = await findShopOrderSummary(requestSupabase, rawValue);
+        const order = await findShopOrderSummary(requestSupabase, rawValue, normalized.site);
         if (order) {
             return {
                 ref_type: 'order_id',
@@ -470,15 +501,15 @@ function buildVerifyExplanation(logRow = {}) {
     };
 }
 
-async function handleDetectReference({ requestSupabase, user, input }) {
+async function handleDetectReference({ requestSupabase, user, input, site }) {
     return {
         success: true,
-        payload: await detectReferencePayload({ requestSupabase, user, input })
+        payload: await detectReferencePayload({ requestSupabase, user, input, site })
     };
 }
 
-async function handleExplainFailure({ requestSupabase, adminSupabase, user, input }) {
-    const normalized = normalizeReferenceInput(input);
+async function handleExplainFailure({ requestSupabase, adminSupabase, user, input, site }) {
+    const normalized = normalizeReferenceInput(input, site);
     const detected = normalized.refType
         ? {
             ref_type: normalized.refType,
@@ -488,7 +519,7 @@ async function handleExplainFailure({ requestSupabase, adminSupabase, user, inpu
             matched_by: 'explicit_ref_type',
             site: normalized.site
         }
-        : await detectReferencePayload({ requestSupabase, user, input });
+        : await detectReferencePayload({ requestSupabase, user, input, site });
 
     if (!detected?.ref_type || detected.ref_type === 'unknown') {
         throw createError('暂时无法识别这段内容属于哪类问题，请提供兑换码、订单号或任务号', 400, 'reference_not_detected');
@@ -507,7 +538,7 @@ async function handleExplainFailure({ requestSupabase, adminSupabase, user, inpu
     }
 
     if (detected.ref_type === 'order_id') {
-        const order = await findShopOrderSummary(requestSupabase, detected.normalized_value);
+        const order = await findShopOrderSummary(requestSupabase, detected.normalized_value, detected.site || normalized.site);
         if (!order) {
             throw createError('订单不存在或无权访问', 404, 'shop_order_not_found');
         }
@@ -625,16 +656,18 @@ async function handleAfdianLookup({ adminSupabase, user, input }) {
     };
 }
 
-async function handleShopOrderStatus({ requestSupabase, input }) {
+async function handleShopOrderStatus({ requestSupabase, input, site }) {
     const orderId = normalizeText(input, 120);
     if (!isUuid(orderId)) {
         throw createError('订单号格式不正确');
     }
+    const normalizedSite = normalizeSiteValue(site, { fallback: 'cn' });
 
     const { data, error } = await requestSupabase
         .from('shop_orders')
         .select('id, snapshot_product_name, delivery_status, delivery_task_id, delivery_last_error, created_at, delivery_updated_at, delivery_completed_at, price_paid, total_price, item_count')
         .eq('id', orderId)
+        .eq('site', normalizedSite)
         .single();
 
     if (error) {
@@ -650,17 +683,19 @@ async function handleShopOrderStatus({ requestSupabase, input }) {
     };
 }
 
-async function handleShopOrderContent({ requestSupabase, input }) {
+async function handleShopOrderContent({ requestSupabase, input, site }) {
     const orderId = normalizeText(input, 120);
     if (!isUuid(orderId)) {
         throw createError('订单号格式不正确');
     }
+    const normalizedSite = normalizeSiteValue(site, { fallback: 'cn' });
 
     const [orderResult, itemsResult] = await Promise.all([
         requestSupabase
             .from('shop_orders')
             .select('id, snapshot_product_name, created_at')
             .eq('id', orderId)
+            .eq('site', normalizedSite)
             .single(),
         requestSupabase
             .from('shop_order_items')
@@ -759,8 +794,9 @@ function shapeTicketHistoryRow(ticket = {}, focusTicketId = '') {
     };
 }
 
-async function loadTicketHistoryRows({ adminSupabase, userId, input }) {
+async function loadTicketHistoryRows({ adminSupabase, userId, input, site = 'cn' }) {
     const normalizedInput = normalizeTicketHistoryInput(input);
+    const normalizedSite = normalizeSiteValue(site, { fallback: 'cn' });
     const ticketFields = 'id, user_id, order_id, issue_type, status, description, admin_notes, created_at, updated_at';
     const historyLimit = 6;
     const focusTicketId = normalizedInput.ticketId;
@@ -769,6 +805,7 @@ async function loadTicketHistoryRows({ adminSupabase, userId, input }) {
         .from('shop_tickets')
         .select(ticketFields)
         .eq('user_id', userId)
+        .eq('site', normalizedSite)
         .order('updated_at', { ascending: false })
         .limit(historyLimit);
 
@@ -784,6 +821,7 @@ async function loadTicketHistoryRows({ adminSupabase, userId, input }) {
                 .from('shop_tickets')
                 .select(ticketFields)
                 .eq('user_id', userId)
+                .eq('site', normalizedSite)
                 .eq('id', focusTicketId)
         );
 
@@ -863,8 +901,9 @@ async function fetchProfileEmailByUserId(supabase, userId) {
     }
 }
 
-async function handleCreateTicket({ requestSupabase, adminSupabase, user, input }) {
+async function handleCreateTicket({ requestSupabase, adminSupabase, user, input, site }) {
     const normalizedInput = normalizeTicketCreateInput(input);
+    const normalizedSite = normalizeSiteValue(site, { fallback: 'cn' });
     const description = normalizedInput.description;
     if (!description) {
         throw createError('请输入问题描述');
@@ -872,6 +911,7 @@ async function handleCreateTicket({ requestSupabase, adminSupabase, user, input 
 
     const insertPayload = {
         user_id: user.id,
+        site: normalizedSite,
         issue_type: normalizedInput.issueType,
         status: 'PENDING',
         description
@@ -915,11 +955,12 @@ async function handleCreateTicket({ requestSupabase, adminSupabase, user, input 
     };
 }
 
-async function handleTicketHistory({ adminSupabase, user, input }) {
+async function handleTicketHistory({ adminSupabase, user, input, site }) {
     return loadTicketHistoryRows({
         adminSupabase,
         userId: user.id,
-        input
+        input,
+        site
     });
 }
 
@@ -952,6 +993,7 @@ module.exports = async function handler(req, res) {
         const body = await parseJsonBody(req);
         const action = normalizeText(body.action, 64);
         const input = body.input;
+        const requestSite = resolveSupportRequestSite(req, body, input);
         const {
             user,
             requestSupabase,
@@ -965,10 +1007,10 @@ module.exports = async function handler(req, res) {
         let result = null;
         switch (action) {
             case 'detect_reference':
-                result = await handleDetectReference({ requestSupabase, user, input });
+                result = await handleDetectReference({ requestSupabase, user, input, site: requestSite });
                 break;
             case 'explain_failure':
-                result = await handleExplainFailure({ requestSupabase, adminSupabase, user, input });
+                result = await handleExplainFailure({ requestSupabase, adminSupabase, user, input, site: requestSite });
                 break;
             case 'code_status':
                 result = await handleCodeStatus({ adminSupabase, input });
@@ -977,16 +1019,16 @@ module.exports = async function handler(req, res) {
                 result = await handleAfdianLookup({ adminSupabase, user, input });
                 break;
             case 'shop_order_status':
-                result = await handleShopOrderStatus({ requestSupabase, input });
+                result = await handleShopOrderStatus({ requestSupabase, input, site: requestSite });
                 break;
             case 'shop_order_content':
-                result = await handleShopOrderContent({ requestSupabase, input });
+                result = await handleShopOrderContent({ requestSupabase, input, site: requestSite });
                 break;
             case 'create_ticket':
-                result = await handleCreateTicket({ requestSupabase, adminSupabase, user, input });
+                result = await handleCreateTicket({ requestSupabase, adminSupabase, user, input, site: requestSite });
                 break;
             case 'ticket_history':
-                result = await handleTicketHistory({ adminSupabase, user, input });
+                result = await handleTicketHistory({ adminSupabase, user, input, site: requestSite });
                 break;
             default:
                 throw createError('Unsupported support action', 400, 'unsupported_action');

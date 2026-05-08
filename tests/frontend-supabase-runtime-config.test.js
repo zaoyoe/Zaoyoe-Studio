@@ -487,14 +487,14 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260507_ENGAGEMENT_BACKLOG_REALTIME_1';",
+        "const VERSION = '20260508_ENGAGEMENT_SITE_SCOPE_2';",
         "const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';",
         'function ensurePlaceholderPlacementStyles() {',
         '/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */',
         '/* 20260503_CHAT_WIDGET_SAFARI_HANDOFF_12 */',
         '/* 20260503_CHAT_WIDGET_DESKTOP_NARROW_PEEK_1 */',
         '/* 20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1 */',
-        '/* 20260507_ENGAGEMENT_BACKLOG_REALTIME_1 */',
+        '/* 20260508_ENGAGEMENT_SITE_SCOPE_2 */',
         'function activateChatWidgetStylesheetLinks() {',
         "link.media = 'all';",
         "link.dataset.deferredStyleActive = '1';",
@@ -516,7 +516,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'body.chat-widget-bootstrap-scroll-locked',
         "const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';",
         "const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';",
-        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260507_ENGAGEMENT_BACKLOG_REALTIME_1';",
+        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260508_ENGAGEMENT_SITE_SCOPE_2';",
         "const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';",
         'function getChatWidgetConstructor() {',
         'global.ChatWidget = ChatWidget;',
@@ -955,9 +955,9 @@ test('public pages wire wallet modal through the shared bootstrap loader', () =>
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260505_PAYMENT_ERROR_I18N_1';",
-        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260505_PAYMENT_ERROR_I18N_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260505_PAYMENT_ERROR_I18N_1';",
+        "const VERSION = '20260508_SITE_SCOPED_CONFIG_1';",
+        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260508_SITE_SCOPED_CONFIG_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260508_SITE_SCOPED_CONFIG_1';",
         'function ensureWalletModalReady() {',
         'function warmWalletModal(options = {}) {',
         "function openWalletModal(view = 'balance', context = {}) {",
@@ -2014,7 +2014,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/chat-widget-loader.js?v=20260507_ENGAGEMENT_BACKLOG_REALTIME_1'),
+            source.includes('js/chat-widget-loader.js?v=20260508_ENGAGEMENT_SITE_SCOPE_2'),
             true,
             'public entry pages should load the lazy chat widget bootstrap'
         );
@@ -2307,7 +2307,7 @@ test('auth runtime renderers centralize avatar, google loading, and profile moda
             'auth entry pages should load the latest auth sheet stylesheet'
         );
         assert.equal(
-            source.includes('supabase-auth-functions.js?v=20260506_ENGAGEMENT_ACTION_ROUTES_1'),
+            source.includes('supabase-auth-functions.js?v=20260508_SITE_SCOPED_GOOGLE_CLIENT_IDS_1'),
             true,
             'auth entry pages should load the latest auth runtime script'
         );
@@ -3470,7 +3470,7 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should not render a secondary text loading message after the skeleton'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260504_SHOP_DISCOUNT_ENGAGEMENT_1'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260508_SHOP_LANGUAGE_LABEL_FIX_1'),
         true,
         'shop.html should reference the latest shop client runtime for the cart-enabled storefront flow'
     );
@@ -9830,7 +9830,7 @@ test('ticket admin surfaces user email in search and list rendering', () => {
     assert.equal(adminStudioSource.includes('admin-studio.css?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'), true, 'admin-studio.html should load the cache-busted admin studio stylesheet for the richer rich-text yellow swatch');
     assert.equal(adminStudioSource.includes('analytics-advanced-entry'), false, 'admin-studio.html should keep advanced analytics out of the main toolbar flow');
     assert.equal(adminStudioSource.includes('js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2'), true, 'admin-studio.html should load the cache-busted ops alert report helper before admin config');
-    assert.equal(adminStudioSource.includes('admin-config.js?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'), true, 'admin-studio.html should load the cache-busted admin config script for the visible rich-text yellow normalization fix');
+    assert.equal(adminStudioSource.includes('admin-config.js?v=20260508_ADMIN_SITE_SCOPED_SYSTEM_CONFIG_2'), true, 'admin-studio.html should load the cache-busted admin config script for the visible rich-text yellow normalization fix');
     assert.equal(adminStudioSource.includes('admin-discounts.js?v=20260427_DISCOUNTS_BATCH_RESTORE_HINT_1'), true, 'admin-studio.html should load the cache-busted discount runtime for the P1 assets and ROI workspace');
     assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260428_TICKETS_WORKSPACE_SCROLL_PRESERVE_1'), true, 'admin-studio.html should load the cache-busted ticket admin script');
     assert.equal(ticketsSource.includes("recordAnalyticsResolutionFeedback: function (ticket = {}, newStatus = '', result = {}, doRefund = false) {"), true, 'js/admin-tickets.js should record analytics resolution feedback after ticket handling succeeds');
@@ -10611,7 +10611,7 @@ test('shop admin order workflows externalize runtime table-row and modal styling
     }
 
     assert.equal(adminStudioSource.includes('js/admin-shop.js?v=20260504_SHOP_IMPORT_STOCK_SYNC_1'), true, 'admin-studio.html should load the cache-busted shop admin script');
-    assert.equal(adminStudioSource.includes('admin-config.js?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'), true, 'admin-studio.html should load the cache-busted admin config script');
+    assert.equal(adminStudioSource.includes('admin-config.js?v=20260508_ADMIN_SITE_SCOPED_SYSTEM_CONFIG_2'), true, 'admin-studio.html should load the cache-busted admin config script');
     assert.equal(adminWorkbenchSource.includes('window.ShopAdmin?.focusOrder'), true, 'js/admin-workbench.js should directly focus shop order workspaces when an order id is available');
     assert.equal(adminWorkbenchSource.includes("const opened = await window.AdminShell.openContext('users', {"), true, 'js/admin-workbench.js should let the shared user detail helper prefer AdminShell context delivery');
     assert.equal(adminWorkbenchSource.includes("if (typeof window.openAdminUsersShellContext === 'function') {"), true, 'js/admin-workbench.js should reuse the shared users context helper before falling back to direct modal control');
@@ -11632,7 +11632,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         'class="chart-card glass-panel analytics-growth-card analytics-growth-card--full"',
         'admin-points.js?v=20260427_ADMIN_POINTS_BATCH_DETAIL_CUSTOM_STATUS_2',
         'js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2',
-        'admin-config.js?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1',
+        'admin-config.js?v=20260508_ADMIN_SITE_SCOPED_SYSTEM_CONFIG_2',
         'js/admin-payments.js?v=20260421_ADMIN_PAYMENTS_CONTEXT_HELPER_P2',
         'js/admin-workbench.js?v=20260422_OPS_ALERT_RESOLVED_COUNT_P13',
         'js/admin-tickets.js?v=20260428_TICKETS_WORKSPACE_SCROLL_PRESERVE_1',
@@ -13151,9 +13151,9 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), false, 'index.html should not eagerly load the full guestbook runtime');
     assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260507_REPLY_REALTIME_1'), true, 'guestbook.html should load the latest guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should load the latest guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260504_SHOP_DISCOUNT_ENGAGEMENT_1'), true, 'shop.html should load the latest cart-aware shop runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260508_SHOP_LANGUAGE_LABEL_FIX_1'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
-    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260505_PAYMENT_ERROR_I18N_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
+    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260508_SITE_SCOPED_CONFIG_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
 
 test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {
@@ -14513,7 +14513,7 @@ test('analytics user drill-down carries commerce context into the user detail mo
     assert.equal(adminStudioHtml.includes('admin-points.js?v=20260427_ADMIN_POINTS_BATCH_DETAIL_CUSTOM_STATUS_2'), true, 'admin-studio.html should reference the latest admin points runtime version');
     assert.equal(adminStudioHtml.includes('js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3&workflowRails=20260430_ADMIN_STUDIO_WORKFLOW_CARD_RAIL_VISIBILITY_1'), true, 'admin-studio.html should reference the latest growth center runtime version');
     assert.equal(adminStudioHtml.includes('js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2'), true, 'admin-studio.html should reference the latest ops alert report helper runtime version');
-    assert.equal(adminStudioHtml.includes('admin-config.js?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'), true, 'admin-studio.html should reference the latest admin settings runtime version');
+    assert.equal(adminStudioHtml.includes('admin-config.js?v=20260508_ADMIN_SITE_SCOPED_SYSTEM_CONFIG_2'), true, 'admin-studio.html should reference the latest admin settings runtime version');
     assert.equal(adminStudioHtml.includes('admin-discounts.js?v=20260427_DISCOUNTS_BATCH_RESTORE_HINT_1'), true, 'admin-studio.html should reference the latest admin discounts runtime version');
     assert.equal(adminStudioHtml.includes('js/admin-analytics-panel-loaders.js?v=20260427_ANALYTICS_USER_TREND_LOADING_DOTS_1'), true, 'admin-studio.html should reference the latest analytics panel loader runtime version');
     assert.equal(adminStudioHtml.includes('admin-studio.js?v=20260427_ADMIN_GALLERY_AI_TAGS_HIDDEN_1'), true, 'admin-studio.html should reference the latest admin studio action routing version');
@@ -14599,7 +14599,7 @@ test('user detail tabs surface product commerce trace when opened from analytics
 
     assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
     assert.equal(adminStudioHtml.includes('admin-users.js?v=20260505_USER_ACTIVITY_HEARTBEAT_1'), true, 'admin-studio.html should reference the latest admin users runtime version');
-    assert.equal(adminStudioHtml.includes('admin-config.js?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'), true, 'admin-studio.html should reference the latest admin settings runtime version');
+    assert.equal(adminStudioHtml.includes('admin-config.js?v=20260508_ADMIN_SITE_SCOPED_SYSTEM_CONFIG_2'), true, 'admin-studio.html should reference the latest admin settings runtime version');
 });
 
 test('payments runtime controls, site filter, and admin chat menu route through delegated actions', () => {
@@ -16092,7 +16092,7 @@ test('admin studio modules emit unified command feedback for recent processing r
         'js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3&workflowRails=20260430_ADMIN_STUDIO_WORKFLOW_CARD_RAIL_VISIBILITY_1',
         'admin-comments.js?v=20260421_COMMENTS_MODULE_BRIDGE_HELPERS_P3',
         'js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2',
-        'admin-config.js?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1',
+        'admin-config.js?v=20260508_ADMIN_SITE_SCOPED_SYSTEM_CONFIG_2',
         'admin-discounts.js?v=20260427_DISCOUNTS_BATCH_RESTORE_HINT_1',
         'js/admin-site-filter.js?v=20260427_ADMIN_SITE_SELECTOR_NO_KICKER_1',
         'admin-studio.js?v=20260427_ADMIN_GALLERY_AI_TAGS_HIDDEN_1'

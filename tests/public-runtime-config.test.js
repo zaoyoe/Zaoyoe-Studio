@@ -1,11 +1,13 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
 const {
     buildSupabaseRuntimeScript,
     hasSupabasePublicClientConfig,
+    resolvePublicGoogleClientConfig,
     resolvePublicSupabaseConfig
 } = require('../api/_lib/public-runtime-config');
 
@@ -74,7 +76,19 @@ test('public runtime config resolves Supabase env aliases', () => {
 
     assert.deepEqual(config, {
         url: 'https://preview.supabase.co',
-        publishableKey: 'preview-key'
+        publishableKey: 'preview-key',
+        site: 'cn',
+        auth: {
+            google: {
+                site: 'cn',
+                clientId: '1017068787594-ep4bj8cdirkllqlpbmlfk436br0vbifp.apps.googleusercontent.com',
+                clientIds: {
+                    cn: '1017068787594-ep4bj8cdirkllqlpbmlfk436br0vbifp.apps.googleusercontent.com',
+                    intl: '1017068787594-ep4bj8cdirkllqlpbmlfk436br0vbifp.apps.googleusercontent.com'
+                },
+                source: 'legacy'
+            }
+        }
     });
     assert.equal(hasSupabasePublicClientConfig({
         NEXT_PUBLIC_SUPABASE_URL: 'https://preview.supabase.co',
@@ -82,10 +96,31 @@ test('public runtime config resolves Supabase env aliases', () => {
     }), true);
 });
 
+test('public runtime config resolves site-scoped Google client ids from env', () => {
+    const config = resolvePublicGoogleClientConfig({
+        GOOGLE_CLIENT_ID_CN: 'google-cn-client',
+        GOOGLE_CLIENT_ID_INTL: 'google-intl-client'
+    }, {
+        site: 'intl'
+    });
+
+    assert.deepEqual(config, {
+        site: 'intl',
+        clientId: 'google-intl-client',
+        clientIds: {
+            cn: 'google-cn-client',
+            intl: 'google-intl-client'
+        },
+        source: 'site'
+    });
+});
+
 test('public runtime config script exports globals for legacy browser scripts', () => {
     const script = buildSupabaseRuntimeScript({
         SUPABASE_URL: 'https://runtime.supabase.co',
-        SUPABASE_PUBLISHABLE_KEY: 'runtime-key'
+        SUPABASE_PUBLISHABLE_KEY: 'runtime-key',
+        GOOGLE_CLIENT_ID_CN: 'google-cn-client',
+        GOOGLE_CLIENT_ID_INTL: 'google-intl-client'
     });
     const context = {
         globalThis: {},
@@ -96,12 +131,74 @@ test('public runtime config script exports globals for legacy browser scripts', 
 
     assert.deepEqual(JSON.parse(JSON.stringify(context.window.__ZAOYOE_SUPABASE_CONFIG__)), {
         url: 'https://runtime.supabase.co',
-        publishableKey: 'runtime-key'
+        publishableKey: 'runtime-key',
+        site: 'cn',
+        auth: {
+            google: {
+                site: 'cn',
+                clientId: 'google-cn-client',
+                clientIds: {
+                    cn: 'google-cn-client',
+                    intl: 'google-intl-client'
+                },
+                source: 'site'
+            }
+        }
     });
     assert.equal(context.window.SUPABASE_URL, 'https://runtime.supabase.co');
     assert.equal(context.window.SUPABASE_KEY, 'runtime-key');
+    assert.equal(context.window.__ZAOYOE_RUNTIME_SITE__, 'cn');
+    assert.deepEqual(JSON.parse(JSON.stringify(context.window.__ZAOYOE_GOOGLE_AUTH_CONFIG__)), {
+        site: 'cn',
+        clientId: 'google-cn-client',
+        clientIds: {
+            cn: 'google-cn-client',
+            intl: 'google-intl-client'
+        },
+        source: 'site'
+    });
     assert.equal(Object.prototype.hasOwnProperty.call(context.window, '__ZAOYOE_TRAFFIC_RUNTIME_DEFAULT_ENABLED__'), false);
     assert.equal(Object.prototype.hasOwnProperty.call(context.window, '__ZAOYOE_EXPERIMENT_RUNTIME_DEFAULT_ENABLED__'), false);
+});
+
+test('browser runtime helper resolves the current site Google client id', () => {
+    const helperSource = fs.readFileSync(
+        path.resolve(__dirname, '../js/runtime-supabase-config.js'),
+        'utf8'
+    );
+    const runtimeScript = buildSupabaseRuntimeScript({
+        SUPABASE_URL: 'https://runtime.supabase.co',
+        SUPABASE_PUBLISHABLE_KEY: 'runtime-key',
+        GOOGLE_CLIENT_ID_CN: 'google-cn-client',
+        GOOGLE_CLIENT_ID_INTL: 'google-intl-client'
+    }, {
+        site: 'intl'
+    });
+    const context = {
+        globalThis: {},
+        window: {
+            location: {
+                hostname: 'zaoyoe.xyz',
+                search: ''
+            }
+        }
+    };
+    context.globalThis = context.window;
+    context.window.window = context.window;
+
+    vm.runInNewContext(runtimeScript, context);
+    vm.runInNewContext(helperSource, context);
+
+    assert.equal(context.window.getZaoyoeGoogleClientId(), 'google-intl-client');
+    assert.deepEqual(JSON.parse(JSON.stringify(context.window.getZaoyoeGoogleAuthConfig())), {
+        site: 'intl',
+        clientId: 'google-intl-client',
+        clientIds: {
+            cn: 'google-cn-client',
+            intl: 'google-intl-client'
+        },
+        source: 'site'
+    });
 });
 
 test('runtime Supabase config endpoint returns executable JavaScript', async () => {

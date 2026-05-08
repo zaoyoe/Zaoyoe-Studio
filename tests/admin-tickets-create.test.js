@@ -189,6 +189,7 @@ test('admin can create a support ticket from an ops alert with explicit user con
         assert.equal(payload.ticket.user_id, 'user-ops-1');
         assert.equal(payload.ticket.order_id, '7f8c1d2e-0cf8-4a9d-95d3-63ce2a4ce44a');
         assert.equal(state.insertedTickets.length, 1);
+        assert.equal(state.insertedTickets[0].site, 'cn');
         assert.equal(state.insertedTickets[0].issue_type, 'OTHER');
         assert.equal(state.insertedTickets[0].status, 'PENDING');
         assert.match(state.insertedTickets[0].description, /\[站内代办转工单]/);

@@ -1,6 +1,7 @@
 const {
     requireAdmin,
-    sendJson
+    sendJson,
+    normalizeAdminSite
 } = require('../../../../api/_lib/admin');
 const {
     isMissingTableAccessError
@@ -50,6 +51,7 @@ const AUDIT_WORKSPACE_RECOVERY_TYPES = new Set([
     'payment_config_recovered',
     'payment_config_incident_recovered'
 ]);
+const SUPPORTED_AUDIT_MONITOR_SITES = new Set(['cn', 'intl']);
 
 function normalizeText(value) {
     return String(value || '').trim();
@@ -68,6 +70,105 @@ function normalizeStringArray(value) {
     return value
         .map((item) => normalizeText(item))
         .filter(Boolean);
+}
+
+function normalizeSupportedSite(value, fallback = '') {
+    const normalized = normalizeText(value).toLowerCase();
+    if (SUPPORTED_AUDIT_MONITOR_SITES.has(normalized)) {
+        return normalized;
+    }
+    return fallback;
+}
+
+function normalizeSupportedSiteList(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return Array.from(new Set(
+        value
+            .map((item) => normalizeSupportedSite(item))
+            .filter(Boolean)
+    ));
+}
+
+function inferSiteFromTargetId(value = '') {
+    const normalized = normalizeText(value).toLowerCase();
+    if (!normalized) {
+        return '';
+    }
+
+    const match = normalized.match(/(?:^|:)(cn|intl)$/);
+    return match ? normalizeSupportedSite(match[1]) : '';
+}
+
+function inferSiteFromContent(value = '') {
+    const match = String(value || '').match(/站点：\s*(CN|INTL)\b/i);
+    return match ? normalizeSupportedSite(match[1]) : '';
+}
+
+function getPaymentConfigAuditSite(row = {}) {
+    const details = normalizeJsonObject(row.details);
+    return normalizeSupportedSite(details.site, 'cn');
+}
+
+function shouldIncludePaymentConfigAuditRowForAdminSite(row = {}, adminSite = 'all') {
+    const normalizedAdminSite = normalizeAdminSite(adminSite, { defaultValue: 'all' }) || 'all';
+    if (normalizedAdminSite === 'all') {
+        return true;
+    }
+
+    return getPaymentConfigAuditSite(row) === normalizedAdminSite;
+}
+
+function inferAuditWorkspaceAlertSite(job = {}) {
+    const payload = normalizeJsonObject(job.payload);
+    const directSite = normalizeSupportedSite(payload.site);
+    if (directSite) {
+        return directSite;
+    }
+
+    const siteLabels = normalizeSupportedSiteList(payload.site_labels);
+    if (siteLabels.length === 1) {
+        return siteLabels[0];
+    }
+
+    const targetSite = inferSiteFromTargetId(normalizeText(payload.target_id));
+    if (targetSite) {
+        return targetSite;
+    }
+
+    const contentSite = inferSiteFromContent(job.content);
+    if (contentSite) {
+        return contentSite;
+    }
+
+    const normalizedAlertType = normalizeText(job.alert_type).toLowerCase();
+    if (normalizedAlertType.startsWith('payment_config_')) {
+        return 'cn';
+    }
+
+    return '';
+}
+
+function shouldIncludeAuditWorkspaceAlertJobForAdminSite(job = {}, adminSite = 'all') {
+    const normalizedAdminSite = normalizeAdminSite(adminSite, { defaultValue: 'all' }) || 'all';
+    if (normalizedAdminSite === 'all') {
+        return true;
+    }
+
+    const normalizedAlertType = normalizeText(job.alert_type).toLowerCase();
+    if (!normalizedAlertType.startsWith('payment_config_')) {
+        return true;
+    }
+
+    const payload = normalizeJsonObject(job.payload);
+    const siteLabels = normalizeSupportedSiteList(payload.site_labels);
+    if (siteLabels.length) {
+        return siteLabels.includes(normalizedAdminSite);
+    }
+
+    return inferAuditWorkspaceAlertSite(job) === normalizedAdminSite;
 }
 
 function normalizePositiveIntegerParam(value, fallback, maxValue = MAX_PAGE_SIZE) {
@@ -311,6 +412,7 @@ function buildAdminAuditWorkspaceItem(job = {}, caseRecord = null, caseEventsByK
         message: getAuditWorkspaceAlertExcerpt(job),
         response_summary: buildAuditWorkspaceAlertDetailSummary(job) || null,
         created_at: normalizeText(job.created_at, 80) || null,
+        site: inferAuditWorkspaceAlertSite(job) || null,
         target_id: targetId,
         reference_label: reference.label,
         reference_value: reference.value,
@@ -465,6 +567,7 @@ function mapPaymentConfigAlert(alert = {}) {
         title: normalizeText(alert.title) || '支付配置变更',
         severity: normalizeText(alert.severity) || 'warning',
         created_at: normalizeText(payload.created_at) || null,
+        site: normalizeSupportedSite(payload.site, 'cn'),
         admin_id: normalizeText(payload.admin_id) || null,
         admin_email: normalizeText(payload.admin_email) || null,
         action_type: normalizeText(payload.action_type) || null,
@@ -543,6 +646,7 @@ module.exports = async function adminAuditMonitorHandler(req, res) {
 
         const { supabase } = await requireAdmin(req, { permission: 'settings.manage' });
         const requestUrl = new URL(req.url || '/api/admin/settings/admin-audit-monitor', 'http://localhost');
+        const adminSite = normalizeAdminSite(requestUrl.searchParams.get('site') || req.adminSite, { defaultValue: 'all' }) || 'all';
         const accessPage = normalizePositiveIntegerParam(requestUrl.searchParams.get('accessPage'), 1);
         const accessPageSize = normalizePositiveIntegerParam(requestUrl.searchParams.get('accessPageSize'), DEFAULT_ACCESS_PAGE_SIZE);
         const anomalyPage = normalizePositiveIntegerParam(requestUrl.searchParams.get('anomalyPage'), 1);
@@ -567,12 +671,14 @@ module.exports = async function adminAuditMonitorHandler(req, res) {
         );
         const mappedAccessRows = sortedAccessRows.map(mapAccessRow);
         const mappedAnomalyRows = sortRowsDesc(anomalyAlerts.map(mapAnomalyAlert));
+        const scopedPaymentConfigRows = paymentConfigRows.filter((row) => shouldIncludePaymentConfigAuditRowForAdminSite(row, adminSite));
         const paymentConfigEvents = sortRowsDesc(buildPaymentConfigChangedAlerts(
-            paymentConfigRows,
+            scopedPaymentConfigRows,
             normalizePaymentConfigChangeMonitorConfig(),
             { now: nowDate }
         ).map(mapPaymentConfigAlert));
-        const auditWorkspaceTargets = auditWorkspaceAlertJobs.map((job) => ({
+        const scopedAuditWorkspaceAlertJobs = auditWorkspaceAlertJobs.filter((job) => shouldIncludeAuditWorkspaceAlertJobForAdminSite(job, adminSite));
+        const auditWorkspaceTargets = scopedAuditWorkspaceAlertJobs.map((job) => ({
             category_key: getAuditWorkspaceAlertCategoryKey(job.alert_type),
             target_id: getAuditWorkspaceAlertTargetId(job)
         })).filter((item) => item.category_key && item.target_id);
@@ -580,13 +686,14 @@ module.exports = async function adminAuditMonitorHandler(req, res) {
             fetchOpsAlertCasesByTargets(supabase, auditWorkspaceTargets),
             fetchOpsAlertCaseEventsByTargets(supabase, auditWorkspaceTargets)
         ]);
-        const alertItems = buildAdminAuditWorkspaceItems(auditWorkspaceAlertJobs, auditCaseMap, auditCaseEventsByKey);
+        const alertItems = buildAdminAuditWorkspaceItems(scopedAuditWorkspaceAlertJobs, auditCaseMap, auditCaseEventsByKey);
         const accessResult = paginateRows(mappedAccessRows, accessPage, accessPageSize);
         const anomalyResult = paginateRows(mappedAnomalyRows, anomalyPage, anomalyPageSize);
         const configResult = paginateRows(paymentConfigEvents, configPage, configPageSize);
 
         return sendJson(res, 200, {
             success: true,
+            site_context: adminSite,
             fetched_at: nowDate.toISOString(),
             access_summary: buildAccessSummary(sortedAccessRows, mappedAnomalyRows),
             config_summary: buildConfigSummary(paymentConfigEvents),

@@ -4,6 +4,9 @@ const {
 const {
     createNowpaymentsWebhookHandler
 } = require('../../../api/_lib/payments/nowpayments-webhook');
+const {
+    resolveSiteScopedSystemConfigRequestSite
+} = require('../_site-scoped-system-config');
 
 const PAYMENT_CREATION_ERROR_PATTERNS = Object.freeze([
     {
@@ -208,7 +211,14 @@ function createPaymentsHandlers({
 
             try {
                 const supabase = getConfigSupabaseClient();
-                const { paymentChannels, rechargeOptions } = await loadStoredPaymentConfigs(supabase);
+                const url = new URL(req.url || '', 'http://localhost');
+                const site = resolveSiteScopedSystemConfigRequestSite(req, url, { fallback: 'cn' });
+                const { paymentChannels, rechargeOptions } = await loadStoredPaymentConfigs(supabase, {
+                    site,
+                    requestHost: req.headers.host || req.headers.Host || '',
+                    origin: env.APP_BASE_URL,
+                    afdianCheckoutUrl: env.PAYMENT_AFDIAN_URL
+                });
                 const runtime = {
                     mock_payment: getMockPaymentRuntimeState({
                         requestHost: req.headers.host || req.headers.Host || '',
@@ -220,6 +230,7 @@ function createPaymentsHandlers({
 
                 return sendJson(res, 200, {
                     success: true,
+                    site,
                     config: publicConfig.paymentChannels,
                     recharge_options: publicConfig.rechargeOptions,
                     runtime: publicRuntime

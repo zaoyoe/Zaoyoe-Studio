@@ -1,4 +1,8 @@
 const crypto = require('crypto');
+const {
+    normalizeSiteValue,
+    SUPPORTED_SITES
+} = require('./site');
 
 const SECRET_ALGORITHM = 'aes-256-gcm';
 const GEMINI_SECRET_KEY = 'gemini_api_key';
@@ -16,6 +20,7 @@ const OPS_ALERT_SECRET_KEYS = {
     feishu_webhook_url: 'ops_alert_feishu_webhook_url',
     email_api_key: 'ops_alert_email_api_key'
 };
+const SUPPORTED_PAYMENT_SECRET_SITES = new Set(SUPPORTED_SITES || ['cn', 'intl']);
 
 function wrapSecretStoreError(error, fallbackMessage) {
     const message = error?.message || fallbackMessage || 'Admin secret store failed';
@@ -155,6 +160,64 @@ async function deleteStoredAdminSecret(supabase, secretKey) {
     }
 }
 
+function normalizePaymentSecretSite(value, options = {}) {
+    const allowEmpty = options.allowEmpty === true;
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) {
+        return allowEmpty ? '' : 'cn';
+    }
+    return normalizeSiteValue(normalized, { fallback: allowEmpty ? '' : 'cn' });
+}
+
+function buildPaymentSiteSecretKey(secretName, site = 'cn') {
+    const baseSecretKey = PAYMENT_CHANNEL_SECRET_KEYS[secretName];
+    if (!baseSecretKey) {
+        return '';
+    }
+    const normalizedSite = normalizePaymentSecretSite(site, { allowEmpty: false });
+    return `${baseSecretKey}__${normalizedSite}`;
+}
+
+function getPaymentSecretLookupKeys(secretName, site = '') {
+    const baseSecretKey = PAYMENT_CHANNEL_SECRET_KEYS[secretName];
+    if (!baseSecretKey) {
+        return [];
+    }
+
+    const normalizedSite = normalizePaymentSecretSite(site, { allowEmpty: true });
+    const keys = [];
+    if (SUPPORTED_PAYMENT_SECRET_SITES.has(normalizedSite)) {
+        keys.push(buildPaymentSiteSecretKey(secretName, normalizedSite));
+    }
+    keys.push(baseSecretKey);
+    return Array.from(new Set(keys.filter(Boolean)));
+}
+
+async function resolveStoredPaymentSecret(supabase, secretName, options = {}) {
+    const lookupKeys = getPaymentSecretLookupKeys(secretName, options.site);
+
+    for (const candidateKey of lookupKeys) {
+        const storedSecret = await getStoredAdminSecret(supabase, candidateKey).catch(() => null);
+        if (!storedSecret?.value) {
+            continue;
+        }
+
+        const scopedSite = candidateKey === PAYMENT_CHANNEL_SECRET_KEYS[secretName]
+            ? ''
+            : normalizePaymentSecretSite(candidateKey.split('__').slice(-1)[0], { allowEmpty: true });
+
+        return {
+            ...storedSecret,
+            secret_name: secretName,
+            secret_key: candidateKey,
+            site: scopedSite || null,
+            scope: scopedSite ? 'site' : 'global'
+        };
+    }
+
+    return null;
+}
+
 async function resolveGeminiRuntimeConfig(supabase) {
     let storedSecret = null;
 
@@ -253,9 +316,13 @@ module.exports = {
     GEMINI_SECRET_KEY,
     OPS_ALERT_SECRET_KEYS,
     PAYMENT_CHANNEL_SECRET_KEYS,
+    buildPaymentSiteSecretKey,
     deleteStoredAdminSecret,
+    getPaymentSecretLookupKeys,
     getStoredAdminSecret,
+    normalizePaymentSecretSite,
     resolveCodexRuntimeConfig,
     resolveGeminiRuntimeConfig,
+    resolveStoredPaymentSecret,
     upsertStoredAdminSecret
 };

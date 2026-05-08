@@ -11,6 +11,7 @@ function isMissingNotificationScopeColumnError(error) {
             || message.includes('metadata')
             || message.includes('priority')
             || message.includes('expires_at')
+            || message.includes('site')
             || message.includes('dedupe_key')
             || message.includes('source_module')
             || message.includes('source_event_id')
@@ -34,6 +35,7 @@ async function insertScopedSystemNotification(client, payload = {}) {
     delete legacyPayload.metadata;
     delete legacyPayload.priority;
     delete legacyPayload.expires_at;
+    delete legacyPayload.site;
     delete legacyPayload.dedupe_key;
     delete legacyPayload.source_module;
     delete legacyPayload.source_event_id;
@@ -637,10 +639,13 @@ class ChatWidget {
             ...previousSessionIds
         ].filter(Boolean);
 
-        const { data, error } = await this.supabase
-            .from('chat_messages')
-            .select('session_id, created_at')
-            .eq('user_id', normalizedUserId)
+        const { data, error } = await this.queryForCurrentSite(
+            this.supabase
+                .from('chat_messages')
+                .select('session_id, created_at')
+                .eq('user_id', normalizedUserId),
+            this.getCurrentSite()
+        )
             .order('created_at', { ascending: false })
             .limit(1000);
 
@@ -2236,7 +2241,8 @@ class ChatWidget {
                 headers,
                 body: JSON.stringify({
                     action,
-                    input
+                    input,
+                    site: this.getCurrentSite()
                 })
             });
             payload = await response.json().catch(() => ({}));
@@ -3839,6 +3845,7 @@ class ChatWidget {
                 .eq('is_admin', true)
                 .order('created_at', { ascending: false })
                 .limit(1);
+            query = this.queryForCurrentSite(query, this.getCurrentSite());
 
             query = sessionIds.length === 1
                 ? query.eq('session_id', sessionIds[0])
@@ -4421,7 +4428,7 @@ class ChatWidget {
             category,
             scope: String(source.scope || metadata.scope || 'unspecified').trim().toLowerCase() || 'unspecified',
             page_id: String(metadata.page_id || this.getEngagementPageId()).trim() || this.getEngagementPageId(),
-            site: String(metadata.site || window.SiteConfig?.site || 'cn').trim().toLowerCase() || 'cn',
+            site: String(source.site || metadata.site || 'cn').trim().toLowerCase() || 'cn',
             placement: metadata.placement || metadata.display_type || metadata.displayType || 'robot_bubble',
             priority: Number(source.priority || metadata.priority || 20) || 20,
             action_label: String(source.action_label || metadata.action_label || '').trim(),
@@ -4553,6 +4560,9 @@ class ChatWidget {
     shouldSurfaceSystemNotificationBubble(item = {}) {
         const normalized = this.normalizeEngagementItem(item);
         if (!normalized) return false;
+        if (!this.matchesCurrentSite(normalized, normalized.site)) {
+            return false;
+        }
         const metadata = normalized.metadata && typeof normalized.metadata === 'object' && !Array.isArray(normalized.metadata)
             ? normalized.metadata
             : {};
@@ -4964,6 +4974,9 @@ class ChatWidget {
         if (String(row.user_id || '').trim() !== this.engagementNotificationChannelUserId) {
             return;
         }
+        if (!this.matchesCurrentSite(row, 'cn')) {
+            return;
+        }
 
         const item = this.normalizeEngagementNotificationRow(row);
         if (!this.shouldSurfaceSystemNotificationBubble(item)) {
@@ -5262,6 +5275,40 @@ class ChatWidget {
     getEngagementBroadcastSite() {
         const externalSite = String(this.getEngagementExternalConfig().site || '').trim().toLowerCase();
         return (externalSite || String(window.SiteConfig?.site || 'cn').trim().toLowerCase()) === 'intl' ? 'intl' : 'cn';
+    }
+
+    getCurrentSite() {
+        return this.getEngagementBroadcastSite();
+    }
+
+    getCurrentSiteRealtimeFilter() {
+        return `site=eq.${this.getCurrentSite()}`;
+    }
+
+    queryForCurrentSite(query, site = this.getCurrentSite()) {
+        if (!query || typeof query.eq !== 'function') {
+            return query;
+        }
+        return query.eq('site', site);
+    }
+
+    matchesCurrentSite(row = {}, fallbackSite = '') {
+        const source = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
+        const metadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
+            ? source.metadata
+            : {};
+        const rowSite = String(
+            source.site
+                || metadata.site
+                || metadata.site_id
+                || metadata.siteId
+                || fallbackSite
+                || ''
+        ).trim().toLowerCase();
+        if (!rowSite || rowSite === 'all') {
+            return true;
+        }
+        return rowSite === this.getCurrentSite();
     }
 
     shouldApplyEngagementFeedBroadcast(message = {}) {
@@ -5999,8 +6046,16 @@ class ChatWidget {
         return 'home';
     }
 
+    getEngagementReaderKeyStorageKey(site = this.getEngagementBroadcastSite()) {
+        return `zaoyoe_engagement_reader_key_${site}_v1`;
+    }
+
+    getEngagementDismissedStorageKey(site = this.getEngagementBroadcastSite()) {
+        return `zaoyoe_engagement_dismissed_${site}_v1`;
+    }
+
     getEngagementReaderKey() {
-        const storageKey = 'zaoyoe_engagement_reader_key_v1';
+        const storageKey = this.getEngagementReaderKeyStorageKey();
         try {
             const existing = window.localStorage?.getItem(storageKey);
             if (existing) return existing;
@@ -6014,7 +6069,7 @@ class ChatWidget {
 
     getEngagementDismissedMap() {
         try {
-            const raw = window.localStorage?.getItem('zaoyoe_engagement_dismissed_v1');
+            const raw = window.localStorage?.getItem(this.getEngagementDismissedStorageKey());
             const parsed = raw ? JSON.parse(raw) : {};
             return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
         } catch (_) {
@@ -6024,7 +6079,7 @@ class ChatWidget {
 
     persistEngagementDismissedMap(map = {}) {
         try {
-            window.localStorage?.setItem('zaoyoe_engagement_dismissed_v1', JSON.stringify(map));
+            window.localStorage?.setItem(this.getEngagementDismissedStorageKey(), JSON.stringify(map));
         } catch (_) {
             // Ignore storage failures; the server-side event still records the action.
         }
@@ -14394,6 +14449,7 @@ class ChatWidget {
         const alert = {
             id: String(row.id || `ops-alert-${createdAt}`),
             alertType,
+            site: String(payload.site || payload.site_id || payload.siteId || 'cn').trim().toLowerCase() || 'cn',
             severity: String(row.severity || 'warning').trim().toLowerCase() || 'warning',
             title: String(row.title || '系统告警').trim() || '系统告警',
             content,
@@ -14461,7 +14517,7 @@ class ChatWidget {
             content,
             category: String(normalized.alertType || 'ops_alert').trim() || 'ops_alert',
             page_id: this.getEngagementPageId(),
-            site: 'cn',
+            site: normalized.site || 'cn',
             placement: 'robot_bubble',
             priority: severity === 'critical' ? 95 : (severity === 'info' ? 55 : 78),
             tone: severity === 'critical' ? 'alert' : (severity === 'info' ? 'info' : 'warning'),
@@ -14472,6 +14528,7 @@ class ChatWidget {
             metadata: {
                 alert_type: normalized.alertType || '',
                 severity,
+                site: normalized.site || 'cn',
                 status: normalized.status || '',
                 entry_path: normalized.entryPath || '',
                 payload: normalized.payload || {},
@@ -14621,6 +14678,13 @@ class ChatWidget {
         return Array.isArray(data) ? data : [];
     }
 
+    shouldIncludeOpsAlertJobRow(row = {}) {
+        const payload = this.parseChatOpsPayload(row?.payload);
+        return this.matchesCurrentSite({
+            site: String(payload.site || payload.site_id || payload.siteId || 'cn').trim().toLowerCase() || 'cn'
+        }, 'cn');
+    }
+
     async refreshOpsAlerts(options = {}) {
         const announceNew = options.announceNew === true;
         const isViewingOpsSession = this.isOpen && this.currentSessionKey === this.opsAlertSessionId;
@@ -14687,6 +14751,7 @@ class ChatWidget {
     async processOpsAlertData(rows) {
         this.opsAlertLoadError = '';
         const alerts = (Array.isArray(rows) ? rows : [])
+            .filter((row) => this.shouldIncludeOpsAlertJobRow(row))
             .map((row) => this.normalizeOpsAlertJob(row));
         this.opsAlertMessages = (await this.attachOpsAlertCases(alerts))
             .sort((left, right) => {
@@ -15329,6 +15394,9 @@ class ChatWidget {
 
     async upsertOpsAlertMessage(row, options = {}) {
         const [normalized] = await this.attachOpsAlertCases([this.normalizeOpsAlertJob(row)]);
+        if (!this.matchesCurrentSite({ site: normalized?.site || 'cn' }, 'cn')) {
+            return;
+        }
         const existingIndex = this.opsAlertMessages.findIndex((item) => item.id === normalized.id);
 
         if (existingIndex > -1) {
@@ -15381,9 +15449,12 @@ class ChatWidget {
             this.currentAdminUserId = String(adminUserId || '').trim();
 
             // Get all messages grouped by session, including user_id for lookup
-            const { data: messages, error } = await this.supabase
-                .from('chat_messages')
-                .select('session_id, created_at, content, is_admin, user_id, message_type')
+            const { data: messages, error } = await this.queryForCurrentSite(
+                this.supabase
+                    .from('chat_messages')
+                    .select('session_id, created_at, content, is_admin, user_id, message_type'),
+                this.getCurrentSite()
+            )
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -15815,6 +15886,7 @@ class ChatWidget {
                 .from('shop_tickets')
                 .select('id, user_id, status, description, created_at')
                 .in('user_id', uniqueUserIds)
+                .eq('site', this.getCurrentSite())
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -15850,6 +15922,7 @@ class ChatWidget {
                 .from('payment_orders')
                 .select('id, user_id, status, package_name, paid_amount, expected_amount, created_at')
                 .in('user_id', uniqueUserIds)
+                .eq('site', this.getCurrentSite())
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -15871,6 +15944,7 @@ class ChatWidget {
                 .from('verification_logs')
                 .select('verification_id, user_id, status, message, created_at')
                 .in('user_id', uniqueUserIds)
+                .eq('site', this.getCurrentSite())
                 .order('created_at', { ascending: false });
 
             if (error) throw error;
@@ -17397,6 +17471,7 @@ class ChatWidget {
         if (this.userContextCache.has(cacheKey)) {
             return this.userContextCache.get(cacheKey);
         }
+        const currentSite = this.getCurrentSite();
 
         const initialUserId = String(session?.userId || '').trim();
         const initialEmail = this.resolveUserContextEmail(session);
@@ -17418,6 +17493,7 @@ class ChatWidget {
                     .from('shop_orders')
                     .select('id, created_at, price_paid, snapshot_product_name, refund_status, delivery_status')
                     .eq('user_id', userId)
+                    .eq('site', currentSite)
                     .order('created_at', { ascending: false })
                     .limit(2)
                 : Promise.resolve({ data: [] }),
@@ -17426,6 +17502,7 @@ class ChatWidget {
                     .from('payment_orders')
                     .select('id, user_id, created_at, package_name, paid_amount, expected_amount, status, provider')
                     .eq('user_id', userId)
+                    .eq('site', currentSite)
                     .order('created_at', { ascending: false })
                     .limit(2)
                 : Promise.resolve({ data: [] }),
@@ -17434,6 +17511,7 @@ class ChatWidget {
                     let query = this.supabase
                         .from('verification_logs')
                         .select('verification_id, status, message, created_at')
+                        .eq('site', currentSite)
                         .order('created_at', { ascending: false })
                         .limit(2);
                     if (userId) {
@@ -17449,6 +17527,7 @@ class ChatWidget {
                     .from('shop_tickets')
                     .select('id, order_id, issue_type, status, description, created_at')
                     .eq('user_id', userId)
+                    .eq('site', currentSite)
                     .order('created_at', { ascending: false })
                     .limit(2)
                 : Promise.resolve({ data: [] })
@@ -18703,6 +18782,9 @@ class ChatWidget {
     }
 
     async handleTicketRealtimeChange(ticket = {}) {
+        if (!this.matchesCurrentSite(ticket)) {
+            return;
+        }
         const currentUserId = String(this.currentUserContext?.userId || '').trim();
         const ticketUserId = String(ticket?.user_id || '').trim();
         if (ticketUserId) {
@@ -18716,6 +18798,9 @@ class ChatWidget {
     }
 
     async handlePaymentRealtimeChange(payment = {}) {
+        if (!this.matchesCurrentSite(payment)) {
+            return;
+        }
         const currentUserId = String(this.currentUserContext?.userId || '').trim();
         const paymentUserId = String(payment?.user_id || '').trim();
         if (paymentUserId) {
@@ -18729,6 +18814,9 @@ class ChatWidget {
     }
 
     async handleVerificationRealtimeChange(entry = {}) {
+        if (!this.matchesCurrentSite(entry)) {
+            return;
+        }
         const currentUserId = String(this.currentUserContext?.userId || '').trim();
         const verificationUserId = String(entry?.user_id || '').trim();
         if (verificationUserId) {
@@ -19173,10 +19261,13 @@ class ChatWidget {
         }
 
         try {
-            const { data, error } = await this.supabase
-                .from('chat_messages')
-                .select('session_id, content, is_admin, message_type, created_at')
-                .in('session_id', sessionIdArray)
+            const { data, error } = await this.queryForCurrentSite(
+                this.supabase
+                    .from('chat_messages')
+                    .select('session_id, content, is_admin, message_type, created_at')
+                    .in('session_id', sessionIdArray),
+                this.getCurrentSite()
+            )
                 .order('created_at', { ascending: true });
 
             if (error) throw error;
@@ -19224,10 +19315,13 @@ class ChatWidget {
 
         // Then search in chat messages database
         try {
-            const { data: messages, error } = await this.supabase
-                .from('chat_messages')
-                .select('session_id, content')
-                .ilike('content', `%${normalizedQuery}%`);
+            const { data: messages, error } = await this.queryForCurrentSite(
+                this.supabase
+                    .from('chat_messages')
+                    .select('session_id, content')
+                    .ilike('content', `%${normalizedQuery}%`),
+                this.getCurrentSite()
+            );
 
             if (error) throw error;
 
@@ -19444,6 +19538,7 @@ class ChatWidget {
                 .from('chat_messages')
                 .insert({
                     session_id: this.currentSessionId,
+                    site: this.getCurrentSite(),
                     content: text,
                     message_type: 'text',
                     is_admin: true
@@ -19497,6 +19592,7 @@ class ChatWidget {
                     .from('chat_messages')
                     .select('user_id')
                     .eq('session_id', sessionId)
+                    .eq('site', this.getCurrentSite())
                     .not('user_id', 'is', null)
                     .limit(1)
                     .single();
@@ -19514,6 +19610,7 @@ class ChatWidget {
             // Create system notification
             const { error } = await insertScopedSystemNotification(this.supabase, {
                 user_id: targetUserId,
+                site: this.getCurrentSite(),
                 title: '客服回复',
                 content: messageContent.substring(0, 100) + (messageContent.length > 100 ? '...' : ''),
                 type: 'info',
@@ -19523,6 +19620,7 @@ class ChatWidget {
                 action_label: '打开客服',
                 metadata: {
                     page_id: 'home',
+                    site: this.getCurrentSite(),
                     event_type: 'support_reply',
                     session_id: sessionId
                 },
@@ -19590,6 +19688,7 @@ class ChatWidget {
                 .from('chat_messages')
                 .insert({
                     session_id: this.currentSessionId,
+                    site: this.getCurrentSite(),
                     content: imageUrl,
                     message_type: 'image',
                     is_admin: true
@@ -19636,7 +19735,12 @@ class ChatWidget {
 
         this.adminMessageChannel = this.supabase
             .channel(`admin-chat-global-${Date.now()}`)
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chat_messages' }, (payload) => {
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'chat_messages',
+                filter: this.getCurrentSiteRealtimeFilter()
+            }, (payload) => {
                 const msg = payload.new;
                 const isTicketSyncMessage = this.isTicketSyncChatMessage(msg);
                 const isAdminReply = Boolean(msg?.is_admin) && !isTicketSyncMessage;
@@ -19706,30 +19810,60 @@ class ChatWidget {
 
         this.adminTicketChannel = this.supabase
             .channel(`admin-ticket-context-${Date.now()}`)
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'shop_tickets' }, (payload) => {
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'shop_tickets',
+                filter: this.getCurrentSiteRealtimeFilter()
+            }, (payload) => {
                 this.handleTicketRealtimeChange(payload.new);
             })
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'shop_tickets' }, (payload) => {
+            .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'shop_tickets',
+                filter: this.getCurrentSiteRealtimeFilter()
+            }, (payload) => {
                 this.handleTicketRealtimeChange(payload.new);
             })
             .subscribe();
 
         this.adminPaymentChannel = this.supabase
             .channel(`admin-payment-context-${Date.now()}`)
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'payment_orders' }, (payload) => {
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'payment_orders',
+                filter: this.getCurrentSiteRealtimeFilter()
+            }, (payload) => {
                 this.handlePaymentRealtimeChange(payload.new);
             })
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'payment_orders' }, (payload) => {
+            .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'payment_orders',
+                filter: this.getCurrentSiteRealtimeFilter()
+            }, (payload) => {
                 this.handlePaymentRealtimeChange(payload.new);
             })
             .subscribe();
 
         this.adminVerificationChannel = this.supabase
             .channel(`admin-verification-context-${Date.now()}`)
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'verification_logs' }, (payload) => {
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'verification_logs',
+                filter: this.getCurrentSiteRealtimeFilter()
+            }, (payload) => {
                 this.handleVerificationRealtimeChange(payload.new);
             })
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'verification_logs' }, (payload) => {
+            .on('postgres_changes', {
+                event: 'UPDATE',
+                schema: 'public',
+                table: 'verification_logs',
+                filter: this.getCurrentSiteRealtimeFilter()
+            }, (payload) => {
                 this.handleVerificationRealtimeChange(payload.new);
             })
             .subscribe();
@@ -21332,6 +21466,7 @@ class ChatWidget {
                     message_type: 'text',
                     user_id: userId,
                     session_id: sessionId,
+                    site: this.getCurrentSite(),
                     is_admin: false
                 });
 
@@ -21435,6 +21570,7 @@ class ChatWidget {
                     message_type: 'image',
                     user_id: userId,
                     session_id: sessionId,
+                    site: this.getCurrentSite(),
                     is_admin: false
                 });
             window.ZaoyoeUserPresence?.markActive?.();
@@ -21614,6 +21750,7 @@ class ChatWidget {
         let query = this.supabase
             .from('chat_messages')
             .select('session_id, content, is_admin, message_type, created_at');
+        query = this.queryForCurrentSite(query, this.getCurrentSite());
 
         query = normalizedSessionIds.length === 1
             ? query.eq('session_id', normalizedSessionIds[0])
@@ -21733,7 +21870,8 @@ class ChatWidget {
                 {
                     event: 'INSERT',
                     schema: 'public',
-                    table: 'chat_messages'
+                    table: 'chat_messages',
+                    filter: this.getCurrentSiteRealtimeFilter()
                 },
                 (payload) => {
                     const activeSessionIds = this.getActiveUserSessionIds();
