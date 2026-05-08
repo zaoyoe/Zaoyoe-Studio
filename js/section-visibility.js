@@ -13,6 +13,7 @@
     'use strict';
 
     const Contract = window.HomepageContract || null;
+    const Preload = window.SectionVisibilityPreload || window.__ZAOYOE_SECTION_VISIBILITY_PRELOAD__ || null;
     const CACHE_KEY_PREFIX = 'zaoyoe_section_vis_';
     const SECTIONS = Array.isArray(Contract?.VISIBILITY_SECTION_ORDER)
         ? [...Contract.VISIBILITY_SECTION_ORDER]
@@ -41,33 +42,33 @@
     const SECTION_SELECTORS = {
         prompts: {
             sections: ['#prompts-section'],
-            navDesktop: 'a.nav-trigger[href="/prompts.html"]',
-            navMobile: null, // handled dynamically
-            footer: 'a[href="/prompts.html"]'
+            navDesktop: ['a.nav-trigger[href="/prompts.html"]'],
+            navMobile: ['button.mobile-menu-trigger[data-submenu="prompts-mobile"]'],
+            footer: ['a[href="/prompts.html"]']
         },
         shop: {
             sections: ['#shop-section'],
-            navDesktop: 'a.nav-trigger[href="/shop.html"]',
-            navMobile: null,
-            footer: 'a[href="/shop.html"]'
+            navDesktop: ['a.nav-trigger[href="/shop.html"]'],
+            navMobile: ['button.mobile-menu-trigger[data-submenu="shop-mobile"]'],
+            footer: ['a[href="/shop.html"]']
         },
         gongyi: {
             sections: ['#gongyi-section'],
-            navDesktop: 'a[href="https://gongyi.zaoyoe.com"]',
-            navMobile: null,
-            footer: 'a[href="https://gongyi.zaoyoe.com"]'
+            navDesktop: ['a[href="https://gongyi.zaoyoe.com"]'],
+            navMobile: ['a.mobile-menu-link[href="https://gongyi.zaoyoe.com"]'],
+            footer: ['a[href="https://gongyi.zaoyoe.com"]']
         },
         verify: {
             sections: ['#verify-section'],
-            navDesktop: 'a[href="/verify.html"]',
-            navMobile: null,
-            footer: 'a[href="/verify.html"]'
+            navDesktop: ['a[href="/verify.html"]', 'a[href="#verify"]'],
+            navMobile: ['a.mobile-menu-link[href="/verify.html"]'],
+            footer: ['a[href="/verify.html"]']
         },
         guestbook: {
             sections: ['#guestbook-section'],
-            navDesktop: 'a[href="/guestbook.html"]',
-            navMobile: null,
-            footer: 'a[href="/guestbook.html"]'
+            navDesktop: ['a[href="/guestbook.html"]'],
+            navMobile: ['a.mobile-menu-link[href="/guestbook.html"]'],
+            footer: ['a[href="/guestbook.html"]']
         },
         ticker: {
             sections: ['#ticker-section'],
@@ -90,6 +91,43 @@
     };
 
     let visibilityConfig = null;
+
+    function buildScopedSelectorList(scopeSelectors = [], targetSelectors = []) {
+        const scopes = Array.isArray(scopeSelectors) ? scopeSelectors.filter(Boolean) : [];
+        const targets = Array.isArray(targetSelectors) ? targetSelectors.filter(Boolean) : [];
+
+        if (!scopes.length || !targets.length) {
+            return '';
+        }
+
+        return scopes
+            .flatMap((scope) => targets.map((target) => `${scope} ${target}`))
+            .join(', ');
+    }
+
+    function queryScopedElements(scopeSelectors = [], targetSelectors = []) {
+        const selector = buildScopedSelectorList(scopeSelectors, targetSelectors);
+        if (!selector) {
+            return [];
+        }
+
+        try {
+            return Array.from(document.querySelectorAll(selector));
+        } catch (error) {
+            console.warn('[SectionVisibility] Failed to query scoped selectors:', error?.message || error);
+            return [];
+        }
+    }
+
+    function syncPreloadVisibility(config) {
+        try {
+            if (typeof Preload?.applyConfig === 'function') {
+                Preload.applyConfig(config);
+            }
+        } catch (error) {
+            console.warn('[SectionVisibility] Failed to sync preload visibility:', error?.message || error);
+        }
+    }
 
     /**
      * Get default config (all visible)
@@ -130,10 +168,29 @@
         return CACHE_KEY_PREFIX + getCurrentSite();
     }
 
+    function loadFromRuntimePreload(site = getCurrentSite()) {
+        const runtimeSite = normalizeSite(window.__ZAOYOE_SECTION_VISIBILITY_PRELOADED_SITE__);
+        const runtimeConfig = window.__ZAOYOE_SECTION_VISIBILITY_PRELOADED_CONFIG__;
+        if (runtimeSite !== normalizeSite(site)) {
+            return null;
+        }
+
+        if (!runtimeConfig || typeof runtimeConfig !== 'object' || Array.isArray(runtimeConfig)) {
+            return null;
+        }
+
+        return runtimeConfig;
+    }
+
     /**
      * Load config from localStorage cache (synchronous, for flash prevention)
      */
     function loadFromCache() {
+        const runtimeConfig = loadFromRuntimePreload();
+        if (runtimeConfig) {
+            return runtimeConfig;
+        }
+
         try {
             const cached = localStorage.getItem(getCacheKey());
             if (cached) {
@@ -236,16 +293,15 @@
             }
 
             // Hide/show desktop nav links
-            if (selectors.navDesktop) {
-                const navEls = document.querySelectorAll(`.nav-menu ${selectors.navDesktop}, .nav-container ${selectors.navDesktop}`);
+            if (Array.isArray(selectors.navDesktop) && selectors.navDesktop.length) {
+                const navEls = queryScopedElements(['.nav-menu', '.nav-container'], selectors.navDesktop);
                 navEls.forEach(el => setDomVisibility(el, visible));
             }
 
             // Hide/show mobile menu items
-            if (selectors.footer) {
-                // Also find in mobile menu
-                const mobileLinks = document.querySelectorAll(`.mobile-menu-items ${selectors.footer}, .mobile-menu-item ${selectors.footer}`);
-                mobileLinks.forEach(el => {
+            if (Array.isArray(selectors.navMobile) && selectors.navMobile.length) {
+                const mobileLinks = queryScopedElements(['.mobile-menu-items', '.mobile-menu-item'], selectors.navMobile);
+                mobileLinks.forEach((el) => {
                     const menuItem = el.closest('.mobile-menu-item');
                     if (menuItem) {
                         setDomVisibility(menuItem, visible);
@@ -256,8 +312,8 @@
             }
 
             // Hide/show footer links
-            if (selectors.footer) {
-                const footerEls = document.querySelectorAll(`footer ${selectors.footer}, .framer-footer ${selectors.footer}`);
+            if (Array.isArray(selectors.footer) && selectors.footer.length) {
+                const footerEls = queryScopedElements(['footer', '.framer-footer'], selectors.footer);
                 footerEls.forEach(el => setDomVisibility(el, visible));
             }
         });
@@ -318,6 +374,7 @@
         const cached = loadFromCache();
         if (cached) {
             visibilityConfig = cached;
+            syncPreloadVisibility(visibilityConfig);
             applySectionVisibility();
 
             // Check page access immediately
@@ -333,6 +390,7 @@
         if (siteConfig) {
             visibilityConfig = siteConfig;
             saveToCache(siteConfig);
+            syncPreloadVisibility(siteConfig);
             applySectionVisibility();
 
             // Re-check page access with fresh data
@@ -358,6 +416,7 @@
         updateConfig(siteConfig) {
             visibilityConfig = siteConfig;
             saveToCache(siteConfig);
+            syncPreloadVisibility(siteConfig);
             applySectionVisibility();
         },
 
