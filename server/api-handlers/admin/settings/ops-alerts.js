@@ -881,6 +881,7 @@ function buildPaymentConfigChangedSampleJob(user) {
         payload: {
             target_id: 'audit-demo-payment-config-001',
             audit_id: 'audit-demo-payment-config-001',
+            site: 'cn',
             admin_id: sanitizeText(user?.id) || 'admin-demo-user',
             admin_email: sanitizeText(user?.email || user?.id) || 'admin@example.com',
             action_type: 'admin.payment_channels.upsert',
@@ -903,7 +904,8 @@ function buildPaymentConfigIncidentSampleJob(user) {
         severity: 'critical',
         title: '支付配置异常升级（3 次）',
         payload: {
-            target_id: 'payment_config_incident:global',
+            target_id: 'payment_config_incident:cn',
+            site: 'cn',
             lookback_minutes: 20,
             incident_change_count: 3,
             distinct_admin_count: 2,
@@ -938,10 +940,11 @@ function buildPaymentConfigRecoveredSampleJob(user) {
         severity: 'warning',
         title: '支付配置风险已恢复（已切回真实支付）',
         payload: {
-            target_id: 'payment_config:active_provider:mock',
+            target_id: 'payment_config:cn:active_provider:mock',
             config_alert_job_id: 'job-demo-payment-config-001',
             recovery_audit_id: 'audit-demo-payment-config-restore-001',
             risk_target_kind: 'active_provider_mock',
+            site: 'cn',
             previous_action_type: 'admin.payment_channels.upsert',
             previous_action_label: '支付通道配置更新',
             previous_admin_email: sanitizeText(user?.email || user?.id) || 'admin@example.com',
@@ -970,7 +973,8 @@ function buildPaymentConfigIncidentRecoveredSampleJob(user) {
         severity: 'warning',
         title: '支付配置事故已恢复',
         payload: {
-            target_id: 'payment_config_incident:global',
+            target_id: 'payment_config_incident:cn',
+            site: 'cn',
             incident_alert_job_id: 'job-demo-payment-config-incident-001',
             incident_started_at: '2026-03-25T10:00:00.000Z',
             incident_recovered_at: new Date().toISOString(),

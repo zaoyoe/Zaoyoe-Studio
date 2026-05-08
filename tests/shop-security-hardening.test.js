@@ -111,12 +111,17 @@ test('follow-up shop hardening adds a server-side quantity cap and removes direc
     );
     assert.match(
         walletModalSource,
-        /rpc\('fn_clear_user_history'\)/,
+        /rpc\('fn_clear_user_history'/,
         'wallet history clearing should continue to go through the controlled RPC'
     );
     assert.match(
+        walletModalSource,
+        /rpc\('fn_clear_user_history',\s*\{\s*p_site:\s*window\.SiteConfig\?\.site \|\| 'cn'\s*\}\)/s,
+        'wallet history clearing should scope the hide action to the active site'
+    );
+    assert.match(
         migrationSql,
-        /CREATE OR REPLACE FUNCTION public\.fn_clear_user_history\(\)\s+RETURNS INTEGER\s+LANGUAGE plpgsql\s+SECURITY DEFINER\s+SET search_path = public, pg_temp/s,
+        /CREATE OR REPLACE FUNCTION public\.fn_clear_user_history\(p_site TEXT DEFAULT 'cn'\)\s+RETURNS INTEGER\s+LANGUAGE plpgsql\s+SECURITY DEFINER\s+SET search_path = public, pg_temp/s,
         'history clearing should remain behind a SECURITY DEFINER function with a fixed search_path'
     );
     assert.match(

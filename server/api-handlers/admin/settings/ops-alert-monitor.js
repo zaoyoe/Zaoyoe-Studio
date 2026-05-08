@@ -1,6 +1,7 @@
 const {
     requireAdmin,
-    sendJson
+    sendJson,
+    normalizeAdminSite
 } = require('../../../../api/_lib/admin');
 const {
     loadOpsAlertsRuntimeConfig
@@ -95,6 +96,7 @@ const ALERT_MONITOR_CATEGORY_LABELS = Object.freeze(
         return accumulator;
     }, {})
 );
+const SUPPORTED_MONITOR_SITES = new Set(['cn', 'intl']);
 
 function normalizeText(value, maxLength = 400) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
@@ -112,6 +114,41 @@ function normalizePayload(value) {
     return value && typeof value === 'object' && !Array.isArray(value)
         ? value
         : {};
+}
+
+function normalizeSupportedSite(value, fallback = '') {
+    const normalized = normalizeText(value, 40).toLowerCase();
+    if (SUPPORTED_MONITOR_SITES.has(normalized)) {
+        return normalized;
+    }
+    return fallback;
+}
+
+function normalizeSupportedSiteList(value) {
+    if (!Array.isArray(value)) {
+        return [];
+    }
+
+    return Array.from(new Set(
+        value
+            .map((item) => normalizeSupportedSite(item))
+            .filter(Boolean)
+    ));
+}
+
+function inferSiteFromTargetId(value = '') {
+    const normalized = normalizeText(value, 200).toLowerCase();
+    if (!normalized) {
+        return '';
+    }
+
+    const match = normalized.match(/(?:^|:)(cn|intl)$/);
+    return match ? normalizeSupportedSite(match[1]) : '';
+}
+
+function inferSiteFromContent(value = '') {
+    const match = String(value || '').match(/站点：\s*(CN|INTL)\b/i);
+    return match ? normalizeSupportedSite(match[1]) : '';
 }
 
 function getSafeTimestamp(value) {
@@ -452,6 +489,57 @@ function getAlertExcerpt(job = {}) {
     return lines[0] || '';
 }
 
+function inferOpsAlertJobSite(job = {}) {
+    const payload = normalizePayload(job.payload);
+    const directSite = normalizeSupportedSite(payload.site);
+    if (directSite) {
+        return directSite;
+    }
+
+    const siteLabels = normalizeSupportedSiteList(payload.site_labels);
+    if (siteLabels.length === 1) {
+        return siteLabels[0];
+    }
+
+    const targetSite = inferSiteFromTargetId(
+        normalizeText(payload.target_id, 200)
+        || normalizeText(getAlertTargetId(job), 200)
+    );
+    if (targetSite) {
+        return targetSite;
+    }
+
+    const contentSite = inferSiteFromContent(job.content);
+    if (contentSite) {
+        return contentSite;
+    }
+
+    const normalizedAlertType = normalizeText(job.alert_type, 120).toLowerCase();
+    if (normalizedAlertType.startsWith('payment_config_')) {
+        return 'cn';
+    }
+
+    return '';
+}
+
+function shouldIncludeOpsAlertJobForAdminSite(job = {}, adminSite = 'all') {
+    const normalizedAdminSite = normalizeAdminSite(adminSite, { defaultValue: 'all' }) || 'all';
+    if (normalizedAdminSite === 'all') {
+        return true;
+    }
+
+    const payload = normalizePayload(job.payload);
+    const siteLabels = normalizeSupportedSiteList(payload.site_labels);
+    if (siteLabels.length) {
+        return siteLabels.includes(normalizedAdminSite);
+    }
+
+    const inferredSite = inferOpsAlertJobSite(job);
+    return inferredSite
+        ? inferredSite === normalizedAdminSite
+        : true;
+}
+
 function getShopOrderRiskSignalLabel(value) {
     const normalized = normalizeText(value, 80).toLowerCase();
     const labelMap = {
@@ -604,6 +692,8 @@ function buildAlertItem(job = {}, categoryKey = '', options = {}) {
         title: normalizeText(job.title, 240) || '系统告警',
         message: getAlertExcerpt(job),
         created_at: normalizeText(job.created_at, 80) || null,
+        site: inferOpsAlertJobSite(job) || null,
+        site_labels: normalizeSupportedSiteList(payload.site_labels),
         target_id: targetId,
         reference_label: reference.label,
         reference_value: reference.value,
@@ -1501,11 +1591,13 @@ module.exports = async (req, res) => {
             });
         }
 
+        const requestUrl = new URL(req.url || '/api/admin/settings/ops-alert-monitor', 'http://localhost');
+        const adminSite = normalizeAdminSite(requestUrl.searchParams.get('site') || req.adminSite, { defaultValue: 'all' }) || 'all';
         const now = new Date();
         const sinceIso = new Date(now.getTime() - OPS_ALERT_MONITOR_LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
         const [
             runtime,
-            jobs,
+            rawJobs,
             assignableAdmins
         ] = await Promise.all([
             loadOpsAlertsRuntimeConfig(supabase),
@@ -1516,6 +1608,7 @@ module.exports = async (req, res) => {
                 currentUserId: user.id
             })
         ]);
+        const jobs = rawJobs.filter((job) => shouldIncludeOpsAlertJobForAdminSite(job, adminSite));
         const targets = jobs
             .map((job) => ({
                 category_key: getAlertCategoryKey(job.alert_type),
@@ -1545,6 +1638,7 @@ module.exports = async (req, res) => {
 
         return sendJson(res, 200, {
             success: true,
+            site_context: adminSite,
             fetched_at: now.toISOString(),
             summary: {
                 lookback_hours: OPS_ALERT_MONITOR_LOOKBACK_HOURS,

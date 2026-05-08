@@ -17,7 +17,7 @@ function createRuntimeSupabaseConfigHandler({
         }
 
         try {
-            const script = buildSupabaseRuntimeScript(env);
+            const script = buildSupabaseRuntimeScript(env, { req });
             res.status(200);
             res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
             res.setHeader('Cache-Control', RUNTIME_CONFIG_CACHE_CONTROL);

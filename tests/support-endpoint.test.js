@@ -238,6 +238,7 @@ test('support create_ticket enqueues an external ops alert for the new ticket', 
         assert.equal(insertedRows.length, 1);
         assert.deepEqual(insertedRows[0], {
             user_id: 'user-support-1',
+            site: 'cn',
             issue_type: 'OTHER',
             status: 'PENDING',
             description: '卡密没有到账，请帮忙处理'
@@ -253,6 +254,7 @@ test('support create_ticket enqueues an external ops alert for the new ticket', 
         assert.equal(enqueuedAlerts[0].payload.ticket_id, 'ticket-demo-001');
         assert.equal(enqueuedAlerts[0].payload.user_id, 'user-support-1');
         assert.equal(enqueuedAlerts[0].payload.user_email, 'profile-member@example.com');
+        assert.equal(enqueuedAlerts[0].payload.site, 'cn');
         assert.equal(enqueuedAlerts[0].createdAt, '2026-03-30T12:00:00.000Z');
     });
 });
@@ -316,6 +318,7 @@ test('support ticket_history returns the current user ticket results and focuses
         {
             id: 'ticket-history-3',
             user_id: 'user-support-history',
+            site: 'cn',
             order_id: 'order-history-3',
             issue_type: 'OTHER',
             status: 'PENDING',
@@ -327,6 +330,7 @@ test('support ticket_history returns the current user ticket results and focuses
         {
             id: 'ticket-history-2',
             user_id: 'user-support-history',
+            site: 'cn',
             order_id: 'order-history-2',
             issue_type: 'DELIVERY',
             status: 'RESOLVED',
@@ -338,6 +342,7 @@ test('support ticket_history returns the current user ticket results and focuses
         {
             id: 'ticket-history-1',
             user_id: 'user-support-history',
+            site: 'cn',
             order_id: '',
             issue_type: 'ACCOUNT',
             status: 'REJECTED',
@@ -349,6 +354,7 @@ test('support ticket_history returns the current user ticket results and focuses
         {
             id: 'ticket-history-other-user',
             user_id: 'someone-else',
+            site: 'cn',
             order_id: 'order-other',
             issue_type: 'PAYMENT',
             status: 'RESOLVED',
@@ -356,6 +362,18 @@ test('support ticket_history returns the current user ticket results and focuses
             admin_notes: '不应该返回',
             created_at: '2026-03-31T09:00:00.000Z',
             updated_at: '2026-03-31T10:00:00.000Z'
+        },
+        {
+            id: 'ticket-history-intl',
+            user_id: 'user-support-history',
+            site: 'intl',
+            order_id: 'order-intl',
+            issue_type: 'PAYMENT',
+            status: 'RESOLVED',
+            description: '不应该混入 cn 历史',
+            admin_notes: '不应该混入 cn 历史',
+            created_at: '2026-03-30T12:00:00.000Z',
+            updated_at: '2026-03-30T12:00:00.000Z'
         }
     ];
 
@@ -416,6 +434,7 @@ test('support ticket_history returns the current user ticket results and focuses
             headers: {},
             body: {
                 action: 'ticket_history',
+                site: 'cn',
                 input: {
                     ticket_id: 'ticket-history-2'
                 }

@@ -970,7 +970,7 @@ function createPublicEngagementHandlers({
             content: sanitizeText(row.content, 1200),
             category,
             page_id: sanitizeText(metadata.page_id || context.pageId, 80) || context.pageId,
-            site: sanitizeText(metadata.site || context.site, 20) || context.site,
+            site: sanitizeText(row.site || metadata.site || 'cn', 20) || 'cn',
             placement: normalizePlacement(metadata.placement || metadata.display_type || metadata.displayType),
             priority: Number(row.priority || metadata.priority || 20) || 20,
             action_label: sanitizeText(row.action_label || metadata.action_label, 80),
@@ -984,6 +984,25 @@ function createPublicEngagementHandlers({
                 scope
             }
         };
+    }
+
+    function notificationMatchesSite(row = {}, context = {}) {
+        const normalizedRow = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
+        const metadata = normalizeMetadata(normalizedRow.metadata);
+        const payloadSite = sanitizeText(
+            normalizedRow.site
+                || metadata.site
+                || metadata.site_id
+                || metadata.siteId,
+            20
+        ).toLowerCase();
+        if (!payloadSite) {
+            return normalizeSite(context.site || 'cn') === 'cn';
+        }
+        if (payloadSite === 'all') {
+            return true;
+        }
+        return normalizeSite(payloadSite) === normalizeSite(context.site || 'cn');
     }
 
     function shouldSurfaceNotificationBubble(row = {}, context = {}) {
@@ -1001,6 +1020,9 @@ function createPublicEngagementHandlers({
         // Moderation outcomes are still stored as notifications, but they should
         // stay in the inbox/badge instead of interrupting users with a robot bubble.
         if (category === 'content_moderated' || triggerType === 'content_moderated') {
+            return false;
+        }
+        if (!notificationMatchesSite(normalizedRow, context)) {
             return false;
         }
         const adminBubbleContext = isCnAdminBubbleContext(context);
@@ -1323,11 +1345,13 @@ function createPublicEngagementHandlers({
 
     async function fetchNotificationBubbles(supabase, userId, context) {
         if (!userId) return [];
+        const requestedSite = normalizeSite(context?.site || 'cn');
 
         let response = await supabase
             .from('system_notifications')
-            .select('id,title,content,type,scope,category,is_read,created_at,action_url,action_label,metadata,priority,expires_at,dedupe_key,source_module,source_event_id')
+            .select('id,title,content,type,scope,category,is_read,created_at,action_url,action_label,metadata,priority,expires_at,dedupe_key,source_module,source_event_id,site')
             .eq('user_id', userId)
+            .eq('site', requestedSite)
             .eq('is_read', false)
             .order('priority', { ascending: false })
             .order('created_at', { ascending: false })

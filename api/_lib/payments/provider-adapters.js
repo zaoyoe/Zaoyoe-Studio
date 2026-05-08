@@ -260,10 +260,11 @@ const providerRegistry = {
             queryOrder: false,
             autoCredit: true
         },
-        async resolveRuntimeContext({ supabase, env = process.env, config = null } = {}) {
+        async resolveRuntimeContext({ supabase, env = process.env, config = null, site = '' } = {}) {
             const loaded = config
                 ? { paymentChannels: config }
                 : await loadStoredPaymentConfigs(supabase, {
+                    site,
                     origin: env.APP_BASE_URL,
                     afdianCheckoutUrl: env.PAYMENT_AFDIAN_URL
                 });
@@ -322,14 +323,15 @@ const providerRegistry = {
             queryOrder: true,
             autoCredit: false
         },
-        async resolveRuntimeContext({ supabase, env = process.env, config = null } = {}) {
+        async resolveRuntimeContext({ supabase, env = process.env, config = null, site = '' } = {}) {
             const loaded = config
                 ? { paymentChannels: config }
                 : await loadStoredPaymentConfigs(supabase, {
+                    site,
                     origin: env.APP_BASE_URL,
                     afdianCheckoutUrl: env.PAYMENT_AFDIAN_URL
                 });
-            const secrets = await resolvePaymentProviderSecrets(supabase, 'afdian', env);
+            const secrets = await resolvePaymentProviderSecrets(supabase, 'afdian', env, { site });
             return {
                 provider: 'afdian',
                 channelConfig: loaded.paymentChannels.providers.afdian,
@@ -429,15 +431,16 @@ const providerRegistry = {
             refundOrder: true,
             autoCredit: true
         },
-        async resolveRuntimeContext({ supabase, env = process.env, config = null, requestOrigin = '' } = {}) {
+        async resolveRuntimeContext({ supabase, env = process.env, config = null, requestOrigin = '', site = '' } = {}) {
             const effectiveRequestOrigin = requestOrigin || env.APP_BASE_URL;
             const loaded = config
                 ? { paymentChannels: config }
                 : await loadStoredPaymentConfigs(supabase, {
+                    site,
                     origin: effectiveRequestOrigin,
                     afdianCheckoutUrl: env.PAYMENT_AFDIAN_URL
                 });
-            const secrets = await resolvePaymentProviderSecrets(supabase, 'zpay', env);
+            const secrets = await resolvePaymentProviderSecrets(supabase, 'zpay', env, { site });
             const integration = normalizeZpayConfig({
                 channelConfig: loaded.paymentChannels.providers.zpay,
                 secretValues: {
@@ -781,15 +784,16 @@ const providerRegistry = {
             queryOrder: false,
             autoCredit: true
         },
-        async resolveRuntimeContext({ supabase, env = process.env, config = null, requestOrigin = '' } = {}) {
+        async resolveRuntimeContext({ supabase, env = process.env, config = null, requestOrigin = '', site = '' } = {}) {
             const effectiveRequestOrigin = requestOrigin || env.APP_BASE_URL;
             const loaded = config
                 ? { paymentChannels: config }
                 : await loadStoredPaymentConfigs(supabase, {
+                    site,
                     origin: effectiveRequestOrigin,
                     afdianCheckoutUrl: env.PAYMENT_AFDIAN_URL
                 });
-            const secrets = await resolvePaymentProviderSecrets(supabase, 'nowpayments', env);
+            const secrets = await resolvePaymentProviderSecrets(supabase, 'nowpayments', env, { site });
             const integration = normalizeNowpaymentsConfig({
                 channelConfig: loaded.paymentChannels.providers.nowpayments,
                 secretValues: {
@@ -1048,15 +1052,16 @@ const providerRegistry = {
             refundOrder: true,
             autoCredit: true
         },
-        async resolveRuntimeContext({ supabase, env = process.env, config = null, requestOrigin = '' } = {}) {
+        async resolveRuntimeContext({ supabase, env = process.env, config = null, requestOrigin = '', site = '' } = {}) {
             const effectiveRequestOrigin = requestOrigin || env.APP_BASE_URL;
             const loaded = config
                 ? { paymentChannels: config }
                 : await loadStoredPaymentConfigs(supabase, {
+                    site,
                     origin: effectiveRequestOrigin,
                     afdianCheckoutUrl: env.PAYMENT_AFDIAN_URL
                 });
-            const secrets = await resolvePaymentProviderSecrets(supabase, 'hupijiao', env);
+            const secrets = await resolvePaymentProviderSecrets(supabase, 'hupijiao', env, { site });
             const integration = normalizeHupijiaoConfig({
                 channelConfig: loaded.paymentChannels.providers.hupijiao,
                 secretValues: {

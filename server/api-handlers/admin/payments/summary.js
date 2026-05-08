@@ -621,16 +621,19 @@ async function enrichRecentOrdersWithGatewayRefundHints(orders = [], supabase, e
         }
 
         const metadata = normalizeJsonObject(order?.provider_metadata);
+        const orderSite = String(order?.site || metadata.site || '').trim().toLowerCase();
+        const runtimeContextKey = `${meta.key}:${orderSite || 'cn'}`;
 
         try {
-            if (!runtimeContextPromises.has(meta.key)) {
-                runtimeContextPromises.set(meta.key, Promise.resolve(adapter.resolveRuntimeContext({
+            if (!runtimeContextPromises.has(runtimeContextKey)) {
+                runtimeContextPromises.set(runtimeContextKey, Promise.resolve(adapter.resolveRuntimeContext({
                     supabase,
-                    env
+                    env,
+                    site: orderSite
                 })));
             }
 
-            const runtimeContext = await runtimeContextPromises.get(meta.key);
+            const runtimeContext = await runtimeContextPromises.get(runtimeContextKey);
             const liveOrder = await adapter.queryOrder({
                 runtimeContext,
                 providerOrderNo: String(order?.provider_order_no || metadata.provider_order_no || '').trim(),

@@ -1,3 +1,7 @@
+const {
+    normalizeSiteValue
+} = require('./site');
+
 function normalizeText(value) {
     return String(value || '').trim();
 }
@@ -36,6 +40,7 @@ function isMissingNotificationColumnError(error) {
             || message.includes('metadata')
             || message.includes('priority')
             || message.includes('expires_at')
+            || message.includes('site')
             || message.includes('dedupe_key')
             || message.includes('source_module')
             || message.includes('source_event_id')
@@ -98,6 +103,7 @@ async function hasRecentMatchingNotification(supabase, {
     userId,
     title,
     content,
+    site = 'cn',
     scope = 'unspecified',
     category = 'general',
     dedupeKey = '',
@@ -108,6 +114,7 @@ async function hasRecentMatchingNotification(supabase, {
     const normalizedUserId = normalizeText(userId);
     const normalizedTitle = normalizeText(title);
     const normalizedContent = normalizeText(content);
+    const normalizedSite = normalizeSiteValue(site, { fallback: 'cn' });
     const normalizedScope = normalizeNotificationScope(scope);
     const normalizedCategory = normalizeNotificationCategory(category);
     const normalizedDedupeKey = normalizeText(dedupeKey);
@@ -122,7 +129,8 @@ async function hasRecentMatchingNotification(supabase, {
         let identityQuery = supabase
             .from('system_notifications')
             .select('id, dedupe_key, source_module, source_event_id')
-            .eq('user_id', normalizedUserId);
+            .eq('user_id', normalizedUserId)
+            .eq('site', normalizedSite);
 
         if (normalizedDedupeKey) {
             identityQuery = identityQuery.eq('dedupe_key', normalizedDedupeKey);
@@ -151,6 +159,7 @@ async function hasRecentMatchingNotification(supabase, {
         .from('system_notifications')
         .select('id, title, content, created_at, scope, category')
         .eq('user_id', normalizedUserId)
+        .eq('site', normalizedSite)
         .eq('title', normalizedTitle)
         .eq('scope', normalizedScope)
         .eq('category', normalizedCategory)
@@ -161,6 +170,7 @@ async function hasRecentMatchingNotification(supabase, {
             .from('system_notifications')
             .select('id, title, content, created_at')
             .eq('user_id', normalizedUserId)
+            .eq('site', normalizedSite)
             .eq('title', normalizedTitle)
             .gte('created_at', sinceIso);
     }
@@ -191,6 +201,7 @@ async function insertNotificationWithFallback(supabase, payload = {}) {
     delete legacyPayload.metadata;
     delete legacyPayload.priority;
     delete legacyPayload.expires_at;
+    delete legacyPayload.site;
     delete legacyPayload.dedupe_key;
     delete legacyPayload.source_module;
     delete legacyPayload.source_event_id;
@@ -205,6 +216,7 @@ async function notifyUsers(supabase, {
     title,
     content,
     type = 'info',
+    site = 'cn',
     scope = 'user_personal',
     category = 'general',
     actionUrl = '',
@@ -227,6 +239,7 @@ async function notifyUsers(supabase, {
 
     const normalizedTitle = normalizeText(title);
     const normalizedContent = normalizeText(content);
+    const normalizedSite = normalizeSiteValue(site, { fallback: 'cn' });
     if (!normalizedTitle || !normalizedContent) {
         return {
             recipients: 0,
@@ -254,6 +267,7 @@ async function notifyUsers(supabase, {
             userId,
             title: normalizedTitle,
             content: normalizedContent,
+            site: normalizedSite,
             scope: notificationScope,
             category: notificationCategory,
             dedupeKey,
@@ -268,6 +282,7 @@ async function notifyUsers(supabase, {
 
         const { error } = await insertNotificationWithFallback(supabase, {
             user_id: userId,
+            site: normalizedSite,
             title: normalizedTitle,
             content: normalizedContent,
             type: notificationType,
@@ -276,7 +291,14 @@ async function notifyUsers(supabase, {
             category: notificationCategory,
             action_url: normalizeText(actionUrl) || null,
             action_label: normalizeText(actionLabel) || null,
-            metadata: metadata && typeof metadata === 'object' && !Array.isArray(metadata) ? metadata : {},
+            metadata: metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+                ? {
+                    ...metadata,
+                    site: normalizeSiteValue(metadata.site || normalizedSite, { fallback: normalizedSite })
+                }
+                : {
+                    site: normalizedSite
+                },
             priority: Number(priority || 0) || 0,
             expires_at: normalizeText(expiresAt) || null,
             dedupe_key: normalizeText(dedupeKey) || null,

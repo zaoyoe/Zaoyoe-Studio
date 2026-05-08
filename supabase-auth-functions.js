@@ -3,12 +3,39 @@
  * 替换 leancloud-auth-functions.js
  */
 
+function getInviteCodeStorageSite() {
+    return window.SiteConfig?.site === 'intl' ? 'intl' : 'cn';
+}
+
+function getInviteCodeStorageKey(site = getInviteCodeStorageSite()) {
+    return `zaoyoe_invite_code_${site}_v1`;
+}
+
+function persistInviteCodeForCurrentSite(inviteCode = '') {
+    const normalizedInviteCode = String(inviteCode || '').trim();
+    if (!normalizedInviteCode) return;
+    try {
+        localStorage.setItem(getInviteCodeStorageKey(), normalizedInviteCode);
+        localStorage.removeItem('invite_code');
+    } catch (error) {
+        console.warn('Failed to persist invite code for current site:', error);
+    }
+}
+
+function getInviteCodeForCurrentSite() {
+    try {
+        return String(localStorage.getItem(getInviteCodeStorageKey()) || '').trim();
+    } catch (_) {
+        return '';
+    }
+}
+
 // Handle affiliate referrals
 document.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
     const ref = urlParams.get('ref');
     if (ref) {
-        localStorage.setItem('invite_code', ref);
+        persistInviteCodeForCurrentSite(ref);
     }
 });
 
@@ -734,7 +761,7 @@ async function handleRegister(event) {
             return;
         }
 
-        const inviteCode = localStorage.getItem('invite_code') || '';
+        const inviteCode = getInviteCodeForCurrentSite();
 
         // 注册用户
         const { data, error } = await window.supabaseClient.auth.signUp({
@@ -2315,7 +2342,7 @@ function updateResetButtonCountdown(button, originalText) {
 }
 
 // ==================== Google Login (Primary: Google ID Token flow, no OAuth callback dependency) ====================
-const GOOGLE_CLIENT_ID = '1017068787594-ep4bj8cdirkllqlpbmlfk436br0vbifp.apps.googleusercontent.com';
+const LEGACY_GOOGLE_CLIENT_ID = '1017068787594-ep4bj8cdirkllqlpbmlfk436br0vbifp.apps.googleusercontent.com';
 const DISABLE_OAUTH_REDIRECT_FALLBACK = true;
 const GOOGLE_POPUP_MESSAGE_TYPE = 'zaoyoe:google-auth-popup';
 const GOOGLE_POPUP_WINDOW_NAME = 'google_login';
@@ -2334,6 +2361,92 @@ let googlePopupWindowRef = null;
 let googlePopupMonitorTimer = null;
 let googlePopupAuthResultHandled = false;
 let googlePopupLastResultSignature = '';
+
+function resolveGoogleAuthSite() {
+    const configuredSite = String(window.SiteConfig?.site || '').trim().toLowerCase();
+    if (configuredSite === 'cn' || configuredSite === 'intl') {
+        return configuredSite;
+    }
+
+    try {
+        const siteParam = new URLSearchParams(window.location.search || '').get('site');
+        if (siteParam === 'cn' || siteParam === 'intl') {
+            return siteParam;
+        }
+    } catch (_) {
+        // ignore query parsing failures
+    }
+
+    const runtimeSite = String(
+        window.getZaoyoeSupabaseConfig?.()?.site
+        || window.__ZAOYOE_RUNTIME_SITE__
+        || ''
+    ).trim().toLowerCase();
+    if (runtimeSite === 'cn' || runtimeSite === 'intl') {
+        return runtimeSite;
+    }
+
+    const hostname = String(window.location.hostname || '').trim().toLowerCase();
+    if (hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz')) {
+        return 'intl';
+    }
+
+    return 'cn';
+}
+
+function resolveGoogleAuthConfig(siteOverride = '') {
+    const currentSite = String(siteOverride || resolveGoogleAuthSite()).trim().toLowerCase() === 'intl'
+        ? 'intl'
+        : 'cn';
+
+    if (typeof window.getZaoyoeGoogleAuthConfig === 'function') {
+        try {
+            const runtimeConfig = window.getZaoyoeGoogleAuthConfig(currentSite);
+            const runtimeClientId = String(runtimeConfig?.clientId || '').trim();
+            if (runtimeClientId) {
+                return {
+                    site: currentSite,
+                    clientId: runtimeClientId,
+                    source: String(runtimeConfig?.source || '').trim() || 'runtime'
+                };
+            }
+        } catch (error) {
+            console.warn('Failed to resolve Google auth config from runtime helper:', error);
+        }
+    }
+
+    try {
+        const supabaseRuntimeConfig = typeof window.requireZaoyoeSupabaseConfig === 'function'
+            ? window.requireZaoyoeSupabaseConfig()
+            : null;
+        const googleConfig = supabaseRuntimeConfig?.auth?.google || {};
+        const runtimeClientId = String(
+            googleConfig?.clientIds?.[currentSite]
+            || googleConfig?.clientId
+            || ''
+        ).trim();
+        if (runtimeClientId) {
+            return {
+                site: currentSite,
+                clientId: runtimeClientId,
+                source: String(googleConfig?.source || '').trim() || 'runtime'
+            };
+        }
+    } catch (error) {
+        console.warn('Failed to resolve Google auth config from runtime payload:', error);
+    }
+
+    return {
+        site: currentSite,
+        clientId: LEGACY_GOOGLE_CLIENT_ID,
+        source: 'legacy'
+    };
+}
+
+function resolveGoogleClientId(siteOverride = '') {
+    const resolved = resolveGoogleAuthConfig(siteOverride);
+    return String(resolved.clientId || '').trim();
+}
 
 function shouldUseOAuthRedirectFallback() {
     if (DISABLE_OAUTH_REDIRECT_FALLBACK) return false;
@@ -2425,8 +2538,12 @@ function createGoogleRedirectState() {
 }
 
 function buildGoogleImplicitAuthUrl(state) {
+    const clientId = resolveGoogleClientId();
+    if (!clientId) {
+        throw new Error('当前站点未配置 Google Client ID');
+    }
     const authUrl = new URL('https://accounts.google.com/o/oauth2/v2/auth');
-    authUrl.searchParams.set('client_id', GOOGLE_CLIENT_ID);
+    authUrl.searchParams.set('client_id', clientId);
     authUrl.searchParams.set('redirect_uri', window.location.origin);
     authUrl.searchParams.set('response_type', 'id_token');
     authUrl.searchParams.set('scope', 'openid email profile');
@@ -2769,6 +2886,10 @@ async function loadGoogleIdentityServices() {
 
 async function initGoogleIdTokenFlow() {
     if (googleIdentityInitialized && window.google?.accounts?.id) return;
+    const clientId = resolveGoogleClientId();
+    if (!clientId) {
+        throw new Error('当前站点未配置 Google Client ID');
+    }
 
     // We used to wipe storage here to clear stuck PKCE nonces, but that is no longer needed
     // since we use a custom popup flow, and it was violently destroying the user's session!
@@ -2776,7 +2897,7 @@ async function initGoogleIdTokenFlow() {
     // Initialize the Google Accounts script manually in case FedCM fallback is ever needed
     // or to keep the Google object initialized properly.
     google.accounts.id.initialize({
-        client_id: GOOGLE_CLIENT_ID,
+        client_id: clientId,
         callback: (response) => {
             if (typeof window.handleGoogleCredentialResponse === 'function') {
                 window.handleGoogleCredentialResponse(response);

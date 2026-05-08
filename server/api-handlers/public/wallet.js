@@ -1018,14 +1018,6 @@ function createWalletHandlers({
                     return result;
                 }, {});
                 const balance = siteBalances[currentSite] || {};
-                const otherSiteBalances = Object.entries(siteBalances)
-                    .filter(([site]) => site !== currentSite)
-                    .map(([site, siteBalance]) => ({
-                        site,
-                        ...siteBalance
-                    }))
-                    .filter((row) => normalizePointValue(row.total_balance, 0) > 0);
-
                 return sendJson(res, 200, {
                     success: true,
                     site: currentSite,
@@ -1036,8 +1028,6 @@ function createWalletHandlers({
                     },
                     balance_scope: 'site',
                     current_site_has_account: Object.prototype.hasOwnProperty.call(siteBalances, currentSite),
-                    site_balances: siteBalances,
-                    other_site_balances: otherSiteBalances,
                     recent_history: recentHistory,
                     history_limit: historyLimit
                 });

@@ -166,7 +166,9 @@ test('public runtime blocks Chinese business-data fallbacks in English language 
 
     assert.match(shopSource, /resolveShopDataText: function \(value, fallback = ''\)/);
     assert.match(shopSource, /this\.isEnglishShopLocale\(\) && this\.containsCjkText\(normalized\)/);
-    assert.match(shopSource, /'虚拟卡': 'Virtual Card'/);
+    assert.match(shopSource, /getProductCategoryLabelMap: function \(\) \{/);
+    assert.match(shopSource, /virtualCard:\s*\{[\s\S]*zh:\s*'虚拟卡'[\s\S]*en:\s*'Virtual Card'/);
+    assert.match(shopSource, /const translationKey = this\.getProductCategoryTranslationKey\(category\)/);
     assert.doesNotMatch(shopSource, /containsCjkText\(cat\?\.name\)/);
     assert.match(shopSource, /const displayName = this\.getLocalizedProductName\(product\)/);
 });

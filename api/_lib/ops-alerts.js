@@ -5026,6 +5026,7 @@ function buildPaymentConfigChangedAlertText(job = {}) {
         `[支付配置告警][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '支付配置变更'}`
     ];
 
+    if (normalizeText(payload.site)) lines.push(`站点：${normalizeText(payload.site).toUpperCase()}`);
     if (normalizeText(payload.admin_email)) lines.push(`操作人：${normalizeText(payload.admin_email)}`);
     if (normalizeText(payload.action_label)) lines.push(`变更类型：${normalizeText(payload.action_label)}`);
     if (normalizeText(payload.active_provider)) lines.push(`当前生效通道：${normalizeText(payload.active_provider_label) || getProviderLabel(payload.active_provider)}`);
@@ -5068,6 +5069,7 @@ function buildPaymentConfigIncidentAlertText(job = {}) {
         `[支付配置事故][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '支付配置异常升级'}`
     ];
 
+    if (normalizeText(payload.site)) lines.push(`站点：${normalizeText(payload.site).toUpperCase()}`);
     if (Number.isFinite(Number(payload.lookback_minutes))) {
         lines.push(`观察窗口：最近 ${Math.max(1, Math.round(Number(payload.lookback_minutes || 0)))} 分钟`);
     }
@@ -5114,6 +5116,7 @@ function buildPaymentConfigIncidentRecoveredAlertText(job = {}) {
         `[支付配置事故恢复][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '支付配置事故已恢复'}`
     ];
 
+    if (normalizeText(payload.site)) lines.push(`站点：${normalizeText(payload.site).toUpperCase()}`);
     if (normalizeText(payload.recovery_summary)) lines.push(`恢复结论：${normalizeText(payload.recovery_summary)}`);
     if (normalizeText(payload.incident_started_at)) lines.push(`上次升级：${formatTimestamp(payload.incident_started_at)}`);
     if (normalizeText(payload.incident_recovered_at)) lines.push(`恢复时间：${formatTimestamp(payload.incident_recovered_at)}`);
@@ -5152,6 +5155,7 @@ function buildPaymentConfigRecoveredAlertText(job = {}) {
         `[支付配置恢复][${normalizeSeverity(job.severity, 'warning').toUpperCase()}] ${normalizeText(job.title) || '支付配置风险已恢复'}`
     ];
 
+    if (normalizeText(payload.site)) lines.push(`站点：${normalizeText(payload.site).toUpperCase()}`);
     if (normalizeText(payload.recovery_summary)) lines.push(`恢复结论：${normalizeText(payload.recovery_summary)}`);
     if (normalizeText(payload.previous_admin_email)) lines.push(`上次操作人：${normalizeText(payload.previous_admin_email)}`);
     if (normalizeText(payload.recovery_admin_email)) lines.push(`修复人：${normalizeText(payload.recovery_admin_email)}`);
@@ -5163,9 +5167,11 @@ function buildPaymentConfigRecoveredAlertText(job = {}) {
     if (currentEnabledProviders.length) lines.push(`当前启用通道：${currentEnabledProviders.join('、')}`);
     if (normalizeText(payload.restored_secret_label)) lines.push(`恢复密钥：${normalizeText(payload.restored_secret_label)}`);
     if (normalizeText(payload.restored_secret_source)) {
-        const sourceLabel = normalizeText(payload.restored_secret_source) === 'stored'
+        const normalizedSecretSource = normalizeText(payload.restored_secret_source);
+        const sourceLabel = normalizedSecretSource === 'stored'
+            || normalizedSecretSource === 'stored_site'
             ? '后台密钥库'
-            : (normalizeText(payload.restored_secret_source) === 'environment' ? '环境变量' : normalizeText(payload.restored_secret_source));
+            : (normalizedSecretSource === 'environment' ? '环境变量' : normalizedSecretSource);
         lines.push(`当前密钥来源：${sourceLabel}`);
     }
     if (normalizeText(payload.restored_secret_updated_at)) lines.push(`密钥更新时间：${formatTimestamp(payload.restored_secret_updated_at)}`);

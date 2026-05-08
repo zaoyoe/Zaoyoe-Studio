@@ -60,9 +60,9 @@ function loadPreviewEnv(envFiles, baseEnv = process.env) {
     };
 }
 
-function resolveLocalPreviewRuntimeScript(envFiles, baseEnv = process.env) {
+function resolveLocalPreviewRuntimeScript(envFiles, baseEnv = process.env, options = {}) {
     try {
-        return buildSupabaseRuntimeScript(loadPreviewEnv(envFiles, baseEnv));
+        return buildSupabaseRuntimeScript(loadPreviewEnv(envFiles, baseEnv), options);
     } catch (error) {
         const message = JSON.stringify(error.message || 'Failed to resolve local preview runtime config');
         return [
@@ -420,7 +420,7 @@ function createLocalPreviewApp(options = {}) {
     });
 
     app.get('/api/runtime/supabase-config', (req, res) => {
-        const script = resolveLocalPreviewRuntimeScript(envFiles, baseEnv);
+        const script = resolveLocalPreviewRuntimeScript(envFiles, baseEnv, { req });
         res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
         setLocalPreviewNoStoreHeaders(res);
         res.status(200).send(script);

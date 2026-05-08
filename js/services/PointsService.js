@@ -238,14 +238,7 @@
                 total_balance: normalizePointValue(data.total_balance),
                 site: overview?.site || window.SiteConfig?.site || 'cn',
                 current_site_has_account: overview?.current_site_has_account === true,
-                other_site_balances: Array.isArray(overview?.other_site_balances)
-                    ? overview.other_site_balances.map((item) => ({
-                        site: String(item?.site || '').trim().toLowerCase(),
-                        paid_balance: normalizePointValue(item?.paid_balance),
-                        bonus_balance: normalizePointValue(item?.bonus_balance),
-                        total_balance: normalizePointValue(item?.total_balance)
-                    }))
-                    : [],
+                other_site_balances: [],
                 _load_failed: false,
                 error_message: ''
             };

@@ -4257,22 +4257,9 @@
             };
         },
 
-        formatWalletSiteLabel(site = '') {
-            const normalized = String(site || '').trim().toLowerCase();
-            if (normalized === 'intl') return 'INTL';
-            return 'CN';
-        },
-
         renderBalanceContext(balance = {}) {
             const contextEl = document.getElementById('wallet-balance-context');
             if (!contextEl) return;
-
-            const currentSite = String(balance?.site || window.SiteConfig?.site || 'cn').trim().toLowerCase() || 'cn';
-            const currentSiteLabel = this.formatWalletSiteLabel(currentSite);
-            const totalBalance = this.normalizePointValue(balance?.total_balance, 0);
-            const otherSiteBalances = Array.isArray(balance?.other_site_balances)
-                ? balance.other_site_balances.filter((item) => this.normalizePointValue(item?.total_balance, 0) > 0)
-                : [];
 
             let message = '';
             let tone = 'info';
@@ -4280,18 +4267,6 @@
             if (balance?._load_failed) {
                 message = balance?.error_message || '钱包余额加载失败，请刷新重试。';
                 tone = 'error';
-            } else if (otherSiteBalances.length > 0 && totalBalance <= 0) {
-                const otherSummary = otherSiteBalances
-                    .map((item) => `${this.formatWalletSiteLabel(item.site)} ${this.formatPoints(item.total_balance)}`)
-                    .join('，');
-                message = `当前显示 ${currentSiteLabel} 站点余额为 0；其它站点仍有余额：${otherSummary}。后台如果看的是其它站点或全站汇总，会和这里不同。`;
-                tone = 'warning';
-            } else if (otherSiteBalances.length > 0) {
-                const otherSummary = otherSiteBalances
-                    .map((item) => `${this.formatWalletSiteLabel(item.site)} ${this.formatPoints(item.total_balance)}`)
-                    .join('，');
-                message = `当前显示 ${currentSiteLabel} 站点余额；其它站点余额：${otherSummary}。`;
-                tone = 'info';
             }
 
             if (!message) {
@@ -6045,6 +6020,35 @@
             return this.checkinConfig;
         },
 
+        buildPublicSiteSystemConfigUrl(keys = []) {
+            const url = new URL('/api/public', window.location.origin);
+            url.searchParams.set('scope', 'config');
+            url.searchParams.set('route', 'site-system-config');
+            url.searchParams.set('site', this.getWalletSiteScope());
+
+            (Array.isArray(keys) ? keys : [keys])
+                .map((entry) => String(entry || '').trim())
+                .filter(Boolean)
+                .forEach((key) => {
+                    url.searchParams.append('key', key);
+                });
+
+            return url.toString();
+        },
+
+        async loadPublicSiteSystemConfigs(keys = []) {
+            const response = await fetch(this.buildPublicSiteSystemConfigUrl(keys), {
+                method: 'GET'
+            });
+            const payload = await response.json().catch(() => ({}));
+
+            if (!response.ok || payload?.success === false) {
+                throw new Error(payload?.message || '加载站点配置失败');
+            }
+
+            return payload?.configs && typeof payload.configs === 'object' ? payload.configs : {};
+        },
+
         getDefaultRechargeOptionsConfig() {
             return {
                 custom_amount_enabled: false,
@@ -6085,13 +6089,8 @@
             }
 
             try {
-                const { data, error } = await window.supabaseClient.rpc('get_system_config', {
-                    p_key: 'recharge_options'
-                });
-
-                if (error) throw error;
-
-                this.rechargeOptionsConfig = this.normalizeRechargeOptionsConfig(data);
+                const configs = await this.loadPublicSiteSystemConfigs(['recharge_options']);
+                this.rechargeOptionsConfig = this.normalizeRechargeOptionsConfig(configs.recharge_options);
             } catch (configError) {
                 console.warn('[WalletModal] Failed to load recharge options config:', configError);
                 this.rechargeOptionsConfig = this.getDefaultRechargeOptionsConfig();
@@ -6373,13 +6372,8 @@
             }
 
             try {
-                const { data, error } = await window.supabaseClient.rpc('get_system_config', {
-                    p_key: 'payment_channels'
-                });
-
-                if (error) throw error;
-
-                this.paymentChannelsConfig = this.normalizePaymentChannelsConfig(data);
+                const configs = await this.loadPublicSiteSystemConfigs(['payment_channels']);
+                this.paymentChannelsConfig = this.normalizePaymentChannelsConfig(configs.payment_channels);
             } catch (configError) {
                 console.warn('[WalletModal] Failed to load payment channels config:', configError);
                 this.paymentChannelsConfig = this.normalizePaymentChannelsConfig(null);
@@ -6430,7 +6424,7 @@
             }
 
             try {
-                const response = await fetch('/api/payments/config', {
+                const response = await fetch(`/api/payments/config?site=${encodeURIComponent(this.getWalletSiteScope())}`, {
                     method: 'GET'
                 });
                 const payload = await response.json().catch(() => ({}));
@@ -6459,7 +6453,16 @@
 
         async loadSystemConfigValue(configKey) {
             const normalizedKey = String(configKey || '').trim();
-            if (!normalizedKey || !window.supabaseClient?.rpc) {
+            if (!normalizedKey) {
+                return null;
+            }
+
+            if (['payment_channels', 'recharge_options', 'affiliate_program', 'affiliate_poster'].includes(normalizedKey)) {
+                const configs = await this.loadPublicSiteSystemConfigs([normalizedKey]);
+                return configs[normalizedKey] || null;
+            }
+
+            if (!window.supabaseClient?.rpc) {
                 return null;
             }
 
@@ -7711,30 +7714,23 @@
                 const user = session?.user;
                 if (!user) return;
 
-                const [statsResult, programResult, posterResult] = await Promise.all([
+                const [statsResult, affiliateConfigs] = await Promise.all([
                     window.supabaseClient.rpc('fn_get_affiliate_stats', {
-                        p_user_id: user.id
+                        p_user_id: user.id,
+                        p_site: window.SiteConfig?.site || 'cn'
                     }),
-                    window.supabaseClient.rpc('get_system_config', {
-                        p_key: 'affiliate_program'
-                    }),
-                    window.supabaseClient.rpc('get_system_config', {
-                        p_key: 'affiliate_poster'
+                    this.loadPublicSiteSystemConfigs(['affiliate_program', 'affiliate_poster']).catch((configError) => {
+                        console.warn('[WalletModal] Affiliate site config load warning:', configError);
+                        return {};
                     })
                 ]);
 
                 if (statsResult.error) throw statsResult.error;
-                if (programResult.error) {
-                    console.warn('[WalletModal] Affiliate program config load warning:', programResult.error);
-                }
-                if (posterResult.error) {
-                    console.warn('[WalletModal] Poster config load warning:', posterResult.error);
-                }
 
                 if (statsResult.data) {
                     const rawStats = (statsResult.data && typeof statsResult.data === 'object' && !Array.isArray(statsResult.data)) ? statsResult.data : {};
-                    const programConfig = (programResult.data && typeof programResult.data === 'object' && !Array.isArray(programResult.data))
-                        ? programResult.data
+                    const programConfig = (affiliateConfigs?.affiliate_program && typeof affiliateConfigs.affiliate_program === 'object' && !Array.isArray(affiliateConfigs.affiliate_program))
+                        ? affiliateConfigs.affiliate_program
                         : {};
                     const stats = {
                         ...rawStats,
@@ -7761,7 +7757,7 @@
                     const pendingRewardCount = Number(stats.pending_reward_count);
                     const totalInviteeSpend = Number(stats.total_invitee_spend);
                     const inviteCode = typeof stats.invite_code === 'string' ? stats.invite_code.trim() : '';
-                    const posterConfig = this.normalizeAffiliatePosterConfig(posterResult.data);
+                    const posterConfig = this.normalizeAffiliatePosterConfig(affiliateConfigs?.affiliate_poster);
 
                     if (commissionEl) {
                         commissionEl.textContent = Number.isFinite(totalRewards)
@@ -8909,17 +8905,79 @@
             }
         },
 
-        getPendingCustomRechargeQuoteStorageKey() {
+        getWalletSiteScope() {
+            return window.SiteConfig?.site === 'intl' ? 'intl' : 'cn';
+        },
+
+        getPendingCustomRechargeQuoteStorageKey(site = this.getWalletSiteScope()) {
+            return `wallet_pending_custom_recharge_quotes_${site}_v1`;
+        },
+
+        getLegacyPendingCustomRechargeQuoteStorageKey() {
             return 'wallet_pending_custom_recharge_quotes_v1';
         },
 
-        getPendingPaymentClaimStorageKey() {
+        getPendingPaymentClaimStorageKey(site = this.getWalletSiteScope()) {
+            return `wallet_pending_payment_claims_${site}_v1`;
+        },
+
+        getLegacyPendingPaymentClaimStorageKey() {
             return 'wallet_pending_payment_claims_v1';
+        },
+
+        migrateLegacyPendingPaymentClaims(site = this.getWalletSiteScope()) {
+            try {
+                const scopedStorageKey = this.getPendingPaymentClaimStorageKey(site);
+                const scopedRaw = window.localStorage?.getItem(scopedStorageKey);
+                if (scopedRaw) {
+                    return scopedRaw;
+                }
+                const legacyRaw = window.localStorage?.getItem(this.getLegacyPendingPaymentClaimStorageKey());
+                if (!legacyRaw) {
+                    return '[]';
+                }
+                const parsed = JSON.parse(legacyRaw || '[]');
+                const filtered = (Array.isArray(parsed) ? parsed : []).filter((item) => {
+                    const itemSite = String(item?.site || 'cn').trim().toLowerCase() || 'cn';
+                    return itemSite === site;
+                });
+                const serialized = JSON.stringify(filtered);
+                window.localStorage?.setItem(scopedStorageKey, serialized);
+                return serialized;
+            } catch (_) {
+                return '[]';
+            }
+        },
+
+        migrateLegacyPendingCustomRechargeQuotes(site = this.getWalletSiteScope()) {
+            try {
+                const scopedStorageKey = this.getPendingCustomRechargeQuoteStorageKey(site);
+                const scopedRaw = window.localStorage?.getItem(scopedStorageKey);
+                if (scopedRaw) {
+                    return scopedRaw;
+                }
+                const legacyRaw = window.localStorage?.getItem(this.getLegacyPendingCustomRechargeQuoteStorageKey());
+                if (!legacyRaw) {
+                    return '[]';
+                }
+                const parsed = JSON.parse(legacyRaw || '[]');
+                const filtered = (Array.isArray(parsed) ? parsed : []).filter((item) => {
+                    const itemSite = String(item?.site || 'cn').trim().toLowerCase() || 'cn';
+                    return itemSite === site;
+                });
+                const serialized = JSON.stringify(filtered);
+                window.localStorage?.setItem(scopedStorageKey, serialized);
+                return serialized;
+            } catch (_) {
+                return '[]';
+            }
         },
 
         loadPendingPaymentClaims() {
             try {
-                const raw = window.localStorage?.getItem(this.getPendingPaymentClaimStorageKey());
+                const currentSite = this.getWalletSiteScope();
+                const storageKey = this.getPendingPaymentClaimStorageKey(currentSite);
+                const raw = window.localStorage?.getItem(storageKey) || this.migrateLegacyPendingPaymentClaims(currentSite);
                 const parsed = JSON.parse(raw || '[]');
                 const now = Date.now();
                 const filtered = (Array.isArray(parsed) ? parsed : []).filter((item) => {
@@ -8931,7 +8989,7 @@
                 });
 
                 if (filtered.length !== (Array.isArray(parsed) ? parsed.length : 0)) {
-                    window.localStorage?.setItem(this.getPendingPaymentClaimStorageKey(), JSON.stringify(filtered));
+                    window.localStorage?.setItem(storageKey, JSON.stringify(filtered));
                 }
 
                 return filtered;
@@ -8964,7 +9022,7 @@
                 intent_id: intentId,
                 token,
                 provider: String(claim?.provider || paymentResult?.provider || 'afdian').trim().toLowerCase() || 'afdian',
-                site: String(claim?.site || window.SiteConfig?.site || 'cn').trim().toLowerCase() || 'cn',
+                site: String(claim?.site || this.getWalletSiteScope()).trim().toLowerCase() || 'cn',
                 checkout_session_id: String(claim?.checkout_session_id || paymentResult?.checkout_session_id || '').trim() || null,
                 package_id: String(claim?.package_id || '').trim() || null,
                 package_name: String(claim?.package_name || paymentResult?.package_name || '').trim() || null,
@@ -8993,7 +9051,9 @@
 
         loadPendingCustomRechargeQuotes() {
             try {
-                const raw = window.localStorage?.getItem(this.getPendingCustomRechargeQuoteStorageKey());
+                const currentSite = this.getWalletSiteScope();
+                const storageKey = this.getPendingCustomRechargeQuoteStorageKey(currentSite);
+                const raw = window.localStorage?.getItem(storageKey) || this.migrateLegacyPendingCustomRechargeQuotes(currentSite);
                 const parsed = JSON.parse(raw || '[]');
                 const now = Date.now();
                 const filtered = (Array.isArray(parsed) ? parsed : []).filter((item) => {
@@ -9004,7 +9064,7 @@
                 });
 
                 if (filtered.length !== (Array.isArray(parsed) ? parsed.length : 0)) {
-                    window.localStorage?.setItem(this.getPendingCustomRechargeQuoteStorageKey(), JSON.stringify(filtered));
+                    window.localStorage?.setItem(storageKey, JSON.stringify(filtered));
                 }
 
                 return filtered;
@@ -9032,7 +9092,7 @@
                 return;
             }
 
-            const site = window.SiteConfig?.site || 'cn';
+            const site = this.getWalletSiteScope();
             const existing = this.loadPendingCustomRechargeQuotes().filter((item) => item.quote_id !== quoteId);
             existing.unshift({
                 quote_id: quoteId,
@@ -10043,7 +10103,9 @@
 
             try {
                 // Use RPC function to bypass RLS issues
-                const { data: deletedCount, error } = await supabase.rpc('fn_clear_user_history');
+                const { data: deletedCount, error } = await supabase.rpc('fn_clear_user_history', {
+                    p_site: window.SiteConfig?.site || 'cn'
+                });
 
                 console.log('[WalletModal] Delete result:', { deletedCount, error });
 
@@ -11360,7 +11422,8 @@
 
                 const { data, error } = await window.supabaseClient.rpc('fn_get_affiliate_reward_detail', {
                     p_user_id: user.id,
-                    p_ledger_id: orderId
+                    p_ledger_id: orderId,
+                    p_site: window.SiteConfig?.site || 'cn'
                 });
 
                 if (error) throw error;

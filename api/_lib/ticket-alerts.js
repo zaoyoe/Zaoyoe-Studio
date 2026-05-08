@@ -32,6 +32,7 @@ function buildTicketCreatedAlert(ticket = {}) {
     const userId = normalizeText(ticket.user_id, 120);
     const userEmail = normalizeText(ticket.user_email, 255);
     const issueType = normalizeText(ticket.issue_type, 60).toUpperCase() || 'OTHER';
+    const site = normalizeText(ticket.site, 20).toLowerCase() || 'cn';
     const status = normalizeTicketStatus(ticket.status);
     const description = normalizeText(ticket.reason || ticket.description, 1500);
     const createdAt = normalizeText(ticket.created_at, 80);
@@ -70,6 +71,7 @@ function buildTicketCreatedAlert(ticket = {}) {
             order_id: orderId || null,
             user_id: userId || null,
             user_email: userEmail || null,
+            site,
             issue_type: issueType,
             ticket_status: status,
             reason: description || null,

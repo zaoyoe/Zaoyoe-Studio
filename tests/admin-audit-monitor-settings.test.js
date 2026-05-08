@@ -142,6 +142,17 @@ function createAdminModule(state) {
                 user: state.user
             };
         },
+        normalizeAdminSite(value, options = {}) {
+            const rawValue = Array.isArray(value) ? value[0] : value;
+            const normalized = String(rawValue || '').trim().toLowerCase();
+            const fallback = Object.prototype.hasOwnProperty.call(options, 'defaultValue')
+                ? String(options.defaultValue || '').trim().toLowerCase()
+                : '';
+            if (!normalized) return fallback;
+            if (normalized === 'global') return 'all';
+            if (['all', 'cn', 'intl'].includes(normalized)) return normalized;
+            return fallback;
+        },
         sendJson(res, status, payload) {
             res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
             res.end(JSON.stringify(payload));
@@ -348,6 +359,132 @@ test('admin audit monitor handler returns recent access rows, anomaly signals, a
         assert.equal(payload.alert_items[0].target_id, 'admin-user-1');
         assert.equal(payload.alert_items[1].category_key, 'payments');
         assert.equal(payload.alert_items[1].case_status, 'claimed');
+        assert.equal(payload.alert_items[1].case_recent_events[0].action, 'add_note');
+    });
+});
+
+test('admin audit monitor handler filters payment config rows and payment workspace alerts by site context', async () => {
+    await withHandler({
+        auditLogs: [
+            buildAuditRow('admin.payment_channels.upsert', {
+                id: 'config-cn',
+                created_at: minutesAgo(9),
+                admin_email: 'cn@example.com',
+                details: {
+                    site: 'cn',
+                    active_provider: 'mock',
+                    updated_providers: ['mock']
+                }
+            }),
+            buildAuditRow('admin.payment_channels.secret.delete', {
+                id: 'config-intl',
+                created_at: minutesAgo(4),
+                admin_email: 'intl@example.com',
+                details: {
+                    site: 'intl',
+                    secret_name: 'hupijiao_secret_key'
+                }
+            })
+        ],
+        opsAlertJobs: [
+            buildAuditAlertJob('security_admin_login_anomaly', {
+                id: 'audit-security-global',
+                severity: 'critical',
+                title: '管理员异常登录（global@example.com）',
+                content: '管理员异常登录\n登录 IP：198.51.100.40',
+                payload: {
+                    target_id: 'admin-user-global',
+                    admin_id: 'admin-user-global',
+                    admin_email: 'global@example.com',
+                    client_ip: '198.51.100.40',
+                    detected_reasons: ['最近窗口内出现 2 个登录 IP']
+                },
+                created_at: minutesAgo(2)
+            }),
+            buildAuditAlertJob('payment_config_incident_recovered', {
+                id: 'audit-payment-cn',
+                severity: 'warning',
+                title: '支付配置事故已恢复（CN）',
+                content: '支付配置事故恢复\n站点：CN',
+                payload: {
+                    site: 'cn',
+                    target_id: 'payment_config_incident:cn',
+                    admin_email: 'cn@example.com',
+                    action_label: '支付通道配置更新'
+                },
+                created_at: minutesAgo(1.5)
+            }),
+            buildAuditAlertJob('payment_config_incident_recovered', {
+                id: 'audit-payment-intl',
+                severity: 'warning',
+                title: '支付配置事故已恢复（INTL）',
+                content: '支付配置事故恢复\n站点：INTL',
+                payload: {
+                    site: 'intl',
+                    target_id: 'payment_config_incident:intl',
+                    admin_email: 'intl@example.com',
+                    action_label: '支付通道配置更新'
+                },
+                created_at: minutesAgo(1)
+            })
+        ],
+        opsAlertCases: [
+            {
+                category_key: 'payments',
+                target_id: 'payment_config_incident:intl',
+                alert_type: 'payment_config_incident',
+                status: 'claimed',
+                owner_admin_id: 'admin-user-1',
+                owner_label: 'admin@example.com',
+                note: 'INTL 继续观察',
+                resolution: null,
+                metadata: {},
+                last_action: 'noted',
+                last_action_at: minutesAgo(0.8),
+                updated_at: minutesAgo(0.8)
+            }
+        ],
+        opsAlertCaseEvents: [
+            {
+                id: 'audit-event-intl-1',
+                category_key: 'payments',
+                target_id: 'payment_config_incident:intl',
+                alert_type: 'payment_config_incident',
+                action: 'add_note',
+                status: 'claimed',
+                owner_admin_id: 'admin-user-1',
+                owner_label: 'admin@example.com',
+                actor_admin_id: 'admin-user-1',
+                actor_label: 'admin@example.com',
+                note: 'INTL 继续观察',
+                resolution: null,
+                metadata: {},
+                created_at: minutesAgo(0.8)
+            }
+        ]
+    }, async (handler) => {
+        const req = {
+            method: 'GET',
+            headers: {},
+            url: '/api/admin/settings/admin-audit-monitor?site=intl'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.site_context, 'intl');
+        assert.equal(payload.config_summary.config_change_count, 1);
+        assert.equal(payload.payment_config_events.length, 1);
+        assert.equal(payload.payment_config_events[0].id, 'config-intl');
+        assert.equal(payload.payment_config_events[0].site, 'intl');
+        assert.equal(payload.alert_summary.visible_count, 2);
+        assert.equal(payload.alert_items[0].category_key, 'security');
+        assert.equal(payload.alert_items[1].category_key, 'payments');
+        assert.equal(payload.alert_items[1].target_id, 'payment_config_incident:intl');
+        assert.equal(payload.alert_items[1].site, 'intl');
         assert.equal(payload.alert_items[1].case_recent_events[0].action, 'add_note');
     });
 });

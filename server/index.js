@@ -77,6 +77,9 @@ const {
     runPaymentConfigChangedSweep
 } = require('../api/_lib/payment-config-change-alerts');
 const {
+    SUPPORTED_SITES
+} = require('../api/_lib/site');
+const {
     normalizePaymentGatewayMonitorConfig,
     runPaymentGatewayDegradationSweep
 } = require('../api/_lib/payment-gateway-alerts');
@@ -3517,22 +3520,25 @@ async function sweepPaymentConfigChangeHealth() {
     paymentConfigChangeSweepRunning = true;
 
     try {
-        const result = await runPaymentConfigChangedSweep(supabase, {
-            env: process.env
-        });
+        for (const site of SUPPORTED_SITES) {
+            const result = await runPaymentConfigChangedSweep(supabase, {
+                env: process.env,
+                site
+            });
 
-        if (
-            Number(result?.change_count || 0) > 0
-            || Number(result?.queued || 0) > 0
-            || Number(result?.incident_count || 0) > 0
-            || Number(result?.incident_queued || 0) > 0
-            || Number(result?.incident_recovered_count || 0) > 0
-            || Number(result?.incident_recovered_queued || 0) > 0
-            || Number(result?.recovery_count || 0) > 0
-            || Number(result?.recovered_queued || 0) > 0
-            || Number(result?.admin_notifications_created || 0) > 0
-        ) {
-            console.log('[PaymentConfigChangeMonitor] Sweep complete:', JSON.stringify(result));
+            if (
+                Number(result?.change_count || 0) > 0
+                || Number(result?.queued || 0) > 0
+                || Number(result?.incident_count || 0) > 0
+                || Number(result?.incident_queued || 0) > 0
+                || Number(result?.incident_recovered_count || 0) > 0
+                || Number(result?.incident_recovered_queued || 0) > 0
+                || Number(result?.recovery_count || 0) > 0
+                || Number(result?.recovered_queued || 0) > 0
+                || Number(result?.admin_notifications_created || 0) > 0
+            ) {
+                console.log(`[PaymentConfigChangeMonitor][${String(site).toUpperCase()}] Sweep complete:`, JSON.stringify(result));
+            }
         }
     } catch (error) {
         console.error('[PaymentConfigChangeMonitor] Sweep failed:', error);
@@ -4915,9 +4921,12 @@ app.post('/api/payments/hupijiao/webhook', async (req, res) => {
             return res.status(400).end('missing trade_order_id');
         }
 
+        const attachData = parseHupijiaoAttach(payload.attach);
+        const currentSite = getCurrentSite(req, attachData.site);
         const runtimeContext = await hupijiaoProvider.resolveRuntimeContext({
             supabase,
-            env: process.env
+            env: process.env,
+            site: currentSite
         });
         const signatureCheck = hupijiaoProvider.verifyWebhook({
             payload,
@@ -4934,8 +4943,6 @@ app.post('/api/payments/hupijiao/webhook', async (req, res) => {
 
         const signatureValid = signatureCheck.valid === true;
         const paymentState = normalizeHupijiaoPaymentStatus(statusRaw);
-        const attachData = parseHupijiaoAttach(payload.attach);
-        const currentSite = getCurrentSite(req, attachData.site);
         const amount = roundPaymentCurrencyAmount(payload.total_fee || 0);
         let paymentOrder = await loadPaymentOrderSnapshotByProviderOrderNo('hupijiao', orderNo);
         if (!paymentOrder && signatureValid) {
@@ -5228,9 +5235,22 @@ app.post('/api/afdian/webhook', async (req, res) => {
             return res.json({ ec: 200, em: '' });
         }
 
+        const amount = roundCurrencyAmount(order.total_amount || 0);
+        const resolvedPackage = await resolveAfdianPackage({
+            planId: order.plan_id,
+            amount
+        });
+        const amountValid = !!resolvedPackage && amountsMatch(resolvedPackage.expectedAmount, amount);
+        const { currentSite, pendingPaymentOrder } = await resolveAfdianWebhookContext({
+            orderNo,
+            resolvedPackage,
+            amount
+        });
+
         const afdianRuntime = await afdianProvider.resolveRuntimeContext({
             supabase,
-            env: process.env
+            env: process.env,
+            site: currentSite || getCurrentSite(req)
         });
         const afdianToken = afdianRuntime.secretValues?.afdian_token || process.env.AFDIAN_TOKEN;
         if (!afdianToken) {
@@ -5256,22 +5276,11 @@ app.post('/api/afdian/webhook', async (req, res) => {
             token: afdianToken
         });
         const signatureValid = signatureCheck.valid;
-        const amount = roundCurrencyAmount(order.total_amount || 0);
-        const resolvedPackage = await resolveAfdianPackage({
-            planId: order.plan_id,
-            amount
-        });
-        const amountValid = !!resolvedPackage && amountsMatch(resolvedPackage.expectedAmount, amount);
         const processError = afdianProvider.deriveProcessError({
             signatureValid,
             resolvedPackage,
             amount,
             amountValid
-        });
-        const { currentSite, pendingPaymentOrder } = await resolveAfdianWebhookContext({
-            orderNo,
-            resolvedPackage,
-            amount
         });
 
         if (!currentSite) {

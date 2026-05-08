@@ -267,6 +267,12 @@
         "title": "Resource Store",
         "allCategories": "All",
         "points": "Points",
+        "categoryLabels": {
+            "communityAccess": "Community Access",
+            "virtualCard": "Virtual Card",
+            "account": "Account",
+            "other": "Other"
+        },
         "stock": "Stock",
         "outOfStock": "Sold Out",
         "soldOutClickHint": "Sold out",

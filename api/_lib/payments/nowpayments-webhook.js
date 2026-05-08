@@ -431,9 +431,15 @@ async function handleNowpaymentsWebhook({
             return sendPlainText(res, 400, 'missing order_id');
         }
 
+        const paymentOrder = await loadPaymentOrderSnapshotByProviderOrderNo(supabase, 'nowpayments', orderNo);
+        const metadata = paymentOrder?.provider_metadata && typeof paymentOrder.provider_metadata === 'object'
+            ? paymentOrder.provider_metadata
+            : {};
+        const currentSite = getCurrentSite(req, metadata.site || paymentOrder?.site);
         const runtimeContext = await nowpaymentsProvider.resolveRuntimeContext({
             supabase,
-            env
+            env,
+            site: currentSite
         });
         const signatureCheck = nowpaymentsProvider.verifyWebhook({
             payload,
@@ -451,11 +457,6 @@ async function handleNowpaymentsWebhook({
 
         const signatureValid = signatureCheck.valid === true;
         const paymentState = normalizeNowpaymentsPaymentStatus(payload.payment_status);
-        const paymentOrder = await loadPaymentOrderSnapshotByProviderOrderNo(supabase, 'nowpayments', orderNo);
-        const metadata = paymentOrder?.provider_metadata && typeof paymentOrder.provider_metadata === 'object'
-            ? paymentOrder.provider_metadata
-            : {};
-        const currentSite = getCurrentSite(req, metadata.site || paymentOrder?.site);
         const expectedPriceAmount = roundCurrencyAmount(metadata.price_amount ?? 0);
         const webhookPriceAmount = roundCurrencyAmount(payload.price_amount ?? 0);
         const expectedPayCurrency = sanitizeText(metadata.pay_currency, 'usdtbsc', 40).toLowerCase();

@@ -1,11 +1,14 @@
 const {
+    normalizeAdminSite,
     parseJsonBody,
     requireAdmin,
+    requireWritableAdminSite,
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
 const {
     PAYMENT_CHANNEL_SECRET_KEYS,
+    buildPaymentSiteSecretKey,
     deleteStoredAdminSecret,
     upsertStoredAdminSecret
 } = require('../../../../api/_lib/secrets');
@@ -19,6 +22,10 @@ const {
 const {
     getMockPaymentRuntimeState
 } = require('../../../../api/_lib/payments/orders');
+const {
+    isSiteScopedSystemConfigKey,
+    upsertSiteScopedSystemConfigValue
+} = require('../../_site-scoped-system-config');
 const PAYMENT_SECRET_PROVIDER_MAP = Object.freeze({
     afdian_token: 'afdian',
     hupijiao_api_key: 'hupijiao',
@@ -71,12 +78,34 @@ function mergePaymentSecretStatus(currentStatus = {}, incomingSecrets = {}) {
     return mergedStatus;
 }
 
-async function upsertSystemConfig(supabase, configKey, configValue, userId, description) {
+async function upsertSystemConfig(supabase, configKey, configValue, userId, description, options = {}) {
+    let storedValue = configValue;
+
+    if (options.site && isSiteScopedSystemConfigKey(configKey)) {
+        const query = supabase
+            .from('system_config')
+            .select('config_value')
+            .eq('config_key', configKey);
+        const { data: existingRow, error: existingError } = await (typeof query.maybeSingle === 'function'
+            ? query.maybeSingle()
+            : query.single());
+
+        if (existingError && existingError.code !== 'PGRST116') {
+            throw new Error(existingError.message || `Failed to load ${configKey}`);
+        }
+
+        storedValue = upsertSiteScopedSystemConfigValue(
+            existingRow?.config_value,
+            options.site,
+            configValue
+        );
+    }
+
     const { error } = await supabase
         .from('system_config')
         .upsert({
             config_key: configKey,
-            config_value: configValue,
+            config_value: storedValue,
             description,
             updated_by: userId,
             updated_at: new Date().toISOString()
@@ -85,6 +114,8 @@ async function upsertSystemConfig(supabase, configKey, configValue, userId, desc
     if (error) {
         throw new Error(error.message || `Failed to save ${configKey}`);
     }
+
+    return storedValue;
 }
 
 module.exports = async (req, res) => {
@@ -97,14 +128,26 @@ module.exports = async (req, res) => {
         };
 
         const { supabase, user } = await requireAdmin(req, { permission: 'settings.manage' });
+        const url = new URL(req.url || '', 'http://localhost');
+        const site = req.method === 'POST'
+            ? null
+            : (normalizeAdminSite(url.searchParams.get('site') || req.adminSite, { defaultValue: 'all' }) || 'all');
 
         if (req.method === 'GET') {
-            const { paymentChannels } = await loadStoredPaymentConfigs(supabase);
-            const secrets = await buildPaymentSecretStatus(supabase);
+            const { paymentChannels } = await loadStoredPaymentConfigs(supabase, {
+                site,
+                requestHost: req.headers.host || req.headers.Host || '',
+                origin: process.env.APP_BASE_URL,
+                afdianCheckoutUrl: process.env.PAYMENT_AFDIAN_URL
+            });
+            const secrets = await buildPaymentSecretStatus(supabase, process.env, {
+                site: site === 'all' ? '' : site
+            });
             const activationChecks = buildPaymentChannelActivationChecks(paymentChannels, secrets, process.env);
 
             return sendJson(res, 200, {
                 success: true,
+                site,
                 config: paymentChannels,
                 secrets,
                 activation_checks: activationChecks,
@@ -114,10 +157,18 @@ module.exports = async (req, res) => {
 
         if (req.method === 'POST') {
             const body = await parseJsonBody(req);
-            const { rechargeOptions } = await loadStoredPaymentConfigs(supabase);
+            const writableSite = requireWritableAdminSite(body.site || req.adminSite, { fieldName: 'site' });
+            const { rechargeOptions } = await loadStoredPaymentConfigs(supabase, {
+                site: writableSite,
+                requestHost: req.headers.host || req.headers.Host || '',
+                origin: process.env.APP_BASE_URL,
+                afdianCheckoutUrl: process.env.PAYMENT_AFDIAN_URL
+            });
             const nextConfig = normalizePaymentChannelsConfig(body.config, rechargeOptions);
             const incomingSecrets = body.secrets && typeof body.secrets === 'object' ? body.secrets : {};
-            const currentSecretStatus = await buildPaymentSecretStatus(supabase);
+            const currentSecretStatus = await buildPaymentSecretStatus(supabase, process.env, {
+                site: writableSite
+            });
             const mergedSecretStatus = mergePaymentSecretStatus(currentSecretStatus, incomingSecrets);
             const updatedSecrets = [];
             const activationCheck = buildPaymentProviderActivationCheck(
@@ -143,7 +194,10 @@ module.exports = async (req, res) => {
                 'payment_channels',
                 nextConfig,
                 user.id,
-                '支付通道配置'
+                '支付通道配置',
+                {
+                    site: writableSite
+                }
             );
 
             await upsertSystemConfig(
@@ -154,12 +208,16 @@ module.exports = async (req, res) => {
                     mock_payment_enabled: nextConfig.active_provider === 'mock'
                 },
                 user.id,
-                '充值入口配置'
+                '充值入口配置',
+                {
+                    site: writableSite
+                }
             );
 
-            for (const [secretName, secretKey] of Object.entries(PAYMENT_CHANNEL_SECRET_KEYS)) {
+            for (const [secretName] of Object.entries(PAYMENT_CHANNEL_SECRET_KEYS)) {
                 const secretValue = sanitizeText(incomingSecrets[secretName], '', 1000);
                 if (!secretValue) continue;
+                const secretKey = buildPaymentSiteSecretKey(secretName, writableSite);
 
                 await upsertStoredAdminSecret({
                     supabase,
@@ -170,6 +228,7 @@ module.exports = async (req, res) => {
                     metadata: {
                         provider: PAYMENT_SECRET_PROVIDER_MAP[secretName] || 'unknown',
                         key_name: secretName,
+                        site: writableSite,
                         saved_via: 'admin_payment_channels'
                     }
                 });
@@ -182,6 +241,7 @@ module.exports = async (req, res) => {
                 adminId: user.id,
                 actionType: 'admin.payment_channels.upsert',
                 details: {
+                    site: writableSite,
                     active_provider: nextConfig.active_provider,
                     updated_providers: Object.keys(nextConfig.providers).filter((providerKey) => nextConfig.providers[providerKey]?.enabled),
                     updated_secrets: updatedSecrets,
@@ -190,12 +250,15 @@ module.exports = async (req, res) => {
                 }
             });
 
-            const secrets = await buildPaymentSecretStatus(supabase);
+            const secrets = await buildPaymentSecretStatus(supabase, process.env, {
+                site: writableSite
+            });
             const savedActivationChecks = buildPaymentChannelActivationChecks(nextConfig, secrets, process.env);
             const savedActivationCheck = savedActivationChecks[nextConfig.active_provider] || activationCheck;
             const successGuidance = buildPaymentChannelActivationGuidance(savedActivationCheck);
             return sendJson(res, 200, {
                 success: true,
+                site: writableSite,
                 message: successGuidance
                     ? `支付通道配置已保存。${successGuidance}`
                     : '支付通道配置已保存。',
@@ -208,8 +271,9 @@ module.exports = async (req, res) => {
 
         if (req.method === 'DELETE') {
             const body = await parseJsonBody(req);
+            const writableSite = requireWritableAdminSite(body.site || req.adminSite, { fieldName: 'site' });
             const secretName = typeof body.secretName === 'string' ? body.secretName.trim() : '';
-            const secretKey = PAYMENT_CHANNEL_SECRET_KEYS[secretName];
+            const secretKey = buildPaymentSiteSecretKey(secretName, writableSite);
 
             if (!secretKey) {
                 return sendJson(res, 400, {
@@ -225,13 +289,17 @@ module.exports = async (req, res) => {
                 adminId: user.id,
                 actionType: 'admin.payment_channels.secret.delete',
                 details: {
+                    site: writableSite,
                     secret_name: secretName
                 }
             });
 
-            const secrets = await buildPaymentSecretStatus(supabase);
+            const secrets = await buildPaymentSecretStatus(supabase, process.env, {
+                site: writableSite
+            });
             return sendJson(res, 200, {
                 success: true,
+                site: writableSite,
                 message: '支付密钥已删除。',
                 secrets,
                 runtime

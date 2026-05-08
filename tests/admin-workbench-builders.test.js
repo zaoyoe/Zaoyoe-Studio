@@ -1674,6 +1674,7 @@ test('shared admin workbench fetches ops alert monitor payloads with timeout-awa
         { authorization: 'Bearer test' },
         {
             endpoint: '/custom/ops-alert-monitor',
+            site: 'intl',
             timeoutMs: 1234,
             AbortController: FakeAbortController,
             setTimeout(handler, delay) {
@@ -1702,7 +1703,7 @@ test('shared admin workbench fetches ops alert monitor payloads with timeout-awa
     assert.equal(calls[0].type, 'setTimeout');
     assert.equal(calls[0].delay, 1234);
     assert.equal(calls[1].type, 'fetch');
-    assert.equal(calls[1].url, '/custom/ops-alert-monitor');
+    assert.equal(calls[1].url, '/custom/ops-alert-monitor?site=intl');
     assert.equal(calls[1].init.method, 'GET');
     assert.equal(calls[1].init.headers.authorization, 'Bearer test');
     assert.ok(calls[1].init.signal);
@@ -1750,6 +1751,7 @@ test('shared admin workbench normalizes ops alert monitor payloads into state-fr
     const runtime = loadAdminWorkbenchRuntime();
     const normalized = runtime.normalizeAdminWorkbenchOpsAlertMonitorPayload({
         fetched_at: '2026-04-01T12:00:00.000Z',
+        site_context: 'intl',
         summary: {
             lookback_hours: 24,
             shift_report: {
@@ -1773,6 +1775,7 @@ test('shared admin workbench normalizes ops alert monitor payloads into state-fr
 
     assert.deepEqual(JSON.parse(JSON.stringify(normalized)), {
         fetched_at: '2026-04-01T12:00:00.000Z',
+        site_context: 'intl',
         summary: {
             lookback_hours: 24,
             total_active_count: 0,

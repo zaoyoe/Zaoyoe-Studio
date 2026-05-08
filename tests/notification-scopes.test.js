@@ -121,8 +121,10 @@ test('notifyUsers applies personal notification scope defaults and dedupes withi
     assert.equal(first.created, 1);
     assert.equal(first.skipped, 0);
     assert.equal(state.systemNotifications.length, 1);
+    assert.equal(state.systemNotifications[0].site, 'cn');
     assert.equal(state.systemNotifications[0].scope, 'user_personal');
     assert.equal(state.systemNotifications[0].category, 'general');
+    assert.equal(state.systemNotifications[0].metadata.site, 'cn');
 
     const second = await notifyUsers(supabase, {
         userIds: ['user-1'],
@@ -166,6 +168,42 @@ test('notifyUsers prefers source event identity over repeated copy matching', as
     assert.equal(second.created, 0);
     assert.equal(second.skipped, 1);
     assert.equal(state.systemNotifications.length, 1);
+});
+
+test('notifyUsers dedupes within the same site but keeps cn and intl notifications isolated', async () => {
+    const state = {
+        adminRoles: [],
+        systemNotifications: []
+    };
+    const supabase = createSupabaseStub(state);
+
+    const cnResult = await notifyUsers(supabase, {
+        userIds: ['user-1'],
+        title: '客服回复',
+        content: '您好，这里是客服。',
+        site: 'cn',
+        dedupeWindowMinutes: 60
+    });
+    const intlResult = await notifyUsers(supabase, {
+        userIds: ['user-1'],
+        title: '客服回复',
+        content: '您好，这里是客服。',
+        site: 'intl',
+        dedupeWindowMinutes: 60
+    });
+    const cnRepeatResult = await notifyUsers(supabase, {
+        userIds: ['user-1'],
+        title: '客服回复',
+        content: '您好，这里是客服。',
+        site: 'cn',
+        dedupeWindowMinutes: 60
+    });
+
+    assert.equal(cnResult.created, 1);
+    assert.equal(intlResult.created, 1);
+    assert.equal(cnRepeatResult.created, 0);
+    assert.equal(state.systemNotifications.length, 2);
+    assert.deepEqual(state.systemNotifications.map((row) => row.site).sort(), ['cn', 'intl']);
 });
 
 test('notifyActiveAdmins defaults to admin personal notification scope', async () => {
@@ -234,6 +272,7 @@ test('notification inserts gracefully fall back when scope columns are not deplo
     assert.equal(state.systemNotifications.length, 1);
     assert.equal('scope' in state.systemNotifications[0], false);
     assert.equal('category' in state.systemNotifications[0], false);
+    assert.equal('site' in state.systemNotifications[0], false);
 });
 
 test('notification writers tag chat replies and admin notices with scoped metadata', () => {
