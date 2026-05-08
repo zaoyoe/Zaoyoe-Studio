@@ -4419,6 +4419,7 @@ class ChatWidget {
             title: String(source.title || '小助手提醒').trim() || '小助手提醒',
             content: String(source.content || '').trim(),
             category,
+            scope: String(source.scope || metadata.scope || 'unspecified').trim().toLowerCase() || 'unspecified',
             page_id: String(metadata.page_id || this.getEngagementPageId()).trim() || this.getEngagementPageId(),
             site: String(metadata.site || window.SiteConfig?.site || 'cn').trim().toLowerCase() || 'cn',
             placement: metadata.placement || metadata.display_type || metadata.displayType || 'robot_bubble',
@@ -4428,8 +4429,66 @@ class ChatWidget {
             dismiss_ttl_hours: metadata.dismiss_ttl_hours ?? 24,
             tone: String(source.type || metadata.tone || 'info').trim() || 'info',
             icon: String(metadata.icon || 'robot').trim() || 'robot',
-            metadata
+            metadata: {
+                ...metadata,
+                scope: String(source.scope || metadata.scope || 'unspecified').trim().toLowerCase() || 'unspecified'
+            }
         });
+    }
+
+    isCnAdminEngagementBubbleContext() {
+        return Boolean(this.isAdmin) && this.getEngagementBroadcastSite() === 'cn';
+    }
+
+    getAdminOpsNotificationPatterns() {
+        return [
+            /库存/,
+            /补货/,
+            /履约/,
+            /支付/,
+            /验证/,
+            /工单超时/,
+            /风险/,
+            /异常登录/,
+            /客服消息汇总/,
+            /购买成功汇总/,
+            /充值成功汇总/,
+            /库存与补货汇总/,
+            /工单超时汇总/,
+            /履约失败汇总/,
+            /支付通道异常汇总/,
+            /验证额度告警汇总/,
+            /验证堆积告警汇总/,
+            /验证失败率告警汇总/
+        ];
+    }
+
+    normalizeSystemNotificationScope(value = '') {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (!normalized) {
+            return 'unspecified';
+        }
+        return ['admin_personal', 'user_personal', 'unspecified'].includes(normalized)
+            ? normalized
+            : 'unknown';
+    }
+
+    isOpsLikeSystemNotification(item = {}) {
+        const normalized = this.normalizeEngagementItem(item);
+        if (!normalized) return false;
+        const metadata = normalized.metadata && typeof normalized.metadata === 'object' && !Array.isArray(normalized.metadata)
+            ? normalized.metadata
+            : {};
+        const text = [
+            normalized.title,
+            normalized.content,
+            normalized.category,
+            metadata.category,
+            metadata.event_type,
+            metadata.trigger_type,
+            normalized.source_module
+        ].map((entry) => String(entry || '').trim()).filter(Boolean).join('\n');
+        return this.getAdminOpsNotificationPatterns().some((pattern) => pattern.test(text));
     }
 
     getSystemNotificationAutomationTriggerTypes() {
@@ -4506,6 +4565,17 @@ class ChatWidget {
                 || ''
         );
         if (notificationCategory === 'content_moderated' || triggerType === 'content_moderated') {
+            return false;
+        }
+        const scope = this.normalizeSystemNotificationScope(normalized.scope || metadata.scope);
+        const cnAdminBubble = this.isCnAdminEngagementBubbleContext();
+        if (scope === 'admin_personal') {
+            return cnAdminBubble;
+        }
+        if (this.isOpsLikeSystemNotification(normalized) && !cnAdminBubble) {
+            return false;
+        }
+        if (scope !== 'user_personal' && scope !== 'unspecified') {
             return false;
         }
         return true;
@@ -4888,7 +4958,7 @@ class ChatWidget {
             return;
         }
         const row = this.getEngagementRealtimeRow(payload);
-        if (!row.id || row.is_read === true || String(row.scope || '').trim() === 'admin_personal') {
+        if (!row.id || row.is_read === true) {
             return;
         }
         if (String(row.user_id || '').trim() !== this.engagementNotificationChannelUserId) {
@@ -7641,7 +7711,7 @@ class ChatWidget {
         const viewKey = this.getEngagementItemKey(normalized);
         const hasSeenInSession = this.engagementViewedKeys.has(viewKey);
         this.engagementActiveItem = normalized;
-        if (normalized.source === 'notification' && !hasSeenInSession) {
+        if (['notification', 'ops_alert'].includes(normalized.source) && !hasSeenInSession) {
             this.unreadCount = Math.max(this.unreadCount, 0) + 1;
         }
         this.updateBadge();
@@ -8213,6 +8283,13 @@ class ChatWidget {
                 rule_id: normalized.rule_id,
                 route_label: routeLabel || null
             });
+            if (opened) {
+                return;
+            }
+        }
+
+        if (normalized.source === 'ops_alert' || /^ops-alert:/i.test(actionUrl)) {
+            const opened = await this.openOpsAlertEngagementTarget(normalized);
             if (opened) {
                 return;
             }
@@ -14361,6 +14438,84 @@ class ChatWidget {
         return alert;
     }
 
+    buildOpsAlertEngagementItem(alert = {}) {
+        const normalized = alert && typeof alert === 'object' && !Array.isArray(alert) ? alert : {};
+        const id = String(normalized.id || '').trim();
+        if (!id) return null;
+        const content = String(
+            normalized.displayContent
+            || normalized.content
+            || normalized.preview
+            || normalized.title
+            || '站内代办提醒'
+        ).trim();
+        if (!content) return null;
+        const severity = String(normalized.severity || 'warning').trim().toLowerCase() || 'warning';
+        return this.normalizeEngagementItem({
+            id: `ops_alert:${id}`,
+            source: 'ops_alert',
+            source_module: 'ops_alert_jobs',
+            source_event_id: `ops_alert:${id}`,
+            trigger_type: 'ops_alert',
+            title: String(normalized.title || '站内代办提醒').trim() || '站内代办提醒',
+            content,
+            category: String(normalized.alertType || 'ops_alert').trim() || 'ops_alert',
+            page_id: this.getEngagementPageId(),
+            site: 'cn',
+            placement: 'robot_bubble',
+            priority: severity === 'critical' ? 95 : (severity === 'info' ? 55 : 78),
+            tone: severity === 'critical' ? 'alert' : (severity === 'info' ? 'info' : 'warning'),
+            action_label: '处理告警',
+            action_url: `ops-alert://${encodeURIComponent(id)}`,
+            dismiss_ttl_hours: 8,
+            repeat_interval_minutes: 15,
+            metadata: {
+                alert_type: normalized.alertType || '',
+                severity,
+                status: normalized.status || '',
+                entry_path: normalized.entryPath || '',
+                payload: normalized.payload || {},
+                created_at: normalized.created_at || '',
+                updated_at: normalized.updated_at || '',
+                source_module: 'ops_alert_jobs',
+                source_event_id: `ops_alert:${id}`
+            }
+        });
+    }
+
+    showOpsAlertEngagementBubble(alert = {}, options = {}) {
+        if (!this.isCnAdminEngagementBubbleContext()) {
+            return false;
+        }
+        const item = this.buildOpsAlertEngagementItem(alert);
+        if (!item) {
+            return false;
+        }
+        return this.showRealtimeEngagementItem(item, {
+            source: 'ops_alert_jobs',
+            ...(options || {})
+        });
+    }
+
+    async openOpsAlertEngagementTarget(item = {}) {
+        if (!this.isAdmin) {
+            return false;
+        }
+        await this.openChat();
+        try {
+            await this.refreshOpsAlerts({ announceNew: false });
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to refresh ops alerts from engagement action:', error?.message || error);
+        }
+        if (!this.sessionList || !this.chatHeader) {
+            return false;
+        }
+        const session = this.sessions.find((entry) => this.isOpsAlertSession(entry)) || this.buildOpsAlertSession();
+        this.selectSession(this.opsAlertSessionId, session);
+        this.clearUnread();
+        return true;
+    }
+
     buildOpsAlertSessionSearchText() {
         return this.opsAlertMessages
             .slice(0, 24)
@@ -15191,6 +15346,16 @@ class ChatWidget {
         const isViewingOpsSession = this.isOpen && this.currentSessionKey === this.opsAlertSessionId;
         if (!isViewingOpsSession && options.announce !== false) {
             this.unreadSessions.add(this.opsAlertSessionId);
+            let showedEngagementBubble = false;
+            try {
+                showedEngagementBubble = this.showOpsAlertEngagementBubble(normalized, { realtime: true });
+            } catch (engagementError) {
+                console.warn('[ChatWidget] Failed to show realtime ops alert engagement bubble:', engagementError);
+            }
+            if (showedEngagementBubble && !this.isOpen) {
+                this.refreshOpsAlertSessionEntry();
+                return;
+            }
             try {
                 this.showNotification(normalized.title || normalized.preview || '收到新的站外告警', '📌 站内代办', true);
             } catch (notificationError) {

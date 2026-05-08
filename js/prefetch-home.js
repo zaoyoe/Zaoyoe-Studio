@@ -12,7 +12,7 @@
     const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
     const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
     const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260505_HOME_GUESTBOOK_PROFILE_NAME_1';
+    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260508_HOME_BILINGUAL_RUNTIME_1';
     const HOMEPAGE_GUESTBOOK_CARD_LIMIT = 6;
     const HOMEPAGE_PROMPT_LIVE_SELECT = [
         'id',
@@ -71,15 +71,28 @@
     function getLanguageFallback(i18nKey, fallbackByLanguage = {}) {
         const lang = getCurrentLanguage();
         const translated = i18nKey ? window.i18n?.t?.(i18nKey) : '';
-        return (translated && translated !== i18nKey ? translated : '') || fallbackByLanguage[lang] || fallbackByLanguage.zh || '';
+        return (translated && translated !== i18nKey ? translated : '') || getStrictLanguageFallback(fallbackByLanguage);
     }
 
     function resolveLocalizedText(value, i18nKey, fallbackByLanguage = {}) {
         const normalized = String(value || '').trim();
-        if (getCurrentLanguage() === 'en' && containsCjkText(normalized)) {
-            return getLanguageFallback(i18nKey, fallbackByLanguage);
+        const fallback = getLanguageFallback(i18nKey, fallbackByLanguage);
+        const currentLang = getCurrentLanguage();
+
+        if (currentLang === 'en' && containsCjkText(normalized)) {
+            return fallback;
         }
-        return normalized || getLanguageFallback(i18nKey, fallbackByLanguage);
+
+        if (
+            currentLang === 'zh'
+            && normalized
+            && !containsCjkText(normalized)
+            && containsCjkText(fallback)
+        ) {
+            return fallback;
+        }
+
+        return normalized || fallback;
     }
 
     function getStrictLanguageFallback(fallbackByLanguage = {}) {
@@ -155,10 +168,23 @@
 
     function resolveLocalizedTextList(value, fallbackItems = []) {
         const normalized = normalizeTextList(value);
-        if (getCurrentLanguage() === 'en' && normalized.some((item) => containsCjkText(item))) {
-            return normalizeTextList(fallbackItems);
+        const fallbackList = normalizeTextList(fallbackItems);
+        const currentLang = getCurrentLanguage();
+
+        if (currentLang === 'en' && normalized.some((item) => containsCjkText(item))) {
+            return fallbackList;
         }
-        return normalized.length > 0 ? normalized : normalizeTextList(fallbackItems);
+
+        if (
+            currentLang === 'zh'
+            && normalized.length > 0
+            && normalized.every((item) => !containsCjkText(item))
+            && fallbackList.some((item) => containsCjkText(item))
+        ) {
+            return fallbackList;
+        }
+
+        return normalized.length > 0 ? normalized : fallbackList;
     }
 
     function filterDataTextList(value) {

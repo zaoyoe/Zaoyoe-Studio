@@ -34,6 +34,27 @@ function createPublicEngagementHandlers({
     const VALID_EVENTS = Object.freeze(new Set(['view', 'click', 'dismiss', 'conversion']));
     const VALID_PLACEMENTS = Object.freeze(new Set(['robot_bubble', 'top_banner', 'inline_card', 'modal', 'floating_badge']));
     const VALID_REPLY_SOURCES = Object.freeze(new Set(['prompt_comment', 'guestbook_comment']));
+    const ADMIN_OPS_NOTIFICATION_PATTERNS = Object.freeze([
+        /库存/,
+        /补货/,
+        /履约/,
+        /支付/,
+        /验证/,
+        /工单超时/,
+        /风险/,
+        /异常登录/,
+        /客服消息汇总/,
+        /购买成功汇总/,
+        /充值成功汇总/,
+        /库存与补货汇总/,
+        /工单超时汇总/,
+        /履约失败汇总/,
+        /支付通道异常汇总/,
+        /验证额度告警汇总/,
+        /验证堆积告警汇总/,
+        /验证失败率告警汇总/
+    ]);
+    const OPS_ALERT_FEED_LOOKBACK_HOURS = 72;
     const AUDIENCE_SCOPE_TAGS = Object.freeze({
         recharged: 'paid_user',
         high_value: 'high_value',
@@ -170,6 +191,39 @@ function createPublicEngagementHandlers({
 
     function normalizeMetadata(value) {
         return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    }
+
+    function matchesAnyPattern(value, patterns = []) {
+        return patterns.some((pattern) => pattern.test(value));
+    }
+
+    function normalizeNotificationScope(value = '') {
+        const normalized = sanitizeText(value, 40).toLowerCase();
+        if (!normalized) {
+            return 'unspecified';
+        }
+        return ['admin_personal', 'user_personal', 'unspecified'].includes(normalized)
+            ? normalized
+            : 'unknown';
+    }
+
+    function isCnAdminBubbleContext(context = {}) {
+        return context?.viewerIsAdmin === true && normalizeSite(context.site || 'cn') === 'cn';
+    }
+
+    function isOpsLikeNotification(row = {}) {
+        const normalizedRow = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
+        const metadata = normalizeMetadata(normalizedRow.metadata);
+        const text = [
+            normalizedRow.title,
+            normalizedRow.content,
+            normalizedRow.category,
+            metadata.category,
+            metadata.event_type,
+            metadata.trigger_type,
+            normalizedRow.source_module
+        ].map((item) => sanitizeText(item, 1200)).filter(Boolean).join('\n');
+        return matchesAnyPattern(text, ADMIN_OPS_NOTIFICATION_PATTERNS);
     }
 
     function parseEventContext(value = '') {
@@ -477,6 +531,50 @@ function createPublicEngagementHandlers({
                 return null;
             }
             return null;
+        }
+    }
+
+    async function resolveViewerAccess(supabase, user = {}) {
+        const userId = sanitizeText(user?.id, 160);
+        if (!userId || !supabase?.from) {
+            return { isAdmin: false };
+        }
+
+        try {
+            if (typeof supabase.rpc === 'function') {
+                const { data, error } = await supabase.rpc('get_user_permissions', { p_user_id: userId });
+                if (!error && (data?.is_admin === true || data?.is_super_admin === true)) {
+                    return { isAdmin: true };
+                }
+            }
+        } catch (_) {
+            // Fall through to role-table lookup.
+        }
+
+        try {
+            const { data, error } = await supabase
+                .from('admin_roles')
+                .select('role_name,expires_at')
+                .eq('user_id', userId);
+            if (error) {
+                if (isMissingRelationOrColumnError(error, 'admin_roles')) {
+                    return { isAdmin: false };
+                }
+                throw error;
+            }
+            const nowMs = Date.now();
+            const isAdmin = (Array.isArray(data) ? data : []).some((role) => {
+                const roleName = sanitizeText(role?.role_name, 80).toLowerCase();
+                if (!['admin', 'super_admin'].includes(roleName)) return false;
+                const expiresAt = sanitizeText(role?.expires_at, 120);
+                if (!expiresAt) return true;
+                const expiresMs = new Date(expiresAt).getTime();
+                return Number.isFinite(expiresMs) && expiresMs > nowMs;
+            });
+            return { isAdmin };
+        } catch (error) {
+            console.warn('[Engagement] Viewer admin lookup skipped:', error?.message || error);
+            return { isAdmin: false };
         }
     }
 
@@ -860,6 +958,7 @@ function createPublicEngagementHandlers({
     function normalizeNotificationBubble(row = {}, context = {}) {
         const metadata = normalizeMetadata(row.metadata);
         const category = sanitizeText(row.category || metadata.category || 'user_notice', 80) || 'user_notice';
+        const scope = normalizeNotificationScope(row.scope || metadata.scope);
         return {
             id: `notification:${sanitizeText(row.id, 160)}`,
             rule_id: '',
@@ -879,7 +978,11 @@ function createPublicEngagementHandlers({
             dismiss_ttl_hours: normalizeDismissTtlHours(metadata.dismiss_ttl_hours, 24),
             tone: sanitizeText(row.type || metadata.tone || 'info', 40) || 'info',
             icon: sanitizeText(metadata.icon || 'robot', 40) || 'robot',
-            metadata
+            scope,
+            metadata: {
+                ...metadata,
+                scope
+            }
         };
     }
 
@@ -887,6 +990,7 @@ function createPublicEngagementHandlers({
         const normalizedRow = row && typeof row === 'object' && !Array.isArray(row) ? row : {};
         const metadata = normalizeMetadata(normalizedRow.metadata);
         const category = sanitizeText(normalizedRow.category || metadata.category, 80).toLowerCase();
+        const scope = normalizeNotificationScope(normalizedRow.scope || metadata.scope);
         const triggerType = normalizeTriggerType(
             metadata.trigger_type
                 || metadata.triggerType
@@ -899,7 +1003,101 @@ function createPublicEngagementHandlers({
         if (category === 'content_moderated' || triggerType === 'content_moderated') {
             return false;
         }
+        const adminBubbleContext = isCnAdminBubbleContext(context);
+        const opsLike = isOpsLikeNotification(normalizedRow);
+        if (scope === 'admin_personal') {
+            return adminBubbleContext;
+        }
+        if (opsLike && !adminBubbleContext) {
+            return false;
+        }
+        if (scope === 'user_personal') {
+            return true;
+        }
+        if (scope !== 'unspecified') {
+            return false;
+        }
         return Boolean(normalizeNotificationBubble(normalizedRow, context));
+    }
+
+    function normalizeOpsAlertTone(severity = '') {
+        const normalized = sanitizeText(severity, 40).toLowerCase();
+        if (normalized === 'critical') return 'alert';
+        if (normalized === 'info' || normalized === 'success') return 'info';
+        return 'warning';
+    }
+
+    function normalizeOpsAlertPriority(row = {}) {
+        const severity = sanitizeText(row.severity, 40).toLowerCase();
+        if (severity === 'critical') return 95;
+        if (severity === 'info') return 55;
+        return 78;
+    }
+
+    function opsAlertMatchesSite(row = {}, context = {}) {
+        const payload = normalizeMetadata(row.payload);
+        const payloadSite = sanitizeText(payload.site || payload.site_id || payload.siteId, 20).toLowerCase();
+        if (!payloadSite || payloadSite === 'all') {
+            return true;
+        }
+        return normalizeSite(payloadSite) === normalizeSite(context.site || 'cn');
+    }
+
+    function shouldSurfaceOpsAlertBubble(row = {}, context = {}) {
+        if (!isCnAdminBubbleContext(context)) {
+            return false;
+        }
+        if (!opsAlertMatchesSite(row, context)) {
+            return false;
+        }
+        const title = sanitizeText(row.title, 160);
+        const content = sanitizeText(row.content, 1200)
+            || sanitizeText(row.title, 160)
+            || '站内代办提醒';
+        return Boolean(title || content);
+    }
+
+    function normalizeOpsAlertBubble(row = {}, context = {}) {
+        const payload = normalizeMetadata(row.payload);
+        const alertType = sanitizeText(row.alert_type, 100).toLowerCase();
+        const jobId = sanitizeText(row.id, 160);
+        const content = sanitizeText(row.content, 1200)
+            || sanitizeText(row.title, 160)
+            || '站内代办提醒';
+        const entryPath = sanitizeText(payload.entry_path, 240);
+        return {
+            id: `ops_alert:${jobId}`,
+            rule_id: '',
+            notification_id: '',
+            source: 'ops_alert',
+            source_module: 'ops_alert_jobs',
+            source_event_id: `ops_alert:${jobId}`,
+            trigger_type: 'ops_alert',
+            title: sanitizeText(row.title, 160) || '站内代办提醒',
+            content,
+            category: alertType || 'ops_alert',
+            page_id: context.pageId,
+            site: 'cn',
+            placement: 'robot_bubble',
+            priority: normalizeOpsAlertPriority(row),
+            action_label: '处理告警',
+            action_url: `ops-alert://${encodeURIComponent(jobId)}`,
+            dismiss_ttl_hours: 8,
+            repeat_interval_minutes: 15,
+            tone: normalizeOpsAlertTone(row.severity),
+            icon: 'robot',
+            metadata: {
+                alert_type: alertType,
+                severity: sanitizeText(row.severity, 40).toLowerCase() || 'warning',
+                status: sanitizeText(row.status, 40).toLowerCase() || 'pending',
+                entry_path: entryPath,
+                payload,
+                created_at: sanitizeText(row.created_at, 120),
+                updated_at: sanitizeText(row.updated_at, 120),
+                source_module: 'ops_alert_jobs',
+                source_event_id: `ops_alert:${jobId}`
+            }
+        };
     }
 
     function normalizeDeliveryFrequency(value = 'once_per_day') {
@@ -1131,7 +1329,6 @@ function createPublicEngagementHandlers({
             .select('id,title,content,type,scope,category,is_read,created_at,action_url,action_label,metadata,priority,expires_at,dedupe_key,source_module,source_event_id')
             .eq('user_id', userId)
             .eq('is_read', false)
-            .neq('scope', 'admin_personal')
             .order('priority', { ascending: false })
             .order('created_at', { ascending: false })
             .limit(20);
@@ -1164,6 +1361,31 @@ function createPublicEngagementHandlers({
                 return !Number.isFinite(expiresMs) || expiresMs > nowMs;
             })
             .map((row) => normalizeNotificationBubble(row, context));
+    }
+
+    async function fetchOpsAlertBubbles(supabase, context) {
+        if (!isCnAdminBubbleContext(context)) {
+            return [];
+        }
+
+        const sinceIso = new Date(Date.now() - OPS_ALERT_FEED_LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
+        const { data, error } = await supabase
+            .from('ops_alert_jobs')
+            .select('id,alert_type,severity,title,content,payload,status,created_at,updated_at')
+            .gte('created_at', sinceIso)
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+        if (error) {
+            if (isMissingRelationOrColumnError(error, 'ops_alert_jobs')) {
+                return [];
+            }
+            throw error;
+        }
+
+        return (Array.isArray(data) ? data : [])
+            .filter((row) => shouldSurfaceOpsAlertBubble(row, context))
+            .map((row) => normalizeOpsAlertBubble(row, context));
     }
 
     async function fetchAssetStyleConfig(supabase) {
@@ -1546,6 +1768,7 @@ function createPublicEngagementHandlers({
         const userId = sanitizeText(user?.id, 160);
         const pageId = normalizePageId(url.searchParams.get('page_id') || url.searchParams.get('page'));
         const site = normalizeSite(url.searchParams.get('site') || 'cn');
+        const viewerAccess = await resolveViewerAccess(supabase, user || {});
         if (userId) {
             await syncInactiveUserTagForUser(supabase, {
                 userId,
@@ -1572,12 +1795,14 @@ function createPublicEngagementHandlers({
             userId,
             userEmail: userProfile.email,
             userTags: userProfile.tags,
+            viewerIsAdmin: viewerAccess.isAdmin === true,
             audienceSegments
         };
 
-        const [ruleFeed, notifications, assetCenter, supportEntry, pageSceneConfig] = await Promise.all([
+        const [ruleFeed, notifications, opsAlerts, assetCenter, supportEntry, pageSceneConfig] = await Promise.all([
             fetchRuleBubbles(supabase, context),
             context.triggerType === 'page_view' ? fetchNotificationBubbles(supabase, userId, context) : Promise.resolve([]),
+            context.triggerType === 'page_view' ? fetchOpsAlertBubbles(supabase, context) : Promise.resolve([]),
             fetchAssetStyleConfig(supabase),
             fetchSupportEntryConfig(supabase),
             fetchPageSceneConfig(supabase)
@@ -1609,7 +1834,7 @@ function createPublicEngagementHandlers({
             }
         }
 
-        const items = [...notifications, ...rules]
+        const items = [...opsAlerts, ...notifications, ...rules]
             .sort((left, right) => {
                 const priorityDelta = Number(right.priority || 0) - Number(left.priority || 0);
                 if (priorityDelta) return priorityDelta;
