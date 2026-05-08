@@ -279,7 +279,19 @@
             performance: {},
             analytics_preferences: {},
             integrations: {},
-            verify_settings: {}
+            verify_settings: {},
+            site_layouts: {
+                cn: {
+                    root_page_key: 'home',
+                    logo_target_mode: 'follow_root',
+                    logo_page_key: 'home'
+                },
+                intl: {
+                    root_page_key: 'shop',
+                    logo_target_mode: 'follow_root',
+                    logo_page_key: 'shop'
+                }
+            }
         },
         opsAlertHealthPayload: {
             success: true,
@@ -7591,6 +7603,52 @@
                 }
             }
 
+            if (url.pathname === '/api/admin/homepage/layout') {
+                const layoutConfigs = getSmokeSystemConfigValue('site_layouts');
+
+                if (method === 'GET') {
+                    const site = normalizeSmokeSite(url.searchParams.get('site'));
+                    return createResponse({
+                        success: true,
+                        site,
+                        layout: site === 'intl'
+                            ? deepClone(layoutConfigs?.intl || {})
+                            : (site === 'cn' ? deepClone(layoutConfigs?.cn || {}) : null),
+                        layouts: deepClone(layoutConfigs || {})
+                    });
+                }
+
+                if (method === 'POST') {
+                    let body = {};
+                    try {
+                        body = JSON.parse(String(init?.body || '{}'));
+                    } catch (_) {
+                        body = {};
+                    }
+
+                    const site = normalizeSmokeSite(body.site);
+                    const nextLayouts = layoutConfigs && typeof layoutConfigs === 'object' && !Array.isArray(layoutConfigs)
+                        ? deepClone(layoutConfigs)
+                        : {};
+
+                    if (site === 'cn' || site === 'intl') {
+                        nextLayouts[site] = body.layout && typeof body.layout === 'object' && !Array.isArray(body.layout)
+                            ? deepClone(body.layout)
+                            : {};
+                        setSmokeSystemConfigValue('site_layouts', nextLayouts);
+                    }
+
+                    return createResponse({
+                        success: true,
+                        site,
+                        layout: site === 'intl'
+                            ? deepClone(nextLayouts.intl || {})
+                            : (site === 'cn' ? deepClone(nextLayouts.cn || {}) : null),
+                        layouts: deepClone(nextLayouts)
+                    });
+                }
+            }
+
             if (originalFetch) {
                 return originalFetch(input, init);
             }
@@ -9106,6 +9164,22 @@
             '首页分栏显隐卡片已从 homepage_config 渲染',
             galleryVisibilityInput instanceof HTMLElement,
             galleryVisibilityInput instanceof HTMLElement ? 'prompts visibility rendered' : 'missing prompts visibility control'
+        );
+
+        globalScope.HomepageAdmin?.switchSection?.('overview');
+        await sleep(120);
+        const siteLayoutCard = await waitFor(
+            () => document.querySelector('#hp-ops-shell [data-homepage-site-layout-card]'),
+            { message: '站点布局入口卡片未渲染' }
+        );
+        const siteLayoutSummary = String(siteLayoutCard?.textContent || '').replace(/\s+/g, ' ').trim();
+        recordResult(
+            '站点布局入口会在布局总览中渲染',
+            siteLayoutCard instanceof HTMLElement
+                && siteLayoutSummary.includes('站点布局')
+                && siteLayoutSummary.includes('根路径')
+                && !siteLayoutSummary.startsWith('NaN'),
+            siteLayoutSummary || '<empty>'
         );
 
         const heroSaveButton = document.querySelector('.hp-section-view[data-hp-view="hero"] [data-admin-action="homepage-save-section"]');

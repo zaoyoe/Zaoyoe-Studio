@@ -38,6 +38,7 @@ const engagementTemplatesHandler = require('../server/api-handlers/admin/engagem
 const marketingAssetsCenterHandler = require('../server/api-handlers/admin/marketing/assets-center');
 const homepageConfigHandler = require('../server/api-handlers/admin/homepage/config');
 const homepageContextHandler = require('../server/api-handlers/admin/homepage/context');
+const homepageLayoutHandler = require('../server/api-handlers/admin/homepage/layout');
 const pointsBatchesHandler = require('../server/api-handlers/admin/points/batches');
 const pointsCatalogHandler = require('../server/api-handlers/admin/points/catalog');
 const pointsLookupHandler = require('../server/api-handlers/admin/points/lookup');
@@ -122,6 +123,7 @@ const ROUTE_HANDLERS = {
     'marketing/assets-center': marketingAssetsCenterHandler,
     'homepage/config': homepageConfigHandler,
     'homepage/context': homepageContextHandler,
+    'homepage/layout': homepageLayoutHandler,
     'points/batches': pointsBatchesHandler,
     'points/catalog': pointsCatalogHandler,
     'points/lookup': pointsLookupHandler,

@@ -2,7 +2,7 @@
  * prefetch-home.js - Cross-page prefetch helpers
  *
  * Loaded on sub-pages.
- * 1. Hovering the site logo keeps homepage data warm.
+ * 1. Hovering the site logo keeps homepage data warm when logo still points home.
  * 2. Hovering / touching guestbook entry points warms guestbook data too.
  */
 (function () {
@@ -1137,6 +1137,20 @@
         ));
     }
 
+    function shouldPrefetchHomepageFromLogo(anchor) {
+        if (!(anchor instanceof HTMLAnchorElement)) {
+            return false;
+        }
+
+        try {
+            const url = new URL(anchor.href, window.location.origin);
+            return url.origin === window.location.origin
+                && (url.pathname === '/' || url.pathname === '/index.html');
+        } catch (_error) {
+            return false;
+        }
+    }
+
     document.addEventListener('mouseover', (e) => {
         if (shouldPrefetchGuestbook(e.target)) {
             prefetchGuestbookData();
@@ -1144,7 +1158,7 @@
         }
 
         const logo = e.target.closest('a.nav-logo, a.back-link');
-        if (logo) checkAndPrefetch();
+        if (shouldPrefetchHomepageFromLogo(logo)) checkAndPrefetch();
     });
 
     document.addEventListener('touchstart', (e) => {
@@ -1154,7 +1168,7 @@
         }
 
         const logo = e.target.closest('a.nav-logo, a.back-link');
-        if (logo) checkAndPrefetch();
+        if (shouldPrefetchHomepageFromLogo(logo)) checkAndPrefetch();
     }, { passive: true });
 
     window._prefetchGuestbook = prefetchGuestbookData;

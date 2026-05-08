@@ -12,7 +12,7 @@ function readRepoFile(relativePath) {
 test('admin studio installs a clipboard fallback before admin modules load', () => {
     const adminHtml = readRepoFile('admin-studio.html');
     const bootstrapSource = readRepoFile(path.join('js', 'admin-studio-bootstrap.js'));
-    const bootstrapScriptIndex = adminHtml.indexOf('js/admin-studio-bootstrap.js?v=20260503_ADMIN_CLIPBOARD_FALLBACK_1');
+    const bootstrapScriptIndex = adminHtml.indexOf('js/admin-studio-bootstrap.js?v=20260508_SITE_LAYOUT_BOOTSTRAP_1');
 
     assert.notEqual(bootstrapScriptIndex, -1, 'admin-studio.html should load the cache-busted clipboard fallback bootstrap');
     [
