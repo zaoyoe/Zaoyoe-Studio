@@ -86,11 +86,17 @@ function createRouteHandlersForScope(scope) {
         const {
             createRuntimeSupabaseConfigHandler
         } = require('../server/api-handlers/public/runtime-supabase-config');
+        const {
+            createRuntimeSectionVisibilityPreloadHandler
+        } = require('../server/api-handlers/public/runtime-section-visibility-preload');
 
         return {
             'supabase-config': createRuntimeSupabaseConfigHandler({
                 buildSupabaseRuntimeScript,
                 env: process.env
+            }),
+            'section-visibility-preload': createRuntimeSectionVisibilityPreloadHandler({
+                admin
             })
         };
     }

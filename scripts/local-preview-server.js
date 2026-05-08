@@ -426,6 +426,17 @@ function createLocalPreviewApp(options = {}) {
         res.status(200).send(script);
     });
 
+    app.get('/api/runtime/section-visibility-preload', async (req, res) => {
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'runtime public api',
+            buildHandlerUrl: (rawUrl) => buildLocalPreviewPublicHandlerUrl(
+                String(rawUrl || '/api/runtime/section-visibility-preload').replace(/^\/api\/runtime/, '/api/public/runtime')
+            ),
+            loadHandler: loadFreshPublicApiHandler,
+            repoRoot
+        });
+    });
+
     app.get('/__local-smoke-result', (req, res) => {
         const runId = String(req.query.runId || '').trim();
         if (!runId) {
