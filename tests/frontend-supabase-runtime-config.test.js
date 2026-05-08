@@ -3061,12 +3061,15 @@ test('public modal closes use the shared iOS theme-color cleanup helper', () => 
 
 test('auth and verify runtime pages externalize page bootstraps instead of embedding large inline scripts', () => {
     const authCallbackSource = readRepoFile('auth-callback.html');
+    const authPopupCloseSource = readRepoFile('auth-popup-close.html');
     const resetPasswordSource = readRepoFile('reset-password.html');
     const verifySource = readRepoFile('verify.html');
     const guestbookSource = readRepoFile('guestbook.html');
 
     assert.equal(authCallbackSource.includes('./js/auth-callback-page.js'), true, 'auth-callback.html should load the shared auth callback bootstrap file');
     assert.equal(authCallbackSource.includes('exchangeCodeForSession(code)'), false, 'auth-callback.html should not inline OAuth session exchange logic');
+    assert.equal(authPopupCloseSource.includes('./js/auth-popup-close-page.js'), true, 'auth-popup-close.html should load the dedicated popup close bootstrap file');
+    assert.equal(authPopupCloseSource.includes('@supabase/supabase-js'), false, 'auth-popup-close.html should avoid loading Supabase for the popup fast-close path');
 
     assert.equal(resetPasswordSource.includes('./js/reset-password-page.js'), true, 'reset-password.html should load the reset password bootstrap file');
     assert.equal(resetPasswordSource.includes('window.supabaseClient = supabase.createClient'), false, 'reset-password.html should not inline Supabase client bootstrap');

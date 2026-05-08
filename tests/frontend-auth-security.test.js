@@ -51,6 +51,14 @@ const authPopupHandoffStyles = fs.readFileSync(
     path.resolve(__dirname, '../css/auth-popup-handoff.css'),
     'utf8'
 );
+const authPopupCloseHtmlSource = fs.readFileSync(
+    path.resolve(__dirname, '../auth-popup-close.html'),
+    'utf8'
+);
+const authPopupCloseSource = fs.readFileSync(
+    path.resolve(__dirname, '../js/auth-popup-close-page.js'),
+    'utf8'
+);
 const zhLocale = fs.readFileSync(
     path.resolve(__dirname, '../lang/zh.json'),
     'utf8'
@@ -132,8 +140,10 @@ test('google popup callback is handed to the lightweight auth callback before th
     assert.match(authSource, /function startGoogleSameTabRedirectLogin\(\)/);
     assert.match(authSource, /buildGoogleImplicitAuthUrl\(redirectState\)/);
     assert.match(authSource, /function buildGoogleImplicitAuthRedirectUri\(mode = 'same-tab'\)/);
+    assert.match(authSource, /new URL\('\/auth-popup-close\.html', window\.location\.origin\)/);
     assert.match(authSource, /buildGoogleImplicitAuthUrl\(popupState, \{ mode: 'popup' \}\)/);
     assert.match(authSource, /authUrl\.searchParams\.set\('redirect_uri', buildGoogleImplicitAuthRedirectUri\(redirectMode\)\)/);
+    assert.match(authSource, /function buildGooglePopupRedirectUrl\(mode = 'callback'\)/);
     assert.match(authSource, /handleGoogleCredentialResponse\(\{ credential: payload\.credential \}/);
     assert.match(authSource, /function closeGoogleAuthSurfacesAfterSuccess\(\)/);
     assert.match(authSource, /function hasActiveModalBehindLogin\(\)/);
@@ -145,6 +155,12 @@ test('google popup callback is handed to the lightweight auth callback before th
     assert.match(authSource, /closeGoogleAuthSurfacesAfterSuccess\(\);\s*await handleGoogleCredentialResponse/);
     assert.match(authSource, /event === 'SIGNED_IN' && session && hasActiveGoogleAuthLoading\(\)/);
     assert.doesNotMatch(authSource, /typeof toggleLoginModal === 'function'/);
+
+    assert.match(authPopupCloseHtmlSource, /\.\/js\/auth-popup-close-page\.js\?v=20260508_AUTH_POPUP_CLOSE_FAST_1/);
+    assert.doesNotMatch(authPopupCloseHtmlSource, /@supabase\/supabase-js/);
+    assert.match(authPopupCloseSource, /const isPopupMode = url\.searchParams\.get\('popup'\) === '1' \|\| \(isPopupState && !isRedirectState\)/);
+    assert.match(authPopupCloseSource, /notifyOpener\(\{\s*status: 'credential'/);
+    assert.match(authPopupCloseSource, /fallbackToFullCallback\(\)/);
 });
 
 test('public login modal waits for the auth sheet runtime before becoming visible', () => {
