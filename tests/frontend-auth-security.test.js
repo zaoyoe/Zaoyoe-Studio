@@ -15,6 +15,30 @@ const indexSource = fs.readFileSync(
     path.resolve(__dirname, '../index.html'),
     'utf8'
 );
+const shopSource = fs.readFileSync(
+    path.resolve(__dirname, '../shop.html'),
+    'utf8'
+);
+const promptsSource = fs.readFileSync(
+    path.resolve(__dirname, '../prompts.html'),
+    'utf8'
+);
+const verifySource = fs.readFileSync(
+    path.resolve(__dirname, '../verify.html'),
+    'utf8'
+);
+const guestbookSource = fs.readFileSync(
+    path.resolve(__dirname, '../guestbook.html'),
+    'utf8'
+);
+const privacySource = fs.readFileSync(
+    path.resolve(__dirname, '../privacy.html'),
+    'utf8'
+);
+const resetPasswordSource = fs.readFileSync(
+    path.resolve(__dirname, '../reset-password.html'),
+    'utf8'
+);
 const authCallbackSource = fs.readFileSync(
     path.resolve(__dirname, '../js/auth-callback-page.js'),
     'utf8'
@@ -77,6 +101,18 @@ test('password reset invalid email feedback follows the active locale', () => {
 test('google popup callback is handed to the lightweight auth callback before the home page renders', () => {
     assert.match(indexSource, /\.\/css\/auth-popup-handoff\.css\?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1/);
     assert.match(indexSource, /\.\/js\/auth-popup-handoff\.js\?v=20260501_IOS_GOOGLE_REDIRECT_1/);
+    assert.match(shopSource, /\.\/css\/auth-popup-handoff\.css\?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1/);
+    assert.match(shopSource, /\.\/js\/auth-popup-handoff\.js\?v=20260501_IOS_GOOGLE_REDIRECT_1/);
+    assert.match(promptsSource, /\.\/css\/auth-popup-handoff\.css\?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1/);
+    assert.match(promptsSource, /\.\/js\/auth-popup-handoff\.js\?v=20260501_IOS_GOOGLE_REDIRECT_1/);
+    assert.match(verifySource, /\.\/css\/auth-popup-handoff\.css\?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1/);
+    assert.match(verifySource, /\.\/js\/auth-popup-handoff\.js\?v=20260501_IOS_GOOGLE_REDIRECT_1/);
+    assert.match(guestbookSource, /\.\/css\/auth-popup-handoff\.css\?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1/);
+    assert.match(guestbookSource, /\.\/js\/auth-popup-handoff\.js\?v=20260501_IOS_GOOGLE_REDIRECT_1/);
+    assert.match(privacySource, /\.\/css\/auth-popup-handoff\.css\?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1/);
+    assert.match(privacySource, /\.\/js\/auth-popup-handoff\.js\?v=20260501_IOS_GOOGLE_REDIRECT_1/);
+    assert.match(resetPasswordSource, /\.\/css\/auth-popup-handoff\.css\?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1/);
+    assert.match(resetPasswordSource, /\.\/js\/auth-popup-handoff\.js\?v=20260501_IOS_GOOGLE_REDIRECT_1/);
     assert.match(authPopupHandoffStyles, /html\.auth-popup-handoff body/);
     assert.match(authPopupHandoffSource, /state\.startsWith\('zaoyoe_google_popup:'\)/);
     assert.match(authPopupHandoffSource, /state\.startsWith\('zaoyoe_google_redirect:'\)/);
@@ -95,6 +131,9 @@ test('google popup callback is handed to the lightweight auth callback before th
     assert.match(authSource, /function shouldUseGoogleSameTabRedirect\(\)/);
     assert.match(authSource, /function startGoogleSameTabRedirectLogin\(\)/);
     assert.match(authSource, /buildGoogleImplicitAuthUrl\(redirectState\)/);
+    assert.match(authSource, /function buildGoogleImplicitAuthRedirectUri\(mode = 'same-tab'\)/);
+    assert.match(authSource, /buildGoogleImplicitAuthUrl\(popupState, \{ mode: 'popup' \}\)/);
+    assert.match(authSource, /authUrl\.searchParams\.set\('redirect_uri', buildGoogleImplicitAuthRedirectUri\(redirectMode\)\)/);
     assert.match(authSource, /handleGoogleCredentialResponse\(\{ credential: payload\.credential \}/);
     assert.match(authSource, /function closeGoogleAuthSurfacesAfterSuccess\(\)/);
     assert.match(authSource, /function hasActiveModalBehindLogin\(\)/);
