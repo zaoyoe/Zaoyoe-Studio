@@ -2541,7 +2541,7 @@ function createGoogleRedirectState() {
 
 function buildGoogleImplicitAuthRedirectUri(mode = 'same-tab') {
     if (String(mode || '').trim().toLowerCase() === 'popup') {
-        return new URL('/auth-popup-close.html', window.location.origin).toString();
+        return new URL('/auth-popup-close', window.location.origin).toString();
     }
     return window.location.origin;
 }
@@ -2573,7 +2573,7 @@ function shouldUseGoogleSameTabRedirect() {
 }
 
 function buildGooglePopupRedirectUrl(mode = 'callback') {
-    const popupUrl = new URL('/auth-popup-close.html', window.location.origin);
+    const popupUrl = new URL('/auth-popup-close', window.location.origin);
     popupUrl.searchParams.set('popup', '1');
     if (mode === 'close') {
         popupUrl.searchParams.set('close', '1');
