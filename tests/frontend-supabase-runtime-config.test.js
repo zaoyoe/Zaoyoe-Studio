@@ -2307,7 +2307,7 @@ test('auth runtime renderers centralize avatar, google loading, and profile moda
             'auth entry pages should load the latest auth sheet stylesheet'
         );
         assert.equal(
-            source.includes('supabase-auth-functions.js?v=20260509_GOOGLE_PROMPT_FIRST_1'),
+            source.includes('supabase-auth-functions.js?v=20260509_GOOGLE_POPUP_ONLY_1'),
             true,
             'auth entry pages should load the latest auth runtime script'
         );
