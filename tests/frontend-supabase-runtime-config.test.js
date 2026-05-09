@@ -487,14 +487,14 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260508_ENGAGEMENT_SITE_SCOPE_2';",
+        "const VERSION = '20260509_ENGAGEMENT_ORDER_DETAIL_ROUTE_1';",
         "const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';",
         'function ensurePlaceholderPlacementStyles() {',
         '/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */',
         '/* 20260503_CHAT_WIDGET_SAFARI_HANDOFF_12 */',
         '/* 20260503_CHAT_WIDGET_DESKTOP_NARROW_PEEK_1 */',
         '/* 20260503_CHAT_WIDGET_BOOTSTRAP_SCROLL_LOCK_1 */',
-        '/* 20260508_ENGAGEMENT_SITE_SCOPE_2 */',
+        '/* 20260509_ENGAGEMENT_ORDER_DETAIL_ROUTE_1 */',
         'function activateChatWidgetStylesheetLinks() {',
         "link.media = 'all';",
         "link.dataset.deferredStyleActive = '1';",
@@ -516,7 +516,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'body.chat-widget-bootstrap-scroll-locked',
         "const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';",
         "const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';",
-        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260508_ENGAGEMENT_SITE_SCOPE_2';",
+        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260509_ENGAGEMENT_ORDER_DETAIL_ROUTE_1';",
         "const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';",
         'function getChatWidgetConstructor() {',
         'global.ChatWidget = ChatWidget;',
@@ -2014,7 +2014,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/chat-widget-loader.js?v=20260508_ENGAGEMENT_SITE_SCOPE_2'),
+            source.includes('js/chat-widget-loader.js?v=20260509_ENGAGEMENT_ORDER_DETAIL_ROUTE_1'),
             true,
             'public entry pages should load the lazy chat widget bootstrap'
         );
