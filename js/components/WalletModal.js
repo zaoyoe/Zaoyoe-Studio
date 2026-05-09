@@ -3607,6 +3607,81 @@
             });
         },
 
+        getShopRechargeReturnContext() {
+            const context = this.lastOpenContext && typeof this.lastOpenContext === 'object'
+                ? this.lastOpenContext
+                : {};
+            if (context.shop_return_consumed === true || context.shopReturnConsumed === true) {
+                return null;
+            }
+
+            const target = String(context.shop_return_target || context.shopReturnTarget || '').trim().toLowerCase();
+            if (!target) {
+                return null;
+            }
+
+            const productId = String(context.shop_return_product_id || context.shopReturnProductId || '').trim();
+            const quantity = Math.max(1, Math.trunc(Number(context.shop_return_quantity || context.shopReturnQuantity || 1) || 1));
+            return {
+                shop_return_target: target,
+                shop_return_source: String(context.shop_return_source || context.shopReturnSource || '').trim(),
+                shop_return_product_id: productId || null,
+                shop_return_product_ids: Array.isArray(context.shop_return_product_ids)
+                    ? context.shop_return_product_ids
+                    : (Array.isArray(context.shopReturnProductIds) ? context.shopReturnProductIds : []),
+                shop_return_quantity: quantity,
+                shop_return_checkout: context.shop_return_checkout === true
+                    || context.shop_return_checkout === 'true'
+                    || context.shopReturnCheckout === true
+                    || context.shopReturnCheckout === 'true'
+            };
+        },
+
+        buildShopRechargeReturnUrl(context = {}) {
+            const target = String(context.shop_return_target || '').trim().toLowerCase();
+            const productId = String(context.shop_return_product_id || '').trim();
+            const url = new URL('/shop.html', window.location.origin);
+
+            if (target === 'cart' || target === 'cart_checkout') {
+                url.hash = 'cart';
+                return url.href;
+            }
+
+            if (productId) {
+                url.searchParams.set('productId', productId);
+                url.searchParams.set('rechargeReturn', '1');
+                const quantity = Math.max(1, Math.trunc(Number(context.shop_return_quantity || 1) || 1));
+                if (quantity > 1) {
+                    url.searchParams.set('quantity', String(quantity));
+                }
+            }
+
+            return url.href;
+        },
+
+        resumeShopAfterRechargeIfNeeded() {
+            const returnContext = this.getShopRechargeReturnContext();
+            if (!returnContext) {
+                return false;
+            }
+
+            if (this.lastOpenContext && typeof this.lastOpenContext === 'object') {
+                this.lastOpenContext.shop_return_consumed = true;
+            }
+
+            window.setTimeout(() => {
+                this.close();
+                const resumed = typeof window.ShopClient?.resumeAfterWalletRecharge === 'function'
+                    ? window.ShopClient.resumeAfterWalletRecharge(returnContext)
+                    : false;
+                if (resumed) {
+                    return;
+                }
+                window.location.href = this.buildShopRechargeReturnUrl(returnContext);
+            }, 720);
+            return true;
+        },
+
         stopHostedPaymentQrPolling(detailOverlay) {
             const cleanup = detailOverlay?._walletPaymentQrCleanup;
             if (typeof cleanup === 'function') {
@@ -3678,6 +3753,7 @@
                     if (typeof options.onAfterCompletedClose === 'function') {
                         options.onAfterCompletedClose();
                     }
+                    this.resumeShopAfterRechargeIfNeeded();
                 }, Math.max(1200, Number(options.closeDelayMs || 3000) || 3000));
             };
 
@@ -8500,6 +8576,7 @@
                     }).catch(e => console.error('Order reload after mock package purchase failed:', e));
 
                     this.loadData().catch(e => console.error('Wallet reload after mock package purchase failed:', e));
+                    this.resumeShopAfterRechargeIfNeeded();
                     return;
                 }
 
@@ -8886,6 +8963,7 @@
                 }).catch(e => console.error('Order reload after custom recharge failed:', e));
 
                 this.loadData().catch(e => console.error('Wallet reload after custom recharge failed:', e));
+                this.resumeShopAfterRechargeIfNeeded();
             } catch (err) {
                 console.error('[WalletModal] Custom recharge failed:', err);
                 this.triggerWalletRechargeFailedEngagement({}, {

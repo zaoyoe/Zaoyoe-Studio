@@ -297,6 +297,23 @@ function applyPreviewEnvToProcess(envValues = {}) {
     });
 }
 
+function withLocalPreviewEnvDefaults(envValues = {}) {
+    const hasExplicitRateLimitStore = [
+        envValues?.RATE_LIMIT_BACKEND,
+        envValues?.RATE_LIMIT_STORE,
+        envValues?.DISABLE_PERSISTENT_RATE_LIMITS
+    ].some((value) => String(value || '').trim());
+
+    if (hasExplicitRateLimitStore) {
+        return { ...envValues };
+    }
+
+    return {
+        ...envValues,
+        RATE_LIMIT_BACKEND: 'memory'
+    };
+}
+
 function resolveLocalPreviewListenHost(value = process.env.LOCAL_PREVIEW_HOST || process.env.HOST) {
     const normalized = String(value || '').trim();
     return normalized || undefined;
@@ -398,7 +415,7 @@ function createLocalPreviewApp(options = {}) {
     const port = Math.max(1, Number(options.port || process.env.PORT || 8000));
     const envFiles = options.envFiles || getDefaultEnvFiles(repoRoot);
     const baseEnv = options.baseEnv || process.env;
-    const previewEnv = loadPreviewEnv(envFiles, baseEnv);
+    const previewEnv = withLocalPreviewEnvDefaults(loadPreviewEnv(envFiles, baseEnv));
     const smokeResultStore = options.smokeResultStore || createSmokeResultStore();
 
     applyPreviewEnvToProcess(previewEnv);
@@ -652,5 +669,6 @@ module.exports = {
     resolveLocalPreviewRuntimeScript,
     setLocalPreviewNoStoreHeaders,
     shouldDisableLocalPreviewCache,
+    withLocalPreviewEnvDefaults,
     dispatchLocalPreviewApiRequest
 };

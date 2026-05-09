@@ -1488,6 +1488,14 @@ test('customer robot account, wallet, shop and verify routes open the intended U
     assert.match(chatWidget, /points:\s*'balance'/);
     assert.match(chatWidget, /transactions:\s*'orders'/);
     assert.match(chatWidget, /getEngagementWalletViewFromActionUrl\(actionUrl = ''\)/);
+    assert.match(chatWidget, /getEngagementWalletOrderDetailTarget\(actionUrl = '', metadata = \{\}\)/);
+    assert.match(chatWidget, /getEngagementWalletReturnContext\(metadata = \{\}\)/);
+    assert.match(chatWidget, /const walletOrderDetailTarget = walletView === 'orders'/);
+    assert.match(chatWidget, /const walletReturnContext = this\.getEngagementWalletReturnContext/);
+    assert.match(chatWidget, /wallet_order_detail_id: walletOrderDetailTarget\?\.orderId \|\| null/);
+    assert.match(chatWidget, /\.\.\.walletReturnContext/);
+    assert.match(chatWidget, /openEngagementWalletOrderDetail\(walletModal, orderDetailId = ''\)/);
+    assert.match(chatWidget, /walletModal\.showOrderDetail\(normalizedOrderId\)/);
     assert.match(chatWidget, /if \(\/\^shop:\/i\.test\(rawUrl\)\)/);
     assert.match(chatWidget, /getEngagementAccountViewFromActionUrl\(actionUrl = '', metadata = \{\}\)/);
     assert.match(chatWidget, /account:\s*'profile'/);
@@ -1547,6 +1555,10 @@ test('business events trigger customer robot automation rules', () => {
     assert.match(shopClient, /triggerShopOrderEngagement:\s*function \(triggerType = 'order_delivered'/);
     assert.match(shopClient, /this\.triggerShopOrderEngagement\('order_delivered'[\s\S]*source:\s*'cart_checkout_success'/);
     assert.match(shopClient, /this\.triggerShopOrderEngagement\('order_delivered'[\s\S]*source:\s*'product_purchase_success'/);
+    assert.match(shopClient, /buildShopRechargeReturnContext:\s*function \(target = 'product_purchase'/);
+    assert.match(shopClient, /resumeAfterWalletRecharge:\s*function \(context = \{\}\)/);
+    assert.match(shopClient, /openShopWalletModal\('recharge'[\s\S]*\.\.\.rechargeReturnContext/);
+    assert.match(shopClient, /action_url:\s*'wallet:\/\/recharge'/);
 
     assert.match(walletModal, /triggerWalletEngagementEvent\(triggerType = 'page_view'/);
     assert.match(walletModal, /triggerWalletRechargeSuccessEngagement\(paymentResult = \{\}, statusResult = \{\}, extra = \{\}\)/);
@@ -1555,6 +1567,9 @@ test('business events trigger customer robot automation rules', () => {
     assert.match(walletModal, /this\.triggerWalletEngagementEvent\('wallet_recharge_failed'/);
     assert.match(walletModal, /source:\s*'wallet_package_qr_timeout'/);
     assert.match(walletModal, /source:\s*'wallet_custom_qr_timeout'/);
+    assert.match(walletModal, /getShopRechargeReturnContext\(\)/);
+    assert.match(walletModal, /resumeShopAfterRechargeIfNeeded\(\)/);
+    assert.match(walletModal, /window\.ShopClient\.resumeAfterWalletRecharge\(returnContext\)/);
 
     assert.match(chatWidget, /scheduleEngagementConditionEvaluation\(reason = 'runtime'/);
     assert.match(chatWidget, /evaluateNewUserWelcomeAutomation\(user = \{\}, context = \{\}\)/);
@@ -1646,6 +1661,17 @@ test('business events trigger customer robot automation rules', () => {
     assert.match(publicHandler, /triggerType !== 'points_adjusted'/);
     assert.match(publicHandler, /const summaryLabel = getPointsAdjustedSummaryLabel\(eventContext\)/);
     assert.match(publicHandler, /action_path_label:\s*bubble\.metadata\?\.action_path_label \|\| '我的钱包 > 积分'/);
+    assert.match(publicHandler, /applyPointsInsufficientRuleContextOverrides\(bubble = \{\}, eventContext = \{\}\)/);
+    assert.match(publicHandler, /action_url:\s*'wallet:\/\/recharge'/);
+    assert.match(publicHandler, /shop_return_target:\s*shopReturnTarget/);
+    assert.match(publicHandler, /ORDER_LIFECYCLE_TRIGGER_TYPES = Object\.freeze\(new Set\(\[/);
+    assert.match(publicHandler, /function applyOrderLifecycleRuleContextOverrides\(bubble = \{\}, eventContext = \{\}, triggerType = ''\)/);
+    assert.match(publicHandler, /actionUrl = buildContextualUrl\('wallet:\/\/orders', primaryOrderId \? \{ order_id: primaryOrderId \} : \{\}\)/);
+    assert.match(publicHandler, /order_lifecycle_trigger:\s*sanitizeText\(triggerType, 80\)/);
+    assert.match(publicHandler, /SUPPORT_CONTEXT_TRIGGER_TYPES = Object\.freeze\(new Set\(\[/);
+    assert.match(publicHandler, /function applySupportRuleContextOverrides\(bubble = \{\}, eventContext = \{\}, triggerType = ''\)/);
+    assert.match(publicHandler, /actionUrl = buildContextualUrl\('support:\/\/tickets'/);
+    assert.match(publicHandler, /support_view:\s*'ticket_history'/);
     assert.match(moderateComments, /title:\s*'你发布的内容已被移除'/);
     assert.match(moderateComments, /已被移除/);
     assert.match(chatWidget, /event_type:\s*'support_reply'/);
@@ -1679,7 +1705,8 @@ test('robot bubbles protect ordinary users from ops notices while surfacing CN a
     assert.match(chatWidget, /showOpsAlertEngagementBubble\(alert = \{\}, options = \{\}\)/);
     assert.match(chatWidget, /openOpsAlertEngagementTarget\(item = \{\}\)/);
     assert.match(chatWidget, /normalized\.source === 'ops_alert' \|\| \/\^ops-alert:\/i\.test\(actionUrl\)/);
-    assert.match(chatWidget, /\['notification', 'ops_alert'\]\.includes\(normalized\.source\)/);
+    assert.match(chatWidget, /this\.fab\.classList\.toggle\('has-unread', this\.unreadCount > 0\)/);
+    assert.doesNotMatch(chatWidget, /\['notification', 'ops_alert'\]\.includes\(normalized\.source\)/);
     assert.match(chatWidget, /this\.showOpsAlertEngagementBubble\(normalized, \{ realtime: true \}\)/);
 });
 
@@ -1778,7 +1805,7 @@ test('shop discount assets can surface as robot engagement bubbles', () => {
     assert.match(shopClient, /shop_product_discount_assets/);
     assert.match(shopClient, /\/shop\.html\?productId=/);
     assert.match(shopClient, /this\.maybeShowShopDiscountEngagement\(\)/);
-    assert.match(shopHtml, /20260508_SHOP_LANGUAGE_LABEL_FIX_1/);
+    assert.match(shopHtml, /20260509_SHOP_PURCHASE_COUPON_SYNC_GRACE_1/);
 });
 
 test('business terminal events automatically maintain engagement user tags', () => {

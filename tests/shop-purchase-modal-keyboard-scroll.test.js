@@ -15,9 +15,15 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
     const shopHtml = readRepoFile('shop.html');
 
     assert.equal(
-        shopHtml.includes('css/shop-page.css?v=20260503_SHOP_MOBILE_FRESH_ENTER_2'),
+        shopHtml.includes('css/shop-page.css?v=20260509_SHOP_PURCHASE_MODAL_MOBILE_WIDTH_1'),
         true,
         'shop.html should load the keyboard-dock cache-busted storefront stylesheet'
+    );
+
+    assert.equal(
+        shopHtml.includes('js/shop-client.js?v=20260509_SHOP_PURCHASE_COUPON_SYNC_GRACE_1'),
+        true,
+        'shop.html should load the viewport-sync cache-busted storefront runtime'
     );
 
     assert.match(
@@ -82,8 +88,20 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
 
     assert.match(
         shopClientSource,
-        /getPurchaseModalNativeViewportFrame:\s*function \(\) \{[\s\S]*const visualTop = Math\.max\(0, vv\?\.offsetTop \|\| 0\);[\s\S]*const visualLeft = Math\.max\(0, vv\?\.offsetLeft \|\| 0\);[\s\S]*const visualWidth = Math\.max\(320, Math\.round\(vv\?\.width[\s\S]*const overlayHeight = Math\.max\(320, Math\.round\([\s\S]*visualHeight[\s\S]*return \{[\s\S]*top: Math\.round\(visualTop\),[\s\S]*left: Math\.round\(visualLeft\),[\s\S]*width: visualWidth,[\s\S]*overlayHeight,/,
+        /getPurchaseModalNativeViewportFrame:\s*function \(\) \{[\s\S]*const visualTop = Math\.max\(0, vv\?\.offsetTop \|\| 0\);[\s\S]*const visualLeft = Math\.max\(0, vv\?\.offsetLeft \|\| 0\);[\s\S]*const overlayHeight = Math\.max\(320, Math\.round\([\s\S]*visualHeight[\s\S]*return \{[\s\S]*top: Math\.round\(visualTop\),[\s\S]*left: Math\.round\(visualLeft\),[\s\S]*width: visualWidth,[\s\S]*overlayHeight,/,
         'purchase modal should derive its overlay frame from visualViewport top/left/width/height'
+    );
+
+    assert.match(
+        shopClientSource,
+        /const visualWidth = Math\.max\(\s*1,\s*Math\.round\(vv\?\.width \|\| window\.innerWidth \|\| document\.documentElement\.clientWidth \|\| document\.body\?\.clientWidth \|\| 0\)\s*\);/,
+        'purchase modal should use the live visual viewport width instead of pinning the overlay to a 320px minimum'
+    );
+
+    assert.doesNotMatch(
+        shopClientSource,
+        /const visualWidth = Math\.max\(320,/,
+        'purchase modal should not keep the retired 320px viewport-width clamp that breaks narrow desktop windows'
     );
 
     assert.match(
@@ -104,6 +122,18 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
         'purchase modal should keep the pre-keyboard overlay height while the active modal waits for iOS keyboard viewport retraction to settle'
     );
 
+    assert.match(
+        shopClientSource,
+        /schedulePurchaseModalViewportSync:\s*function \(force = false\) \{[\s\S]*requestAnimationFrame\(\(\) => \{[\s\S]*this\.syncPurchaseModalOverlayViewport\(force\);[\s\S]*\}\);/,
+        'purchase modal should coalesce live viewport resizes through one animation-frame sync'
+    );
+
+    assert.match(
+        shopClientSource,
+        /attachPurchaseModalViewportSync:\s*function \(\) \{[\s\S]*window\.addEventListener\('resize', handleViewportChange, \{ passive: true \}\);[\s\S]*window\.addEventListener\('orientationchange', handleViewportChange, \{ passive: true \}\);[\s\S]*window\.visualViewport\?\.addEventListener\('resize', handleViewportChange, \{ passive: true \}\);[\s\S]*window\.visualViewport\?\.addEventListener\('scroll', handleViewportChange, \{ passive: true \}\);/,
+        'purchase modal should keep listening for desktop and visual viewport changes while it is open'
+    );
+
     assert.equal(
         shopClientSource.includes('shop-purchase-chrome-fill'),
         false,
@@ -112,13 +142,13 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
 
     assert.match(
         shopClientSource,
-        /modal\.classList\.remove\('shop-purchase-force-hidden'\);\s+modal\.hidden = false;\s+modal\.classList\.remove\('active'\);\s+this\.freezePurchaseModalPage\(\);\s+this\.capturePurchaseModalOverlayHeight\(true\);\s+if \(!this\.purchaseModalPageFrozen && window\.iOSScrollLock\) \{[\s\S]*window\.iOSScrollLock\.lockLight\(modal, \{[\s\S]*restoreScrollDuringViewport: true[\s\S]*modal\.classList\.add\('active'\);/,
+        /modal\.classList\.remove\('shop-purchase-force-hidden'\);\s+modal\.hidden = false;\s+modal\.classList\.remove\('active'\);\s+this\.freezePurchaseModalPage\(\);\s+this\.capturePurchaseModalOverlayHeight\(true\);\s+if \(!this\.purchaseModalPageFrozen && window\.iOSScrollLock\) \{[\s\S]*window\.iOSScrollLock\.lockLight\(modal, \{[\s\S]*restoreScrollDuringViewport: true[\s\S]*modal\.classList\.add\('active'\);\s+this\.attachPurchaseModalViewportSync\(\);\s+this\.attachPurchaseModalKeyboardDock\(\);/,
         'purchase modal should freeze the iOS page and capture the visual viewport before the active overlay frame is painted'
     );
 
     assert.match(
         shopClientSource,
-        /closePurchaseModal:\s*function \(\) \{[\s\S]*activeInput\?\.blur\(\);[\s\S]*modal\.classList\.add\('shop-purchase-force-hidden'\);\s+modal\.hidden = true;\s+modal\.classList\.remove\('active'\);\s+void modal\.offsetHeight;[\s\S]*this\.detachPurchaseModalKeyboardDock\(\);[\s\S]*if \(this\.purchaseModalPageFrozen\) \{[\s\S]*this\.unfreezePurchaseModalPage\(\);/,
+        /closePurchaseModal:\s*function \(\) \{[\s\S]*activeInput\?\.blur\(\);[\s\S]*modal\.classList\.add\('shop-purchase-force-hidden'\);\s+modal\.hidden = true;\s+modal\.classList\.remove\('active'\);\s+void modal\.offsetHeight;[\s\S]*this\.detachPurchaseModalViewportSync\(\);[\s\S]*this\.detachPurchaseModalKeyboardDock\(\);[\s\S]*if \(this\.purchaseModalPageFrozen\) \{[\s\S]*this\.unfreezePurchaseModalPage\(\);/,
         'purchase modal should force-hide before cleanup and lock release so the address-bar white area disappears in the close frame'
     );
 

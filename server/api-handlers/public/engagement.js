@@ -54,6 +54,18 @@ function createPublicEngagementHandlers({
         /验证堆积告警汇总/,
         /验证失败率告警汇总/
     ]);
+    const ORDER_LIFECYCLE_TRIGGER_TYPES = Object.freeze(new Set([
+        'order_status',
+        'order_paid',
+        'order_delivered',
+        'refund_status',
+        'payment_failed',
+        'wallet_recharge_failed'
+    ]));
+    const SUPPORT_CONTEXT_TRIGGER_TYPES = Object.freeze(new Set([
+        'support_reply',
+        'ticket_updated'
+    ]));
     const OPS_ALERT_FEED_LOOKBACK_HOURS = 72;
     const AUDIENCE_SCOPE_TAGS = Object.freeze({
         recharged: 'paid_user',
@@ -913,14 +925,185 @@ function createPublicEngagementHandlers({
             .trim();
     }
 
+    function applyPointsInsufficientRuleContextOverrides(bubble = {}, eventContext = {}) {
+        const shopReturnTarget = sanitizeText(eventContext.shop_return_target || eventContext.shopReturnTarget, 80);
+        const shopReturnProductId = sanitizeText(
+            eventContext.shop_return_product_id
+                || eventContext.shopReturnProductId
+                || eventContext.product_id
+                || eventContext.productId,
+            160
+        );
+        const shopReturnSource = sanitizeText(eventContext.shop_return_source || eventContext.shopReturnSource || eventContext.source, 120);
+        const shopReturnCheckout = eventContext.shop_return_checkout === true
+            || eventContext.shop_return_checkout === 'true'
+            || eventContext.shopReturnCheckout === true
+            || eventContext.shopReturnCheckout === 'true';
+        const shopReturnQuantity = Number(eventContext.shop_return_quantity || eventContext.shopReturnQuantity || eventContext.quantity || 1) || 1;
+
+        return {
+            ...bubble,
+            action_label: '去充值',
+            action_url: 'wallet://recharge',
+            metadata: {
+                ...bubble.metadata,
+                action_path_label: '我的钱包 > 充值',
+                action_path_url: 'wallet://recharge',
+                wallet_view: 'recharge',
+                shop_return_target: shopReturnTarget || bubble.metadata?.shop_return_target || '',
+                shop_return_source: shopReturnSource || bubble.metadata?.shop_return_source || '',
+                shop_return_product_id: shopReturnProductId || bubble.metadata?.shop_return_product_id || '',
+                shop_return_quantity: Math.max(1, Math.trunc(shopReturnQuantity)),
+                shop_return_checkout: shopReturnCheckout,
+                feed_context: {
+                    ...normalizeMetadata(bubble.metadata?.feed_context),
+                    event_context: eventContext
+                }
+            }
+        };
+    }
+
+    function collectEventContextValues(eventContext = {}, candidateKeys = [], maxLength = 160) {
+        const source = normalizeMetadata(eventContext);
+        const keys = Array.isArray(candidateKeys) ? candidateKeys : [candidateKeys];
+        const values = [];
+        const appendValue = (value) => {
+            if (Array.isArray(value)) {
+                value.forEach(appendValue);
+                return;
+            }
+            if (value === undefined || value === null) return;
+            String(value)
+                .split(',')
+                .map((item) => sanitizeText(item, maxLength))
+                .filter(Boolean)
+                .forEach((item) => values.push(item));
+        };
+
+        keys.forEach((key) => appendValue(source[key]));
+        return [...new Set(values)];
+    }
+
+    function getEventContextValue(eventContext = {}, candidateKeys = [], maxLength = 160) {
+        return collectEventContextValues(eventContext, candidateKeys, maxLength)[0] || '';
+    }
+
+    function buildContextualUrl(protocolPath = '', params = {}) {
+        const normalizedPath = sanitizeText(protocolPath, 200);
+        const searchParams = new URLSearchParams();
+        Object.entries(normalizeMetadata(params)).forEach(([key, value]) => {
+            if (value === undefined || value === null || value === '') return;
+            searchParams.set(key, sanitizeText(value, 240));
+        });
+        const query = searchParams.toString();
+        return query ? `${normalizedPath}?${query}` : normalizedPath;
+    }
+
+    function applyOrderLifecycleRuleContextOverrides(bubble = {}, eventContext = {}, triggerType = '') {
+        const orderIds = collectEventContextValues(eventContext, [
+            'order_id',
+            'orderId',
+            'shop_order_id',
+            'shopOrderId',
+            'target_order_id',
+            'targetOrderId',
+            'reference_order_id',
+            'referenceOrderId',
+            'order_ids',
+            'orderIds',
+            'shop_order_ids',
+            'shopOrderIds'
+        ]);
+        const primaryOrderId = orderIds[0] || '';
+        const paymentOrderId = getEventContextValue(eventContext, ['payment_order_id', 'paymentOrderId'], 160);
+        const checkoutSessionId = getEventContextValue(eventContext, ['checkout_session_id', 'checkoutSessionId'], 160);
+        const providerOrderNo = getEventContextValue(eventContext, ['provider_order_no', 'providerOrderNo'], 180);
+        const orderStatus = getEventContextValue(eventContext, ['order_status', 'orderStatus', 'status', 'payment_status', 'paymentStatus'], 80);
+        const actionUrl = buildContextualUrl('wallet://orders', primaryOrderId ? { order_id: primaryOrderId } : {});
+
+        return {
+            ...bubble,
+            action_label: bubble.action_label || '查看订单',
+            action_url: primaryOrderId ? actionUrl : (bubble.action_url || 'wallet://orders'),
+            metadata: {
+                ...bubble.metadata,
+                action_path_label: bubble.metadata?.action_path_label || '我的钱包 > 订单',
+                action_path_url: primaryOrderId ? actionUrl : (bubble.metadata?.action_path_url || 'wallet://orders'),
+                wallet_view: bubble.metadata?.wallet_view || 'orders',
+                order_id: primaryOrderId || bubble.metadata?.order_id || '',
+                order_ids: orderIds.length ? orderIds : (bubble.metadata?.order_ids || []),
+                shop_order_id: primaryOrderId || bubble.metadata?.shop_order_id || '',
+                payment_order_id: paymentOrderId || bubble.metadata?.payment_order_id || '',
+                checkout_session_id: checkoutSessionId || bubble.metadata?.checkout_session_id || '',
+                provider_order_no: providerOrderNo || bubble.metadata?.provider_order_no || '',
+                order_status: orderStatus || bubble.metadata?.order_status || '',
+                order_lifecycle_trigger: sanitizeText(triggerType, 80),
+                feed_context: {
+                    ...normalizeMetadata(bubble.metadata?.feed_context),
+                    event_context: eventContext
+                }
+            }
+        };
+    }
+
+    function applySupportRuleContextOverrides(bubble = {}, eventContext = {}, triggerType = '') {
+        const ticketId = getEventContextValue(eventContext, [
+            'ticket_id',
+            'ticketId',
+            'support_ticket_id',
+            'supportTicketId',
+            'target_ticket_id',
+            'targetTicketId'
+        ]);
+        const orderId = getEventContextValue(eventContext, ['order_id', 'orderId', 'shop_order_id', 'shopOrderId']);
+        const ticketStatus = getEventContextValue(eventContext, ['ticket_status', 'ticketStatus', 'status'], 80);
+        const ticketStatusLabel = getEventContextValue(eventContext, ['ticket_status_label', 'ticketStatusLabel', 'status_label', 'statusLabel'], 80);
+        const actionUrl = buildContextualUrl('support://tickets', {
+            ticket_id: ticketId,
+            order_id: orderId
+        });
+
+        return {
+            ...bubble,
+            action_label: bubble.action_label || (triggerType === 'support_reply' ? '查看回复' : '查看工单'),
+            action_url: actionUrl,
+            metadata: {
+                ...bubble.metadata,
+                action_path_label: bubble.metadata?.action_path_label || '客服中心 > 工单记录',
+                action_path_url: actionUrl,
+                support_view: 'ticket_history',
+                ticket_id: ticketId || bubble.metadata?.ticket_id || '',
+                ticket_status: ticketStatus || bubble.metadata?.ticket_status || '',
+                ticket_status_label: ticketStatusLabel || bubble.metadata?.ticket_status_label || '',
+                order_id: orderId || bubble.metadata?.order_id || '',
+                feed_context: {
+                    ...normalizeMetadata(bubble.metadata?.feed_context),
+                    event_context: eventContext
+                }
+            }
+        };
+    }
+
     function applyRuleEventContextOverrides(bubble = {}, row = {}, context = {}) {
         const triggerType = normalizeTriggerType(bubble.trigger_type || row.trigger_type || context.triggerType || 'page_view');
-        if (triggerType !== 'points_adjusted') {
+        const eventContext = normalizeMetadata(context.triggerMetadata?.event_context);
+        if (!Object.keys(eventContext).length) {
             return bubble;
         }
 
-        const eventContext = normalizeMetadata(context.triggerMetadata?.event_context);
-        if (!Object.keys(eventContext).length) {
+        if (triggerType === 'points_insufficient') {
+            return applyPointsInsufficientRuleContextOverrides(bubble, eventContext);
+        }
+
+        if (ORDER_LIFECYCLE_TRIGGER_TYPES.has(triggerType)) {
+            return applyOrderLifecycleRuleContextOverrides(bubble, eventContext, triggerType);
+        }
+
+        if (SUPPORT_CONTEXT_TRIGGER_TYPES.has(triggerType)) {
+            return applySupportRuleContextOverrides(bubble, eventContext, triggerType);
+        }
+
+        if (triggerType !== 'points_adjusted') {
             return bubble;
         }
 

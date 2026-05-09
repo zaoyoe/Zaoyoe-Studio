@@ -27,7 +27,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /void this\.prefetchDiscountAssetsForProduct\(\{\s+productId,\s+quantity: 1,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);\s+this\.openPurchaseModal\(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, \{\s+category: productCategory,\s+sourceContext\s+\}\);\s+void this\.refreshCurrentPurchaseGuidance\(productId\);\s+void this\.syncPurchaseAccessAfterOpen\(productId, quantityCap\);/s,
+        /const initialQuantity = Math\.max\(1, Math\.min\(quantityCap[\s\S]*?void this\.prefetchDiscountAssetsForProduct\(\{\s+productId,\s+quantity: initialQuantity,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);\s+this\.openPurchaseModal\(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, \{\s+category: productCategory,\s+sourceContext,\s+initialQuantity\s+\}\);\s+void this\.refreshCurrentPurchaseGuidance\(productId\);\s+void this\.syncPurchaseAccessAfterOpen\(productId, quantityCap\);/s,
         'shop purchase clicks should prefetch discount assets, open the modal immediately, refresh the latest product guidance, and sync purchase access in the background'
     );
     assert.doesNotMatch(
@@ -37,8 +37,8 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /confirmPurchase: async function \(\) \{\s+const token = await this\.getAccessToken\(\);\s+if \(!token\) \{\s+this\.promptLoginForPurchase/s,
-        'confirmPurchase should prompt login only when the user actually tries to submit the order'
+        /confirmPurchase: async function \(\) \{\s+if \(this\.purchaseProcessing\) return;[\s\S]*this\.purchaseProcessing = true;[\s\S]*btn\.innerHTML = `<i class="fas fa-spinner fa-spin"><\/i> <span>\$\{processingText\}<\/span>`;[\s\S]*await new Promise\(\(resolve\) => \{\s+window\.requestAnimationFrame\(\(\) => resolve\(\)\);\s+\}\);[\s\S]*const shouldContinueAfterCouponSync = await this\.waitForPurchaseDiscountAssetsBeforeSubmit\(\);[\s\S]*const token = await this\.getAccessToken\(\);[\s\S]*if \(!token\) \{[\s\S]*restoreIdleButtonState\(\);[\s\S]*this\.promptLoginForPurchase/s,
+        'confirmPurchase should show processing immediately, flush one frame, briefly resolve coupon sync, and only then wait for auth before prompting login if needed'
     );
     assert.match(
         shopClientSource,
@@ -112,8 +112,18 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHandlerSource,
-        /usage_instructions: guidanceData\?\.usage_instructions \|\| normalizeGuidanceText\(responseData\.usage_instructions\) \|\| null/,
-        'purchase responses should prefer server-side localized product guidance over legacy RPC usage instructions'
+        /const responseUsageInstructions = normalizeGuidanceText\(responseData\.usage_instructions\);[\s\S]*const responseHasUsageInstructions = responseData\.show_usage_instructions === true[\s\S]*usage_instructions: responseUsageInstructions \|\| null,[\s\S]*show_usage_instructions: responseHasUsageInstructions/s,
+        'purchase responses should normalize direct RPC usage instructions without blocking on a post-purchase guidance refetch'
+    );
+    assert.doesNotMatch(
+        shopHandlerSource,
+        /const guidancePromise = loadProductGuidance\(requestAdminSupabase \|\| adminSupabase \|\| supabase, \{/,
+        'purchase responses should not refetch product guidance before returning success'
+    );
+    assert.match(
+        shopClientSource,
+        /this\.showSuccessModal\(finalContent, null, usageInstructions, successItems\);[\s\S]*this\.purchaseProcessing = false;[\s\S]*window\.setTimeout\(\(\) => \{[\s\S]*trackShopAnalyticsEvent\('product_purchase_success'/s,
+        'confirmPurchase should show the success UI before running purchase analytics and product refresh follow-ups'
     );
     assert.match(
         shopHandlerSource,
@@ -147,7 +157,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /css\/shop-page\.css\?v=20260503_SHOP_MOBILE_FRESH_ENTER_2/,
+        /css\/shop-page\.css\?v=20260509_SHOP_PURCHASE_MODAL_MOBILE_WIDTH_1/,
         'shop.html should bust the shop stylesheet cache after updating purchase guidance light-theme color visibility'
     );
     assert.match(
@@ -177,7 +187,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /js\/shop-client\.js\?v=20260508_SHOP_LANGUAGE_LABEL_FIX_1/,
+        /js\/shop-client\.js\?v=20260509_SHOP_PURCHASE_COUPON_SYNC_GRACE_1/,
         'shop.html should load the purchase-guidance rich-text runtime with the visible yellow normalization fix'
     );
     assert.match(

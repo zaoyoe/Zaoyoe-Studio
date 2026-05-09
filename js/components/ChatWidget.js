@@ -6885,6 +6885,128 @@ class ChatWidget {
         return '';
     }
 
+    getEngagementRouteMetadataValues(metadata = {}, candidateKeys = []) {
+        const keys = Array.isArray(candidateKeys) ? candidateKeys : [candidateKeys];
+        const values = [];
+        const appendValue = (value) => {
+            if (Array.isArray(value)) {
+                value.forEach(appendValue);
+                return;
+            }
+            if (value === undefined || value === null) return;
+            String(value)
+                .split(',')
+                .map((item) => item.trim())
+                .filter(Boolean)
+                .forEach((item) => values.push(item));
+        };
+
+        this.getEngagementRouteMetadataContexts(metadata).forEach((context) => {
+            keys.forEach((key) => appendValue(context?.[key]));
+        });
+
+        return [...new Set(values)];
+    }
+
+    getEngagementWalletOrderDetailTarget(actionUrl = '', metadata = {}) {
+        const source = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+            ? metadata
+            : {};
+        const orderIds = [];
+        const appendOrderIds = (items = []) => {
+            (Array.isArray(items) ? items : [items])
+                .map((item) => String(item || '').trim())
+                .filter(Boolean)
+                .forEach((item) => orderIds.push(item));
+        };
+        const rawActionUrl = String(actionUrl || '').trim();
+        let targetUrl = null;
+        let isOrderRoute = false;
+
+        if (rawActionUrl) {
+            try {
+                targetUrl = new URL(rawActionUrl, window.location.origin);
+                const routeParts = [
+                    String(targetUrl.hostname || '').trim(),
+                    String(targetUrl.pathname || '').replace(/^\/+/, '').trim()
+                ].filter(Boolean).join('/').toLowerCase();
+                isOrderRoute = ['wallet:', 'shop:'].includes(targetUrl.protocol)
+                    && /(^|\/)(orders|order-history|shop-orders)$/.test(routeParts || 'orders');
+                appendOrderIds([
+                    targetUrl.searchParams.get('order_id'),
+                    targetUrl.searchParams.get('orderId'),
+                    targetUrl.searchParams.get('shop_order_id'),
+                    targetUrl.searchParams.get('shopOrderId'),
+                    targetUrl.searchParams.get('order_ids'),
+                    targetUrl.searchParams.get('orderIds'),
+                    targetUrl.searchParams.get('shop_order_ids'),
+                    targetUrl.searchParams.get('shopOrderIds')
+                ]);
+                if (isOrderRoute) {
+                    appendOrderIds(targetUrl.searchParams.get('id'));
+                }
+            } catch (_) {
+                targetUrl = null;
+            }
+        }
+
+        appendOrderIds(this.getEngagementRouteMetadataValues(source, [
+            'order_id',
+            'orderId',
+            'shop_order_id',
+            'shopOrderId',
+            'target_order_id',
+            'targetOrderId',
+            'reference_order_id',
+            'referenceOrderId',
+            'source_order_id',
+            'sourceOrderId'
+        ]));
+        appendOrderIds(this.getEngagementRouteMetadataValues(source, [
+            'order_ids',
+            'orderIds',
+            'shop_order_ids',
+            'shopOrderIds'
+        ]));
+
+        const uniqueOrderIds = [...new Set(orderIds)];
+        return uniqueOrderIds.length
+            ? {
+                orderId: uniqueOrderIds[0],
+                orderIds: uniqueOrderIds
+            }
+            : null;
+    }
+
+    getEngagementWalletReturnContext(metadata = {}) {
+        const source = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+            ? metadata
+            : {};
+        const target = this.getEngagementRouteMetadataValue(source, ['shop_return_target', 'shopReturnTarget']);
+        if (!target) {
+            return {};
+        }
+
+        const productIds = this.getEngagementRouteMetadataValues(source, ['shop_return_product_ids', 'shopReturnProductIds', 'product_ids', 'productIds']);
+        const productId = this.getEngagementRouteMetadataValue(source, [
+            'shop_return_product_id',
+            'shopReturnProductId',
+            'product_id',
+            'productId'
+        ]) || productIds[0] || '';
+        const quantity = this.getEngagementRouteMetadataValue(source, ['shop_return_quantity', 'shopReturnQuantity', 'quantity']);
+        const checkout = this.getEngagementRouteMetadataValue(source, ['shop_return_checkout', 'shopReturnCheckout']);
+
+        return {
+            shop_return_target: target,
+            shop_return_source: this.getEngagementRouteMetadataValue(source, ['shop_return_source', 'shopReturnSource', 'source']),
+            shop_return_product_id: productId,
+            shop_return_product_ids: productIds,
+            shop_return_quantity: quantity || null,
+            shop_return_checkout: checkout === 'true' || checkout === '1'
+        };
+    }
+
     getEngagementSupportTarget(actionUrl = '', metadata = {}) {
         const source = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
             ? metadata
@@ -6920,13 +7042,13 @@ class ChatWidget {
             ticketId: String(
                 targetUrl?.searchParams?.get('ticketId')
                     || targetUrl?.searchParams?.get('ticket_id')
-                    || this.getEngagementRouteMetadataValue(source, ['ticketId', 'ticket_id'])
+                    || this.getEngagementRouteMetadataValue(source, ['ticketId', 'ticket_id', 'supportTicketId', 'support_ticket_id'])
                     || ''
             ).trim(),
             orderId: String(
                 targetUrl?.searchParams?.get('orderId')
                     || targetUrl?.searchParams?.get('order_id')
-                    || this.getEngagementRouteMetadataValue(source, ['orderId', 'order_id'])
+                    || this.getEngagementRouteMetadataValue(source, ['orderId', 'order_id', 'shopOrderId', 'shop_order_id'])
                     || ''
             ).trim(),
             ticketStatus: String(
@@ -7766,12 +7888,9 @@ class ChatWidget {
         const viewKey = this.getEngagementItemKey(normalized);
         const hasSeenInSession = this.engagementViewedKeys.has(viewKey);
         this.engagementActiveItem = normalized;
-        if (['notification', 'ops_alert'].includes(normalized.source) && !hasSeenInSession) {
-            this.unreadCount = Math.max(this.unreadCount, 0) + 1;
-        }
         this.updateBadge();
         this._pauseFabAmbientMotion(8200, true);
-        this.fab.classList.add('has-unread');
+        this.fab.classList.toggle('has-unread', this.unreadCount > 0);
         this.fab.classList.add('has-new-message');
         setTimeout(() => this.fab?.classList.remove('has-new-message'), 600);
 
@@ -8070,20 +8189,36 @@ class ChatWidget {
 
     async openEngagementWalletView(view = '', context = {}) {
         const walletView = this.normalizeEngagementWalletView(view) || 'balance';
+        const normalizedContext = context && typeof context === 'object' && !Array.isArray(context)
+            ? context
+            : {};
+        const orderDetailId = String(
+            normalizedContext.wallet_order_detail_id
+            || normalizedContext.walletOrderDetailId
+            || normalizedContext.order_detail_id
+            || normalizedContext.orderDetailId
+            || ''
+        ).trim();
         const walletContext = {
             entry: 'engagement_bubble',
             source_module: 'engagement',
-            ...context
+            ...normalizedContext
         };
 
         try {
+            let walletModal = null;
             if (typeof window.ZaoyoeWalletModalBootstrap?.open === 'function') {
-                await window.ZaoyoeWalletModalBootstrap.open(walletView, walletContext);
-                this.clearUnread();
-                return true;
+                walletModal = await window.ZaoyoeWalletModalBootstrap.open(walletView, walletContext);
+            } else if (typeof window.WalletModal?.open === 'function') {
+                await window.WalletModal.open(walletView, walletContext);
+                walletModal = window.WalletModal;
             }
-            if (typeof window.WalletModal?.open === 'function') {
-                window.WalletModal.open(walletView, walletContext);
+
+            if (walletModal) {
+                if (typeof walletModal.switchView === 'function') {
+                    walletModal.switchView(walletView);
+                }
+                this.openEngagementWalletOrderDetail(walletModal, orderDetailId);
                 this.clearUnread();
                 return true;
             }
@@ -8092,6 +8227,34 @@ class ChatWidget {
         }
 
         return false;
+    }
+
+    openEngagementWalletOrderDetail(walletModal, orderDetailId = '') {
+        const normalizedOrderId = String(orderDetailId || '').trim();
+        if (!normalizedOrderId || typeof walletModal?.showOrderDetail !== 'function') {
+            return false;
+        }
+
+        if (document.getElementById(`order-detail-${normalizedOrderId}`)) {
+            return true;
+        }
+
+        window.setTimeout(() => {
+            if (document.getElementById(`order-detail-${normalizedOrderId}`)) {
+                return;
+            }
+            try {
+                const detailPromise = walletModal.showOrderDetail(normalizedOrderId);
+                if (detailPromise && typeof detailPromise.catch === 'function') {
+                    detailPromise.catch((error) => {
+                        console.warn('[ChatWidget] Failed to open wallet order detail from engagement:', error?.message || error);
+                    });
+                }
+            } catch (error) {
+                console.warn('[ChatWidget] Failed to open wallet order detail from engagement:', error?.message || error);
+            }
+        }, 0);
+        return true;
     }
 
     normalizeEngagementAuthView(view = '') {
@@ -8246,6 +8409,16 @@ class ChatWidget {
             source: normalized.source,
             source_module: normalized.source_module
         };
+        const walletOrderDetailTarget = walletView === 'orders'
+            ? this.getEngagementWalletOrderDetailTarget(actionUrl, {
+                ...routeMetadata,
+                ...actionTarget
+            })
+            : null;
+        const walletReturnContext = this.getEngagementWalletReturnContext({
+            ...routeMetadata,
+            ...actionTarget
+        });
         const guestbookReplyTarget = this.getEngagementGuestbookReplyTarget(actionUrl, {
             ...routeMetadata
         });
@@ -8336,7 +8509,10 @@ class ChatWidget {
                 source_event_id: normalized.source_event_id,
                 notification_id: normalized.notification_id,
                 rule_id: normalized.rule_id,
-                route_label: routeLabel || null
+                route_label: routeLabel || null,
+                wallet_order_detail_id: walletOrderDetailTarget?.orderId || null,
+                wallet_order_ids: walletOrderDetailTarget?.orderIds || [],
+                ...walletReturnContext
             });
             if (opened) {
                 return;

@@ -22,7 +22,8 @@ const {
     resolveLocalPreviewStandaloneApiRoute,
     resolveLocalPreviewRuntimeScript,
     setLocalPreviewNoStoreHeaders,
-    shouldDisableLocalPreviewCache
+    shouldDisableLocalPreviewCache,
+    withLocalPreviewEnvDefaults
 } = require('../scripts/local-preview-server');
 
 test('local preview server serves Supabase runtime config from local env files', async () => {
@@ -322,6 +323,33 @@ test('local preview server seeds process env from loaded preview values without 
             process.env.LOCAL_PREVIEW_TEST_MARKER = originalMarker;
         }
     }
+});
+
+test('local preview server defaults rate limiting to memory unless explicitly configured', () => {
+    assert.deepEqual(withLocalPreviewEnvDefaults({
+        SUPABASE_URL: 'https://preview.supabase.co'
+    }), {
+        SUPABASE_URL: 'https://preview.supabase.co',
+        RATE_LIMIT_BACKEND: 'memory'
+    });
+
+    assert.deepEqual(withLocalPreviewEnvDefaults({
+        RATE_LIMIT_BACKEND: 'supabase'
+    }), {
+        RATE_LIMIT_BACKEND: 'supabase'
+    });
+
+    assert.deepEqual(withLocalPreviewEnvDefaults({
+        RATE_LIMIT_STORE: 'supabase'
+    }), {
+        RATE_LIMIT_STORE: 'supabase'
+    });
+
+    assert.deepEqual(withLocalPreviewEnvDefaults({
+        DISABLE_PERSISTENT_RATE_LIMITS: '1'
+    }), {
+        DISABLE_PERSISTENT_RATE_LIMITS: '1'
+    });
 });
 
 test('local preview server listen host defaults to localhost-compatible any-address mode', () => {

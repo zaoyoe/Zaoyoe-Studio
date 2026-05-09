@@ -404,6 +404,41 @@ test('shop product cards prefetch discount assets so direct product opens can re
     );
 });
 
+test('shop purchase submit gives coupon-list sync a short chance before buying without a coupon', () => {
+    const shopClientSource = readRepoFile(path.join('js', 'shop-client.js'));
+
+    assert.match(
+        shopClientSource,
+        /discountAssetsRequestCache: new Map\(\),[\s\S]*discountAssetsRequestControllers: new Map\(\),/s,
+        'shop-client.js should track in-flight coupon-list requests'
+    );
+    assert.match(
+        shopClientSource,
+        /const SHOP_PURCHASE_COUPON_SYNC_SUBMIT_GRACE_MS = 900;/,
+        'shop-client.js should cap the pre-submit coupon-list wait so purchase is not blocked for seconds'
+    );
+    assert.match(
+        shopClientSource,
+        /waitForPurchaseDiscountAssetsBeforeSubmit: async function \(\{ timeoutMs = SHOP_PURCHASE_COUPON_SYNC_SUBMIT_GRACE_MS \} = \{\}\) \{[\s\S]*this\.getCurrentPurchaseSelectedDiscounts\(\)\.length > 0[\s\S]*Promise\.race\(\[[\s\S]*this\.applyCurrentPurchaseDiscountAssetsPayload\(result\.payload \|\| \{\}\);[\s\S]*couponSyncFoundBeforePurchase/s,
+        'coupon-list sync should be allowed to reveal available coupons before an un-discounted purchase continues'
+    );
+    assert.match(
+        shopClientSource,
+        /fetch\('\/api\/shop\/available-discounts', \{[\s\S]*signal: abortController\?\.signal,[\s\S]*body: JSON\.stringify/s,
+        'available discount requests should remain abortable for cleanup and stale modal transitions'
+    );
+    assert.match(
+        shopClientSource,
+        /btn\.disabled = true;[\s\S]*await new Promise\(\(resolve\) => \{[\s\S]*const shouldContinueAfterCouponSync = await this\.waitForPurchaseDiscountAssetsBeforeSubmit\(\);[\s\S]*if \(!shouldContinueAfterCouponSync\) \{[\s\S]*restoreIdleButtonState\(\);[\s\S]*return;[\s\S]*\}[\s\S]*const token = await this\.getAccessToken\(\);/s,
+        'confirmPurchase should briefly wait for coupon-list sync before auth and purchase transport'
+    );
+    assert.doesNotMatch(
+        shopClientSource,
+        /confirmPurchase: async function \(\) \{[\s\S]*cancelCurrentPurchaseDiscountAssetsSync/s,
+        'confirmPurchase should not blindly cancel the current-product coupon sync'
+    );
+});
+
 test('shop purchase modal renders a polished discount input group instead of a plain text field and boxy button', () => {
     const shopHtmlSource = readRepoFile('shop.html');
     const shopCssSource = readRepoFile(path.join('css', 'shop-page.css'));

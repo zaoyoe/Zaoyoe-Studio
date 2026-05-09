@@ -4996,6 +4996,12 @@
             }
         }
 
+        @media (max-width: 600px) {
+            #shopPurchaseModal .modal-content {
+                width: min(calc(100% - 24px), 700px) !important;
+            }
+        }
+
         #shopSuccessModal.has-usage-instructions {
             --shop-success-action-bottom: auto;
             --shop-success-action-width: auto;
