@@ -2913,6 +2913,7 @@ function clearInlineGoogleFallbackButtons() {
         btn.removeAttribute('tabindex');
     });
 }
+window.clearInlineGoogleFallbackButtons = clearInlineGoogleFallbackButtons;
 
 function ensureInlineGoogleButtonSlot(fallbackButton) {
     if (!fallbackButton?.parentNode) return null;
@@ -3263,27 +3264,19 @@ async function triggerGoogleOAuthRedirectFallback() {
 }
 
 // triggerGoogleLogin - Triggered when the user clicks the custom "Sign in with Google" button.
-// Desktop/manual login should always open the full Google account chooser popup so users can
-// reliably switch accounts. iOS keeps the same-tab redirect path to avoid popup blockers.
+// We now prefer same-tab Google account selection on every platform so users do not see a
+// detached popup shell after account selection. The popup bridge remains as a fallback/debug path.
 window.triggerGoogleLogin = async () => {
     console.log('🔵 triggerGoogleLogin called (Client-side Google auth mode)');
 
     if (window.isGoogleLoginLoading) return;
     clearAuthFeedback();
-    setGoogleButtonsLoading(true, authT('auth.openingGoogleWindow', '正在打开授权窗口...'));
+    setGoogleButtonsLoading(true, authT('auth.redirectingToGoogle', '正在跳转到 Google...'));
 
     try {
-        if (shouldUseGoogleSameTabRedirect()) {
-            updateGoogleAuthDebugState('本次登录：同页重定向', resolveGoogleAuthSite().toUpperCase());
-            setGoogleButtonsLoading(true, authT('auth.redirectingToGoogle', '正在跳转到 Google...'));
-            startGoogleSameTabRedirectLogin();
-            return;
-        }
-
-        ensureGooglePopupMessageBridge();
-        updateGoogleAuthDebugState('本次登录：Popup Fallback', resolveGoogleAuthSite().toUpperCase());
-        openGooglePopupFallback();
-        // Loading state will be cleared by the popup polling logic or after redirect
+        updateGoogleAuthDebugState('本次登录：同页重定向', resolveGoogleAuthSite().toUpperCase());
+        startGoogleSameTabRedirectLogin();
+        return;
     } catch (error) {
         console.error('❌ Google login failed:', error);
         setGoogleButtonsLoading(false);

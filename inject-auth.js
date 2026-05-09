@@ -1571,8 +1571,11 @@
         warmRegisterDependencies();
         renderGoogleDebugBadge();
 
+        if (typeof window.clearInlineGoogleFallbackButtons === 'function') {
+            window.clearInlineGoogleFallbackButtons();
+        }
         if (typeof window.ensureGoogleInlineButtonReady === 'function') {
-            window.ensureGoogleInlineButtonReady({ renderFallbackButton: true }).catch((error) => {
+            window.ensureGoogleInlineButtonReady({ renderFallbackButton: false }).catch((error) => {
                 console.warn('⚠️ ensureGoogleInlineButtonReady failed:', error?.message || error);
             });
         }

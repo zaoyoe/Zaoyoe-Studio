@@ -157,7 +157,7 @@ test('google popup callback is handed to the lightweight auth callback before th
     assert.match(authSource, /link\.rel = 'prefetch'/);
     assert.match(authSource, /cache: 'force-cache'/);
     assert.match(authSource, /buildGoogleImplicitAuthUrl\(popupState, \{ mode: 'popup' \}\)/);
-    assert.match(authSource, /ensureGooglePopupMessageBridge\(\);[\s\S]*?updateGoogleAuthDebugState\('本次登录：Popup Fallback'[\s\S]*?openGooglePopupFallback\(\);/);
+    assert.match(authSource, /updateGoogleAuthDebugState\('本次登录：同页重定向'[\s\S]*?startGoogleSameTabRedirectLogin\(\);/);
     assert.match(authSource, /authUrl\.searchParams\.set\('redirect_uri', buildGoogleImplicitAuthRedirectUri\(redirectMode\)\)/);
     assert.match(authSource, /function buildGooglePopupRedirectUrl\(mode = 'callback'\)/);
     assert.match(authSource, /let googlePopupClosureErrorTimer = null/);
