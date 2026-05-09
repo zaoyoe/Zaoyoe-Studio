@@ -137,16 +137,13 @@ test('google popup callback is handed to the lightweight auth callback before th
     assert.match(authCallbackSource, /broadcast: false/);
     assert.match(authSource, /payload\.status === 'credential'/);
     assert.match(authSource, /function shouldUseGoogleSameTabRedirect\(\)/);
-    assert.match(authSource, /async function tryGoogleInteractivePrompt\(\)/);
-    assert.match(authSource, /window\.google\.accounts\.id\.prompt\(\(notification\) => \{/);
     assert.match(authSource, /function startGoogleSameTabRedirectLogin\(\)/);
     assert.match(authSource, /buildGoogleImplicitAuthUrl\(redirectState\)/);
     assert.match(authSource, /function buildGoogleImplicitAuthRedirectUri\(mode = 'same-tab'\)/);
     assert.match(authSource, /const GOOGLE_POPUP_ACK_MESSAGE_TYPE = 'zaoyoe:google-auth-popup-ack'/);
     assert.match(authSource, /new URL\('\/auth-popup-close', window\.location\.origin\)/);
     assert.match(authSource, /buildGoogleImplicitAuthUrl\(popupState, \{ mode: 'popup' \}\)/);
-    assert.match(authSource, /const promptHandled = await tryGoogleInteractivePrompt\(\)/);
-    assert.match(authSource, /if \(promptHandled\) \{\s*setGoogleButtonsLoading\(false\);\s*return;\s*\}/);
+    assert.match(authSource, /ensureGooglePopupMessageBridge\(\);\s*openGooglePopupFallback\(\);/);
     assert.match(authSource, /authUrl\.searchParams\.set\('redirect_uri', buildGoogleImplicitAuthRedirectUri\(redirectMode\)\)/);
     assert.match(authSource, /function buildGooglePopupRedirectUrl\(mode = 'callback'\)/);
     assert.match(authSource, /let googlePopupClosureErrorTimer = null/);
@@ -163,6 +160,8 @@ test('google popup callback is handed to the lightweight auth callback before th
     assert.match(authSource, /window\.iOSScrollLock\.unlock\(\)/);
     assert.match(authSource, /closeGoogleAuthSurfacesAfterSuccess\(\);\s*await handleGoogleCredentialResponse/);
     assert.match(authSource, /event === 'SIGNED_IN' && session && hasActiveGoogleAuthLoading\(\)/);
+    assert.doesNotMatch(authSource, /async function tryGoogleInteractivePrompt\(\)/);
+    assert.doesNotMatch(authSource, /window\.google\.accounts\.id\.prompt\(\(notification\) => \{/);
     assert.doesNotMatch(authSource, /typeof toggleLoginModal === 'function'/);
 
     assert.match(authPopupCloseHtmlSource, /\.\/js\/auth-popup-close-page\.js\?v=20260509_AUTH_POPUP_FAST_RETRY_1/);
