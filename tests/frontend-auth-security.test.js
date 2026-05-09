@@ -141,7 +141,12 @@ test('google popup callback is handed to the lightweight auth callback before th
     assert.match(authSource, /buildGoogleImplicitAuthUrl\(redirectState\)/);
     assert.match(authSource, /function buildGoogleImplicitAuthRedirectUri\(mode = 'same-tab'\)/);
     assert.match(authSource, /const GOOGLE_POPUP_ACK_MESSAGE_TYPE = 'zaoyoe:google-auth-popup-ack'/);
+    assert.match(authSource, /const GOOGLE_POPUP_CLOSE_PREFETCH_SCRIPT_VERSION = '20260509_AUTH_POPUP_FAST_RETRY_1'/);
+    assert.match(authSource, /const GOOGLE_POPUP_CLOSE_PREFETCH_STYLE_VERSION = '20260509_AUTH_POPUP_CLOSE_THEME_1'/);
     assert.match(authSource, /new URL\('\/auth-popup-close', window\.location\.origin\)/);
+    assert.match(authSource, /function prefetchGooglePopupCloseShell\(\)/);
+    assert.match(authSource, /link\.rel = 'prefetch'/);
+    assert.match(authSource, /cache: 'force-cache'/);
     assert.match(authSource, /buildGoogleImplicitAuthUrl\(popupState, \{ mode: 'popup' \}\)/);
     assert.match(authSource, /ensureGooglePopupMessageBridge\(\);\s*openGooglePopupFallback\(\);/);
     assert.match(authSource, /authUrl\.searchParams\.set\('redirect_uri', buildGoogleImplicitAuthRedirectUri\(redirectMode\)\)/);

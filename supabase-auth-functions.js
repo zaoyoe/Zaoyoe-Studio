@@ -2348,6 +2348,8 @@ const GOOGLE_POPUP_MESSAGE_TYPE = 'zaoyoe:google-auth-popup';
 const GOOGLE_POPUP_ACK_MESSAGE_TYPE = 'zaoyoe:google-auth-popup-ack';
 const GOOGLE_POPUP_WINDOW_NAME = 'google_login';
 const GOOGLE_POPUP_RESULT_STORAGE_KEY = 'zaoyoe_google_popup_auth_result_v1';
+const GOOGLE_POPUP_CLOSE_PREFETCH_SCRIPT_VERSION = '20260509_AUTH_POPUP_FAST_RETRY_1';
+const GOOGLE_POPUP_CLOSE_PREFETCH_STYLE_VERSION = '20260509_AUTH_POPUP_CLOSE_THEME_1';
 const GOOGLE_POPUP_STATE_PREFIX = 'zaoyoe_google_popup:';
 const GOOGLE_POPUP_STATE_STORAGE_KEY = 'zaoyoe_google_popup_state_v1';
 const GOOGLE_REDIRECT_STATE_PREFIX = 'zaoyoe_google_redirect:';
@@ -2363,6 +2365,7 @@ let googlePopupMonitorTimer = null;
 let googlePopupAuthResultHandled = false;
 let googlePopupLastResultSignature = '';
 let googlePopupClosureErrorTimer = null;
+let googlePopupCloseShellPrefetched = false;
 
 function resolveGoogleAuthSite() {
     const configuredSite = String(window.SiteConfig?.site || '').trim().toLowerCase();
@@ -2952,6 +2955,46 @@ async function ensureGoogleInlineButtonReady(options = {}) {
     return true;
 }
 window.ensureGoogleInlineButtonReady = ensureGoogleInlineButtonReady;
+
+function prefetchGooglePopupCloseShell() {
+    if (googlePopupCloseShellPrefetched || typeof document === 'undefined' || !window.location?.origin) {
+        return;
+    }
+    googlePopupCloseShellPrefetched = true;
+
+    const urls = [
+        { href: new URL('/auth-popup-close', window.location.origin).toString(), as: 'document' },
+        { href: new URL(`/js/auth-popup-close-page.js?v=${GOOGLE_POPUP_CLOSE_PREFETCH_SCRIPT_VERSION}`, window.location.origin).toString(), as: 'script' },
+        { href: new URL(`/css/auth-popup-close.css?v=${GOOGLE_POPUP_CLOSE_PREFETCH_STYLE_VERSION}`, window.location.origin).toString(), as: 'style' }
+    ];
+
+    const head = document.head || document.documentElement;
+    urls.forEach(({ href, as }) => {
+        try {
+            const link = document.createElement('link');
+            link.rel = 'prefetch';
+            link.href = href;
+            if (as) {
+                link.as = as;
+            }
+            head.appendChild(link);
+        } catch (_) {
+            // ignore DOM prefetch failures
+        }
+
+        try {
+            void fetch(href, {
+                method: 'GET',
+                credentials: 'same-origin',
+                cache: 'force-cache',
+                mode: 'same-origin'
+            }).catch(() => {});
+        } catch (_) {
+            // ignore fetch prewarm failures
+        }
+    });
+}
+window.prefetchGooglePopupCloseShell = prefetchGooglePopupCloseShell;
 
 function decodeJwtPayload(token) {
     try {
@@ -3726,6 +3769,7 @@ async function initializeAuthPageBoot() {
         return false;
     });
     void googleIdentityWarmup;
+    prefetchGooglePopupCloseShell();
 
     restoreRememberedLoginState();
 
