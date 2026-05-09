@@ -140,10 +140,15 @@ test('google popup callback is handed to the lightweight auth callback before th
     assert.match(authSource, /function startGoogleSameTabRedirectLogin\(\)/);
     assert.match(authSource, /buildGoogleImplicitAuthUrl\(redirectState\)/);
     assert.match(authSource, /function buildGoogleImplicitAuthRedirectUri\(mode = 'same-tab'\)/);
+    assert.match(authSource, /const GOOGLE_POPUP_ACK_MESSAGE_TYPE = 'zaoyoe:google-auth-popup-ack'/);
     assert.match(authSource, /new URL\('\/auth-popup-close\.html', window\.location\.origin\)/);
     assert.match(authSource, /buildGoogleImplicitAuthUrl\(popupState, \{ mode: 'popup' \}\)/);
     assert.match(authSource, /authUrl\.searchParams\.set\('redirect_uri', buildGoogleImplicitAuthRedirectUri\(redirectMode\)\)/);
     assert.match(authSource, /function buildGooglePopupRedirectUrl\(mode = 'callback'\)/);
+    assert.match(authSource, /let googlePopupClosureErrorTimer = null/);
+    assert.match(authSource, /function clearGooglePopupClosureErrorTimer\(\)/);
+    assert.match(authSource, /event\.source\.postMessage\(\{\s*type: GOOGLE_POPUP_ACK_MESSAGE_TYPE/);
+    assert.match(authSource, /googlePopupClosureErrorTimer = setTimeout\(\(\) => \{/);
     assert.match(authSource, /handleGoogleCredentialResponse\(\{ credential: payload\.credential \}/);
     assert.match(authSource, /function closeGoogleAuthSurfacesAfterSuccess\(\)/);
     assert.match(authSource, /function hasActiveModalBehindLogin\(\)/);
@@ -156,10 +161,13 @@ test('google popup callback is handed to the lightweight auth callback before th
     assert.match(authSource, /event === 'SIGNED_IN' && session && hasActiveGoogleAuthLoading\(\)/);
     assert.doesNotMatch(authSource, /typeof toggleLoginModal === 'function'/);
 
-    assert.match(authPopupCloseHtmlSource, /\.\/js\/auth-popup-close-page\.js\?v=20260508_AUTH_POPUP_CLOSE_FAST_1/);
+    assert.match(authPopupCloseHtmlSource, /\.\/js\/auth-popup-close-page\.js\?v=20260509_AUTH_POPUP_ACK_1/);
     assert.doesNotMatch(authPopupCloseHtmlSource, /@supabase\/supabase-js/);
     assert.match(authPopupCloseSource, /const isPopupMode = url\.searchParams\.get\('popup'\) === '1' \|\| \(isPopupState && !isRedirectState\)/);
-    assert.match(authPopupCloseSource, /notifyOpener\(\{\s*status: 'credential'/);
+    assert.match(authPopupCloseSource, /const GOOGLE_POPUP_ACK_MESSAGE_TYPE = 'zaoyoe:google-auth-popup-ack'/);
+    assert.match(authPopupCloseSource, /function createPopupMessage\(payload\)/);
+    assert.match(authPopupCloseSource, /function waitForPopupAck\(message, options\)/);
+    assert.match(authPopupCloseSource, /waitForPopupAck\(credentialMessage, \{ broadcast: false \}\)/);
     assert.match(authPopupCloseSource, /fallbackToFullCallback\(\)/);
 });
 

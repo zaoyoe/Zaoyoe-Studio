@@ -51,7 +51,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'homepage should load the cached nav auth fast-paint helper before the lower auth runtime'
     );
     assert.ok(
-        indexSource.indexOf('./js/nav-auth-fast-paint.js?v=20260501_NAV_AUTH_FAST_PAINT_1') < indexSource.indexOf('./supabase-auth-functions.js?v=20260508_SITE_SCOPED_GOOGLE_CLIENT_IDS_2'),
+        indexSource.indexOf('./js/nav-auth-fast-paint.js?v=20260501_NAV_AUTH_FAST_PAINT_1') < indexSource.indexOf('./supabase-auth-functions.js?v=20260509_GOOGLE_POPUP_ACK_1'),
         'homepage nav auth fast-paint helper should run before Supabase auth hydration'
     );
     assert.match(

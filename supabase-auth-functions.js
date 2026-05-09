@@ -2345,6 +2345,7 @@ function updateResetButtonCountdown(button, originalText) {
 const LEGACY_GOOGLE_CLIENT_ID = '1017068787594-ep4bj8cdirkllqlpbmlfk436br0vbifp.apps.googleusercontent.com';
 const DISABLE_OAUTH_REDIRECT_FALLBACK = true;
 const GOOGLE_POPUP_MESSAGE_TYPE = 'zaoyoe:google-auth-popup';
+const GOOGLE_POPUP_ACK_MESSAGE_TYPE = 'zaoyoe:google-auth-popup-ack';
 const GOOGLE_POPUP_WINDOW_NAME = 'google_login';
 const GOOGLE_POPUP_RESULT_STORAGE_KEY = 'zaoyoe_google_popup_auth_result_v1';
 const GOOGLE_POPUP_STATE_PREFIX = 'zaoyoe_google_popup:';
@@ -2361,6 +2362,7 @@ let googlePopupWindowRef = null;
 let googlePopupMonitorTimer = null;
 let googlePopupAuthResultHandled = false;
 let googlePopupLastResultSignature = '';
+let googlePopupClosureErrorTimer = null;
 
 function resolveGoogleAuthSite() {
     const configuredSite = String(window.SiteConfig?.site || '').trim().toLowerCase();
@@ -2653,6 +2655,13 @@ function notifyGooglePopupResultToOpener(payload) {
     }
 }
 
+function clearGooglePopupClosureErrorTimer() {
+    if (googlePopupClosureErrorTimer) {
+        clearTimeout(googlePopupClosureErrorTimer);
+        googlePopupClosureErrorTimer = null;
+    }
+}
+
 function stopGooglePopupMonitor() {
     if (googlePopupMonitorTimer) {
         clearInterval(googlePopupMonitorTimer);
@@ -2752,6 +2761,7 @@ function ensureGooglePopupMessageBridge() {
         googlePopupLastResultSignature = signature;
 
         googlePopupAuthResultHandled = true;
+        clearGooglePopupClosureErrorTimer();
         stopGooglePopupMonitor();
         closeTrackedGooglePopup();
         clearGooglePopupState();
@@ -2811,6 +2821,16 @@ function ensureGooglePopupMessageBridge() {
 
     window.addEventListener('message', async (event) => {
         if (event.origin !== window.location.origin) return;
+        if (event.data?.type === GOOGLE_POPUP_MESSAGE_TYPE && event.source && typeof event.source.postMessage === 'function') {
+            try {
+                event.source.postMessage({
+                    type: GOOGLE_POPUP_ACK_MESSAGE_TYPE,
+                    popupEventId: event.data.popupEventId || event.data.emittedAt || ''
+                }, event.origin);
+            } catch (_) {
+                // ignore ack failures
+            }
+        }
         await processPopupPayload(event.data);
     });
 
@@ -3109,6 +3129,7 @@ function startGoogleSameTabRedirectLogin() {
     stopGooglePopupMonitor();
     closeTrackedGooglePopup();
     clearGooglePopupState();
+    clearGooglePopupClosureErrorTimer();
 
     const redirectState = createGoogleRedirectState();
     window.location.assign(buildGoogleImplicitAuthUrl(redirectState));
@@ -3130,6 +3151,7 @@ function openGooglePopupFallback() {
     googlePopupAuthResultHandled = false;
     stopGooglePopupMonitor();
     closeTrackedGooglePopup();
+    clearGooglePopupClosureErrorTimer();
 
     const popup = window.open(authUrl, GOOGLE_POPUP_WINDOW_NAME,
         `width=${width},height=${height},top=${top},left=${left},toolbar=no,menubar=no`);
@@ -3150,12 +3172,19 @@ function openGooglePopupFallback() {
             clearGooglePopupState();
 
             if (!googlePopupAuthResultHandled) {
-                setGoogleButtonsLoading(false);
-                showAuthFeedback(
-                    authT('auth.googlePopupClosed', '登录窗口已关闭，请重试'),
-                    'error',
-                    'login'
-                );
+                clearGooglePopupClosureErrorTimer();
+                googlePopupClosureErrorTimer = setTimeout(() => {
+                    googlePopupClosureErrorTimer = null;
+                    if (googlePopupAuthResultHandled) {
+                        return;
+                    }
+                    setGoogleButtonsLoading(false);
+                    showAuthFeedback(
+                        authT('auth.googlePopupClosed', '登录窗口已关闭，请重试'),
+                        'error',
+                        'login'
+                    );
+                }, 900);
             }
             return;
         }
@@ -3164,6 +3193,7 @@ function openGooglePopupFallback() {
             stopGooglePopupMonitor();
             closeTrackedGooglePopup();
             clearGooglePopupState();
+            clearGooglePopupClosureErrorTimer();
             setGoogleButtonsLoading(false);
             showAuthFeedback(
                 authT('auth.googlePopupTimeout', 'Google 登录超时，请重试'),
