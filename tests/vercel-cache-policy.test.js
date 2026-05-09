@@ -26,6 +26,8 @@ test('vercel cache policy keeps admin shells and APIs uncached while allowing ve
     const adminStudioHtmlRule = headers.find((entry) => entry?.source === '/admin-studio.html');
     const adminEntryRule = headers.find((entry) => entry?.source === '/admin-entry');
     const authCallbackRule = headers.find((entry) => entry?.source === '/auth-callback');
+    const authPopupCloseRule = headers.find((entry) => entry?.source === '/auth-popup-close');
+    const authPopupCloseHtmlRule = headers.find((entry) => entry?.source === '/auth-popup-close.html');
     const smokeNotificationsRule = headers.find((entry) => entry?.source === '/smoke-notifications');
     const swRule = headers.find((entry) => entry?.source === '/sw.js');
     const versionedJsRule = headers.find((entry) => entry?.source === '/:path*.js');
@@ -44,6 +46,10 @@ test('vercel cache policy keeps admin shells and APIs uncached while allowing ve
     assert.equal(getHeaderValue(adminEntryRule, 'Cache-Control'), 'no-store, max-age=0');
     assert.ok(authCallbackRule, 'vercel.json should keep the auth callback shell uncached');
     assert.equal(getHeaderValue(authCallbackRule, 'Cache-Control'), 'no-store, max-age=0');
+    assert.ok(authPopupCloseRule, 'vercel.json should keep a dedicated popup close shell cache rule');
+    assert.equal(getHeaderValue(authPopupCloseRule, 'Cache-Control'), 'public, max-age=600, stale-while-revalidate=300');
+    assert.ok(authPopupCloseHtmlRule, 'vercel.json should keep a dedicated popup close html cache rule');
+    assert.equal(getHeaderValue(authPopupCloseHtmlRule, 'Cache-Control'), 'public, max-age=600, stale-while-revalidate=300');
     assert.ok(smokeNotificationsRule, 'vercel.json should keep the smoke notification shell uncached');
     assert.equal(getHeaderValue(smokeNotificationsRule, 'Cache-Control'), 'no-store, max-age=0');
     assert.ok(swRule, 'vercel.json should keep the service worker uncached');

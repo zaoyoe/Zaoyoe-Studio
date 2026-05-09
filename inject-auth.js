@@ -1503,6 +1503,9 @@
                 console.warn('⚠️ ensureGoogleInlineButtonReady failed:', error?.message || error);
             });
         }
+        if (typeof window.prefetchGooglePopupCloseShell === 'function') {
+            window.prefetchGooglePopupCloseShell();
+        }
     }
 
     async function openLoginModalWithMessage(message, options = {}) {
