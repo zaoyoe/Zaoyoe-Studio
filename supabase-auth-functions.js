@@ -2954,6 +2954,57 @@ async function ensureGoogleInlineButtonReady(options = {}) {
 }
 window.ensureGoogleInlineButtonReady = ensureGoogleInlineButtonReady;
 
+async function tryGoogleInteractivePrompt() {
+    const ready = await ensureGoogleInlineButtonReady();
+    if (!ready || !window.google?.accounts?.id?.prompt) {
+        return false;
+    }
+
+    return await new Promise((resolve) => {
+        let settled = false;
+        const finish = (value) => {
+            if (settled) return;
+            settled = true;
+            resolve(Boolean(value));
+        };
+
+        const fallbackTimer = setTimeout(() => {
+            finish(false);
+        }, 480);
+
+        try {
+            window.google.accounts.id.prompt((notification) => {
+                try {
+                    if (notification?.isNotDisplayed?.()) {
+                        clearTimeout(fallbackTimer);
+                        finish(false);
+                        return;
+                    }
+
+                    if (notification?.isSkippedMoment?.()) {
+                        clearTimeout(fallbackTimer);
+                        finish(false);
+                        return;
+                    }
+
+                    if (notification?.isDismissedMoment?.()) {
+                        clearTimeout(fallbackTimer);
+                        // Credential-returned / user-cancel / tap-outside all count as
+                        // "Google handled this interaction", so do not open our custom popup.
+                        finish(true);
+                        return;
+                    }
+                } catch (_) {
+                    // ignore notification inspection failures
+                }
+            });
+        } catch (_) {
+            clearTimeout(fallbackTimer);
+            finish(false);
+        }
+    });
+}
+
 function decodeJwtPayload(token) {
     try {
         if (!token || typeof token !== 'string') return null;
@@ -3102,6 +3153,11 @@ window.triggerGoogleLogin = async () => {
         }
 
         ensureGooglePopupMessageBridge();
+        const promptHandled = await tryGoogleInteractivePrompt();
+        if (promptHandled) {
+            setGoogleButtonsLoading(false);
+            return;
+        }
         openGooglePopupFallback();
         // Loading state will be cleared by the popup polling logic or after redirect
     } catch (error) {
