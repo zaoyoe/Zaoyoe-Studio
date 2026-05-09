@@ -74,10 +74,10 @@
         const shouldBroadcast = options?.broadcast === true;
         notifyOpener(message, { broadcast: shouldBroadcast });
 
-        // Repeat a couple of times before closing so slower production tabs still receive it,
-        // without visibly holding the popup open like the old ack-wait path did.
-        setTimeout(() => notifyOpener(message, { broadcast: shouldBroadcast }), 28);
-        setTimeout(() => notifyOpener(message, { broadcast: shouldBroadcast }), 72);
+        // Keep retries inside the same render frame budget so the popup can disappear
+        // almost as quickly as localhost while still covering slower production tabs.
+        setTimeout(() => notifyOpener(message, { broadcast: shouldBroadcast }), 10);
+        setTimeout(() => notifyOpener(message, { broadcast: shouldBroadcast }), 24);
     }
 
     function attemptClosePopup(force) {
@@ -140,7 +140,7 @@
         dispatchPopupResult(errorMessage, { broadcast: true });
         setTimeout(() => {
             attemptClosePopup(true);
-        }, 88);
+        }, 24);
         return;
     }
 
@@ -157,7 +157,7 @@
         dispatchPopupResult(credentialMessage, { broadcast: false });
         setTimeout(() => {
             attemptClosePopup(true);
-        }, 88);
+        }, 24);
         return;
     }
 
