@@ -161,13 +161,13 @@ test('google popup callback is handed to the lightweight auth callback before th
     assert.match(authSource, /event === 'SIGNED_IN' && session && hasActiveGoogleAuthLoading\(\)/);
     assert.doesNotMatch(authSource, /typeof toggleLoginModal === 'function'/);
 
-    assert.match(authPopupCloseHtmlSource, /\.\/js\/auth-popup-close-page\.js\?v=20260509_AUTH_POPUP_ACK_1/);
+    assert.match(authPopupCloseHtmlSource, /\.\/js\/auth-popup-close-page\.js\?v=20260509_AUTH_POPUP_FAST_RETRY_1/);
     assert.doesNotMatch(authPopupCloseHtmlSource, /@supabase\/supabase-js/);
     assert.match(authPopupCloseSource, /const isPopupMode = url\.searchParams\.get\('popup'\) === '1' \|\| \(isPopupState && !isRedirectState\)/);
-    assert.match(authPopupCloseSource, /const GOOGLE_POPUP_ACK_MESSAGE_TYPE = 'zaoyoe:google-auth-popup-ack'/);
     assert.match(authPopupCloseSource, /function createPopupMessage\(payload\)/);
-    assert.match(authPopupCloseSource, /function waitForPopupAck\(message, options\)/);
-    assert.match(authPopupCloseSource, /waitForPopupAck\(credentialMessage, \{ broadcast: false \}\)/);
+    assert.match(authPopupCloseSource, /function dispatchPopupResult\(message, options = \{\}\)/);
+    assert.match(authPopupCloseSource, /setTimeout\(\(\) => notifyOpener\(message, \{ broadcast: shouldBroadcast \}\), 28\)/);
+    assert.match(authPopupCloseSource, /dispatchPopupResult\(credentialMessage, \{ broadcast: false \}\)/);
     assert.match(authPopupCloseSource, /fallbackToFullCallback\(\)/);
 });
 

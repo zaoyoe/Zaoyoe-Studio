@@ -2,13 +2,10 @@
     'use strict';
 
     const GOOGLE_POPUP_MESSAGE_TYPE = 'zaoyoe:google-auth-popup';
-    const GOOGLE_POPUP_ACK_MESSAGE_TYPE = 'zaoyoe:google-auth-popup-ack';
     const GOOGLE_POPUP_WINDOW_NAME = 'google_login';
     const GOOGLE_POPUP_RESULT_STORAGE_KEY = 'zaoyoe_google_popup_auth_result_v1';
     const GOOGLE_POPUP_STATE_PREFIX = 'zaoyoe_google_popup:';
     const GOOGLE_REDIRECT_STATE_PREFIX = 'zaoyoe_google_redirect:';
-    const POPUP_ACK_TIMEOUT_MS = 900;
-    const POPUP_ACK_RETRY_INTERVAL_MS = 120;
 
     const url = new URL(window.location.href);
     const hash = window.location.hash || '';
@@ -73,52 +70,14 @@
         return message;
     }
 
-    function waitForPopupAck(message, options) {
+    function dispatchPopupResult(message, options = {}) {
         const shouldBroadcast = options?.broadcast === true;
-        const timeoutMs = Number.isFinite(options?.timeoutMs) && options.timeoutMs > 0
-            ? options.timeoutMs
-            : POPUP_ACK_TIMEOUT_MS;
-        const retryIntervalMs = Number.isFinite(options?.retryIntervalMs) && options.retryIntervalMs > 0
-            ? options.retryIntervalMs
-            : POPUP_ACK_RETRY_INTERVAL_MS;
+        notifyOpener(message, { broadcast: shouldBroadcast });
 
-        return new Promise((resolve) => {
-            const expectedId = String(message.popupEventId || message.emittedAt || '');
-            let settled = false;
-            let retryTimer = null;
-            let timeoutTimer = null;
-
-            const cleanup = () => {
-                window.removeEventListener('message', handleAckMessage);
-                if (retryTimer) clearTimeout(retryTimer);
-                if (timeoutTimer) clearTimeout(timeoutTimer);
-            };
-
-            const finish = (acked) => {
-                if (settled) return;
-                settled = true;
-                cleanup();
-                resolve(acked);
-            };
-
-            const handleAckMessage = (event) => {
-                if (event.origin !== window.location.origin) return;
-                const payload = event.data;
-                if (!payload || payload.type !== GOOGLE_POPUP_ACK_MESSAGE_TYPE) return;
-                if (expectedId && String(payload.popupEventId || '') !== expectedId) return;
-                finish(true);
-            };
-
-            const send = () => {
-                if (settled) return;
-                notifyOpener(message, { broadcast: shouldBroadcast });
-                retryTimer = setTimeout(send, retryIntervalMs);
-            };
-
-            window.addEventListener('message', handleAckMessage);
-            send();
-            timeoutTimer = setTimeout(() => finish(false), timeoutMs);
-        });
+        // Repeat a couple of times before closing so slower production tabs still receive it,
+        // without visibly holding the popup open like the old ack-wait path did.
+        setTimeout(() => notifyOpener(message, { broadcast: shouldBroadcast }), 28);
+        setTimeout(() => notifyOpener(message, { broadcast: shouldBroadcast }), 72);
     }
 
     function attemptClosePopup(force) {
@@ -178,11 +137,10 @@
             status: 'error',
             message: hashErrorDescription || hashError
         });
-        waitForPopupAck(errorMessage, { broadcast: true }).finally(() => {
-            setTimeout(() => {
-                attemptClosePopup(true);
-            }, 40);
-        });
+        dispatchPopupResult(errorMessage, { broadcast: true });
+        setTimeout(() => {
+            attemptClosePopup(true);
+        }, 88);
         return;
     }
 
@@ -196,11 +154,10 @@
             status: 'credential',
             credential: idToken
         });
-        waitForPopupAck(credentialMessage, { broadcast: false }).finally(() => {
-            setTimeout(() => {
-                attemptClosePopup(true);
-            }, 40);
-        });
+        dispatchPopupResult(credentialMessage, { broadcast: false });
+        setTimeout(() => {
+            attemptClosePopup(true);
+        }, 88);
         return;
     }
 
