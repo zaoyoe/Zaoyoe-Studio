@@ -98,6 +98,9 @@ test('homepage hero runtime avoids Chinese title fallback in English language mo
     assert.match(framerSource, /resolveHomepageLocalizedText\(this\.getLocalizedField\(config, 'section_title'\), 'home\.guestbook\.title'/);
     assert.match(framerSource, /features: resolveHomepageLocalizedTextList\(config\.features, defaultFeatures\)/);
     assert.match(framerSource, /ctaText: resolveHomepageLocalizedText\(experimentCtaText \|\| config\.cta_text, 'home\.verify\.cta'/);
+    assert.match(framerSource, /function getHomepageGongyiModelLabelFallback\(item = \{\}\)/);
+    assert.match(framerSource, /'更多': \{ zh: '更多', en: 'More' \}/);
+    assert.match(framerSource, /const label = resolveHomepageDataText\(rawLabel, getHomepageGongyiModelLabelFallback\(item\)\)/);
     assert.match(framerSource, /en: 'Supported AI Models'/);
     assert.match(framerSource, /emailLabel: copy\('verify\.emailLabel', \{ zh: 'Gmail 地址', en: 'Gmail Address' \}\)/);
     assert.match(framerSource, /submitTask: copy\(\{ zh: '提交任务', en: 'Submit Task' \}\)/);
@@ -114,6 +117,9 @@ test('homepage hero runtime avoids Chinese title fallback in English language mo
     assert.match(prefetchSource, /resolveLocalizedText\(getLocalizedField\(config, 'section_title'\), 'home\.verify\.title'/);
     assert.match(prefetchSource, /features: resolveLocalizedTextList\(config\.features, defaultFeatures\)/);
     assert.match(prefetchSource, /ctaText: resolveLocalizedText\(experimentCtaText \|\| config\.cta_text, 'home\.verify\.cta'/);
+    assert.match(prefetchSource, /function getGongyiModelLabelFallback\(item = \{\}\)/);
+    assert.match(prefetchSource, /'更多': \{ zh: '更多', en: 'More' \}/);
+    assert.match(prefetchSource, /const label = resolveDataText\(rawLabel, getGongyiModelLabelFallback\(item\)\)/);
     assert.match(prefetchSource, /data\?\.language && data\.language !== getCurrentLanguage\(\)/);
     assert.match(prefetchSource, /language: getCurrentLanguage\(\)/);
 });

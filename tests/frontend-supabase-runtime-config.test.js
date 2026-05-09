@@ -3935,7 +3935,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'function setHomeSectionVisibility(section, visible)',
         'function getHomeLoopPixelsPerSecond(speedValue)',
         'function getHomeLoopDurationSeconds(cycleWidth, speedValue)',
-        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260508_HOME_BILINGUAL_RUNTIME_1';",
+        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260509_HOME_GONGYI_I18N_1';",
         "const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';",
         "const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';",
         'async fetchVisiblePromptPool(options = {}) {',
@@ -4027,7 +4027,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'index.html should load the latest framer_home stylesheet version'
     );
     assert.equal(
-        homepageSource.includes('./js/framer_home.js?v=20260508_HOME_BILINGUAL_RUNTIME_1'),
+        homepageSource.includes('./js/framer_home.js?v=20260509_HOME_GONGYI_I18N_1'),
         true,
         'index.html should load the latest framer_home script version'
     );
@@ -4093,14 +4093,14 @@ test('homepage subpages load the latest prefetch-home runtime script version', (
 
     for (const source of subpageSources) {
         assert.equal(
-            source.includes('./js/prefetch-home.js?v=20260508_HOME_BILINGUAL_RUNTIME_2'),
+            source.includes('./js/prefetch-home.js?v=20260509_HOME_GONGYI_I18N_1'),
             true,
             'subpages should load the latest prefetch-home script version'
         );
     }
 
     assert.equal(
-        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260508_HOME_BILINGUAL_RUNTIME_1';"),
+        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260509_HOME_GONGYI_I18N_1';"),
         true,
         'js/prefetch-home.js should version homepage prefetch payloads after the homepage P2 runtime changes'
     );

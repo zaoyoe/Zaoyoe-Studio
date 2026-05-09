@@ -65,7 +65,7 @@ const HOMEPAGE_DEFERRED_OVERLAY_STYLE_GROUP = 'homepage-overlays';
 const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
 const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
 const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260508_HOME_BILINGUAL_RUNTIME_1';
+const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260509_HOME_GONGYI_I18N_1';
 const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';
 const HOMEPAGE_PROMPT_LIVE_SELECT = [
   'id',
@@ -459,6 +459,22 @@ function getHomepageProductCategoryLabel(category) {
     '其它': 'Other'
   };
   return translations[normalized] || normalized;
+}
+
+function getHomepageGongyiModelLabelFallback(item = {}) {
+  const source = typeof item === 'string' ? { label: item } : (item || {});
+  const normalizedId = String(source.id || '').trim().toLowerCase();
+  const normalizedSource = String(source.label || source.name || source.title || '').trim().toLowerCase();
+  const fallbackByKey = {
+    claude: { zh: 'Claude', en: 'Claude' },
+    gpt: { zh: 'GPT', en: 'GPT' },
+    gemini: { zh: 'Gemini', en: 'Gemini' },
+    antigravity: { zh: 'Antigravity', en: 'Antigravity' },
+    more: { zh: '更多', en: 'More' },
+    '更多': { zh: '更多', en: 'More' }
+  };
+
+  return fallbackByKey[normalizedId] || fallbackByKey[normalizedSource] || {};
 }
 
 function getHomepagePrimaryLanguage() {
@@ -2838,13 +2854,20 @@ const FramerHome = {
     const modelItems = sourceModels
       .map((item, index) => {
         if (typeof item === 'string') {
-          const label = String(item || '').trim();
+          const label = resolveHomepageDataText(item, getHomepageGongyiModelLabelFallback(item));
           return label ? { id: `model_${index + 1}`, label, enabled: true } : null;
         }
         if (!item || typeof item !== 'object') {
           return null;
         }
-        const label = String(item.label || item.name || item.title || '').trim();
+        const rawLabel = this.getLocalizedField(item, 'label')
+          || this.getLocalizedField(item, 'name')
+          || this.getLocalizedField(item, 'title')
+          || item.label
+          || item.name
+          || item.title
+          || '';
+        const label = resolveHomepageDataText(rawLabel, getHomepageGongyiModelLabelFallback(item));
         if (!label) {
           return null;
         }
