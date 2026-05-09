@@ -2348,6 +2348,7 @@ const GOOGLE_POPUP_MESSAGE_TYPE = 'zaoyoe:google-auth-popup';
 const GOOGLE_POPUP_ACK_MESSAGE_TYPE = 'zaoyoe:google-auth-popup-ack';
 const GOOGLE_POPUP_WINDOW_NAME = 'google_login';
 const GOOGLE_POPUP_RESULT_STORAGE_KEY = 'zaoyoe_google_popup_auth_result_v1';
+const GOOGLE_AUTH_DEBUG_STORAGE_KEY = 'zaoyoe_google_auth_debug_v1';
 const GOOGLE_POPUP_CLOSE_PREFETCH_SCRIPT_VERSION = '20260509_AUTH_POPUP_FAST_RETRY_1';
 const GOOGLE_POPUP_CLOSE_PREFETCH_STYLE_VERSION = '20260509_AUTH_POPUP_CLOSE_THEME_1';
 const GOOGLE_POPUP_STATE_PREFIX = 'zaoyoe_google_popup:';
@@ -2366,6 +2367,59 @@ let googlePopupAuthResultHandled = false;
 let googlePopupLastResultSignature = '';
 let googlePopupClosureErrorTimer = null;
 let googlePopupCloseShellPrefetched = false;
+
+function syncGoogleAuthDebugFlag() {
+    try {
+        const params = new URLSearchParams(window.location.search || '');
+        const raw = String(params.get('authDebug') || '').trim().toLowerCase();
+        if (!raw) return;
+        if (raw === '1' || raw === 'true' || raw === 'on') {
+            localStorage.setItem(GOOGLE_AUTH_DEBUG_STORAGE_KEY, '1');
+            return;
+        }
+        if (raw === '0' || raw === 'false' || raw === 'off') {
+            localStorage.removeItem(GOOGLE_AUTH_DEBUG_STORAGE_KEY);
+        }
+    } catch (_) {
+        // ignore query/localStorage failures
+    }
+}
+
+function isGoogleAuthDebugEnabled() {
+    try {
+        return localStorage.getItem(GOOGLE_AUTH_DEBUG_STORAGE_KEY) === '1';
+    } catch (_) {
+        return false;
+    }
+}
+
+function updateGoogleAuthDebugState(label = '', detail = '') {
+    if (!isGoogleAuthDebugEnabled()) {
+        window.clearAuthGoogleDebugState?.();
+        return false;
+    }
+    window.setAuthGoogleDebugState?.({
+        enabled: true,
+        label,
+        detail
+    });
+    return true;
+}
+
+syncGoogleAuthDebugFlag();
+
+function formatGoogleAuthDebugSource(source = '') {
+    switch (String(source || '').trim()) {
+        case 'gis_button':
+            return 'GIS 按钮';
+        case 'popup_bridge':
+            return 'Popup 回调';
+        case 'same_tab_redirect':
+            return '同页重定向';
+        default:
+            return '未知来源';
+    }
+}
 
 function resolveGoogleAuthSite() {
     const configuredSite = String(window.SiteConfig?.site || '').trim().toLowerCase();
@@ -2786,7 +2840,8 @@ function ensureGooglePopupMessageBridge() {
             clearInlineGoogleFallbackButtons();
             closeGoogleAuthSurfacesAfterSuccess();
             await handleGoogleCredentialResponse({ credential: payload.credential }, {
-                fromPopupBridge: true
+                fromPopupBridge: true,
+                source: 'popup_bridge'
             });
             return;
         }
@@ -2849,7 +2904,7 @@ function ensureGooglePopupMessageBridge() {
 }
 
 function clearInlineGoogleFallbackButtons() {
-    document.querySelectorAll('.gsi-btn-container[data-inline-fallback="1"]').forEach((node) => {
+    document.querySelectorAll('.gsi-btn-container[data-inline-fallback="1"], .auth-sheet-google-render-slot[data-inline-fallback="1"]').forEach((node) => {
         if (node && node.parentNode) node.parentNode.removeChild(node);
     });
     document.querySelectorAll('.google-login-btn.gsi-hidden').forEach((btn) => {
@@ -2859,7 +2914,83 @@ function clearInlineGoogleFallbackButtons() {
     });
 }
 
-// showInlineGoogleFallbackButtons removed - single custom button in inject-auth.js
+function ensureInlineGoogleButtonSlot(fallbackButton) {
+    if (!fallbackButton?.parentNode) return null;
+    const previous = fallbackButton.previousElementSibling;
+    if (previous?.classList?.contains('auth-sheet-google-render-slot')) {
+        return previous;
+    }
+
+    const slot = document.createElement('div');
+    slot.className = 'auth-sheet-google-render-slot gsi-btn-container';
+    slot.dataset.inlineFallback = '1';
+    slot.hidden = true;
+    fallbackButton.parentNode.insertBefore(slot, fallbackButton);
+    return slot;
+}
+
+function resolveGoogleButtonLocale() {
+    const htmlLang = String(document.documentElement?.lang || '').trim().toLowerCase();
+    const runtimeLang = String(window.currentLanguage || window.i18n?.currentLanguage || '').trim().toLowerCase();
+    const source = runtimeLang || htmlLang;
+    if (source.startsWith('zh')) return 'zh-CN';
+    if (source.startsWith('ja')) return 'ja';
+    if (source.startsWith('ko')) return 'ko';
+    return 'en';
+}
+
+function renderInlineGoogleButtons() {
+    if (!window.google?.accounts?.id?.renderButton) {
+        updateGoogleAuthDebugState('当前入口：Popup Fallback', 'GIS button unavailable');
+        return false;
+    }
+
+    const buttons = Array.from(document.querySelectorAll('.google-login-btn'));
+    let rendered = 0;
+
+    buttons.forEach((btn) => {
+        const slot = ensureInlineGoogleButtonSlot(btn);
+        if (!slot) return;
+
+        const buttonWidth = Math.max(280, Math.round(btn.getBoundingClientRect().width || btn.offsetWidth || 320));
+
+        try {
+            slot.hidden = false;
+            slot.innerHTML = '';
+            slot.classList.remove('is-ready');
+            window.google.accounts.id.renderButton(slot, {
+                type: 'standard',
+                theme: 'outline',
+                size: 'large',
+                text: 'continue_with',
+                shape: 'pill',
+                logo_alignment: 'left',
+                locale: resolveGoogleButtonLocale(),
+                width: buttonWidth
+            });
+            slot.classList.add('is-ready');
+            btn.classList.add('gsi-hidden');
+            btn.setAttribute('aria-hidden', 'true');
+            btn.setAttribute('tabindex', '-1');
+            rendered += 1;
+        } catch (error) {
+            console.warn('⚠️ Failed to render inline Google button:', error?.message || error);
+            slot.hidden = true;
+            slot.classList.remove('is-ready');
+            btn.classList.remove('gsi-hidden');
+            btn.removeAttribute('aria-hidden');
+            btn.removeAttribute('tabindex');
+        }
+    });
+
+    if (rendered > 0) {
+        updateGoogleAuthDebugState('当前入口：GIS 按钮', resolveGoogleAuthSite().toUpperCase());
+    } else {
+        updateGoogleAuthDebugState('当前入口：Popup Fallback', 'GIS render failed');
+    }
+
+    return rendered > 0;
+}
 
 // Nonce generation removed: Chrome FedCM breaks nonce sync with Supabase
 
@@ -2933,7 +3064,10 @@ async function initGoogleIdTokenFlow() {
         client_id: clientId,
         callback: (response) => {
             if (typeof window.handleGoogleCredentialResponse === 'function') {
-                window.handleGoogleCredentialResponse(response);
+                updateGoogleAuthDebugState('收到凭证：GIS 按钮', resolveGoogleAuthSite().toUpperCase());
+                window.handleGoogleCredentialResponse(response, {
+                    source: 'gis_button'
+                });
             } else {
                 console.error('❌ Google callback handler not ready');
                 setGoogleButtonsLoading(false);
@@ -2942,7 +3076,7 @@ async function initGoogleIdTokenFlow() {
         context: 'signin',
         auto_select: false,
         itp_support: true,
-        use_fedcm_for_button: true
+        use_fedcm_for_button: false
     });
     googleIdentityInitialized = true;
 }
@@ -2951,6 +3085,9 @@ async function ensureGoogleInlineButtonReady(options = {}) {
     const loaded = await loadGoogleIdentityServices();
     if (!loaded || !window.google?.accounts?.id) return false;
     await initGoogleIdTokenFlow();
+    if (options?.renderFallbackButton === true) {
+        renderInlineGoogleButtons();
+    }
     console.log('✅ Google Identity Services ready');
     return true;
 }
@@ -3137,12 +3274,14 @@ window.triggerGoogleLogin = async () => {
 
     try {
         if (shouldUseGoogleSameTabRedirect()) {
+            updateGoogleAuthDebugState('本次登录：同页重定向', resolveGoogleAuthSite().toUpperCase());
             setGoogleButtonsLoading(true, authT('auth.redirectingToGoogle', '正在跳转到 Google...'));
             startGoogleSameTabRedirectLogin();
             return;
         }
 
         ensureGooglePopupMessageBridge();
+        updateGoogleAuthDebugState('本次登录：Popup Fallback', resolveGoogleAuthSite().toUpperCase());
         openGooglePopupFallback();
         // Loading state will be cleared by the popup polling logic or after redirect
     } catch (error) {
@@ -3198,6 +3337,7 @@ function openGooglePopupFallback() {
         `width=${width},height=${height},top=${top},left=${left},toolbar=no,menubar=no`);
 
     if (!popup) {
+        updateGoogleAuthDebugState('Popup Fallback', '弹窗被拦截');
         setGoogleButtonsLoading(false);
         showAuthFeedback(authT('auth.allowPopupRetry', '弹窗被浏览器拦截，请允许弹窗后重试'), 'error', 'login');
         return;
@@ -3219,6 +3359,7 @@ function openGooglePopupFallback() {
                     if (googlePopupAuthResultHandled) {
                         return;
                     }
+                    updateGoogleAuthDebugState('Popup Fallback', '窗口已关闭');
                     setGoogleButtonsLoading(false);
                     showAuthFeedback(
                         authT('auth.googlePopupClosed', '登录窗口已关闭，请重试'),
@@ -3235,6 +3376,7 @@ function openGooglePopupFallback() {
             closeTrackedGooglePopup();
             clearGooglePopupState();
             clearGooglePopupClosureErrorTimer();
+            updateGoogleAuthDebugState('Popup Fallback', '登录超时');
             setGoogleButtonsLoading(false);
             showAuthFeedback(
                 authT('auth.googlePopupTimeout', 'Google 登录超时，请重试'),
@@ -3247,10 +3389,12 @@ function openGooglePopupFallback() {
 
 async function handleGoogleCredentialResponse(response, options = {}) {
     const shouldClosePopupAfterSuccess = options.closePopup === true || isGooglePopupWindow();
+    const authSourceLabel = formatGoogleAuthDebugSource(options.source);
     try {
         if (!response?.credential) throw new Error('未获取到 Google 凭证');
         googleCredentialReceived = true;
         googleLoginAttemptId += 1;
+        updateGoogleAuthDebugState('收到凭证', authSourceLabel);
 
         console.log('🔵 Received Google ID Token, authenticating with Supabase (no-nonce mode)...');
 
@@ -3292,6 +3436,7 @@ async function handleGoogleCredentialResponse(response, options = {}) {
             }, { animateAvatar: false, preferImmediateAvatar: true });
         }
         clearInlineGoogleFallbackButtons();
+        updateGoogleAuthDebugState('登录成功', authSourceLabel);
 
         if (shouldClosePopupAfterSuccess) {
             notifyGooglePopupResultToOpener({
@@ -3313,6 +3458,7 @@ async function handleGoogleCredentialResponse(response, options = {}) {
         }
     } catch (error) {
         console.error('❌ Google ID Token login error:', error);
+        updateGoogleAuthDebugState('登录失败', authSourceLabel || (error?.message || '未知错误'));
         if (isGooglePopupWindow() || options.closePopup === true) {
             notifyGooglePopupResultToOpener({
                 status: 'error',
@@ -3816,7 +3962,8 @@ async function initializeAuthPageBoot() {
 
         if (idToken) {
             await handleGoogleCredentialResponse({ credential: idToken }, {
-                closePopup: isGooglePopupWindow() || popupStateMatched
+                closePopup: isGooglePopupWindow() || popupStateMatched,
+                source: popupStateMatched ? 'popup_bridge' : 'same_tab_redirect'
             });
         } else {
             console.warn('⚠️ Google ID token hash detected without id_token value.');

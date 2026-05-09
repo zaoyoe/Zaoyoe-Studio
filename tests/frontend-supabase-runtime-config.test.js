@@ -2293,7 +2293,10 @@ test('auth runtime renderers centralize avatar, google loading, and profile moda
     const styleMarkers = [
         '.google-login-btn.is-loading',
         '.google-login-btn__spinner',
-        '.auth-admin-badge'
+        '.auth-admin-badge',
+        '.auth-sheet-google-render-slot',
+        '.auth-google-debug-badge',
+        '.auth-google-debug-floating'
     ];
 
     for (const marker of styleMarkers) {
@@ -2302,12 +2305,12 @@ test('auth runtime renderers centralize avatar, google loading, and profile moda
 
     for (const source of pageSources) {
         assert.equal(
-            source.includes('css/auth-sheet.css?v=20260503_AUTH_MODAL_CHROME_CLOSE_1'),
+            source.includes('css/auth-sheet.css?v=20260509_AUTH_GIS_BUTTON_1'),
             true,
             'auth entry pages should load the latest auth sheet stylesheet'
         );
         assert.equal(
-            source.includes('supabase-auth-functions.js?v=20260509_GOOGLE_POPUP_ONLY_2'),
+            source.includes('supabase-auth-functions.js?v=20260509_GOOGLE_GIS_BUTTON_1'),
             true,
             'auth entry pages should load the latest auth runtime script'
         );
@@ -2374,9 +2377,29 @@ test('login auth sheet uses natural height while preserving smooth resize transi
         'inject-auth.js should lock sheet body scrolling while the auth sheet height is animating'
     );
     assert.equal(
-        injectSource.includes("const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260503_AUTH_MODAL_CHROME_CLOSE_1';"),
+        injectSource.includes("const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260509_AUTH_GIS_BUTTON_1';"),
         true,
         'inject-auth.js should cache-bust the auth sheet stylesheet for shop staggered auth entry'
+    );
+    assert.equal(
+        injectSource.includes('id="authGoogleDebugBadge"'),
+        true,
+        'inject-auth.js should render the inline Google auth debug badge placeholder'
+    );
+    assert.equal(
+        injectSource.includes("const GOOGLE_DEBUG_FLOATING_ID = 'authGoogleDebugFloating';"),
+        true,
+        'inject-auth.js should define the persistent Google auth debug floating badge id'
+    );
+    assert.equal(
+        injectSource.includes('window.setAuthGoogleDebugState = setAuthGoogleDebugState;'),
+        true,
+        'inject-auth.js should expose the Google auth debug state updater globally'
+    );
+    assert.equal(
+        injectSource.includes('window.clearAuthGoogleDebugState = clearAuthGoogleDebugState;'),
+        true,
+        'inject-auth.js should expose the Google auth debug state clearer globally'
     );
     assert.doesNotMatch(
         authSheetStyles,
@@ -2527,13 +2550,13 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
 
     for (const source of pageSources) {
         assert.equal(
-            source.includes('css/auth-sheet.css?v=20260503_AUTH_MODAL_CHROME_CLOSE_1'),
+            source.includes('css/auth-sheet.css?v=20260509_AUTH_GIS_BUTTON_1'),
             true,
             'auth entry pages should load the latest injected auth stylesheet'
         );
         assert.match(
             source,
-            /inject-auth\.js\?v=20260505_REMEMBER_EMAIL_AUTOFILL_1/,
+            /inject-auth\.js\?v=20260509_AUTH_GIS_BUTTON_1/,
             'auth entry pages should load the latest injected auth runtime version'
         );
     }
@@ -3015,7 +3038,7 @@ test('theme bootstraps default first visits to light instead of system dark', ()
     for (const relativePath of injectedAuthEntryPages) {
         const source = readRepoFile(relativePath);
         assert.equal(
-            source.includes('inject-auth.js?v=20260505_REMEMBER_EMAIL_AUTOFILL_1'),
+            source.includes('inject-auth.js?v=20260509_AUTH_GIS_BUTTON_1'),
             true,
             `${relativePath} should cache-bust the injected auth light-default runtime`
         );
@@ -16120,7 +16143,7 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
     for (const file of files) {
         const source = readRepoFile(file);
         const expectedMarker = file === 'css/auth-sheet.css'
-            ? '20260503_AUTH_MODAL_CHROME_CLOSE_1'
+            ? '20260509_AUTH_GIS_BUTTON_1'
             : '20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1';
         assert.equal(source.includes(expectedMarker), true, `${file} should carry the public light modal backdrop marker`);
         assert.equal(source.includes('rgba(34, 41, 52, 0.48)'), true, `${file} should use the shared muted blue-gray backdrop`);
@@ -16141,7 +16164,7 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
 
     for (const source of pageSources) {
         assert.equal(
-            source.includes(expectedHref) || source.includes('css/auth-sheet.css?v=20260503_AUTH_MODAL_CHROME_CLOSE_1'),
+            source.includes(expectedHref) || source.includes('css/auth-sheet.css?v=20260509_AUTH_GIS_BUTTON_1'),
             true,
             'public pages should cache-bust the light modal backdrop material'
         );
@@ -16162,7 +16185,7 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
 test('shop page loads auth sheet after legacy shared styles', () => {
     const shopSource = readRepoFile('shop.html');
     const sharedStyleIndex = shopSource.indexOf('style.css?v=20260430_PUBLIC_ROOT_SCROLLBAR_FULL_HIDE_1');
-    const authSheetIndex = shopSource.indexOf('css/auth-sheet.css?v=20260503_AUTH_MODAL_CHROME_CLOSE_1');
+    const authSheetIndex = shopSource.indexOf('css/auth-sheet.css?v=20260509_AUTH_GIS_BUTTON_1');
 
     assert.notEqual(sharedStyleIndex, -1, 'shop.html should load the shared style.css bundle');
     assert.notEqual(authSheetIndex, -1, 'shop.html should load the shared auth sheet stylesheet');
