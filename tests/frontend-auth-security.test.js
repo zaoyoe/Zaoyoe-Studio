@@ -166,7 +166,8 @@ test('google popup callback is handed to the lightweight auth callback before th
     assert.match(authPopupCloseSource, /const isPopupMode = url\.searchParams\.get\('popup'\) === '1' \|\| \(isPopupState && !isRedirectState\)/);
     assert.match(authPopupCloseSource, /function createPopupMessage\(payload\)/);
     assert.match(authPopupCloseSource, /function dispatchPopupResult\(message, options = \{\}\)/);
-    assert.match(authPopupCloseSource, /setTimeout\(\(\) => notifyOpener\(message, \{ broadcast: shouldBroadcast \}\), 28\)/);
+    assert.match(authPopupCloseSource, /setTimeout\(\(\) => notifyOpener\(message, \{ broadcast: shouldBroadcast \}\), 10\)/);
+    assert.match(authPopupCloseSource, /setTimeout\(\(\) => \{\s*attemptClosePopup\(true\);\s*\}, 24\)/);
     assert.match(authPopupCloseSource, /dispatchPopupResult\(credentialMessage, \{ broadcast: false \}\)/);
     assert.match(authPopupCloseSource, /fallbackToFullCallback\(\)/);
 });
