@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260509_AUTH_GIS_BUTTON_1';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260509_AUTH_POPUP_STABLE_1';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260314_AUTH_I18N_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -1571,14 +1571,6 @@
         warmRegisterDependencies();
         renderGoogleDebugBadge();
 
-        if (typeof window.clearInlineGoogleFallbackButtons === 'function') {
-            window.clearInlineGoogleFallbackButtons();
-        }
-        if (typeof window.ensureGoogleInlineButtonReady === 'function') {
-            window.ensureGoogleInlineButtonReady({ renderFallbackButton: false }).catch((error) => {
-                console.warn('⚠️ ensureGoogleInlineButtonReady failed:', error?.message || error);
-            });
-        }
         if (typeof window.prefetchGooglePopupCloseShell === 'function') {
             window.prefetchGooglePopupCloseShell();
         }
