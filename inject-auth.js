@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260503_AUTH_MODAL_CHROME_CLOSE_1';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260509_AUTH_GIS_BUTTON_1';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260314_AUTH_I18N_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -58,6 +58,12 @@
     const submitState = {
         stabilizeTimerId: 0
     };
+    const googleDebugState = {
+        enabled: false,
+        label: '',
+        detail: ''
+    };
+    const GOOGLE_DEBUG_FLOATING_ID = 'authGoogleDebugFloating';
     let userPresenceAuthBound = false;
 
     function isIOSMobile() {
@@ -285,6 +291,7 @@
                                             <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18" height="18">
                                             <span data-i18n="auth.googleLogin">使用 Google 登录</span>
                                         </button>
+                                        <div id="authGoogleDebugBadge" class="auth-google-debug-badge" hidden aria-live="polite"></div>
 
                                         <div class="auth-sheet-login-fields-stack">
                                             <div class="auth-sheet-divider">
@@ -672,9 +679,74 @@
             tabs: overlay?.querySelector('#authSheetTabs') || null,
             title: overlay?.querySelector('#authSheetTitle') || null,
             message: overlay?.querySelector('#authSheetMessage') || null,
+            googleDebug: overlay?.querySelector('#authGoogleDebugBadge') || null,
             body: overlay?.querySelector('.auth-sheet-body') || null,
             plane: overlay?.querySelector('#authInputPlane') || null
         };
+    }
+
+    function ensureGoogleDebugFloatingBadge() {
+        let badge = document.getElementById(GOOGLE_DEBUG_FLOATING_ID);
+        if (badge) return badge;
+        if (!document.body) return null;
+
+        badge = document.createElement('div');
+        badge.id = GOOGLE_DEBUG_FLOATING_ID;
+        badge.className = 'auth-google-debug-floating';
+        badge.hidden = true;
+        badge.setAttribute('aria-live', 'polite');
+        document.body.appendChild(badge);
+        return badge;
+    }
+
+    function renderGoogleDebugBadge() {
+        const { googleDebug } = getSheetElements();
+        const floatingDebug = ensureGoogleDebugFloatingBadge();
+
+        const enabled = googleDebugState.enabled && !!String(googleDebugState.label || '').trim();
+        if (googleDebug) {
+            googleDebug.hidden = !enabled;
+            googleDebug.classList.toggle('is-visible', enabled);
+        }
+        if (floatingDebug) {
+            floatingDebug.hidden = !enabled;
+            floatingDebug.classList.toggle('is-visible', enabled);
+        }
+
+        if (!enabled) {
+            if (googleDebug) {
+                googleDebug.textContent = '';
+            }
+            if (floatingDebug) {
+                floatingDebug.textContent = '';
+            }
+            return;
+        }
+
+        const label = String(googleDebugState.label || '').trim();
+        const detail = String(googleDebugState.detail || '').trim();
+        const text = detail ? `${label} · ${detail}` : label;
+        if (googleDebug) {
+            googleDebug.textContent = text;
+        }
+        if (floatingDebug) {
+            floatingDebug.textContent = `Google 登录诊断：${text}`;
+        }
+    }
+
+    function setAuthGoogleDebugState(payload = {}) {
+        googleDebugState.enabled = payload.enabled === true;
+        googleDebugState.label = String(payload.label || '').trim();
+        googleDebugState.detail = String(payload.detail || '').trim();
+        renderGoogleDebugBadge();
+        return true;
+    }
+
+    function clearAuthGoogleDebugState() {
+        googleDebugState.enabled = false;
+        googleDebugState.label = '';
+        googleDebugState.detail = '';
+        renderGoogleDebugBadge();
     }
 
     function getActiveAuthInput() {
@@ -1497,6 +1569,7 @@
 
         overlayCloseDisabledUntil = Date.now() + 240;
         warmRegisterDependencies();
+        renderGoogleDebugBadge();
 
         if (typeof window.ensureGoogleInlineButtonReady === 'function') {
             window.ensureGoogleInlineButtonReady({ renderFallbackButton: true }).catch((error) => {
@@ -1876,6 +1949,8 @@
         };
         window.showAuthMessage = showAuthMessage;
         window.clearAuthMessage = clearAuthMessage;
+        window.setAuthGoogleDebugState = setAuthGoogleDebugState;
+        window.clearAuthGoogleDebugState = clearAuthGoogleDebugState;
         window.setAuthFormLoading = setAuthFormLoading;
         window.isAuthModalOpen = function () {
             return !!document.getElementById('loginModal')?.classList.contains('active');

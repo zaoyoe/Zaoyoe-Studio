@@ -8,7 +8,7 @@
     gap: 16px;
 }
 
-/* 20260503_AUTH_MODAL_CHROME_CLOSE_1 */
+/* 20260509_AUTH_GIS_BUTTON_1 */
 :root {
     --auth-sheet-overlay: rgba(7, 9, 12, 0.28);
     --auth-sheet-overlay-filter: blur(14px) saturate(108%);
@@ -1069,6 +1069,72 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-message.is-error {
 
 .auth-sheet-google-btn.gsi-hidden {
     display: none;
+}
+
+.auth-sheet-google-render-slot {
+    display: none;
+    width: 100%;
+    min-height: 44px;
+    justify-content: center;
+}
+
+.auth-sheet-google-render-slot.is-ready {
+    display: flex;
+}
+
+.auth-sheet-google-render-slot.is-ready > div {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+}
+
+.auth-sheet-google-render-slot iframe {
+    max-width: 100%;
+}
+
+.auth-google-debug-badge {
+    display: none;
+    width: 100%;
+    padding: 8px 12px;
+    margin-top: -2px;
+    border-radius: 12px;
+    border: 1px dashed rgba(107, 158, 206, 0.34);
+    background: rgba(107, 158, 206, 0.08);
+    color: var(--auth-sheet-muted);
+    font-size: 11px;
+    line-height: 1.45;
+    letter-spacing: 0.01em;
+    text-align: center;
+}
+
+.auth-google-debug-badge.is-visible {
+    display: block;
+}
+
+.auth-google-debug-floating {
+    position: fixed;
+    right: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    z-index: 9999;
+    display: none;
+    max-width: min(360px, calc(100vw - 32px));
+    padding: 10px 12px;
+    border-radius: 14px;
+    border: 1px solid rgba(107, 158, 206, 0.28);
+    background: rgba(12, 18, 32, 0.84);
+    color: rgba(245, 248, 255, 0.94);
+    box-shadow: 0 12px 28px rgba(7, 12, 23, 0.28);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    font-size: 12px;
+    line-height: 1.45;
+    letter-spacing: 0.01em;
+    text-align: left;
+    pointer-events: none;
+}
+
+.auth-google-debug-floating.is-visible {
+    display: block;
 }
 
 .auth-admin-badge {
