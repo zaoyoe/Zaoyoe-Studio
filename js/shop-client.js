@@ -328,6 +328,7 @@ const SHOP_PURCHASE_PREFILL_SCHEMA_VERSION = '20260415_SHOP_PURCHASE_PREFILL_1';
 const SHOP_PURCHASE_PREFILL_STORAGE_KEY = 'shop_purchase_prefill';
 const SHOP_DISCOUNT_ASSETS_CACHE_TTL_MS = 2 * 60 * 1000;
 const SHOP_DISCOUNT_ASSETS_PREFETCH_LIMIT = 4;
+const SHOP_PURCHASE_COUPON_SYNC_SUBMIT_GRACE_MS = 900;
 const SHOP_DEFERRED_TASK_TIMEOUT_MS = 1400;
 const SHOP_POST_RENDER_TASK_TIMEOUT_MS = 900;
 const shopCardImageWarmCache = new Set();
@@ -366,6 +367,8 @@ const ShopClient = {
     currentAgentName: null,
     successUsageWheelCleanup: null,
     purchaseNotesHeightAnimationTimer: null,
+    purchaseModalViewportSyncCleanup: null,
+    purchaseModalViewportSyncRafId: null,
     purchaseModalKeyboardViewportCleanup: null,
     purchaseModalKeyboardViewportRafId: null,
     purchaseModalKeyboardContentRafId: null,
@@ -426,6 +429,7 @@ const ShopClient = {
     postRenderEnhancementHandle: null,
     discountAssetsCache: new Map(),
     discountAssetsRequestCache: new Map(),
+    discountAssetsRequestControllers: new Map(),
     discountAssetsPrefetchHandle: null,
     discountAssetsCacheUserKey: null,
     shopDiscountEngagementSeenKeys: new Set(),
@@ -448,6 +452,17 @@ const ShopClient = {
             this.discountAssetsCache.clear();
         } else {
             this.discountAssetsCache = new Map();
+        }
+
+        if (this.discountAssetsRequestControllers instanceof Map) {
+            this.discountAssetsRequestControllers.forEach((controller) => {
+                try {
+                    controller?.abort?.();
+                } catch (_error) {}
+            });
+            this.discountAssetsRequestControllers.clear();
+        } else {
+            this.discountAssetsRequestControllers = new Map();
         }
 
         if (this.discountAssetsRequestCache instanceof Map) {
@@ -1407,6 +1422,93 @@ const ShopClient = {
         });
     },
 
+    buildCurrentPurchaseDiscountAssetsCacheKey: function () {
+        if (!this.currentPurchase?.productId) {
+            return '';
+        }
+
+        return this.buildDiscountAssetsCacheKey({
+            productId: this.currentPurchase.productId,
+            quantity: this.currentPurchase.quantity || 1,
+            agentId: this.currentAgentId,
+            site: window.SiteConfig?.site || 'cn',
+            userKey: this.discountAssetsCacheUserKey || 'guest'
+        });
+    },
+
+    getCurrentPurchaseDiscountAssetsPendingRequest: function () {
+        const cacheKey = this.buildCurrentPurchaseDiscountAssetsCacheKey();
+        if (!cacheKey || !(this.discountAssetsRequestCache instanceof Map)) {
+            return null;
+        }
+
+        return this.discountAssetsRequestCache.get(cacheKey) || null;
+    },
+
+    hasVisibleCurrentPurchaseDiscountAssets: function (payload = null) {
+        const ownedItems = payload
+            ? (Array.isArray(payload?.owned_discounts) ? payload.owned_discounts : [])
+            : (Array.isArray(this.currentPurchase?.availableDiscountAssets) ? this.currentPurchase.availableDiscountAssets : []);
+        const claimableItems = payload
+            ? (Array.isArray(payload?.claimable_discounts) ? payload.claimable_discounts : [])
+            : (Array.isArray(this.currentPurchase?.claimableDiscounts) ? this.currentPurchase.claimableDiscounts : []);
+
+        return ownedItems.some((item) => item?.available !== false)
+            || claimableItems.some((item) => item?.can_claim !== false);
+    },
+
+    applyCurrentPurchaseDiscountAssetsPayload: function (payload = {}) {
+        if (!this.currentPurchase) {
+            return;
+        }
+
+        this.currentPurchase.availableDiscountAssets = Array.isArray(payload?.owned_discounts) ? payload.owned_discounts : [];
+        this.currentPurchase.claimableDiscounts = Array.isArray(payload?.claimable_discounts) ? payload.claimable_discounts : [];
+        this.currentPurchase.discountAssetsLoading = false;
+        this.renderPurchaseDiscountAssets();
+        this.maybeShowShopDiscountEngagement();
+    },
+
+    waitForPurchaseDiscountAssetsBeforeSubmit: async function ({ timeoutMs = SHOP_PURCHASE_COUPON_SYNC_SUBMIT_GRACE_MS } = {}) {
+        if (!this.currentPurchase || this.getCurrentPurchaseSelectedDiscounts().length > 0) {
+            return true;
+        }
+
+        if (this.hasVisibleCurrentPurchaseDiscountAssets() || this.currentPurchase.discountAssetsLoading !== true) {
+            return true;
+        }
+
+        const pendingRequest = this.getCurrentPurchaseDiscountAssetsPendingRequest();
+        if (!pendingRequest || typeof pendingRequest.then !== 'function') {
+            return true;
+        }
+
+        const safeTimeoutMs = Math.max(100, Number(timeoutMs || SHOP_PURCHASE_COUPON_SYNC_SUBMIT_GRACE_MS) || SHOP_PURCHASE_COUPON_SYNC_SUBMIT_GRACE_MS);
+        const result = await Promise.race([
+            pendingRequest
+                .then((payload) => ({ status: 'fulfilled', payload }))
+                .catch((error) => ({ status: 'rejected', error })),
+            new Promise((resolve) => {
+                window.setTimeout(() => resolve({ status: 'timeout' }), safeTimeoutMs);
+            })
+        ]);
+
+        if (result.status !== 'fulfilled') {
+            return true;
+        }
+
+        this.applyCurrentPurchaseDiscountAssetsPayload(result.payload || {});
+        if (!this.hasVisibleCurrentPurchaseDiscountAssets()) {
+            return true;
+        }
+
+        this.setDiscountMessage(
+            this.trShop('couponSyncFoundBeforePurchase', '发现当前商品有可用优惠，请确认是否使用后再兑换。'),
+            { variant: 'info' }
+        );
+        return false;
+    },
+
     requestAvailableDiscountAssets: async function ({ productId = '', quantity = 1, agentId = null, site = '', preferCache = false, allowPending = true } = {}) {
         const normalizedProductId = String(productId || '').trim();
         if (!normalizedProductId) {
@@ -1438,6 +1540,20 @@ const ShopClient = {
             return this.cloneDiscountAssetsPayload(pendingPayload);
         }
 
+        if (!(this.discountAssetsRequestCache instanceof Map)) {
+            this.discountAssetsRequestCache = new Map();
+        }
+        if (!(this.discountAssetsRequestControllers instanceof Map)) {
+            this.discountAssetsRequestControllers = new Map();
+        }
+
+        const abortController = typeof AbortController === 'function'
+            ? new AbortController()
+            : null;
+        if (abortController) {
+            this.discountAssetsRequestControllers.set(cacheKey, abortController);
+        }
+
         const request = (async () => {
             if (!token) {
                 const emptyPayload = {
@@ -1458,6 +1574,7 @@ const ShopClient = {
                         'Content-Type': 'application/json',
                         Authorization: `Bearer ${token}`
                     },
+                    signal: abortController?.signal,
                     body: JSON.stringify({
                         productId: normalizedProductId,
                         quantity: Math.max(1, Math.trunc(Number(quantity || 1) || 1)),
@@ -1491,11 +1608,13 @@ const ShopClient = {
                 if (this.discountAssetsRequestCache instanceof Map) {
                     this.discountAssetsRequestCache.delete(cacheKey);
                 }
+                if (this.discountAssetsRequestControllers instanceof Map) {
+                    const currentController = this.discountAssetsRequestControllers.get(cacheKey);
+                    if (!abortController || currentController === abortController) {
+                        this.discountAssetsRequestControllers.delete(cacheKey);
+                    }
+                }
             });
-
-        if (!(this.discountAssetsRequestCache instanceof Map)) {
-            this.discountAssetsRequestCache = new Map();
-        }
         this.discountAssetsRequestCache.set(cacheKey, request);
 
         const payload = await request;
@@ -1751,6 +1870,106 @@ const ShopClient = {
             console.debug('[ShopEngagement] Trigger skipped:', triggerType, error?.message || error);
             return null;
         }
+    },
+
+    buildShopRechargeReturnContext: function (target = 'product_purchase', options = {}) {
+        const normalizedTarget = String(target || options.target || '').trim().toLowerCase();
+        const isCartTarget = normalizedTarget.includes('cart');
+        const productId = String(options.productId || this.currentPurchase?.productId || '').trim();
+        const quantity = Math.max(1, Math.trunc(Number(options.quantity || this.currentPurchase?.quantity || 1) || 1));
+        const cartSnapshot = isCartTarget ? this.getCartEngagementSnapshot() : null;
+
+        return {
+            shop_return_target: isCartTarget ? 'cart' : 'product_purchase',
+            shop_return_source: String(options.source || '').trim() || (isCartTarget ? 'cart_checkout_insufficient_points' : 'product_purchase_insufficient_points'),
+            shop_return_product_id: isCartTarget ? null : (productId || null),
+            shop_return_product_ids: isCartTarget ? (cartSnapshot?.productIds || []) : (productId ? [productId] : []),
+            shop_return_quantity: isCartTarget ? null : quantity,
+            shop_return_checkout: isCartTarget && options.checkout !== false
+        };
+    },
+
+    resumeAfterWalletRecharge: function (context = {}) {
+        const source = context && typeof context === 'object' && !Array.isArray(context) ? context : {};
+        const target = String(source.shop_return_target || source.shopReturnTarget || '').trim().toLowerCase();
+        const productId = String(source.shop_return_product_id || source.shopReturnProductId || '').trim();
+        const quantity = Math.max(1, Math.trunc(Number(source.shop_return_quantity || source.shopReturnQuantity || 1) || 1));
+        const shouldOpenCheckout = source.shop_return_checkout === true
+            || source.shop_return_checkout === 'true'
+            || source.shopReturnCheckout === true
+            || source.shopReturnCheckout === 'true';
+
+        if (target === 'cart' || target === 'cart_checkout') {
+            this.closePurchaseModal();
+            this.renderCart();
+            const opened = this.openCartFromEngagement();
+            if (opened && shouldOpenCheckout) {
+                window.setTimeout(() => {
+                    this.openCartCheckoutModal();
+                }, 360);
+            }
+            return opened;
+        }
+
+        if (!productId) {
+            return false;
+        }
+
+        const product = this.getCachedProductById(productId);
+        if (!product) {
+            this.pendingProductSpotlight = {
+                productId,
+                autoOpen: true,
+                expandedSearch: false,
+                initialQuantity: quantity,
+                sourceContext: {
+                    sourcePage: 'wallet',
+                    sourceChannel: 'recharge_return',
+                    sourcePromptId: null
+                }
+            };
+            void this.fulfillPendingProductSpotlight();
+            return true;
+        }
+
+        const pricing = this.resolveProductPricing(product, this.agentPricesCache || {});
+        const price = Number(pricing?.currentPrice ?? product.price ?? product.price_paid ?? 0) || 0;
+        const quantityCap = this.getPurchaseQuantityCapForProduct(product, product.max_purchase_quantity);
+        const card = this.findRenderedProductCard(productId);
+        if (card) {
+            try {
+                card.scrollIntoView({
+                    behavior: this.prefersReducedMotion() ? 'auto' : 'smooth',
+                    block: 'center'
+                });
+            } catch (_error) {
+                card.scrollIntoView();
+            }
+            this.spotlightProductCard(card);
+        }
+
+        this.openPurchaseModal(
+            productId,
+            product.name || product.title || '',
+            product.name_en || '',
+            price,
+            Array.isArray(product.quantity_rules) ? product.quantity_rules : [],
+            quantityCap,
+            product.show_purchase_notes === true ? this.getLocalizedProductGuidanceText(product, 'purchase_notes') : '',
+            product.show_usage_instructions === true ? this.getLocalizedProductGuidanceText(product, 'usage_instructions') : '',
+            {
+                category: product.category || '',
+                initialQuantity: quantity,
+                sourceContext: {
+                    sourcePage: 'wallet',
+                    sourceChannel: 'recharge_return',
+                    sourcePromptId: null
+                }
+            }
+        );
+        void this.refreshCurrentPurchaseGuidance(productId);
+        void this.syncPurchaseAccessAfterOpen(productId, quantityCap);
+        return true;
     },
 
     maybeTriggerProductRestockedEngagement: function (products = []) {
@@ -2684,7 +2903,10 @@ const ShopClient = {
             payload.showUsageInstructions,
             payload.usageInstructions,
             payload.productCategory,
-            sourceContext
+            sourceContext,
+            {
+                initialQuantity: options.initialQuantity
+            }
         );
     },
 
@@ -5356,13 +5578,15 @@ const ShopClient = {
 
         const productSpotlightId = String(urlParams.get('productId') || urlParams.get('product_id') || '').trim();
         if (productSpotlightId) {
+            const rechargeReturn = urlParams.get('rechargeReturn') === '1';
             this.pendingProductSpotlight = {
                 productId: productSpotlightId,
                 autoOpen: true,
                 expandedSearch: false,
+                initialQuantity: Math.max(1, Math.trunc(Number(urlParams.get('quantity') || 1) || 1)),
                 sourceContext: {
                     sourcePage: 'wallet',
-                    sourceChannel: 'wallet_discount_asset',
+                    sourceChannel: rechargeReturn ? 'recharge_return' : 'wallet_discount_asset',
                     sourcePromptId: null
                 }
             };
@@ -5996,7 +6220,10 @@ const ShopClient = {
         const vv = window.visualViewport;
         const visualTop = Math.max(0, vv?.offsetTop || 0);
         const visualLeft = Math.max(0, vv?.offsetLeft || 0);
-        const visualWidth = Math.max(320, Math.round(vv?.width || window.innerWidth || document.documentElement.clientWidth || 0));
+        const visualWidth = Math.max(
+            1,
+            Math.round(vv?.width || window.innerWidth || document.documentElement.clientWidth || document.body?.clientWidth || 0)
+        );
         const visualHeight = Math.max(0, vv?.height || 0);
         const visualBottom = visualTop + visualHeight;
         const overlayHeight = Math.max(320, Math.round(
@@ -6044,6 +6271,68 @@ const ShopClient = {
         if (shouldPreserveKeyboardBase) return;
         if (!force && baseHeight >= measuredHeight) return;
         this.purchaseModalKeyboardBaseViewportHeight = measuredHeight;
+    },
+
+    syncPurchaseModalOverlayViewport: function (force = false) {
+        const { overlay } = this.getPurchaseModalElements();
+        if (!overlay?.classList.contains('active')) return;
+        if (this.purchaseModalPageFrozen) {
+            this.stabilizePurchaseModalViewport();
+        }
+        this.capturePurchaseModalOverlayHeight(force);
+    },
+
+    schedulePurchaseModalViewportSync: function (force = false) {
+        const { overlay } = this.getPurchaseModalElements();
+        if (!overlay?.classList.contains('active')) return;
+
+        if (this.purchaseModalViewportSyncRafId) {
+            cancelAnimationFrame(this.purchaseModalViewportSyncRafId);
+        }
+
+        this.purchaseModalViewportSyncRafId = requestAnimationFrame(() => {
+            this.purchaseModalViewportSyncRafId = null;
+            this.syncPurchaseModalOverlayViewport(force);
+        });
+    },
+
+    attachPurchaseModalViewportSync: function () {
+        const { overlay } = this.getPurchaseModalElements();
+        if (!overlay) return;
+
+        this.detachPurchaseModalViewportSync();
+
+        const handleViewportChange = () => {
+            if (!overlay.classList.contains('active')) return;
+            this.schedulePurchaseModalViewportSync();
+        };
+
+        window.addEventListener('resize', handleViewportChange, { passive: true });
+        window.addEventListener('orientationchange', handleViewportChange, { passive: true });
+        window.visualViewport?.addEventListener('resize', handleViewportChange, { passive: true });
+        window.visualViewport?.addEventListener('scroll', handleViewportChange, { passive: true });
+
+        this.purchaseModalViewportSyncCleanup = () => {
+            window.removeEventListener('resize', handleViewportChange);
+            window.removeEventListener('orientationchange', handleViewportChange);
+            window.visualViewport?.removeEventListener('resize', handleViewportChange);
+            window.visualViewport?.removeEventListener('scroll', handleViewportChange);
+            if (this.purchaseModalViewportSyncRafId) {
+                cancelAnimationFrame(this.purchaseModalViewportSyncRafId);
+                this.purchaseModalViewportSyncRafId = null;
+            }
+            this.purchaseModalViewportSyncCleanup = null;
+        };
+    },
+
+    detachPurchaseModalViewportSync: function () {
+        if (typeof this.purchaseModalViewportSyncCleanup === 'function') {
+            this.purchaseModalViewportSyncCleanup();
+        }
+        if (this.purchaseModalViewportSyncRafId) {
+            cancelAnimationFrame(this.purchaseModalViewportSyncRafId);
+            this.purchaseModalViewportSyncRafId = null;
+        }
     },
 
     isShopImageSource: function (value) {
@@ -6996,10 +7285,15 @@ const ShopClient = {
         try {
             const url = new URL(window.location.href);
             const hadProductParam = url.searchParams.has('productId') || url.searchParams.has('product_id');
+            const hadRechargeReturnParam = url.searchParams.has('rechargeReturn') || url.searchParams.has('quantity');
             if (!hadProductParam) return;
 
             url.searchParams.delete('productId');
             url.searchParams.delete('product_id');
+            if (hadRechargeReturnParam) {
+                url.searchParams.delete('rechargeReturn');
+                url.searchParams.delete('quantity');
+            }
             window.history.replaceState(window.history.state, document.title, `${url.pathname}${url.search}${url.hash}`);
         } catch (error) {
             console.warn('Failed to clear shop product spotlight params:', error);
@@ -7038,7 +7332,10 @@ const ShopClient = {
                             sourceChannel: 'wallet_discount_asset',
                             sourcePromptId: null
                         },
-                        { trackClick: false }
+                        {
+                            trackClick: false,
+                            initialQuantity: pending.initialQuantity
+                        }
                     );
                 });
             }
@@ -8874,22 +9171,24 @@ const ShopClient = {
         }
     },
 
-    buyProduct: async function (productId, productName, productNameEn, price, rulesStr, maxPurchaseQuantity = 99, showPurchaseNotes = false, purchaseNotesEncoded = '', showUsageInstructions = false, usageInstructionsEncoded = '', productCategory = '', sourceContext = null) {
+    buyProduct: async function (productId, productName, productNameEn, price, rulesStr, maxPurchaseQuantity = 99, showPurchaseNotes = false, purchaseNotesEncoded = '', showUsageInstructions = false, usageInstructionsEncoded = '', productCategory = '', sourceContext = null, options = {}) {
         const rules = rulesStr ? JSON.parse(decodeURIComponent(rulesStr)) : [];
         let purchaseNotes = showPurchaseNotes ? decodeURIComponent(purchaseNotesEncoded || '') : '';
         let usageInstructions = showUsageInstructions ? decodeURIComponent(usageInstructionsEncoded || '') : '';
         const liveProduct = this.getCachedProductById(productId);
         const quantityCap = this.getPurchaseQuantityCapForProduct(liveProduct, maxPurchaseQuantity);
+        const initialQuantity = Math.max(1, Math.min(quantityCap, Math.trunc(Number(options?.initialQuantity || 1) || 1)));
 
         void this.prefetchDiscountAssetsForProduct({
             productId,
-            quantity: 1,
+            quantity: initialQuantity,
             agentId: this.currentAgentId,
             site: window.SiteConfig?.site || 'cn'
         });
         this.openPurchaseModal(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, {
             category: productCategory,
-            sourceContext
+            sourceContext,
+            initialQuantity
         });
         void this.refreshCurrentPurchaseGuidance(productId);
         void this.syncPurchaseAccessAfterOpen(productId, quantityCap);
@@ -9071,6 +9370,7 @@ const ShopClient = {
         // Show Modal
         this.setPurchaseModalLayerOpen(true);
         modal.classList.add('active');
+        this.attachPurchaseModalViewportSync();
         this.attachPurchaseModalKeyboardDock();
         void this.refreshPurchaseDiscountAssets({ silent: true });
         if (runtimeCartDiscount) {
@@ -9129,6 +9429,7 @@ const ShopClient = {
         this.setPurchaseModalLayerOpen(false);
         this.clearPurchaseNotesWheelIsolation();
         this.clearPurchaseNotesHeightAnimation();
+        this.detachPurchaseModalViewportSync();
         this.detachPurchaseModalKeyboardDock();
         this.resetPurchaseModalKeyboardDockState();
         modal.classList.remove('has-purchase-notes');
@@ -9465,6 +9766,10 @@ const ShopClient = {
         if (errorMessage.includes('积分') || errorMessage.includes('余额') || errorMessage.includes('nsufficient') || errorMessage.includes('balance')) {
             this.closeCartCheckoutModal();
             this.showShopToast(window.i18n?.t('shop.insufficientPoints') || '积分不足，请先充值', 'error');
+            const rechargeReturnContext = this.buildShopRechargeReturnContext('cart', {
+                source: 'cart_checkout_insufficient_points',
+                checkout: true
+            });
             const fallbackEngagement = {
                 id: 'shop_cart_insufficient_points',
                 source: 'client_event',
@@ -9475,19 +9780,21 @@ const ShopClient = {
                 title: '积分不足',
                 content: '购物车结算需要更多积分，可以先去钱包充值后再回来下单。',
                 action_label: '去充值',
-                action_url: '/index.html#wallet',
+                action_url: 'wallet://recharge',
                 tone: 'warning',
                 priority: 70,
                 dismiss_ttl_hours: 2,
                 metadata: {
                     event_type: 'points_insufficient',
-                    source: 'cart_checkout'
+                    source: 'cart_checkout',
+                    ...rechargeReturnContext
                 }
             };
             const triggeredEngagement = window.ZaoyoeEngagement?.trigger?.('points_insufficient', {
                 source_module: 'shop',
                 source_event_id: 'shop_cart_insufficient_points',
-                source: 'cart_checkout'
+                source: 'cart_checkout',
+                ...rechargeReturnContext
             });
             if (triggeredEngagement && typeof triggeredEngagement.then === 'function') {
                 triggeredEngagement.then((shown) => {
@@ -9499,7 +9806,8 @@ const ShopClient = {
             setTimeout(() => {
                 void openShopWalletModal('recharge', {
                     entry: 'shop_cart_insufficient_points',
-                    sourceModule: 'shop_client'
+                    sourceModule: 'shop_client',
+                    ...rechargeReturnContext
                 });
             }, 300);
             return;
@@ -9512,11 +9820,6 @@ const ShopClient = {
     },
 
     confirmPurchase: async function () {
-        const token = await this.getAccessToken();
-        if (!token) {
-            this.promptLoginForPurchase(window.i18n?.t('shop.loginRequired') || '请先登录再进行兑换');
-            return;
-        }
         if (this.purchaseProcessing) return;
 
         // Disable button
@@ -9527,11 +9830,36 @@ const ShopClient = {
         }
         const originalText = btn.innerHTML;
         const processingText = window.i18n?.t('shop.processing') || '处理中...';
+        const restoreIdleButtonState = () => {
+            this.purchaseProcessing = false;
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            if (backBtn) {
+                backBtn.disabled = false;
+            }
+        };
         this.purchaseProcessing = true;
         btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>${processingText}</span>`;
         btn.disabled = true;
         if (backBtn) {
             backBtn.disabled = true;
+        }
+
+        await new Promise((resolve) => {
+            window.requestAnimationFrame(() => resolve());
+        });
+
+        const shouldContinueAfterCouponSync = await this.waitForPurchaseDiscountAssetsBeforeSubmit();
+        if (!shouldContinueAfterCouponSync) {
+            restoreIdleButtonState();
+            return;
+        }
+
+        const token = await this.getAccessToken();
+        if (!token) {
+            restoreIdleButtonState();
+            this.promptLoginForPurchase(window.i18n?.t('shop.loginRequired') || '请先登录再进行兑换');
+            return;
         }
 
         try {
@@ -9603,42 +9931,13 @@ const ShopClient = {
                     ?? (subtotal - discountAmount)
                 ) || 0
             );
-            const purchaseSuccessMetadata = buildShopTrackingMetadata({
-                order_id: String(lastOrderId || '').trim() || null,
-                product_id: String(this.currentPurchase?.productId || '').trim() || null,
-                product_name: this.currentPurchase?.productName || null,
-                product_name_en: this.currentPurchase?.productNameEn || null,
-                category: this.currentPurchase?.productCategory || null,
-                quantity: Number(this.currentPurchase?.quantity || 0) || 1,
-                unit_price: Number(this.currentPurchase?.unitPrice || 0) || null,
-                subtotal_points: subtotal || null,
-                discount_code: this.currentPurchase?.discountCode || null,
-                discount_amount: discountAmount || null,
-                total_points: totalPointsSpent || null,
-                has_usage_instructions: Boolean(usageInstructions)
-            }, purchaseSourceContext);
-            trackShopAnalyticsEvent('product_purchase_success', {
-                entityType: 'shop_order',
-                entityId: String(lastOrderId || this.currentPurchase?.productId || '').trim() || null,
-                eventValue: totalPointsSpent || null,
-                pointsDelta: totalPointsSpent > 0 ? -Math.abs(totalPointsSpent) : null,
-                metadata: purchaseSuccessMetadata
-            }, {
-                eventType: 'conversion',
-                dedupeKey: String(lastOrderId || '').trim()
-                    ? `product_purchase_success:${String(lastOrderId).trim()}`
-                    : ''
-            });
-            trackShopAnalyticsEvent('shop_purchase', {
-                entityType: 'shop_order',
-                entityId: String(lastOrderId || this.currentPurchase?.productId || '').trim() || null,
-                eventValue: totalPointsSpent || null,
-                pointsDelta: totalPointsSpent > 0 ? -Math.abs(totalPointsSpent) : null,
-                metadata: purchaseSuccessMetadata
-            }, {
-                eventType: 'conversion',
-                dedupeKey: String(lastOrderId || '').trim() ? `shop_purchase:${String(lastOrderId).trim()}` : ''
-            });
+            const purchasedProductId = String(this.currentPurchase?.productId || '').trim() || null;
+            const purchasedProductName = this.currentPurchase?.productName || null;
+            const purchasedProductNameEn = this.currentPurchase?.productNameEn || null;
+            const purchasedProductCategory = this.currentPurchase?.productCategory || null;
+            const purchasedQuantity = Number(this.currentPurchase?.quantity || 0) || 1;
+            const purchasedUnitPrice = Number(this.currentPurchase?.unitPrice || 0) || null;
+            const purchasedDiscountCode = this.currentPurchase?.discountCode || null;
 
             // Handle Results
             this.closePurchaseModal();
@@ -9652,20 +9951,17 @@ const ShopClient = {
                 }
                 this.renderCart();
             }
-            const refreshProductsPromise = this.loadProducts({ forceRefresh: true }).catch((error) => {
-                console.warn('Failed to refresh shop products after purchase:', error);
-            });
 
             const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
             const successItems = [
                 this.buildSuccessModalItemPayload({
-                    productId: this.currentPurchase?.productId,
+                    productId: purchasedProductId,
                     displayName: currentLang === 'en'
-                        ? (this.currentPurchase?.productNameEn || this.currentPurchase?.productName || '')
-                        : (this.currentPurchase?.productName || this.currentPurchase?.productNameEn || ''),
+                        ? (purchasedProductNameEn || purchasedProductName || '')
+                        : (purchasedProductName || purchasedProductNameEn || ''),
                     orderId: lastOrderId,
                     createdAt,
-                    quantity: Number(this.currentPurchase?.quantity || 0) || 1,
+                    quantity: purchasedQuantity,
                     content: finalContent,
                     purchaseNotes: this.currentPurchase?.purchaseNotes || '',
                     usageInstructions,
@@ -9674,16 +9970,6 @@ const ShopClient = {
             ];
 
             this.showSuccessModal(finalContent, null, usageInstructions, successItems);
-            this.triggerShopOrderEngagement('order_delivered', {
-                source_event_id: `shop_order_delivered:${String(lastOrderId || this.currentPurchase?.productId || 'unknown').trim()}`,
-                source: 'product_purchase_success',
-                order_id: lastOrderId || null,
-                product_id: this.currentPurchase?.productId || null,
-                product_name: this.currentPurchase?.productName || null,
-                quantity: Number(this.currentPurchase?.quantity || 0) || 1,
-                total_points: totalPointsSpent || null,
-                remaining_points: remainingPoints ?? null
-            });
             this.purchaseProcessing = false;
 
             // Update Points UI
@@ -9691,7 +9977,59 @@ const ShopClient = {
                 window.updateUserPointsUI(remainingPoints);
                 if (window.checkAuthState) window.checkAuthState();
             }
-            await refreshProductsPromise;
+            window.setTimeout(() => {
+                const purchaseSuccessMetadata = buildShopTrackingMetadata({
+                    order_id: String(lastOrderId || '').trim() || null,
+                    product_id: purchasedProductId,
+                    product_name: purchasedProductName,
+                    product_name_en: purchasedProductNameEn,
+                    category: purchasedProductCategory,
+                    quantity: purchasedQuantity,
+                    unit_price: purchasedUnitPrice,
+                    subtotal_points: subtotal || null,
+                    discount_code: purchasedDiscountCode,
+                    discount_amount: discountAmount || null,
+                    total_points: totalPointsSpent || null,
+                    has_usage_instructions: Boolean(usageInstructions)
+                }, purchaseSourceContext);
+
+                trackShopAnalyticsEvent('product_purchase_success', {
+                    entityType: 'shop_order',
+                    entityId: String(lastOrderId || purchasedProductId || '').trim() || null,
+                    eventValue: totalPointsSpent || null,
+                    pointsDelta: totalPointsSpent > 0 ? -Math.abs(totalPointsSpent) : null,
+                    metadata: purchaseSuccessMetadata
+                }, {
+                    eventType: 'conversion',
+                    dedupeKey: String(lastOrderId || '').trim()
+                        ? `product_purchase_success:${String(lastOrderId).trim()}`
+                        : ''
+                });
+                trackShopAnalyticsEvent('shop_purchase', {
+                    entityType: 'shop_order',
+                    entityId: String(lastOrderId || purchasedProductId || '').trim() || null,
+                    eventValue: totalPointsSpent || null,
+                    pointsDelta: totalPointsSpent > 0 ? -Math.abs(totalPointsSpent) : null,
+                    metadata: purchaseSuccessMetadata
+                }, {
+                    eventType: 'conversion',
+                    dedupeKey: String(lastOrderId || '').trim() ? `shop_purchase:${String(lastOrderId).trim()}` : ''
+                });
+                this.triggerShopOrderEngagement('order_delivered', {
+                    source_event_id: `shop_order_delivered:${String(lastOrderId || purchasedProductId || 'unknown').trim()}`,
+                    source: 'product_purchase_success',
+                    order_id: lastOrderId || null,
+                    product_id: purchasedProductId,
+                    product_name: purchasedProductName,
+                    quantity: purchasedQuantity,
+                    total_points: totalPointsSpent || null,
+                    remaining_points: remainingPoints ?? null
+                });
+                void this.loadProducts({ forceRefresh: true }).catch((error) => {
+                    console.warn('Failed to refresh shop products after purchase:', error);
+                });
+            }, 0);
+            return;
 
         } catch (err) {
             console.error(err);
@@ -9703,6 +10041,11 @@ const ShopClient = {
                 this.closePurchaseModal();
                 // Show a visible toast notification instead of native alert
                 this.showShopToast(`❌ ${window.i18n?.t('shop.insufficientPoints') || '积分不足，请先充值'}`, 'error');
+                const rechargeReturnContext = this.buildShopRechargeReturnContext('product_purchase', {
+                    productId: this.currentPurchase?.productId,
+                    quantity: this.currentPurchase?.quantity,
+                    source: 'product_purchase_insufficient_points'
+                });
                 const fallbackEngagement = {
                     id: 'shop_insufficient_points',
                     source: 'client_event',
@@ -9710,23 +10053,25 @@ const ShopClient = {
                     source_event_id: 'shop_insufficient_points',
                     page_id: 'shop',
                     site: window.SiteConfig?.site || 'cn',
-                    title: '积分不足',
-                    content: '这件商品需要更多积分，可以先充值，完成后回到商城继续购买。',
-                    action_label: '去充值',
-                    action_url: '/index.html#wallet',
-                    tone: 'warning',
+                title: '积分不足',
+                content: '这件商品需要更多积分，可以先充值，完成后回到商城继续购买。',
+                action_label: '去充值',
+                action_url: 'wallet://recharge',
+                tone: 'warning',
                     priority: 70,
                     dismiss_ttl_hours: 2,
                     metadata: {
                         event_type: 'points_insufficient',
-                        product_id: this.currentPurchase?.productId || null
+                        product_id: this.currentPurchase?.productId || null,
+                        ...rechargeReturnContext
                     }
                 };
                 const triggeredEngagement = window.ZaoyoeEngagement?.trigger?.('points_insufficient', {
                     source_module: 'shop',
                     source_event_id: `shop_insufficient_points:${String(this.currentPurchase?.productId || 'unknown')}`,
                     source: 'product_purchase',
-                    product_id: this.currentPurchase?.productId || null
+                    product_id: this.currentPurchase?.productId || null,
+                    ...rechargeReturnContext
                 });
                 if (triggeredEngagement && typeof triggeredEngagement.then === 'function') {
                     triggeredEngagement.then((shown) => {
@@ -9739,7 +10084,8 @@ const ShopClient = {
                 setTimeout(() => {
                     void openShopWalletModal('recharge', {
                         entry: 'shop_insufficient_points',
-                        sourceModule: 'shop_client'
+                        sourceModule: 'shop_client',
+                        ...rechargeReturnContext
                     });
                 }, 300);
             } else if (this.isInventoryStockErrorMessage(errMsg)) {
@@ -9765,12 +10111,7 @@ const ShopClient = {
             }
 
             // Re-enable button on error
-            this.purchaseProcessing = false;
-            btn.innerHTML = originalText;
-            btn.disabled = false;
-            if (backBtn) {
-                backBtn.disabled = false;
-            }
+            restoreIdleButtonState();
         }
     },
 

@@ -1365,7 +1365,7 @@ test('public chat and shop scroll panels clamp accidental horizontal pan', () =>
         'shop usage instruction card should keep long content from causing lateral wobble'
     );
     assert.equal(
-        shopHtmlSource.includes('css/shop-page.css?v=20260503_SHOP_MOBILE_FRESH_ENTER_2'),
+        shopHtmlSource.includes('css/shop-page.css?v=20260509_SHOP_PURCHASE_MODAL_MOBILE_WIDTH_1'),
         true,
         'shop.html should cache-bust the keyboard-scroll shop stylesheet'
     );
@@ -2736,7 +2736,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['privacy.html', 'css/privacy-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260425_HOME_GUESTBOOK_MODAL_HIDE_1'],
-        ['shop.html', 'css/shop-page.css?v=20260503_SHOP_MOBILE_FRESH_ENTER_2'],
+        ['shop.html', 'css/shop-page.css?v=20260509_SHOP_PURCHASE_MODAL_MOBILE_WIDTH_1'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260427_ADMIN_SITE_SWITCHER_ACTIVE_HOVER_LOCK_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260502_ADMIN_ENTRY_TAP_HIGHLIGHT_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260427_AUTH_CALLBACK_SILENT_2'],
@@ -2825,7 +2825,7 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260503_SHOP_MOBILE_FRESH_ENTER_2'],
+        ['shop.html', 'css/shop-page.css?v=20260509_SHOP_PURCHASE_MODAL_MOBILE_WIDTH_1'],
         ['index_old.html', 'css/index-old.css?v=20260502_INDEX_OLD_TAP_HIGHLIGHT_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
@@ -3496,7 +3496,7 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should not render a secondary text loading message after the skeleton'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260508_SHOP_LANGUAGE_LABEL_FIX_1'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260509_SHOP_PURCHASE_COUPON_SYNC_GRACE_1'),
         true,
         'shop.html should reference the latest shop client runtime for the cart-enabled storefront flow'
     );
@@ -3535,7 +3535,7 @@ test('shop storefront uses a 21:9 media ratio for mobile product cards', () => {
         'mobile shop product cards and loading skeletons should keep the top media area at 21:9'
     );
     assert.equal(
-        shopHtmlSource.includes('css/shop-page.css?v=20260503_SHOP_MOBILE_FRESH_ENTER_2'),
+        shopHtmlSource.includes('css/shop-page.css?v=20260509_SHOP_PURCHASE_MODAL_MOBILE_WIDTH_1'),
         true,
         'shop.html should bust the shop stylesheet cache for the latest shop card sizing'
     );
@@ -3713,6 +3713,11 @@ test('shop mobile purchase actions stay visible while guidance content scrolls',
         shopCssSource,
         /@media \(max-width: 768px\)[\s\S]*?#shopPurchaseModal \.modal-content\s*\{[\s\S]*?max-height:\s*min\(760px,\s*calc\(100dvh - 112px - env\(safe-area-inset-top, 0px\) - env\(safe-area-inset-bottom, 0px\)\)\)\s*!important;[\s\S]*?display:\s*flex\s*!important;[\s\S]*?flex-direction:\s*column;[\s\S]*?overflow-y:\s*auto\s*!important;[\s\S]*?overflow-x:\s*hidden\s*!important;/,
         'mobile purchase modal should leave a clear outside tap area while using a vertical flex layout'
+    );
+    assert.match(
+        shopCssSource,
+        /@media \(max-width: 600px\)\s*\{[\s\S]*?#shopPurchaseModal \.modal-content\s*\{[\s\S]*?width:\s*min\(calc\(100% - 24px\), 700px\)\s*!important;/,
+        'phone-width purchase modal should match the wallet sheet side gutters'
     );
     assert.match(
         shopCssSource,
@@ -13177,7 +13182,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), false, 'index.html should not eagerly load the full guestbook runtime');
     assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260507_REPLY_REALTIME_1'), true, 'guestbook.html should load the latest guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should load the latest guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260508_SHOP_LANGUAGE_LABEL_FIX_1'), true, 'shop.html should load the latest cart-aware shop runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260509_SHOP_PURCHASE_COUPON_SYNC_GRACE_1'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
     assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260508_SITE_SCOPED_CONFIG_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });

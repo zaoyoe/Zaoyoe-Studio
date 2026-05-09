@@ -9,6 +9,13 @@ const {
     markUserAsPaid
 } = require('../../../api/_lib/user-tags');
 
+let vercelWaitUntil = null;
+try {
+    ({ waitUntil: vercelWaitUntil } = require('@vercel/functions'));
+} catch (_error) {
+    vercelWaitUntil = null;
+}
+
 async function safeMarkShopBuyerAsPaid(supabase, options = {}) {
     try {
         return await markUserAsPaid(supabase, options);
@@ -58,6 +65,138 @@ function createShopHandlers({
         normalizeDiscountSelection: normalizePricingDiscountSelection,
         resolveDiscountStacking: resolvePricingDiscountStacking
     } = discountPricing || {};
+
+    function createServerTimingTracker() {
+        return {
+            startedAt: Date.now(),
+            phases: []
+        };
+    }
+
+    function recordServerTimingPhase(tracker, name = '', startedAt = Date.now()) {
+        if (!tracker || !name) return 0;
+        const durationMs = Math.max(0, Date.now() - Number(startedAt || Date.now()));
+        tracker.phases.push({
+            name: String(name || '').trim(),
+            durationMs
+        });
+        return durationMs;
+    }
+
+    function applyServerTimingHeader(res, tracker) {
+        if (!res?.setHeader || !tracker) {
+            return {
+                phases: [],
+                totalMs: 0
+            };
+        }
+
+        const phases = Array.isArray(tracker.phases)
+            ? tracker.phases.filter((phase) => phase?.name)
+            : [];
+        const totalMs = Math.max(0, Date.now() - Number(tracker.startedAt || Date.now()));
+        const metrics = [
+            ...phases,
+            { name: 'shop-purchase-total', durationMs: totalMs }
+        ];
+        const serverTimingValue = metrics
+            .map((metric) => `${metric.name};dur=${Math.max(0, Math.round(Number(metric.durationMs || 0)))}`)
+            .join(', ');
+
+        if (serverTimingValue) {
+            res.setHeader('Server-Timing', serverTimingValue);
+        }
+
+        return {
+            phases,
+            totalMs
+        };
+    }
+
+    function maybeLogSlowPurchaseTiming(summary = {}, context = {}) {
+        const totalMs = Math.max(0, Number(summary?.totalMs || 0) || 0);
+        const slowThresholdMs = Math.max(250, Number(env.SHOP_PURCHASE_SLOW_REQUEST_MS || 1200) || 1200);
+        if (!totalMs || totalMs < slowThresholdMs) {
+            return;
+        }
+
+        const phaseSummary = (Array.isArray(summary?.phases) ? summary.phases : [])
+            .map((phase) => `${String(phase?.name || '').replace(/^shop-purchase-/, '')}=${Math.max(0, Math.round(Number(phase?.durationMs || 0) || 0))}ms`)
+            .filter(Boolean)
+            .join(' ');
+        const statusCode = Math.max(0, Number(context?.statusCode || 0) || 0);
+        const productId = normalizeText(context?.productId, 160) || 'unknown';
+        const userId = normalizeText(context?.userId, 160) || 'unknown';
+        const orderId = normalizeText(context?.orderId, 160) || 'pending';
+        const outcome = context?.success === false ? 'failure' : 'success';
+
+        console.warn(
+            `[Shop] Slow purchase ${outcome} status=${statusCode || 0} total=${Math.round(totalMs)}ms product=${productId} user=${userId} order=${orderId} ${phaseSummary}`.trim()
+        );
+    }
+
+    function scheduleShopPurchaseFollowups(followupTask) {
+        const guardedPromise = new Promise((resolve) => {
+            const startTask = () => {
+                Promise.resolve()
+                    .then(() => (typeof followupTask === 'function' ? followupTask() : followupTask))
+                    .catch((error) => {
+                        console.warn('[Shop] Async purchase follow-up failed:', error?.message || error);
+                    })
+                    .finally(resolve);
+            };
+
+            if (typeof setImmediate === 'function') {
+                setImmediate(startTask);
+            } else {
+                setTimeout(startTask, 0);
+            }
+        });
+
+        if (typeof vercelWaitUntil === 'function') {
+            try {
+                vercelWaitUntil(guardedPromise);
+                return;
+            } catch (error) {
+                console.warn('[Shop] Failed to register purchase follow-up with waitUntil:', error?.message || error);
+            }
+        }
+
+        void guardedPromise;
+    }
+
+    async function safeProcessShopPurchaseRewards(supabase, { orderId = '', site = 'cn' } = {}) {
+        const normalizedOrderId = normalizeText(orderId, 160);
+        if (!supabase?.rpc || !normalizedOrderId) {
+            return {
+                success: false,
+                skipped: 'reward_rpc_unavailable'
+            };
+        }
+
+        try {
+            const { data, error } = await supabase.rpc('fn_process_shop_purchase_rewards', {
+                p_order_id: normalizedOrderId,
+                p_site: site || 'cn'
+            });
+            if (error) throw error;
+            return data || { success: true };
+        } catch (error) {
+            if (isMissingRpcCapabilityError(error)) {
+                console.debug('[Shop] Purchase reward job RPC is not available yet; assuming legacy inline rewards.');
+                return {
+                    success: false,
+                    skipped: 'reward_rpc_missing'
+                };
+            }
+
+            console.warn('[Shop] Purchase reward job failed:', error?.message || error);
+            return {
+                success: false,
+                message: error?.message || 'purchase reward job failed'
+            };
+        }
+    }
 
     function isMissingRelationError(error, relationName = '') {
         const normalizedMessage = String(error?.message || '').trim().toLowerCase();
@@ -1624,11 +1763,6 @@ function createShopHandlers({
             && (!normalizedFunctionName || normalizedMessage.includes(normalizedFunctionName));
     }
 
-    function canFallbackToLegacyPurchaseRpc(error) {
-        return isMissingRpcCapabilityError(error)
-            || isAmbiguousRpcOverloadError(error, 'fn_purchase_shop_item');
-    }
-
     function getRpcSingleRow(data) {
         if (Array.isArray(data)) {
             return data[0] || null;
@@ -1646,7 +1780,7 @@ function createShopHandlers({
             p_agent_id: payload.agentId
         };
 
-        if (options.includeDiscountAssetId !== false) {
+        if (options.includeDiscountAssetId !== false && payload.discountAssetId) {
             params.p_discount_asset_id = payload.discountAssetId;
         }
 
@@ -1728,69 +1862,41 @@ function createShopHandlers({
         adminSupabase,
         fallbackSupabase
     }) {
-        const primaryClient = requestSupabase || fallbackSupabase || adminSupabase;
-        if (!primaryClient?.rpc) {
+        const clients = [];
+        for (const client of [requestSupabase, adminSupabase, fallbackSupabase]) {
+            if (client?.rpc && !clients.includes(client)) {
+                clients.push(client);
+            }
+        }
+
+        if (!clients.length) {
             const error = new Error('商城购买服务暂时不可用');
             error.statusCode = 503;
             throw error;
         }
 
-        const primaryParams = buildPurchaseRpcParams(payload, userId, {
-            includeDiscountAssetId: true
+        const params = buildPurchaseRpcParams(payload, userId, {
+            includeDiscountAssetId: Boolean(payload.discountAssetId)
         });
-        const canFallbackToLegacyRpc = !payload.discountAssetId;
         let lastError = null;
 
-        try {
-            const { data, error } = await primaryClient.rpc('fn_purchase_shop_item', primaryParams);
-            if (error) {
-                throw error;
-            }
-
-            const primaryPayload = getRpcSingleRow(data);
-            if (primaryPayload) {
-                return primaryPayload;
-            }
-        } catch (error) {
-            lastError = error;
-            if (!canFallbackToLegacyRpc || !canFallbackToLegacyPurchaseRpc(error)) {
-                throw error;
-            }
-        }
-
-        if (!canFallbackToLegacyRpc) {
-            const error = new Error('商城购买服务未返回结果，请稍后重试');
-            error.statusCode = 502;
-            throw error;
-        }
-
-        const legacyParams = buildPurchaseRpcParams(payload, userId, {
-            includeDiscountAssetId: false
-        });
-        const legacyClients = [];
-        for (const client of [requestSupabase, adminSupabase, fallbackSupabase]) {
-            if (client?.rpc && !legacyClients.includes(client)) {
-                legacyClients.push(client);
-            }
-        }
-
-        for (const client of legacyClients) {
+        for (const client of clients) {
             try {
-                const { data, error } = await client.rpc('fn_purchase_shop_item', legacyParams);
+                const { data, error } = await client.rpc('fn_purchase_shop_item', params);
                 if (error) {
                     throw error;
                 }
 
-                const legacyPayload = getRpcSingleRow(data);
-                if (legacyPayload) {
-                    return legacyPayload;
+                const rpcPayload = getRpcSingleRow(data);
+                if (rpcPayload) {
+                    return rpcPayload;
                 }
             } catch (error) {
                 lastError = error;
             }
         }
 
-        if (isMissingRpcCapabilityError(lastError)) {
+        if (payload.discountAssetId && isMissingRpcCapabilityError(lastError)) {
             const error = new Error('商城购买接口版本不兼容，请检查 fn_purchase_shop_item 迁移和 schema cache');
             error.statusCode = 502;
             throw error;
@@ -2785,9 +2891,20 @@ function createShopHandlers({
             }
         },
         purchase: async function purchaseHandler(req, res) {
+            const timingTracker = createServerTimingTracker();
+            const respond = (statusCode, payload, context = {}) => {
+                const timingSummary = applyServerTimingHeader(res, timingTracker);
+                maybeLogSlowPurchaseTiming(timingSummary, {
+                    ...context,
+                    statusCode,
+                    success: payload?.success !== false
+                });
+                return sendJson(res, statusCode, payload);
+            };
+
             if (req.method !== 'POST') {
                 res.setHeader('Allow', 'POST');
-                return sendJson(res, 405, {
+                return respond(405, {
                     success: false,
                     message: 'Method not allowed'
                 });
@@ -2795,15 +2912,17 @@ function createShopHandlers({
 
             const adminSupabase = getOptionalSupabaseAdmin();
             const clientIp = resolveClientIp(req, { env }) || 'unknown';
+            const ipRateLimitStartedAt = Date.now();
             const ipRateLimit = await takeRateLimitToken({
                 supabase: adminSupabase,
                 key: `shop-purchase:ip:${clientIp}`,
                 limit: Math.max(1, Number(env.SHOP_PURCHASE_RATE_LIMIT_MAX || 12)),
                 windowMs: Math.max(10_000, Number(env.SHOP_PURCHASE_RATE_LIMIT_WINDOW_MS || 60_000))
             });
+            recordServerTimingPhase(timingTracker, 'shop-purchase-iplimit', ipRateLimitStartedAt);
             applyRateLimitHeaders(res, ipRateLimit);
             if (!ipRateLimit.allowed) {
-                return sendJson(res, 429, {
+                return respond(429, {
                     success: false,
                     code: 'rate_limited',
                     message: '商城购买请求过于频繁，请稍后重试',
@@ -2812,8 +2931,20 @@ function createShopHandlers({
             }
 
             try {
-                const { supabase, requestSupabase, adminSupabase: requestAdminSupabase, user } = await requireAuthenticatedUser(req);
-                const body = await parseJsonBody(req);
+                const authStartedAt = Date.now();
+                const authPromise = (async () => {
+                    try {
+                        return await requireAuthenticatedUser(req);
+                    } finally {
+                        recordServerTimingPhase(timingTracker, 'shop-purchase-auth', authStartedAt);
+                    }
+                })();
+                const prepareStartedAt = Date.now();
+                const bodyPromise = parseJsonBody(req);
+                const [{ supabase, requestSupabase, adminSupabase: requestAdminSupabase, user }, body] = await Promise.all([
+                    authPromise,
+                    bodyPromise
+                ]);
                 const payload = normalizePurchaseBody(body, req.headers || {});
                 payload.discountSelections = normalizeDiscountSelectionsInput({
                     discountSelections: payload.discountSelections
@@ -2825,34 +2956,25 @@ function createShopHandlers({
                     payload.discountCode = payload.discountSelections[0].code || null;
                     payload.discountAssetId = payload.discountSelections[0].assetId || null;
                 }
+                recordServerTimingPhase(timingTracker, 'shop-purchase-prepare', prepareStartedAt);
 
                 if (!payload.productId) {
-                    return sendJson(res, 400, {
+                    return respond(400, {
                         success: false,
                         message: '缺少商品标识'
+                    }, {
+                        userId: user.id,
+                        productId: payload.productId
                     });
                 }
 
                 if (!Number.isInteger(payload.quantity) || payload.quantity < 1) {
-                    return sendJson(res, 400, {
+                    return respond(400, {
                         success: false,
                         message: '购买数量必须大于0'
-                    });
-                }
-
-                const userRateLimit = await takeRateLimitToken({
-                    supabase: adminSupabase,
-                    key: `shop-purchase:user:${user.id}`,
-                    limit: Math.max(1, Number(env.SHOP_PURCHASE_USER_RATE_LIMIT_MAX || 8)),
-                    windowMs: Math.max(10_000, Number(env.SHOP_PURCHASE_USER_RATE_LIMIT_WINDOW_MS || 60_000))
-                });
-                applyRateLimitHeaders(res, userRateLimit);
-                if (!userRateLimit.allowed) {
-                    return sendJson(res, 429, {
-                        success: false,
-                        code: 'rate_limited',
-                        message: '下单过于频繁，请稍后重试',
-                        retry_after_seconds: userRateLimit.retryAfterSeconds
+                    }, {
+                        userId: user.id,
+                        productId: payload.productId
                     });
                 }
 
@@ -2860,40 +2982,91 @@ function createShopHandlers({
                     userId: user.id,
                     payload
                 });
-                const idempotencyResult = await takeRateLimitToken({
-                    supabase: adminSupabase,
-                    key: `shop-purchase:idempotency:${user.id}:${idempotencyFingerprint}`,
-                    limit: 1,
-                    windowMs: Math.max(10_000, Number(env.SHOP_PURCHASE_IDEMPOTENCY_WINDOW_MS || 90_000))
-                });
+                const userRateLimitStartedAt = Date.now();
+                const userRateLimitPromise = (async () => {
+                    try {
+                        return await takeRateLimitToken({
+                            supabase: adminSupabase,
+                            key: `shop-purchase:user:${user.id}`,
+                            limit: Math.max(1, Number(env.SHOP_PURCHASE_USER_RATE_LIMIT_MAX || 8)),
+                            windowMs: Math.max(10_000, Number(env.SHOP_PURCHASE_USER_RATE_LIMIT_WINDOW_MS || 60_000))
+                        });
+                    } finally {
+                        recordServerTimingPhase(timingTracker, 'shop-purchase-userlimit', userRateLimitStartedAt);
+                    }
+                })();
+                const idempotencyStartedAt = Date.now();
+                const idempotencyPromise = (async () => {
+                    try {
+                        return await takeRateLimitToken({
+                            supabase: adminSupabase,
+                            key: `shop-purchase:idempotency:${user.id}:${idempotencyFingerprint}`,
+                            limit: 1,
+                            windowMs: Math.max(10_000, Number(env.SHOP_PURCHASE_IDEMPOTENCY_WINDOW_MS || 90_000))
+                        });
+                    } finally {
+                        recordServerTimingPhase(timingTracker, 'shop-purchase-idempotency', idempotencyStartedAt);
+                    }
+                })();
+                const [userRateLimit, idempotencyResult] = await Promise.all([
+                    userRateLimitPromise,
+                    idempotencyPromise
+                ]);
+                applyRateLimitHeaders(res, userRateLimit);
+                if (!userRateLimit.allowed) {
+                    return respond(429, {
+                        success: false,
+                        code: 'rate_limited',
+                        message: '下单过于频繁，请稍后重试',
+                        retry_after_seconds: userRateLimit.retryAfterSeconds
+                    }, {
+                        userId: user.id,
+                        productId: payload.productId
+                    });
+                }
                 if (!idempotencyResult.allowed) {
-                    return sendJson(res, 409, {
+                    return respond(409, {
                         success: false,
                         code: 'duplicate_submission',
                         message: '请勿重复提交订单，请稍候刷新后查看结果',
                         retry_after_seconds: idempotencyResult.retryAfterSeconds
+                    }, {
+                        userId: user.id,
+                        productId: payload.productId
                     });
                 }
 
-                const responsePayload = payload.discountSelections.length > 1
-                    ? await executeMultiDiscountPurchaseRpc({
-                        payload,
-                        userId: user.id,
-                        requestSupabase,
-                        adminSupabase,
-                        fallbackSupabase: supabase
-                    })
-                    : await executePurchaseRpc({
-                        payload,
-                        userId: user.id,
-                        requestSupabase,
-                        adminSupabase,
-                        fallbackSupabase: supabase
-                    });
+                let responsePayload = null;
+                const rpcPhaseName = payload.discountSelections.length > 1
+                    ? 'shop-purchase-rpc-multidiscount'
+                    : 'shop-purchase-rpc';
+                const rpcStartedAt = Date.now();
+                try {
+                    responsePayload = payload.discountSelections.length > 1
+                        ? await executeMultiDiscountPurchaseRpc({
+                            payload,
+                            userId: user.id,
+                            requestSupabase,
+                            adminSupabase,
+                            fallbackSupabase: supabase
+                        })
+                        : await executePurchaseRpc({
+                            payload,
+                            userId: user.id,
+                            requestSupabase,
+                            adminSupabase,
+                            fallbackSupabase: supabase
+                        });
+                } finally {
+                    recordServerTimingPhase(timingTracker, rpcPhaseName, rpcStartedAt);
+                }
                 if (!responsePayload || responsePayload.success === false) {
-                    return sendJson(res, 400, responsePayload || {
+                    return respond(400, responsePayload || {
                         success: false,
                         message: '商城购买服务未返回结果，请检查 fn_purchase_shop_item RPC 配置'
+                    }, {
+                        userId: user.id,
+                        productId: payload.productId
                     });
                 }
 
@@ -2902,33 +3075,9 @@ function createShopHandlers({
                     : {};
                 const orderId = normalizeText(responseData.order_id || responseData.id, 160);
                 const systemSupabase = requestAdminSupabase || adminSupabase || supabase;
-                if (orderId && systemSupabase?.from) {
-                    try {
-                        await maybeIssueAffiliateDiscountAssetsForShopOrder({
-                            supabase: systemSupabase,
-                            site: payload.site,
-                            orderId
-                        });
-                    } catch (linkageError) {
-                        console.warn('[Shop] Affiliate discount linkage skipped:', linkageError.message);
-                    }
-                }
-                if (systemSupabase?.from) {
-                    await safeMarkShopBuyerAsPaid(systemSupabase, {
-                        userId: user.id,
-                        sourceEventId: orderId,
-                        sourceModule: 'shop.purchase'
-                    });
-                }
-                let guidanceData = null;
-                try {
-                    guidanceData = await loadProductGuidance(requestAdminSupabase || adminSupabase || supabase, {
-                        productId: payload.productId,
-                        site: payload.site
-                    });
-                } catch (guidanceError) {
-                    guidanceData = null;
-                }
+                const responseUsageInstructions = normalizeGuidanceText(responseData.usage_instructions);
+                const responseHasUsageInstructions = responseData.show_usage_instructions === true
+                    || Boolean(responseUsageInstructions);
                 const pricingWaterfall = buildPricingWaterfall({
                     ...responseData,
                     applied_discounts: responseData.applied_discounts || [],
@@ -2945,20 +3094,55 @@ function createShopHandlers({
                     }],
                     responseData.discount_amount
                 );
+                const followupsStartedAt = Date.now();
+                scheduleShopPurchaseFollowups(async () => {
+                    await safeProcessShopPurchaseRewards(systemSupabase, {
+                        orderId,
+                        site: payload.site
+                    });
 
-                return sendJson(res, 200, {
+                    await Promise.all([
+                        (orderId && systemSupabase?.from)
+                            ? (async () => {
+                                try {
+                                    await maybeIssueAffiliateDiscountAssetsForShopOrder({
+                                        supabase: systemSupabase,
+                                        site: payload.site,
+                                        orderId
+                                    });
+                                } catch (linkageError) {
+                                    console.warn('[Shop] Affiliate discount linkage skipped:', linkageError.message);
+                                }
+                            })()
+                            : Promise.resolve(null),
+                        systemSupabase?.from
+                            ? safeMarkShopBuyerAsPaid(systemSupabase, {
+                                userId: user.id,
+                                sourceEventId: orderId,
+                                sourceModule: 'shop.purchase'
+                            })
+                            : Promise.resolve(null)
+                    ]);
+                });
+                recordServerTimingPhase(timingTracker, 'shop-purchase-followups', followupsStartedAt);
+
+                return respond(200, {
                     ...responsePayload,
                     data: {
                         ...responseData,
                         benefit_label: benefitLabel,
-                        usage_instructions: guidanceData?.usage_instructions || normalizeGuidanceText(responseData.usage_instructions) || null,
-                        show_usage_instructions: guidanceData?.has_usage_instructions ?? responseData.show_usage_instructions ?? false,
+                        usage_instructions: responseUsageInstructions || null,
+                        show_usage_instructions: responseHasUsageInstructions,
                         pricing_waterfall: pricingWaterfall.rows,
                         stacking_policy: pricingWaterfall.stacking_policy
                     }
+                }, {
+                    userId: user.id,
+                    productId: payload.productId,
+                    orderId
                 });
             } catch (error) {
-                return sendJson(res, error.statusCode || 500, {
+                return respond(error.statusCode || 500, {
                     success: false,
                     message: error.message || '兑换失败'
                 });

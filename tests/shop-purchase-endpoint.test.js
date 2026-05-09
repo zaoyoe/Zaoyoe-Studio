@@ -35,8 +35,9 @@ function createMockResponse() {
     };
 }
 
-async function withShopPurchaseHandler(mockAdminModule, callback, mockRequestSecurityModule = null) {
+async function withShopPurchaseHandler(mockAdminModule, callback, mockRequestSecurityModule = null, mockExtraModules = {}) {
     const handlerPath = path.resolve(__dirname, '../api/shop/purchase.js');
+    const sharedHandlerPath = path.resolve(__dirname, '../server/api-handlers/public/shop.js');
     const originalLoad = Module._load;
     const resolvedAdminModule = {
         getOptionalSupabaseAdmin() {
@@ -49,6 +50,7 @@ async function withShopPurchaseHandler(mockAdminModule, callback, mockRequestSec
     };
 
     delete require.cache[handlerPath];
+    delete require.cache[sharedHandlerPath];
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../_lib/admin') {
             return resolvedAdminModule;
@@ -56,6 +58,10 @@ async function withShopPurchaseHandler(mockAdminModule, callback, mockRequestSec
 
         if (request === '../_lib/request-security' && mockRequestSecurityModule) {
             return mockRequestSecurityModule;
+        }
+
+        if (Object.prototype.hasOwnProperty.call(mockExtraModules, request)) {
+            return mockExtraModules[request];
         }
 
         return originalLoad.call(this, request, parent, isMain);
@@ -72,6 +78,7 @@ async function withShopPurchaseHandler(mockAdminModule, callback, mockRequestSec
         return await callback(handler);
     } finally {
         delete require.cache[handlerPath];
+        delete require.cache[sharedHandlerPath];
     }
 }
 
@@ -206,6 +213,11 @@ test('shop purchase uses the request-scoped client and normalized payload', asyn
 
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
+        assert.match(String(res.headers['server-timing'] || ''), /shop-purchase-iplimit;dur=\d+/);
+        assert.match(String(res.headers['server-timing'] || ''), /shop-purchase-auth;dur=\d+/);
+        assert.match(String(res.headers['server-timing'] || ''), /shop-purchase-rpc;dur=\d+/);
+        assert.match(String(res.headers['server-timing'] || ''), /shop-purchase-followups;dur=\d+/);
+        assert.match(String(res.headers['server-timing'] || ''), /shop-purchase-total;dur=\d+/);
         assert.equal(rpcCalls.length, 1);
         assert.deepEqual(payload.data.stacking_policy, {
             is_exclusive: false,
@@ -228,7 +240,6 @@ test('shop purchase uses the request-scoped client and normalized payload', asyn
                 p_site: 'cn',
                 p_quantity: 2,
                 p_discount_code: 'ABCD1234',
-                p_discount_asset_id: null,
                 p_agent_id: 'agent-7'
             }
         });
@@ -251,6 +262,126 @@ test('shop purchase uses the request-scoped client and normalized payload', asyn
             };
         },
         applyRateLimitHeaders() {}
+    });
+});
+
+test('shop purchase responds before slow post-purchase follow-ups finish', async () => {
+    const rpcCalls = [];
+    let releaseFollowups = () => {};
+    let affiliateStarted = false;
+    let affiliateFinished = false;
+    let tagStarted = false;
+    let tagFinished = false;
+    const slowFollowup = new Promise((resolve) => {
+        releaseFollowups = resolve;
+    });
+    const systemSupabase = {
+        from() {
+            return {};
+        }
+    };
+
+    await withShopPurchaseHandler({
+        async requireAuthenticatedUser() {
+            return {
+                user: {
+                    id: 'user-fast-followup',
+                    email: 'member@example.com'
+                },
+                requestSupabase: {
+                    rpc(name, params) {
+                        rpcCalls.push({ name, params });
+                        return Promise.resolve({
+                            data: {
+                                success: true,
+                                data: {
+                                    order_id: 'order-fast-followup-1',
+                                    remaining_points: 42,
+                                    content: 'KEY-FAST-001'
+                                }
+                            },
+                            error: null
+                        });
+                    }
+                },
+                adminSupabase: systemSupabase,
+                supabase: null
+            };
+        },
+        sendJson(res, status, payload) {
+            res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify(payload));
+        }
+    }, async (handler) => {
+        const req = {
+            method: 'POST',
+            headers: {
+                'x-forwarded-for': '203.0.113.39'
+            },
+            body: {
+                productId: 'product-fast-followup-1',
+                quantity: 1,
+                site: 'cn',
+                idempotencyKey: 'fast-followup-click-1'
+            }
+        };
+        const res = createMockResponse();
+        const handlerPromise = handler(req, res);
+        const raceResult = await Promise.race([
+            handlerPromise.then(() => 'responded'),
+            new Promise((resolve) => setTimeout(() => resolve('blocked'), 30))
+        ]);
+
+        if (raceResult !== 'responded') {
+            releaseFollowups();
+        }
+
+        assert.equal(raceResult, 'responded');
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().success, true);
+        assert.equal(rpcCalls.length, 1);
+        assert.equal(affiliateStarted, false);
+        assert.equal(tagStarted, false);
+        assert.equal(affiliateFinished, false);
+        assert.equal(tagFinished, false);
+
+        releaseFollowups();
+        await handlerPromise;
+        await new Promise((resolve) => setImmediate(resolve));
+
+        assert.equal(affiliateFinished, true);
+        assert.equal(tagFinished, true);
+    }, {
+        resolveClientIp() {
+            return '203.0.113.39';
+        },
+        takeRateLimitToken() {
+            return {
+                allowed: true,
+                limit: 10,
+                remaining: 9,
+                resetAt: Date.now() + 60_000,
+                retryAfterSeconds: 60
+            };
+        },
+        applyRateLimitHeaders() {}
+    }, {
+        '../../../api/_lib/discount-trigger-linkage': {
+            async maybeIssueAffiliateDiscountAssetsForShopOrder() {
+                affiliateStarted = true;
+                await slowFollowup;
+                affiliateFinished = true;
+                return { success: true };
+            }
+        },
+        '../../../api/_lib/user-tags': {
+            async markUserAsPaid() {
+                tagStarted = true;
+                await slowFollowup;
+                tagFinished = true;
+                return { ok: true };
+            }
+        }
     });
 });
 
@@ -479,7 +610,7 @@ test('shop purchase routes multiple selected coupons through the multi-discount 
     });
 });
 
-test('shop purchase falls back to the legacy purchase rpc when discount-asset signature is unavailable', async () => {
+test('shop purchase skips the discount-asset rpc signature when no asset is selected', async () => {
     const rpcCalls = [];
 
     await withShopPurchaseHandler({
@@ -545,20 +676,8 @@ test('shop purchase falls back to the legacy purchase rpc when discount-asset si
 
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
-        assert.equal(rpcCalls.length, 2);
+        assert.equal(rpcCalls.length, 1);
         assert.deepEqual(rpcCalls[0], {
-            name: 'fn_purchase_shop_item',
-            params: {
-                p_product_id: 'product-legacy-1',
-                p_user_id: 'user-legacy',
-                p_site: 'cn',
-                p_quantity: 1,
-                p_discount_code: null,
-                p_discount_asset_id: null,
-                p_agent_id: null
-            }
-        });
-        assert.deepEqual(rpcCalls[1], {
             name: 'fn_purchase_shop_item',
             params: {
                 p_product_id: 'product-legacy-1',
@@ -586,7 +705,7 @@ test('shop purchase falls back to the legacy purchase rpc when discount-asset si
     });
 });
 
-test('shop purchase falls back to the legacy purchase rpc when the 7-arg overload is ambiguous', async () => {
+test('shop purchase avoids the ambiguous 7-arg overload when no discount asset is selected', async () => {
     const rpcCalls = [];
 
     await withShopPurchaseHandler({
@@ -652,9 +771,8 @@ test('shop purchase falls back to the legacy purchase rpc when the 7-arg overloa
 
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
-        assert.equal(rpcCalls.length, 2);
-        assert.equal(Object.prototype.hasOwnProperty.call(rpcCalls[0].params, 'p_discount_asset_id'), true);
-        assert.equal(Object.prototype.hasOwnProperty.call(rpcCalls[1].params, 'p_discount_asset_id'), false);
+        assert.equal(rpcCalls.length, 1);
+        assert.equal(Object.prototype.hasOwnProperty.call(rpcCalls[0].params, 'p_discount_asset_id'), false);
     }, {
         resolveClientIp() {
             return '203.0.113.52';
@@ -751,7 +869,7 @@ test('shop purchase can fall back to the admin client when authenticated legacy 
 
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
-        assert.equal(requestRpcCalls.length, 2);
+        assert.equal(requestRpcCalls.length, 1);
         assert.equal(adminRpcCalls.length, 1);
         assert.deepEqual(adminRpcCalls[0], {
             name: 'fn_purchase_shop_item',
@@ -762,6 +880,17 @@ test('shop purchase can fall back to the admin client when authenticated legacy 
                 p_quantity: 1,
                 p_discount_code: null,
                 p_agent_id: null
+            }
+        });
+
+        await new Promise((resolve) => setImmediate(resolve));
+
+        assert.equal(adminRpcCalls.length, 2);
+        assert.deepEqual(adminRpcCalls[1], {
+            name: 'fn_process_shop_purchase_rewards',
+            params: {
+                p_order_id: 'order-admin-fallback-1',
+                p_site: 'cn'
             }
         });
     }, {
@@ -825,9 +954,8 @@ test('shop purchase returns a diagnostic error when the purchase rpc yields no p
         assert.equal(res.statusCode, 502);
         assert.equal(payload.success, false);
         assert.equal(payload.message, '商城购买服务未返回结果，请检查 fn_purchase_shop_item RPC 配置');
-        assert.equal(rpcCalls.length, 2);
-        assert.equal(Object.prototype.hasOwnProperty.call(rpcCalls[0].params, 'p_discount_asset_id'), true);
-        assert.equal(Object.prototype.hasOwnProperty.call(rpcCalls[1].params, 'p_discount_asset_id'), false);
+        assert.equal(rpcCalls.length, 1);
+        assert.equal(Object.prototype.hasOwnProperty.call(rpcCalls[0].params, 'p_discount_asset_id'), false);
     }, {
         resolveClientIp() {
             return '203.0.113.61';
