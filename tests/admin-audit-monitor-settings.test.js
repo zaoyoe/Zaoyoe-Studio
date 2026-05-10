@@ -505,8 +505,8 @@ test('admin audit monitor handler paginates access, anomaly, and config lists fr
                 id: 'access-2',
                 created_at: minutesAgo(20),
                 details: {
-                    client_ip: '198.51.100.12',
-                    user_agent: 'Chrome / 2',
+                    client_ip: '203.0.113.12',
+                    user_agent: 'Safari / 2',
                     origin: 'https://www.zaoyoe.com'
                 }
             }),
@@ -514,8 +514,8 @@ test('admin audit monitor handler paginates access, anomaly, and config lists fr
                 id: 'access-3',
                 created_at: minutesAgo(15),
                 details: {
-                    client_ip: '198.51.100.13',
-                    user_agent: 'Chrome / 3',
+                    client_ip: '192.0.2.13',
+                    user_agent: 'Firefox / 3',
                     origin: 'https://www.zaoyoe.com'
                 }
             }),
@@ -523,8 +523,8 @@ test('admin audit monitor handler paginates access, anomaly, and config lists fr
                 id: 'access-4',
                 created_at: minutesAgo(10),
                 details: {
-                    client_ip: '198.51.100.14',
-                    user_agent: 'Chrome / 4',
+                    client_ip: '198.51.101.14',
+                    user_agent: 'Edge / 4',
                     origin: 'https://www.zaoyoe.com'
                 }
             }),
@@ -532,7 +532,7 @@ test('admin audit monitor handler paginates access, anomaly, and config lists fr
                 id: 'access-5',
                 created_at: minutesAgo(5),
                 details: {
-                    client_ip: '198.51.100.15',
+                    client_ip: '203.0.114.15',
                     user_agent: 'Chrome / 5',
                     origin: 'https://www.zaoyoe.com'
                 }

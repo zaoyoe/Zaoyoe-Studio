@@ -1,8 +1,12 @@
 const crypto = require('crypto');
+const { isIP } = require('node:net');
 const {
     enqueueOpsAlertJob,
     loadOpsAlertsRuntimeConfig
 } = require('./ops-alerts');
+const {
+    normalizeIp
+} = require('./request-security');
 const {
     notifyActiveAdmins
 } = require('./admin-notifications');
@@ -14,6 +18,12 @@ const DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG = Object.freeze({
     recent_window_minutes: 30,
     baseline_lookback_days: 30,
     dedupe_window_minutes: 30,
+    ip_grouping_enabled: true,
+    ipv4_group_prefix_bits: 24,
+    ipv6_group_prefix_bits: 64,
+    recent_distinct_ip_group_threshold: 2,
+    user_agent_family_grouping_enabled: true,
+    recent_distinct_user_agent_family_threshold: 2,
     page_size: 500,
     max_pages: 10
 });
@@ -41,7 +51,10 @@ function normalizeNumber(value, fallback = 0, min = null, max = null) {
 }
 
 function normalizeAdminLoginAnomalyMonitorConfig(rawConfig = {}, env = process.env) {
-    const source = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
+    const rootSource = rawConfig && typeof rawConfig === 'object' ? rawConfig : {};
+    const source = rootSource.admin_login_anomaly && typeof rootSource.admin_login_anomaly === 'object' && !Array.isArray(rootSource.admin_login_anomaly)
+        ? rootSource.admin_login_anomaly
+        : rootSource;
 
     return {
         enabled: normalizeBoolean(
@@ -72,6 +85,38 @@ function normalizeAdminLoginAnomalyMonitorConfig(rawConfig = {}, env = process.e
             1,
             24 * 60
         ),
+        ip_grouping_enabled: normalizeBoolean(
+            source.ip_grouping_enabled,
+            normalizeBoolean(env?.ADMIN_LOGIN_ANOMALY_MONITOR_IP_GROUPING_ENABLED, DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.ip_grouping_enabled)
+        ),
+        ipv4_group_prefix_bits: Math.round(normalizeNumber(
+            source.ipv4_group_prefix_bits,
+            normalizeNumber(env?.ADMIN_LOGIN_ANOMALY_MONITOR_IPV4_GROUP_PREFIX_BITS, DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.ipv4_group_prefix_bits, 8, 32),
+            8,
+            32
+        )),
+        ipv6_group_prefix_bits: Math.round(normalizeNumber(
+            source.ipv6_group_prefix_bits,
+            normalizeNumber(env?.ADMIN_LOGIN_ANOMALY_MONITOR_IPV6_GROUP_PREFIX_BITS, DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.ipv6_group_prefix_bits, 16, 128),
+            16,
+            128
+        )),
+        recent_distinct_ip_group_threshold: Math.round(normalizeNumber(
+            source.recent_distinct_ip_group_threshold,
+            normalizeNumber(env?.ADMIN_LOGIN_ANOMALY_MONITOR_RECENT_DISTINCT_IP_GROUP_THRESHOLD, DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.recent_distinct_ip_group_threshold, 2, 20),
+            2,
+            20
+        )),
+        user_agent_family_grouping_enabled: normalizeBoolean(
+            source.user_agent_family_grouping_enabled,
+            normalizeBoolean(env?.ADMIN_LOGIN_ANOMALY_MONITOR_UA_FAMILY_GROUPING_ENABLED, DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.user_agent_family_grouping_enabled)
+        ),
+        recent_distinct_user_agent_family_threshold: Math.round(normalizeNumber(
+            source.recent_distinct_user_agent_family_threshold,
+            normalizeNumber(env?.ADMIN_LOGIN_ANOMALY_MONITOR_RECENT_DISTINCT_UA_FAMILY_THRESHOLD, DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.recent_distinct_user_agent_family_threshold, 2, 20),
+            2,
+            20
+        )),
         page_size: normalizeNumber(
             source.page_size,
             normalizeNumber(env?.ADMIN_LOGIN_ANOMALY_MONITOR_PAGE_SIZE, DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.page_size, 50, 5000),
@@ -125,6 +170,182 @@ function getDistinctValues(rows = [], picker) {
     ));
 }
 
+function ipv4ToBytes(ip) {
+    const octets = String(ip || '').split('.');
+    if (octets.length !== 4) return null;
+
+    const bytes = octets.map((octet) => Number(octet));
+    if (bytes.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) {
+        return null;
+    }
+    return bytes;
+}
+
+function expandIpv6(ip) {
+    const normalized = String(ip || '').toLowerCase();
+    const halves = normalized.split('::');
+    if (halves.length > 2) return null;
+
+    const left = halves[0] ? halves[0].split(':').filter(Boolean) : [];
+    const right = halves[1] ? halves[1].split(':').filter(Boolean) : [];
+
+    const convertIpv4Tail = (groups) => {
+        if (!groups.length) return true;
+        const last = groups[groups.length - 1];
+        if (!last || !last.includes('.')) return true;
+
+        const bytes = ipv4ToBytes(last);
+        if (!bytes) return false;
+        groups.splice(
+            groups.length - 1,
+            1,
+            ((bytes[0] << 8) | bytes[1]).toString(16),
+            ((bytes[2] << 8) | bytes[3]).toString(16)
+        );
+        return true;
+    };
+
+    if (!convertIpv4Tail(left) || !convertIpv4Tail(right)) {
+        return null;
+    }
+
+    const totalGroups = left.length + right.length;
+    if ((halves.length === 1 && totalGroups !== 8) || totalGroups > 8) {
+        return null;
+    }
+
+    const zeroGroups = halves.length === 2 ? 8 - totalGroups : 0;
+    const groups = [
+        ...left,
+        ...Array.from({ length: zeroGroups }, () => '0'),
+        ...right
+    ];
+
+    if (groups.length !== 8) return null;
+    return groups.map((group) => {
+        const value = Number.parseInt(group, 16);
+        if (!Number.isInteger(value) || value < 0 || value > 0xffff) {
+            return null;
+        }
+        return value;
+    });
+}
+
+function ipv6ToBytes(ip) {
+    const groups = expandIpv6(ip);
+    if (!groups || groups.some((group) => group === null)) {
+        return null;
+    }
+
+    const bytes = [];
+    for (const group of groups) {
+        bytes.push((group >> 8) & 0xff, group & 0xff);
+    }
+    return bytes;
+}
+
+function maskBytes(bytes = [], prefixBits = 0) {
+    const masked = bytes.slice();
+    let remainingBits = Math.max(0, Math.min(masked.length * 8, Math.round(Number(prefixBits) || 0)));
+
+    for (let index = 0; index < masked.length; index += 1) {
+        if (remainingBits >= 8) {
+            remainingBits -= 8;
+            continue;
+        }
+
+        if (remainingBits <= 0) {
+            masked[index] = 0;
+            continue;
+        }
+
+        const mask = (0xff << (8 - remainingBits)) & 0xff;
+        masked[index] = masked[index] & mask;
+        remainingBits = 0;
+    }
+
+    return masked;
+}
+
+function formatIpv6Bytes(bytes = []) {
+    const groups = [];
+    for (let index = 0; index < 16; index += 2) {
+        groups.push(((bytes[index] << 8) | bytes[index + 1]).toString(16));
+    }
+    return groups.join(':');
+}
+
+function buildIpGroup(ip, config = {}) {
+    const normalized = normalizeIp(ip);
+    if (!normalized) return '';
+    if (!config.ip_grouping_enabled) return normalized;
+
+    const version = isIP(normalized);
+    if (version === 4) {
+        const prefix = Math.round(Number(config.ipv4_group_prefix_bits || DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.ipv4_group_prefix_bits));
+        const bytes = ipv4ToBytes(normalized);
+        if (!bytes) return normalized;
+        return `${maskBytes(bytes, prefix).join('.')}/${prefix}`;
+    }
+    if (version === 6) {
+        const prefix = Math.round(Number(config.ipv6_group_prefix_bits || DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.ipv6_group_prefix_bits));
+        const bytes = ipv6ToBytes(normalized);
+        if (!bytes) return normalized;
+        return `${formatIpv6Bytes(maskBytes(bytes, prefix))}/${prefix}`;
+    }
+
+    return normalized;
+}
+
+function getBrowserFamily(userAgent = '') {
+    const normalized = String(userAgent || '').toLowerCase();
+    if (!normalized) return '';
+    if (/\bedg(?:e|a|ios)?\//.test(normalized)) return 'edge';
+    if (/\bopr\/|\bopera\//.test(normalized)) return 'opera';
+    if (/\bfirefox\/|\bfxios\//.test(normalized)) return 'firefox';
+    if (/\bcrios\/|\bchrome\/|\bchromium\//.test(normalized)) return 'chrome';
+    if (/\bversion\/[\d.]+.*\bsafari\//.test(normalized) || /\bsafari\//.test(normalized)) return 'safari';
+    if (/\bcurl\//.test(normalized)) return 'curl';
+    if (/\bpostmanruntime\//.test(normalized)) return 'postman';
+    if (/\bnode(?:\.js)?\//.test(normalized)) return 'node';
+
+    const firstProduct = normalized.match(/[a-z][a-z0-9_-]*(?=\/|\s|$)/i)?.[0];
+    return firstProduct || normalized.slice(0, 80);
+}
+
+function getPlatformFamily(userAgent = '') {
+    const normalized = String(userAgent || '').toLowerCase();
+    if (!normalized) return '';
+    if (/\bipad\b/.test(normalized)) return 'ipados';
+    if (/\biphone\b|\bipod\b/.test(normalized)) return 'ios';
+    if (/\bandroid\b/.test(normalized)) return 'android';
+    if (/\bwindows nt\b/.test(normalized)) return 'windows';
+    if (/\bmac os x\b|\bmacintosh\b/.test(normalized)) return 'macos';
+    if (/\bcros\b/.test(normalized)) return 'chromeos';
+    if (/\blinux\b/.test(normalized)) return 'linux';
+    return 'unknown';
+}
+
+function getDeviceFamily(userAgent = '') {
+    const normalized = String(userAgent || '').toLowerCase();
+    if (!normalized) return '';
+    if (/\bmobile\b|\biphone\b|\bandroid.*mobile\b/.test(normalized)) return 'mobile';
+    if (/\bipad\b|\btablet\b|\bandroid\b/.test(normalized)) return 'tablet';
+    return 'desktop';
+}
+
+function buildUserAgentFingerprint(userAgent = '', config = {}) {
+    const raw = normalizeText(userAgent);
+    if (!raw) return '';
+    if (!config.user_agent_family_grouping_enabled) return raw;
+
+    return [
+        getBrowserFamily(raw),
+        getPlatformFamily(raw),
+        getDeviceFamily(raw)
+    ].filter(Boolean).join(':') || raw.slice(0, 160);
+}
+
 function parseAuditDetails(details) {
     return details && typeof details === 'object' && !Array.isArray(details)
         ? details
@@ -146,16 +367,26 @@ function getEventAdminLabel(row = {}) {
     return normalizeText(row.admin_email) || normalizeText(details.admin_email) || normalizeText(row.admin_id) || 'unknown-admin';
 }
 
-function buildReasonList({ isNewIp, recentDistinctIps, recentDistinctUserAgents }) {
+function buildReasonList({ isNewIpGroup, recentDistinctIpGroups, recentDistinctUserAgentFingerprints, config }) {
     const reasons = [];
-    if (isNewIp) {
-        reasons.push('管理员首次从该 IP 登录后台');
+    const ipUnitLabel = config.ip_grouping_enabled ? ' IP 段' : ' IP';
+    const ipGroupThreshold = Math.max(
+        2,
+        Math.round(Number(config.recent_distinct_ip_group_threshold || DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.recent_distinct_ip_group_threshold))
+    );
+    const userAgentFamilyThreshold = Math.max(
+        2,
+        Math.round(Number(config.recent_distinct_user_agent_family_threshold || DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.recent_distinct_user_agent_family_threshold))
+    );
+
+    if (isNewIpGroup) {
+        reasons.push(`管理员首次从该${ipUnitLabel}登录后台`);
     }
-    if (recentDistinctIps.length >= 2) {
-        reasons.push(`最近窗口内出现 ${recentDistinctIps.length} 个登录 IP`);
+    if (recentDistinctIpGroups.length >= ipGroupThreshold) {
+        reasons.push(`最近窗口内出现 ${recentDistinctIpGroups.length} 个登录${ipUnitLabel}`);
     }
-    if (recentDistinctUserAgents.length >= 2) {
-        reasons.push(`最近窗口内出现 ${recentDistinctUserAgents.length} 个登录设备指纹`);
+    if (recentDistinctUserAgentFingerprints.length >= userAgentFamilyThreshold) {
+        reasons.push(`最近窗口内出现 ${recentDistinctUserAgentFingerprints.length} 个登录设备家族`);
     }
     return reasons;
 }
@@ -189,13 +420,18 @@ function buildAdminLoginAnomalyAlerts(auditRows = [], rawConfig = {}, options = 
             });
 
             const previousIps = getDistinctValues(earlierRows, getEventIp);
+            const previousIpGroups = getDistinctValues(earlierRows, (candidate) => buildIpGroup(getEventIp(candidate), config));
             const recentDistinctIps = getDistinctValues(recentRows, getEventIp);
-            const recentDistinctUserAgents = getDistinctValues(recentRows, getEventUserAgent);
-            const isNewIp = previousIps.length > 0 && !previousIps.includes(clientIp);
+            const recentDistinctIpGroups = getDistinctValues(recentRows, (candidate) => buildIpGroup(getEventIp(candidate), config));
+            const recentDistinctRawUserAgents = getDistinctValues(recentRows, getEventUserAgent);
+            const recentDistinctUserAgentFingerprints = getDistinctValues(recentRows, (candidate) => buildUserAgentFingerprint(getEventUserAgent(candidate), config));
+            const clientIpGroup = buildIpGroup(clientIp, config);
+            const isNewIpGroup = previousIpGroups.length > 0 && clientIpGroup && !previousIpGroups.includes(clientIpGroup);
             const reasons = buildReasonList({
-                isNewIp,
-                recentDistinctIps,
-                recentDistinctUserAgents
+                isNewIpGroup,
+                recentDistinctIpGroups,
+                recentDistinctUserAgentFingerprints,
+                config
             });
 
             if (!reasons.length) {
@@ -211,13 +447,20 @@ function buildAdminLoginAnomalyAlerts(auditRows = [], rawConfig = {}, options = 
             ];
 
             const userAgent = getEventUserAgent(row);
+            const userAgentFingerprint = buildUserAgentFingerprint(userAgent, config);
             if (userAgent) {
                 lines.push(`设备指纹：${userAgent}`);
+            }
+            if (userAgentFingerprint && userAgentFingerprint !== userAgent) {
+                lines.push(`设备家族：${userAgentFingerprint}`);
             }
             lines.push(`判定信号：${reasons.join('；')}`);
 
             if (previousIps.length) {
                 lines.push(`历史常用 IP：${previousIps.slice(-3).join('、')}`);
+            }
+            if (clientIpGroup && clientIpGroup !== clientIp) {
+                lines.push(`登录 IP 段：${clientIpGroup}`);
             }
             if (normalizeText(details.origin)) {
                 lines.push(`来源 Origin：${normalizeText(details.origin)}`);
@@ -238,11 +481,16 @@ function buildAdminLoginAnomalyAlerts(auditRows = [], rawConfig = {}, options = 
                     admin_id: adminId,
                     admin_email: adminLabel,
                     client_ip: clientIp,
+                    client_ip_group: clientIpGroup || null,
                     user_agent: userAgent || null,
+                    user_agent_fingerprint: userAgentFingerprint || null,
                     occurred_at: createdAt,
                     previous_ips: previousIps,
-                    recent_distinct_ip_count: recentDistinctIps.length,
-                    recent_distinct_user_agent_count: recentDistinctUserAgents.length,
+                    previous_ip_groups: previousIpGroups,
+                    recent_distinct_ip_count: recentDistinctIpGroups.length,
+                    recent_distinct_raw_ip_count: recentDistinctIps.length,
+                    recent_distinct_user_agent_count: recentDistinctUserAgentFingerprints.length,
+                    recent_distinct_raw_user_agent_count: recentDistinctRawUserAgents.length,
                     detected_reasons: reasons,
                     origin: normalizeText(details.origin) || null,
                     referer: normalizeText(details.referer) || null,
@@ -250,7 +498,7 @@ function buildAdminLoginAnomalyAlerts(auditRows = [], rawConfig = {}, options = 
                 },
                 dedupeKey: crypto
                     .createHash('sha256')
-                    .update(`security_admin_login_anomaly:${adminId}:${clientIp}:${crypto.createHash('sha256').update(userAgent || '').digest('hex')}`)
+                    .update(`security_admin_login_anomaly:${adminId}:${clientIpGroup || clientIp}:${crypto.createHash('sha256').update(userAgentFingerprint || userAgent || '').digest('hex')}`)
                     .digest('hex'),
                 dedupeWindowMinutes: Number(config.dedupe_window_minutes || DEFAULT_ADMIN_LOGIN_ANOMALY_MONITOR_CONFIG.dedupe_window_minutes)
             };
@@ -279,7 +527,8 @@ async function notifyAdminLoginAnomalyReminder(supabase, alert = {}) {
 
 async function runAdminLoginAnomalySweep(supabase, options = {}) {
     const env = options.env || process.env;
-    const config = normalizeAdminLoginAnomalyMonitorConfig(options.config, env);
+    const explicitConfig = options.config && typeof options.config === 'object' ? options.config : {};
+    let config = normalizeAdminLoginAnomalyMonitorConfig(explicitConfig, env);
 
     if (!config.enabled) {
         return {
@@ -291,6 +540,25 @@ async function runAdminLoginAnomalySweep(supabase, options = {}) {
     }
 
     const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
+    const runtimeMonitorConfig = runtime?.config?.admin_login_anomaly && typeof runtime.config.admin_login_anomaly === 'object'
+        ? runtime.config.admin_login_anomaly
+        : {};
+    if (Object.keys(runtimeMonitorConfig).length || Object.keys(explicitConfig).length) {
+        config = normalizeAdminLoginAnomalyMonitorConfig({
+            ...runtimeMonitorConfig,
+            ...explicitConfig
+        }, env);
+    }
+
+    if (!config.enabled) {
+        return {
+            skipped: 'monitor_disabled',
+            anomaly_count: 0,
+            queued: 0,
+            deduped: 0
+        };
+    }
+
     if (!runtime?.config?.enabled) {
         return {
             skipped: 'ops_alerts_disabled',
