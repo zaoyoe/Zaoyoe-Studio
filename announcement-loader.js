@@ -497,11 +497,39 @@
         }
     }
 
+    const ANNOUNCEMENT_CONFIG_SESSION_KEY = 'zaoyoe_announcement_config_cache_v1';
+    const ANNOUNCEMENT_CONFIG_SESSION_TTL_MS = 5 * 60 * 1000;
+
+    function readAnnouncementConfigFromSession() {
+        try {
+            const raw = sessionStorage.getItem(ANNOUNCEMENT_CONFIG_SESSION_KEY);
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            if (!parsed?.cachedAt || Date.now() - parsed.cachedAt > ANNOUNCEMENT_CONFIG_SESSION_TTL_MS) {
+                sessionStorage.removeItem(ANNOUNCEMENT_CONFIG_SESSION_KEY);
+                return null;
+            }
+            return normalizeAnnouncementConfig(parsed.config || {});
+        } catch (_error) {
+            return null;
+        }
+    }
+
+    function writeAnnouncementConfigToSession(config) {
+        try {
+            sessionStorage.setItem(ANNOUNCEMENT_CONFIG_SESSION_KEY, JSON.stringify({
+                config,
+                cachedAt: Date.now()
+            }));
+        } catch (_error) {
+            // Ignore storage failures.
+        }
+    }
+
     async function fetchAnnouncementConfigFromPublicApi() {
         const response = await fetch('/api/public?scope=config&route=notifications', {
             method: 'GET',
-            credentials: 'same-origin',
-            cache: 'no-store'
+            credentials: 'same-origin'
         });
 
         const payload = await response.json().catch(() => ({}));
@@ -509,7 +537,9 @@
             throw new Error(payload?.message || 'Failed to load public announcement config');
         }
 
-        return normalizeAnnouncementConfig(payload?.config || {});
+        const config = normalizeAnnouncementConfig(payload?.config || {});
+        writeAnnouncementConfigToSession(payload?.config || {});
+        return config;
     }
 
     async function fetchAnnouncementConfigFromSupabase() {
@@ -526,6 +556,12 @@
     }
 
     async function fetchAnnouncementConfig() {
+        // Try sessionStorage cache first to avoid network request entirely
+        const sessionCached = readAnnouncementConfigFromSession();
+        if (sessionCached) {
+            return sessionCached;
+        }
+
         try {
             return await fetchAnnouncementConfigFromPublicApi();
         } catch (publicError) {
@@ -639,19 +675,10 @@
         announcementBootstrapStarted = true;
         clearLocalAnnouncementAckCache();
 
+        // Single immediate load + one delayed fallback (reduced from 5-6 calls)
         void warmAnnouncementConfig();
         scheduleAnnouncementLoad(0);
-        scheduleAnnouncementLoad(650);
-        scheduleAnnouncementLoad(1800);
-        scheduleAnnouncementLoad(4200);
-
-        window.addEventListener('load', () => {
-            scheduleAnnouncementLoad(0);
-        }, { once: true });
-
-        window.addEventListener('pageshow', () => {
-            scheduleAnnouncementLoad(0);
-        });
+        scheduleAnnouncementLoad(2000);
     }
 
     function showAnnouncement(type, color, size, content, ackKey, decoration, context = {}) {

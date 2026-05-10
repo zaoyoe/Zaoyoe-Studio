@@ -567,8 +567,7 @@ async function fetchJsonWithTimeout(url, timeoutMs = 4500) {
 
     try {
         const response = await fetch(url, {
-            signal: controller.signal,
-            cache: 'no-store'
+            signal: controller.signal
         });
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
@@ -887,7 +886,7 @@ async function handleLogin(event) {
         // 获取用户 profile
         const { data: profile } = await window.supabaseClient
             .from('profiles')
-            .select('*')
+            .select('id, username, avatar_url, email')
             .eq('id', data.user.id)
             .single();
 

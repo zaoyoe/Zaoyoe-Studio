@@ -2705,6 +2705,25 @@ const FramerHome = {
     try {
       return await Cache.loadWithCache('shop_products', async () => {
         const baseFields = 'id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, category, is_active, display_order';
+        try {
+          const response = await fetch(`/api/shop/catalog?site=${encodeURIComponent(getHomepageRuntimeSite())}`, {
+            method: 'GET',
+            headers: {
+              Accept: 'application/json'
+            }
+          });
+          const payload = await response.json().catch(() => ({}));
+          if (!response.ok || payload?.success === false) {
+            throw new Error(payload?.message || 'shop catalog api failed');
+          }
+          const products = Array.isArray(payload?.products)
+            ? payload.products
+            : (Array.isArray(payload?.data?.products) ? payload.data.products : []);
+          return products.slice(0, 120);
+        } catch (apiError) {
+          console.warn('Failed to fetch shop catalog from API route, falling back to direct query:', apiError?.message || apiError);
+        }
+
         let query = window.supabaseClient
           .from('shop_products')
           .select(`${baseFields}, image_assets`)

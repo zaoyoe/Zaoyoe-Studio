@@ -21,7 +21,10 @@ test('vercel cache policy keeps admin shells and APIs uncached while allowing ve
     const config = readVercelConfig();
     const headers = Array.isArray(config.headers) ? config.headers : [];
 
-    const apiRule = headers.find((entry) => entry?.source === '/api/:path*');
+    const apiAdminRule = headers.find((entry) => entry?.source === '/api/admin/:path*');
+    const apiAuthRule = headers.find((entry) => entry?.source === '/api/auth/:path*');
+    const apiPublicRule = headers.find((entry) => entry?.source === '/api/public');
+    const apiShopRule = headers.find((entry) => entry?.source === '/api/shop/:path*');
     const adminStudioRule = headers.find((entry) => entry?.source === '/admin-studio');
     const adminStudioHtmlRule = headers.find((entry) => entry?.source === '/admin-studio.html');
     const adminEntryRule = headers.find((entry) => entry?.source === '/admin-entry');
@@ -34,8 +37,14 @@ test('vercel cache policy keeps admin shells and APIs uncached while allowing ve
     const versionedCssRule = headers.find((entry) => entry?.source === '/:path*.css');
     const globalRule = headers.find((entry) => entry?.source === '/(.*)');
 
-    assert.ok(apiRule, 'vercel.json should keep an explicit API cache rule');
-    assert.equal(getHeaderValue(apiRule, 'Cache-Control'), 'no-store, max-age=0');
+    assert.ok(apiAdminRule, 'vercel.json should keep an explicit API admin cache rule');
+    assert.equal(getHeaderValue(apiAdminRule, 'Cache-Control'), 'no-store, max-age=0');
+    assert.ok(apiAuthRule, 'vercel.json should keep an explicit API auth cache rule');
+    assert.equal(getHeaderValue(apiAuthRule, 'Cache-Control'), 'no-store, max-age=0');
+    assert.ok(apiPublicRule, 'vercel.json should have a public API cache rule');
+    assert.equal(getHeaderValue(apiPublicRule, 'Cache-Control'), 'public, max-age=120, s-maxage=60, stale-while-revalidate=600');
+    assert.ok(apiShopRule, 'vercel.json should have a shop API cache rule');
+    assert.equal(getHeaderValue(apiShopRule, 'Cache-Control'), 'public, max-age=120, s-maxage=60, stale-while-revalidate=300');
 
     assert.ok(adminStudioRule, 'vercel.json should keep admin-studio uncached');
     assert.equal(getHeaderValue(adminStudioRule, 'Cache-Control'), 'no-store, max-age=0');

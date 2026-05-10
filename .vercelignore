@@ -15,6 +15,7 @@ api/payments/mock/complete.js
 api/payments/status.js
 api/runtime/supabase-config.js
 api/shop/available-discounts.js
+api/shop/catalog.js
 api/shop/claim-discount.js
 api/shop/my-discount-assets.js
 api/shop/order-detail.js

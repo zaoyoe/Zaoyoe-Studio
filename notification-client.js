@@ -1515,7 +1515,7 @@
             try {
                 const { data, error } = await window.supabaseClient
                     .from('system_notifications')
-                    .select('*')
+                    .select('id, title, content, type, category, is_read, is_pinned, created_at, user_id')
                     .eq('user_id', normalizedUserId)
                     .order('created_at', { ascending: false })
                     .limit(50);

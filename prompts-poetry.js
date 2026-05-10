@@ -6288,7 +6288,7 @@ async function checkUnlockStatus(promptId) {
         // Check if unlocked in DB
         const { data, error } = await window.supabaseClient
             .from('prompt_unlocks')
-            .select('*')
+            .select('id')
             .eq('user_id', user.id)
             .eq('prompt_id', promptId)
             .eq('site', window.SiteConfig?.site || 'cn')
@@ -8760,7 +8760,7 @@ async function checkUserBlockStatus(userId, scope = 'gallery') {
     // Check for explicit block
     const { data: blocks, error } = await window.supabaseClient
         .from('blocked_users')
-        .select('*')
+        .select('id, user_id, scope, expires_at')
         .eq('user_id', userId)
         .or(`scope.eq.all,scope.eq.${scope}`);
 

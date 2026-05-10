@@ -229,6 +229,146 @@ function createShopHandlers({
             );
     }
 
+    function shouldRetryShopCatalogSelect(error) {
+        return [
+            'image_assets',
+            'price_points_intl',
+            'name_en',
+            'description_en',
+            'quantity_rules',
+            'max_purchase_quantity',
+            'show_product_description',
+            'show_purchase_notes',
+            'purchase_notes',
+            'purchase_notes_zh',
+            'purchase_notes_en',
+            'show_usage_instructions',
+            'usage_instructions',
+            'usage_instructions_zh',
+            'usage_instructions_en',
+            'flash_sale_price',
+            'flash_sale_end'
+        ].some((field) => isMissingColumnError(error, field));
+    }
+
+    function normalizeShopCatalogCategory(value = 'all') {
+        const normalized = String(value || 'all').trim();
+        if (!normalized || normalized.toLowerCase() === 'all') return 'all';
+        return normalized.slice(0, 120);
+    }
+
+    function isShopCatalogProductAvailableForSite(product = {}, currentSite = 'cn') {
+        const priceField = currentSite === 'intl' ? 'price_points_intl' : 'price_points';
+        const rawValue = product?.[priceField];
+        if (rawValue === null || rawValue === undefined || rawValue === '') {
+            return false;
+        }
+        return Number.isFinite(Number(rawValue));
+    }
+
+    async function loadPublicShopCategories(dataSupabase) {
+        const { data, error } = await dataSupabase
+            .from('shop_categories')
+            .select('*')
+            .order('sort_order');
+
+        if (error) {
+            if (isMissingRelationError(error, 'shop_categories')) {
+                return [];
+            }
+            throw error;
+        }
+        return Array.isArray(data) ? data : [];
+    }
+
+    async function loadPublicShopProducts(dataSupabase, {
+        category = 'all',
+        currentSite = 'cn'
+    } = {}) {
+        const selectAttempts = [
+            [
+                'id',
+                'name',
+                'name_en',
+                'description',
+                'description_en',
+                'icon_url',
+                'image_assets',
+                'price_points',
+                'price_points_intl',
+                'stock_count',
+                'category',
+                'tags',
+                'display_order',
+                'is_active',
+                'quantity_rules',
+                'max_purchase_quantity',
+                'show_product_description',
+                'show_purchase_notes',
+                'purchase_notes',
+                'purchase_notes_zh',
+                'purchase_notes_en',
+                'show_usage_instructions',
+                'usage_instructions',
+                'usage_instructions_zh',
+                'usage_instructions_en',
+                'flash_sale_price',
+                'flash_sale_end'
+            ].join(', '),
+            [
+                'id',
+                'name',
+                'name_en',
+                'description',
+                'description_en',
+                'icon_url',
+                'price_points',
+                'price_points_intl',
+                'stock_count',
+                'category',
+                'tags',
+                'display_order',
+                'is_active',
+                'quantity_rules',
+                'max_purchase_quantity',
+                'show_product_description',
+                'show_purchase_notes',
+                'purchase_notes',
+                'show_usage_instructions',
+                'usage_instructions',
+                'flash_sale_price',
+                'flash_sale_end'
+            ].join(', '),
+            'id, name, description, icon_url, price_points, stock_count, category, tags, display_order, is_active'
+        ];
+
+        let lastError = null;
+        for (const selectClause of selectAttempts) {
+            let query = dataSupabase
+                .from('shop_products')
+                .select(selectClause)
+                .eq('is_active', true)
+                .order('display_order', { ascending: false });
+
+            if (category !== 'all') {
+                query = query.eq('category', category);
+            }
+
+            const { data, error } = await query;
+            if (!error) {
+                const products = Array.isArray(data) ? data : [];
+                return products.filter((product) => isShopCatalogProductAvailableForSite(product, currentSite));
+            }
+
+            lastError = error;
+            if (!shouldRetryShopCatalogSelect(error)) {
+                throw error;
+            }
+        }
+
+        throw lastError || new Error('Failed to load shop catalog');
+    }
+
     function getSafeTimestamp(value) {
         const parsed = Date.parse(String(value || '').trim());
         return Number.isFinite(parsed) ? parsed : 0;
@@ -2100,6 +2240,61 @@ function createShopHandlers({
     }
 
     return {
+        catalog: async function catalogHandler(req, res) {
+            if (req.method !== 'GET' && req.method !== 'HEAD') {
+                res.setHeader('Allow', 'GET, HEAD');
+                return sendJson(res, 405, {
+                    success: false,
+                    message: 'Method not allowed'
+                });
+            }
+
+            try {
+                const adminSupabase = getOptionalSupabaseAdmin();
+                if (!adminSupabase) {
+                    return sendJson(res, 503, {
+                        success: false,
+                        code: 'shop_catalog_unavailable',
+                        message: '商城数据暂时不可用，请稍后刷新重试'
+                    });
+                }
+
+                const requestUrl = new URL(req.url || '/', 'http://localhost');
+                const currentSite = requireSupportedSite(requestUrl.searchParams.get('site') || 'cn', {
+                    fieldName: 'site'
+                });
+                const category = normalizeShopCatalogCategory(requestUrl.searchParams.get('category') || 'all');
+                const [categories, products] = await Promise.all([
+                    loadPublicShopCategories(adminSupabase),
+                    loadPublicShopProducts(adminSupabase, {
+                        category,
+                        currentSite
+                    })
+                ]);
+
+                res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=86400');
+                res.setHeader('CDN-Cache-Control', 'max-age=300, stale-while-revalidate=86400');
+                res.setHeader('Vercel-CDN-Cache-Control', 'max-age=300, stale-while-revalidate=86400');
+                return sendJson(res, 200, {
+                    success: true,
+                    site: currentSite,
+                    category,
+                    categories,
+                    products,
+                    data: {
+                        categories,
+                        products
+                    }
+                });
+            } catch (error) {
+                console.warn('[ShopCatalog] Failed to load public catalog:', error?.message || error);
+                return sendJson(res, error.statusCode || 503, {
+                    success: false,
+                    code: 'shop_catalog_unavailable',
+                    message: '商城数据暂时不可用，请稍后刷新重试'
+                });
+            }
+        },
         'available-discounts': async function availableDiscountsHandler(req, res) {
             if (req.method !== 'POST') {
                 res.setHeader('Allow', 'POST');

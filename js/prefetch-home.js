@@ -1103,18 +1103,36 @@
             const sectionOrder = Contract?.sortSectionsByDisplayOrder?.(rows) || ['hero', 'prompts', 'shop', 'gongyi', 'verify', 'guestbook', 'ticker'];
             const { items: promptPool, source: promptPoolSource } = await fetchVisiblePromptPool();
 
-            const [shopResult, guestbookMessages] = await Promise.all([
-                window.supabaseClient
-                    .from('shop_products')
-                    .select('id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, category, display_order')
-                    .eq('is_active', true)
-                    .order('display_order', { ascending: false }),
+            const [shopCatalog, guestbookMessages] = await Promise.all([
+                fetch(`/api/shop/catalog?site=${encodeURIComponent(getCurrentSite())}`, {
+                    method: 'GET',
+                    headers: {
+                        Accept: 'application/json'
+                    }
+                }).then(async (response) => {
+                    const payload = await response.json().catch(() => ({}));
+                    if (!response.ok || payload?.success === false) {
+                        throw new Error(payload?.message || 'shop catalog api failed');
+                    }
+                    return payload;
+                }).catch(async (apiError) => {
+                    console.warn('Homepage shop catalog API prefetch failed, using direct fetch:', apiError?.message || apiError);
+                    const result = await window.supabaseClient
+                        .from('shop_products')
+                        .select('id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, category, display_order')
+                        .eq('is_active', true)
+                        .order('display_order', { ascending: false });
+                    if (result.error) throw result.error;
+                    return {
+                        products: Array.isArray(result.data) ? result.data : []
+                    };
+                }),
                 fetchHomepageGuestbookMessages(HOMEPAGE_GUESTBOOK_CARD_LIMIT)
             ]);
 
-            if (shopResult.error) throw shopResult.error;
-
-            const allProducts = Array.isArray(shopResult.data) ? shopResult.data : [];
+            const allProducts = Array.isArray(shopCatalog?.products)
+                ? shopCatalog.products
+                : (Array.isArray(shopCatalog?.data?.products) ? shopCatalog.data.products : []);
             const prompts = aggregatePrompts(config.prompts || {}, promptPool);
             const shop = aggregateShop(config.shop || {}, allProducts);
             const guestbook = aggregateGuestbook(config.guestbook || {}, guestbookMessages);

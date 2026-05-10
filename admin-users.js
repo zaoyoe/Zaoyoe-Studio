@@ -329,6 +329,7 @@ function ensureUsersActivityLiveRefresh() {
 
     if (!usersActivityRefreshTimer) {
         usersActivityRefreshTimer = window.setInterval(() => {
+            if (document.hidden) return;
             void refreshUsersActivityHeartbeats();
         }, 30000);
     }

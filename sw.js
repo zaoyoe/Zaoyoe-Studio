@@ -88,13 +88,7 @@ self.addEventListener('fetch', (event) => {
             caches.open(IMAGE_CACHE).then(cache => {
                 return cache.match(event.request).then(cachedResponse => {
                     if (cachedResponse) {
-                        // Return cached image immediately
-                        // Also update cache in background
-                        fetch(event.request).then(networkResponse => {
-                            if (networkResponse.ok) {
-                                cache.put(event.request, networkResponse);
-                            }
-                        }).catch(() => { });
+                        // Return cached image immediately (pure cache-first, no background revalidate)
                         return cachedResponse;
                     }
 

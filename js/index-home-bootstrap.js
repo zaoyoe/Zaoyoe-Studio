@@ -69,22 +69,50 @@
     async function prefetchShop() {
         try {
             const currentSite = site();
-            const [categoryResult, productResult] = await Promise.all([
-                window.supabaseClient.from('shop_categories').select('*').order('sort_order'),
-                window.supabaseClient
-                    .from('shop_products')
-                    .select('*')
-                    .eq('is_active', true)
-                    .order('display_order', { ascending: false })
-            ]);
+            let categories = [];
+            let products = [];
+
+            try {
+                const response = await fetch(`/api/shop/catalog?site=${encodeURIComponent(currentSite)}`, {
+                    method: 'GET',
+                    headers: {
+                        Accept: 'application/json'
+                    }
+                });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || payload?.success === false) {
+                    throw new Error(payload?.message || 'shop catalog api failed');
+                }
+                categories = Array.isArray(payload?.categories)
+                    ? payload.categories
+                    : (Array.isArray(payload?.data?.categories) ? payload.data.categories : []);
+                products = Array.isArray(payload?.products)
+                    ? payload.products
+                    : (Array.isArray(payload?.data?.products) ? payload.data.products : []);
+            } catch (apiError) {
+                console.warn('Shop catalog API prefetch failed, falling back to direct query:', apiError?.message || apiError);
+                const [categoryResult, productResult] = await Promise.all([
+                    window.supabaseClient.from('shop_categories').select('*').order('sort_order'),
+                    window.supabaseClient
+                        .from('shop_products')
+                        .select('*')
+                        .eq('is_active', true)
+                        .order('display_order', { ascending: false })
+                ]);
+                if (categoryResult.error) throw categoryResult.error;
+                if (productResult.error) throw productResult.error;
+                categories = categoryResult.data || [];
+                products = productResult.data || [];
+            }
+
             const filteredProducts = window.SiteConfig?.filterProductsForCurrentSite
-                ? window.SiteConfig.filterProductsForCurrentSite(productResult.data || [])
-                : (productResult.data || []);
+                ? window.SiteConfig.filterProductsForCurrentSite(products)
+                : products;
 
             if (filteredProducts.length > 0) {
                 sessionStorage.setItem('shop_prefetch', JSON.stringify({
                     version: SHOP_PREFETCH_SCHEMA_VERSION,
-                    categories: categoryResult.data || [],
+                    categories,
                     products: filteredProducts,
                     timestamp: Date.now(),
                     site: currentSite

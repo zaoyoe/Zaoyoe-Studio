@@ -402,7 +402,8 @@
         "alreadyClaimedCoupon": "你已领取过该券，可直接使用",
         "couponClaimed": "领取成功，已加入你的卡券包",
         "claimFailed": "领取失败",
-        "couponProductHidden": "这张卡券对应的商品当前暂不可见，请先浏览商城其他商品。"
+        "couponProductHidden": "这张卡券对应的商品当前暂不可见，请先浏览商城其他商品。",
+        "catalogUnavailable": "商城数据暂时不可用，请稍后刷新重试。"
     },
     "guestbook": {
         "title": "留言板",
