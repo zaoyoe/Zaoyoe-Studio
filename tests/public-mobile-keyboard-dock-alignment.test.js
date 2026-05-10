@@ -201,7 +201,7 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(adminChatCss, /--admin-chat-keyboard-dock-height/);
     assert.match(adminChatCss, /\.admin-chat-viewport-probe/);
 
-    assert.match(shopHtml, /shop-client\.js\?v=20260509_SHOP_PURCHASE_COUPON_SYNC_GRACE_1/);
+    assert.match(shopHtml, /shop-client\.js\?v=20260510_SHOP_CATALOG_API_1/);
     assert.match(guestbookHtml, /guestbook\.js\?v=20260507_GUESTBOOK_DEEPLINK_REPLAY_1/);
     assert.match(shopHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
     assert.match(guestbookHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);

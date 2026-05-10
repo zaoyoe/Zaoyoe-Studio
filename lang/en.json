@@ -403,7 +403,8 @@
         "alreadyClaimedCoupon": "You already claimed this coupon and can use it directly.",
         "couponClaimed": "Claimed and added to your wallet.",
         "claimFailed": "Claim failed",
-        "couponProductHidden": "The product for this coupon is currently hidden. Please browse other store items."
+        "couponProductHidden": "The product for this coupon is currently hidden. Please browse other store items.",
+        "catalogUnavailable": "The store is temporarily unavailable. Please refresh later."
     },
     "guestbook": {
         "title": "Guestbook",

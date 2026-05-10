@@ -388,6 +388,7 @@ const ShopClient = {
     categoryProductsPromises: {},
     allProductsCache: null,
     allProductsPromise: null,
+    shopCatalogPromise: null,
     prefetchedShopRevalidationPromise: null,
     agentPricesCache: null,
     agentPricesPromise: null,
@@ -620,6 +621,15 @@ const ShopClient = {
         return Array.isArray(products) ? products : [];
     },
 
+    filterProductsForCategory: function (products, category = 'all') {
+        const normalizedCategory = String(category || 'all').trim();
+        const visibleProducts = this.filterProductsForCurrentSite(products);
+        if (!normalizedCategory || normalizedCategory === 'all') {
+            return visibleProducts;
+        }
+        return visibleProducts.filter((product) => String(product?.category || '').trim() === normalizedCategory);
+    },
+
     getProductPriceForCurrentSite: function (product) {
         if (window.SiteConfig?.getProductPrice) {
             return window.SiteConfig.getProductPrice(product);
@@ -642,6 +652,15 @@ const ShopClient = {
         return String(translated).replace(/\{(\w+)\}/g, (match, name) => (
             params[name] === undefined || params[name] === null ? match : String(params[name])
         ));
+    },
+
+    getShopCatalogUnavailableMessage: function () {
+        return this.trShop(
+            'catalogUnavailable',
+            this.isEnglishShopLocale()
+                ? 'The store is temporarily unavailable. Please refresh later.'
+                : '商城数据暂时不可用，请稍后刷新重试'
+        );
     },
 
     getGuidanceSiteForCurrentLanguage: function () {
@@ -4435,6 +4454,9 @@ const ShopClient = {
             || normalizedMessage.includes('networkerror')
             || normalizedMessage.includes('load failed')
             || normalizedMessage.includes('network request failed')
+            || normalizedMessage.includes('exceed_egress_quota')
+            || normalizedMessage.includes('service for this project is restricted')
+            || normalizedMessage.includes('supabase support')
         ) {
             return new Error(fallbackMessage);
         }
@@ -5667,8 +5689,8 @@ const ShopClient = {
                 console.error('🛍️ Shop loading error:', err);
                 clearTimeout(fallbackTimer);
                 container.innerHTML = this.buildShopStatusMessage(
-                    window.i18n?.t('common.error') || '加载失败，请刷新重试',
-                    { variant: 'error', fullSpan: true }
+                    this.getShopCatalogUnavailableMessage(),
+                    { variant: 'error', fullSpan: true, iconClass: 'fas fa-circle-exclamation' }
                 );
             }
         }
@@ -7113,6 +7135,7 @@ const ShopClient = {
         this.categoryProductsPromises = {};
         this.allProductsCache = null;
         this.allProductsPromise = null;
+        this.shopCatalogPromise = null;
         this.backgroundPrefetchScheduled = false;
 
         if (this.backgroundPrefetchHandle) {
@@ -8260,21 +8283,97 @@ const ShopClient = {
         this.clearMobileProductFocus();
     },
 
-    fetchProductsFromServer: async function (category = 'all') {
+    fetchShopCatalogDirect: async function () {
         const client = window.supabaseClient || supabaseClient;
-        let query = client
-            .from('shop_products')
-            .select('*')
-            .eq('is_active', true)
-            .order('display_order', { ascending: false });
+        const [categoryResult, productResult] = await Promise.all([
+            client
+                .from('shop_categories')
+                .select('*')
+                .order('sort_order'),
+            client
+                .from('shop_products')
+                .select('*')
+                .eq('is_active', true)
+                .order('display_order', { ascending: false })
+        ]);
 
-        if (category !== 'all') {
-            query = query.eq('category', category);
+        if (categoryResult.error) {
+            throw categoryResult.error;
+        }
+        if (productResult.error) {
+            throw productResult.error;
         }
 
-        const result = await query;
-        if (result.error) throw result.error;
-        return this.filterProductsForCurrentSite(result.data || []);
+        return {
+            categories: Array.isArray(categoryResult.data) ? categoryResult.data : [],
+            products: this.filterProductsForCurrentSite(productResult.data || [])
+        };
+    },
+
+    fetchShopCatalogFromApi: async function ({ forceRefresh = false } = {}) {
+        if (!forceRefresh && this.shopCatalogPromise) {
+            return this.shopCatalogPromise;
+        }
+
+        const request = (async () => {
+            const currentSite = window.SiteConfig?.site || 'cn';
+            const catalogUrl = `/api/shop/catalog?site=${encodeURIComponent(currentSite)}`;
+            let response = null;
+
+            try {
+                response = await fetch(catalogUrl, {
+                    method: 'GET',
+                    headers: {
+                        Accept: 'application/json'
+                    }
+                });
+            } catch (error) {
+                console.warn('Shop catalog API unavailable, falling back to direct query:', error?.message || error);
+                return this.fetchShopCatalogDirect();
+            }
+
+            if (response.status === 404 || response.status === 405) {
+                console.warn('Shop catalog API route missing, falling back to direct query');
+                return this.fetchShopCatalogDirect();
+            }
+
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || payload?.success === false) {
+                const fallbackMessage = this.getShopCatalogUnavailableMessage();
+                throw this.normalizeShopRequestError(new Error(payload?.message || fallbackMessage), {
+                    fallbackMessage
+                });
+            }
+
+            const categories = Array.isArray(payload?.categories)
+                ? payload.categories
+                : (Array.isArray(payload?.data?.categories) ? payload.data.categories : []);
+            const products = Array.isArray(payload?.products)
+                ? payload.products
+                : (Array.isArray(payload?.data?.products) ? payload.data.products : []);
+
+            return {
+                categories,
+                products: this.filterProductsForCurrentSite(products)
+            };
+        })();
+
+        const trackedRequest = request.finally(() => {
+            if (this.shopCatalogPromise === trackedRequest) {
+                this.shopCatalogPromise = null;
+            }
+        });
+
+        this.shopCatalogPromise = trackedRequest;
+        return trackedRequest;
+    },
+
+    fetchProductsFromServer: async function (category = 'all') {
+        const catalog = await this.fetchShopCatalogFromApi();
+        if (Array.isArray(catalog?.categories)) {
+            this.availableCategories = catalog.categories;
+        }
+        return this.filterProductsForCategory(catalog?.products || [], category);
     },
 
     getProductsForCategory: async function (category, { forceRefresh = false } = {}) {
@@ -8482,15 +8581,13 @@ const ShopClient = {
                 return;
             }
 
-            const client = window.supabaseClient || supabaseClient;
             let categories = null;
-            const { data, error } = await client
-                .from('shop_categories')
-                .select('*')
-                .order('sort_order');
-            console.log('🛍️ Shop categories from DB:', { data, error });
-            if (!error && Array.isArray(data) && data.length > 0) {
-                categories = data;
+            const catalog = await this.fetchShopCatalogFromApi({ forceRefresh });
+            if (Array.isArray(catalog?.products) && catalog.products.length > 0 && (forceRefresh || !Array.isArray(this.allProductsCache))) {
+                this.hydrateProductCaches(catalog.products);
+            }
+            if (Array.isArray(catalog?.categories) && catalog.categories.length > 0) {
+                categories = catalog.categories;
             } else if (!forceRefresh && Array.isArray(this._prefetchedCategories) && this._prefetchedCategories.length > 0) {
                 categories = [...this._prefetchedCategories].sort((a, b) => (
                     Number(a?.sort_order || 0) - Number(b?.sort_order || 0)
@@ -8587,8 +8684,8 @@ const ShopClient = {
             this.clearProductGridTransitionArtifacts(container);
             container.classList.remove('is-empty');
             container.innerHTML = this.buildShopStatusMessage(
-                `${window.i18n?.t('common.error') || '加载失败'}: ${err.message || ''}`,
-                { variant: 'error', fullSpan: true }
+                this.getShopCatalogUnavailableMessage(),
+                { variant: 'error', fullSpan: true, iconClass: 'fas fa-circle-exclamation' }
             );
             this.clearMobileProductFocus();
             this.renderCart();
