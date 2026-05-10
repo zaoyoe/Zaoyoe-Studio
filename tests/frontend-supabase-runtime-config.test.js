@@ -3496,7 +3496,7 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should not render a secondary text loading message after the skeleton'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260509_SHOP_PURCHASE_COUPON_SYNC_GRACE_1'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260510_SHOP_CATALOG_API_1'),
         true,
         'shop.html should reference the latest shop client runtime for the cart-enabled storefront flow'
     );
@@ -13182,7 +13182,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), false, 'index.html should not eagerly load the full guestbook runtime');
     assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260507_REPLY_REALTIME_1'), true, 'guestbook.html should load the latest guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should load the latest guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260509_SHOP_PURCHASE_COUPON_SYNC_GRACE_1'), true, 'shop.html should load the latest cart-aware shop runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260510_SHOP_CATALOG_API_1'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
     assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260508_SITE_SCOPED_CONFIG_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
@@ -15768,7 +15768,12 @@ test('announcement runtime renderers externalize decoration particles and physic
         'p.el.style.transform = `translate3d(${p.x}px, ${p.y}px, 0)`',
         "p.el.style.opacity = p.opacity",
         "toast.querySelector('.announcement-ack-btn').onclick = () => {",
-        'background: linear-gradient(180deg, rgba(255, 255, 255, 0.82) 0%, rgba(248, 250, 252, 0.74) 100%);'
+        'background: linear-gradient(180deg, rgba(255, 255, 255, 0.82) 0%, rgba(248, 250, 252, 0.74) 100%);',
+        'scheduleAnnouncementLoad(650);',
+        'scheduleAnnouncementLoad(1800);',
+        'scheduleAnnouncementLoad(4200);',
+        'cache: \'no-store\'',
+        "window.addEventListener('pageshow', () => {"
     ];
 
     for (const marker of removedRuntimeMarkers) {
@@ -15799,7 +15804,6 @@ test('announcement runtime renderers externalize decoration particles and physic
         '${ANNOUNCEMENT_ACK_STORAGE_PREFIX}${normalizedPage}_${Math.abs(hash).toString(36)}',
         "fetch('/api/public?scope=config&route=notifications', {",
         "fetch('/api/public?scope=config&route=announcement-event', {",
-        'cache: \'no-store\'',
         'return await fetchAnnouncementConfigFromPublicApi();',
         "console.warn('📢 [Loader] 公共公告配置读取失败，回退到 Supabase RPC:'",
         'function normalizeAnnouncementRule(ruleValue = {}) {',
@@ -15817,10 +15821,6 @@ test('announcement runtime renderers externalize decoration particles and physic
         'void warmAnnouncementConfig();',
         'function startAnnouncementWhenBodyReady()',
         'scheduleAnnouncementLoad(0);',
-        'scheduleAnnouncementLoad(650);',
-        'scheduleAnnouncementLoad(1800);',
-        'scheduleAnnouncementLoad(4200);',
-        "window.addEventListener('pageshow', () => {",
         'data-announcement-dust="1"',
         'data-announcement-particle="1"',
         'announcement-particle--snow-dust',
