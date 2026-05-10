@@ -81,6 +81,75 @@ function inferShopSourcePageKeyFromUrl(urlObj) {
     return normalizeShopTrackingText(pathname.split('/').pop()?.replace(/\.html?$/i, '') || '', 80);
 }
 
+function isSupabaseStorageImageUrl(url) {
+    return /^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(String(url || '').trim());
+}
+
+function getZaoyoeAssetCdnOrigin({ canonical = false } = {}) {
+    if (canonical) {
+        return String(window.SiteConfig?.getCanonicalAssetCdnOrigin?.() || 'https://cdn.zaoyoe.com').replace(/\/+$/, '');
+    }
+
+    const configuredOrigin = String(window.SiteConfig?.getAssetCdnOrigin?.() || '').trim();
+    if (configuredOrigin) {
+        return configuredOrigin.replace(/\/+$/, '');
+    }
+
+    const hostname = String(window.location?.hostname || '').toLowerCase();
+    return hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz')
+        ? 'https://cdn.zaoyoe.xyz'
+        : 'https://cdn.zaoyoe.com';
+}
+
+function normalizeZaoyoeAssetCdnUrl(url, expectedPrefix = '', options = {}) {
+    const source = String(url || '').trim();
+    if (!source) return '';
+
+    const siteConfigNormalizer = options.canonical
+        ? window.SiteConfig?.normalizeAssetUrlForCanonicalSite
+        : window.SiteConfig?.normalizeAssetUrlForCurrentSite;
+    const normalizedBySiteConfig = typeof siteConfigNormalizer === 'function'
+        ? String(siteConfigNormalizer.call(window.SiteConfig, source) || '').trim()
+        : '';
+    if (normalizedBySiteConfig && normalizedBySiteConfig !== source) {
+        if (!expectedPrefix) return normalizedBySiteConfig;
+        try {
+            const parsed = new URL(normalizedBySiteConfig, window.location.origin);
+            const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+            if (parts[0] === expectedPrefix) return normalizedBySiteConfig;
+        } catch (error) {
+            return '';
+        }
+    }
+
+    try {
+        const parsed = new URL(String(url || '').trim(), window.location.origin);
+        const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+        const isKnownCdnHost = ['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname) || parsed.hostname.endsWith('.r2.dev');
+        if (!isKnownCdnHost || (expectedPrefix && parts[0] !== expectedPrefix)) return '';
+
+        const targetOrigin = new URL(getZaoyoeAssetCdnOrigin(options));
+        parsed.protocol = targetOrigin.protocol;
+        parsed.host = targetOrigin.host;
+        return parsed.toString();
+    } catch (error) {
+        return '';
+    }
+}
+
+function normalizeShopProductCdnUrl(url, options = {}) {
+    return normalizeZaoyoeAssetCdnUrl(url, 'products', options);
+}
+
+function getShopProductCdnUrlCandidates(url) {
+    const trimmed = String(url || '').trim();
+    return Array.from(new Set([
+        normalizeShopProductCdnUrl(trimmed),
+        normalizeShopProductCdnUrl(trimmed, { canonical: true }),
+        trimmed
+    ].filter(Boolean)));
+}
+
 function getShopResponsiveImageVariantUrl(url, variant = '') {
     const normalizedVariant = String(variant || '').trim();
     const trimmed = String(url || '').trim();
@@ -88,16 +157,18 @@ function getShopResponsiveImageVariantUrl(url, variant = '') {
         return '';
     }
 
+    const candidates = getShopProductCdnUrlCandidates(trimmed);
+    const normalizedUrl = candidates[0] || trimmed;
     const manifest = window.__SHOP_IMAGE_VARIANTS__ || null;
     const variants = manifest?.variants?.[normalizedVariant];
     if (variants && typeof variants === 'object') {
-        const manifestUrl = String(variants[trimmed] || '').trim();
+        const manifestUrl = String(candidates.map((candidate) => variants[candidate]).find(Boolean) || '').trim();
         if (manifestUrl) {
             return manifestUrl;
         }
     }
 
-    return getShopResponsiveR2CardVariantUrl(trimmed, normalizedVariant);
+    return getShopResponsiveR2CardVariantUrl(normalizedUrl, normalizedVariant);
 }
 
 function getShopResponsiveR2CardVariantUrl(url, variant = '') {
@@ -106,8 +177,9 @@ function getShopResponsiveR2CardVariantUrl(url, variant = '') {
     }
 
     try {
-        const parsed = new URL(String(url || '').trim(), window.location.origin);
-        if (parsed.hostname !== 'cdn.zaoyoe.com' && !parsed.hostname.endsWith('.r2.dev')) {
+        const normalizedUrl = normalizeShopProductCdnUrl(url) || String(url || '').trim();
+        const parsed = new URL(normalizedUrl, window.location.origin);
+        if (!['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)) {
             return '';
         }
 
@@ -121,7 +193,7 @@ function getShopResponsiveR2CardVariantUrl(url, variant = '') {
             return '';
         }
 
-        return `${parsed.origin}/products/card/${encodeURIComponent(basename)}.webp`;
+        return `${getZaoyoeAssetCdnOrigin()}/products/card/${encodeURIComponent(basename)}.webp`;
     } catch (error) {
         return '';
     }
@@ -331,6 +403,9 @@ const SHOP_DISCOUNT_ASSETS_PREFETCH_LIMIT = 4;
 const SHOP_PURCHASE_COUPON_SYNC_SUBMIT_GRACE_MS = 900;
 const SHOP_DEFERRED_TASK_TIMEOUT_MS = 1400;
 const SHOP_POST_RENDER_TASK_TIMEOUT_MS = 900;
+const SHOP_REALTIME_SUBSCRIBE_TIMEOUT_MS = 2600;
+const SHOP_REALTIME_REFRESH_DEBOUNCE_MS = 650;
+const SHOP_REALTIME_RETRY_MS = 30000;
 const shopCardImageWarmCache = new Set();
 
 async function ensureShopWalletModal(options = {}) {
@@ -436,6 +511,17 @@ const ShopClient = {
     shopDiscountEngagementSeenKeys: new Set(),
     productStockSnapshot: new Map(),
     cartAbandonEngagementTimer: null,
+    storefrontRealtimeSubscription: null,
+    storefrontRealtimeRetryTimer: null,
+    storefrontRealtimeRefreshTimer: null,
+    storefrontRealtimeOrderRefreshTimer: null,
+    storefrontRealtimeStatus: 'idle',
+    storefrontRealtimeSite: '',
+    storefrontRealtimeUserId: '',
+    shopRealtimeAuthUnsubscribe: null,
+    shopRealtimeAuthBound: false,
+    ordersLoaded: false,
+    ordersLoading: false,
 
     getAccessToken: async function () {
         const client = window.supabaseClient || supabaseClient;
@@ -2092,6 +2178,284 @@ const ShopClient = {
             source: normalizedMetadata.source || 'shop_order',
             order_ids: orderIds,
             ...normalizedMetadata
+        });
+    },
+
+    getShopSupabaseClient: function () {
+        return window.supabaseClient || (typeof supabaseClient !== 'undefined' ? supabaseClient : null);
+    },
+
+    getCurrentShopSite: function () {
+        const site = String(window.SiteConfig?.site || '').trim().toLowerCase();
+        if (site === 'cn' || site === 'intl') {
+            return site;
+        }
+        const hostname = String(window.location?.hostname || '').trim().toLowerCase();
+        return hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz') ? 'intl' : 'cn';
+    },
+
+    isRealtimeRowForCurrentShopSite: function (row = {}) {
+        const rowSite = String(row?.site || '').trim().toLowerCase();
+        if (!rowSite || (rowSite !== 'cn' && rowSite !== 'intl')) {
+            return true;
+        }
+        return rowSite === this.getCurrentShopSite();
+    },
+
+    clearStorefrontRealtimeRetryTimer: function () {
+        if (this.storefrontRealtimeRetryTimer) {
+            window.clearTimeout(this.storefrontRealtimeRetryTimer);
+            this.storefrontRealtimeRetryTimer = null;
+        }
+    },
+
+    clearStorefrontRealtimeRefreshTimers: function () {
+        if (this.storefrontRealtimeRefreshTimer) {
+            window.clearTimeout(this.storefrontRealtimeRefreshTimer);
+            this.storefrontRealtimeRefreshTimer = null;
+        }
+        if (this.storefrontRealtimeOrderRefreshTimer) {
+            window.clearTimeout(this.storefrontRealtimeOrderRefreshTimer);
+            this.storefrontRealtimeOrderRefreshTimer = null;
+        }
+    },
+
+    teardownStorefrontRealtime: function ({ preserveRetry = false } = {}) {
+        if (!preserveRetry) {
+            this.clearStorefrontRealtimeRetryTimer();
+        }
+        if (this.storefrontRealtimeSubscription) {
+            try {
+                this.storefrontRealtimeSubscription.unsubscribe?.();
+            } catch (error) {
+                console.warn('[ShopRealtime] Failed to unsubscribe storefront realtime:', error?.message || error);
+            }
+        }
+        this.storefrontRealtimeSubscription = null;
+        this.storefrontRealtimeStatus = 'idle';
+        this.storefrontRealtimeSite = '';
+        this.storefrontRealtimeUserId = '';
+    },
+
+    scheduleStorefrontRealtimeRetry: function (reason = 'degraded') {
+        this.clearStorefrontRealtimeRetryTimer();
+        this.storefrontRealtimeRetryTimer = window.setTimeout(() => {
+            this.storefrontRealtimeRetryTimer = null;
+            void this.setupStorefrontRealtime({ force: true, reason });
+        }, SHOP_REALTIME_RETRY_MS);
+    },
+
+    scheduleShopRealtimeCatalogRefresh: function (reason = 'catalog_change') {
+        if (!document.getElementById('userShopGrid')) {
+            return;
+        }
+
+        if (this.storefrontRealtimeRefreshTimer) {
+            window.clearTimeout(this.storefrontRealtimeRefreshTimer);
+        }
+
+        this.storefrontRealtimeRefreshTimer = window.setTimeout(() => {
+            this.storefrontRealtimeRefreshTimer = null;
+            void (async () => {
+                try {
+                    await this.refreshStorefrontCatalogFromRealtime();
+                    this.syncCurrentPurchaseInventoryFromCatalog();
+                    console.debug('[ShopRealtime] Catalog refreshed:', reason);
+                } catch (error) {
+                    console.warn('[ShopRealtime] Catalog refresh failed:', error?.message || error);
+                }
+            })();
+        }, SHOP_REALTIME_REFRESH_DEBOUNCE_MS);
+    },
+
+    refreshStorefrontCatalogFromRealtime: async function () {
+        const catalog = await this.fetchShopCatalogFromApi({ forceRefresh: true });
+        const categories = Array.isArray(catalog?.categories) ? catalog.categories : [];
+        const products = Array.isArray(catalog?.products) ? this.filterProductsForCurrentSite(catalog.products) : [];
+        const filtersContainer = document.getElementById('shopCategoryFilters');
+
+        if (categories.length > 0) {
+            this.availableCategories = categories;
+            if (filtersContainer) {
+                this.renderCategoryFilterButtons(filtersContainer, categories);
+            }
+        }
+
+        this.hydrateProductCaches(products);
+        await this.loadProducts();
+    },
+
+    scheduleShopRealtimeOrderRefresh: function (reason = 'order_change') {
+        const list = document.getElementById('ordersList');
+        if (!list || this.ordersLoading || (!this.ordersLoaded && !list.querySelector('.shop-order-history-item'))) {
+            return;
+        }
+
+        if (this.storefrontRealtimeOrderRefreshTimer) {
+            window.clearTimeout(this.storefrontRealtimeOrderRefreshTimer);
+        }
+
+        this.storefrontRealtimeOrderRefreshTimer = window.setTimeout(() => {
+            this.storefrontRealtimeOrderRefreshTimer = null;
+            void this.loadMyOrders({ preserveExisting: true, reason }).catch((error) => {
+                console.warn('[ShopRealtime] Order refresh failed:', error?.message || error);
+            });
+        }, SHOP_REALTIME_REFRESH_DEBOUNCE_MS);
+    },
+
+    getRealtimePayloadRow: function (payload = {}) {
+        const nextRow = payload?.new && typeof payload.new === 'object' && !Array.isArray(payload.new)
+            ? payload.new
+            : null;
+        const oldRow = payload?.old && typeof payload.old === 'object' && !Array.isArray(payload.old)
+            ? payload.old
+            : null;
+        return nextRow || oldRow || {};
+    },
+
+    handleShopCatalogRealtimePayload: function (payload = {}, sourceTable = 'shop_products') {
+        const row = this.getRealtimePayloadRow(payload);
+        if (!this.isRealtimeRowForCurrentShopSite(row)) {
+            return;
+        }
+        this.scheduleShopRealtimeCatalogRefresh(sourceTable);
+    },
+
+    handleShopOrderRealtimePayload: function (payload = {}, userId = '') {
+        const row = this.getRealtimePayloadRow(payload);
+        const normalizedUserId = String(userId || '').trim();
+        const rowUserId = String(row?.user_id || '').trim();
+        if (normalizedUserId && rowUserId && rowUserId !== normalizedUserId) {
+            return;
+        }
+        if (!this.isRealtimeRowForCurrentShopSite(row)) {
+            return;
+        }
+        this.scheduleShopRealtimeOrderRefresh('order_change');
+    },
+
+    markStorefrontRealtimeDegraded: function (reason = 'channel_error') {
+        this.storefrontRealtimeStatus = 'degraded';
+        console.warn('[ShopRealtime] Realtime degraded, existing catalog/order reads remain available:', reason);
+        this.scheduleStorefrontRealtimeRetry(reason);
+    },
+
+    setupStorefrontRealtime: async function ({ force = false, reason = 'init' } = {}) {
+        if (!document.getElementById('userShopGrid')) {
+            return;
+        }
+
+        const client = this.getShopSupabaseClient();
+        const site = this.getCurrentShopSite();
+        let userId = '';
+
+        if (client?.auth && typeof client.auth.getUser === 'function') {
+            try {
+                const { data: { user } = {} } = await client.auth.getUser();
+                userId = String(user?.id || '').trim();
+            } catch (error) {
+                console.warn('[ShopRealtime] Failed to resolve realtime user context:', error?.message || error);
+            }
+        }
+
+        if (
+            !force
+            && this.storefrontRealtimeSubscription
+            && this.storefrontRealtimeSite === site
+            && this.storefrontRealtimeUserId === userId
+        ) {
+            return;
+        }
+
+        this.teardownStorefrontRealtime();
+        this.storefrontRealtimeSite = site;
+        this.storefrontRealtimeUserId = userId;
+
+        if (typeof window.subscribeZaoyoeRealtime !== 'function' || !client) {
+            this.markStorefrontRealtimeDegraded(!client ? 'missing_supabase_client' : 'missing_realtime_guard');
+            return;
+        }
+
+        const channelName = `shop-storefront:${site}:${userId || 'guest'}`;
+        this.storefrontRealtimeStatus = 'connecting';
+        this.storefrontRealtimeSubscription = window.subscribeZaoyoeRealtime({
+            client,
+            channel: channelName,
+            feature: 'shop-storefront',
+            timeoutMs: SHOP_REALTIME_SUBSCRIBE_TIMEOUT_MS,
+            build: (channel) => {
+                channel.on('postgres_changes', {
+                    event: '*',
+                    schema: 'public',
+                    table: 'shop_products'
+                }, (payload) => this.handleShopCatalogRealtimePayload(payload, 'shop_products'));
+
+                channel.on('postgres_changes', {
+                    event: '*',
+                    schema: 'public',
+                    table: 'shop_categories'
+                }, (payload) => this.handleShopCatalogRealtimePayload(payload, 'shop_categories'));
+
+                if (userId) {
+                    channel.on('postgres_changes', {
+                        event: '*',
+                        schema: 'public',
+                        table: 'shop_orders',
+                        filter: `user_id=eq.${userId}`
+                    }, (payload) => this.handleShopOrderRealtimePayload(payload, userId));
+                }
+
+                return channel;
+            },
+            onActive: () => {
+                this.storefrontRealtimeStatus = 'active';
+                this.clearStorefrontRealtimeRetryTimer();
+                console.debug('[ShopRealtime] Storefront realtime active:', reason);
+            },
+            onDegraded: (degradeReason) => {
+                this.markStorefrontRealtimeDegraded(degradeReason);
+            }
+        });
+    },
+
+    bindShopRealtimeAuthSync: function () {
+        if (this.shopRealtimeAuthBound) {
+            return;
+        }
+
+        const client = this.getShopSupabaseClient();
+        if (!client?.auth || typeof client.auth.onAuthStateChange !== 'function') {
+            return;
+        }
+
+        try {
+            const result = client.auth.onAuthStateChange(() => {
+                window.setTimeout(() => {
+                    void this.setupStorefrontRealtime({ force: true, reason: 'auth_change' });
+                }, 120);
+            });
+            this.shopRealtimeAuthUnsubscribe = result?.data?.subscription || result?.subscription || result || null;
+            this.shopRealtimeAuthBound = true;
+        } catch (error) {
+            console.warn('[ShopRealtime] Failed to bind auth sync:', error?.message || error);
+        }
+    },
+
+    syncCurrentPurchaseInventoryFromCatalog: function () {
+        const productId = String(this.currentPurchase?.productId || '').trim();
+        if (!productId) {
+            return;
+        }
+
+        const liveProduct = this.getCachedProductById(productId);
+        if (!liveProduct) {
+            return;
+        }
+
+        const quantityCap = this.getPurchaseQuantityCapForProduct(liveProduct, liveProduct.max_purchase_quantity);
+        this.currentPurchase.configuredMaxQuantity = quantityCap;
+        this.setCurrentPurchaseQuantityCap(quantityCap, {
+            unlimited: this.currentPurchase.unlimitedPurchases === true
         });
     },
 
@@ -5674,6 +6038,8 @@ const ShopClient = {
                 // then let the first product batch replace the server skeletons.
                 await this.loadCategoryFilters();
                 await this.loadProducts();
+                this.bindShopRealtimeAuthSync();
+                void this.setupStorefrontRealtime({ reason: 'shop_init' });
 
                 // Clear prefetch references
                 this._prefetchedCategories = null;
@@ -5712,6 +6078,7 @@ const ShopClient = {
             void (async () => {
                 await this.loadCategoryFilters();
                 await this.loadProducts();
+                void this.setupStorefrontRealtime({ force: true, reason: 'language_change' });
             })();
             this.renderCart();
             this.renderCartCheckoutModal();
@@ -6359,6 +6726,7 @@ const ShopClient = {
 
     isShopImageSource: function (value) {
         const trimmed = String(value || '').trim();
+        if (isSupabaseStorageImageUrl(trimmed)) return false;
         return trimmed.startsWith('http://')
             || trimmed.startsWith('https://')
             || trimmed.startsWith('/')
@@ -6494,13 +6862,14 @@ const ShopClient = {
     getOptimizedShopImageUrl: function (url, options = {}) {
         const explicitVariantUrl = getShopProductImageAssetExplicitVariantUrl(url, options.variant || '');
         if (explicitVariantUrl && options.variant) {
-            return explicitVariantUrl;
+            return normalizeShopProductCdnUrl(explicitVariantUrl) || explicitVariantUrl;
         }
 
-        const trimmed = getShopProductImageAssetUrl(url, 'original');
+        const rawUrl = getShopProductImageAssetUrl(url, 'original');
+        const trimmed = normalizeShopProductCdnUrl(rawUrl) || rawUrl;
         if (!trimmed) return '';
 
-        const { format = 'avif', variant = '' } = options;
+        const { variant = '' } = options;
         const variantUrl = getShopResponsiveImageVariantUrl(trimmed, variant);
         if (variantUrl) {
             return variantUrl;
@@ -6510,34 +6879,13 @@ const ShopClient = {
             return trimmed;
         }
 
-        if (trimmed.includes('cdn.zaoyoe.com/prompts/') && !trimmed.includes('/thumb/')) {
-            return trimmed.replace('/prompts/', '/prompts/thumb/');
+        const promptCdnUrl = normalizeZaoyoeAssetCdnUrl(trimmed, 'prompts') || '';
+        if (promptCdnUrl && !promptCdnUrl.includes('/thumb/')) {
+            return promptCdnUrl.replace('/prompts/', '/prompts/thumb/');
         }
 
-        if (
-            trimmed.includes('supabase.co/storage/v1/object/public/')
-            || trimmed.includes('supabase.co/storage/v1/render/image/public/')
-        ) {
-            try {
-                const optimizedUrl = new URL(trimmed);
-                if (optimizedUrl.pathname.includes('/storage/v1/object/public/')) {
-                    optimizedUrl.pathname = optimizedUrl.pathname.replace(
-                        '/storage/v1/object/public/',
-                        '/storage/v1/render/image/public/'
-                    );
-                }
-                optimizedUrl.searchParams.set('width', '480');
-                optimizedUrl.searchParams.set('height', '320');
-                optimizedUrl.searchParams.set('quality', '80');
-                if (format) {
-                    optimizedUrl.searchParams.set('format', format);
-                } else {
-                    optimizedUrl.searchParams.delete('format');
-                }
-                return optimizedUrl.toString();
-            } catch (error) {
-                console.warn('Failed to build shop image transform URL:', error);
-            }
+        if (isSupabaseStorageImageUrl(trimmed)) {
+            return '';
         }
 
         return trimmed;
@@ -6569,13 +6917,20 @@ const ShopClient = {
         if (!(cardImage instanceof HTMLImageElement) || !originalUrl) return;
 
         const primaryUrl = this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' });
-        const originalSrc = getShopProductImageAssetUrl(originalUrl, 'original');
+        const rawOriginalSrc = getShopProductImageAssetUrl(originalUrl, 'original');
+        const originalSrc = isSupabaseStorageImageUrl(rawOriginalSrc)
+            ? ''
+            : (normalizeShopProductCdnUrl(rawOriginalSrc) || rawOriginalSrc);
         const transformFallbackUrl = this.getOptimizedShopImageUrl(originalSrc, { format: '' });
 
         cardImage.dataset.originalSrc = originalSrc;
         cardImage.dataset.transformFallbackSrc = transformFallbackUrl !== primaryUrl ? transformFallbackUrl : '';
         cardImage.dataset.fallbackStage = '';
-        cardImage.src = primaryUrl;
+        if (primaryUrl) {
+            cardImage.src = primaryUrl;
+        } else {
+            cardImage.removeAttribute('src');
+        }
     },
 
     handleShopCardImageError: function (cardImage, originalUrl) {
@@ -6590,9 +6945,14 @@ const ShopClient = {
             return;
         }
 
-        if (cardImage.dataset.fallbackStage !== 'original' && fallbackOriginalSrc && cardImage.src !== fallbackOriginalSrc) {
+        if (
+            cardImage.dataset.fallbackStage !== 'original'
+            && fallbackOriginalSrc
+            && !isSupabaseStorageImageUrl(fallbackOriginalSrc)
+            && cardImage.src !== fallbackOriginalSrc
+        ) {
             cardImage.dataset.fallbackStage = 'original';
-            cardImage.src = fallbackOriginalSrc;
+            cardImage.src = normalizeShopProductCdnUrl(fallbackOriginalSrc) || fallbackOriginalSrc;
         }
     },
 
@@ -10852,24 +11212,31 @@ const ShopClient = {
         }
     },
 
-    loadMyOrders: async function () {
+    loadMyOrders: async function (options = {}) {
         this.bindDeferredUiHandlers();
         const list = document.getElementById('ordersList');
         if (!list) return;
 
-        list.innerHTML = this.buildShopStatusMessage(
-            window.i18n?.t('common.loading') || '加载中...',
-            { variant: 'muted', iconClass: 'fas fa-spinner fa-spin' }
-        );
+        const preserveExisting = options?.preserveExisting === true && list.childElementCount > 0;
+        this.ordersLoading = true;
 
-        const { data: { user } } = await supabaseClient.auth.getUser();
-        if (!user) {
-            list.innerHTML = this.buildShopStatusMessage(window.i18n?.t('shop.loginRequired') || '请先登录');
-            return;
+        if (!preserveExisting) {
+            list.innerHTML = this.buildShopStatusMessage(
+                window.i18n?.t('common.loading') || '加载中...',
+                { variant: 'muted', iconClass: 'fas fa-spinner fa-spin' }
+            );
         }
 
         try {
-            const { data, error } = await supabaseClient
+            const client = this.getShopSupabaseClient();
+            const { data: { user } = {} } = await client.auth.getUser();
+            if (!user) {
+                this.ordersLoaded = false;
+                list.innerHTML = this.buildShopStatusMessage(window.i18n?.t('shop.loginRequired') || '请先登录');
+                return;
+            }
+
+            const { data, error } = await client
                 .from('shop_orders')
                 .select(`
     *,
@@ -10881,6 +11248,7 @@ const ShopClient = {
 
             if (error) throw error;
 
+            this.ordersLoaded = true;
             list.innerHTML = '';
             if (!data || data.length === 0) {
                 list.innerHTML = this.buildShopStatusMessage(window.i18n?.t('shop.noOrders') || '暂无订单记录', { variant: 'muted' });
@@ -10920,7 +11288,11 @@ const ShopClient = {
             });
         } catch (err) {
             console.error(err);
-            list.innerHTML = this.buildShopStatusMessage(window.i18n?.t('common.error') || '加载失败', { variant: 'error' });
+            if (!preserveExisting) {
+                list.innerHTML = this.buildShopStatusMessage(window.i18n?.t('common.error') || '加载失败', { variant: 'error' });
+            }
+        } finally {
+            this.ordersLoading = false;
         }
     },
 

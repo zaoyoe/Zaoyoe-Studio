@@ -24,14 +24,15 @@ test('homepage shop carousel uses the storefront shop image optimization contrac
         'setHomeShopCardImageSource(cardImage, originalUrl) {'
     );
 
-    assert.match(optimizationBlock, /const \{ format = 'avif', variant = '' \} = options;/);
+    assert.match(optimizationBlock, /const \{ variant = '' \} = options;/);
     assert.match(source, /function normalizeShopProductImageAsset\(value\) \{/);
     assert.match(source, /const explicitVariantUrl = getShopProductImageAssetExplicitVariantUrl\(url, options\.variant \|\| ''\);/);
+    assert.match(source, /function getZaoyoeAssetCdnOrigin\(\{ canonical = false \} = \{\}\) \{/);
+    assert.match(source, /function normalizeShopProductCdnUrl\(url, options = \{\}\) \{/);
     assert.match(optimizationBlock, /const variantUrl = getShopImageVariantUrl\(trimmed, variant\);/);
     assert.match(optimizationBlock, /if \(variantUrl\) \{\s*return variantUrl;\s*\}/);
-    assert.match(optimizationBlock, /optimizedUrl\.searchParams\.set\('width', '480'\);/);
-    assert.match(optimizationBlock, /optimizedUrl\.searchParams\.set\('height', '320'\);/);
-    assert.match(optimizationBlock, /optimizedUrl\.searchParams\.set\('quality', '80'\);/);
+    assert.match(optimizationBlock, /if \(isSupabaseStorageImageUrl\(trimmed\)\) \{\s*return '';\s*\}/);
+    assert.doesNotMatch(optimizationBlock, /storage\/v1\/render\/image\/public/);
     assert.match(source, /const primaryUrl = this\.getOptimizedShopImageUrl\(originalUrl, \{ variant: 'card' \}\);/);
     assert.match(source, /data-home-shop-image="1"/);
     assert.match(source, /this\.setHomeShopCardImageSource\(image, imageAsset\);/);
@@ -49,14 +50,15 @@ test('admin shop product cards use the storefront shop image optimization contra
         'setProductCardImageSource: function (cardImage, originalUrl) {'
     );
 
-    assert.match(optimizationBlock, /const \{ format = 'avif', variant = '' \} = options;/);
+    assert.match(optimizationBlock, /const \{ variant = '' \} = options;/);
     assert.match(source, /function normalizeShopProductImageAsset\(value\) \{/);
     assert.match(source, /function getShopProductImageAsset\(productOrAsset = \{\}\) \{/);
     assert.match(source, /function buildShopProductImageAssetForSave\(iconUrl, existingAsset = null\) \{/);
+    assert.match(source, /function getZaoyoeAssetCdnOrigin\(\{ canonical = false \} = \{\}\) \{/);
+    assert.match(source, /function normalizeShopProductCdnUrl\(url, options = \{\}\) \{/);
     assert.match(optimizationBlock, /const cardVariantUrl = getShopProductR2CardVariantUrl\(trimmed\);/);
-    assert.match(optimizationBlock, /optimizedUrl\.searchParams\.set\('width', '480'\);/);
-    assert.match(optimizationBlock, /optimizedUrl\.searchParams\.set\('height', '320'\);/);
-    assert.match(optimizationBlock, /optimizedUrl\.searchParams\.set\('quality', '80'\);/);
+    assert.match(optimizationBlock, /if \(isSupabaseStorageImageUrl\(trimmed\)\) \{\s*return '';\s*\}/);
+    assert.doesNotMatch(optimizationBlock, /storage\/v1\/render\/image\/public/);
     assert.match(source, /const primaryUrl = this\.getOptimizedShopImageUrl\(originalUrl, \{ variant: 'card' \}\);/);
     assert.match(source, /data-shop-product-image="1"/);
     assert.match(source, /this\.setProductCardImageSource\(productImage, productImageAsset \|\| productImageOriginalUrl\);/);
@@ -67,9 +69,11 @@ test('admin shop product cards use the storefront shop image optimization contra
     assert.match(source, /cardImageData = await this\.blobToDataUrl\(cardBlob\);/);
     assert.match(source, /fit: 'cover'/);
     assert.match(shopClientSource, /function normalizeShopProductImageAsset\(value\) \{/);
+    assert.match(shopClientSource, /function getZaoyoeAssetCdnOrigin\(\{ canonical = false \} = \{\}\) \{/);
+    assert.match(shopClientSource, /function normalizeShopProductCdnUrl\(url, options = \{\}\) \{/);
     assert.match(shopClientSource, /const explicitVariantUrl = getShopProductImageAssetExplicitVariantUrl\(url, options\.variant \|\| ''\);/);
     assert.match(shopClientSource, /function getShopResponsiveR2CardVariantUrl\(url, variant = ''\) \{/);
-    assert.match(shopClientSource, /return `\$\{parsed\.origin\}\/products\/card\/\$\{encodeURIComponent\(basename\)\}\.webp`;/);
+    assert.match(shopClientSource, /return `\$\{getZaoyoeAssetCdnOrigin\(\)\}\/products\/card\/\$\{encodeURIComponent\(basename\)\}\.webp`;/);
     assert.match(uploadAvatarSource, /cardImageData\?: string/);
     assert.match(uploadAvatarSource, /const cardFilename = `products\/card\/\$\{productKeyBase\}\.webp`/);
     assert.match(uploadAvatarSource, /imageAsset/);

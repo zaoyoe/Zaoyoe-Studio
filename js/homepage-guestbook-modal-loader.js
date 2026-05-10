@@ -5,7 +5,7 @@
     const HOMEPAGE_GUESTBOOK_RUNTIME_SOURCES = Object.freeze([
         {
             id: 'guestbook-data-runtime',
-            src: './supabase-guestbook-functions.js?v=20260507_REPLY_REALTIME_1',
+            src: './supabase-guestbook-functions.js?v=20260510_GUESTBOOK_R2_IMAGE_UPLOAD_1',
             isReady: () => typeof window.loadGuestbookMessages === 'function'
                 && typeof window.addMessage === 'function'
         },

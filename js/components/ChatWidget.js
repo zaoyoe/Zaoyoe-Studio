@@ -3562,19 +3562,61 @@ class ChatWidget {
         }
     }
 
+    createRealtimeSubscription(channelName, buildChannel, options = {}) {
+        if (!this.supabase?.channel || typeof buildChannel !== 'function') {
+            return null;
+        }
+
+        const subscribeRealtime = window.subscribeZaoyoeRealtime;
+        if (typeof subscribeRealtime === 'function') {
+            const subscription = subscribeRealtime({
+                client: this.supabase,
+                channel: channelName,
+                feature: options.feature || 'chat_widget',
+                timeoutMs: options.timeoutMs || 2600,
+                channelOptions: options.channelOptions,
+                build: buildChannel,
+                onActive: options.onActive,
+                onDegraded: (reason, detail) => {
+                    console.warn(`[ChatWidget] Realtime degraded for ${channelName}; polling/manual refresh remains available:`, reason, detail?.error || '');
+                    options.onDegraded?.(reason, detail);
+                }
+            });
+            return subscription?.channel || null;
+        }
+
+        try {
+            const channel = buildChannel(this.supabase.channel(channelName, options.channelOptions || undefined));
+            return channel.subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    options.onActive?.({ reason: 'subscribed' });
+                    return;
+                }
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                    console.warn(`[ChatWidget] Realtime degraded for ${channelName}; polling/manual refresh remains available:`, status);
+                    options.onDegraded?.(String(status || '').toLowerCase(), {});
+                }
+            });
+        } catch (error) {
+            console.warn(`[ChatWidget] Realtime unavailable for ${channelName}; polling/manual refresh remains available:`, error?.message || error);
+            options.onDegraded?.('subscribe_exception', { error: error?.message || String(error || '') });
+            return null;
+        }
+    }
+
     subscribeToUserPresence() {
         if (!this.supabase?.channel || this.userPresenceChannel) {
             return;
         }
 
-        this.userPresenceChannel = this.supabase
-            .channel(this.getUserPresenceChannelName())
-            .on('presence', { event: 'sync' }, () => this.refreshUserPresenceSnapshot())
-            .subscribe((status) => {
-                if (status === 'SUBSCRIBED') {
-                    this.refreshUserPresenceSnapshot();
-                }
-            });
+        this.userPresenceChannel = this.createRealtimeSubscription(
+            this.getUserPresenceChannelName(),
+            (channel) => channel.on('presence', { event: 'sync' }, () => this.refreshUserPresenceSnapshot()),
+            {
+                feature: 'chat_widget_user_presence',
+                onActive: () => this.refreshUserPresenceSnapshot()
+            }
+        );
 
         this.userPresenceStatusTimer = setInterval(() => {
             this.renderAdminSessionList();
@@ -3746,15 +3788,17 @@ class ChatWidget {
         }
 
         if (this.supabase?.channel && !this.userActivityChannel) {
-            this.userActivityChannel = this.supabase
-                .channel(`chat-widget-user-activity-${Date.now()}`)
-                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'engagement_user_activity' }, (payload) => {
+            this.userActivityChannel = this.createRealtimeSubscription(
+                `chat-widget-user-activity-${Date.now()}`,
+                (channel) => channel
+                    .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'engagement_user_activity' }, (payload) => {
                     this.handleUserActivityRealtime(payload.new);
                 })
-                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'engagement_user_activity' }, (payload) => {
+                    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'engagement_user_activity' }, (payload) => {
                     this.handleUserActivityRealtime(payload.new);
-                })
-                .subscribe();
+                }),
+                { feature: 'chat_widget_user_activity' }
+            );
         }
 
         if (!this.userActivityRefreshTimer) {
@@ -4386,9 +4430,9 @@ class ChatWidget {
         }
 
         this.engagementNotificationChannelUserId = userId;
-        this.engagementNotificationChannel = this.supabase
-            .channel(`engagement-user-notifications-${userId}`)
-            .on(
+        this.engagementNotificationChannel = this.createRealtimeSubscription(
+            `engagement-user-notifications-${userId}`,
+            (channel) => channel.on(
                 'postgres_changes',
                 {
                     event: '*',
@@ -4397,12 +4441,9 @@ class ChatWidget {
                     filter: `user_id=eq.${userId}`
                 },
                 (payload) => this.handleEngagementNotificationRealtime(payload)
-            )
-            .subscribe((status) => {
-                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                    console.warn('[ChatWidget] Engagement notification realtime degraded:', status);
-                }
-            });
+            ),
+            { feature: 'engagement_notifications' }
+        );
     }
 
     getEngagementRealtimeRow(payload = {}) {
@@ -5049,9 +5090,9 @@ class ChatWidget {
         }
 
         this.engagementDeliveryChannelUserId = userId;
-        this.engagementDeliveryChannel = this.supabase
-            .channel(`engagement-user-deliveries-${userId}`)
-            .on(
+        this.engagementDeliveryChannel = this.createRealtimeSubscription(
+            `engagement-user-deliveries-${userId}`,
+            (channel) => channel.on(
                 'postgres_changes',
                 {
                     event: '*',
@@ -5060,12 +5101,9 @@ class ChatWidget {
                     filter: `user_id=eq.${userId}`
                 },
                 (payload) => this.handleEngagementDeliveryRealtime(payload)
-            )
-            .subscribe((status) => {
-                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                    console.warn('[ChatWidget] Engagement delivery realtime degraded:', status);
-                }
-            });
+            ),
+            { feature: 'engagement_deliveries' }
+        );
     }
 
     normalizeEngagementDeliveryRow(row = {}) {
@@ -5191,9 +5229,9 @@ class ChatWidget {
         }
 
         this.engagementUserTagsChannelUserId = userId;
-        this.engagementUserTagsChannel = this.supabase
-            .channel(`engagement-user-tags-${userId}`)
-            .on(
+        this.engagementUserTagsChannel = this.createRealtimeSubscription(
+            `engagement-user-tags-${userId}`,
+            (channel) => channel.on(
                 'postgres_changes',
                 {
                     event: '*',
@@ -5202,12 +5240,9 @@ class ChatWidget {
                     filter: `user_id=eq.${userId}`
                 },
                 (payload) => this.handleEngagementUserTagsRealtime(payload)
-            )
-            .subscribe((status) => {
-                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                    console.warn('[ChatWidget] Engagement user tags realtime degraded:', status);
-                }
-            });
+            ),
+            { feature: 'engagement_user_tags' }
+        );
     }
 
     handleEngagementUserTagsRealtime(payload = {}) {
@@ -5251,20 +5286,18 @@ class ChatWidget {
             return;
         }
 
-        this.engagementFeedBroadcastChannel = this.supabase
-            .channel('engagement-feed-invalidations', {
-                config: { broadcast: { self: false } }
-            })
-            .on(
+        this.engagementFeedBroadcastChannel = this.createRealtimeSubscription(
+            'engagement-feed-invalidations',
+            (channel) => channel.on(
                 'broadcast',
                 { event: 'engagement_feed_changed' },
                 (payload) => this.handleEngagementFeedBroadcast(payload?.payload || payload)
-            )
-            .subscribe((status) => {
-                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                    console.warn('[ChatWidget] Engagement feed broadcast degraded:', status);
-                }
-            });
+            ),
+            {
+                feature: 'engagement_feed_broadcast',
+                channelOptions: { config: { broadcast: { self: false } } }
+            }
+        );
     }
 
     normalizeEngagementBroadcastList(value) {
@@ -5376,9 +5409,9 @@ class ChatWidget {
             return;
         }
 
-        this.engagementFeedInvalidationsChannel = this.supabase
-            .channel('engagement-feed-invalidations-db')
-            .on(
+        this.engagementFeedInvalidationsChannel = this.createRealtimeSubscription(
+            'engagement-feed-invalidations-db',
+            (channel) => channel.on(
                 'postgres_changes',
                 {
                     event: '*',
@@ -5386,12 +5419,9 @@ class ChatWidget {
                     table: 'engagement_feed_invalidations'
                 },
                 (payload) => this.handleEngagementFeedInvalidationRealtime(payload)
-            )
-            .subscribe((status) => {
-                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                    console.warn('[ChatWidget] Engagement feed invalidations realtime degraded:', status);
-                }
-            });
+            ),
+            { feature: 'engagement_feed_invalidations' }
+        );
     }
 
     handleEngagementFeedInvalidationRealtime(payload = {}) {
@@ -8667,11 +8697,12 @@ class ChatWidget {
 
         const trimmed = url.trim();
         if (trimmed.startsWith('data:image/')) return trimmed;
+        if (/^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(trimmed)) return '';
 
         try {
             const parsed = new URL(trimmed, window.location.origin);
             if (['http:', 'https:', 'blob:'].includes(parsed.protocol)) {
-                return parsed.href;
+                return window.SiteConfig?.normalizeAssetUrlForCurrentSite?.(parsed.href) || parsed.href;
             }
         } catch (err) {
             console.warn('[ChatWidget] Blocked unsafe media URL:', trimmed, err);
@@ -19815,6 +19846,53 @@ class ChatWidget {
         }
     }
 
+    readImageFileAsDataUrl(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(new Error('图片读取失败'));
+            reader.readAsDataURL(file);
+        });
+    }
+
+    async uploadChatImageToR2(file, options = {}) {
+        const { data: { session } = {} } = await this.supabase.auth.getSession();
+        if (!session?.access_token || !session?.user?.id) {
+            throw new Error('请先登录后再上传图片');
+        }
+
+        const imageData = await this.readImageFileAsDataUrl(file);
+        const response = await fetch(
+            window.getZaoyoeSupabaseFunctionUrl('upload-avatar'),
+            {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    userId: session.user.id,
+                    type: 'chat',
+                    sessionId: options.sessionId || this.currentSessionId || session.user.id,
+                    imageData
+                })
+            }
+        );
+
+        let payload = null;
+        try {
+            payload = await response.json();
+        } catch (error) {
+            payload = null;
+        }
+
+        if (!response.ok || !payload?.imageUrl) {
+            throw new Error(payload?.error || 'R2 图片上传失败');
+        }
+
+        return payload.imageUrl;
+    }
+
     async handleAdminImageUpload(event) {
         if (!this.currentSessionId) {
             // Show friendly inline hint instead of alert
@@ -19846,18 +19924,9 @@ class ChatWidget {
             // Compress image
             const compressedFile = await this.compressImage(file);
 
-            const fileName = `admin_${Date.now()}_${Math.random().toString(36).substring(7)}.webp`;
-            const { error: uploadError } = await this.supabase.storage
-                .from('chat-images')
-                .upload(fileName, compressedFile);
-
-            if (uploadError) throw uploadError;
-
-            const { data: urlData } = this.supabase.storage
-                .from('chat-images')
-                .getPublicUrl(fileName);
-
-            const imageUrl = urlData.publicUrl;
+            const imageUrl = await this.uploadChatImageToR2(compressedFile, {
+                sessionId: this.currentSessionId
+            });
 
             // Send as image message
             const { data: sentImageMessage, error: insertError } = await this.supabase
@@ -19909,9 +19978,9 @@ class ChatWidget {
             this.supabase.removeChannel(this.adminVerificationChannel);
         }
 
-        this.adminMessageChannel = this.supabase
-            .channel(`admin-chat-global-${Date.now()}`)
-            .on('postgres_changes', {
+        this.adminMessageChannel = this.createRealtimeSubscription(
+            `admin-chat-global-${Date.now()}`,
+            (channel) => channel.on('postgres_changes', {
                 event: 'INSERT',
                 schema: 'public',
                 table: 'chat_messages',
@@ -19971,22 +20040,25 @@ class ChatWidget {
                 if (!this.applyIncomingAdminUserMessage(msg)) {
                     this.loadAdminSessions();
                 }
-            })
-            .subscribe();
+            }),
+            { feature: 'chat_widget_admin_messages' }
+        );
 
-        this.adminOpsAlertChannel = this.supabase
-            .channel(`admin-ops-alerts-${Date.now()}`)
-            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ops_alert_jobs' }, (payload) => {
+        this.adminOpsAlertChannel = this.createRealtimeSubscription(
+            `admin-ops-alerts-${Date.now()}`,
+            (channel) => channel
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ops_alert_jobs' }, (payload) => {
                 this.upsertOpsAlertMessage(payload.new, { announce: true });
             })
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ops_alert_jobs' }, (payload) => {
+                .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ops_alert_jobs' }, (payload) => {
                 this.upsertOpsAlertMessage(payload.new, { announce: false });
-            })
-            .subscribe();
+            }),
+            { feature: 'chat_widget_ops_alerts' }
+        );
 
-        this.adminTicketChannel = this.supabase
-            .channel(`admin-ticket-context-${Date.now()}`)
-            .on('postgres_changes', {
+        this.adminTicketChannel = this.createRealtimeSubscription(
+            `admin-ticket-context-${Date.now()}`,
+            (channel) => channel.on('postgres_changes', {
                 event: 'INSERT',
                 schema: 'public',
                 table: 'shop_tickets',
@@ -20002,11 +20074,13 @@ class ChatWidget {
             }, (payload) => {
                 this.handleTicketRealtimeChange(payload.new);
             })
-            .subscribe();
+            ,
+            { feature: 'chat_widget_ticket_context' }
+        );
 
-        this.adminPaymentChannel = this.supabase
-            .channel(`admin-payment-context-${Date.now()}`)
-            .on('postgres_changes', {
+        this.adminPaymentChannel = this.createRealtimeSubscription(
+            `admin-payment-context-${Date.now()}`,
+            (channel) => channel.on('postgres_changes', {
                 event: 'INSERT',
                 schema: 'public',
                 table: 'payment_orders',
@@ -20022,11 +20096,13 @@ class ChatWidget {
             }, (payload) => {
                 this.handlePaymentRealtimeChange(payload.new);
             })
-            .subscribe();
+            ,
+            { feature: 'chat_widget_payment_context' }
+        );
 
-        this.adminVerificationChannel = this.supabase
-            .channel(`admin-verification-context-${Date.now()}`)
-            .on('postgres_changes', {
+        this.adminVerificationChannel = this.createRealtimeSubscription(
+            `admin-verification-context-${Date.now()}`,
+            (channel) => channel.on('postgres_changes', {
                 event: 'INSERT',
                 schema: 'public',
                 table: 'verification_logs',
@@ -20042,7 +20118,9 @@ class ChatWidget {
             }, (payload) => {
                 this.handleVerificationRealtimeChange(payload.new);
             })
-            .subscribe();
+            ,
+            { feature: 'chat_widget_verification_context' }
+        );
     }
 
     injectUserLayoutStyles() {
@@ -21714,30 +21792,19 @@ class ChatWidget {
         try {
             // Compress image
             const compressedFile = await this.compressImage(file);
-
-            // Upload to Supabase Storage
-            const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.webp`;
-            const filePath = `chat-images/${fileName}`; // Keep filePath structure but use webp
-
-            const { error: uploadError } = await this.supabase.storage
-                .from('chat-assets') // Make sure this bucket exists
-                .upload(filePath, compressedFile);
-
-            if (uploadError) throw uploadError;
-
-            // Get Public URL
-            const { data: { publicUrl } } = this.supabase.storage
-                .from('chat-assets')
-                .getPublicUrl(filePath);
+            const { user, sessionId } = await this.refreshUserSessionContext();
+            if (!user) {
+                throw new Error('请先登录后再上传图片');
+            }
+            const userId = user.id;
+            const publicUrl = await this.uploadChatImageToR2(compressedFile, {
+                sessionId
+            });
 
             const optimisticCreatedAt = new Date().toISOString();
 
             // Optimistic UI for Image
             this.appendMessage(publicUrl, this.getMessageRenderType(false), 'image', optimisticCreatedAt);
-
-            // Save to DB
-            const { user, sessionId } = await this.refreshUserSessionContext();
-            const userId = user ? user.id : null;
 
             await this.supabase
                 .from('chat_messages')
@@ -22039,9 +22106,9 @@ class ChatWidget {
             this.supabase.removeChannel(this.userMessageChannel);
         }
 
-        this.userMessageChannel = this.supabase
-            .channel('chat-room')
-            .on(
+        this.userMessageChannel = this.createRealtimeSubscription(
+            'chat-room',
+            (channel) => channel.on(
                 'postgres_changes',
                 {
                     event: 'INSERT',
@@ -22074,8 +22141,9 @@ class ChatWidget {
                         this.showNotification(messageContent, '💬 客服');
                     }
                 }
-            )
-            .subscribe();
+            ),
+            { feature: 'chat_widget_user_messages' }
+        );
     }
 
     async loadHistory() {

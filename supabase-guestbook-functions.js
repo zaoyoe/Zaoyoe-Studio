@@ -27,6 +27,76 @@ function getGuestbookLoginMessage(fallback = '请先登录') {
     return window.i18n?.t?.('auth.loginRequired') || fallback;
 }
 
+function isGuestbookSupabaseStorageImageUrl(url) {
+    return /^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(String(url || '').trim());
+}
+
+function isGuestbookInlineImageData(url) {
+    return /^data:image\/[a-z0-9.+-]+;base64,/i.test(String(url || '').trim());
+}
+
+function normalizeGuestbookImageUrlForDisplay(url) {
+    const source = String(url || '').trim();
+    if (!source || isGuestbookSupabaseStorageImageUrl(source) || isGuestbookInlineImageData(source)) {
+        return '';
+    }
+
+    try {
+        const parsed = new URL(source, window.location.origin);
+        if (!['http:', 'https:', 'blob:'].includes(parsed.protocol)) {
+            return '';
+        }
+
+        return window.SiteConfig?.normalizeAssetUrlForCurrentSite?.(parsed.href) || parsed.href;
+    } catch (error) {
+        return '';
+    }
+}
+
+async function uploadGuestbookImageToR2(imageData, user) {
+    const normalizedImageData = String(imageData || '').trim();
+    if (!normalizedImageData) {
+        return '';
+    }
+
+    if (!isGuestbookInlineImageData(normalizedImageData)) {
+        return normalizeGuestbookImageUrlForDisplay(normalizedImageData);
+    }
+
+    const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
+    if (!session?.access_token || !session?.user?.id || session.user.id !== user?.id) {
+        throw new Error('请重新登录后再上传图片');
+    }
+
+    const response = await fetch(
+        window.getZaoyoeSupabaseFunctionUrl('upload-avatar'),
+        {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                userId: user.id,
+                type: 'guestbook',
+                imageData: normalizedImageData
+            })
+        }
+    );
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload?.imageUrl) {
+        throw new Error(payload?.error || '留言图片上传失败');
+    }
+
+    const cdnUrl = normalizeGuestbookImageUrlForDisplay(payload.imageUrl);
+    if (!cdnUrl) {
+        throw new Error('留言图片上传后地址不可用');
+    }
+
+    return cdnUrl;
+}
+
 function hasGuestbookAuthSheetApi() {
     return typeof window.openLoginModalWithMessage === 'function' ||
         typeof window.openLoginModal === 'function' ||
@@ -833,11 +903,11 @@ function displayMessages(messages) {
         container.innerHTML = messages.map(msg => `
             <div class="message-item" id="msg-${msg.id}">
                 <div class="author-info">
-                    <img src="${msg.profiles?.avatar_url || 'https://ui-avatars.com/api/?name=User'}" class="author-avatar">
+                    <img src="${escapeHTML(normalizeGuestbookImageUrlForDisplay(msg.profiles?.avatar_url) || 'https://ui-avatars.com/api/?name=User')}" class="author-avatar">
                     <span class="author-name">${escapeHTML(msg.profiles?.username || 'Anonymous')}</span>
                 </div>
                 <p class="message-content">${escapeHTML(msg.content)}</p>
-                ${msg.image_url ? `<img src="${msg.image_url}" class="message-image">` : ''}
+                ${normalizeGuestbookImageUrlForDisplay(msg.image_url) ? `<img src="${escapeHTML(normalizeGuestbookImageUrlForDisplay(msg.image_url))}" class="message-image">` : ''}
                 <div class="message-footer">
                     <span class="message-time">${formatTime(msg.created_at)}</span>
                     <button class="like-btn ${isLiked('message', msg.id) ? 'active' : ''}" data-guestbook-action="toggle-like" data-guestbook-id="${msg.id}">
@@ -862,16 +932,18 @@ function formatMessageForUI(msg) {
         fallbackName: msg.username || msg.name || msg.author || '',
         fallbackAvatar: msg.avatar_url || msg.avatarUrl || ''
     });
+    const imageUrl = normalizeGuestbookImageUrlForDisplay(msg.image_url);
+    const avatarUrl = normalizeGuestbookImageUrlForDisplay(resolvedProfile.avatar_url);
 
     return {
         objectId: msg.id,
         id: msg.id,
         content: msg.content,
-        image: msg.image_url,
-        imageUrl: msg.image_url,
+        image: imageUrl,
+        imageUrl,
         name: resolvedProfile.username,
         username: resolvedProfile.username,
-        avatarUrl: resolvedProfile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(resolvedProfile.username || 'User')}&background=random`,
+        avatarUrl: avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(resolvedProfile.username || 'User')}&background=random`,
         userId: msg.user_id,
         authorId: msg.user_id,
         likes: msg.like_count || 0,
@@ -888,6 +960,7 @@ function formatCommentForUI(comment) {
         fallbackName: comment.username || comment.name || comment.author || '',
         fallbackAvatar: comment.avatar_url || comment.avatarUrl || ''
     });
+    const avatarUrl = normalizeGuestbookImageUrlForDisplay(resolvedProfile.avatar_url);
 
     return {
         objectId: comment.id,
@@ -895,7 +968,7 @@ function formatCommentForUI(comment) {
         content: comment.content,
         name: resolvedProfile.username,
         username: resolvedProfile.username,
-        avatarUrl: resolvedProfile.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(resolvedProfile.username || 'User')}&background=random`,
+        avatarUrl: avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(resolvedProfile.username || 'User')}&background=random`,
         userId: comment.user_id,
         authorId: comment.user_id,
         parentId: comment.parent_id,
@@ -988,7 +1061,8 @@ async function addMessage(content, imageUrl = '', options = {}) {
         return false;
     }
 
-    if (!content && !imageUrl) {
+    const rawImageUrl = String(imageUrl || '').trim();
+    if (!content && !rawImageUrl) {
         alert('请输入留言内容或上传图片');
         return false;
     }
@@ -1003,12 +1077,17 @@ async function addMessage(content, imageUrl = '', options = {}) {
     }
 
     try {
+        const uploadedImageUrl = await uploadGuestbookImageToR2(rawImageUrl, user);
+        if (rawImageUrl && !uploadedImageUrl) {
+            throw new Error('图片地址不可用，请重新上传');
+        }
+
         const { data, error } = await window.supabaseClient
             .from('guestbook_messages')
             .insert({
                 user_id: user.id,
                 content: content || '',
-                image_url: imageUrl || null,
+                image_url: uploadedImageUrl || null,
                 site: window.SiteConfig?.site || 'cn'
             })
             .select(`
@@ -1039,7 +1118,7 @@ async function addMessage(content, imageUrl = '', options = {}) {
             metadata: {
                 message_id: String(data.id || '').trim() || null,
                 content_length: content ? String(content).trim().length : 0,
-                has_image: Boolean(imageUrl),
+                has_image: Boolean(uploadedImageUrl),
                 entry: (window.location.pathname === '/' || window.location.pathname === '/index.html')
                     ? 'homepage_guestbook'
                     : 'guestbook_page',
@@ -1469,8 +1548,7 @@ function enableRealTimeUpdates() {
 
 // Fallback: Direct Realtime without NotificationManager (for compatibility)
 function enableDirectRealtime() {
-    realtimeChannel = window.supabaseClient
-        .channel('guestbook-changes')
+    const buildGuestbookChannel = (channel) => channel
         .on('postgres_changes',
             { event: '*', schema: 'public', table: 'guestbook_messages' },
             (payload) => {
@@ -1491,10 +1569,36 @@ function enableDirectRealtime() {
                 console.log('❤️ Like change:', payload.eventType);
                 handleRealtimeEvent('like', payload);
             }
-        )
-        .subscribe((status) => {
-            console.log('🔌 Realtime status:', status);
+        );
+
+    if (typeof window.subscribeZaoyoeRealtime === 'function') {
+        const subscription = window.subscribeZaoyoeRealtime({
+            client: window.supabaseClient,
+            channel: 'guestbook-changes',
+            feature: 'guestbook',
+            timeoutMs: 2600,
+            build: buildGuestbookChannel,
+            onDegraded: (reason) => {
+                console.warn('⚠️ Guestbook Realtime degraded; keeping normal refresh/post flow:', reason);
+                realtimeChannel = null;
+            }
         });
+        realtimeChannel = subscription.channel || true;
+        return;
+    }
+
+    try {
+        realtimeChannel = buildGuestbookChannel(window.supabaseClient.channel('guestbook-changes'))
+            .subscribe((status) => {
+                console.log('🔌 Realtime status:', status);
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                    console.warn('⚠️ Guestbook Realtime degraded; keeping normal refresh/post flow:', status);
+                }
+            });
+    } catch (error) {
+        realtimeChannel = null;
+        console.warn('⚠️ Guestbook Realtime unavailable; keeping normal refresh/post flow:', error?.message || error);
+    }
 }
 
 function handleRealtimeEvent(type, payload) {
@@ -1648,11 +1752,11 @@ async function insertNewMessageFromRealtime(msgData) {
                     id: realtimeSnapshot.message.id,
                     objectId: realtimeSnapshot.message.id,
                     content: realtimeSnapshot.message.content,
-                    image: realtimeSnapshot.message.image_url,
-                    imageUrl: realtimeSnapshot.message.image_url,
+                    image: normalizeGuestbookImageUrlForDisplay(realtimeSnapshot.message.image_url),
+                    imageUrl: normalizeGuestbookImageUrlForDisplay(realtimeSnapshot.message.image_url),
                     name: realtimeSnapshot.message.profiles?.username || 'Anonymous',
                     username: realtimeSnapshot.message.profiles?.username || 'Anonymous',
-                    avatarUrl: realtimeSnapshot.message.profiles?.avatar_url || null,
+                    avatarUrl: normalizeGuestbookImageUrlForDisplay(realtimeSnapshot.message.profiles?.avatar_url) || null,
                     userId: realtimeSnapshot.message.user_id,
                     authorId: realtimeSnapshot.message.user_id,
                     likes: realtimeSnapshot.message.like_count || 0,
@@ -1690,11 +1794,11 @@ async function insertNewMessageFromRealtime(msgData) {
                 id: msgData.id,
                 objectId: msgData.id,
                 content: msgData.content,
-                image: msgData.image_url,
-                imageUrl: msgData.image_url,
+                image: normalizeGuestbookImageUrlForDisplay(msgData.image_url),
+                imageUrl: normalizeGuestbookImageUrlForDisplay(msgData.image_url),
                 name: resolvedProfile.username,
                 username: resolvedProfile.username,
-                avatarUrl: resolvedProfile.avatar_url || null,
+                avatarUrl: normalizeGuestbookImageUrlForDisplay(resolvedProfile.avatar_url) || null,
                 userId: msgData.user_id,
                 authorId: msgData.user_id,
                 likes: msgData.like_count || 0,

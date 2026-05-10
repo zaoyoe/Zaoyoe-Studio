@@ -64,15 +64,89 @@ const supabaseClient = (() => {
     return window.__shopAdminDbClient;
 })();
 
+function isSupabaseStorageImageUrl(url) {
+    return /^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(String(url || '').trim());
+}
+
+function getZaoyoeAssetCdnOrigin({ canonical = false } = {}) {
+    if (canonical) {
+        return String(window.SiteConfig?.getCanonicalAssetCdnOrigin?.() || 'https://cdn.zaoyoe.com').replace(/\/+$/, '');
+    }
+
+    const configuredOrigin = String(window.SiteConfig?.getAssetCdnOrigin?.() || '').trim();
+    if (configuredOrigin) {
+        return configuredOrigin.replace(/\/+$/, '');
+    }
+
+    const hostname = String(window.location?.hostname || '').toLowerCase();
+    return hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz')
+        ? 'https://cdn.zaoyoe.xyz'
+        : 'https://cdn.zaoyoe.com';
+}
+
+function normalizeZaoyoeAssetCdnUrl(url, expectedPrefix = '', options = {}) {
+    const source = String(url || '').trim();
+    if (!source) return '';
+
+    const siteConfigNormalizer = options.canonical
+        ? window.SiteConfig?.normalizeAssetUrlForCanonicalSite
+        : window.SiteConfig?.normalizeAssetUrlForCurrentSite;
+    const normalizedBySiteConfig = typeof siteConfigNormalizer === 'function'
+        ? String(siteConfigNormalizer.call(window.SiteConfig, source) || '').trim()
+        : '';
+    if (normalizedBySiteConfig && normalizedBySiteConfig !== source) {
+        if (!expectedPrefix) return normalizedBySiteConfig;
+        try {
+            const parsed = new URL(normalizedBySiteConfig, window.location.origin);
+            const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+            if (parts[0] === expectedPrefix) return normalizedBySiteConfig;
+        } catch (error) {
+            return '';
+        }
+    }
+
+    try {
+        const parsed = new URL(source, window.location.origin);
+        const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+        const isKnownCdnHost = ['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname) || parsed.hostname.endsWith('.r2.dev');
+        if (!isKnownCdnHost || (expectedPrefix && parts[0] !== expectedPrefix)) return '';
+
+        const targetOrigin = new URL(getZaoyoeAssetCdnOrigin(options));
+        parsed.protocol = targetOrigin.protocol;
+        parsed.host = targetOrigin.host;
+        return parsed.toString();
+    } catch (error) {
+        return '';
+    }
+}
+
+function normalizeShopProductCdnUrl(url, options = {}) {
+    return normalizeZaoyoeAssetCdnUrl(url, 'products', options);
+}
+
+function getShopProductCdnUrlCandidates(url) {
+    const trimmed = String(url || '').trim();
+    return Array.from(new Set([
+        normalizeShopProductCdnUrl(trimmed),
+        normalizeShopProductCdnUrl(trimmed, { canonical: true }),
+        trimmed
+    ].filter(Boolean)));
+}
+
 function getShopProductR2CardVariantUrl(url) {
-    const manifestUrl = String(window.__SHOP_IMAGE_VARIANTS__?.variants?.card?.[String(url || '').trim()] || '').trim();
+    const trimmed = String(url || '').trim();
+    const candidates = getShopProductCdnUrlCandidates(trimmed);
+    const normalizedUrl = candidates[0] || trimmed;
+    const manifestUrl = String(
+        candidates.map((candidate) => window.__SHOP_IMAGE_VARIANTS__?.variants?.card?.[candidate]).find(Boolean) || ''
+    ).trim();
     if (manifestUrl) {
         return manifestUrl;
     }
 
     try {
-        const parsed = new URL(String(url || '').trim(), window.location.origin);
-        if (parsed.hostname !== 'cdn.zaoyoe.com' && !parsed.hostname.endsWith('.r2.dev')) {
+        const parsed = new URL(normalizedUrl, window.location.origin);
+        if (!['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)) {
             return '';
         }
 
@@ -86,7 +160,7 @@ function getShopProductR2CardVariantUrl(url) {
             return '';
         }
 
-        return `${parsed.origin}/products/card/${encodeURIComponent(basename)}.webp`;
+        return `${getZaoyoeAssetCdnOrigin()}/products/card/${encodeURIComponent(basename)}.webp`;
     } catch (error) {
         return '';
     }
@@ -5132,6 +5206,7 @@ Example output format:
     // ==================== Products (Grid View) ====================
     isShopImageSource: function (value) {
         const trimmed = String(value || '').trim();
+        if (isSupabaseStorageImageUrl(trimmed)) return false;
         return trimmed.startsWith('http://')
             || trimmed.startsWith('https://')
             || trimmed.startsWith('/')
@@ -5141,13 +5216,14 @@ Example output format:
     getOptimizedShopImageUrl: function (url, options = {}) {
         const explicitVariantUrl = getShopProductImageAssetExplicitVariantUrl(url, options.variant || '');
         if (explicitVariantUrl && options.variant) {
-            return explicitVariantUrl;
+            return normalizeShopProductCdnUrl(explicitVariantUrl) || explicitVariantUrl;
         }
 
-        const trimmed = getShopProductImageAssetUrl(url, 'original');
+        const rawUrl = getShopProductImageAssetUrl(url, 'original');
+        const trimmed = normalizeShopProductCdnUrl(rawUrl) || rawUrl;
         if (!trimmed) return '';
 
-        const { format = 'avif', variant = '' } = options;
+        const { variant = '' } = options;
         if (variant === 'card') {
             const cardVariantUrl = getShopProductR2CardVariantUrl(trimmed);
             if (cardVariantUrl) {
@@ -5159,34 +5235,13 @@ Example output format:
             return trimmed;
         }
 
-        if (trimmed.includes('cdn.zaoyoe.com/prompts/') && !trimmed.includes('/thumb/')) {
-            return trimmed.replace('/prompts/', '/prompts/thumb/');
+        const promptCdnUrl = normalizeZaoyoeAssetCdnUrl(trimmed, 'prompts') || '';
+        if (promptCdnUrl && !promptCdnUrl.includes('/thumb/')) {
+            return promptCdnUrl.replace('/prompts/', '/prompts/thumb/');
         }
 
-        if (
-            trimmed.includes('supabase.co/storage/v1/object/public/')
-            || trimmed.includes('supabase.co/storage/v1/render/image/public/')
-        ) {
-            try {
-                const optimizedUrl = new URL(trimmed);
-                if (optimizedUrl.pathname.includes('/storage/v1/object/public/')) {
-                    optimizedUrl.pathname = optimizedUrl.pathname.replace(
-                        '/storage/v1/object/public/',
-                        '/storage/v1/render/image/public/'
-                    );
-                }
-                optimizedUrl.searchParams.set('width', '480');
-                optimizedUrl.searchParams.set('height', '320');
-                optimizedUrl.searchParams.set('quality', '80');
-                if (format) {
-                    optimizedUrl.searchParams.set('format', format);
-                } else {
-                    optimizedUrl.searchParams.delete('format');
-                }
-                return optimizedUrl.toString();
-            } catch (error) {
-                console.warn('Failed to build admin shop image transform URL:', error);
-            }
+        if (isSupabaseStorageImageUrl(trimmed)) {
+            return '';
         }
 
         return trimmed;
@@ -5196,13 +5251,20 @@ Example output format:
         if (!(cardImage instanceof HTMLImageElement) || !originalUrl) return;
 
         const primaryUrl = this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' });
-        const originalSrc = getShopProductImageAssetUrl(originalUrl, 'original');
+        const rawOriginalSrc = getShopProductImageAssetUrl(originalUrl, 'original');
+        const originalSrc = isSupabaseStorageImageUrl(rawOriginalSrc)
+            ? ''
+            : (normalizeShopProductCdnUrl(rawOriginalSrc) || rawOriginalSrc);
         const transformFallbackUrl = this.getOptimizedShopImageUrl(originalSrc, { format: '' });
 
         cardImage.dataset.originalSrc = originalSrc;
         cardImage.dataset.transformFallbackSrc = transformFallbackUrl !== primaryUrl ? transformFallbackUrl : '';
         cardImage.dataset.fallbackStage = '';
-        cardImage.src = primaryUrl;
+        if (primaryUrl) {
+            cardImage.src = primaryUrl;
+        } else {
+            cardImage.removeAttribute('src');
+        }
     },
 
     handleProductCardImageError: function (cardImage, originalUrl) {
@@ -5217,9 +5279,14 @@ Example output format:
             return true;
         }
 
-        if (cardImage.dataset.fallbackStage !== 'original' && fallbackOriginalSrc && cardImage.src !== fallbackOriginalSrc) {
+        if (
+            cardImage.dataset.fallbackStage !== 'original'
+            && fallbackOriginalSrc
+            && !isSupabaseStorageImageUrl(fallbackOriginalSrc)
+            && cardImage.src !== fallbackOriginalSrc
+        ) {
             cardImage.dataset.fallbackStage = 'original';
-            cardImage.src = fallbackOriginalSrc;
+            cardImage.src = normalizeShopProductCdnUrl(fallbackOriginalSrc) || fallbackOriginalSrc;
             return true;
         }
 

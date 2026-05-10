@@ -7,10 +7,28 @@
     global.__zaoyoeExternalEngagementEmbedLoaded = true;
 
     const VERSION = '20260505_GONGYI_EXTERNAL_ENGAGEMENT_1';
-    const CHAT_WIDGET_LOADER_SRC = 'js/chat-widget-loader.js?v=20260509_ENGAGEMENT_ORDER_DETAIL_ROUTE_1';
+    const CHAT_WIDGET_LOADER_SRC = 'js/chat-widget-loader.js?v=20260509_ENGAGEMENT_ORDER_DETAIL_ROUTE_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';
     const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=20260507_CHAT_WIDGET_ADAPTIVE_BUBBLE_1';
     const DEFAULT_PAGE_ID = 'gongyi';
     const DEFAULT_SITE = 'cn';
+    const ASSET_CDN_ORIGINS = Object.freeze({
+        cn: 'https://cdn.zaoyoe.com',
+        intl: 'https://cdn.zaoyoe.xyz'
+    });
+    const ASSET_CDN_HOSTS = new Set([
+        'cdn.zaoyoe.com',
+        'cdn.zaoyoe.xyz'
+    ]);
+    const ASSET_CDN_PATH_PREFIXES = new Set([
+        'affiliate-posters',
+        'avatars',
+        'chat',
+        'comments',
+        'guestbook',
+        'homepage',
+        'products',
+        'prompts'
+    ]);
 
     const currentScript = document.currentScript
         || document.querySelector(`script[src*="js/engagement-external-embed.js?v=${VERSION}"]`)
@@ -68,6 +86,31 @@
             return rawSrc;
         }
         return new URL(rawSrc.replace(/^\.\//, ''), config.assetBase).toString();
+    }
+
+    function getAssetCdnOriginForSite(siteValue) {
+        return ASSET_CDN_ORIGINS[siteValue === 'intl' ? 'intl' : 'cn'];
+    }
+
+    function normalizeAssetUrlForSite(url, siteValue) {
+        const source = String(url || '').trim();
+        if (!source) return '';
+
+        try {
+            const parsed = new URL(source, global.location.origin);
+            const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+            const isKnownAssetHost = ASSET_CDN_HOSTS.has(parsed.hostname) || parsed.hostname.endsWith('.r2.dev');
+            if (!isKnownAssetHost || !ASSET_CDN_PATH_PREFIXES.has(parts[0])) {
+                return source;
+            }
+
+            const targetOrigin = new URL(getAssetCdnOriginForSite(siteValue));
+            parsed.protocol = targetOrigin.protocol;
+            parsed.host = targetOrigin.host;
+            return parsed.toString();
+        } catch (_) {
+            return source;
+        }
     }
 
     function getDatasetValue(...keys) {
@@ -164,6 +207,14 @@
             isIntl: typeof existing.isIntl === 'function' ? existing.isIntl : () => config.site === 'intl',
             getPriceField: typeof existing.getPriceField === 'function' ? existing.getPriceField : () => 'price',
             getPointsLabel: typeof existing.getPointsLabel === 'function' ? existing.getPointsLabel : () => 'points',
+            getAssetCdnOrigin: typeof existing.getAssetCdnOrigin === 'function' ? existing.getAssetCdnOrigin : () => getAssetCdnOriginForSite(config.site),
+            getCanonicalAssetCdnOrigin: typeof existing.getCanonicalAssetCdnOrigin === 'function' ? existing.getCanonicalAssetCdnOrigin : () => ASSET_CDN_ORIGINS.cn,
+            normalizeAssetUrlForCurrentSite: typeof existing.normalizeAssetUrlForCurrentSite === 'function'
+                ? existing.normalizeAssetUrlForCurrentSite
+                : (url) => normalizeAssetUrlForSite(url, config.site),
+            normalizeAssetUrlForCanonicalSite: typeof existing.normalizeAssetUrlForCanonicalSite === 'function'
+                ? existing.normalizeAssetUrlForCanonicalSite
+                : (url) => normalizeAssetUrlForSite(url, 'cn'),
             getStoragePrefix: typeof existing.getStoragePrefix === 'function' ? existing.getStoragePrefix : (key = '') => `zaoyoe_${config.site}_${String(key || '')}`
         };
     }

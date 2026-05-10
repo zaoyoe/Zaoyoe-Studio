@@ -138,9 +138,158 @@
         return `${config.url}/functions/v1/${normalizedName}`;
     }
 
+    const REALTIME_DEGRADED_STATUSES = new Set(['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED']);
+
+    function dispatchZaoyoeRealtimeState(detail = {}) {
+        try {
+            global.dispatchEvent?.(new CustomEvent('zaoyoe:realtime-state', {
+                detail
+            }));
+        } catch (_) {
+            // State events are diagnostic only.
+        }
+    }
+
+    function subscribeZaoyoeRealtime(options = {}) {
+        const client = options.client || global.supabaseClient || null;
+        const channelName = String(options.channel || '').trim();
+        const timeoutMs = Math.max(1000, Number(options.timeoutMs || 2600) || 2600);
+        const feature = String(options.feature || channelName || 'realtime').trim();
+        const removeOnDegraded = options.removeOnDegraded !== false;
+        let channel = null;
+        let subscribeTimer = null;
+        let state = 'idle';
+
+        const clearSubscribeTimer = () => {
+            if (subscribeTimer) {
+                global.clearTimeout(subscribeTimer);
+                subscribeTimer = null;
+            }
+        };
+
+        const notifyState = (status, detail = {}) => {
+            dispatchZaoyoeRealtimeState({
+                feature,
+                channel: channelName,
+                status,
+                ...detail
+            });
+        };
+
+        const markDegraded = (reason = 'channel_error', detail = {}) => {
+            if (state === 'degraded') return;
+            state = 'degraded';
+            clearSubscribeTimer();
+
+            if (removeOnDegraded && channel) {
+                try {
+                    if (typeof client?.removeChannel === 'function') {
+                        client.removeChannel(channel);
+                    } else {
+                        channel.unsubscribe?.();
+                    }
+                } catch (error) {
+                    console.warn('[Realtime] Failed to remove degraded channel:', error?.message || error);
+                }
+            }
+
+            notifyState('degraded', { reason, ...detail });
+            try {
+                options.onDegraded?.(reason, detail);
+            } catch (error) {
+                console.warn('[Realtime] Degraded callback failed:', error?.message || error);
+            }
+        };
+
+        const markActive = (detail = {}) => {
+            state = 'active';
+            clearSubscribeTimer();
+            notifyState('active', detail);
+            try {
+                options.onActive?.(detail);
+            } catch (error) {
+                console.warn('[Realtime] Active callback failed:', error?.message || error);
+            }
+        };
+
+        const unsubscribe = () => {
+            clearSubscribeTimer();
+            if (!channel) {
+                state = 'closed';
+                return;
+            }
+            try {
+                if (typeof client?.removeChannel === 'function') {
+                    client.removeChannel(channel);
+                } else {
+                    channel.unsubscribe?.();
+                }
+            } catch (error) {
+                console.warn('[Realtime] Failed to remove channel:', error?.message || error);
+            }
+            state = 'closed';
+            notifyState('closed');
+        };
+
+        if (!channelName || typeof client?.channel !== 'function') {
+            markDegraded(!channelName ? 'missing_channel_name' : 'missing_realtime_client');
+            return {
+                channel: null,
+                unsubscribe,
+                getStatus: () => state
+            };
+        }
+
+        try {
+            state = 'connecting';
+            notifyState('connecting');
+            channel = client.channel(channelName, options.channelOptions || undefined);
+            if (typeof options.build === 'function') {
+                channel = options.build(channel) || channel;
+            }
+
+            subscribeTimer = global.setTimeout(() => {
+                if (state !== 'active') {
+                    markDegraded('subscribe_timeout');
+                }
+            }, timeoutMs);
+
+            channel.subscribe((status, error) => {
+                const normalizedStatus = String(status || '').trim().toUpperCase();
+                try {
+                    options.onStatus?.(normalizedStatus, error);
+                } catch (callbackError) {
+                    console.warn('[Realtime] Status callback failed:', callbackError?.message || callbackError);
+                }
+
+                if (normalizedStatus === 'SUBSCRIBED') {
+                    markActive({ reason: 'subscribed' });
+                    return;
+                }
+
+                if (REALTIME_DEGRADED_STATUSES.has(normalizedStatus)) {
+                    markDegraded(normalizedStatus.toLowerCase(), {
+                        error: error?.message || ''
+                    });
+                }
+            });
+        } catch (error) {
+            markDegraded('subscribe_exception', {
+                error: error?.message || String(error || '')
+            });
+        }
+
+        return {
+            channel,
+            unsubscribe,
+            getStatus: () => state
+        };
+    }
+
     global.getZaoyoeSupabaseConfig = getZaoyoeSupabaseConfig;
     global.getZaoyoeGoogleAuthConfig = getZaoyoeGoogleAuthConfig;
     global.getZaoyoeGoogleClientId = getZaoyoeGoogleClientId;
     global.requireZaoyoeSupabaseConfig = requireZaoyoeSupabaseConfig;
     global.getZaoyoeSupabaseFunctionUrl = getZaoyoeSupabaseFunctionUrl;
+    global.subscribeZaoyoeRealtime = subscribeZaoyoeRealtime;
 }(typeof window !== 'undefined' ? window : globalThis));

@@ -516,7 +516,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'body.chat-widget-bootstrap-scroll-locked',
         "const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';",
         "const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';",
-        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260509_ENGAGEMENT_ORDER_DETAIL_ROUTE_1';",
+        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260509_ENGAGEMENT_ORDER_DETAIL_ROUTE_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';",
         "const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';",
         'function getChatWidgetConstructor() {',
         'global.ChatWidget = ChatWidget;',
@@ -955,9 +955,9 @@ test('public pages wire wallet modal through the shared bootstrap loader', () =>
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260508_SITE_SCOPED_CONFIG_1';",
-        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260508_SITE_SCOPED_CONFIG_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260508_SITE_SCOPED_CONFIG_1';",
+        "const VERSION = '20260510_WALLET_REALTIME_FALLBACK_1';",
+        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260510_WALLET_REALTIME_FALLBACK_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260510_WALLET_REALTIME_FALLBACK_1';",
         'function ensureWalletModalReady() {',
         'function warmWalletModal(options = {}) {',
         "function openWalletModal(view = 'balance', context = {}) {",
@@ -1013,18 +1013,18 @@ test('public pages lazy-load notifications and head-preload announcement runtime
             violations.push(`${relativePath} should preload announcement-loader.js from the document head`);
         }
         const headEndIndex = source.indexOf('</head>');
-        const engagementIndex = source.indexOf('js/engagement-runtime-loader.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1');
+        const engagementIndex = source.indexOf('js/engagement-runtime-loader.js?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1');
         if (headEndIndex === -1 || engagementIndex === -1 || engagementIndex > headEndIndex) {
             violations.push(`${relativePath} should start the shared engagement loader from the document head`);
         }
-        if (!/js\/engagement-runtime-loader\.js\?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1"[^>]*data-load-announcement="1"[^>]*async/.test(source)) {
+        if (!/js\/engagement-runtime-loader\.js\?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1"[^>]*data-load-announcement="1"[^>]*async/.test(source)) {
             violations.push(`${relativePath} should run the announcement engagement bootstrap asynchronously from the head`);
         }
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1';",
-        "const NOTIFICATION_SRC = 'notification-client.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1';",
+        "const VERSION = '20260510_NOTIFICATION_SCHEMA_FALLBACK_1';",
+        "const NOTIFICATION_SRC = 'notification-client.js?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1';",
         "const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=20260503_ANNOUNCEMENT_MODAL_CHROME_CLOSE_1';",
         'const NOTIFICATION_IDLE_TIMEOUT_MS = 1800;',
         'const ANNOUNCEMENT_BOOT_DELAY_MS = 0;',
@@ -3389,10 +3389,12 @@ test('shop client runtime renderers externalize product cards, purchase feedback
         'setCssVariables: function (element, variables = {})',
         'isShopImageSource: function (value) {',
         'getOptimizedShopImageUrl: function (url, options = {}) {',
-        "const { format = 'avif', variant = '' } = options;",
+        "const { variant = '' } = options;",
         'const variantUrl = getShopResponsiveImageVariantUrl(trimmed, variant);',
+        'function getZaoyoeAssetCdnOrigin({ canonical = false } = {}) {',
+        'function normalizeShopProductCdnUrl(url, options = {}) {',
         'function getShopResponsiveR2CardVariantUrl(url, variant = \'\') {',
-        "return `${parsed.origin}/products/card/${encodeURIComponent(basename)}.webp`;",
+        "return `${getZaoyoeAssetCdnOrigin()}/products/card/${encodeURIComponent(basename)}.webp`;",
         'warmShopCardLeadImages: function (products = []) {',
         'setShopCardImageSource: function (cardImage, originalUrl) {',
         "const primaryUrl = this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' });",
@@ -3496,7 +3498,7 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should not render a secondary text loading message after the skeleton'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260510_SHOP_CATALOG_API_1'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260510_SHOP_REALTIME_FALLBACK_1'),
         true,
         'shop.html should reference the latest shop client runtime for the cart-enabled storefront flow'
     );
@@ -3817,6 +3819,10 @@ test('homepage keeps guestbook modal delegation off nav links while retaining sh
     assert.equal(framerHomeSource.includes("closest('[data-home-trigger-upload=\"1\"]')"), true, 'js/framer_home.js should delegate homepage upload triggers');
     assert.equal(guestbookRuntimeSource.includes("uploadButton.addEventListener('click'"), true, 'guestbook runtime should bind upload button clicks directly inside the modal');
     assert.equal(guestbookRuntimeSource.includes('imageUpload.click();'), true, 'guestbook runtime should trigger the hidden file input from the modal upload button');
+    assert.equal(guestbookRuntimeSource.includes('async function uploadGuestbookImageToR2(imageData, user)'), true, 'guestbook runtime should upload message images to R2 before insert');
+    assert.equal(guestbookRuntimeSource.includes("type: 'guestbook'"), true, 'guestbook runtime should tag message image uploads separately from comments and chat');
+    assert.equal(guestbookRuntimeSource.includes('image_url: uploadedImageUrl || null'), true, 'guestbook runtime should persist only the uploaded CDN URL');
+    assert.equal(guestbookRuntimeSource.includes('normalizeGuestbookImageUrlForDisplay'), true, 'guestbook runtime should normalize r2.dev and block Supabase Storage display URLs');
 });
 
 test('hero guestbook entry activates deferred overlays and bypasses center-first gating', () => {
@@ -4438,8 +4444,8 @@ test('supabase guestbook runtime renderers externalize error, empty state, delet
     assert.match(archivedIndexSource, /style\.css\?v=[A-Za-z0-9_]+/, 'index_old.html should contain a cache-busted shared stylesheet reference');
     assert.equal(indexSource.includes('supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), false, 'index.html should not eagerly load the full guestbook runtime');
     assert.equal(indexSource.includes('./js/homepage-guestbook-modal-loader.js?v=20260504_HOME_GUESTBOOK_LOADER_KEYBOARD_RETRACT_1'), true, 'index.html should load the intent-based homepage guestbook modal loader');
-    assert.equal(guestbookHtml.includes('supabase-guestbook-functions.js?v=20260507_REPLY_REALTIME_1'), true, 'guestbook.html should contain the DOM-ready-safe guestbook runtime');
-    assert.equal(archivedIndexSource.includes('supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should contain supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1');
+    assert.equal(guestbookHtml.includes('supabase-guestbook-functions.js?v=20260510_GUESTBOOK_R2_IMAGE_UPLOAD_1'), true, 'guestbook.html should contain the DOM-ready-safe guestbook runtime');
+    assert.equal(archivedIndexSource.includes('supabase-guestbook-functions.js?v=20260510_GUESTBOOK_R2_IMAGE_UPLOAD_1'), true, 'index_old.html should contain supabase-guestbook-functions.js?v=20260510_GUESTBOOK_R2_IMAGE_UPLOAD_1');
 });
 
 test('homepage guestbook modal runtime renderers externalize keyboard dock, viewport probe, and overlay state styling', () => {
@@ -9552,7 +9558,7 @@ test('homepage admin runtime renderers externalize retry, visibility, tab indica
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-homepage.js?v=20260508_SITE_LAYOUT_RUNTIME_2'),
+        adminStudioSource.includes('admin-homepage.js?v=20260510_HOME_SCREENSHOT_R2_1'),
         true,
         'admin-studio.html should load the latest homepage admin script version'
     );
@@ -12868,17 +12874,12 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'gallery-toast--visible',
         "setPromptsDisplayState(loginBtn, false, 'prompts-display-flex')",
         'buildPromptsStaggerClass(i)',
-        "const { format = 'avif', variant = '' } = options;",
+        "const { variant = '' } = options;",
         'const variantUrl = getPromptResponsiveImageVariantUrl(rawUrl, variant);',
         'function getPromptResponsiveR2VariantUrl(url, variant = \'\') {',
         "const variantPath = { thumb: 'thumb', featured: 'featured', home: 'home', card: 'card' }[String(variant || '').trim()];",
-        "rawUrl.includes('supabase.co/storage/v1/object/public/prompt-images/')",
-        "'/storage/v1/render/image/public/'",
-        "optimizedUrl.searchParams.set('width', '360');",
-        "optimizedUrl.searchParams.set('height', '270');",
-        "optimizedUrl.searchParams.set('quality', '80');",
-        "optimizedUrl.searchParams.set('format', format);",
-        "optimizedUrl.searchParams.delete('format');",
+        'function isSupabaseStorageImageUrl(url) {',
+        'if (isSupabaseStorageImageUrl(rawUrl)) {',
         'const PROMPT_GALLERY_SKELETON_COUNT = 8;',
         'const PROMPT_NAV_SKELETON_COUNT = 8;',
         'const PROMPT_GALLERY_EAGER_IMAGE_COUNT = 4;',
@@ -12888,13 +12889,14 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         'function renderPromptGallerySkeletons(count = PROMPT_GALLERY_SKELETON_COUNT) {',
         'function warmPromptGalleryLeadImages(items = []) {',
         'function setPromptCardImageSource(cardImage, imageAsset) {',
+        'if (isSupabaseStorageImageUrl(rawOriginalUrl)) {',
+        "cardImage.removeAttribute('src');",
         "const primaryUrl = getOptimizedImageUrl(imageAsset, { variant: 'card' });",
         "const transformFallbackUrl = getOptimizedImageUrl(imageAsset, { format: '' });",
         "cardImage.dataset.transformFallbackSrc = transformFallbackUrl !== primaryUrl ? transformFallbackUrl : '';",
         'function getPromptModalImageUrl(url) {',
         "['thumb', 'featured', 'card', 'home'].includes(parts[1])",
         '.map(getPromptModalImageUrl)',
-        "if (optimizedUrl.includes('supabase.co/storage/v1/render/image/public/')) return;",
         'const commentRequestCache = new Map();',
         'function invalidatePromptCommentsCache(promptId, site = getPromptInteractionSite()) {',
         'async function loadPromptCommentsData(promptId, forceRefresh = false) {',
@@ -13180,11 +13182,11 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(shopSource.includes('js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), true, 'shop.html should load the shared user event tracker');
     assert.equal(indexSource.includes('./js/homepage-guestbook-modal-loader.js?v=20260504_HOME_GUESTBOOK_LOADER_KEYBOARD_RETRACT_1'), true, 'index.html should load the lazy guestbook modal bootstrap');
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), false, 'index.html should not eagerly load the full guestbook runtime');
-    assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260507_REPLY_REALTIME_1'), true, 'guestbook.html should load the latest guestbook runtime');
-    assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260416_GUESTBOOK_SUCCESS_FEEDBACK_1'), true, 'index_old.html should load the latest guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260510_SHOP_CATALOG_API_1'), true, 'shop.html should load the latest cart-aware shop runtime');
-    assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260412_SHOP_CARD_IMAGE_OPT_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
-    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260508_SITE_SCOPED_CONFIG_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
+    assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260510_GUESTBOOK_R2_IMAGE_UPLOAD_1'), true, 'guestbook.html should load the latest guestbook runtime');
+    assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260510_GUESTBOOK_R2_IMAGE_UPLOAD_1'), true, 'index_old.html should load the latest guestbook runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260510_SHOP_REALTIME_FALLBACK_1'), true, 'shop.html should load the latest cart-aware shop runtime');
+    assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260510_SHOP_REALTIME_FALLBACK_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
+    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260510_WALLET_REALTIME_FALLBACK_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
 
 test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {
@@ -14308,10 +14310,16 @@ test('analytics export builders isolate csv and excel assembly from the ai runti
     );
 });
 
-test('prompt image delivery optimizes admin previews and cacheable fallback uploads', () => {
+test('prompt image delivery optimizes admin previews and keeps uploads on R2', () => {
     const adminStudioScript = readRepoFile('admin-studio.js');
     const adminStudioHtml = readRepoFile('admin-studio.html');
     const r2UploadFunction = readRepoFile('supabase/functions/upload-to-r2/index.ts');
+    const r2OnlyUploadSources = [
+        adminStudioScript,
+        readRepoFile('prompts-poetry.js'),
+        readRepoFile('js/admin-chat.js'),
+        readRepoFile('js/components/ChatWidget.js')
+    ];
 
     const markers = [
         'const PROMPT_UPLOAD_ORIGINAL_MAX_WIDTH = 2048;',
@@ -14326,10 +14334,8 @@ test('prompt image delivery optimizes admin previews and cacheable fallback uplo
         "{ id: 'home', maxWidth: 420, quality: 0.74 }",
         'function getOptimizedPromptCardImageUrl(url) {',
         "trimmed.includes('cdn.zaoyoe.com/prompts/') && !trimmed.includes('/thumb/')",
-        "trimmed.includes('supabase.co/storage/v1/object/public/prompt-images/')",
-        "optimizedUrl.searchParams.set('width', '320');",
-        "optimizedUrl.searchParams.set('height', '220');",
-        "optimizedUrl.searchParams.set('quality', '80');",
+        'function isSupabaseStorageImageUrl(url) {',
+        'if (isSupabaseStorageImageUrl(trimmed)) {',
         'function sanitizePromptImageUrl(url) {',
         'const promptImageAssets = normalizePromptImageAssetsFromRecord(prompt);',
         "if (!uploadZone || !fileInput || uploadZone.dataset.uploadZoneBound === '1')",
@@ -14348,22 +14354,48 @@ test('prompt image delivery optimizes admin previews and cacheable fallback uplo
         'urls.push(...resultUrls);',
         'promptPayload.image_assets = promptData.image_assets;',
         'const client = getAdminStudioSupabaseClient();',
-        "const originalImagesToUpload = imagesToUpload.filter(({ variant, isThumb }) => variant === 'original' || (!variant && !isThumb));",
-        "cacheControl: '31536000'",
-        'upsert: false'
+        'Supabase Storage fallback is intentionally disabled',
+        'R2 image upload failed; Supabase Storage fallback is disabled'
     ];
 
     for (const marker of markers) {
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
 
+    for (const source of r2OnlyUploadSources) {
+        assert.equal(
+            /\.storage\s*\.from\(\s*['"](prompt-images|comment-images|chat-assets|chat-images)['"]/.test(source),
+            false,
+            'active image upload runtimes should not write to Supabase Storage image buckets'
+        );
+        assert.equal(
+            source.includes('/storage/v1/render/image/public/'),
+            false,
+            'active image runtimes should not route legacy images through Supabase transforms'
+        );
+    }
+
     const edgeFunctionMarkers = [
+        "const REQUIRED_PROMPT_UPLOAD_PERMISSION = 'prompts.manage';",
+        'const MAX_PROMPT_IMAGES_PER_REQUEST = 25;',
+        'const MAX_PROMPT_IMAGE_BYTES = 6 * 1024 * 1024;',
+        'const MAX_PROMPT_UPLOAD_TOTAL_BYTES = 30 * 1024 * 1024;',
+        "const ALLOWED_PROMPT_IMAGE_CONTENT_TYPE = 'image/webp';",
         'const PROMPT_IMAGE_VARIANT_PREFIXES: Record<string, string> = {',
         "thumb: 'prompts/thumb'",
         "card: 'prompts/card'",
         "home: 'prompts/home'",
+        'async function requirePromptImageUploadAdmin(',
+        ".rpc('get_user_permissions', { p_user_id: user.id })",
+        ".from('admin_roles')",
+        'Prompt image upload requires prompts.manage admin permission',
+        'function normalizePromptImageUploads(images: unknown)',
+        'function assertPromptImageIsWebP(bytes: Uint8Array)',
+        'async function enforcePromptUploadRateLimit(userId: string)',
+        "adminClient.rpc('take_rate_limit_token'",
         "const requestedVariant = String(image?.variant || (isThumb ? 'thumb' : 'original')).trim();",
         "isOriginal: variant === 'original'",
+        'ContentType: ALLOWED_PROMPT_IMAGE_CONTENT_TYPE',
         'console.log(`✅ Uploaded (${variant}): ${filename} → ${publicUrl}`);'
     ];
 
@@ -14539,7 +14571,7 @@ test('analytics user drill-down carries commerce context into the user detail mo
     }
 
     assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
-    assert.equal(adminStudioHtml.includes('admin-homepage.js?v=20260508_SITE_LAYOUT_RUNTIME_2'), true, 'admin-studio.html should reference the latest homepage admin runtime version');
+    assert.equal(adminStudioHtml.includes('admin-homepage.js?v=20260510_HOME_SCREENSHOT_R2_1'), true, 'admin-studio.html should reference the latest homepage admin runtime version');
     assert.equal(adminStudioHtml.includes('admin-users.js?v=20260505_USER_ACTIVITY_HEARTBEAT_1'), true, 'admin-studio.html should reference the latest admin users runtime version');
     assert.equal(adminStudioHtml.includes('admin-points.js?v=20260427_ADMIN_POINTS_BATCH_DETAIL_CUSTOM_STATUS_2'), true, 'admin-studio.html should reference the latest admin points runtime version');
     assert.equal(adminStudioHtml.includes('js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3&workflowRails=20260430_ADMIN_STUDIO_WORKFLOW_CARD_RAIL_VISIBILITY_1'), true, 'admin-studio.html should reference the latest growth center runtime version');
@@ -15400,7 +15432,7 @@ test('final frontend runtime remnants route through delegated or bound listeners
 
     const notificationAssetMarkers = [
         'css/notification-client.css?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1',
-        'js/engagement-runtime-loader.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1'
+        'js/engagement-runtime-loader.js?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1'
     ];
 
     for (const marker of notificationAssetMarkers) {
@@ -15581,7 +15613,7 @@ test('local smoke fixtures expose admin and notification regression harnesses', 
         'smoke-notifications.html should load the local smoke fixtures entry'
     );
     assert.equal(
-        smokeNotificationHtml.includes('notification-client.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1'),
+        smokeNotificationHtml.includes('notification-client.js?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1'),
         true,
         'smoke-notifications.html should load the current notification runtime'
     );
@@ -15861,12 +15893,12 @@ test('announcement runtime renderers externalize decoration particles and physic
     }
 
     assert.equal(
-        indexSource.includes('./js/engagement-runtime-loader.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1'),
+        indexSource.includes('./js/engagement-runtime-loader.js?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1'),
         true,
         'index.html should defer announcement loading through the shared engagement bootstrap'
     );
     assert.equal(
-        guestbookSource.includes('js/engagement-runtime-loader.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1'),
+        guestbookSource.includes('js/engagement-runtime-loader.js?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1'),
         true,
         'guestbook.html should defer announcement loading through the shared engagement bootstrap'
     );
@@ -15878,7 +15910,7 @@ test('announcement runtime renderers externalize decoration particles and physic
 
     for (const source of [verifySource, shopSource, legacyIndexSource]) {
         assert.equal(
-            source.includes('js/engagement-runtime-loader.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1'),
+            source.includes('js/engagement-runtime-loader.js?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1'),
             true,
             'announcement entry pages should defer announcement loading through the shared engagement bootstrap'
         );
@@ -16118,7 +16150,7 @@ test('admin studio modules emit unified command feedback for recent processing r
         'admin-discounts.js?v=20260427_DISCOUNTS_BATCH_RESTORE_HINT_1',
         'js/admin-shell.js?v=20260426_ADMIN_SHELL_LOADING_DOTS_CENTER_P1',
         'admin-users.js?v=20260505_USER_ACTIVITY_HEARTBEAT_1',
-        'admin-homepage.js?v=20260508_SITE_LAYOUT_RUNTIME_2',
+        'admin-homepage.js?v=20260510_HOME_SCREENSHOT_R2_1',
         'admin-points.js?v=20260427_ADMIN_POINTS_BATCH_DETAIL_CUSTOM_STATUS_2',
         'js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3&workflowRails=20260430_ADMIN_STUDIO_WORKFLOW_CARD_RAIL_VISIBILITY_1',
         'admin-comments.js?v=20260421_COMMENTS_MODULE_BRIDGE_HELPERS_P3',

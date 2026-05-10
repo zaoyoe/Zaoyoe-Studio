@@ -231,6 +231,7 @@ async function createEdgeUploadSession(adminClient, supabaseUrl, publishableKey)
     }
 
     return {
+        userId: tempUserId,
         accessToken: signInResult.data.session.access_token,
         async cleanup() {
             await adminClient.auth.admin.deleteUser(tempUserId);
@@ -238,7 +239,7 @@ async function createEdgeUploadSession(adminClient, supabaseUrl, publishableKey)
     };
 }
 
-async function uploadProductImageViaEdge({ supabaseUrl, publishableKey, accessToken }, productId, originalBuffer, cardBuffer) {
+async function uploadProductImageViaEdge({ supabaseUrl, publishableKey, accessToken, userId }, productId, originalBuffer, cardBuffer) {
     const response = await fetch(`${String(supabaseUrl || '').replace(/\/+$/, '')}/functions/v1/upload-avatar`, {
         method: 'POST',
         headers: {
@@ -247,7 +248,7 @@ async function uploadProductImageViaEdge({ supabaseUrl, publishableKey, accessTo
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-            userId: 'shop-product-image-backfill',
+            userId,
             type: 'product',
             productId,
             imageData: toWebpDataUrl(originalBuffer),

@@ -13636,8 +13636,17 @@ function normalizeAnalyticsAvatarImageUrl(value = '') {
         return '';
     }
 
+    if (/^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(raw)) {
+        return '';
+    }
+
     if (/^(https?:|blob:|\/|\.\.?\/)/i.test(raw)) {
-        return raw;
+        try {
+            const parsed = new URL(raw, window.location.origin);
+            return window.SiteConfig?.normalizeAssetUrlForCurrentSite?.(parsed.href) || parsed.href;
+        } catch (error) {
+            return '';
+        }
     }
 
     return '';

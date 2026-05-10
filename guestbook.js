@@ -30,6 +30,26 @@ function setElementHidden(target, hidden, visibleDisplay = '') {
     }
 }
 
+function normalizeGuestbookDisplayImageUrl(url) {
+    const source = String(url || '').trim();
+    if (!source || /^data:image\/[a-z0-9.+-]+;base64,/i.test(source)) {
+        return '';
+    }
+    if (/^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(source)) {
+        return '';
+    }
+
+    try {
+        const parsed = new URL(source, window.location.origin);
+        if (!['http:', 'https:', 'blob:'].includes(parsed.protocol)) {
+            return '';
+        }
+        return window.SiteConfig?.normalizeAssetUrlForCurrentSite?.(parsed.href) || parsed.href;
+    } catch (error) {
+        return '';
+    }
+}
+
 function requestGuestbookLoginPrompt(message, options = {}) {
     const normalizedMessage = String(
         message || window.i18n?.t?.('auth.loginRequired') || '请先登录'
@@ -876,16 +896,18 @@ function initGuestbookPage() {
             : '';
 
         // 🔍 DEBUG: Check if image string is "null" or "undefined"
-        const hasValidImage = msg.image && msg.image !== 'null' && msg.image !== 'undefined';
+        const normalizedMessageImage = normalizeGuestbookDisplayImageUrl(msg.image);
+        const hasValidImage = Boolean(normalizedMessageImage);
         if (msg.image && !hasValidImage) {
             console.warn(`⚠️ Invalid image URL detected for message ${msg.id}:`, msg.image);
         }
 
         const imageHtml = hasValidImage
             ? `<div class="message-image">
-            <img src="${msg.image}" alt="用户上传图片" loading="lazy" decoding="async" data-guestbook-open-image="1" data-hide-on-error="1">
+            <img src="${escapeHtml(normalizedMessageImage)}" alt="用户上传图片" loading="lazy" decoding="async" data-guestbook-open-image="1" data-hide-on-error="1">
            </div>`
             : '';
+        const normalizedAvatarUrl = normalizeGuestbookDisplayImageUrl(msg.avatarUrl);
 
         const commentSectionHtml = hasComments
             ? `
@@ -905,8 +927,8 @@ function initGuestbookPage() {
                     <!-- 1. Header (Author Info & Time) -->
                     <div class="message-header">
                         <div class="author-info">
-                            ${msg.avatarUrl
-                ? `<img src="${msg.avatarUrl}" alt="${escapeHtml(msg.name)}" class="author-avatar" loading="lazy" decoding="async" data-avatar-fallback="https://ui-avatars.com/api/?name=${encodeURIComponent(msg.name)}&background=random" data-avatar-fallback-applied="0">`
+                            ${normalizedAvatarUrl
+                ? `<img src="${escapeHtml(normalizedAvatarUrl)}" alt="${escapeHtml(msg.name)}" class="author-avatar" loading="lazy" decoding="async" data-avatar-fallback="https://ui-avatars.com/api/?name=${encodeURIComponent(msg.name)}&background=random" data-avatar-fallback-applied="0">`
                 : '<i class="fas fa-user-circle author-avatar-placeholder"></i>'}
                             <span class="author-name">${escapeHtml(msg.name)}</span>
                         </div>

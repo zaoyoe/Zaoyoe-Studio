@@ -73,7 +73,10 @@ function sanitizeUrl(value, fallback = '', maxLength = 2048) {
     if (!normalized) {
         return '';
     }
-    if (/^https?:\/\//i.test(normalized) || normalized.startsWith('/') || normalized.startsWith('#') || normalized.startsWith('data:image/')) {
+    if (normalized.startsWith('data:image/')) {
+        return fallback || '';
+    }
+    if (/^https?:\/\//i.test(normalized) || normalized.startsWith('/') || normalized.startsWith('#')) {
         return normalized;
     }
     return normalized;
@@ -679,7 +682,7 @@ function normalizeHomepageContent(section, content = {}) {
             next.section_title = sanitizeText(source.section_title, '', 120);
             next.section_subtitle = sanitizeText(source.section_subtitle, '', 240);
             next.preview_mode = sanitizeText(source.preview_mode, next.preview_mode, 20) === 'image' ? 'image' : 'dynamic';
-            next.screenshot_path = sanitizeUrl(source.screenshot_path, '', 400000);
+            next.screenshot_path = sanitizeUrl(source.screenshot_path, '', 2048);
             next.features = normalizeStringList(source.features, { maxItems: 8, maxLength: 60 });
             next.value_props = normalizeStringList(source.value_props, { maxItems: 8, maxLength: 80 });
             next.supported_models = normalizeStringList(source.supported_models, { maxItems: 8, maxLength: 80 });
@@ -840,8 +843,8 @@ function validateHomepageRow(section, row = {}, options = {}) {
         case 'hero':
             if (!content.title) warnings.push('Hero 主标题为空，前台将回退到默认文案');
             if (!content.subtitle) warnings.push('Hero 副标题为空，前台将回退到默认文案');
-            if (content.custom_image && !/^https?:|^\//.test(content.custom_image) && !/^data:image\//.test(content.custom_image)) {
-                warnings.push('Hero 背景图路径不是标准 URL、绝对路径或 data URI');
+            if (content.custom_image && !/^https?:|^\//.test(content.custom_image)) {
+                warnings.push('Hero 背景图路径不是标准 URL 或绝对路径');
             }
             if (!Array.isArray(content.entries) || !content.entries.length) {
                 warnings.push('Hero 入口卡片为空，首屏导流能力会回退到默认入口');
@@ -914,8 +917,8 @@ function validateHomepageRow(section, row = {}, options = {}) {
         case 'verify':
             if (!content.section_title) warnings.push('Verify 标题为空');
             if (content.preview_mode === 'image' && !content.screenshot_path) warnings.push('Verify 预览截图为空');
-            if (content.screenshot_path && /^data:image\//.test(content.screenshot_path) && content.screenshot_path.length > 350000) {
-                warnings.push('Verify 预览截图为较大的 base64 数据，建议迁移到资源存储');
+            if (content.screenshot_path && /^data:image\//.test(content.screenshot_path)) {
+                warnings.push('Verify 预览截图不能再使用 base64 数据，请上传到 R2/CDN');
             }
             if (!Array.isArray(content.features) || !content.features.length) {
                 warnings.push('Verify 特性标签为空');

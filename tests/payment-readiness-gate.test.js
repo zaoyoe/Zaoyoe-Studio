@@ -4,8 +4,10 @@ const assert = require('node:assert/strict');
 const {
     buildReadinessSummary,
     formatHumanReport,
+    isMissingRelationCapabilityError,
     isMissingRpcCapabilityError,
-    parseArgs
+    parseArgs,
+    RECOVERY_AUDIT_RELATIONS
 } = require('../scripts/payment-readiness-gate');
 
 test('parseArgs captures readiness gate flags', () => {
@@ -39,7 +41,22 @@ test('isMissingRpcCapabilityError detects missing function signatures from postg
     );
 });
 
-test('buildReadinessSummary marks missing rpc capabilities as blocking', () => {
+test('isMissingRelationCapabilityError detects missing recovery audit views', () => {
+    assert.equal(
+        isMissingRelationCapabilityError({ code: '42P01', message: 'relation "public.admin_payment_order_recovery_audit_view" does not exist' }, 'admin_payment_order_recovery_audit_view'),
+        true
+    );
+    assert.equal(
+        isMissingRelationCapabilityError({ code: 'PGRST205', message: "Could not find the table 'public.admin_points_balance_recovery_audit_view' in the schema cache" }, 'admin_points_balance_recovery_audit_view'),
+        true
+    );
+    assert.equal(
+        isMissingRelationCapabilityError({ code: '42501', message: 'permission denied for view admin_shop_inventory_recovery_audit_view' }, 'admin_shop_inventory_recovery_audit_view'),
+        false
+    );
+});
+
+test('buildReadinessSummary marks missing rpc capabilities and audit views as blocking', () => {
     const summary = buildReadinessSummary({
         envFile: '/tmp/server.env',
         projectHost: 'demo.supabase.co',
@@ -68,11 +85,26 @@ test('buildReadinessSummary marks missing rpc capabilities as blocking', () => {
                     message: 'target_user_id is required'
                 }
             }
+        ],
+        relationResults: [
+            {
+                key: 'payment_order_recovery_audit',
+                relation_name: 'admin_payment_order_recovery_audit_view',
+                label: '支付订单恢复审计视图',
+                migration: '20260510_add_financial_recovery_audit_views.sql',
+                available: false,
+                outcome: 'missing',
+                probe: {
+                    code: '42P01',
+                    message: 'relation does not exist'
+                }
+            }
         ]
     });
 
     assert.equal(summary.ok, false);
     assert.equal(summary.findings.some((finding) => finding.key === 'missing_shop_multi_discount_purchase'), true);
+    assert.equal(summary.findings.some((finding) => finding.key === 'missing_payment_order_recovery_audit'), true);
     assert.equal(summary.capabilities.admin_refund_reclaim.available, true);
 });
 
@@ -94,12 +126,38 @@ test('formatHumanReport renders a readable PASS report', () => {
                 }
             }
         },
+        recovery_audit_relations: {
+            payment_order_recovery_audit: {
+                key: 'payment_order_recovery_audit',
+                relation_name: 'admin_payment_order_recovery_audit_view',
+                label: '支付订单恢复审计视图',
+                migration: '20260510_add_financial_recovery_audit_views.sql',
+                available: true,
+                outcome: 'readable',
+                row_count: 3,
+                probe: {}
+            }
+        },
         findings: [],
         ok: true
     });
 
     assert.match(output, /Payment RPC Readiness Gate/);
     assert.match(output, /available: yes/);
+    assert.match(output, /recovery_audit_relations/);
+    assert.match(output, /admin_payment_order_recovery_audit_view/);
     assert.match(output, /findings: none/);
     assert.match(output, /result: PASS/);
+});
+
+test('recovery audit relations are part of the readiness gate contract', () => {
+    assert.deepEqual(
+        RECOVERY_AUDIT_RELATIONS.map((relation) => relation.relationName),
+        [
+            'admin_payment_order_recovery_audit_view',
+            'admin_points_balance_recovery_audit_view',
+            'admin_shop_inventory_recovery_audit_view',
+            'admin_financial_recovery_audit_summary_view'
+        ]
+    );
 });

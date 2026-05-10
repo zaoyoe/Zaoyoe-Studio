@@ -494,17 +494,22 @@ function sanitizeImageUrl(url) {
 
     const trimmed = url.trim();
     if (trimmed.startsWith('data:image/')) return trimmed;
+    if (isSupabaseStorageImageUrl(trimmed)) return '';
 
     try {
         const parsed = new URL(trimmed, window.location.origin);
         if (['http:', 'https:', 'blob:'].includes(parsed.protocol)) {
-            return parsed.href;
+            return window.SiteConfig?.normalizeAssetUrlForCurrentSite?.(parsed.href) || parsed.href;
         }
     } catch (err) {
         console.warn('Blocked unsafe image URL:', trimmed, err);
     }
 
     return '';
+}
+
+function isSupabaseStorageImageUrl(url) {
+    return /^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(String(url || '').trim());
 }
 
 function normalizePromptImageAsset(value) {
@@ -590,36 +595,14 @@ function getOptimizedPromptCardImageUrl(url) {
 
     const rawUrl = typeof url === 'string' ? url : getPromptImageAssetOriginalUrl(url);
     if (typeof rawUrl !== 'string' || !rawUrl.trim()) return '';
-    const options = arguments[1] && typeof arguments[1] === 'object'
-        ? arguments[1]
-        : {};
-    const { format = 'avif' } = options;
-
     const trimmed = rawUrl.trim();
 
     if (trimmed.includes('cdn.zaoyoe.com/prompts/') && !trimmed.includes('/thumb/')) {
         return trimmed.replace('/prompts/', '/prompts/thumb/');
     }
 
-    if (trimmed.includes('supabase.co/storage/v1/object/public/prompt-images/')) {
-        try {
-            const optimizedUrl = new URL(trimmed);
-            optimizedUrl.pathname = optimizedUrl.pathname.replace(
-                '/storage/v1/object/public/',
-                '/storage/v1/render/image/public/'
-            );
-            optimizedUrl.searchParams.set('width', '320');
-            optimizedUrl.searchParams.set('height', '220');
-            optimizedUrl.searchParams.set('quality', '80');
-            if (format) {
-                optimizedUrl.searchParams.set('format', format);
-            } else {
-                optimizedUrl.searchParams.delete('format');
-            }
-            return optimizedUrl.toString();
-        } catch (error) {
-            console.warn('Failed to optimize prompt card image URL:', trimmed, error);
-        }
+    if (isSupabaseStorageImageUrl(trimmed)) {
+        return '';
     }
 
     return trimmed;
@@ -686,13 +669,23 @@ function handleAdminPromptCardImageError(event) {
     const transformFallbackSrc = String(image.dataset.transformFallbackSrc || '').trim();
     const originalSrc = String(image.dataset.originalSrc || '').trim();
 
-    if (!image.dataset.fallbackStage && transformFallbackSrc && image.src !== transformFallbackSrc) {
+    if (
+        !image.dataset.fallbackStage
+        && transformFallbackSrc
+        && !isSupabaseStorageImageUrl(transformFallbackSrc)
+        && image.src !== transformFallbackSrc
+    ) {
         image.dataset.fallbackStage = 'transform';
         image.src = transformFallbackSrc;
         return;
     }
 
-    if (image.dataset.fallbackStage !== 'original' && originalSrc && image.src !== originalSrc) {
+    if (
+        image.dataset.fallbackStage !== 'original'
+        && originalSrc
+        && !isSupabaseStorageImageUrl(originalSrc)
+        && image.src !== originalSrc
+    ) {
         image.dataset.fallbackStage = 'original';
         image.src = originalSrc;
         return;
@@ -9861,7 +9854,7 @@ async function savePrompt(e) {
             throw new Error(`请填写${missingFields.join('和')}`);
         }
 
-        // Try to upload images to Supabase Storage
+        // Upload images to R2/CDN. Supabase Storage fallback is intentionally disabled.
         let imageUrls = [];
         let imageAssets = [];
         let storageAvailable = true;
@@ -9883,10 +9876,13 @@ async function savePrompt(e) {
                 imageUrls = uploadResult.urls;
                 imageAssets = uploadResult.assets;
             }
-        } catch (storageError) {
-            console.warn('Storage upload failed:', storageError);
+        } catch (imageUploadError) {
+            console.warn('R2 image upload failed:', imageUploadError);
+            if (currentMode !== 'edit' || retainedEditingImageUrls.length === 0) {
+                throw imageUploadError;
+            }
             storageAvailable = false;
-            // Keep existing images when storage fails in edit mode
+            // Keep existing images when a new R2 upload fails in edit mode.
             imageUrls = retainedEditingImageUrls;
             imageAssets = retainedEditingImageAssets;
         }
@@ -10294,46 +10290,7 @@ async function uploadImages() {
 
         } catch (r2Error) {
             console.error('❌ R2 upload failed:', r2Error);
-
-            // Fallback to Supabase Storage if R2 fails
-            console.warn('⚠️ Falling back to Supabase Storage...');
-
-            const originalImagesToUpload = imagesToUpload.filter(({ variant, isThumb }) => variant === 'original' || (!variant && !isThumb));
-
-            for (let i = 0; i < originalImagesToUpload.length; i++) {
-                const { base64, filename } = originalImagesToUpload[i];
-
-                try {
-                    // Convert base64 to blob
-                    const blob = await fetch(`data:image/webp;base64,${base64}`).then(r => r.blob());
-
-                    const { data, error } = await client.storage
-                        .from('prompt-images')
-                        .upload(filename, blob, {
-                            contentType: 'image/webp',
-                            cacheControl: '31536000',
-                            upsert: false
-                        });
-
-                    if (error) throw error;
-
-                    // Get public URL
-                    const { data: urlData } = client.storage
-                        .from('prompt-images')
-                        .getPublicUrl(filename);
-
-                    urls.push(urlData.publicUrl);
-                    assets.push({ original: urlData.publicUrl });
-                    console.log(`📤 Fallback upload: ${filename} (Supabase Storage)`);
-                } catch (storageError) {
-                    console.error(`❌ Failed to upload ${filename} to Supabase:`, storageError);
-                    // Continue with other images
-                }
-            }
-
-            if (urls.length === 0) {
-                throw new Error('All image uploads failed (R2 and Supabase)');
-            }
+            throw new Error(`R2 image upload failed; Supabase Storage fallback is disabled: ${r2Error.message || r2Error}`);
         }
     }
 

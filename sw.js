@@ -2,15 +2,16 @@
 // SERVICE WORKER - Performance Optimization
 // ========================================
 
-const CACHE_NAME = 'prompts-gallery-v5';
-const STATIC_CACHE = 'static-v5';
-const IMAGE_CACHE = 'images-v5';
+const CACHE_NAME = 'prompts-gallery-v6';
+const STATIC_CACHE = 'static-v6';
+const IMAGE_CACHE = 'images-v6';
 
 // Static assets to cache immediately
 const STATIC_ASSETS = [
     '/prompts.html',
     '/prompts-poetry.css',
     '/prompts-poetry.js',
+    '/js/site-config.js',
     '/prompts-data.js',
     '/supabase-client.js'
 ];

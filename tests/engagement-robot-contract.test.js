@@ -1395,7 +1395,7 @@ test('community replies create realtime personal notifications directly from com
     assert.doesNotMatch(guestbook, /\/api\/engagement\/reply-notify/);
 
     assert.match(promptsHtml, /20260507_REPLY_REALTIME_1/);
-    assert.match(guestbookHtml, /20260507_REPLY_REALTIME_1/);
+    assert.match(guestbookHtml, /20260510_GUESTBOOK_R2_IMAGE_UPLOAD_1/);
 });
 
 test('customer robot subscribes to personal notifications in realtime', () => {
@@ -1747,7 +1747,8 @@ test('customer robot realtime covers feed invalidations and user tag audience ch
     assert.match(chatWidget, /handleEngagementUserTagsRealtime\(payload = \{\}\)/);
 
     assert.match(chatWidget, /engagementFeedBroadcastChannel/);
-    assert.match(chatWidget, /\.channel\('engagement-feed-invalidations'/);
+    assert.match(chatWidget, /createRealtimeSubscription\(\s*'engagement-feed-invalidations'/);
+    assert.match(chatWidget, /channelOptions:\s*\{\s*config:\s*\{\s*broadcast:\s*\{\s*self:\s*false\s*\}/);
     assert.match(chatWidget, /\.on\(\s*'broadcast'[\s\S]*event:\s*'engagement_feed_changed'[\s\S]*handleEngagementFeedBroadcast/);
     assert.match(chatWidget, /shouldApplyEngagementFeedBroadcast\(message = \{\}\)/);
     assert.match(chatWidget, /refreshEngagementFeed\(\{\s*force:\s*true\s*\}\)/);
@@ -1805,7 +1806,7 @@ test('shop discount assets can surface as robot engagement bubbles', () => {
     assert.match(shopClient, /shop_product_discount_assets/);
     assert.match(shopClient, /\/shop\.html\?productId=/);
     assert.match(shopClient, /this\.maybeShowShopDiscountEngagement\(\)/);
-    assert.match(shopHtml, /20260510_SHOP_CATALOG_API_1/);
+    assert.match(shopHtml, /20260510_SHOP_REALTIME_FALLBACK_1/);
 });
 
 test('business terminal events automatically maintain engagement user tags', () => {

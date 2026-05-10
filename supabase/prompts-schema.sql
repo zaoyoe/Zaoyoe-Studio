@@ -27,15 +27,15 @@ CREATE POLICY "Service role can manage prompts." ON prompts
     USING (auth.role() = 'service_role')
     WITH CHECK (auth.role() = 'service_role');
 
--- Create storage bucket for prompt images
+-- Legacy Supabase Storage bucket is kept private for migration/cleanup only.
+-- New prompt images must be uploaded to R2/CDN through the upload-to-r2 Edge Function.
 INSERT INTO storage.buckets (id, name, public)
-VALUES ('prompt-images', 'prompt-images', true)
+VALUES ('prompt-images', 'prompt-images', false)
 ON CONFLICT (id) DO NOTHING;
 
--- Storage policy: Anyone can view images
-CREATE POLICY "Public image access" ON storage.objects
-    FOR SELECT USING (bucket_id = 'prompt-images');
-
--- Storage policy: Only authenticated users can upload
-CREATE POLICY "Authenticated image upload" ON storage.objects
-    FOR INSERT WITH CHECK (bucket_id = 'prompt-images' AND auth.role() = 'authenticated');
+UPDATE storage.buckets
+SET
+    public = false,
+    file_size_limit = 1,
+    allowed_mime_types = ARRAY['application/x-supabase-image-bucket-disabled']::text[]
+WHERE id = 'prompt-images';

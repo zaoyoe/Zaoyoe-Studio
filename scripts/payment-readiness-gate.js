@@ -5,6 +5,49 @@ const { createClient } = require('@supabase/supabase-js');
 const DEFAULT_ENV_FILE = path.resolve(__dirname, '../server/.env.production');
 const CAPABILITY_DEFINITIONS = Object.freeze([
     Object.freeze({
+        key: 'payment_checkout_session',
+        rpcName: 'fn_create_payment_checkout_session',
+        label: '支付 checkout session 创建 RPC',
+        migration: '20260418_enable_decimal_payment_and_redemption_precision.sql',
+        buildProbeArgs() {
+            return {
+                p_payload: {},
+                p_user_id: null
+            };
+        }
+    }),
+    Object.freeze({
+        key: 'payment_redemption_code',
+        rpcName: 'fn_ensure_redemption_code_for_payment_order',
+        label: '支付订单兑换码补发/确认 RPC',
+        migration: '20260418_enable_decimal_payment_and_redemption_precision.sql',
+        buildProbeArgs() {
+            return {
+                p_payment_order_id: null,
+                p_package_id: null,
+                p_points: 0.01,
+                p_site: 'cn',
+                p_external_order_id: 'readiness_probe'
+            };
+        }
+    }),
+    Object.freeze({
+        key: 'points_recharge',
+        rpcName: 'fn_recharge_points',
+        label: '积分充值入账 RPC',
+        migration: '20260416_enable_decimal_shop_points_precision.sql',
+        buildProbeArgs() {
+            return {
+                target_user_id: null,
+                p_paid: 0.01,
+                p_bonus: 0,
+                p_reason: 'readiness_probe',
+                p_reference_id: 'readiness_probe',
+                p_site: 'cn'
+            };
+        }
+    }),
+    Object.freeze({
         key: 'shop_multi_discount_purchase',
         rpcName: 'fn_purchase_shop_item_with_discounts',
         label: '商城多券叠加购买 RPC',
@@ -17,6 +60,20 @@ const CAPABILITY_DEFINITIONS = Object.freeze([
                 p_quantity: 1,
                 p_discount_inputs: [],
                 p_agent_id: null
+            };
+        }
+    }),
+    Object.freeze({
+        key: 'shop_admin_refund',
+        rpcName: 'fn_admin_refund_order',
+        label: '商城订单退款/库存恢复 RPC',
+        migration: '20260416_enable_decimal_shop_points_precision.sql',
+        buildProbeArgs() {
+            return {
+                p_order_id: null,
+                p_admin_id: null,
+                p_target_status: 'frozen',
+                p_remark: 'readiness_probe'
             };
         }
     }),
@@ -34,6 +91,32 @@ const CAPABILITY_DEFINITIONS = Object.freeze([
                 p_site: 'cn'
             };
         }
+    })
+]);
+const RECOVERY_AUDIT_RELATIONS = Object.freeze([
+    Object.freeze({
+        key: 'payment_order_recovery_audit',
+        relationName: 'admin_payment_order_recovery_audit_view',
+        label: '支付订单恢复审计视图',
+        migration: '20260510_add_financial_recovery_audit_views.sql'
+    }),
+    Object.freeze({
+        key: 'points_balance_recovery_audit',
+        relationName: 'admin_points_balance_recovery_audit_view',
+        label: '积分余额恢复审计视图',
+        migration: '20260510_add_financial_recovery_audit_views.sql'
+    }),
+    Object.freeze({
+        key: 'shop_inventory_recovery_audit',
+        relationName: 'admin_shop_inventory_recovery_audit_view',
+        label: '商城库存恢复审计视图',
+        migration: '20260510_add_financial_recovery_audit_views.sql'
+    }),
+    Object.freeze({
+        key: 'financial_recovery_audit_summary',
+        relationName: 'admin_financial_recovery_audit_summary_view',
+        label: '支付/积分/商城恢复审计汇总视图',
+        migration: '20260510_add_financial_recovery_audit_views.sql'
     })
 ]);
 
@@ -125,6 +208,28 @@ function isMissingRpcCapabilityError(error, rpcName = '') {
         && (!normalizedRpcName || normalizedMessage.includes(normalizedRpcName));
 }
 
+function isMissingRelationCapabilityError(error, relationName = '') {
+    const normalizedCode = String(error?.code || '').trim().toUpperCase();
+    const normalizedMessage = [
+        error?.message,
+        error?.details,
+        error?.hint
+    ].filter(Boolean).join(' ').trim().toLowerCase();
+    const normalizedRelationName = String(relationName || '').trim().toLowerCase();
+
+    if (['42P01', 'PGRST106', 'PGRST205'].includes(normalizedCode)) {
+        return true;
+    }
+
+    if (normalizedMessage.includes('could not find the table') || normalizedMessage.includes('schema cache')) {
+        return true;
+    }
+
+    return normalizedMessage.includes('relation')
+        && normalizedMessage.includes('does not exist')
+        && (!normalizedRelationName || normalizedMessage.includes(normalizedRelationName));
+}
+
 function getRpcProbePayload(data) {
     if (Array.isArray(data)) {
         return data[0] || null;
@@ -164,15 +269,53 @@ async function probeRpcCapability(supabase, definition = {}) {
     };
 }
 
+async function probeRelationCapability(supabase, definition = {}) {
+    let count = null;
+    let error = null;
+
+    try {
+        const result = await supabase
+            .from(definition.relationName)
+            .select('*', { count: 'exact', head: true });
+        count = result?.count ?? null;
+        error = result?.error ?? null;
+    } catch (thrownError) {
+        error = thrownError;
+    }
+
+    const missing = isMissingRelationCapabilityError(error, definition.relationName);
+
+    return {
+        key: definition.key,
+        relation_name: definition.relationName,
+        label: definition.label,
+        migration: definition.migration,
+        available: !missing,
+        row_count: Number.isFinite(Number(count)) ? Number(count) : null,
+        outcome: missing
+            ? 'missing'
+            : (error ? 'rejected' : 'readable'),
+        probe: {
+            code: String(error?.code || '').trim() || '',
+            message: String(error?.message || '').trim()
+        }
+    };
+}
+
 function buildReadinessSummary({
     envFile,
     projectHost,
-    capabilityResults = []
+    capabilityResults = [],
+    relationResults = []
 }) {
     const capabilities = Object.fromEntries(
         capabilityResults.map((result) => [result.key, result])
     );
-    const findings = capabilityResults
+    const recovery_audit_relations = Object.fromEntries(
+        relationResults.map((result) => [result.key, result])
+    );
+    const findings = [
+        ...capabilityResults
         .filter((result) => result.available !== true)
         .map((result) => ({
             severity: 'high',
@@ -180,13 +323,24 @@ function buildReadinessSummary({
             message: `${result.label} 缺失，请先执行 ${result.migration}`,
             rpc_name: result.rpc_name,
             migration: result.migration
-        }));
+        })),
+        ...relationResults
+            .filter((result) => result.available !== true)
+            .map((result) => ({
+                severity: 'high',
+                key: `missing_${result.key}`,
+                message: `${result.label} 缺失，请先执行 ${result.migration}`,
+                relation_name: result.relation_name,
+                migration: result.migration
+            }))
+    ];
 
     return {
         checked_at: new Date().toISOString(),
         env_file: envFile,
         project_host: projectHost,
         capabilities,
+        recovery_audit_relations,
         findings,
         ok: findings.length === 0
     };
@@ -218,6 +372,29 @@ function formatHumanReport(summary = {}) {
         lines.push('');
     }
 
+    const relations = Object.values(summary.recovery_audit_relations || {});
+    if (relations.length) {
+        lines.push('recovery_audit_relations');
+        for (const relation of relations) {
+            lines.push(`  ${relation.key}`);
+            lines.push(`    relation_name: ${relation.relation_name}`);
+            lines.push(`    label: ${relation.label}`);
+            lines.push(`    migration: ${relation.migration}`);
+            lines.push(`    available: ${relation.available === true ? 'yes' : 'no'}`);
+            lines.push(`    outcome: ${relation.outcome || ''}`);
+            if (Number.isFinite(Number(relation.row_count))) {
+                lines.push(`    row_count: ${relation.row_count}`);
+            }
+            if (relation.probe?.code) {
+                lines.push(`    probe.code: ${relation.probe.code}`);
+            }
+            if (relation.probe?.message) {
+                lines.push(`    probe.message: ${relation.probe.message}`);
+            }
+        }
+        lines.push('');
+    }
+
     if (!summary.findings?.length) {
         lines.push('findings: none');
     } else {
@@ -238,15 +415,20 @@ async function runReadinessGate({ envFile = DEFAULT_ENV_FILE } = {}) {
     const projectHost = new URL(getRequiredEnv('SUPABASE_URL')).host;
     const supabase = buildSupabaseClient();
     const capabilityResults = [];
+    const relationResults = [];
 
     for (const definition of CAPABILITY_DEFINITIONS) {
         capabilityResults.push(await probeRpcCapability(supabase, definition));
+    }
+    for (const definition of RECOVERY_AUDIT_RELATIONS) {
+        relationResults.push(await probeRelationCapability(supabase, definition));
     }
 
     return buildReadinessSummary({
         envFile,
         projectHost,
-        capabilityResults
+        capabilityResults,
+        relationResults
     });
 }
 
@@ -271,10 +453,13 @@ if (require.main === module) {
 module.exports = {
     CAPABILITY_DEFINITIONS,
     DEFAULT_ENV_FILE,
+    RECOVERY_AUDIT_RELATIONS,
     buildReadinessSummary,
     formatHumanReport,
+    isMissingRelationCapabilityError,
     isMissingRpcCapabilityError,
     parseArgs,
+    probeRelationCapability,
     probeRpcCapability,
     runReadinessGate
 };

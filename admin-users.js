@@ -35,6 +35,23 @@ let usersActivityChannel = null;
 let usersActivityRefreshTimer = null;
 let usersActivityReloadTimer = null;
 
+function normalizeAdminUserAvatarUrl(value = '') {
+    const source = String(value || '').trim();
+    if (!source || /^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(source)) {
+        return '';
+    }
+
+    try {
+        const parsed = new URL(source, window.location.origin);
+        if (!['http:', 'https:', 'blob:'].includes(parsed.protocol)) {
+            return '';
+        }
+        return window.SiteConfig?.normalizeAssetUrlForCurrentSite?.(parsed.href) || parsed.href;
+    } catch (error) {
+        return '';
+    }
+}
+
 function emitUsersCommandFeedback(message = '', feedbackState = 'saved', options = {}) {
     const normalizedMessage = String(message || '').trim();
     if (!normalizedMessage) {
@@ -312,9 +329,7 @@ async function refreshUsersActivityHeartbeats() {
 
 function ensureUsersActivityLiveRefresh() {
     if (window.supabaseClient?.channel && !usersActivityChannel) {
-        usersActivityChannel = window.supabaseClient
-            .channel(`admin-users-activity-${Date.now()}`)
-            .on(
+        const buildUsersActivityChannel = (channel) => channel.on(
                 'postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'engagement_user_activity' },
                 (payload) => applyUsersActivityHeartbeatRow(payload.new)
@@ -323,8 +338,28 @@ function ensureUsersActivityLiveRefresh() {
                 'postgres_changes',
                 { event: 'UPDATE', schema: 'public', table: 'engagement_user_activity' },
                 (payload) => applyUsersActivityHeartbeatRow(payload.new)
-            )
-            .subscribe();
+            );
+        if (typeof window.subscribeZaoyoeRealtime === 'function') {
+            const subscription = window.subscribeZaoyoeRealtime({
+                client: window.supabaseClient,
+                channel: `admin-users-activity-${Date.now()}`,
+                feature: 'admin_users_activity',
+                build: buildUsersActivityChannel,
+                onDegraded: (reason) => console.warn('[AdminUsers] Activity realtime degraded; 30s refresh remains active:', reason)
+            });
+            usersActivityChannel = subscription.channel || null;
+        } else {
+            try {
+                usersActivityChannel = buildUsersActivityChannel(window.supabaseClient.channel(`admin-users-activity-${Date.now()}`))
+                    .subscribe((status) => {
+                        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                            console.warn('[AdminUsers] Activity realtime degraded; 30s refresh remains active:', status);
+                        }
+                    });
+            } catch (error) {
+                console.warn('[AdminUsers] Activity realtime unavailable; 30s refresh remains active:', error?.message || error);
+            }
+        }
     }
 
     if (!usersActivityRefreshTimer) {
@@ -1722,8 +1757,8 @@ function renderUsersTable() {
             ` : ''}
             <td class="col-identity">
                 <div class="user-cell">
-                    ${u.avatar_url
-                ? `<img src="${u.avatar_url}" class="user-avatar-small" data-avatar-fallback-src="https://via.placeholder.com/40">`
+                    ${normalizeAdminUserAvatarUrl(u.avatar_url)
+                ? `<img src="${escapeHtml(normalizeAdminUserAvatarUrl(u.avatar_url))}" class="user-avatar-small" data-avatar-fallback-src="https://via.placeholder.com/40">`
                 : generateInitialsAvatar(u.username)
             }
                     <div class="user-info">
@@ -5955,8 +5990,8 @@ function renderModalLeftPanel(user, roleInfo, isSuperAdmin, activeBans) {
     leftPanel.innerHTML = `
             <!-- User Card (Horizontal) -->
         <div class="user-card">
-            ${user.avatar_url
-            ? `<img src="${user.avatar_url}" class="user-avatar-large" data-avatar-fallback-src="https://via.placeholder.com/80">`
+            ${normalizeAdminUserAvatarUrl(user.avatar_url)
+            ? `<img src="${escapeHtml(normalizeAdminUserAvatarUrl(user.avatar_url))}" class="user-avatar-large" data-avatar-fallback-src="https://via.placeholder.com/80">`
             : generateInitialsAvatar(user.username, 64)}
             
             <div class="user-details">

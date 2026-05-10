@@ -72,6 +72,16 @@
         'unread',
         'read'
     ]);
+    const NOTIFICATION_SITE_SCOPED_SELECT_COLUMNS = 'id, title, content, type, category, scope, site, is_read, created_at, user_id';
+    const NOTIFICATION_SITE_LEGACY_SELECT_COLUMNS = 'id, title, content, type, site, is_read, created_at, user_id';
+    const NOTIFICATION_SCOPED_SELECT_COLUMNS = 'id, title, content, type, category, scope, is_read, created_at, user_id';
+    const NOTIFICATION_LEGACY_SELECT_COLUMNS = 'id, title, content, type, is_read, created_at, user_id';
+    const NOTIFICATION_SCHEMA_OPTIONAL_COLUMNS = Object.freeze([
+        'category',
+        'scope',
+        'site',
+        'is_pinned'
+    ]);
     const NOTIFICATION_PINNED_STORAGE_KEY = 'notifications_pinned_v1';
     const NOTIFICATION_FILTER_STORAGE_KEY = 'notifications_filters_v1';
     const NOTIFICATION_LOADING_TEXT = '正在加载个人消息...';
@@ -81,6 +91,8 @@
     const NOTIFICATION_ADMIN_ACCESS_READY_TIMEOUT_MS = 1800;
     const NOTIFICATION_READY_POLL_MS = 120;
     const NOTIFICATION_RUNTIME_RETRY_MS = 1400;
+    const NOTIFICATION_REALTIME_SUBSCRIBE_TIMEOUT_MS = 2600;
+    const NOTIFICATION_REALTIME_RETRY_MS = 30000;
     const NOTIFICATION_SWIPE_OPEN_THRESHOLD_PX = 54;
     const NOTIFICATION_SWIPE_MAX_OFFSET_PX = 188;
     const NOTIFICATION_SWIPE_CLICK_SUPPRESS_MS = 520;
@@ -99,6 +111,9 @@
     let notificationActiveUserId = '';
     let notificationRealtimeChannel = null;
     let notificationRealtimeUserId = '';
+    let notificationRealtimeStatus = 'idle';
+    let notificationRealtimeSubscribeTimerId = null;
+    let notificationRealtimeRetryTimerId = null;
     let notifSwipeShell = null;
     let notifSwipePointerId = null;
     let notifSwipeStartX = 0;
@@ -475,6 +490,72 @@
         return normalizeText(value).toLowerCase();
     }
 
+    function getNotificationCurrentSite() {
+        const configuredSite = normalizeText(window.SiteConfig?.site).toLowerCase();
+        if (configuredSite === 'cn' || configuredSite === 'intl') {
+            return configuredSite;
+        }
+
+        const hostname = normalizeText(window.location?.hostname).toLowerCase();
+        return hostname === 'zaoyoe.xyz' || hostname === 'www.zaoyoe.xyz'
+            ? 'intl'
+            : 'cn';
+    }
+
+    function isNotificationForCurrentSite(notification) {
+        const rowSite = normalizeText(notification?.site).toLowerCase();
+        if (!rowSite || (rowSite !== 'cn' && rowSite !== 'intl')) {
+            return true;
+        }
+        return rowSite === getNotificationCurrentSite();
+    }
+
+    function getNotificationQueryErrorText(error) {
+        return [
+            error?.code,
+            error?.message,
+            error?.details,
+            error?.hint
+        ]
+            .map((value) => normalizeText(value).toLowerCase())
+            .filter(Boolean)
+            .join(' ');
+    }
+
+    function isMissingNotificationColumnError(error) {
+        const code = normalizeText(error?.code).toUpperCase();
+        const text = getNotificationQueryErrorText(error);
+        if (!text) {
+            return false;
+        }
+
+        const looksLikeSchemaError = code === '42703'
+            || code === 'PGRST204'
+            || text.includes('schema cache')
+            || text.includes('does not exist')
+            || text.includes('could not find');
+
+        return looksLikeSchemaError && NOTIFICATION_SCHEMA_OPTIONAL_COLUMNS.some((column) => text.includes(column));
+    }
+
+    function normalizeNotificationRow(row = {}) {
+        if (!row || typeof row !== 'object' || Array.isArray(row)) {
+            return row;
+        }
+
+        return {
+            ...row,
+            category: normalizeNotificationCategory(row.category) || 'general',
+            scope: normalizeNotificationScope(row.scope) || 'unspecified',
+            site: normalizeText(row.site).toLowerCase() || getNotificationCurrentSite(),
+            is_pinned: row.is_pinned === true
+        };
+    }
+
+    function normalizeNotificationRows(rows = []) {
+        return (Array.isArray(rows) ? rows : []).map((row) => normalizeNotificationRow(row));
+    }
+
     function inferLegacyAdminPersonalCategory(notification) {
         const title = normalizeText(notification?.title);
         const content = normalizeText(notification?.content);
@@ -583,6 +664,9 @@
 
     function shouldIncludeNotification(notification) {
         if (!notification || typeof notification !== 'object') {
+            return false;
+        }
+        if (!isNotificationForCurrentSite(notification)) {
             return false;
         }
 
@@ -1433,9 +1517,79 @@
         return data?.user || null;
     }
 
+    function clearNotificationRealtimeSubscribeTimer() {
+        if (notificationRealtimeSubscribeTimerId) {
+            window.clearTimeout(notificationRealtimeSubscribeTimerId);
+            notificationRealtimeSubscribeTimerId = null;
+        }
+    }
+
+    function clearNotificationRealtimeRetryTimer() {
+        if (notificationRealtimeRetryTimerId) {
+            window.clearTimeout(notificationRealtimeRetryTimerId);
+            notificationRealtimeRetryTimerId = null;
+        }
+    }
+
+    function setNotificationRealtimeStatus(status = 'idle', detail = {}) {
+        notificationRealtimeStatus = normalizeText(status).toLowerCase() || 'idle';
+        try {
+            window.dispatchEvent(new CustomEvent('zaoyoe:notification-realtime-state', {
+                detail: {
+                    status: notificationRealtimeStatus,
+                    userId: notificationRealtimeUserId || '',
+                    ...detail
+                }
+            }));
+        } catch (_error) {
+            // Ignore CustomEvent failures.
+        }
+    }
+
+    function scheduleNotificationRealtimeRetry(userId, reason = 'degraded') {
+        const normalizedUserId = normalizeText(userId);
+        if (!normalizedUserId) {
+            return;
+        }
+
+        clearNotificationRealtimeRetryTimer();
+        notificationRealtimeRetryTimerId = window.setTimeout(() => {
+            notificationRealtimeRetryTimerId = null;
+            if (notificationActiveUserId === normalizedUserId) {
+                setupNotificationRealtime(normalizedUserId, { force: true, reason });
+            }
+        }, NOTIFICATION_REALTIME_RETRY_MS);
+    }
+
+    function markNotificationRealtimeDegraded(reason = 'channel_error') {
+        clearNotificationRealtimeSubscribeTimer();
+        const userId = notificationRealtimeUserId;
+        const channel = notificationRealtimeChannel;
+        notificationRealtimeChannel = null;
+
+        if (channel) {
+            try {
+                if (typeof window.supabaseClient?.removeChannel === 'function') {
+                    window.supabaseClient.removeChannel(channel);
+                } else {
+                    channel?.unsubscribe?.();
+                }
+            } catch (error) {
+                console.warn('Failed to clean up degraded notification realtime channel:', error?.message || error);
+            }
+        }
+
+        notificationRealtimeUserId = userId;
+        setNotificationRealtimeStatus('degraded', { reason });
+        scheduleNotificationRealtimeRetry(userId, reason);
+    }
+
     function removeNotificationRealtimeChannel() {
+        clearNotificationRealtimeSubscribeTimer();
+        clearNotificationRealtimeRetryTimer();
         if (!notificationRealtimeChannel) {
             notificationRealtimeUserId = '';
+            setNotificationRealtimeStatus('idle');
             return;
         }
 
@@ -1446,50 +1600,170 @@
         try {
             if (typeof window.supabaseClient?.removeChannel === 'function') {
                 window.supabaseClient.removeChannel(channel);
+                setNotificationRealtimeStatus('idle');
                 return;
             }
             channel?.unsubscribe?.();
         } catch (error) {
             console.warn('Failed to remove notification realtime channel:', error?.message || error);
         }
+        setNotificationRealtimeStatus('idle');
     }
 
-    function setupNotificationRealtime(userId) {
+    function setupNotificationRealtime(userId, options = {}) {
         const normalizedUserId = normalizeText(userId);
         if (!normalizedUserId || !window.supabaseClient || typeof window.supabaseClient.channel !== 'function') {
+            if (normalizedUserId) {
+                notificationRealtimeUserId = normalizedUserId;
+                setNotificationRealtimeStatus('degraded', { reason: 'missing_realtime_client' });
+            }
             return;
         }
 
-        if (notificationRealtimeChannel && notificationRealtimeUserId === normalizedUserId) {
+        if (!options?.force && notificationRealtimeChannel && notificationRealtimeUserId === normalizedUserId) {
             return;
         }
 
         removeNotificationRealtimeChannel();
+        setNotificationRealtimeStatus('connecting', {
+            reason: normalizeText(options?.reason) || 'sync'
+        });
 
-        notificationRealtimeChannel = window.supabaseClient
+        const channel = window.supabaseClient
             .channel(`public:system_notifications:${normalizedUserId}`)
             .on('postgres_changes', {
-                event: 'INSERT',
+                event: '*',
                 schema: 'public',
                 table: 'system_notifications',
                 filter: `user_id=eq.${normalizedUserId}`
             }, payload => {
-                if (!shouldIncludeNotification(payload.new)) {
+                const eventType = normalizeText(payload?.eventType).toUpperCase();
+                const rawRow = payload?.new && typeof payload.new === 'object' && !Array.isArray(payload.new)
+                    ? payload.new
+                    : (payload?.old && typeof payload.old === 'object' && !Array.isArray(payload.old) ? payload.old : null);
+                const row = normalizeNotificationRow(rawRow);
+                const notificationId = getNotificationId(row);
+
+                if (!notificationId) {
                     return;
                 }
-                const nextNotification = syncNotificationPinnedState([payload.new])[0] || payload.new;
-                notifications.unshift(nextNotification);
+
+                if (eventType === 'DELETE') {
+                    notifications = notifications.filter((notification) => getNotificationId(notification) !== notificationId);
+                } else if (shouldIncludeNotification(row)) {
+                    const nextNotification = syncNotificationPinnedState([row])[0] || row;
+                    notifications = [
+                        nextNotification,
+                        ...notifications.filter((notification) => getNotificationId(notification) !== notificationId)
+                    ];
+                } else {
+                    notifications = notifications.filter((notification) => getNotificationId(notification) !== notificationId);
+                }
+
                 notifications = getSortedNotifications(notifications);
                 notificationsLoaded = true;
                 notificationLoadError = '';
-                if (nextNotification.is_read !== true) {
-                    unreadCount++;
-                }
+                unreadCount = notifications.filter(n => !n.is_read).length;
                 updateBadge();
                 renderNotifications();
             })
-            .subscribe();
+            .subscribe((status) => {
+                if (notificationRealtimeChannel !== channel) {
+                    return;
+                }
+
+                if (status === 'SUBSCRIBED') {
+                    clearNotificationRealtimeSubscribeTimer();
+                    clearNotificationRealtimeRetryTimer();
+                    setNotificationRealtimeStatus('active', { reason: 'subscribed' });
+                    return;
+                }
+
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                    console.warn('Notification realtime degraded:', status);
+                    markNotificationRealtimeDegraded(status.toLowerCase());
+                }
+            });
+        notificationRealtimeChannel = channel;
         notificationRealtimeUserId = normalizedUserId;
+        clearNotificationRealtimeSubscribeTimer();
+        notificationRealtimeSubscribeTimerId = window.setTimeout(() => {
+            if (notificationRealtimeChannel === channel && notificationRealtimeUserId === normalizedUserId && notificationRealtimeStatus !== 'active') {
+                markNotificationRealtimeDegraded('subscribe_timeout');
+            }
+        }, NOTIFICATION_REALTIME_SUBSCRIBE_TIMEOUT_MS);
+    }
+
+    function buildNotificationSelectQuery(userId, options = {}) {
+        const site = normalizeText(options?.site || getNotificationCurrentSite()).toLowerCase();
+        let query = window.supabaseClient
+            .from('system_notifications')
+            .select(options?.columns || NOTIFICATION_LEGACY_SELECT_COLUMNS)
+            .eq('user_id', userId);
+
+        if (options?.siteScoped === true && site) {
+            query = query.eq('site', site);
+        }
+
+        return query
+            .order('created_at', { ascending: false })
+            .limit(50);
+    }
+
+    async function selectNotificationsForUser(userId) {
+        const site = getNotificationCurrentSite();
+        const attempts = [
+            {
+                key: 'site_scoped',
+                columns: NOTIFICATION_SITE_SCOPED_SELECT_COLUMNS,
+                siteScoped: true
+            },
+            {
+                key: 'site_legacy',
+                columns: NOTIFICATION_SITE_LEGACY_SELECT_COLUMNS,
+                siteScoped: true
+            },
+            {
+                key: 'scoped',
+                columns: NOTIFICATION_SCOPED_SELECT_COLUMNS,
+                siteScoped: false
+            },
+            {
+                key: 'legacy',
+                columns: NOTIFICATION_LEGACY_SELECT_COLUMNS,
+                siteScoped: false
+            }
+        ];
+        let lastSchemaError = null;
+
+        for (const attempt of attempts) {
+            const result = await buildNotificationSelectQuery(userId, {
+                columns: attempt.columns,
+                site,
+                siteScoped: attempt.siteScoped
+            });
+
+            if (!result?.error) {
+                if (lastSchemaError) {
+                    console.warn(`Notification query fell back to ${attempt.key} columns:`, lastSchemaError?.message || lastSchemaError);
+                }
+                return {
+                    ...result,
+                    data: normalizeNotificationRows(result?.data)
+                };
+            }
+
+            if (!isMissingNotificationColumnError(result.error)) {
+                return result;
+            }
+
+            lastSchemaError = result.error;
+        }
+
+        return {
+            data: [],
+            error: lastSchemaError
+        };
     }
 
     async function fetchNotifications(userId, options = {}) {
@@ -1513,12 +1787,7 @@
 
         const currentFetchPromise = (async () => {
             try {
-                const { data, error } = await window.supabaseClient
-                    .from('system_notifications')
-                    .select('id, title, content, type, category, is_read, is_pinned, created_at, user_id')
-                    .eq('user_id', normalizedUserId)
-                    .order('created_at', { ascending: false })
-                    .limit(50);
+                const { data, error } = await selectNotificationsForUser(normalizedUserId);
 
                 if (error) throw error;
                 if (notificationActiveUserId !== normalizedUserId) {
