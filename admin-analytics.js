@@ -41,6 +41,13 @@ const ANALYTICS_ADVANCED_WORKSPACE_STORAGE_KEY = 'analyticsAdvancedWorkspaceOpen
 const ANALYTICS_ADVANCED_TOGGLE_BINDING_FLAG = 'analyticsAdvancedToggleBound';
 const ANALYTICS_PANEL_SUPPORT_TOP_CONTENT_LIMIT = 100;
 const ANALYTICS_PANEL_SUPPORT_POINTS_LEADERBOARD_LIMIT = 100;
+const ANALYTICS_PRESET_RANGE_LABELS = Object.freeze({
+    7: '最近 7 天',
+    30: '最近 30 天',
+    90: '最近 90 天',
+    365: '最近 1 年'
+});
+const analyticsRpcAttemptPreference = Object.create(null);
 let pendingAnalyticsAdminSessionPromise = null;
 
 const analyticsRuntime = {
@@ -291,6 +298,32 @@ function buildAnalyticsPresetRange(days = DEFAULT_ANALYTICS_DAYS, anchorDate = n
         end,
         days: normalizedDays
     };
+}
+
+function getAnalyticsPresetRangeLabel(days = DEFAULT_ANALYTICS_DAYS) {
+    const normalizedDays = Number.isFinite(Number(days)) && Number(days) > 0
+        ? Math.round(Number(days))
+        : DEFAULT_ANALYTICS_DAYS;
+    return ANALYTICS_PRESET_RANGE_LABELS[normalizedDays] || `最近 ${normalizedDays} 天`;
+}
+
+function buildAnalyticsRangeControlLabel(range = getAnalyticsRangeState()) {
+    const days = Number.isFinite(Number(range?.days)) && Number(range.days) > 0
+        ? Math.round(Number(range.days))
+        : DEFAULT_ANALYTICS_DAYS;
+    const presetRange = buildAnalyticsPresetRange(days);
+    const startKey = toAnalyticsIsoDate(range?.startDate);
+    const endKey = toAnalyticsIsoDate(range?.endDate);
+
+    if (
+        ANALYTICS_PRESET_RANGE_LABELS[days]
+        && startKey === toAnalyticsIsoDate(presetRange.start)
+        && endKey === toAnalyticsIsoDate(presetRange.end)
+    ) {
+        return getAnalyticsPresetRangeLabel(days);
+    }
+
+    return buildAnalyticsRangeLabel(range);
 }
 
 function getAnalyticsRefreshTimeLabel(date = new Date()) {
@@ -607,8 +640,36 @@ async function fetchAnalyticsAdminJson(url, options = {}) {
     return payload;
 }
 
-async function callAnalyticsRpcWithFallback(name, attempts = []) {
+function getAnalyticsRpcAttemptSignature(params = {}) {
+    const keys = Object.keys(params && typeof params === 'object' && !Array.isArray(params) ? params : {})
+        .sort();
+    return keys.length ? keys.join('|') : '<empty>';
+}
+
+function orderAnalyticsRpcAttempts(name, attempts = []) {
     const candidates = Array.isArray(attempts) && attempts.length ? attempts : [{}];
+    const preferredSignature = analyticsRpcAttemptPreference[String(name || '')] || '';
+    if (!preferredSignature || candidates.length < 2) {
+        return candidates;
+    }
+
+    const preferredIndex = candidates.findIndex((attempt) => (
+        getAnalyticsRpcAttemptSignature(attempt) === preferredSignature
+    ));
+
+    if (preferredIndex <= 0) {
+        return candidates;
+    }
+
+    return [
+        candidates[preferredIndex],
+        ...candidates.slice(0, preferredIndex),
+        ...candidates.slice(preferredIndex + 1)
+    ];
+}
+
+async function callAnalyticsRpcWithFallback(name, attempts = []) {
+    const candidates = orderAnalyticsRpcAttempts(name, attempts);
     let lastError = null;
 
     for (const attempt of candidates) {
@@ -619,6 +680,7 @@ async function callAnalyticsRpcWithFallback(name, attempts = []) {
             : await getAnalyticsSupabaseClient().rpc(name);
 
         if (!error) {
+            analyticsRpcAttemptPreference[String(name || '')] = getAnalyticsRpcAttemptSignature(params);
             return data;
         }
 

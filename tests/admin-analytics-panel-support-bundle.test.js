@@ -246,6 +246,64 @@ test('analytics panel support bundle keeps explicit date ranges on local calenda
     });
 });
 
+test('analytics panel support bundle remembers successful rpc fallback signatures', async () => {
+    await withHandler({}, async ({ handler }) => {
+        const {
+            callRpcWithFallback,
+            getRpcAttemptSignature,
+            orderRpcAttempts
+        } = handler.__testUtils;
+        const rpcName = 'get_demo_signature_preference';
+        const fullParams = {
+            p_site: 'cn',
+            p_days: 30,
+            p_start_date: '2026-04-01',
+            p_end_date: '2026-04-30'
+        };
+        const legacyParams = {
+            p_site: 'cn',
+            p_days: 30
+        };
+        const calls = [];
+        const supabase = {
+            async rpc(name, params) {
+                calls.push({
+                    name,
+                    params: params && typeof params === 'object' ? { ...params } : {}
+                });
+
+                if (getRpcAttemptSignature(params) === getRpcAttemptSignature(fullParams)) {
+                    return { data: null, error: new Error('RPC signature unavailable') };
+                }
+
+                return { data: ['ok'], error: null };
+            }
+        };
+
+        assert.equal(getRpcAttemptSignature({ p_site: 'cn', p_days: 30 }), 'p_days|p_site');
+        assert.equal(getRpcAttemptSignature(), '<empty>');
+
+        assert.deepEqual(
+            await callRpcWithFallback(supabase, rpcName, [fullParams, legacyParams, {}]),
+            ['ok']
+        );
+        assert.equal(calls.length, 2);
+        assert.equal(getRpcAttemptSignature(calls[0].params), getRpcAttemptSignature(fullParams));
+        assert.equal(getRpcAttemptSignature(calls[1].params), getRpcAttemptSignature(legacyParams));
+
+        const orderedAttempts = orderRpcAttempts(rpcName, [fullParams, legacyParams, {}]);
+        assert.equal(getRpcAttemptSignature(orderedAttempts[0]), getRpcAttemptSignature(legacyParams));
+
+        calls.length = 0;
+        assert.deepEqual(
+            await callRpcWithFallback(supabase, rpcName, [fullParams, legacyParams, {}]),
+            ['ok']
+        );
+        assert.equal(calls.length, 1);
+        assert.equal(getRpcAttemptSignature(calls[0].params), getRpcAttemptSignature(legacyParams));
+    });
+});
+
 test('analytics panel support bundle rejects non-GET methods', async () => {
     await withHandler({}, async ({ handler }) => {
         const res = createMockResponse();
