@@ -291,14 +291,144 @@ async function handleAdminAnalyticsSiteChange(detail = {}) {
     return true;
 }
 
+const ANALYTICS_REALTIME_DEGRADED_STATUSES = new Set(['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED']);
+const ANALYTICS_OPS_REALTIME_TABLES = Object.freeze([
+    { table: 'ops_alert_jobs', event: '*' },
+    { table: 'ops_alert_cases', event: '*' },
+    { table: 'payment_orders', event: 'UPDATE' },
+    { table: 'shop_orders', event: 'UPDATE' },
+    { table: 'shop_products', event: 'UPDATE' }
+]);
+
+function getAnalyticsOpsRealtimeTables() {
+    return ANALYTICS_OPS_REALTIME_TABLES;
+}
+
+function subscribeAnalyticsRealtimeChannel(options = {}) {
+    const realtimeClient = options.client;
+    const channelName = String(options.channel || '').trim();
+    const buildChannel = typeof options.build === 'function' ? options.build : (channel) => channel;
+    const feature = String(options.feature || 'admin_analytics').trim();
+    const onDegraded = typeof options.onDegraded === 'function' ? options.onDegraded : () => {};
+    const subscribeRealtime = window.subscribeZaoyoeRealtime;
+
+    if (typeof subscribeRealtime === 'function') {
+        return subscribeRealtime({
+            ...options,
+            client: realtimeClient,
+            channel: channelName,
+            feature,
+            build: buildChannel,
+            onDegraded
+        });
+    }
+
+    if (!channelName || typeof realtimeClient?.channel !== 'function') {
+        onDegraded(!channelName ? 'missing_channel_name' : 'missing_realtime_client');
+        return {
+            channel: null,
+            unsubscribe() {},
+            getStatus: () => 'degraded'
+        };
+    }
+
+    let realtimeChannel = null;
+    let state = 'connecting';
+    const unsubscribe = () => {
+        if (!realtimeChannel) {
+            state = 'closed';
+            return;
+        }
+        try {
+            if (typeof realtimeClient.removeChannel === 'function') {
+                realtimeClient.removeChannel(realtimeChannel);
+            } else {
+                realtimeChannel.unsubscribe?.();
+            }
+        } catch (error) {
+            console.warn(`[Analytics] ${feature} realtime removal failed:`, error?.message || error);
+        }
+        state = 'closed';
+    };
+
+    try {
+        realtimeChannel = buildChannel(realtimeClient.channel(channelName));
+        realtimeChannel.subscribe((status, error) => {
+            const normalizedStatus = String(status || '').trim().toUpperCase();
+            if (normalizedStatus === 'SUBSCRIBED') {
+                state = 'active';
+                return;
+            }
+            if (ANALYTICS_REALTIME_DEGRADED_STATUSES.has(normalizedStatus)) {
+                state = 'degraded';
+                onDegraded(normalizedStatus.toLowerCase(), {
+                    error: error?.message || ''
+                });
+            }
+        });
+    } catch (error) {
+        state = 'degraded';
+        onDegraded('subscribe_exception', {
+            error: error?.message || String(error || '')
+        });
+    }
+
+    return {
+        channel: realtimeChannel,
+        unsubscribe,
+        getStatus: () => state
+    };
+}
+
+function scheduleAnalyticsOpsRealtimeRefresh(sourceTable = '') {
+    analyticsRuntime.opsRealtimeLastSource = String(sourceTable || 'ops_event').trim().toLowerCase() || 'ops_event';
+    if (!analyticsRuntime.moduleActive || !analyticsRuntime.initialized) {
+        return;
+    }
+
+    if (analyticsRuntime.opsRealtimeRefreshTimer) {
+        clearTimeout(analyticsRuntime.opsRealtimeRefreshTimer);
+    }
+
+    analyticsRuntime.opsRealtimeRefreshTimer = setTimeout(() => {
+        analyticsRuntime.opsRealtimeRefreshTimer = null;
+        if (!analyticsRuntime.moduleActive) {
+            return;
+        }
+
+        void reloadAnalyticsDashboard({
+            reason: 'ops-realtime',
+            activeTabId: getActiveAnalyticsTabId(),
+            force: true
+        });
+    }, ANALYTICS_OPS_REALTIME_REFRESH_DEBOUNCE_MS);
+}
+
+function handleAnalyticsOpsRealtimePayload(payload = {}) {
+    if (!analyticsRuntime.moduleActive) {
+        return;
+    }
+    const sourceTable = String(payload?.table || '').trim().toLowerCase();
+    console.log('[Analytics] Ops realtime event detected:', sourceTable || payload?.eventType || 'unknown');
+    scheduleAnalyticsOpsRealtimeRefresh(sourceTable);
+}
+
+function buildAnalyticsOpsRealtimeChannel(channel) {
+    return getAnalyticsOpsRealtimeTables().reduce((realtimeChannel, config) => realtimeChannel.on(
+        'postgres_changes',
+        { event: config.event || '*', schema: 'public', table: config.table },
+        handleAnalyticsOpsRealtimePayload
+    ), channel);
+}
+
 function setupRealtimeSubscriptions() {
     if (analyticsRuntime.realtimeBound) {
         return;
     }
 
     try {
-        const usersChannel = getAnalyticsSupabaseClient().channel('analytics-users')
-            .on(
+        const realtimeClient = getAnalyticsSupabaseClient();
+        const buildUsersChannel = (channel) => channel.on(
                 'postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'profiles' },
                 () => {
@@ -307,11 +437,8 @@ function setupRealtimeSubscriptions() {
                     animateKPIIncrement('kpiMauValue');
                     animateKPIIncrement('kpiNewUsersValue');
                 }
-            )
-            .subscribe();
-
-        const commentsChannel = getAnalyticsSupabaseClient().channel('analytics-comments')
-            .on(
+            );
+        const buildCommentsChannel = (channel) => channel.on(
                 'postgres_changes',
                 { event: 'INSERT', schema: 'public', table: 'prompt_comments' },
                 () => {
@@ -319,18 +446,50 @@ function setupRealtimeSubscriptions() {
                     console.log('[Analytics] New comment detected');
                     animateKPIIncrement('kpiCommentsValue');
                 }
-            )
-            .subscribe();
+            );
 
-        analyticsRuntime.realtimeChannels = [usersChannel, commentsChannel];
+        const usersSubscription = subscribeAnalyticsRealtimeChannel({
+            client: realtimeClient,
+            channel: 'analytics-users',
+            feature: 'admin_analytics',
+            build: buildUsersChannel,
+            onDegraded: (reason) => console.warn('[Analytics] Users realtime degraded; manual/auto refresh remains available:', reason)
+        });
+        const commentsSubscription = subscribeAnalyticsRealtimeChannel({
+            client: realtimeClient,
+            channel: 'analytics-comments',
+            feature: 'admin_analytics',
+            build: buildCommentsChannel,
+            onDegraded: (reason) => console.warn('[Analytics] Comments realtime degraded; manual/auto refresh remains available:', reason)
+        });
+        const opsSubscription = subscribeAnalyticsRealtimeChannel({
+            client: realtimeClient,
+            channel: 'analytics-ops-events',
+            feature: 'admin_analytics_ops',
+            build: buildAnalyticsOpsRealtimeChannel,
+            onDegraded: (reason) => console.warn('[Analytics] Ops realtime degraded; manual/auto refresh remains available:', reason)
+        });
+
+        analyticsRuntime.realtimeChannels = [
+            usersSubscription,
+            commentsSubscription,
+            opsSubscription
+        ].filter(Boolean);
         analyticsRuntime.realtimeBound = true;
         console.log('[Analytics] Realtime subscriptions active');
     } catch (error) {
         console.error('[Analytics] Realtime subscription error:', error);
+        analyticsRuntime.realtimeChannels = [];
+        analyticsRuntime.realtimeBound = false;
     }
 }
 
 function teardownRealtimeSubscriptions() {
+    if (analyticsRuntime.opsRealtimeRefreshTimer) {
+        clearTimeout(analyticsRuntime.opsRealtimeRefreshTimer);
+        analyticsRuntime.opsRealtimeRefreshTimer = null;
+    }
+
     if (!analyticsRuntime.realtimeChannels.length) {
         analyticsRuntime.realtimeBound = false;
         return;
@@ -338,7 +497,13 @@ function teardownRealtimeSubscriptions() {
 
     analyticsRuntime.realtimeChannels.forEach((channel) => {
         try {
-            void getAnalyticsSupabaseClient().removeChannel(channel);
+            if (typeof channel?.unsubscribe === 'function') {
+                channel.unsubscribe();
+            } else if (channel?.channel) {
+                void getAnalyticsSupabaseClient().removeChannel(channel.channel);
+            } else {
+                void getAnalyticsSupabaseClient().removeChannel(channel);
+            }
         } catch (error) {
             console.warn('[Analytics] Failed to remove realtime channel:', error);
         }

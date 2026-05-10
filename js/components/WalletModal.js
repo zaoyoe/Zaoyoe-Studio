@@ -93,6 +93,9 @@
     const WALLET_MODAL_UNDOCK_CONTENT_RELEASE_MS = 260;
     const WALLET_MODAL_UNDOCK_SCROLL_RESTORE_MS = 260;
     const WALLET_MODAL_REDEEM_INPUT_BOTTOM_GUARD = 32;
+    const WALLET_REALTIME_SUBSCRIBE_TIMEOUT_MS = 2600;
+    const WALLET_REALTIME_DEGRADED_RETRY_MS = 30000;
+    const WALLET_REALTIME_REFRESH_DEBOUNCE_MS = 900;
     const walletModalState = {
         overlayBaseHeight: 0,
         overlayBaseVisualHeight: 0,
@@ -1677,6 +1680,14 @@
         discountAssetsSummaryFilter: 'available',
         discountAssetsExpandedKey: '',
         discountAssetsRemovingId: '',
+        walletRealtimeChannel: null,
+        walletRealtimeUserId: '',
+        walletRealtimeSite: '',
+        walletRealtimeStatus: 'idle',
+        walletRealtimeSubscribeTimer: null,
+        walletRealtimeRetryTimer: null,
+        walletRealtimeRefreshTimer: null,
+        walletRealtimeRefreshReason: '',
 
         triggerWalletEngagementEvent(triggerType = 'page_view', metadata = {}, options = {}) {
             const trigger = window.ZaoyoeEngagement?.trigger;
@@ -4612,6 +4623,312 @@
             }
         },
 
+        getWalletRealtimeSite() {
+            return String(window.SiteConfig?.site || 'cn').trim().toLowerCase() || 'cn';
+        },
+
+        clearWalletRealtimeSubscribeTimer() {
+            if (this.walletRealtimeSubscribeTimer) {
+                window.clearTimeout(this.walletRealtimeSubscribeTimer);
+                this.walletRealtimeSubscribeTimer = null;
+            }
+        },
+
+        clearWalletRealtimeRetryTimer() {
+            if (this.walletRealtimeRetryTimer) {
+                window.clearTimeout(this.walletRealtimeRetryTimer);
+                this.walletRealtimeRetryTimer = null;
+            }
+        },
+
+        setWalletRealtimeStatus(status = 'idle', detail = {}) {
+            const normalizedStatus = String(status || 'idle').trim().toLowerCase() || 'idle';
+            this.walletRealtimeStatus = normalizedStatus;
+            try {
+                window.dispatchEvent(new CustomEvent('zaoyoe:wallet-realtime-state', {
+                    detail: {
+                        status: normalizedStatus,
+                        site: this.walletRealtimeSite || this.getWalletRealtimeSite(),
+                        userId: this.walletRealtimeUserId || '',
+                        ...detail
+                    }
+                }));
+            } catch (_error) {
+                // Ignore CustomEvent failures in older embedded browsers.
+            }
+        },
+
+        stopWalletRealtimeSubscription() {
+            this.clearWalletRealtimeSubscribeTimer();
+            this.clearWalletRealtimeRetryTimer();
+
+            const channel = this.walletRealtimeChannel;
+            this.walletRealtimeChannel = null;
+            this.walletRealtimeUserId = '';
+            this.walletRealtimeSite = '';
+
+            if (channel) {
+                try {
+                    if (typeof supabase?.removeChannel === 'function') {
+                        supabase.removeChannel(channel);
+                    } else {
+                        channel.unsubscribe?.();
+                    }
+                } catch (error) {
+                    console.warn('[WalletModal] Failed to remove wallet realtime channel:', error?.message || error);
+                }
+            }
+
+            this.setWalletRealtimeStatus('idle');
+        },
+
+        scheduleWalletRealtimeRetry(reason = 'degraded') {
+            this.clearWalletRealtimeRetryTimer();
+            this.walletRealtimeRetryTimer = window.setTimeout(() => {
+                this.walletRealtimeRetryTimer = null;
+                void this.ensureWalletRealtimeForCurrentSession({ reason, force: true });
+            }, WALLET_REALTIME_DEGRADED_RETRY_MS);
+        },
+
+        markWalletRealtimeDegraded(reason = 'channel_error') {
+            this.clearWalletRealtimeSubscribeTimer();
+            const channel = this.walletRealtimeChannel;
+            this.walletRealtimeChannel = null;
+            const userId = this.walletRealtimeUserId;
+            const site = this.walletRealtimeSite;
+
+            if (channel) {
+                try {
+                    if (typeof supabase?.removeChannel === 'function') {
+                        supabase.removeChannel(channel);
+                    } else {
+                        channel.unsubscribe?.();
+                    }
+                } catch (error) {
+                    console.warn('[WalletModal] Wallet realtime cleanup after degradation failed:', error?.message || error);
+                }
+            }
+
+            this.walletRealtimeUserId = userId;
+            this.walletRealtimeSite = site;
+            this.setWalletRealtimeStatus('degraded', { reason });
+            this.scheduleWalletRealtimeRetry(reason);
+        },
+
+        async ensureWalletRealtimeForCurrentSession(options = {}) {
+            if (!supabase?.auth?.getSession) {
+                this.setWalletRealtimeStatus('degraded', { reason: 'missing_supabase_auth' });
+                return false;
+            }
+
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                return this.syncWalletRealtimeSubscription(session?.user || null, options);
+            } catch (error) {
+                console.warn('[WalletModal] Wallet realtime session check failed:', error?.message || error);
+                this.setWalletRealtimeStatus('degraded', { reason: 'session_check_failed' });
+                return false;
+            }
+        },
+
+        syncWalletRealtimeSubscription(user = null, options = {}) {
+            const userId = String(user?.id || '').trim();
+            const site = this.getWalletRealtimeSite();
+            const force = options?.force === true;
+
+            if (!userId) {
+                this.stopWalletRealtimeSubscription();
+                return false;
+            }
+
+            if (
+                !force
+                && this.walletRealtimeChannel
+                && this.walletRealtimeUserId === userId
+                && this.walletRealtimeSite === site
+            ) {
+                return true;
+            }
+
+            if (!supabase?.channel) {
+                this.walletRealtimeUserId = userId;
+                this.walletRealtimeSite = site;
+                this.setWalletRealtimeStatus('degraded', { reason: 'missing_realtime_client' });
+                return false;
+            }
+
+            this.stopWalletRealtimeSubscription();
+            this.walletRealtimeUserId = userId;
+            this.walletRealtimeSite = site;
+            this.setWalletRealtimeStatus('connecting', {
+                reason: String(options?.reason || 'sync').trim() || 'sync'
+            });
+
+            const channel = supabase
+                .channel(`wallet-user-updates-${site}-${userId}`)
+                .on('postgres_changes', {
+                    event: '*',
+                    schema: 'public',
+                    table: 'points_balance',
+                    filter: `user_id=eq.${userId}`
+                }, (payload) => this.handleWalletRealtimeChange('points_balance', payload))
+                .on('postgres_changes', {
+                    event: '*',
+                    schema: 'public',
+                    table: 'points_ledger',
+                    filter: `user_id=eq.${userId}`
+                }, (payload) => this.handleWalletRealtimeChange('points_ledger', payload))
+                .on('postgres_changes', {
+                    event: '*',
+                    schema: 'public',
+                    table: 'shop_orders',
+                    filter: `user_id=eq.${userId}`
+                }, (payload) => this.handleWalletRealtimeChange('shop_orders', payload))
+                .on('postgres_changes', {
+                    event: '*',
+                    schema: 'public',
+                    table: 'payment_orders',
+                    filter: `user_id=eq.${userId}`
+                }, (payload) => this.handleWalletRealtimeChange('payment_orders', payload));
+
+            this.walletRealtimeChannel = channel;
+            this.clearWalletRealtimeSubscribeTimer();
+            this.walletRealtimeSubscribeTimer = window.setTimeout(() => {
+                if (this.walletRealtimeChannel === channel && this.walletRealtimeStatus !== 'active') {
+                    this.markWalletRealtimeDegraded('subscribe_timeout');
+                }
+            }, WALLET_REALTIME_SUBSCRIBE_TIMEOUT_MS);
+
+            try {
+                channel.subscribe((status) => {
+                    if (this.walletRealtimeChannel !== channel) {
+                        return;
+                    }
+
+                    if (status === 'SUBSCRIBED') {
+                        this.clearWalletRealtimeSubscribeTimer();
+                        this.clearWalletRealtimeRetryTimer();
+                        this.setWalletRealtimeStatus('active', { reason: 'subscribed' });
+                        return;
+                    }
+
+                    if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                        console.warn('[WalletModal] Wallet realtime degraded:', status);
+                        this.markWalletRealtimeDegraded(status.toLowerCase());
+                    }
+                });
+                return true;
+            } catch (error) {
+                console.warn('[WalletModal] Wallet realtime subscribe failed:', error?.message || error);
+                this.markWalletRealtimeDegraded('subscribe_exception');
+                return false;
+            }
+        },
+
+        isWalletRealtimeRowForActiveContext(row = {}) {
+            const userId = String(row?.user_id || '').trim();
+            const site = String(row?.site || this.walletRealtimeSite || this.getWalletRealtimeSite()).trim().toLowerCase() || 'cn';
+            return Boolean(
+                userId
+                && userId === this.walletRealtimeUserId
+                && site === (this.walletRealtimeSite || this.getWalletRealtimeSite())
+            );
+        },
+
+        handleWalletRealtimeChange(tableName = '', payload = {}) {
+            const table = String(tableName || '').trim();
+            const row = payload?.new && typeof payload.new === 'object' && !Array.isArray(payload.new)
+                ? payload.new
+                : (payload?.old && typeof payload.old === 'object' && !Array.isArray(payload.old) ? payload.old : {});
+
+            if (!this.isWalletRealtimeRowForActiveContext(row)) {
+                return;
+            }
+
+            if (table === 'points_balance') {
+                this.applyWalletRealtimeBalance(row);
+            } else {
+                this.markWalletRecordsStaleFromRealtime(table);
+            }
+
+            this.scheduleWalletRealtimeSnapshotRefresh(table);
+        },
+
+        applyWalletRealtimeBalance(row = {}) {
+            window.PointsService?.clearWalletReadCaches?.();
+            const paidBalance = this.normalizePointValue(row?.paid_balance);
+            const bonusBalance = this.normalizePointValue(row?.bonus_balance);
+            const totalBalance = this.normalizePointValue(row?.total_balance ?? (paidBalance + bonusBalance));
+            const balance = this.applyWalletBalance({
+                paid_balance: paidBalance,
+                bonus_balance: bonusBalance,
+                total_balance: totalBalance,
+                site: row?.site || this.walletRealtimeSite || this.getWalletRealtimeSite(),
+                current_site_has_account: true,
+                other_site_balances: [],
+                _load_failed: false,
+                error_message: ''
+            }, { animate: this.isOpen });
+
+            window.dispatchEvent(new CustomEvent('walletBalanceUpdated', {
+                detail: {
+                    totalBalance: balance.total_balance,
+                    source: 'supabase_realtime'
+                }
+            }));
+        },
+
+        markWalletRecordsStaleFromRealtime(reason = 'wallet_realtime') {
+            window.PointsService?.clearWalletReadCaches?.();
+            this._prefetched = false;
+            this._prefetchedShopOrders = null;
+            this._prefetchedLedger = null;
+            this._prefetchedPromptTitles = null;
+            this.ordersLoaded = false;
+            this.walletRealtimeRefreshReason = reason;
+        },
+
+        isWalletOrdersViewActive() {
+            return Boolean(document.getElementById('view-orders')?.classList.contains('active'));
+        },
+
+        scheduleWalletRealtimeSnapshotRefresh(reason = 'wallet_realtime') {
+            this.walletRealtimeRefreshReason = reason;
+            if (this.walletRealtimeRefreshTimer) {
+                window.clearTimeout(this.walletRealtimeRefreshTimer);
+            }
+
+            this.walletRealtimeRefreshTimer = window.setTimeout(async () => {
+                this.walletRealtimeRefreshTimer = null;
+                const site = this.getWalletRealtimeSite();
+                const pointsService = window.PointsService;
+
+                try {
+                    if (pointsService?.getBalance) {
+                        const balance = await pointsService.getBalance({ site, force: true });
+                        if (!balance?._load_failed) {
+                            this.applyWalletBalance(balance, { animate: this.isOpen });
+                            window.dispatchEvent(new CustomEvent('walletBalanceUpdated', {
+                                detail: {
+                                    totalBalance: balance.total_balance,
+                                    source: 'supabase_realtime_refresh'
+                                }
+                            }));
+                        }
+                    }
+
+                    if (this.isOpen && (this.isWalletOrdersViewActive() || Array.isArray(this.ordersData) && this.ordersData.length > 0)) {
+                        await this.loadOrders({
+                            ignorePrefetch: true,
+                            preserveExisting: true
+                        });
+                    }
+                } catch (error) {
+                    console.warn('[WalletModal] Wallet realtime fallback refresh skipped:', error?.message || error);
+                }
+            }, WALLET_REALTIME_REFRESH_DEBOUNCE_MS);
+        },
+
         /**
          * Pre-fetch wallet data in background (called when avatar dropdown opens)
          * So data is instantly available when user clicks 'My Orders'
@@ -4623,6 +4940,7 @@
             }
 
             const site = window.SiteConfig?.site || 'cn';
+            void this.ensureWalletRealtimeForCurrentSession({ reason: 'wallet_prefetch' });
 
             if (!this._prefetched && !this.ordersLoaded && pointsService?.getWalletTransactions) {
                 this._prefetched = true;
@@ -4786,6 +5104,7 @@
                 }
 
                 // Load data after session is confirmed
+                this.syncWalletRealtimeSubscription(session.user, { reason: 'wallet_open' });
                 this.loadData().catch(e => console.error('[WalletModal] Initial load failed:', e));
             });
 
@@ -7429,6 +7748,26 @@
             return matched ? matched.trim() : 'U';
         },
 
+        normalizeWalletAvatarUrl(value = '') {
+            const source = String(value || '').trim();
+            if (!source || /^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(source)) {
+                return '';
+            }
+            if (source.startsWith('data:image/') && source.length > 100) {
+                return source;
+            }
+
+            try {
+                const parsed = new URL(source, window.location.origin);
+                if (!['http:', 'https:', 'blob:'].includes(parsed.protocol)) {
+                    return '';
+                }
+                return window.SiteConfig?.normalizeAssetUrlForCurrentSite?.(parsed.href) || parsed.href;
+            } catch (error) {
+                return '';
+            }
+        },
+
         getProfileAvatarUrl(profile = {}, user = {}) {
             const candidates = [
                 profile.avatar_url,
@@ -7438,8 +7777,7 @@
                 user.user_metadata?.picture
             ];
 
-            const matched = candidates.find(value => typeof value === 'string' && value.trim());
-            return matched ? matched.trim() : '';
+            return candidates.map(value => this.normalizeWalletAvatarUrl(value)).find(Boolean) || '';
         },
 
         getPosterInitial(name = '') {
@@ -7606,6 +7944,7 @@
                     : this.tr('wallet.registeredAt', '注册于 {date}', { date: this.escapeHtml(registeredAt) });
                 const badgeClass = `affiliate-member-badge affiliate-member-badge-${stageMeta.tone}`;
                 const avatarLabel = this.escapeHtml(displayName.charAt(0).toUpperCase() || 'U');
+                const avatarUrl = this.normalizeWalletAvatarUrl(member.avatar_url);
                 const secondaryLine = [maskedEmail, this.tr('wallet.registeredAt', '注册于 {date}', { date: registeredAt })].filter(Boolean).join(' · ');
                 const quickContribution = `${totalSpend} ${pointsUnit}`;
                 const quickCommission = `${commissionEarned} ${pointsUnit}`;
@@ -7621,8 +7960,8 @@
                             <div class="affiliate-member-summary-main">
                                 <div class="affiliate-member-head">
                                     <div class="affiliate-member-avatar">
-                                        ${member.avatar_url
-                                            ? `<img src="${this.escapeHtml(member.avatar_url)}" alt="${this.escapeHtml(displayName)}" />`
+                                        ${avatarUrl
+                                            ? `<img src="${this.escapeHtml(avatarUrl)}" alt="${this.escapeHtml(displayName)}" />`
                                             : `<span>${avatarLabel}</span>`}
                                     </div>
                                     <div class="affiliate-member-ident">
@@ -10810,7 +11149,8 @@
         async loadOrders(options = {}) {
             const {
                 searchQuery = this.orderSearchQuery,
-                ignorePrefetch = false
+                ignorePrefetch = false,
+                preserveExisting = false
             } = options;
             const normalizedQuery = String(searchQuery || '').trim();
             const requestId = ++this.orderRequestId;
@@ -10826,9 +11166,11 @@
 
                 if (!container) return;
 
-                container.innerHTML = `<div class="loading-text">${normalizedQuery
-                    ? (window.i18n?.t('wallet.searchingRecords') || '查询中...')
-                    : (window.i18n?.t('common.loading') || '加载中...')}</div>`;
+                if (!preserveExisting || !Array.isArray(this.ordersData) || this.ordersData.length === 0) {
+                    container.innerHTML = `<div class="loading-text">${normalizedQuery
+                        ? (window.i18n?.t('wallet.searchingRecords') || '查询中...')
+                        : (window.i18n?.t('common.loading') || '加载中...')}</div>`;
+                }
 
                 const { data: { session } } = await window.supabaseClient.auth.getSession();
                 const user = session?.user;
@@ -11628,8 +11970,8 @@
                             <div class="content-card content-card--detail">
                                 <div class="wallet-affiliate-person-row">
                                     <div class="affiliate-detail-avatar">
-                                        ${detail.invitee_avatar_url
-                                            ? `<img src="${this.escapeHtml(detail.invitee_avatar_url)}" alt="${this.escapeHtml(inviteeName)}" />`
+                                        ${this.normalizeWalletAvatarUrl(detail.invitee_avatar_url)
+                                            ? `<img src="${this.escapeHtml(this.normalizeWalletAvatarUrl(detail.invitee_avatar_url))}" alt="${this.escapeHtml(inviteeName)}" />`
                                             : `<span>${this.escapeHtml((inviteeName.charAt(0) || 'U').toUpperCase())}</span>`}
                                     </div>
                                     <div class="wallet-affiliate-person-meta">
@@ -12402,6 +12744,17 @@
 
     // Export to window
     window.WalletModal = WalletModal;
+
+    if (typeof supabase.auth?.onAuthStateChange === 'function') {
+        supabase.auth.onAuthStateChange((_event, session) => {
+            const user = session?.user || null;
+            if (user?.id) {
+                WalletModal.syncWalletRealtimeSubscription(user, { reason: 'auth_state' });
+            } else {
+                WalletModal.stopWalletRealtimeSubscription();
+            }
+        });
+    }
 
     // Listen to global language change
     window.addEventListener('languageChanged', () => {

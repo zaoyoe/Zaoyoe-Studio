@@ -1581,9 +1581,9 @@ async function checkAuthState(options = {}) {
     const cleanCachedAvatar = (isUsableAvatarUrl(cachedAvatarCandidate) &&
         !isGeneratedAvatarUrl(cachedAvatarCandidate) &&
         !isTransientAvatarUrl(cachedAvatarCandidate))
-        ? String(cachedAvatarCandidate).trim()
+        ? normalizeDisplayAvatarUrl(cachedAvatarCandidate)
         : '';
-    const optimisticAvatar = cleanCachedAvatar || user.user_metadata?.avatar_url || '';
+    const optimisticAvatar = cleanCachedAvatar || normalizeDisplayAvatarUrl(user.user_metadata?.avatar_url) || '';
 
     const optimisticUser = {
         objectId: user.id,
@@ -1608,14 +1608,14 @@ async function checkAuthState(options = {}) {
     if (profile?.avatar_url) {
         const url = profile.avatar_url.trim();
         if (url.startsWith('http')) {
-            validCustomAvatar = url;
+            validCustomAvatar = normalizeDisplayAvatarUrl(url);
         } else if (url.startsWith('data:') && url.length > MIN_BASE64_LENGTH) {
-            validCustomAvatar = url;
+            validCustomAvatar = normalizeDisplayAvatarUrl(url);
         }
     }
 
     // Always prefer profile.avatar_url (custom uploads are persisted to R2 there).
-    let avatarUrl = validCustomAvatar || cleanCachedAvatar || user.user_metadata?.avatar_url || '';
+    let avatarUrl = validCustomAvatar || cleanCachedAvatar || normalizeDisplayAvatarUrl(user.user_metadata?.avatar_url) || '';
     const resolvedNickname = profile?.username || user.user_metadata?.full_name || user.email.split('@')[0];
 
     // 🆕 Auto-upload Google OAuth avatar to R2 asynchronously (non-blocking)
@@ -1673,6 +1673,27 @@ function normalizeAvatarUrl(url) {
     }
 }
 
+function normalizeDisplayAvatarUrl(url) {
+    const value = String(url || '').trim();
+    if (!value || /^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(value)) {
+        return '';
+    }
+
+    if (value.startsWith('data:image/') && value.length > 100) {
+        return value;
+    }
+
+    try {
+        const parsed = new URL(value, window.location.origin);
+        if (!['http:', 'https:', 'blob:'].includes(parsed.protocol)) {
+            return '';
+        }
+        return window.SiteConfig?.normalizeAssetUrlForCurrentSite?.(parsed.href) || parsed.href;
+    } catch (_) {
+        return '';
+    }
+}
+
 function getAvatarFallbackUrl(seed) {
     return `https://ui-avatars.com/api/?name=${encodeURIComponent(seed || 'User')}&background=6b9ece&color=fff`;
 }
@@ -1688,12 +1709,7 @@ function isTransientAvatarUrl(url) {
 }
 
 function isUsableAvatarUrl(url) {
-    if (!url) return false;
-    const value = String(url).trim();
-    if (!value) return false;
-    if (value.startsWith('http')) return true;
-    if (value.startsWith('data:') && value.length > 100) return true;
-    return false;
+    return Boolean(normalizeDisplayAvatarUrl(url));
 }
 
 function setTextContent(id, value) {
@@ -1797,7 +1813,7 @@ function setProfileModalAvatar(avatarUrl, fallbackSeed = 'User', options = {}) {
 
     const fallbackUrl = getAvatarFallbackUrl(fallbackSeed);
     const currentRaw = avatarTargets[0].getAttribute('src') || avatarTargets[0].src || '';
-    const incomingUrl = isUsableAvatarUrl(avatarUrl) ? String(avatarUrl).trim() : '';
+    const incomingUrl = normalizeDisplayAvatarUrl(avatarUrl);
     const avatarFallback = document.getElementById('profileModalAvatarMobileFallback');
     if (avatarFallback) {
         avatarFallback.textContent = getProfileDisplayInitial(fallbackSeed);
@@ -2094,7 +2110,7 @@ function updateUserUI(user, options = {}) {
         if (navAvatar) {
             const fallbackSeed = user.email || user.username || user.nickname || 'User';
             const fallbackUrl = getAvatarFallbackUrl(fallbackSeed);
-            const incomingAvatarUrl = isUsableAvatarUrl(user.avatarUrl) ? String(user.avatarUrl).trim() : '';
+            const incomingAvatarUrl = normalizeDisplayAvatarUrl(user.avatarUrl);
             let cachedAvatarUrl = '';
             try {
                 const cachedRaw = localStorage.getItem('cached_user_profile');
@@ -2103,7 +2119,7 @@ function updateUserUI(user, options = {}) {
                     const sameUser = (cachedUser?.objectId && user.objectId && cachedUser.objectId === user.objectId) ||
                         (cachedUser?.email && user.email && cachedUser.email === user.email);
                     if (sameUser && isUsableAvatarUrl(cachedUser?.avatarUrl) && !isGeneratedAvatarUrl(cachedUser?.avatarUrl)) {
-                        cachedAvatarUrl = String(cachedUser.avatarUrl).trim();
+                        cachedAvatarUrl = normalizeDisplayAvatarUrl(cachedUser.avatarUrl);
                     }
                 }
             } catch (_) {
@@ -2187,7 +2203,7 @@ function updateUserUI(user, options = {}) {
             { preferImmediate: preferImmediateAvatar }
         );
         const userForCache = { ...user };
-        const cacheAvatar = isUsableAvatarUrl(userForCache.avatarUrl) ? String(userForCache.avatarUrl).trim() : '';
+        const cacheAvatar = normalizeDisplayAvatarUrl(userForCache.avatarUrl);
         if (!cacheAvatar) {
             delete userForCache.avatarUrl;
         } else {
@@ -2200,11 +2216,12 @@ function updateUserUI(user, options = {}) {
                 const previous = JSON.parse(previousRaw);
                 const sameUser = (previous?.objectId && userForCache.objectId && previous.objectId === userForCache.objectId) ||
                     (previous?.email && userForCache.email && previous.email === userForCache.email);
-                if (sameUser && isUsableAvatarUrl(previous?.avatarUrl) && !isGeneratedAvatarUrl(previous?.avatarUrl) &&
+                const previousAvatarUrl = normalizeDisplayAvatarUrl(previous?.avatarUrl);
+                if (sameUser && previousAvatarUrl && !isGeneratedAvatarUrl(previousAvatarUrl) &&
                     (isGeneratedAvatarUrl(userForCache.avatarUrl) ||
                         !isUsableAvatarUrl(userForCache.avatarUrl) ||
                         isTransientAvatarUrl(userForCache.avatarUrl))) {
-                    userForCache.avatarUrl = previous.avatarUrl;
+                    userForCache.avatarUrl = previousAvatarUrl;
                 }
             }
         } catch (_) {
@@ -5301,9 +5318,7 @@ async function openProfileModal(event) {
                 matchedCachedProfile?.email?.split('@')[0] ||
                 '';
             const stableNickname = cachedNickname || readCurrentKnownNickname();
-            const cachedAvatarUrl = isUsableAvatarUrl(matchedCachedProfile?.avatarUrl)
-                ? String(matchedCachedProfile.avatarUrl).trim()
-                : '';
+            const cachedAvatarUrl = normalizeDisplayAvatarUrl(matchedCachedProfile?.avatarUrl);
             const optimisticNickname = stableNickname || user.user_metadata?.full_name || user.email.split('@')[0];
             const memberSinceText = formatProfileMemberSince(user.created_at);
             updateProfileMobileSummary({
@@ -5326,7 +5341,9 @@ async function openProfileModal(event) {
                 .single();
 
             const resolvedNickname = profile?.username || optimisticNickname;
-            const resolvedAvatar = profile?.avatar_url || user.user_metadata?.avatar_url || getAvatarFallbackUrl(user.email);
+            const resolvedAvatar = normalizeDisplayAvatarUrl(profile?.avatar_url)
+                || normalizeDisplayAvatarUrl(user.user_metadata?.avatar_url)
+                || getAvatarFallbackUrl(user.email);
             setProfileModalAvatar(resolvedAvatar, user.email || resolvedNickname);
             updateProfileMobileSummary({
                 nickname: resolvedNickname,

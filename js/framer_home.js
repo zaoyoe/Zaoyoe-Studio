@@ -517,13 +517,66 @@ function pathnameBasename(pathname = '') {
   return String(pathname || '').split('/').filter(Boolean).pop() || '';
 }
 
+function getZaoyoeAssetCdnOrigin({ canonical = false } = {}) {
+  if (canonical) {
+    return String(window.SiteConfig?.getCanonicalAssetCdnOrigin?.() || 'https://cdn.zaoyoe.com').replace(/\/+$/, '');
+  }
+
+  const configuredOrigin = String(window.SiteConfig?.getAssetCdnOrigin?.() || '').trim();
+  if (configuredOrigin) {
+    return configuredOrigin.replace(/\/+$/, '');
+  }
+
+  const hostname = String(window.location?.hostname || '').toLowerCase();
+  return hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz')
+    ? 'https://cdn.zaoyoe.xyz'
+    : 'https://cdn.zaoyoe.com';
+}
+
+function normalizeZaoyoeAssetCdnUrl(url, expectedPrefix = '', options = {}) {
+  const source = String(url || '').trim();
+  if (!source) return '';
+
+  const siteConfigNormalizer = options.canonical
+    ? window.SiteConfig?.normalizeAssetUrlForCanonicalSite
+    : window.SiteConfig?.normalizeAssetUrlForCurrentSite;
+  const normalizedBySiteConfig = typeof siteConfigNormalizer === 'function'
+    ? String(siteConfigNormalizer.call(window.SiteConfig, source) || '').trim()
+    : '';
+  if (normalizedBySiteConfig && normalizedBySiteConfig !== source) {
+    if (!expectedPrefix) return normalizedBySiteConfig;
+    try {
+      const parsed = new URL(normalizedBySiteConfig, window.location.origin);
+      const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+      if (parts[0] === expectedPrefix) return normalizedBySiteConfig;
+    } catch (error) {
+      return '';
+    }
+  }
+
+  try {
+    const parsed = new URL(source, window.location.origin);
+    const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+    const isKnownCdnHost = ['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname) || parsed.hostname.endsWith('.r2.dev');
+    if (!isKnownCdnHost || (expectedPrefix && parts[0] !== expectedPrefix)) return '';
+
+    const targetOrigin = new URL(getZaoyoeAssetCdnOrigin(options));
+    parsed.protocol = targetOrigin.protocol;
+    parsed.host = targetOrigin.host;
+    return parsed.toString();
+  } catch (error) {
+    return '';
+  }
+}
+
 function getPromptR2VariantUrl(url, variant = '') {
   const variantPath = { thumb: 'thumb', featured: 'featured', home: 'home', card: 'card' }[String(variant || '').trim()];
   if (!variantPath) return '';
 
   try {
-    const parsed = new URL(String(url || '').trim(), window.location.origin);
-    if (parsed.hostname !== 'cdn.zaoyoe.com') return '';
+    const normalizedUrl = normalizeZaoyoeAssetCdnUrl(url, 'prompts') || String(url || '').trim();
+    const parsed = new URL(normalizedUrl, window.location.origin);
+    if (!['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)) return '';
 
     const parts = String(parsed.pathname || '').split('/').filter(Boolean);
     if (parts.length !== 2 || parts[0] !== 'prompts') return '';
@@ -531,7 +584,7 @@ function getPromptR2VariantUrl(url, variant = '') {
     const filename = decodeURIComponent(parts[1] || '');
     if (!filename) return '';
 
-    return `${parsed.origin}/prompts/${variantPath}/${encodeURIComponent(filename)}`;
+    return `${getZaoyoeAssetCdnOrigin()}/prompts/${variantPath}/${encodeURIComponent(filename)}`;
   } catch (error) {
     return '';
   }
@@ -540,21 +593,22 @@ function getPromptR2VariantUrl(url, variant = '') {
 function getPromptImageVariantUrl(url, variant = '') {
   const normalizedVariant = String(variant || '').trim();
   const trimmed = String(url || '').trim();
-  if (!normalizedVariant || !trimmed.includes('cdn.zaoyoe.com/prompts/')) {
+  const normalizedUrl = normalizeZaoyoeAssetCdnUrl(trimmed, 'prompts') || '';
+  if (!normalizedVariant || !normalizedUrl) {
     return '';
   }
 
   const manifest = window.__PROMPT_IMAGE_VARIANTS__ || null;
   const available = manifest?.variants?.[normalizedVariant];
   if (Array.isArray(available) && available.length > 0) {
-    const filename = getHomepageImageFilenameFromUrl(trimmed);
+    const filename = getHomepageImageFilenameFromUrl(normalizedUrl);
     if (filename && available.includes(filename)) {
       const basePath = String(manifest?.basePaths?.[normalizedVariant] || `/assets/prompts-${normalizedVariant}`).replace(/\/+$/, '');
       return `${basePath}/${encodeURIComponent(filename)}`;
     }
   }
 
-  return getPromptR2VariantUrl(trimmed, normalizedVariant);
+  return getPromptR2VariantUrl(normalizedUrl, normalizedVariant);
 }
 
 function getShopImageVariantUrl(url, variant = '') {
@@ -564,16 +618,35 @@ function getShopImageVariantUrl(url, variant = '') {
     return '';
   }
 
+  const candidates = getShopProductCdnUrlCandidates(trimmed);
+  const normalizedUrl = candidates[0] || trimmed;
   const manifest = window.__SHOP_IMAGE_VARIANTS__ || null;
   const variants = manifest?.variants?.[normalizedVariant];
   if (variants && typeof variants === 'object') {
-    const manifestUrl = String(variants[trimmed] || '').trim();
+    const manifestUrl = String(candidates.map((candidate) => variants[candidate]).find(Boolean) || '').trim();
     if (manifestUrl) {
       return manifestUrl;
     }
   }
 
-  return getShopR2CardVariantUrl(trimmed, normalizedVariant);
+  return getShopR2CardVariantUrl(normalizedUrl, normalizedVariant);
+}
+
+function isSupabaseStorageImageUrl(url) {
+  return /^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(String(url || '').trim());
+}
+
+function normalizeShopProductCdnUrl(url, options = {}) {
+  return normalizeZaoyoeAssetCdnUrl(url, 'products', options);
+}
+
+function getShopProductCdnUrlCandidates(url) {
+  const trimmed = String(url || '').trim();
+  return Array.from(new Set([
+    normalizeShopProductCdnUrl(trimmed),
+    normalizeShopProductCdnUrl(trimmed, { canonical: true }),
+    trimmed
+  ].filter(Boolean)));
 }
 
 function getShopR2CardVariantUrl(url, variant = '') {
@@ -582,8 +655,9 @@ function getShopR2CardVariantUrl(url, variant = '') {
   }
 
   try {
-    const parsed = new URL(String(url || '').trim(), window.location.origin);
-    if (parsed.hostname !== 'cdn.zaoyoe.com' && !parsed.hostname.endsWith('.r2.dev')) {
+    const normalizedUrl = normalizeShopProductCdnUrl(url) || String(url || '').trim();
+    const parsed = new URL(normalizedUrl, window.location.origin);
+    if (!['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)) {
       return '';
     }
 
@@ -597,7 +671,7 @@ function getShopR2CardVariantUrl(url, variant = '') {
       return '';
     }
 
-    return `${parsed.origin}/products/card/${encodeURIComponent(basename)}.webp`;
+    return `${getZaoyoeAssetCdnOrigin()}/products/card/${encodeURIComponent(basename)}.webp`;
   } catch (error) {
     return '';
   }
@@ -799,10 +873,10 @@ function buildHomepagePromptRenderSignature(prompts = []) {
   return (Array.isArray(prompts) ? prompts : []).map((prompt) => {
     const normalizedPrompt = normalizeHomePromptRecord(prompt);
     const normalizedId = String(normalizedPrompt?.supabaseId || normalizedPrompt?.id || '').trim();
-    const updatedAt = String(normalizedPrompt?.updated_at || normalizedPrompt?.created_at || '').trim();
     const primaryImage = String(normalizedPrompt?.images?.[0] || normalizedPrompt?.image || normalizedPrompt?.image_url || '').trim();
-    const title = String(normalizedPrompt?.title || normalizedPrompt?.title_zh || normalizedPrompt?.title_en || '').trim();
-    return [normalizedId, updatedAt, primaryImage, title].join('::');
+    const titleZh = String(normalizedPrompt?.title_zh || normalizedPrompt?.title || '').trim();
+    const titleEn = String(normalizedPrompt?.title_en || normalizedPrompt?.title || '').trim();
+    return [normalizedId, primaryImage, titleZh, titleEn].join('::');
   }).join('||');
 }
 
@@ -1691,6 +1765,8 @@ const FramerHome = {
     }
 
     try {
+      const promptSection = document.getElementById('prompts-section');
+      const promptSectionAlreadyPainted = Boolean(promptSection?.querySelector?.('.masonry-card'));
       const previousSignature = buildHomepagePromptRenderSignature(this.cachedData?.prompts || []);
       const livePromptPool = await this.fetchVisiblePromptPool();
       const nextPrompts = await this.aggregatePrompts(this.config.prompts || {});
@@ -1703,7 +1779,9 @@ const FramerHome = {
       this.cachedData = this.cachedData || {};
       this.cachedData.prompts = nextPrompts;
       this.cachedData.ticker = await this.buildTickerData(this.config.ticker || {});
-      this.renderPrompts();
+      if (options.forceRender === true || !promptSectionAlreadyPainted) {
+        this.renderPrompts();
+      }
       this.renderTicker();
       this.scheduleScrollAnimationsInit();
 
@@ -1721,7 +1799,8 @@ const FramerHome = {
         // Ignore sessionStorage write failures.
       }
 
-      console.log('♻️ Homepage prompt cards refreshed from live prompt pool', {
+      console.log('♻️ Homepage prompt pool synced from live source', {
+        domPatched: options.forceRender === true || !promptSectionAlreadyPainted,
         reason: String(options.reason || 'background-sync').trim() || 'background-sync'
       });
       return true;
@@ -2964,13 +3043,8 @@ const FramerHome = {
       return r2ThumbUrl;
     }
 
-    // Supabase Storage images - use Supabase Transform API
-    if (rawUrl.includes('supabase.co/storage')) {
-      const transformUrl = rawUrl.replace(
-        '/storage/v1/object/public/',
-        '/storage/v1/render/image/public/'
-      );
-      return `${transformUrl}?width=600&quality=85&format=webp`;
+    if (isSupabaseStorageImageUrl(rawUrl)) {
+      return '';
     }
 
     // Return original URL for other images
@@ -2979,6 +3053,7 @@ const FramerHome = {
 
   isShopImageSource(value) {
     const trimmed = String(value || '').trim();
+    if (isSupabaseStorageImageUrl(trimmed)) return false;
     return trimmed.startsWith('http://')
       || trimmed.startsWith('https://')
       || trimmed.startsWith('/')
@@ -2988,13 +3063,14 @@ const FramerHome = {
   getOptimizedShopImageUrl(url, options = {}) {
     const explicitVariantUrl = getShopProductImageAssetExplicitVariantUrl(url, options.variant || '');
     if (explicitVariantUrl && options.variant) {
-      return explicitVariantUrl;
+      return normalizeShopProductCdnUrl(explicitVariantUrl) || explicitVariantUrl;
     }
 
-    const trimmed = getShopProductImageAssetUrl(url, 'original');
+    const rawUrl = getShopProductImageAssetUrl(url, 'original');
+    const trimmed = normalizeShopProductCdnUrl(rawUrl) || rawUrl;
     if (!trimmed) return '';
 
-    const { format = 'avif', variant = '' } = options;
+    const { variant = '' } = options;
     const variantUrl = getShopImageVariantUrl(trimmed, variant);
     if (variantUrl) {
       return variantUrl;
@@ -3004,34 +3080,13 @@ const FramerHome = {
       return trimmed;
     }
 
-    if (trimmed.includes('cdn.zaoyoe.com/prompts/') && !trimmed.includes('/thumb/')) {
-      return trimmed.replace('/prompts/', '/prompts/thumb/');
+    const promptCdnUrl = normalizeZaoyoeAssetCdnUrl(trimmed, 'prompts') || '';
+    if (promptCdnUrl && !promptCdnUrl.includes('/thumb/')) {
+      return promptCdnUrl.replace('/prompts/', '/prompts/thumb/');
     }
 
-    if (
-      trimmed.includes('supabase.co/storage/v1/object/public/')
-      || trimmed.includes('supabase.co/storage/v1/render/image/public/')
-    ) {
-      try {
-        const optimizedUrl = new URL(trimmed);
-        if (optimizedUrl.pathname.includes('/storage/v1/object/public/')) {
-          optimizedUrl.pathname = optimizedUrl.pathname.replace(
-            '/storage/v1/object/public/',
-            '/storage/v1/render/image/public/'
-          );
-        }
-        optimizedUrl.searchParams.set('width', '480');
-        optimizedUrl.searchParams.set('height', '320');
-        optimizedUrl.searchParams.set('quality', '80');
-        if (format) {
-          optimizedUrl.searchParams.set('format', format);
-        } else {
-          optimizedUrl.searchParams.delete('format');
-        }
-        return optimizedUrl.toString();
-      } catch (error) {
-        console.warn('Failed to build homepage shop image transform URL:', error);
-      }
+    if (isSupabaseStorageImageUrl(trimmed)) {
+      return '';
     }
 
     return trimmed;
@@ -3041,13 +3096,20 @@ const FramerHome = {
     if (!(cardImage instanceof HTMLImageElement) || !originalUrl) return;
 
     const primaryUrl = this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' });
-    const originalSrc = getShopProductImageAssetUrl(originalUrl, 'original');
+    const rawOriginalSrc = getShopProductImageAssetUrl(originalUrl, 'original');
+    const originalSrc = isSupabaseStorageImageUrl(rawOriginalSrc)
+      ? ''
+      : (normalizeShopProductCdnUrl(rawOriginalSrc) || rawOriginalSrc);
     const transformFallbackUrl = this.getOptimizedShopImageUrl(originalSrc, { format: '' });
 
     cardImage.dataset.originalSrc = originalSrc;
     cardImage.dataset.transformFallbackSrc = transformFallbackUrl !== primaryUrl ? transformFallbackUrl : '';
     cardImage.dataset.fallbackStage = '';
-    cardImage.src = primaryUrl;
+    if (primaryUrl) {
+      cardImage.src = primaryUrl;
+    } else {
+      cardImage.removeAttribute('src');
+    }
   },
 
   handleHomeShopCardImageError(cardImage, originalUrl) {
@@ -3062,9 +3124,14 @@ const FramerHome = {
       return true;
     }
 
-    if (cardImage.dataset.fallbackStage !== 'original' && fallbackOriginalSrc && cardImage.src !== fallbackOriginalSrc) {
+    if (
+      cardImage.dataset.fallbackStage !== 'original'
+      && fallbackOriginalSrc
+      && !isSupabaseStorageImageUrl(fallbackOriginalSrc)
+      && cardImage.src !== fallbackOriginalSrc
+    ) {
       cardImage.dataset.fallbackStage = 'original';
-      cardImage.src = fallbackOriginalSrc;
+      cardImage.src = normalizeShopProductCdnUrl(fallbackOriginalSrc) || fallbackOriginalSrc;
       return true;
     }
 
@@ -5407,9 +5474,19 @@ const FramerHome = {
 
   getGuestbookAvatarUrl(message) {
     const username = String(message?.author || message?.profiles?.username || message?.username || 'U').trim() || 'U';
-    return message?.avatar_url
-      || message?.profiles?.avatar_url
-      || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(username)}&backgroundColor=6b9ece`;
+    const candidate = String(message?.avatar_url || message?.profiles?.avatar_url || '').trim();
+    if (candidate && !isSupabaseStorageImageUrl(candidate) && !/^data:image\/[a-z0-9.+-]+;base64,/i.test(candidate)) {
+      try {
+        const parsed = new URL(candidate, window.location.origin);
+        if (['http:', 'https:', 'blob:'].includes(parsed.protocol)) {
+          return normalizeZaoyoeAssetCdnUrl(parsed.href) || parsed.href;
+        }
+      } catch (error) {
+        // Fall through to generated avatar.
+      }
+    }
+
+    return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(username)}&backgroundColor=6b9ece`;
   },
 
   getGuestbookDisplayName(message) {

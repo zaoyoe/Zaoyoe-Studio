@@ -36,6 +36,7 @@ let analyticsDestinationFocusTimeoutId = 0;
 const DEFAULT_ANALYTICS_DAYS = 7;
 const ANALYTICS_DAY_MS = 24 * 60 * 60 * 1000;
 const ANALYTICS_REENTRY_REFRESH_TTL_MS = 15000;
+const ANALYTICS_OPS_REALTIME_REFRESH_DEBOUNCE_MS = 1500;
 const ANALYTICS_COMMAND_CENTER_INVENTORY_PRIME_DELAY_MS = 1800;
 const ANALYTICS_ADVANCED_WORKSPACE_STORAGE_KEY = 'analyticsAdvancedWorkspaceOpen';
 const ANALYTICS_ADVANCED_TOGGLE_BINDING_FLAG = 'analyticsAdvancedToggleBound';
@@ -67,7 +68,9 @@ const analyticsRuntime = {
     loadedTabsByContext: {},
     lastLoadedAt: 0,
     lastLoadedContextKey: '',
-    lastReloadReason: ''
+    lastReloadReason: '',
+    opsRealtimeRefreshTimer: null,
+    opsRealtimeLastSource: ''
 };
 
 function getAnalyticsGlobalDateRangeState() {

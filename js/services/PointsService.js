@@ -570,6 +570,7 @@
 
                 const overview = await this._getWalletOverview({
                     historyLimit: 20,
+                    force: options.force === true,
                     site: options.site || window.SiteConfig?.site || 'cn'
                 });
                 return this._normalizeWalletBalancePayload(overview);

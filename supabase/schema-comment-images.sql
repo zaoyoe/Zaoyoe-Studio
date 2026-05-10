@@ -3,24 +3,24 @@
 -- Run this in Supabase SQL Editor
 -- ============================================
 
--- 1. Create Storage Bucket for comment images
+-- 1. Keep the legacy Supabase Storage bucket private for migration/cleanup only.
+-- New comment images must be uploaded to R2/CDN through the upload-avatar Edge Function.
 insert into storage.buckets (id, name, public)
-values ('comment-images', 'comment-images', true)
+values ('comment-images', 'comment-images', false)
 on conflict (id) do nothing;
+
+update storage.buckets
+set
+    public = false,
+    file_size_limit = 1,
+    allowed_mime_types = ARRAY['application/x-supabase-image-bucket-disabled']::text[]
+where id = 'comment-images';
 
 -- 2. Storage Policies
 
--- Allow authenticated users to upload images
-create policy "Authenticated users can upload comment images"
-on storage.objects for insert
-to authenticated
-with check (bucket_id = 'comment-images');
-
--- Allow anyone to view images (public read)
-create policy "Anyone can view comment images"
-on storage.objects for select
-to public
-using (bucket_id = 'comment-images');
+-- Direct uploads are intentionally disabled. Prompt comment images should be
+-- uploaded to R2/CDN through the upload-avatar Edge Function instead of
+-- Supabase Storage.
 
 -- Allow users to delete their own images (optional, for future cleanup)
 create policy "Users can delete own comment images"
@@ -32,7 +32,7 @@ using (bucket_id = 'comment-images' and auth.uid()::text = (storage.foldername(n
 alter table public.prompt_comments 
 add column if not exists image_url text;
 
-comment on column public.prompt_comments.image_url is 'URL to attached image in Supabase Storage';
+comment on column public.prompt_comments.image_url is 'URL to attached image in R2/CDN';
 
 -- 4. Verify setup
 select 

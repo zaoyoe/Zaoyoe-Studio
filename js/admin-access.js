@@ -623,6 +623,8 @@
         adminPresenceChannel.subscribe((status) => {
             if (status === 'SUBSCRIBED') {
                 void markAdminPresenceActive();
+            } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                console.warn('[AdminAccess] Admin presence realtime degraded; heartbeat updates continue:', status);
             }
         });
 
@@ -661,6 +663,8 @@
         userPresenceChannel.subscribe((status) => {
             if (status === 'SUBSCRIBED') {
                 void markUserPresenceActive();
+            } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                console.warn('[AdminAccess] User presence realtime degraded; heartbeat updates continue:', status);
             }
         });
 

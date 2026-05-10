@@ -201,7 +201,7 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(adminChatCss, /--admin-chat-keyboard-dock-height/);
     assert.match(adminChatCss, /\.admin-chat-viewport-probe/);
 
-    assert.match(shopHtml, /shop-client\.js\?v=20260510_SHOP_CATALOG_API_1/);
+    assert.match(shopHtml, /shop-client\.js\?v=20260510_SHOP_REALTIME_FALLBACK_1/);
     assert.match(guestbookHtml, /guestbook\.js\?v=20260507_GUESTBOOK_DEEPLINK_REPLAY_1/);
     assert.match(shopHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
     assert.match(guestbookHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
@@ -296,5 +296,5 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(chatWidget, /\.chat-window--bootstrap-adopting-content\.chat-window--bootstrap-content-ready > \*:not\(\.emoji-picker-popover\):not\(\.chat-bootstrap-content-snapshot\)[\s\S]*opacity: 1;[\s\S]*chat-widget-content-settle/);
     assert.match(chatWidgetCss, /\.chat-window--bootstrap-content-ready \.emoji-picker-popover:not\(\.active\) \{[\s\S]*opacity: 0 !important;/);
     assert.match(chatWidgetCss, /@keyframes chat-widget-loading-dots \{[\s\S]*transform: translateY\(-3px\);[\s\S]*opacity: 0\.96;/);
-    assert.match(walletLoader, /const VERSION = '20260508_SITE_SCOPED_CONFIG_1';/);
+    assert.match(walletLoader, /const VERSION = '20260510_WALLET_REALTIME_FALLBACK_1';/);
 });

@@ -10,6 +10,7 @@
  *   SiteConfig.currencyCode  → 'CNY' | 'USD'
  *   SiteConfig.getPriceField() → 'price_points' | 'price_points_intl'
  *   SiteConfig.getPointsLabel() → 跟随当前语言返回 '积分' | 'Points'
+ *   SiteConfig.getAssetCdnOrigin() → 当前站点图片 CDN origin
  *   SiteConfig.isCN()        → true | false
  *   SiteConfig.isIntl()      → true | false
  */
@@ -21,6 +22,24 @@
         'zaoyoe.xyz',
         'www.zaoyoe.xyz'
     ];
+    const ASSET_CDN_ORIGINS = {
+        cn: 'https://cdn.zaoyoe.com',
+        intl: 'https://cdn.zaoyoe.xyz'
+    };
+    const ASSET_CDN_HOSTS = new Set([
+        'cdn.zaoyoe.com',
+        'cdn.zaoyoe.xyz'
+    ]);
+    const ASSET_CDN_PATH_PREFIXES = new Set([
+        'affiliate-posters',
+        'avatars',
+        'chat',
+        'comments',
+        'guestbook',
+        'homepage',
+        'products',
+        'prompts'
+    ]);
 
     /**
      * 检测当前站点
@@ -48,6 +67,31 @@
     }
 
     const site = detectSite();
+
+    function getAssetCdnOriginForSite(siteValue) {
+        return ASSET_CDN_ORIGINS[siteValue === 'intl' ? 'intl' : 'cn'];
+    }
+
+    function normalizeAssetUrlForSite(url, siteValue) {
+        const source = String(url || '').trim();
+        if (!source) return '';
+
+        try {
+            const parsed = new URL(source, window.location.origin);
+            const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+            const isKnownAssetHost = ASSET_CDN_HOSTS.has(parsed.hostname) || parsed.hostname.endsWith('.r2.dev');
+            if (!isKnownAssetHost || !ASSET_CDN_PATH_PREFIXES.has(parts[0])) {
+                return source;
+            }
+
+            const targetOrigin = new URL(getAssetCdnOriginForSite(siteValue));
+            parsed.protocol = targetOrigin.protocol;
+            parsed.host = targetOrigin.host;
+            return parsed.toString();
+        } catch (error) {
+            return source;
+        }
+    }
 
     const SiteConfig = {
         /** 当前站点标识: 'cn' | 'intl' */
@@ -110,6 +154,26 @@
             return this.site === 'intl'
                 ? (lowercaseEnglish ? 'points' : 'Points')
                 : '积分';
+        },
+
+        /** 获取当前站点的图片 CDN Origin。数据库仍使用 cn 作为 canonical，前台按站点改写。 */
+        getAssetCdnOrigin: function () {
+            return getAssetCdnOriginForSite(this.site);
+        },
+
+        /** 获取数据库 canonical 图片 CDN Origin */
+        getCanonicalAssetCdnOrigin: function () {
+            return ASSET_CDN_ORIGINS.cn;
+        },
+
+        /** 将 R2/CDN 图片 URL 改写到当前站点 CDN */
+        normalizeAssetUrlForCurrentSite: function (url) {
+            return normalizeAssetUrlForSite(url, this.site);
+        },
+
+        /** 将 R2/CDN 图片 URL 改写到数据库 canonical CDN */
+        normalizeAssetUrlForCanonicalSite: function (url) {
+            return normalizeAssetUrlForSite(url, 'cn');
         },
 
         /** 是否为国内站 */

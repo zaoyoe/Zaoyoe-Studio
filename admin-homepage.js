@@ -3516,7 +3516,7 @@ const HomepageAdmin = (() => {
                 setSelectValue('hp-verify-preview-mode', content.preview_mode || 'dynamic');
                 setInputValue('hp-verify-demo-title', content.demo_title);
                 setInputValue('hp-verify-demo-subtitle', content.demo_subtitle);
-                setInputValue('hp-verify-screenshot', content.screenshot_path);
+                setInputValue('hp-verify-screenshot', normalizeHomepageManagedImageUrl(content.screenshot_path));
                 setInputValue('hp-verify-features', (content.features || []).join(', '));
                 setInputValue('hp-verify-value-props', (content.value_props || []).join(', '));
                 setInputValue('hp-verify-supported-models', (content.supported_models || []).join(', '));
@@ -4031,7 +4031,7 @@ const HomepageAdmin = (() => {
                 content.preview_mode = getSelectValue('hp-verify-preview-mode') === 'image' ? 'image' : 'dynamic';
                 content.demo_title = getInputValue('hp-verify-demo-title');
                 content.demo_subtitle = getInputValue('hp-verify-demo-subtitle');
-                content.screenshot_path = getInputValue('hp-verify-screenshot');
+                content.screenshot_path = normalizeHomepageManagedImageUrl(getInputValue('hp-verify-screenshot'));
                 content.features = parseHomepageDelimitedList(getInputValue('hp-verify-features'));
                 content.value_props = parseHomepageDelimitedList(getInputValue('hp-verify-value-props'));
                 content.supported_models = parseHomepageDelimitedList(getInputValue('hp-verify-supported-models'));
@@ -5243,50 +5243,166 @@ const HomepageAdmin = (() => {
     // SCREENSHOT UPLOAD
     // ============================================
 
+    function isHomepageInlineImageData(value) {
+        return /^data:image\/[a-z0-9.+-]+;base64,/i.test(String(value || '').trim());
+    }
+
+    function isHomepageSupabaseStorageImageUrl(value) {
+        const source = String(value || '').trim();
+        if (!source) return false;
+
+        try {
+            const parsed = new URL(source, window.location.origin);
+            return parsed.hostname.endsWith('.supabase.co') && parsed.pathname.includes('/storage/v1/');
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function normalizeHomepageManagedImageUrl(value) {
+        const source = String(value || '').trim();
+        if (!source || isHomepageInlineImageData(source) || isHomepageSupabaseStorageImageUrl(source)) {
+            return '';
+        }
+        return window.SiteConfig?.normalizeAssetUrlForCanonicalSite?.(source) || source;
+    }
+
+    function readHomepageImageFileAsDataUrl(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(new Error('图片读取失败'));
+            reader.readAsDataURL(file);
+        });
+    }
+
+    async function compressHomepageScreenshotFile(file) {
+        const dataUrl = await readHomepageImageFileAsDataUrl(file);
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    reject(new Error('浏览器无法压缩图片'));
+                    return;
+                }
+
+                let w = img.width;
+                let h = img.height;
+                const MAX = 1200;
+                if (w > MAX || h > MAX) {
+                    if (w > h) {
+                        h = Math.round(h * MAX / w);
+                        w = MAX;
+                    } else {
+                        w = Math.round(w * MAX / h);
+                        h = MAX;
+                    }
+                }
+
+                canvas.width = w;
+                canvas.height = h;
+                ctx.drawImage(img, 0, 0, w, h);
+                const imageData = canvas.toDataURL('image/webp', 0.8);
+                resolve({
+                    imageData,
+                    width: w,
+                    height: h,
+                    originalWidth: img.width,
+                    originalHeight: img.height
+                });
+            };
+            img.onerror = () => reject(new Error('图片格式无法识别'));
+            img.src = dataUrl;
+        });
+    }
+
+    async function uploadHomepageScreenshotToR2(imageData, site) {
+        if (!window.supabaseClient?.auth?.getSession) {
+            throw new Error('Supabase 登录态未就绪，请刷新后重试');
+        }
+
+        const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
+        if (!session?.access_token || !session?.user?.id) {
+            throw new Error('请先登录后再上传截图');
+        }
+
+        const response = await fetch(
+            window.getZaoyoeSupabaseFunctionUrl('upload-avatar'),
+            {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${session.access_token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    userId: session.user.id,
+                    type: 'homepage',
+                    homepageSection: 'verify-screenshot',
+                    site,
+                    imageData
+                })
+            }
+        );
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload?.imageUrl) {
+            throw new Error(payload?.error || '首页截图上传失败');
+        }
+
+        return normalizeHomepageManagedImageUrl(payload.imageUrl);
+    }
+
     function _handleScreenshotUpload(input) {
         const file = input.files && input.files[0];
         if (!file) return;
 
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const img = new Image();
-            img.onload = () => {
-                // Compress & convert to WebP via Canvas
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
+        const writableSite = requireWritableHomepageSite({ label: '上传 Verify 截图' });
+        if (!writableSite) {
+            input.value = '';
+            return;
+        }
 
-                let w = img.width, h = img.height;
-                const MAX = 1200; // max dimension
-                if (w > MAX || h > MAX) {
-                    if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
-                    else { w = Math.round(w * MAX / h); h = MAX; }
-                }
-                canvas.width = w;
-                canvas.height = h;
-                ctx.drawImage(img, 0, 0, w, h);
+        void (async () => {
+            showHomepageActionToast('正在上传截图到 R2/CDN...', 'info', {
+                source: 'homepage-draft',
+                feedbackState: 'loading'
+            });
 
-                // Convert to WebP (80% quality)
-                const webpData = canvas.toDataURL('image/webp', 0.8);
+            const previewImg = document.getElementById('hp-verify-preview-img');
+            const placeholder = document.getElementById('hp-verify-upload-placeholder');
+            const compressed = await compressHomepageScreenshotFile(file);
 
-                // Update preview
-                const previewImg = document.getElementById('hp-verify-preview-img');
-                const placeholder = document.getElementById('hp-verify-upload-placeholder');
-                if (previewImg) {
-                    previewImg.src = webpData;
-                }
-                setHomepagePreviewState(previewImg, placeholder, true);
+            if (previewImg) {
+                previewImg.src = compressed.imageData;
+            }
+            setHomepagePreviewState(previewImg, placeholder, true);
 
-                // Store WebP base64 data directly (will be saved to DB)
-                setInputValue('hp-verify-screenshot', webpData);
+            const uploadedUrl = await uploadHomepageScreenshotToR2(compressed.imageData, writableSite);
+            if (!uploadedUrl) {
+                throw new Error('首页截图上传后未返回可用 CDN 地址');
+            }
 
-                // Log compression info
-                const originalKB = (file.size / 1024).toFixed(1);
-                const compressedKB = (webpData.length * 0.75 / 1024).toFixed(1); // approx base64 → bytes
-                console.log(`📸 Screenshot: ${img.width}x${img.height} → ${w}x${h}, ${originalKB}KB → ~${compressedKB}KB WebP`);
-            };
-            img.src = e.target.result;
-        };
-        reader.readAsDataURL(file);
+            setInputValue('hp-verify-screenshot', uploadedUrl);
+            _updateScreenshotPreview(uploadedUrl);
+
+            const originalKB = (file.size / 1024).toFixed(1);
+            const compressedKB = (compressed.imageData.length * 0.75 / 1024).toFixed(1);
+            console.log(`📸 Screenshot: ${compressed.originalWidth}x${compressed.originalHeight} → ${compressed.width}x${compressed.height}, ${originalKB}KB → ~${compressedKB}KB WebP → ${uploadedUrl}`);
+            showHomepageActionToast('截图已上传到 R2/CDN，保存草稿后生效', 'success', {
+                source: 'homepage-draft'
+            });
+        })().catch((error) => {
+            console.error('[Homepage] Failed to upload verify screenshot:', error);
+            setInputValue('hp-verify-screenshot', normalizeHomepageManagedImageUrl(getInputValue('hp-verify-screenshot')));
+            _updateScreenshotPreview(getInputValue('hp-verify-screenshot'));
+            showHomepageActionToast(error?.message || '截图上传失败，请稍后重试', 'error', {
+                source: 'homepage-draft'
+            });
+        }).finally(() => {
+            input.value = '';
+        });
     }
 
     function _updateScreenshotPreview(path) {
@@ -5294,14 +5410,16 @@ const HomepageAdmin = (() => {
         const placeholder = document.getElementById('hp-verify-upload-placeholder');
         if (!img || !placeholder) return;
 
-        if (path) {
-            img.src = path;
+        const safePath = normalizeHomepageManagedImageUrl(path);
+        if (safePath) {
+            img.src = safePath;
             setHomepagePreviewState(img, placeholder, true);
             // Handle load error — show placeholder again
             img.onerror = () => {
                 setHomepagePreviewState(img, placeholder, false);
             };
         } else {
+            img.removeAttribute('src');
             setHomepagePreviewState(img, placeholder, false);
         }
     }

@@ -100,7 +100,10 @@
         if (!normalized) {
             return '';
         }
-        if (/^https?:\/\//i.test(normalized) || normalized.startsWith('/') || normalized.startsWith('#') || normalized.startsWith('data:image/')) {
+        if (normalized.startsWith('data:image/')) {
+            return fallback || '';
+        }
+        if (/^https?:\/\//i.test(normalized) || normalized.startsWith('/') || normalized.startsWith('#')) {
             return normalized;
         }
         return normalized;
@@ -708,7 +711,7 @@
                 next.section_title = sanitizeText(source.section_title, '', 120);
                 next.section_subtitle = sanitizeText(source.section_subtitle, '', 240);
                 next.preview_mode = sanitizeText(source.preview_mode, next.preview_mode, 20) === 'image' ? 'image' : 'dynamic';
-                next.screenshot_path = sanitizeUrl(source.screenshot_path, '', 400000);
+                next.screenshot_path = sanitizeUrl(source.screenshot_path, '', 2048);
                 next.features = normalizeStringList(source.features, { maxItems: 8, maxLength: 60 });
                 next.value_props = normalizeStringList(source.value_props, { maxItems: 8, maxLength: 80 });
                 next.supported_models = normalizeStringList(source.supported_models, { maxItems: 8, maxLength: 80 });

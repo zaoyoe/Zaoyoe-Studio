@@ -11,11 +11,43 @@
         return /googleusercontent\.com|lh3\.googleusercontent\.com/i.test(String(url || ''));
     }
 
-    function isUsableAvatarUrl(url) {
+    function normalizeFastPaintAvatarUrl(url) {
         const value = String(url || '').trim();
-        if (!value) return false;
-        if (/^https?:\/\//i.test(value)) return true;
-        return value.startsWith('data:image/') && value.length > 100;
+        if (!value || /^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(value)) {
+            return '';
+        }
+
+        if (value.startsWith('data:image/') && value.length > 100) {
+            return value;
+        }
+
+        try {
+            const parsed = new URL(value, window.location.origin);
+            if (!['http:', 'https:'].includes(parsed.protocol)) {
+                return '';
+            }
+
+            const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+            const isR2Asset = parsed.hostname.endsWith('.r2.dev')
+                && ['affiliate-posters', 'avatars', 'chat', 'comments', 'guestbook', 'products', 'prompts'].includes(parts[0]);
+            if (isR2Asset) {
+                const hostname = String(window.location?.hostname || '').toLowerCase();
+                const cdnOrigin = hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz')
+                    ? 'https://cdn.zaoyoe.xyz'
+                    : 'https://cdn.zaoyoe.com';
+                const targetOrigin = new URL(cdnOrigin);
+                parsed.protocol = targetOrigin.protocol;
+                parsed.host = targetOrigin.host;
+            }
+
+            return parsed.href;
+        } catch (_) {
+            return '';
+        }
+    }
+
+    function isUsableAvatarUrl(url) {
+        return Boolean(normalizeFastPaintAvatarUrl(url));
     }
 
     function escapeSvgText(value) {
@@ -66,7 +98,7 @@
     function buildAuthButton(profile) {
         const isLoggedIn = !!profile;
         const avatarSeed = profile?.email || profile?.username || profile?.nickname || 'User';
-        const cachedAvatarUrl = isUsableAvatarUrl(profile?.avatarUrl) ? String(profile.avatarUrl).trim() : '';
+        const cachedAvatarUrl = normalizeFastPaintAvatarUrl(profile?.avatarUrl);
         const avatarUrl = cachedAvatarUrl || (isLoggedIn ? getInstantFallbackAvatarUrl(avatarSeed) : '');
         const hasAvatar = !!(isLoggedIn && avatarUrl);
 

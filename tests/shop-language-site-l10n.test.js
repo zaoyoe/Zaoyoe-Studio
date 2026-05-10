@@ -2,11 +2,33 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 
 function readRepoFile(relativePath) {
     return fs.readFileSync(path.join(REPO_ROOT, relativePath), 'utf8');
+}
+
+function loadSiteConfigForUrl(rawUrl) {
+    const pageUrl = new URL(rawUrl);
+    const window = {
+        location: {
+            search: pageUrl.search,
+            hostname: pageUrl.hostname,
+            origin: pageUrl.origin
+        }
+    };
+
+    vm.runInNewContext(readRepoFile('js/site-config.js'), {
+        window,
+        document: { documentElement: { lang: '' } },
+        console: { log() {}, warn() {}, debug() {} },
+        URL,
+        URLSearchParams
+    });
+
+    return window.SiteConfig;
 }
 
 test('shop runtime derives points label from current language instead of site', () => {
@@ -27,6 +49,60 @@ test('shop runtime derives points label from current language instead of site', 
         shopClientSource,
         /window\.SiteConfig\?\.getPointsLabel\(\) \|\| window\.i18n\?\.t\('shop\.points'\) \|\| '积分'/,
         'shop client should not keep a site-biased inline fallback for points labels'
+    );
+});
+
+test('site config keeps shared image records canonical while exposing intl CDN display origins', () => {
+    const siteConfigSource = readRepoFile('js/site-config.js');
+    const shopClientSource = readRepoFile('js/shop-client.js');
+    const framerHomeSource = readRepoFile('js/framer_home.js');
+    const chatWidgetSource = readRepoFile('js/components/ChatWidget.js');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    assert.match(siteConfigSource, /intl: 'https:\/\/cdn\.zaoyoe\.xyz'/);
+    assert.match(siteConfigSource, /getCanonicalAssetCdnOrigin: function \(\)/);
+    assert.match(siteConfigSource, /normalizeAssetUrlForCurrentSite: function \(url\)/);
+    assert.match(shopClientSource, /normalizeShopProductCdnUrl\(trimmed, \{ canonical: true \}\)/);
+    assert.match(framerHomeSource, /getZaoyoeAssetCdnOrigin\(\)/);
+    assert.match(chatWidgetSource, /window\.SiteConfig\?\.normalizeAssetUrlForCurrentSite\?\.\(parsed\.href\)/);
+    assert.ok(
+        adminStudioHtml.indexOf('./js/site-config.js?v=20260510_SITE_ASSET_CDN_1') < adminStudioHtml.indexOf('admin-studio.js?v='),
+        'admin studio should load site config before admin gallery image rendering'
+    );
+    assert.ok(
+        adminStudioHtml.indexOf('./js/site-config.js?v=20260510_SITE_ASSET_CDN_1') < adminStudioHtml.indexOf('js/admin-shop.js?v='),
+        'admin studio should load site config before admin shop image rendering'
+    );
+});
+
+test('site config rewrites canonical image CDN records to intl display origins at runtime', () => {
+    const intlConfig = loadSiteConfigForUrl('https://zaoyoe.xyz/shop.html?site=intl');
+    const cnConfig = loadSiteConfigForUrl('https://zaoyoe.com/shop.html');
+
+    assert.equal(intlConfig.site, 'intl');
+    assert.equal(intlConfig.getAssetCdnOrigin(), 'https://cdn.zaoyoe.xyz');
+    assert.equal(intlConfig.getCanonicalAssetCdnOrigin(), 'https://cdn.zaoyoe.com');
+    assert.equal(
+        intlConfig.normalizeAssetUrlForCurrentSite('https://cdn.zaoyoe.com/products/product_1775982177111.jpg'),
+        'https://cdn.zaoyoe.xyz/products/product_1775982177111.jpg'
+    );
+    assert.equal(
+        intlConfig.normalizeAssetUrlForCurrentSite('https://legacy-public.r2.dev/prompts/example.webp?size=card'),
+        'https://cdn.zaoyoe.xyz/prompts/example.webp?size=card'
+    );
+    assert.equal(
+        intlConfig.normalizeAssetUrlForCanonicalSite('https://cdn.zaoyoe.xyz/chat/thread/image.webp'),
+        'https://cdn.zaoyoe.com/chat/thread/image.webp'
+    );
+    assert.equal(
+        intlConfig.normalizeAssetUrlForCurrentSite('https://example.com/products/product_1775982177111.jpg'),
+        'https://example.com/products/product_1775982177111.jpg'
+    );
+
+    assert.equal(cnConfig.site, 'cn');
+    assert.equal(
+        cnConfig.normalizeAssetUrlForCurrentSite('https://cdn.zaoyoe.xyz/prompts/example.webp'),
+        'https://cdn.zaoyoe.com/prompts/example.webp'
     );
 });
 

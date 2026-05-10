@@ -10,10 +10,10 @@
  * @returns {string} Thumbnail URL for R2 CDN images, original for others
  */
 function getOptimizedImageUrl(url, options = {}) {
-    const { format = 'avif', variant = '' } = options;
+    const { variant = '' } = options;
     const explicitVariantUrl = getPromptImageAssetVariantUrl(url, variant);
     if (explicitVariantUrl) {
-        return explicitVariantUrl;
+        return normalizePromptCdnUrlForCurrentSite(explicitVariantUrl) || explicitVariantUrl;
     }
 
     const rawUrl = getPromptImageAssetOriginalUrl(url);
@@ -30,30 +30,61 @@ function getOptimizedImageUrl(url, options = {}) {
         return r2ThumbUrl;
     }
 
-    // Supabase Storage images - use the built-in transform endpoint for card-sized WebP delivery
-    if (rawUrl.includes('supabase.co/storage/v1/object/public/prompt-images/')) {
-        try {
-            const optimizedUrl = new URL(rawUrl);
-            optimizedUrl.pathname = optimizedUrl.pathname.replace(
-                '/storage/v1/object/public/',
-                '/storage/v1/render/image/public/'
-            );
-            optimizedUrl.searchParams.set('width', '360');
-            optimizedUrl.searchParams.set('height', '270');
-            optimizedUrl.searchParams.set('quality', '80');
-            if (format) {
-                optimizedUrl.searchParams.set('format', format);
-            } else {
-                optimizedUrl.searchParams.delete('format');
-            }
-            return optimizedUrl.toString();
-        } catch (error) {
-            console.warn('Failed to build Supabase prompt image transform URL:', error);
-        }
+    if (isSupabaseStorageImageUrl(rawUrl)) {
+        return '';
     }
 
     // Return original URL for other images or already-thumbnail URLs
-    return rawUrl;
+    return normalizePromptCdnUrlForCurrentSite(rawUrl) || rawUrl;
+}
+
+function isSupabaseStorageImageUrl(url) {
+    return /^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(String(url || '').trim());
+}
+
+function getPromptAssetCdnOrigin({ canonical = false } = {}) {
+    if (canonical) {
+        return String(window.SiteConfig?.getCanonicalAssetCdnOrigin?.() || 'https://cdn.zaoyoe.com').replace(/\/+$/, '');
+    }
+
+    const configuredOrigin = String(window.SiteConfig?.getAssetCdnOrigin?.() || '').trim();
+    if (configuredOrigin) {
+        return configuredOrigin.replace(/\/+$/, '');
+    }
+
+    const hostname = String(window.location?.hostname || '').toLowerCase();
+    return hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz')
+        ? 'https://cdn.zaoyoe.xyz'
+        : 'https://cdn.zaoyoe.com';
+}
+
+function normalizePromptCdnUrlForCurrentSite(url, options = {}) {
+    const source = String(url || '').trim();
+    if (!source) return '';
+
+    const siteConfigNormalizer = options.canonical
+        ? window.SiteConfig?.normalizeAssetUrlForCanonicalSite
+        : window.SiteConfig?.normalizeAssetUrlForCurrentSite;
+    const normalizedBySiteConfig = typeof siteConfigNormalizer === 'function'
+        ? String(siteConfigNormalizer.call(window.SiteConfig, source) || '').trim()
+        : '';
+    if (normalizedBySiteConfig && normalizedBySiteConfig !== source) {
+        return normalizedBySiteConfig;
+    }
+
+    try {
+        const parsed = new URL(source, window.location.origin);
+        const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+        const isKnownCdnHost = ['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname) || parsed.hostname.endsWith('.r2.dev');
+        if (!isKnownCdnHost || parts[0] !== 'prompts') return '';
+
+        const targetOrigin = new URL(getPromptAssetCdnOrigin(options));
+        parsed.protocol = targetOrigin.protocol;
+        parsed.host = targetOrigin.host;
+        return parsed.toString();
+    } catch (error) {
+        return '';
+    }
 }
 
 function getPromptResponsiveImageFilename(url) {
@@ -92,8 +123,9 @@ function getPromptResponsiveR2VariantUrl(url, variant = '') {
     if (!variantPath) return '';
 
     try {
-        const parsed = new URL(String(url || '').trim(), window.location.origin);
-        if (parsed.hostname !== 'cdn.zaoyoe.com') return '';
+        const normalizedUrl = normalizePromptCdnUrlForCurrentSite(url) || String(url || '').trim();
+        const parsed = new URL(normalizedUrl, window.location.origin);
+        if (!['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)) return '';
 
         const parts = String(parsed.pathname || '').split('/').filter(Boolean);
         if (parts.length !== 2 || parts[0] !== 'prompts') return '';
@@ -101,7 +133,7 @@ function getPromptResponsiveR2VariantUrl(url, variant = '') {
         const filename = decodeURIComponent(parts[1] || '');
         if (!filename) return '';
 
-        return `${parsed.origin}/prompts/${variantPath}/${encodeURIComponent(filename)}`;
+        return `${getPromptAssetCdnOrigin()}/prompts/${variantPath}/${encodeURIComponent(filename)}`;
     } catch (error) {
         return '';
     }
@@ -110,13 +142,14 @@ function getPromptResponsiveR2VariantUrl(url, variant = '') {
 function getPromptResponsiveImageVariantUrl(url, variant = '') {
     const normalizedVariant = String(variant || '').trim();
     const trimmed = String(url || '').trim();
-    if (!normalizedVariant || !trimmed.includes('cdn.zaoyoe.com/prompts/')) {
+    const normalizedUrl = normalizePromptCdnUrlForCurrentSite(trimmed) || '';
+    if (!normalizedVariant || !normalizedUrl) {
         return '';
     }
 
     const available = getPromptResponsiveVariantList(normalizedVariant);
     if (Array.isArray(available)) {
-        const filename = getPromptResponsiveImageFilename(trimmed);
+        const filename = getPromptResponsiveImageFilename(normalizedUrl);
         if (filename && available.includes(filename)) {
             const manifest = window.__PROMPT_IMAGE_VARIANTS__ || null;
             const basePath = String(manifest?.basePaths?.[normalizedVariant] || `/assets/prompts-${normalizedVariant}`).replace(/\/+$/, '');
@@ -125,7 +158,7 @@ function getPromptResponsiveImageVariantUrl(url, variant = '') {
         return '';
     }
 
-    return getPromptResponsiveR2VariantUrl(trimmed, normalizedVariant);
+    return getPromptResponsiveR2VariantUrl(normalizedUrl, normalizedVariant);
 }
 
 function normalizePromptImageAsset(value) {
@@ -207,32 +240,26 @@ function getPromptPrimaryImageAsset(item = {}) {
 function getPromptModalImageUrl(url) {
     const trimmed = getPromptImageAssetOriginalUrl(url);
     if (!trimmed) return '';
+    if (isSupabaseStorageImageUrl(trimmed)) return '';
+    const displayUrl = normalizePromptCdnUrlForCurrentSite(trimmed) || trimmed;
 
     try {
-        const parsed = new URL(trimmed, window.location.origin);
+        const parsed = new URL(displayUrl, window.location.origin);
         const parts = String(parsed.pathname || '').split('/').filter(Boolean);
 
-        const isPromptCdnHost = parsed.hostname === 'cdn.zaoyoe.com' || parsed.hostname.endsWith('.r2.dev');
+        const isPromptCdnHost = ['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname) || parsed.hostname.endsWith('.r2.dev');
         if (isPromptCdnHost && parts.length === 3 && parts[0] === 'prompts' && ['thumb', 'featured', 'card', 'home'].includes(parts[1])) {
             parsed.pathname = `/prompts/${parts[2]}`;
             parsed.search = '';
             parsed.hash = '';
-            return parsed.toString();
+            return normalizePromptCdnUrlForCurrentSite(parsed.toString()) || parsed.toString();
         }
 
-        if (parsed.pathname.includes('/storage/v1/render/image/public/')) {
-            parsed.pathname = parsed.pathname.replace(
-                '/storage/v1/render/image/public/',
-                '/storage/v1/object/public/'
-            );
-            ['width', 'height', 'quality', 'format'].forEach((param) => parsed.searchParams.delete(param));
-            return parsed.toString();
-        }
     } catch (error) {
-        return trimmed;
+        return displayUrl;
     }
 
-    return trimmed;
+    return displayUrl;
 }
 
 function shouldForcePromptPageTop() {
@@ -2124,7 +2151,6 @@ function warmPromptGalleryLeadImages(items = []) {
     leadItems.forEach((item) => {
         const optimizedUrl = getOptimizedImageUrl(getPromptPrimaryImageAsset(item), { variant: 'card' });
         if (!optimizedUrl || promptGalleryImageWarmCache.has(optimizedUrl)) return;
-        if (optimizedUrl.includes('supabase.co/storage/v1/render/image/public/')) return;
 
         promptGalleryImageWarmCache.add(optimizedUrl);
         const warmImage = new Image();
@@ -2159,14 +2185,27 @@ function markPromptCardImageReady(card, cardImage) {
 function setPromptCardImageSource(cardImage, imageAsset) {
     if (!cardImage || !imageAsset) return;
 
-    const originalUrl = getPromptImageAssetOriginalUrl(imageAsset);
+    const rawOriginalUrl = getPromptImageAssetOriginalUrl(imageAsset);
+    if (isSupabaseStorageImageUrl(rawOriginalUrl)) {
+        cardImage.dataset.originalSrc = '';
+        cardImage.dataset.transformFallbackSrc = '';
+        cardImage.dataset.fallbackStage = '';
+        cardImage.removeAttribute('src');
+        return;
+    }
+
+    const originalUrl = normalizePromptCdnUrlForCurrentSite(rawOriginalUrl) || rawOriginalUrl;
     const primaryUrl = getOptimizedImageUrl(imageAsset, { variant: 'card' });
     const transformFallbackUrl = getOptimizedImageUrl(imageAsset, { format: '' });
 
     cardImage.dataset.originalSrc = originalUrl;
     cardImage.dataset.transformFallbackSrc = transformFallbackUrl !== primaryUrl ? transformFallbackUrl : '';
     cardImage.dataset.fallbackStage = '';
-    cardImage.src = primaryUrl;
+    if (primaryUrl) {
+        cardImage.src = primaryUrl;
+    } else {
+        cardImage.removeAttribute('src');
+    }
 }
 
 function getUniquePromptImageCandidates(urls = []) {
@@ -2174,7 +2213,7 @@ function getUniquePromptImageCandidates(urls = []) {
     return urls
         .map((url) => String(url || '').trim())
         .filter((url) => {
-            if (!url || seen.has(url)) return false;
+            if (!url || seen.has(url) || isSupabaseStorageImageUrl(url)) return false;
             seen.add(url);
             return true;
         });
@@ -2184,16 +2223,11 @@ function getFeaturedBannerImageCandidates(imageAsset) {
     const trimmed = getPromptImageAssetOriginalUrl(imageAsset);
     if (!trimmed) return [];
 
-    const supabaseTransformFallback = trimmed.includes('supabase.co/storage/v1/object/public/prompt-images/')
-        ? getOptimizedImageUrl(trimmed, { format: '' })
-        : '';
-
     return getUniquePromptImageCandidates([
         getOptimizedImageUrl(imageAsset, { variant: 'featured' }),
         getOptimizedImageUrl(imageAsset, { variant: 'thumb' }),
         getOptimizedImageUrl(imageAsset, { variant: 'card' }),
         getOptimizedImageUrl(imageAsset, { variant: 'home' }),
-        supabaseTransformFallback,
         trimmed
     ]);
 }
@@ -3859,7 +3893,12 @@ function renderCurrentPage() {
                 return;
             }
 
-            if (cardImage.dataset.fallbackStage !== 'original' && originalSrc && cardImage.src !== originalSrc) {
+            if (
+                cardImage.dataset.fallbackStage !== 'original'
+                && originalSrc
+                && !isSupabaseStorageImageUrl(originalSrc)
+                && cardImage.src !== originalSrc
+            ) {
                 cardImage.dataset.fallbackStage = 'original';
                 cardImage.src = originalSrc;
                 return;
@@ -7726,33 +7765,62 @@ async function smartCompress(file) {
     return compressed;
 }
 
-// Upload image to Supabase Storage
+function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(new Error('File read failed'));
+        reader.readAsDataURL(file);
+    });
+}
+
+// Upload comment image to R2. Do not fall back to Supabase Storage; image serving
+// must stay off Supabase egress even when R2 is temporarily unavailable.
 async function uploadCommentImage(file) {
     if (!window.supabaseClient) return null;
 
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${fileExt}`;
-    const filePath = `${fileName}`;
-
-    const { data, error } = await window.supabaseClient.storage
-        .from('comment-images')
-        .upload(filePath, file);
-
-    if (error) {
-        console.error('Upload error:', error);
-        return null;
+    const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
+    if (!session?.access_token || !session?.user?.id) {
+        throw new Error('Please sign in before uploading images');
     }
 
-    // Get public URL
-    const { data: { publicUrl } } = window.supabaseClient.storage
-        .from('comment-images')
-        .getPublicUrl(filePath);
+    const imageData = await fileToDataUrl(file);
+    const response = await fetch(
+        window.getZaoyoeSupabaseFunctionUrl('upload-avatar'),
+        {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${session.access_token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                userId: session.user.id,
+                type: 'comment',
+                imageData
+            })
+        }
+    );
 
-    return publicUrl;
+    let payload = null;
+    try {
+        payload = await response.json();
+    } catch (error) {
+        payload = null;
+    }
+
+    if (!response.ok || !payload?.imageUrl) {
+        throw new Error(payload?.error || 'R2 image upload failed');
+    }
+
+    return payload.imageUrl;
 }
 
 // Open image in lightbox
 function openImageLightbox(imageUrl) {
+    const rawImageUrl = String(imageUrl || '').trim();
+    const safeImageUrl = String(window.SiteConfig?.normalizeAssetUrlForCurrentSite?.(rawImageUrl) || rawImageUrl).trim();
+    if (!safeImageUrl || isSupabaseStorageImageUrl(safeImageUrl)) return;
+
     // Create lightbox if doesn't exist
     let lightbox = document.getElementById('imageLightbox');
     if (!lightbox) {
@@ -7771,7 +7839,7 @@ function openImageLightbox(imageUrl) {
 
     // Set image and show
     const img = lightbox.querySelector('img');
-    img.src = imageUrl;
+    img.src = safeImageUrl;
 
     requestAnimationFrame(() => {
         lightbox.classList.add('active');
@@ -7800,6 +7868,7 @@ function closeImageLightbox() {
 
 let realtimeChannel = null;
 let realtimeChannelSite = null;
+let realtimeSubscription = null;
 
 function normalizePromptInteractionSite(site) {
     return site === 'intl' ? 'intl' : 'cn';
@@ -7820,23 +7889,55 @@ function initCommentRealtime() {
     const site = getPromptInteractionSite();
     if (realtimeChannel && realtimeChannelSite === site) return;
 
-    if (realtimeChannel && realtimeChannelSite !== site) {
+    if ((realtimeChannel || realtimeSubscription) && realtimeChannelSite !== site) {
         try {
-            realtimeChannel.unsubscribe?.();
+            realtimeSubscription?.unsubscribe?.();
+            if (!realtimeSubscription) {
+                realtimeChannel.unsubscribe?.();
+            }
         } catch (_) {
             // Ignore cleanup failures during local dev/site swaps.
         }
         realtimeChannel = null;
+        realtimeSubscription = null;
     }
 
     realtimeChannelSite = site;
-    realtimeChannel = window.supabaseClient
-        .channel(`prompt-comments-updates-${site}`)
-        .on('postgres_changes',
-            { event: 'INSERT', schema: 'public', table: 'prompt_comments', filter: `site=eq.${site}` },
-            handleRealtimeCommentInsert
-        )
-        .subscribe();
+    if (typeof window.subscribeZaoyoeRealtime === 'function') {
+        realtimeSubscription = window.subscribeZaoyoeRealtime({
+            client: window.supabaseClient,
+            channel: `prompt-comments-updates-${site}`,
+            feature: 'prompt_comments',
+            timeoutMs: 2600,
+            build: (channel) => channel.on('postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'prompt_comments', filter: `site=eq.${site}` },
+                handleRealtimeCommentInsert
+            ),
+            onDegraded: (reason) => {
+                console.warn('[PromptComments] Realtime degraded, using on-open refresh only:', reason);
+                realtimeChannel = null;
+            }
+        });
+        realtimeChannel = realtimeSubscription.channel || true;
+        return;
+    }
+
+    try {
+        realtimeChannel = window.supabaseClient
+            .channel(`prompt-comments-updates-${site}`)
+            .on('postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'prompt_comments', filter: `site=eq.${site}` },
+                handleRealtimeCommentInsert
+            )
+            .subscribe((status) => {
+                if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+                    console.warn('[PromptComments] Realtime degraded, using on-open refresh only:', status);
+                }
+            });
+    } catch (error) {
+        realtimeChannel = null;
+        console.warn('[PromptComments] Realtime unavailable, using on-open refresh only:', error?.message || error);
+    }
 }
 
 // Handle new comment from realtime
@@ -8517,7 +8618,7 @@ function renderComment(comment, overrideAvatar = null, replyToProfile = null, ha
                     <i class="${heartIconClass}"></i> <span class="like-count">${likeCount}</span>
                 </button>
                 <button class="comment-action-btn reply-btn">${window.i18n?.t('gallery.reply') || 'Reply'}</button>
-                ${comment.image_url ? `
+                ${comment.image_url && !isSupabaseStorageImageUrl(comment.image_url) ? `
                     <button class="comment-action-btn view-image-btn" type="button">
                         <i class="far fa-image"></i> ${window.i18n?.t('gallery.viewImage') || 'View Image'}
                     </button>

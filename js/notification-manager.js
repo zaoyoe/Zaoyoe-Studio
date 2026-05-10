@@ -21,6 +21,7 @@ class NotificationManager {
         this.channels = new Map(); // Store channel configs
         this.realtimeChannels = new Map(); // Store Realtime channel instances
         this.pollingIntervals = new Map(); // Store polling interval IDs
+        this.realtimeSubscribeTimers = new Map(); // Store Realtime subscribe timeout IDs
         this.lastRecordIds = new Map(); // Track last seen record ID per channel
         this.realtimeRetryInterval = null;
         this.mode = 'realtime'; // 'realtime' or 'polling'
@@ -134,12 +135,43 @@ class NotificationManager {
      */
     setupRealtime(config) {
         const { channel, table, event, onMessage, filter } = config;
+        const realtimeTimeoutMs = Math.max(1000, Number(config.realtimeTimeoutMs || 2600) || 2600);
 
         if (!this.supabaseClient) {
             console.warn(`⚠️ [${channel}] No Supabase client, falling back to polling`);
             this.startPolling(config);
             return;
         }
+
+        this.clearRealtimeSubscribeTimer(channel);
+
+        const markRealtimeDegraded = (reason = 'channel_error') => {
+            this.clearRealtimeSubscribeTimer(channel);
+            const currentChannel = this.realtimeChannels.get(channel);
+            if (currentChannel) {
+                try {
+                    this.supabaseClient?.removeChannel?.(currentChannel);
+                } catch (error) {
+                    console.warn(`⚠️ [${channel}] Failed to remove degraded Realtime channel:`, error?.message || error);
+                }
+                this.realtimeChannels.delete(channel);
+            }
+            console.warn(`⚠️ [${channel}] Realtime degraded (${reason}), falling back to polling`);
+            this.startPolling(config);
+            this.mode = 'polling';
+            try {
+                window.dispatchEvent(new CustomEvent('zaoyoe:realtime-state', {
+                    detail: {
+                        feature: 'notification-manager',
+                        channel,
+                        status: 'degraded',
+                        reason
+                    }
+                }));
+            } catch (_) {
+                // diagnostic event only
+            }
+        };
 
         // Create Realtime channel
         const realtimeChannel = this.supabaseClient
@@ -162,22 +194,23 @@ class NotificationManager {
             )
             .subscribe((status) => {
                 if (status === 'SUBSCRIBED') {
+                    this.clearRealtimeSubscribeTimer(channel);
                     console.log(`✅ [${channel}] Realtime connected`);
                     this.stopPolling(channel);
                     this.mode = 'realtime';
                 } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
-                    console.warn(`⚠️ [${channel}] Realtime failed (${status}), falling back to polling`);
-                    this.startPolling(config);
-                    this.mode = 'polling';
+                    markRealtimeDegraded(status.toLowerCase());
                 } else if (status === 'CLOSED') {
-                    console.warn(`⚠️ [${channel}] Realtime closed, trying polling`);
-                    this.startPolling(config);
-                    this.mode = 'polling';
+                    markRealtimeDegraded('closed');
                 }
             });
 
         // Store channel instance
         this.realtimeChannels.set(channel, realtimeChannel);
+        const timerId = setTimeout(() => {
+            markRealtimeDegraded('subscribe_timeout');
+        }, realtimeTimeoutMs);
+        this.realtimeSubscribeTimers.set(channel, timerId);
     }
 
     /**
@@ -268,6 +301,14 @@ class NotificationManager {
         }
     }
 
+    clearRealtimeSubscribeTimer(channel) {
+        const timerId = this.realtimeSubscribeTimers.get(channel);
+        if (timerId) {
+            clearTimeout(timerId);
+            this.realtimeSubscribeTimers.delete(channel);
+        }
+    }
+
     /**
      * Unsubscribe from a channel
      */
@@ -275,6 +316,7 @@ class NotificationManager {
         // Unsubscribe from Realtime
         const realtimeChannel = this.realtimeChannels.get(channel);
         if (realtimeChannel) {
+            this.clearRealtimeSubscribeTimer(channel);
             this.supabaseClient.removeChannel(realtimeChannel);
             this.realtimeChannels.delete(channel);
         }
@@ -306,6 +348,7 @@ class NotificationManager {
                     // Unsubscribe from old Realtime channel if exists
                     const oldChannel = this.realtimeChannels.get(channel);
                     if (oldChannel) {
+                        this.clearRealtimeSubscribeTimer(channel);
                         this.supabaseClient.removeChannel(oldChannel);
                     }
 

@@ -31,6 +31,11 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should cache-bust the first-paint homepage runtime'
     );
     assert.equal(
+        indexSource.includes('promptNoRepaint=20260510_PROMPT_NO_REPAINT_1'),
+        true,
+        'index.html should cache-bust the prompt no-repaint homepage runtime fix'
+    );
+    assert.equal(
         indexSource.includes('./css/framer_home_critical.css?v=20260504_HOME_SECTION_SHELLS_1'),
         true,
         'index.html should load a small blocking homepage critical stylesheet'
@@ -495,6 +500,21 @@ test('homepage prompt masonry keeps first refresh light while warming thumbnails
         /this\.schedulePromptPoolLiveSync\(\{ reason: 'initial-static-prompt-pool' \}\);/,
         'homepage live prompt sync should move off the blocking first render path'
     );
+    assert.doesNotMatch(
+        framerSource,
+        /const updatedAt = String\(normalizedPrompt\?\.(?:updated_at|created_at)/,
+        'homepage live prompt sync should not repaint cards just because live rows include timestamp metadata'
+    );
+    assert.match(
+        framerSource,
+        /const promptSectionAlreadyPainted = Boolean\(promptSection\?\.querySelector\?\.\('\.masonry-card'\)\);/,
+        'homepage live prompt sync should detect when first-paint prompt cards are already on screen'
+    );
+    assert.match(
+        framerSource,
+        /if \(options\.forceRender === true \|\| !promptSectionAlreadyPainted\) \{\s*this\.renderPrompts\(\);/,
+        'homepage live prompt sync should not clear already-painted prompt cards during first-load background refresh'
+    );
     assert.match(
         framerSource,
         /const \[shop, guestbook, shopCategories\] = await Promise\.all\(/,
@@ -536,9 +556,9 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
     const deferredScripts = [
         'https://unpkg.com/@supabase/supabase-js@2',
         '/api/runtime/supabase-config',
-        './js/runtime-supabase-config.js?v=20260508_SITE_SCOPED_GOOGLE_CLIENT_IDS_1',
+        './js/runtime-supabase-config.js?v=20260510_REALTIME_GRACEFUL_FALLBACK_1',
         './supabase-client.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1',
-        './js/site-config.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
+        './js/site-config.js?v=20260510_SITE_ASSET_CDN_1',
         './js/homepage-contract.js?v=20260430_HOMEPAGE_BILINGUAL_FIELDS_1',
         './js/section-visibility.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
         './js/i18n.js?v=20260501_I18N_STABLE_LANG_CACHE_1',
@@ -568,7 +588,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
     );
     assert.match(
         guestbookLoaderSource,
-        /const HOMEPAGE_GUESTBOOK_RUNTIME_SOURCES = Object\.freeze\(\[[\s\S]*supabase-guestbook-functions\.js\?v=20260507_REPLY_REALTIME_1[\s\S]*homepage-guestbook-modal\.js\?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1/,
+        /const HOMEPAGE_GUESTBOOK_RUNTIME_SOURCES = Object\.freeze\(\[[\s\S]*supabase-guestbook-functions\.js\?v=20260510_GUESTBOOK_R2_IMAGE_UPLOAD_1[\s\S]*homepage-guestbook-modal\.js\?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1/,
         'guestbook intent loader should own the deferred runtime sources'
     );
     assert.match(
@@ -577,7 +597,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
         'guestbook intent loader should open the modal after loading deferred runtimes'
     );
     assert.equal(
-        indexSource.includes('./js/engagement-runtime-loader.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1'),
+        indexSource.includes('./js/engagement-runtime-loader.js?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1'),
         true,
         'homepage should cache-bust the split engagement bootstrap'
     );
