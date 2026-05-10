@@ -7,10 +7,10 @@
     const DEFAULT_ADMIN_ACCESS_REST_TIMEOUT_MS = 6000;
     const DEFAULT_ADMIN_STUDIO_SESSION_TIMEOUT_MS = 6000;
     const ADMIN_PRESENCE_CHANNEL = 'zaoyoe-admin-presence';
-    const ADMIN_PRESENCE_HEARTBEAT_MS = 30000;
+    const ADMIN_PRESENCE_HEARTBEAT_MS = 120000;
     const ADMIN_PRESENCE_TAB_KEY = 'zaoyoe_admin_presence_tab_v1';
     const USER_PRESENCE_CHANNEL = 'zaoyoe-user-presence';
-    const USER_PRESENCE_HEARTBEAT_MS = 30000;
+    const USER_PRESENCE_HEARTBEAT_MS = 120000;
     const USER_PRESENCE_TAB_KEY = 'zaoyoe_user_presence_tab_v1';
     let pendingAdminStudioSessionPromise = null;
     let pendingAdminStudioSessionUserId = '';
@@ -628,6 +628,7 @@
 
         if (typeof globalScope.setInterval === 'function') {
             adminPresenceHeartbeatTimer = globalScope.setInterval(() => {
+                if (typeof document !== 'undefined' && document.hidden) return;
                 void markAdminPresenceActive();
             }, ADMIN_PRESENCE_HEARTBEAT_MS);
         }
@@ -665,6 +666,7 @@
 
         if (typeof globalScope.setInterval === 'function') {
             userPresenceHeartbeatTimer = globalScope.setInterval(() => {
+                if (typeof document !== 'undefined' && document.hidden) return;
                 void markUserPresenceActive();
             }, USER_PRESENCE_HEARTBEAT_MS);
         }

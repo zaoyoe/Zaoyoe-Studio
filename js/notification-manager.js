@@ -211,7 +211,7 @@ class NotificationManager {
                     const lastTimestamp = this.lastRecordIds.get(channel) || new Date(0).toISOString();
                     const query = this.supabaseClient
                         .from(table)
-                        .select('*')
+                        .select('id, created_at')
                         .gt('created_at', lastTimestamp)
                         .order('created_at', { ascending: true });
 

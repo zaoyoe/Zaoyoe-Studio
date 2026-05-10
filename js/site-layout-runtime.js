@@ -191,8 +191,7 @@
     function fetchLayoutsFromPublicApi() {
         return fetch('/api/public?scope=config&route=site-layout', {
             method: 'GET',
-            credentials: 'same-origin',
-            cache: 'no-store'
+            credentials: 'same-origin'
         })
             .then((response) => response.json().catch(() => ({})).then((payload) => ({ response, payload })))
             .then(({ response, payload }) => {
@@ -229,16 +228,18 @@
     const cachedLayouts = loadLayoutsFromCache();
     if (cachedLayouts) {
         ensureAppliedWithCurrentDom(cachedLayouts);
+        // Cache hit — skip network fetch to save bandwidth.
+        // Layout config rarely changes; next full page reload will refresh.
+    } else {
+        fetchLayoutsFromPublicApi()
+            .then((layouts) => {
+                saveLayoutsToCache(layouts);
+                ensureAppliedWithCurrentDom(layouts);
+            })
+            .catch((error) => {
+                console.warn('[SiteLayoutRuntime] Failed to load public site layout config:', error?.message || error);
+            });
     }
-
-    fetchLayoutsFromPublicApi()
-        .then((layouts) => {
-            saveLayoutsToCache(layouts);
-            ensureAppliedWithCurrentDom(layouts);
-        })
-        .catch((error) => {
-            console.warn('[SiteLayoutRuntime] Failed to load public site layout config:', error?.message || error);
-        });
 
     global.SiteLayoutRuntime = Object.freeze({
         defaults: DEFAULT_LAYOUTS,

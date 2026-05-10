@@ -448,6 +448,8 @@ function startAutoRefresh() {
     if (autoRefreshInterval || !isAnalyticsModuleVisible()) return;
 
     autoRefreshInterval = setInterval(() => {
+        // Skip auto-refresh when the page is not visible to save bandwidth
+        if (document.hidden) return;
         void refreshAllAnalytics({ silent: true, reason: 'auto-refresh' });
     }, currentRefreshIntervalMs);
 

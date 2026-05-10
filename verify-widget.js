@@ -2602,7 +2602,7 @@
         try {
             const { data, error } = await window.supabaseClient
                 .from('verification_logs')
-                .select('*')
+                .select('id, user_id, site, email, status, points_deducted, result_data, created_at, task_type')
                 .eq('user_id', currentUser.id)
                 .eq('site', window.SiteConfig?.site || 'cn')
                 .order('created_at', { ascending: false })
@@ -2695,7 +2695,7 @@
             try {
                 const result = await window.supabaseClient
                     .from('verification_logs')
-                    .select('*')
+                    .select('id, user_id, site, email, status, points_deducted, result_data, created_at, task_type')
                     .eq('user_id', currentUser.id)
                     .eq('site', window.SiteConfig?.site || 'cn')
                     .order('created_at', { ascending: false });

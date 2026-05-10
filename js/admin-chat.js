@@ -330,6 +330,7 @@ class AdminChat {
             });
 
         this.userPresenceStatusTimer = window.setInterval(() => {
+            if (document.hidden) return;
             if (this.currentSessionInfo && !this.isOpsAlertSession(this.currentSessionInfo)) {
                 this.renderUserContextHeaderStatus(this.currentUserContext);
             }
@@ -505,6 +506,7 @@ class AdminChat {
         }
 
         this.userActivityRefreshTimer = window.setInterval(() => {
+            if (document.hidden) return;
             void this.refreshUserActivityForSessions(this.chatSessions, { render: true });
         }, 30000);
         void this.refreshUserActivityForSessions(this.chatSessions, { render: true });
