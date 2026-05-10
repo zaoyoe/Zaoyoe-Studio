@@ -35,10 +35,10 @@ function initDateRangeControls() {
             existingRange.startDate,
             existingRange.endDate,
             existingRange.days,
-            buildAnalyticsRangeLabel(existingRange)
+            buildAnalyticsRangeControlLabel(existingRange)
         );
     } else {
-        syncAnalyticsDateRange(presetRange.start, presetRange.end, presetRange.days, '最近 7 天');
+        syncAnalyticsDateRange(presetRange.start, presetRange.end, presetRange.days, getAnalyticsPresetRangeLabel(presetRange.days));
     }
 
     syncAnalyticsPresetButtonState(getAnalyticsRangeDays());
@@ -69,13 +69,12 @@ function toggleDateRangeDropdown() {
 
 function selectPresetRange(days) {
     const presetRange = buildAnalyticsPresetRange(days);
-    const labels = { 7: '最近 7 天', 30: '最近 30 天', 90: '最近 90 天', 365: '最近 1 年' };
 
     syncAnalyticsDateRange(
         presetRange.start,
         presetRange.end,
         presetRange.days,
-        labels[presetRange.days] || `最近 ${presetRange.days} 天`
+        getAnalyticsPresetRangeLabel(presetRange.days)
     );
 
     syncAnalyticsPresetButtonState(presetRange.days);

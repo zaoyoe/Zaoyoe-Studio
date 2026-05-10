@@ -11,6 +11,7 @@ const {
 
 const DEFAULT_TOP_CONTENT_LIMIT = 100;
 const DEFAULT_POINTS_LEADERBOARD_LIMIT = 100;
+const rpcAttemptPreference = Object.create(null);
 
 function getQueryParams(req) {
     const url = new URL(req.url || '', 'http://localhost');
@@ -95,7 +96,7 @@ function buildLegacyRpcParams(params = {}, options = {}) {
 }
 
 async function callRpcWithFallback(supabase, name, attempts = []) {
-    const candidates = Array.isArray(attempts) && attempts.length > 0 ? attempts : [{}];
+    const candidates = orderRpcAttempts(name, attempts);
     let lastError = null;
 
     for (const attempt of candidates) {
@@ -106,6 +107,7 @@ async function callRpcWithFallback(supabase, name, attempts = []) {
             : await supabase.rpc(name);
 
         if (!error) {
+            rpcAttemptPreference[String(name || '')] = getRpcAttemptSignature(params);
             return data;
         }
 
@@ -113,6 +115,34 @@ async function callRpcWithFallback(supabase, name, attempts = []) {
     }
 
     throw lastError || new Error(`RPC ${name} 调用失败`);
+}
+
+function getRpcAttemptSignature(params = {}) {
+    const keys = Object.keys(params && typeof params === 'object' && !Array.isArray(params) ? params : {})
+        .sort();
+    return keys.length ? keys.join('|') : '<empty>';
+}
+
+function orderRpcAttempts(name, attempts = []) {
+    const candidates = Array.isArray(attempts) && attempts.length > 0 ? attempts : [{}];
+    const preferredSignature = rpcAttemptPreference[String(name || '')] || '';
+    if (!preferredSignature || candidates.length < 2) {
+        return candidates;
+    }
+
+    const preferredIndex = candidates.findIndex((attempt) => (
+        getRpcAttemptSignature(attempt) === preferredSignature
+    ));
+
+    if (preferredIndex <= 0) {
+        return candidates;
+    }
+
+    return [
+        candidates[preferredIndex],
+        ...candidates.slice(0, preferredIndex),
+        ...candidates.slice(preferredIndex + 1)
+    ];
 }
 
 function buildSegmentSuccess(payload, options = {}) {
@@ -337,6 +367,8 @@ module.exports.__testUtils = {
     buildRpcRangeParams,
     buildLegacyRpcParams,
     callRpcWithFallback,
+    getRpcAttemptSignature,
+    orderRpcAttempts,
     hasChannelBreakdownV2Signal,
     hasTopContentV2Signal
 };
