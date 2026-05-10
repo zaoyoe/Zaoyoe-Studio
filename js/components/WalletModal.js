@@ -4865,7 +4865,7 @@
                 <div class="wallet-viewport">
                     <div class="wallet-modal">
                         <div class="wallet-header">
-                            <h2>💰 ${window.i18n?.t('wallet.title') || '我的钱包'}</h2>
+                            <h2>${window.i18n?.t('wallet.title') || '我的钱包'}</h2>
                         </div>
                         
                         <div class="wallet-layout">

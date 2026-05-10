@@ -220,8 +220,42 @@ test('buildAdminLoginAnomalyAlerts flags new admin login IPs and short-window dr
     assert.equal(alerts[0].alertType, 'security_admin_login_anomaly');
     assert.equal(alerts[0].severity, 'critical');
     assert.equal(alerts[0].payload.client_ip, '203.0.113.88');
+    assert.equal(alerts[0].payload.client_ip_group, '203.0.113.0/24');
     assert.equal(alerts[0].payload.recent_distinct_ip_count, 2);
-    assert.match(alerts[0].content, /首次从该 IP 登录后台/);
+    assert.match(alerts[0].content, /首次从该 IP 段登录后台/);
+});
+
+test('buildAdminLoginAnomalyAlerts ignores same network and browser-family drift', () => {
+    const chromeMac124 = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_4) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+    const chromeMac125 = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
+    const alerts = buildAdminLoginAnomalyAlerts([
+        {
+            id: 'log-1',
+            action_type: 'admin.access.session.issue',
+            admin_id: 'admin-1',
+            admin_email: 'admin@example.com',
+            created_at: '2026-03-25T09:40:00.000Z',
+            details: {
+                client_ip: '198.51.100.21',
+                user_agent: chromeMac124
+            }
+        },
+        {
+            id: 'log-2',
+            action_type: 'admin.access.session.issue',
+            admin_id: 'admin-1',
+            admin_email: 'admin@example.com',
+            created_at: '2026-03-25T09:55:00.000Z',
+            details: {
+                client_ip: '198.51.100.88',
+                user_agent: chromeMac125
+            }
+        }
+    ], normalizeAdminLoginAnomalyMonitorConfig(), {
+        now: '2026-03-25T10:00:00.000Z'
+    });
+
+    assert.equal(alerts.length, 0);
 });
 
 test('runAdminLoginAnomalySweep enqueues anomalous admin login alerts with stable dedupe', async () => {

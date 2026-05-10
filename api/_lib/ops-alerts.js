@@ -5921,10 +5921,12 @@ function buildAdminLoginAnomalyAlertText(job = {}) {
 
     if (normalizeText(payload.admin_email)) lines.push(`管理员：${normalizeText(payload.admin_email)}`);
     if (normalizeText(payload.client_ip)) lines.push(`登录 IP：${normalizeText(payload.client_ip)}`);
+    if (normalizeText(payload.client_ip_group)) lines.push(`登录 IP 段：${normalizeText(payload.client_ip_group)}`);
     if (normalizeText(payload.user_agent)) lines.push(`设备指纹：${normalizeText(payload.user_agent)}`);
+    if (normalizeText(payload.user_agent_fingerprint)) lines.push(`设备家族：${normalizeText(payload.user_agent_fingerprint)}`);
     if (reasons.length) lines.push(`判定信号：${reasons.join('；')}`);
-    if (Number.isFinite(Number(payload.recent_distinct_ip_count))) lines.push(`最近窗口内 IP 数：${Math.max(0, Math.round(Number(payload.recent_distinct_ip_count || 0)))}`);
-    if (Number.isFinite(Number(payload.recent_distinct_user_agent_count))) lines.push(`最近窗口内设备数：${Math.max(0, Math.round(Number(payload.recent_distinct_user_agent_count || 0)))}`);
+    if (Number.isFinite(Number(payload.recent_distinct_ip_count))) lines.push(`最近窗口内 IP 段数：${Math.max(0, Math.round(Number(payload.recent_distinct_ip_count || 0)))}`);
+    if (Number.isFinite(Number(payload.recent_distinct_user_agent_count))) lines.push(`最近窗口内设备家族数：${Math.max(0, Math.round(Number(payload.recent_distinct_user_agent_count || 0)))}`);
     if (previousIps.length) lines.push(`历史常用 IP：${previousIps.join('、')}`);
     if (normalizeText(payload.origin)) lines.push(`Origin：${normalizeText(payload.origin)}`);
     if (normalizeText(payload.referer)) lines.push(`Referer：${normalizeText(payload.referer)}`);

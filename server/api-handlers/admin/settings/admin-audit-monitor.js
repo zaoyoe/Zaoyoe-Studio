@@ -545,6 +545,7 @@ function mapAccessRow(row = {}) {
 
 function mapAnomalyAlert(alert = {}) {
     const payload = normalizeJsonObject(alert.payload);
+    const anomalyReasons = normalizeStringArray(payload.anomaly_reasons);
     return {
         id: normalizeText(payload.audit_id) || normalizeText(alert.dedupeKey) || null,
         title: normalizeText(alert.title) || '管理员异常登录',
@@ -554,7 +555,9 @@ function mapAnomalyAlert(alert = {}) {
         client_ip: normalizeText(payload.client_ip) || null,
         user_agent: normalizeText(payload.user_agent) || null,
         user_agent_summary: summarizeUserAgent(payload.user_agent),
-        anomaly_reasons: normalizeStringArray(payload.anomaly_reasons),
+        anomaly_reasons: anomalyReasons.length
+            ? anomalyReasons
+            : normalizeStringArray(payload.detected_reasons),
         origin: normalizeText(payload.origin) || null,
         referer: normalizeText(payload.referer) || null
     };

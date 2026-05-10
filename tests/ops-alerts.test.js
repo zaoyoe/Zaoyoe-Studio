@@ -2851,14 +2851,16 @@ test('buildExternalAlertText renders admin login anomaly details', () => {
         payload: {
             admin_email: 'admin@example.com',
             client_ip: '203.0.113.88',
+            client_ip_group: '203.0.113.0/24',
             user_agent: 'Mozilla/5.0 Demo Chrome/124',
+            user_agent_fingerprint: 'chrome:unknown:desktop',
             occurred_at: '2026-03-25T10:00:00.000Z',
             previous_ips: ['198.51.100.21', '198.51.100.22'],
             recent_distinct_ip_count: 3,
             recent_distinct_user_agent_count: 2,
             detected_reasons: [
-                '管理员首次从该 IP 登录后台',
-                '最近窗口内出现 3 个登录 IP'
+                '管理员首次从该 IP 段登录后台',
+                '最近窗口内出现 3 个登录 IP 段'
             ],
             origin: 'https://www.zaoyoe.com',
             referer: 'https://www.zaoyoe.com/admin-entry.html',
@@ -2869,8 +2871,10 @@ test('buildExternalAlertText renders admin login anomaly details', () => {
     assert.match(text, /管理员安全告警/);
     assert.match(text, /管理员：admin@example.com/);
     assert.match(text, /登录 IP：203\.0\.113\.88/);
-    assert.match(text, /判定信号：管理员首次从该 IP 登录后台；最近窗口内出现 3 个登录 IP/);
-    assert.match(text, /最近窗口内 IP 数：3/);
+    assert.match(text, /登录 IP 段：203\.0\.113\.0\/24/);
+    assert.match(text, /设备家族：chrome:unknown:desktop/);
+    assert.match(text, /判定信号：管理员首次从该 IP 段登录后台；最近窗口内出现 3 个登录 IP 段/);
+    assert.match(text, /最近窗口内 IP 段数：3/);
     assert.match(text, /历史常用 IP：198\.51\.100\.21、198\.51\.100\.22/);
     assert.match(text, /处理入口：后台设置 -> 管理员访问 \/ Admin Audit Logs -> 异常登录信号/);
 });
