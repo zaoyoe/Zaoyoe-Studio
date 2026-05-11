@@ -9,6 +9,7 @@ function readRepoFile(relativePath) {
 
 test('financial recovery audit migration covers payment, points, and shop recovery views', () => {
     const migration = readRepoFile('supabase/migrations/20260510_add_financial_recovery_audit_views.sql');
+    const serviceRoleMigration = readRepoFile('supabase/migrations/20260511_allow_service_role_financial_recovery_audit_views.sql');
     const readiness = readRepoFile('scripts/payment-readiness-gate.js');
     const packageJson = JSON.parse(readRepoFile('package.json'));
 
@@ -21,6 +22,8 @@ test('financial recovery audit migration covers payment, points, and shop recove
         assert.match(migration, new RegExp(`CREATE OR REPLACE VIEW public\\.${viewName}`));
         assert.match(migration, new RegExp(`GRANT SELECT ON public\\.${viewName} TO authenticated`));
         assert.equal(readiness.includes(viewName), true, `readiness gate should probe ${viewName}`);
+        assert.match(serviceRoleMigration, new RegExp(`CREATE OR REPLACE VIEW public\\.${viewName}`));
+        assert.match(serviceRoleMigration, new RegExp(`GRANT SELECT ON public\\.${viewName} TO authenticated, service_role`));
     }
 
     for (const flag of [
@@ -39,6 +42,13 @@ test('financial recovery audit migration covers payment, points, and shop recove
 
     assert.match(migration, /WITH \(security_invoker = on\)/);
     assert.match(migration, /WHERE public\.is_admin\(\)/);
+    assert.match(serviceRoleMigration, /COALESCE\(auth\.role\(\), ''\) = 'service_role' OR public\.is_admin\(\)/);
+    assert.equal(
+        (serviceRoleMigration.match(/COALESCE\(auth\.role\(\), ''\) = 'service_role' OR public\.is_admin\(\)/g) || []).length,
+        3
+    );
+    assert.doesNotMatch(serviceRoleMigration, /WHERE public\.is_admin\(\);/);
+    assert.match(serviceRoleMigration, /backend readiness and scheduled recovery drills can use service_role/);
     assert.match(migration, /COALESCE\(NULLIF\(BTRIM\(site\), ''\), 'cn'\)/);
     assert.match(migration, /SHOP_ORDER_/);
     assert.match(migration, /redeem_/);

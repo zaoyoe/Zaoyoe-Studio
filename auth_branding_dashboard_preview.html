@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zaoyoe Auth Branding Preview</title>
+    <link rel="stylesheet" href="./css/auth-branding-dashboard-preview.css">
+</head>
+<body>
+    <main class="preview-shell">
+        <section class="preview-hero" aria-labelledby="page-title">
+            <div>
+                <p class="eyebrow">Supabase Auth 配置模拟</p>
+                <h1 id="page-title">Zaoyoe 登录与邮件品牌化</h1>
+                <p class="lead">这页只是给你看第 6 步要在 Supabase Dashboard 里填什么，不会连接线上服务。</p>
+            </div>
+            <div class="status-stack" aria-label="当前状态">
+                <span class="status-pill status-pill--ready">代码侧已准备</span>
+                <span class="status-pill">Dashboard 待手动填写</span>
+            </div>
+        </section>
+
+        <section class="panel-grid" aria-label="Dashboard 配置">
+            <article class="panel">
+                <div class="panel-heading">
+                    <span class="step-badge">1</span>
+                    <div>
+                        <h2>URL Configuration</h2>
+                        <p>Supabase Dashboard > Authentication > URL Configuration</p>
+                    </div>
+                </div>
+
+                <label class="field-block">
+                    <span>Site URL</span>
+                    <code>https://www.zaoyoe.com</code>
+                </label>
+
+                <div class="field-block">
+                    <span>Additional Redirect URLs</span>
+                    <ul class="url-list">
+                        <li><code>https://www.zaoyoe.com/auth-callback.html</code></li>
+                        <li><code>https://www.zaoyoe.com/reset-password.html</code></li>
+                        <li><code>https://zaoyoe.xyz/auth-callback.html</code></li>
+                        <li><code>https://zaoyoe.xyz/reset-password.html</code></li>
+                    </ul>
+                </div>
+            </article>
+
+            <article class="panel">
+                <div class="panel-heading">
+                    <span class="step-badge">2</span>
+                    <div>
+                        <h2>SMTP Settings</h2>
+                        <p>可选项，先不配也不会影响网站运行</p>
+                    </div>
+                </div>
+
+                <div class="smtp-card">
+                    <span class="smtp-label">推荐发件人</span>
+                    <strong>Zaoyoe &lt;no-reply@zaoyoe.com&gt;</strong>
+                    <p>等你的发信域名、DNS、SPF/DKIM 都准备好后再开启。没开启时继续走 Supabase 默认邮件。</p>
+                </div>
+            </article>
+        </section>
+
+        <section class="template-section" aria-labelledby="template-title">
+            <div class="section-heading">
+                <p class="eyebrow">Email Templates</p>
+                <h2 id="template-title">4 封邮件的标题和预览</h2>
+            </div>
+
+            <div class="template-grid">
+                <article class="email-preview">
+                    <div class="template-meta">
+                        <span>Confirm signup</span>
+                        <code>confirm-signup.html.tpl</code>
+                    </div>
+                    <h3>确认你的 Zaoyoe 账号</h3>
+                    <div class="mail-card">
+                        <strong class="brand">Zaoyoe</strong>
+                        <h4>确认你的账号</h4>
+                        <p>欢迎来到 Zaoyoe。点击下面的按钮完成邮箱确认，之后就可以同步钱包、订单、留言和个人资料。</p>
+                        <span class="fake-button">确认邮箱</span>
+                        <small>If you did not create this account, you can safely ignore this email.</small>
+                    </div>
+                </article>
+
+                <article class="email-preview">
+                    <div class="template-meta">
+                        <span>Magic Link</span>
+                        <code>magic-link.html.tpl</code>
+                    </div>
+                    <h3>登录 Zaoyoe</h3>
+                    <div class="mail-card">
+                        <strong class="brand">Zaoyoe</strong>
+                        <h4>登录 Zaoyoe</h4>
+                        <p>点击按钮完成登录。这个链接只用于本次会话，请不要转发给其他人。</p>
+                        <span class="fake-button">继续登录</span>
+                        <small>If you did not request this login link, no action is needed.</small>
+                    </div>
+                </article>
+
+                <article class="email-preview">
+                    <div class="template-meta">
+                        <span>Reset Password</span>
+                        <code>reset-password.html.tpl</code>
+                    </div>
+                    <h3>重置你的 Zaoyoe 密码</h3>
+                    <div class="mail-card">
+                        <strong class="brand">Zaoyoe</strong>
+                        <h4>重置你的密码</h4>
+                        <p>我们收到了密码重置请求。点击按钮设置新密码，完成后你可以继续访问钱包、订单和已保存内容。</p>
+                        <span class="fake-button">重置密码</span>
+                        <small>If this was not you, ignore this email and keep your current password.</small>
+                    </div>
+                </article>
+
+                <article class="email-preview">
+                    <div class="template-meta">
+                        <span>Change Email Address</span>
+                        <code>change-email.html.tpl</code>
+                    </div>
+                    <h3>确认你的 Zaoyoe 新邮箱</h3>
+                    <div class="mail-card">
+                        <strong class="brand">Zaoyoe</strong>
+                        <h4>确认新的邮箱地址</h4>
+                        <p>点击按钮确认邮箱变更。确认后，这个邮箱将用于 Zaoyoe 的登录、安全通知和账号恢复。</p>
+                        <span class="fake-button">确认邮箱变更</span>
+                        <small>If you did not request this change, review your account security.</small>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section class="panel checklist-panel" aria-labelledby="checklist-title">
+            <div class="panel-heading">
+                <span class="step-badge">3</span>
+                <div>
+                    <h2 id="checklist-title">你在 Supabase 里照这个填</h2>
+                    <p>填完后跑 readiness 就能验收</p>
+                </div>
+            </div>
+
+            <ol class="checklist">
+                <li>把上面的 4 个 Redirect URL 全部加到 Authentication URL Configuration。</li>
+                <li>把 4 个模板文件复制到对应 Email Template。</li>
+                <li>每个邮件按钮链接都保留 <code>{{ .ConfirmationURL }}</code>。</li>
+                <li>Custom SMTP 暂时可以不开，不影响登录和找回密码。</li>
+                <li>Custom Domain 也是可选，等 DNS/SSL 都准备好再做。</li>
+            </ol>
+        </section>
+    </main>
+</body>
+</html>

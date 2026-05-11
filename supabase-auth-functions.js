@@ -44,7 +44,7 @@ function showAuthFeedback(message, type = 'error', targetView) {
         return true;
     }
 
-    alert(message);
+    alert(resolveAuthFeedbackMessage(message));
     return false;
 }
 
@@ -183,6 +183,17 @@ function formatAuthText(key, fallback, vars = {}) {
     return text;
 }
 
+function buildAuthFeedbackMessage(key, fallback, vars = {}) {
+    return { key, fallback, vars };
+}
+
+function resolveAuthFeedbackMessage(payload) {
+    if (payload && typeof payload === 'object' && payload.key) {
+        return formatAuthText(payload.key, payload.fallback || '', payload.vars || {});
+    }
+    return String(payload || '');
+}
+
 function isValidAuthEmailFormat(email) {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
 }
@@ -198,9 +209,25 @@ function isInvalidAuthEmailError(error) {
         || message.includes('invalid format');
 }
 
+function isAuthEmailRateLimitError(error) {
+    const message = String(error?.message || error || '').toLowerCase();
+    const code = String(error?.code || '').toLowerCase();
+    return code.includes('email_rate_limit')
+        || message.includes('email rate limit exceeded')
+        || message.includes('rate limit');
+}
+
 function getPasswordResetErrorMessage(error) {
     if (isInvalidAuthEmailError(error)) {
         return getInvalidResetEmailMessage();
+    }
+
+    if (isAuthEmailRateLimitError(error)) {
+        return buildAuthFeedbackMessage(
+            'auth.emailRateLimitExceeded',
+            '邮件发送通道暂时繁忙，请稍后再试。若连续触发，可能是项目邮件额度已满，通常需要等待约 1 小时。',
+            {}
+        );
     }
 
     return error?.message || authT('auth.sendFailed', '发送失败');
@@ -2320,13 +2347,17 @@ async function handlePasswordReset(event) {
 
         console.log('✅ 重置邮件已发送');
         showAuthFeedback(
-            formatAuthText('auth.resetEmailSent', '重置密码邮件已发送到 {email}，请检查收件箱（包括垃圾邮件）。', { email }),
+            buildAuthFeedbackMessage(
+                'auth.resetEmailSent',
+                '重置密码邮件已发送到 {email}，\n请检查收件箱（包括垃圾邮件）。',
+                { email }
+            ),
             'success',
             'reset'
         );
         emailInput.value = '';
 
-        resetCooldownSeconds = 30;
+        resetCooldownSeconds = 60;
         updateResetButtonCountdown(submitBtn, originalText);
 
         setTimeout(() => {

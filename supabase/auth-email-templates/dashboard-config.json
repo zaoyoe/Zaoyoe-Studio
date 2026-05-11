@@ -1,0 +1,49 @@
+{
+  "siteUrl": "https://www.zaoyoe.com",
+  "additionalRedirectUrls": [
+    "https://www.zaoyoe.com/auth-callback.html",
+    "https://www.zaoyoe.com/reset-password.html",
+    "https://zaoyoe.xyz/auth-callback.html",
+    "https://zaoyoe.xyz/reset-password.html"
+  ],
+  "emailTemplates": [
+    {
+      "key": "confirm-signup",
+      "dashboardLabel": "Confirm signup",
+      "file": "confirm-signup.html.tpl",
+      "subject": "确认你的 Zaoyoe 账号",
+      "requiredVariables": ["{{ .ConfirmationURL }}"]
+    },
+    {
+      "key": "magic-link",
+      "dashboardLabel": "Magic Link",
+      "file": "magic-link.html.tpl",
+      "subject": "登录 Zaoyoe",
+      "requiredVariables": ["{{ .ConfirmationURL }}"]
+    },
+    {
+      "key": "reset-password",
+      "dashboardLabel": "Reset Password",
+      "file": "reset-password.html.tpl",
+      "subject": "重置你的 Zaoyoe 密码",
+      "requiredVariables": ["{{ .ConfirmationURL }}"]
+    },
+    {
+      "key": "change-email",
+      "dashboardLabel": "Change Email Address",
+      "file": "change-email.html.tpl",
+      "subject": "确认你的 Zaoyoe 新邮箱",
+      "requiredVariables": ["{{ .ConfirmationURL }}"]
+    }
+  ],
+  "customSmtp": {
+    "optional": true,
+    "senderName": "Zaoyoe",
+    "senderEmail": "no-reply@zaoyoe.com",
+    "fallback": "Supabase default email delivery"
+  },
+  "customDomain": {
+    "optional": true,
+    "fallback": "Supabase project auth domain"
+  }
+}

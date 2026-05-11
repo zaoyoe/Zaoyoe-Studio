@@ -539,6 +539,16 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-message.is-error {
     border-color: rgba(143, 194, 161, 0.3);
 }
 
+html[data-theme="light"] #loginModal .auth-sheet-message.is-success,
+html:not([data-theme="dark"]) #loginModal .auth-sheet-message.is-success {
+    color: #166534;
+    background: rgba(220, 252, 231, 0.82);
+    border-color: rgba(34, 197, 94, 0.34);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.52);
+    font-weight: 600;
+    text-shadow: none;
+}
+
 .auth-sheet-body {
     position: relative;
     min-height: 0;
@@ -1051,10 +1061,23 @@ html:not([data-theme="dark"]) #loginModal .auth-sheet-message.is-error {
     box-shadow: var(--auth-sheet-control-shadow-hover);
 }
 
+.auth-sheet-google-mark,
 .auth-sheet-google-btn img {
     width: 18px;
     height: 18px;
     flex: 0 0 18px;
+}
+
+.auth-sheet-google-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.auth-sheet-google-mark svg {
+    display: block;
+    width: 18px;
+    height: 18px;
 }
 
 .google-login-btn.is-loading,
