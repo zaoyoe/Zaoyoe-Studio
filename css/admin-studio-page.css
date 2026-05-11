@@ -43319,6 +43319,40 @@ html:not([data-theme="dark"]) .admin-main-content :is(
 }
 
 /* 20260428_ADMIN_STUDIO_OPS_ALERT_HEALTH_STATIC_SUBCARDS_1 */
+#module-ops-alerts :is(
+    .ops-alert-health-card > *,
+    .ops-alert-health-card__head > *,
+    .ops-alert-health-card__status,
+    .ops-alert-health-card__stats > div,
+    .ops-alert-health-card__config,
+    .ops-alert-health-card__config-item,
+    .ops-alert-health-card__errors,
+    .ops-alert-health-card__error-item
+) {
+    min-width: 0;
+}
+
+#module-ops-alerts .ops-alert-health-card__head > div:first-child {
+    flex: 1 1 200px;
+    min-width: 0;
+}
+
+#module-ops-alerts :is(
+    .ops-alert-health-card__title,
+    .ops-alert-health-card__meta,
+    .ops-alert-health-card__summary,
+    .ops-alert-health-card__config-item strong,
+    .ops-alert-health-card__error-item strong,
+    .ops-alert-health-card__error-item span
+) {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+#module-ops-alerts .ops-alert-health-card__error-item strong {
+    line-height: 1.45;
+}
+
 html[data-theme="light"] #module-ops-alerts,
 html:not([data-theme="dark"]) #module-ops-alerts {
     --ops-alert-health-static-subcard-bg: rgba(255, 255, 255, 0.72);

@@ -15063,6 +15063,8 @@ test('ops alert health page includes recovery readiness fail-open panel', () => 
     assert.match(workbenchSource, /submitAdminWorkbenchExternalMonitoringSmoke/);
     assert.match(workbenchSource, /normalizeAdminWorkbenchRecoveryReadinessPayload/);
     assert.match(styles, /\.recovery-readiness-grid/);
+    assert.match(styles, /overflow-wrap:\s*anywhere/);
+    assert.match(styles, /\.ops-alert-health-card__head > div:first-child/);
     assert.match(styles, /\.config-inline-note\[data-tone="success"\]/);
 });
 
