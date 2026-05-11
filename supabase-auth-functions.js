@@ -217,6 +217,28 @@ function isAuthEmailRateLimitError(error) {
         || message.includes('rate limit');
 }
 
+function isAuthEmailDeliveryError(error) {
+    const message = String(error?.message || error || '').toLowerCase();
+    const code = String(error?.code || '').toLowerCase();
+    return code.includes('email')
+        || code.includes('smtp')
+        || message.includes('error sending')
+        || message.includes('failed to send')
+        || message.includes('smtp')
+        || message.includes('mail server')
+        || message.includes('email provider')
+        || message.includes('email service')
+        || message.includes('resend');
+}
+
+function getAuthEmailDeliveryUnavailableMessage() {
+    return buildAuthFeedbackMessage(
+        'auth.emailDeliveryUnavailable',
+        '邮件服务暂时不可用，请稍后再试或联系客服。',
+        {}
+    );
+}
+
 function getPasswordResetErrorMessage(error) {
     if (isInvalidAuthEmailError(error)) {
         return getInvalidResetEmailMessage();
@@ -228,6 +250,10 @@ function getPasswordResetErrorMessage(error) {
             '邮件发送通道暂时繁忙，请稍后再试。若连续触发，可能是项目邮件额度已满，通常需要等待约 1 小时。',
             {}
         );
+    }
+
+    if (isAuthEmailDeliveryError(error)) {
+        return getAuthEmailDeliveryUnavailableMessage();
     }
 
     return error?.message || authT('auth.sendFailed', '发送失败');
@@ -836,6 +862,9 @@ async function handleRegister(event) {
         let errorMessage = '注册失败';
         if (error.message.includes('already registered')) {
             errorMessage = authT('auth.emailRegistered', '该邮箱已被注册。');
+        } else if (isAuthEmailDeliveryError(error)) {
+            showAuthFeedback(getAuthEmailDeliveryUnavailableMessage(), 'error', 'register');
+            return;
         } else {
             errorMessage = error.message || '未知错误';
         }

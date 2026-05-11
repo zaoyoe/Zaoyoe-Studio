@@ -96,6 +96,12 @@ test('local preview server rewrites nested public routes into the shared public 
     assert.equal(rewrittenUrl, '/api/public?scope=config&route=notifications&site=cn');
 });
 
+test('local preview server rewrites ops public routes into the shared public handler format', () => {
+    const rewrittenUrl = buildLocalPreviewPublicHandlerUrl('/api/public/ops/recovery-readiness-sweep?dry_run=1');
+
+    assert.equal(rewrittenUrl, '/api/public?scope=ops&route=recovery-readiness-sweep&dry_run=1');
+});
+
 test('local preview server preserves explicit public query routes for shared handler urls', () => {
     const rewrittenUrl = buildLocalPreviewPublicHandlerUrl('/api/public?scope=config&route=notifications&site=intl');
 

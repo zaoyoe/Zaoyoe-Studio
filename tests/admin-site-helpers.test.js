@@ -473,3 +473,35 @@ test('admin router normalizes absolute query routes from upstream proxies', asyn
         assert.equal(state.handlerCalls[0].adminRoute, 'shop/inventory');
     });
 });
+
+test('admin router resolves recovery readiness settings route', async () => {
+    await withAdminApiRouter(async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/settings/recovery-readiness',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.handlerCalls.length, 1);
+        assert.equal(state.handlerCalls[0].adminRoute, 'settings/recovery-readiness');
+    });
+});
+
+test('admin router resolves external monitoring smoke settings route', async () => {
+    await withAdminApiRouter(async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            url: '/api/admin/settings/external-monitoring-smoke',
+            headers: {}
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.handlerCalls.length, 1);
+        assert.equal(state.handlerCalls[0].adminRoute, 'settings/external-monitoring-smoke');
+    });
+});

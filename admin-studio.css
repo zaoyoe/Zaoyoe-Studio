@@ -16840,6 +16840,78 @@ input:checked+.toggle-slider:before {
     /* Orange 200 */
 }
 
+.users-reset-password-modal {
+    width: 420px !important;
+}
+
+.users-reset-password-title {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+}
+
+.users-reset-password-note {
+    margin: 10px 0 0;
+    color: #64748b;
+    font-size: 0.84rem;
+    line-height: 1.65;
+}
+
+.users-reset-password-result {
+    margin-top: 14px;
+    padding: 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(245, 158, 11, 0.24);
+    background: #fffbeb;
+}
+
+.users-reset-password-label {
+    display: block;
+    margin-bottom: 6px;
+    color: #92400e;
+    font-size: 0.76rem;
+    font-weight: 700;
+}
+
+.users-reset-password-copy-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+}
+
+.users-reset-password-input {
+    height: 34px !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 0.86rem !important;
+}
+
+.users-reset-password-copy-btn {
+    height: 34px !important;
+    white-space: nowrap;
+}
+
+.users-reset-password-warning {
+    margin-top: 8px;
+    color: #92400e;
+    font-size: 0.76rem;
+    line-height: 1.5;
+}
+
+[data-theme="dark"] .users-reset-password-note {
+    color: #cbd5e1;
+}
+
+[data-theme="dark"] .users-reset-password-result {
+    border-color: rgba(251, 191, 36, 0.28);
+    background: rgba(251, 191, 36, 0.09);
+}
+
+[data-theme="dark"] .users-reset-password-label,
+[data-theme="dark"] .users-reset-password-warning {
+    color: #fcd34d;
+}
+
 /* Tighter Actions Panel */
 #userModalActions {
     padding: 12px 24px !important;
@@ -16872,16 +16944,6 @@ input:checked+.toggle-slider:before {
         justify-content: center !important;
         padding: 10px 6px !important;
         font-size: 0.75rem !important;
-    }
-
-    /* 4th button (清空内容) - center on second row */
-    #userModalActions .modal-action-btn:nth-child(4) {
-        grid-column: 2 / 4 !important;
-    }
-
-    /* 5th button (铃铛) - next to 4th button */
-    #userModalActions .modal-action-btn:nth-child(5) {
-        grid-column: 4 / 6 !important;
     }
 }
 
@@ -46939,6 +47001,10 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     gap: 14px;
 }
 
+.recovery-readiness-grid {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
 .ops-alert-health-card {
     border-radius: 16px;
     padding: 16px;
@@ -46949,6 +47015,10 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     gap: 12px;
     min-width: 0;
     transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.recovery-readiness-card__stats {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .ops-alert-health-card:hover {
@@ -48525,6 +48595,35 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
 .config-inline-note i {
     color: #10b981;
     margin-top: 3px;
+}
+
+.config-inline-note[data-tone="loading"],
+.config-inline-note[data-tone="info"] {
+    background: rgba(59, 130, 246, 0.08);
+    border-color: rgba(59, 130, 246, 0.18);
+}
+
+.config-inline-note[data-tone="loading"] i,
+.config-inline-note[data-tone="info"] i {
+    color: #2563eb;
+}
+
+.config-inline-note[data-tone="warning"] {
+    background: rgba(245, 158, 11, 0.1);
+    border-color: rgba(245, 158, 11, 0.24);
+}
+
+.config-inline-note[data-tone="warning"] i {
+    color: #b45309;
+}
+
+.config-inline-note[data-tone="success"] {
+    background: rgba(16, 185, 129, 0.08);
+    border-color: rgba(16, 185, 129, 0.18);
+}
+
+.config-inline-note[data-tone="success"] i {
+    color: #059669;
 }
 
 .ops-alert-email-help code {

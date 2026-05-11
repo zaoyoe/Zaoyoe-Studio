@@ -353,12 +353,70 @@ function buildRepoChecks(repoRoot = REPO_ROOT) {
     }
 
     try {
+        const monitoringHelper = readRepoFile(repoRoot, 'api/_lib/external-monitoring.js');
+        checks.push({
+            key: 'repo:external-monitoring-helper',
+            ok: monitoringHelper.includes('emitExternalMonitoringEventFailOpen')
+                && monitoringHelper.includes('redactMonitoringPayload')
+                && monitoringHelper.includes('buildSentryEnvelope')
+                && monitoringHelper.includes('sendAxiomEvent')
+                && monitoringHelper.includes('sendDatadogEvent'),
+            message: 'external monitoring helper emits optional sanitized provider copies'
+        });
+    } catch (error) {
+        checks.push({
+            key: 'repo:external-monitoring-helper',
+            ok: false,
+            message: `cannot read external monitoring helper: ${error.message || error}`
+        });
+    }
+
+    try {
+        const clientEndpoint = readRepoFile(repoRoot, 'server/api-handlers/public/monitoring-client-event.js');
+        const publicRouter = readRepoFile(repoRoot, 'api/public.js');
+        checks.push({
+            key: 'repo:client-monitoring-endpoint',
+            ok: clientEndpoint.includes('emitExternalMonitoringEventFailOpen')
+                && clientEndpoint.includes('accepted: true')
+                && clientEndpoint.includes('no-store')
+                && publicRouter.includes("case 'monitoring'")
+                && publicRouter.includes("'client-event': clientMonitoringEventHandler"),
+            message: 'frontend diagnostics endpoint accepts events without making monitoring a runtime dependency'
+        });
+    } catch (error) {
+        checks.push({
+            key: 'repo:client-monitoring-endpoint',
+            ok: false,
+            message: `cannot read client monitoring endpoint: ${error.message || error}`
+        });
+    }
+
+    try {
+        const runtimeConfig = readRepoFile(repoRoot, 'js/runtime-supabase-config.js');
+        checks.push({
+            key: 'repo:client-monitoring-fail-open',
+            ok: runtimeConfig.includes('installZaoyoeClientMonitoring')
+                && runtimeConfig.includes('unhandledrejection')
+                && runtimeConfig.includes('ZaoyoeMonitoring')
+                && runtimeConfig.includes('catch(() => {})'),
+            message: 'frontend runtime reports browser errors with throttled fail-open delivery'
+        });
+    } catch (error) {
+        checks.push({
+            key: 'repo:client-monitoring-fail-open',
+            ok: false,
+            message: `cannot read frontend monitoring runtime: ${error.message || error}`
+        });
+    }
+
+    try {
         const checklist = readRepoFile(repoRoot, 'docs/external-monitoring-checklist.md');
         checks.push({
             key: 'docs:external-monitoring-fallback',
             ok: /optional enhancement/i.test(checklist)
                 && /not a runtime dependency/i.test(checklist)
                 && /ops_alert_jobs/i.test(checklist)
+                && /frontend_runtime_error/i.test(checklist)
                 && /Supabase Pro/i.test(checklist),
             message: 'external monitoring checklist documents fail-open fallback behavior'
         });

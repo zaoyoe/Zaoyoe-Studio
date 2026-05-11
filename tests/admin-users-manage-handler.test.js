@@ -175,6 +175,26 @@ function createSupabaseDouble(state) {
     }
 
     return {
+        auth: {
+            admin: {
+                async updateUserById(userId, attributes = {}) {
+                    state.authAdminUpdates.push({
+                        userId,
+                        attributes: clone(attributes)
+                    });
+
+                    return {
+                        data: {
+                            user: {
+                                id: userId,
+                                updated_at: '2026-05-11T00:00:00.000Z'
+                            }
+                        },
+                        error: null
+                    };
+                }
+            }
+        },
         from(table) {
             return {
                 select() {
@@ -261,6 +281,7 @@ async function withUsersManageHandler(options, callback) {
     const handlerPath = path.resolve(__dirname, '../server/api-handlers/admin/users/manage.js');
     const originalLoad = Module._load;
     const state = {
+        authAdminUpdates: [],
         auditEntries: [],
         notifications: [],
         requireAdminCalls: [],
@@ -416,6 +437,43 @@ test('users manage handler adjusts points through hardened RPCs and server notif
         assert.equal(state.notifications.length, 1);
         assert.equal(state.notifications[0]?.scope, 'user_personal');
         assert.equal(state.auditEntries[0]?.actionType, 'UPDATE_POINT');
+    });
+});
+
+test('users manage handler resets passwords through Supabase Auth admin without storing the temporary password in audit logs', async () => {
+    await withUsersManageHandler({
+        tables: {
+            profiles: [
+                { id: 'user_1', email: 'user1@example.com', username: 'user1' }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'reset_password',
+                userId: 'user_1'
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.userId, 'user_1');
+        assert.equal(payload.email, 'user1@example.com');
+        assert.equal(typeof payload.temporaryPassword, 'string');
+        assert.equal(payload.temporaryPassword.length, 20);
+        assert.equal(state.authAdminUpdates.length, 1);
+        assert.equal(state.authAdminUpdates[0]?.userId, 'user_1');
+        assert.equal(state.authAdminUpdates[0]?.attributes?.password, payload.temporaryPassword);
+        assert.equal(state.auditEntries[0]?.actionType, 'RESET_PASSWORD');
+        assert.equal(state.auditEntries[0]?.details?.reset_method, 'admin_temporary_password');
+        assert.equal(state.auditEntries[0]?.details?.password_length, 20);
+        assert.equal(Object.prototype.hasOwnProperty.call(state.auditEntries[0]?.details || {}, 'temporaryPassword'), false);
+        assert.equal(Object.prototype.hasOwnProperty.call(state.auditEntries[0]?.details || {}, 'password'), false);
     });
 });
 

@@ -829,6 +829,7 @@
         const loaders = [
             window.loadOpsAlertSettings,
             window.loadOpsAlertHealth,
+            window.loadRecoveryReadiness,
             window.loadOpsAlertMonitor
         ].filter((loader) => typeof loader === 'function');
 

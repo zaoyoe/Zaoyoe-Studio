@@ -5009,6 +5009,102 @@ async function fetchAdminWorkbenchOpsAlertHealth(headers = {}, options = {}) {
     }
 }
 
+async function fetchAdminWorkbenchRecoveryReadiness(headers = {}, options = {}) {
+    const fetchImpl = typeof options.fetch === 'function'
+        ? options.fetch
+        : (typeof fetch === 'function' ? fetch.bind(window) : null);
+    if (typeof fetchImpl !== 'function') {
+        throw new Error('当前环境暂不支持加载恢复 readiness 状态');
+    }
+
+    const endpoint = String(options.endpoint || '/api/admin/settings/recovery-readiness').trim()
+        || '/api/admin/settings/recovery-readiness';
+    const timeoutMs = Number(options.timeoutMs || 0);
+    const AbortControllerImpl = typeof options.AbortController === 'function'
+        ? options.AbortController
+        : (typeof AbortController === 'function' ? AbortController : null);
+    const scheduleTimeout = typeof options.setTimeout === 'function'
+        ? options.setTimeout
+        : ((handler, delay) => window.setTimeout(handler, delay));
+    const clearScheduledTimeout = typeof options.clearTimeout === 'function'
+        ? options.clearTimeout
+        : ((timeoutId) => window.clearTimeout(timeoutId));
+    const controller = AbortControllerImpl ? new AbortControllerImpl() : null;
+    const timeoutId = controller && timeoutMs > 0
+        ? scheduleTimeout(() => controller.abort(), timeoutMs)
+        : 0;
+
+    try {
+        const response = await fetchImpl(endpoint, {
+            method: 'GET',
+            headers,
+            signal: controller?.signal
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.success === false) {
+            throw new Error(payload.message || options.errorMessage || '加载恢复 readiness 状态失败');
+        }
+        return payload;
+    } finally {
+        if (timeoutId) {
+            clearScheduledTimeout(timeoutId);
+        }
+    }
+}
+
+async function submitAdminWorkbenchExternalMonitoringSmoke(headers = {}, options = {}) {
+    const fetchImpl = typeof options.fetch === 'function'
+        ? options.fetch
+        : (typeof fetch === 'function' ? fetch.bind(window) : null);
+    if (typeof fetchImpl !== 'function') {
+        throw new Error('当前环境暂不支持发送外部监控测试事件');
+    }
+
+    const endpoint = String(options.endpoint || '/api/admin/settings/external-monitoring-smoke').trim()
+        || '/api/admin/settings/external-monitoring-smoke';
+    const timeoutMs = Number(options.timeoutMs || 0);
+    const AbortControllerImpl = typeof options.AbortController === 'function'
+        ? options.AbortController
+        : (typeof AbortController === 'function' ? AbortController : null);
+    const scheduleTimeout = typeof options.setTimeout === 'function'
+        ? options.setTimeout
+        : ((handler, delay) => window.setTimeout(handler, delay));
+    const clearScheduledTimeout = typeof options.clearTimeout === 'function'
+        ? options.clearTimeout
+        : ((timeoutId) => window.clearTimeout(timeoutId));
+    const controller = AbortControllerImpl ? new AbortControllerImpl() : null;
+    const timeoutId = controller && timeoutMs > 0
+        ? scheduleTimeout(() => controller.abort(), timeoutMs)
+        : 0;
+    const body = options.body && typeof options.body === 'object' && !Array.isArray(options.body)
+        ? options.body
+        : {};
+
+    try {
+        const response = await fetchImpl(endpoint, {
+            method: 'POST',
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                source: body.source || 'admin-studio',
+                message: body.message || 'Admin Studio external monitoring smoke test'
+            }),
+            signal: controller?.signal
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.success === false) {
+            throw new Error(payload.message || options.errorMessage || '发送外部监控测试事件失败');
+        }
+        return payload;
+    } finally {
+        if (timeoutId) {
+            clearScheduledTimeout(timeoutId);
+        }
+    }
+}
+
 function normalizeAdminWorkbenchOpsAlertHealthPayload(payload = {}, options = {}) {
     const source = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
     const defaultSummary = options.defaultSummary && typeof options.defaultSummary === 'object' && !Array.isArray(options.defaultSummary)
@@ -5024,6 +5120,27 @@ function normalizeAdminWorkbenchOpsAlertHealthPayload(payload = {}, options = {}
                 : {})
         },
         channels: Array.isArray(source.channels) ? source.channels : [],
+        message: ''
+    };
+}
+
+function normalizeAdminWorkbenchRecoveryReadinessPayload(payload = {}, options = {}) {
+    const source = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+    const defaultSummary = options.defaultSummary && typeof options.defaultSummary === 'object' && !Array.isArray(options.defaultSummary)
+        ? options.defaultSummary
+        : {};
+    return {
+        status: String(source.status || 'ready').trim().toLowerCase() || 'ready',
+        fetched_at: source.fetched_at || '',
+        runtime_dependency: source.runtime_dependency || 'none',
+        pro_fallback: source.pro_fallback !== false,
+        summary: {
+            ...defaultSummary,
+            ...(source.summary && typeof source.summary === 'object' && !Array.isArray(source.summary)
+                ? source.summary
+                : {})
+        },
+        sections: Array.isArray(source.sections) ? source.sections : [],
         message: ''
     };
 }
@@ -8183,6 +8300,9 @@ window.deleteAdminWorkbenchOpsAlertSecret = deleteAdminWorkbenchOpsAlertSecret;
 window.normalizeAdminWorkbenchOpsAlertSettingsPayload = normalizeAdminWorkbenchOpsAlertSettingsPayload;
 window.fetchAdminWorkbenchOpsAlertHealth = fetchAdminWorkbenchOpsAlertHealth;
 window.normalizeAdminWorkbenchOpsAlertHealthPayload = normalizeAdminWorkbenchOpsAlertHealthPayload;
+window.fetchAdminWorkbenchRecoveryReadiness = fetchAdminWorkbenchRecoveryReadiness;
+window.submitAdminWorkbenchExternalMonitoringSmoke = submitAdminWorkbenchExternalMonitoringSmoke;
+window.normalizeAdminWorkbenchRecoveryReadinessPayload = normalizeAdminWorkbenchRecoveryReadinessPayload;
 window.normalizeAdminWorkbenchOpsAlertMonitorShiftReport = normalizeAdminWorkbenchOpsAlertMonitorShiftReport;
 window.normalizeAdminWorkbenchOpsAlertMonitorShiftReportView = normalizeAdminWorkbenchOpsAlertMonitorShiftReportView;
 window.getAdminWorkbenchOpsAlertMonitorShiftReportViewMeta = getAdminWorkbenchOpsAlertMonitorShiftReportViewMeta;

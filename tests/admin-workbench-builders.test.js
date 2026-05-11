@@ -1873,6 +1873,135 @@ test('shared admin workbench normalizes ops alert health payloads into state-fri
     });
 });
 
+test('shared admin workbench fetches recovery readiness payloads without creating a hard runtime dependency', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const calls = [];
+    const payload = await runtime.fetchAdminWorkbenchRecoveryReadiness(
+        { authorization: 'Bearer test' },
+        {
+            endpoint: '/custom/recovery-readiness',
+            fetch: async (url, init) => {
+                calls.push({ url, init });
+                return {
+                    ok: true,
+                    async json() {
+                        return {
+                            success: true,
+                            runtime_dependency: 'none',
+                            pro_fallback: true,
+                            sections: [{ key: 'pro_fallback' }]
+                        };
+                    }
+                };
+            }
+        }
+    );
+
+    assert.equal(payload.runtime_dependency, 'none');
+    assert.equal(payload.pro_fallback, true);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].url, '/custom/recovery-readiness');
+    assert.equal(calls[0].init.method, 'GET');
+    assert.equal(calls[0].init.headers.authorization, 'Bearer test');
+});
+
+test('shared admin workbench submits external monitoring smoke payloads through admin API', async () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const calls = [];
+    let clearedTimeoutId = 0;
+    class FakeAbortController {
+        constructor() {
+            this.signal = { aborted: false };
+        }
+        abort() {
+            this.signal.aborted = true;
+        }
+    }
+
+    const payload = await runtime.submitAdminWorkbenchExternalMonitoringSmoke(
+        { authorization: 'Bearer test' },
+        {
+            endpoint: '/custom/external-monitoring-smoke',
+            timeoutMs: 3456,
+            AbortController: FakeAbortController,
+            body: {
+                source: 'readiness-panel',
+                message: 'hello smoke'
+            },
+            setTimeout(handler, delay) {
+                calls.push({ type: 'setTimeout', delay, hasHandler: typeof handler === 'function' });
+                return 93;
+            },
+            clearTimeout(timeoutId) {
+                clearedTimeoutId = timeoutId;
+            },
+            fetch: async (url, init) => {
+                calls.push({ type: 'fetch', url, init });
+                return {
+                    ok: true,
+                    async json() {
+                        return {
+                            success: true,
+                            status: 'delivered',
+                            runtime_dependency: 'none',
+                            pro_fallback: true
+                        };
+                    }
+                };
+            }
+        }
+    );
+
+    assert.equal(payload.status, 'delivered');
+    assert.equal(payload.runtime_dependency, 'none');
+    assert.equal(payload.pro_fallback, true);
+    assert.equal(calls[0].type, 'setTimeout');
+    assert.equal(calls[0].delay, 3456);
+    assert.equal(calls[1].type, 'fetch');
+    assert.equal(calls[1].url, '/custom/external-monitoring-smoke');
+    assert.equal(calls[1].init.method, 'POST');
+    assert.equal(calls[1].init.headers.authorization, 'Bearer test');
+    assert.equal(calls[1].init.headers['Content-Type'], 'application/json');
+    assert.deepEqual(JSON.parse(calls[1].init.body), {
+        source: 'readiness-panel',
+        message: 'hello smoke'
+    });
+    assert.ok(calls[1].init.signal);
+    assert.equal(clearedTimeoutId, 93);
+});
+
+test('shared admin workbench normalizes recovery readiness payloads into state-friendly snapshots', () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const normalized = runtime.normalizeAdminWorkbenchRecoveryReadinessPayload({
+        status: 'ready',
+        fetched_at: '2026-05-11T00:00:00.000Z',
+        runtime_dependency: 'none',
+        pro_fallback: true,
+        summary: {
+            section_count: 4
+        },
+        sections: [{ key: 'payment_recovery_live' }]
+    }, {
+        defaultSummary: {
+            section_count: 0,
+            blocking_finding_count: 0
+        }
+    });
+
+    assert.deepEqual(JSON.parse(JSON.stringify(normalized)), {
+        status: 'ready',
+        fetched_at: '2026-05-11T00:00:00.000Z',
+        runtime_dependency: 'none',
+        pro_fallback: true,
+        summary: {
+            section_count: 4,
+            blocking_finding_count: 0
+        },
+        sections: [{ key: 'payment_recovery_live' }],
+        message: ''
+    });
+});
+
 test('shared admin workbench fetches ops alert settings payloads', async () => {
     const runtime = loadAdminWorkbenchRuntime();
     const calls = [];

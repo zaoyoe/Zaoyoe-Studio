@@ -4748,6 +4748,41 @@
                                     </div>
                                     </div>
                                 </div>
+
+                            <div class="config-card ops-alert-config-card" data-config="ops-alerts-recovery-readiness">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-shield-heart"></i>
+                                        <span>恢复 readiness</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="ops-alert-health-panel recovery-readiness-panel" id="recoveryReadinessPanel">
+                                        <div class="ops-alert-card-toolbar">
+                                            <div class="ops-alert-card-toolbar__copy">
+                                                <p>只读查看 Pro/PITR 降级、支付积分库存恢复链路、外部监控和月度演练状态。</p>
+                                            </div>
+                                            <div class="ops-alert-card-toolbar__actions">
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-send-external-monitoring-smoke">
+                                                    <i class="fas fa-paper-plane"></i> 发送监控测试
+                                                </button>
+                                                <button type="button" class="btn-add-config btn-add-config--compact" data-admin-action="settings-refresh-recovery-readiness">
+                                                    <i class="fas fa-rotate"></i> 检查 readiness
+                                                </button>
+                                            </div>
+                                        </div>
+                                        <div class="config-inline-note" id="externalMonitoringSmokeMeta" data-tone="info">
+                                            <i class="fas fa-circle-info"></i>
+                                            <span>外部监控测试会由后台代发，不会暴露 Cron 密钥；未配置 Sentry/Axiom/Datadog 时会自动跳过。</span>
+                                        </div>
+                                        <div class="config-inline-note" id="recoveryReadinessMeta">
+                                            <i class="fas fa-rotate fa-spin"></i>
+                                            <span>正在加载恢复 readiness 状态...</span>
+                                        </div>
+                                        <div class="ops-alert-health-grid recovery-readiness-grid" id="recoveryReadinessGrid"></div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>

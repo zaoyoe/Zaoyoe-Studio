@@ -251,6 +251,7 @@
         "sendFailed": "发送失败",
         "invalidResetEmailFormat": "请输入有效的邮箱地址",
         "emailRateLimitExceeded": "邮件发送通道暂时繁忙，请稍后再试。若连续触发，可能是项目邮件额度已满，通常需要等待约 1 小时。",
+        "emailDeliveryUnavailable": "邮件服务暂时不可用，请稍后再试或联系客服。",
         "invalidEmailNotice": "请先填写正确的邮箱地址！",
         "emailServiceLoading": "邮件服务加载中，请稍后再试...",
         "sendTimeout": "发送超时，请检查网络后重试。",

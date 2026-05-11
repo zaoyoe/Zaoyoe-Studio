@@ -1,3 +1,5 @@
+const crypto = require('node:crypto');
+
 const {
     normalizeAdminSite,
     parseJsonBody,
@@ -40,6 +42,36 @@ function requireSingleUserId(body = {}) {
         throw error;
     }
     return userId;
+}
+
+function pickRandomChar(chars = '') {
+    return chars[crypto.randomInt(0, chars.length)];
+}
+
+function shuffleChars(chars = []) {
+    const nextChars = [...chars];
+    for (let index = nextChars.length - 1; index > 0; index -= 1) {
+        const swapIndex = crypto.randomInt(0, index + 1);
+        [nextChars[index], nextChars[swapIndex]] = [nextChars[swapIndex], nextChars[index]];
+    }
+    return nextChars.join('');
+}
+
+function generateTemporaryPassword(length = 20) {
+    const groups = [
+        'abcdefghijkmnopqrstuvwxyz',
+        'ABCDEFGHJKLMNPQRSTUVWXYZ',
+        '23456789',
+        '!@#$%*-_=+'
+    ];
+    const allChars = groups.join('');
+    const passwordChars = groups.map(pickRandomChar);
+
+    while (passwordChars.length < length) {
+        passwordChars.push(pickRandomChar(allChars));
+    }
+
+    return shuffleChars(passwordChars);
 }
 
 function requireUserIds(body = {}) {
@@ -1058,6 +1090,56 @@ async function handleResetAvatar({ supabase, user, body, site }) {
     };
 }
 
+async function handleResetPassword({ supabase, user, body, site }) {
+    const userId = requireSingleUserId(body);
+    const profileMap = await fetchUserProfilesByIds(supabase, [userId]);
+    assertNoLockedTargets(profileMap, [userId]);
+
+    if (typeof supabase?.auth?.admin?.updateUserById !== 'function') {
+        const error = new Error('当前服务端未启用 Supabase Auth 管理权限，无法直接重置密码');
+        error.statusCode = 503;
+        error.code = 'auth_admin_unavailable';
+        throw error;
+    }
+
+    const profile = profileMap.get(userId) || {};
+    const targetEmail = sanitizeText(profile.email, 320) || null;
+    const targetUsername = sanitizeText(profile.username || profile.out_username, 160) || null;
+    const temporaryPassword = generateTemporaryPassword();
+    const { data, error } = await supabase.auth.admin.updateUserById(userId, {
+        password: temporaryPassword
+    });
+
+    if (error) {
+        throw error;
+    }
+
+    await writeAdminAuditLog({
+        supabase,
+        adminId: user.id,
+        targetUserId: userId,
+        module: 'users',
+        site,
+        actionType: 'RESET_PASSWORD',
+        details: {
+            reset_method: 'admin_temporary_password',
+            password_length: temporaryPassword.length,
+            target_email: targetEmail,
+            target_username: targetUsername,
+            auth_user_updated_at: data?.user?.updated_at || null
+        }
+    });
+
+    return {
+        userId,
+        email: targetEmail,
+        username: targetUsername,
+        temporaryPassword,
+        passwordLength: temporaryPassword.length,
+        updatedAt: data?.user?.updated_at || null
+    };
+}
+
 function normalizeClearContentSelection(body = {}) {
     return {
         comments: normalizeBoolean(body.comments),
@@ -1750,6 +1832,9 @@ module.exports = async (req, res) => {
             break;
         case 'reset_avatar':
             payload = await handleResetAvatar({ supabase, user, body, site });
+            break;
+        case 'reset_password':
+            payload = await handleResetPassword({ supabase, user, body, site });
             break;
         case 'clear_content':
             payload = await handleClearContent({ supabase, user, body, site });

@@ -61,6 +61,7 @@ const paymentsShopRefundHandler = require('../server/api-handlers/admin/payments
 const paymentsSummaryHandler = require('../server/api-handlers/admin/payments/summary');
 const settingsCodexConfigHandler = require('../server/api-handlers/admin/settings/codex-config');
 const settingsDiscountTriggerOptionsHandler = require('../server/api-handlers/admin/settings/discount-trigger-options');
+const settingsExternalMonitoringSmokeHandler = require('../server/api-handlers/admin/settings/external-monitoring-smoke');
 const settingsGeminiKeyHandler = require('../server/api-handlers/admin/settings/gemini-key');
 const settingsAdminAuditMonitorHandler = require('../server/api-handlers/admin/settings/admin-audit-monitor');
 const settingsAnnouncementsHandler = require('../server/api-handlers/admin/settings/announcements');
@@ -69,6 +70,7 @@ const settingsOpsAlertsHandler = require('../server/api-handlers/admin/settings/
 const settingsOpsAlertMonitorHandler = require('../server/api-handlers/admin/settings/ops-alert-monitor');
 const settingsOpsAlertMonitorCasesHandler = require('../server/api-handlers/admin/settings/ops-alert-monitor-cases');
 const settingsPaymentChannelsHandler = require('../server/api-handlers/admin/settings/payment-channels');
+const settingsRecoveryReadinessHandler = require('../server/api-handlers/admin/settings/recovery-readiness');
 const settingsSecurityLocksHandler = require('../server/api-handlers/admin/settings/security-locks');
 const settingsSystemConfigHandler = require('../server/api-handlers/admin/settings/system-config');
 const settingsVerifyMonitorHandler = require('../server/api-handlers/admin/settings/verify-monitor');
@@ -135,12 +137,14 @@ const ROUTE_HANDLERS = {
     'settings/announcements': settingsAnnouncementsHandler,
     'settings/codex-config': settingsCodexConfigHandler,
     'settings/discount-trigger-options': settingsDiscountTriggerOptionsHandler,
+    'settings/external-monitoring-smoke': settingsExternalMonitoringSmokeHandler,
     'settings/gemini-key': settingsGeminiKeyHandler,
     'settings/ops-alert-health': settingsOpsAlertHealthHandler,
     'settings/ops-alerts': settingsOpsAlertsHandler,
     'settings/ops-alert-monitor': settingsOpsAlertMonitorHandler,
     'settings/ops-alert-monitor-cases': settingsOpsAlertMonitorCasesHandler,
     'settings/payment-channels': settingsPaymentChannelsHandler,
+    'settings/recovery-readiness': settingsRecoveryReadinessHandler,
     'settings/security-locks': settingsSecurityLocksHandler,
     'settings/system-config': settingsSystemConfigHandler,
     'settings/verify-monitor': settingsVerifyMonitorHandler,

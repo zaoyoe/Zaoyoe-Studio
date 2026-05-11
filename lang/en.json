@@ -251,6 +251,7 @@
         "sendFailed": "Failed to send",
         "invalidResetEmailFormat": "Please enter a valid email address",
         "emailRateLimitExceeded": "Email sending is temporarily rate limited. Please try again later. If this keeps happening, the project's email quota may be exhausted; it usually resets in about 1 hour.",
+        "emailDeliveryUnavailable": "Email delivery is temporarily unavailable. Please try again later or contact support.",
         "invalidEmailNotice": "Please enter a valid email address first!",
         "emailServiceLoading": "Email service is still loading. Please try again shortly...",
         "sendTimeout": "Sending timed out. Please check your network and try again.",
