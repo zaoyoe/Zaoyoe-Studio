@@ -132,9 +132,9 @@ function buildReadinessAlert(issues = [], readinessPayload = {}, options = {}) {
     return {
         alertType: ALERT_TYPE,
         severity,
-        title: '恢复 readiness 需要关注',
+        title: '恢复能力检查需要关注',
         content: [
-            `恢复 readiness 巡检发现 ${issueCount} 项需要关注。`,
+            `恢复能力检查巡检发现 ${issueCount} 项需要关注。`,
             ...issueLines,
             '生产主链路已按 fail-open 策略保留原有读取、轮询和站内告警逻辑。'
         ].join('\n'),
@@ -257,12 +257,12 @@ function buildSweepFallbackPayload(error = null, now = new Date()) {
         },
         sections: [{
             key: 'recovery_readiness_sweep',
-            label: '恢复 readiness 巡检',
+            label: '恢复能力检查巡检',
             ok: true,
             status: 'unavailable_fallback',
             tone: 'warning',
             runtime_dependency: 'none',
-            summary_text: '恢复 readiness 巡检暂时不可用，生产继续使用原有读取、轮询和站内告警逻辑。',
+            summary_text: '恢复能力检查巡检暂时不可用，生产继续使用原有读取、轮询和站内告警逻辑。',
             message: normalizeText(error?.message || error || 'Recovery readiness sweep unavailable', 500),
             findings: [],
             advisories: [{

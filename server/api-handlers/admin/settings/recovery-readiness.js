@@ -74,7 +74,7 @@ function normalizeFinancialRecoveryDrillSection(summary = {}) {
         checked_at: normalizeText(summary.checked_at, 80),
         summary_text: ok
             ? '演练脚本、审计视图和降级规则已就位。'
-            : '恢复演练 readiness 发现需要处理的问题。',
+            : '恢复演练检查发现需要处理的问题。',
         configured_recovery_layers: configuredLayers,
         finding_count: findings.length,
         advisory_count: advisories.length,

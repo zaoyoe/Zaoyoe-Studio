@@ -5014,7 +5014,7 @@ async function fetchAdminWorkbenchRecoveryReadiness(headers = {}, options = {}) 
         ? options.fetch
         : (typeof fetch === 'function' ? fetch.bind(window) : null);
     if (typeof fetchImpl !== 'function') {
-        throw new Error('当前环境暂不支持加载恢复 readiness 状态');
+        throw new Error('当前环境暂不支持加载恢复能力检查状态');
     }
 
     const endpoint = String(options.endpoint || '/api/admin/settings/recovery-readiness').trim()
@@ -5042,7 +5042,7 @@ async function fetchAdminWorkbenchRecoveryReadiness(headers = {}, options = {}) 
         });
         const payload = await response.json().catch(() => ({}));
         if (!response.ok || payload.success === false) {
-            throw new Error(payload.message || options.errorMessage || '加载恢复 readiness 状态失败');
+            throw new Error(payload.message || options.errorMessage || '加载恢复能力检查状态失败');
         }
         return payload;
     } finally {

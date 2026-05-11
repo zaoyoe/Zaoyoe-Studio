@@ -33,13 +33,13 @@ const REQUIRED_PACKAGE_SCRIPTS = Object.freeze([
         key: 'package-script:readiness-payment-recovery',
         name: 'readiness:payment-recovery',
         expected: 'node scripts/payment-readiness-gate.js --fail-on-missing',
-        label: '支付/积分/商城恢复链路 readiness 命令'
+        label: '支付/积分/商城恢复链路检查命令'
     }),
     Object.freeze({
         key: 'package-script:readiness-financial-recovery-drill',
         name: 'readiness:financial-recovery-drill',
         expected: 'node scripts/financial-recovery-drill-readiness.js',
-        label: '财务恢复演练 readiness 命令'
+        label: '财务恢复演练检查命令'
     })
 ]);
 
