@@ -15057,7 +15057,7 @@ test('ops alert health page includes recovery readiness fail-open panel', () => 
     assert.match(adminStudioSource, /settings-send-external-monitoring-smoke/);
     assert.match(configSource, /function loadRecoveryReadiness/);
     assert.match(configSource, /function sendExternalMonitoringSmokeTest/);
-    assert.match(configSource, /后端未读到 SENTRY_DSN/);
+    assert.match(configSource, /后端未读到 \$\{checkedEnvText\}/);
     assert.match(configSource, /生产链路继续使用现有降级逻辑/);
     assert.match(workbenchSource, /fetchAdminWorkbenchRecoveryReadiness/);
     assert.match(workbenchSource, /submitAdminWorkbenchExternalMonitoringSmoke/);

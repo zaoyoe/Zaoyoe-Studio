@@ -141,6 +141,40 @@ function getSentryDsn(env = process.env) {
     return readFirstEnv(env, SENTRY_DSN_ENV_NAMES);
 }
 
+function listPresentEnvNames(env = process.env, names = []) {
+    return names
+        .map((name) => normalizeText(name, 80))
+        .filter((name) => name && readEnv(env, name));
+}
+
+function buildSafeDeploymentDiagnostics(env = process.env) {
+    const commitSha = normalizeText(env.VERCEL_GIT_COMMIT_SHA || env.GITHUB_SHA || '', 80);
+    return {
+        vercel_env: normalizeText(env.VERCEL_ENV || '', 40) || null,
+        vercel_region: normalizeText(env.VERCEL_REGION || env.AWS_REGION || '', 80) || null,
+        vercel_url: normalizeText(env.VERCEL_URL || '', 180) || null,
+        project_production_url: normalizeText(env.VERCEL_PROJECT_PRODUCTION_URL || '', 180) || null,
+        git_ref: normalizeText(env.VERCEL_GIT_COMMIT_REF || env.GITHUB_REF_NAME || '', 120) || null,
+        git_commit_sha: commitSha ? commitSha.slice(0, 12) : null
+    };
+}
+
+function inspectSentryEnv(env = process.env) {
+    const dsn = getSentryDsn(env);
+    const sentry = parseSentryDsn(dsn.value);
+    const expectedEnvNames = [...SENTRY_DSN_ENV_NAMES];
+    return {
+        expected_env_names: expectedEnvNames,
+        present_env_names: listPresentEnvNames(env, expectedEnvNames),
+        selected_env_name: dsn.name || null,
+        configured: Boolean(dsn.value),
+        valid: Boolean(sentry),
+        dsn_host: sentry?.host || null,
+        dsn_project_id: sentry?.project_id || null,
+        deployment: buildSafeDeploymentDiagnostics(env)
+    };
+}
+
 function parseSentryDsn(dsn = '') {
     try {
         const parsed = new URL(dsn);
@@ -265,6 +299,7 @@ function buildSentryEnvelope(event = {}, dsn = '') {
 }
 
 async function sendSentryEvent(event = {}, env = process.env, options = {}) {
+    const diagnostics = inspectSentryEnv(env);
     const dsn = getSentryDsn(env);
     const sentry = parseSentryDsn(dsn.value);
     if (!sentry) {
@@ -273,7 +308,9 @@ async function sendSentryEvent(event = {}, env = process.env, options = {}) {
             skipped: true,
             reason: dsn.value ? 'invalid_dsn' : 'not_configured',
             env_name: dsn.name || null,
-            expected_env_names: SENTRY_DSN_ENV_NAMES
+            expected_env_names: diagnostics.expected_env_names,
+            present_env_names: diagnostics.present_env_names,
+            deployment: diagnostics.deployment
         };
     }
 
@@ -282,6 +319,8 @@ async function sendSentryEvent(event = {}, env = process.env, options = {}) {
         env_name: dsn.name || null,
         dsn_host: sentry.host,
         dsn_project_id: sentry.project_id,
+        present_env_names: diagnostics.present_env_names,
+        deployment: diagnostics.deployment,
         ...(await postMonitoringPayload(
             sentry.endpoint,
             buildSentryEnvelope(event, sentry.dsn),
@@ -420,6 +459,7 @@ module.exports = {
     DEFAULT_MONITORING_TIMEOUT_MS,
     REDACTED_VALUE,
     SENTRY_DSN_ENV_NAMES,
+    buildSafeDeploymentDiagnostics,
     buildMonitoringEvent,
     buildSentryEnvelope,
     emitExternalMonitoringEvent,
@@ -427,6 +467,7 @@ module.exports = {
     getAxiomConfig,
     getDatadogConfig,
     getSentryDsn,
+    inspectSentryEnv,
     normalizeLevel,
     normalizeText,
     parseSentryDsn,
