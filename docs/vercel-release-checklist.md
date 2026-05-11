@@ -12,6 +12,11 @@
 
 如果你接下来要从稳定快照重新逐步引回后台能力，再配合看上面的 `Admin Studio` 重建顺序表。
 
+## 2026-05-11 生产部署重触发
+
+- 本次文档变更用于通过 PR 合并生成新的 `main` 提交，触发 Vercel Git 集成重新创建 `Production Deployment`。
+- 合并后确认 Vercel `Production` 的 commit 已跟随最新 `main`。
+
 ## 1. 当前分支策略
 
 - `main`
