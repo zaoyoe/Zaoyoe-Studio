@@ -283,6 +283,15 @@ const ALERT_TYPE_MODULE_MAP = Object.freeze({
     shop_order_delivery_incident_recovered: 'fulfillment',
     security_admin_login_anomaly: 'security'
 });
+const AUTO_REOPEN_SUMMARY_ALERT_TYPES = new Set([
+    'shop_inventory_summary',
+    'payment_gateway_summary',
+    'verify_quota_summary',
+    'verify_queue_summary',
+    'verify_failure_summary',
+    'ticket_sla_summary',
+    'shop_order_delivery_summary'
+]);
 const SEVERITY_RANK = Object.freeze({
     info: 10,
     warning: 20,
@@ -882,7 +891,13 @@ function shouldAutoReopenOpsAlertCase(alertType = '') {
         return false;
     }
 
-    return !normalized.endsWith('_summary') && !normalized.endsWith('_recovered');
+    if (normalized.endsWith('_recovered')) {
+        return false;
+    }
+    if (normalized.endsWith('_summary')) {
+        return AUTO_REOPEN_SUMMARY_ALERT_TYPES.has(normalized);
+    }
+    return true;
 }
 
 function buildOpsAlertCaseMetadata(existingCase = {}, input = {}) {
@@ -3890,12 +3905,31 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
             throw error;
         }
 
+        let caseSync = null;
+        try {
+            caseSync = await reopenResolvedOpsAlertCaseForJob(supabase, {
+                ...input,
+                alertType: summaryConfig.summary_alert_type,
+                alert_type: summaryConfig.summary_alert_type,
+                title: updateRow.title,
+                content: updateRow.content,
+                payload: nextPayload,
+                createdAt: nowIso,
+                created_at: nowIso
+            }, {
+                now: itemCreatedAt
+            });
+        } catch (caseError) {
+            console.warn('[OpsAlerts] Failed to sync case state for summary alert:', caseError?.message || caseError);
+        }
+
         return {
             queued: true,
             dedupeKey: itemDedupeKey,
             job: data || { ...existing, ...updateRow },
             channels: nextChannels,
-            summary: true
+            summary: true,
+            caseSync
         };
     }
 
@@ -3952,12 +3986,31 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
         throw error;
     }
 
+    let caseSync = null;
+    try {
+        caseSync = await reopenResolvedOpsAlertCaseForJob(supabase, {
+            ...input,
+            alertType: row.alert_type,
+            alert_type: row.alert_type,
+            title: row.title,
+            content: row.content,
+            payload: row.payload,
+            createdAt: nowIso,
+            created_at: nowIso
+        }, {
+            now: itemCreatedAt
+        });
+    } catch (caseError) {
+        console.warn('[OpsAlerts] Failed to sync case state for summary alert:', caseError?.message || caseError);
+    }
+
     return {
         queued: true,
         dedupeKey: itemDedupeKey,
         job: data || row,
         channels,
-        summary: true
+        summary: true,
+        caseSync
     };
 }
 

@@ -446,6 +446,34 @@ function buildOpsAlertItemCaseState(categoryKey = '', targetId = '', caseRecord 
     };
 }
 
+function isResolvedCaseStaleForJob(caseRecord = null, job = {}) {
+    if (normalizeText(caseRecord?.status, 40).toLowerCase() !== 'resolved') {
+        return false;
+    }
+
+    const jobCreatedAt = getCreatedAtTime(job);
+    const caseClosedAt = getSafeTimestamp(caseRecord?.last_action_at)
+        || getSafeTimestamp(caseRecord?.updated_at);
+    return jobCreatedAt > 0 && caseClosedAt > 0 && jobCreatedAt > caseClosedAt;
+}
+
+function buildImplicitlyReopenedCaseRecord(caseRecord = {}, job = {}) {
+    const jobCreatedAt = normalizeText(job?.created_at, 80) || normalizeText(caseRecord?.updated_at, 80);
+    return {
+        ...caseRecord,
+        status: 'open',
+        resolution: null,
+        last_action: 'reopened',
+        last_action_at: jobCreatedAt || normalizeText(caseRecord?.last_action_at, 80) || null,
+        updated_at: jobCreatedAt || normalizeText(caseRecord?.updated_at, 80) || null,
+        metadata: {
+            ...normalizePayload(caseRecord?.metadata),
+            implicit_reopen_reason: 'newer_alert_after_resolved_case',
+            implicit_reopen_alert_job_id: normalizeText(job?.id, 160) || null
+        }
+    };
+}
+
 function getCreatedAtTime(row = {}) {
     const timestamp = Date.parse(normalizeText(row.created_at, 80));
     return Number.isFinite(timestamp) ? timestamp : 0;
@@ -682,7 +710,10 @@ function buildAlertItem(job = {}, categoryKey = '', options = {}) {
     const caseEventsByKey = options.caseEventsByKey instanceof Map
         ? options.caseEventsByKey
         : new Map();
-    const caseRecord = opsAlertCasesByKey.get(buildOpsAlertCaseKey(categoryKey, targetId)) || null;
+    const rawCaseRecord = opsAlertCasesByKey.get(buildOpsAlertCaseKey(categoryKey, targetId)) || null;
+    const caseRecord = isResolvedCaseStaleForJob(rawCaseRecord, job)
+        ? buildImplicitlyReopenedCaseRecord(rawCaseRecord, job)
+        : rawCaseRecord;
     const caseState = buildOpsAlertItemCaseState(categoryKey, targetId, caseRecord, caseEventsByKey);
 
     return {

@@ -644,6 +644,56 @@ test('ops alert monitor handler treats actionable summary jobs as active inbox p
     });
 });
 
+test('ops alert monitor handler keeps newer summary alerts visible after an older case was resolved', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('verify_quota_summary', {
+                id: 'verify-quota-summary-newer-than-close',
+                severity: 'critical',
+                title: '验证额度告警汇总（1 条额度告警）',
+                content: '验证额度告警汇总\n累计额度告警：1 条',
+                payload: {
+                    target_id: 'ops_summary:verify_quota_summary',
+                    item_count: 1
+                },
+                created_at: hoursAgo(1)
+            })
+        ],
+        cases: [{
+            category_key: 'verify',
+            target_id: 'ops_summary:verify_quota_summary',
+            alert_type: 'verify_quota_summary',
+            status: 'resolved',
+            owner_admin_id: 'admin-user-1',
+            owner_label: '当前值班',
+            resolution: '额度已补充',
+            metadata: {
+                title: '验证额度告警汇总'
+            },
+            last_action: 'resolved',
+            last_action_at: hoursAgo(2),
+            updated_at: hoursAgo(2)
+        }]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const verify = payload.categories.find((item) => item.key === 'verify');
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(verify.active_count, 1);
+        assert.equal(verify.critical_count, 1);
+        assert.equal(verify.items[0].alert_type, 'verify_quota_summary');
+        assert.equal(verify.items[0].case_status, 'open');
+        assert.equal(verify.items[0].case_last_action, 'reopened');
+        assert.equal(verify.items[0].case_resolution, null);
+        assert.equal(verify.items[0].case_owner_label, '当前值班');
+    });
+});
+
 test('ops alert monitor handler can build assignable admins without scanning auth user pages', async () => {
     await withHandler({
         authUsers: [

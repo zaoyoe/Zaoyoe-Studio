@@ -2955,6 +2955,74 @@ test('enqueueOpsAlertJob auto-reopens a resolved case when the same target recei
     assert.equal(state.caseEvents[0].status, 'open');
 });
 
+test('enqueueOpsAlertJob auto-reopens a resolved case when an actionable summary receives a new alert', async () => {
+    const state = {
+        jobs: [],
+        cases: [{
+            category_key: 'verify',
+            target_id: 'ops_summary:verify_quota_summary',
+            alert_type: 'verify_quota_summary',
+            status: 'resolved',
+            owner_admin_id: 'zaoyoe@gmail.com',
+            owner_label: 'zaoyoe@gmail.com',
+            resolution: '额度已补充',
+            metadata: {
+                title: '验证额度告警汇总'
+            },
+            last_action: 'resolved',
+            last_action_by: 'zaoyoe@gmail.com',
+            last_action_at: '2026-05-11T10:00:00.000Z',
+            updated_at: '2026-05-11T10:00:00.000Z'
+        }],
+        caseEvents: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig({
+        config: {
+            verify_quota: {
+                enabled: true,
+                summary_enabled: true,
+                summary_schedule_mode: 'hourly',
+                summary_hourly_minute: 0,
+                summary_window_minutes: 60,
+                summary_max_items: 10
+            }
+        }
+    });
+
+    const result = await enqueueOpsAlertJob(supabase, {
+        alertType: 'verify_quota_low',
+        severity: 'critical',
+        title: '验证额度不足预警（primary-key）',
+        content: '验证额度告警\nAPI Key：primary-key',
+        payload: {
+            target_id: 'verify_quota:primary-key',
+            key_name: 'primary-key',
+            balance: 0,
+            remaining_jobs: 0,
+            entry_path: '后台设置 -> 验证服务配置 -> 当前额度 / 队列状态'
+        },
+        createdAt: '2026-05-11T12:04:10.404Z',
+        source: 'verify_quota_monitor'
+    }, {
+        runtime,
+        now: new Date('2026-05-11T12:04:10.404Z')
+    });
+
+    assert.equal(result.queued, true);
+    assert.equal(result.summary, true);
+    assert.equal(result.caseSync?.reopened, true);
+    assert.equal(state.jobs.length, 1);
+    assert.equal(state.jobs[0].alert_type, 'verify_quota_summary');
+    assert.equal(state.jobs[0].payload.target_id, 'ops_summary:verify_quota_summary');
+    assert.equal(state.cases[0].status, 'open');
+    assert.equal(state.cases[0].last_action, 'reopened');
+    assert.equal(state.cases[0].resolution, null);
+    assert.equal(state.caseEvents.length, 1);
+    assert.equal(state.caseEvents[0].action, 'reopen');
+    assert.equal(state.caseEvents[0].target_id, 'ops_summary:verify_quota_summary');
+});
+
 test('sweepOpsAlertJobs delivers queued alerts and records per-channel attempts', async () => {
     const state = {
         jobs: [
