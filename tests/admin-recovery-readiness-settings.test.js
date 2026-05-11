@@ -97,6 +97,7 @@ async function withHandler(stateOverrides, callback) {
         if (request === '../../../../scripts/payment-readiness-gate') {
             return {
                 async runReadinessGate() {
+                    if (state.paymentNeverResolves) return new Promise(() => {});
                     if (state.paymentError) throw state.paymentError;
                     return state.paymentSummary;
                 }
@@ -175,6 +176,27 @@ test('recovery readiness handler keeps response successful when optional checks 
         assert.equal(payment.runtime_dependency, 'none');
         assert.match(payment.summary_text, /继续使用原有读取和降级逻辑/);
         assert.equal(external.status, 'unavailable_fallback');
+    });
+});
+
+test('recovery readiness payload times out slow optional payment checks and still returns', async () => {
+    await withHandler({
+        paymentNeverResolves: true
+    }, async (handler) => {
+        const payload = await handler._private.buildRecoveryReadinessPayload({
+            env: {},
+            now: new Date('2026-05-11T00:00:00.000Z'),
+            defaultTimeoutMs: 50,
+            paymentTimeoutMs: 10
+        });
+
+        assert.equal(payload.success, true);
+        assert.equal(payload.status, 'ready');
+        const payment = payload.sections.find((section) => section.key === 'payment_recovery_live');
+        assert.equal(payment.status, 'unavailable_fallback');
+        assert.equal(payment.runtime_dependency, 'none');
+        assert.match(payment.message, /超过 10ms/);
+        assert.match(payment.summary_text, /继续使用原有读取和降级逻辑/);
     });
 });
 
