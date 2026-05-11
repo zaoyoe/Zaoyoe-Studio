@@ -519,6 +519,131 @@ test('ops alert monitor handler summarizes payment, ticket, inventory, fulfillme
     });
 });
 
+test('ops alert monitor handler treats actionable summary jobs as active inbox problems', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('payment_gateway_summary', {
+                id: 'payment-gateway-summary',
+                severity: 'critical',
+                title: '支付通道异常汇总（1 条通道异常）',
+                content: '支付通道异常汇总\n累计通道异常：1 条',
+                payload: {
+                    target_id: 'ops_summary:payment_gateway_summary',
+                    item_count: 1
+                },
+                created_at: hoursAgo(1.7)
+            }),
+            buildJob('ticket_sla_summary', {
+                id: 'ticket-sla-summary',
+                severity: 'critical',
+                title: '工单超时汇总（1 条超时工单）',
+                content: '工单超时汇总\n累计超时工单：1 条',
+                payload: {
+                    target_id: 'ops_summary:ticket_sla_summary',
+                    item_count: 1
+                },
+                created_at: hoursAgo(1.6)
+            }),
+            buildJob('shop_inventory_summary', {
+                id: 'inventory-summary',
+                severity: 'critical',
+                title: '库存与补货汇总（1 条库存告警）',
+                content: '库存与补货汇总\n累计库存告警：1 条',
+                payload: {
+                    target_id: 'ops_summary:shop_inventory_summary',
+                    item_count: 1
+                },
+                created_at: hoursAgo(1.5)
+            }),
+            buildJob('shop_order_delivery_summary', {
+                id: 'delivery-summary',
+                severity: 'critical',
+                title: '履约失败汇总（1 条履约异常）',
+                content: '履约失败汇总\n累计履约异常：1 条',
+                payload: {
+                    target_id: 'ops_summary:shop_order_delivery_summary',
+                    item_count: 1
+                },
+                created_at: hoursAgo(1.4)
+            }),
+            buildJob('verify_quota_summary', {
+                id: 'verify-quota-summary',
+                severity: 'warning',
+                title: '验证额度告警汇总（1 条额度告警）',
+                content: '验证额度告警汇总\n累计额度告警：1 条',
+                payload: {
+                    target_id: 'ops_summary:verify_quota_summary',
+                    item_count: 1
+                },
+                created_at: hoursAgo(1.3)
+            }),
+            buildJob('verify_queue_summary', {
+                id: 'verify-queue-summary',
+                severity: 'warning',
+                title: '验证堆积告警汇总（1 条堆积告警）',
+                content: '验证堆积告警汇总\n累计堆积告警：1 条',
+                payload: {
+                    target_id: 'ops_summary:verify_queue_summary',
+                    item_count: 1
+                },
+                created_at: hoursAgo(1.2)
+            }),
+            buildJob('verify_failure_summary', {
+                id: 'verify-failure-summary',
+                severity: 'critical',
+                title: '验证失败率告警汇总（1 条失败率告警）',
+                content: '验证失败率告警汇总\n累计失败率告警：1 条',
+                payload: {
+                    target_id: 'ops_summary:verify_failure_summary',
+                    item_count: 1
+                },
+                created_at: hoursAgo(1.1)
+            })
+        ]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const categoriesByKey = new Map(payload.categories.map((category) => [category.key, category]));
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.summary.total_active_count, 7);
+        assert.equal(payload.summary.total_critical_count, 5);
+        assert.equal(payload.summary.active_category_count, 5);
+
+        const payments = categoriesByKey.get('payments');
+        assert.equal(payments.active_count, 1);
+        assert.equal(payments.items[0].alert_type, 'payment_gateway_summary');
+        assert.equal(payments.items[0].target_id, 'ops_summary:payment_gateway_summary');
+
+        const tickets = categoriesByKey.get('tickets');
+        assert.equal(tickets.active_count, 1);
+        assert.equal(tickets.items[0].alert_type, 'ticket_sla_summary');
+
+        const inventory = categoriesByKey.get('inventory');
+        assert.equal(inventory.active_count, 1);
+        assert.equal(inventory.critical_count, 1);
+        assert.equal(inventory.items[0].alert_type, 'shop_inventory_summary');
+        assert.equal(inventory.items[0].title, '库存与补货汇总（1 条库存告警）');
+        assert.equal(inventory.items[0].target_id, 'ops_summary:shop_inventory_summary');
+
+        const fulfillment = categoriesByKey.get('fulfillment');
+        assert.equal(fulfillment.active_count, 1);
+        assert.equal(fulfillment.items[0].alert_type, 'shop_order_delivery_summary');
+
+        const verify = categoriesByKey.get('verify');
+        assert.equal(verify.active_count, 3);
+        assert.equal(verify.critical_count, 1);
+        assert.deepEqual(
+            verify.items.map((item) => item.alert_type),
+            ['verify_failure_summary', 'verify_queue_summary', 'verify_quota_summary']
+        );
+    });
+});
+
 test('ops alert monitor handler can build assignable admins without scanning auth user pages', async () => {
     await withHandler({
         authUsers: [

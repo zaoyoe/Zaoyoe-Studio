@@ -31,28 +31,28 @@ const ALERT_MONITOR_CATEGORIES = Object.freeze([
         key: 'payments',
         label: '支付与退款',
         description: '聚合支付通道、退款售后和支付配置相关告警。',
-        problem_types: ['payment_refund_ops', 'payment_gateway_degraded', 'payment_config_changed', 'payment_config_incident'],
+        problem_types: ['payment_refund_ops', 'payment_gateway_summary', 'payment_gateway_degraded', 'payment_config_changed', 'payment_config_incident'],
         recovery_types: ['payment_gateway_recovered', 'payment_config_recovered', 'payment_config_incident_recovered']
     },
     {
         key: 'tickets',
         label: '工单与售后',
         description: '聚合工单超时与售后处理进度告警。',
-        problem_types: ['ticket_sla_overdue'],
+        problem_types: ['ticket_sla_summary', 'ticket_sla_overdue'],
         recovery_types: ['ticket_sla_recovered']
     },
     {
         key: 'inventory',
         label: '库存与补货',
         description: '聚合库存偏低、售罄以及补货恢复告警。',
-        problem_types: ['shop_inventory_low', 'shop_inventory_empty'],
+        problem_types: ['shop_inventory_summary', 'shop_inventory_low', 'shop_inventory_empty'],
         recovery_types: ['shop_inventory_recovered']
     },
     {
         key: 'fulfillment',
         label: '履约与死信',
         description: '聚合单笔履约失败、履约事故升级及恢复告警。',
-        problem_types: ['shop_order_delivery_failed', 'shop_order_delivery_incident'],
+        problem_types: ['shop_order_delivery_summary', 'shop_order_delivery_failed', 'shop_order_delivery_incident'],
         recovery_types: ['shop_order_delivery_recovered', 'shop_order_delivery_incident_recovered']
     },
     {
@@ -66,7 +66,7 @@ const ALERT_MONITOR_CATEGORIES = Object.freeze([
         key: 'verify',
         label: '验证服务',
         description: '聚合验证额度不足、服务停摆、队列堆积、失败率飙升和综合事故相关告警。',
-        problem_types: ['verify_quota_low', 'verify_service_disabled', 'verify_queue_backlog', 'verify_failure_rate_spike', 'verify_incident_escalated'],
+        problem_types: ['verify_quota_summary', 'verify_quota_low', 'verify_service_disabled', 'verify_queue_summary', 'verify_queue_backlog', 'verify_failure_summary', 'verify_failure_rate_spike', 'verify_incident_escalated'],
         recovery_types: ['verify_incident_recovered']
     },
     {
