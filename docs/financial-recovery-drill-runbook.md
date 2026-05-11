@@ -6,6 +6,7 @@ Use this monthly for payment, points, and shop inventory recovery readiness. The
 
 1. Confirm the latest migrations have been applied:
    - `20260510_add_financial_recovery_audit_views.sql`
+   - `20260511_allow_service_role_financial_recovery_audit_views.sql`
    - latest payment, points, and shop purchase migrations
 2. Run the readiness gate:
    - `npm run readiness:payment-recovery`

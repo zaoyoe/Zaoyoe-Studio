@@ -2,11 +2,13 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+    buildRecoveryAuditVisibilityFindings,
     buildReadinessSummary,
     formatHumanReport,
     isMissingRelationCapabilityError,
     isMissingRpcCapabilityError,
     parseArgs,
+    RECOVERY_AUDIT_VISIBILITY_CHECKS,
     RECOVERY_AUDIT_RELATIONS
 } = require('../scripts/payment-readiness-gate');
 
@@ -108,6 +110,62 @@ test('buildReadinessSummary marks missing rpc capabilities and audit views as bl
     assert.equal(summary.capabilities.admin_refund_reclaim.available, true);
 });
 
+test('buildReadinessSummary flags service-role filtered audit views when source data exists', () => {
+    const summary = buildReadinessSummary({
+        envFile: '/tmp/server.env',
+        projectHost: 'demo.supabase.co',
+        capabilityResults: [],
+        relationResults: [
+            {
+                key: 'payment_order_recovery_audit',
+                relation_name: 'admin_payment_order_recovery_audit_view',
+                label: '支付订单恢复审计视图',
+                migration: '20260510_add_financial_recovery_audit_views.sql',
+                available: true,
+                row_count: 0,
+                outcome: 'readable',
+                probe: {}
+            }
+        ],
+        sourceCountResults: [
+            {
+                relation_name: 'payment_orders',
+                available: true,
+                row_count: 87,
+                probe: {}
+            }
+        ]
+    });
+
+    assert.equal(summary.ok, false);
+    assert.equal(summary.source_counts.payment_orders.row_count, 87);
+    assert.equal(summary.findings.some((finding) => (
+        finding.key === 'filtered_payment_order_recovery_audit'
+            && finding.migration === '20260511_allow_service_role_financial_recovery_audit_views.sql'
+    )), true);
+
+    assert.deepEqual(
+        buildRecoveryAuditVisibilityFindings(
+            {
+                payment_order_recovery_audit: {
+                    key: 'payment_order_recovery_audit',
+                    relation_name: 'admin_payment_order_recovery_audit_view',
+                    label: '支付订单恢复审计视图',
+                    available: true,
+                    row_count: 1
+                }
+            },
+            {
+                payment_orders: {
+                    relation_name: 'payment_orders',
+                    row_count: 87
+                }
+            }
+        ),
+        []
+    );
+});
+
 test('formatHumanReport renders a readable PASS report', () => {
     const output = formatHumanReport({
         checked_at: '2026-04-16T00:00:00.000Z',
@@ -158,6 +216,14 @@ test('recovery audit relations are part of the readiness gate contract', () => {
             'admin_points_balance_recovery_audit_view',
             'admin_shop_inventory_recovery_audit_view',
             'admin_financial_recovery_audit_summary_view'
+        ]
+    );
+    assert.deepEqual(
+        RECOVERY_AUDIT_VISIBILITY_CHECKS.map((check) => check.migration),
+        [
+            '20260511_allow_service_role_financial_recovery_audit_views.sql',
+            '20260511_allow_service_role_financial_recovery_audit_views.sql',
+            '20260511_allow_service_role_financial_recovery_audit_views.sql'
         ]
     );
 });

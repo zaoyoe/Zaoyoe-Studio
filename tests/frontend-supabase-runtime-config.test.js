@@ -2332,6 +2332,16 @@ test('login auth sheet uses natural height while preserving smooth resize transi
         'inject-auth.js should wrap the divider, form, and remember row in a dedicated lower login fields stack'
     );
     assert.equal(
+        injectSource.includes('class="auth-sheet-google-mark"'),
+        true,
+        'inject-auth.js should render the Google mark inline so the login button is not blocked by an external icon request'
+    );
+    assert.equal(
+        injectSource.includes('https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg'),
+        false,
+        'inject-auth.js should not depend on the external Firebase UI Google icon'
+    );
+    assert.equal(
         injectSource.includes('function animateAuthSheetResize(fromHeight) {'),
         true,
         'inject-auth.js should keep the dedicated auth sheet resize animator'

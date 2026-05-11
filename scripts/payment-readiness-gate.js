@@ -119,6 +119,23 @@ const RECOVERY_AUDIT_RELATIONS = Object.freeze([
         migration: '20260510_add_financial_recovery_audit_views.sql'
     })
 ]);
+const RECOVERY_AUDIT_VISIBILITY_CHECKS = Object.freeze([
+    Object.freeze({
+        key: 'payment_order_recovery_audit',
+        sourceRelations: ['payment_orders'],
+        migration: '20260511_allow_service_role_financial_recovery_audit_views.sql'
+    }),
+    Object.freeze({
+        key: 'points_balance_recovery_audit',
+        sourceRelations: ['points_balance', 'points_ledger'],
+        migration: '20260511_allow_service_role_financial_recovery_audit_views.sql'
+    }),
+    Object.freeze({
+        key: 'shop_inventory_recovery_audit',
+        sourceRelations: ['shop_orders'],
+        migration: '20260511_allow_service_role_financial_recovery_audit_views.sql'
+    })
+]);
 
 function parseArgs(argv = []) {
     const options = {
@@ -302,17 +319,73 @@ async function probeRelationCapability(supabase, definition = {}) {
     };
 }
 
+async function probeSourceRelationCount(supabase, relationName = '') {
+    let count = null;
+    let error = null;
+
+    try {
+        const result = await supabase
+            .from(relationName)
+            .select('*', { count: 'exact', head: true });
+        count = result?.count ?? null;
+        error = result?.error ?? null;
+    } catch (thrownError) {
+        error = thrownError;
+    }
+
+    return {
+        relation_name: relationName,
+        available: !error,
+        row_count: Number.isFinite(Number(count)) ? Number(count) : null,
+        probe: {
+            code: String(error?.code || '').trim() || '',
+            message: String(error?.message || '').trim()
+        }
+    };
+}
+
+function buildRecoveryAuditVisibilityFindings(recoveryAuditRelations = {}, sourceCounts = {}) {
+    return RECOVERY_AUDIT_VISIBILITY_CHECKS.flatMap((check) => {
+        const auditRelation = recoveryAuditRelations[check.key];
+        if (!auditRelation || auditRelation.available !== true || Number(auditRelation.row_count || 0) > 0) {
+            return [];
+        }
+
+        const sourceTotal = check.sourceRelations.reduce((sum, relationName) => {
+            const source = sourceCounts[relationName] || {};
+            return sum + (Number(source.row_count || 0) || 0);
+        }, 0);
+
+        if (sourceTotal <= 0) {
+            return [];
+        }
+
+        return [{
+            severity: 'high',
+            key: `filtered_${check.key}`,
+            message: `${auditRelation.label} 可读但在 service_role 下返回 0 行；源表已有 ${sourceTotal} 行，请执行 ${check.migration}`,
+            relation_name: auditRelation.relation_name,
+            source_relations: check.sourceRelations,
+            migration: check.migration
+        }];
+    });
+}
+
 function buildReadinessSummary({
     envFile,
     projectHost,
     capabilityResults = [],
-    relationResults = []
+    relationResults = [],
+    sourceCountResults = []
 }) {
     const capabilities = Object.fromEntries(
         capabilityResults.map((result) => [result.key, result])
     );
     const recovery_audit_relations = Object.fromEntries(
         relationResults.map((result) => [result.key, result])
+    );
+    const source_counts = Object.fromEntries(
+        sourceCountResults.map((result) => [result.relation_name, result])
     );
     const findings = [
         ...capabilityResults
@@ -332,7 +405,8 @@ function buildReadinessSummary({
                 message: `${result.label} 缺失，请先执行 ${result.migration}`,
                 relation_name: result.relation_name,
                 migration: result.migration
-            }))
+            })),
+        ...buildRecoveryAuditVisibilityFindings(recovery_audit_relations, source_counts)
     ];
 
     return {
@@ -341,6 +415,7 @@ function buildReadinessSummary({
         project_host: projectHost,
         capabilities,
         recovery_audit_relations,
+        source_counts,
         findings,
         ok: findings.length === 0
     };
@@ -395,6 +470,15 @@ function formatHumanReport(summary = {}) {
         lines.push('');
     }
 
+    const sourceCounts = Object.values(summary.source_counts || {});
+    if (sourceCounts.length) {
+        lines.push('source_counts');
+        for (const source of sourceCounts) {
+            lines.push(`  ${source.relation_name}: ${Number.isFinite(Number(source.row_count)) ? source.row_count : '(unknown)'}`);
+        }
+        lines.push('');
+    }
+
     if (!summary.findings?.length) {
         lines.push('findings: none');
     } else {
@@ -416,6 +500,7 @@ async function runReadinessGate({ envFile = DEFAULT_ENV_FILE } = {}) {
     const supabase = buildSupabaseClient();
     const capabilityResults = [];
     const relationResults = [];
+    const sourceCountResults = [];
 
     for (const definition of CAPABILITY_DEFINITIONS) {
         capabilityResults.push(await probeRpcCapability(supabase, definition));
@@ -423,12 +508,16 @@ async function runReadinessGate({ envFile = DEFAULT_ENV_FILE } = {}) {
     for (const definition of RECOVERY_AUDIT_RELATIONS) {
         relationResults.push(await probeRelationCapability(supabase, definition));
     }
+    for (const relationName of [...new Set(RECOVERY_AUDIT_VISIBILITY_CHECKS.flatMap((check) => check.sourceRelations))]) {
+        sourceCountResults.push(await probeSourceRelationCount(supabase, relationName));
+    }
 
     return buildReadinessSummary({
         envFile,
         projectHost,
         capabilityResults,
-        relationResults
+        relationResults,
+        sourceCountResults
     });
 }
 
@@ -454,6 +543,8 @@ module.exports = {
     CAPABILITY_DEFINITIONS,
     DEFAULT_ENV_FILE,
     RECOVERY_AUDIT_RELATIONS,
+    RECOVERY_AUDIT_VISIBILITY_CHECKS,
+    buildRecoveryAuditVisibilityFindings,
     buildReadinessSummary,
     formatHumanReport,
     isMissingRelationCapabilityError,
@@ -461,5 +552,6 @@ module.exports = {
     parseArgs,
     probeRelationCapability,
     probeRpcCapability,
+    probeSourceRelationCount,
     runReadinessGate
 };

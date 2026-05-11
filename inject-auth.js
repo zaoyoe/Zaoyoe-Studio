@@ -87,6 +87,66 @@
         return window.i18n?.t(key, fallback) || fallback;
     }
 
+    function formatInjectedAuthText(key, fallback = '', vars = {}) {
+        let text = t(key, fallback || '');
+        Object.entries(vars || {}).forEach(([name, value]) => {
+            text = String(text).split(`{${name}}`).join(String(value));
+        });
+        return text;
+    }
+
+    function normalizeAuthMessagePayload(message) {
+        if (message && typeof message === 'object' && message.key) {
+            const vars = message.vars && typeof message.vars === 'object' ? message.vars : {};
+            return {
+                text: formatInjectedAuthText(message.key, message.fallback || '', vars),
+                key: String(message.key || ''),
+                fallback: String(message.fallback || ''),
+                vars
+            };
+        }
+
+        return {
+            text: String(message || ''),
+            key: '',
+            fallback: '',
+            vars: null
+        };
+    }
+
+    function setAuthMessageTranslationState(messageBox, payload = {}) {
+        if (!messageBox) return;
+        if (payload.key) {
+            messageBox.dataset.authI18nKey = payload.key;
+            messageBox.dataset.authI18nFallback = payload.fallback || '';
+            messageBox.dataset.authI18nVars = JSON.stringify(payload.vars || {});
+            return;
+        }
+
+        delete messageBox.dataset.authI18nKey;
+        delete messageBox.dataset.authI18nFallback;
+        delete messageBox.dataset.authI18nVars;
+    }
+
+    function refreshVisibleAuthMessageTranslation() {
+        const { message: messageBox } = getSheetElements();
+        if (!messageBox || messageBox.hidden || !messageBox.dataset.authI18nKey) return;
+
+        let vars = {};
+        try {
+            vars = JSON.parse(messageBox.dataset.authI18nVars || '{}') || {};
+        } catch (_) {
+            vars = {};
+        }
+
+        const translated = formatInjectedAuthText(
+            messageBox.dataset.authI18nKey,
+            messageBox.dataset.authI18nFallback || messageBox.textContent || '',
+            vars
+        );
+        messageBox.textContent = translated;
+    }
+
     function toInjectedAuthCssPropertyName(name) {
         if (typeof name !== 'string' || !name) return '';
         if (name.startsWith('--')) return name;
@@ -288,7 +348,14 @@
                                 <section id="loginView" class="auth-sheet-view auth-sheet-view--primary is-active" data-auth-view="login">
                                     <div class="auth-sheet-login-stack">
                                         <button type="button" class="auth-sheet-google-btn google-login-btn" data-auth-google>
-                                            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" width="18" height="18">
+                                            <span class="auth-sheet-google-mark" aria-hidden="true">
+                                                <svg viewBox="0 0 18 18" width="18" height="18" focusable="false" role="img">
+                                                    <path fill="#4285f4" d="M17.64 9.2c0-.64-.06-1.25-.16-1.84H9v3.48h4.84a4.14 4.14 0 0 1-1.8 2.71v2.25h2.91c1.7-1.57 2.69-3.88 2.69-6.6Z"/>
+                                                    <path fill="#34a853" d="M9 18c2.43 0 4.47-.8 5.95-2.2l-2.91-2.25c-.8.54-1.83.86-3.04.86-2.35 0-4.34-1.58-5.05-3.72H.94v2.33A9 9 0 0 0 9 18Z"/>
+                                                    <path fill="#fbbc05" d="M3.95 10.69a5.41 5.41 0 0 1 0-3.38V4.98H.94a9 9 0 0 0 0 8.04l3.01-2.33Z"/>
+                                                    <path fill="#ea4335" d="M9 3.58c1.32 0 2.5.45 3.44 1.35l2.57-2.57A8.65 8.65 0 0 0 9 0 9 9 0 0 0 .94 4.98l3.01 2.33C4.66 5.17 6.65 3.58 9 3.58Z"/>
+                                                </svg>
+                                            </span>
                                             <span data-i18n="auth.googleLogin">使用 Google 登录</span>
                                         </button>
                                         <div id="authGoogleDebugBadge" class="auth-google-debug-badge" hidden aria-live="polite"></div>
@@ -1281,12 +1348,14 @@
 
     function renderAuthMessage(message, type = 'error') {
         const { message: messageBox } = getSheetElements();
-        const normalizedMessage = String(message || '').trim();
+        const payload = normalizeAuthMessagePayload(message);
+        const normalizedMessage = String(payload.text || '').trim();
         if (!messageBox || !normalizedMessage) return false;
 
         releaseAuthMessageReserve(messageBox);
         messageBox.hidden = false;
         messageBox.textContent = normalizedMessage;
+        setAuthMessageTranslationState(messageBox, payload);
         messageBox.classList.remove('is-error', 'is-success');
         messageBox.classList.add(type === 'success' ? 'is-success' : 'is-error');
         return true;
@@ -1360,6 +1429,7 @@
             }
             message.hidden = true;
             message.textContent = '';
+            setAuthMessageTranslationState(message, {});
             message.classList.remove('is-error', 'is-success');
         }, { animate: animate && !shouldReserveSpace });
     }
@@ -2171,6 +2241,7 @@
         if (window.i18n?.applyTranslations) {
             window.i18n.applyTranslations();
         }
+        refreshVisibleAuthMessageTranslation();
     });
 
     if (document.readyState === 'loading') {

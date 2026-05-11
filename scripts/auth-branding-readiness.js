@@ -3,11 +3,18 @@ const path = require('path');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
 const TEMPLATE_DIR = path.join(REPO_ROOT, 'supabase/auth-email-templates');
+const DASHBOARD_CONFIG_PATH = path.join(TEMPLATE_DIR, 'dashboard-config.json');
 const REQUIRED_TEMPLATES = Object.freeze([
     'confirm-signup.html.tpl',
     'magic-link.html.tpl',
     'reset-password.html.tpl',
     'change-email.html.tpl'
+]);
+const REQUIRED_REDIRECT_URLS = Object.freeze([
+    'https://www.zaoyoe.com/auth-callback.html',
+    'https://www.zaoyoe.com/reset-password.html',
+    'https://zaoyoe.xyz/auth-callback.html',
+    'https://zaoyoe.xyz/reset-password.html'
 ]);
 
 function parseArgs(argv = []) {
@@ -30,6 +37,10 @@ function parseArgs(argv = []) {
 
 function readRepoFile(relativePath) {
     return fs.readFileSync(path.join(REPO_ROOT, relativePath), 'utf8');
+}
+
+function readJsonFile(filePath) {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
 function buildCheck(key, ok, message, detail = {}) {
@@ -73,8 +84,75 @@ function inspectTemplate(templateName) {
     );
 }
 
+function inspectDashboardConfig() {
+    if (!fs.existsSync(DASHBOARD_CONFIG_PATH)) {
+        return [
+            buildCheck(
+                'dashboard-config:exists',
+                false,
+                'dashboard-config.json is missing',
+                { path: 'supabase/auth-email-templates/dashboard-config.json' }
+            )
+        ];
+    }
+
+    const config = readJsonFile(DASHBOARD_CONFIG_PATH);
+    const checks = [
+        buildCheck(
+            'dashboard-config:site-url',
+            config.siteUrl === 'https://www.zaoyoe.com',
+            'dashboard config pins the canonical CN Site URL'
+        )
+    ];
+
+    const redirectUrls = Array.isArray(config.additionalRedirectUrls) ? config.additionalRedirectUrls : [];
+    checks.push(buildCheck(
+        'dashboard-config:dual-site-redirects',
+        REQUIRED_REDIRECT_URLS.every((url) => redirectUrls.includes(url)),
+        'dashboard config includes CN and international auth redirect URLs'
+    ));
+
+    const templates = Array.isArray(config.emailTemplates) ? config.emailTemplates : [];
+    const templateFiles = templates.map((template) => String(template?.file || '').trim()).filter(Boolean);
+    checks.push(buildCheck(
+        'dashboard-config:template-files',
+        REQUIRED_TEMPLATES.every((templateName) => templateFiles.includes(templateName)),
+        'dashboard config maps every required email template file'
+    ));
+    checks.push(buildCheck(
+        'dashboard-config:template-subjects',
+        templates.length >= REQUIRED_TEMPLATES.length
+            && templates.every((template) => String(template?.subject || '').includes('Zaoyoe')),
+        'dashboard config includes branded subjects for every email template'
+    ));
+    checks.push(buildCheck(
+        'dashboard-config:template-variables',
+        templates.every((template) => (
+            Array.isArray(template?.requiredVariables)
+                && template.requiredVariables.includes('{{ .ConfirmationURL }}')
+        )),
+        'dashboard config keeps the Supabase ConfirmationURL variable required'
+    ));
+    checks.push(buildCheck(
+        'dashboard-config:optional-smtp',
+        config.customSmtp?.optional === true
+            && /Supabase default/i.test(String(config.customSmtp?.fallback || '')),
+        'dashboard config keeps Custom SMTP optional with Supabase delivery fallback'
+    ));
+    checks.push(buildCheck(
+        'dashboard-config:optional-custom-domain',
+        config.customDomain?.optional === true
+            && /Supabase/i.test(String(config.customDomain?.fallback || '')),
+        'dashboard config keeps Supabase Custom Domain optional'
+    ));
+
+    return checks;
+}
+
 function runReadiness() {
     const checks = [];
+
+    checks.push(...inspectDashboardConfig());
 
     for (const templateName of REQUIRED_TEMPLATES) {
         checks.push(inspectTemplate(templateName));
@@ -95,11 +173,13 @@ function runReadiness() {
     const checklist = readRepoFile('docs/auth-branding-supabase-checklist.md');
     checks.push(buildCheck(
         'docs:dual-site-redirects',
-        checklist.includes('https://www.zaoyoe.com/reset-password.html')
-            && checklist.includes('https://zaoyoe.xyz/reset-password.html')
-            && checklist.includes('https://www.zaoyoe.com/auth-callback.html')
-            && checklist.includes('https://zaoyoe.xyz/auth-callback.html'),
+        REQUIRED_REDIRECT_URLS.every((url) => checklist.includes(url)),
         'checklist includes CN and international auth redirect URLs'
+    ));
+    checks.push(buildCheck(
+        'docs:dashboard-config',
+        checklist.includes('supabase/auth-email-templates/dashboard-config.json'),
+        'checklist points operators to the machine-readable dashboard config'
     ));
     checks.push(buildCheck(
         'docs:optional-custom-domain',
@@ -166,8 +246,10 @@ if (require.main === module) {
 }
 
 module.exports = {
+    REQUIRED_REDIRECT_URLS,
     REQUIRED_TEMPLATES,
     formatHumanReport,
+    inspectDashboardConfig,
     inspectTemplate,
     parseArgs,
     runReadiness
