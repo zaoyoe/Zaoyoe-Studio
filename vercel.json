@@ -18,7 +18,7 @@
     "crons": [
         {
             "path": "/api/ops/recovery-readiness-sweep",
-            "schedule": "0 */6 * * *"
+            "schedule": "0 0 * * *"
         }
     ],
     "redirects": [
