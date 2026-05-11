@@ -549,6 +549,28 @@ function createLocalPreviewApp(options = {}) {
         });
     });
 
+    app.all('/api/ops', async (req, res) => {
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'ops public api',
+            buildHandlerUrl: (rawUrl) => buildLocalPreviewPublicHandlerUrl(
+                String(rawUrl || '/api/ops').replace(/^\/api\/ops/, '/api/public/ops')
+            ),
+            loadHandler: loadFreshPublicApiHandler,
+            repoRoot
+        });
+    });
+
+    app.all('/api/ops/*', async (req, res) => {
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'ops public api',
+            buildHandlerUrl: (rawUrl) => buildLocalPreviewPublicHandlerUrl(
+                String(rawUrl || '/api/ops').replace(/^\/api\/ops/, '/api/public/ops')
+            ),
+            loadHandler: loadFreshPublicApiHandler,
+            repoRoot
+        });
+    });
+
     app.all('/api/shop', async (req, res) => {
         await dispatchLocalPreviewApiRequest(req, res, {
             kind: 'shop api',

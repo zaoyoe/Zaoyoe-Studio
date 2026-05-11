@@ -347,6 +347,7 @@ test('vercel hobby deployment routes public endpoints through the shared handler
     const authRewrite = rewrites.find((entry) => entry?.source === '/api/auth/:path*');
     const paymentsRewrite = rewrites.find((entry) => entry?.source === '/api/payments/:path*');
     const runtimeRewrite = rewrites.find((entry) => entry?.source === '/api/runtime/:path*');
+    const monitoringRewrite = rewrites.find((entry) => entry?.source === '/api/monitoring/:path*');
     const engagementRewrite = rewrites.find((entry) => entry?.source === '/api/engagement/:path*');
     const shopRewrite = rewrites.find((entry) => entry?.source === '/api/shop/:path*');
     const walletRewrite = rewrites.find((entry) => entry?.source === '/api/wallet/:path*');
@@ -358,6 +359,8 @@ test('vercel hobby deployment routes public endpoints through the shared handler
     assert.equal(paymentsRewrite.destination, '/api/public?scope=payments&route=:path*');
     assert.ok(runtimeRewrite, 'vercel.json should rewrite runtime endpoints through the shared public handler');
     assert.equal(runtimeRewrite.destination, '/api/public?scope=runtime&route=:path*');
+    assert.ok(monitoringRewrite, 'vercel.json should rewrite monitoring endpoints through the shared public handler');
+    assert.equal(monitoringRewrite.destination, '/api/public?scope=monitoring&route=:path*');
     assert.ok(engagementRewrite, 'vercel.json should rewrite engagement endpoints through the shared public handler');
     assert.equal(engagementRewrite.destination, '/api/public?scope=engagement&route=:path*');
     assert.ok(shopRewrite, 'vercel.json should rewrite shop endpoints through the shared public handler');
@@ -7772,6 +7775,7 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         'data-admin-action="users-save-modal-admin-permissions"',
         'data-admin-action="users-toggle-block"',
         'data-admin-action="users-adjust-points"',
+        'data-admin-action="users-reset-password"',
         'data-admin-action="users-reset-avatar"',
         'data-admin-action="users-clear-content"',
         'data-admin-action="users-show-notification"',
@@ -7797,6 +7801,9 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         'users-hidden-date-picker',
         'users-batch-tag-modal',
         'users-ban-actions',
+        'resetPasswordModalOverlay',
+        'data-users-password-action="confirm"',
+        "postAdminUsersManage('reset_password'",
         'users-clear-confirm-btn',
         'users-table-empty-state',
         'users-empty-tag',
@@ -7911,6 +7918,7 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         "case 'users-batch-set-admin-expiry':",
         "case 'users-toggle-block':",
         "case 'users-adjust-points':",
+        "case 'users-reset-password':",
         "case 'users-reset-avatar':",
         "case 'users-clear-content':",
         "case 'users-show-notification':",
@@ -7968,6 +7976,8 @@ test('admin user runtime renderers route list, modal, toolbar, and notification 
         '.users-affiliate-error-state',
         '.users-ledger-reason-row',
         '.users-ban-confirm-btn--ban',
+        '.users-reset-password-modal',
+        '.users-reset-password-copy-row',
         '.initials-avatar--tone-0',
         '.users-points-modal-footer',
         '.custom-tag-input',
@@ -15012,8 +15022,9 @@ test('section visibility runtime externalizes element hiding and blocked overlay
     for (const pageSource of pageSources) {
         for (const marker of sharedMarkers) {
             assert.equal(pageSource.includes(marker), true, `public section pages should contain ${marker}`);
+        }
     }
-}
+});
 
 test('ops alert health runtime renders per-channel configuration detail cards for email delivery', () => {
     const configSource = readRepoFile('admin-config.js');
@@ -15028,6 +15039,31 @@ test('ops alert health runtime renders per-channel configuration detail cards fo
     const html = readRepoFile('admin-studio.html');
     assert.match(html, /admin-studio\.css\?v=[A-Za-z0-9_]+/);
 });
+
+test('ops alert health page includes recovery readiness fail-open panel', () => {
+    const adminStudioSource = readRepoFile('admin-studio.js');
+    const configSource = readRepoFile('admin-config.js');
+    const workbenchSource = readRepoFile('js/admin-workbench.js');
+    const html = readRepoFile('admin-studio.html');
+    const styles = readRepoFile('admin-studio.css');
+
+    assert.match(html, /data-config="ops-alerts-recovery-readiness"/);
+    assert.match(html, /id="recoveryReadinessPanel"/);
+    assert.match(html, /id="externalMonitoringSmokeMeta"/);
+    assert.match(html, /data-admin-action="settings-refresh-recovery-readiness"/);
+    assert.match(html, /data-admin-action="settings-send-external-monitoring-smoke"/);
+    assert.match(adminStudioSource, /configId: 'ops-alerts-recovery-readiness'/);
+    assert.match(adminStudioSource, /settings-refresh-recovery-readiness/);
+    assert.match(adminStudioSource, /settings-send-external-monitoring-smoke/);
+    assert.match(configSource, /function loadRecoveryReadiness/);
+    assert.match(configSource, /function sendExternalMonitoringSmokeTest/);
+    assert.match(configSource, /后端未读到 SENTRY_DSN/);
+    assert.match(configSource, /生产链路继续使用现有降级逻辑/);
+    assert.match(workbenchSource, /fetchAdminWorkbenchRecoveryReadiness/);
+    assert.match(workbenchSource, /submitAdminWorkbenchExternalMonitoringSmoke/);
+    assert.match(workbenchSource, /normalizeAdminWorkbenchRecoveryReadinessPayload/);
+    assert.match(styles, /\.recovery-readiness-grid/);
+    assert.match(styles, /\.config-inline-note\[data-tone="success"\]/);
 });
 
 test('final frontend runtime remnants route through delegated or bound listeners instead of inline attributes', () => {

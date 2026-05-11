@@ -101,8 +101,11 @@ test('password reset invalid email feedback follows the active locale', () => {
     assert.match(authSource, /showAuthFeedback\(getInvalidResetEmailMessage\(\), 'error', 'reset'\)/);
     assert.match(authSource, /message\.includes\('unable to validate email address'\)/);
     assert.match(authSource, /function isAuthEmailRateLimitError\(error\)/);
+    assert.match(authSource, /function isAuthEmailDeliveryError\(error\)/);
+    assert.match(authSource, /function getAuthEmailDeliveryUnavailableMessage\(\)/);
     assert.match(authSource, /buildAuthFeedbackMessage\(\s*'auth\.emailRateLimitExceeded'/);
     assert.match(authSource, /buildAuthFeedbackMessage\(\s*'auth\.resetEmailSent'/);
+    assert.match(authSource, /showAuthFeedback\(getAuthEmailDeliveryUnavailableMessage\(\), 'error', 'register'\)/);
     assert.match(authSource, /resetCooldownSeconds = 60;/);
     assert.match(injectAuthSource, /function normalizeAuthMessagePayload\(message\)/);
     assert.match(injectAuthSource, /messageBox\.dataset\.authI18nKey = payload\.key/);
@@ -111,6 +114,8 @@ test('password reset invalid email feedback follows the active locale', () => {
     assert.match(enLocale, /"invalidResetEmailFormat": "Please enter a valid email address"/);
     assert.match(zhLocale, /"emailRateLimitExceeded": "邮件发送通道暂时繁忙/);
     assert.match(enLocale, /"emailRateLimitExceeded": "Email sending is temporarily rate limited/);
+    assert.match(zhLocale, /"emailDeliveryUnavailable": "邮件服务暂时不可用/);
+    assert.match(enLocale, /"emailDeliveryUnavailable": "Email delivery is temporarily unavailable/);
     assert.match(zhLocale, /"resetEmailSent": "重置密码邮件已发送到 \{email\}，\\n请检查收件箱/);
     assert.match(enLocale, /"resetEmailSent": "Password reset email sent to \{email\}\.\\nPlease check your inbox/);
     assert.doesNotMatch(zhLocale, /invalidResetEmailFormat": "[^"]*Please enter a valid email address/);

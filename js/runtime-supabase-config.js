@@ -286,10 +286,168 @@
         };
     }
 
+    const CLIENT_MONITORING_ENDPOINT = '/api/monitoring/client-event';
+    const CLIENT_MONITORING_MAX_EVENTS = 6;
+    const CLIENT_MONITORING_FINGERPRINT_TTL_MS = 60 * 1000;
+    const clientMonitoringState = {
+        reportedCount: 0,
+        fingerprints: new Map()
+    };
+
+    function normalizeMonitoringText(value = '', maxLength = 1000) {
+        return String(value || '').trim().slice(0, Math.max(0, maxLength));
+    }
+
+    function getClientMonitoringPath() {
+        try {
+            return `${global.location?.pathname || ''}${global.location?.search || ''}`.slice(0, 240);
+        } catch (_) {
+            return '';
+        }
+    }
+
+    function getClientMonitoringFingerprint(payload = {}) {
+        return [
+            payload.kind,
+            payload.message,
+            payload.filename,
+            payload.lineno,
+            payload.colno,
+            payload.path
+        ].map((item) => normalizeMonitoringText(item, 160)).join('|');
+    }
+
+    function shouldSendClientMonitoringEvent(payload = {}) {
+        const config = global.__ZAOYOE_CLIENT_MONITORING__ || {};
+        if (config.enabled === false) {
+            return false;
+        }
+
+        if (clientMonitoringState.reportedCount >= CLIENT_MONITORING_MAX_EVENTS) {
+            return false;
+        }
+
+        const fingerprint = getClientMonitoringFingerprint(payload);
+        const now = Date.now();
+        const lastSeenAt = clientMonitoringState.fingerprints.get(fingerprint) || 0;
+        if (lastSeenAt && now - lastSeenAt < CLIENT_MONITORING_FINGERPRINT_TTL_MS) {
+            return false;
+        }
+
+        clientMonitoringState.fingerprints.set(fingerprint, now);
+        clientMonitoringState.reportedCount += 1;
+        return true;
+    }
+
+    function sendClientMonitoringEvent(payload = {}) {
+        if (!shouldSendClientMonitoringEvent(payload)) {
+            return false;
+        }
+
+        const endpoint = normalizeMonitoringText(global.__ZAOYOE_CLIENT_MONITORING__?.endpoint, 240) || CLIENT_MONITORING_ENDPOINT;
+        const body = JSON.stringify(payload);
+
+        try {
+            if (global.navigator?.sendBeacon && typeof Blob === 'function') {
+                const blob = new Blob([body], { type: 'application/json' });
+                if (blob.size <= 32 * 1024 && global.navigator.sendBeacon(endpoint, blob)) {
+                    return true;
+                }
+            }
+        } catch (_) {
+            // Monitoring should never affect the page runtime.
+        }
+
+        try {
+            if (typeof global.fetch === 'function') {
+                void global.fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body,
+                    keepalive: true,
+                    credentials: 'omit'
+                }).catch(() => {});
+                return true;
+            }
+        } catch (_) {
+            // Fail-open: browser diagnostics are optional.
+        }
+
+        return false;
+    }
+
+    function buildClientMonitoringPayload(kind = 'runtime_error', source = {}, overrides = {}) {
+        const error = source?.error || source?.reason || source || {};
+        const message = normalizeMonitoringText(
+            overrides.message
+            || source?.message
+            || error?.message
+            || String(error || ''),
+            1000
+        ) || 'Frontend runtime error';
+
+        return {
+            kind: normalizeMonitoringText(kind, 80) || 'runtime_error',
+            level: normalizeMonitoringText(overrides.level || 'error', 40) || 'error',
+            message,
+            stack: normalizeMonitoringText(overrides.stack || error?.stack || '', 4000),
+            filename: normalizeMonitoringText(overrides.filename || source?.filename || '', 500),
+            lineno: Number.isFinite(Number(overrides.lineno ?? source?.lineno)) ? Number(overrides.lineno ?? source?.lineno) : null,
+            colno: Number.isFinite(Number(overrides.colno ?? source?.colno)) ? Number(overrides.colno ?? source?.colno) : null,
+            href: normalizeMonitoringText(global.location?.href || '', 500),
+            path: getClientMonitoringPath(),
+            referrer: normalizeMonitoringText(global.document?.referrer || '', 500),
+            site: detectRuntimeSite(),
+            page: normalizeMonitoringText(global.document?.title || global.location?.pathname || '', 160),
+            userAgentFamily: normalizeMonitoringText(global.navigator?.userAgent || '', 160),
+            component: normalizeMonitoringText(overrides.component || '', 160),
+            metadata: overrides.metadata && typeof overrides.metadata === 'object' ? overrides.metadata : null
+        };
+    }
+
+    function captureZaoyoeClientError(error, context = {}) {
+        return sendClientMonitoringEvent(buildClientMonitoringPayload('manual_capture', error, context));
+    }
+
+    function captureZaoyoeClientMessage(message = '', context = {}) {
+        return sendClientMonitoringEvent(buildClientMonitoringPayload('manual_message', {
+            message
+        }, {
+            ...context,
+            level: context.level || 'info'
+        }));
+    }
+
+    function installZaoyoeClientMonitoring() {
+        if (global.__ZAOYOE_CLIENT_MONITORING_BOUND__ === true) {
+            return;
+        }
+        global.__ZAOYOE_CLIENT_MONITORING_BOUND__ = true;
+
+        try {
+            global.addEventListener?.('error', (event) => {
+                sendClientMonitoringEvent(buildClientMonitoringPayload('window_error', event));
+            });
+            global.addEventListener?.('unhandledrejection', (event) => {
+                sendClientMonitoringEvent(buildClientMonitoringPayload('unhandled_rejection', event));
+            });
+        } catch (_) {
+            // Optional diagnostics only.
+        }
+    }
+
+    installZaoyoeClientMonitoring();
+
     global.getZaoyoeSupabaseConfig = getZaoyoeSupabaseConfig;
     global.getZaoyoeGoogleAuthConfig = getZaoyoeGoogleAuthConfig;
     global.getZaoyoeGoogleClientId = getZaoyoeGoogleClientId;
     global.requireZaoyoeSupabaseConfig = requireZaoyoeSupabaseConfig;
     global.getZaoyoeSupabaseFunctionUrl = getZaoyoeSupabaseFunctionUrl;
     global.subscribeZaoyoeRealtime = subscribeZaoyoeRealtime;
+    global.ZaoyoeMonitoring = {
+        captureException: captureZaoyoeClientError,
+        captureMessage: captureZaoyoeClientMessage
+    };
 }(typeof window !== 'undefined' ? window : globalThis));

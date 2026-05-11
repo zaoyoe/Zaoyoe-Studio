@@ -183,6 +183,78 @@ test('public wallet overview remains available when wallet checkin module fails 
     });
 });
 
+test('public ops scope exposes the protected recovery readiness sweep route', async () => {
+    await withPublicHandler((request, parent, isMain, originalLoad) => {
+        if (request === '../server/api-handlers/public/ops') {
+            return {
+                createOpsHandlers() {
+                    return {
+                        'recovery-readiness-sweep': async (req, res) => {
+                            res.status(200).setHeader('Content-Type', 'application/json; charset=utf-8');
+                            res.end(JSON.stringify({
+                                success: true,
+                                route: 'recovery-readiness-sweep'
+                            }));
+                        }
+                    };
+                }
+            };
+        }
+
+        return originalLoad.call(Module, request, parent, isMain);
+    }, async (handler) => {
+        const req = {
+            method: 'GET',
+            url: '/api/public?scope=ops&route=recovery-readiness-sweep'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.deepEqual(res.json(), {
+            success: true,
+            route: 'recovery-readiness-sweep'
+        });
+    });
+});
+
+test('public ops scope exposes the protected external monitoring smoke route', async () => {
+    await withPublicHandler((request, parent, isMain, originalLoad) => {
+        if (request === '../server/api-handlers/public/ops') {
+            return {
+                createOpsHandlers() {
+                    return {
+                        'external-monitoring-smoke': async (req, res) => {
+                            res.status(202).setHeader('Content-Type', 'application/json; charset=utf-8');
+                            res.end(JSON.stringify({
+                                success: true,
+                                route: 'external-monitoring-smoke'
+                            }));
+                        }
+                    };
+                }
+            };
+        }
+
+        return originalLoad.call(Module, request, parent, isMain);
+    }, async (handler) => {
+        const req = {
+            method: 'GET',
+            url: '/api/public?scope=ops&route=external-monitoring-smoke'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+
+        assert.equal(res.statusCode, 202);
+        assert.deepEqual(res.json(), {
+            success: true,
+            route: 'external-monitoring-smoke'
+        });
+    });
+});
+
 test('public wallet scope exposes kebab-case route aliases used by Vercel rewrites', async () => {
     await withPublicHandler((request, parent, isMain, originalLoad) => {
         if (request === '../server/api-handlers/public/wallet') {

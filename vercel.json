@@ -15,6 +15,12 @@
             "maxDuration": 60
         }
     },
+    "crons": [
+        {
+            "path": "/api/ops/recovery-readiness-sweep",
+            "schedule": "0 */6 * * *"
+        }
+    ],
     "redirects": [
         {
             "source": "/gongyi",
@@ -64,6 +70,14 @@
         {
             "source": "/api/runtime/:path*",
             "destination": "/api/public?scope=runtime&route=:path*"
+        },
+        {
+            "source": "/api/monitoring/:path*",
+            "destination": "/api/public?scope=monitoring&route=:path*"
+        },
+        {
+            "source": "/api/ops/:path*",
+            "destination": "/api/public?scope=ops&route=:path*"
         },
         {
             "source": "/api/engagement/:path*",
@@ -138,6 +152,15 @@
                 {
                     "key": "Cache-Control",
                     "value": "public, max-age=300, s-maxage=120, stale-while-revalidate=600"
+                }
+            ]
+        },
+        {
+            "source": "/api/ops/:path*",
+            "headers": [
+                {
+                    "key": "Cache-Control",
+                    "value": "no-store, max-age=0"
                 }
             ]
         },

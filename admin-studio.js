@@ -3348,6 +3348,22 @@ function bindAdminStudioDelegatedControls() {
                     silentErrors: true
                 });
                 break;
+            case 'settings-refresh-recovery-readiness':
+                runAdminStudioActionFeedback(actionEl, () => window.refreshRecoveryReadinessPanel?.(), {
+                    loadingText: '检查中...',
+                    successText: '已检查',
+                    errorText: '检查失败',
+                    silentErrors: true
+                });
+                break;
+            case 'settings-send-external-monitoring-smoke':
+                runAdminStudioActionFeedback(actionEl, () => window.sendExternalMonitoringSmokeTest?.(), {
+                    loadingText: '发送中...',
+                    successText: '已发送',
+                    errorText: '发送失败',
+                    silentErrors: true
+                });
+                break;
             case 'settings-scroll-ops-alert-health':
                 window.scrollToOpsAlertHealthPanel?.();
                 break;
@@ -4174,6 +4190,9 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'users-adjust-points':
                 window.adjustUserPoints?.(decodeURIComponent(actionEl.dataset.userId || ''));
+                break;
+            case 'users-reset-password':
+                window.resetUserPassword?.(decodeURIComponent(actionEl.dataset.userId || ''));
                 break;
             case 'users-reset-avatar':
                 window.resetUserAvatar?.(decodeURIComponent(actionEl.dataset.userId || ''));
@@ -5449,7 +5468,8 @@ const OPS_ALERTS_MODULE_VIEW_CARD_ASSIGNMENTS = Object.freeze([
     { configId: 'ops-alerts-shop-risk', bucket: 'monitors-side' },
     { configId: 'ops-alerts-monitor', bucket: 'workspace-main' },
     { configId: 'ops-alerts-workspace', bucket: 'workspace-main' },
-    { configId: 'ops-alerts-health', bucket: 'health-main' }
+    { configId: 'ops-alerts-health', bucket: 'health-main' },
+    { configId: 'ops-alerts-recovery-readiness', bucket: 'health-main' }
 ]);
 
 function organizeOpsAlertsModule() {
@@ -6885,6 +6905,7 @@ function prefetchOpsAlertsModule() {
     const tasks = [
         window.loadOpsAlertSettings,
         window.loadOpsAlertHealth,
+        window.loadRecoveryReadiness,
         window.loadOpsAlertMonitor
     ].filter((loader) => typeof loader === 'function');
 

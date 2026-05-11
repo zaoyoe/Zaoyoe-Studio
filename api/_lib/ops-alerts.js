@@ -7,6 +7,9 @@ const {
     formatAlertTimestamp,
     formatAlertTimestampsInsideText
 } = require('./alert-time');
+const {
+    emitExternalMonitoringEventFailOpen
+} = require('./external-monitoring');
 
 const OPS_ALERTS_CONFIG_KEY = 'ops_alerts';
 const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
@@ -6121,6 +6124,41 @@ async function recordOpsAlertAttempt(supabase, {
     }
 }
 
+async function mirrorOpsAlertAttemptToExternalMonitoring(job = {}, channel = '', result = {}, options = {}) {
+    const status = result?.ok ? 'delivered' : 'failed';
+    const event = {
+        type: 'ops_alert_delivery_attempt',
+        level: result?.ok ? 'info' : 'warning',
+        message: `Ops alert ${status}: ${normalizeText(job.alert_type, 120) || 'unknown'} via ${normalizeText(channel, 40) || 'unknown'}`,
+        tags: {
+            source: 'ops_alert_jobs',
+            alert_type: normalizeText(job.alert_type, 120) || 'unknown',
+            severity: normalizeSeverity(job.severity, 'warning'),
+            channel: normalizeChannelName(channel) || normalizeText(channel, 40) || 'unknown',
+            status
+        },
+        extra: {
+            job_id: normalizeText(job.id, 160),
+            title: normalizeText(job.title, 240),
+            response_status: Number.isFinite(Number(result?.status)) ? Number(result.status) : null,
+            error_message: normalizeText(result?.error, 1000) || null,
+            payload: job.payload || {}
+        }
+    };
+    const emitPromise = emitExternalMonitoringEventFailOpen(event, {
+        env: options.env || process.env,
+        fetchImpl: options.fetchImpl || global.fetch,
+        timeoutMs: Math.max(250, Number(options.externalMonitoringTimeoutMs || 900) || 900)
+    });
+
+    if (options.awaitExternalMonitoring === true) {
+        return emitPromise;
+    }
+
+    void emitPromise;
+    return null;
+}
+
 async function claimOpsAlertJobs(supabase, options = {}) {
     if (!supabase?.from) return [];
 
@@ -6341,6 +6379,7 @@ async function processOpsAlertJob(supabase, job, runtime, options = {}) {
             responseBody: result?.body || null,
             errorMessage: result?.error || null
         });
+        await mirrorOpsAlertAttemptToExternalMonitoring(job, channel, result, options);
 
         if (!result?.ok) {
             failedChannels.push(channel);
@@ -6430,6 +6469,7 @@ module.exports = {
         getNextRetryAt,
         getRetryDelayMs,
         hasRecentOpsAlertJob,
+        mirrorOpsAlertAttemptToExternalMonitoring,
         normalizeChannelName,
         normalizeCustomerChatQuickReplyTemplates,
         normalizeTicketReplyTemplates,

@@ -11,6 +11,7 @@ let paymentChannelActivationChecks = getDefaultPaymentChannelActivationChecks();
 let discountTriggerSettingsState = getDefaultDiscountTriggerSettingsState();
 let opsAlertSecretStatus = getDefaultOpsAlertSecretStatus();
 let opsAlertHealthState = getDefaultOpsAlertHealthState();
+let recoveryReadinessState = getDefaultRecoveryReadinessState();
 let opsAlertMonitorState = getDefaultOpsAlertMonitorState();
 let opsAlertMonitorLastReadyState = null;
 let opsAlertMonitorViewState = getDefaultOpsAlertMonitorViewState();
@@ -368,6 +369,8 @@ const OPS_ALERT_MONITOR_CARD_CONFIG_IDS = Object.freeze([
     'ops-alerts-shop-risk'
 ]);
 const OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS = 25000;
+const RECOVERY_READINESS_FETCH_TIMEOUT_MS = 30000;
+const EXTERNAL_MONITORING_SMOKE_TIMEOUT_MS = 12000;
 const OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS = 20000;
 const OPS_ALERT_MONITOR_FETCH_RETRY_COUNT = 2;
 const OPS_ALERT_MONITOR_FETCH_RETRY_DELAY_MS = 450;
@@ -2769,6 +2772,22 @@ function getDefaultOpsAlertHealthState() {
             enabled_channel_count: 0
         },
         channels: [],
+        message: '等待加载'
+    };
+}
+
+function getDefaultRecoveryReadinessState() {
+    return {
+        status: 'idle',
+        fetched_at: '',
+        runtime_dependency: 'none',
+        pro_fallback: true,
+        summary: {
+            section_count: 0,
+            blocking_finding_count: 0,
+            advisory_count: 0
+        },
+        sections: [],
         message: '等待加载'
     };
 }
@@ -7405,6 +7424,7 @@ async function handleAdminOpsAlertsSiteChange(detail = {}) {
     }
     if (activeView === 'overview' || activeView === 'health') {
         tasks.push(loadOpsAlertHealth(true));
+        tasks.push(loadRecoveryReadiness(true));
     }
     if (activeView === 'overview' || activeView === 'workspace') {
         tasks.push(loadOpsAlertMonitor(true));
@@ -14593,6 +14613,179 @@ function renderOpsAlertHealthPanel() {
     });
 }
 
+function buildRecoveryReadinessPanelState(state = recoveryReadinessState || getDefaultRecoveryReadinessState()) {
+    const normalizedState = state && typeof state === 'object' && !Array.isArray(state)
+        ? state
+        : getDefaultRecoveryReadinessState();
+    const normalizedStatus = String(normalizedState.status || 'idle').trim().toLowerCase();
+    const sections = Array.isArray(normalizedState.sections) ? normalizedState.sections.filter(Boolean) : [];
+    const summary = normalizedState.summary && typeof normalizedState.summary === 'object' && !Array.isArray(normalizedState.summary)
+        ? normalizedState.summary
+        : getDefaultRecoveryReadinessState().summary;
+
+    if (normalizedStatus === 'loading') {
+        return {
+            status: 'loading',
+            metaIcon: 'fas fa-rotate fa-spin',
+            metaText: '正在加载恢复 readiness 状态...',
+            emptyMessage: '正在加载恢复 readiness 状态...',
+            shouldRenderCards: false
+        };
+    }
+
+    if (normalizedStatus === 'error') {
+        const message = normalizedState.message || '恢复 readiness 状态暂不可用，生产链路继续使用现有降级逻辑。';
+        return {
+            status: 'error',
+            metaIcon: 'fas fa-triangle-exclamation',
+            metaText: message,
+            emptyMessage: message,
+            shouldRenderCards: false
+        };
+    }
+
+    if (!sections.length) {
+        return {
+            status: 'empty',
+            metaIcon: 'fas fa-circle-info',
+            metaText: '暂未返回恢复 readiness 项，生产链路继续使用现有降级逻辑。',
+            emptyMessage: '暂未返回恢复 readiness 项。',
+            shouldRenderCards: false
+        };
+    }
+
+    const blockingFindingCount = Number(summary.blocking_finding_count || 0) || 0;
+    const advisoryCount = Number(summary.advisory_count || 0) || 0;
+    const metaIcon = blockingFindingCount > 0
+        ? 'fas fa-triangle-exclamation'
+        : (advisoryCount > 0 ? 'fas fa-shield-heart' : 'fas fa-circle-check');
+    const metaText = blockingFindingCount > 0
+        ? `发现 ${formatVerifyMonitorInteger(blockingFindingCount)} 个需要处理的 readiness 项；线上仍按降级逻辑运行。`
+        : `恢复 readiness 已就绪，当前有 ${formatVerifyMonitorInteger(advisoryCount)} 条提示；运行时依赖：${normalizedState.runtime_dependency || 'none'}。`;
+
+    return {
+        status: 'ready',
+        metaIcon,
+        metaText,
+        emptyMessage: '',
+        shouldRenderCards: true
+    };
+}
+
+function getRecoveryReadinessStatusLabel(section = {}) {
+    const status = String(section.status || '').trim().toLowerCase();
+    if (status === 'ready') return '已就绪';
+    if (status === 'needs_attention') return '需处理';
+    if (status === 'optional_not_configured') return '可选未配置';
+    if (status === 'unavailable_fallback') return '降级可用';
+    return section.ok === true ? '可用' : '需检查';
+}
+
+function buildRecoveryReadinessDetails(section = {}) {
+    const details = [];
+    if (section.runtime_dependency) {
+        details.push({ label: '运行依赖', value: section.runtime_dependency });
+    }
+    if (Array.isArray(section.configured_recovery_layers) && section.configured_recovery_layers.length) {
+        details.push({ label: '恢复层', value: section.configured_recovery_layers.join('、') });
+    }
+    if (Array.isArray(section.configured_providers) && section.configured_providers.length) {
+        details.push({ label: '外部通道', value: section.configured_providers.join('、') });
+    }
+    if (section.project_host) {
+        details.push({ label: '项目', value: section.project_host });
+    }
+    if (section.checked_at) {
+        details.push({ label: '检查时间', value: formatVerifyMonitorDateTime(section.checked_at) });
+    }
+    return details.slice(0, 4);
+}
+
+function buildRecoveryReadinessCardMarkup(section = {}) {
+    const tone = String(section.tone || 'neutral').trim().toLowerCase() || 'neutral';
+    const findings = Array.isArray(section.findings) ? section.findings.filter(Boolean) : [];
+    const advisories = Array.isArray(section.advisories) ? section.advisories.filter(Boolean) : [];
+    const noticeItems = findings.length ? findings : advisories.slice(0, 2);
+    const details = buildRecoveryReadinessDetails(section);
+    const rpcText = Number.isFinite(Number(section.total_rpc_count))
+        ? `${formatVerifyMonitorInteger(section.available_rpc_count || 0)}/${formatVerifyMonitorInteger(section.total_rpc_count || 0)}`
+        : '—';
+    const relationText = Number.isFinite(Number(section.total_relation_count))
+        ? `${formatVerifyMonitorInteger(section.available_relation_count || 0)}/${formatVerifyMonitorInteger(section.total_relation_count || 0)}`
+        : '—';
+
+    return `
+        <article class="ops-alert-health-card ops-alert-health-card--${escapeConfigHtml(tone)} recovery-readiness-card">
+            <div class="ops-alert-health-card__head">
+                <div>
+                    <div class="ops-alert-health-card__title">${escapeConfigHtml(section.label || 'Readiness')}</div>
+                    <div class="ops-alert-health-card__meta">${escapeConfigHtml(section.summary_text || '等待检查结果')}</div>
+                </div>
+                <div class="ops-alert-health-card__status">
+                    ${buildOpsAlertHealthBadge(getRecoveryReadinessStatusLabel(section), tone)}
+                    ${buildOpsAlertHealthBadge(section.runtime_dependency === 'none' ? '无运行依赖' : '有运行依赖', section.runtime_dependency === 'none' ? 'success' : 'warning')}
+                </div>
+            </div>
+            <div class="ops-alert-health-card__stats recovery-readiness-card__stats">
+                <div><strong>${escapeConfigHtml(String(section.finding_count ?? findings.length ?? 0))}</strong><span>问题</span></div>
+                <div><strong>${escapeConfigHtml(String(section.advisory_count ?? advisories.length ?? 0))}</strong><span>提示</span></div>
+                <div><strong>${escapeConfigHtml(rpcText)}</strong><span>RPC</span></div>
+                <div><strong>${escapeConfigHtml(relationText)}</strong><span>审计视图</span></div>
+            </div>
+            ${details.length ? `
+                <div class="ops-alert-health-card__config">
+                    ${details.map((item) => `
+                        <div class="ops-alert-health-card__config-item">
+                            <span>${escapeConfigHtml(item.label || '')}</span>
+                            <strong>${escapeConfigHtml(item.value || '—')}</strong>
+                        </div>
+                    `).join('')}
+                </div>
+            ` : ''}
+            <div class="ops-alert-health-card__errors${noticeItems.length ? '' : ' empty'}">
+                ${noticeItems.length
+                    ? noticeItems.map((item) => `
+                        <div class="ops-alert-health-card__error-item">
+                            <strong>${escapeConfigHtml(item.message || '待检查')}</strong>
+                            <span>${escapeConfigHtml(item.severity || item.status || 'info')}</span>
+                        </div>
+                    `).join('')
+                    : '没有需要额外处理的 readiness 提示。'}
+            </div>
+        </article>
+    `;
+}
+
+function buildRecoveryReadinessPanelMarkupState(state = recoveryReadinessState || getDefaultRecoveryReadinessState()) {
+    const normalizedState = state && typeof state === 'object' && !Array.isArray(state)
+        ? state
+        : getDefaultRecoveryReadinessState();
+    const panelState = buildRecoveryReadinessPanelState(normalizedState);
+    const sections = Array.isArray(normalizedState.sections) ? normalizedState.sections.filter(Boolean) : [];
+
+    return {
+        state: normalizedState,
+        panelState,
+        metaMarkup: buildOpsAlertPanelMetaMarkup(panelState, '暂未返回恢复 readiness 项。'),
+        bodyMarkup: panelState.shouldRenderCards
+            ? sections.map((section) => buildRecoveryReadinessCardMarkup(section)).join('')
+            : buildOpsAlertPanelEmptyMarkup(panelState.emptyMessage || '暂未返回恢复 readiness 项。')
+    };
+}
+
+function renderRecoveryReadinessPanel() {
+    renderOpsAlertPanelMarkupTarget({
+        panelId: 'recoveryReadinessPanel',
+        metaId: 'recoveryReadinessMeta',
+        gridId: 'recoveryReadinessGrid',
+        resolveMarkupState: () => buildRecoveryReadinessPanelMarkupState(recoveryReadinessState || getDefaultRecoveryReadinessState()),
+        applyMarkupState: (markupState, elements) => applyOpsAlertPanelMarkupElements(markupState, elements, {
+            fallbackMetaText: '暂未返回恢复 readiness 项。',
+            fallbackEmptyText: '暂未返回恢复 readiness 项。'
+        })
+    });
+}
+
 function buildLocalOpsAlertMonitorCategoryActions(categoryKey) {
     const normalizedKey = String(categoryKey || '').trim().toLowerCase();
     const actionMap = {
@@ -17805,6 +17998,191 @@ async function loadOpsAlertHealth(force = false) {
     });
 }
 
+async function fetchRecoveryReadinessPayload(headers = {}) {
+    return requireOpsAlertWorkbenchMethod('fetchAdminWorkbenchRecoveryReadiness')(headers, {
+        timeoutMs: RECOVERY_READINESS_FETCH_TIMEOUT_MS,
+        errorMessage: '加载恢复 readiness 状态失败'
+    });
+}
+
+async function submitExternalMonitoringSmokePayload(headers = {}) {
+    return requireOpsAlertWorkbenchMethod('submitAdminWorkbenchExternalMonitoringSmoke')(headers, {
+        timeoutMs: EXTERNAL_MONITORING_SMOKE_TIMEOUT_MS,
+        body: {
+            source: 'readiness-panel',
+            message: 'Admin Studio external monitoring smoke test'
+        },
+        errorMessage: '发送外部监控测试事件失败'
+    });
+}
+
+function resolveRecoveryReadinessPayload(payload = {}) {
+    return requireOpsAlertWorkbenchMethod('normalizeAdminWorkbenchRecoveryReadinessPayload')(payload, {
+        defaultSummary: getDefaultRecoveryReadinessState().summary
+    });
+}
+
+function buildLocalRecoveryReadinessLoadingState(state = recoveryReadinessState || getDefaultRecoveryReadinessState()) {
+    return {
+        ...(state || getDefaultRecoveryReadinessState()),
+        status: 'loading',
+        message: '正在加载恢复 readiness 状态...'
+    };
+}
+
+function resolveRecoveryReadinessReadyState(payload = {}) {
+    return {
+        status: 'ready',
+        ...resolveRecoveryReadinessPayload(payload)
+    };
+}
+
+function buildLocalRecoveryReadinessErrorState(error = null) {
+    return {
+        ...getDefaultRecoveryReadinessState(),
+        status: 'error',
+        message: error?.name === 'AbortError'
+            ? '加载恢复 readiness 状态超时；生产链路继续使用现有降级逻辑。'
+            : (error?.message || '恢复 readiness 状态暂不可用；生产链路继续使用现有降级逻辑。')
+    };
+}
+
+function resolveRecoveryReadinessRuntimeState(mode = 'ready', value = null, currentState = recoveryReadinessState || getDefaultRecoveryReadinessState()) {
+    return resolveLocalOpsAlertRuntimeState(mode, value, {
+        loading: buildLocalRecoveryReadinessLoadingState,
+        error: buildLocalRecoveryReadinessErrorState,
+        ready: resolveRecoveryReadinessReadyState
+    }, currentState);
+}
+
+function applyRecoveryReadinessRuntimeState(nextState = getDefaultRecoveryReadinessState()) {
+    return applyLocalOpsAlertRuntimeState(nextState, {
+        applyState: (state = {}) => {
+            recoveryReadinessState = state;
+        },
+        render: () => renderRecoveryReadinessPanel()
+    });
+}
+
+async function loadRecoveryReadiness(force = false) {
+    applyRecoveryReadinessRuntimeState(resolveRecoveryReadinessRuntimeState('loading'));
+    return runOpsAlertSingletonLoad(loadRecoveryReadiness, force, async () => {
+        try {
+            const headers = await getAdminConfigApiHeaders();
+            const payload = await fetchRecoveryReadinessPayload(headers);
+            applyRecoveryReadinessRuntimeState(resolveRecoveryReadinessRuntimeState('ready', payload));
+            return payload;
+        } catch (error) {
+            const errorState = resolveRecoveryReadinessRuntimeState('error', error);
+            console.warn('[Config] Recovery readiness load failed:', errorState.message);
+            applyRecoveryReadinessRuntimeState(errorState);
+            return null;
+        }
+    });
+}
+
+function buildExternalMonitoringProviderSummaryText(provider = {}) {
+    const name = String(provider?.provider || 'unknown').trim();
+    const normalizedName = name.toLowerCase();
+    const reason = String(provider?.reason || '').trim();
+    const envName = String(provider?.env_name || '').trim();
+    const dsnHost = String(provider?.dsn_host || '').trim();
+    const dsnProjectId = String(provider?.dsn_project_id || '').trim();
+    const sentryTarget = dsnHost
+        ? `（${dsnHost}${dsnProjectId ? ` / ${dsnProjectId}` : ''}）`
+        : (envName ? `（已读到 ${envName}）` : '');
+
+    if (provider?.ok === true) {
+        return `${name}: 已送达${normalizedName === 'sentry' ? sentryTarget : ''}`;
+    }
+
+    if (provider?.skipped === true) {
+        if (normalizedName === 'sentry' && reason === 'not_configured') {
+            return `${name}: 后端未读到 SENTRY_DSN（检查 Vercel Production 环境变量和 Project）`;
+        }
+        if (normalizedName === 'sentry' && reason === 'invalid_dsn') {
+            return `${name}: DSN 无效${sentryTarget}`;
+        }
+        if (reason === 'invalid_dsn') return `${name}: DSN 无效`;
+        if (reason === 'not_configured') return `${name}: 未配置`;
+        return `${name}: ${reason || '已跳过'}`;
+    }
+
+    if (normalizedName === 'sentry') {
+        return `${name}: ${reason || provider?.status || '失败'}${sentryTarget}`;
+    }
+
+    return `${name}: ${reason || provider?.status || '失败'}`;
+}
+
+function buildExternalMonitoringSmokeResultText(payload = {}) {
+    const status = String(payload.status || '').trim().toLowerCase();
+    const configured = Number(payload.configured || 0) || 0;
+    const delivered = Number(payload.delivered || 0) || 0;
+    const failed = Number(payload.failed || 0) || 0;
+    const providerSummary = (Array.isArray(payload.providers) ? payload.providers : [])
+        .map((provider) => buildExternalMonitoringProviderSummaryText(provider))
+        .slice(0, 3)
+        .join('；');
+
+    if (status === 'delivered') {
+        return `外部监控测试已送达 ${formatVerifyMonitorInteger(delivered)} 个通道；${providerSummary || '请到外部平台确认事件。'}`;
+    }
+    if (status === 'attempted') {
+        return `已尝试发送，配置 ${formatVerifyMonitorInteger(configured)} 个通道、失败 ${formatVerifyMonitorInteger(failed)} 个；${providerSummary || '请检查通道凭证。'}`;
+    }
+    return `外部监控未配置；站内告警和现有降级逻辑继续可用。${providerSummary ? ` ${providerSummary}` : ''}`;
+}
+
+function renderExternalMonitoringSmokeResult(payload = {}, tone = 'info') {
+    const target = document.getElementById('externalMonitoringSmokeMeta');
+    if (!target) return null;
+    const normalizedTone = String(tone || 'info').trim().toLowerCase();
+    const icon = normalizedTone === 'success'
+        ? 'fas fa-circle-check'
+        : (normalizedTone === 'warning' ? 'fas fa-triangle-exclamation' : 'fas fa-circle-info');
+    const text = buildExternalMonitoringSmokeResultText(payload);
+    target.innerHTML = `
+        <i class="${escapeConfigHtml(icon)}"></i>
+        <span>${escapeConfigHtml(text)}</span>
+    `;
+    target.dataset.tone = normalizedTone;
+    return text;
+}
+
+async function sendExternalMonitoringSmokeTest() {
+    const target = document.getElementById('externalMonitoringSmokeMeta');
+    if (target) {
+        target.innerHTML = '<i class="fas fa-rotate fa-spin"></i><span>正在发送外部监控测试事件...</span>';
+        target.dataset.tone = 'loading';
+    }
+
+    try {
+        const headers = await getAdminConfigApiHeaders();
+        const payload = await submitExternalMonitoringSmokePayload(headers);
+        const tone = payload.delivered > 0
+            ? 'success'
+            : (payload.configured > 0 ? 'warning' : 'info');
+        const text = renderExternalMonitoringSmokeResult(payload, tone);
+        showToast(text || payload.message || '外部监控测试事件已发送', tone === 'warning' ? 'warning' : 'success');
+        return true;
+    } catch (error) {
+        const fallbackPayload = {
+            status: 'attempted',
+            configured: 0,
+            delivered: 0,
+            failed: 1,
+            providers: [{
+                provider: 'admin-api',
+                reason: error?.message || '未知错误'
+            }]
+        };
+        const text = renderExternalMonitoringSmokeResult(fallbackPayload, 'warning');
+        showToast(text || `发送失败: ${error?.message || '未知错误'}`, 'error');
+        return false;
+    }
+}
+
 async function fetchOpsAlertMonitorPayload(headers = {}) {
     return requireOpsAlertWorkbenchMethod('fetchAdminWorkbenchOpsAlertMonitor')(headers, {
         site: getAdminSettingsSiteFilterValue(),
@@ -20093,6 +20471,10 @@ async function refreshOpsAlertWorkspacePanel(loader, successMessage) {
 
 async function refreshOpsAlertHealthPanel() {
     return refreshOpsAlertWorkspacePanel(loadOpsAlertHealth, '告警通道健康页已刷新');
+}
+
+async function refreshRecoveryReadinessPanel() {
+    return refreshOpsAlertWorkspacePanel(loadRecoveryReadiness, '恢复 readiness 已刷新');
 }
 
 async function refreshOpsAlertMonitorPanel() {
@@ -25599,6 +25981,7 @@ window.savePaymentChannelSettings = savePaymentChannelSettings;
 Object.assign(window, {
     loadOpsAlertSettings,
     loadOpsAlertHealth,
+    loadRecoveryReadiness,
     loadOpsAlertMonitor,
     toggleOpsAlertsEnabled,
     toggleOpsAlertChannelEnabled,
@@ -25696,7 +26079,9 @@ Object.assign(window, {
     sendOpsAlertPaymentConfigIncidentSample,
     sendOpsAlertPaymentConfigIncidentRecoveredSample,
     sendOpsAlertPaymentConfigRecoveredSample,
+    sendExternalMonitoringSmokeTest,
     refreshOpsAlertHealthPanel,
+    refreshRecoveryReadinessPanel,
     scrollToOpsAlertHealthPanel,
     refreshOpsAlertMonitorPanel,
     setOpsAlertMonitorFilter,

@@ -6526,6 +6526,9 @@ function renderModalActions(user) {
         <button class="modal-action-btn" type="button" data-admin-action="users-adjust-points" data-user-id="${encodeURIComponent(user.id)}">
             <i class="fas fa-coins"></i> 调整积分
         </button>
+        <button class="modal-action-btn warning" type="button" data-admin-action="users-reset-password" data-user-id="${encodeURIComponent(user.id)}">
+            <i class="fas fa-key"></i> 重置密码
+        </button>
         <button class="modal-action-btn" type="button" data-admin-action="users-reset-avatar" data-user-id="${encodeURIComponent(user.id)}">
             <i class="fas fa-user-circle"></i> 重置头像
         </button>
@@ -10701,6 +10704,265 @@ async function resetUserAvatar(userId) {
 
 }
 
+function getAdminUserActionTarget(userId) {
+    const normalizedUserId = String(userId || '').trim();
+    if (currentModalUser?.id && String(currentModalUser.id) === normalizedUserId) {
+        return currentModalUser;
+    }
+    return userState.users.find((user) => String(user.id || '') === normalizedUserId) || null;
+}
+
+function getAdminUserActionLabel(userId) {
+    const user = getAdminUserActionTarget(userId) || {};
+    return String(
+        user.email
+        || (user.username && user.username !== 'Unknown' ? user.username : '')
+        || user.nickname
+        || userId
+        || 'Unknown'
+    ).trim();
+}
+
+function injectResetPasswordModal() {
+    if (document.getElementById('resetPasswordModalOverlay')) return;
+
+    const modalHtml = `
+        <div id="resetPasswordModalOverlay" class="custom-modal-overlay users-reset-password-modal-overlay">
+            <div class="custom-modal ban-user-modal users-reset-password-modal">
+                <div class="modal-header">
+                    <h3 class="modal-title users-reset-password-title"><i class="fas fa-key"></i> 重置密码</h3>
+                    <button class="modal-close-btn" type="button" data-users-password-action="close" aria-label="关闭">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="data-row">
+                        <span class="label">目标用户</span>
+                        <span id="rpUserName" class="value-highlight">--</span>
+                    </div>
+                    <p class="users-reset-password-note">
+                        将立即替换该用户当前密码。系统会生成随机临时密码，不发送邮件；密码只在这里显示一次。
+                    </p>
+                    <div id="rpPasswordResult" class="users-reset-password-result" hidden>
+                        <label class="users-reset-password-label" for="rpTemporaryPassword">临时密码</label>
+                        <div class="users-reset-password-copy-row">
+                            <input id="rpTemporaryPassword" class="modal-input users-reset-password-input" type="text" readonly value="">
+                            <button class="modal-btn confirm users-reset-password-copy-btn" type="button" data-users-password-action="copy">
+                                <i class="fas fa-copy"></i> 复制
+                            </button>
+                        </div>
+                        <div class="users-reset-password-warning">
+                            复制后请立即通过安全渠道发给用户，并提醒用户登录后修改密码。
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="modal-btn cancel" type="button" data-users-password-action="close" id="rpCloseBtn">取消</button>
+                    <button class="modal-btn confirm" type="button" data-users-password-action="confirm" id="rpConfirmBtn">生成临时密码</button>
+                </div>
+            </div>
+        </div>`;
+
+    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    bindResetPasswordModalInteractions(document.getElementById('resetPasswordModalOverlay'));
+}
+
+function bindResetPasswordModalInteractions(overlay) {
+    if (!overlay || overlay.dataset.usersPasswordBound === '1') {
+        return;
+    }
+
+    overlay.dataset.usersPasswordBound = '1';
+    overlay.addEventListener('click', (event) => {
+        if (event.target === overlay) {
+            closeResetPasswordModal();
+            return;
+        }
+
+        const actionEl = event.target instanceof Element ? event.target.closest('[data-users-password-action]') : null;
+        if (!actionEl || !overlay.contains(actionEl)) {
+            return;
+        }
+
+        const action = actionEl.dataset.usersPasswordAction;
+        if (action === 'close') {
+            closeResetPasswordModal();
+            return;
+        }
+        if (action === 'copy') {
+            copyResetPasswordTemporaryPassword();
+            return;
+        }
+        if (action === 'confirm') {
+            confirmResetUserPassword();
+        }
+    });
+}
+
+function setResetPasswordModalBusy(isBusy) {
+    const confirmBtn = document.getElementById('rpConfirmBtn');
+    if (!confirmBtn) {
+        return;
+    }
+
+    confirmBtn.disabled = isBusy;
+    confirmBtn.innerHTML = isBusy
+        ? '<i class="fas fa-spinner fa-spin"></i> 生成中...'
+        : '生成临时密码';
+}
+
+function closeResetPasswordModal() {
+    const overlay = document.getElementById('resetPasswordModalOverlay');
+    if (!overlay) return;
+
+    overlay.classList.remove('active');
+    overlay.dataset.userId = '';
+
+    const input = document.getElementById('rpTemporaryPassword');
+    if (input) {
+        input.value = '';
+    }
+
+    const result = document.getElementById('rpPasswordResult');
+    if (result) {
+        result.hidden = true;
+    }
+
+    const closeBtn = document.getElementById('rpCloseBtn');
+    if (closeBtn) {
+        closeBtn.textContent = '取消';
+    }
+
+    setResetPasswordModalBusy(false);
+    const confirmBtn = document.getElementById('rpConfirmBtn');
+    if (confirmBtn) {
+        confirmBtn.hidden = false;
+    }
+}
+
+function resetUserPassword(userId) {
+    injectResetPasswordModal();
+
+    const overlay = document.getElementById('resetPasswordModalOverlay');
+    if (!overlay) return;
+
+    overlay.dataset.userId = String(userId || '');
+    const userNameEl = document.getElementById('rpUserName');
+    if (userNameEl) {
+        userNameEl.textContent = getAdminUserActionLabel(userId);
+    }
+
+    const result = document.getElementById('rpPasswordResult');
+    if (result) {
+        result.hidden = true;
+    }
+
+    const input = document.getElementById('rpTemporaryPassword');
+    if (input) {
+        input.value = '';
+    }
+
+    const closeBtn = document.getElementById('rpCloseBtn');
+    if (closeBtn) {
+        closeBtn.textContent = '取消';
+    }
+
+    const confirmBtn = document.getElementById('rpConfirmBtn');
+    if (confirmBtn) {
+        confirmBtn.hidden = false;
+    }
+
+    setResetPasswordModalBusy(false);
+    overlay.classList.add('active');
+}
+
+async function confirmResetUserPassword() {
+    const overlay = document.getElementById('resetPasswordModalOverlay');
+    const userId = String(overlay?.dataset.userId || '').trim();
+    if (!userId) {
+        showToast?.('缺少用户 ID，无法重置密码', 'error');
+        return;
+    }
+
+    setResetPasswordModalBusy(true);
+
+    try {
+        const payload = await postAdminUsersManage('reset_password', {
+            userId
+        });
+        const temporaryPassword = String(payload?.temporaryPassword || '');
+        if (!temporaryPassword) {
+            throw new Error('后端没有返回临时密码');
+        }
+
+        const input = document.getElementById('rpTemporaryPassword');
+        if (input) {
+            input.value = temporaryPassword;
+            input.focus();
+            input.select();
+        }
+
+        const result = document.getElementById('rpPasswordResult');
+        if (result) {
+            result.hidden = false;
+        }
+
+        const closeBtn = document.getElementById('rpCloseBtn');
+        if (closeBtn) {
+            closeBtn.textContent = '关闭';
+        }
+
+        const confirmBtn = document.getElementById('rpConfirmBtn');
+        if (confirmBtn) {
+            confirmBtn.hidden = true;
+        }
+
+        const successMessage = '临时密码已生成，请复制后发给用户';
+        showToast?.(successMessage, 'success');
+        emitUsersCommandFeedback(successMessage, 'saved', { source: 'users-profile' });
+
+        if (currentModalUser?.id === userId && currentTab === 'audit') {
+            reloadUserModalTab('audit', {
+                preserveData: true,
+                loadingMessage: '密码已重置，正在同步审计记录...',
+                successMessage: '审计记录已更新',
+                errorMessage: '密码已重置，但同步审计记录失败，可稍后手动刷新'
+            });
+        }
+    } catch (err) {
+        console.error('Password reset failed:', err);
+        const failureMessage = `重置密码失败: ${err.message || '未知错误'}`;
+        showToast?.(failureMessage, 'error');
+        emitUsersCommandFeedback(failureMessage, 'failed', { source: 'users-profile' });
+    } finally {
+        setResetPasswordModalBusy(false);
+    }
+}
+
+async function copyResetPasswordTemporaryPassword() {
+    const input = document.getElementById('rpTemporaryPassword');
+    const password = String(input?.value || '');
+    if (!password) {
+        showToast?.('没有可复制的临时密码', 'warning');
+        return;
+    }
+
+    try {
+        if (navigator?.clipboard?.writeText) {
+            await navigator.clipboard.writeText(password);
+        } else {
+            input.focus();
+            input.select();
+            document.execCommand('copy');
+        }
+
+        showToast?.('临时密码已复制', 'success');
+    } catch (err) {
+        console.warn('Failed to copy temporary password', err);
+        showToast?.('复制失败，请手动选中密码复制', 'warning');
+    }
+}
+
 // Helper: Mask email for privacy
 function maskEmail(email) {
     if (!email || !email.includes('@')) return email;
@@ -11409,6 +11671,7 @@ async function saveAdminPermissions(userId) {
 window.initUserModule = initUserModule;
 window.toggleUserBlock = toggleUserBlock;
 window.resetUserAvatar = resetUserAvatar;
+window.resetUserPassword = resetUserPassword;
 window.adjustUserPoints = adjustUserPoints;
 window.clearAllUserContent = clearAllUserContent;
 window.addUserTag = addUserTag;
@@ -11877,6 +12140,7 @@ function renderAuditItems(data) {
             if (normalized.includes('note')) return `内容: ${escapeHtml(String(details.content_preview || ''))}...`;
             if (normalized.includes('notification')) return `标题: ${escapeHtml(String(details.title || '-'))} (${escapeHtml(String(details.type || 'info'))})`;
             if (normalized.includes('clear')) return `清空项目: ${Array.isArray(details.cleared_items) ? details.cleared_items.map((item) => escapeHtml(String(item))).join(', ') : '无'}`;
+            if (normalized.includes('password')) return '已生成临时密码，密码内容不会写入审计记录';
             if (type === 'remove_user_discount_asset' || type === 'restore_user_discount_asset') return renderUserDiscountAuditDetails(details);
 
             // Admin Permission Changes
@@ -11899,6 +12163,7 @@ function renderAuditItems(data) {
         else if (normalizedType.includes('point')) { icon = 'fa-coins'; toneClass = 'is-warning'; }
         else if (normalizedType.includes('note')) { icon = 'fa-sticky-note'; toneClass = 'is-info'; }
         else if (normalizedType.includes('clear')) { icon = 'fa-trash-alt'; toneClass = 'is-danger'; }
+        else if (normalizedType.includes('password')) { icon = 'fa-key'; toneClass = 'is-warning'; }
         else if (normalizedType.includes('notification')) { icon = 'fa-bell'; toneClass = 'is-accent'; }
         else if (normalizedType.includes('discount') || normalizedType.includes('coupon')) { icon = 'fa-ticket-alt'; toneClass = 'is-danger'; }
         else if (normalizedType.includes('admin') || normalizedType.includes('permission')) { icon = 'fa-user-shield'; toneClass = 'is-accent'; }
@@ -11937,6 +12202,7 @@ function formatAuditAction(action) {
         'ADD_NOTE': '添加备注',
         'SEND_NOTIFICATION': '发送系统通知',
         'RESET_AVATAR': '重置头像',
+        'RESET_PASSWORD': '重置密码',
         'grant_admin': '授予管理员',
         'revoke_admin': '移除管理员',
         'remove_user_discount_asset': '删除用户优惠券',

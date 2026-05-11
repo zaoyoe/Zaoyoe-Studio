@@ -21,6 +21,7 @@
     "preflight:payment-rollout": "node scripts/payment-rollout-preflight.js",
     "readiness:auth-branding": "node scripts/auth-branding-readiness.js --fail-on-missing",
     "readiness:external-monitoring": "node scripts/external-monitoring-readiness.js",
+    "readiness:financial-recovery-drill": "node scripts/financial-recovery-drill-readiness.js",
     "readiness:payment": "node scripts/payment-readiness-gate.js",
     "readiness:payment-recovery": "node scripts/payment-readiness-gate.js --fail-on-missing",
     "rollout:payment": "node scripts/payment-rollout-apply.js",

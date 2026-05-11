@@ -100,6 +100,27 @@ function createRouteHandlersForScope(scope) {
             })
         };
     }
+    case 'monitoring': {
+        const {
+            clientMonitoringEventHandler
+        } = require('../server/api-handlers/public/monitoring-client-event');
+
+        return {
+            'client-event': clientMonitoringEventHandler
+        };
+    }
+    case 'ops': {
+        const {
+            createOpsHandlers
+        } = require('../server/api-handlers/public/ops');
+
+        return {
+            ...createOpsHandlers({
+                admin,
+                env: process.env
+            })
+        };
+    }
     case 'engagement': {
         const {
             createPublicEngagementHandlers

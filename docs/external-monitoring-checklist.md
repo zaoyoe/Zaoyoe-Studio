@@ -6,6 +6,8 @@ External monitoring is an optional enhancement for production diagnosis. It is n
 
 - In-app alerts already flow through `ops_alert_jobs` and `ops_alert_job_attempts`.
 - Admin Studio already exposes ops alert delivery health through the existing ops alert health endpoint.
+- Browser runtime errors are copied to `/api/monitoring/client-event` as `frontend_runtime_error` events, then forwarded only when an external provider is configured.
+- `ops_alert_jobs` delivery attempts are mirrored as optional `ops_alert_delivery_attempt` events for external diagnosis.
 - Supabase Pro Realtime should improve freshness, but Realtime and external monitors must stay fail-open.
 - External tools should receive copies of logs/events; they should not sit on the critical path for payments, wallet balance, order state, uploads, or page rendering.
 
@@ -67,6 +69,14 @@ If a URL-based drain is used, it must be HTTPS:
 LOG_DRAIN_URL=https://logs.example.com/ingest
 ```
 
+## Runtime Wiring
+
+- `api/_lib/external-monitoring.js` sends sanitized optional copies to Sentry, Axiom, and Datadog.
+- `/api/monitoring/client-event` is routed through the shared `api/public.js` handler and returns success even when no external provider is configured.
+- `/api/ops/external-monitoring-smoke` is a protected manual smoke endpoint for testing production provider credentials after deployment.
+- `js/runtime-supabase-config.js` installs throttled `error` and `unhandledrejection` listeners and exposes `window.ZaoyoeMonitoring.captureException/captureMessage`.
+- `api/_lib/ops-alerts.js` mirrors alert delivery attempts to external monitoring with a short timeout; this does not change the internal `ops_alert_jobs` retry logic.
+
 ## Supabase Pro Fallback Rule
 
 Supabase Pro Realtime and Log Drain can improve freshness and visibility, but the application must not assume they are always available. If Pro expires, Realtime limits are hit, or external monitors reject traffic:
@@ -75,6 +85,7 @@ Supabase Pro Realtime and Log Drain can improve freshness and visibility, but th
 2. Modals should render cached/loaded data instead of waiting on a Realtime subscription.
 3. `ops_alert_jobs` remains the internal source of alert delivery state.
 4. External logging failures should be recorded as diagnostics only, never thrown into user flows.
+5. Browser error reporting falls back to no-op if the monitoring endpoint or provider is unavailable.
 
 ## Verification
 
@@ -96,6 +107,20 @@ Expected behavior:
 - Fully configured provider: PASS and listed under configured providers.
 - Half-configured provider: WARN by default; exits non-zero only with `--fail-on-invalid`.
 - Missing Supabase Pro or Realtime: not tested here as a blocker; app fallback behavior is covered by Realtime fallback tests.
+
+After deployment, send one protected production smoke event:
+
+```bash
+curl -fsS \
+  -H "Authorization: Bearer $CRON_SECRET" \
+  "https://www.zaoyoe.com/api/ops/external-monitoring-smoke?source=manual"
+```
+
+Expected behavior:
+
+- No provider configured: returns `status: "not_configured"` and does not fail production.
+- Provider configured and reachable: returns `delivered > 0`.
+- Provider configured but rejecting traffic: returns `attempted` with provider diagnostics; user-facing flows are still unaffected.
 
 ## Rollout Order
 
