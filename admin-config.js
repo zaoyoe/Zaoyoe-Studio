@@ -16,6 +16,9 @@ let opsAlertMonitorState = getDefaultOpsAlertMonitorState();
 let opsAlertMonitorLastReadyState = null;
 let opsAlertMonitorViewState = getDefaultOpsAlertMonitorViewState();
 let opsAlertMonitorShiftReportViewState = getDefaultOpsAlertMonitorShiftReportViewState();
+let opsAlertMonitorRealtimeSubscription = null;
+let opsAlertMonitorRealtimeRefreshTimer = null;
+let opsAlertMonitorRealtimeLastAttemptAt = 0;
 let shopRiskCaseComposerState = getDefaultShopRiskCaseComposerState();
 let opsAlertBatchMuteState = getDefaultOpsAlertBatchMuteState();
 let opsAlertStrategySaveInFlight = false;
@@ -17212,6 +17215,306 @@ function buildOpsAlertMonitorCategoryMarkup(category = {}, filters = getOpsAlert
     `;
 }
 
+function getOpsAlertMonitorCategoryLabel(categoryKey = '') {
+    const labelMap = {
+        payments: '支付与退款',
+        tickets: '工单与售后',
+        inventory: '库存与补货',
+        fulfillment: '履约与死信',
+        shop_risk: '商城风控',
+        verify: '验证服务',
+        security: '安全与审计'
+    };
+    const normalizedKey = String(categoryKey || '').trim().toLowerCase();
+    return labelMap[normalizedKey] || normalizedKey || '告警模块';
+}
+
+function getOpsExceptionInboxTimestamp(item = {}) {
+    const rawValue = String(
+        item.created_at
+        || item.case_last_action_at
+        || item.updated_at
+        || item.case_latest_event_at
+        || ''
+    ).trim();
+    const parsedTime = rawValue ? Date.parse(rawValue) : 0;
+    return {
+        raw: rawValue,
+        ms: Number.isFinite(parsedTime) ? parsedTime : 0,
+        label: rawValue ? formatVerifyMonitorDateTime(rawValue) : ''
+    };
+}
+
+function getOpsExceptionInboxStatusRank(status = '') {
+    const normalizedStatus = String(status || '').trim().toLowerCase() || 'open';
+    if (normalizedStatus === 'open') return 3;
+    if (normalizedStatus === 'claimed') return 2;
+    return 1;
+}
+
+function getOpsExceptionInboxSeverityRank(severity = '') {
+    const normalizedSeverity = String(severity || '').trim().toLowerCase();
+    if (normalizedSeverity === 'critical') return 3;
+    if (normalizedSeverity === 'warning') return 2;
+    return 1;
+}
+
+function buildLocalOpsExceptionInboxState(categories = [], filters = getOpsAlertMonitorViewFilters(), monitorState = opsAlertMonitorState || getDefaultOpsAlertMonitorState()) {
+    const normalizedState = monitorState && typeof monitorState === 'object' && !Array.isArray(monitorState)
+        ? monitorState
+        : getDefaultOpsAlertMonitorState();
+    const normalizedStatus = String(normalizedState.status || '').trim().toLowerCase() || 'idle';
+    const normalizedFilters = filters && typeof filters === 'object' && !Array.isArray(filters)
+        ? filters
+        : getOpsAlertMonitorViewFilters();
+    const maxItems = 8;
+
+    if (normalizedStatus === 'loading') {
+        return {
+            status: 'loading',
+            tone: 'neutral',
+            title: '异常收件箱',
+            summary: '正在读取现有告警、处理状态和模块入口...',
+            statBadges: [{ label: '读取中', tone: 'neutral' }],
+            items: [],
+            totalCount: 0,
+            hiddenCount: 0,
+            emptyMessage: '正在加载异常收件箱...'
+        };
+    }
+
+    if (normalizedStatus === 'error') {
+        return {
+            status: 'error',
+            tone: 'danger',
+            title: '异常收件箱暂不可用',
+            summary: normalizedState.message || '集中告警读取失败，原有模块和手动刷新仍可继续使用。',
+            statBadges: [{ label: '读取失败', tone: 'danger' }],
+            items: [],
+            totalCount: 0,
+            hiddenCount: 0,
+            emptyMessage: normalizedState.message || '集中告警读取失败。'
+        };
+    }
+
+    const entries = (Array.isArray(categories) ? categories : []).flatMap((category) => {
+        const categoryKey = String(category.key || category.category_key || '').trim().toLowerCase();
+        if (!categoryKey) {
+            return [];
+        }
+        const categoryLabel = String(category.label || getOpsAlertMonitorCategoryLabel(categoryKey) || categoryKey).trim();
+        const sourceItems = Array.isArray(category.visible_items) && category.visible_items.length
+            ? category.visible_items
+            : (Array.isArray(category.items) ? category.items : []);
+
+        return sourceItems
+            .filter((item) => isOpsAlertCaseUnresolved(item))
+            .map((item) => {
+                const itemState = resolveOpsAlertMonitorItemMarkupState(item, category);
+                const severity = String(item.severity || 'warning').trim().toLowerCase() || 'warning';
+                const caseStatus = String(item.case_status || '').trim().toLowerCase() || 'open';
+                const timestamp = getOpsExceptionInboxTimestamp(item);
+
+                return {
+                    category: {
+                        key: categoryKey,
+                        label: categoryLabel
+                    },
+                    categoryKey,
+                    categoryLabel,
+                    item,
+                    state: itemState,
+                    titleText: itemState.titleText || item.title || '系统告警',
+                    messageText: itemState.messageText || item.message || '',
+                    metaText: itemState.metaText || '',
+                    createdAt: timestamp.raw,
+                    createdAtLabel: timestamp.label,
+                    sortTimestamp: timestamp.ms,
+                    severity,
+                    severityTone: getOpsAlertMonitorSeverityTone(severity),
+                    caseStatus,
+                    caseStatusLabel: getOpsAlertCaseStatusLabel(caseStatus),
+                    caseTone: getOpsAlertCaseStatusTone(caseStatus),
+                    workspaceActionState: itemState.workspaceActionState || null,
+                    caseActionStates: Array.isArray(itemState.caseActionStates) ? itemState.caseActionStates : []
+                };
+            });
+    });
+
+    entries.sort((left, right) => {
+        const severityDelta = getOpsExceptionInboxSeverityRank(right.severity) - getOpsExceptionInboxSeverityRank(left.severity);
+        if (severityDelta !== 0) return severityDelta;
+
+        const statusDelta = getOpsExceptionInboxStatusRank(right.caseStatus) - getOpsExceptionInboxStatusRank(left.caseStatus);
+        if (statusDelta !== 0) return statusDelta;
+
+        const timeDelta = Number(right.sortTimestamp || 0) - Number(left.sortTimestamp || 0);
+        if (timeDelta !== 0) return timeDelta;
+
+        return String(left.titleText || '').localeCompare(String(right.titleText || ''), 'zh-CN');
+    });
+
+    const totalCount = entries.length;
+    const criticalCount = entries.filter((entry) => entry.severity === 'critical').length;
+    const hiddenCount = Math.max(0, totalCount - maxItems);
+    const filterSummary = getOpsAlertMonitorFilterSummaryLabel(normalizedFilters);
+    const isRecoveredScope = String(normalizedFilters.scope || '').trim().toLowerCase() === 'recovered';
+    const tone = criticalCount > 0 ? 'danger' : (totalCount > 0 ? 'warning' : 'success');
+
+    return {
+        status: 'ready',
+        tone,
+        title: totalCount > 0 ? '异常收件箱' : '异常收件箱已清空',
+        summary: totalCount > 0
+            ? `${filterSummary}下有 ${formatVerifyMonitorInteger(totalCount)} 条未关闭异常；这里负责汇总入口，具体处理仍回到原模块。`
+            : (isRecoveredScope
+                ? '收件箱只展示未关闭异常；已恢复记录可在下方模块卡片复核。'
+                : `${filterSummary}下没有未关闭异常。`),
+        statBadges: [
+            { label: `${formatVerifyMonitorInteger(totalCount)} 未关闭`, tone },
+            criticalCount > 0 ? { label: `${formatVerifyMonitorInteger(criticalCount)} critical`, tone: 'danger' } : null,
+            hiddenCount > 0 ? { label: `另 ${formatVerifyMonitorInteger(hiddenCount)} 条在清单`, tone: 'neutral' } : null
+        ].filter(Boolean),
+        items: entries.slice(0, maxItems),
+        totalCount,
+        hiddenCount,
+        emptyMessage: isRecoveredScope
+            ? '收件箱只展示未关闭异常；已恢复记录请在下方模块卡片复核。'
+            : '当前筛选下没有未关闭异常。'
+    };
+}
+
+function resolveOpsExceptionInboxStateBuilder() {
+    return resolveOpsAlertSharedCallable(
+        'buildAdminWorkbenchOpsExceptionInboxState',
+        buildLocalOpsExceptionInboxState,
+        () => ({
+            maxItems: 8,
+            formatCount: formatVerifyMonitorInteger,
+            formatDateTime: formatVerifyMonitorDateTime,
+            getFilterSummaryLabel: getOpsAlertMonitorFilterSummaryLabel,
+            getCategoryLabel: getOpsAlertMonitorCategoryLabel,
+            getCaseStatusLabel: getOpsAlertCaseStatusLabel,
+            getCaseStatusTone: getOpsAlertCaseStatusTone,
+            getSeverityTone: getOpsAlertMonitorSeverityTone
+        })
+    );
+}
+
+function resolveOpsExceptionInboxState(categories = [], filters = getOpsAlertMonitorViewFilters(), monitorState = opsAlertMonitorState || getDefaultOpsAlertMonitorState()) {
+    return resolveOpsExceptionInboxStateBuilder()(categories, filters, monitorState);
+}
+
+function buildOpsExceptionInboxActionMarkup(entry = {}) {
+    const item = entry.item || {};
+    const category = entry.category || {
+        key: entry.categoryKey || '',
+        label: entry.categoryLabel || ''
+    };
+    const state = entry.state && typeof entry.state === 'object' && !Array.isArray(entry.state) ? entry.state : {};
+    const caseActionStates = Array.isArray(entry.caseActionStates) && entry.caseActionStates.length
+        ? entry.caseActionStates
+        : (Array.isArray(state.caseActionStates) && state.caseActionStates.length
+            ? state.caseActionStates
+            : (Array.isArray(entry.caseActions) ? entry.caseActions.map((action) => ({
+                ...action,
+                attrs: buildOpsAlertMonitorCaseActionAttrs(action, category, item)
+            })) : []));
+    const workspaceActionState = entry.workspaceActionState
+        || state.workspaceActionState
+        || (entry.workspaceAction ? {
+            ...entry.workspaceAction,
+            attrs: buildOpsAlertMonitorWorkspaceAttrs(entry.workspaceAction, category, item)
+        } : null);
+    const actionMarkup = [
+        workspaceActionState ? `
+            <button
+                type="button"
+                class="btn-add-config btn-add-config--compact ops-exception-inbox__primary-action"
+                ${workspaceActionState.attrs}
+            >
+                <i class="${escapeConfigHtml(workspaceActionState.icon || 'fas fa-arrow-up-right-from-square')}"></i> ${escapeConfigHtml(workspaceActionState.label || '去处理')}
+            </button>
+        ` : '',
+        ...caseActionStates.map((action) => `
+            <button
+                type="button"
+                class="btn-add-config btn-add-config--compact"
+                ${action.attrs}
+            >
+                <i class="${escapeConfigHtml(action.icon || 'fas fa-circle-dot')}"></i> ${escapeConfigHtml(action.label || '处理')}
+            </button>
+        `)
+    ].filter(Boolean);
+
+    return actionMarkup.length
+        ? `<div class="ops-exception-inbox__actions">${actionMarkup.join('')}</div>`
+        : '';
+}
+
+function buildOpsExceptionInboxItemMarkup(entry = {}) {
+    const severity = String(entry.severity || 'warning').trim().toLowerCase() || 'warning';
+    const severityTone = entry.severityTone || getOpsAlertMonitorSeverityTone(severity);
+    const caseTone = entry.caseTone || getOpsAlertCaseStatusTone(entry.caseStatus || '');
+    const metaText = String(entry.metaText || '').trim() || String(entry.createdAtLabel || '').trim() || '等待更多上下文';
+
+    return `
+        <article class="ops-exception-inbox__row ops-exception-inbox__row--${escapeConfigHtml(severityTone)}">
+            <div class="ops-exception-inbox__main">
+                <div class="ops-exception-inbox__badges">
+                    ${buildOpsAlertMonitorBadge(entry.categoryLabel || '告警模块', 'neutral')}
+                    ${buildOpsAlertMonitorBadge(severity === 'critical' ? 'critical' : 'warning', severityTone)}
+                    ${buildOpsAlertMonitorBadge(entry.caseStatusLabel || '待处理', caseTone)}
+                </div>
+                <strong class="ops-exception-inbox__title">${escapeConfigHtml(entry.titleText || '系统告警')}</strong>
+                ${entry.messageText ? `<div class="ops-exception-inbox__summary">${escapeConfigHtml(entry.messageText)}</div>` : ''}
+                <div class="ops-exception-inbox__meta">${escapeConfigHtml(metaText)}</div>
+            </div>
+            ${buildOpsExceptionInboxActionMarkup(entry)}
+        </article>
+    `;
+}
+
+function buildOpsExceptionInboxInnerMarkup(inboxState = {}) {
+    const resolvedState = inboxState && typeof inboxState === 'object' && !Array.isArray(inboxState)
+        ? inboxState
+        : buildLocalOpsExceptionInboxState();
+    const statBadges = Array.isArray(resolvedState.statBadges) ? resolvedState.statBadges : [];
+    const items = Array.isArray(resolvedState.items) ? resolvedState.items : [];
+
+    return `
+        <div class="ops-exception-inbox__head">
+            <div class="ops-exception-inbox__copy">
+                <div class="ops-exception-inbox__eyebrow">指挥台入口</div>
+                <div class="ops-exception-inbox__title-line">${escapeConfigHtml(resolvedState.title || '异常收件箱')}</div>
+                <p>${escapeConfigHtml(resolvedState.summary || '汇总现有模块里需要处理的异常。')}</p>
+            </div>
+            <div class="ops-exception-inbox__stats">
+                ${statBadges.map((badge) => buildOpsAlertMonitorBadge(badge.label, badge.tone)).join('')}
+            </div>
+        </div>
+        <div class="ops-exception-inbox__list">
+            ${items.length
+        ? items.map((entry) => buildOpsExceptionInboxItemMarkup(entry)).join('')
+        : `<div class="ops-exception-inbox__empty">${escapeConfigHtml(resolvedState.emptyMessage || '当前没有未关闭异常。')}</div>`}
+        </div>
+    `;
+}
+
+function renderOpsExceptionInbox(inboxState = null) {
+    const target = document.getElementById('opsExceptionInbox');
+    if (!target) return;
+    const state = inboxState || resolveOpsExceptionInboxState(
+        getOpsAlertMonitorPreparedCategories(getOpsAlertMonitorViewFilters()),
+        getOpsAlertMonitorViewFilters(),
+        opsAlertMonitorState || getDefaultOpsAlertMonitorState()
+    );
+    const tone = String(state?.tone || 'neutral').trim().toLowerCase() || 'neutral';
+    target.className = `ops-exception-inbox ops-exception-inbox--${tone}`;
+    target.innerHTML = buildOpsExceptionInboxInnerMarkup(state);
+    window.bindAdminStudioOpsAlertDirectActionButtons?.(target);
+}
+
 function setOpsAlertMonitorFilter(kind, value) {
     const normalizedKind = String(kind || '').trim().toLowerCase();
     if (!['scope', 'severity', 'category'].includes(normalizedKind)) {
@@ -17405,6 +17708,7 @@ function buildLocalOpsAlertMonitorPanelMarkupState(state = {}, filters = getOpsA
         toolbarState,
         batchActionStates,
         panelState,
+        inboxState: resolveOpsExceptionInboxState(normalizedCategories, normalizedFilters, normalizedState),
         metaMarkup: buildOpsAlertPanelMetaMarkup(panelState),
         bodyMarkup: panelState.status === 'ready' && normalizedCategories.length
             ? normalizedCategories.map((category) => buildOpsAlertMonitorCategoryMarkup(category, normalizedFilters)).join('')
@@ -17462,6 +17766,7 @@ function applyOpsAlertMonitorPanelMarkupState(markupState = {}, elements = {}) {
         beforeApply: (resolvedMarkupState) => {
             const filters = resolvedMarkupState.filters || getOpsAlertMonitorViewFilters();
             syncOpsAlertMonitorFilterToolbar(filters, resolvedMarkupState.toolbarState || null);
+            renderOpsExceptionInbox(resolvedMarkupState.inboxState || null);
             renderOpsAlertRiskSpotlight(filters);
             renderOpsAlertMonitorShiftReport();
             renderOpsAlertMonitorBatchActions(filters, resolvedMarkupState.batchActionStates || null);
@@ -18327,6 +18632,92 @@ function applyOpsAlertMonitorRuntimeState(nextState = getDefaultOpsAlertMonitorS
     });
 }
 
+async function refreshOpsAlertMonitorFromRealtime(reason = 'realtime') {
+    try {
+        const headers = await getAdminConfigApiHeaders();
+        const payload = await fetchOpsAlertMonitorPayload(headers);
+        applyOpsAlertMonitorRuntimeState(resolveOpsAlertMonitorRuntimeState('ready', payload));
+        ensureOpsAlertMonitorRealtimeSubscription();
+        return payload;
+    } catch (error) {
+        const errorState = buildLocalOpsAlertMonitorErrorState(error, opsAlertMonitorState);
+        console.warn('[Config] Ops alert monitor realtime refresh failed:', reason, errorState.message);
+        applyOpsAlertMonitorRuntimeState(errorState);
+        return null;
+    }
+}
+
+function scheduleOpsAlertMonitorRealtimeRefresh(reason = 'realtime') {
+    if (opsAlertMonitorRealtimeRefreshTimer) {
+        window.clearTimeout(opsAlertMonitorRealtimeRefreshTimer);
+    }
+
+    opsAlertMonitorRealtimeRefreshTimer = window.setTimeout(() => {
+        opsAlertMonitorRealtimeRefreshTimer = null;
+        refreshOpsAlertMonitorFromRealtime(reason);
+    }, 700);
+}
+
+function teardownOpsAlertMonitorRealtimeSubscription() {
+    if (!opsAlertMonitorRealtimeSubscription) {
+        return;
+    }
+
+    try {
+        opsAlertMonitorRealtimeSubscription.unsubscribe?.();
+    } catch (error) {
+        console.warn('[Config] Ops alert monitor realtime cleanup failed:', error?.message || error);
+    }
+    opsAlertMonitorRealtimeSubscription = null;
+}
+
+function ensureOpsAlertMonitorRealtimeSubscription(options = {}) {
+    const force = options?.force === true;
+    const now = Date.now();
+    const currentStatus = typeof opsAlertMonitorRealtimeSubscription?.getStatus === 'function'
+        ? opsAlertMonitorRealtimeSubscription.getStatus()
+        : '';
+
+    if (['active', 'connecting'].includes(String(currentStatus || '').trim().toLowerCase())) {
+        return opsAlertMonitorRealtimeSubscription;
+    }
+
+    if (!force && String(currentStatus || '').trim().toLowerCase() === 'degraded' && now - opsAlertMonitorRealtimeLastAttemptAt < 60 * 1000) {
+        return opsAlertMonitorRealtimeSubscription;
+    }
+
+    if (typeof window.subscribeZaoyoeRealtime !== 'function') {
+        return null;
+    }
+
+    teardownOpsAlertMonitorRealtimeSubscription();
+    opsAlertMonitorRealtimeLastAttemptAt = now;
+
+    opsAlertMonitorRealtimeSubscription = window.subscribeZaoyoeRealtime({
+        channel: 'admin-ops-exception-inbox',
+        feature: 'admin-ops-exception-inbox',
+        timeoutMs: 2600,
+        build: (channel) => channel
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ops_alert_jobs' }, () => {
+                scheduleOpsAlertMonitorRealtimeRefresh('ops_alert_jobs_insert');
+            })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ops_alert_jobs' }, () => {
+                scheduleOpsAlertMonitorRealtimeRefresh('ops_alert_jobs_update');
+            })
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'ops_alert_cases' }, () => {
+                scheduleOpsAlertMonitorRealtimeRefresh('ops_alert_cases_insert');
+            })
+            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'ops_alert_cases' }, () => {
+                scheduleOpsAlertMonitorRealtimeRefresh('ops_alert_cases_update');
+            }),
+        onDegraded: (reason, detail = {}) => {
+            console.warn('[Config] Ops alert monitor realtime degraded; existing reads and manual refresh remain available:', reason, detail?.error || '');
+        }
+    });
+
+    return opsAlertMonitorRealtimeSubscription;
+}
+
 async function loadOpsAlertMonitor(force = false) {
     applyOpsAlertMonitorRuntimeState(resolveOpsAlertMonitorRuntimeState('loading'));
     return runOpsAlertSingletonLoad(loadOpsAlertMonitor, force, async () => {
@@ -18334,6 +18725,7 @@ async function loadOpsAlertMonitor(force = false) {
             const headers = await getAdminConfigApiHeaders();
             const payload = await fetchOpsAlertMonitorPayload(headers);
             applyOpsAlertMonitorRuntimeState(resolveOpsAlertMonitorRuntimeState('ready', payload));
+            ensureOpsAlertMonitorRealtimeSubscription();
             return payload;
         } catch (error) {
             const errorState = buildLocalOpsAlertMonitorErrorState(error, opsAlertMonitorState);
@@ -26103,6 +26495,8 @@ Object.assign(window, {
     refreshRecoveryReadinessPanel,
     scrollToOpsAlertHealthPanel,
     refreshOpsAlertMonitorPanel,
+    renderOpsExceptionInbox,
+    ensureOpsAlertMonitorRealtimeSubscription,
     setOpsAlertMonitorFilter,
     setOpsAlertMonitorShiftReportView,
     copyOpsAlertMonitorChecklist,

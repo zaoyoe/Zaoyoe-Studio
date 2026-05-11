@@ -57274,6 +57274,61 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-alert-summary-mode-note sp
     -webkit-text-fill-color: var(--ops-alert-light-muted, rgba(71, 85, 105, 0.9)) !important;
 }
 
+/* 20260511_ADMIN_STUDIO_OPS_EXCEPTION_INBOX_LIGHT_1 */
+html[data-theme="light"] #module-ops-alerts .ops-exception-inbox,
+html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox {
+    background: rgba(255, 255, 255, 0.78) !important;
+    background-image: none !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.2) !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] #module-ops-alerts .ops-exception-inbox--warning,
+html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox--warning {
+    border-color: rgba(217, 119, 6, 0.24) !important;
+}
+
+html[data-theme="light"] #module-ops-alerts .ops-exception-inbox--danger,
+html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox--danger {
+    border-color: rgba(220, 38, 38, 0.22) !important;
+}
+
+html[data-theme="light"] #module-ops-alerts .ops-exception-inbox--success,
+html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox--success {
+    border-color: rgba(22, 163, 74, 0.2) !important;
+}
+
+html[data-theme="light"] #module-ops-alerts .ops-exception-inbox__eyebrow,
+html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__eyebrow {
+    background: rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.1) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.18) !important;
+    color: var(--ops-alert-light-blue, var(--admin-studio-ui-blue, #769dca)) !important;
+    -webkit-text-fill-color: var(--ops-alert-light-blue, var(--admin-studio-ui-blue, #769dca)) !important;
+}
+
+html[data-theme="light"] #module-ops-alerts .ops-exception-inbox__title-line,
+html[data-theme="light"] #module-ops-alerts .ops-exception-inbox__title,
+html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__title-line,
+html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__title {
+    color: var(--ops-alert-light-text, rgba(30, 41, 59, 0.96)) !important;
+    -webkit-text-fill-color: var(--ops-alert-light-text, rgba(30, 41, 59, 0.96)) !important;
+}
+
+html[data-theme="light"] #module-ops-alerts :is(.ops-exception-inbox__copy p, .ops-exception-inbox__summary, .ops-exception-inbox__meta, .ops-exception-inbox__empty),
+html:not([data-theme="dark"]) #module-ops-alerts :is(.ops-exception-inbox__copy p, .ops-exception-inbox__summary, .ops-exception-inbox__meta, .ops-exception-inbox__empty) {
+    color: var(--ops-alert-light-muted, rgba(71, 85, 105, 0.9)) !important;
+    -webkit-text-fill-color: var(--ops-alert-light-muted, rgba(71, 85, 105, 0.9)) !important;
+}
+
+html[data-theme="light"] #module-ops-alerts .ops-exception-inbox__row,
+html[data-theme="light"] #module-ops-alerts .ops-exception-inbox__empty,
+html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__row,
+html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__empty {
+    background: rgba(248, 250, 252, 0.72) !important;
+    border-color: rgba(148, 163, 184, 0.22) !important;
+    box-shadow: none !important;
+}
+
 /* 20260430_ADMIN_STUDIO_OPS_ALERT_MONITOR_BADGE_STATS_TRANSPARENT_1 */
 html[data-theme="light"] #module-ops-alerts .ops-alert-monitor-card .ops-alert-monitor-card__head,
 html[data-theme="light"] #module-ops-alerts .ops-alert-monitor-card .ops-alert-monitor-card__stats,
