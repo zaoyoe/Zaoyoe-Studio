@@ -108,12 +108,28 @@ function createExternalMonitoringSmokeHandler({
                 env_name: normalizeText(entry.env_name, 80) || null,
                 dsn_host: normalizeText(entry.dsn_host, 180) || null,
                 dsn_project_id: normalizeText(entry.dsn_project_id, 80) || null,
+                present_env_names: Array.isArray(entry.present_env_names)
+                    ? entry.present_env_names
+                        .map((name) => normalizeText(name, 80))
+                        .filter(Boolean)
+                        .slice(0, 6)
+                    : [],
                 expected_env_names: Array.isArray(entry.expected_env_names)
                     ? entry.expected_env_names
                         .map((name) => normalizeText(name, 80))
                         .filter(Boolean)
                         .slice(0, 6)
-                    : []
+                    : [],
+                deployment: entry.deployment && typeof entry.deployment === 'object' && !Array.isArray(entry.deployment)
+                    ? {
+                        vercel_env: normalizeText(entry.deployment.vercel_env, 40) || null,
+                        vercel_region: normalizeText(entry.deployment.vercel_region, 80) || null,
+                        vercel_url: normalizeText(entry.deployment.vercel_url, 180) || null,
+                        project_production_url: normalizeText(entry.deployment.project_production_url, 180) || null,
+                        git_ref: normalizeText(entry.deployment.git_ref, 120) || null,
+                        git_commit_sha: normalizeText(entry.deployment.git_commit_sha, 40) || null
+                    }
+                    : null
             })),
             event: {
                 type: result.event?.type,

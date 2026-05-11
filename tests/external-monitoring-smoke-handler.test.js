@@ -72,7 +72,12 @@ test('external monitoring smoke handler succeeds without configured providers', 
                         provider: 'sentry',
                         skipped: true,
                         reason: 'not_configured',
-                        expected_env_names: ['SENTRY_DSN', 'SERVER_SENTRY_DSN']
+                        expected_env_names: ['SENTRY_DSN', 'SERVER_SENTRY_DSN'],
+                        present_env_names: [],
+                        deployment: {
+                            vercel_env: 'production',
+                            git_ref: 'main'
+                        }
                     },
                     { provider: 'axiom', skipped: true, reason: 'not_configured' },
                     { provider: 'datadog', skipped: true, reason: 'not_configured' }
@@ -112,6 +117,8 @@ test('external monitoring smoke handler succeeds without configured providers', 
         ['sentry', 'axiom', 'datadog']
     );
     assert.deepEqual(payload.providers[0].expected_env_names, ['SENTRY_DSN', 'SERVER_SENTRY_DSN']);
+    assert.deepEqual(payload.providers[0].present_env_names, []);
+    assert.equal(payload.providers[0].deployment.vercel_env, 'production');
 });
 
 test('external monitoring smoke handler exposes provider delivery diagnostics', async () => {
@@ -130,7 +137,13 @@ test('external monitoring smoke handler exposes provider delivery diagnostics', 
                         status: 202,
                         env_name: 'SENTRY_DSN',
                         dsn_host: 'example.sentry.io',
-                        dsn_project_id: '123456'
+                        dsn_project_id: '123456',
+                        present_env_names: ['SENTRY_DSN'],
+                        deployment: {
+                            vercel_env: 'production',
+                            git_ref: 'main',
+                            git_commit_sha: 'abcdef123456'
+                        }
                     },
                     { provider: 'axiom', ok: false, status: 401, error: 'unauthorized' },
                     { provider: 'datadog', skipped: true, reason: 'not_configured' }
@@ -165,6 +178,8 @@ test('external monitoring smoke handler exposes provider delivery diagnostics', 
     assert.equal(payload.providers[0].env_name, 'SENTRY_DSN');
     assert.equal(payload.providers[0].dsn_host, 'example.sentry.io');
     assert.equal(payload.providers[0].dsn_project_id, '123456');
+    assert.deepEqual(payload.providers[0].present_env_names, ['SENTRY_DSN']);
+    assert.equal(payload.providers[0].deployment.git_ref, 'main');
     assert.equal(payload.providers[1].provider, 'axiom');
     assert.equal(payload.providers[1].reason, 'unauthorized');
 });

@@ -18088,6 +18088,26 @@ function buildExternalMonitoringProviderSummaryText(provider = {}) {
     const envName = String(provider?.env_name || '').trim();
     const dsnHost = String(provider?.dsn_host || '').trim();
     const dsnProjectId = String(provider?.dsn_project_id || '').trim();
+    const expectedEnvNames = Array.isArray(provider?.expected_env_names)
+        ? provider.expected_env_names
+            .map((item) => String(item || '').trim())
+            .filter(Boolean)
+        : [];
+    const presentEnvNames = Array.isArray(provider?.present_env_names)
+        ? provider.present_env_names
+            .map((item) => String(item || '').trim())
+            .filter(Boolean)
+        : [];
+    const checkedEnvText = expectedEnvNames.length
+        ? expectedEnvNames.slice(0, 4).join(' / ')
+        : 'SENTRY_DSN / SERVER_SENTRY_DSN';
+    const deployment = provider?.deployment && typeof provider.deployment === 'object' && !Array.isArray(provider.deployment)
+        ? provider.deployment
+        : {};
+    const deploymentText = [deployment.vercel_env, deployment.git_ref, deployment.git_commit_sha]
+        .map((item) => String(item || '').trim())
+        .filter(Boolean)
+        .join(' / ');
     const sentryTarget = dsnHost
         ? `（${dsnHost}${dsnProjectId ? ` / ${dsnProjectId}` : ''}）`
         : (envName ? `（已读到 ${envName}）` : '');
@@ -18098,10 +18118,10 @@ function buildExternalMonitoringProviderSummaryText(provider = {}) {
 
     if (provider?.skipped === true) {
         if (normalizedName === 'sentry' && reason === 'not_configured') {
-            return `${name}: 后端未读到 SENTRY_DSN（检查 Vercel Production 环境变量和 Project）`;
+            return `${name}: 后端未读到 ${checkedEnvText}${deploymentText ? `（当前部署 ${deploymentText}）` : ''}`;
         }
         if (normalizedName === 'sentry' && reason === 'invalid_dsn') {
-            return `${name}: DSN 无效${sentryTarget}`;
+            return `${name}: DSN 无效${sentryTarget || (presentEnvNames.length ? `（已读到 ${presentEnvNames.join(' / ')}）` : '')}`;
         }
         if (reason === 'invalid_dsn') return `${name}: DSN 无效`;
         if (reason === 'not_configured') return `${name}: 未配置`;

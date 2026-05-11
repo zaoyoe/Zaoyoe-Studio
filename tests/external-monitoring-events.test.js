@@ -117,6 +117,8 @@ test('external monitoring is no-op when no provider is configured', async () => 
     assert.equal(result.results.every((entry) => entry.skipped === true), true);
     const sentry = result.results.find((entry) => entry.provider === 'sentry');
     assert.deepEqual(sentry.expected_env_names, SENTRY_DSN_ENV_NAMES);
+    assert.deepEqual(sentry.present_env_names, []);
+    assert.equal(sentry.deployment.vercel_env, null);
 });
 
 test('external monitoring sends sanitized copies to configured providers', async () => {
@@ -155,7 +157,10 @@ test('external monitoring sends sanitized copies to configured providers', async
             AXIOM_TOKEN: 'axiom-token-1234567890',
             AXIOM_DATASET: 'zaoyoe-production',
             DATADOG_API_KEY: '0123456789abcdef0123456789abcdef',
-            DATADOG_SITE: 'datadoghq.com'
+            DATADOG_SITE: 'datadoghq.com',
+            VERCEL_ENV: 'production',
+            VERCEL_GIT_COMMIT_REF: 'main',
+            VERCEL_GIT_COMMIT_SHA: 'abcdef1234567890'
         },
         fetchImpl
     });
@@ -166,6 +171,10 @@ test('external monitoring sends sanitized copies to configured providers', async
     assert.equal(result.results[0].env_name, 'SENTRY_DSN');
     assert.equal(result.results[0].dsn_host, 'example.sentry.io');
     assert.equal(result.results[0].dsn_project_id, '123456');
+    assert.deepEqual(result.results[0].present_env_names, ['SENTRY_DSN']);
+    assert.equal(result.results[0].deployment.vercel_env, 'production');
+    assert.equal(result.results[0].deployment.git_ref, 'main');
+    assert.equal(result.results[0].deployment.git_commit_sha, 'abcdef123456');
     assert.match(calls[0].url, /example\.sentry\.io\/api\/123456\/envelope/);
     assert.match(calls[1].url, /api\.axiom\.co\/v1\/datasets\/zaoyoe-production\/ingest/);
     assert.match(calls[2].url, /http-intake\.logs\.datadoghq\.com\/api\/v2\/logs/);
