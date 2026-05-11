@@ -5307,6 +5307,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
             ['window.normalizeAdminWorkbenchOpsAlertMonitorPayload(payload, {', 'normalizeAdminWorkbenchOpsAlertMonitorPayload'],
             ['window.buildAdminWorkbenchOpsAlertMonitorPanelState(state, filters, categories, {', 'buildAdminWorkbenchOpsAlertMonitorPanelState'],
             ['window.buildAdminWorkbenchOpsAlertMonitorCategoryRenderState(category, filters, {', 'buildAdminWorkbenchOpsAlertMonitorCategoryRenderState'],
+            ['window.buildAdminWorkbenchOpsExceptionInboxState(categories, filters, monitorState, {', 'buildAdminWorkbenchOpsExceptionInboxState'],
             ['window.getOpsAlertWorkspaceContextLabel(context, { fallback: \'集中告警\' })', 'getOpsAlertWorkspaceContextLabel'],
             ['window.getOpsAlertWorkspaceBatchPreview(items, {', 'getOpsAlertWorkspaceBatchPreview'],
             ['window.getOpsAlertCaseComposerMeta(state, {', 'getOpsAlertCaseComposerMeta'],
@@ -5514,6 +5515,9 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'data-admin-action="settings-refresh-ops-alert-monitor"',
         'data-admin-action="settings-delete-ops-alert-secret"',
         'id="opsAlertMonitorPanel"',
+        'id="opsExceptionInbox"',
+        '异常收件箱',
+        '指挥台入口',
         'id="opsAlertMonitorGrid"',
         'id="opsAlertMonitorMeta"',
         'id="opsAlertMonitorShiftReport"',
@@ -5875,6 +5879,12 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'function applyOpsAlertMonitorBatchActionStates(buttonStates = [], filters = getOpsAlertMonitorViewFilters()) {',
         'function openOpsAlertBatchCaseComposer(action, categoryKey = \'\') {',
         'return openOpsAlertBatchCaseComposer(normalizedAction, categoryKey);',
+        'function ensureOpsAlertMonitorRealtimeSubscription(options = {}) {',
+        "typeof window.subscribeZaoyoeRealtime !== 'function'",
+        "channel: 'admin-ops-exception-inbox'",
+        "table: 'ops_alert_jobs'",
+        "table: 'ops_alert_cases'",
+        'existing reads and manual refresh remain available',
         'window.bindAdminStudioOpsAlertDirectActionButtons?.(panel);',
         'const filters = getOpsAlertMonitorViewFilters();',
         'const items = getOpsAlertMonitorBatchItems(filters, normalizedAction, categoryKey);',
@@ -5892,6 +5902,12 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
             || marker.includes('window.bindAdminStudioOpsAlertDirectActionButtons?.(panel);')
             || marker.includes('getOpsAlertMonitorBatchItems(filters')
             || marker.includes('const filters = getOpsAlertMonitorViewFilters();')
+            || marker.includes('ensureOpsAlertMonitorRealtimeSubscription')
+            || marker.includes('subscribeZaoyoeRealtime')
+            || marker.includes('admin-ops-exception-inbox')
+            || marker.includes('ops_alert_jobs')
+            || marker.includes('ops_alert_cases')
+            || marker.includes('existing reads and manual refresh remain available')
             ? adminConfigSource
             : adminStudioScript;
         assert.equal(source.includes(marker), true, `ops alert monitor batch runtime should contain ${marker}`);
@@ -7200,9 +7216,13 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'function renderOpsAlertMonitorShiftReport()',
         'function buildLocalOpsAlertMonitorPanelState(state = {}, filters = getOpsAlertMonitorViewFilters(), categories = [])',
         'function resolveOpsAlertMonitorPanelState(state = {}, filters = getOpsAlertMonitorViewFilters(), categories = [])',
+        'function buildLocalOpsExceptionInboxState(categories = [], filters = getOpsAlertMonitorViewFilters(), monitorState = opsAlertMonitorState || getDefaultOpsAlertMonitorState())',
+        "function resolveOpsExceptionInboxStateBuilder() {",
+        'function renderOpsExceptionInbox(inboxState = null)',
         'function buildLocalOpsAlertMonitorPanelMarkupState(state = {}, filters = getOpsAlertMonitorViewFilters(), categories = [], viewState = null) {',
         'function resolveOpsAlertMonitorPanelMarkupState(state = {}, filters = getOpsAlertMonitorViewFilters(), categories = [], viewState = null) {',
         'function applyOpsAlertMonitorPanelMarkupState(markupState = {}, elements = {}) {',
+        'renderOpsExceptionInbox(resolvedMarkupState.inboxState || null);',
         'function buildLocalOpsAlertMonitorCategoryRenderState(category = {}, filters = getOpsAlertMonitorViewFilters())',
         'function resolveOpsAlertMonitorCategoryRenderState(category = {}, filters = getOpsAlertMonitorViewFilters())',
         'function resolveOpsAlertMonitorCategoryActionsResolver() {',

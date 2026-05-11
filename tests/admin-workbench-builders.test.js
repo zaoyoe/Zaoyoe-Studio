@@ -3013,6 +3013,95 @@ test('shared admin workbench builds ops alert risk spotlight state', () => {
     });
 });
 
+test('shared admin workbench builds ops exception inbox from existing monitor categories', () => {
+    const runtime = loadAdminWorkbenchRuntime();
+    const state = runtime.buildAdminWorkbenchOpsExceptionInboxState([
+        {
+            key: 'payments',
+            label: '支付与退款',
+            visible_items: [
+                {
+                    title: '支付退款卡住',
+                    message: '退款超过 SLA',
+                    severity: 'critical',
+                    alert_type: 'payment_refund_ops',
+                    target_id: 'payment_refund:pay_001',
+                    reference_label: '订单',
+                    reference_value: 'pay_001',
+                    case_status: 'open',
+                    created_at: '2026-05-11T08:10:00.000Z'
+                },
+                {
+                    title: '已关闭退款',
+                    severity: 'critical',
+                    alert_type: 'payment_refund_ops',
+                    target_id: 'payment_refund:pay_000',
+                    case_status: 'resolved',
+                    created_at: '2026-05-11T09:00:00.000Z'
+                }
+            ]
+        },
+        {
+            key: 'inventory',
+            label: '库存与补货',
+            visible_items: [
+                {
+                    title: '库存不足',
+                    message: 'SKU 库存低于阈值',
+                    severity: 'warning',
+                    alert_type: 'shop_inventory_low',
+                    target_id: 'sku_001',
+                    reference_label: 'SKU',
+                    reference_value: 'sku_001',
+                    case_status: 'claimed',
+                    case_owner_label: '值班同学',
+                    created_at: '2026-05-11T09:15:00.000Z'
+                }
+            ]
+        },
+        {
+            key: 'verify',
+            label: '验证服务',
+            visible_items: [
+                {
+                    title: '验证队列堆积',
+                    message: '待处理任务过多',
+                    severity: 'warning',
+                    alert_type: 'verify_queue_backlog',
+                    target_id: 'verify_queue',
+                    case_status: 'open',
+                    created_at: '2026-05-11T09:30:00.000Z'
+                }
+            ]
+        }
+    ], {
+        scope: 'active',
+        severity: 'all',
+        category: 'all'
+    }, {
+        status: 'ready'
+    }, {
+        maxItems: 2,
+        formatCount: (value) => `#${value}`,
+        formatDateTime: (value) => `FMT:${value}`,
+        getFilterSummaryLabel: () => '当前筛选',
+        getCaseStatusLabel: (status) => (status === 'claimed' ? '处理中' : '待处理'),
+        getCaseStatusTone: (status) => (status === 'claimed' ? 'neutral' : 'warning')
+    });
+
+    assert.equal(state.status, 'ready');
+    assert.equal(state.totalCount, 3);
+    assert.equal(state.hiddenCount, 1);
+    assert.equal(state.statBadges[0].label, '#3 未关闭');
+    assert.equal(state.items.length, 2);
+    assert.equal(state.items[0].titleText, '支付退款卡住');
+    assert.equal(state.items[0].categoryKey, 'payments');
+    assert.equal(state.items[0].workspaceAction.target, 'payments-ops');
+    assert.equal(state.items[0].caseActions.some((action) => action.action === 'assign'), true);
+    assert.equal(state.items[1].titleText, '验证队列堆积');
+    assert.equal(state.items.some((entry) => entry.titleText === '已关闭退款'), false);
+});
+
 test('shared admin workbench builds ops alert monitor filter toolbar state', () => {
     const runtime = loadAdminWorkbenchRuntime();
     const toolbarState = runtime.buildAdminWorkbenchOpsAlertMonitorFilterToolbarState({

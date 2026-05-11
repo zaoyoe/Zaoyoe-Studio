@@ -47228,6 +47228,205 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     min-width: 0;
 }
 
+.ops-exception-inbox {
+    border-radius: 18px;
+    padding: 18px;
+    background:
+        linear-gradient(180deg, rgba(14, 25, 45, 0.78), rgba(9, 18, 34, 0.82)),
+        rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(107, 158, 206, 0.2);
+    box-shadow: inset 0 0 0 1px rgba(107, 158, 206, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 0;
+}
+
+.ops-exception-inbox--warning {
+    border-color: rgba(246, 189, 96, 0.28);
+    box-shadow: inset 0 0 0 1px rgba(246, 189, 96, 0.08);
+}
+
+.ops-exception-inbox--danger {
+    border-color: rgba(240, 98, 108, 0.3);
+    box-shadow: inset 0 0 0 1px rgba(240, 98, 108, 0.1);
+}
+
+.ops-exception-inbox--success {
+    border-color: rgba(88, 196, 135, 0.28);
+    box-shadow: inset 0 0 0 1px rgba(88, 196, 135, 0.08);
+}
+
+.ops-exception-inbox__head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 14px;
+}
+
+.ops-exception-inbox__copy {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.ops-exception-inbox__eyebrow {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    min-height: 26px;
+    padding: 0 11px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: #dff1ff;
+    font-size: 0.74rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.ops-exception-inbox__title-line {
+    color: var(--text-main);
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.45;
+}
+
+.ops-exception-inbox__copy p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.86rem;
+    line-height: 1.6;
+}
+
+.ops-exception-inbox__stats,
+.ops-exception-inbox__actions,
+.ops-exception-inbox__badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.ops-exception-inbox__stats {
+    justify-content: flex-end;
+}
+
+.ops-exception-inbox__list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    min-width: 0;
+}
+
+.ops-exception-inbox__row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(180px, auto);
+    align-items: center;
+    gap: 12px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.028);
+    border: 1px solid rgba(255, 255, 255, 0.055);
+    min-width: 0;
+}
+
+.ops-exception-inbox__row--danger {
+    border-color: rgba(240, 98, 108, 0.24);
+}
+
+.ops-exception-inbox__row--warning {
+    border-color: rgba(246, 189, 96, 0.2);
+}
+
+.ops-exception-inbox__main {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.ops-exception-inbox__title {
+    color: var(--text-main);
+    font-size: 0.9rem;
+    font-weight: 700;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.ops-exception-inbox__summary,
+.ops-exception-inbox__meta,
+.ops-exception-inbox__empty {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.ops-exception-inbox__meta {
+    color: var(--text-dim);
+}
+
+.ops-exception-inbox__actions {
+    justify-content: flex-end;
+}
+
+.ops-exception-inbox__actions .btn-add-config {
+    min-height: 34px;
+    white-space: normal;
+}
+
+.ops-exception-inbox__primary-action {
+    border-color: rgba(107, 158, 206, 0.32);
+    background: rgba(107, 158, 206, 0.13);
+}
+
+.ops-exception-inbox__empty {
+    padding: 14px;
+    border-radius: 14px;
+    border: 1px dashed rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.025);
+    text-align: center;
+}
+
+html[data-theme="light"] #module-ops-alerts .ops-exception-inbox,
+html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox {
+    background: rgba(255, 255, 255, 0.78);
+    background-image: none;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.2);
+    box-shadow: none;
+}
+
+html[data-theme="light"] #module-ops-alerts .ops-exception-inbox__eyebrow,
+html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__eyebrow {
+    background: rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.1);
+    border-color: rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.18);
+    color: var(--ops-alert-light-blue, var(--admin-studio-ui-blue, #769dca));
+}
+
+html[data-theme="light"] #module-ops-alerts .ops-exception-inbox__title-line,
+html[data-theme="light"] #module-ops-alerts .ops-exception-inbox__title,
+html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__title-line,
+html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__title {
+    color: var(--ops-alert-light-text, rgba(30, 41, 59, 0.96));
+}
+
+html[data-theme="light"] #module-ops-alerts :is(.ops-exception-inbox__copy p, .ops-exception-inbox__summary, .ops-exception-inbox__meta, .ops-exception-inbox__empty),
+html:not([data-theme="dark"]) #module-ops-alerts :is(.ops-exception-inbox__copy p, .ops-exception-inbox__summary, .ops-exception-inbox__meta, .ops-exception-inbox__empty) {
+    color: var(--ops-alert-light-muted, rgba(71, 85, 105, 0.9));
+}
+
+html[data-theme="light"] #module-ops-alerts .ops-exception-inbox__row,
+html[data-theme="light"] #module-ops-alerts .ops-exception-inbox__empty,
+html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__row,
+html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__empty {
+    background: rgba(248, 250, 252, 0.72);
+    border-color: rgba(148, 163, 184, 0.22);
+    box-shadow: none;
+}
+
 .ops-alert-risk-spotlight {
     border-radius: 18px;
     padding: 18px;
@@ -47996,6 +48195,7 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     }
 
     #opsAlertMonitorPanel > .ops-alert-card-toolbar,
+    #opsExceptionInbox,
     #opsAlertMonitorToolbar,
     #opsAlertMonitorBatchActions,
     #opsAlertMonitorMeta,
@@ -48143,6 +48343,23 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
 
     .ops-alert-monitor-item__actions {
         gap: 8px;
+    }
+}
+
+@media (max-width: 860px) {
+    .ops-exception-inbox__head,
+    .ops-exception-inbox__row {
+        grid-template-columns: 1fr;
+    }
+
+    .ops-exception-inbox__stats,
+    .ops-exception-inbox__actions {
+        justify-content: flex-start;
+    }
+
+    .ops-exception-inbox__actions .btn-add-config {
+        flex: 1 1 160px;
+        justify-content: center;
     }
 }
 

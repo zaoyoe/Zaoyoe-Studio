@@ -1654,6 +1654,210 @@ function buildAdminWorkbenchOpsAlertMonitorCategoryRenderState(category = {}, fi
     };
 }
 
+function getAdminWorkbenchOpsExceptionInboxTimestamp(item = {}, options = {}) {
+    const rawValue = String(
+        item?.created_at
+        || item?.case_last_action_at
+        || item?.updated_at
+        || item?.case_latest_event_at
+        || ''
+    ).trim();
+    const parsedTime = rawValue ? Date.parse(rawValue) : 0;
+    const formatDateTime = typeof options.formatDateTime === 'function'
+        ? options.formatDateTime
+        : ((value) => String(value || ''));
+
+    return {
+        raw: rawValue,
+        ms: Number.isFinite(parsedTime) ? parsedTime : 0,
+        label: rawValue ? formatDateTime(rawValue) : ''
+    };
+}
+
+function getAdminWorkbenchOpsExceptionInboxStatusRank(status = '') {
+    const normalizedStatus = String(status || '').trim().toLowerCase() || 'open';
+    if (normalizedStatus === 'open') return 3;
+    if (normalizedStatus === 'claimed') return 2;
+    return 1;
+}
+
+function getAdminWorkbenchOpsExceptionInboxSeverityRank(severity = '') {
+    const normalizedSeverity = String(severity || '').trim().toLowerCase();
+    if (normalizedSeverity === 'critical') return 3;
+    if (normalizedSeverity === 'warning') return 2;
+    return 1;
+}
+
+function buildAdminWorkbenchOpsExceptionInboxItems(categories = [], filters = {}, monitorState = {}, options = {}) {
+    const normalizedCategories = Array.isArray(categories) ? categories : [];
+    const maxItems = Math.max(1, Math.min(30, Number(options.maxItems || 8) || 8));
+    const getItemDisplayState = typeof options.getItemDisplayState === 'function'
+        ? options.getItemDisplayState
+        : buildAdminWorkbenchOpsAlertMonitorItemDisplayState;
+    const getCategoryLabel = typeof options.getCategoryLabel === 'function'
+        ? options.getCategoryLabel
+        : getAdminWorkbenchOpsAlertMonitorCategoryLabel;
+    const getCaseStatusLabel = typeof options.getCaseStatusLabel === 'function'
+        ? options.getCaseStatusLabel
+        : ((value) => String(value || '').trim() || '待处理');
+    const getCaseStatusTone = typeof options.getCaseStatusTone === 'function'
+        ? options.getCaseStatusTone
+        : (() => 'neutral');
+    const getSeverityTone = typeof options.getSeverityTone === 'function'
+        ? options.getSeverityTone
+        : ((value) => (String(value || '').trim().toLowerCase() === 'critical' ? 'danger' : 'warning'));
+    const entries = [];
+
+    normalizedCategories.forEach((category) => {
+        const categoryKey = String(category?.key || category?.category_key || '').trim().toLowerCase();
+        if (!categoryKey) {
+            return;
+        }
+
+        const sourceItems = Array.isArray(category?.visible_items) && category.visible_items.length
+            ? category.visible_items
+            : (Array.isArray(category?.items) ? category.items : []);
+        const categoryLabel = String(category?.label || getCategoryLabel(categoryKey, options) || categoryKey).trim();
+
+        sourceItems.forEach((item) => {
+            if (!isOpsAlertCaseUnresolved(item)) {
+                return;
+            }
+
+            const displayState = getItemDisplayState(item, category, options) || {};
+            const severity = String(item?.severity || displayState?.severity || 'warning').trim().toLowerCase() || 'warning';
+            const caseStatus = String(item?.case_status || item?.caseStatus || '').trim().toLowerCase() || 'open';
+            const timestamp = getAdminWorkbenchOpsExceptionInboxTimestamp(item, options);
+            const workspaceAction = displayState?.workspaceAction
+                || getAdminWorkbenchOpsAlertMonitorWorkspaceAction(category, item, options)
+                || null;
+            const displayCaseActions = Array.isArray(displayState?.caseActions) ? displayState.caseActions : [];
+            const caseActions = displayCaseActions.length
+                ? displayCaseActions
+                : getAdminWorkbenchOpsAlertMonitorCaseActions(category, item, options);
+            const messageText = String(displayState?.message || item?.message || '').trim();
+
+            entries.push({
+                category: {
+                    key: categoryKey,
+                    label: categoryLabel
+                },
+                categoryKey,
+                categoryLabel,
+                item,
+                state: displayState,
+                titleText: String(displayState?.title || item?.title || '系统告警').trim() || '系统告警',
+                messageText,
+                metaText: String(displayState?.metaText || item?.reference_value || '').trim(),
+                createdAt: timestamp.raw,
+                createdAtLabel: timestamp.label,
+                sortTimestamp: timestamp.ms,
+                severity,
+                severityTone: getSeverityTone(severity),
+                caseStatus,
+                caseStatusLabel: getCaseStatusLabel(caseStatus),
+                caseTone: getCaseStatusTone(caseStatus),
+                workspaceAction,
+                caseActions: Array.isArray(caseActions) ? caseActions : []
+            });
+        });
+    });
+
+    entries.sort((left, right) => {
+        const severityDelta = getAdminWorkbenchOpsExceptionInboxSeverityRank(right.severity) - getAdminWorkbenchOpsExceptionInboxSeverityRank(left.severity);
+        if (severityDelta !== 0) return severityDelta;
+
+        const statusDelta = getAdminWorkbenchOpsExceptionInboxStatusRank(right.caseStatus) - getAdminWorkbenchOpsExceptionInboxStatusRank(left.caseStatus);
+        if (statusDelta !== 0) return statusDelta;
+
+        const timeDelta = Number(right.sortTimestamp || 0) - Number(left.sortTimestamp || 0);
+        if (timeDelta !== 0) return timeDelta;
+
+        return String(left.titleText || '').localeCompare(String(right.titleText || ''), 'zh-CN');
+    });
+
+    return {
+        items: entries.slice(0, maxItems),
+        totalCount: entries.length,
+        hiddenCount: Math.max(0, entries.length - maxItems),
+        criticalCount: entries.filter((entry) => entry.severity === 'critical').length
+    };
+}
+
+function buildAdminWorkbenchOpsExceptionInboxState(categories = [], filters = {}, monitorState = {}, options = {}) {
+    const normalizedState = monitorState && typeof monitorState === 'object' && !Array.isArray(monitorState)
+        ? monitorState
+        : {};
+    const normalizedStatus = String(normalizedState.status || '').trim().toLowerCase() || 'idle';
+    const normalizedFilters = filters && typeof filters === 'object' && !Array.isArray(filters)
+        ? filters
+        : {};
+    const formatCount = typeof options.formatCount === 'function'
+        ? options.formatCount
+        : ((value) => String(Number(value || 0)));
+    const getFilterSummaryLabel = typeof options.getFilterSummaryLabel === 'function'
+        ? options.getFilterSummaryLabel
+        : (() => '当前筛选');
+
+    if (normalizedStatus === 'loading') {
+        return {
+            status: 'loading',
+            tone: 'neutral',
+            title: '异常收件箱',
+            summary: '正在读取现有告警、处理状态和模块入口...',
+            statBadges: [{ label: '读取中', tone: 'neutral' }],
+            items: [],
+            totalCount: 0,
+            hiddenCount: 0,
+            emptyMessage: '正在加载异常收件箱...'
+        };
+    }
+
+    if (normalizedStatus === 'error') {
+        return {
+            status: 'error',
+            tone: 'danger',
+            title: '异常收件箱暂不可用',
+            summary: String(normalizedState.message || '集中告警读取失败，原有模块和手动刷新仍可继续使用。'),
+            statBadges: [{ label: '读取失败', tone: 'danger' }],
+            items: [],
+            totalCount: 0,
+            hiddenCount: 0,
+            emptyMessage: String(normalizedState.message || '集中告警读取失败。')
+        };
+    }
+
+    const inboxResult = buildAdminWorkbenchOpsExceptionInboxItems(categories, normalizedFilters, normalizedState, options);
+    const totalCount = Number(inboxResult.totalCount || 0);
+    const criticalCount = Number(inboxResult.criticalCount || 0);
+    const filterSummary = getFilterSummaryLabel(normalizedFilters);
+    const isRecoveredScope = String(normalizedFilters.scope || '').trim().toLowerCase() === 'recovered';
+    const tone = criticalCount > 0 ? 'danger' : (totalCount > 0 ? 'warning' : 'success');
+    const summary = totalCount > 0
+        ? `${filterSummary}下有 ${formatCount(totalCount)} 条未关闭异常；这里负责汇总入口，具体处理仍回到原模块。`
+        : (isRecoveredScope
+            ? '收件箱只展示未关闭异常；已恢复记录可在下方模块卡片复核。'
+            : `${filterSummary}下没有未关闭异常。`);
+
+    return {
+        status: 'ready',
+        tone,
+        title: totalCount > 0 ? '异常收件箱' : '异常收件箱已清空',
+        summary,
+        statBadges: [
+            { label: `${formatCount(totalCount)} 未关闭`, tone },
+            criticalCount > 0 ? { label: `${formatCount(criticalCount)} critical`, tone: 'danger' } : null,
+            inboxResult.hiddenCount > 0 ? { label: `另 ${formatCount(inboxResult.hiddenCount)} 条在清单`, tone: 'neutral' } : null
+        ].filter(Boolean),
+        items: inboxResult.items,
+        totalCount,
+        hiddenCount: inboxResult.hiddenCount,
+        emptyMessage: isRecoveredScope
+            ? '收件箱只展示未关闭异常；已恢复记录请在下方模块卡片复核。'
+            : '当前筛选下没有未关闭异常。'
+    };
+}
+
 function buildAdminWorkbenchOpsAlertMonitorBatchActionStates(categories = [], filters = {}, options = {}) {
     const normalizedCategories = Array.isArray(categories) ? categories : [];
     const buildBatchItems = typeof options.buildBatchItems === 'function'
@@ -8246,6 +8450,8 @@ window.getAdminWorkbenchOpsAlertMonitorCardTone = getAdminWorkbenchOpsAlertMonit
 window.buildAdminWorkbenchOpsAlertMonitorCategoryCardState = buildAdminWorkbenchOpsAlertMonitorCategoryCardState;
 window.buildAdminWorkbenchOpsAlertMonitorCategoryRenderState = buildAdminWorkbenchOpsAlertMonitorCategoryRenderState;
 window.buildAdminWorkbenchOpsAlertMonitorItemDisplayState = buildAdminWorkbenchOpsAlertMonitorItemDisplayState;
+window.buildAdminWorkbenchOpsExceptionInboxItems = buildAdminWorkbenchOpsExceptionInboxItems;
+window.buildAdminWorkbenchOpsExceptionInboxState = buildAdminWorkbenchOpsExceptionInboxState;
 window.buildAdminWorkbenchOpsAlertMonitorBatchActionStates = buildAdminWorkbenchOpsAlertMonitorBatchActionStates;
 window.formatAdminWorkbenchOpsAlertSignedCount = formatAdminWorkbenchOpsAlertSignedCount;
 window.formatAdminWorkbenchOpsAlertTimeShort = formatAdminWorkbenchOpsAlertTimeShort;
