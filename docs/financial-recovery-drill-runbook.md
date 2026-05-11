@@ -39,7 +39,7 @@ FINANCIAL_RECOVERY_DRILL_LAST_AT=2026-05-11
 Production has a protected cron endpoint:
 
 - Path: `/api/ops/recovery-readiness-sweep`
-- Schedule: every 6 hours from `vercel.json`
+- Schedule: daily from `vercel.json`
 - Secret: `RECOVERY_READINESS_CRON_SECRET` or `CRON_SECRET`
 
 The sweep reuses the Admin Studio recovery readiness checks, then writes admin notifications and optional `ops_alert_jobs` only when a real gap appears. PITR missing, Supabase Pro missing, or external monitoring not configured remain advisory/fail-open states; they should not block frontend, payment, wallet, order, or Admin Studio runtime.
