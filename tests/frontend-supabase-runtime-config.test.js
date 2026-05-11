@@ -9887,7 +9887,7 @@ test('ticket admin surfaces user email in search and list rendering', () => {
     assert.equal(adminStudioSource.includes('admin-studio.css?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'), true, 'admin-studio.html should load the cache-busted admin studio stylesheet for the richer rich-text yellow swatch');
     assert.equal(adminStudioSource.includes('analytics-advanced-entry'), false, 'admin-studio.html should keep advanced analytics out of the main toolbar flow');
     assert.equal(adminStudioSource.includes('js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2'), true, 'admin-studio.html should load the cache-busted ops alert report helper before admin config');
-    assert.equal(adminStudioSource.includes('admin-config.js?v=20260508_ADMIN_SITE_SCOPED_SYSTEM_CONFIG_2'), true, 'admin-studio.html should load the cache-busted admin config script for the visible rich-text yellow normalization fix');
+    assert.equal(adminStudioSource.includes('admin-config.js?v=20260511_RECOVERY_READINESS_COPY_1'), true, 'admin-studio.html should load the cache-busted admin config script for the visible rich-text yellow normalization fix');
     assert.equal(adminStudioSource.includes('admin-discounts.js?v=20260427_DISCOUNTS_BATCH_RESTORE_HINT_1'), true, 'admin-studio.html should load the cache-busted discount runtime for the P1 assets and ROI workspace');
     assert.equal(adminStudioSource.includes('js/admin-tickets.js?v=20260428_TICKETS_WORKSPACE_SCROLL_PRESERVE_1'), true, 'admin-studio.html should load the cache-busted ticket admin script');
     assert.equal(ticketsSource.includes("recordAnalyticsResolutionFeedback: function (ticket = {}, newStatus = '', result = {}, doRefund = false) {"), true, 'js/admin-tickets.js should record analytics resolution feedback after ticket handling succeeds');
@@ -10668,7 +10668,7 @@ test('shop admin order workflows externalize runtime table-row and modal styling
     }
 
     assert.equal(adminStudioSource.includes('js/admin-shop.js?v=20260504_SHOP_IMPORT_STOCK_SYNC_1'), true, 'admin-studio.html should load the cache-busted shop admin script');
-    assert.equal(adminStudioSource.includes('admin-config.js?v=20260508_ADMIN_SITE_SCOPED_SYSTEM_CONFIG_2'), true, 'admin-studio.html should load the cache-busted admin config script');
+    assert.equal(adminStudioSource.includes('admin-config.js?v=20260511_RECOVERY_READINESS_COPY_1'), true, 'admin-studio.html should load the cache-busted admin config script');
     assert.equal(adminWorkbenchSource.includes('window.ShopAdmin?.focusOrder'), true, 'js/admin-workbench.js should directly focus shop order workspaces when an order id is available');
     assert.equal(adminWorkbenchSource.includes("const opened = await window.AdminShell.openContext('users', {"), true, 'js/admin-workbench.js should let the shared user detail helper prefer AdminShell context delivery');
     assert.equal(adminWorkbenchSource.includes("if (typeof window.openAdminUsersShellContext === 'function') {"), true, 'js/admin-workbench.js should reuse the shared users context helper before falling back to direct modal control');
@@ -11689,7 +11689,7 @@ test('analytics runtime renderers externalize heatmap, cohort, flow, and panel v
         'class="chart-card glass-panel analytics-growth-card analytics-growth-card--full"',
         'admin-points.js?v=20260427_ADMIN_POINTS_BATCH_DETAIL_CUSTOM_STATUS_2',
         'js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2',
-        'admin-config.js?v=20260508_ADMIN_SITE_SCOPED_SYSTEM_CONFIG_2',
+        'admin-config.js?v=20260511_RECOVERY_READINESS_COPY_1',
         'js/admin-payments.js?v=20260421_ADMIN_PAYMENTS_CONTEXT_HELPER_P2',
         'js/admin-workbench.js?v=20260422_OPS_ALERT_RESOLVED_COUNT_P13',
         'js/admin-tickets.js?v=20260428_TICKETS_WORKSPACE_SCROLL_PRESERVE_1',
@@ -14596,7 +14596,7 @@ test('analytics user drill-down carries commerce context into the user detail mo
     assert.equal(adminStudioHtml.includes('admin-points.js?v=20260427_ADMIN_POINTS_BATCH_DETAIL_CUSTOM_STATUS_2'), true, 'admin-studio.html should reference the latest admin points runtime version');
     assert.equal(adminStudioHtml.includes('js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3&workflowRails=20260430_ADMIN_STUDIO_WORKFLOW_CARD_RAIL_VISIBILITY_1'), true, 'admin-studio.html should reference the latest growth center runtime version');
     assert.equal(adminStudioHtml.includes('js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2'), true, 'admin-studio.html should reference the latest ops alert report helper runtime version');
-    assert.equal(adminStudioHtml.includes('admin-config.js?v=20260508_ADMIN_SITE_SCOPED_SYSTEM_CONFIG_2'), true, 'admin-studio.html should reference the latest admin settings runtime version');
+    assert.equal(adminStudioHtml.includes('admin-config.js?v=20260511_RECOVERY_READINESS_COPY_1'), true, 'admin-studio.html should reference the latest admin settings runtime version');
     assert.equal(adminStudioHtml.includes('admin-discounts.js?v=20260427_DISCOUNTS_BATCH_RESTORE_HINT_1'), true, 'admin-studio.html should reference the latest admin discounts runtime version');
     assert.equal(adminStudioHtml.includes('js/admin-analytics-panel-loaders.js?v=20260427_ANALYTICS_USER_TREND_LOADING_DOTS_1'), true, 'admin-studio.html should reference the latest analytics panel loader runtime version');
     assert.equal(adminStudioHtml.includes('admin-studio.js?v=20260427_ADMIN_GALLERY_AI_TAGS_HIDDEN_1'), true, 'admin-studio.html should reference the latest admin studio action routing version');
@@ -14682,7 +14682,7 @@ test('user detail tabs surface product commerce trace when opened from analytics
 
     assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
     assert.equal(adminStudioHtml.includes('admin-users.js?v=20260505_USER_ACTIVITY_HEARTBEAT_1'), true, 'admin-studio.html should reference the latest admin users runtime version');
-    assert.equal(adminStudioHtml.includes('admin-config.js?v=20260508_ADMIN_SITE_SCOPED_SYSTEM_CONFIG_2'), true, 'admin-studio.html should reference the latest admin settings runtime version');
+    assert.equal(adminStudioHtml.includes('admin-config.js?v=20260511_RECOVERY_READINESS_COPY_1'), true, 'admin-studio.html should reference the latest admin settings runtime version');
 });
 
 test('payments runtime controls, site filter, and admin chat menu route through delegated actions', () => {
@@ -15059,6 +15059,11 @@ test('ops alert health page includes recovery readiness fail-open panel', () => 
     assert.match(configSource, /function sendExternalMonitoringSmokeTest/);
     assert.match(configSource, /后端未读到 \$\{checkedEnvText\}/);
     assert.match(configSource, /生产链路继续使用现有降级逻辑/);
+    assert.match(html, /恢复能力检查/);
+    assert.match(html, /检查恢复能力/);
+    assert.match(configSource, /恢复能力检查已就绪/);
+    assert.match(configSource, /return '外部监控测试已送达。';/);
+    assert.equal(configSource.includes('外部监控测试已送达 ${formatVerifyMonitorInteger(delivered)} 个通道；'), false, 'delivered smoke feedback should not list unconfigured optional providers');
     assert.match(workbenchSource, /fetchAdminWorkbenchRecoveryReadiness/);
     assert.match(workbenchSource, /submitAdminWorkbenchExternalMonitoringSmoke/);
     assert.match(workbenchSource, /normalizeAdminWorkbenchRecoveryReadinessPayload/);
@@ -16203,7 +16208,7 @@ test('admin studio modules emit unified command feedback for recent processing r
         'js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3&workflowRails=20260430_ADMIN_STUDIO_WORKFLOW_CARD_RAIL_VISIBILITY_1',
         'admin-comments.js?v=20260421_COMMENTS_MODULE_BRIDGE_HELPERS_P3',
         'js/admin-config-ops-alert-reports.js?v=20260421_OPS_ALERT_REPORT_ACTIONS_P2',
-        'admin-config.js?v=20260508_ADMIN_SITE_SCOPED_SYSTEM_CONFIG_2',
+        'admin-config.js?v=20260511_RECOVERY_READINESS_COPY_1',
         'admin-discounts.js?v=20260427_DISCOUNTS_BATCH_RESTORE_HINT_1',
         'js/admin-site-filter.js?v=20260427_ADMIN_SITE_SELECTOR_NO_KICKER_1',
         'admin-studio.js?v=20260427_ADMIN_GALLERY_AI_TAGS_HIDDEN_1'

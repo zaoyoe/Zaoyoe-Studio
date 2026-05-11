@@ -14627,14 +14627,14 @@ function buildRecoveryReadinessPanelState(state = recoveryReadinessState || getD
         return {
             status: 'loading',
             metaIcon: 'fas fa-rotate fa-spin',
-            metaText: '正在加载恢复 readiness 状态...',
-            emptyMessage: '正在加载恢复 readiness 状态...',
+            metaText: '正在加载恢复能力检查状态...',
+            emptyMessage: '正在加载恢复能力检查状态...',
             shouldRenderCards: false
         };
     }
 
     if (normalizedStatus === 'error') {
-        const message = normalizedState.message || '恢复 readiness 状态暂不可用，生产链路继续使用现有降级逻辑。';
+        const message = normalizedState.message || '恢复能力检查暂不可用，生产链路继续使用现有降级逻辑。';
         return {
             status: 'error',
             metaIcon: 'fas fa-triangle-exclamation',
@@ -14648,8 +14648,8 @@ function buildRecoveryReadinessPanelState(state = recoveryReadinessState || getD
         return {
             status: 'empty',
             metaIcon: 'fas fa-circle-info',
-            metaText: '暂未返回恢复 readiness 项，生产链路继续使用现有降级逻辑。',
-            emptyMessage: '暂未返回恢复 readiness 项。',
+            metaText: '暂未返回恢复能力检查项，生产链路继续使用现有降级逻辑。',
+            emptyMessage: '暂未返回恢复能力检查项。',
             shouldRenderCards: false
         };
     }
@@ -14660,8 +14660,8 @@ function buildRecoveryReadinessPanelState(state = recoveryReadinessState || getD
         ? 'fas fa-triangle-exclamation'
         : (advisoryCount > 0 ? 'fas fa-shield-heart' : 'fas fa-circle-check');
     const metaText = blockingFindingCount > 0
-        ? `发现 ${formatVerifyMonitorInteger(blockingFindingCount)} 个需要处理的 readiness 项；线上仍按降级逻辑运行。`
-        : `恢复 readiness 已就绪，当前有 ${formatVerifyMonitorInteger(advisoryCount)} 条提示；运行时依赖：${normalizedState.runtime_dependency || 'none'}。`;
+        ? `发现 ${formatVerifyMonitorInteger(blockingFindingCount)} 个需要处理的恢复检查项；线上仍按降级逻辑运行。`
+        : `恢复能力检查已就绪，当前有 ${formatVerifyMonitorInteger(advisoryCount)} 条提示；运行时依赖：${normalizedState.runtime_dependency || 'none'}。`;
 
     return {
         status: 'ready',
@@ -14750,7 +14750,7 @@ function buildRecoveryReadinessCardMarkup(section = {}) {
                             <span>${escapeConfigHtml(item.severity || item.status || 'info')}</span>
                         </div>
                     `).join('')
-                    : '没有需要额外处理的 readiness 提示。'}
+                    : '没有需要额外处理的恢复提示。'}
             </div>
         </article>
     `;
@@ -14766,10 +14766,10 @@ function buildRecoveryReadinessPanelMarkupState(state = recoveryReadinessState |
     return {
         state: normalizedState,
         panelState,
-        metaMarkup: buildOpsAlertPanelMetaMarkup(panelState, '暂未返回恢复 readiness 项。'),
+        metaMarkup: buildOpsAlertPanelMetaMarkup(panelState, '暂未返回恢复能力检查项。'),
         bodyMarkup: panelState.shouldRenderCards
             ? sections.map((section) => buildRecoveryReadinessCardMarkup(section)).join('')
-            : buildOpsAlertPanelEmptyMarkup(panelState.emptyMessage || '暂未返回恢复 readiness 项。')
+            : buildOpsAlertPanelEmptyMarkup(panelState.emptyMessage || '暂未返回恢复能力检查项。')
     };
 }
 
@@ -14780,8 +14780,8 @@ function renderRecoveryReadinessPanel() {
         gridId: 'recoveryReadinessGrid',
         resolveMarkupState: () => buildRecoveryReadinessPanelMarkupState(recoveryReadinessState || getDefaultRecoveryReadinessState()),
         applyMarkupState: (markupState, elements) => applyOpsAlertPanelMarkupElements(markupState, elements, {
-            fallbackMetaText: '暂未返回恢复 readiness 项。',
-            fallbackEmptyText: '暂未返回恢复 readiness 项。'
+            fallbackMetaText: '暂未返回恢复能力检查项。',
+            fallbackEmptyText: '暂未返回恢复能力检查项。'
         })
     });
 }
@@ -18001,7 +18001,7 @@ async function loadOpsAlertHealth(force = false) {
 async function fetchRecoveryReadinessPayload(headers = {}) {
     return requireOpsAlertWorkbenchMethod('fetchAdminWorkbenchRecoveryReadiness')(headers, {
         timeoutMs: RECOVERY_READINESS_FETCH_TIMEOUT_MS,
-        errorMessage: '加载恢复 readiness 状态失败'
+        errorMessage: '加载恢复能力检查状态失败'
     });
 }
 
@@ -18026,7 +18026,7 @@ function buildLocalRecoveryReadinessLoadingState(state = recoveryReadinessState 
     return {
         ...(state || getDefaultRecoveryReadinessState()),
         status: 'loading',
-        message: '正在加载恢复 readiness 状态...'
+        message: '正在加载恢复能力检查状态...'
     };
 }
 
@@ -18042,8 +18042,8 @@ function buildLocalRecoveryReadinessErrorState(error = null) {
         ...getDefaultRecoveryReadinessState(),
         status: 'error',
         message: error?.name === 'AbortError'
-            ? '加载恢复 readiness 状态超时；生产链路继续使用现有降级逻辑。'
-            : (error?.message || '恢复 readiness 状态暂不可用；生产链路继续使用现有降级逻辑。')
+            ? '加载恢复能力检查状态超时；生产链路继续使用现有降级逻辑。'
+            : (error?.message || '恢复能力检查暂不可用；生产链路继续使用现有降级逻辑。')
     };
 }
 
@@ -18138,7 +18138,6 @@ function buildExternalMonitoringProviderSummaryText(provider = {}) {
 function buildExternalMonitoringSmokeResultText(payload = {}) {
     const status = String(payload.status || '').trim().toLowerCase();
     const configured = Number(payload.configured || 0) || 0;
-    const delivered = Number(payload.delivered || 0) || 0;
     const failed = Number(payload.failed || 0) || 0;
     const providerSummary = (Array.isArray(payload.providers) ? payload.providers : [])
         .map((provider) => buildExternalMonitoringProviderSummaryText(provider))
@@ -18146,7 +18145,7 @@ function buildExternalMonitoringSmokeResultText(payload = {}) {
         .join('；');
 
     if (status === 'delivered') {
-        return `外部监控测试已送达 ${formatVerifyMonitorInteger(delivered)} 个通道；${providerSummary || '请到外部平台确认事件。'}`;
+        return '外部监控测试已送达。';
     }
     if (status === 'attempted') {
         return `已尝试发送，配置 ${formatVerifyMonitorInteger(configured)} 个通道、失败 ${formatVerifyMonitorInteger(failed)} 个；${providerSummary || '请检查通道凭证。'}`;
@@ -20494,7 +20493,7 @@ async function refreshOpsAlertHealthPanel() {
 }
 
 async function refreshRecoveryReadinessPanel() {
-    return refreshOpsAlertWorkspacePanel(loadRecoveryReadiness, '恢复 readiness 已刷新');
+    return refreshOpsAlertWorkspacePanel(loadRecoveryReadiness, '恢复能力检查已刷新');
 }
 
 async function refreshOpsAlertMonitorPanel() {
