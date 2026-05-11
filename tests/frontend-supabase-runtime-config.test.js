@@ -15022,8 +15022,9 @@ test('section visibility runtime externalizes element hiding and blocked overlay
     for (const pageSource of pageSources) {
         for (const marker of sharedMarkers) {
             assert.equal(pageSource.includes(marker), true, `public section pages should contain ${marker}`);
+        }
     }
-}
+});
 
 test('ops alert health runtime renders per-channel configuration detail cards for email delivery', () => {
     const configSource = readRepoFile('admin-config.js');
@@ -15063,7 +15064,6 @@ test('ops alert health page includes recovery readiness fail-open panel', () => 
     assert.match(workbenchSource, /normalizeAdminWorkbenchRecoveryReadinessPayload/);
     assert.match(styles, /\.recovery-readiness-grid/);
     assert.match(styles, /\.config-inline-note\[data-tone="success"\]/);
-});
 });
 
 test('final frontend runtime remnants route through delegated or bound listeners instead of inline attributes', () => {
