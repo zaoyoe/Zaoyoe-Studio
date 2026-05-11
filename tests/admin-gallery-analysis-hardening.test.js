@@ -227,3 +227,32 @@ test('vercel admin function gets an explicit longer max duration', () => {
 
     assert.equal(config.functions['api/admin.js'].maxDuration, 60);
 });
+
+test('vercel recovery readiness functions include non-runtime audit assets', () => {
+    const config = JSON.parse(readRepoFile('vercel.json'));
+    const requiredGlobParts = [
+        'api/_lib/*.js',
+        'api/public.js',
+        'docs/*.md',
+        'js/runtime-supabase-config.js',
+        'scripts/*.js',
+        'server/api-handlers/**/*.js',
+        'supabase/migrations/*.sql'
+    ];
+
+    for (const functionName of ['api/admin.js', 'api/public.js']) {
+        const includeFiles = String(config.functions?.[functionName]?.includeFiles || '');
+        assert.equal(
+            includeFiles.length <= 256,
+            true,
+            `${functionName} includeFiles should remain compatible with Vercel's functions schema`
+        );
+        for (const globPart of requiredGlobParts) {
+            assert.equal(
+                includeFiles.includes(globPart),
+                true,
+                `${functionName} should include ${globPart} for deployed readiness checks`
+            );
+        }
+    }
+});
