@@ -12,6 +12,9 @@ const {
     runReadinessGate: runPaymentRecoveryReadinessGate
 } = require('../../../../scripts/payment-readiness-gate');
 
+const DEFAULT_READINESS_CHECK_TIMEOUT_MS = 1800;
+const PAYMENT_READINESS_CHECK_TIMEOUT_MS = 4500;
+
 function normalizeText(value, maxLength = 500) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
 }
@@ -166,25 +169,64 @@ function buildProFallbackSection(sections = []) {
     };
 }
 
-async function runOptionalCheck(key, label, task) {
+function buildReadinessTimeoutError(label = 'Readiness', timeoutMs = 0) {
+    const error = new Error(`${label} 检查超过 ${timeoutMs}ms，已切换为降级可用。`);
+    error.code = 'readiness_check_timeout';
+    return error;
+}
+
+async function runWithReadinessTimeout(label, task, timeoutMs = DEFAULT_READINESS_CHECK_TIMEOUT_MS) {
+    const normalizedTimeoutMs = Math.max(0, Number(timeoutMs || 0));
+    if (normalizedTimeoutMs <= 0) {
+        return task();
+    }
+
+    let timeoutId = 0;
+    const timeoutPromise = new Promise((_, reject) => {
+        timeoutId = setTimeout(() => {
+            reject(buildReadinessTimeoutError(label, normalizedTimeoutMs));
+        }, normalizedTimeoutMs);
+        if (typeof timeoutId?.unref === 'function') {
+            timeoutId.unref();
+        }
+    });
+
     try {
-        return await task();
+        return await Promise.race([
+            Promise.resolve().then(task),
+            timeoutPromise
+        ]);
+    } finally {
+        if (timeoutId) {
+            clearTimeout(timeoutId);
+        }
+    }
+}
+
+async function runOptionalCheck(key, label, task, options = {}) {
+    try {
+        return await runWithReadinessTimeout(label, task, options.timeoutMs);
     } catch (error) {
         return buildUnavailableSection(key, label, error);
     }
 }
 
-async function buildRecoveryReadinessPayload({ env = process.env, now = new Date() } = {}) {
+async function buildRecoveryReadinessPayload({
+    env = process.env,
+    now = new Date(),
+    defaultTimeoutMs = DEFAULT_READINESS_CHECK_TIMEOUT_MS,
+    paymentTimeoutMs = PAYMENT_READINESS_CHECK_TIMEOUT_MS
+} = {}) {
     const [financialRecoveryDrill, paymentRecoveryLive, externalMonitoring] = await Promise.all([
         runOptionalCheck('financial_recovery_drill', '恢复演练', () => normalizeFinancialRecoveryDrillSection(
             runFinancialRecoveryDrillReadiness({ env })
-        )),
+        ), { timeoutMs: defaultTimeoutMs }),
         runOptionalCheck('payment_recovery_live', '支付积分库存链路', async () => normalizePaymentRecoverySection(
             await runPaymentRecoveryReadinessGate({ envFile: '' })
-        )),
+        ), { timeoutMs: paymentTimeoutMs }),
         runOptionalCheck('external_monitoring', '外部监控', () => normalizeExternalMonitoringSection(
             runExternalMonitoringReadiness({ env })
-        ))
+        ), { timeoutMs: defaultTimeoutMs })
     ]);
     const sections = [
         financialRecoveryDrill,
@@ -242,8 +284,11 @@ module.exports = async (req, res) => {
 };
 
 module.exports._private = {
+    DEFAULT_READINESS_CHECK_TIMEOUT_MS,
+    PAYMENT_READINESS_CHECK_TIMEOUT_MS,
     buildRecoveryReadinessPayload,
     buildProFallbackSection,
+    buildReadinessTimeoutError,
     buildUnavailableSection,
     normalizeExternalMonitoringSection,
     normalizeFinancialRecoveryDrillSection,
