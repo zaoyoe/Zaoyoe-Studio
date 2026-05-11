@@ -186,9 +186,6 @@ async function runWithReadinessTimeout(label, task, timeoutMs = DEFAULT_READINES
         timeoutId = setTimeout(() => {
             reject(buildReadinessTimeoutError(label, normalizedTimeoutMs));
         }, normalizedTimeoutMs);
-        if (typeof timeoutId?.unref === 'function') {
-            timeoutId.unref();
-        }
     });
 
     try {
