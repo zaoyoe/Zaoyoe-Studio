@@ -9,14 +9,29 @@
     const I18N_STORAGE_KEY = 'zaoyoe_language';
     const DEFAULT_LANG = 'zh';
     const SUPPORTED_LANGS = ['zh', 'en'];
+    const I18N_ASSET_VERSION_FALLBACK = '20260512_NAV_AUTH_I18N_CACHE_1';
     const I18N_ASSET_VERSION = (() => {
         try {
             const scriptUrl = new URL(document.currentScript?.src || '', window.location.href);
-            return scriptUrl.searchParams.get('v') || '20260501_I18N_STABLE_LANG_CACHE_1';
+            return scriptUrl.searchParams.get('v') || I18N_ASSET_VERSION_FALLBACK;
         } catch (error) {
-            return '20260501_I18N_STABLE_LANG_CACHE_1';
+            return I18N_ASSET_VERSION_FALLBACK;
         }
     })();
+    const LEGACY_TRANSLATION_FIXUPS = Object.freeze({
+        zh: Object.freeze({
+            'nav.verify': Object.freeze({ value: 'Gemini Pro', legacy: ['验证'] }),
+            'nav.gongyi': Object.freeze({ value: 'API中转', legacy: ['公益站', '公益站点'] }),
+            'home.entries.verify': Object.freeze({ value: 'Gemini Pro', legacy: ['验证'] }),
+            'home.entries.gongyi': Object.freeze({ value: 'API中转', legacy: ['公益站', '公益站点', 'API 中转'] })
+        }),
+        en: Object.freeze({
+            'nav.verify': Object.freeze({ value: 'Gemini Pro', legacy: ['Verify'] }),
+            'nav.gongyi': Object.freeze({ value: 'API Relay', legacy: ['Community Access', 'Gongyi'] }),
+            'home.entries.verify': Object.freeze({ value: 'Gemini Pro', legacy: ['Verify'] }),
+            'home.entries.gongyi': Object.freeze({ value: 'API Relay', legacy: ['Community Access', 'Gongyi'] })
+        })
+    });
 
     let translations = {};
     let currentLang = DEFAULT_LANG;
@@ -56,15 +71,50 @@
 
         try {
             const response = await fetch(`/lang/${lang}.json?v=${encodeURIComponent(I18N_ASSET_VERSION)}`, {
-                cache: 'force-cache'
+                cache: 'no-cache'
             });
             if (!response.ok) throw new Error(`Failed to load ${lang}.json`);
-            translations[lang] = await response.json();
+            translations[lang] = normalizeLoadedTranslations(lang, await response.json());
             return translations[lang];
         } catch (err) {
             console.error(`Failed to load translations for ${lang}:`, err);
             return {};
         }
+    }
+
+    function getNestedValue(source, key) {
+        return key.split('.').reduce((value, part) => {
+            if (!value || typeof value !== 'object') return undefined;
+            return value[part];
+        }, source);
+    }
+
+    function setNestedValue(source, key, value) {
+        const parts = key.split('.');
+        let target = source;
+        for (let index = 0; index < parts.length - 1; index += 1) {
+            const part = parts[index];
+            if (!target[part] || typeof target[part] !== 'object') {
+                target[part] = {};
+            }
+            target = target[part];
+        }
+        target[parts[parts.length - 1]] = value;
+    }
+
+    function normalizeLoadedTranslations(lang, payload) {
+        const data = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : {};
+        const fixups = LEGACY_TRANSLATION_FIXUPS[lang] || {};
+
+        Object.entries(fixups).forEach(([key, config]) => {
+            const currentValue = getNestedValue(data, key);
+            const currentText = String(currentValue || '').trim();
+            if (!currentText || config.legacy.includes(currentText)) {
+                setNestedValue(data, key, config.value);
+            }
+        });
+
+        return data;
     }
 
     /**

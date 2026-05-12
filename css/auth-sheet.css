@@ -8,7 +8,7 @@
     gap: 16px;
 }
 
-/* 20260509_AUTH_POPUP_STABLE_1 */
+/* 20260512_NAV_AUTH_GUEST_MENU_1 */
 :root {
     --auth-sheet-overlay: rgba(7, 9, 12, 0.28);
     --auth-sheet-overlay-filter: blur(14px) saturate(108%);
@@ -113,6 +113,13 @@ body.auth-sheet-open {
 
 .auth-display-none {
     display: none;
+}
+
+.avatar-dropdown:not(.is-authenticated) .auth-user-only,
+.avatar-dropdown[data-auth-state="guest"] .auth-user-only,
+.avatar-dropdown.is-authenticated .auth-guest-only,
+.avatar-dropdown[data-auth-state="authenticated"] .auth-guest-only {
+    display: none !important;
 }
 
 .auth-dropdown-layer {

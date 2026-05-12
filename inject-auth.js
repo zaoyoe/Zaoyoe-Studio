@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260509_AUTH_POPUP_STABLE_1';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260512_NAV_AUTH_GUEST_MENU_1';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260314_AUTH_I18N_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -208,6 +208,10 @@
             const profile = JSON.parse(raw);
 
             if (!profile || typeof profile !== 'object') return null;
+            if (!hasCachedProfileIdentity(profile) || !hasStoredAuthSessionCandidate()) {
+                localStorage.removeItem('cached_user_profile');
+                return null;
+            }
 
             if (profile.avatarUrl && (isGeneratedAvatarUrl(profile.avatarUrl) || isTransientAvatarUrl(profile.avatarUrl))) {
                 delete profile.avatarUrl;
@@ -217,6 +221,45 @@
             return profile;
         } catch (error) {
             console.warn('⚠️ Failed to read cached profile:', error?.message || error);
+            return null;
+        }
+    }
+
+    function hasCachedProfileIdentity(profile) {
+        if (!profile || typeof profile !== 'object') return false;
+        return !!(profile.objectId || profile.id || profile.user_id || profile.email);
+    }
+
+    function hasStoredAuthSessionCandidate() {
+        try {
+            return Object.keys(localStorage).some((key) => {
+                if (!key || !key.startsWith('sb-') || !key.endsWith('-auth-token')) return false;
+                const raw = localStorage.getItem(key);
+                if (!raw) return false;
+                const parsed = JSON.parse(raw);
+                const token = parsed?.access_token || parsed?.currentSession?.access_token;
+                if (!token) return false;
+
+                const payload = decodeStoredJwtPayload(token);
+                if (!payload?.exp) return true;
+
+                const now = Math.floor(Date.now() / 1000);
+                return payload.exp > now + 60;
+            });
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function decodeStoredJwtPayload(token) {
+        try {
+            if (!token || typeof token !== 'string') return null;
+            const parts = token.split('.');
+            if (parts.length < 2) return null;
+            const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+            const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+            return JSON.parse(atob(padded));
+        } catch (_) {
             return null;
         }
     }
@@ -242,8 +285,34 @@
         `;
     }
 
+    function syncDropdownAuthMode(dropdown, isAuthenticated) {
+        if (!dropdown) return;
+
+        const nextState = !!isAuthenticated;
+        dropdown.classList.toggle('is-authenticated', nextState);
+        dropdown.classList.toggle('is-guest', !nextState);
+        dropdown.dataset.authState = nextState ? 'authenticated' : 'guest';
+
+        const syncItems = (selector, shouldHide) => {
+            dropdown.querySelectorAll(selector).forEach((item) => {
+                item.hidden = shouldHide;
+                item.setAttribute('aria-hidden', shouldHide ? 'true' : 'false');
+                if (shouldHide) {
+                    item.setAttribute('tabindex', '-1');
+                } else {
+                    item.removeAttribute('tabindex');
+                }
+            });
+        };
+
+        syncItems('.auth-user-only', !nextState);
+        syncItems('.auth-guest-only', nextState);
+    }
+
     function buildDropdownHTML(profile) {
         const isLoggedIn = !!profile;
+        const userOnlyAttrs = isLoggedIn ? '' : ' hidden aria-hidden="true" tabindex="-1"';
+        const guestOnlyAttrs = isLoggedIn ? ' hidden aria-hidden="true" tabindex="-1"' : '';
 
         return `
             <div id="userDropdown" class="avatar-dropdown auth-dropdown-layer" data-auth-state="${isLoggedIn ? 'authenticated' : 'guest'}" aria-hidden="true">
@@ -263,7 +332,7 @@
                 </div>
 
                 <div class="dropdown-actions">
-                    <button type="button" class="dropdown-action auth-user-only" data-auth-action="profile">
+                    <button type="button" class="dropdown-action auth-user-only" data-auth-action="profile"${userOnlyAttrs}>
                         <i class="fas fa-user"></i>
                         <span data-i18n="common.profile">个人资料</span>
                     </button>
@@ -275,19 +344,19 @@
                         <i class="fas fa-box-open"></i>
                         <span data-i18n="wallet.myOrders">我的订单</span>
                     </button>
-                    <button type="button" class="dropdown-action auth-user-only" data-auth-action="switch-account">
+                    <button type="button" class="dropdown-action auth-user-only" data-auth-action="switch-account"${userOnlyAttrs}>
                         <i class="fas fa-exchange-alt"></i>
                         <span data-i18n="auth.switchAccount">切换账户</span>
                     </button>
-                    <button type="button" class="dropdown-action auth-user-only auth-display-none" id="enterStudioBtn" data-auth-action="studio">
+                    <button type="button" class="dropdown-action auth-user-only auth-display-none" id="enterStudioBtn" data-auth-action="studio"${userOnlyAttrs}>
                         <i class="fas fa-palette"></i>
                         <span data-i18n="admin.enterStudio">Enter Studio</span>
                     </button>
-                    <button type="button" class="dropdown-action auth-user-only" data-auth-action="logout">
+                    <button type="button" class="dropdown-action auth-user-only" data-auth-action="logout"${userOnlyAttrs}>
                         <i class="fas fa-sign-out-alt"></i>
                         <span data-i18n="common.logout">退出登录</span>
                     </button>
-                    <button type="button" class="dropdown-action auth-guest-only" data-auth-action="login">
+                    <button type="button" class="dropdown-action auth-guest-only" data-auth-action="login"${guestOnlyAttrs}>
                         <i class="fas fa-sign-in-alt"></i>
                         <span data-i18n="common.login">登录</span>
                     </button>
@@ -639,9 +708,7 @@
 
         const userDropdown = document.getElementById('userDropdown');
         if (userDropdown) {
-            userDropdown.classList.toggle('is-authenticated', !!cachedProfile);
-            userDropdown.classList.toggle('is-guest', !cachedProfile);
-            userDropdown.dataset.authState = cachedProfile ? 'authenticated' : 'guest';
+            syncDropdownAuthMode(userDropdown, !!cachedProfile);
         }
 
         if (!document.getElementById('loginModal')) {
@@ -1590,13 +1657,7 @@
     }
 
     function hasCachedAuthProfile() {
-        try {
-            const raw = localStorage.getItem('cached_user_profile');
-            if (!raw) return false;
-            return !!JSON.parse(raw);
-        } catch (_) {
-            return false;
-        }
+        return !!readCachedProfile();
     }
 
     function requestLoginFromDropdown(viewId = 'login') {
