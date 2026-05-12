@@ -562,7 +562,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
         './js/homepage-contract.js?v=20260512_HOMEPAGE_CONTRACT_VERIFY_I18N_1',
         './js/section-visibility.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
         './js/i18n.js?v=20260501_I18N_STABLE_LANG_CACHE_1',
-        './js/cache.js?v=20260505_HOME_GUESTBOOK_PROFILE_NAME_1',
+        './js/cache.js?v=20260512_HOME_CACHE_REFRESH_1',
         './js/homepage-prompts-data.js?v=20260501_HOME_PROMPTS_SUMMARY_1'
     ];
 
