@@ -12,6 +12,8 @@ function readRepoFile(relativePath) {
 test('auth dropdown keeps a guest menu before opening the login sheet', () => {
     const injectSource = readRepoFile('inject-auth.js');
     const authSource = readRepoFile('supabase-auth-functions.js');
+    const navAuthFastPaintSource = readRepoFile('js/nav-auth-fast-paint.js');
+    const authSheetStyles = readRepoFile('css/auth-sheet.css');
     const homeStyles = readRepoFile('css/framer_home.css');
     const criticalStyles = readRepoFile('css/framer_home_critical.css');
 
@@ -24,6 +26,11 @@ test('auth dropdown keeps a guest menu before opening the login sheet', () => {
         injectSource.includes('<span data-i18n="common.login">登录</span>'),
         true,
         'guest login action should use the shared bilingual login key'
+    );
+    assert.equal(
+        injectSource.includes('const userOnlyAttrs = isLoggedIn ? \'\' : \' hidden aria-hidden="true" tabindex="-1"\';'),
+        true,
+        'guest dropdown should hide authenticated-only actions in the rendered markup before CSS loads'
     );
     assert.match(
         injectSource,
@@ -56,8 +63,18 @@ test('auth dropdown keeps a guest menu before opening the login sheet', () => {
         true,
         'login and logout UI updates should switch the dropdown between authenticated and guest modes'
     );
+    assert.equal(
+        authSource.includes('!hasStoredAuthSessionCandidate()') && navAuthFastPaintSource.includes('!hasStoredAuthSessionCandidate()'),
+        true,
+        'cached profiles without a Supabase session should not make the nav render as authenticated'
+    );
+    assert.equal(
+        authSource.includes("item.hidden = shouldHide;"),
+        true,
+        'auth runtime should update hidden attributes when switching guest/authenticated dropdown modes'
+    );
 
-    for (const source of [homeStyles, criticalStyles]) {
+    for (const source of [authSheetStyles, homeStyles, criticalStyles]) {
         assert.equal(
             source.includes('.avatar-dropdown:not(.is-authenticated) .auth-user-only'),
             true,

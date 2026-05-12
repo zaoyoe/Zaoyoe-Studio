@@ -74,6 +74,10 @@
 
             const profile = JSON.parse(raw);
             if (!profile || typeof profile !== 'object') return null;
+            if (!hasCachedProfileIdentity(profile) || !hasStoredAuthSessionCandidate()) {
+                localStorage.removeItem(CACHE_KEY);
+                return null;
+            }
 
             if (profile.avatarUrl && (isGeneratedAvatarUrl(profile.avatarUrl) || isTransientAvatarUrl(profile.avatarUrl))) {
                 delete profile.avatarUrl;
@@ -81,6 +85,45 @@
             }
 
             return profile;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function hasCachedProfileIdentity(profile) {
+        if (!profile || typeof profile !== 'object') return false;
+        return !!(profile.objectId || profile.id || profile.user_id || profile.email);
+    }
+
+    function hasStoredAuthSessionCandidate() {
+        try {
+            return Object.keys(localStorage).some((key) => {
+                if (!key || !key.startsWith('sb-') || !key.endsWith('-auth-token')) return false;
+                const raw = localStorage.getItem(key);
+                if (!raw) return false;
+                const parsed = JSON.parse(raw);
+                const token = parsed?.access_token || parsed?.currentSession?.access_token;
+                if (!token) return false;
+
+                const payload = decodeStoredJwtPayload(token);
+                if (!payload?.exp) return true;
+
+                const now = Math.floor(Date.now() / 1000);
+                return payload.exp > now + 60;
+            });
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function decodeStoredJwtPayload(token) {
+        try {
+            if (!token || typeof token !== 'string') return null;
+            const parts = token.split('.');
+            if (parts.length < 2) return null;
+            const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+            const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+            return JSON.parse(atob(padded));
         } catch (_) {
             return null;
         }

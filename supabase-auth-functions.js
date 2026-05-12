@@ -337,6 +337,21 @@ function syncUserDropdownAuthMode(isAuthenticated) {
     dropdown.classList.toggle('is-authenticated', nextState);
     dropdown.classList.toggle('is-guest', !nextState);
     dropdown.dataset.authState = nextState ? 'authenticated' : 'guest';
+
+    const syncItems = (selector, shouldHide) => {
+        dropdown.querySelectorAll(selector).forEach((item) => {
+            item.hidden = shouldHide;
+            item.setAttribute('aria-hidden', shouldHide ? 'true' : 'false');
+            if (shouldHide) {
+                item.setAttribute('tabindex', '-1');
+            } else {
+                item.removeAttribute('tabindex');
+            }
+        });
+    };
+
+    syncItems('.auth-user-only', !nextState);
+    syncItems('.auth-guest-only', nextState);
 }
 
 function positionUserDropdownFromAuthButton(dropdown) {
@@ -1535,7 +1550,12 @@ function readCachedUserProfile() {
     try {
         const raw = localStorage.getItem('cached_user_profile');
         if (!raw) return null;
-        return JSON.parse(raw);
+        const profile = JSON.parse(raw);
+        if (!hasCachedIdentity(profile) || !hasStoredAuthSessionCandidate()) {
+            localStorage.removeItem('cached_user_profile');
+            return null;
+        }
+        return profile;
     } catch (e) {
         return null;
     }
@@ -1544,6 +1564,27 @@ function readCachedUserProfile() {
 function hasCachedIdentity(profile) {
     if (!profile) return false;
     return !!(profile.objectId || profile.id || profile.user_id || profile.email);
+}
+
+function hasStoredAuthSessionCandidate() {
+    try {
+        return Object.keys(localStorage).some((key) => {
+            if (!key || !key.startsWith('sb-') || !key.endsWith('-auth-token')) return false;
+            const raw = localStorage.getItem(key);
+            if (!raw) return false;
+            const parsed = JSON.parse(raw);
+            const token = parsed?.access_token || parsed?.currentSession?.access_token;
+            if (!token) return false;
+
+            const payload = decodeJwtPayload(token);
+            if (!payload?.exp) return true;
+
+            const now = Math.floor(Date.now() / 1000);
+            return payload.exp > now + 60;
+        });
+    } catch (_) {
+        return false;
+    }
 }
 
 function getMatchedCachedProfile(user, cachedProfile = readCachedUserProfile()) {
@@ -3991,16 +4032,11 @@ async function initializeAuthPageBoot() {
     clearLegacyRememberedAuthSecrets();
 
     // 🆕 Instant UI restoration from cache (prevents avatar flash on hard refresh)
-    const cachedProfile = localStorage.getItem('cached_user_profile');
+    const cachedProfile = readCachedUserProfile();
     if (cachedProfile) {
-        try {
-            const user = JSON.parse(cachedProfile);
-            console.log('⚡ Instant restore from cached profile:', user.nickname);
-            updateUserUI(user);
-            scheduleSupabaseAuthProfileModalWarmup('cached-profile');
-        } catch (e) {
-            console.warn('Failed to parse cached profile:', e);
-        }
+        console.log('⚡ Instant restore from cached profile:', cachedProfile.nickname);
+        updateUserUI(cachedProfile);
+        scheduleSupabaseAuthProfileModalWarmup('cached-profile');
     }
 
     // 等待 Supabase 客户端初始化

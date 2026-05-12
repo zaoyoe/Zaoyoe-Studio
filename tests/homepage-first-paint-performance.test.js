@@ -51,12 +51,12 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should keep cache-busting the full static hero stability styles'
     );
     assert.equal(
-        indexSource.includes('./js/nav-auth-fast-paint.js?v=20260501_NAV_AUTH_FAST_PAINT_1'),
+        indexSource.includes('./js/nav-auth-fast-paint.js?v=20260512_NAV_AUTH_GUEST_MENU_1'),
         true,
         'homepage should load the cached nav auth fast-paint helper before the lower auth runtime'
     );
     assert.ok(
-        indexSource.indexOf('./js/nav-auth-fast-paint.js?v=20260501_NAV_AUTH_FAST_PAINT_1') < indexSource.indexOf('./supabase-auth-functions.js?v=20260509_GOOGLE_POPUP_STABLE_1'),
+        indexSource.indexOf('./js/nav-auth-fast-paint.js?v=20260512_NAV_AUTH_GUEST_MENU_1') < indexSource.indexOf('./supabase-auth-functions.js?v=20260512_NAV_AUTH_GUEST_MENU_1'),
         'homepage nav auth fast-paint helper should run before Supabase auth hydration'
     );
     assert.match(
@@ -561,7 +561,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
         './js/site-config.js?v=20260510_SITE_ASSET_CDN_1',
         './js/homepage-contract.js?v=20260512_HOMEPAGE_CONTRACT_VERIFY_I18N_1',
         './js/section-visibility.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
-        './js/i18n.js?v=20260501_I18N_STABLE_LANG_CACHE_1',
+        './js/i18n.js?v=20260512_NAV_AUTH_I18N_CACHE_1',
         './js/cache.js?v=20260512_HOME_CACHE_REFRESH_1',
         './js/homepage-prompts-data.js?v=20260501_HOME_PROMPTS_SUMMARY_1'
     ];
@@ -623,8 +623,8 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
     );
     assert.match(
         i18nSource,
-        /fetch\(`\/lang\/\$\{lang\}\.json\?v=\$\{encodeURIComponent\(I18N_ASSET_VERSION\)\}`,\s*\{\s*cache: 'force-cache'\s*\}\)/,
-        'i18n should fetch language JSON with browser-cache-friendly options'
+        /fetch\(`\/lang\/\$\{lang\}\.json\?v=\$\{encodeURIComponent\(I18N_ASSET_VERSION\)\}`,\s*\{\s*cache: 'no-cache'\s*\}\)/,
+        'i18n should revalidate language JSON so stale browser caches cannot overwrite fresh static nav copy'
     );
     assert.ok(
         vercelConfig.headers.some((entry) => {
