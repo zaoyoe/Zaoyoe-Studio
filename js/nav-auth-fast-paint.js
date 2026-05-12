@@ -107,7 +107,7 @@
         button.type = 'button';
         button.className = `login-trigger-btn${isLoggedIn ? ' logged-in' : ''}`;
         button.dataset.authFastPaint = '1';
-        button.setAttribute('aria-label', isLoggedIn ? 'Open account menu' : 'Open sign in panel');
+        button.setAttribute('aria-label', 'Open account menu');
 
         appendDefaultIcon(button, hasAvatar);
 

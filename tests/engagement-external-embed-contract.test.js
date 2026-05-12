@@ -144,7 +144,7 @@ test('admin studio exposes external embed governance and deployment controls', (
     assert.match(engagementJs, /engagement-external-submit-btn/);
     assert.match(engagementJs, /data-engagement-action="copy-external-embed-snippet"/);
     assert.match(engagementJs, /engagement-rule-form engagement-management-form engagement-external-form/);
-    assert.match(engagementJs, /公益站嵌入代码/);
+    assert.match(engagementJs, /API中转嵌入代码/);
     assert.match(engagementJs, /排障与回流观测/);
     assert.match(engagementJs, /异常诊断/);
     assert.match(engagementJs, /engagement-external-troubleshoot/);

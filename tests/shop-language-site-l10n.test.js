@@ -112,13 +112,13 @@ test('shop category aliases localize for zh and en storefront views', () => {
     const shopClientSource = readRepoFile('js/shop-client.js');
 
     assert.deepEqual(zh.shop.categoryLabels, {
-        communityAccess: '公益站',
+        communityAccess: 'API中转',
         virtualCard: '虚拟卡',
         account: '账号',
         other: '其他'
     }, 'Chinese shop translations should define canonical category labels');
     assert.deepEqual(en.shop.categoryLabels, {
-        communityAccess: 'Community Access',
+        communityAccess: 'API Relay',
         virtualCard: 'Virtual Card',
         account: 'Account',
         other: 'Other'

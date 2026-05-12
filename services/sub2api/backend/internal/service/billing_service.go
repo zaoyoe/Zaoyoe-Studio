@@ -214,7 +214,7 @@ func (s *BillingService) initFallbackPricing() {
 		CacheReadPricePerTokenPriority: 0.25e-6,
 		SupportsCacheBreakdown:         false,
 	}
-	// OpenAI GPT-5.4（业务指定价格）
+	// OpenAI GPT-5.4 / GPT-5.5（业务指定价格）
 	s.fallbackPrices["gpt-5.4"] = &ModelPricing{
 		InputPricePerToken:             2.5e-6,  // $2.5 per MTok
 		InputPricePerTokenPriority:     5e-6,    // $5 per MTok
@@ -228,6 +228,7 @@ func (s *BillingService) initFallbackPricing() {
 		LongContextInputMultiplier:     openAIGPT54LongContextInputMultiplier,
 		LongContextOutputMultiplier:    openAIGPT54LongContextOutputMultiplier,
 	}
+	s.fallbackPrices["gpt-5.5"] = s.fallbackPrices["gpt-5.4"]
 	s.fallbackPrices["gpt-5.4-mini"] = &ModelPricing{
 		InputPricePerToken:     7.5e-7,
 		OutputPricePerToken:    4.5e-6,
@@ -320,6 +321,8 @@ func (s *BillingService) getFallbackPricing(model string) *ModelPricing {
 			return s.fallbackPrices["gpt-5.4-mini"]
 		case "gpt-5.4-nano":
 			return s.fallbackPrices["gpt-5.4-nano"]
+		case "gpt-5.5":
+			return s.fallbackPrices["gpt-5.5"]
 		case "gpt-5.4":
 			return s.fallbackPrices["gpt-5.4"]
 		case "gpt-5.2":
@@ -666,7 +669,7 @@ func (s *BillingService) shouldApplySessionLongContextPricing(tokens UsageTokens
 
 func isOpenAIGPT54Model(model string) bool {
 	normalized := normalizeCodexModel(strings.TrimSpace(strings.ToLower(model)))
-	return normalized == "gpt-5.4"
+	return normalized == "gpt-5.4" || normalized == "gpt-5.5"
 }
 
 // CalculateCostWithConfig 使用配置中的默认倍率计算费用

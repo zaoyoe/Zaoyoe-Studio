@@ -124,10 +124,10 @@ function buildExternalEmbedDiagnostics(policy = {}) {
         preflight_url: buildExternalEmbedPreflightUrl(normalized),
         smoke_command: 'npm run smoke:engagement-external',
         deployment_steps: [
-            '复制后台生成的嵌入代码到公益站公共页',
+            '复制后台生成的嵌入代码到API中转公共页',
             '确认浏览器 Network 中 engagement-external-embed.js、chat-widget-loader.js、ChatWidget.js 均加载成功',
             '运行 npm run smoke:engagement-external 做外部 origin 模拟验收',
-            '真实公益站访问后，在客服系统效果分析中确认 view/click/dismiss 回流'
+            '真实API中转访问后，在客服系统效果分析中确认 view/click/dismiss 回流'
         ],
         allowed_origin_count: normalized.allowed_origins.length,
         has_gongyi_origin: hasGongyiOrigin,
@@ -141,9 +141,9 @@ function buildExternalEmbedDiagnostics(policy = {}) {
             },
             {
                 id: 'gongyi_origin',
-                label: '公益站白名单',
+                label: 'API中转白名单',
                 status: hasGongyiOrigin ? 'ok' : 'warning',
-                detail: hasGongyiOrigin ? '公益站域名已在 CORS 白名单内' : '需要加入 https://gongyi.zaoyoe.com'
+                detail: hasGongyiOrigin ? 'API中转域名已在 CORS 白名单内' : '需要加入 https://gongyi.zaoyoe.com'
             },
             {
                 id: 'asset_base',

@@ -26,7 +26,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'static hero title should render immediately and still be localized by i18n'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260509_HOME_GONGYI_I18N_1'),
+        indexSource.includes('./js/framer_home.js?v=20260512_HOME_GONGYI_BRAND_VERIFY_I18N_1'),
         true,
         'index.html should cache-bust the first-paint homepage runtime'
     );
@@ -559,7 +559,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
         './js/runtime-supabase-config.js?v=20260510_REALTIME_GRACEFUL_FALLBACK_1',
         './supabase-client.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1',
         './js/site-config.js?v=20260510_SITE_ASSET_CDN_1',
-        './js/homepage-contract.js?v=20260430_HOMEPAGE_BILINGUAL_FIELDS_1',
+        './js/homepage-contract.js?v=20260512_HOMEPAGE_CONTRACT_VERIFY_I18N_1',
         './js/section-visibility.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
         './js/i18n.js?v=20260501_I18N_STABLE_LANG_CACHE_1',
         './js/cache.js?v=20260505_HOME_GUESTBOOK_PROFILE_NAME_1',

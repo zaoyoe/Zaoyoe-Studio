@@ -226,7 +226,7 @@
         const avatarSeed = profile?.email || profile?.username || profile?.nickname || 'User';
         const avatarUrl = profile?.avatarUrl || (isLoggedIn ? getInstantFallbackAvatarUrl(avatarSeed) : '');
         const hasAvatar = !!(isLoggedIn && avatarUrl);
-        const label = isLoggedIn ? 'Open account menu' : 'Open sign in panel';
+        const label = 'Open account menu';
 
         return `
             <button id="authBtn" class="login-trigger-btn${isLoggedIn ? ' logged-in' : ''}" type="button" aria-label="${label}">
@@ -242,9 +242,11 @@
         `;
     }
 
-    function buildDropdownHTML() {
+    function buildDropdownHTML(profile) {
+        const isLoggedIn = !!profile;
+
         return `
-            <div id="userDropdown" class="avatar-dropdown auth-dropdown-layer" aria-hidden="true">
+            <div id="userDropdown" class="avatar-dropdown auth-dropdown-layer" data-auth-state="${isLoggedIn ? 'authenticated' : 'guest'}" aria-hidden="true">
                 <div class="dropdown-header">
                     <button type="button" class="dropdown-notif-btn" id="dropdownNotifBtn" data-auth-action="notifications" aria-label="${PERSONAL_MESSAGE_BUTTON_LABEL}" title="${PERSONAL_MESSAGE_BUTTON_LABEL}">
                         <i class="far fa-bell"></i>
@@ -261,7 +263,7 @@
                 </div>
 
                 <div class="dropdown-actions">
-                    <button type="button" class="dropdown-action" data-auth-action="profile">
+                    <button type="button" class="dropdown-action auth-user-only" data-auth-action="profile">
                         <i class="fas fa-user"></i>
                         <span data-i18n="common.profile">个人资料</span>
                     </button>
@@ -273,17 +275,21 @@
                         <i class="fas fa-box-open"></i>
                         <span data-i18n="wallet.myOrders">我的订单</span>
                     </button>
-                    <button type="button" class="dropdown-action" data-auth-action="switch-account">
+                    <button type="button" class="dropdown-action auth-user-only" data-auth-action="switch-account">
                         <i class="fas fa-exchange-alt"></i>
                         <span data-i18n="auth.switchAccount">切换账户</span>
                     </button>
-                    <button type="button" class="dropdown-action auth-display-none" id="enterStudioBtn" data-auth-action="studio">
+                    <button type="button" class="dropdown-action auth-user-only auth-display-none" id="enterStudioBtn" data-auth-action="studio">
                         <i class="fas fa-palette"></i>
                         <span data-i18n="admin.enterStudio">Enter Studio</span>
                     </button>
-                    <button type="button" class="dropdown-action" data-auth-action="logout">
+                    <button type="button" class="dropdown-action auth-user-only" data-auth-action="logout">
                         <i class="fas fa-sign-out-alt"></i>
                         <span data-i18n="common.logout">退出登录</span>
+                    </button>
+                    <button type="button" class="dropdown-action auth-guest-only" data-auth-action="login">
+                        <i class="fas fa-sign-in-alt"></i>
+                        <span data-i18n="common.login">登录</span>
                     </button>
                 </div>
             </div>
@@ -628,7 +634,14 @@
         }
 
         if (!document.getElementById('userDropdown')) {
-            document.body.insertAdjacentHTML('beforeend', buildDropdownHTML());
+            document.body.insertAdjacentHTML('beforeend', buildDropdownHTML(cachedProfile));
+        }
+
+        const userDropdown = document.getElementById('userDropdown');
+        if (userDropdown) {
+            userDropdown.classList.toggle('is-authenticated', !!cachedProfile);
+            userDropdown.classList.toggle('is-guest', !cachedProfile);
+            userDropdown.dataset.authState = cachedProfile ? 'authenticated' : 'guest';
         }
 
         if (!document.getElementById('loginModal')) {
@@ -1576,6 +1589,29 @@
         authBtn?.setAttribute('aria-expanded', 'false');
     }
 
+    function hasCachedAuthProfile() {
+        try {
+            const raw = localStorage.getItem('cached_user_profile');
+            if (!raw) return false;
+            return !!JSON.parse(raw);
+        } catch (_) {
+            return false;
+        }
+    }
+
+    function requestLoginFromDropdown(viewId = 'login') {
+        closeDropdown();
+
+        if (typeof window.requestLoginModalOpen === 'function') {
+            window.requestLoginModalOpen(viewId);
+            return;
+        }
+
+        openLoginModal(viewId).catch((error) => {
+            console.error('Failed to open auth sheet:', error);
+        });
+    }
+
     function hasActiveShopModalBehindAuthSheet() {
         return !!document.querySelector('#shopPurchaseModal.active, #shopSuccessModal.active');
     }
@@ -1926,17 +1962,14 @@
         const dropdown = document.getElementById('userDropdown');
         if (!dropdown || dropdown.dataset.bound === '1') return;
 
+        const guestLoginActions = new Set(['notifications', 'profile', 'wallet', 'orders', 'switch-account', 'studio', 'logout']);
+
         dropdown.addEventListener('click', (event) => {
             const action = event.target.closest('[data-auth-action]')?.dataset.authAction;
             if (!action) return;
 
             event.preventDefault();
             event.stopPropagation();
-
-            if (action === 'notifications') {
-                window.handleDropdownNotifClick?.(event);
-                return;
-            }
 
             if (action === 'language') {
                 window.toggleLanguage?.(event);
@@ -1945,6 +1978,16 @@
 
             if (action === 'theme') {
                 window.toggleTheme?.(event);
+                return;
+            }
+
+            if (action === 'login' || (!hasCachedAuthProfile() && guestLoginActions.has(action))) {
+                requestLoginFromDropdown('login');
+                return;
+            }
+
+            if (action === 'notifications') {
+                window.handleDropdownNotifClick?.(event);
                 return;
             }
 

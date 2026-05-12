@@ -5295,8 +5295,70 @@ class AdminChat {
         };
     }
 
+    parseOpsAlertTimestampMs(value = '') {
+        if (value instanceof Date) {
+            const timestamp = value.getTime();
+            return Number.isFinite(timestamp) ? timestamp : 0;
+        }
+        const timestamp = Date.parse(String(value || '').trim());
+        return Number.isFinite(timestamp) ? timestamp : 0;
+    }
+
+    getOpsAlertActivityTimestampMs(alert = {}) {
+        return Math.max(
+            this.parseOpsAlertTimestampMs(alert.updated_at || alert.updatedAt),
+            this.parseOpsAlertTimestampMs(alert.delivered_at || alert.deliveredAt),
+            this.parseOpsAlertTimestampMs(alert.created_at || alert.createdAt),
+            this.parseOpsAlertTimestampMs(alert.sortTimestamp),
+            this.parseOpsAlertTimestampMs(alert.timestamp)
+        );
+    }
+
+    isResolvedOpsAlertCaseStaleForAlert(caseRecord = null, alert = {}) {
+        if (String(caseRecord?.status || '').trim().toLowerCase() !== 'resolved') {
+            return false;
+        }
+        const alertActivityAt = this.getOpsAlertActivityTimestampMs(alert);
+        const caseClosedAt = this.parseOpsAlertTimestampMs(caseRecord.last_action_at)
+            || this.parseOpsAlertTimestampMs(caseRecord.updated_at)
+            || this.parseOpsAlertTimestampMs(caseRecord.created_at);
+        return alertActivityAt > 0 && caseClosedAt > 0 && alertActivityAt > caseClosedAt;
+    }
+
+    buildImplicitlyReopenedOpsAlertCaseRecord(caseRecord = {}, alert = {}) {
+        const reopenedAt = String(
+            alert.updated_at
+            || alert.updatedAt
+            || alert.delivered_at
+            || alert.deliveredAt
+            || alert.created_at
+            || alert.createdAt
+            || caseRecord.updated_at
+            || caseRecord.last_action_at
+            || ''
+        ).trim();
+        return {
+            ...caseRecord,
+            status: 'open',
+            resolution: '',
+            last_action: 'reopened',
+            last_action_at: reopenedAt || caseRecord.last_action_at || '',
+            updated_at: reopenedAt || caseRecord.updated_at || '',
+            metadata: {
+                ...(caseRecord.metadata && typeof caseRecord.metadata === 'object' && !Array.isArray(caseRecord.metadata)
+                    ? caseRecord.metadata
+                    : {}),
+                implicit_reopen_reason: 'newer_alert_after_resolved_case',
+                implicit_reopen_alert_job_id: String(alert.id || '').trim() || null
+            }
+        };
+    }
+
     applyOpsAlertCaseRecord(alert = {}, row = null) {
-        const caseRecord = row ? this.normalizeOpsAlertCaseRecord(row) : null;
+        const normalizedCaseRecord = row ? this.normalizeOpsAlertCaseRecord(row) : null;
+        const caseRecord = this.isResolvedOpsAlertCaseStaleForAlert(normalizedCaseRecord, alert)
+            ? this.buildImplicitlyReopenedOpsAlertCaseRecord(normalizedCaseRecord, alert)
+            : normalizedCaseRecord;
         alert.caseRecord = caseRecord;
         alert.case_status = caseRecord?.status || '';
         alert.case_owner_admin_id = caseRecord?.owner_admin_id || '';

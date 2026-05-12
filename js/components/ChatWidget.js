@@ -12714,10 +12714,14 @@ class ChatWidget {
         if (payload.ticket_id) return '工单号';
         if (payload.order_id) return '订单号';
         if (payload.payment_order_id) return '充值单号';
+        if (payload.verification_id) return '验证任务';
+        if (payload.product_id) return '商品';
         if (payload.provider_order_no) return '支付单号';
         if (payload.message_id) return '消息ID';
         if (payload.session_id) return '会话ID';
         if (payload.user_id) return '用户ID';
+        if (payload.admin_id || payload.admin_email) return '管理员';
+        if (payload.email || payload.user_email || payload.sender_email) return '邮箱';
         if (payload.target_id) return '目标';
         return '';
     }
@@ -12727,22 +12731,55 @@ class ChatWidget {
             payload.ticket_id
             || payload.order_id
             || payload.payment_order_id
+            || payload.verification_id
+            || payload.product_id
             || payload.provider_order_no
             || payload.message_id
             || payload.session_id
             || payload.user_id
+            || payload.admin_email
+            || payload.admin_id
+            || payload.email
+            || payload.user_email
+            || payload.sender_email
             || payload.target_id
             || ''
         ).trim();
     }
 
-    getOpsAlertTargetId(payload = {}) {
+    buildOpsAlertSummaryTargetId(payload = {}, options = {}) {
+        const summaryAlertType = String(options.alertType || payload.summary_type || '').trim().toLowerCase();
+        if (!summaryAlertType || !summaryAlertType.endsWith('_summary')) {
+            return '';
+        }
+        return `ops_summary:${summaryAlertType}`;
+    }
+
+    buildOpsAlertLegacySummaryTargetId(payload = {}, options = {}) {
+        const summaryAlertType = String(options.alertType || payload.summary_type || '').trim().toLowerCase();
+        const summaryDedupeKey = String(options.dedupeKey || payload.summary_dedupe_key || payload.dedupe_key || '').trim();
+        if (!summaryAlertType || !summaryDedupeKey || !summaryAlertType.endsWith('_summary')) {
+            return '';
+        }
+        return `ops_summary:${summaryAlertType}:${summaryDedupeKey}`;
+    }
+
+    getOpsAlertTargetId(payload = {}, options = {}) {
+        const summaryTargetId = this.buildOpsAlertSummaryTargetId(payload, options);
+        const payloadTargetId = String(payload.target_id || '').trim();
+        if (summaryTargetId && (!payloadTargetId || payloadTargetId === summaryTargetId || payloadTargetId.startsWith(`${summaryTargetId}:`))) {
+            return summaryTargetId;
+        }
         return String(
-            payload.target_id
+            payloadTargetId
             || payload.order_id
             || payload.payment_order_id
             || payload.ticket_id
+            || payload.verification_id
+            || payload.product_id
+            || payload.admin_id
             || payload.message_id
+            || summaryTargetId
             || payload.id
             || ''
         ).trim();
@@ -12803,6 +12840,80 @@ class ChatWidget {
 
     buildOpsAlertCaseKey(categoryKey = '', targetId = '') {
         return `${String(categoryKey || '').trim().toLowerCase()}::${String(targetId || '').trim()}`;
+    }
+
+    getOpsAlertCaseTargetIds(alert = {}) {
+        const targetIds = [String(alert.caseTargetId || '').trim()];
+        const legacySummaryTargetId = this.buildOpsAlertLegacySummaryTargetId(alert.payload || {}, {
+            alertType: alert.alertType || alert.alert_type || '',
+            dedupeKey: alert.dedupe_key || alert.dedupeKey || ''
+        });
+        if (legacySummaryTargetId) {
+            targetIds.push(legacySummaryTargetId);
+        }
+        return Array.from(new Set(targetIds.filter(Boolean)));
+    }
+
+    getOpsAlertSummaryCaseGroupKey(alert = {}) {
+        const alertType = String(alert.alertType || alert.alert_type || alert.payload?.summary_type || '').trim().toLowerCase();
+        if (!alertType || !alertType.endsWith('_summary')) {
+            return '';
+        }
+        return `${String(alert.caseCategoryKey || '').trim().toLowerCase()}::${alertType}`;
+    }
+
+    pickPreferredOpsAlertCaseRecord(current = null, candidate = null) {
+        if (!candidate) {
+            return current || null;
+        }
+        if (!current) {
+            return candidate;
+        }
+        const currentResolved = String(current.status || '').trim().toLowerCase() === 'resolved';
+        const candidateResolved = String(candidate.status || '').trim().toLowerCase() === 'resolved';
+        if (candidateResolved !== currentResolved) {
+            return candidateResolved ? candidate : current;
+        }
+        const currentTime = Date.parse(current.updated_at || current.last_action_at || current.created_at || '') || 0;
+        const candidateTime = Date.parse(candidate.updated_at || candidate.last_action_at || candidate.created_at || '') || 0;
+        return candidateTime >= currentTime ? candidate : current;
+    }
+
+    buildOpsAlertSummaryFallbackCaseMap(alerts = [], caseMap = new Map()) {
+        const summaryCaseByGroup = new Map();
+        (Array.isArray(alerts) ? alerts : []).forEach((alert) => {
+            const groupKey = this.getOpsAlertSummaryCaseGroupKey(alert);
+            if (!groupKey) {
+                return;
+            }
+            this.getOpsAlertCaseTargetIds(alert)
+                .filter((targetId) => targetId && targetId !== alert.caseTargetId)
+                .forEach((targetId) => {
+                    const legacyCase = caseMap.get(this.buildOpsAlertCaseKey(alert.caseCategoryKey, targetId));
+                    if (!legacyCase) {
+                        return;
+                    }
+                    summaryCaseByGroup.set(
+                        groupKey,
+                        this.pickPreferredOpsAlertCaseRecord(summaryCaseByGroup.get(groupKey), legacyCase)
+                    );
+                });
+        });
+
+        const fallbackMap = new Map();
+        (Array.isArray(alerts) ? alerts : []).forEach((alert) => {
+            const groupKey = this.getOpsAlertSummaryCaseGroupKey(alert);
+            const fallbackCase = groupKey ? summaryCaseByGroup.get(groupKey) : null;
+            if (!fallbackCase || !alert.caseCategoryKey || !alert.caseTargetId) {
+                return;
+            }
+            fallbackMap.set(this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId), {
+                ...fallbackCase,
+                category_key: String(alert.caseCategoryKey || '').trim().toLowerCase(),
+                target_id: String(alert.caseTargetId || '').trim()
+            });
+        });
+        return fallbackMap;
     }
 
     isMissingOpsAlertCasesTableError(error) {
@@ -12978,8 +13089,70 @@ class ChatWidget {
         };
     }
 
+    parseOpsAlertTimestampMs(value = '') {
+        if (value instanceof Date) {
+            const timestamp = value.getTime();
+            return Number.isFinite(timestamp) ? timestamp : 0;
+        }
+        const timestamp = Date.parse(String(value || '').trim());
+        return Number.isFinite(timestamp) ? timestamp : 0;
+    }
+
+    getOpsAlertActivityTimestampMs(alert = {}) {
+        return Math.max(
+            this.parseOpsAlertTimestampMs(alert.updated_at || alert.updatedAt),
+            this.parseOpsAlertTimestampMs(alert.delivered_at || alert.deliveredAt),
+            this.parseOpsAlertTimestampMs(alert.created_at || alert.createdAt),
+            this.parseOpsAlertTimestampMs(alert.sortTimestamp),
+            this.parseOpsAlertTimestampMs(alert.timestamp)
+        );
+    }
+
+    isResolvedOpsAlertCaseStaleForAlert(caseRecord = null, alert = {}) {
+        if (String(caseRecord?.status || '').trim().toLowerCase() !== 'resolved') {
+            return false;
+        }
+        const alertActivityAt = this.getOpsAlertActivityTimestampMs(alert);
+        const caseClosedAt = this.parseOpsAlertTimestampMs(caseRecord.last_action_at)
+            || this.parseOpsAlertTimestampMs(caseRecord.updated_at)
+            || this.parseOpsAlertTimestampMs(caseRecord.created_at);
+        return alertActivityAt > 0 && caseClosedAt > 0 && alertActivityAt > caseClosedAt;
+    }
+
+    buildImplicitlyReopenedOpsAlertCaseRecord(caseRecord = {}, alert = {}) {
+        const reopenedAt = String(
+            alert.updated_at
+            || alert.updatedAt
+            || alert.delivered_at
+            || alert.deliveredAt
+            || alert.created_at
+            || alert.createdAt
+            || caseRecord.updated_at
+            || caseRecord.last_action_at
+            || ''
+        ).trim();
+        return {
+            ...caseRecord,
+            status: 'open',
+            resolution: '',
+            last_action: 'reopened',
+            last_action_at: reopenedAt || caseRecord.last_action_at || '',
+            updated_at: reopenedAt || caseRecord.updated_at || '',
+            metadata: {
+                ...(caseRecord.metadata && typeof caseRecord.metadata === 'object' && !Array.isArray(caseRecord.metadata)
+                    ? caseRecord.metadata
+                    : {}),
+                implicit_reopen_reason: 'newer_alert_after_resolved_case',
+                implicit_reopen_alert_job_id: String(alert.id || '').trim() || null
+            }
+        };
+    }
+
     applyOpsAlertCaseRecord(alert = {}, row = null) {
-        const caseRecord = row ? this.normalizeOpsAlertCaseRecord(row) : null;
+        const normalizedCaseRecord = row ? this.normalizeOpsAlertCaseRecord(row) : null;
+        const caseRecord = this.isResolvedOpsAlertCaseStaleForAlert(normalizedCaseRecord, alert)
+            ? this.buildImplicitlyReopenedOpsAlertCaseRecord(normalizedCaseRecord, alert)
+            : normalizedCaseRecord;
         alert.caseRecord = caseRecord;
         alert.case_status = caseRecord?.status || '';
         alert.case_owner_admin_id = caseRecord?.owner_admin_id || '';
@@ -14316,7 +14489,7 @@ class ChatWidget {
 
     async fetchOpsAlertCasesForAlerts(alerts = []) {
         const normalizedAlerts = Array.isArray(alerts) ? alerts : [];
-        const targetIds = [...new Set(normalizedAlerts.map((alert) => String(alert.caseTargetId || '').trim()).filter(Boolean))];
+        const targetIds = [...new Set(normalizedAlerts.flatMap((alert) => this.getOpsAlertCaseTargetIds(alert)))];
         const categoryKeys = [...new Set(normalizedAlerts.map((alert) => String(alert.caseCategoryKey || '').trim().toLowerCase()).filter(Boolean))];
 
         if (!targetIds.length || !categoryKeys.length || !this.supabase?.from) {
@@ -14357,14 +14530,14 @@ class ChatWidget {
 
         const groupedTargets = normalizedAlerts.reduce((accumulator, alert) => {
             const categoryKey = String(alert.caseCategoryKey || '').trim().toLowerCase();
-            const targetId = String(alert.caseTargetId || '').trim();
-            if (!categoryKey || !targetId) {
+            const targetIds = this.getOpsAlertCaseTargetIds(alert);
+            if (!categoryKey || !targetIds.length) {
                 return accumulator;
             }
             if (!accumulator.has(categoryKey)) {
                 accumulator.set(categoryKey, []);
             }
-            accumulator.get(categoryKey).push(targetId);
+            accumulator.get(categoryKey).push(...targetIds);
             return accumulator;
         }, new Map());
 
@@ -14411,9 +14584,10 @@ class ChatWidget {
             this.fetchOpsAlertCasesForAlerts(alerts),
             this.fetchOpsAlertCaseEventsForAlerts(alerts)
         ]);
+        const summaryFallbackCaseMap = this.buildOpsAlertSummaryFallbackCaseMap(alerts, caseMap);
         return (Array.isArray(alerts) ? alerts : []).map((alert) => {
             const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId);
-            this.applyOpsAlertCaseRecord(alert, caseMap.get(caseKey) || null);
+            this.applyOpsAlertCaseRecord(alert, caseMap.get(caseKey) || summaryFallbackCaseMap.get(caseKey) || null);
             return this.applyOpsAlertCaseEvents(alert, eventMap.get(caseKey) || []);
         });
     }
@@ -14432,10 +14606,11 @@ class ChatWidget {
             this.fetchOpsAlertCasesForAlerts(uniqueAlerts),
             this.fetchOpsAlertCaseEventsForAlerts(uniqueAlerts)
         ]);
+        const summaryFallbackCaseMap = this.buildOpsAlertSummaryFallbackCaseMap(uniqueAlerts, caseMap);
 
         uniqueAlerts.forEach((alert) => {
             const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId);
-            this.applyOpsAlertCaseRecord(alert, caseMap.get(caseKey) || null);
+            this.applyOpsAlertCaseRecord(alert, caseMap.get(caseKey) || summaryFallbackCaseMap.get(caseKey) || null);
             this.applyOpsAlertCaseEvents(alert, eventMap.get(caseKey) || []);
         });
         return uniqueAlerts;
@@ -14584,8 +14759,11 @@ class ChatWidget {
         }
     }
 
-    buildOpsAlertContext(alertType = '', payload = {}, title = '') {
-        const targetId = this.getOpsAlertTargetId(payload);
+    buildOpsAlertContext(alertType = '', payload = {}, title = '', options = {}) {
+        const targetId = this.getOpsAlertTargetId(payload, {
+            ...options,
+            alertType
+        });
         const categoryKey = this.getOpsAlertCaseCategoryKey(alertType, targetId);
 
         return {
@@ -14633,8 +14811,8 @@ class ChatWidget {
         };
     }
 
-    resolveOpsAlertWorkspace(alertType = '', payload = {}, title = '', entryPath = '') {
-        const baseContext = this.buildOpsAlertContext(alertType, payload, title);
+    resolveOpsAlertWorkspace(alertType = '', payload = {}, title = '', entryPath = '', options = {}) {
+        const baseContext = this.buildOpsAlertContext(alertType, payload, title, options);
 
         if (typeof window.resolveOpsAlertWorkspace === 'function') {
             return window.resolveOpsAlertWorkspace(alertType, payload, baseContext, entryPath);
@@ -14651,7 +14829,8 @@ class ChatWidget {
         const entryPath = String(payload.entry_path || '').trim() || this.extractOpsAlertEntryPath(content);
         const createdAt = row.created_at || row.updated_at || new Date().toISOString();
         const updatedAt = row.updated_at || createdAt;
-        const targetId = this.getOpsAlertTargetId(payload);
+        const dedupeKey = String(row.dedupe_key || '').trim();
+        const targetId = this.getOpsAlertTargetId(payload, { alertType, dedupeKey });
         const caseCategoryKey = this.getOpsAlertCaseCategoryKey(alertType, targetId);
         const alert = {
             id: String(row.id || `ops-alert-${createdAt}`),
@@ -14672,6 +14851,8 @@ class ChatWidget {
             timestamp: new Date(createdAt),
             sortTimestamp: new Date(updatedAt),
             preview: '',
+            dedupeKey,
+            dedupe_key: dedupeKey,
             caseCategoryKey,
             caseTargetId: targetId,
             referenceLabel: this.getOpsAlertReferenceLabel(payload),
@@ -14696,7 +14877,7 @@ class ChatWidget {
             caseRecord: null
         };
 
-        alert.workspace = this.resolveOpsAlertWorkspace(alertType, payload, alert.title, entryPath);
+        alert.workspace = this.resolveOpsAlertWorkspace(alertType, payload, alert.title, entryPath, { dedupeKey });
         alert.preview = this.buildOpsAlertPreview(alert);
         return alert;
     }
@@ -14877,7 +15058,7 @@ class ChatWidget {
     async fetchOpsAlertJobs() {
         const { data, error } = await this.supabase
             .from('ops_alert_jobs')
-            .select('id, alert_type, severity, title, content, payload, status, last_error, created_at, updated_at, delivered_at')
+            .select('id, dedupe_key, alert_type, severity, title, content, payload, status, last_error, created_at, updated_at, delivered_at')
             .order('created_at', { ascending: false })
             .limit(160);
 

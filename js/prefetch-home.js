@@ -12,7 +12,7 @@
     const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
     const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
     const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260509_HOME_GONGYI_I18N_1';
+    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260512_HOME_GONGYI_BRAND_VERIFY_I18N_1';
     const HOMEPAGE_GUESTBOOK_CARD_LIMIT = 6;
     const HOMEPAGE_PROMPT_LIVE_SELECT = [
         'id',
@@ -202,9 +202,9 @@
         const key = String(item?.section || item?.id || '').trim().toLowerCase();
         const fallbackByKey = {
             prompts: { i18nKey: 'home.entries.prompts', zh: '提示词', en: 'Prompts' },
-            gongyi: { i18nKey: 'home.entries.gongyi', zh: '公益站', en: 'Community Access' },
+            gongyi: { i18nKey: 'home.entries.gongyi', zh: 'API中转', en: 'API Relay' },
             shop: { i18nKey: 'home.entries.shop', zh: '商城', en: 'Shop' },
-            verify: { i18nKey: 'home.entries.verify', zh: '验证', en: 'Verify' },
+            verify: { i18nKey: 'home.entries.verify', zh: 'Gemini Pro', en: 'Gemini Pro' },
             guestbook: { i18nKey: 'home.entries.guestbook', zh: '留言板', en: 'Guestbook' }
         };
         return fallbackByKey[key] || {
@@ -212,6 +212,34 @@
             zh: `入口 ${index + 1}`,
             en: `Entry ${index + 1}`
         };
+    }
+
+    function isVerifyHeroEntry(item = {}) {
+        const normalizedId = String(item?.id || '').trim().toLowerCase();
+        const normalizedSection = String(item?.section || '').trim().toLowerCase();
+        const normalizedLink = String(item?.link || '').trim().toLowerCase();
+        return normalizedId === 'verify' || normalizedSection === 'verify' || normalizedLink.includes('/verify.html');
+    }
+
+    function normalizeVerifyProductLabel(value) {
+        const text = String(value || '').trim();
+        const legacyLabels = new Set(['验证', 'Verify', 'API 验证', 'API Verification', 'Gemini 验证', 'Gemini Verify', 'Gemini验证', 'Google One', 'Google one']);
+        return legacyLabels.has(text) ? 'Gemini Pro' : text;
+    }
+
+    function resolveGongyiBrandName(value) {
+        const text = String(value || '').trim();
+        const fallback = getLanguageFallback('home.entries.gongyi', {
+            zh: 'API中转',
+            en: 'API Relay'
+        });
+        const legacyLabels = new Set(['公益站', '公益站点', 'Community Access', 'API中转', 'API 中转', 'API Relay']);
+
+        if (!text || legacyLabels.has(text) || containsCjkText(text)) {
+            return fallback;
+        }
+
+        return text;
     }
 
     async function loadHomepageConfigRows(site = getCurrentSite()) {
@@ -835,9 +863,9 @@
             ? config.entries
             : [
                 { id: 'prompts', icon: 'fa-wand-magic-sparkles', text: window.i18n?.t('home.entries.prompts') || '提示词', link: '/prompts.html', color: '#f472b6', section: 'prompts' },
-                { id: 'gongyi', icon: 'home-entry-card-icon--gongyi', text: window.i18n?.t('home.entries.gongyi') || '公益站', link: 'https://gongyi.zaoyoe.com', color: '#5ed8f8', section: 'gongyi' },
+                { id: 'gongyi', icon: 'home-entry-card-icon--gongyi', text: window.i18n?.t('home.entries.gongyi') || 'API中转', link: 'https://gongyi.zaoyoe.com', color: '#5ed8f8', section: 'gongyi' },
                 { id: 'shop', icon: 'fa-store', text: window.i18n?.t('home.entries.shop') || '商城', link: '/shop.html', color: '#4ade80', section: 'shop' },
-                { id: 'verify', icon: 'fa-robot', text: window.i18n?.t('home.entries.verify') || '验证', link: '/verify.html', color: '#667eea', section: 'verify' },
+                { id: 'verify', icon: 'fa-robot', text: window.i18n?.t('home.entries.verify') || 'Gemini Pro', link: '/verify.html', color: '#667eea', section: 'verify' },
                 { id: 'guestbook', icon: 'fa-comment-dots', text: window.i18n?.t('home.entries.guestbook') || '留言板', link: '#', color: '#f59e0b', action: 'openGuestbookModal', section: 'guestbook' }
             ];
         return {
@@ -854,10 +882,12 @@
                 .filter((item) => item?.enabled !== false)
                 .map((item, index) => {
                     const entryFallback = getHeroEntryFallback(item, index);
+                    const rawEntryText = getLocalizedField(item, 'text') || item?.text;
+                    const entryText = isVerifyHeroEntry(item) ? normalizeVerifyProductLabel(rawEntryText) : rawEntryText;
                     return {
                         id: String(item?.id || item?.section || item?.action || item?.link || `hero_entry_${index + 1}`).trim(),
                         icon: String(item?.icon || 'fa-star').trim(),
-                        text: resolveLocalizedText(getLocalizedField(item, 'text') || item?.text, entryFallback.i18nKey, {
+                        text: resolveLocalizedText(entryText, entryFallback.i18nKey, {
                             zh: entryFallback.zh,
                             en: entryFallback.en
                         }),
@@ -924,7 +954,7 @@
             .filter((item) => item.enabled !== false);
 
         return {
-            brandName: String(config.brand_name || '').trim() || 'Zaoyoe',
+            brandName: resolveGongyiBrandName(getLocalizedField(config, 'brand_name') || config.brand_name),
             brandSubtitle: resolveLocalizedText(getLocalizedField(config, 'brand_subtitle'), '', {
                 zh: '订阅转 API 转换平台',
                 en: 'Subscription to API Conversion Platform'
@@ -984,9 +1014,9 @@
         const defaultModels = ['Gemini', 'Claude', 'OpenAI'];
         const demoCostPoints = Number.parseInt(config.demo_cost_points, 10);
         return {
-            title: resolveLocalizedText(getLocalizedField(config, 'section_title'), 'home.verify.title', {
-                zh: 'Gemini 验证',
-                en: 'Google One'
+            title: resolveLocalizedText(normalizeVerifyProductLabel(getLocalizedField(config, 'section_title')), 'home.verify.title', {
+                zh: 'Gemini Pro',
+                en: 'Gemini Pro'
             }),
             subtitle: resolveLocalizedText(getLocalizedField(config, 'section_subtitle'), 'home.verify.subtitle', {
                 zh: '快速验证您的 API 密钥',

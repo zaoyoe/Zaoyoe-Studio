@@ -141,6 +141,13 @@
         return normalizeTranslatedPair(target, fieldBase, maxLength);
     }
 
+    function normalizeVerifyDisplayLabel(value) {
+        const text = sanitizeText(value, '', 120);
+        return ['验证', 'Verify', 'API 验证', 'API Verification', 'Gemini 验证', 'Gemini Verify', 'Gemini验证', 'Google One', 'Google one'].includes(text)
+            ? 'Gemini Pro'
+            : text;
+    }
+
     function normalizeStringList(value, {
         maxItems = 12,
         maxLength = 80
@@ -541,7 +548,7 @@
             case 'gongyi':
                 return {
                     enable_auto: false,
-                    section_tag: '公益站',
+                    section_tag: 'API中转',
                     brand_name: 'Zaoyoe',
                     brand_subtitle: 'Subscription to API Conversion Platform',
                     cta_text: '进入控制台',
@@ -684,6 +691,7 @@
                     ? normalizeGongyiModelItems(source.model_items)
                     : next.model_items;
                 preserveTranslatedPair(next, source, 'section_tag', 40);
+                preserveTranslatedPair(next, source, 'brand_name', 80);
                 preserveTranslatedPair(next, source, 'brand_subtitle', 240);
                 preserveTranslatedPair(next, source, 'cta_text', 48);
                 preserveTranslatedPair(next, source, 'feature_1_title', 80);
@@ -708,7 +716,7 @@
                 return next;
             case 'verify':
                 next.enable_auto = sanitizeBoolean(source.enable_auto, false);
-                next.section_title = sanitizeText(source.section_title, '', 120);
+                next.section_title = normalizeVerifyDisplayLabel(source.section_title);
                 next.section_subtitle = sanitizeText(source.section_subtitle, '', 240);
                 next.preview_mode = sanitizeText(source.preview_mode, next.preview_mode, 20) === 'image' ? 'image' : 'dynamic';
                 next.screenshot_path = sanitizeUrl(source.screenshot_path, '', 2048);

@@ -10530,8 +10530,8 @@ body.guestbook-page .comment-list {
 }
 
 body.guestbook-page .comment-list:not(.collapsed) {
-    max-height: none !important;
-    overflow: visible !important;
+    max-height: none;
+    overflow: visible;
 }
 
 body.guestbook-page .comment-item {

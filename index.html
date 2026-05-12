@@ -14,18 +14,18 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    <meta name="description" data-i18n="seo.index.description" data-i18n-attr="content" content="早鸟工作室 - AI 驱动的创意资源平台，提供 Prompt 提示词、API 验证、资源商城等服务">
-    <meta name="keywords" data-i18n="seo.index.keywords" data-i18n-attr="content" content="AI提示词,Prompt Gallery,Gemini验证,资源商城,早鸟工作室">
+    <meta name="description" data-i18n="seo.index.description" data-i18n-attr="content" content="早鸟工作室 - AI 驱动的创意资源平台，提供 Prompt 提示词、Gemini Pro、资源商城等服务">
+    <meta name="keywords" data-i18n="seo.index.keywords" data-i18n-attr="content" content="AI提示词,Prompt Gallery,Gemini Pro,资源商城,早鸟工作室">
     <title data-i18n="seo.index.title">早鸟工作室 - 创意·效率·无限可能</title>
     <link rel="canonical" href="https://www.zaoyoe.com/">
     <meta property="og:type" content="website">
     <meta property="og:title" data-i18n="seo.index.title" data-i18n-attr="content" content="早鸟工作室 - 创意·效率·无限可能">
-    <meta property="og:description" data-i18n="seo.index.description" data-i18n-attr="content" content="AI 驱动的创意资源平台，提供 Prompt 提示词、API 验证、资源商城等服务。">
+    <meta property="og:description" data-i18n="seo.index.description" data-i18n-attr="content" content="AI 驱动的创意资源平台，提供 Prompt 提示词、Gemini Pro、资源商城等服务。">
     <meta property="og:url" content="https://www.zaoyoe.com/">
     <meta property="og:image" content="https://www.zaoyoe.com/assets/favicon.png">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" data-i18n="seo.index.title" data-i18n-attr="content" content="早鸟工作室 - 创意·效率·无限可能">
-    <meta name="twitter:description" data-i18n="seo.index.description" data-i18n-attr="content" content="AI 驱动的创意资源平台，提供 Prompt 提示词、API 验证、资源商城等服务。">
+    <meta name="twitter:description" data-i18n="seo.index.description" data-i18n-attr="content" content="AI 驱动的创意资源平台，提供 Prompt 提示词、Gemini Pro、资源商城等服务。">
     <meta name="twitter:image" content="https://www.zaoyoe.com/assets/favicon.png">
     <link rel="icon" type="image/png" href="assets/favicon.png">
     <link rel="stylesheet" href="./css/auth-popup-handoff.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1">
@@ -58,7 +58,7 @@
     <!-- Site Config (dual-site detection) -->
     <script src="./js/site-config.js?v=20260510_SITE_ASSET_CDN_1" defer></script>
     <script src="./js/site-layout-runtime.js?v=20260508_SITE_LAYOUT_RUNTIME_1" defer></script>
-    <script src="./js/homepage-contract.js?v=20260430_HOMEPAGE_BILINGUAL_FIELDS_1" defer></script>
+    <script src="./js/homepage-contract.js?v=20260512_HOMEPAGE_CONTRACT_VERIFY_I18N_1" defer></script>
 
     <!-- Section Visibility (per-site section toggle control) -->
     <script src="./js/section-visibility.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1" defer></script>
@@ -114,9 +114,9 @@
             <!-- Desktop Menu -->
             <div class="nav-menu">
                 <a href="/prompts.html" class="nav-trigger" data-dropdown="prompts" data-i18n="nav.prompts">提示词</a>
-                <a href="https://gongyi.zaoyoe.com" data-i18n="nav.gongyi">公益站</a>
+                <a href="/verify.html" data-i18n="nav.verify">Gemini Pro</a>
+                <a href="https://gongyi.zaoyoe.com" data-i18n="nav.gongyi">API中转</a>
                 <a href="/shop.html" class="nav-trigger" data-dropdown="shop" data-i18n="nav.shop">商城</a>
-                <a href="/verify.html" data-i18n="nav.verify">验证</a>
                 <a href="/guestbook.html" data-i18n="nav.guestbook">留言板</a>
                 <a href="javascript:void(0)" class="nav-trigger" data-dropdown="support" data-i18n="nav.support">支持</a>
             </div>
@@ -148,7 +148,11 @@
             </div>
 
             <div class="mobile-menu-item">
-                <a href="https://gongyi.zaoyoe.com" class="mobile-menu-link" data-i18n="nav.gongyi">公益站</a>
+                <a href="#verify" class="mobile-menu-link" data-i18n="nav.verify">Gemini Pro</a>
+            </div>
+
+            <div class="mobile-menu-item">
+                <a href="https://gongyi.zaoyoe.com" class="mobile-menu-link" data-i18n="nav.gongyi">API中转</a>
             </div>
 
             <div class="mobile-menu-item">
@@ -162,10 +166,6 @@
             </div>
 
             <div class="mobile-menu-item">
-                <a href="#verify" class="mobile-menu-link" data-i18n="nav.verify">验证</a>
-            </div>
-
-            <div class="mobile-menu-item">
                 <a href="/guestbook.html" class="mobile-menu-link" data-i18n="nav.guestbook"
                     data-close-mobile-menu="1">留言板</a>
             </div>
@@ -176,7 +176,6 @@
                     <i class="fas fa-chevron-down"></i>
                 </button>
                 <div class="mobile-submenu" id="support-mobile">
-                    <a href="https://status.zaoyoe.com" class="mobile-menu-link" data-i18n="nav.status">状态页</a>
                     <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer"
                         class="mobile-menu-link">TG</a>
                     <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer"
@@ -232,7 +231,7 @@
                     <a href="https://gongyi.zaoyoe.com" class="entry-card">
                         <span class="entry-card-ui">
                             <i class="fas home-entry-card-icon home-entry-card-icon--gongyi"></i>
-                            <span data-i18n="home.entries.gongyi">公益站</span>
+                            <span data-i18n="home.entries.gongyi">API中转</span>
                         </span>
                     </a>
                     <a href="/shop.html" class="entry-card">
@@ -244,7 +243,7 @@
                     <a href="/verify.html" class="entry-card">
                         <span class="entry-card-ui">
                             <i class="fas fa-robot home-entry-card-icon"></i>
-                            <span data-i18n="home.entries.verify">验证</span>
+                            <span data-i18n="home.entries.verify">Gemini Pro</span>
                         </span>
                     </a>
                     <a href="/guestbook.html" class="entry-card" data-home-open-guestbook="1">
@@ -298,9 +297,9 @@
                     <h4 data-i18n="footer.products.title">产品</h4>
                     <a href="/prompts.html" data-i18n="footer.products.prompts">提示词图库</a>
                     <a href="/shop.html" data-i18n="footer.products.shop">资源商城</a>
-                    <a href="/verify.html" data-i18n="footer.products.verify">API 验证</a>
+                    <a href="/verify.html" data-i18n="footer.products.verify">Gemini Pro</a>
                     <a href="/guestbook.html" data-i18n="footer.products.guestbook">留言板</a>
-                    <a href="https://gongyi.zaoyoe.com" data-i18n="footer.products.gongyi">公益站</a>
+                    <a href="https://gongyi.zaoyoe.com" data-i18n="footer.products.gongyi">API中转</a>
                 </div>
 
                 <!-- Resources -->
@@ -346,7 +345,7 @@
     <script src="./js/homepage-guestbook-modal-loader.js?v=20260504_HOME_GUESTBOOK_LOADER_KEYBOARD_RETRACT_1" defer></script>
 
     <!--  Framer Home Engine -->
-    <script src="./js/framer_home.js?v=20260509_HOME_GONGYI_I18N_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&promptNoRepaint=20260510_PROMPT_NO_REPAINT_1" defer></script>
+    <script src="./js/framer_home.js?v=20260512_HOME_GONGYI_BRAND_VERIFY_I18N_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&promptNoRepaint=20260510_PROMPT_NO_REPAINT_1" defer></script>
 
     <script src="./js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1" defer></script>
     <script src="./js/wallet-modal-loader.js?v=20260510_WALLET_REALTIME_FALLBACK_1" defer></script>

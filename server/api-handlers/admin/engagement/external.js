@@ -38,7 +38,7 @@ async function saveExternalEmbedPolicy({ supabase, user, body }) {
         .upsert({
             config_key: CONFIG_KEY,
             config_value: nextPolicy,
-            description: '客服系统外部承载与公益站嵌入策略',
+            description: '客服系统外部承载与API中转嵌入策略',
             updated_by: user.id || null,
             updated_at: new Date().toISOString()
         }, {

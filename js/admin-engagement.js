@@ -4,7 +4,7 @@
     const PAGE_LABELS = {
         home: '首页',
         prompts: '提示词',
-        gongyi: '公益站',
+        gongyi: 'API中转',
         shop: '商城',
         verify: '验证',
         guestbook: '留言板',
@@ -149,7 +149,7 @@
         },
         {
             id: 'gongyi',
-            label: '公益站',
+            label: 'API中转',
             tone: 'calm',
             safe_zone: 'bottom-right',
             events: ['service_status', 'usage_rules', 'maintenance_notice', 'community_rule', 'support_reply', 'ticket_updated']
@@ -183,7 +183,7 @@
         ['alert', '警示'],
         ['welcome', '欢迎'],
         ['creative', '提示词'],
-        ['calm', '公益站'],
+        ['calm', 'API中转'],
         ['commerce', '商城'],
         ['assistive', '验证'],
         ['community', '社区']
@@ -524,13 +524,13 @@
         ['default', '默认入口'],
         ['home', '首页'],
         ['prompts', '提示词'],
-        ['gongyi', '公益站'],
+        ['gongyi', 'API中转'],
         ['shop', '商城'],
         ['verify', '验证'],
         ['guestbook', '留言板']
     ];
     const EXTERNAL_PAGE_OPTIONS = [
-        ['gongyi', '公益站'],
+        ['gongyi', 'API中转'],
         ['home', '首页'],
         ['prompts', '提示词'],
         ['shop', '商城'],
@@ -1296,7 +1296,7 @@
         {
             id: 'community_rule_notice',
             title: '社区规则提醒',
-            desc: '留言、评论或公益站互动前，提示社区规范和内容边界。',
+            desc: '留言、评论或API中转互动前，提示社区规范和内容边界。',
             icon: 'fa-scale-balanced',
             triggerType: 'community_rule',
             audienceScope: 'all',
@@ -1366,7 +1366,7 @@
         ['auto', '跟随规则'],
         ['home', '首页'],
         ['prompts', '提示词'],
-        ['gongyi', '公益站'],
+        ['gongyi', 'API中转'],
         ['shop', '商城'],
         ['verify', '验证'],
         ['guestbook', '留言板']
@@ -1469,7 +1469,7 @@
         {
             id: 'operations',
             title: '站点运营',
-            desc: '首页公告、公益站规则、验证排队、工单进展、服务维护',
+            desc: '首页公告、API中转规则、验证排队、工单进展、服务维护',
             icon: 'fa-satellite-dish',
             categories: ['operations', 'site', 'service', 'general'],
             events: ['service_status', 'usage_rules', 'maintenance_notice', 'verify_queue', 'ticket_updated', 'support_reply'],
@@ -1543,7 +1543,7 @@
         {
             id: 'operations',
             title: '站点运营',
-            desc: '维护公告、公益站规则、内容开放和全站说明。',
+            desc: '维护公告、API中转规则、内容开放和全站说明。',
             icon: 'fa-satellite-dish',
             categories: ['operations', 'site', 'general'],
             events: ['maintenance_notice', 'usage_rules', 'service_status', 'prompt_unlocked'],
@@ -1908,7 +1908,7 @@
             content: '部分服务可能会短暂波动，如遇异常请稍后重试或联系在线客服。',
             action_label: '查看公告',
             action_url: '/index.html#announcements',
-            description: '适合全站维护、服务波动或公益站规则说明。',
+            description: '适合全站维护、服务波动或API中转规则说明。',
             priority: 18
         }
     ]);
@@ -7786,13 +7786,13 @@
             },
             {
                 id: 'external_embed',
-                label: '公益站外部承载',
+                label: 'API中转外部承载',
                 status: externalEmbed.enabled === false
                     ? 'blocked'
                     : (externalDiagnostics.status === 'ready' ? 'ok' : 'warning'),
                 detail: externalEmbed.enabled === false
                     ? '外部嵌入已关闭'
-                    : `${formatNumber(externalDiagnostics.allowed_origin_count || 0)} 个白名单域名 · ${externalDiagnostics.has_gongyi_origin ? '公益站已覆盖' : '公益站白名单待补'}`
+                    : `${formatNumber(externalDiagnostics.allowed_origin_count || 0)} 个白名单域名 · ${externalDiagnostics.has_gongyi_origin ? 'API中转已覆盖' : 'API中转白名单待补'}`
             },
             {
                 id: 'governance',
@@ -7835,7 +7835,7 @@
                 </div>
                 <div class="engagement-launch-meta">
                     <span>最后事件：${escapeHtml(lastEventLabel)}</span>
-                    <span>验收范围：首页 / 提示词 / 公益站 / 商城 / 验证 / 留言板</span>
+                    <span>验收范围：首页 / 提示词 / API中转 / 商城 / 验证 / 留言板</span>
                 </div>
                 <div class="engagement-launch-grid">
                     ${readiness.checks.map((item) => `
@@ -8535,8 +8535,8 @@
             <section class="engagement-section engagement-external-embed">
                 <div class="engagement-section__head">
                     <div>
-                        <h3>外部承载与公益站嵌入</h3>
-                        <p>管理公益站等外部页面的 CORS 白名单、主站 API 地址、静态资源地址和可复制嵌入代码。</p>
+                        <h3>外部承载与API中转嵌入</h3>
+                        <p>管理API中转等外部页面的 CORS 白名单、主站 API 地址、静态资源地址和可复制嵌入代码。</p>
                     </div>
                     <span class="engagement-status-pill" data-status="${escapeHtml(diagnosticsStatus)}">
                         ${escapeHtml(diagnosticsStatusLabel)}
@@ -8592,8 +8592,8 @@
                     <div class="engagement-external-deploy">
                         <div class="engagement-external-deploy__head">
                             <div>
-                                <strong>公益站嵌入代码</strong>
-                                <p>把这段脚本放到公益站公共页底部即可接入同一套机器人触达。</p>
+                                <strong>API中转嵌入代码</strong>
+                                <p>把这段脚本放到API中转公共页底部即可接入同一套机器人触达。</p>
                             </div>
                             <button type="button" class="engagement-link-btn" data-engagement-action="copy-external-embed-snippet">
                                 <i class="fas fa-copy" aria-hidden="true"></i>
@@ -8649,7 +8649,7 @@
                                     <div class="engagement-external-observability__head">
                                         <div>
                                             <strong>真实部署回流</strong>
-                                            <p>统计公益站等外部页面近 24 小时的曝光、点击、关闭和转化事件。</p>
+                                            <p>统计API中转等外部页面近 24 小时的曝光、点击、关闭和转化事件。</p>
                                         </div>
                                         <span>${escapeHtml(deploymentStatusLabel)}</span>
                                     </div>
@@ -10996,7 +10996,7 @@
         }
         try {
             await navigator.clipboard?.writeText(snippet);
-            showFeedback('公益站嵌入代码已复制', 'success');
+            showFeedback('API中转嵌入代码已复制', 'success');
             return true;
         } catch (_) {
             const textarea = document.getElementById('engagementExternalEmbedSnippet');
@@ -11004,7 +11004,7 @@
             textarea?.select?.();
             try {
                 document.execCommand?.('copy');
-                showFeedback('公益站嵌入代码已复制', 'success');
+                showFeedback('API中转嵌入代码已复制', 'success');
                 return true;
             } catch (error) {
                 showFeedback('复制失败，请手动选择代码', 'error');
@@ -13612,7 +13612,7 @@
         if (action === 'copy-external-embed-snippet') {
             event.preventDefault();
             closeEngagementSelects();
-            runEngagementAsyncAction(actionEl, () => copyExternalEmbedSnippet(), '公益站嵌入代码复制失败');
+            runEngagementAsyncAction(actionEl, () => copyExternalEmbedSnippet(), 'API中转嵌入代码复制失败');
             return;
         }
         if (action === 'clear-rule-filters') {

@@ -29,9 +29,9 @@
     "nav": {
         "prompts": "提示词",
         "shop": "商城",
-        "verify": "验证",
+        "verify": "Gemini Pro",
         "guestbook": "留言板",
-        "gongyi": "公益站",
+        "gongyi": "API中转",
         "status": "状态页",
         "gallery": "图库",
         "settings": "设置",
@@ -45,8 +45,8 @@
     "seo": {
         "index": {
             "title": "早鸟工作室 - 创意·效率·无限可能",
-            "description": "早鸟工作室 - AI 驱动的创意资源平台，提供 Prompt 提示词、API 验证、资源商城等服务",
-            "keywords": "AI提示词,Prompt Gallery,Gemini验证,资源商城,早鸟工作室",
+            "description": "早鸟工作室 - AI 驱动的创意资源平台，提供 Prompt 提示词、Gemini Pro、资源商城等服务",
+            "keywords": "AI提示词,Prompt Gallery,Gemini Pro,资源商城,早鸟工作室",
             "h1": "早鸟工作室 - AI 驱动的创意资源平台"
         },
         "prompts": {
@@ -78,8 +78,8 @@
         "entries": {
             "prompts": "提示词",
             "shop": "商城",
-            "gongyi": "公益站",
-            "verify": "验证",
+            "gongyi": "API中转",
+            "verify": "Gemini Pro",
             "guestbook": "留言板"
         },
         "prompts": {
@@ -92,7 +92,7 @@
             "subtitle": "优质资源，助力成长"
         },
         "verify": {
-            "title": "Google One",
+            "title": "Gemini Pro",
             "subtitle": "提交账号任务，自动获取试用链接",
             "features": {
                 "free": "任务化",
@@ -270,7 +270,7 @@
         "allCategories": "全部",
         "points": "积分",
         "categoryLabels": {
-            "communityAccess": "公益站",
+            "communityAccess": "API中转",
             "virtualCard": "虚拟卡",
             "account": "账号",
             "other": "其他"
@@ -1076,9 +1076,9 @@
             "title": "产品",
             "prompts": "提示词图库",
             "shop": "资源商城",
-            "verify": "API 验证",
+            "verify": "Gemini Pro",
             "guestbook": "留言板",
-            "gongyi": "公益站"
+            "gongyi": "API中转"
         },
         "resources": {
             "title": "资源",
