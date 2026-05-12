@@ -30,7 +30,7 @@ const PAGE_SCENES = Object.freeze([
     },
     {
         id: 'gongyi',
-        label: '公益站',
+        label: 'API中转',
         tone: 'calm',
         safe_zone: 'bottom-right',
         events: ['service_status', 'usage_rules', 'maintenance_notice', 'community_rule', 'support_reply', 'ticket_updated']
@@ -1065,7 +1065,7 @@ function buildExternalDeploymentTroubleshooting(policy = {}, deployment = {}) {
         '真实事件回流',
         eventCount > 0 ? 'ok' : (normalized.enabled ? 'warning' : 'idle'),
         eventCount > 0 ? `近 24 小时收到 ${eventCount} 条外部事件` : '近 24 小时还没有外部页面事件回流',
-        '在公益站打开页面，确认 Network 中 /api/engagement/feed 与 /api/engagement/event 返回 2xx'
+        '在API中转页面打开，确认 Network 中 /api/engagement/feed 与 /api/engagement/event 返回 2xx'
     );
     addCheck(
         'external_runtime_views',
@@ -1088,7 +1088,7 @@ function buildExternalDeploymentTroubleshooting(policy = {}, deployment = {}) {
         hasUnknownHost
             ? '外部事件缺少 page_host/page_origin，无法准确识别来源域名'
             : (unlistedHosts.length ? `发现未在白名单中的来源：${unlistedHosts.slice(0, 3).join('、')}` : '外部来源域名识别正常'),
-        '确认外部 embed 使用最新版脚本，并把真实公益站域名加入 CORS 白名单'
+        '确认外部 embed 使用最新版脚本，并把真实API中转域名加入 CORS 白名单'
     );
     addCheck(
         'external_api_origin_match',
@@ -1097,7 +1097,7 @@ function buildExternalDeploymentTroubleshooting(policy = {}, deployment = {}) {
         unexpectedApiOrigins.length
             ? `发现事件使用了不同 API Origin：${unexpectedApiOrigins.slice(0, 3).join('、')}`
             : (apiRows.length ? '事件回传使用的 API Origin 与当前配置一致' : '暂无事件可判断 API Origin'),
-        '如切换了主站域名，请重新复制后台生成的公益站嵌入代码'
+        '如切换了主站域名，请重新复制后台生成的API中转嵌入代码'
     );
 
     const status = checks.some((item) => item.status === 'blocked')

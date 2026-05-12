@@ -300,6 +300,59 @@ func TestAPIKeyAuthOverwritesInvalidContextGroup(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code)
 }
 
+func TestAPIKeyAuthSkipsBillingForModelList(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	user := &service.User{
+		ID:          7,
+		Role:        service.RoleUser,
+		Status:      service.StatusActive,
+		Balance:     0,
+		Concurrency: 3,
+	}
+	apiKey := &service.APIKey{
+		ID:     100,
+		UserID: user.ID,
+		Key:    "model-list-key",
+		Status: service.StatusActive,
+		User:   user,
+	}
+
+	apiKeyRepo := &stubApiKeyRepo{
+		getByKey: func(ctx context.Context, key string) (*service.APIKey, error) {
+			if key != apiKey.Key {
+				return nil, service.ErrAPIKeyNotFound
+			}
+			clone := *apiKey
+			return &clone, nil
+		},
+	}
+
+	cfg := &config.Config{RunMode: config.RunModeStandard}
+	apiKeyService := service.NewAPIKeyService(apiKeyRepo, nil, nil, nil, nil, nil, cfg)
+	router := gin.New()
+	router.Use(gin.HandlerFunc(NewAPIKeyAuthMiddleware(apiKeyService, nil, cfg)))
+	router.GET("/v1/models", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+	router.POST("/v1/responses", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	})
+
+	modelsRecorder := httptest.NewRecorder()
+	modelsReq := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	modelsReq.Header.Set("x-api-key", apiKey.Key)
+	router.ServeHTTP(modelsRecorder, modelsReq)
+	require.Equal(t, http.StatusOK, modelsRecorder.Code)
+
+	responsesRecorder := httptest.NewRecorder()
+	responsesReq := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	responsesReq.Header.Set("x-api-key", apiKey.Key)
+	router.ServeHTTP(responsesRecorder, responsesReq)
+	require.Equal(t, http.StatusForbidden, responsesRecorder.Code)
+	require.Contains(t, responsesRecorder.Body.String(), "INSUFFICIENT_BALANCE")
+}
+
 func TestAPIKeyAuthIPRestrictionDoesNotTrustSpoofedForwardHeaders(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

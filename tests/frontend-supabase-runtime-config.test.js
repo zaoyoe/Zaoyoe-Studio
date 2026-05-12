@@ -3954,7 +3954,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'function setHomeSectionVisibility(section, visible)',
         'function getHomeLoopPixelsPerSecond(speedValue)',
         'function getHomeLoopDurationSeconds(cycleWidth, speedValue)',
-        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260509_HOME_GONGYI_I18N_1';",
+        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260512_HOME_GONGYI_BRAND_VERIFY_I18N_1';",
         "const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';",
         "const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';",
         'async fetchVisiblePromptPool(options = {}) {',
@@ -4046,7 +4046,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'index.html should load the latest framer_home stylesheet version'
     );
     assert.equal(
-        homepageSource.includes('./js/framer_home.js?v=20260509_HOME_GONGYI_I18N_1'),
+        homepageSource.includes('./js/framer_home.js?v=20260512_HOME_GONGYI_BRAND_VERIFY_I18N_1'),
         true,
         'index.html should load the latest framer_home script version'
     );
@@ -4058,8 +4058,8 @@ test('framer home runtime renderers externalize homepage section visibility, tem
             'home-nav subpages should continue to load the shared framer_home stylesheet version'
         );
         assert.equal(
-            source.includes('js/framer-nav-runtime.js?v=20260428_IOS_SAFARI_THEME_CHROME_2')
-                || source.includes('./js/framer-nav-runtime.js?v=20260428_IOS_SAFARI_THEME_CHROME_2'),
+            source.includes('js/framer-nav-runtime.js?v=20260512_SUPPORT_STATUS_LINK_REMOVED_1')
+                || source.includes('./js/framer-nav-runtime.js?v=20260512_SUPPORT_STATUS_LINK_REMOVED_1'),
             true,
             'home-nav subpages should load the dedicated lightweight nav runtime'
         );
@@ -4072,7 +4072,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
     }
 
     const navRuntimeMarkers = [
-        "const VERSION = '20260428_IOS_SAFARI_THEME_CHROME_2';",
+        "const VERSION = '20260512_SUPPORT_STATUS_LINK_REMOVED_1';",
         'function setMobileMenuState(hamburger, mobileMenu, isOpen) {',
         'async function loadNavData() {',
         'function initNavDropdowns() {',
@@ -4112,14 +4112,14 @@ test('homepage subpages load the latest prefetch-home runtime script version', (
 
     for (const source of subpageSources) {
         assert.equal(
-            source.includes('./js/prefetch-home.js?v=20260509_HOME_GONGYI_I18N_1'),
+            source.includes('./js/prefetch-home.js?v=20260512_HOME_GONGYI_BRAND_VERIFY_I18N_1'),
             true,
             'subpages should load the latest prefetch-home script version'
         );
     }
 
     assert.equal(
-        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260509_HOME_GONGYI_I18N_1';"),
+        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260512_HOME_GONGYI_BRAND_VERIFY_I18N_1';"),
         true,
         'js/prefetch-home.js should version homepage prefetch payloads after the homepage P2 runtime changes'
     );
@@ -4353,7 +4353,7 @@ test('guestbook runtime renderers externalize loading, modal, and interaction st
     }
 
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260506_GUESTBOOK_COMPACT_SPACING_1'),
+        guestbookHtml.includes('style.css?v=20260512_GUESTBOOK_COMMENT_EXPAND_ANIM_1'),
         true,
         'guestbook.html should reference the updated guestbook stylesheet version'
     );
@@ -4533,7 +4533,7 @@ test('homepage guestbook modal runtime renderers externalize keyboard dock, view
         'index.html should load the latest homepage guestbook intent loader version'
     );
     assert.equal(
-        guestbookHtml.includes('style.css?v=20260506_GUESTBOOK_COMPACT_SPACING_1'),
+        guestbookHtml.includes('style.css?v=20260512_GUESTBOOK_COMMENT_EXPAND_ANIM_1'),
         true,
         'guestbook.html should load the latest shared stylesheet version'
     );

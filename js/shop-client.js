@@ -778,9 +778,9 @@ const ShopClient = {
     getProductCategoryLabelMap: function () {
         return {
             communityAccess: {
-                zh: '公益站',
-                en: 'Community Access',
-                aliases: ['公益站', 'community access', 'community_access', 'community-access', 'community', 'gongyi']
+                zh: 'API中转',
+                en: 'API Relay',
+                aliases: ['API中转', 'API Relay', 'api relay', 'api_relay', 'api-relay', 'api中转', '公益站', 'community access', 'community_access', 'community-access', 'community', 'gongyi']
             },
             virtualCard: {
                 zh: '虚拟卡',

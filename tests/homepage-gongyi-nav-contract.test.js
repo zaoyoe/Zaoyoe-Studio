@@ -21,24 +21,29 @@ function extractSupportMobileBlock(source) {
     return match ? match[1] : '';
 }
 
-test('primary pages place gongyi nav between prompts and shop', () => {
+test('primary pages place verify before gongyi and shop after gongyi', () => {
     PAGE_PATHS.forEach((relativePath) => {
         const source = readRepoFile(relativePath);
         const promptsIndex = source.indexOf('href="/prompts.html"');
+        const verifyIndex = source.indexOf('href="/verify.html"');
         const gongyiIndex = source.indexOf('href="https://gongyi.zaoyoe.com"');
         const shopIndex = source.indexOf('href="/shop.html"');
 
         assert.ok(promptsIndex >= 0, `${relativePath} should include the prompts nav link`);
+        assert.ok(verifyIndex >= 0, `${relativePath} should include the verify nav link`);
         assert.ok(gongyiIndex >= 0, `${relativePath} should include the gongyi nav link`);
         assert.ok(shopIndex >= 0, `${relativePath} should include the shop nav link`);
-        assert.ok(promptsIndex < gongyiIndex && gongyiIndex < shopIndex, `${relativePath} should place gongyi after prompts and before shop`);
+        assert.ok(
+            promptsIndex < verifyIndex && verifyIndex < gongyiIndex && gongyiIndex < shopIndex,
+            `${relativePath} should place verify after prompts, then gongyi, then shop`
+        );
     });
 });
 
-test('support mobile submenu keeps status but no longer nests gongyi', () => {
+test('support mobile submenu removes status and does not nest gongyi', () => {
     PAGE_PATHS.forEach((relativePath) => {
         const supportBlock = extractSupportMobileBlock(readRepoFile(relativePath));
-        assert.ok(supportBlock.includes('https://status.zaoyoe.com'), `${relativePath} support submenu should keep the status link`);
+        assert.equal(supportBlock.includes('https://status.zaoyoe.com'), false, `${relativePath} support submenu should not keep the status link`);
         assert.equal(supportBlock.includes('https://gongyi.zaoyoe.com'), false, `${relativePath} support submenu should not keep the gongyi link`);
     });
 });

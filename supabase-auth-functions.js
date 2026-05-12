@@ -329,6 +329,65 @@ function setUserDropdownOpen(isOpen) {
     authBtn?.setAttribute('aria-expanded', nextState ? 'true' : 'false');
 }
 
+function syncUserDropdownAuthMode(isAuthenticated) {
+    const dropdown = document.getElementById('userDropdown');
+    if (!dropdown) return;
+
+    const nextState = !!isAuthenticated;
+    dropdown.classList.toggle('is-authenticated', nextState);
+    dropdown.classList.toggle('is-guest', !nextState);
+    dropdown.dataset.authState = nextState ? 'authenticated' : 'guest';
+}
+
+function positionUserDropdownFromAuthButton(dropdown) {
+    const authBtn = document.getElementById('authBtn');
+    if (!dropdown || !authBtn) return;
+
+    const rect = authBtn.getBoundingClientRect();
+    const navBar = authBtn.closest('.nav-bar') || authBtn.closest('nav') || authBtn.closest('.top-right-nav')?.parentElement;
+    let anchorBottom;
+    if (navBar) {
+        anchorBottom = navBar.getBoundingClientRect().bottom;
+    } else {
+        anchorBottom = rect.bottom + 8;
+    }
+
+    const rightOffset = window.innerWidth - rect.right;
+    const navOverlap = parseFloat(
+        getComputedStyle(document.documentElement).getPropertyValue('--nav-dropdown-overlap')
+    ) || 1;
+
+    setAuthStyleState(dropdown, {
+        right: `${Math.max(10, rightOffset)}px`
+    });
+    setAuthStyleState(dropdown, {
+        top: `${anchorBottom - navOverlap}px`
+    });
+}
+
+function openUserDropdownForAuthState(isAuthenticated, source = 'dropdown-open') {
+    const dropdown = document.getElementById('userDropdown');
+    if (!dropdown) return false;
+
+    syncUserDropdownAuthMode(isAuthenticated);
+    positionUserDropdownFromAuthButton(dropdown);
+    setUserDropdownOpen(true);
+
+    if (isAuthenticated) {
+        if (source === 'dropdown-open') {
+            void refreshAdminEntryUiState({ source: 'dropdown-open' });
+            scheduleSupabaseAuthWalletWarmPrefetch('dropdown-open');
+            scheduleSupabaseAuthProfileModalWarmup('dropdown-open');
+        } else {
+            void refreshAdminEntryUiState({ source });
+            scheduleSupabaseAuthWalletWarmPrefetch(source);
+            scheduleSupabaseAuthProfileModalWarmup(source);
+        }
+    }
+
+    return true;
+}
+
 function closeUserDropdown() {
     setUserDropdownOpen(false);
 }
@@ -1447,62 +1506,24 @@ async function handleAuthClick(event) {
     console.log('🔘 handleAuthClick triggered');
 
     // 🚀 OPTIMIZATION: Use cached profile for instant dropdown (no network delay)
-    const cachedProfile = localStorage.getItem('cached_user_profile');
+    const cachedProfile = readCachedUserProfile();
     const isLoggedIn = !!cachedProfile;
 
     console.log('👤 Using cached login state:', isLoggedIn ? 'logged in' : 'not logged in');
 
-    if (isLoggedIn) {
-        // User is logged in - toggle dropdown INSTANTLY
-        const dropdown = document.getElementById('userDropdown');
-
-        if (dropdown) {
-            const isActive = dropdown.classList.contains('active');
-            if (isActive) {
-                closeUserDropdown();
-            } else {
-                // 🆕 Dynamically position dropdown relative to nav bar bottom edge
-                const authBtn = document.getElementById('authBtn');
-                if (authBtn) {
-                    const rect = authBtn.getBoundingClientRect();
-                    // Find the actual nav bar container to get its true bottom edge
-                    const navBar = authBtn.closest('.nav-bar') || authBtn.closest('nav') || authBtn.closest('.top-right-nav')?.parentElement;
-                    let anchorBottom;
-                    if (navBar) {
-                        anchorBottom = navBar.getBoundingClientRect().bottom;
-                    } else {
-                        // Fallback: use button bottom + generous margin
-                        anchorBottom = rect.bottom + 8;
-                    }
-                    // Align dropdown right edge with avatar button right edge
-                    const rightOffset = window.innerWidth - rect.right;
-                    const navOverlap = parseFloat(
-                        getComputedStyle(document.documentElement).getPropertyValue('--nav-dropdown-overlap')
-                    ) || 1;
-                    // Use setProperty with !important to guarantee JS wins over any CSS rules
-                    setAuthStyleState(dropdown, {
-                        right: `${Math.max(10, rightOffset)}px`
-                    });
-                    // Shift up slightly to fuse seamlessly with the nav border.
-                    setAuthStyleState(dropdown, {
-                        top: `${anchorBottom - navOverlap}px`
-                    });
-                }
-                setUserDropdownOpen(true);
-                void refreshAdminEntryUiState({
-                    source: 'dropdown-open'
-                });
-
-                // Pre-fetch wallet data so 'My Orders' opens instantly
-                scheduleSupabaseAuthWalletWarmPrefetch('dropdown-open');
-                scheduleSupabaseAuthProfileModalWarmup('dropdown-open');
-            }
+    const dropdown = document.getElementById('userDropdown');
+    if (dropdown) {
+        const isActive = dropdown.classList.contains('active');
+        if (isActive) {
+            closeUserDropdown();
+        } else {
+            openUserDropdownForAuthState(isLoggedIn, 'dropdown-open');
         }
 
-        // Note: Background verification happens via auth state listener, 
-        // no need to await getUser() here for dropdown toggle
+        // Note: Background verification happens via auth state listener,
+        // no need to await getUser() here for dropdown toggle.
     } else {
-        // User is not logged in - open login modal
+        // Fallback for pages where the dropdown markup has not been injected yet.
         requestLoginModalOpen('login');
     }
 }
@@ -2246,6 +2267,7 @@ function updateUserUI(user, options = {}) {
         applyAdminEntryUiState(displayName, false);
 
         if (authBtn) authBtn.classList.add('logged-in');
+        syncUserDropdownAuthMode(true);
 
         updateProfileMobileSummary({
             nickname: user.nickname || user.username || 'User',
@@ -2311,6 +2333,7 @@ function updateUserUI(user, options = {}) {
         if (authBtn) {
             authBtn.classList.remove('logged-in');
         }
+        syncUserDropdownAuthMode(false);
         window.__ZAOYOE_LAST_AUTH_USER__ = null;
         window.__ZAOYOE_LAST_AUTH_DISPLAY_NAME__ = '';
         applyAdminEntryUiState('User', false);

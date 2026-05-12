@@ -18,7 +18,7 @@ const SITE_LAYOUT_PAGE_OPTIONS = Object.freeze([
     }),
     Object.freeze({
         key: 'verify',
-        label: '验证',
+        label: 'Gemini Pro',
         path: '/verify.html'
     }),
     Object.freeze({
@@ -28,7 +28,7 @@ const SITE_LAYOUT_PAGE_OPTIONS = Object.freeze([
     }),
     Object.freeze({
         key: 'gongyi',
-        label: '公益站',
+        label: 'API中转',
         path: 'https://gongyi.zaoyoe.com'
     })
 ]);

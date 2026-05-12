@@ -222,6 +222,13 @@ function normalizeHomepageHeroEntries(value) {
         .slice(0, 8);
 }
 
+function normalizeHomepageVerifyDisplayLabel(value) {
+    const text = sanitizeText(value, '', 120);
+    return ['验证', 'Verify', 'API 验证', 'API Verification', 'Gemini 验证', 'Gemini Verify', 'Gemini验证', 'Google One', 'Google one'].includes(text)
+        ? 'Gemini Pro'
+        : text;
+}
+
 function normalizeHomepageShopCustomItems(value) {
     return sanitizeArray(value)
         .map((item) => {
@@ -512,7 +519,7 @@ function buildEmptyHomepageSectionContent(section) {
         case 'gongyi':
             return {
                 enable_auto: false,
-                section_tag: '公益站',
+                section_tag: 'API中转',
                 brand_name: 'Zaoyoe',
                 brand_subtitle: 'Subscription to API Conversion Platform',
                 cta_text: '进入控制台',
@@ -655,6 +662,7 @@ function normalizeHomepageContent(section, content = {}) {
                 ? normalizeHomepageGongyiModelItems(source.model_items)
                 : next.model_items;
             preserveTranslatedPair(next, source, 'section_tag', 40);
+            preserveTranslatedPair(next, source, 'brand_name', 80);
             preserveTranslatedPair(next, source, 'brand_subtitle', 240);
             preserveTranslatedPair(next, source, 'cta_text', 48);
             preserveTranslatedPair(next, source, 'feature_1_title', 80);
@@ -679,7 +687,7 @@ function normalizeHomepageContent(section, content = {}) {
             return next;
         case 'verify':
             next.enable_auto = sanitizeBoolean(source.enable_auto, false);
-            next.section_title = sanitizeText(source.section_title, '', 120);
+            next.section_title = normalizeHomepageVerifyDisplayLabel(source.section_title);
             next.section_subtitle = sanitizeText(source.section_subtitle, '', 240);
             next.preview_mode = sanitizeText(source.preview_mode, next.preview_mode, 20) === 'image' ? 'image' : 'dynamic';
             next.screenshot_path = sanitizeUrl(source.screenshot_path, '', 2048);
@@ -901,36 +909,36 @@ function validateHomepageRow(section, row = {}, options = {}) {
             break;
         }
         case 'gongyi':
-            if (!content.brand_name) warnings.push('公益站品牌名为空');
-            if (!content.brand_subtitle) warnings.push('公益站副标题为空');
-            if (!content.cta_text || !content.cta_link) warnings.push('公益站 CTA 文案或链接未配置完整');
+            if (!content.brand_name) warnings.push('API中转品牌名为空');
+            if (!content.brand_subtitle) warnings.push('API中转副标题为空');
+            if (!content.cta_text || !content.cta_link) warnings.push('API中转 CTA 文案或链接未配置完整');
             if (!Array.isArray(content.highlight_items) || !content.highlight_items.length) {
-                warnings.push('公益站能力标签为空');
+                warnings.push('API中转能力标签为空');
             }
             if (!content.feature_1_title && !content.feature_2_title && !content.feature_3_title) {
-                warnings.push('公益站卖点卡片标题为空');
+                warnings.push('API中转卖点卡片标题为空');
             }
             if (content.show_model_section !== false && (!Array.isArray(content.model_items) || !content.model_items.some((item) => item?.enabled !== false))) {
-                warnings.push('公益站模型标签为空');
+                warnings.push('API中转模型标签为空');
             }
             break;
         case 'verify':
-            if (!content.section_title) warnings.push('Verify 标题为空');
-            if (content.preview_mode === 'image' && !content.screenshot_path) warnings.push('Verify 预览截图为空');
+            if (!content.section_title) warnings.push('Gemini Pro 标题为空');
+            if (content.preview_mode === 'image' && !content.screenshot_path) warnings.push('Gemini Pro 预览截图为空');
             if (content.screenshot_path && /^data:image\//.test(content.screenshot_path)) {
-                warnings.push('Verify 预览截图不能再使用 base64 数据，请上传到 R2/CDN');
+                warnings.push('Gemini Pro 预览截图不能再使用 base64 数据，请上传到 R2/CDN');
             }
             if (!Array.isArray(content.features) || !content.features.length) {
-                warnings.push('Verify 特性标签为空');
+                warnings.push('Gemini Pro 特性标签为空');
             }
             if (!Array.isArray(content.supported_models) || !content.supported_models.length) {
-                warnings.push('Verify 支持模型说明为空');
+                warnings.push('Gemini Pro 支持模型说明为空');
             }
             if (!content.cta_text || !content.cta_link) {
-                warnings.push('Verify CTA 文案或链接未配置完整');
+                warnings.push('Gemini Pro CTA 文案或链接未配置完整');
             }
             if (!content.risk_notice) {
-                warnings.push('Verify 风险提示为空');
+                warnings.push('Gemini Pro 风险提示为空');
             }
             break;
         case 'guestbook': {

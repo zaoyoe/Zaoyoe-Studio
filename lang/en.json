@@ -29,9 +29,9 @@
     "nav": {
         "prompts": "Prompts",
         "shop": "Shop",
-        "verify": "Verify",
+        "verify": "Gemini Pro",
         "guestbook": "Guestbook",
-        "gongyi": "Community Access",
+        "gongyi": "API Relay",
         "status": "Status",
         "gallery": "Gallery",
         "settings": "Settings",
@@ -45,8 +45,8 @@
     "seo": {
         "index": {
             "title": "Zaoyoe Studio - Creativity, Efficiency, Endless Possibilities",
-            "description": "Zaoyoe Studio is an AI-powered creative resource platform for prompts, API verification, resource shopping, and community access.",
-            "keywords": "AI prompts, Prompt Gallery, Google One verification, resource store, Zaoyoe Studio",
+            "description": "Zaoyoe Studio is an AI-powered creative resource platform for prompts, Gemini Pro, resource shopping, and API relay.",
+            "keywords": "AI prompts, Prompt Gallery, Gemini Pro, resource store, Zaoyoe Studio",
             "h1": "Zaoyoe Studio - AI-powered creative resource platform"
         },
         "prompts": {
@@ -78,8 +78,8 @@
         "entries": {
             "prompts": "Prompts",
             "shop": "Shop",
-            "gongyi": "Community Access",
-            "verify": "Verify",
+            "gongyi": "API Relay",
+            "verify": "Gemini Pro",
             "guestbook": "Guestbook"
         },
         "prompts": {
@@ -92,7 +92,7 @@
             "subtitle": "Quality resources for growth"
         },
         "verify": {
-            "title": "Google One",
+            "title": "Gemini Pro",
             "subtitle": "Submit account jobs and fetch trial links automatically",
             "features": {
                 "free": "Job-based",
@@ -270,7 +270,7 @@
         "allCategories": "All",
         "points": "Points",
         "categoryLabels": {
-            "communityAccess": "Community Access",
+            "communityAccess": "API Relay",
             "virtualCard": "Virtual Card",
             "account": "Account",
             "other": "Other"
@@ -1100,9 +1100,9 @@
             "title": "Products",
             "prompts": "Prompt Gallery",
             "shop": "Resource Store",
-            "verify": "API Verification",
+            "verify": "Gemini Pro",
             "guestbook": "Guestbook",
-            "gongyi": "Community Access"
+            "gongyi": "API Relay"
         },
         "resources": {
             "title": "Resources",

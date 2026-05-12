@@ -1,7 +1,7 @@
 (function (global) {
     'use strict';
 
-    const VERSION = '20260428_IOS_SAFARI_THEME_CHROME_2';
+    const VERSION = '20260512_SUPPORT_STATUS_LINK_REMOVED_1';
     const MOBILE_MENU_LOCK_CLASS = 'mobile-menu-open';
     const runtimeState = {
         cachedData: {
@@ -254,7 +254,6 @@
             support: {
                 type: 'custom',
                 render: () => `
-                    <a href="https://status.zaoyoe.com"><span data-i18n="nav.status">状态页</span></a>
                     <a href="https://t.me/zaoyoe" target="_blank">TG</a>
                     <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank"><span data-i18n="nav.tgGroup">TG群组</span></a>
                 `

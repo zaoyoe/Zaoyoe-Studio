@@ -32,8 +32,8 @@ const HomepageAdmin = (() => {
         hero: { icon: 'fas fa-image', label: 'Hero 横幅' },
         prompts: { icon: 'fas fa-palette', label: '提示词图库' },
         shop: { icon: 'fas fa-store', label: '资源商城' },
-        gongyi: { icon: 'fas fa-hand-holding-heart', label: '公益站' },
-        verify: { icon: 'fas fa-shield-alt', label: 'API 验证' },
+        gongyi: { icon: 'fas fa-hand-holding-heart', label: 'API中转' },
+        verify: { icon: 'fas fa-shield-alt', label: 'Gemini Pro' },
         guestbook: { icon: 'fas fa-comment-dots', label: '留言板' },
         ticker: { icon: 'fas fa-wave-square', label: '底部跑马灯' }
     };
@@ -52,9 +52,9 @@ const HomepageAdmin = (() => {
         { key: 'home', label: '首页', path: '/' },
         { key: 'shop', label: '商城', path: '/shop.html' },
         { key: 'prompts', label: '提示词', path: '/prompts.html' },
-        { key: 'verify', label: '验证', path: '/verify.html' },
+        { key: 'verify', label: 'Gemini Pro', path: '/verify.html' },
         { key: 'guestbook', label: '留言板', path: '/guestbook.html' },
-        { key: 'gongyi', label: '公益站', path: 'https://gongyi.zaoyoe.com' }
+        { key: 'gongyi', label: 'API中转', path: 'https://gongyi.zaoyoe.com' }
     ]);
     const HOMEPAGE_SITE_LAYOUT_PAGE_KEYS = new Set(HOMEPAGE_SITE_LAYOUT_PAGE_OPTIONS.map((option) => option.key));
     const HOMEPAGE_SITE_LAYOUT_LOGO_MODES = new Set(['follow_root', 'custom']);
@@ -63,6 +63,7 @@ const HomepageAdmin = (() => {
         prompts: ['section_title', 'section_subtitle'],
         shop: ['section_title', 'section_subtitle'],
         gongyi: [
+            'brand_name',
             'brand_subtitle',
             'cta_text',
             'feature_1_title',
@@ -997,7 +998,7 @@ const HomepageAdmin = (() => {
             value: 'verify:cta_text',
             section: 'verify',
             field: 'cta_text',
-            label: 'Verify CTA',
+            label: 'Gemini Pro CTA',
             inputKind: 'text',
             placeholder: '输入实验 CTA 文案'
         },
@@ -1065,11 +1066,18 @@ const HomepageAdmin = (() => {
     function getHomepageDefaultHeroEntries() {
         return [
             { id: 'prompts', text: '提示词', text_en: 'Prompts', icon: 'fa-wand-magic-sparkles', color: '#f472b6', link: '/prompts.html', section: 'prompts' },
-            { id: 'gongyi', text: '公益站', text_en: 'Community Access', icon: 'home-entry-card-icon--gongyi', color: '#5ed8f8', link: 'https://gongyi.zaoyoe.com', section: 'gongyi' },
+            { id: 'gongyi', text: 'API中转', text_en: 'API Relay', icon: 'home-entry-card-icon--gongyi', color: '#5ed8f8', link: 'https://gongyi.zaoyoe.com', section: 'gongyi' },
             { id: 'shop', text: '商城', text_en: 'Shop', icon: 'fa-store', color: '#4ade80', link: '/shop.html', section: 'shop' },
-            { id: 'verify', text: '验证', text_en: 'Verify', icon: 'fa-shield-check', color: '#60a5fa', link: '/verify.html?source=homepage_verify', section: 'verify' },
+            { id: 'verify', text: 'Gemini Pro', text_en: 'Gemini Pro', icon: 'fa-shield-check', color: '#60a5fa', link: '/verify.html?source=homepage_verify', section: 'verify' },
             { id: 'guestbook', text: '留言板', text_en: 'Guestbook', icon: 'fa-comment-dots', color: '#f59e0b', link: '#', action: 'openGuestbookModal', section: 'guestbook' }
         ];
+    }
+
+    function normalizeHomepageVerifyDisplayLabel(value) {
+        const text = String(value || '').trim();
+        return ['验证', 'Verify', 'API 验证', 'API Verification', 'Gemini 验证', 'Gemini Verify', 'Gemini验证', 'Google One', 'Google one'].includes(text)
+            ? 'Gemini Pro'
+            : text;
     }
 
     function isHomepageGongyiHeroEntry(item) {
@@ -1925,7 +1933,7 @@ const HomepageAdmin = (() => {
                 break;
             case 'verify':
                 summary = `
-                    <strong>${escapeHomepageHtml(getLocalizedHomepageField(content, 'section_title') || 'Verify 分区')}</strong>
+                    <strong>${escapeHomepageHtml(getLocalizedHomepageField(content, 'section_title') || 'Gemini Pro 分区')}</strong>
                     <span>${content.screenshot_path ? '已配置截图' : '缺少截图'} · ${escapeHomepageHtml(String((content.features || []).length || 0))} 个标签</span>
                 `;
                 break;
@@ -1970,7 +1978,7 @@ const HomepageAdmin = (() => {
             case 'guestbook':
                 return safeContent.section_title || safeContent.section_subtitle || '更新分区标题与描述';
             case 'verify':
-                return safeContent.section_title || safeContent.cta_text || '更新验证区文案与 CTA';
+                return safeContent.section_title || safeContent.cta_text || '更新 Gemini Pro 区文案与 CTA';
             case 'ticker':
                 return [
                     ...(Array.isArray(safeContent.activity_keywords) ? safeContent.activity_keywords : []),
@@ -2129,7 +2137,7 @@ const HomepageAdmin = (() => {
             '    </div>',
             '    <div class="hp-inline-note hp-inline-note--muted">',
             '        <i class="fas fa-compass"></i>',
-            '        <span>这里控制站点根路径 `/` 默认打开谁，以及用户点击 Logo 后回到哪里。下方 Hero / 商城 / 验证等标签页继续负责首页内容本身。</span>',
+            '        <span>这里控制站点根路径 `/` 默认打开谁，以及用户点击 Logo 后回到哪里。下方 Hero / 商城 / Gemini Pro 等标签页继续负责首页内容本身。</span>',
             '    </div>',
             '    <div class="hp-ops-form-grid hp-ops-form-grid--compact">',
             '        <div class="hp-field">',
@@ -2665,7 +2673,7 @@ const HomepageAdmin = (() => {
                             ${aggregateMode ? '只读' : (isContextPending ? '加载中' : `${escapeHomepageHtml(String(experiments.length || 0))} 个实验`)}
                         </span>
                     </div>
-                    ${aggregateMode ? '<div class="hp-preview-empty">切换到具体站点后，可对 Hero 标题、Verify CTA 和精选清单做轻量实验。</div>' : `
+                    ${aggregateMode ? '<div class="hp-preview-empty">切换到具体站点后，可对 Hero 标题、Gemini Pro CTA 和精选清单做轻量实验。</div>' : `
                         <div class="hp-ops-form-grid hp-ops-form-grid--compact">
                             <div class="hp-field">
                                 <label>实验槽位</label>
@@ -3511,7 +3519,7 @@ const HomepageAdmin = (() => {
                 break;
 
             case 'verify':
-                setInputValue('hp-verify-title', content.section_title);
+                setInputValue('hp-verify-title', normalizeHomepageVerifyDisplayLabel(content.section_title));
                 setInputValue('hp-verify-subtitle', content.section_subtitle);
                 setSelectValue('hp-verify-preview-mode', content.preview_mode || 'dynamic');
                 setInputValue('hp-verify-demo-title', content.demo_title);
@@ -4026,7 +4034,7 @@ const HomepageAdmin = (() => {
                 break;
 
             case 'verify':
-                content.section_title = getInputValue('hp-verify-title');
+                content.section_title = normalizeHomepageVerifyDisplayLabel(getInputValue('hp-verify-title'));
                 content.section_subtitle = getInputValue('hp-verify-subtitle');
                 content.preview_mode = getSelectValue('hp-verify-preview-mode') === 'image' ? 'image' : 'dynamic';
                 content.demo_title = getInputValue('hp-verify-demo-title');
@@ -5358,7 +5366,7 @@ const HomepageAdmin = (() => {
         const file = input.files && input.files[0];
         if (!file) return;
 
-        const writableSite = requireWritableHomepageSite({ label: '上传 Verify 截图' });
+        const writableSite = requireWritableHomepageSite({ label: '上传 Gemini Pro 截图' });
         if (!writableSite) {
             input.value = '';
             return;

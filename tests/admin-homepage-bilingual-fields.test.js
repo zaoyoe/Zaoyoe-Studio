@@ -70,12 +70,21 @@ test('homepage browser contract preserves localized section title pairs', () => 
     });
     assert.equal(guestbook.fallback_items[0].content_en, 'English fallback');
     assert.equal(guestbook.fallback_items[0].author_en, 'Zaoyoe Community');
+
+    const verify = contract.normalizeContent('verify', {
+        section_title: 'Google One',
+        section_title_zh: 'Gemini Pro',
+        section_title_en: 'Gemini Pro'
+    });
+    assert.equal(verify.section_title, 'Gemini Pro');
+    assert.equal(verify.section_title_en, 'Gemini Pro');
 });
 
 test('homepage admin save path seeds the current site localized fallback', () => {
     const source = fs.readFileSync(adminHomepagePath, 'utf8');
 
     assert.match(source, /hero:\s*\['title', 'subtitle'\]/);
+    assert.match(source, /gongyi:\s*\[[\s\S]*'brand_name'[\s\S]*'brand_subtitle'/);
     assert.match(source, /function ensureHomepageSectionLocalizedFallbacks\(section, content, site\)/);
     assert.match(source, /ensureHomepageLocalizedListFallbacks\(content\.fallback_items, \['content', 'author'\], site\)/);
     assert.match(source, /ensureHomepageSectionLocalizedFallbacks\(section, content, writableSite\);/);
@@ -91,11 +100,10 @@ test('homepage hero runtime avoids Chinese title fallback in English language mo
     assert.match(framerSource, /getHomepageRuntimeLanguage\(\) === 'en' && containsHomeCjkText\(normalized\)/);
     assert.match(framerSource, /currentLang === 'zh'[\s\S]*!containsHomeCjkText\(normalized\)[\s\S]*containsHomeCjkText\(fallback\)/);
     assert.match(framerSource, /currentLang === 'zh'[\s\S]*normalized\.every\(\(item\) => !containsHomeCjkText\(item\)\)[\s\S]*fallbackList\.some\(\(item\) => containsHomeCjkText\(item\)\)/);
-    assert.match(framerSource, /text: resolveHomepageLocalizedText\(this\.getLocalizedField\(item, 'text'\) \|\| item\?\.text, entryFallback\.i18nKey/);
-    assert.match(framerSource, /resolveHomepageLocalizedText\(this\.getLocalizedField\(config, 'section_title'\), 'home\.prompts\.title'/);
-    assert.match(framerSource, /resolveHomepageLocalizedText\(this\.getLocalizedField\(config, 'section_title'\), 'home\.shop\.title'/);
-    assert.match(framerSource, /resolveHomepageLocalizedText\(this\.getLocalizedField\(config, 'section_title'\), 'home\.verify\.title'/);
-    assert.match(framerSource, /resolveHomepageLocalizedText\(this\.getLocalizedField\(config, 'section_title'\), 'home\.guestbook\.title'/);
+    assert.match(framerSource, /text: resolveHomepageLocalizedText\(entryText, entryFallback\.i18nKey/);
+    assert.match(framerSource, /brandName: resolveHomepageGongyiBrandName\(this\.getLocalizedField\(config, 'brand_name'\) \|\| config\.brand_name\)/);
+    assert.match(framerSource, /resolveHomepageLocalizedText\(normalizeHomepageVerifyProductLabel\(this\.getLocalizedField\(config, 'section_title'\)\), 'home\.verify\.title'/);
+    assert.match(framerSource, /this\.cachedData\.gongyi = this\.buildGongyiData\(this\.config\.gongyi \|\| \{\}\);/);
     assert.match(framerSource, /features: resolveHomepageLocalizedTextList\(config\.features, defaultFeatures\)/);
     assert.match(framerSource, /ctaText: resolveHomepageLocalizedText\(experimentCtaText \|\| config\.cta_text, 'home\.verify\.cta'/);
     assert.match(framerSource, /function getHomepageGongyiModelLabelFallback\(item = \{\}\)/);
@@ -113,8 +121,9 @@ test('homepage hero runtime avoids Chinese title fallback in English language mo
     assert.match(prefetchSource, /getCurrentLanguage\(\) === 'en' && containsCjkText\(normalized\)/);
     assert.match(prefetchSource, /currentLang === 'zh'[\s\S]*!containsCjkText\(normalized\)[\s\S]*containsCjkText\(fallback\)/);
     assert.match(prefetchSource, /currentLang === 'zh'[\s\S]*normalized\.every\(\(item\) => !containsCjkText\(item\)\)[\s\S]*fallbackList\.some\(\(item\) => containsCjkText\(item\)\)/);
-    assert.match(prefetchSource, /text: resolveLocalizedText\(getLocalizedField\(item, 'text'\) \|\| item\?\.text, entryFallback\.i18nKey/);
-    assert.match(prefetchSource, /resolveLocalizedText\(getLocalizedField\(config, 'section_title'\), 'home\.verify\.title'/);
+    assert.match(prefetchSource, /text: resolveLocalizedText\(entryText, entryFallback\.i18nKey/);
+    assert.match(prefetchSource, /brandName: resolveGongyiBrandName\(getLocalizedField\(config, 'brand_name'\) \|\| config\.brand_name\)/);
+    assert.match(prefetchSource, /resolveLocalizedText\(normalizeVerifyProductLabel\(getLocalizedField\(config, 'section_title'\)\), 'home\.verify\.title'/);
     assert.match(prefetchSource, /features: resolveLocalizedTextList\(config\.features, defaultFeatures\)/);
     assert.match(prefetchSource, /ctaText: resolveLocalizedText\(experimentCtaText \|\| config\.cta_text, 'home\.verify\.cta'/);
     assert.match(prefetchSource, /function getGongyiModelLabelFallback\(item = \{\}\)/);
@@ -157,7 +166,7 @@ test('public runtime blocks Chinese business-data fallbacks in English language 
     assert.match(framerSource, /const promptTitle = getHomepageLocalizedDataField\(prompt, 'title'/);
     assert.match(framerSource, /const productName = getHomepageLocalizedDataField\(product, 'name'/);
     assert.match(framerSource, /function getHomepageProductCategoryLabel\(category\)/);
-    assert.match(framerSource, /'公益站': 'Community Access'/);
+    assert.match(framerSource, /'API中转': 'API Relay'/);
     assert.match(framerSource, /sanitizeTickerItems\(config\.product_categories, \{ allowCjk: true \}\)/);
     assert.match(framerSource, /filterHomepageDataTextList\(langTags\)\.forEach/);
     assert.match(framerSource, /getHomepageRuntimeLanguage\(\) !== 'en' \|\| Boolean\(getHomepageLocalizedDataField\(item, 'content'/);

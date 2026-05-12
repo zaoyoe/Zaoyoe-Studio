@@ -158,7 +158,7 @@ function getAnalyticsProductSemanticIndicatorColor(value = '', index = 0) {
     if (key.includes('facebook') || key.includes('meta')) {
         return chartColors.warning;
     }
-    if (key.includes('公益') || key.includes('charity') || key.includes('public')) {
+    if (key.includes('api中转') || key.includes('apirelay') || key.includes('公益') || key.includes('charity') || key.includes('public')) {
         return chartColors.secondary;
     }
     if (key.includes('other') || key.includes('others') || key.includes('其他') || key.includes('未分类') || key.includes('misc')) {

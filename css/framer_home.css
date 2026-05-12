@@ -4721,6 +4721,11 @@ body.home-page .framer-footer {
     padding-top: 12px;
 }
 
+.avatar-dropdown:not(.is-authenticated) .auth-user-only,
+.avatar-dropdown.is-authenticated .auth-guest-only {
+    display: none !important;
+}
+
 .dropdown-action {
     width: 100%;
     display: flex;

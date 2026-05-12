@@ -19,7 +19,7 @@
         }),
         verify: Object.freeze({
             key: 'verify',
-            label: '验证',
+            label: 'Gemini Pro',
             href: '/verify.html'
         }),
         guestbook: Object.freeze({
@@ -29,7 +29,7 @@
         }),
         gongyi: Object.freeze({
             key: 'gongyi',
-            label: '公益站',
+            label: 'API中转',
             href: 'https://gongyi.zaoyoe.com'
         })
     });

@@ -52,7 +52,7 @@ test('homepage admin runtime and studio shell expose P1 orchestration controls',
     assert.match(runtimeSource, /function renderHomepageGuestbookFallbackList\(\)/);
     assert.match(runtimeSource, /const HOMEPAGE_EXPERIMENT_SLOT_DEFS = Object\.freeze\(/);
     assert.match(runtimeSource, /function renderHomepageExperimentComposer\(\)/);
-    assert.match(runtimeSource, /gongyi: \{ icon: 'fas fa-hand-holding-heart', label: '公益站' \}/);
+    assert.match(runtimeSource, /gongyi: \{ icon: 'fas fa-hand-holding-heart', label: 'API中转' \}/);
     assert.match(runtimeSource, /case 'gongyi':/);
     assert.match(runtimeSource, /show_model_section/);
     assert.match(runtimeSource, /add-gongyi-model/);
