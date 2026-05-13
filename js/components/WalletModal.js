@@ -6400,13 +6400,8 @@
             }
 
             try {
-                const { data, error } = await window.supabaseClient.rpc('get_system_config', {
-                    p_key: 'checkin_system'
-                });
-
-                if (error) throw error;
-
-                this.checkinConfig = this.normalizeCheckinConfig(data);
+                const configs = await this.loadPublicSiteSystemConfigs(['checkin_system']);
+                this.checkinConfig = this.normalizeCheckinConfig(configs.checkin_system);
             } catch (configError) {
                 console.warn('[WalletModal] Failed to load check-in config:', configError);
                 this.checkinConfig = this.getDefaultCheckinConfig();
@@ -6852,7 +6847,7 @@
                 return null;
             }
 
-            if (['payment_channels', 'recharge_options', 'affiliate_program', 'affiliate_poster'].includes(normalizedKey)) {
+            if (['payment_channels', 'recharge_options', 'affiliate_program', 'affiliate_poster', 'unlock_pricing', 'rewards', 'checkin_system'].includes(normalizedKey)) {
                 const configs = await this.loadPublicSiteSystemConfigs([normalizedKey]);
                 return configs[normalizedKey] || null;
             }

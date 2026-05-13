@@ -813,6 +813,7 @@ async function loadWalletShopOrderDetail(client, { orderId = '', userId = '', si
         .select('id, user_id, product_id, inventory_id, snapshot_product_name, created_at, price_paid, total_price, discount_code, discount_amount, discount_snapshot, item_count')
         .eq('id', normalizedOrderId)
         .eq('user_id', normalizedUserId)
+        .eq('site', site)
         .single();
 
     if (orderError || !order) {

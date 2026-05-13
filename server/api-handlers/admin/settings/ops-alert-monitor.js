@@ -24,7 +24,7 @@ const OPS_ALERT_MONITOR_SHIFT_BUCKET_COUNT = 6;
 const OPS_ALERT_MONITOR_SHIFT_CATEGORY_LIMIT = 4;
 const OPS_ALERT_MONITOR_SHIFT_ADMIN_LIMIT = 6;
 const OPS_ALERT_MONITOR_SHIFT_CLOSE_REASON_LIMIT = 5;
-const OPS_ALERT_CASES_SELECT_FIELDS = 'category_key, target_id, alert_type, status, owner_admin_id, owner_label, note, resolution, metadata, last_action, last_action_at, updated_at';
+const OPS_ALERT_CASES_SELECT_FIELDS = 'site, category_key, target_id, alert_type, status, owner_admin_id, owner_label, note, resolution, metadata, last_action, last_action_at, updated_at';
 
 const ALERT_MONITOR_CATEGORIES = Object.freeze([
     {
@@ -173,12 +173,43 @@ function getAlertTypeState(alertType = '') {
     return 'unknown';
 }
 
-function buildOpsAlertCaseKey(categoryKey, targetId) {
-    return `${normalizeText(categoryKey, 80).toLowerCase()}::${normalizeText(targetId, 200)}`;
+function normalizeOpsAlertCaseSite(value, fallback = 'cn') {
+    const fallbackText = normalizeText(fallback, 40).toLowerCase();
+    const normalizedFallback = ['cn', 'intl', 'all'].includes(fallbackText)
+        ? fallbackText
+        : (fallbackText ? 'cn' : '');
+    const normalized = normalizeText(value, 40).toLowerCase();
+    if (['cn', 'intl', 'all'].includes(normalized)) {
+        return normalized;
+    }
+    return normalizedFallback;
+}
+
+function inferOpsAlertCaseSiteForJob(job = {}) {
+    const payload = normalizePayload(job.payload);
+    const directSite = normalizeOpsAlertCaseSite(payload.site, '');
+    if (directSite) {
+        return directSite;
+    }
+
+    const siteLabels = normalizeSupportedSiteList(payload.site_labels);
+    if (siteLabels.length === 1) {
+        return siteLabels[0];
+    }
+    if (siteLabels.length > 1) {
+        return 'all';
+    }
+
+    return inferOpsAlertJobSite(job) || 'cn';
+}
+
+function buildOpsAlertCaseKey(categoryKey, targetId, site = 'cn') {
+    return `${normalizeOpsAlertCaseSite(site, 'cn')}::${normalizeText(categoryKey, 80).toLowerCase()}::${normalizeText(targetId, 200)}`;
 }
 
 function buildOpsAlertCaseRecord(row = {}, categoryKeyFallback = '') {
     return {
+        site: normalizeOpsAlertCaseSite(row.site || row?.metadata?.site, 'cn'),
         category_key: normalizeText(row.category_key, 80).toLowerCase() || normalizeText(categoryKeyFallback, 80).toLowerCase() || null,
         target_id: normalizeText(row.target_id, 200) || null,
         alert_type: normalizeText(row.alert_type, 120).toLowerCase() || null,
@@ -257,7 +288,7 @@ async function fetchLegacyShopRiskCasesByTargetIds(supabase, targetIds = []) {
                 category_key: 'shop_risk'
             }, 'shop_risk');
             return [
-                buildOpsAlertCaseKey('shop_risk', caseRecord.target_id),
+                buildOpsAlertCaseKey('shop_risk', caseRecord.target_id, caseRecord.site),
                 caseRecord
             ];
         })
@@ -268,11 +299,12 @@ async function fetchOpsAlertCasesByTargets(supabase, targets = []) {
     const normalizedTargets = Array.from(new Map(
         (Array.isArray(targets) ? targets : [])
             .map((item) => ({
+                site: normalizeOpsAlertCaseSite(item?.site || item?.siteContext || item?.site_context || item?.metadata?.site, 'cn'),
                 category_key: normalizeText(item?.category_key || item?.categoryKey, 80).toLowerCase(),
                 target_id: normalizeText(item?.target_id || item?.targetId, 200)
             }))
             .filter((item) => item.category_key && item.target_id)
-            .map((item) => [buildOpsAlertCaseKey(item.category_key, item.target_id), item])
+            .map((item) => [buildOpsAlertCaseKey(item.category_key, item.target_id, item.site), item])
     ).values());
 
     if (!normalizedTargets.length) {
@@ -280,10 +312,15 @@ async function fetchOpsAlertCasesByTargets(supabase, targets = []) {
     }
 
     const groupedTargets = normalizedTargets.reduce((accumulator, item) => {
-        if (!accumulator.has(item.category_key)) {
-            accumulator.set(item.category_key, []);
+        const groupKey = buildOpsAlertCaseKey(item.category_key, '', item.site);
+        if (!accumulator.has(groupKey)) {
+            accumulator.set(groupKey, {
+                site: item.site,
+                category_key: item.category_key,
+                target_ids: []
+            });
         }
-        accumulator.get(item.category_key).push(item.target_id);
+        accumulator.get(groupKey).target_ids.push(item.target_id);
         return accumulator;
     }, new Map());
 
@@ -291,12 +328,13 @@ async function fetchOpsAlertCasesByTargets(supabase, targets = []) {
 
     try {
         const groupedRows = await Promise.all(
-            Array.from(groupedTargets.entries()).map(async ([categoryKey, targetIds]) => {
+            Array.from(groupedTargets.values()).map(async (group) => {
                 const { data, error } = await supabase
                     .from('ops_alert_cases')
                     .select(OPS_ALERT_CASES_SELECT_FIELDS)
-                    .in('category_key', [categoryKey])
-                    .in('target_id', Array.from(new Set(targetIds)));
+                    .in('site', [group.site])
+                    .in('category_key', [group.category_key])
+                    .in('target_id', Array.from(new Set(group.target_ids)));
 
                 if (error) {
                     throw error;
@@ -309,7 +347,7 @@ async function fetchOpsAlertCasesByTargets(supabase, targets = []) {
         groupedRows.flat().forEach((row) => {
             const caseRecord = buildOpsAlertCaseRecord(row, row?.category_key);
             caseMap.set(
-                buildOpsAlertCaseKey(caseRecord.category_key, caseRecord.target_id),
+                buildOpsAlertCaseKey(caseRecord.category_key, caseRecord.target_id, caseRecord.site),
                 caseRecord
             );
         });
@@ -323,7 +361,7 @@ async function fetchOpsAlertCasesByTargets(supabase, targets = []) {
 
     const legacyShopRiskCases = await fetchLegacyShopRiskCasesByTargetIds(
         supabase,
-        groupedTargets.get('shop_risk') || []
+        (Array.from(groupedTargets.values()).find((group) => group.category_key === 'shop_risk' && group.site === 'cn') || {}).target_ids || []
     );
     legacyShopRiskCases.forEach((value, key) => {
         caseMap.set(key, value);
@@ -354,6 +392,7 @@ function buildFallbackOpsAlertCaseEvent(caseRecord = {}) {
 
     return {
         id: null,
+        site: normalizeOpsAlertCaseSite(caseRecord?.site || caseRecord?.metadata?.site, 'cn'),
         category_key: normalizeText(caseRecord?.category_key, 80).toLowerCase() || null,
         target_id: normalizeText(caseRecord?.target_id, 200) || null,
         alert_type: normalizeText(caseRecord?.alert_type, 120).toLowerCase() || null,
@@ -390,16 +429,18 @@ function buildOpsAlertCaseEventView(event = {}) {
     };
 }
 
-function buildOpsAlertItemCaseState(categoryKey = '', targetId = '', caseRecord = null, caseEventsByKey = new Map()) {
+function buildOpsAlertItemCaseState(categoryKey = '', targetId = '', caseRecord = null, caseEventsByKey = new Map(), options = {}) {
     const normalizedCategoryKey = normalizeText(categoryKey, 80).toLowerCase();
     const normalizedTargetId = normalizeText(targetId, 200);
-    const caseKey = buildOpsAlertCaseKey(normalizedCategoryKey, normalizedTargetId);
+    const normalizedSite = normalizeOpsAlertCaseSite(options.site || caseRecord?.site || caseRecord?.metadata?.site, 'cn');
+    const caseKey = buildOpsAlertCaseKey(normalizedCategoryKey, normalizedTargetId, normalizedSite);
     const rawEvents = caseEventsByKey instanceof Map ? caseEventsByKey.get(caseKey) : null;
     const timeline = Array.isArray(rawEvents) && rawEvents.length
         ? rawEvents.map((event) => buildOpsAlertCaseEventView(event)).slice(0, OPS_ALERT_CASE_EVENT_LIMIT)
         : [];
     const fallbackEvent = timeline.length ? null : buildFallbackOpsAlertCaseEvent({
         ...caseRecord,
+        site: normalizedSite,
         category_key: normalizedCategoryKey || caseRecord?.category_key,
         target_id: normalizedTargetId || caseRecord?.target_id
     });
@@ -410,6 +451,7 @@ function buildOpsAlertItemCaseState(categoryKey = '', targetId = '', caseRecord 
     const latestNoteEvent = recentEvents.find((event) => normalizeText(event?.note, 2000));
 
     return {
+        case_site: normalizedSite,
         case_status: normalizeText(caseRecord?.status || latestEvent?.status, 40).toLowerCase() || 'open',
         case_owner_admin_id: normalizeText(caseRecord?.owner_admin_id || latestEvent?.owner_admin_id, 160) || null,
         case_owner_label: normalizeText(caseRecord?.owner_label || latestEvent?.owner_label, 255) || null,
@@ -710,11 +752,12 @@ function buildAlertItem(job = {}, categoryKey = '', options = {}) {
     const caseEventsByKey = options.caseEventsByKey instanceof Map
         ? options.caseEventsByKey
         : new Map();
-    const rawCaseRecord = opsAlertCasesByKey.get(buildOpsAlertCaseKey(categoryKey, targetId)) || null;
+    const caseSite = inferOpsAlertCaseSiteForJob(job);
+    const rawCaseRecord = opsAlertCasesByKey.get(buildOpsAlertCaseKey(categoryKey, targetId, caseSite)) || null;
     const caseRecord = isResolvedCaseStaleForJob(rawCaseRecord, job)
         ? buildImplicitlyReopenedCaseRecord(rawCaseRecord, job)
         : rawCaseRecord;
-    const caseState = buildOpsAlertItemCaseState(categoryKey, targetId, caseRecord, caseEventsByKey);
+    const caseState = buildOpsAlertItemCaseState(categoryKey, targetId, caseRecord, caseEventsByKey, { site: caseSite });
 
     return {
         id: normalizeText(job.id, 160),
@@ -723,7 +766,7 @@ function buildAlertItem(job = {}, categoryKey = '', options = {}) {
         title: normalizeText(job.title, 240) || '系统告警',
         message: getAlertExcerpt(job),
         created_at: normalizeText(job.created_at, 80) || null,
-        site: inferOpsAlertJobSite(job) || null,
+        site: inferOpsAlertJobSite(job) || caseSite || null,
         site_labels: normalizeSupportedSiteList(payload.site_labels),
         target_id: targetId,
         reference_label: reference.label,
@@ -798,8 +841,9 @@ function buildShopRiskThresholdHitEntries(jobs = [], config = {}, options = {}) 
             || (thresholdConfig.auto_response_enabled ? 'pending_review' : 'auto_response_disabled');
         const reference = getAlertReference(job);
         const targetId = getAlertTargetId(job);
-        const caseRecord = opsAlertCasesByKey.get(buildOpsAlertCaseKey('shop_risk', targetId)) || null;
-        const caseState = buildOpsAlertItemCaseState('shop_risk', targetId, caseRecord, caseEventsByKey);
+        const caseSite = inferOpsAlertCaseSiteForJob(job);
+        const caseRecord = opsAlertCasesByKey.get(buildOpsAlertCaseKey('shop_risk', targetId, caseSite)) || null;
+        const caseState = buildOpsAlertItemCaseState('shop_risk', targetId, caseRecord, caseEventsByKey, { site: caseSite });
 
         if (
             primaryAction === 'disable-coupon'
@@ -905,8 +949,9 @@ function buildShopRiskAutoResponseHistoryEntries(jobs = [], config = {}, options
             const status = normalizeText(payload.auto_response_status, 80).toLowerCase()
                 || (thresholdConfig.auto_response_enabled ? 'pending_review' : 'auto_response_disabled');
             const targetId = getAlertTargetId(job);
-            const caseRecord = opsAlertCasesByKey.get(buildOpsAlertCaseKey('shop_risk', targetId)) || null;
-            const caseState = buildOpsAlertItemCaseState('shop_risk', targetId, caseRecord, caseEventsByKey);
+            const caseSite = inferOpsAlertCaseSiteForJob(job);
+            const caseRecord = opsAlertCasesByKey.get(buildOpsAlertCaseKey('shop_risk', targetId, caseSite)) || null;
+            const caseState = buildOpsAlertItemCaseState('shop_risk', targetId, caseRecord, caseEventsByKey, { site: caseSite });
 
             return {
                 id: normalizeText(job.id, 160) || normalizeText(payload.target_id, 160),
@@ -965,8 +1010,10 @@ function buildCategorySnapshot(category, jobs = [], options = {}) {
     const latestByTarget = new Map();
     for (const job of filteredJobs) {
         const targetId = getAlertTargetId(job);
-        if (!latestByTarget.has(targetId)) {
-            latestByTarget.set(targetId, job);
+        const site = inferOpsAlertCaseSiteForJob(job);
+        const targetKey = buildOpsAlertCaseKey(category.key, targetId, site);
+        if (!latestByTarget.has(targetKey)) {
+            latestByTarget.set(targetKey, job);
         }
     }
 
@@ -1045,12 +1092,14 @@ function buildOpsAlertMonitorJobTimeline(jobs = []) {
                 return;
             }
 
-            const caseKey = buildOpsAlertCaseKey(categoryKey, targetId);
+            const caseSite = inferOpsAlertCaseSiteForJob(job);
+            const caseKey = buildOpsAlertCaseKey(categoryKey, targetId, caseSite);
             if (!timelineByKey.has(caseKey)) {
                 timelineByKey.set(caseKey, []);
             }
 
             timelineByKey.get(caseKey).push({
+                site: caseSite,
                 category_key: categoryKey,
                 category_label: ALERT_MONITOR_CATEGORY_LABELS[categoryKey] || categoryKey,
                 target_id: targetId,
@@ -1423,7 +1472,7 @@ function buildOpsAlertMonitorShiftReport({
         .filter((event) => Number(event?.created_time || 0) >= windowStartTime)
         .forEach((event) => {
             const action = normalizeText(event.action, 80).toLowerCase();
-            const caseKey = buildOpsAlertCaseKey(event.category_key, event.target_id);
+            const caseKey = buildOpsAlertCaseKey(event.category_key, event.target_id, event.site);
             const caseEvents = eventTimelineByKey.get(caseKey) || [];
             const jobEntries = jobTimelineByKey.get(caseKey) || [];
 
@@ -1631,7 +1680,7 @@ module.exports = async (req, res) => {
             rawJobs,
             assignableAdmins
         ] = await Promise.all([
-            loadOpsAlertsRuntimeConfig(supabase),
+            loadOpsAlertsRuntimeConfig(supabase, process.env, { site: adminSite }),
             fetchRecentOpsAlertJobs(supabase, sinceIso),
             fetchAssignableOpsAlertAdmins({
                 supabase,
@@ -1642,6 +1691,7 @@ module.exports = async (req, res) => {
         const jobs = rawJobs.filter((job) => shouldIncludeOpsAlertJobForAdminSite(job, adminSite));
         const targets = jobs
             .map((job) => ({
+                site: inferOpsAlertCaseSiteForJob(job),
                 category_key: getAlertCategoryKey(job.alert_type),
                 target_id: getAlertTargetId(job)
             }));

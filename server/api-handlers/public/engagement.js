@@ -13,6 +13,10 @@ function createPublicEngagementHandlers({
         syncInactiveUserTagForUser
     } = require('../../../api/_lib/user-tags');
     const {
+        loadSiteScopedConfig,
+        resolveEngagementConfigRequestSite
+    } = require('../_engagement-site-config');
+    const {
         getOptionalSupabaseAdmin,
         parseJsonBody,
         requireAuthenticatedUser,
@@ -95,8 +99,7 @@ function createPublicEngagementHandlers({
             events: ['verify_success', 'prompt_unlocked', 'search_no_result', 'profile_incomplete', 'daily_checkin_available', 'new_user_welcome', 'points_low_balance', 'content_featured', 'wallet_recharge_success']
         }
     });
-    let engagementCorsPolicyCache = null;
-    let engagementCorsPolicyCacheExpiresAt = 0;
+    const engagementCorsPolicyCache = new Map();
 
     function sanitizeText(value, maxLength = 4000) {
         return String(value || '').trim().slice(0, Math.max(0, maxLength));
@@ -261,39 +264,42 @@ function createPublicEngagementHandlers({
         }
     }
 
-    async function fetchEngagementCorsPolicy(supabase) {
+    async function fetchEngagementCorsPolicy(supabase, site = 'cn') {
         const now = Date.now();
-        if (engagementCorsPolicyCache && engagementCorsPolicyCacheExpiresAt > now) {
-            return engagementCorsPolicyCache;
+        const cacheKey = normalizeSite(site);
+        const cached = engagementCorsPolicyCache.get(cacheKey);
+        if (cached && cached.expiresAt > now) {
+            return cached.policy;
         }
 
         let policy = normalizeExternalEmbedPolicy({});
         if (supabase?.from) {
             try {
-                const { data, error } = await supabase
-                    .from('system_config')
-                    .select('config_value')
-                    .eq('config_key', EXTERNAL_EMBED_POLICY_CONFIG_KEY)
-                    .maybeSingle();
-                if (!error) {
-                    policy = normalizeExternalEmbedPolicy(data?.config_value || {});
-                } else if (!isMissingRelationOrColumnError(error, 'system_config')) {
-                    throw error;
-                }
+                policy = await loadSiteScopedConfig(
+                    supabase,
+                    EXTERNAL_EMBED_POLICY_CONFIG_KEY,
+                    cacheKey,
+                    normalizeExternalEmbedPolicy,
+                    {}
+                );
             } catch (error) {
                 console.warn('[Engagement] External CORS policy fallback:', error?.message || error);
             }
         }
 
-        engagementCorsPolicyCache = policy;
-        engagementCorsPolicyCacheExpiresAt = now + 60 * 1000;
+        engagementCorsPolicyCache.set(cacheKey, {
+            policy,
+            expiresAt: now + 60 * 1000
+        });
         return policy;
     }
 
     async function applyEngagementCors(req, res, supabase = null) {
         const origin = sanitizeText(req?.headers?.origin || req?.headers?.Origin, 240);
         if (!origin) return;
-        const policy = await fetchEngagementCorsPolicy(supabase);
+        const url = new URL(req?.url || '/api/public/engagement/feed', 'http://localhost');
+        const policySite = resolveEngagementConfigRequestSite(req, url, { fallback: 'cn' });
+        const policy = await fetchEngagementCorsPolicy(supabase, policySite);
         if (!policy.enabled) return;
         const allowedOrigins = new Set(policy.allowed_origins || []);
         if (!allowedOrigins.has(origin) && !(policy.allow_local_preview && isLocalPreviewOrigin(origin))) return;
@@ -758,27 +764,59 @@ function createPublicEngagementHandlers({
         return {
             key: sanitizeText(row.key, 160),
             scope,
+            site: sanitizeText(row.site || 'all', 20).toLowerCase() || 'all',
             enabled: row.enabled !== false,
             emails: normalizeEmailArray(definition.email_targets || definition.emails || []),
             tags: normalizeTagArray(definition.tag_targets || definition.tags || [])
         };
     }
 
-    async function fetchAudienceSegments(supabase) {
-        const { data, error } = await supabase
+    function segmentMatchesSite(row = {}, site = 'cn') {
+        const rowSite = sanitizeText(row.site || 'all', 20).toLowerCase() || 'all';
+        return rowSite === 'all' || rowSite === normalizeSite(site);
+    }
+
+    function compareSegmentSitePriority(left = {}, right = {}, site = 'cn') {
+        const requestedSite = normalizeSite(site);
+        const siteRank = (row) => sanitizeText(row.site || 'all', 20).toLowerCase() === requestedSite ? 1 : 0;
+        return siteRank(left) - siteRank(right);
+    }
+
+    async function fetchAudienceSegments(supabase, site = 'cn') {
+        const requestedSite = normalizeSite(site);
+        let query = supabase
             .from('engagement_segments')
-            .select('key,definition,enabled')
-            .eq('enabled', true)
-            .limit(200);
+            .select('key,definition,enabled,site')
+            .eq('enabled', true);
+        if (typeof query?.in === 'function') {
+            query = query.in('site', ['all', requestedSite]);
+        }
+        let { data, error } = await query.limit(200);
 
         if (error) {
             if (isMissingRelationOrColumnError(error, 'engagement_segments')) {
-                return new Map();
+                const fallbackResponse = await supabase
+                    .from('engagement_segments')
+                    .select('key,definition,enabled')
+                    .eq('enabled', true)
+                    .limit(200);
+                if (fallbackResponse.error) {
+                    if (isMissingRelationOrColumnError(fallbackResponse.error, 'engagement_segments')) {
+                        return new Map();
+                    }
+                    throw fallbackResponse.error;
+                }
+                data = fallbackResponse.data;
+                error = null;
+            } else {
+                throw error;
             }
-            throw error;
         }
 
-        return (Array.isArray(data) ? data : []).reduce((segmentMap, row) => {
+        return (Array.isArray(data) ? data : [])
+            .filter((row) => segmentMatchesSite(row, requestedSite))
+            .sort((left, right) => compareSegmentSitePriority(left, right, requestedSite))
+            .reduce((segmentMap, row) => {
             const segment = normalizeAudienceSegment(row);
             if (segment.enabled && segment.scope) {
                 segmentMap.set(segment.scope, segment);
@@ -1595,55 +1633,19 @@ function createPublicEngagementHandlers({
             .map((row) => normalizeOpsAlertBubble(row, context));
     }
 
-    async function fetchAssetStyleConfig(supabase) {
-        const { data, error } = await supabase
-            .from('system_config')
-            .select('config_value')
-            .eq('config_key', ASSET_STYLE_CONFIG_KEY)
-            .maybeSingle();
-        if (error) {
-            if (isMissingRelationOrColumnError(error, 'system_config')) {
-                return normalizeAssetCenter({});
-            }
-            throw error;
-        }
-        return normalizeAssetCenter(data?.config_value || {});
+    async function fetchAssetStyleConfig(supabase, site = 'cn') {
+        return loadSiteScopedConfig(supabase, ASSET_STYLE_CONFIG_KEY, site, normalizeAssetCenter, {});
     }
 
-    async function fetchSupportEntryConfig(supabase) {
-        const { data, error } = await supabase
-            .from('system_config')
-            .select('config_value')
-            .eq('config_key', SUPPORT_ENTRY_CONFIG_KEY)
-            .maybeSingle();
-        if (error) {
-            if (isMissingRelationOrColumnError(error, 'system_config')) {
-                return normalizeSupportEntryCenter({});
-            }
-            throw error;
-        }
-        return normalizeSupportEntryCenter(data?.config_value || {});
+    async function fetchSupportEntryConfig(supabase, site = 'cn') {
+        return loadSiteScopedConfig(supabase, SUPPORT_ENTRY_CONFIG_KEY, site, normalizeSupportEntryCenter, {});
     }
 
-    async function fetchPageSceneConfig(supabase) {
-        const { data, error } = await supabase
-            .from('system_config')
-            .select('config_value')
-            .eq('config_key', PAGE_SCENE_CONFIG_KEY)
-            .maybeSingle();
-        if (error) {
-            if (isMissingRelationOrColumnError(error, 'system_config')) {
-                return {
-                    scenes: [],
-                    event_priority_center: normalizeEventPriorityCenter({})
-                };
-            }
-            throw error;
-        }
-        return {
-            scenes: Array.isArray(data?.config_value?.scenes) ? data.config_value.scenes : [],
-            event_priority_center: normalizeEventPriorityCenter(data?.config_value?.event_priority_center || {})
-        };
+    async function fetchPageSceneConfig(supabase, site = 'cn') {
+        return loadSiteScopedConfig(supabase, PAGE_SCENE_CONFIG_KEY, site, (value = {}) => ({
+            scenes: Array.isArray(value?.scenes) ? value.scenes : [],
+            event_priority_center: normalizeEventPriorityCenter(value?.event_priority_center || {})
+        }), {});
     }
 
     async function resolvePromptReplyNotification(supabase, actorUserId, body = {}) {
@@ -1986,7 +1988,7 @@ function createPublicEngagementHandlers({
         }
         const [userProfile, audienceSegments] = await Promise.all([
             getUserEngagementProfile(supabase, user || {}),
-            fetchAudienceSegments(supabase)
+            fetchAudienceSegments(supabase, site)
         ]);
         const context = {
             pageId,
@@ -2010,9 +2012,9 @@ function createPublicEngagementHandlers({
             fetchRuleBubbles(supabase, context),
             context.triggerType === 'page_view' ? fetchNotificationBubbles(supabase, userId, context) : Promise.resolve([]),
             context.triggerType === 'page_view' ? fetchOpsAlertBubbles(supabase, context) : Promise.resolve([]),
-            fetchAssetStyleConfig(supabase),
-            fetchSupportEntryConfig(supabase),
-            fetchPageSceneConfig(supabase)
+            fetchAssetStyleConfig(supabase, context.site),
+            fetchSupportEntryConfig(supabase, context.site),
+            fetchPageSceneConfig(supabase, context.site)
         ]);
         let rules = Array.isArray(ruleFeed) ? ruleFeed : (Array.isArray(ruleFeed?.items) ? ruleFeed.items : []);
         let realtimeDeliveries = { created: 0, skipped: 0 };

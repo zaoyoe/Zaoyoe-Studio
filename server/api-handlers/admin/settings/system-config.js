@@ -362,11 +362,14 @@ module.exports = async (req, res) => {
         let warning = '';
         if (key === 'notifications') {
             try {
+                const previousAnnouncementValue = isSiteScopedSystemConfigKey(key)
+                    ? resolveSiteScopedSystemConfigForRead(key, previousValue, site)
+                    : previousValue;
                 announcementNotification = await notifyActiveAdminsAboutAnnouncementChange(
                     supabase,
                     user,
-                    previousValue,
-                    storedValue
+                    previousAnnouncementValue,
+                    value
                 );
             } catch (notificationError) {
                 warning = sanitizeText(notificationError?.message || 'Announcement notification failed', 400);

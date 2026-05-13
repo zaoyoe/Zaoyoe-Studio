@@ -30,6 +30,10 @@ const AdminGrowthCenter = {
         return window.AdminSiteFilter?.getSiteFilter?.() || 'all';
     },
 
+    isCurrentSiteRequest(site, requestId = this.state.requestId) {
+        return requestId === this.state.requestId && this.getReadSite() === site;
+    },
+
     isGrowthTabActive() {
         const activeTabId = String(document.querySelector('#analyticsTabsNav .admin-tab.active')?.dataset?.tab || '').trim().toLowerCase();
         return activeTabId === 'growth';
@@ -170,8 +174,7 @@ const AdminGrowthCenter = {
             && this.state.detailsLoaded === true;
     },
 
-    async fetchPayload({ force = false, mode = 'full' } = {}) {
-        const site = this.getReadSite();
+    async fetchPayload({ force = false, mode = 'full', site = this.getReadSite(), requestId = this.state.requestId } = {}) {
         const loadMode = this.normalizeLoadMode(mode);
         const requestMode = loadMode === 'details' && (!this.state.payload || this.state.loadedSite !== site) ? 'full' : loadMode;
         if (!force && this.state.payload && this.state.loadedSite === site) {
@@ -200,6 +203,10 @@ const AdminGrowthCenter = {
 
         if (!response.ok || payload?.success === false) {
             throw new Error(payload?.message || `营销资产中心加载失败 (${response.status})`);
+        }
+
+        if (!this.isCurrentSiteRequest(site, requestId)) {
+            return null;
         }
 
         this.state.loadedSite = site;
@@ -538,15 +545,18 @@ const AdminGrowthCenter = {
         this.renderState();
 
         try {
-            await this.fetchPayload({ force, mode: 'summary' });
-            if (requestId !== this.state.requestId) {
+            await this.fetchPayload({ force, mode: 'summary', site, requestId });
+            if (!this.isCurrentSiteRequest(site, requestId)) {
                 return;
             }
             this.state.loading = false;
             this.state.detailLoading = true;
             this.renderState();
-            this.scheduleDetailLoad({ force, requestId });
+            this.scheduleDetailLoad({ force, requestId, site });
         } catch (error) {
+            if (!this.isCurrentSiteRequest(site, requestId)) {
+                return;
+            }
             this.state.error = error?.message || '营销资产中心加载失败';
             this.state.loading = false;
             this.state.detailLoading = false;
@@ -554,22 +564,22 @@ const AdminGrowthCenter = {
         }
     },
 
-    scheduleDetailLoad({ force = false, requestId = this.state.requestId } = {}) {
+    scheduleDetailLoad({ force = false, requestId = this.state.requestId, site = this.getReadSite() } = {}) {
         window.setTimeout(() => {
             void (async () => {
-                if (requestId !== this.state.requestId || !this.shouldDisplay()) {
+                if (!this.isCurrentSiteRequest(site, requestId) || !this.shouldDisplay()) {
                     return;
                 }
 
                 try {
-                    await this.fetchPayload({ force, mode: 'details' });
+                    await this.fetchPayload({ force, mode: 'details', site, requestId });
                 } catch (error) {
-                    if (requestId !== this.state.requestId) {
+                    if (!this.isCurrentSiteRequest(site, requestId)) {
                         return;
                     }
                     this.state.detailError = error?.message || '营销资产中心明细加载失败';
                 } finally {
-                    if (requestId === this.state.requestId) {
+                    if (this.isCurrentSiteRequest(site, requestId)) {
                         this.state.detailLoading = false;
                         this.state.loading = false;
                         this.renderState();

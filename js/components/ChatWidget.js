@@ -12838,8 +12838,36 @@ class ChatWidget {
         return categoryMap[normalizedAlertType] || '';
     }
 
-    buildOpsAlertCaseKey(categoryKey = '', targetId = '') {
-        return `${String(categoryKey || '').trim().toLowerCase()}::${String(targetId || '').trim()}`;
+    normalizeOpsAlertCaseSite(value = '', fallback = 'cn') {
+        const fallbackText = String(fallback || '').trim().toLowerCase();
+        const normalizedFallback = ['cn', 'intl', 'all'].includes(fallbackText)
+            ? fallbackText
+            : (fallbackText ? 'cn' : '');
+        const normalized = String(value || '').trim().toLowerCase();
+        if (['cn', 'intl', 'all'].includes(normalized)) {
+            return normalized;
+        }
+        return normalizedFallback;
+    }
+
+    getOpsAlertCaseSite(alert = {}) {
+        const payload = alert.payload && typeof alert.payload === 'object' && !Array.isArray(alert.payload)
+            ? alert.payload
+            : {};
+        const siteLabels = Array.isArray(payload.site_labels)
+            ? payload.site_labels.map((item) => this.normalizeOpsAlertCaseSite(item, '')).filter(Boolean)
+            : [];
+        if (siteLabels.length === 1) {
+            return siteLabels[0];
+        }
+        if (siteLabels.length > 1) {
+            return 'all';
+        }
+        return this.normalizeOpsAlertCaseSite(alert.caseSite || alert.site || payload.site || payload.site_context, 'cn');
+    }
+
+    buildOpsAlertCaseKey(categoryKey = '', targetId = '', site = 'cn') {
+        return `${this.normalizeOpsAlertCaseSite(site, 'cn')}::${String(categoryKey || '').trim().toLowerCase()}::${String(targetId || '').trim()}`;
     }
 
     getOpsAlertCaseTargetIds(alert = {}) {
@@ -12859,7 +12887,7 @@ class ChatWidget {
         if (!alertType || !alertType.endsWith('_summary')) {
             return '';
         }
-        return `${String(alert.caseCategoryKey || '').trim().toLowerCase()}::${alertType}`;
+        return `${this.getOpsAlertCaseSite(alert)}::${String(alert.caseCategoryKey || '').trim().toLowerCase()}::${alertType}`;
     }
 
     pickPreferredOpsAlertCaseRecord(current = null, candidate = null) {
@@ -12889,7 +12917,7 @@ class ChatWidget {
             this.getOpsAlertCaseTargetIds(alert)
                 .filter((targetId) => targetId && targetId !== alert.caseTargetId)
                 .forEach((targetId) => {
-                    const legacyCase = caseMap.get(this.buildOpsAlertCaseKey(alert.caseCategoryKey, targetId));
+                    const legacyCase = caseMap.get(this.buildOpsAlertCaseKey(alert.caseCategoryKey, targetId, this.getOpsAlertCaseSite(alert)));
                     if (!legacyCase) {
                         return;
                     }
@@ -12907,8 +12935,9 @@ class ChatWidget {
             if (!fallbackCase || !alert.caseCategoryKey || !alert.caseTargetId) {
                 return;
             }
-            fallbackMap.set(this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId), {
+            fallbackMap.set(this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId, this.getOpsAlertCaseSite(alert)), {
                 ...fallbackCase,
+                site: this.getOpsAlertCaseSite(alert),
                 category_key: String(alert.caseCategoryKey || '').trim().toLowerCase(),
                 target_id: String(alert.caseTargetId || '').trim()
             });
@@ -12995,6 +13024,7 @@ class ChatWidget {
 
         return {
             id: String(row.id || '').trim(),
+            site: this.normalizeOpsAlertCaseSite(row.site || row.metadata?.site, 'cn'),
             category_key: categoryKey,
             target_id: targetId,
             status: String(row.status || 'open').trim().toLowerCase() || 'open',
@@ -13037,6 +13067,7 @@ class ChatWidget {
 
         return {
             id: String(row.id || '').trim(),
+            site: this.normalizeOpsAlertCaseSite(row.site || metadata.site, 'cn'),
             category_key: categoryKey,
             target_id: targetId,
             action,
@@ -13072,6 +13103,7 @@ class ChatWidget {
 
         return {
             id: '',
+            site: this.getOpsAlertCaseSite(alert),
             category_key: String(alert.caseCategoryKey || '').trim().toLowerCase(),
             target_id: String(alert.caseTargetId || '').trim(),
             action,
@@ -13384,12 +13416,14 @@ class ChatWidget {
             headers,
             body: JSON.stringify({
                 action: 'add_note',
+                site: this.getOpsAlertCaseSite(alert),
                 category_key: alert.caseCategoryKey,
                 target_id: alert.caseTargetId,
                 alert_type: alert.alertType || '',
                 title: alert.title || '',
                 note: normalizedNote,
                 metadata: {
+                    site: this.getOpsAlertCaseSite(alert),
                     category: alert.caseCategoryKey,
                     alert_type: alert.alertType || '',
                     reference_label: alert.referenceLabel || '',
@@ -13797,7 +13831,7 @@ class ChatWidget {
         filteredAlerts
             .filter((alert) => !this.isOpsAlertClosed(alert))
             .forEach((alert) => {
-                const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId);
+                const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId, this.getOpsAlertCaseSite(alert));
                 if (!alert.caseCategoryKey || !alert.caseTargetId || caseMap.has(caseKey)) {
                     return;
                 }
@@ -13816,12 +13850,12 @@ class ChatWidget {
             (Array.isArray(cases) ? cases : [])
                 .map((row) => this.normalizeOpsAlertCaseRecord(row))
                 .filter(Boolean)
-                .map((row) => [this.buildOpsAlertCaseKey(row.category_key, row.target_id), row])
+                .map((row) => [this.buildOpsAlertCaseKey(row.category_key, row.target_id, row.site), row])
         );
 
         this.opsAlertMessages = (Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [])
             .map((alert) => {
-                const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId);
+                const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId, this.getOpsAlertCaseSite(alert));
                 return caseMap.has(caseKey)
                     ? this.applyOpsAlertCaseRecord(alert, caseMap.get(caseKey))
                     : alert;
@@ -14359,11 +14393,13 @@ class ChatWidget {
             if (!item.caseTargetId) {
                 return;
             }
-            const caseKey = this.buildOpsAlertCaseKey(item.caseCategoryKey, item.caseTargetId);
+            const caseSite = this.getOpsAlertCaseSite(item);
+            const caseKey = this.buildOpsAlertCaseKey(item.caseCategoryKey, item.caseTargetId, caseSite);
             if (itemMap.has(caseKey)) {
                 return;
             }
             itemMap.set(caseKey, {
+                site: caseSite,
                 category_key: item.caseCategoryKey,
                 target_id: item.caseTargetId,
                 alert_type: item.alertType || '',
@@ -14380,8 +14416,10 @@ class ChatWidget {
         });
 
         if (!itemMap.size && sourceAlert?.caseTargetId) {
-            const caseKey = this.buildOpsAlertCaseKey(sourceAlert.caseCategoryKey, sourceAlert.caseTargetId);
+            const caseSite = this.getOpsAlertCaseSite(sourceAlert);
+            const caseKey = this.buildOpsAlertCaseKey(sourceAlert.caseCategoryKey, sourceAlert.caseTargetId, caseSite);
             itemMap.set(caseKey, {
+                site: caseSite,
                 category_key: sourceAlert.caseCategoryKey,
                 target_id: sourceAlert.caseTargetId,
                 alert_type: sourceAlert.alertType || '',
@@ -14491,15 +14529,17 @@ class ChatWidget {
         const normalizedAlerts = Array.isArray(alerts) ? alerts : [];
         const targetIds = [...new Set(normalizedAlerts.flatMap((alert) => this.getOpsAlertCaseTargetIds(alert)))];
         const categoryKeys = [...new Set(normalizedAlerts.map((alert) => String(alert.caseCategoryKey || '').trim().toLowerCase()).filter(Boolean))];
+        const sites = [...new Set(normalizedAlerts.map((alert) => this.getOpsAlertCaseSite(alert)).filter(Boolean))];
 
-        if (!targetIds.length || !categoryKeys.length || !this.supabase?.from) {
+        if (!targetIds.length || !categoryKeys.length || !sites.length || !this.supabase?.from) {
             return new Map();
         }
 
         try {
             const { data, error } = await this.supabase
                 .from('ops_alert_cases')
-                .select('id, category_key, target_id, status, owner_admin_id, owner_label, note, resolution, last_action, last_action_at, created_at, updated_at')
+                .select('id, site, category_key, target_id, status, owner_admin_id, owner_label, note, resolution, last_action, last_action_at, created_at, updated_at')
+                .in('site', sites)
                 .in('category_key', categoryKeys)
                 .in('target_id', targetIds);
 
@@ -14511,7 +14551,7 @@ class ChatWidget {
                 (Array.isArray(data) ? data : [])
                     .map((row) => this.normalizeOpsAlertCaseRecord(row))
                     .filter(Boolean)
-                    .map((row) => [this.buildOpsAlertCaseKey(row.category_key, row.target_id), row])
+                    .map((row) => [this.buildOpsAlertCaseKey(row.category_key, row.target_id, row.site), row])
             );
         } catch (error) {
             if (this.isMissingOpsAlertCasesTableError(error)) {
@@ -14530,25 +14570,28 @@ class ChatWidget {
 
         const groupedTargets = normalizedAlerts.reduce((accumulator, alert) => {
             const categoryKey = String(alert.caseCategoryKey || '').trim().toLowerCase();
+            const site = this.getOpsAlertCaseSite(alert);
             const targetIds = this.getOpsAlertCaseTargetIds(alert);
-            if (!categoryKey || !targetIds.length) {
+            if (!categoryKey || !site || !targetIds.length) {
                 return accumulator;
             }
-            if (!accumulator.has(categoryKey)) {
-                accumulator.set(categoryKey, []);
+            const groupKey = this.buildOpsAlertCaseKey(categoryKey, '', site);
+            if (!accumulator.has(groupKey)) {
+                accumulator.set(groupKey, { site, categoryKey, targetIds: [] });
             }
-            accumulator.get(categoryKey).push(...targetIds);
+            accumulator.get(groupKey).targetIds.push(...targetIds);
             return accumulator;
         }, new Map());
 
         const eventMap = new Map();
         try {
-            for (const [categoryKey, targetIds] of groupedTargets.entries()) {
+            for (const group of groupedTargets.values()) {
                 const { data, error } = await this.supabase
                     .from('ops_alert_case_events')
-                    .select('id, category_key, target_id, action, status, owner_admin_id, owner_label, actor_admin_id, actor_label, note, resolution, metadata, created_at')
-                    .in('category_key', [categoryKey])
-                    .in('target_id', Array.from(new Set(targetIds)))
+                    .select('id, site, category_key, target_id, action, status, owner_admin_id, owner_label, actor_admin_id, actor_label, note, resolution, metadata, created_at')
+                    .in('site', [group.site])
+                    .in('category_key', [group.categoryKey])
+                    .in('target_id', Array.from(new Set(group.targetIds)))
                     .order('created_at', { ascending: false });
 
                 if (error) {
@@ -14560,7 +14603,7 @@ class ChatWidget {
                     if (!event) {
                         return;
                     }
-                    const caseKey = this.buildOpsAlertCaseKey(event.category_key, event.target_id);
+                    const caseKey = this.buildOpsAlertCaseKey(event.category_key, event.target_id, event.site);
                     if (!eventMap.has(caseKey)) {
                         eventMap.set(caseKey, []);
                     }
@@ -14586,7 +14629,7 @@ class ChatWidget {
         ]);
         const summaryFallbackCaseMap = this.buildOpsAlertSummaryFallbackCaseMap(alerts, caseMap);
         return (Array.isArray(alerts) ? alerts : []).map((alert) => {
-            const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId);
+            const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId, this.getOpsAlertCaseSite(alert));
             this.applyOpsAlertCaseRecord(alert, caseMap.get(caseKey) || summaryFallbackCaseMap.get(caseKey) || null);
             return this.applyOpsAlertCaseEvents(alert, eventMap.get(caseKey) || []);
         });
@@ -14596,7 +14639,7 @@ class ChatWidget {
         const uniqueAlerts = Array.from(new Map(
             (Array.isArray(alerts) ? alerts : [])
                 .filter((alert) => alert?.caseCategoryKey && alert?.caseTargetId)
-                .map((alert) => [this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId), alert])
+                .map((alert) => [this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId, this.getOpsAlertCaseSite(alert)), alert])
         ).values());
         if (!uniqueAlerts.length) {
             return [];
@@ -14609,7 +14652,7 @@ class ChatWidget {
         const summaryFallbackCaseMap = this.buildOpsAlertSummaryFallbackCaseMap(uniqueAlerts, caseMap);
 
         uniqueAlerts.forEach((alert) => {
-            const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId);
+            const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId, this.getOpsAlertCaseSite(alert));
             this.applyOpsAlertCaseRecord(alert, caseMap.get(caseKey) || summaryFallbackCaseMap.get(caseKey) || null);
             this.applyOpsAlertCaseEvents(alert, eventMap.get(caseKey) || []);
         });
@@ -14656,6 +14699,7 @@ class ChatWidget {
             headers,
             body: JSON.stringify({
                 action: normalizedAction,
+                site: this.getOpsAlertCaseSite(alert),
                 category_key: alert.caseCategoryKey,
                 target_id: alert.caseTargetId,
                 alert_type: alert.alertType || '',
@@ -14665,6 +14709,7 @@ class ChatWidget {
                 note,
                 resolution,
                 metadata: {
+                    site: this.getOpsAlertCaseSite(alert),
                     category: alert.caseCategoryKey,
                     alert_type: alert.alertType || '',
                     reference_label: alert.referenceLabel || '',
@@ -14775,6 +14820,7 @@ class ChatWidget {
             referenceValue: this.getOpsAlertReferenceValue(payload),
             targetId,
             target_id: targetId,
+            site: this.normalizeOpsAlertCaseSite(payload.site || payload.site_id || payload.siteId || payload.site_context, 'cn'),
             userId: String(payload.user_id || '').trim(),
             user_id: String(payload.user_id || '').trim(),
             clientIp: String(payload.client_ip || '').trim(),
@@ -14855,6 +14901,10 @@ class ChatWidget {
             dedupe_key: dedupeKey,
             caseCategoryKey,
             caseTargetId: targetId,
+            caseSite: this.getOpsAlertCaseSite({
+                payload,
+                site: payload.site || payload.site_id || payload.siteId || payload.site_context || 'cn'
+            }),
             referenceLabel: this.getOpsAlertReferenceLabel(payload),
             referenceValue: this.getOpsAlertReferenceValue(payload),
             case_status: '',

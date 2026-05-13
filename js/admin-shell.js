@@ -5,7 +5,7 @@
         return;
     }
 
-    const ADMIN_SHELL_VERSION = '20260426_ADMIN_SHELL_LOADING_DOTS_CENTER_P1';
+    const ADMIN_SHELL_VERSION = '20260513_ADMIN_SHELL_SITE_CHANGE_ASYNC_1';
     const ADMIN_LOADING_BRIDGE_SELECTOR = [
         '#analysisLoading',
         '#hp-loading',
@@ -1016,22 +1016,20 @@
         return false;
     }
 
-    function handleSiteChange(detail = {}) {
-        const activeModuleId = getActiveModuleId();
-        const normalizedDetail = normalizePayloadObject(detail);
+    function dispatchAdminShellSiteChange(activeModuleId, normalizedDetail = {}) {
         window.dispatchEvent(new CustomEvent('admin-shell-site-changed', {
             detail: {
                 ...normalizedDetail,
                 activeModuleId
             }
         }));
+    }
 
+    async function runSiteChangeHandler(activeModuleId, normalizedDetail = {}) {
         const handler = registeredSiteHandlers.get(activeModuleId);
         if (typeof handler === 'function') {
             try {
-                void Promise.resolve(handler(normalizedDetail)).catch((error) => {
-                    console.warn(`[AdminShell] Site change handler failed for ${activeModuleId}:`, error);
-                });
+                await Promise.resolve(handler(normalizedDetail));
                 return true;
             } catch (error) {
                 console.warn(`[AdminShell] Site change handler failed for ${activeModuleId}:`, error);
@@ -1040,6 +1038,27 @@
         }
 
         return runDefaultSiteChangeHandler(activeModuleId, normalizedDetail);
+    }
+
+    function handleSiteChange(detail = {}) {
+        const activeModuleId = getActiveModuleId();
+        const normalizedDetail = normalizePayloadObject(detail);
+        dispatchAdminShellSiteChange(activeModuleId, normalizedDetail);
+
+        const handler = registeredSiteHandlers.get(activeModuleId);
+        if (typeof handler === 'function') {
+            void runSiteChangeHandler(activeModuleId, normalizedDetail);
+            return true;
+        }
+
+        return runDefaultSiteChangeHandler(activeModuleId, normalizedDetail);
+    }
+
+    async function handleSiteChangeAsync(detail = {}) {
+        const activeModuleId = getActiveModuleId();
+        const normalizedDetail = normalizePayloadObject(detail);
+        dispatchAdminShellSiteChange(activeModuleId, normalizedDetail);
+        return runSiteChangeHandler(activeModuleId, normalizedDetail);
     }
 
     function switchModule(moduleName, options = {}) {
@@ -1060,6 +1079,7 @@
             return moduleContexts.get(normalizeModuleId(moduleId)) || null;
         },
         handleSiteChange,
+        handleSiteChangeAsync,
         normalizeContext,
         normalizeDeliveryResult,
         normalizeModuleId,

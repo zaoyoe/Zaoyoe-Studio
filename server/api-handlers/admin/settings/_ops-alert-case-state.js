@@ -1,11 +1,13 @@
 const {
+    buildOpsAlertCaseKey,
     fetchOpsAlertCaseEventsByTargets,
     getOpsAlertCaseEventActionLabel,
     isMissingTableAccessError,
-    mapCaseLastActionToEventAction
+    mapCaseLastActionToEventAction,
+    resolveOpsAlertCaseSite
 } = require('./_ops-alert-case-events');
 
-const OPS_ALERT_CASES_SELECT_FIELDS = 'category_key, target_id, alert_type, status, owner_admin_id, owner_label, note, resolution, metadata, last_action, last_action_at, updated_at';
+const OPS_ALERT_CASES_SELECT_FIELDS = 'site, category_key, target_id, alert_type, status, owner_admin_id, owner_label, note, resolution, metadata, last_action, last_action_at, updated_at';
 const DEFAULT_PAGE_SIZE = 500;
 const DEFAULT_MAX_PAGES = 5;
 const OPS_ALERT_TARGET_CHUNK_SIZE = 50;
@@ -32,12 +34,9 @@ function chunkValues(values = [], chunkSize = OPS_ALERT_TARGET_CHUNK_SIZE) {
     return chunks;
 }
 
-function buildOpsAlertCaseKey(categoryKey = '', targetId = '') {
-    return `${normalizeText(categoryKey, 80).toLowerCase()}::${normalizeText(targetId, 200)}`;
-}
-
 function buildOpsAlertCaseRecord(row = {}, categoryKeyFallback = '') {
     return {
+        site: resolveOpsAlertCaseSite(row, 'cn'),
         category_key: normalizeText(row.category_key, 80).toLowerCase() || normalizeText(categoryKeyFallback, 80).toLowerCase() || null,
         target_id: normalizeText(row.target_id, 200) || null,
         alert_type: normalizeText(row.alert_type, 120).toLowerCase() || null,
@@ -93,6 +92,7 @@ function buildFallbackOpsAlertCaseEvent(caseRecord = {}) {
 
     return {
         id: null,
+        site: resolveOpsAlertCaseSite(caseRecord, 'cn'),
         category_key: normalizeText(caseRecord?.category_key, 80).toLowerCase() || null,
         target_id: normalizeText(caseRecord?.target_id, 200) || null,
         alert_type: normalizeText(caseRecord?.alert_type, 120).toLowerCase() || null,
@@ -137,11 +137,12 @@ async function fetchOpsAlertCasesByTargets(supabase, targets = []) {
     const normalizedTargets = Array.from(new Map(
         (Array.isArray(targets) ? targets : [])
             .map((item) => ({
+                site: resolveOpsAlertCaseSite(item, 'cn'),
                 category_key: normalizeText(item?.category_key || item?.categoryKey, 80).toLowerCase(),
                 target_id: normalizeText(item?.target_id || item?.targetId, 200)
             }))
             .filter((item) => item.category_key && item.target_id)
-            .map((item) => [buildOpsAlertCaseKey(item.category_key, item.target_id), item])
+            .map((item) => [buildOpsAlertCaseKey(item.category_key, item.target_id, item.site), item])
     ).values());
 
     if (!normalizedTargets.length) {
@@ -149,30 +150,36 @@ async function fetchOpsAlertCasesByTargets(supabase, targets = []) {
     }
 
     const groupedTargets = normalizedTargets.reduce((accumulator, item) => {
-        if (!accumulator.has(item.category_key)) {
-            accumulator.set(item.category_key, []);
+        const groupKey = buildOpsAlertCaseKey(item.category_key, '', item.site);
+        if (!accumulator.has(groupKey)) {
+            accumulator.set(groupKey, {
+                site: item.site,
+                category_key: item.category_key,
+                target_ids: []
+            });
         }
-        accumulator.get(item.category_key).push(item.target_id);
+        accumulator.get(groupKey).target_ids.push(item.target_id);
         return accumulator;
     }, new Map());
 
     const caseMap = new Map();
 
     try {
-        for (const [categoryKey, targetIds] of groupedTargets.entries()) {
-            const uniqueTargetIds = Array.from(new Set(targetIds));
+        for (const group of groupedTargets.values()) {
+            const uniqueTargetIds = Array.from(new Set(group.target_ids));
             for (const targetChunk of chunkValues(uniqueTargetIds)) {
                 const rows = await fetchPagedRows(() => supabase
                     .from('ops_alert_cases')
                     .select(OPS_ALERT_CASES_SELECT_FIELDS)
-                    .in('category_key', [categoryKey])
+                    .in('site', [group.site])
+                    .in('category_key', [group.category_key])
                     .in('target_id', targetChunk)
                     .order('updated_at', { ascending: false }), Math.max(targetChunk.length, 1), 1);
 
                 rows.forEach((row) => {
-                    const caseRecord = buildOpsAlertCaseRecord(row, categoryKey);
+                    const caseRecord = buildOpsAlertCaseRecord(row, group.category_key);
                     caseMap.set(
-                        buildOpsAlertCaseKey(caseRecord.category_key, caseRecord.target_id),
+                        buildOpsAlertCaseKey(caseRecord.category_key, caseRecord.target_id, caseRecord.site),
                         caseRecord
                     );
                 });
@@ -192,7 +199,12 @@ async function fetchOpsAlertCasesByTargets(supabase, targets = []) {
 function buildOpsAlertItemCaseState(categoryKey = '', targetId = '', caseRecord = null, caseEventsByKey = new Map(), options = {}) {
     const normalizedCategoryKey = normalizeText(categoryKey, 80).toLowerCase();
     const normalizedTargetId = normalizeText(targetId, 200);
-    const caseKey = buildOpsAlertCaseKey(normalizedCategoryKey, normalizedTargetId);
+    const normalizedSite = resolveOpsAlertCaseSite({
+        ...caseRecord,
+        site: options.site || caseRecord?.site,
+        target_id: normalizedTargetId || caseRecord?.target_id
+    }, 'cn');
+    const caseKey = buildOpsAlertCaseKey(normalizedCategoryKey, normalizedTargetId, normalizedSite);
     const eventLimit = Number.isFinite(Number(options.eventLimit)) && Number(options.eventLimit) > 0
         ? Number(options.eventLimit)
         : 3;
@@ -202,6 +214,7 @@ function buildOpsAlertItemCaseState(categoryKey = '', targetId = '', caseRecord 
         : [];
     const fallbackEvent = timeline.length ? null : buildFallbackOpsAlertCaseEvent({
         ...caseRecord,
+        site: normalizedSite,
         category_key: normalizedCategoryKey || caseRecord?.category_key,
         target_id: normalizedTargetId || caseRecord?.target_id
     });
@@ -212,6 +225,7 @@ function buildOpsAlertItemCaseState(categoryKey = '', targetId = '', caseRecord 
     const latestNoteEvent = recentEvents.find((event) => normalizeText(event?.note, 2000));
 
     return {
+        case_site: normalizedSite,
         case_status: normalizeText(caseRecord?.status || latestEvent?.status, 40).toLowerCase() || 'open',
         case_owner_admin_id: normalizeText(caseRecord?.owner_admin_id || latestEvent?.owner_admin_id, 160) || null,
         case_owner_label: normalizeText(caseRecord?.owner_label || latestEvent?.owner_label, 255) || null,

@@ -704,6 +704,7 @@ async function handleZpayWebhook({
                 await safeSyncPaymentStatusUserTags(supabase, {
                     userId: paymentOrder.user_id,
                     status: 'completed',
+                    site: paymentOrder.site || currentSite || 'cn',
                     sourceEventId: paymentOrder.id,
                     sourceModule: 'payments.zpay_webhook'
                 });

@@ -1,5 +1,7 @@
 const {
-    isMissingTableAccessError
+    isMissingTableAccessError,
+    normalizeOpsAlertCaseSite,
+    resolveOpsAlertCaseSite
 } = require('./_ops-alert-case-events');
 
 function sanitizeText(value, maxLength = 4000) {
@@ -85,6 +87,7 @@ function inferOpsAlertCategoryKey(alertType = '', targetId = '') {
 function buildCaseResponse(row = {}) {
     return {
         id: sanitizeText(row.id, 160) || null,
+        site: resolveOpsAlertCaseSite(row, 'cn'),
         category_key: sanitizeText(row.category_key, 80).toLowerCase() || null,
         target_id: sanitizeText(row.target_id, 200) || null,
         alert_type: sanitizeText(row.alert_type, 120).toLowerCase() || null,
@@ -123,16 +126,19 @@ async function fetchLegacyShopRiskCase(supabase, targetId) {
 
     return {
         ...data,
+        site: 'cn',
         category_key: 'shop_risk',
         alert_type: sanitizeText(data?.alert_type || data?.metadata?.alert_type, 120).toLowerCase() || null
     };
 }
 
-async function fetchExistingCase(supabase, categoryKey, targetId) {
+async function fetchExistingCase(supabase, categoryKey, targetId, site = 'cn') {
+    const normalizedSite = normalizeOpsAlertCaseSite(site, 'cn');
     try {
         const { data, error } = await supabase
             .from('ops_alert_cases')
             .select('*')
+            .eq('site', normalizedSite)
             .eq('category_key', categoryKey)
             .eq('target_id', targetId)
             .maybeSingle();
@@ -182,6 +188,7 @@ function buildCaseMetadata(existingCase = {}, item = {}, requestMetadata = {}) {
     if (referenceValue) {
         nextMetadata.reference_value = referenceValue;
     }
+    nextMetadata.site = resolveOpsAlertCaseSite(item, resolveOpsAlertCaseSite(existingCase, 'cn'));
 
     return nextMetadata;
 }
@@ -206,6 +213,7 @@ function resolveAssignedOwner(user = {}, ownerInput = {}) {
 function applyCaseAction(existingCase = null, action, item = {}, options = {}) {
     const categoryKey = normalizeCategoryKey(item.category_key || item.categoryKey, item.target_id || item.targetId);
     const targetId = sanitizeText(item.target_id || item.targetId, 200);
+    const site = resolveOpsAlertCaseSite(item, resolveOpsAlertCaseSite(existingCase, 'cn'));
     const note = sanitizeText(options.note, 4000);
     const resolution = sanitizeText(options.resolution, 4000) || note;
     const requestMetadata = normalizeJsonObject(options.metadata);
@@ -214,6 +222,7 @@ function applyCaseAction(existingCase = null, action, item = {}, options = {}) {
     const owner = resolveAssignedOwner(user, options.owner || {});
 
     const nextRecord = {
+        site,
         category_key: categoryKey,
         target_id: targetId,
         alert_type: sanitizeText(item.alert_type || item.alertType || existingCase?.alert_type, 120).toLowerCase() || null,
@@ -268,7 +277,10 @@ async function persistCase(supabase, record = {}) {
     try {
         const { data, error } = await supabase
             .from('ops_alert_cases')
-            .upsert(record, { onConflict: 'category_key,target_id' })
+            .upsert({
+                ...record,
+                site: normalizeOpsAlertCaseSite(record.site, 'cn')
+            }, { onConflict: 'site,category_key,target_id' })
             .select('*')
             .single();
 
@@ -306,6 +318,7 @@ async function persistCase(supabase, record = {}) {
 
         return {
             ...data,
+            site: 'cn',
             category_key: 'shop_risk',
             alert_type: sanitizeText(record.alert_type || data?.alert_type || data?.metadata?.alert_type, 120).toLowerCase() || null
         };

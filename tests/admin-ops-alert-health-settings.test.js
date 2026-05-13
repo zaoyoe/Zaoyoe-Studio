@@ -155,7 +155,18 @@ function createSupabaseStub(state) {
 }
 
 function createAdminModule(state) {
+    function normalizeAdminSite(value, options = {}) {
+        const normalizedDefault = Object.prototype.hasOwnProperty.call(options, 'defaultValue')
+            ? normalizeAdminSite(options.defaultValue)
+            : '';
+        const normalized = String(value || '').trim().toLowerCase();
+        if (!normalized) return normalizedDefault;
+        if (normalized === 'cn' || normalized === 'intl' || normalized === 'all') return normalized;
+        return normalizedDefault;
+    }
+
     return {
+        normalizeAdminSite,
         async requireAdmin(_req, options = {}) {
             state.requireAdminCalls.push(options);
             return {

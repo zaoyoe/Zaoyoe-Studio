@@ -374,6 +374,7 @@ test('ops alert case handler resolves an existing case while preserving owner in
         cases: [
             {
                 id: 'case-1',
+                site: 'cn',
                 category_key: 'shop_risk',
                 target_id: 'shop_order_risk:coupon:FLASH0',
                 alert_type: 'shop_order_risk_anomaly',

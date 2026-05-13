@@ -9,6 +9,7 @@ const VALID_OPS_ALERT_CASE_EVENT_ACTIONS = Object.freeze([
 
 const OPS_ALERT_CASE_EVENT_SELECT_FIELDS = [
     'id',
+    'site',
     'category_key',
     'target_id',
     'alert_type',
@@ -51,8 +52,62 @@ function normalizeCategoryKey(value, targetId = '') {
     return '';
 }
 
-function buildOpsAlertCaseKey(categoryKey, targetId) {
-    return `${normalizeCategoryKey(categoryKey, targetId)}::${sanitizeText(targetId, 200)}`;
+function normalizeOpsAlertCaseSite(value, fallback = 'cn') {
+    const fallbackText = sanitizeText(fallback, 40).toLowerCase();
+    const normalizedFallback = ['cn', 'intl', 'all'].includes(fallbackText)
+        ? fallbackText
+        : (fallbackText ? 'cn' : '');
+    const normalized = sanitizeText(value, 40).toLowerCase();
+    if (['cn', 'intl', 'all'].includes(normalized)) {
+        return normalized;
+    }
+    return normalizedFallback;
+}
+
+function inferOpsAlertCaseSiteFromTargetId(value = '') {
+    const parts = sanitizeText(value, 240)
+        .toLowerCase()
+        .split(':')
+        .map((part) => part.trim())
+        .filter(Boolean);
+    if (parts.includes('intl')) return 'intl';
+    if (parts.includes('cn')) return 'cn';
+    if (parts.includes('all')) return 'all';
+    return '';
+}
+
+function resolveOpsAlertCaseSite(source = {}, fallback = 'cn') {
+    const metadata = normalizeJsonObject(source?.metadata);
+    const payload = normalizeJsonObject(source?.payload);
+    const siteLabels = [
+        ...(Array.isArray(source?.site_labels) ? source.site_labels : []),
+        ...(Array.isArray(metadata.site_labels) ? metadata.site_labels : []),
+        ...(Array.isArray(payload.site_labels) ? payload.site_labels : [])
+    ]
+        .map((item) => normalizeOpsAlertCaseSite(item, ''))
+        .filter(Boolean);
+    const candidates = [
+        source?.site,
+        source?.site_context,
+        source?.case_site,
+        source?.workspaceSite,
+        metadata.site,
+        payload.site,
+        siteLabels.length === 1 ? siteLabels[0] : ''
+    ];
+    const explicitSite = candidates.find((item) => sanitizeText(item, 40));
+    if (explicitSite) {
+        return normalizeOpsAlertCaseSite(explicitSite, fallback);
+    }
+
+    const inferredSite = inferOpsAlertCaseSiteFromTargetId(
+        source?.target_id || source?.targetId || metadata.target_id || payload.target_id
+    );
+    return normalizeOpsAlertCaseSite(inferredSite, fallback);
+}
+
+function buildOpsAlertCaseKey(categoryKey, targetId, site = 'cn') {
+    return `${normalizeOpsAlertCaseSite(site, 'cn')}::${normalizeCategoryKey(categoryKey, targetId)}::${sanitizeText(targetId, 200)}`;
 }
 
 function getOpsAlertCaseEventActionLabel(action) {
@@ -96,6 +151,7 @@ function buildOpsAlertCaseEventRecord(row = {}) {
     const metadata = normalizeJsonObject(row.metadata);
     return {
         id: sanitizeText(row.id, 160) || null,
+        site: resolveOpsAlertCaseSite(row, 'cn'),
         category_key: normalizeCategoryKey(row.category_key, row.target_id) || null,
         target_id: sanitizeText(row.target_id, 200) || null,
         alert_type: sanitizeText(row.alert_type, 120).toLowerCase() || null,
@@ -118,6 +174,15 @@ function buildOpsAlertCaseEventPayload({ action, item = {}, record = {}, user = 
     const normalizedAction = sanitizeText(action, 80).toLowerCase();
     const categoryKey = normalizeCategoryKey(item.category_key || record.category_key, item.target_id || record.target_id);
     const targetId = sanitizeText(item.target_id || record.target_id, 200);
+    const site = resolveOpsAlertCaseSite({
+        ...record,
+        ...item,
+        metadata: {
+            ...normalizeJsonObject(record.metadata),
+            ...normalizeJsonObject(item.metadata),
+            ...normalizeJsonObject(metadata)
+        }
+    }, 'cn');
     const existingMetadata = normalizeJsonObject(record.metadata);
     const itemMetadata = normalizeJsonObject(item.metadata);
     const requestMetadata = normalizeJsonObject(metadata);
@@ -137,8 +202,10 @@ function buildOpsAlertCaseEventPayload({ action, item = {}, record = {}, user = 
     if (title) payloadMetadata.title = title;
     if (referenceLabel) payloadMetadata.reference_label = referenceLabel;
     if (referenceValue) payloadMetadata.reference_value = referenceValue;
+    payloadMetadata.site = site;
 
     return {
+        site,
         category_key: categoryKey,
         target_id: targetId,
         alert_type: alertType || null,
@@ -157,15 +224,25 @@ function buildOpsAlertCaseEventPayload({ action, item = {}, record = {}, user = 
 
 function normalizeOpsAlertCaseTargetItems(items = [], defaults = {}) {
     return (Array.isArray(items) ? items : [])
-        .map((item) => ({
-            category_key: normalizeCategoryKey(item?.category_key || item?.categoryKey || defaults.category_key || defaults.categoryKey, item?.target_id || item?.targetId),
-            target_id: sanitizeText(item?.target_id || item?.targetId, 200),
-            alert_type: sanitizeText(item?.alert_type || item?.alertType || defaults.alert_type || defaults.alertType, 120).toLowerCase(),
-            title: sanitizeText(item?.title || defaults.title, 240),
-            reference_label: sanitizeText(item?.reference_label || item?.referenceLabel || defaults.reference_label || defaults.referenceLabel, 120),
-            reference_value: sanitizeText(item?.reference_value || item?.referenceValue || defaults.reference_value || defaults.referenceValue, 240),
-            metadata: normalizeJsonObject(item?.metadata)
-        }))
+        .map((item) => {
+            const metadata = normalizeJsonObject(item?.metadata);
+            const targetId = sanitizeText(item?.target_id || item?.targetId, 200);
+            return {
+                site: resolveOpsAlertCaseSite({
+                    ...defaults,
+                    ...item,
+                    target_id: targetId,
+                    metadata
+                }, resolveOpsAlertCaseSite(defaults, 'cn')),
+                category_key: normalizeCategoryKey(item?.category_key || item?.categoryKey || defaults.category_key || defaults.categoryKey, targetId),
+                target_id: targetId,
+                alert_type: sanitizeText(item?.alert_type || item?.alertType || defaults.alert_type || defaults.alertType, 120).toLowerCase(),
+                title: sanitizeText(item?.title || defaults.title, 240),
+                reference_label: sanitizeText(item?.reference_label || item?.referenceLabel || defaults.reference_label || defaults.referenceLabel, 120),
+                reference_value: sanitizeText(item?.reference_value || item?.referenceValue || defaults.reference_value || defaults.referenceValue, 240),
+                metadata
+            };
+        })
         .filter((item) => item.category_key && item.target_id);
 }
 
@@ -265,7 +342,7 @@ function chunkValues(values = [], chunkSize = 50) {
 async function fetchOpsAlertCaseEventsByTargets(supabase, targets = []) {
     const normalizedTargets = Array.from(new Map(
         normalizeOpsAlertCaseTargetItems(targets)
-            .map((item) => [buildOpsAlertCaseKey(item.category_key, item.target_id), item])
+            .map((item) => [buildOpsAlertCaseKey(item.category_key, item.target_id, item.site), item])
     ).values());
 
     if (!supabase || !normalizedTargets.length) {
@@ -273,10 +350,15 @@ async function fetchOpsAlertCaseEventsByTargets(supabase, targets = []) {
     }
 
     const groupedTargets = normalizedTargets.reduce((accumulator, item) => {
-        if (!accumulator.has(item.category_key)) {
-            accumulator.set(item.category_key, []);
+        const groupKey = buildOpsAlertCaseKey(item.category_key, '', item.site);
+        if (!accumulator.has(groupKey)) {
+            accumulator.set(groupKey, {
+                site: item.site,
+                category_key: item.category_key,
+                target_ids: []
+            });
         }
-        accumulator.get(item.category_key).push(item.target_id);
+        accumulator.get(groupKey).target_ids.push(item.target_id);
         return accumulator;
     }, new Map());
 
@@ -284,12 +366,13 @@ async function fetchOpsAlertCaseEventsByTargets(supabase, targets = []) {
 
     try {
         const groupedRows = await Promise.all(
-            Array.from(groupedTargets.entries()).flatMap(([categoryKey, targetIds]) => {
-                const uniqueTargetIds = Array.from(new Set(targetIds));
+            Array.from(groupedTargets.values()).flatMap((group) => {
+                const uniqueTargetIds = Array.from(new Set(group.target_ids));
                 return chunkValues(uniqueTargetIds).map((targetChunk) => fetchPagedRows(() => supabase
                     .from('ops_alert_case_events')
                     .select(OPS_ALERT_CASE_EVENT_SELECT_FIELDS)
-                    .in('category_key', [categoryKey])
+                    .in('site', [group.site])
+                    .in('category_key', [group.category_key])
                     .in('target_id', targetChunk)
                     .order('created_at', { ascending: false })));
             })
@@ -297,7 +380,7 @@ async function fetchOpsAlertCaseEventsByTargets(supabase, targets = []) {
 
         groupedRows.flat().forEach((row) => {
             const eventRecord = buildOpsAlertCaseEventRecord(row);
-            const eventKey = buildOpsAlertCaseKey(eventRecord.category_key, eventRecord.target_id);
+            const eventKey = buildOpsAlertCaseKey(eventRecord.category_key, eventRecord.target_id, eventRecord.site);
             if (!eventMap.has(eventKey)) {
                 eventMap.set(eventKey, []);
             }
@@ -457,6 +540,9 @@ module.exports = {
     normalizeJsonObject,
     buildOwnerLabel,
     normalizeCategoryKey,
+    normalizeOpsAlertCaseSite,
+    inferOpsAlertCaseSiteFromTargetId,
+    resolveOpsAlertCaseSite,
     buildOpsAlertCaseKey,
     getOpsAlertCaseEventActionLabel,
     buildOpsAlertCaseEventRecord,

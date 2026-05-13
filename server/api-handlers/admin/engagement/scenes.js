@@ -4,6 +4,12 @@ const {
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
+const {
+    loadSiteScopedConfig,
+    normalizeEngagementConfigSite,
+    resolveEngagementConfigRequestSite,
+    saveSiteScopedConfig
+} = require('../../_engagement-site-config');
 
 const CONFIG_KEY = 'engagement_page_scenes';
 const VALID_SCENE_PAGES = Object.freeze(new Set(['home', 'prompts', 'gongyi', 'shop', 'verify', 'guestbook']));
@@ -112,21 +118,20 @@ function normalizeScene(scene = {}) {
     };
 }
 
-async function loadScenes(supabase) {
-    const { data, error } = await supabase
-        .from('system_config')
-        .select('config_value')
-        .eq('config_key', CONFIG_KEY)
-        .maybeSingle();
-    if (error) throw error;
+function normalizeSceneConfig(value = {}) {
     return {
-        scenes: (Array.isArray(data?.config_value?.scenes) ? data.config_value.scenes : []).map(normalizeScene),
-        event_priority_center: normalizeEventPriorityCenter(data?.config_value?.event_priority_center || {})
+        scenes: (Array.isArray(value?.scenes) ? value.scenes : []).map(normalizeScene),
+        event_priority_center: normalizeEventPriorityCenter(value?.event_priority_center || {})
     };
 }
 
-async function saveScenes({ supabase, user, body }) {
-    const existingConfig = await loadScenes(supabase);
+async function loadScenes(supabase, site = 'cn') {
+    return loadSiteScopedConfig(supabase, CONFIG_KEY, site, normalizeSceneConfig, {});
+}
+
+async function saveScenes({ supabase, user, body, site }) {
+    const normalizedSite = normalizeEngagementConfigSite(body.site || site, { fallback: 'cn' });
+    const existingConfig = await loadScenes(supabase, normalizedSite);
     const incomingScenes = (Array.isArray(body.scenes) ? body.scenes : [body.scene || body])
         .map(normalizeScene)
         .filter((scene) => VALID_SCENE_PAGES.has(scene.id));
@@ -141,25 +146,23 @@ async function saveScenes({ supabase, user, body }) {
         updated_at: new Date().toISOString()
     };
 
-    const { error } = await supabase
-        .from('system_config')
-        .upsert({
-            config_key: CONFIG_KEY,
-            config_value: payload,
-            description: '客服系统页面场景配置',
-            updated_by: user.id || null,
-            updated_at: new Date().toISOString()
-        }, {
-            onConflict: 'config_key'
-        });
-    if (error) throw error;
+    await saveSiteScopedConfig({
+        supabase,
+        key: CONFIG_KEY,
+        site: normalizedSite,
+        value: payload,
+        description: '客服系统页面场景配置',
+        userId: user.id
+    });
 
     await writeAdminAuditLog({
         supabase,
         adminId: user.id,
         module: 'engagement',
+        site: normalizedSite,
         actionType: 'engagement.scene.update',
         details: {
+            site: normalizedSite,
             config_key: CONFIG_KEY,
             pages: uniqueScenes.map((scene) => scene.id)
         }
@@ -168,33 +171,32 @@ async function saveScenes({ supabase, user, body }) {
     return uniqueScenes;
 }
 
-async function saveEventPriorityCenter({ supabase, user, body }) {
-    const existingConfig = await loadScenes(supabase);
+async function saveEventPriorityCenter({ supabase, user, body, site }) {
+    const normalizedSite = normalizeEngagementConfigSite(body.site || site, { fallback: 'cn' });
+    const existingConfig = await loadScenes(supabase, normalizedSite);
     const payload = {
         scenes: existingConfig.scenes,
         event_priority_center: normalizeEventPriorityCenter(body.event_priority_center || body.eventPriorityCenter || {}),
         updated_at: new Date().toISOString()
     };
 
-    const { error } = await supabase
-        .from('system_config')
-        .upsert({
-            config_key: CONFIG_KEY,
-            config_value: payload,
-            description: '客服系统页面场景配置',
-            updated_by: user.id || null,
-            updated_at: new Date().toISOString()
-        }, {
-            onConflict: 'config_key'
-        });
-    if (error) throw error;
+    await saveSiteScopedConfig({
+        supabase,
+        key: CONFIG_KEY,
+        site: normalizedSite,
+        value: payload,
+        description: '客服系统页面场景配置',
+        userId: user.id
+    });
 
     await writeAdminAuditLog({
         supabase,
         adminId: user.id,
         module: 'engagement',
+        site: normalizedSite,
         actionType: 'engagement.event_priority.update',
         details: {
+            site: normalizedSite,
             config_key: CONFIG_KEY,
             priority_groups: Object.keys(payload.event_priority_center || {})
         }
@@ -210,9 +212,12 @@ module.exports = async function engagementScenesHandler(req, res) {
         });
 
         if (req.method === 'GET') {
-            const config = await loadScenes(supabase);
+            const url = new URL(req.url || '', 'http://localhost');
+            const site = resolveEngagementConfigRequestSite(req, url, { fallback: 'cn' });
+            const config = await loadScenes(supabase, site);
             return sendJson(res, 200, {
                 success: true,
+                site,
                 scenes: config.scenes,
                 event_priority_center: config.event_priority_center
             });
@@ -227,16 +232,20 @@ module.exports = async function engagementScenesHandler(req, res) {
         }
 
         const body = await parseJsonBody(req);
+        const url = new URL(req.url || '', 'http://localhost');
+        const site = normalizeEngagementConfigSite(body.site || url.searchParams.get('site') || req.adminSite, { fallback: 'cn' });
         if (normalizeToken(body.action || '', '') === 'save_event_priority_center') {
-            const eventPriorityCenter = await saveEventPriorityCenter({ supabase, user, body });
+            const eventPriorityCenter = await saveEventPriorityCenter({ supabase, user, body, site });
             return sendJson(res, 200, {
                 success: true,
+                site,
                 event_priority_center: eventPriorityCenter
             });
         }
-        const scenes = await saveScenes({ supabase, user, body });
+        const scenes = await saveScenes({ supabase, user, body, site });
         return sendJson(res, 200, {
             success: true,
+            site,
             scenes
         });
     } catch (error) {

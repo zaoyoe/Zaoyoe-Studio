@@ -75,6 +75,28 @@ function normalizeJsonObject(value) {
         : {};
 }
 
+function normalizeVerifyMonitorSite(value, fallback = 'cn') {
+    const fallbackText = normalizeText(fallback).toLowerCase();
+    const normalizedFallback = ['cn', 'intl', 'all'].includes(fallbackText)
+        ? fallbackText
+        : (fallbackText ? 'cn' : '');
+    const normalized = normalizeText(value).toLowerCase();
+    if (['cn', 'intl', 'all'].includes(normalized)) {
+        return normalized;
+    }
+    return normalizedFallback;
+}
+
+function getVerifyServiceStatusSite(serviceStatus = {}, options = {}) {
+    return normalizeVerifyMonitorSite(
+        serviceStatus.site
+            || serviceStatus.site_context
+            || options.site
+            || options.site_context,
+        'cn'
+    );
+}
+
 function normalizeVerifyServiceApiBaseUrl(value) {
     const normalized = normalizeText(value).replace(/\/+$/, '');
     if (!normalized) return '';
@@ -138,12 +160,14 @@ async function resolveVerifyServiceDisabledCase(supabase, serviceStatus = {}, op
     }
 
     const targetId = buildVerifyServiceCaseTargetId(serviceStatus);
+    const site = getVerifyServiceStatusSite(serviceStatus, options);
     let existingCase = null;
 
     try {
         const { data, error } = await supabase
             .from('ops_alert_cases')
             .select('*')
+            .eq('site', site)
             .eq('category_key', 'verify')
             .eq('target_id', targetId)
             .maybeSingle();
@@ -188,6 +212,7 @@ async function resolveVerifyServiceDisabledCase(supabase, serviceStatus = {}, op
     const resolution = buildVerifyServiceRecoveryResolution(serviceStatus);
     const metadata = {
         ...normalizeJsonObject(existingCase.metadata),
+        site,
         alert_type: 'verify_service_disabled',
         auto_recovered_at: nowIso,
         auto_recovered_by: 'verify_service_monitor',
@@ -198,6 +223,7 @@ async function resolveVerifyServiceDisabledCase(supabase, serviceStatus = {}, op
     };
     const nextRecord = {
         ...existingCase,
+        site,
         category_key: 'verify',
         target_id: targetId,
         alert_type: 'verify_service_disabled',
@@ -207,14 +233,14 @@ async function resolveVerifyServiceDisabledCase(supabase, serviceStatus = {}, op
         resolution,
         metadata,
         last_action: 'resolved',
-        last_action_by: 'system:verify_service_monitor',
+        last_action_by: null,
         last_action_at: nowIso
     };
 
     try {
         const { error } = await supabase
             .from('ops_alert_cases')
-            .upsert(nextRecord, { onConflict: 'category_key,target_id' })
+            .upsert(nextRecord, { onConflict: 'site,category_key,target_id' })
             .select('*')
             .single();
 
@@ -235,6 +261,7 @@ async function resolveVerifyServiceDisabledCase(supabase, serviceStatus = {}, op
         const { error } = await supabase
             .from('ops_alert_case_events')
             .insert({
+                site,
                 category_key: 'verify',
                 target_id: targetId,
                 alert_type: 'verify_service_disabled',
@@ -242,7 +269,7 @@ async function resolveVerifyServiceDisabledCase(supabase, serviceStatus = {}, op
                 status: 'resolved',
                 owner_admin_id: nextRecord.owner_admin_id,
                 owner_label: nextRecord.owner_label,
-                actor_admin_id: 'system:verify_service_monitor',
+                actor_admin_id: null,
                 actor_label: '系统健康检查',
                 note: null,
                 resolution,
@@ -262,6 +289,7 @@ async function resolveVerifyServiceDisabledCase(supabase, serviceStatus = {}, op
     return {
         resolved: true,
         reason: 'auto_resolved',
+        site,
         target_id: targetId
     };
 }
@@ -462,6 +490,7 @@ function buildVerifyServiceDisabledAlerts(serviceStatus = {}, rawConfig = {}) {
     const hasResponseStatus = Number.isFinite(responseStatus) && responseStatus > 0;
     const title = getStatusTitle(status, keyName);
     const targetId = buildVerifyServiceCaseTargetId(serviceStatus);
+    const site = getVerifyServiceStatusSite(serviceStatus);
     const lines = [
         getStatusSummary(status),
         `当前状态：${statusLabel}`
@@ -493,6 +522,7 @@ function buildVerifyServiceDisabledAlerts(serviceStatus = {}, rawConfig = {}) {
         title,
         content: lines.join('\n'),
         payload: {
+            site,
             target_id: targetId,
             service_status: status,
             service_status_label: statusLabel,
@@ -530,7 +560,9 @@ async function runVerifyServiceDisabledSweep(supabase, options = {}) {
         };
     }
 
-    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env);
+    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, env, {
+        site: normalizeVerifyMonitorSite(options.site || verifyConfig.site || verifyConfig.site_context, 'cn')
+    });
     if (!runtime?.config?.enabled) {
         return {
             skipped: 'ops_alerts_disabled',
@@ -545,6 +577,7 @@ async function runVerifyServiceDisabledSweep(supabase, options = {}) {
         timeoutMs: config.request_timeout_ms,
         now: options.now
     });
+    serviceStatus.site = getVerifyServiceStatusSite(serviceStatus, options);
     const recovery = await resolveVerifyServiceDisabledCase(supabase, serviceStatus, {
         now: options.now
     });

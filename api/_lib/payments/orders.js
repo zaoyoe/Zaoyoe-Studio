@@ -2262,6 +2262,7 @@ async function getPaymentRequestStatus({
     await safeSyncPaymentStatusUserTags(supabase, {
         userId: normalizedUserId,
         status,
+        site: activeCheckoutSession.site || activePaymentOrder?.site || body.site || 'cn',
         sourceEventId: activePaymentOrder?.id || activeCheckoutSession.id || '',
         sourceModule: 'payments'
     });
@@ -2803,6 +2804,7 @@ async function completeMockPayment({
         await safeSyncPaymentStatusUserTags(supabase, {
             userId: user.id,
             status: 'completed',
+            site: activeCheckoutSession.site || pendingOrder.site || 'cn',
             sourceEventId: pendingOrder.id,
             sourceModule: 'payments.mock'
         });
@@ -2858,6 +2860,7 @@ async function completeMockPayment({
         await safeSyncPaymentStatusUserTags(supabase, {
             userId: user.id,
             status: 'failed',
+            site: activeCheckoutSession.site || pendingOrder.site || 'cn',
             sourceEventId: pendingOrder.id,
             sourceModule: 'payments.mock'
         });
@@ -3239,6 +3242,7 @@ async function createPaymentRequest({
         await safeSyncPaymentStatusUserTags(paymentRuntimeSupabase || paymentWriteSupabase, {
             userId: user.id,
             status: 'failed',
+            site: checkoutSession.site || 'cn',
             sourceEventId: checkoutSession.id,
             sourceModule: 'payments.create'
         });

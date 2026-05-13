@@ -92,11 +92,12 @@ function offsetIso(baseTime, { days = 0, hours = 0, minutes = 0 } = {}) {
 
 function applyFilters(rows, filters = []) {
     return rows.filter((row) => filters.every((filter) => {
+        const rowValue = filter.column === 'site' && row.site === undefined ? 'cn' : row[filter.column];
         if (filter.op === 'eq') {
-            return row[filter.column] === filter.value;
+            return rowValue === filter.value;
         }
         if (filter.op === 'in') {
-            return filter.values.includes(row[filter.column]);
+            return filter.values.includes(rowValue);
         }
         if (filter.op === 'gte') {
             const rowTime = Date.parse(row[filter.column] || '');

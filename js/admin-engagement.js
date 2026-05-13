@@ -2118,6 +2118,8 @@
     const state = {
         initialized: false,
         loading: false,
+        requestId: 0,
+        loadedSite: '',
         payload: null,
         activeView: 'dashboard',
         focusedPageId: '',
@@ -2262,6 +2264,10 @@
 
     function getCurrentSite() {
         return String(globalScope.AdminSiteFilter?.getSiteFilter?.() || 'all').trim().toLowerCase() || 'all';
+    }
+
+    function getCurrentConcreteSite(fallback = 'cn') {
+        return getCurrentSite() === 'intl' ? 'intl' : (fallback === 'intl' ? 'intl' : 'cn');
     }
 
     function normalizeEngagementBroadcastPageIds(value, fallback = ['all']) {
@@ -3626,9 +3632,13 @@
         };
     }
 
-    async function fetchOverview() {
+    function isCurrentEngagementSiteRequest(site, requestId = state.requestId) {
+        return requestId === state.requestId && getCurrentSite() === site;
+    }
+
+    async function fetchOverview(site = getCurrentSite()) {
         const response = await engagementAdminFetch(buildAdminUrl('engagement/overview', {
-            site: getCurrentSite()
+            site
         }), {
             method: 'GET',
             timeoutMs: 30000
@@ -3641,7 +3651,9 @@
     }
 
     async function fetchSegmentsAndTagCenter() {
-        const response = await engagementAdminFetch(buildAdminUrl('engagement/segments'), {
+        const response = await engagementAdminFetch(buildAdminUrl('engagement/segments', {
+            site: getCurrentConcreteSite()
+        }), {
             method: 'GET',
             timeoutMs: 15000
         });
@@ -3687,12 +3699,17 @@
     }
 
     async function mutateSegment(payload = {}) {
-        const response = await engagementAdminFetch(buildAdminUrl('engagement/segments'), {
+        const response = await engagementAdminFetch(buildAdminUrl('engagement/segments', {
+            site: getCurrentConcreteSite()
+        }), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify({
+                ...payload,
+                site: payload.site || getCurrentConcreteSite()
+            })
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok || result?.success === false) {
@@ -3700,18 +3717,24 @@
         }
         broadcastEngagementFeedChange('segment_changed', {
             action: payload.action,
+            site: payload.site || getCurrentConcreteSite(),
             page_ids: ['all']
         });
         return result;
     }
 
     async function mutateScene(payload = {}) {
-        const response = await engagementAdminFetch(buildAdminUrl('engagement/scenes'), {
+        const response = await engagementAdminFetch(buildAdminUrl('engagement/scenes', {
+            site: getCurrentConcreteSite()
+        }), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify({
+                ...payload,
+                site: payload.site || getCurrentConcreteSite()
+            })
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok || result?.success === false) {
@@ -3719,18 +3742,24 @@
         }
         broadcastEngagementFeedChange('scene_changed', {
             action: payload.action,
+            site: payload.site || getCurrentConcreteSite(),
             page_ids: getEngagementMutationBroadcastPages(payload, result)
         });
         return result;
     }
 
     async function mutateAssets(payload = {}) {
-        const response = await engagementAdminFetch(buildAdminUrl('engagement/assets'), {
+        const response = await engagementAdminFetch(buildAdminUrl('engagement/assets', {
+            site: getCurrentConcreteSite()
+        }), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify({
+                ...payload,
+                site: payload.site || getCurrentConcreteSite()
+            })
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok || result?.success === false) {
@@ -3738,18 +3767,24 @@
         }
         broadcastEngagementFeedChange('asset_center_changed', {
             action: payload.action,
+            site: payload.site || getCurrentConcreteSite(),
             page_ids: getEngagementMutationBroadcastPages(payload, result)
         });
         return result;
     }
 
     async function mutateEntry(payload = {}) {
-        const response = await engagementAdminFetch(buildAdminUrl('engagement/entry'), {
+        const response = await engagementAdminFetch(buildAdminUrl('engagement/entry', {
+            site: getCurrentConcreteSite()
+        }), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify({
+                ...payload,
+                site: payload.site || getCurrentConcreteSite()
+            })
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok || result?.success === false) {
@@ -3757,18 +3792,24 @@
         }
         broadcastEngagementFeedChange('support_entry_changed', {
             action: payload.action,
+            site: payload.site || getCurrentConcreteSite(),
             page_ids: ['all']
         });
         return result;
     }
 
     async function mutateExternalEmbed(payload = {}) {
-        const response = await engagementAdminFetch(buildAdminUrl('engagement/external'), {
+        const response = await engagementAdminFetch(buildAdminUrl('engagement/external', {
+            site: getCurrentConcreteSite()
+        }), {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify(payload)
+            body: JSON.stringify({
+                ...payload,
+                site: payload.site || getCurrentConcreteSite()
+            })
         });
         const result = await response.json().catch(() => ({}));
         if (!response.ok || result?.success === false) {
@@ -13087,31 +13128,44 @@
             return false;
         }
 
-        if (state.loading) {
+        const requestSite = getCurrentSite();
+        if (state.loading && options.force !== true && state.loadedSite === requestSite) {
             return true;
         }
 
-        if (state.initialized && options.force !== true) {
+        if (state.initialized && options.force !== true && state.loadedSite === requestSite) {
             return true;
         }
 
+        const requestId = state.requestId + 1;
+        state.requestId = requestId;
         state.loading = true;
         setLoading(options.message || '客服系统加载中...');
         try {
-            const payload = await fetchOverview();
+            const payload = await fetchOverview(requestSite);
+            if (!isCurrentEngagementSiteRequest(requestSite, requestId)) {
+                return false;
+            }
             renderOverview(payload);
+            state.loadedSite = requestSite;
             state.initialized = true;
             return true;
         } catch (error) {
+            if (!isCurrentEngagementSiteRequest(requestSite, requestId)) {
+                return false;
+            }
             if (isOverviewTimeoutError(error)) {
                 renderOverview(createDegradedOverviewPayload(error));
+                state.loadedSite = requestSite;
                 state.initialized = true;
                 return true;
             }
             renderError(error);
             return false;
         } finally {
-            state.loading = false;
+            if (requestId === state.requestId) {
+                state.loading = false;
+            }
         }
     }
 
@@ -13124,6 +13178,7 @@
 
     function handleAdminEngagementSiteChange() {
         state.initialized = false;
+        state.loadedSite = '';
         return refreshAdminEngagementModule();
     }
 

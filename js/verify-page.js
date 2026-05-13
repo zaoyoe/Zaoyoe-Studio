@@ -95,18 +95,40 @@
         }
     }
 
+    function getVerifyRuntimeSite() {
+        try {
+            const querySite = new URL(window.location.href).searchParams.get('site');
+            const normalizedQuerySite = String(querySite || '').trim().toLowerCase();
+            if (normalizedQuerySite === 'cn' || normalizedQuerySite === 'intl') {
+                return normalizedQuerySite;
+            }
+        } catch (_) {
+            // Ignore URL parsing failures and fall back to SiteConfig.
+        }
+
+        return String(window.SiteConfig?.site || '').trim().toLowerCase() === 'intl' ? 'intl' : 'cn';
+    }
+
     async function syncVerifyDisplayPrice() {
         try {
-            const { data } = await window.supabaseClient
-                .from('system_config')
-                .select('config_value')
-                .eq('config_key', 'verify_settings')
-                .single();
+            const response = await fetch(`/api/public?scope=config&route=verify-settings&site=${encodeURIComponent(getVerifyRuntimeSite())}`, {
+                credentials: 'same-origin'
+            });
+            if (!response.ok) {
+                return;
+            }
+            const payload = await response.json().catch(() => ({}));
+            const price = Number(
+                payload?.config?.price_per_verify_extract
+                || payload?.config?.price_per_verify
+                || payload?.config?.pricePerVerifyExtract
+                || payload?.config?.pricePerVerify
+            );
 
-            if (data?.config_value?.price_per_verify) {
+            if (Number.isFinite(price) && price > 0) {
                 const element = document.getElementById('displayPrice');
                 if (element) {
-                    element.textContent = data.config_value.price_per_verify;
+                    element.textContent = String(price);
                 }
             }
         } catch (error) {

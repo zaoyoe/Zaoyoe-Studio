@@ -1,6 +1,10 @@
 const {
     fetchVerifyQuotaSnapshot
 } = require('../../api/_lib/verify-quota-alerts');
+const {
+    normalizeSiteScopedSystemConfigSite,
+    resolveSiteScopedSystemConfigValue
+} = require('./_site-scoped-system-config');
 
 const ACTIVE_VERIFY_STATUSES = Object.freeze(['queued', 'running', 'processing', 'pending']);
 
@@ -97,7 +101,8 @@ function buildVerifyQuotaKeyState(snapshot = {}) {
     };
 }
 
-async function loadVerifyRuntimeConfig(supabase, env = process.env) {
+async function loadVerifyRuntimeConfig(supabase, env = process.env, options = {}) {
+    const site = normalizeSiteScopedSystemConfigSite(options?.site, { fallback: 'cn' });
     const fallbackKeys = normalizeVerifyCredentialList([
         env?.VERIFY_CDKEY,
         env?.VERIFY_API_KEY,
@@ -105,6 +110,7 @@ async function loadVerifyRuntimeConfig(supabase, env = process.env) {
         ...(String(env?.VERIFY_CDKEYS || '').trim() ? String(env.VERIFY_CDKEYS).split(/[\n,;]+/) : [])
     ]);
     const fallbackConfig = {
+        site,
         enabled: true,
         apiKey: fallbackKeys[0] || '',
         apiKeys: fallbackKeys,
@@ -125,8 +131,12 @@ async function loadVerifyRuntimeConfig(supabase, env = process.env) {
         throw error;
     }
 
-    const config = data?.config_value && typeof data.config_value === 'object'
+    const storedConfig = data?.config_value && typeof data.config_value === 'object'
         ? data.config_value
+        : {};
+    const resolvedConfig = resolveSiteScopedSystemConfigValue(storedConfig, site);
+    const config = resolvedConfig && typeof resolvedConfig === 'object' && !Array.isArray(resolvedConfig)
+        ? resolvedConfig
         : {};
     const prices = getVerifyPriceMap(config);
     const apiKeys = normalizeVerifyCredentialList([
@@ -137,6 +147,7 @@ async function loadVerifyRuntimeConfig(supabase, env = process.env) {
     ]);
 
     return {
+        site,
         enabled: config.enabled !== false,
         apiKey: apiKeys[0] || '',
         apiKeys,
@@ -194,11 +205,14 @@ async function selectVerifyCredentialForTask(config = {}, requiredUses = 0, opti
 }
 
 async function fetchDirectVerifyQuotaState(supabase, options = {}) {
-    const config = await loadVerifyRuntimeConfig(supabase, options.env || process.env);
+    const config = await loadVerifyRuntimeConfig(supabase, options.env || process.env, {
+        site: options.site
+    });
     if (!config.apiKey || !config.apiBaseUrl) {
         return {
             success: false,
             status: 500,
+            site: config.site,
             message: '验证服务未配置 CDKey 或 Base URL'
         };
     }
@@ -220,6 +234,7 @@ async function fetchDirectVerifyQuotaState(supabase, options = {}) {
     return {
         success: true,
         status: 200,
+        site: config.site,
         balance: usageSummary.remaining_uses,
         credits: usageSummary.remaining_uses,
         remaining_uses: usageSummary.remaining_uses,
@@ -241,12 +256,15 @@ async function fetchDirectVerifyQuotaState(supabase, options = {}) {
 }
 
 async function buildLocalVerifyQueueSnapshot(supabase, options = {}) {
-    const config = await loadVerifyRuntimeConfig(supabase, options.env || process.env);
+    const config = await loadVerifyRuntimeConfig(supabase, options.env || process.env, {
+        site: options.site
+    });
 
     if (!supabase?.from) {
         return {
             success: false,
             status: 503,
+            site: config.site,
             message: '验证服务本地队列不可用'
         };
     }
@@ -268,6 +286,7 @@ async function buildLocalVerifyQueueSnapshot(supabase, options = {}) {
     return {
         success: true,
         status: 200,
+        site: config.site,
         queue_size: queueSize,
         running_jobs: runningJobs,
         key_name: Number(config.keyCount || 0) > 1

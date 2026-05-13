@@ -36,6 +36,24 @@ function loadAnnouncementHandlerWithMocks(state) {
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../../../../api/_lib/admin') {
             return {
+                normalizeAdminSite(value, options = {}) {
+                    const normalized = String(value || '').trim().toLowerCase();
+                    if (normalized === 'cn' || normalized === 'intl' || normalized === 'all') {
+                        return normalized;
+                    }
+                    return Object.prototype.hasOwnProperty.call(options, 'defaultValue')
+                        ? options.defaultValue
+                        : '';
+                },
+                requireWritableAdminSite(value, options = {}) {
+                    const normalized = String(value || '').trim().toLowerCase();
+                    if (normalized === 'cn' || normalized === 'intl') {
+                        return normalized;
+                    }
+                    const error = new Error(options.message || 'Writable site is required');
+                    error.statusCode = 400;
+                    throw error;
+                },
                 async requireAdmin(req, options = {}) {
                     state.requireAdminCalls.push({ req, options });
                     return {
@@ -119,7 +137,9 @@ class AnnouncementQuery {
         }
 
         return {
-            data: this.state.rules.find((item) => item.id === this.filters.id) || null,
+            data: this.state.rules.find((item) => Object.entries(this.filters).every(([field, value]) => (
+                String(item[field] || '') === String(value || '')
+            ))) || null,
             error: null
         };
     }
@@ -135,7 +155,15 @@ class AnnouncementQuery {
         }
 
         if (this.table === 'announcement_rules') {
-            return { data: this.state.rules, error: null };
+            return {
+                data: this.state.rules.filter((row) => Object.entries(this.filters).every(([field, value]) => {
+                    if (Array.isArray(value)) {
+                        return value.includes(row[field]);
+                    }
+                    return String(row[field] || '') === String(value || '');
+                })),
+                error: null
+            };
         }
         if (this.table === 'announcement_history') {
             const ids = Array.isArray(this.filters.announcement_id) ? this.filters.announcement_id : [];
@@ -199,7 +227,15 @@ test('announcement workflow exposes admin API, history, review states, and read 
         true,
         'read statistics should deduplicate repeated events by reader and page'
     );
+    assert.equal(
+        readRepoFile('supabase/migrations/20260513_site_scope_announcements.sql').includes('ADD COLUMN IF NOT EXISTS site VARCHAR(16) DEFAULT \'cn\' NOT NULL'),
+        true,
+        'announcement workflow should add a site column for CN/INTL isolation'
+    );
+    assert.equal(handlerSource.includes('requireWritableAdminSite'), true, 'announcement writes should require a concrete writable site');
+    assert.equal(handlerSource.includes(".eq('site', site)"), true, 'announcement list reads should filter by site');
     assert.equal(publicConfigSource.includes('fetchPublicAnnouncementRules'), true, 'public config should publish approved announcement rules');
+    assert.equal(publicConfigSource.includes(".eq('site', normalizedSite)"), true, 'public announcement reads should filter by site');
     assert.equal(publicConfigSource.includes("'announcement-event'"), true, 'public config should accept read events');
 });
 
@@ -220,7 +256,9 @@ test('announcement workflow handler creates draft announcements and records hist
     await handler({
         method: 'POST',
         url: '/api/admin/settings/announcements',
+        adminSite: 'cn',
         body: {
+            site: 'cn',
             action: 'create',
             announcement: {
                 title: '五一商城公告',
@@ -238,6 +276,7 @@ test('announcement workflow handler creates draft announcements and records hist
     assert.equal(res.statusCode, 200);
     assert.equal(payload.success, true);
     assert.equal(payload.announcement.id, 'rule-created');
+    assert.equal(payload.announcement.site, 'cn');
     assert.equal(payload.announcement.status, 'draft');
     assert.deepEqual(payload.announcement.pages, ['shop']);
     assert.equal(payload.items.length, 1);
@@ -245,4 +284,49 @@ test('announcement workflow handler creates draft announcements and records hist
     assert.equal(payload.history[0].to_status, 'draft');
     assert.deepEqual(state.requireAdminCalls[0].options, { permission: 'settings.manage' });
     assert.equal(state.auditLogs[0].actionType, 'announcement.create');
+});
+
+test('announcement workflow handler filters rules by admin site', async () => {
+    const state = {
+        user: { id: 'admin-1', email: 'admin@example.com' },
+        rules: [
+            {
+                id: 'rule-cn',
+                site: 'cn',
+                title: 'CN 公告',
+                content: '<p>cn</p>',
+                status: 'approved',
+                enabled: true,
+                pages: ['all']
+            },
+            {
+                id: 'rule-intl',
+                site: 'intl',
+                title: 'INTL 公告',
+                content: '<p>intl</p>',
+                status: 'approved',
+                enabled: true,
+                pages: ['all']
+            }
+        ],
+        history: [],
+        reads: [],
+        auditLogs: [],
+        requireAdminCalls: []
+    };
+    state.supabase = createMockSupabase(state);
+
+    const handler = loadAnnouncementHandlerWithMocks(state);
+    const res = createResponseRecorder();
+
+    await handler({
+        method: 'GET',
+        url: '/api/admin/settings/announcements?site=intl'
+    }, res);
+
+    const payload = JSON.parse(String(res.body || '{}'));
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.site, 'intl');
+    assert.deepEqual(payload.items.map((item) => item.id), ['rule-intl']);
 });

@@ -4,6 +4,12 @@ const {
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
+const {
+    loadSiteScopedConfig,
+    normalizeEngagementConfigSite,
+    resolveEngagementConfigRequestSite,
+    saveSiteScopedConfig
+} = require('../../_engagement-site-config');
 
 const CONFIG_KEY = 'engagement_support_entry_center';
 const VALID_CONTEXT_IDS = Object.freeze(new Set(['default', 'home', 'prompts', 'gongyi', 'shop', 'verify', 'guestbook']));
@@ -203,18 +209,13 @@ function normalizeSupportEntryCenter(value = {}) {
     };
 }
 
-async function loadSupportEntryCenter(supabase) {
-    const { data, error } = await supabase
-        .from('system_config')
-        .select('config_value')
-        .eq('config_key', CONFIG_KEY)
-        .maybeSingle();
-    if (error) throw error;
-    return normalizeSupportEntryCenter(data?.config_value || {});
+async function loadSupportEntryCenter(supabase, site = 'cn') {
+    return loadSiteScopedConfig(supabase, CONFIG_KEY, site, normalizeSupportEntryCenter, {});
 }
 
-async function saveSupportEntryCenter({ supabase, user, body }) {
-    const current = await loadSupportEntryCenter(supabase);
+async function saveSupportEntryCenter({ supabase, user, body, site }) {
+    const normalizedSite = normalizeEngagementConfigSite(body.site || site, { fallback: 'cn' });
+    const current = await loadSupportEntryCenter(supabase, normalizedSite);
     const action = normalizeToken(body.action, 'save_settings');
     let nextCenter = current;
 
@@ -266,25 +267,23 @@ async function saveSupportEntryCenter({ supabase, user, body }) {
         updated_at: new Date().toISOString()
     };
 
-    const { error } = await supabase
-        .from('system_config')
-        .upsert({
-            config_key: CONFIG_KEY,
-            config_value: payload,
-            description: '客服系统入口与工单引导配置',
-            updated_by: user.id || null,
-            updated_at: new Date().toISOString()
-        }, {
-            onConflict: 'config_key'
-        });
-    if (error) throw error;
+    await saveSiteScopedConfig({
+        supabase,
+        key: CONFIG_KEY,
+        site: normalizedSite,
+        value: payload,
+        description: '客服系统入口与工单引导配置',
+        userId: user.id
+    });
 
     await writeAdminAuditLog({
         supabase,
         adminId: user.id,
         module: 'engagement',
+        site: normalizedSite,
         actionType: `engagement.entry.${action}`,
         details: {
+            site: normalizedSite,
             config_key: CONFIG_KEY,
             enabled: payload.enabled,
             context_count: payload.contexts.length,
@@ -303,9 +302,12 @@ module.exports = async function engagementEntryHandler(req, res) {
         });
 
         if (req.method === 'GET') {
-            const supportEntry = await loadSupportEntryCenter(supabase);
+            const url = new URL(req.url || '', 'http://localhost');
+            const site = resolveEngagementConfigRequestSite(req, url, { fallback: 'cn' });
+            const supportEntry = await loadSupportEntryCenter(supabase, site);
             return sendJson(res, 200, {
                 success: true,
+                site,
                 support_entry: supportEntry
             });
         }
@@ -319,9 +321,12 @@ module.exports = async function engagementEntryHandler(req, res) {
         }
 
         const body = await parseJsonBody(req);
-        const supportEntry = await saveSupportEntryCenter({ supabase, user, body });
+        const url = new URL(req.url || '', 'http://localhost');
+        const site = normalizeEngagementConfigSite(body.site || url.searchParams.get('site') || req.adminSite, { fallback: 'cn' });
+        const supportEntry = await saveSupportEntryCenter({ supabase, user, body, site });
         return sendJson(res, 200, {
             success: true,
+            site,
             support_entry: supportEntry
         });
     } catch (error) {

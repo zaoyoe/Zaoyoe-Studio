@@ -2344,11 +2344,11 @@ async function loadBatches() {
     tbody.innerHTML = buildPointsBatchLoadingSkeleton();
     renderPointsBatchOverviewLoading();
     renderPointsBatchListFeedback();
+    const currentSite = getPointsReadSite();
 
     try {
-        const currentSite = getPointsReadSite();
         const payload = await fetchPointsBatchesPayload({ site: currentSite });
-        if (requestId !== pointsBatchListLoadRequestId) {
+        if (requestId !== pointsBatchListLoadRequestId || getPointsReadSite() !== currentSite) {
             return false;
         }
         allBatches = Array.isArray(payload?.batches) ? payload.batches : [];
@@ -2382,7 +2382,7 @@ async function loadBatches() {
         return true;
 
     } catch (err) {
-        if (requestId !== pointsBatchListLoadRequestId) {
+        if (requestId !== pointsBatchListLoadRequestId || getPointsReadSite() !== currentSite) {
             return false;
         }
         console.error('Failed to load batches:', err);
@@ -3313,9 +3313,15 @@ async function loadPointsPackageCatalog({ force = false } = {}) {
     }
 
     try {
-        const payload = await fetchPointsCatalogSnapshot({ site: getPointsReadSite(), force });
+        const payload = await fetchPointsCatalogSnapshot({ site: currentSite, force });
+        if (getPointsReadSite() !== currentSite) {
+            return false;
+        }
         renderPointsPackageCatalog(payload);
     } catch (error) {
+        if (getPointsReadSite() !== currentSite) {
+            return false;
+        }
         console.error('Failed to load points package catalog:', error);
         if (summaryEl) {
             summaryEl.innerHTML = [

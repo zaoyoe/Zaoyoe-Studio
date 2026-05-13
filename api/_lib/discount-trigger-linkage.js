@@ -4,6 +4,9 @@ const {
 const {
     buildDiscountLifecycleSummary
 } = require('../../server/api-handlers/admin/discounts/_shared');
+const {
+    resolveSiteScopedSystemConfigValue
+} = require('../../server/api-handlers/_site-scoped-system-config');
 
 const DISCOUNT_TRIGGER_CONFIG_KEY = 'discount_trigger_rules';
 const SUCCESSFUL_RECHARGE_STATUSES = Object.freeze(['redeemed', 'refunded']);
@@ -208,7 +211,7 @@ function matchesRuleSite(ruleSite = 'all', site = 'cn') {
     return ruleSite === 'all' || ruleSite === normalizeSiteValue(site || 'cn');
 }
 
-async function loadTriggerConfig(supabase) {
+async function loadTriggerConfig(supabase, site = 'cn') {
     const { data, error } = await supabase
         .from('system_config')
         .select('config_key, config_value')
@@ -216,7 +219,7 @@ async function loadTriggerConfig(supabase) {
         .maybeSingle();
 
     if (error) throw error;
-    return normalizeTriggerConfig(data?.config_value || {});
+    return normalizeTriggerConfig(resolveSiteScopedSystemConfigValue(data?.config_value || {}, site));
 }
 
 async function loadPreviousSuccessfulRechargeCount(supabase, { userId = '', site = 'cn', excludePaymentOrderId = '' } = {}) {
@@ -605,7 +608,7 @@ async function maybeIssueRechargeDiscountAssets(context = {}) {
     }
 
     try {
-        const config = await loadTriggerConfig(supabase);
+        const config = await loadTriggerConfig(supabase, site);
         const rechargeRules = config.recharge?.enabled ? config.recharge.rules : [];
         if (!rechargeRules.length) {
             return result;
@@ -686,7 +689,7 @@ async function maybeIssueCheckinDiscountAssets(context = {}) {
     }
 
     try {
-        const config = await loadTriggerConfig(supabase);
+        const config = await loadTriggerConfig(supabase, site);
         const checkinRules = config.checkin?.enabled ? config.checkin.rules : [];
         if (!checkinRules.length) {
             return result;
@@ -759,7 +762,7 @@ async function maybeIssueAffiliateDiscountAssets(context = {}) {
     }
 
     try {
-        const config = await loadTriggerConfig(supabase);
+        const config = await loadTriggerConfig(supabase, site);
         const affiliateRules = config.affiliate?.enabled ? config.affiliate.rules : [];
         if (!affiliateRules.length) {
             return result;

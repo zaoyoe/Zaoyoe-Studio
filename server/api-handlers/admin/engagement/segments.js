@@ -8,6 +8,12 @@ const {
     listKnownUserTagDefinitions,
     sweepInactiveUserTags
 } = require('../../../../api/_lib/user-tags');
+const {
+    loadSiteScopedConfig,
+    normalizeEngagementConfigSite,
+    resolveEngagementConfigRequestSite,
+    saveSiteScopedConfig
+} = require('../../_engagement-site-config');
 
 const TAG_CENTER_CONFIG_KEY = 'engagement_user_tag_center';
 const VALID_TAG_SOURCES = Object.freeze(new Set(['manual', 'profile_metadata', 'auth_metadata', 'purchase', 'wallet', 'behavior', 'support']));
@@ -19,6 +25,22 @@ function sanitizeText(value, maxLength = 4000) {
 
 function isUuid(value = '') {
     return UUID_PATTERN.test(sanitizeText(value, 160));
+}
+
+function isMissingRelationOrColumnError(error, relationName = '') {
+    const text = [
+        error?.code,
+        error?.message,
+        error?.details,
+        error?.hint
+    ].filter(Boolean).join(' ').toLowerCase();
+    const relation = sanitizeText(relationName, 120).toLowerCase();
+    return error?.code === '42P01'
+        || error?.code === '42703'
+        || error?.code === 'PGRST204'
+        || error?.code === 'PGRST205'
+        || text.includes('schema cache')
+        || (relation && text.includes(relation));
 }
 
 function slugify(value = '', fallback = 'segment') {
@@ -241,6 +263,7 @@ function normalizeSegment(row = {}) {
     return {
         id: sanitizeText(row.id, 160),
         key: sanitizeText(row.key, 160),
+        site: normalizeEngagementConfigSite(row.site || 'all', { allowAll: true, fallback: 'all' }),
         name: sanitizeText(row.name || '未命名分群', 160) || '未命名分群',
         title: sanitizeText(row.name || '未命名分群', 160) || '未命名分群',
         description: sanitizeText(row.description, 800),
@@ -258,7 +281,7 @@ function normalizeSegment(row = {}) {
     };
 }
 
-function buildSegmentPayload(body = {}) {
+function buildSegmentPayload(body = {}, site = 'cn') {
     const name = sanitizeText(body.name || body.title, 160);
     if (!name) {
         const error = new Error('分群名称不能为空');
@@ -269,6 +292,7 @@ function buildSegmentPayload(body = {}) {
     const definition = normalizeDefinition(body.definition);
     return {
         key,
+        site: normalizeEngagementConfigSite(body.site || site, { fallback: 'cn' }),
         name,
         description: sanitizeText(body.description || body.desc, 800),
         definition: {
@@ -284,34 +308,65 @@ function buildSegmentPayload(body = {}) {
     };
 }
 
-async function listSegments(supabase) {
-    const { data, error } = await supabase
+function segmentMatchesSite(row = {}, site = 'all') {
+    const normalizedSite = normalizeEngagementConfigSite(site, { allowAll: true, fallback: 'all' });
+    if (normalizedSite === 'all') return true;
+    const rowSite = normalizeEngagementConfigSite(row.site || 'all', { allowAll: true, fallback: 'all' });
+    return rowSite === 'all' || rowSite === normalizedSite;
+}
+
+function compareSegmentSitePriority(left = {}, right = {}, site = 'all') {
+    const normalizedSite = normalizeEngagementConfigSite(site, { allowAll: true, fallback: 'all' });
+    if (normalizedSite === 'all') return 0;
+    const siteRank = (row) => (
+        normalizeEngagementConfigSite(row.site || 'all', { allowAll: true, fallback: 'all' }) === normalizedSite ? 1 : 0
+    );
+    return siteRank(left) - siteRank(right);
+}
+
+function applySegmentsSiteFilter(query, site = 'all') {
+    const normalizedSite = normalizeEngagementConfigSite(site, { allowAll: true, fallback: 'all' });
+    if (normalizedSite === 'all' || typeof query?.in !== 'function') {
+        return query;
+    }
+    return query.in('site', ['all', normalizedSite]);
+}
+
+async function listSegments(supabase, site = 'all') {
+    const normalizedSite = normalizeEngagementConfigSite(site, { allowAll: true, fallback: 'all' });
+    let query = supabase
         .from('engagement_segments')
-        .select('id,key,name,description,definition,enabled,created_at,updated_at')
+        .select('id,key,site,name,description,definition,enabled,created_at,updated_at');
+    query = applySegmentsSiteFilter(query, normalizedSite);
+    let { data, error } = await query
         .order('updated_at', { ascending: false })
         .limit(100);
+    if (error && isMissingRelationOrColumnError(error, 'engagement_segments')) {
+        const fallbackResponse = await supabase
+            .from('engagement_segments')
+            .select('id,key,name,description,definition,enabled,created_at,updated_at')
+            .order('updated_at', { ascending: false })
+            .limit(100);
+        data = fallbackResponse.data;
+        error = fallbackResponse.error;
+    }
     if (error) throw error;
-    return (Array.isArray(data) ? data : []).map(normalizeSegment);
+    return (Array.isArray(data) ? data : [])
+        .filter((row) => segmentMatchesSite(row, normalizedSite))
+        .sort((left, right) => compareSegmentSitePriority(left, right, normalizedSite))
+        .map(normalizeSegment);
 }
 
 async function loadTagCenter(supabase, options = {}) {
     const includeUserTags = options.includeUserTags === true;
-    const { data, error } = await supabase
-        .from('system_config')
-        .select('config_value')
-        .eq('config_key', TAG_CENTER_CONFIG_KEY)
-        .maybeSingle();
-    if (error) {
-        const text = sanitizeText(error?.message || error?.details || '', 500).toLowerCase();
-        if (error.code === '42P01' || text.includes('system_config')) {
-            const userTags = includeUserTags
-                ? await listKnownUserTagDefinitions(supabase, { limit: 5000 })
-                : [];
-            return mergeTagCenterWithUserTags(getDefaultTagCenter(), userTags);
-        }
-        throw error;
-    }
-    const tagCenter = normalizeTagCenter(data?.config_value || {});
+    const site = normalizeEngagementConfigSite(options.site || 'cn', { fallback: 'cn' });
+    const tagCenter = await loadSiteScopedConfig(
+        supabase,
+        TAG_CENTER_CONFIG_KEY,
+        site,
+        normalizeTagCenter,
+        {}
+    );
     if (!includeUserTags) {
         return tagCenter;
     }
@@ -319,8 +374,12 @@ async function loadTagCenter(supabase, options = {}) {
     return mergeTagCenterWithUserTags(tagCenter, userTags);
 }
 
-async function saveTagCenter({ supabase, user, body }) {
-    const current = await loadTagCenter(supabase, { includeUserTags: false });
+async function saveTagCenter({ supabase, user, body, site = 'cn' }) {
+    const normalizedSite = normalizeEngagementConfigSite(body.site || site, { fallback: 'cn' });
+    const current = await loadTagCenter(supabase, {
+        includeUserTags: false,
+        site: normalizedSite
+    });
     const action = normalizeToken(body.action, 'save_tag');
     let nextCenter = current;
 
@@ -372,18 +431,14 @@ async function saveTagCenter({ supabase, user, body }) {
         updated_at: new Date().toISOString()
     };
 
-    const { error } = await supabase
-        .from('system_config')
-        .upsert({
-            config_key: TAG_CENTER_CONFIG_KEY,
-            config_value: payload,
-            description: '客服系统用户标签中心配置',
-            updated_by: user.id || null,
-            updated_at: new Date().toISOString()
-        }, {
-            onConflict: 'config_key'
-        });
-    if (error) throw error;
+    await saveSiteScopedConfig({
+        supabase,
+        key: TAG_CENTER_CONFIG_KEY,
+        site: normalizedSite,
+        value: payload,
+        description: '客服系统用户标签中心配置',
+        userId: user.id
+    });
 
     await writeAdminAuditLog({
         supabase,
@@ -392,6 +447,7 @@ async function saveTagCenter({ supabase, user, body }) {
         actionType: `engagement.segment_tags.${action}`,
         details: {
             config_key: TAG_CENTER_CONFIG_KEY,
+            site: normalizedSite,
             tag_count: payload.tags.length,
             tag_key: sanitizeText(body.key || body.id || body.tag_key || body.tagKey || body.tag?.key, 120)
         }
@@ -400,16 +456,30 @@ async function saveTagCenter({ supabase, user, body }) {
     return payload;
 }
 
-async function saveSegment({ supabase, user, body }) {
+async function persistSegmentPayload(supabase, id, payload, includeSite = true) {
+    const { site, ...legacyPayload } = payload;
+    const nextPayload = includeSite ? payload : legacyPayload;
+    const query = id
+        ? supabase.from('engagement_segments').update(nextPayload).eq('id', id)
+        : supabase.from('engagement_segments').insert(nextPayload);
+    return query
+        .select(includeSite
+            ? 'id,key,site,name,description,definition,enabled,created_at,updated_at'
+            : 'id,key,name,description,definition,enabled,created_at,updated_at')
+        .single();
+}
+
+async function saveSegment({ supabase, user, body, site = 'cn' }) {
     const rawId = sanitizeText(body.id || body.segment_id || body.segmentId, 160);
     const id = isUuid(rawId) ? rawId : '';
-    const payload = buildSegmentPayload(body);
-    const query = id
-        ? supabase.from('engagement_segments').update(payload).eq('id', id)
-        : supabase.from('engagement_segments').insert(payload);
-    const { data, error } = await query
-        .select('id,key,name,description,definition,enabled,created_at,updated_at')
-        .single();
+    const normalizedSite = normalizeEngagementConfigSite(body.site || site, { fallback: 'cn' });
+    const payload = buildSegmentPayload(body, normalizedSite);
+    let { data, error } = await persistSegmentPayload(supabase, id, payload, true);
+    if (error && isMissingRelationOrColumnError(error, 'engagement_segments')) {
+        const fallbackResponse = await persistSegmentPayload(supabase, id, payload, false);
+        data = fallbackResponse.data;
+        error = fallbackResponse.error;
+    }
     if (error) throw error;
 
     await writeAdminAuditLog({
@@ -419,6 +489,7 @@ async function saveSegment({ supabase, user, body }) {
         actionType: id ? 'engagement.segment.update' : 'engagement.segment.create',
         details: {
             segment_id: data?.id || id,
+            site: normalizedSite,
             key: payload.key,
             name: payload.name,
             enabled: payload.enabled
@@ -466,14 +537,20 @@ module.exports = async function engagementSegmentsHandler(req, res) {
         const { supabase, user } = await requireAdmin(req, {
             anyOf: ['chat.manage', 'settings.manage']
         });
+        const url = new URL(req.url || '', 'http://localhost');
 
         if (req.method === 'GET') {
+            const site = resolveEngagementConfigRequestSite(req, url, {
+                allowAll: true,
+                fallback: 'cn'
+            });
             const [segments, tagCenter] = await Promise.all([
-                listSegments(supabase),
-                loadTagCenter(supabase)
+                listSegments(supabase, site),
+                loadTagCenter(supabase, { site })
             ]);
             return sendJson(res, 200, {
                 success: true,
+                site,
                 segments,
                 tag_center: tagCenter
             });
@@ -488,25 +565,31 @@ module.exports = async function engagementSegmentsHandler(req, res) {
         }
 
         const body = await parseJsonBody(req);
+        const site = normalizeEngagementConfigSite(body.site || url.searchParams.get('site') || req.adminSite, {
+            fallback: 'cn'
+        });
         const action = sanitizeText(body.action || 'save', 40).toLowerCase();
         if (action === 'delete') {
             const result = await deleteSegment({ supabase, user, body });
             return sendJson(res, 200, {
                 success: true,
+                site,
                 deleted: result.id
             });
         }
         if (action === 'save_tag' || action === 'delete_tag' || action === 'save_tag_center' || action === 'sync_user_tags') {
-            const tagCenter = await saveTagCenter({ supabase, user, body });
+            const tagCenter = await saveTagCenter({ supabase, user, body, site });
             return sendJson(res, 200, {
                 success: true,
+                site,
                 tag_center: tagCenter
             });
         }
         if (action === 'run_inactive_sweep') {
             const result = await sweepInactiveUserTags(supabase, {
                 limit: body.limit || 500,
-                createdBy: user.id
+                createdBy: user.id,
+                site
             });
             await writeAdminAuditLog({
                 supabase,
@@ -514,6 +597,7 @@ module.exports = async function engagementSegmentsHandler(req, res) {
                 module: 'engagement',
                 actionType: 'engagement.segment_tags.run_inactive_sweep',
                 details: {
+                    site,
                     tagged: result.tagged || 0,
                     cutoff_at: result.cutoff_at || '',
                     skipped: result.skipped || ''
@@ -521,13 +605,15 @@ module.exports = async function engagementSegmentsHandler(req, res) {
             });
             return sendJson(res, 200, {
                 success: true,
+                site,
                 sweep: result
             });
         }
 
-        const segment = await saveSegment({ supabase, user, body });
+        const segment = await saveSegment({ supabase, user, body, site });
         return sendJson(res, 200, {
             success: true,
+            site,
             segment
         });
     } catch (error) {

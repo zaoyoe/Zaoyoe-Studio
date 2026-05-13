@@ -104,11 +104,12 @@ function compareValue(left, right) {
 
 function applyFilters(rows, filters) {
     return rows.filter((row) => filters.every(({ op, column, value }) => {
+        const rowValue = column === 'site' && !row[column] ? 'cn' : row[column];
         if (op === 'in') {
-            return Array.isArray(value) ? value.includes(row[column]) : false;
+            return Array.isArray(value) ? value.includes(rowValue) : false;
         }
         if (op === 'gte') {
-            return compareValue(row[column], value) >= 0;
+            return compareValue(rowValue, value) >= 0;
         }
         return true;
     }));
@@ -1282,6 +1283,65 @@ test('ops alert monitor handler merges generic ops alert cases into non-shop-ris
         assert.equal(payments.case_summary.open, 0);
         assert.equal(payments.case_summary.claimed, 1);
         assert.equal(payments.case_summary.resolved, 0);
+    });
+});
+
+test('ops alert monitor handler keeps same target case state isolated by site', async () => {
+    await withHandler({
+        jobs: [
+            buildJob('payment_gateway_degraded', {
+                id: 'gateway-cn-same-target',
+                severity: 'critical',
+                title: '国内站支付通道异常',
+                content: '支付通道告警\n判定信号：成功率下降',
+                payload: {
+                    site: 'cn',
+                    target_id: 'payment_gateway:hupijiao'
+                },
+                created_at: hoursAgo(1)
+            }),
+            buildJob('payment_gateway_degraded', {
+                id: 'gateway-intl-same-target',
+                severity: 'critical',
+                title: '国际站支付通道异常',
+                content: '支付通道告警\n判定信号：成功率下降',
+                payload: {
+                    site: 'intl',
+                    target_id: 'payment_gateway:hupijiao'
+                },
+                created_at: hoursAgo(0.5)
+            })
+        ],
+        cases: [
+            {
+                site: 'cn',
+                category_key: 'payments',
+                target_id: 'payment_gateway:hupijiao',
+                alert_type: 'payment_gateway_degraded',
+                status: 'claimed',
+                owner_admin_id: 'admin-user-3',
+                owner_label: 'payments-ops@example.com',
+                note: '只处理国内站通道。',
+                resolution: null,
+                last_action: 'claimed',
+                last_action_at: hoursAgo(0.4),
+                updated_at: hoursAgo(0.4)
+            }
+        ]
+    }, async (handler) => {
+        const req = { method: 'GET', headers: {} };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const payments = payload.categories.find((item) => item.key === 'payments');
+        const bySite = new Map(payments.items.map((item) => [item.site, item]));
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(bySite.get('cn').case_status, 'claimed');
+        assert.equal(bySite.get('cn').case_note, '只处理国内站通道。');
+        assert.equal(bySite.get('intl').case_status, 'open');
+        assert.equal(bySite.get('intl').case_note, null);
     });
 });
 

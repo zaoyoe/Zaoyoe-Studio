@@ -5,6 +5,10 @@ const {
     buildExternalEmbedSnippet,
     normalizeExternalEmbedPolicy
 } = require('../../../../api/_lib/engagement-external-policy');
+const {
+    loadSiteScopedConfig,
+    normalizeEngagementConfigSite
+} = require('../../_engagement-site-config');
 const ASSET_STYLE_CONFIG_KEY = 'engagement_asset_style_center';
 const SUPPORT_ENTRY_CONFIG_KEY = 'engagement_support_entry_center';
 const PAGE_SCENE_CONFIG_KEY = 'engagement_page_scenes';
@@ -770,6 +774,7 @@ function normalizeSegment(row = {}) {
     return {
         id: sanitizeText(row.id, 160),
         key,
+        site: normalizeEngagementConfigSite(row.site || 'all', { allowAll: true, fallback: 'all' }),
         name,
         title: name,
         description: sanitizeText(row.description, 800),
@@ -823,87 +828,27 @@ function mergePageSceneConfig(baseScenes = [], overrides = []) {
     });
 }
 
-async function fetchPageSceneConfig(supabase) {
-    const { data, error } = await supabase
-        .from('system_config')
-        .select('config_value')
-        .eq('config_key', PAGE_SCENE_CONFIG_KEY)
-        .maybeSingle();
-    if (error) {
-        const text = sanitizeText(error?.message || error?.details || '', 500).toLowerCase();
-        if (error.code === '42P01' || text.includes('system_config')) {
-            return [];
-        }
-        throw error;
-    }
-    return {
-        scenes: Array.isArray(data?.config_value?.scenes) ? data.config_value.scenes : [],
-        event_priority_center: normalizeEventPriorityCenter(data?.config_value?.event_priority_center || {})
-    };
+async function fetchPageSceneConfig(supabase, site = 'all') {
+    return loadSiteScopedConfig(supabase, PAGE_SCENE_CONFIG_KEY, site, (value = {}) => ({
+        scenes: Array.isArray(value?.scenes) ? value.scenes : [],
+        event_priority_center: normalizeEventPriorityCenter(value?.event_priority_center || {})
+    }), {});
 }
 
-async function fetchAssetStyleConfig(supabase) {
-    const { data, error } = await supabase
-        .from('system_config')
-        .select('config_value')
-        .eq('config_key', ASSET_STYLE_CONFIG_KEY)
-        .maybeSingle();
-    if (error) {
-        const text = sanitizeText(error?.message || error?.details || '', 500).toLowerCase();
-        if (error.code === '42P01' || text.includes('system_config')) {
-            return getDefaultAssetCenter();
-        }
-        throw error;
-    }
-    return normalizeAssetCenter(data?.config_value || {});
+async function fetchAssetStyleConfig(supabase, site = 'all') {
+    return loadSiteScopedConfig(supabase, ASSET_STYLE_CONFIG_KEY, site, normalizeAssetCenter, {});
 }
 
-async function fetchSupportEntryConfig(supabase) {
-    const { data, error } = await supabase
-        .from('system_config')
-        .select('config_value')
-        .eq('config_key', SUPPORT_ENTRY_CONFIG_KEY)
-        .maybeSingle();
-    if (error) {
-        const text = sanitizeText(error?.message || error?.details || '', 500).toLowerCase();
-        if (error.code === '42P01' || text.includes('system_config')) {
-            return getDefaultSupportEntryCenter();
-        }
-        throw error;
-    }
-    return normalizeSupportEntryCenter(data?.config_value || {});
+async function fetchSupportEntryConfig(supabase, site = 'all') {
+    return loadSiteScopedConfig(supabase, SUPPORT_ENTRY_CONFIG_KEY, site, normalizeSupportEntryCenter, {});
 }
 
-async function fetchTagCenterConfig(supabase) {
-    const { data, error } = await supabase
-        .from('system_config')
-        .select('config_value')
-        .eq('config_key', TAG_CENTER_CONFIG_KEY)
-        .maybeSingle();
-    if (error) {
-        const text = sanitizeText(error?.message || error?.details || '', 500).toLowerCase();
-        if (error.code === '42P01' || text.includes('system_config')) {
-            return getDefaultTagCenter();
-        }
-        throw error;
-    }
-    return normalizeTagCenter(data?.config_value || {});
+async function fetchTagCenterConfig(supabase, site = 'all') {
+    return loadSiteScopedConfig(supabase, TAG_CENTER_CONFIG_KEY, site, normalizeTagCenter, {});
 }
 
-async function fetchExternalEmbedPolicyConfig(supabase) {
-    const { data, error } = await supabase
-        .from('system_config')
-        .select('config_value')
-        .eq('config_key', EXTERNAL_EMBED_POLICY_CONFIG_KEY)
-        .maybeSingle();
-    if (error) {
-        const text = sanitizeText(error?.message || error?.details || '', 500).toLowerCase();
-        if (error.code === '42P01' || text.includes('system_config')) {
-            return normalizeExternalEmbedPolicy({});
-        }
-        throw error;
-    }
-    return normalizeExternalEmbedPolicy(data?.config_value || {});
+async function fetchExternalEmbedPolicyConfig(supabase, site = 'all') {
+    return loadSiteScopedConfig(supabase, EXTERNAL_EMBED_POLICY_CONFIG_KEY, site, normalizeExternalEmbedPolicy, {});
 }
 
 function isExternalEngagementEvent(row = {}) {
@@ -1794,11 +1739,39 @@ function buildLifecycleDiagnostics({ schemaReady = false, rules = [], eventRows 
     };
 }
 
-async function fetchEngagementOverview(supabase) {
+function applyOverviewSiteFilter(query, site = 'all') {
+    const normalizedSite = normalizeEngagementConfigSite(site, { allowAll: true, fallback: 'all' });
+    if (normalizedSite === 'all') {
+        return query;
+    }
+    if (typeof query?.in !== 'function') {
+        return query;
+    }
+    return query.in('site', ['all', normalizedSite]);
+}
+
+function overviewRowMatchesSite(row = {}, site = 'all') {
+    const normalizedSite = normalizeEngagementConfigSite(site, { allowAll: true, fallback: 'all' });
+    if (normalizedSite === 'all') return true;
+    const rowSite = normalizeEngagementConfigSite(row.site || 'all', { allowAll: true, fallback: 'all' });
+    return rowSite === 'all' || rowSite === normalizedSite;
+}
+
+function compareOverviewSitePriority(left = {}, right = {}, site = 'all') {
+    const normalizedSite = normalizeEngagementConfigSite(site, { allowAll: true, fallback: 'all' });
+    if (normalizedSite === 'all') return 0;
+    const siteRank = (row) => (
+        normalizeEngagementConfigSite(row.site || 'all', { allowAll: true, fallback: 'all' }) === normalizedSite ? 1 : 0
+    );
+    return siteRank(left) - siteRank(right);
+}
+
+async function fetchEngagementOverview(supabase, site = 'all') {
+    const normalizedSite = normalizeEngagementConfigSite(site, { allowAll: true, fallback: 'all' });
     const taskRows = await Promise.all([
-        runOverviewTask('rules', () => supabase
+        runOverviewTask('rules', () => applyOverviewSiteFilter(supabase
             .from('engagement_rules')
-            .select('id,name,description,site,page_ids,placement,trigger_type,audience,title,content,action_label,action_url,tone,icon,priority,frequency,dismiss_ttl_hours,enabled,status,starts_at,ends_at,metadata,updated_at')
+            .select('id,name,description,site,page_ids,placement,trigger_type,audience,title,content,action_label,action_url,tone,icon,priority,frequency,dismiss_ttl_hours,enabled,status,starts_at,ends_at,metadata,updated_at'), normalizedSite)
             .order('updated_at', { ascending: false })
             .limit(RULE_MANAGEMENT_LIST_LIMIT), { data: [], error: null }),
         runOverviewTask('templates', () => supabase
@@ -1806,23 +1779,31 @@ async function fetchEngagementOverview(supabase) {
             .select('id,key,name,description,category,page_ids,title,content,action_label,action_url,tone,metadata,created_at,updated_at')
             .order('updated_at', { ascending: false })
             .limit(24), { data: [], error: null }),
-        runOverviewTask('segments', () => supabase
+        runOverviewTask('segments', () => applyOverviewSiteFilter(supabase
             .from('engagement_segments')
-            .select('id,key,name,description,definition,enabled,created_at,updated_at')
+            .select('id,key,site,name,description,definition,enabled,created_at,updated_at'), normalizedSite)
             .order('updated_at', { ascending: false })
             .limit(50), { data: [], error: null }),
-        runOverviewTask('events', () => supabase
-            .from('engagement_events')
-            .select('event_type,page_id,site,rule_id,notification_id,user_id,reader_key,source_module,source_event_id,metadata,created_at')
-            .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-            .order('created_at', { ascending: false })
-            .limit(1000), { data: [], error: null }),
+        runOverviewTask('events', () => {
+            let query = supabase
+                .from('engagement_events')
+                .select('event_type,page_id,site,rule_id,notification_id,user_id,reader_key,source_module,source_event_id,metadata,created_at')
+                .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
+            if (normalizedSite !== 'all') {
+                query = typeof query?.eq === 'function'
+                    ? query.eq('site', normalizedSite)
+                    : query;
+            }
+            return query
+                .order('created_at', { ascending: false })
+                .limit(1000);
+        }, { data: [], error: null }),
         runOverviewTask('audit_logs', () => fetchEngagementAuditLogs(supabase), []),
-        runOverviewTask('page_scenes', () => fetchPageSceneConfig(supabase), {}),
-        runOverviewTask('asset_center', () => fetchAssetStyleConfig(supabase), getDefaultAssetCenter()),
-        runOverviewTask('support_entry', () => fetchSupportEntryConfig(supabase), getDefaultSupportEntryCenter()),
-        runOverviewTask('tag_center', () => fetchTagCenterConfig(supabase), getDefaultTagCenter()),
-        runOverviewTask('external_embed', () => fetchExternalEmbedPolicyConfig(supabase), normalizeExternalEmbedPolicy({}))
+        runOverviewTask('page_scenes', () => fetchPageSceneConfig(supabase, normalizedSite), {}),
+        runOverviewTask('asset_center', () => fetchAssetStyleConfig(supabase, normalizedSite), getDefaultAssetCenter()),
+        runOverviewTask('support_entry', () => fetchSupportEntryConfig(supabase, normalizedSite), getDefaultSupportEntryCenter()),
+        runOverviewTask('tag_center', () => fetchTagCenterConfig(supabase, normalizedSite), getDefaultTagCenter()),
+        runOverviewTask('external_embed', () => fetchExternalEmbedPolicyConfig(supabase, normalizedSite), normalizeExternalEmbedPolicy({}))
     ]);
     const taskMap = Object.fromEntries(taskRows.map((task) => [task.label, task]));
     const rulesResult = getOverviewQueryResult(taskMap.rules);
@@ -1833,7 +1814,10 @@ async function fetchEngagementOverview(supabase) {
     const eventRows = Array.isArray(eventsResult.data) ? eventsResult.data : [];
     const rules = (Array.isArray(rulesResult.data) ? rulesResult.data : []).map(normalizeRule);
     const templates = (Array.isArray(templatesResult.data) ? templatesResult.data : []).map(normalizeTemplate);
-    const segments = (Array.isArray(segmentsResult.data) ? segmentsResult.data : []).map(normalizeSegment);
+    const segments = (Array.isArray(segmentsResult.data) ? segmentsResult.data : [])
+        .filter((row) => overviewRowMatchesSite(row, normalizedSite))
+        .sort((left, right) => compareOverviewSitePriority(left, right, normalizedSite))
+        .map(normalizeSegment);
     const auditLogs = Array.isArray(taskMap.audit_logs?.value) ? taskMap.audit_logs.value : [];
     const sceneOverrides = taskMap.page_scenes?.value && typeof taskMap.page_scenes.value === 'object' ? taskMap.page_scenes.value : {};
     const assetCenter = taskMap.asset_center?.value || getDefaultAssetCenter();
@@ -1856,6 +1840,7 @@ async function fetchEngagementOverview(supabase) {
 
     return {
         schema_ready: schemaReady,
+        site: normalizedSite,
         page_scenes: mergePageSceneConfig(PAGE_SCENES, sceneOverrides.scenes || sceneOverrides),
         event_priority_center: normalizeEventPriorityCenter(sceneOverrides.event_priority_center || {}),
         asset_center: assetCenter,
@@ -1914,7 +1899,12 @@ module.exports = async function engagementOverviewHandler(req, res) {
             });
         }
         const { supabase } = authTask.value;
-        const overview = await fetchEngagementOverview(supabase);
+        const url = new URL(req.url || '', 'http://localhost');
+        const site = normalizeEngagementConfigSite(url.searchParams.get('site') || req.adminSite, {
+            allowAll: true,
+            fallback: 'all'
+        });
+        const overview = await fetchEngagementOverview(supabase, site);
         return sendJson(res, 200, {
             success: true,
             ...overview

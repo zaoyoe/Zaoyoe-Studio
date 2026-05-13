@@ -226,8 +226,11 @@ const PRODUCT_SCHEMA_COMPATIBILITY_FIELDS = [
     'delivery_type',
     'webhook_target',
     'quantity_rules',
+    'quantity_rules_intl',
     'flash_sale_price',
+    'flash_sale_price_intl',
     'flash_sale_end',
+    'flash_sale_end_intl',
     'name_en',
     'description_en',
     'image_assets'
@@ -340,8 +343,22 @@ function buildSchemaCompatibleProductPayload(payload = {}, { site = 'cn', missin
         removeFields(['delivery_type', 'webhook_target']);
     }
 
-    if (hasMissing('quantity_rules', 'flash_sale_price', 'flash_sale_end')) {
-        removeFields(['quantity_rules', 'flash_sale_price', 'flash_sale_end']);
+    if (hasMissing(
+        'quantity_rules',
+        'quantity_rules_intl',
+        'flash_sale_price',
+        'flash_sale_price_intl',
+        'flash_sale_end',
+        'flash_sale_end_intl'
+    )) {
+        removeFields([
+            'quantity_rules',
+            'quantity_rules_intl',
+            'flash_sale_price',
+            'flash_sale_price_intl',
+            'flash_sale_end',
+            'flash_sale_end_intl'
+        ]);
     }
 
     if (hasMissing('name_en')) {

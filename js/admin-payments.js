@@ -6076,6 +6076,7 @@
 
     async function loadSummary(requestToken, targetTab = state.activeTab) {
         const requestedTab = String(targetTab || state.activeTab || 'overview').trim().toLowerCase() || 'overview';
+        const requestCacheKey = getCurrentCacheKey();
 
         if (requestedTab === 'overview') {
             state.overviewStage = 'loading';
@@ -6085,7 +6086,7 @@
 
             const coreQuery = buildSummaryQuery('overview', { scope: 'core' });
             const corePayload = await fetchAdminJson(`/api/admin/payments/summary?${coreQuery.toString()}`);
-            if (requestToken !== state.requestToken) {
+            if (requestToken !== state.requestToken || requestCacheKey !== getCurrentCacheKey()) {
                 return false;
             }
 
@@ -6098,20 +6099,20 @@
             updateOverviewBanner(coreData);
             updateOverviewLoadingMeta();
             updateLastSynced(new Date());
-            void loadOverviewDeferredScopes(requestToken, getCurrentCacheKey());
+            void loadOverviewDeferredScopes(requestToken, requestCacheKey);
             return true;
         }
 
         const query = buildSummaryQuery(requestedTab);
         const payload = await fetchAdminJson(`/api/admin/payments/summary?${query.toString()}`);
-        if (requestToken !== state.requestToken) {
+        if (requestToken !== state.requestToken || requestCacheKey !== getCurrentCacheKey()) {
             return false;
         }
 
         mergeSummaryPayload(payload, { sourceTab: requestedTab });
 
         const data = state.summary;
-        state.viewCache[requestedTab] = getCurrentCacheKey();
+        state.viewCache[requestedTab] = requestCacheKey;
         updateToolbarHighlights(data);
         renderRefundAlerts(data);
         renderOverviewCards(data);
@@ -7193,9 +7194,15 @@
     }
 
     function handlePaymentsSiteChange() {
+        state.requestToken = Date.now() + Math.random();
         resetViewState();
 
-        if (!state.initialized || !isPaymentsModuleActive()) {
+        if (!isPaymentsModuleActive()) {
+            return;
+        }
+
+        if (!state.initialized) {
+            void activatePaymentsModule({}, { force: true });
             return;
         }
 

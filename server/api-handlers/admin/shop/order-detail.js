@@ -55,6 +55,7 @@ async function selectSingleRow(queryBuilder) {
 function normalizeCaseRecord(row = {}, categoryKey = '') {
     return {
         id: normalizeText(row?.id, 160) || null,
+        site: normalizeText(row?.site || row?.metadata?.site, 40).toLowerCase() || 'cn',
         category_key: normalizeText(row?.category_key || categoryKey, 80).toLowerCase() || null,
         target_id: normalizeText(row?.target_id, 200) || null,
         alert_type: normalizeText(row?.alert_type, 120).toLowerCase() || null,
@@ -67,6 +68,17 @@ function normalizeCaseRecord(row = {}, categoryKey = '') {
             ? row.metadata
             : {}
     };
+}
+
+function normalizeOpsAlertCaseSite(value = '', fallback = 'cn') {
+    const normalized = normalizeText(value, 40).toLowerCase();
+    if (normalized === 'intl') {
+        return 'intl';
+    }
+    if (normalized === 'cn') {
+        return 'cn';
+    }
+    return fallback === 'intl' ? 'intl' : 'cn';
 }
 
 async function loadOrderRecord(supabase, orderId) {
@@ -233,16 +245,18 @@ async function loadTicketContext(supabase, orderId) {
     }
 }
 
-async function loadOpsCaseByTarget(supabase, categoryKey, targetId) {
+async function loadOpsCaseByTarget(supabase, categoryKey, targetId, site = 'cn') {
     if (!categoryKey || !targetId) {
         return null;
     }
+    const caseSite = normalizeOpsAlertCaseSite(site, 'cn');
 
     try {
         const record = await selectSingleRow(
             supabase
                 .from('ops_alert_cases')
-                .select('id, category_key, target_id, alert_type, status, owner_label, note, resolution, updated_at, metadata')
+                .select('id, site, category_key, target_id, alert_type, status, owner_label, note, resolution, updated_at, metadata')
+                .eq('site', caseSite)
                 .eq('category_key', categoryKey)
                 .eq('target_id', targetId)
         );
@@ -261,6 +275,7 @@ async function loadRiskContext(supabase, order = {}) {
     const userId = normalizeText(order?.user_id, 160);
     const discountCode = normalizeText(order?.discount_code, 160).toUpperCase();
     const totalPrice = Number(order?.total_price || order?.price_paid || 0) || 0;
+    const caseSite = normalizeOpsAlertCaseSite(order?.site, 'cn');
 
     if (userId) {
         candidates.push(`shop_order_risk:user_velocity:${userId}`);
@@ -287,7 +302,8 @@ async function loadRiskContext(supabase, order = {}) {
     try {
         const { data, error } = await supabase
             .from('ops_alert_cases')
-            .select('id, category_key, target_id, alert_type, status, owner_label, note, resolution, updated_at, metadata')
+            .select('id, site, category_key, target_id, alert_type, status, owner_label, note, resolution, updated_at, metadata')
+            .eq('site', caseSite)
             .eq('category_key', 'shop_risk')
             .in('target_id', candidateTargets)
             .order('updated_at', { ascending: false });
@@ -376,7 +392,7 @@ module.exports = async function adminShopOrderDetailHandler(req, res) {
             loadInventoryRecordsByIds(supabase, linkedInventoryIds),
             loadDeliveryTask(supabase, order),
             loadTicketContext(supabase, orderId),
-            loadOpsCaseByTarget(supabase, 'fulfillment', orderId),
+            loadOpsCaseByTarget(supabase, 'fulfillment', orderId, order?.site),
             loadRiskContext(supabase, order)
         ]);
         const deliveryAttempts = await loadDeliveryAttempts(supabase, normalizeText(deliveryTask?.id, 160));

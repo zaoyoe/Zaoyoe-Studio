@@ -1,4 +1,5 @@
 const {
+    normalizeAdminSite,
     requireAdmin,
     sendJson
 } = require('../../../../api/_lib/admin');
@@ -19,6 +20,59 @@ const OPS_ALERT_HEALTH_CHANNELS = Object.freeze([
 
 function normalizeText(value, maxLength = 400) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
+}
+
+function normalizeSupportedSite(value = '') {
+    const normalized = normalizeText(value, 20).toLowerCase();
+    return normalized === 'cn' || normalized === 'intl' ? normalized : '';
+}
+
+function normalizeSupportedSiteList(value = []) {
+    const values = Array.isArray(value) ? value : [value];
+    return Array.from(new Set(values.map(normalizeSupportedSite).filter(Boolean)));
+}
+
+function inferOpsAlertJobSite(job = {}) {
+    const payload = job && typeof job.payload === 'object' && job.payload
+        ? job.payload
+        : {};
+    const directSite = normalizeSupportedSite(payload.site);
+    if (directSite) {
+        return directSite;
+    }
+
+    const siteLabels = normalizeSupportedSiteList(payload.site_labels);
+    if (siteLabels.length === 1) {
+        return siteLabels[0];
+    }
+
+    const targetId = normalizeText(payload.target_id, 240).toLowerCase();
+    if (targetId.includes(':intl') || targetId.includes(':international')) {
+        return 'intl';
+    }
+    if (targetId.includes(':cn') || targetId.includes(':china')) {
+        return 'cn';
+    }
+
+    return '';
+}
+
+function shouldIncludeOpsAlertJobForAdminSite(job = {}, adminSite = 'all') {
+    const normalizedAdminSite = normalizeAdminSite(adminSite, { defaultValue: 'all' }) || 'all';
+    if (normalizedAdminSite === 'all') {
+        return true;
+    }
+
+    const payload = job && typeof job.payload === 'object' && job.payload
+        ? job.payload
+        : {};
+    const siteLabels = normalizeSupportedSiteList(payload.site_labels);
+    if (siteLabels.length) {
+        return siteLabels.includes(normalizedAdminSite);
+    }
+
+    const inferredSite = inferOpsAlertJobSite(job);
+    return inferredSite ? inferredSite === normalizedAdminSite : normalizedAdminSite === 'cn';
 }
 
 function normalizeChannelList(value) {
@@ -470,14 +524,21 @@ module.exports = async (req, res) => {
             });
         }
 
-        const runtime = await loadOpsAlertsRuntimeConfig(supabase);
+        const requestUrl = new URL(req.url || '/api/admin/settings/ops-alert-health', 'http://localhost');
+        const adminSite = normalizeAdminSite(requestUrl.searchParams.get('site') || req.adminSite, { defaultValue: 'all' }) || 'all';
+        const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env, { site: adminSite });
         const secretStatus = buildOpsAlertSecretStatus(runtime);
         const now = new Date();
         const sinceIso = new Date(now.getTime() - OPS_ALERT_HEALTH_LOOKBACK_HOURS * 60 * 60 * 1000).toISOString();
-        const [jobs, attempts] = await Promise.all([
+        const [rawJobs, rawAttempts] = await Promise.all([
             fetchRecentJobs(supabase, sinceIso),
             fetchRecentAttempts(supabase, sinceIso)
         ]);
+        const jobs = rawJobs.filter((job) => shouldIncludeOpsAlertJobForAdminSite(job, adminSite));
+        const visibleJobIds = new Set(jobs.map((job) => normalizeText(job.id, 120)).filter(Boolean));
+        const attempts = adminSite === 'all'
+            ? rawAttempts
+            : rawAttempts.filter((attempt) => visibleJobIds.has(normalizeText(attempt.job_id, 120)));
 
         const channels = OPS_ALERT_HEALTH_CHANNELS.map((channel) => {
             const channelKey = channel.key;
@@ -525,6 +586,7 @@ module.exports = async (req, res) => {
 
         return sendJson(res, 200, {
             success: true,
+            site_context: adminSite,
             fetched_at: now.toISOString(),
             summary,
             channels

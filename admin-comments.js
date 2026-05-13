@@ -74,6 +74,11 @@ function getCommentsReadSite() {
     return window.AdminSiteFilter?.getSiteFilter?.() || 'all';
 }
 
+function isCurrentCommentsSite(site) {
+    return String(getCommentsReadSite() || 'all').trim().toLowerCase()
+        === String(site || 'all').trim().toLowerCase();
+}
+
 function requireWritableCommentsSite(options = {}) {
     return window.AdminSiteFilter?.requireWritableSite?.(options) || null;
 }
@@ -1735,14 +1740,14 @@ async function loadCommentStats(view = currentCommentView, options = {}) {
         const payload = await fetchAdminCommentSummary(site, normalizedView);
         storeCommentsCachedSummary(normalizedView, site, payload);
 
-        if (requestVersion !== commentsSummaryRequestVersion) {
+        if (requestVersion !== commentsSummaryRequestVersion || !isCurrentCommentsSite(site)) {
             return payload;
         }
 
         applyCommentStatsSummary(payload?.summary || {});
 
     } catch (error) {
-        if (requestVersion !== commentsSummaryRequestVersion) {
+        if (requestVersion !== commentsSummaryRequestVersion || !isCurrentCommentsSite(site)) {
             return null;
         }
         console.error('Error loading comment stats:', error);
@@ -3415,11 +3420,13 @@ async function loadComments(view, options = {}) {
     }
 
     listContainer.innerHTML = buildCommentLoadingSkeleton();
+    let requestSite = getCommentsReadSite();
 
     try {
         const requestParams = buildCommentsListRequestParams(normalizedView, {
             page: commentsPaginationState.page
         });
+        requestSite = requestParams.site || requestSite;
         const requestCacheKey = buildCommentsViewCacheKey(requestParams);
         const cachedPayload = getCommentsCachedPayload(normalizedView, requestParams);
         const inFlightPrefetch = !cachedPayload
@@ -3430,6 +3437,9 @@ async function loadComments(view, options = {}) {
 
         console.log('Fetching comments...', requestParams);
         const payload = cachedPayload || await (inFlightPrefetch || fetchAdminCommentsList(requestParams));
+        if (!isCurrentCommentsSite(requestParams.site)) {
+            return false;
+        }
         if (!cachedPayload) {
             storeCommentsCachedPayload(normalizedView, requestParams, payload);
         }
@@ -3456,6 +3466,9 @@ async function loadComments(view, options = {}) {
         scheduleCommentsViewPrefetch(normalizedView);
 
     } catch (error) {
+        if (!isCurrentCommentsSite(requestSite)) {
+            return false;
+        }
         console.error('Error loading comments:', error);
         commentsById = new Map();
         commentsPaginationState.totalItems = 0;
@@ -4642,6 +4655,7 @@ function handleAdminCommentsSiteChange() {
     pendingFocusedCommentId = '';
     commentsPaginationState.page = 1;
     void loadComments(currentCommentView, { resetPage: true });
+    void loadCommentStats(currentCommentView, { showLoading: true });
 }
 
 function handleAdminCommentsShellContext(context = {}) {

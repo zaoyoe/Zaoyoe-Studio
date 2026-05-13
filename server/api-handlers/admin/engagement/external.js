@@ -10,48 +10,48 @@ const {
     buildExternalEmbedSnippet,
     normalizeExternalEmbedPolicy
 } = require('../../../../api/_lib/engagement-external-policy');
+const {
+    loadSiteScopedConfig,
+    normalizeEngagementConfigSite,
+    resolveEngagementConfigRequestSite,
+    saveSiteScopedConfig
+} = require('../../_engagement-site-config');
 
 function sanitizeText(value, maxLength = 4000) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
 }
 
-async function loadExternalEmbedPolicy(supabase) {
-    const { data, error } = await supabase
-        .from('system_config')
-        .select('config_value')
-        .eq('config_key', CONFIG_KEY)
-        .maybeSingle();
-    if (error) throw error;
-    return normalizeExternalEmbedPolicy(data?.config_value || {});
+async function loadExternalEmbedPolicy(supabase, site = 'cn') {
+    return loadSiteScopedConfig(supabase, CONFIG_KEY, site, normalizeExternalEmbedPolicy, {});
 }
 
-async function saveExternalEmbedPolicy({ supabase, user, body }) {
-    const current = await loadExternalEmbedPolicy(supabase);
+async function saveExternalEmbedPolicy({ supabase, user, body, site }) {
+    const normalizedSite = normalizeEngagementConfigSite(body.site || site, { fallback: 'cn' });
+    const current = await loadExternalEmbedPolicy(supabase, normalizedSite);
     const nextPolicy = normalizeExternalEmbedPolicy({
         ...current,
         ...(body.policy || body.external_embed || body.externalEmbed || body),
+        default_site: normalizedSite,
         updated_at: new Date().toISOString()
     });
 
-    const { error } = await supabase
-        .from('system_config')
-        .upsert({
-            config_key: CONFIG_KEY,
-            config_value: nextPolicy,
-            description: '客服系统外部承载与API中转嵌入策略',
-            updated_by: user.id || null,
-            updated_at: new Date().toISOString()
-        }, {
-            onConflict: 'config_key'
-        });
-    if (error) throw error;
+    await saveSiteScopedConfig({
+        supabase,
+        key: CONFIG_KEY,
+        site: normalizedSite,
+        value: nextPolicy,
+        description: '客服系统外部承载与API中转嵌入策略',
+        userId: user.id
+    });
 
     await writeAdminAuditLog({
         supabase,
         adminId: user.id,
         module: 'engagement',
+        site: normalizedSite,
         actionType: 'engagement.external.policy.update',
         details: {
+            site: normalizedSite,
             config_key: CONFIG_KEY,
             enabled: nextPolicy.enabled,
             allowed_origin_count: nextPolicy.allowed_origins.length,
@@ -80,9 +80,12 @@ module.exports = async function engagementExternalHandler(req, res) {
         });
 
         if (req.method === 'GET') {
-            const policy = await loadExternalEmbedPolicy(supabase);
+            const url = new URL(req.url || '', 'http://localhost');
+            const site = resolveEngagementConfigRequestSite(req, url, { fallback: 'cn' });
+            const policy = await loadExternalEmbedPolicy(supabase, site);
             return sendJson(res, 200, {
                 success: true,
+                site,
                 external_embed: buildExternalPayload(policy)
             });
         }
@@ -96,6 +99,8 @@ module.exports = async function engagementExternalHandler(req, res) {
         }
 
         const body = await parseJsonBody(req);
+        const url = new URL(req.url || '', 'http://localhost');
+        const site = normalizeEngagementConfigSite(body.site || url.searchParams.get('site') || req.adminSite, { fallback: 'cn' });
         const action = sanitizeText(body.action || 'save_policy', 80).toLowerCase();
         if (action !== 'save_policy') {
             return sendJson(res, 400, {
@@ -104,9 +109,10 @@ module.exports = async function engagementExternalHandler(req, res) {
             });
         }
 
-        const policy = await saveExternalEmbedPolicy({ supabase, user, body });
+        const policy = await saveExternalEmbedPolicy({ supabase, user, body, site });
         return sendJson(res, 200, {
             success: true,
+            site,
             external_embed: buildExternalPayload(policy)
         });
     } catch (error) {

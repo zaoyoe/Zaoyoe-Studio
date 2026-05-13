@@ -281,6 +281,7 @@ test('verify monitor settings handler returns recent tasks, recent failures, and
         ],
         opsAlertCases: [
             {
+                site: 'cn',
                 category_key: 'verify',
                 target_id: 'verify_incident:primary-key',
                 alert_type: 'verify_incident_escalated',
@@ -298,6 +299,7 @@ test('verify monitor settings handler returns recent tasks, recent failures, and
         opsAlertCaseEvents: [
             {
                 id: 'event-verify-1',
+                site: 'cn',
                 category_key: 'verify',
                 target_id: 'verify_incident:primary-key',
                 alert_type: 'verify_incident_escalated',

@@ -6803,7 +6803,7 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-qty-btn {
     border: 1px solid var(--shop-light-border);
     background: #ffffff;
     color: rgba(23, 32, 51, 0.72);
-    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
+    box-shadow: 0 3px 8px rgba(15, 23, 42, 0.035);
 }
 
 html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-qty-btn:hover {
@@ -6835,7 +6835,7 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseQuantit
     font-weight: 700;
     line-height: 52px;
     box-shadow:
-        0 12px 28px rgba(15, 23, 42, 0.08),
+        0 4px 10px rgba(15, 23, 42, 0.035),
         inset 0 1px 0 rgba(255, 255, 255, 0.92) !important;
 }
 
@@ -6843,7 +6843,7 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseQuantit
     border-color: rgba(107, 158, 206, 0.36) !important;
     background: #ffffff !important;
     box-shadow:
-        0 12px 28px rgba(15, 23, 42, 0.08),
+        0 4px 10px rgba(15, 23, 42, 0.035),
         inset 0 1px 0 rgba(255, 255, 255, 0.92) !important;
 }
 

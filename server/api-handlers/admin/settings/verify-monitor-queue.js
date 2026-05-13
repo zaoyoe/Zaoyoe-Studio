@@ -17,6 +17,13 @@ function getVerifyServerUrl() {
     return String(process.env.VERIFY_SERVER_URL || DEFAULT_VERIFY_SERVER_URL).trim().replace(/\/+$/, '');
 }
 
+function normalizeVerifyMonitorSite(value = '', fallback = 'cn') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'intl') return 'intl';
+    if (normalized === 'cn') return 'cn';
+    return fallback === 'intl' ? 'intl' : 'cn';
+}
+
 function getForwardHeaders(req) {
     const headers = buildVerifyMonitorProxyHeaders(process.env);
     if (headers) {
@@ -38,7 +45,7 @@ function getForwardHeaders(req) {
 
 module.exports = async (req, res) => {
     try {
-        await requireAdmin(req, { permission: 'settings.manage' });
+        const adminContext = await requireAdmin(req, { permission: 'settings.manage' });
 
         if (req.method !== 'GET') {
             res.setHeader('Allow', 'GET');
@@ -47,6 +54,9 @@ module.exports = async (req, res) => {
                 message: 'Method not allowed'
             });
         }
+        const url = new URL(req.url || '', 'http://localhost');
+        const siteHint = url.searchParams.get('site') || req.adminSite || adminContext?.site || '';
+        const site = normalizeVerifyMonitorSite(siteHint);
 
         const controller = typeof AbortController === 'function' ? new AbortController() : null;
         const timeoutId = controller
@@ -58,13 +68,14 @@ module.exports = async (req, res) => {
                 ? getOptionalSupabaseAdmin()
                 : null;
             if (supabase) {
-                const localState = await buildLocalVerifyQueueSnapshot(supabase);
+                const localState = await buildLocalVerifyQueueSnapshot(supabase, { site });
                 if (localState?.success) {
                     return sendJson(res, 200, localState);
                 }
             }
 
-            const upstreamResponse = await fetch(`${getVerifyServerUrl()}/api/queue`, {
+            const upstreamUrl = `${getVerifyServerUrl()}/api/queue${siteHint ? `?site=${encodeURIComponent(site)}` : ''}`;
+            const upstreamResponse = await fetch(upstreamUrl, {
                 method: 'GET',
                 headers: getForwardHeaders(req),
                 signal: controller?.signal

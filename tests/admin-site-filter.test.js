@@ -68,8 +68,8 @@ function loadAdminSiteFilter(options = {}) {
     };
 
     context.window = {
-        showToast(message, type) {
-            toasts.push({ message, type });
+        showToast(message, type, options = {}) {
+            toasts.push({ message, type, options });
         },
         dispatchEvent(event) {
             dispatchedEvents.push(event);
@@ -161,7 +161,14 @@ function loadAdminSiteFilter(options = {}) {
             return true;
         };
     }
-    if (options.withAdminShell) {
+    if (options.withAdminShellAsync) {
+        context.window.AdminShell = {
+            async handleSiteChangeAsync(detail) {
+                shellSiteChanges.push(detail);
+                return true;
+            }
+        };
+    } else if (options.withAdminShell) {
         context.window.AdminShell = {
             handleSiteChange(detail) {
                 shellSiteChanges.push(detail);
@@ -313,6 +320,34 @@ test('admin site filter delegates site reloads to the admin shell when available
     assert.equal(analyticsReloads.length, 0);
     assert.equal(usersReloads.length, 0);
     assert.equal(paymentsReloads.length, 0);
+});
+
+test('admin site filter shows switching feedback while awaiting admin shell site reloads', async () => {
+    const { AdminSiteFilter, toasts, shellSiteChanges, storage } = loadAdminSiteFilter({
+        activeModuleId: 'settings',
+        withAdminShellAsync: true,
+        localStorage: {
+            admin_site_filter: 'all'
+        }
+    });
+
+    const switched = await AdminSiteFilter.select('intl');
+
+    assert.equal(switched, true);
+    assert.equal(storage.get('admin_site_filter'), 'intl');
+    assert.equal(shellSiteChanges.length, 1);
+    assert.deepEqual(JSON.parse(JSON.stringify(shellSiteChanges[0])), {
+        site: 'intl',
+        writableSite: 'intl',
+        isAllSitesSelected: false
+    });
+    assert.deepEqual(
+        toasts.map(({ message, type }) => ({ message, type })),
+        [
+            { message: '正在切换到EN 站...', type: 'info' },
+            { message: '已切换到EN 站', type: 'success' }
+        ]
+    );
 });
 
 test('admin site filter refreshes chat through the shared chat site-change helper in legacy fallback mode', () => {

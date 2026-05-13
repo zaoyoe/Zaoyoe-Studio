@@ -1095,7 +1095,13 @@ function createMockSupabase(state) {
                     async upsert(payload) {
                         state.systemConfigUpserts.push(cloneValue(payload));
                         if (payload.config_key === 'ops_alerts') {
-                            state.config = createNormalizedConfig(payload.config_value);
+                            const storedConfig = payload.config_value && typeof payload.config_value === 'object' && !Array.isArray(payload.config_value)
+                                ? payload.config_value
+                                : {};
+                            const visibleConfig = storedConfig.__site_scoped === true
+                                ? (storedConfig.sites?.cn || storedConfig.default || {})
+                                : storedConfig;
+                            state.config = createNormalizedConfig(visibleConfig);
                         }
                         return { error: null };
                     }
@@ -1129,7 +1135,27 @@ function createMockSupabase(state) {
 }
 
 function createMockAdminModule(state) {
+    function normalizeAdminSite(value, options = {}) {
+        const normalizedDefault = Object.prototype.hasOwnProperty.call(options, 'defaultValue')
+            ? normalizeAdminSite(options.defaultValue)
+            : '';
+        const normalized = String(value || '').trim().toLowerCase();
+        if (!normalized) return normalizedDefault;
+        if (normalized === 'cn' || normalized === 'intl' || normalized === 'all') return normalized;
+        return normalizedDefault;
+    }
+
     return {
+        normalizeAdminSite,
+        requireWritableAdminSite(value, options = {}) {
+            const normalized = normalizeAdminSite(value);
+            if (normalized === 'cn' || normalized === 'intl') {
+                return normalized;
+            }
+            const error = new Error(options.message || 'Writable admin site is required');
+            error.statusCode = 400;
+            throw error;
+        },
         async requireAdmin() {
             return {
                 supabase: createMockSupabase(state),
@@ -2245,6 +2271,8 @@ test('ops alert settings POST saves config, stores secrets, and records an audit
         assert.equal(payload.config.payment_gateway.dedupe_window_minutes, 75);
         assert.equal(state.systemConfigUpserts.length, 1);
         assert.equal(state.systemConfigUpserts[0].config_key, 'ops_alerts');
+        assert.equal(state.systemConfigUpserts[0].config_value.__site_scoped, true);
+        assert.equal(state.systemConfigUpserts[0].config_value.sites.cn.enabled, true);
         assert.equal(state.upsertedSecrets.length, 2);
         assert.equal(state.auditLogs.length, 1);
         assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.upsert');

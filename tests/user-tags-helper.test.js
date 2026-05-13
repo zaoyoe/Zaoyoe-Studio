@@ -142,7 +142,10 @@ function createUserTagSupabaseStub(options = {}) {
                     const rows = Array.isArray(payload) ? payload : [payload];
                     if (table === 'engagement_user_activity') {
                         rows.forEach((row) => {
-                            const existing = state.activityRows.find((item) => item.user_id === row.user_id);
+                            const existing = state.activityRows.find((item) => (
+                                item.user_id === row.user_id
+                                && String(item.site || 'cn') === String(row.site || 'cn')
+                            ));
                             if (existing) {
                                 Object.assign(existing, row);
                             } else {
@@ -314,6 +317,55 @@ test('user tag automation config normalizes commercial thresholds', async () => 
     assert.equal(config.payment_failed.min_count, 2);
     assert.equal(config.verify_failed.window_days, DEFAULT_USER_TAG_AUTOMATION.verify_failed.window_days);
     assert.equal(normalizeUserTagAutomationConfig({ inactive: { inactiveDays: '60' } }).inactive.inactive_days, 60);
+});
+
+test('user tag automation resolves thresholds and commerce metrics by site', async () => {
+    const supabase = createUserTagSupabaseStub({
+        config: {
+            __site_scoped: true,
+            default: {
+                automation: {
+                    high_value: {
+                        enabled: true,
+                        min_paid_amount: 999,
+                        min_points: 999999,
+                        min_order_count: 99
+                    }
+                }
+            },
+            sites: {
+                intl: {
+                    automation: {
+                        high_value: {
+                            enabled: true,
+                            min_paid_amount: 10,
+                            min_points: 999999,
+                            min_order_count: 99
+                        }
+                    }
+                }
+            }
+        },
+        paymentOrders: [
+            { user_id: 'user-1', site: 'cn', status: 'paid', paid_amount: 20, points_amount: 0 },
+            { user_id: 'user-1', site: 'intl', status: 'paid', paid_amount: 20, points_amount: 0 }
+        ]
+    });
+
+    const cnConfig = await loadUserTagAutomationConfig(supabase, { site: 'cn' });
+    const intlConfig = await loadUserTagAutomationConfig(supabase, { site: 'intl' });
+    assert.equal(cnConfig.high_value.min_paid_amount, 999);
+    assert.equal(intlConfig.high_value.min_paid_amount, 10);
+
+    await markUserAsPaid(supabase, {
+        userId: 'user-1',
+        site: 'intl'
+    });
+
+    assert.deepEqual(
+        supabase.state.rows.map((row) => row.tag).sort(),
+        [AUTO_USER_TAGS.HIGH_VALUE, AUTO_USER_TAGS.PAID_USER].sort()
+    );
 });
 
 test('paid users are promoted to high value only after configured commerce threshold', async () => {
