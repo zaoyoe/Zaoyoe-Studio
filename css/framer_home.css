@@ -3129,9 +3129,37 @@ body.home-page .framer-footer {
         padding-bottom: 48px;
     }
 
+    .mask-labels-container {
+        /* 20260513_HOME_PROMPT_MASK_CENTER_1: keep the mobile CTA centered to the viewport, not the over-wide tag row. */
+        width: min(100%, calc(100vw - 32px));
+        max-width: calc(100vw - 32px);
+        box-sizing: border-box;
+        margin-inline: auto;
+        padding: 14px 8px;
+    }
+
+    .mask-labels-row {
+        width: 100%;
+        max-width: 100%;
+        justify-content: center;
+        gap: clamp(12px, 4vw, 24px);
+    }
+
     .mask-tag {
         padding: 6px 12px;
         font-size: 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .mask-labels-container {
+        width: min(100%, calc(100vw - 24px));
+        max-width: calc(100vw - 24px);
+        padding-inline: 6px;
+    }
+
+    .mask-labels-row {
+        gap: clamp(10px, 3.5vw, 18px);
     }
 }
 

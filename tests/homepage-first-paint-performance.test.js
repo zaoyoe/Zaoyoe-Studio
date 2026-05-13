@@ -42,11 +42,11 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
     );
     assert.match(
         indexSource,
-        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260512_NAV_AUTH_SESSION_MATCH_1" media="print" data-deferred-style="1">/,
+        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260513_HOME_PROMPT_MASK_CENTER_1" media="print" data-deferred-style="1">/,
         'index.html should defer the full homepage stylesheet after the first-paint shell'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home.css?v=20260512_NAV_AUTH_SESSION_MATCH_1'),
+        indexSource.includes('./css/framer_home.css?v=20260513_HOME_PROMPT_MASK_CENTER_1'),
         true,
         'index.html should keep cache-busting the full static hero stability styles'
     );
