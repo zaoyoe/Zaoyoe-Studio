@@ -73,7 +73,7 @@ test('admin shop product cards use the storefront shop image optimization contra
     assert.match(shopClientSource, /function normalizeShopProductCdnUrl\(url, options = \{\}\) \{/);
     assert.match(shopClientSource, /const explicitVariantUrl = getShopProductImageAssetExplicitVariantUrl\(url, options\.variant \|\| ''\);/);
     assert.match(shopClientSource, /function getShopResponsiveR2CardVariantUrl\(url, variant = ''\) \{/);
-    assert.match(shopClientSource, /return `\$\{getZaoyoeAssetCdnOrigin\(\)\}\/products\/card\/\$\{encodeURIComponent\(basename\)\}\.webp`;/);
+    assert.match(shopClientSource, /return `\$\{getZaoyoeAssetCdnOrigin\(\{ canonical: true \}\)\}\/products\/card\/\$\{encodeURIComponent\(basename\)\}\.webp`;/);
     assert.match(uploadAvatarSource, /cardImageData\?: string/);
     assert.match(uploadAvatarSource, /const cardFilename = `products\/card\/\$\{productKeyBase\}\.webp`/);
     assert.match(uploadAvatarSource, /imageAsset/);

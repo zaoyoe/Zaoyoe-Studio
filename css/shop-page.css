@@ -380,9 +380,15 @@
 
         .shop-card-original-price {
             text-decoration: line-through;
+            text-decoration-color: currentColor;
             color: rgba(255, 255, 255, 0.4);
             font-size: 0.8em;
             margin-right: 6px;
+        }
+
+        .shop-card-original-price--flash {
+            text-decoration-color: #ef4444;
+            text-decoration-thickness: 2px;
         }
 
         .shop-agent-badge {
@@ -5350,8 +5356,11 @@
             }
         }
 
-        .flash-badge-glass .fa-bolt {
+        .flash-badge-glass .flash-sale-badge__label {
             color: #ff3b30;
+            font-family: var(--font-sans);
+            font-weight: 800;
+            letter-spacing: 0;
             animation: urgentPulse 0.8s ease-in-out infinite;
             filter: drop-shadow(0 0 4px rgba(255, 59, 48, 0.8));
         }
@@ -5359,6 +5368,27 @@
         .flash-badge-glass .countdown-timer {
             font-variant-numeric: tabular-nums;
             /* Monospaced numbers to stop jittering */
+        }
+
+        .tier-badge-glass {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            z-index: 10;
+            font-size: 12px;
+            font-weight: 800;
+            padding: 4px 10px;
+            border-radius: 20px;
+            background: rgba(40, 40, 40, 0.6);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border: 1px solid rgba(125, 211, 252, 0.34);
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+            display: inline-flex;
+            align-items: center;
+            color: #7dd3fc;
+            font-family: var(--font-sans);
+            letter-spacing: 0;
         }
 
         /* Pause animation on hover (prioritize hover lift effect) */
@@ -5692,6 +5722,22 @@
 .shop-inline-style-attr-15 { text-align: left; }
 .shop-inline-style-attr-16 { font-size: 12px; color: rgba(255,255,255,0.4); margin-bottom: 2px; }
 .shop-inline-style-attr-17 { font-family: 'Outfit'; color: #fbbf24; }
+.shop-purchase-price-note { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; margin-top: 6px; font-family: var(--font-sans); font-size: 0.72rem; line-height: 1.35; color: rgba(255,255,255,0.48); }
+.shop-purchase-price-note[hidden] { display: none !important; }
+.shop-purchase-price-note__original span { color: rgba(255,255,255,0.54); text-decoration: line-through; text-decoration-color: #ef4444; text-decoration-thickness: 2px; text-underline-offset: 2px; }
+.shop-purchase-price-note__tier-row { display: inline-flex; align-items: center; gap: 6px; position: relative; }
+.shop-purchase-price-note__tier { color: rgba(56,189,248,0.95); font-weight: 800; }
+.shop-purchase-price-note--tier .shop-purchase-price-note__original span { text-decoration-color: #0ea5e9; }
+.shop-tier-rules-popover-wrap { position: relative; display: inline-flex; align-items: center; }
+.shop-tier-rules-help { width: 18px; height: 18px; display: inline-grid; place-items: center; border-radius: 999px; border: 1px solid rgba(56,189,248,0.42); background: rgba(14,165,233,0.12); color: #38bdf8; font-family: 'Outfit'; font-size: 0.75rem; font-weight: 800; line-height: 1; cursor: help; padding: 0; }
+.shop-tier-rules-help:focus-visible { outline: 2px solid rgba(56,189,248,0.45); outline-offset: 2px; }
+.shop-tier-rules-popover { position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 50; min-width: 168px; max-width: min(260px, 68vw); padding: 9px 10px; border-radius: 10px; border: 1px solid rgba(125,211,252,0.24); background: rgba(15,23,42,0.94); box-shadow: 0 16px 34px rgba(15,23,42,0.26); color: rgba(226,232,240,0.92); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); opacity: 0; visibility: hidden; pointer-events: none; transform: translateY(4px); transition: opacity 0.16s ease, transform 0.16s ease, visibility 0.16s ease; }
+.shop-tier-rules-popover::after { content: ''; position: absolute; left: 8px; top: 100%; border-width: 6px 6px 0 6px; border-style: solid; border-color: rgba(15,23,42,0.94) transparent transparent transparent; }
+.shop-tier-rules-popover-wrap:hover .shop-tier-rules-popover,
+.shop-tier-rules-popover-wrap:focus-within .shop-tier-rules-popover,
+.shop-tier-rules-popover-wrap.is-open .shop-tier-rules-popover { opacity: 1; visibility: visible; transform: translateY(0); }
+.shop-tier-rules-popover__title { display: block; margin-bottom: 5px; color: #7dd3fc; font-weight: 800; white-space: nowrap; }
+.shop-tier-rules-popover__rule { display: block; white-space: nowrap; color: rgba(226,232,240,0.88); }
 .shop-inline-style-attr-18 { text-align: right; }
 .shop-inline-style-attr-19 { font-family: 'Outfit'; font-size: 1.4rem; color: #4ade80; font-weight: 700; }
 .shop-inline-style-attr-20 { font-size: 0.9rem; font-weight: 500; }
@@ -6879,6 +6925,49 @@ html:not([data-theme="dark"]) body.shop-page .shop-purchase-discount__action:hov
 
 html:not([data-theme="dark"]) body.shop-page .shop-inline-style-attr-17 {
     color: #d97706;
+}
+
+html:not([data-theme="dark"]) body.shop-page .tier-badge-glass {
+    background: rgba(40, 40, 40, 0.6);
+    color: #7dd3fc;
+    border-color: rgba(125, 211, 252, 0.34);
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-purchase-price-note {
+    color: rgba(100, 116, 139, 0.86);
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-purchase-price-note__original span {
+    color: rgba(100, 116, 139, 0.78);
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-purchase-price-note__tier {
+    color: #0369a1;
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-tier-rules-help {
+    background: rgba(2, 132, 199, 0.1);
+    border-color: rgba(2, 132, 199, 0.28);
+    color: #0284c7;
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-tier-rules-popover {
+    background: rgba(255, 255, 255, 0.96);
+    border-color: rgba(2, 132, 199, 0.18);
+    color: rgba(15, 23, 42, 0.86);
+    box-shadow: 0 16px 34px rgba(15, 23, 42, 0.14);
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-tier-rules-popover::after {
+    border-color: rgba(255, 255, 255, 0.96) transparent transparent transparent;
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-tier-rules-popover__title {
+    color: #0369a1;
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-tier-rules-popover__rule {
+    color: rgba(15, 23, 42, 0.78);
 }
 
 html:not([data-theme="dark"]) body.shop-page .shop-inline-style-attr-19 {

@@ -138,7 +138,10 @@ function normalizeZaoyoeAssetCdnUrl(url, expectedPrefix = '', options = {}) {
 }
 
 function normalizeShopProductCdnUrl(url, options = {}) {
-    return normalizeZaoyoeAssetCdnUrl(url, 'products', options);
+    return normalizeZaoyoeAssetCdnUrl(url, 'products', {
+        ...options,
+        canonical: options.canonical !== false
+    });
 }
 
 function getShopProductCdnUrlCandidates(url) {
@@ -193,7 +196,7 @@ function getShopResponsiveR2CardVariantUrl(url, variant = '') {
             return '';
         }
 
-        return `${getZaoyoeAssetCdnOrigin()}/products/card/${encodeURIComponent(basename)}.webp`;
+        return `${getZaoyoeAssetCdnOrigin({ canonical: true })}/products/card/${encodeURIComponent(basename)}.webp`;
     } catch (error) {
         return '';
     }
@@ -406,6 +409,7 @@ const SHOP_POST_RENDER_TASK_TIMEOUT_MS = 900;
 const SHOP_REALTIME_SUBSCRIBE_TIMEOUT_MS = 2600;
 const SHOP_REALTIME_REFRESH_DEBOUNCE_MS = 650;
 const SHOP_REALTIME_RETRY_MS = 30000;
+const SHOP_REALTIME_FALLBACK_REFRESH_MS = 30000;
 const shopCardImageWarmCache = new Set();
 
 async function ensureShopWalletModal(options = {}) {
@@ -514,6 +518,7 @@ const ShopClient = {
     storefrontRealtimeSubscription: null,
     storefrontRealtimeRetryTimer: null,
     storefrontRealtimeRefreshTimer: null,
+    storefrontRealtimeFallbackRefreshTimer: null,
     storefrontRealtimeOrderRefreshTimer: null,
     storefrontRealtimeStatus: 'idle',
     storefrontRealtimeSite: '',
@@ -2209,11 +2214,19 @@ const ShopClient = {
         }
     },
 
+    clearStorefrontRealtimeFallbackRefreshTimer: function () {
+        if (this.storefrontRealtimeFallbackRefreshTimer) {
+            window.clearTimeout(this.storefrontRealtimeFallbackRefreshTimer);
+            this.storefrontRealtimeFallbackRefreshTimer = null;
+        }
+    },
+
     clearStorefrontRealtimeRefreshTimers: function () {
         if (this.storefrontRealtimeRefreshTimer) {
             window.clearTimeout(this.storefrontRealtimeRefreshTimer);
             this.storefrontRealtimeRefreshTimer = null;
         }
+        this.clearStorefrontRealtimeFallbackRefreshTimer();
         if (this.storefrontRealtimeOrderRefreshTimer) {
             window.clearTimeout(this.storefrontRealtimeOrderRefreshTimer);
             this.storefrontRealtimeOrderRefreshTimer = null;
@@ -2243,6 +2256,24 @@ const ShopClient = {
             this.storefrontRealtimeRetryTimer = null;
             void this.setupStorefrontRealtime({ force: true, reason });
         }, SHOP_REALTIME_RETRY_MS);
+    },
+
+    scheduleStorefrontRealtimeFallbackCatalogRefresh: function (reason = 'realtime_degraded') {
+        if (!document.getElementById('userShopGrid') || this.storefrontRealtimeStatus === 'active') {
+            return;
+        }
+        if (this.storefrontRealtimeFallbackRefreshTimer) {
+            return;
+        }
+
+        this.storefrontRealtimeFallbackRefreshTimer = window.setTimeout(() => {
+            this.storefrontRealtimeFallbackRefreshTimer = null;
+            if (this.storefrontRealtimeStatus === 'active') {
+                return;
+            }
+            this.scheduleShopRealtimeCatalogRefresh(`${reason}_fallback`);
+            this.scheduleStorefrontRealtimeFallbackCatalogRefresh(reason);
+        }, SHOP_REALTIME_FALLBACK_REFRESH_MS);
     },
 
     scheduleShopRealtimeCatalogRefresh: function (reason = 'catalog_change') {
@@ -2338,6 +2369,8 @@ const ShopClient = {
         this.storefrontRealtimeStatus = 'degraded';
         console.warn('[ShopRealtime] Realtime degraded, existing catalog/order reads remain available:', reason);
         this.scheduleStorefrontRealtimeRetry(reason);
+        this.scheduleShopRealtimeCatalogRefresh(`${reason}_snapshot`);
+        this.scheduleStorefrontRealtimeFallbackCatalogRefresh(reason);
     },
 
     setupStorefrontRealtime: async function ({ force = false, reason = 'init' } = {}) {
@@ -2410,6 +2443,7 @@ const ShopClient = {
             onActive: () => {
                 this.storefrontRealtimeStatus = 'active';
                 this.clearStorefrontRealtimeRetryTimer();
+                this.clearStorefrontRealtimeFallbackRefreshTimer();
                 console.debug('[ShopRealtime] Storefront realtime active:', reason);
             },
             onDegraded: (degradeReason) => {
@@ -2542,6 +2576,119 @@ const ShopClient = {
         };
     },
 
+    getActiveFlashSalePricingContext: function (product, fallbackPrice = null) {
+        const pricing = product ? this.resolveProductPricing(product, this.agentPricesCache || {}) : null;
+        const flashSalePrice = Number(pricing?.currentPrice ?? fallbackPrice);
+        const flashSaleOriginalPrice = Number(pricing?.originalPrice);
+        const hasFlashSale = pricing?.hasFlashSale === true
+            && Number.isFinite(flashSalePrice)
+            && Number.isFinite(flashSaleOriginalPrice)
+            && flashSaleOriginalPrice > flashSalePrice;
+
+        return {
+            hasFlashSale,
+            flashSalePrice: hasFlashSale ? flashSalePrice : null,
+            flashSaleOriginalPrice: hasFlashSale ? flashSaleOriginalPrice : null
+        };
+    },
+
+    getFlashSaleBadgeLabel: function () {
+        return this.trShop('flashSaleBadge', this.isEnglishShopLocale() ? 'Flash' : '秒杀');
+    },
+
+    buildFlashSaleBadgeHtml: function (endTime) {
+        return `<div class="flash-sale-badge flash-badge-glass" data-shop-card-flash-badge="true" data-endtime="${this.escapeAttribute(endTime || '')}"><span class="flash-sale-badge__label">${this.escapeHtml(this.getFlashSaleBadgeLabel())}</span> <span class="countdown-timer">${window.i18n?.t('shop.calculating') || '计算中...'}</span></div>`;
+    },
+
+    normalizeQuantityPricingRules: function (rules = []) {
+        let sourceRules = rules;
+        if (typeof sourceRules === 'string' && sourceRules.trim()) {
+            try {
+                sourceRules = JSON.parse(sourceRules);
+            } catch (_) {
+                sourceRules = [];
+            }
+        }
+
+        return (Array.isArray(sourceRules) ? sourceRules : [])
+            .map((rule) => {
+                const qty = Math.trunc(Number(rule?.qty ?? rule?.quantity ?? rule?.min_quantity));
+                const price = Number(rule?.price ?? rule?.unit_price);
+                return { qty, price };
+            })
+            .filter((rule) => Number.isFinite(rule.qty)
+                && Number.isFinite(rule.price)
+                && rule.qty > 0
+                && rule.price >= 0)
+            .sort((a, b) => (a.qty - b.qty) || (a.price - b.price));
+    },
+
+    getTieredPricingContext: function ({ basePrice = 0, rules = [], quantity = 1 } = {}) {
+        const normalizedBasePrice = Math.max(0, Number(basePrice || 0) || 0);
+        const normalizedQuantity = Math.max(1, Math.trunc(Number(quantity || 1) || 1));
+        const discountRules = this.normalizeQuantityPricingRules(rules)
+            .filter((rule) => rule.price < normalizedBasePrice);
+
+        if (!discountRules.length) {
+            return null;
+        }
+
+        const activeRule = discountRules
+            .filter((rule) => normalizedQuantity >= rule.qty)
+            .sort((a, b) => (a.price - b.price) || (b.qty - a.qty))[0] || null;
+        const nextRule = discountRules
+            .filter((rule) => normalizedQuantity < rule.qty)
+            .sort((a, b) => (a.qty - b.qty) || (a.price - b.price))[0] || null;
+        const lowestRule = [...discountRules].sort((a, b) => (a.price - b.price) || (a.qty - b.qty))[0] || null;
+
+        return {
+            basePrice: normalizedBasePrice,
+            quantity: normalizedQuantity,
+            rules: discountRules,
+            activeRule,
+            nextRule,
+            lowestRule,
+            hasActiveTier: Boolean(activeRule)
+        };
+    },
+
+    getTieredPricingLabel: function () {
+        return this.trShop('tieredPrice', this.isEnglishShopLocale() ? 'Tiered price' : '阶梯价');
+    },
+
+    buildTieredPricingBadgeHtml: function () {
+        return `<div class="tier-price-badge tier-badge-glass" data-shop-card-tier-badge="true">${this.escapeHtml(this.getTieredPricingLabel())}</div>`;
+    },
+
+    buildTieredPricingRulesHelpHtml: function (tieredPricing = null, pointsLabel = '') {
+        const rules = Array.isArray(tieredPricing?.rules) ? tieredPricing.rules : [];
+        if (!rules.length) {
+            return '';
+        }
+
+        const isEn = this.isEnglishShopLocale();
+        const fallbackPointsLabel = pointsLabel || this.getShopPointsLabel({ lowercaseEnglish: isEn });
+        const title = this.trShop('tieredPriceRulesLabel', isEn ? 'Tiered pricing rules' : '阶梯定价规则');
+        const helpLabel = this.trShop('tieredPriceRulesHelp', isEn ? 'View tiered pricing rules' : '查看阶梯定价规则');
+        const rulesHtml = rules.map((rule) => `
+            <span class="shop-tier-rules-popover__rule">${this.escapeHtml(this.trShop('tieredPriceRuleInline', isEn ? '{qty}+ {price} {unit}' : '满 {qty} 件 {price} {unit}', {
+                qty: rule.qty,
+                price: this.formatShopPointValue(rule.price),
+                unit: fallbackPointsLabel
+            }))}</span>
+        `).join('');
+
+        return `
+            <span class="shop-tier-rules-popover-wrap">
+                <button type="button" class="shop-tier-rules-help" aria-label="${this.escapeAttribute(helpLabel)}" aria-describedby="modalTierPricingRules" aria-expanded="false">?</button>
+                <span id="modalTierPricingRules" class="shop-tier-rules-popover" role="tooltip">
+                    <span class="shop-tier-rules-popover__title">${this.escapeHtml(title)}</span>
+                    ${rulesHtml}
+                </span>
+            </span>
+        `;
+    },
+
     buildProductCardPurchaseDataset: function (product, unitPrice) {
         const productId = String(product?.id || '').trim();
         const maxPurchaseQuantity = this.getPurchaseQuantityCapForProduct(product, product?.max_purchase_quantity);
@@ -2577,6 +2724,7 @@ const ShopClient = {
         let flashSaleBadgeHtml = '';
         let flashShadowClass = '';
         let agentBadgeHtml = '';
+        let tieredPricingBadgeHtml = '';
         const formattedCurrentPrice = this.formatShopPointValue(currentPrice);
         const formattedOriginalPrice = pricing.originalPrice != null
             ? this.formatShopPointValue(pricing.originalPrice)
@@ -2588,9 +2736,20 @@ const ShopClient = {
         }
 
         if (pricing.originalPrice != null && pricing.hasFlashSale && !agentBadgeHtml) {
-            originalPriceHtml = `<span class="shop-card-original-price">${formattedOriginalPrice}</span>`;
-            flashSaleBadgeHtml = `<div class="flash-sale-badge flash-badge-glass" data-shop-card-flash-badge="true" data-endtime="${product.flash_sale_end}"><i class="fas fa-bolt"></i> <span class="countdown-timer">${window.i18n?.t('shop.calculating') || '计算中...'}</span></div>`;
+            originalPriceHtml = `<span class="shop-card-original-price shop-card-original-price--flash">${formattedOriginalPrice}</span>`;
+            flashSaleBadgeHtml = this.buildFlashSaleBadgeHtml(product.flash_sale_end);
             flashShadowClass = 'flash-sale-card';
+        }
+
+        if (!pricing.hasFlashSale && !pricing.hasAgentPrice) {
+            const tieredPricing = this.getTieredPricingContext({
+                basePrice: currentPrice,
+                rules: product?.quantity_rules,
+                quantity: 1
+            });
+            if (tieredPricing?.lowestRule) {
+                tieredPricingBadgeHtml = this.buildTieredPricingBadgeHtml();
+            }
         }
 
         return {
@@ -2598,6 +2757,7 @@ const ShopClient = {
             priceHtml: `${originalPriceHtml}${formattedCurrentPrice} <span data-i18n="shop.points">${this.getShopPointsLabel()}</span>`,
             flashSaleBadgeHtml,
             flashShadowClass,
+            tieredPricingBadgeHtml,
             agentBadgeHtml
         };
     },
@@ -2611,9 +2771,21 @@ const ShopClient = {
         const pricingState = this.buildProductCardPricingState(liveProduct, this.agentPricesCache || {});
         if (!pricingState) return;
 
-        const nextBasePrice = Number(pricingState.currentPrice || 0);
+        const flashSalePricing = this.getActiveFlashSalePricingContext(liveProduct, pricingState.currentPrice);
+        const nextBasePrice = Number(flashSalePricing.hasFlashSale
+            ? flashSalePricing.flashSalePrice
+            : pricingState.currentPrice || 0);
         const currentBasePrice = Number(this.currentPurchase.basePrice || 0);
-        if (!Number.isFinite(nextBasePrice) || nextBasePrice === currentBasePrice) {
+        if (!Number.isFinite(nextBasePrice)) {
+            return;
+        }
+
+        this.currentPurchase.hasFlashSale = flashSalePricing.hasFlashSale;
+        this.currentPurchase.flashSalePrice = flashSalePricing.flashSalePrice;
+        this.currentPurchase.flashSaleOriginalPrice = flashSalePricing.flashSaleOriginalPrice;
+
+        if (nextBasePrice === currentBasePrice) {
+            this.renderPurchaseUnitPrice(this.currentPurchase.unitPrice);
             return;
         }
 
@@ -2646,6 +2818,17 @@ const ShopClient = {
                 }
             } else {
                 existingFlashBadge?.remove();
+            }
+
+            const existingTierBadge = imageShell.querySelector('[data-shop-card-tier-badge="true"]');
+            if (pricingState.tieredPricingBadgeHtml) {
+                if (existingTierBadge) {
+                    existingTierBadge.outerHTML = pricingState.tieredPricingBadgeHtml;
+                } else {
+                    imageShell.insertAdjacentHTML('afterbegin', pricingState.tieredPricingBadgeHtml);
+                }
+            } else {
+                existingTierBadge?.remove();
             }
 
             const existingAgentBadge = imageShell.querySelector('[data-shop-card-agent-badge="true"]');
@@ -4287,6 +4470,160 @@ const ShopClient = {
         };
     },
 
+    getCurrentPurchaseFlashSalePricingContext: function () {
+        const flashSaleOriginalPrice = Number(this.currentPurchase?.flashSaleOriginalPrice);
+        const flashSalePrice = Number(this.currentPurchase?.flashSalePrice ?? this.currentPurchase?.basePrice);
+        if (this.currentPurchase?.hasFlashSale !== true
+            || !Number.isFinite(flashSaleOriginalPrice)
+            || !Number.isFinite(flashSalePrice)
+            || flashSaleOriginalPrice <= flashSalePrice) {
+            return null;
+        }
+
+        return {
+            flashSaleOriginalPrice,
+            flashSalePrice
+        };
+    },
+
+    getCurrentPurchaseTieredPricingContext: function () {
+        if (this.currentPurchase?.hasFlashSale === true) {
+            return null;
+        }
+
+        return this.getTieredPricingContext({
+            basePrice: this.currentPurchase?.basePrice,
+            rules: this.currentPurchase?.rules,
+            quantity: this.currentPurchase?.quantity
+        });
+    },
+
+    closeTierRulesPopovers: function (exceptWrap = null) {
+        let closed = false;
+        document.querySelectorAll('.shop-tier-rules-popover-wrap.is-open').forEach((wrap) => {
+            if (exceptWrap && wrap === exceptWrap) {
+                return;
+            }
+            wrap.classList.remove('is-open');
+            const trigger = wrap.querySelector('.shop-tier-rules-help');
+            if (trigger instanceof HTMLElement) {
+                trigger.setAttribute('aria-expanded', 'false');
+                if (document.activeElement === trigger) {
+                    trigger.blur();
+                }
+            }
+            closed = true;
+        });
+        return closed;
+    },
+
+    toggleTierRulesPopover: function (trigger) {
+        if (!(trigger instanceof HTMLElement)) {
+            return;
+        }
+        const wrap = trigger.closest('.shop-tier-rules-popover-wrap');
+        if (!(wrap instanceof HTMLElement)) {
+            return;
+        }
+
+        const shouldOpen = !wrap.classList.contains('is-open');
+        this.closeTierRulesPopovers(wrap);
+        wrap.classList.toggle('is-open', shouldOpen);
+        trigger.setAttribute('aria-expanded', shouldOpen ? 'true' : 'false');
+        if (!shouldOpen) {
+            trigger.blur();
+        }
+    },
+
+    buildPurchasePriceContextNote: function () {
+        const flashSalePricing = this.getCurrentPurchaseFlashSalePricingContext();
+        const isEn = this.isEnglishShopLocale();
+        const pointsLabel = this.getShopPointsLabel({ lowercaseEnglish: isEn });
+        const originalLabel = this.trShop('originalPrice', isEn ? 'Original' : '原价');
+        const tieredLabel = this.getTieredPricingLabel();
+
+        if (flashSalePricing) {
+            return {
+                variant: 'flash',
+                html: `
+                    <span class="shop-purchase-price-note__original">
+                        ${this.escapeHtml(originalLabel)}
+                        <span>${this.escapeHtml(this.formatShopPointValue(flashSalePricing.flashSaleOriginalPrice))} ${this.escapeHtml(pointsLabel)}</span>
+                    </span>
+                `
+            };
+        }
+
+        const tieredPricing = this.getCurrentPurchaseTieredPricingContext();
+        if (!tieredPricing?.lowestRule) {
+            return null;
+        }
+
+        const tierRulesHelpHtml = this.buildTieredPricingRulesHelpHtml(tieredPricing, pointsLabel);
+        if (!tierRulesHelpHtml) {
+            return null;
+        }
+
+        if (tieredPricing.activeRule) {
+            return {
+                variant: 'tier',
+                html: `
+                    <span class="shop-purchase-price-note__original">
+                        ${this.escapeHtml(originalLabel)}
+                        <span>${this.escapeHtml(this.formatShopPointValue(tieredPricing.basePrice))} ${this.escapeHtml(pointsLabel)}</span>
+                    </span>
+                    <span class="shop-purchase-price-note__tier-row">
+                        <span class="shop-purchase-price-note__tier">${this.escapeHtml(tieredLabel)}</span>
+                        ${tierRulesHelpHtml}
+                    </span>
+                `
+            };
+        }
+
+        return {
+            variant: 'tier',
+            html: `
+                <span class="shop-purchase-price-note__tier-row">
+                    <span class="shop-purchase-price-note__tier">${this.escapeHtml(tieredLabel)}</span>
+                    ${tierRulesHelpHtml}
+                </span>
+            `
+        };
+    },
+
+    renderPurchaseUnitPrice: function (unitPrice = null) {
+        const normalizedUnitPrice = Math.max(0, Number(unitPrice ?? this.currentPurchase?.unitPrice ?? this.currentPurchase?.basePrice ?? 0) || 0);
+        const unitPriceEl = document.getElementById('modalUnitPrice');
+        if (unitPriceEl) {
+            const flashSalePricing = this.getCurrentPurchaseFlashSalePricingContext();
+            const tieredPricing = this.getCurrentPurchaseTieredPricingContext();
+            if (flashSalePricing) {
+                unitPriceEl.textContent = `${this.trShop('flashSalePrice', this.isEnglishShopLocale() ? 'Flash sale price' : '秒杀价')} ${this.formatShopPointValue(normalizedUnitPrice)}`;
+            } else if (tieredPricing?.activeRule) {
+                unitPriceEl.textContent = `${this.getTieredPricingLabel()} ${this.formatShopPointValue(normalizedUnitPrice)}`;
+            } else {
+                unitPriceEl.textContent = this.formatShopPointValue(normalizedUnitPrice);
+            }
+        }
+
+        const priceContextNoteEl = document.getElementById('modalPriceContextNote');
+        if (!priceContextNoteEl) {
+            return;
+        }
+
+        const note = this.buildPurchasePriceContextNote();
+        if (!note?.html) {
+            priceContextNoteEl.hidden = true;
+            priceContextNoteEl.innerHTML = '';
+            priceContextNoteEl.className = 'shop-purchase-price-note';
+            return;
+        }
+
+        priceContextNoteEl.className = `shop-purchase-price-note shop-purchase-price-note--${this.escapeAttribute(note.variant || 'default')}`;
+        priceContextNoteEl.innerHTML = note.html;
+        priceContextNoteEl.hidden = false;
+    },
+
     renderPurchaseConfirmationStage: function () {
         if (!this.currentPurchase) return;
 
@@ -4315,7 +4652,12 @@ const ShopClient = {
 
         if (productNameEl) productNameEl.textContent = displayName || '-';
         if (quantityEl) quantityEl.textContent = String(quantity);
-        if (unitPriceEl) unitPriceEl.textContent = `${this.formatShopPointValue(unitPrice)} ${pointsLabel}`;
+        if (unitPriceEl) {
+            const flashSalePricing = this.getCurrentPurchaseFlashSalePricingContext();
+            unitPriceEl.textContent = flashSalePricing
+                ? `${this.trShop('originalPrice', isEn ? 'Original' : '原价')} ${this.formatShopPointValue(flashSalePricing.flashSaleOriginalPrice)} ${pointsLabel} · ${this.trShop('flashSalePrice', isEn ? 'Flash sale price' : '秒杀价')} ${this.formatShopPointValue(unitPrice)} ${pointsLabel}`
+                : `${this.formatShopPointValue(unitPrice)} ${pointsLabel}`;
+        }
         if (subtotalEl) subtotalEl.textContent = `${this.formatShopPointValue(subtotal)} ${pointsLabel}`;
         if (totalEl) totalEl.textContent = `${this.formatShopPointValue(finalTotal)} ${pointsLabel}`;
 
@@ -6366,6 +6708,20 @@ const ShopClient = {
                 return;
             }
 
+            const tierRulesHelpTrigger = event.target instanceof Element
+                ? event.target.closest('.shop-tier-rules-help')
+                : null;
+            if (tierRulesHelpTrigger) {
+                event.preventDefault?.();
+                event.stopPropagation?.();
+                this.toggleTierRulesPopover(tierRulesHelpTrigger);
+                return;
+            }
+
+            if (!(event.target instanceof Element && event.target.closest('.shop-tier-rules-popover-wrap'))) {
+                this.closeTierRulesPopovers();
+            }
+
             const quantityTrigger = event.target instanceof Element
                 ? event.target.closest('[data-shop-qty-delta]')
                 : null;
@@ -6484,6 +6840,10 @@ const ShopClient = {
 
         document.addEventListener('keydown', (event) => {
             if (event.key !== 'Escape') return;
+
+            if (this.closeTierRulesPopovers()) {
+                return;
+            }
 
             const cartCheckoutModalEl = document.getElementById('shopCartCheckoutModal');
             if (cartCheckoutModalEl?.classList.contains('active')) {
@@ -8013,6 +8373,7 @@ const ShopClient = {
         el.innerHTML = `
             <div class="shop-card-image">
                 ${pricingState.flashSaleBadgeHtml}
+                ${pricingState.tieredPricingBadgeHtml}
                 ${displayHtml}
                 ${pricingState.agentBadgeHtml}
                 <div class="shop-stock-badge shop-stock-badge--floating ${noStock ? 'out-of-stock' : 'in-stock'}">
@@ -8677,14 +9038,23 @@ const ShopClient = {
 
         const request = (async () => {
             const currentSite = window.SiteConfig?.site || 'cn';
-            const catalogUrl = `/api/shop/catalog?site=${encodeURIComponent(currentSite)}`;
+            const catalogParams = new URLSearchParams({ site: currentSite });
+            if (forceRefresh) {
+                catalogParams.set('refresh', String(Date.now()));
+            }
+            const catalogUrl = `/api/shop/catalog?${catalogParams.toString()}`;
             let response = null;
 
             try {
                 response = await fetch(catalogUrl, {
                     method: 'GET',
+                    cache: forceRefresh ? 'no-store' : 'default',
                     headers: {
-                        Accept: 'application/json'
+                        Accept: 'application/json',
+                        ...(forceRefresh ? {
+                            'Cache-Control': 'no-cache',
+                            Pragma: 'no-cache'
+                        } : {})
                     }
                 });
             } catch (error) {
@@ -9101,6 +9471,9 @@ const ShopClient = {
         productCategory: null,
         basePrice: 0,
         unitPrice: 0,
+        hasFlashSale: false,
+        flashSalePrice: null,
+        flashSaleOriginalPrice: null,
         quantity: 1,
         orderId: null,
         createdAt: null,
@@ -9655,6 +10028,9 @@ const ShopClient = {
         const quantityCap = this.normalizePurchaseQuantityCap(maxPurchaseQuantity);
         const unlimitedPurchases = options?.unlimitedPurchases === true;
         const initialQuantity = Math.max(1, Math.min(quantityCap, Math.trunc(Number(options?.initialQuantity || 1) || 1)));
+        const liveProductForPricing = this.getCachedProductById(productId);
+        const flashSalePricing = this.getActiveFlashSalePricingContext(liveProductForPricing, price);
+        const effectivePrice = Math.max(0, Number(flashSalePricing.hasFlashSale ? flashSalePricing.flashSalePrice : price) || 0);
         void this.prefetchDiscountAssetsForProduct({
             productId,
             quantity: initialQuantity,
@@ -9716,8 +10092,11 @@ const ShopClient = {
             productName,
             productNameEn,
             productCategory: String(options?.category || options?.productCategory || '').trim() || null,
-            basePrice: price,
-            unitPrice: price,
+            basePrice: effectivePrice,
+            unitPrice: effectivePrice,
+            hasFlashSale: flashSalePricing.hasFlashSale,
+            flashSalePrice: flashSalePricing.flashSalePrice,
+            flashSaleOriginalPrice: flashSalePricing.flashSaleOriginalPrice,
             quantity: initialQuantity,
             orderId: null,
             createdAt: null,
@@ -9762,8 +10141,8 @@ const ShopClient = {
         const currentLang = window.i18n?.getCurrentLanguage() || 'zh';
         const displayName = (currentLang === 'en' && productNameEn) ? productNameEn : productName;
         this.renderModalProductName(displayName);
-        document.getElementById('modalUnitPrice').textContent = price;
-        document.getElementById('modalTotalPrice').textContent = this.formatShopPointValue(price * initialQuantity);
+        this.renderPurchaseUnitPrice(effectivePrice);
+        document.getElementById('modalTotalPrice').textContent = this.formatShopPointValue(effectivePrice * initialQuantity);
         const quantityInput = document.getElementById('purchaseQuantity');
         if (quantityInput) {
             quantityInput.value = initialQuantity;
@@ -9836,13 +10215,13 @@ const ShopClient = {
 
         trackShopAnalyticsEvent('shop_view', {
             entityId: String(productId || '').trim() || null,
-            eventValue: Number(price || 0) || null,
+            eventValue: Number(effectivePrice || 0) || null,
             metadata: buildShopTrackingMetadata({
                 product_id: String(productId || '').trim() || null,
                 product_name: productName || null,
                 product_name_en: productNameEn || null,
                 category: String(options?.category || options?.productCategory || '').trim() || null,
-                unit_price: Number(price || 0) || null,
+                unit_price: Number(effectivePrice || 0) || null,
                 max_purchase_quantity: quantityCap,
                 has_purchase_notes: Boolean(purchaseNotes),
                 has_usage_instructions: Boolean(usageInstructions)
@@ -9853,13 +10232,13 @@ const ShopClient = {
 
         trackShopAnalyticsEvent('product_detail_view', {
             entityId: String(productId || '').trim() || null,
-            eventValue: Number(price || 0) || null,
+            eventValue: Number(effectivePrice || 0) || null,
             metadata: buildShopTrackingMetadata({
                 product_id: String(productId || '').trim() || null,
                 product_name: productName || null,
                 product_name_en: productNameEn || null,
                 category: String(options?.category || options?.productCategory || '').trim() || null,
-                unit_price: Number(price || 0) || null,
+                unit_price: Number(effectivePrice || 0) || null,
                 max_purchase_quantity: quantityCap,
                 has_purchase_notes: Boolean(purchaseNotes),
                 has_usage_instructions: Boolean(usageInstructions)
@@ -9903,12 +10282,15 @@ const ShopClient = {
 
     updatePriceForQuantity: function (qty) {
         let unitPrice = this.currentPurchase.basePrice;
-        if (this.currentPurchase.rules && this.currentPurchase.rules.length > 0) {
-            this.currentPurchase.rules.forEach(rule => {
-                if (qty >= rule.qty && rule.price < unitPrice) {
-                    unitPrice = rule.price;
-                }
+        if (!this.currentPurchase.hasFlashSale) {
+            const tieredPricing = this.getTieredPricingContext({
+                basePrice: this.currentPurchase.basePrice,
+                rules: this.currentPurchase.rules,
+                quantity: qty
             });
+            if (tieredPricing?.activeRule) {
+                unitPrice = tieredPricing.activeRule.price;
+            }
         }
         this.currentPurchase.unitPrice = unitPrice;
 
@@ -9918,7 +10300,7 @@ const ShopClient = {
 
         this.renderModalProductName(displayName, { wholesale: unitPrice < this.currentPurchase.basePrice });
 
-        document.getElementById('modalUnitPrice').textContent = unitPrice;
+        this.renderPurchaseUnitPrice(unitPrice);
 
         let total = qty * unitPrice;
 

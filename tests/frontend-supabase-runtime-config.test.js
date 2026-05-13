@@ -1368,7 +1368,7 @@ test('public chat and shop scroll panels clamp accidental horizontal pan', () =>
         'shop usage instruction card should keep long content from causing lateral wobble'
     );
     assert.equal(
-        shopHtmlSource.includes('css/shop-page.css?v=20260509_SHOP_PURCHASE_MODAL_MOBILE_WIDTH_1'),
+        shopHtmlSource.includes('css/shop-page.css?v=20260512_SHOP_TIER_RULE_HELP_1'),
         true,
         'shop.html should cache-bust the keyboard-scroll shop stylesheet'
     );
@@ -2308,12 +2308,12 @@ test('auth runtime renderers centralize avatar, google loading, and profile moda
 
     for (const source of pageSources) {
         assert.equal(
-            source.includes('css/auth-sheet.css?v=20260512_NAV_AUTH_GUEST_MENU_1'),
+            source.includes('css/auth-sheet.css?v=20260512_NAV_AUTH_SESSION_MATCH_1'),
             true,
             'auth entry pages should load the latest auth sheet stylesheet'
         );
         assert.equal(
-            source.includes('supabase-auth-functions.js?v=20260512_NAV_AUTH_GUEST_MENU_1'),
+            source.includes('supabase-auth-functions.js?v=20260512_NAV_AUTH_SESSION_MATCH_1'),
             true,
             'auth entry pages should load the latest auth runtime script'
         );
@@ -2390,7 +2390,7 @@ test('login auth sheet uses natural height while preserving smooth resize transi
         'inject-auth.js should lock sheet body scrolling while the auth sheet height is animating'
     );
     assert.equal(
-        injectSource.includes("const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260512_NAV_AUTH_GUEST_MENU_1';"),
+        injectSource.includes("const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260512_NAV_AUTH_SESSION_MATCH_1';"),
         true,
         'inject-auth.js should cache-bust the auth sheet stylesheet for shop staggered auth entry'
     );
@@ -2522,7 +2522,7 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
         'function getInstantFallbackAvatarUrl(seed)',
         `class="nav-user-avatar\${hasAvatar ? ' show' : ' auth-display-none'}"`,
         'window.__ZAOYOE_PENDING_AUTH_USER__',
-        'class="avatar-dropdown auth-dropdown-layer"',
+        'class="avatar-dropdown auth-dropdown-layer ${',
         "setInjectedAuthStyleState(indicator, {",
         "setInjectedAuthStyleState(dropdown, {",
         "setInjectedAuthStyleProperty(sheet, 'transform', null);",
@@ -2563,13 +2563,13 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
 
     for (const source of pageSources) {
         assert.equal(
-            source.includes('css/auth-sheet.css?v=20260512_NAV_AUTH_GUEST_MENU_1'),
+            source.includes('css/auth-sheet.css?v=20260512_NAV_AUTH_SESSION_MATCH_1'),
             true,
             'auth entry pages should load the latest injected auth stylesheet'
         );
         assert.match(
             source,
-            /inject-auth\.js\?v=20260512_NAV_AUTH_GUEST_MENU_1/,
+            /inject-auth\.js\?v=20260512_NAV_AUTH_SESSION_MATCH_1/,
             'auth entry pages should load the latest injected auth runtime version'
         );
     }
@@ -2749,7 +2749,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['privacy.html', 'css/privacy-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260425_HOME_GUESTBOOK_MODAL_HIDE_1'],
-        ['shop.html', 'css/shop-page.css?v=20260509_SHOP_PURCHASE_MODAL_MOBILE_WIDTH_1'],
+        ['shop.html', 'css/shop-page.css?v=20260512_SHOP_TIER_RULE_HELP_1'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260427_ADMIN_SITE_SWITCHER_ACTIVE_HOVER_LOCK_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260502_ADMIN_ENTRY_TAP_HIGHLIGHT_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260427_AUTH_CALLBACK_SILENT_2'],
@@ -2838,7 +2838,7 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260509_SHOP_PURCHASE_MODAL_MOBILE_WIDTH_1'],
+        ['shop.html', 'css/shop-page.css?v=20260512_SHOP_TIER_RULE_HELP_1'],
         ['index_old.html', 'css/index-old.css?v=20260502_INDEX_OLD_TAP_HIGHLIGHT_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
@@ -3051,7 +3051,7 @@ test('theme bootstraps default first visits to light instead of system dark', ()
     for (const relativePath of injectedAuthEntryPages) {
         const source = readRepoFile(relativePath);
         assert.equal(
-            source.includes('inject-auth.js?v=20260512_NAV_AUTH_GUEST_MENU_1'),
+            source.includes('inject-auth.js?v=20260512_NAV_AUTH_SESSION_MATCH_1'),
             true,
             `${relativePath} should cache-bust the injected auth light-default runtime`
         );
@@ -3100,6 +3100,7 @@ test('auth and verify runtime pages externalize page bootstraps instead of embed
     const authPopupCloseSource = readRepoFile('auth-popup-close.html');
     const resetPasswordSource = readRepoFile('reset-password.html');
     const verifySource = readRepoFile('verify.html');
+    const verifyBootstrapSource = readRepoFile('js/verify-page.js');
     const guestbookSource = readRepoFile('guestbook.html');
 
     assert.equal(authCallbackSource.includes('./js/auth-callback-page.js'), true, 'auth-callback.html should load the shared auth callback bootstrap file');
@@ -3112,8 +3113,11 @@ test('auth and verify runtime pages externalize page bootstraps instead of embed
     assert.equal(resetPasswordSource.includes('handleNewPasswordSubmit(event)'), false, 'reset-password.html should not inline the reset password submission handler');
 
     assert.equal(verifySource.includes('./js/verify-page.js'), true, 'verify.html should load the verify page bootstrap file');
+    assert.equal(verifySource.includes('./js/verify-page.js?v=20260512_NAV_AUTH_SESSION_MATCH_1'), true, 'verify.html should cache-bust the verify page stale-auth prerender guard');
     assert.equal(verifySource.includes('window.VERIFY_SERVER_URL ='), false, 'verify.html should not inline verify server globals');
     assert.equal(verifySource.includes('verify-prerender-style'), false, 'verify.html should not inline prerender style injection logic');
+    assert.equal(verifyBootstrapSource.includes('hasStoredAuthSessionCandidate(user)'), true, 'verify page prerender should require a usable stored auth session');
+    assert.equal(verifyBootstrapSource.includes('doesStoredSessionMatchCachedProfile'), true, 'verify page prerender should match cached profile identity to the stored JWT');
 
     assert.equal(guestbookSource.includes('./js/guestbook-optional-enhancements.js'), true, 'guestbook.html should load the guestbook optional enhancements bootstrap file');
     assert.equal(guestbookSource.includes('scheduleOptionalGuestbookEnhancements'), false, 'guestbook.html should not inline optional guestbook enhancement boot logic');
@@ -3407,7 +3411,7 @@ test('shop client runtime renderers externalize product cards, purchase feedback
         'function getZaoyoeAssetCdnOrigin({ canonical = false } = {}) {',
         'function normalizeShopProductCdnUrl(url, options = {}) {',
         'function getShopResponsiveR2CardVariantUrl(url, variant = \'\') {',
-        "return `${getZaoyoeAssetCdnOrigin()}/products/card/${encodeURIComponent(basename)}.webp`;",
+        "return `${getZaoyoeAssetCdnOrigin({ canonical: true })}/products/card/${encodeURIComponent(basename)}.webp`;",
         'warmShopCardLeadImages: function (products = []) {',
         'setShopCardImageSource: function (cardImage, originalUrl) {',
         "const primaryUrl = this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' });",
@@ -3511,7 +3515,7 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should not render a secondary text loading message after the skeleton'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260510_SHOP_REALTIME_FALLBACK_1'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260512_SHOP_TIER_RULE_HELP_1'),
         true,
         'shop.html should reference the latest shop client runtime for the cart-enabled storefront flow'
     );
@@ -3550,7 +3554,7 @@ test('shop storefront uses a 21:9 media ratio for mobile product cards', () => {
         'mobile shop product cards and loading skeletons should keep the top media area at 21:9'
     );
     assert.equal(
-        shopHtmlSource.includes('css/shop-page.css?v=20260509_SHOP_PURCHASE_MODAL_MOBILE_WIDTH_1'),
+        shopHtmlSource.includes('css/shop-page.css?v=20260512_SHOP_TIER_RULE_HELP_1'),
         true,
         'shop.html should bust the shop stylesheet cache for the latest shop card sizing'
     );
@@ -4031,7 +4035,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         '.guestbook-actions',
         '.guestbook-action-btn',
         '20260502_PUBLIC_MOBILE_TAP_HIGHLIGHT_GUARD_1',
-        '20260502_NAV_LOGO_TAP_HIGHLIGHT_1',
+        '20260512_NAV_AUTH_SESSION_MATCH_1',
         '-webkit-tap-highlight-color: transparent;',
         ':focus:not(:focus-visible)'
     ];
@@ -13224,7 +13228,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), false, 'index.html should not eagerly load the full guestbook runtime');
     assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260510_GUESTBOOK_R2_IMAGE_UPLOAD_1'), true, 'guestbook.html should load the latest guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260510_GUESTBOOK_R2_IMAGE_UPLOAD_1'), true, 'index_old.html should load the latest guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260510_SHOP_REALTIME_FALLBACK_1'), true, 'shop.html should load the latest cart-aware shop runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260512_SHOP_TIER_RULE_HELP_1'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260510_SHOP_REALTIME_FALLBACK_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
     assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260510_WALLET_REALTIME_FALLBACK_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
@@ -15310,6 +15314,8 @@ test('final frontend runtime remnants route through delegated or bound listeners
         '.notif-card-shell.notif-card-filter-enter',
         '.notif-drawer.notif-drawer-opening',
         '.notif-drawer.notif-drawer-closing',
+        '.notif-drawer.notif-drawer-opening .notif-card-list > .notif-card-shell',
+        '.notif-drawer.notif-drawer-closing .notif-card-list > .notif-card-shell',
         '@keyframes notifMobileLayerFadeOut',
         '#navNotifWrapper[hidden]',
         '.notif-drawer',
@@ -15502,9 +15508,19 @@ test('final frontend runtime remnants route through delegated or bound listeners
         /\.notif-drawer-footer\s*\{[\s\S]*?flex:\s*0 0 72px;[\s\S]*?align-items:\s*center;[\s\S]*?height:\s*72px;[\s\S]*?padding:\s*0 max\(16px, env\(safe-area-inset-right, 0px\)\) 0 max\(16px, env\(safe-area-inset-left, 0px\)\);/,
         'notification footer should keep the close capsule centered in the fixed mobile footer block'
     );
+    assert.match(
+        notificationStyles,
+        /\.notif-drawer\.notif-drawer-opening \.notif-module-shell\s*\{[\s\S]*?animation:\s*none;[\s\S]*?\.notif-drawer\.notif-drawer-opening \.notif-filter-panel,[\s\S]*?\.notif-drawer\.notif-drawer-opening \.notif-card-list > \.notif-card-shell\s*\{[\s\S]*?animation:\s*notifMobileFadeInDown 0\.5s ease forwards;/,
+        'mobile notification opening should animate the nested filter and card list, not only the module wrapper'
+    );
+    assert.match(
+        notificationStyles,
+        /\.notif-drawer\.notif-drawer-closing \.notif-module-shell\s*\{[\s\S]*?animation:\s*none;[\s\S]*?\.notif-drawer\.notif-drawer-closing \.notif-filter-panel,[\s\S]*?\.notif-drawer\.notif-drawer-closing \.notif-card-list > \.notif-card-shell\s*\{[\s\S]*?animation:\s*notifMobileFadeOutUp 0\.28s ease forwards;[\s\S]*?\.notif-drawer\.notif-drawer-closing \.notif-card-list > \.notif-card-shell:nth-child\(1\)\s*\{[\s\S]*?animation-delay:\s*0\.4s;[\s\S]*?\.notif-drawer\.notif-drawer-closing \.notif-filter-panel\s*\{[\s\S]*?animation-delay:\s*0\.46s;/,
+        'mobile notification closing should stagger the nested cards before the filter panel fades out'
+    );
 
     const notificationAssetMarkers = [
-        'css/notification-client.css?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1',
+        'css/notification-client.css?v=20260513_NOTIFICATION_MOBILE_STAGGER_1',
         'js/engagement-runtime-loader.js?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1'
     ];
 
@@ -16253,7 +16269,7 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
     for (const file of files) {
         const source = readRepoFile(file);
         const expectedMarker = file === 'css/auth-sheet.css'
-            ? '20260512_NAV_AUTH_GUEST_MENU_1'
+            ? '20260512_NAV_AUTH_SESSION_MATCH_1'
             : '20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1';
         assert.equal(source.includes(expectedMarker), true, `${file} should carry the public light modal backdrop marker`);
         assert.equal(source.includes('rgba(34, 41, 52, 0.48)'), true, `${file} should use the shared muted blue-gray backdrop`);
@@ -16274,7 +16290,7 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
 
     for (const source of pageSources) {
         assert.equal(
-            source.includes(expectedHref) || source.includes('css/auth-sheet.css?v=20260512_NAV_AUTH_GUEST_MENU_1'),
+            source.includes(expectedHref) || source.includes('css/auth-sheet.css?v=20260512_NAV_AUTH_SESSION_MATCH_1'),
             true,
             'public pages should cache-bust the light modal backdrop material'
         );
@@ -16295,7 +16311,7 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
 test('shop page loads auth sheet after legacy shared styles', () => {
     const shopSource = readRepoFile('shop.html');
     const sharedStyleIndex = shopSource.indexOf('style.css?v=20260430_PUBLIC_ROOT_SCROLLBAR_FULL_HIDE_1');
-    const authSheetIndex = shopSource.indexOf('css/auth-sheet.css?v=20260512_NAV_AUTH_GUEST_MENU_1');
+    const authSheetIndex = shopSource.indexOf('css/auth-sheet.css?v=20260512_NAV_AUTH_SESSION_MATCH_1');
 
     assert.notEqual(sharedStyleIndex, -1, 'shop.html should load the shared style.css bundle');
     assert.notEqual(authSheetIndex, -1, 'shop.html should load the shared auth sheet stylesheet');

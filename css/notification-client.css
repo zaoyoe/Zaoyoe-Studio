@@ -1458,6 +1458,53 @@ html[data-theme="light"] .notif-card-tag--admin-notice {
         animation-delay: 0.92s;
     }
 
+    .notif-drawer.notif-drawer-opening .notif-module-shell {
+        opacity: 1;
+        transform: none;
+        animation: none;
+    }
+
+    .notif-drawer.notif-drawer-opening .notif-filter-panel,
+    .notif-drawer.notif-drawer-opening .notif-card-list > .notif-empty,
+    .notif-drawer.notif-drawer-opening .notif-card-list > .notif-card-shell {
+        opacity: 0;
+        transform: translateY(-10px);
+        animation: notifMobileFadeInDown 0.5s ease forwards;
+    }
+
+    .notif-drawer.notif-drawer-opening .notif-filter-panel {
+        animation-delay: 0.1s;
+    }
+
+    .notif-drawer.notif-drawer-opening .notif-card-list > .notif-empty,
+    .notif-drawer.notif-drawer-opening .notif-card-list > .notif-card-shell:nth-child(1) {
+        animation-delay: 0.2s;
+    }
+
+    .notif-drawer.notif-drawer-opening .notif-card-list > .notif-card-shell:nth-child(2) {
+        animation-delay: 0.3s;
+    }
+
+    .notif-drawer.notif-drawer-opening .notif-card-list > .notif-card-shell:nth-child(3) {
+        animation-delay: 0.4s;
+    }
+
+    .notif-drawer.notif-drawer-opening .notif-card-list > .notif-card-shell:nth-child(4) {
+        animation-delay: 0.5s;
+    }
+
+    .notif-drawer.notif-drawer-opening .notif-card-list > .notif-card-shell:nth-child(5) {
+        animation-delay: 0.6s;
+    }
+
+    .notif-drawer.notif-drawer-opening .notif-card-list > .notif-card-shell:nth-child(6) {
+        animation-delay: 0.7s;
+    }
+
+    .notif-drawer.notif-drawer-opening .notif-card-list > .notif-card-shell:nth-child(n+7) {
+        animation-delay: 0.76s;
+    }
+
     .notif-drawer.notif-drawer-closing .notif-drawer-list > *,
     .notif-drawer.notif-drawer-closing .notif-drawer-footer {
         animation: notifMobileFadeOutUp 0.28s ease forwards;
@@ -1498,6 +1545,51 @@ html[data-theme="light"] .notif-card-tag--admin-notice {
 
     .notif-drawer.notif-drawer-closing .notif-drawer-list > *:nth-child(1) {
         animation-delay: 0.52s;
+    }
+
+    .notif-drawer.notif-drawer-closing .notif-module-shell {
+        opacity: 1;
+        transform: none;
+        animation: none;
+    }
+
+    .notif-drawer.notif-drawer-closing .notif-filter-panel,
+    .notif-drawer.notif-drawer-closing .notif-card-list > .notif-empty,
+    .notif-drawer.notif-drawer-closing .notif-card-list > .notif-card-shell {
+        animation: notifMobileFadeOutUp 0.28s ease forwards;
+    }
+
+    .notif-drawer.notif-drawer-closing .notif-card-list > .notif-card-shell:nth-child(n+7),
+    .notif-drawer.notif-drawer-closing .notif-card-list > .notif-empty {
+        animation-delay: 0.04s;
+    }
+
+    .notif-drawer.notif-drawer-closing .notif-card-list > .notif-card-shell:nth-child(6) {
+        animation-delay: 0.1s;
+    }
+
+    .notif-drawer.notif-drawer-closing .notif-card-list > .notif-card-shell:nth-child(5) {
+        animation-delay: 0.16s;
+    }
+
+    .notif-drawer.notif-drawer-closing .notif-card-list > .notif-card-shell:nth-child(4) {
+        animation-delay: 0.22s;
+    }
+
+    .notif-drawer.notif-drawer-closing .notif-card-list > .notif-card-shell:nth-child(3) {
+        animation-delay: 0.28s;
+    }
+
+    .notif-drawer.notif-drawer-closing .notif-card-list > .notif-card-shell:nth-child(2) {
+        animation-delay: 0.34s;
+    }
+
+    .notif-drawer.notif-drawer-closing .notif-card-list > .notif-card-shell:nth-child(1) {
+        animation-delay: 0.4s;
+    }
+
+    .notif-drawer.notif-drawer-closing .notif-filter-panel {
+        animation-delay: 0.46s;
     }
 
     .notif-card-shell.notif-card-filter-enter {

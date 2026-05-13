@@ -1551,7 +1551,7 @@ function readCachedUserProfile() {
         const raw = localStorage.getItem('cached_user_profile');
         if (!raw) return null;
         const profile = JSON.parse(raw);
-        if (!hasCachedIdentity(profile) || !hasStoredAuthSessionCandidate()) {
+        if (!hasCachedIdentity(profile) || !hasStoredAuthSessionCandidate(profile)) {
             localStorage.removeItem('cached_user_profile');
             return null;
         }
@@ -1566,7 +1566,42 @@ function hasCachedIdentity(profile) {
     return !!(profile.objectId || profile.id || profile.user_id || profile.email);
 }
 
-function hasStoredAuthSessionCandidate() {
+function getCachedProfileIdentity(profile) {
+    return {
+        id: String(profile?.objectId || profile?.id || profile?.user_id || '').trim(),
+        email: String(profile?.email || '').trim().toLowerCase()
+    };
+}
+
+function doesStoredSessionMatchCachedProfile(payload, profile) {
+    const cached = getCachedProfileIdentity(profile);
+    const tokenId = String(payload?.sub || payload?.user_id || payload?.user?.id || '').trim();
+    const tokenEmail = String(
+        payload?.email ||
+        payload?.user?.email ||
+        payload?.user_metadata?.email ||
+        ''
+    ).trim().toLowerCase();
+
+    if (cached.id && tokenId && cached.id === tokenId) return true;
+    if (cached.email && tokenEmail && cached.email === tokenEmail) return true;
+    return false;
+}
+
+function getUsableStoredSessionPayload(token) {
+    if (!token) return null;
+    const payload = decodeJwtPayload(token);
+    if (!payload) return null;
+
+    if (payload.exp) {
+        const now = Math.floor(Date.now() / 1000);
+        if (payload.exp <= now + 60) return null;
+    }
+
+    return payload;
+}
+
+function hasStoredAuthSessionCandidate(profile = null) {
     try {
         return Object.keys(localStorage).some((key) => {
             if (!key || !key.startsWith('sb-') || !key.endsWith('-auth-token')) return false;
@@ -1574,13 +1609,9 @@ function hasStoredAuthSessionCandidate() {
             if (!raw) return false;
             const parsed = JSON.parse(raw);
             const token = parsed?.access_token || parsed?.currentSession?.access_token;
-            if (!token) return false;
-
-            const payload = decodeJwtPayload(token);
-            if (!payload?.exp) return true;
-
-            const now = Math.floor(Date.now() / 1000);
-            return payload.exp > now + 60;
+            const payload = getUsableStoredSessionPayload(token);
+            if (!payload) return false;
+            return profile ? doesStoredSessionMatchCachedProfile(payload, profile) : true;
         });
     } catch (_) {
         return false;
@@ -2008,10 +2039,7 @@ function normalizeUserForAdminAccess(user) {
 
 function readCachedAuthUserProfile() {
     try {
-        const raw = localStorage.getItem('cached_user_profile');
-        if (!raw) return null;
-        const parsed = JSON.parse(raw);
-        return normalizeUserForAdminAccess(parsed);
+        return normalizeUserForAdminAccess(readCachedUserProfile());
     } catch (error) {
         console.warn('Failed to read cached auth user profile:', error);
         return null;
@@ -5221,10 +5249,7 @@ function detachProfileModalViewportHandlers() {
 
 function hydrateProfileModalFromCache() {
     try {
-        const cachedRaw = localStorage.getItem('cached_user_profile');
-        if (!cachedRaw) return;
-
-        const cached = JSON.parse(cachedRaw);
+        const cached = readCachedUserProfile();
         if (!cached) return;
 
         const cachedNickname = cached.nickname || cached.username || cached.email?.split('@')[0] || '';

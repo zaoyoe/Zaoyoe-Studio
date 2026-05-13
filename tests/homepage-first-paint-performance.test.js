@@ -36,27 +36,27 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should cache-bust the prompt no-repaint homepage runtime fix'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home_critical.css?v=20260504_HOME_SECTION_SHELLS_1'),
+        indexSource.includes('./css/framer_home_critical.css?v=20260512_NAV_AUTH_SESSION_MATCH_1'),
         true,
         'index.html should load a small blocking homepage critical stylesheet'
     );
     assert.match(
         indexSource,
-        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260504_HOME_SECTION_SHELLS_1" media="print" data-deferred-style="1">/,
+        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260512_NAV_AUTH_SESSION_MATCH_1" media="print" data-deferred-style="1">/,
         'index.html should defer the full homepage stylesheet after the first-paint shell'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home.css?v=20260504_HOME_SECTION_SHELLS_1'),
+        indexSource.includes('./css/framer_home.css?v=20260512_NAV_AUTH_SESSION_MATCH_1'),
         true,
         'index.html should keep cache-busting the full static hero stability styles'
     );
     assert.equal(
-        indexSource.includes('./js/nav-auth-fast-paint.js?v=20260512_NAV_AUTH_GUEST_MENU_1'),
+        indexSource.includes('./js/nav-auth-fast-paint.js?v=20260512_NAV_AUTH_SESSION_MATCH_1'),
         true,
         'homepage should load the cached nav auth fast-paint helper before the lower auth runtime'
     );
     assert.ok(
-        indexSource.indexOf('./js/nav-auth-fast-paint.js?v=20260512_NAV_AUTH_GUEST_MENU_1') < indexSource.indexOf('./supabase-auth-functions.js?v=20260512_NAV_AUTH_GUEST_MENU_1'),
+        indexSource.indexOf('./js/nav-auth-fast-paint.js?v=20260512_NAV_AUTH_SESSION_MATCH_1') < indexSource.indexOf('./supabase-auth-functions.js?v=20260512_NAV_AUTH_SESSION_MATCH_1'),
         'homepage nav auth fast-paint helper should run before Supabase auth hydration'
     );
     assert.match(
