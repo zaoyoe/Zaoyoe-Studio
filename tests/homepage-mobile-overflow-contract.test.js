@@ -34,7 +34,27 @@ test('homepage mobile shell prevents document-level horizontal dragging', () => 
     assert.match(mainContentRule, /overflow-x:\s*hidden;/);
     assert.match(
         homepage,
-        /css\/framer_home\.css\?v=20260512_NAV_AUTH_SESSION_MATCH_1/,
+        /css\/framer_home\.css\?v=20260513_HOME_PROMPT_MASK_CENTER_1/,
         'homepage should bust cached framer_home.css after mobile overflow fix'
+    );
+});
+
+test('homepage prompt mask keeps mobile labels and CTA centered in the viewport', () => {
+    const styles = readRepoFile('css/framer_home.css');
+
+    assert.equal(
+        styles.includes('20260513_HOME_PROMPT_MASK_CENTER_1'),
+        true,
+        'homepage prompt mask should carry a dated mobile centering guard'
+    );
+    assert.match(
+        styles,
+        /@media \(max-width: 768px\)\s*\{[\s\S]*\.mask-labels-container\s*\{[\s\S]*width:\s*min\(100%, calc\(100vw - 32px\)\);[\s\S]*max-width:\s*calc\(100vw - 32px\);[\s\S]*box-sizing:\s*border-box;[\s\S]*margin-inline:\s*auto;[\s\S]*\.mask-labels-row\s*\{[\s\S]*width:\s*100%;[\s\S]*max-width:\s*100%;[\s\S]*justify-content:\s*center;[\s\S]*gap:\s*clamp\(12px, 4vw, 24px\);/,
+        'mobile prompt mask should center the CTA against a viewport-width label container'
+    );
+    assert.match(
+        styles,
+        /@media \(max-width: 480px\)\s*\{[\s\S]*\.mask-labels-container\s*\{[\s\S]*width:\s*min\(100%, calc\(100vw - 24px\)\);[\s\S]*max-width:\s*calc\(100vw - 24px\);[\s\S]*\.mask-labels-row\s*\{[\s\S]*gap:\s*clamp\(10px, 3\.5vw, 18px\);/,
+        'small mobile prompt mask should keep narrow viewport labels centered without using the over-wide masonry track'
     );
 });
