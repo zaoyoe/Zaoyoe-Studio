@@ -53,7 +53,7 @@ test('shop realtime catalog refresh bypasses stale HTTP and worker caches', () =
         'the service worker should not satisfy API or no-store requests from its static cache'
     );
     assert.equal(
-        shopHtml.includes('js/shop-client.js?v=20260512_SHOP_TIER_RULE_HELP_1'),
+        shopHtml.includes('js/shop-client.js?v=20260513_SHOP_MOBILE_TAP_FALLBACK_1'),
         true,
         'shop.html should cache-bust the realtime catalog refresh runtime'
     );

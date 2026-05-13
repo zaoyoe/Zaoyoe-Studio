@@ -4151,6 +4151,7 @@ const ShopClient = {
         if (list) {
             list.innerHTML = entries.map((entry) => this.buildCartCheckoutItemMarkup(entry)).join('');
         }
+        this.bindCartCheckoutModalTapFallbacks();
     },
 
     captureCartItemPositions: function ({ excludeProductId = '' } = {}) {
@@ -5632,6 +5633,7 @@ const ShopClient = {
                 ? `<div class="shop-discount-assets-empty">${this.trShop('syncingCurrentCoupons', '正在同步当前商品可用卡券...')}</div>`
                 : `<div class="shop-discount-assets-empty">${this.trShop('noSelectableCoupons', '当前没有可直接选择的卡券，仍可继续输入暗码。')}</div>`;
             this.schedulePurchaseModalKeyboardContentSync();
+            this.bindPurchaseDiscountActionTapFallbacks();
             return;
         }
 
@@ -5671,6 +5673,7 @@ const ShopClient = {
             </div>
         `;
         this.schedulePurchaseModalKeyboardContentSync();
+        this.bindPurchaseDiscountActionTapFallbacks();
     },
 
     jumpToDiscountTargetProduct: async function (productId, options = {}) {
@@ -6538,6 +6541,169 @@ const ShopClient = {
         }
     },
 
+    bindShopMobileTapFallback: function (element, bindingKey, handler) {
+        if (!(element instanceof HTMLElement) || typeof handler !== 'function') {
+            return;
+        }
+
+        const safeKey = String(bindingKey || 'action').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        const boundAttribute = `data-shop-mobile-tap-${safeKey || 'action'}`;
+        if (element.getAttribute(boundAttribute) === '1') {
+            return;
+        }
+
+        const isDisabled = () => element.disabled === true || element.getAttribute('aria-disabled') === 'true';
+        const invoke = (event) => {
+            if (isDisabled()) return;
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            handler(event, element);
+        };
+
+        element.setAttribute(boundAttribute, '1');
+        let touchStart = null;
+        element.addEventListener('click', invoke);
+        element.addEventListener('touchstart', (event) => {
+            const touch = event.changedTouches?.[0] || event.touches?.[0] || null;
+            if (!touch) return;
+            touchStart = {
+                x: touch.clientX,
+                y: touch.clientY,
+                time: Date.now()
+            };
+        }, { passive: true });
+        element.addEventListener('touchend', (event) => {
+            const touch = event.changedTouches?.[0] || null;
+            const start = touchStart;
+            touchStart = null;
+            if (!touch || !start || isDisabled()) return;
+
+            const movedX = Math.abs(touch.clientX - start.x);
+            const movedY = Math.abs(touch.clientY - start.y);
+            const elapsed = Date.now() - start.time;
+            if (movedX > 16 || movedY > 16 || elapsed > 1200) {
+                return;
+            }
+
+            invoke(event);
+        }, { passive: false });
+        element.addEventListener('touchcancel', () => {
+            touchStart = null;
+        }, { passive: true });
+    },
+
+    resolvePurchaseActionButton: function (preferredButton = null) {
+        if (preferredButton instanceof HTMLElement) {
+            return preferredButton;
+        }
+
+        const candidates = [
+            document.getElementById('nextPurchaseStepBtn'),
+            document.getElementById('confirmPurchaseBtn')
+        ].filter((button) => button instanceof HTMLElement);
+
+        return candidates.find((button) => {
+            if (button.hidden || button.disabled) return false;
+            const style = window.getComputedStyle?.(button);
+            return style?.display !== 'none' && style?.visibility !== 'hidden';
+        }) || candidates[0] || null;
+    },
+
+    handlePurchasePrimaryActionTap: function (eventOrButton = null) {
+        const triggerButton = eventOrButton instanceof HTMLElement
+            ? eventOrButton
+            : (eventOrButton?.target instanceof Element
+                ? eventOrButton.target.closest('#nextPurchaseStepBtn, #confirmPurchaseBtn')
+                : null);
+        const actionButton = this.resolvePurchaseActionButton(triggerButton);
+        if (!actionButton || actionButton.disabled) {
+            return;
+        }
+
+        eventOrButton?.preventDefault?.();
+        eventOrButton?.stopPropagation?.();
+        void this.confirmPurchase({ triggerButton: actionButton });
+    },
+
+    bindPurchaseActionButtonTapFallbacks: function () {
+        [
+            document.getElementById('nextPurchaseStepBtn'),
+            document.getElementById('confirmPurchaseBtn')
+        ].forEach((button) => {
+            this.bindShopMobileTapFallback(button, 'purchase-primary-action', (event) => {
+                this.handlePurchasePrimaryActionTap(event);
+            });
+        });
+    },
+
+    bindPurchaseDiscountActionTapFallbacks: function () {
+        const modal = document.getElementById('shopPurchaseModal');
+        if (!modal) return;
+
+        modal.querySelectorAll('.shop-discount-asset-card__summary').forEach((summary) => {
+            this.bindShopMobileTapFallback(summary, 'purchase-discount-summary', (_event, target) => {
+                this.toggleDiscountAssetAccordion(
+                    target.closest('.shop-discount-asset-card--collapsible')
+                );
+            });
+        });
+
+        modal.querySelectorAll('[data-shop-discount-action="apply"]').forEach((button) => {
+            this.bindShopMobileTapFallback(button, 'purchase-discount-apply', (_event, target) => {
+                void this.applyOwnedDiscountAsset(
+                    target.dataset.discountAssetId || '',
+                    target.dataset.discountCode || ''
+                );
+            });
+        });
+
+        modal.querySelectorAll('[data-shop-discount-action="claim"]').forEach((button) => {
+            this.bindShopMobileTapFallback(button, 'purchase-discount-claim', (_event, target) => {
+                void this.claimAndRefreshDiscountAsset(target.dataset.discountId || '');
+            });
+        });
+
+        modal.querySelectorAll('[data-shop-discount-action="jump-product"]').forEach((button) => {
+            this.bindShopMobileTapFallback(button, 'purchase-discount-jump', (_event, target) => {
+                void this.jumpToDiscountTargetProduct(target.dataset.targetProductId || '');
+            });
+        });
+    },
+
+    bindPurchaseModalControlTapFallbacks: function () {
+        const modal = document.getElementById('shopPurchaseModal');
+        if (!modal) return;
+
+        this.bindPurchaseActionButtonTapFallbacks();
+        modal.querySelectorAll('[data-shop-qty-delta]').forEach((button) => {
+            this.bindShopMobileTapFallback(button, 'purchase-quantity', (_event, target) => {
+                this.adjustQuantity(Number(target.dataset.shopQtyDelta || 0));
+            });
+        });
+        this.bindShopMobileTapFallback(document.getElementById('applyDiscountBtn'), 'purchase-discount-code', () => {
+            void this.applyDiscount();
+        });
+        this.bindShopMobileTapFallback(document.getElementById('purchaseNotesToggle'), 'purchase-notes-toggle', () => {
+            this.togglePurchaseNotesVisibility();
+        });
+        this.bindShopMobileTapFallback(document.getElementById('purchaseBackBtn'), 'purchase-back', () => {
+            this.setPurchaseStage('configure');
+        });
+        this.bindShopMobileTapFallback(document.getElementById('purchaseAddToCartBtn'), 'purchase-add-cart', () => {
+            this.addCurrentPurchaseToCart();
+        });
+        this.bindPurchaseDiscountActionTapFallbacks();
+    },
+
+    bindCartCheckoutModalTapFallbacks: function () {
+        this.bindShopMobileTapFallback(document.getElementById('shopCartCheckoutBackBtn'), 'cart-checkout-back', () => {
+            this.closeCartCheckoutModal();
+        });
+        this.bindShopMobileTapFallback(document.getElementById('shopCartCheckoutConfirmBtn'), 'cart-checkout-confirm', () => {
+            void this.confirmCartCheckout();
+        });
+    },
+
     bindStaticUiHandlers: function () {
         if (this.staticUiBindingsBound) return;
 
@@ -6700,6 +6866,7 @@ const ShopClient = {
                 void this.confirmCartCheckout();
             }
         });
+        this.bindCartCheckoutModalTapFallbacks();
 
         const purchaseModal = document.getElementById('shopPurchaseModal');
         purchaseModal?.addEventListener('click', (event) => {
@@ -6797,16 +6964,15 @@ const ShopClient = {
             }
 
             if (event.target instanceof Element && event.target.closest('#nextPurchaseStepBtn')) {
-                event.preventDefault?.();
-                void this.confirmPurchase();
+                this.handlePurchasePrimaryActionTap(event);
                 return;
             }
 
             if (event.target instanceof Element && event.target.closest('#confirmPurchaseBtn')) {
-                event.preventDefault?.();
-                void this.confirmPurchase();
+                this.handlePurchasePrimaryActionTap(event);
             }
         });
+        this.bindPurchaseModalControlTapFallbacks();
 
         document.getElementById('purchaseQuantity')?.addEventListener('input', (event) => {
             if (event.target instanceof HTMLInputElement) {
@@ -10199,6 +10365,7 @@ const ShopClient = {
         this.renderPurchaseNotes();
         this.renderPurchaseConfirmationStage();
         this.setPurchaseStage('configure');
+        this.bindPurchaseModalControlTapFallbacks();
 
         // Flush the inactive layout first so newly revealed notes can join the stagger animation on first open.
         void modal.offsetHeight;
@@ -10658,11 +10825,11 @@ const ShopClient = {
         this.showShopToast(`❌ ${errorMessage}`, 'error');
     },
 
-    confirmPurchase: async function () {
+    confirmPurchase: async function ({ triggerButton = null } = {}) {
         if (this.purchaseProcessing) return;
 
         // Disable button
-        const btn = document.getElementById('confirmPurchaseBtn') || document.getElementById('nextPurchaseStepBtn');
+        const btn = this.resolvePurchaseActionButton(triggerButton);
         const backBtn = document.getElementById('purchaseBackBtn');
         if (!btn) {
             return;
@@ -10684,24 +10851,24 @@ const ShopClient = {
             backBtn.disabled = true;
         }
 
-        await new Promise((resolve) => {
-            window.requestAnimationFrame(() => resolve());
-        });
-
-        const shouldContinueAfterCouponSync = await this.waitForPurchaseDiscountAssetsBeforeSubmit();
-        if (!shouldContinueAfterCouponSync) {
-            restoreIdleButtonState();
-            return;
-        }
-
-        const token = await this.getAccessToken();
-        if (!token) {
-            restoreIdleButtonState();
-            this.promptLoginForPurchase(window.i18n?.t('shop.loginRequired') || '请先登录再进行兑换');
-            return;
-        }
-
         try {
+            await new Promise((resolve) => {
+                window.requestAnimationFrame(() => resolve());
+            });
+
+            const shouldContinueAfterCouponSync = await this.waitForPurchaseDiscountAssetsBeforeSubmit();
+            if (!shouldContinueAfterCouponSync) {
+                restoreIdleButtonState();
+                return;
+            }
+
+            const token = await this.getAccessToken();
+            if (!token) {
+                restoreIdleButtonState();
+                this.promptLoginForPurchase(window.i18n?.t('shop.loginRequired') || '请先登录再进行兑换');
+                return;
+            }
+
             const { subtotal, discountAmount, finalTotal } = this.getCurrentPurchasePricingSummary();
             const tentativeTotalPoints = finalTotal || null;
             const purchaseSourceContext = {

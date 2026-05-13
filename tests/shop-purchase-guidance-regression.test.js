@@ -37,8 +37,18 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /confirmPurchase: async function \(\) \{\s+if \(this\.purchaseProcessing\) return;[\s\S]*this\.purchaseProcessing = true;[\s\S]*btn\.innerHTML = `<i class="fas fa-spinner fa-spin"><\/i> <span>\$\{processingText\}<\/span>`;[\s\S]*await new Promise\(\(resolve\) => \{\s+window\.requestAnimationFrame\(\(\) => resolve\(\)\);\s+\}\);[\s\S]*const shouldContinueAfterCouponSync = await this\.waitForPurchaseDiscountAssetsBeforeSubmit\(\);[\s\S]*const token = await this\.getAccessToken\(\);[\s\S]*if \(!token\) \{[\s\S]*restoreIdleButtonState\(\);[\s\S]*this\.promptLoginForPurchase/s,
+        /confirmPurchase: async function \(\{ triggerButton = null \} = \{\}\) \{\s+if \(this\.purchaseProcessing\) return;[\s\S]*const btn = this\.resolvePurchaseActionButton\(triggerButton\);[\s\S]*this\.purchaseProcessing = true;[\s\S]*btn\.innerHTML = `<i class="fas fa-spinner fa-spin"><\/i> <span>\$\{processingText\}<\/span>`;[\s\S]*try \{[\s\S]*await new Promise\(\(resolve\) => \{\s+window\.requestAnimationFrame\(\(\) => resolve\(\)\);\s+\}\);[\s\S]*const shouldContinueAfterCouponSync = await this\.waitForPurchaseDiscountAssetsBeforeSubmit\(\);[\s\S]*const token = await this\.getAccessToken\(\);[\s\S]*if \(!token\) \{[\s\S]*restoreIdleButtonState\(\);[\s\S]*this\.promptLoginForPurchase/s,
         'confirmPurchase should show processing immediately, flush one frame, briefly resolve coupon sync, and only then wait for auth before prompting login if needed'
+    );
+    assert.match(
+        shopClientSource,
+        /bindShopMobileTapFallback: function \(element, bindingKey, handler\) \{[\s\S]*element\.addEventListener\('touchend'[\s\S]*invoke\(event\);[\s\S]*handlePurchasePrimaryActionTap: function \(eventOrButton = null\) \{[\s\S]*void this\.confirmPurchase\(\{ triggerButton: actionButton \}\);/s,
+        'shop purchase primary action should share the direct mobile tap fallback instead of relying only on modal click bubbling'
+    );
+    assert.match(
+        shopClientSource,
+        /bindPurchaseModalControlTapFallbacks: function \(\) \{[\s\S]*this\.bindPurchaseActionButtonTapFallbacks\(\);[\s\S]*\[data-shop-qty-delta\][\s\S]*applyDiscountBtn[\s\S]*purchaseNotesToggle[\s\S]*purchaseAddToCartBtn[\s\S]*this\.bindPurchaseDiscountActionTapFallbacks\(\);[\s\S]*bindCartCheckoutModalTapFallbacks: function \(\) \{[\s\S]*shopCartCheckoutBackBtn[\s\S]*shopCartCheckoutConfirmBtn/s,
+        'shop purchase modal and cart checkout controls should get direct mobile tap fallbacks as well'
     );
     assert.match(
         shopClientSource,
@@ -187,7 +197,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /js\/shop-client\.js\?v=20260512_SHOP_TIER_RULE_HELP_1/,
+        /js\/shop-client\.js\?v=20260513_SHOP_MOBILE_TAP_FALLBACK_1/,
         'shop.html should load the purchase-guidance rich-text runtime with the visible yellow normalization fix'
     );
     assert.match(
@@ -352,7 +362,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /if \(event\.target instanceof Element && event\.target\.closest\('#nextPurchaseStepBtn'\)\) \{\s+event\.preventDefault\?\.\(\);\s+void this\.confirmPurchase\(\);\s+return;\s+\}/s,
+        /if \(event\.target instanceof Element && event\.target\.closest\('#nextPurchaseStepBtn'\)\) \{\s+this\.handlePurchasePrimaryActionTap\(event\);\s+return;\s+\}/s,
         'single-item purchase should submit directly from the primary action instead of navigating into a second confirmation stage'
     );
     assert.match(
