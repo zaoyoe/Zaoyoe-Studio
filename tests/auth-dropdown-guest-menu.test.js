@@ -34,6 +34,11 @@ test('auth dropdown keeps a guest menu before opening the login sheet', () => {
     );
     assert.match(
         injectSource,
+        /class="avatar-dropdown auth-dropdown-layer \$\{isLoggedIn \? 'is-authenticated' : 'is-guest'\}"/,
+        'dropdown markup should include the initial auth mode class before the runtime sync pass'
+    );
+    assert.match(
+        injectSource,
         /guestLoginActions = new Set\(\['notifications', 'profile', 'wallet', 'orders', 'switch-account', 'studio', 'logout'\]\)/,
         'guest-only protected menu actions should defer to the login sheet when clicked'
     );
@@ -64,9 +69,29 @@ test('auth dropdown keeps a guest menu before opening the login sheet', () => {
         'login and logout UI updates should switch the dropdown between authenticated and guest modes'
     );
     assert.equal(
-        authSource.includes('!hasStoredAuthSessionCandidate()') && navAuthFastPaintSource.includes('!hasStoredAuthSessionCandidate()'),
+        authSource.includes('!hasStoredAuthSessionCandidate(profile)') &&
+        injectSource.includes('!hasStoredAuthSessionCandidate(profile)') &&
+        navAuthFastPaintSource.includes('!hasStoredAuthSessionCandidate(profile)'),
         true,
-        'cached profiles without a Supabase session should not make the nav render as authenticated'
+        'cached profiles without a matching Supabase session should not make the nav render as authenticated'
+    );
+    assert.equal(
+        authSource.includes('doesStoredSessionMatchCachedProfile') &&
+        injectSource.includes('doesStoredSessionMatchCachedProfile') &&
+        navAuthFastPaintSource.includes('doesStoredSessionMatchCachedProfile'),
+        true,
+        'cached profiles should be matched against the stored JWT identity before fast auth paint'
+    );
+    assert.equal(
+        authSource.includes('return normalizeUserForAdminAccess(readCachedUserProfile());'),
+        true,
+        'admin entry warmup should reuse the verified cached profile reader'
+    );
+    assert.equal(
+        authSource.includes('const cached = readCachedUserProfile();') &&
+        authSource.includes('const cachedNickname = cached.nickname || cached.username'),
+        true,
+        'profile modal cache hydration should reuse the verified cached profile reader'
     );
     assert.equal(
         authSource.includes("item.hidden = shouldHide;"),
@@ -79,6 +104,16 @@ test('auth dropdown keeps a guest menu before opening the login sheet', () => {
             source.includes('.avatar-dropdown:not(.is-authenticated) .auth-user-only'),
             true,
             'guest dropdown should hide authenticated-only actions'
+        );
+        assert.equal(
+            source.includes('.avatar-dropdown[data-auth-state="guest"] .auth-user-only'),
+            true,
+            'guest dropdown should also hide authenticated-only actions through data-auth-state'
+        );
+        assert.equal(
+            source.includes('.avatar-dropdown [hidden]'),
+            true,
+            'dropdown hidden attributes should not be overridden by action display rules'
         );
         assert.equal(
             source.includes('.avatar-dropdown.is-authenticated .auth-guest-only'),

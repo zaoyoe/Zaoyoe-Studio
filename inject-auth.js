@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260512_NAV_AUTH_GUEST_MENU_1';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260512_NAV_AUTH_SESSION_MATCH_1';
     const SUPPORT_SCRIPT_SRC = './script.js?v=20260314_AUTH_I18N_1';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
@@ -208,7 +208,7 @@
             const profile = JSON.parse(raw);
 
             if (!profile || typeof profile !== 'object') return null;
-            if (!hasCachedProfileIdentity(profile) || !hasStoredAuthSessionCandidate()) {
+            if (!hasCachedProfileIdentity(profile) || !hasStoredAuthSessionCandidate(profile)) {
                 localStorage.removeItem('cached_user_profile');
                 return null;
             }
@@ -230,7 +230,42 @@
         return !!(profile.objectId || profile.id || profile.user_id || profile.email);
     }
 
-    function hasStoredAuthSessionCandidate() {
+    function getCachedProfileIdentity(profile) {
+        return {
+            id: String(profile?.objectId || profile?.id || profile?.user_id || '').trim(),
+            email: String(profile?.email || '').trim().toLowerCase()
+        };
+    }
+
+    function doesStoredSessionMatchCachedProfile(payload, profile) {
+        const cached = getCachedProfileIdentity(profile);
+        const tokenId = String(payload?.sub || payload?.user_id || payload?.user?.id || '').trim();
+        const tokenEmail = String(
+            payload?.email ||
+            payload?.user?.email ||
+            payload?.user_metadata?.email ||
+            ''
+        ).trim().toLowerCase();
+
+        if (cached.id && tokenId && cached.id === tokenId) return true;
+        if (cached.email && tokenEmail && cached.email === tokenEmail) return true;
+        return false;
+    }
+
+    function getUsableStoredSessionPayload(token) {
+        if (!token) return null;
+        const payload = decodeStoredJwtPayload(token);
+        if (!payload) return null;
+
+        if (payload.exp) {
+            const now = Math.floor(Date.now() / 1000);
+            if (payload.exp <= now + 60) return null;
+        }
+
+        return payload;
+    }
+
+    function hasStoredAuthSessionCandidate(profile = null) {
         try {
             return Object.keys(localStorage).some((key) => {
                 if (!key || !key.startsWith('sb-') || !key.endsWith('-auth-token')) return false;
@@ -238,13 +273,9 @@
                 if (!raw) return false;
                 const parsed = JSON.parse(raw);
                 const token = parsed?.access_token || parsed?.currentSession?.access_token;
-                if (!token) return false;
-
-                const payload = decodeStoredJwtPayload(token);
-                if (!payload?.exp) return true;
-
-                const now = Math.floor(Date.now() / 1000);
-                return payload.exp > now + 60;
+                const payload = getUsableStoredSessionPayload(token);
+                if (!payload) return false;
+                return profile ? doesStoredSessionMatchCachedProfile(payload, profile) : true;
             });
         } catch (_) {
             return false;
@@ -315,7 +346,7 @@
         const guestOnlyAttrs = isLoggedIn ? ' hidden aria-hidden="true" tabindex="-1"' : '';
 
         return `
-            <div id="userDropdown" class="avatar-dropdown auth-dropdown-layer" data-auth-state="${isLoggedIn ? 'authenticated' : 'guest'}" aria-hidden="true">
+            <div id="userDropdown" class="avatar-dropdown auth-dropdown-layer ${isLoggedIn ? 'is-authenticated' : 'is-guest'}" data-auth-state="${isLoggedIn ? 'authenticated' : 'guest'}" aria-hidden="true">
                 <div class="dropdown-header">
                     <button type="button" class="dropdown-notif-btn" id="dropdownNotifBtn" data-auth-action="notifications" aria-label="${PERSONAL_MESSAGE_BUTTON_LABEL}" title="${PERSONAL_MESSAGE_BUTTON_LABEL}">
                         <i class="far fa-bell"></i>

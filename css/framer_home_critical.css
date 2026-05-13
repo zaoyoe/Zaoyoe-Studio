@@ -88,7 +88,7 @@ body.home-page #main-content {
     overscroll-behavior-x: none;
 }
 
-/* 20260501_HOME_CRITICAL_FOOTER_GUARD_1: full footer styling lives in the deferred stylesheet. */
+/* 20260501_HOME_CRITICAL_FOOTER_GUARD_1 */
 body.home-page .framer-footer {
     display: none;
 }
@@ -401,7 +401,7 @@ a.nav-trigger.active {
     padding-top: 12px;
 }
 
-.avatar-dropdown:not(.is-authenticated) .auth-user-only,.avatar-dropdown.is-authenticated .auth-guest-only{display:none !important;}
+.avatar-dropdown [hidden],.avatar-dropdown:not(.is-authenticated) .auth-user-only,.avatar-dropdown[data-auth-state="guest"] .auth-user-only,.avatar-dropdown.is-authenticated .auth-guest-only,.avatar-dropdown[data-auth-state="authenticated"] .auth-guest-only{display:none !important;}
 
 .dropdown-action {
     width: 100%;

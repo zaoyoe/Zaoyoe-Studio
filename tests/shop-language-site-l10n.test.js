@@ -62,7 +62,16 @@ test('site config keeps shared image records canonical while exposing intl CDN d
     assert.match(siteConfigSource, /intl: 'https:\/\/cdn\.zaoyoe\.xyz'/);
     assert.match(siteConfigSource, /getCanonicalAssetCdnOrigin: function \(\)/);
     assert.match(siteConfigSource, /normalizeAssetUrlForCurrentSite: function \(url\)/);
-    assert.match(shopClientSource, /normalizeShopProductCdnUrl\(trimmed, \{ canonical: true \}\)/);
+    assert.match(
+        shopClientSource,
+        /function normalizeShopProductCdnUrl\(url, options = \{\}\) \{[\s\S]*canonical: options\.canonical !== false/,
+        'shop storefront product images should stay on canonical R2 CDN by default'
+    );
+    assert.match(
+        shopClientSource,
+        /return `\$\{getZaoyoeAssetCdnOrigin\(\{ canonical: true \}\)\}\/products\/card/,
+        'shop storefront generated card variants should stay on canonical R2 CDN'
+    );
     assert.match(framerHomeSource, /getZaoyoeAssetCdnOrigin\(\)/);
     assert.match(chatWidgetSource, /window\.SiteConfig\?\.normalizeAssetUrlForCurrentSite\?\.\(parsed\.href\)/);
     assert.ok(

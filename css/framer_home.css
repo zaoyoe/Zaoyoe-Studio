@@ -399,7 +399,7 @@ h3 {
     opacity: 0.8;
 }
 
-/* 20260502_NAV_LOGO_TAP_HIGHLIGHT_1 */
+/* 20260512_NAV_AUTH_SESSION_MATCH_1 */
 .nav-logo:active {
     background: transparent !important;
     box-shadow: none !important;
@@ -4721,8 +4721,11 @@ body.home-page .framer-footer {
     padding-top: 12px;
 }
 
+.avatar-dropdown [hidden],
 .avatar-dropdown:not(.is-authenticated) .auth-user-only,
-.avatar-dropdown.is-authenticated .auth-guest-only {
+.avatar-dropdown[data-auth-state="guest"] .auth-user-only,
+.avatar-dropdown.is-authenticated .auth-guest-only,
+.avatar-dropdown[data-auth-state="authenticated"] .auth-guest-only {
     display: none !important;
 }
 

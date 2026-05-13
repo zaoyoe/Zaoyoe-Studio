@@ -84,6 +84,7 @@
             {
                 id: 'notif-long-1',
                 user_id: 'admin-1',
+                site: 'cn',
                 title: '交班补充说明：今天上午支付波动与验证排队需要同步给接班同学',
                 content: '9:00 到 10:00 之间的支付到账核对、验证排队重试和售后回访需要持续关注，建议交班时明确说明当前积压、已认领负责人以及还未关闭的异常链路。',
                 type: 'warning',
@@ -95,6 +96,7 @@
             {
                 id: 'notif-announce-1',
                 user_id: 'admin-1',
+                site: 'cn',
                 title: '公告待确认',
                 content: '春季活动公告已发布，建议值班管理员确认前台露出。',
                 type: 'info',
@@ -106,6 +108,7 @@
             {
                 id: 'notif-security-1',
                 user_id: 'admin-1',
+                site: 'cn',
                 title: '异地登录提醒',
                 content: '检测到新的后台登录地点，请确认是否为本人操作。',
                 type: 'alert',
@@ -117,6 +120,7 @@
             {
                 id: 'notif-assignment-1',
                 user_id: 'admin-1',
+                site: 'cn',
                 title: '有新的值班转交',
                 content: '商城风控队列新增 2 条转交会话，请优先处理。',
                 type: 'info',
@@ -128,6 +132,7 @@
             {
                 id: 'notif-admin-1',
                 user_id: 'admin-1',
+                site: 'cn',
                 title: '退款运营提醒',
                 content: '今天 10:00 前需要复核 3 条退款异常，并确认退款队列里两条历史工单是否已经同步给接班同学。',
                 type: 'warning',
@@ -139,6 +144,7 @@
             {
                 id: 'notif-assignment-2',
                 user_id: 'admin-1',
+                site: 'cn',
                 title: '待办已认领',
                 content: '支付异常会话已被林支援认领，当前无需重复跟进。',
                 type: 'success',

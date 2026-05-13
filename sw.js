@@ -2,8 +2,8 @@
 // SERVICE WORKER - Performance Optimization
 // ========================================
 
-const CACHE_NAME = 'prompts-gallery-v6';
-const STATIC_CACHE = 'static-v6';
+const CACHE_NAME = 'prompts-gallery-v7';
+const STATIC_CACHE = 'static-v7';
 const IMAGE_CACHE = 'images-v6';
 
 // Static assets to cache immediately
@@ -64,6 +64,12 @@ self.addEventListener('fetch', (event) => {
         url.pathname.includes('/storage/');
     const isDocumentRequest = event.request.mode === 'navigate' ||
         event.request.destination === 'document';
+    const isApiRequest = isSameOrigin && url.pathname.startsWith('/api/');
+
+    if (isApiRequest || event.request.cache === 'no-store' || event.request.cache === 'reload') {
+        event.respondWith(fetch(event.request));
+        return;
+    }
 
     // HTML 文档使用 network-first，避免 stale cache 导致页面长期加载旧脚本版本
     if (isDocumentRequest && isSameOrigin) {

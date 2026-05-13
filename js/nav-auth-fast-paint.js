@@ -74,7 +74,7 @@
 
             const profile = JSON.parse(raw);
             if (!profile || typeof profile !== 'object') return null;
-            if (!hasCachedProfileIdentity(profile) || !hasStoredAuthSessionCandidate()) {
+            if (!hasCachedProfileIdentity(profile) || !hasStoredAuthSessionCandidate(profile)) {
                 localStorage.removeItem(CACHE_KEY);
                 return null;
             }
@@ -95,7 +95,42 @@
         return !!(profile.objectId || profile.id || profile.user_id || profile.email);
     }
 
-    function hasStoredAuthSessionCandidate() {
+    function getCachedProfileIdentity(profile) {
+        return {
+            id: String(profile?.objectId || profile?.id || profile?.user_id || '').trim(),
+            email: String(profile?.email || '').trim().toLowerCase()
+        };
+    }
+
+    function doesStoredSessionMatchCachedProfile(payload, profile) {
+        const cached = getCachedProfileIdentity(profile);
+        const tokenId = String(payload?.sub || payload?.user_id || payload?.user?.id || '').trim();
+        const tokenEmail = String(
+            payload?.email ||
+            payload?.user?.email ||
+            payload?.user_metadata?.email ||
+            ''
+        ).trim().toLowerCase();
+
+        if (cached.id && tokenId && cached.id === tokenId) return true;
+        if (cached.email && tokenEmail && cached.email === tokenEmail) return true;
+        return false;
+    }
+
+    function getUsableStoredSessionPayload(token) {
+        if (!token) return null;
+        const payload = decodeStoredJwtPayload(token);
+        if (!payload) return null;
+
+        if (payload.exp) {
+            const now = Math.floor(Date.now() / 1000);
+            if (payload.exp <= now + 60) return null;
+        }
+
+        return payload;
+    }
+
+    function hasStoredAuthSessionCandidate(profile = null) {
         try {
             return Object.keys(localStorage).some((key) => {
                 if (!key || !key.startsWith('sb-') || !key.endsWith('-auth-token')) return false;
@@ -103,13 +138,9 @@
                 if (!raw) return false;
                 const parsed = JSON.parse(raw);
                 const token = parsed?.access_token || parsed?.currentSession?.access_token;
-                if (!token) return false;
-
-                const payload = decodeStoredJwtPayload(token);
-                if (!payload?.exp) return true;
-
-                const now = Math.floor(Date.now() / 1000);
-                return payload.exp > now + 60;
+                const payload = getUsableStoredSessionPayload(token);
+                if (!payload) return false;
+                return profile ? doesStoredSessionMatchCachedProfile(payload, profile) : true;
             });
         } catch (_) {
             return false;
