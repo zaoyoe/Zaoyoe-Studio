@@ -287,6 +287,24 @@ async function fetchRecentShopOrderRiskStateJobs(client, sinceIso, config) {
         .order('created_at', { ascending: false }), config.page_size, config.max_pages);
 }
 
+const PROFILE_SELECT_ATTEMPTS = Object.freeze([
+    'id, email, display_name, username, last_login_ip',
+    'id, email, username, last_login_ip',
+    'id, email, username',
+    'id, email',
+    'id'
+]);
+
+function isMissingOptionalProfileColumnError(error) {
+    const code = normalizeText(error?.code).toUpperCase();
+    const message = normalizeText(error?.message).toLowerCase();
+
+    return code === '42703'
+        || code === 'PGRST204'
+        || (message.includes('column') && message.includes('does not exist'))
+        || (message.includes('could not find') && message.includes('column'));
+}
+
 async function fetchProfilesByIds(client, userIds = [], config = {}) {
     const normalizedUserIds = Array.from(new Set((userIds || []).map((userId) => normalizeText(userId)).filter(Boolean)));
     if (!normalizedUserIds.length) {
@@ -295,19 +313,36 @@ async function fetchProfilesByIds(client, userIds = [], config = {}) {
 
     const rows = [];
     const chunkSize = Math.max(1, Math.min(Number(config.page_size || DEFAULT_SHOP_ORDER_RISK_MONITOR_CONFIG.page_size), 200));
+    let workingSelect = '';
 
     for (let index = 0; index < normalizedUserIds.length; index += chunkSize) {
         const batch = normalizedUserIds.slice(index, index + chunkSize);
-        const { data, error } = await client
-            .from('profiles')
-            .select('id, email, display_name, username, last_login_ip')
-            .in('id', batch);
+        const selectAttempts = workingSelect ? [workingSelect] : PROFILE_SELECT_ATTEMPTS;
+        let selected = false;
 
-        if (error) {
-            throw error;
+        for (let attemptIndex = 0; attemptIndex < selectAttempts.length; attemptIndex += 1) {
+            const selectClause = selectAttempts[attemptIndex];
+            const { data, error } = await client
+                .from('profiles')
+                .select(selectClause)
+                .in('id', batch);
+
+            if (error) {
+                if (isMissingOptionalProfileColumnError(error) && !workingSelect && attemptIndex < selectAttempts.length - 1) {
+                    continue;
+                }
+                throw error;
+            }
+
+            workingSelect = selectClause;
+            rows.push(...(Array.isArray(data) ? data : []));
+            selected = true;
+            break;
         }
 
-        rows.push(...(Array.isArray(data) ? data : []));
+        if (!selected) {
+            return rows;
+        }
     }
 
     return rows;
