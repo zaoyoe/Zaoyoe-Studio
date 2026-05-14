@@ -19,6 +19,7 @@
         initialDockTimer: null,
         insetDropTimer: null,
         pendingInset: 0,
+        focusedReleaseTimer: null,
         entryAnimationTimer: null,
         sheetAnimationTimer: null,
         focusSettleTimer: null
@@ -253,6 +254,7 @@
             clearTimeout(guestbookModalKeyboardState.insetDropTimer);
             guestbookModalKeyboardState.insetDropTimer = null;
         }
+        clearGuestbookFocusedReleaseTimer();
         guestbookModalKeyboardState.pendingInset = 0;
     }
 
@@ -275,6 +277,34 @@
             clearTimeout(guestbookModalKeyboardState.focusSettleTimer);
             guestbookModalKeyboardState.focusSettleTimer = null;
         }
+    }
+
+    function clearGuestbookFocusedReleaseTimer() {
+        if (guestbookModalKeyboardState.focusedReleaseTimer) {
+            clearTimeout(guestbookModalKeyboardState.focusedReleaseTimer);
+            guestbookModalKeyboardState.focusedReleaseTimer = null;
+        }
+    }
+
+    function scheduleGuestbookFocusedRelease() {
+        if (guestbookModalKeyboardState.focusedReleaseTimer) {
+            return;
+        }
+
+        guestbookModalKeyboardState.focusedReleaseTimer = setTimeout(() => {
+            guestbookModalKeyboardState.focusedReleaseTimer = null;
+            const { overlay } = getGuestbookModalElements();
+            if (!overlay?.classList.contains('active')) {
+                return;
+            }
+            if (!guestbookModalKeyboardState.docked || !getActiveGuestbookModalInput()) {
+                return;
+            }
+            const liveMetrics = getGuestbookModalViewportMetrics();
+            if (liveMetrics.bottomInset <= 24) {
+                releaseGuestbookModalKeyboardDock(true);
+            }
+        }, 48);
     }
 
     function setGuestbookKeyboardSettling(active) {
@@ -420,6 +450,7 @@
             return;
         }
 
+        clearGuestbookFocusedReleaseTimer();
         clearGuestbookEntryAnimationTimer();
         overlay.classList.remove('guestbook-entrying');
         overlay.classList.add('keyboard-docked');
@@ -462,6 +493,7 @@
             return;
         }
 
+        clearGuestbookFocusedReleaseTimer();
         overlay.classList.remove('keyboard-docked');
         setGuestbookModalRuntimeStyles(overlay, {
             '--guestbook-modal-translate-y': '0px'
@@ -555,21 +587,13 @@
         }
 
         if (isInsetDroppingWhileFocused) {
-            guestbookModalKeyboardState.pendingInset = nextInset;
-            if (!guestbookModalKeyboardState.insetDropTimer) {
-                guestbookModalKeyboardState.insetDropTimer = setTimeout(() => {
-                    guestbookModalKeyboardState.insetDropTimer = null;
-                    const settledInset = guestbookModalKeyboardState.pendingInset;
-                    guestbookModalKeyboardState.pendingInset = 0;
-                    if (settledInset > 24) {
-                        applyGuestbookModalKeyboardDock(settledInset, false);
-                    }
-                }, GUESTBOOK_KEYBOARD_SETTLE_MS);
-            }
+            guestbookModalKeyboardState.pendingInset = 0;
+            applyGuestbookModalKeyboardDock(nextInset, false);
             return;
         }
 
         if (guestbookModalKeyboardState.docked && activeInput && nextInset <= 24) {
+            scheduleGuestbookFocusedRelease();
             return;
         }
 
@@ -613,6 +637,8 @@
 
         vv.addEventListener('resize', handleViewportChange, { passive: true });
         vv.addEventListener('scroll', handleViewportChange, { passive: true });
+        window.addEventListener('resize', handleViewportChange, { passive: true });
+        window.addEventListener('orientationchange', handleViewportChange, { passive: true });
         inputs.forEach((input) => {
             input.addEventListener('focus', handleViewportChange);
             input.addEventListener('blur', handleViewportChange);
@@ -621,6 +647,8 @@
         guestbookModalKeyboardState.viewportCleanup = () => {
             vv.removeEventListener('resize', handleViewportChange);
             vv.removeEventListener('scroll', handleViewportChange);
+            window.removeEventListener('resize', handleViewportChange);
+            window.removeEventListener('orientationchange', handleViewportChange);
             inputs.forEach((input) => {
                 input.removeEventListener('focus', handleViewportChange);
                 input.removeEventListener('blur', handleViewportChange);

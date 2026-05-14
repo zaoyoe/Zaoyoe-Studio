@@ -84,6 +84,7 @@ class AdminChat {
             docked: false,
             scrollLockActive: false,
             rafId: 0,
+            focusedReleaseTimer: null,
             stableViewportProbe: null,
             cleanup: null
         };
@@ -705,10 +706,32 @@ class AdminChat {
         return metrics.bottomInset > 24 ? metrics.bottomInset : estimatedInset;
     }
 
+    clearAdminChatFocusedReleaseTimer() {
+        if (this._mobileKeyboardDock.focusedReleaseTimer) {
+            clearTimeout(this._mobileKeyboardDock.focusedReleaseTimer);
+            this._mobileKeyboardDock.focusedReleaseTimer = null;
+        }
+    }
+
+    scheduleAdminChatFocusedRelease() {
+        if (this._mobileKeyboardDock.focusedReleaseTimer) return;
+
+        this._mobileKeyboardDock.focusedReleaseTimer = setTimeout(() => {
+            this._mobileKeyboardDock.focusedReleaseTimer = null;
+            if (!this.isAdminChatInputFocused() || !this._mobileKeyboardDock.docked) return;
+            const liveMetrics = this.getAdminChatKeyboardMetrics();
+            if (liveMetrics.bottomInset <= 24) {
+                this.releaseAdminChatKeyboardDock();
+                this.unlockAdminChatKeyboardPage();
+            }
+        }, 48);
+    }
+
     applyAdminChatKeyboardDock(bottomInset) {
         const { containerEl, interfaceEl, inputWrapper } = this.getAdminChatKeyboardElements();
         if (!interfaceEl || !inputWrapper || interfaceEl.hidden) return;
 
+        this.clearAdminChatFocusedReleaseTimer();
         const metrics = this.getAdminChatKeyboardMetrics();
         const effectiveBottomInset = Math.max(0, Math.round(bottomInset ?? metrics.bottomInset));
         const dockTarget = containerEl || interfaceEl;
@@ -748,6 +771,7 @@ class AdminChat {
     }
 
     releaseAdminChatKeyboardDock() {
+        this.clearAdminChatFocusedReleaseTimer();
         const { containerEl, interfaceEl } = this.getAdminChatKeyboardElements();
         if (containerEl) {
             containerEl.classList.remove('admin-chat-keyboard-docked');
@@ -774,6 +798,10 @@ class AdminChat {
 
         const activeInput = this.isAdminChatInputFocused();
         const metrics = this.getAdminChatKeyboardMetrics();
+        if (activeInput && this._mobileKeyboardDock.docked && metrics.bottomInset <= 24) {
+            this.scheduleAdminChatFocusedRelease();
+            return;
+        }
         const effectiveBottomInset = activeInput
             ? this.getAdminChatFocusKeyboardInset(metrics)
             : metrics.bottomInset;
@@ -837,6 +865,8 @@ class AdminChat {
 
         vv.addEventListener('resize', handleViewportChange, { passive: true });
         vv.addEventListener('scroll', handleViewportChange, { passive: true });
+        window.addEventListener('resize', handleViewportChange, { passive: true });
+        window.addEventListener('orientationchange', handleViewportChange, { passive: true });
         input.addEventListener('focus', handleInputFocus);
         input.addEventListener('blur', handleInputBlur);
         input.addEventListener('touchstart', handleTouchStart, { passive: false });
@@ -844,6 +874,8 @@ class AdminChat {
         this._mobileKeyboardDock.cleanup = () => {
             vv.removeEventListener('resize', handleViewportChange);
             vv.removeEventListener('scroll', handleViewportChange);
+            window.removeEventListener('resize', handleViewportChange);
+            window.removeEventListener('orientationchange', handleViewportChange);
             input.removeEventListener('focus', handleInputFocus);
             input.removeEventListener('blur', handleInputBlur);
             input.removeEventListener('touchstart', handleTouchStart);

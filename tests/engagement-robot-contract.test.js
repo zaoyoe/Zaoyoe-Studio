@@ -1237,12 +1237,12 @@ test('public robot engagement feed is routed and consumed by ChatWidget', () => 
     assert.match(chatWidget, /this\.initEngagementRuntime\(\);\s*\n\s*\}/);
     assert.doesNotMatch(chatWidget, /initEngagementRuntime\(\) \{\s*if \(this\.isAdmin\) return;/);
     assert.doesNotMatch(chatWidget, /if \(this\.isAdmin \|\| this\.isOpen\) return;/);
-    assert.match(chatWidgetLoader, /20260509_ENGAGEMENT_ORDER_DETAIL_ROUTE_1/);
-    assert.match(chatWidgetLoader, /ChatWidget\.js\?v=20260509_ENGAGEMENT_ORDER_DETAIL_ROUTE_1/);
+    assert.match(chatWidgetLoader, /20260514_CHAT_WIDGET_IOS_CHROME_KEYBOARD_1/);
+    assert.match(chatWidgetLoader, /ChatWidget\.js\?v=20260514_CHAT_WIDGET_IOS_CHROME_KEYBOARD_1/);
     assert.match(chatWidgetLoader, /scheduleEngagementRuntimeWarm/);
     assert.match(chatWidgetLoader, /ensureChatWidgetReady\(\{ open: false \}\)/);
-    assert.match(indexHtml, /chat-widget-loader\.js\?v=20260509_ENGAGEMENT_ORDER_DETAIL_ROUTE_1/);
-    assert.match(promptsHtml, /chat-widget-loader\.js\?v=20260509_ENGAGEMENT_ORDER_DETAIL_ROUTE_1/);
+    assert.match(indexHtml, /chat-widget-loader\.js\?v=20260514_CHAT_WIDGET_IOS_CHROME_KEYBOARD_1/);
+    assert.match(promptsHtml, /chat-widget-loader\.js\?v=20260514_CHAT_WIDGET_IOS_CHROME_KEYBOARD_1/);
     assert.match(chatWidget, /renderEngagementContentHtml/);
     assert.match(chatWidget, /engagement-preview__path-link/);
     assert.match(chatWidget, /ZaoyoeWalletModalBootstrap\?\.open/);

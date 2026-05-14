@@ -4301,6 +4301,19 @@ body.modal-open .prompt-card {
     pointer-events: none;
 }
 
+.prompt-comment-composer-viewport-probe {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 0;
+    height: 100vh;
+    height: 100svh;
+    pointer-events: none;
+    visibility: hidden;
+    opacity: 0;
+    z-index: -1;
+}
+
 @keyframes composerOverlayFadeIn {
     from {
         opacity: 0;
@@ -4329,7 +4342,7 @@ body.modal-open .prompt-card {
     animation: composerOverlayFadeIn 0.3s ease forwards;
 }
 
-.prompt-comment-composer.active .prompt-comment-composer-sheet {
+.prompt-comment-composer.active.composer-entering .prompt-comment-composer-sheet {
     animation: composerSheetFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
@@ -4361,7 +4374,13 @@ body.modal-open .prompt-card {
     box-shadow:
         0 26px 70px rgba(0, 0, 0, 0.28),
         inset 0 1px 0 rgba(255, 255, 255, 0.06);
-    padding: 14px 18px calc(18px + env(safe-area-inset-bottom));
+    /* NOTE: do NOT add env(safe-area-inset-bottom) here. The overlay's outer
+       padding (.prompt-comment-composer) already accounts for the home
+       indicator. On iOS Chrome `env(safe-area-inset-bottom)` toggles between
+       0 and ~34px as the bottom toolbar collapses on scroll — adding it here
+       would double-count it and surface as blank space below the send button
+       whenever the page is mid-scrolled. */
+    padding: 14px 18px 18px;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -4641,12 +4660,18 @@ body.modal-open .prompt-card {
 
     .prompt-comment-composer-sheet {
         width: 100%;
-        height: min(400px, calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px));
+        /* 不再在 sheet 的 height / max-height / padding 上叠加 env(safe-area-inset-bottom)。
+           外层 .prompt-comment-composer overlay 的 padding-bottom 已经处理了
+           home indicator 安全区。iOS Chrome 在页面滚动到中间时会把
+           env(safe-area-inset-bottom) 从 0 变成 ~34px（底部工具栏折叠时
+           home indicator 暴露），如果在 sheet 内部也读取这个值，会导致
+           弹窗的 padding-bottom 跟随滚动突变，发送按钮下方出现一条空白。 */
+        height: min(400px, calc(100svh - 24px));
         min-height: 300px;
-        max-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px);
-        max-height: calc(100svh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 24px);
+        max-height: calc(100vh - 24px);
+        max-height: calc(100svh - 24px);
         border-radius: 30px;
-        padding: 14px 16px calc(16px + env(safe-area-inset-bottom));
+        padding: 14px 16px 16px;
     }
 
     #promptCommentComposerInput {

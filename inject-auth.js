@@ -51,6 +51,14 @@
         originNextSibling: null,
         layoutRafId: 0
     };
+    const authInputViewportState = {
+        cleanup: null,
+        rafId: 0,
+        focusedReleaseTimer: 0,
+        baseViewportHeight: 0,
+        baseVisualHeight: 0,
+        keyboardActive: false
+    };
     const resizeState = {
         token: 0,
         cleanupTimerId: 0
@@ -940,6 +948,151 @@
         overlay.classList.toggle('auth-sheet-input-active', !!portalState.activeId || !!getActiveAuthInput());
     }
 
+    function isAuthInputViewportReleaseEnabled() {
+        return shouldUseInPlaceAuthInput() && !!window.visualViewport;
+    }
+
+    function getAuthInputViewportMetrics() {
+        const vv = window.visualViewport;
+        const visualTop = Math.max(0, vv?.offsetTop || 0);
+        const visualHeight = Math.max(0, vv?.height || 0);
+        const visualBottom = visualTop + visualHeight;
+        const baseViewportHeight = Math.max(
+            authInputViewportState.baseViewportHeight || 0,
+            window.innerHeight || 0,
+            document.documentElement.clientHeight || 0,
+            visualBottom
+        );
+        const baseVisualHeight = Math.max(
+            authInputViewportState.baseVisualHeight || 0,
+            visualHeight
+        );
+
+        return {
+            visualHeight,
+            visualBottom,
+            baseViewportHeight,
+            baseVisualHeight,
+            bottomInset: Math.max(
+                0,
+                Math.round(baseViewportHeight - visualBottom),
+                Math.round(baseVisualHeight - visualHeight)
+            )
+        };
+    }
+
+    function captureAuthInputViewportBase() {
+        if (!isAuthInputViewportReleaseEnabled()) return;
+        const vv = window.visualViewport;
+        const visualTop = Math.max(0, vv?.offsetTop || 0);
+        const visualHeight = Math.max(0, vv?.height || 0);
+        const visualBottom = visualTop + visualHeight;
+        authInputViewportState.baseViewportHeight = Math.max(
+            authInputViewportState.baseViewportHeight || 0,
+            window.innerHeight || 0,
+            document.documentElement.clientHeight || 0,
+            visualBottom
+        );
+        authInputViewportState.baseVisualHeight = Math.max(
+            authInputViewportState.baseVisualHeight || 0,
+            visualHeight
+        );
+    }
+
+    function clearAuthInputFocusedReleaseTimer() {
+        if (authInputViewportState.focusedReleaseTimer) {
+            window.clearTimeout(authInputViewportState.focusedReleaseTimer);
+            authInputViewportState.focusedReleaseTimer = 0;
+        }
+    }
+
+    function releaseStaleFocusedAuthInputIfKeyboardClosed() {
+        const { overlay } = getSheetElements();
+        if (!overlay?.classList.contains('active')) return;
+        if (!getActiveAuthInput() && !portalState.activeId) return;
+
+        const metrics = getAuthInputViewportMetrics();
+        if (metrics.bottomInset > 24) return;
+
+        deactivateActivePortaledInput({ blur: true });
+        getActiveAuthInput()?.blur();
+        overlay.classList.remove('auth-sheet-input-active', 'ios-focus-lock');
+        syncAuthInputActiveState();
+        authInputViewportState.keyboardActive = false;
+        overlayCloseDisabledUntil = Date.now() + 180;
+    }
+
+    function scheduleAuthInputFocusedRelease() {
+        if (authInputViewportState.focusedReleaseTimer) return;
+
+        authInputViewportState.focusedReleaseTimer = window.setTimeout(() => {
+            authInputViewportState.focusedReleaseTimer = 0;
+            releaseStaleFocusedAuthInputIfKeyboardClosed();
+        }, 48);
+    }
+
+    function syncAuthInputViewportRelease() {
+        const { overlay } = getSheetElements();
+        if (!overlay?.classList.contains('active') || !isAuthInputViewportReleaseEnabled()) return;
+
+        captureAuthInputViewportBase();
+        syncActivePortaledInputPosition();
+        const hasFocusedInput = !!getActiveAuthInput() || !!portalState.activeId;
+        const metrics = getAuthInputViewportMetrics();
+
+        if (metrics.bottomInset > 24) {
+            authInputViewportState.keyboardActive = true;
+            clearAuthInputFocusedReleaseTimer();
+            return;
+        }
+
+        if (hasFocusedInput && authInputViewportState.keyboardActive && metrics.bottomInset <= 24) {
+            scheduleAuthInputFocusedRelease();
+        }
+    }
+
+    function attachAuthInputViewportRelease() {
+        detachAuthInputViewportRelease();
+        if (!isAuthInputViewportReleaseEnabled()) return;
+
+        const handleViewportChange = () => {
+            if (authInputViewportState.rafId) return;
+            authInputViewportState.rafId = window.requestAnimationFrame(() => {
+                authInputViewportState.rafId = 0;
+                syncAuthInputViewportRelease();
+            });
+        };
+
+        window.visualViewport?.addEventListener('resize', handleViewportChange, { passive: true });
+        window.visualViewport?.addEventListener('scroll', handleViewportChange, { passive: true });
+        window.addEventListener('resize', handleViewportChange, { passive: true });
+        window.addEventListener('orientationchange', handleViewportChange, { passive: true });
+
+        authInputViewportState.cleanup = () => {
+            window.visualViewport?.removeEventListener('resize', handleViewportChange);
+            window.visualViewport?.removeEventListener('scroll', handleViewportChange);
+            window.removeEventListener('resize', handleViewportChange);
+            window.removeEventListener('orientationchange', handleViewportChange);
+            authInputViewportState.cleanup = null;
+        };
+
+        captureAuthInputViewportBase();
+    }
+
+    function detachAuthInputViewportRelease() {
+        if (typeof authInputViewportState.cleanup === 'function') {
+            authInputViewportState.cleanup();
+        }
+        if (authInputViewportState.rafId) {
+            window.cancelAnimationFrame(authInputViewportState.rafId);
+            authInputViewportState.rafId = 0;
+        }
+        clearAuthInputFocusedReleaseTimer();
+        authInputViewportState.baseViewportHeight = 0;
+        authInputViewportState.baseVisualHeight = 0;
+        authInputViewportState.keyboardActive = false;
+    }
+
     function stabilizeAuthSheetForSubmit(options = {}) {
         const { overlay } = getSheetElements();
         if (!overlay) return;
@@ -1733,6 +1886,7 @@
         overlay.classList.remove('auth-sheet-force-hidden');
 
         syncAuthInputInteractionMode();
+        attachAuthInputViewportRelease();
         resetAuthSheetFields({ preserveView: true });
 
         setInjectedAuthStyleProperty(overlay, 'display', null);
@@ -1799,6 +1953,7 @@
         if (!overlay) return;
 
         resetAuthSheetFields({ preserveView: true });
+        detachAuthInputViewportRelease();
         deactivateActivePortaledInput();
         getActiveAuthInput()?.blur();
         clearAuthMessage();
@@ -1941,6 +2096,12 @@
 
             input.addEventListener('change', () => {
                 syncAllInputProxyDisplays();
+                scheduleActivePortaledInputPosition();
+            });
+
+            input.addEventListener('focus', () => {
+                clearAuthInputFocusedReleaseTimer();
+                syncAuthInputActiveState();
                 scheduleActivePortaledInputPosition();
             });
 

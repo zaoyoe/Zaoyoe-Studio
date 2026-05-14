@@ -1655,6 +1655,7 @@ const commentModalKeyboardState = {
     lastBottomInset: 0,
     initialDockTimer: null,
     insetDropTimer: null,
+    focusedReleaseTimer: null,
     pendingInset: 0,
     sheetAnimationTimer: null
 };
@@ -1739,6 +1740,7 @@ function clearCommentModalKeyboardTimers() {
         clearTimeout(commentModalKeyboardState.insetDropTimer);
         commentModalKeyboardState.insetDropTimer = null;
     }
+    clearCommentModalFocusedReleaseTimer();
     commentModalKeyboardState.pendingInset = 0;
 }
 
@@ -1747,6 +1749,29 @@ function clearCommentModalSheetAnimationTimer() {
         clearTimeout(commentModalKeyboardState.sheetAnimationTimer);
         commentModalKeyboardState.sheetAnimationTimer = null;
     }
+}
+
+function clearCommentModalFocusedReleaseTimer() {
+    if (commentModalKeyboardState.focusedReleaseTimer) {
+        clearTimeout(commentModalKeyboardState.focusedReleaseTimer);
+        commentModalKeyboardState.focusedReleaseTimer = null;
+    }
+}
+
+function scheduleCommentModalFocusedRelease() {
+    if (commentModalKeyboardState.focusedReleaseTimer) return;
+
+    commentModalKeyboardState.focusedReleaseTimer = setTimeout(() => {
+        commentModalKeyboardState.focusedReleaseTimer = null;
+        const { overlay } = getCommentModalElements();
+        if (!overlay?.classList.contains('active')) return;
+        if (!commentModalKeyboardState.docked || !getActiveCommentModalInput()) return;
+
+        const liveMetrics = getCommentModalViewportMetrics();
+        if (liveMetrics.bottomInset <= 24) {
+            releaseCommentModalKeyboardDock(true);
+        }
+    }, 48);
 }
 
 function toggleCommentModalSheetAnimation(card, animate) {
@@ -1820,6 +1845,7 @@ function applyCommentModalKeyboardDock(bottomInset, animate = false) {
     const { overlay, card } = getCommentModalElements();
     if (!overlay || !card) return;
 
+    clearCommentModalFocusedReleaseTimer();
     clearCommentComposerEntryTimer();
     overlay.classList.remove('comment-entrying');
     overlay.classList.add('keyboard-docked');
@@ -1857,6 +1883,7 @@ function releaseCommentModalKeyboardDock(animate = false) {
     const { overlay, card } = getCommentModalElements();
     if (!overlay || !card) return;
 
+    clearCommentModalFocusedReleaseTimer();
     overlay.classList.remove('keyboard-docked');
     setCssVariables(overlay, {
         '--comment-modal-translate-y': '0px'
@@ -1932,21 +1959,13 @@ function syncCommentModalKeyboardDock() {
     }
 
     if (isInsetDroppingWhileFocused) {
-        commentModalKeyboardState.pendingInset = nextInset;
-        if (!commentModalKeyboardState.insetDropTimer) {
-            commentModalKeyboardState.insetDropTimer = setTimeout(() => {
-                commentModalKeyboardState.insetDropTimer = null;
-                const settledInset = commentModalKeyboardState.pendingInset;
-                commentModalKeyboardState.pendingInset = 0;
-                if (settledInset > 24) {
-                    applyCommentModalKeyboardDock(settledInset, false);
-                }
-            }, COMMENT_MODAL_KEYBOARD_SETTLE_MS);
-        }
+        commentModalKeyboardState.pendingInset = 0;
+        applyCommentModalKeyboardDock(nextInset, false);
         return;
     }
 
     if (commentModalKeyboardState.docked && activeInput && nextInset <= 24) {
+        scheduleCommentModalFocusedRelease();
         return;
     }
 
@@ -1984,6 +2003,8 @@ function attachCommentModalKeyboardDock() {
 
     vv.addEventListener('resize', handleViewportChange, { passive: true });
     vv.addEventListener('scroll', handleViewportChange, { passive: true });
+    window.addEventListener('resize', handleViewportChange, { passive: true });
+    window.addEventListener('orientationchange', handleViewportChange, { passive: true });
     inputs.forEach((input) => {
         input.addEventListener('focus', handleViewportChange);
         input.addEventListener('blur', handleViewportChange);
@@ -1992,6 +2013,8 @@ function attachCommentModalKeyboardDock() {
     commentModalKeyboardState.viewportCleanup = () => {
         vv.removeEventListener('resize', handleViewportChange);
         vv.removeEventListener('scroll', handleViewportChange);
+        window.removeEventListener('resize', handleViewportChange);
+        window.removeEventListener('orientationchange', handleViewportChange);
         inputs.forEach((input) => {
             input.removeEventListener('focus', handleViewportChange);
             input.removeEventListener('blur', handleViewportChange);

@@ -4292,6 +4292,7 @@ const profileModalState = {
     keyboardMotionTimer: null,
     pendingFirstDockTimer: null,
     pendingFirstDockParams: null,
+    focusedReleaseTimer: null,
     focusScrollRafId: 0,
     focusScrollTimer: null,
     focusScrollSuppressUntil: 0,
@@ -4357,6 +4358,10 @@ function clearProfileModalTimers() {
     if (profileModalState.pendingFirstDockTimer) {
         clearTimeout(profileModalState.pendingFirstDockTimer);
         profileModalState.pendingFirstDockTimer = null;
+    }
+    if (profileModalState.focusedReleaseTimer) {
+        clearTimeout(profileModalState.focusedReleaseTimer);
+        profileModalState.focusedReleaseTimer = null;
     }
     if (profileModalState.focusScrollRafId) {
         cancelAnimationFrame(profileModalState.focusScrollRafId);
@@ -4441,6 +4446,7 @@ function resetProfileModalVisualState() {
     const { overlay, card, scroller } = getProfileModalElements();
     if (!overlay || !card) return;
 
+    clearProfileModalFocusedReleaseTimer();
     overlay.classList.remove('keyboard-active', 'keyboard-docked', 'ios-focus-lock');
     setAuthStyleState(overlay, {
         '--profile-modal-shift-y': '0px',
@@ -4728,6 +4734,31 @@ function clearProfileModalPendingFirstDock() {
     profileModalState.pendingFirstDockParams = null;
 }
 
+function clearProfileModalFocusedReleaseTimer() {
+    if (profileModalState.focusedReleaseTimer) {
+        clearTimeout(profileModalState.focusedReleaseTimer);
+        profileModalState.focusedReleaseTimer = null;
+    }
+}
+
+function scheduleProfileModalFocusedRelease() {
+    if (profileModalState.focusedReleaseTimer) return;
+
+    profileModalState.focusedReleaseTimer = setTimeout(() => {
+        profileModalState.focusedReleaseTimer = null;
+        const { overlay } = getProfileModalElements();
+        if (!overlay?.classList.contains('active')) return;
+        if (!overlay.classList.contains('keyboard-docked') || !getActiveProfileModalInput()) return;
+
+        const liveMetrics = getProfileModalKeyboardMetrics();
+        if (liveMetrics.bottomInset <= 40) {
+            profileModalState.keyboardBlurUndocking = true;
+            resetProfileModalKeyboardDock(true);
+            scheduleProfileModalLayout({ settled: true, deferOnly: true });
+        }
+    }, 48);
+}
+
 function getProfileModalKeyboardMetrics() {
     const vv = window.visualViewport;
     const visualTop = Math.max(0, vv?.offsetTop || 0);
@@ -4771,6 +4802,7 @@ function applyProfileModalKeyboardDock(metrics, animate = false) {
     const { overlay, card, scroller } = getProfileModalElements();
     if (!overlay || !card) return;
 
+    clearProfileModalFocusedReleaseTimer();
     const bottomInset = Math.max(0, metrics?.bottomInset || 0);
     const baseViewportHeight = Math.max(
         metrics?.baseViewportHeight || 0,
@@ -4818,6 +4850,7 @@ function resetProfileModalKeyboardDock(animate = false) {
     if (!overlay || !card) return;
 
     clearProfileModalPendingFirstDock();
+    clearProfileModalFocusedReleaseTimer();
     overlay.classList.remove('keyboard-active', 'keyboard-docked');
     setProfileModalKeyboardAnimating(animate);
     setAuthStyleState(overlay, {
@@ -4955,6 +4988,11 @@ function applyProfileModalLayout({ ensureInput = true, allowUndock = true } = {}
     setAuthStyleState(scroller, {
         scrollPaddingBottom: `${wasDocked || shouldDock ? 144 : 96}px`
     });
+
+    if (wasDocked && activeInput && metrics.bottomInset <= 40 && !preserveFocusDock) {
+        scheduleProfileModalFocusedRelease();
+        return;
+    }
 
     if (shouldDock) {
         if (!wasDocked) {
@@ -5223,10 +5261,14 @@ function attachProfileModalViewportHandlers() {
     vv.addEventListener('resize', handleViewportChange, { passive: true });
     vv.addEventListener('scroll', handleViewportChange, { passive: true });
     window.addEventListener('scroll', handleRootScroll, { passive: true });
+    window.addEventListener('resize', handleViewportChange, { passive: true });
+    window.addEventListener('orientationchange', handleViewportChange, { passive: true });
 
     profileModalState.viewportCleanup = () => {
         vv.removeEventListener('resize', handleViewportChange);
         vv.removeEventListener('scroll', handleViewportChange);
+        window.removeEventListener('resize', handleViewportChange);
+        window.removeEventListener('orientationchange', handleViewportChange);
         profileModalState.viewportCleanup = null;
     };
     profileModalState.rootScrollCleanup = () => {

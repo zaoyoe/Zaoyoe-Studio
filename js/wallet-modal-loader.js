@@ -7,8 +7,10 @@
     global.__zaoyoeWalletModalBootstrapLoaded = true;
 
     const VERSION = '20260510_WALLET_REALTIME_FALLBACK_1';
+    const IOS_CHROME_KEYBOARD_VERSION = '20260514_ALL_KEYBOARD_RELEASE_1';
     const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260510_WALLET_REALTIME_FALLBACK_1';
     const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260510_WALLET_REALTIME_FALLBACK_1';
+    const WALLET_MODAL_RUNTIME_SRC = `${WALLET_MODAL_SRC}&iosChromeKeyboard=${IOS_CHROME_KEYBOARD_VERSION}`;
     const POLL_INTERVAL_MS = 100;
     const MAX_WAIT_MS = 10000;
 
@@ -111,7 +113,7 @@
         if (!walletWarmPromise) {
             walletWarmPromise = Promise.all([
                 ensurePointsServiceReady(),
-                loadScript(WALLET_MODAL_SRC)
+                loadScript(WALLET_MODAL_RUNTIME_SRC)
             ]).then(() => waitForWalletModal());
         }
 

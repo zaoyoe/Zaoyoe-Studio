@@ -112,14 +112,26 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
 
     assert.match(
         shopClientSource,
+        /shouldUsePurchaseModalLightOpenLock:\s*function \(\) \{[\s\S]*return this\.shouldUseShopBackdropTouchFallback\(\);[\s\S]*freezePurchaseModalPage:\s*function \(\) \{[\s\S]*if \(this\.shouldUsePurchaseModalLightOpenLock\(\)\) return;[\s\S]*window\.iOSScrollLock\.lockLight\(modal, \{[\s\S]*restoreScrollDuringViewport: true/,
+        'iOS Chrome purchase modal should use light scroll lock on open so background cards do not jump when opened from the page bottom'
+    );
+
+    assert.match(
+        shopClientSource,
         /unfreezePurchaseModalPage:\s*function \(\) \{[\s\S]*document\.documentElement\.classList\.remove\('shop-purchase-modal-lock'\);[\s\S]*document\.body\.classList\.remove\('shop-purchase-modal-lock'\);[\s\S]*'--shop-purchase-theme-chrome-color': '',[\s\S]*metaTheme\.removeAttribute\('data-shop-purchase-theme-lock'\);[\s\S]*metaTheme\.removeAttribute\('data-mobile-theme-lock'\);[\s\S]*window\.applySiteThemeChrome\(theme, \{ forceRepaint: true \}\);/,
         'purchase modal should release its theme chrome lock immediately when closing'
     );
 
     assert.match(
         shopClientSource,
-        /capturePurchaseModalOverlayHeight:\s*function \(force = false\) \{[\s\S]*const frame = this\.getPurchaseModalNativeViewportFrame\(\);[\s\S]*const measuredHeight = Math\.max\(0, Math\.round\(frame\.overlayHeight \|\| 0\)\);[\s\S]*const baseHeight = Math\.round\(this\.purchaseModalKeyboardBaseViewportHeight \|\| 0\);[\s\S]*const shouldPreserveKeyboardBase = overlay\.classList\.contains\('active'\)\s+&& baseHeight > measuredHeight;[\s\S]*const overlayHeight = shouldPreserveKeyboardBase \? baseHeight : measuredHeight;[\s\S]*'--shop-purchase-viewport-top': `\$\{frame\.top\}px`,[\s\S]*'--shop-purchase-viewport-left': `\$\{frame\.left\}px`,[\s\S]*'--shop-purchase-viewport-width': `\$\{frame\.width\}px`,[\s\S]*'--shop-purchase-overlay-height': `\$\{overlayHeight\}px`[\s\S]*if \(shouldPreserveKeyboardBase\) return;/,
-        'purchase modal should keep the pre-keyboard overlay height while the active modal waits for iOS keyboard viewport retraction to settle'
+        /capturePurchaseModalOverlayHeight:\s*function \(force = false\) \{[\s\S]*const frame = this\.getPurchaseModalNativeViewportFrame\(\);[\s\S]*const measuredHeight = Math\.max\(0, Math\.round\(frame\.overlayHeight \|\| 0\)\);[\s\S]*const baseHeight = Math\.round\(this\.purchaseModalKeyboardBaseViewportHeight \|\| 0\);[\s\S]*const shouldPreserveForKeyboard = this\.purchaseModalKeyboardDocked \|\| !!this\.getActivePurchaseModalInput\(\);[\s\S]*const shouldPreserveKeyboardBase = overlay\.classList\.contains\('active'\)\s+&& shouldPreserveForKeyboard\s+&& baseHeight > measuredHeight;[\s\S]*const overlayHeight = shouldPreserveKeyboardBase \? baseHeight : measuredHeight;[\s\S]*'--shop-purchase-viewport-top': `\$\{frame\.top\}px`,[\s\S]*'--shop-purchase-viewport-left': `\$\{frame\.left\}px`,[\s\S]*'--shop-purchase-viewport-width': `\$\{frame\.width\}px`,[\s\S]*'--shop-purchase-overlay-height': `\$\{overlayHeight\}px`[\s\S]*if \(shouldPreserveKeyboardBase\) return;/,
+        'purchase modal should preserve the pre-keyboard overlay height only while keyboard-related focus or docking is active'
+    );
+
+    assert.match(
+        shopClientSource,
+        /schedulePurchaseModalOpenViewportStabilization:\s*function \(\) \{[\s\S]*this\.schedulePurchaseModalViewportSync\(true\);[\s\S]*\[48, 140, 320\]\.forEach\(\(delayMs\) => \{[\s\S]*this\.syncPurchaseModalOverlayViewport\(true\);[\s\S]*this\.syncPurchaseModalKeyboardDock\(\);[\s\S]*detachPurchaseModalViewportSync:\s*function \(\) \{[\s\S]*this\.clearPurchaseModalOpenViewportStabilization\(\);/,
+        'purchase modal should resample the iOS Chrome viewport after opening so the sheet recenters when browser chrome settles'
     );
 
     assert.match(
@@ -142,7 +154,7 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
 
     assert.match(
         shopClientSource,
-        /modal\.classList\.remove\('shop-purchase-force-hidden'\);\s+modal\.hidden = false;\s+modal\.classList\.remove\('active'\);\s+this\.freezePurchaseModalPage\(\);\s+this\.capturePurchaseModalOverlayHeight\(true\);\s+if \(!this\.purchaseModalPageFrozen && window\.iOSScrollLock\) \{[\s\S]*window\.iOSScrollLock\.lockLight\(modal, \{[\s\S]*restoreScrollDuringViewport: true[\s\S]*modal\.classList\.add\('active'\);\s+this\.attachPurchaseModalViewportSync\(\);\s+this\.attachPurchaseModalKeyboardDock\(\);/,
+        /modal\.classList\.remove\('shop-purchase-force-hidden'\);\s+modal\.hidden = false;\s+modal\.classList\.remove\('active'\);\s+this\.freezePurchaseModalPage\(\);\s+this\.capturePurchaseModalOverlayHeight\(true\);\s+if \(!this\.purchaseModalPageFrozen && window\.iOSScrollLock\) \{[\s\S]*window\.iOSScrollLock\.lockLight\(modal, \{[\s\S]*restoreScrollDuringViewport: true[\s\S]*modal\.classList\.add\('active'\);\s+this\.attachPurchaseModalViewportSync\(\);\s+this\.attachPurchaseModalKeyboardDock\(\);\s+this\.schedulePurchaseModalOpenViewportStabilization\(\);/,
         'purchase modal should freeze the iOS page and capture the visual viewport before the active overlay frame is painted'
     );
 

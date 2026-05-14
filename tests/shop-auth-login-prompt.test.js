@@ -71,6 +71,11 @@ test('mobile safari auth input follows the deployed in-place focus contract', ()
     );
     assert.match(
         injectAuthSource,
+        /function scheduleAuthInputFocusedRelease\(\) \{[\s\S]*releaseStaleFocusedAuthInputIfKeyboardClosed\(\);/,
+        'iOS Chrome auth inputs should release the stale focused state when the keyboard is dismissed'
+    );
+    assert.match(
+        injectAuthSource,
         /function shouldUseInPlaceAuthInput\(\) \{\s*return isIOSMobile\(\) && window\.matchMedia\('\(max-width: 768px\)'\)\.matches;\s*\}/,
         'iOS mobile auth fields should keep the real input in place inside the sheet like the deployed version'
     );
@@ -86,7 +91,7 @@ test('mobile safari auth input follows the deployed in-place focus contract', ()
     );
     assert.doesNotMatch(
         injectAuthSource,
-        /window\.visualViewport\?\.addEventListener\('resize'[\s\S]*authSheet/i,
+        /auth-sheet-keyboard-docked|auth-sheet-keyboard-translate-y|applyAuthSheetKeyboardViewportState/,
         'auth sheet should not run its own visualViewport resize dock loop'
     );
     assert.match(

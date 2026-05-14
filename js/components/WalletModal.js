@@ -126,6 +126,7 @@
         pendingUndockTimer: null,
         pendingFirstDockTimer: null,
         pendingFirstDockParams: null,
+        focusedReleaseTimer: null,
         animationCleanupTimer: null,
         contentReleaseTimer: null,
         scrollCueRafId: 0,
@@ -279,6 +280,10 @@
         if (walletModalState.pendingUndockTimer) {
             clearTimeout(walletModalState.pendingUndockTimer);
             walletModalState.pendingUndockTimer = null;
+        }
+        if (walletModalState.focusedReleaseTimer) {
+            clearTimeout(walletModalState.focusedReleaseTimer);
+            walletModalState.focusedReleaseTimer = null;
         }
         if (walletModalState.animationCleanupTimer) {
             clearTimeout(walletModalState.animationCleanupTimer);
@@ -590,10 +595,36 @@
         walletModalState.pendingFirstDockParams = null;
     }
 
+    function clearWalletModalFocusedReleaseTimer() {
+        if (walletModalState.focusedReleaseTimer) {
+            clearTimeout(walletModalState.focusedReleaseTimer);
+            walletModalState.focusedReleaseTimer = null;
+        }
+    }
+
+    function scheduleWalletModalFocusedRelease() {
+        if (walletModalState.focusedReleaseTimer) return;
+
+        walletModalState.focusedReleaseTimer = setTimeout(() => {
+            walletModalState.focusedReleaseTimer = null;
+            const { overlay } = getWalletModalElements();
+            if (!overlay?.classList.contains('active')) return;
+            if (!walletModalState.keyboardDocked || !getActiveWalletModalInput()) return;
+
+            const liveSnapshot = getWalletModalViewportSnapshot();
+            if (liveSnapshot.bottomInset <= WALLET_MODAL_UNDOCK_THRESHOLD) {
+                walletModalState.keyboardBlurUndocking = true;
+                resetWalletModalDockLayout(true);
+                scheduleWalletModalLayout({ settled: true, deferOnly: true });
+            }
+        }, 48);
+    }
+
     function applyWalletModalDockLayout(bottomInset, { animate = false, duration = WALLET_MODAL_KEYBOARD_MOTION_MS } = {}) {
         const { overlay, viewport: viewportEl, card, scroller } = getWalletModalElements();
         if (!overlay || !viewportEl || !card) return;
 
+        clearWalletModalFocusedReleaseTimer();
         const snapshot = getWalletModalViewportSnapshot();
         const dockInset = Math.max(0, Math.round(bottomInset ?? snapshot.bottomInset));
         const keyboardTop = Math.max(0, snapshot.baseViewportHeight - dockInset);
@@ -645,6 +676,7 @@
 
         clearWalletModalUndockTimer();
         clearWalletModalPendingFirstDock();
+        clearWalletModalFocusedReleaseTimer();
 
         const snapshot = getWalletModalViewportSnapshot();
         const activeInput = getActiveWalletModalInput();
@@ -1160,6 +1192,11 @@
             scrollPaddingBottom: `${wasDocked || shouldDock ? 144 : 96}px`
         });
 
+        if (wasDocked && inputFocused && bottomInset <= WALLET_MODAL_UNDOCK_THRESHOLD && !preserveFocusDock) {
+            scheduleWalletModalFocusedRelease();
+            return;
+        }
+
         if (shouldDock) {
             clearWalletModalUndockTimer();
             if (!wasDocked) {
@@ -1559,12 +1596,14 @@
         vv?.addEventListener('scroll', handleViewportChange, { passive: true });
         window.addEventListener('scroll', handleRootScroll, { passive: true });
         window.addEventListener('resize', handleViewportChange, { passive: true });
+        window.addEventListener('orientationchange', handleViewportChange, { passive: true });
 
         walletModalState.viewportCleanup = () => {
             vv?.removeEventListener('resize', handleViewportChange);
             vv?.removeEventListener('scroll', handleViewportChange);
             window.removeEventListener('scroll', handleRootScroll);
             window.removeEventListener('resize', handleViewportChange);
+            window.removeEventListener('orientationchange', handleViewportChange);
             scrollElements.forEach(el => el.removeEventListener('scroll', handleContentScroll));
             walletModalState.viewportCleanup = null;
         };
