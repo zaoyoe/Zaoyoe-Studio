@@ -46370,6 +46370,30 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     line-height: 1.4;
 }
 
+.verify-monitor-item__submitter-link {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    font-family: inherit;
+    margin: 0;
+    padding: 0;
+    text-align: left;
+}
+
+.verify-monitor-item__submitter-link:hover,
+.verify-monitor-item__submitter-link:focus-visible {
+    color: var(--accent-purple);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.verify-monitor-item__submitter-link:focus-visible {
+    border-radius: 6px;
+    outline: 2px solid rgba(107, 158, 206, 0.35);
+    outline-offset: 3px;
+}
+
 .verify-monitor-item__time {
     margin-left: auto;
     color: var(--text-secondary);

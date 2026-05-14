@@ -898,16 +898,31 @@ function renderVerifyMonitorOverview() {
 
 function buildVerifyMonitorRowMarkup(row) {
     const statusMeta = getVerifyMonitorStatusMeta(row.status);
-    const rawJobLabel = String(row.verification_id || row.id || 'unknown').trim() || 'unknown';
-    const jobLabel = escapeConfigHtml(summarizeAdminAuditMonitorText(rawJobLabel, 40));
+    const rawVerificationId = String(row.verification_id || '').trim();
+    const rawMonitorLogId = String(row.verification_id || row.id || '').trim();
+    const rawUserId = String(row.user_id || '').trim();
+    const rawSubmitterEmail = String(row.submitter_email || row.email || '').trim();
+    const rawSubmitterName = String(row.submitter_display_name || row.submitter_username || '').trim();
+    const rawSubmitterLabel = rawSubmitterEmail
+        || rawSubmitterName
+        || (rawUserId ? `用户 ${summarizeAdminAuditMonitorText(rawUserId, 18)}` : '未记录提交者');
+    const submitterLabel = escapeConfigHtml(summarizeAdminAuditMonitorText(rawSubmitterLabel, 42));
+    const siteLabel = row.site ? String(row.site).toUpperCase() : '';
+    const canOpenSubmitter = Boolean(rawUserId || rawSubmitterEmail);
+    const submitterTitle = canOpenSubmitter
+        ? `打开用户详情：${rawSubmitterLabel}`
+        : rawSubmitterLabel;
+    const submitterMarkup = canOpenSubmitter
+        ? `<button type="button" class="verify-monitor-item__job verify-monitor-item__submitter-link" data-admin-action="settings-open-verify-monitor-user" data-user-id="${escapeConfigHtml(rawUserId)}" data-user-email="${escapeConfigHtml(rawSubmitterEmail)}" data-verification-id="${escapeConfigHtml(rawVerificationId || rawMonitorLogId)}" data-ledger-reference-id="${escapeConfigHtml(rawVerificationId || rawMonitorLogId)}" data-site="${escapeConfigHtml(siteLabel)}" title="${escapeConfigHtml(submitterTitle)}">${submitterLabel}</button>`
+        : `<strong class="verify-monitor-item__job" title="${escapeConfigHtml(submitterTitle)}">${submitterLabel}</strong>`;
     const identityParts = [
-        row.email ? summarizeAdminAuditMonitorText(row.email, 32) : '',
-        row.user_id ? summarizeAdminAuditMonitorText(row.user_id, 18) : '',
-        row.site ? String(row.site).toUpperCase() : ''
+        rawVerificationId ? `验证单号 ${summarizeAdminAuditMonitorText(rawVerificationId, 20)}` : '',
+        rawUserId ? `用户ID ${summarizeAdminAuditMonitorText(rawUserId, 18)}` : '',
+        siteLabel ? `站点 ${siteLabel}` : ''
     ].filter(Boolean).map((item) => escapeConfigHtml(item));
     const detailChips = [];
     const summaryText = String(row.summary || row.error_message || '暂无更多细节').trim() || '暂无更多细节';
-    const identitySummary = identityParts.length ? identityParts.join(' · ') : '未记录身份信息';
+    const identitySummary = identityParts.length ? identityParts.join(' · ') : '未记录验证关联信息';
 
     if (row.stage_label) {
         detailChips.push(buildAdminAuditMonitorInfoChip(
@@ -950,10 +965,10 @@ function buildVerifyMonitorRowMarkup(row) {
     }
 
     return `
-        <article class="verify-monitor-item" data-verify-monitor-log-id="${escapeConfigHtml(String(row.verification_id || row.id || '').trim())}">
+        <article class="verify-monitor-item" data-verify-monitor-log-id="${escapeConfigHtml(rawMonitorLogId)}">
             <div class="verify-monitor-item__top">
                 <span class="verify-monitor-status-badge verify-monitor-status-badge--${escapeConfigHtml(statusMeta.tone)}">${escapeConfigHtml(statusMeta.label)}</span>
-                <strong class="verify-monitor-item__job" title="${escapeConfigHtml(rawJobLabel)}">${jobLabel}</strong>
+                ${submitterMarkup}
                 <span class="verify-monitor-item__time">${escapeConfigHtml(formatVerifyMonitorDateTime(row.created_at))}</span>
             </div>
             <div class="verify-monitor-item__summary" title="${escapeConfigHtml(summaryText)}">${escapeConfigHtml(summaryText)}</div>
