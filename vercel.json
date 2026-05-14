@@ -60,6 +60,10 @@
     ],
     "rewrites": [
         {
+            "source": "/favicon.ico",
+            "destination": "/assets/favicon.png"
+        },
+        {
             "source": "/api/admin/:path*",
             "destination": "/api/admin?route=:path*"
         },
