@@ -50,6 +50,42 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         /bindPurchaseModalControlTapFallbacks: function \(\) \{[\s\S]*this\.bindPurchaseActionButtonTapFallbacks\(\);[\s\S]*\[data-shop-qty-delta\][\s\S]*applyDiscountBtn[\s\S]*purchaseNotesToggle[\s\S]*purchaseAddToCartBtn[\s\S]*this\.bindPurchaseDiscountActionTapFallbacks\(\);[\s\S]*bindCartCheckoutModalTapFallbacks: function \(\) \{[\s\S]*shopCartCheckoutBackBtn[\s\S]*shopCartCheckoutConfirmBtn/s,
         'shop purchase modal and cart checkout controls should get direct mobile tap fallbacks as well'
     );
+    [
+        "return this.isIOSMobileViewport() && /CriOS/i.test(navigator.userAgent || '');",
+        'armShopModalBackdropTapGuard: function (durationMs = 650)',
+        'document.addEventListener(type, consumeSyntheticClick, true);',
+        'event.stopImmediatePropagation?.();',
+        'bindShopModalBackdropTouchFallback: function (element, bindingKey, closeHandler)',
+        "element.addEventListener('touchend'",
+        'this.armShopModalBackdropTapGuard();',
+        'closeHandler(event, element);'
+    ].forEach((marker) => {
+        assert.equal(
+            shopClientSource.includes(marker),
+            true,
+            `shop modal backdrop touch fallback should include ${marker}`
+        );
+    });
+    assert.match(
+        shopClientSource,
+        /bindShopModalBackdropTouchFallback\(document\.getElementById\('shopCartBackdrop'\), 'cart-drawer'[\s\S]*bindShopModalBackdropTouchFallback\(cartCheckoutModal, 'cart-checkout-modal'[\s\S]*bindShopModalBackdropTouchFallback\(purchaseModal, 'purchase-modal'[\s\S]*bindShopModalBackdropTouchFallback\(successModal, 'success-modal'/s,
+        'shop backdrop touch fallback should cover cart, checkout, purchase, and success overlays'
+    );
+    assert.match(
+        shopHtmlSource,
+        /shopModalBackdropTap=20260514_SHOP_MODAL_CHROME_BACKDROP_TAP_1/,
+        'shop.html should bust the shop client cache for the iOS Chrome backdrop tap fix'
+    );
+    assert.match(
+        shopHtmlSource,
+        /purchaseModalCenter=20260514_SHOP_PURCHASE_CENTER_CHROME_1/,
+        'shop.html should bust the shop client cache for the iOS Chrome purchase modal centering fix'
+    );
+    assert.match(
+        shopHtmlSource,
+        /purchaseLightLock=20260514_SHOP_PURCHASE_CHROME_LIGHT_LOCK_1/,
+        'shop.html should bust the shop client cache for the iOS Chrome purchase modal light-lock fix'
+    );
     assert.match(
         shopClientSource,
         /const prefetchVersionMatches = prefetch\?\.version === SHOP_PREFETCH_SCHEMA_VERSION;/,

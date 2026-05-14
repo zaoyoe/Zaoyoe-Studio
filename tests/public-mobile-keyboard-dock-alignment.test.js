@@ -14,6 +14,7 @@ test('mobile keyboard overlays use the customer-service light-lock dock contract
     const homepageGuestbookModal = readRepoFile(path.join('js', 'homepage-guestbook-modal.js'));
     const guestbook = readRepoFile('guestbook.js');
     const profileAuth = readRepoFile('supabase-auth-functions.js');
+    const injectAuth = readRepoFile('inject-auth.js');
     const adminChat = readRepoFile(path.join('js', 'admin-chat.js'));
     const chatWidget = readRepoFile(path.join('js', 'components', 'ChatWidget.js'));
     const walletModal = readRepoFile(path.join('js', 'components', 'WalletModal.js'));
@@ -75,11 +76,27 @@ test('mobile keyboard overlays use the customer-service light-lock dock contract
     });
     assert.match(promptsPoetry, /const PROMPT_COMMENT_COMPOSER_KEYBOARD_CLEARANCE = 12;/);
     assert.match(promptsPoetry, /const keyboardClearance = PROMPT_COMMENT_COMPOSER_KEYBOARD_CLEARANCE;[\s\S]*const targetBottom = Math\.max\(40, Math\.round\(keyboardTop - keyboardClearance\)\);/);
-    assert.match(promptsPoetry, /const zeroBottom = Math\.round\(zeroRect\.bottom/);
+    assert.match(promptsPoetry, /function getPromptCommentComposerStableViewportHeight\(\) \{/);
+    assert.match(promptsPoetry, /const zeroBottom = Math\.round\(overlayTop \+ \(sheet\.offsetTop \|\| 0\) \+ dockHeight\);/);
     assert.match(promptsPoetry, /Math\.round\(targetBottom - zeroBottom\)/);
+    assert.match(promptsPoetry, /setTimeout\(handleViewportChange, 60\);[\s\S]*setTimeout\(handleViewportChange, 120\);[\s\S]*setTimeout\(handleViewportChange, 260\);/);
+    assert.match(promptsPoetry, /function schedulePromptCommentComposerSettleSync\(\) \{/);
 
     assert.match(adminChat, /classList\.add\('admin-chat-keyboard-docked'\)/);
     assert.match(adminChat, /const targetBottom = Math\.max\(40, keyboardTop - 12\);/);
+    assert.match(adminChat, /scheduleAdminChatFocusedRelease\(\) \{/);
+    assert.match(shopClient, /schedulePurchaseModalFocusedRelease: function \(\) \{/);
+    assert.match(homepageGuestbookModal, /function scheduleGuestbookFocusedRelease\(\) \{/);
+    assert.match(guestbook, /function scheduleCommentModalFocusedRelease\(\) \{/);
+    assert.match(profileAuth, /function scheduleProfileModalFocusedRelease\(\) \{/);
+    assert.match(walletModal, /function scheduleWalletModalFocusedRelease\(\) \{/);
+    assert.match(promptsPoetry, /function schedulePromptModalFocusedRelease\(\) \{/);
+    assert.match(promptsPoetry, /function schedulePromptCommentComposerFocusedRelease\(\) \{/);
+    assert.match(injectAuth, /function scheduleAuthInputFocusedRelease\(\) \{/);
+    assert.match(homepageGuestbookModal, /if \(isInsetDroppingWhileFocused\) \{[\s\S]*guestbookModalKeyboardState\.pendingInset = 0;[\s\S]*applyGuestbookModalKeyboardDock\(nextInset, false\);[\s\S]*return;/);
+    assert.match(guestbook, /if \(isInsetDroppingWhileFocused\) \{[\s\S]*commentModalKeyboardState\.pendingInset = 0;[\s\S]*applyCommentModalKeyboardDock\(nextInset, false\);[\s\S]*return;/);
+    assert.match(shopClient, /if \(isInsetDroppingWhileFocused\) \{[\s\S]*this\.purchaseModalKeyboardPendingInset = 0;[\s\S]*this\.applyPurchaseModalKeyboardDock\(nextInset, false\);[\s\S]*return;/);
+    assert.match(promptsPoetry, /if \(isInsetDroppingWhileFocused\) \{[\s\S]*promptCommentComposerPendingInset = 0;[\s\S]*applyPromptCommentComposerDock\(nextInset, false\);[\s\S]*return;/);
     assert.match(adminChat, /getAdminChatFocusKeyboardInset\(metrics = this\.getAdminChatKeyboardMetrics\(\)\) \{/);
     assert.match(adminChat, /getAdminChatKeyboardStableViewportProbe\(\) \{/);
     assert.match(adminChat, /dockTarget\.style\.setProperty\('--admin-chat-keyboard-dock-height', `\$\{dockHeight\}px`\);/);
@@ -208,7 +225,7 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(guestbookHtml, /homepage-guestbook-modal\.js\?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1/);
     assert.match(adminStudioHtml, /admin-chat\.js\?v=20260505_CHAT_USER_ACTIVITY_1/);
     assert.match(adminStudioHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
-    assert.match(chatWidgetLoader, /const VERSION = '20260509_ENGAGEMENT_ORDER_DETAIL_ROUTE_1';/);
+    assert.match(chatWidgetLoader, /const VERSION = '20260514_CHAT_WIDGET_IOS_CHROME_KEYBOARD_1';/);
     assert.match(chatWidgetLoader, /<div class="chat-header-actions">[\s\S]*<button type="button" class="chat-header-mode-switch" tabindex="-1">常用入口<\/button>/);
     assert.match(chatWidgetLoader, /chat-widget-bootstrap-user-input \.chat-widget-bootstrap-user-emoji-btn \{[\s\S]*background: transparent;[\s\S]*box-shadow: none;/);
     assert.match(chatWidgetLoader, /chat-widget-bootstrap-user-input \.chat-send-btn \{[\s\S]*width: auto;[\s\S]*flex: 0 0 auto;/);

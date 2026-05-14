@@ -583,7 +583,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
     );
     assert.match(
         indexSource,
-        /<script src="\.\/js\/homepage-guestbook-modal-loader\.js\?v=20260504_HOME_GUESTBOOK_LOADER_KEYBOARD_RETRACT_1" defer><\/script>/,
+        /<script src="\.\/js\/homepage-guestbook-modal-loader\.js\?v=20260504_HOME_GUESTBOOK_LOADER_KEYBOARD_RETRACT_1&iosChromeKeyboard=20260514_ALL_KEYBOARD_RELEASE_1" defer><\/script>/,
         'homepage should keep only a small guestbook intent loader on the first load path'
     );
     assert.match(

@@ -490,7 +490,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260509_ENGAGEMENT_ORDER_DETAIL_ROUTE_1';",
+        "const VERSION = '20260514_CHAT_WIDGET_IOS_CHROME_KEYBOARD_1';",
         "const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';",
         'function ensurePlaceholderPlacementStyles() {',
         '/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */',
@@ -519,7 +519,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'body.chat-widget-bootstrap-scroll-locked',
         "const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';",
         "const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';",
-        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260509_ENGAGEMENT_ORDER_DETAIL_ROUTE_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';",
+        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260514_CHAT_WIDGET_IOS_CHROME_KEYBOARD_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';",
         "const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';",
         'function getChatWidgetConstructor() {',
         'global.ChatWidget = ChatWidget;',
@@ -2017,7 +2017,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/chat-widget-loader.js?v=20260509_ENGAGEMENT_ORDER_DETAIL_ROUTE_1'),
+            source.includes('js/chat-widget-loader.js?v=20260514_CHAT_WIDGET_IOS_CHROME_KEYBOARD_1'),
             true,
             'public entry pages should load the lazy chat widget bootstrap'
         );
@@ -13024,9 +13024,11 @@ test('prompts gallery UI state renderers externalize toast, banner, nav, and com
         "overlay.classList.add('composer-caret-stabilizing')",
         'let promptCommentComposerScrollLockMode = null;',
         'const PROMPT_COMMENT_COMPOSER_KEYBOARD_CLEARANCE = 12;',
+        'function getPromptCommentComposerStableViewportHeight() {',
         "window.iOSScrollLock.lockLight(sheet, { restoreScrollDuringViewport: true });",
         "window.iOSScrollLock.lockLight(modalInner, { restoreScrollDuringViewport: true });",
         'const targetBottom = Math.max(40, Math.round(keyboardTop - keyboardClearance));',
+        'const zeroBottom = Math.round(overlayTop + (sheet.offsetTop || 0) + dockHeight);',
         'const deltaY = Math.max(-520, Math.min(520, Math.round(targetBottom - zeroBottom)));',
         'applyPromptCommentComposerDock(liveMetrics.bottomInset, true);',
         'setPromptsCssVars(modalInner, {',

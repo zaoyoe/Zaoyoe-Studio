@@ -448,6 +448,7 @@ const ShopClient = {
     purchaseNotesHeightAnimationTimer: null,
     purchaseModalViewportSyncCleanup: null,
     purchaseModalViewportSyncRafId: null,
+    purchaseModalOpenViewportSyncTimers: [],
     purchaseModalKeyboardViewportCleanup: null,
     purchaseModalKeyboardViewportRafId: null,
     purchaseModalKeyboardContentRafId: null,
@@ -459,7 +460,11 @@ const ShopClient = {
     purchaseModalKeyboardInitialDockTimer: null,
     purchaseModalKeyboardInsetDropTimer: null,
     purchaseModalKeyboardTransitionTimer: null,
+    purchaseModalKeyboardFocusedReleaseTimer: null,
     purchaseModalKeyboardPendingInset: 0,
+    shopModalBackdropTapGuardUntil: 0,
+    shopModalBackdropTapGuardTimer: null,
+    shopModalBackdropTapGuardCleanup: null,
     purchaseModalPageFrozen: false,
     purchaseModalBaseScrollY: 0,
     purchaseModalOwnsFullScrollLock: false,
@@ -6833,6 +6838,10 @@ const ShopClient = {
             }
             this.closeCart();
         });
+        this.bindShopModalBackdropTouchFallback(document.getElementById('shopCartBackdrop'), 'cart-drawer', () => {
+            if (this.shouldIgnoreCartBackdropClose()) return;
+            this.closeCart();
+        });
 
         document.getElementById('shopCartDrawer')?.addEventListener('pointerdown', () => {
             this.guardCartBackdropClose(260);
@@ -6915,6 +6924,9 @@ const ShopClient = {
                 event.preventDefault?.();
                 void this.confirmCartCheckout();
             }
+        });
+        this.bindShopModalBackdropTouchFallback(cartCheckoutModal, 'cart-checkout-modal', () => {
+            this.closeCartCheckoutModal();
         });
         this.bindCartCheckoutModalTapFallbacks();
 
@@ -7021,6 +7033,9 @@ const ShopClient = {
             if (event.target instanceof Element && event.target.closest('#confirmPurchaseBtn')) {
                 this.handlePurchasePrimaryActionTap(event);
             }
+        });
+        this.bindShopModalBackdropTouchFallback(purchaseModal, 'purchase-modal', () => {
+            this.closePurchaseModal();
         });
         this.bindPurchaseModalControlTapFallbacks();
 
@@ -7132,6 +7147,9 @@ const ShopClient = {
                 void this.copySuccessCardContent(copyCard.dataset.shopCopyContent || '');
             }
         });
+        this.bindShopModalBackdropTouchFallback(successModal, 'success-modal', () => {
+            this.closeSuccessModal();
+        });
 
         document.getElementById('ordersList')?.addEventListener('click', (event) => {
             const target = event.target instanceof Element
@@ -7224,7 +7242,9 @@ const ShopClient = {
 
         if (!measuredHeight) return;
         const baseHeight = Math.round(this.purchaseModalKeyboardBaseViewportHeight || 0);
+        const shouldPreserveForKeyboard = this.purchaseModalKeyboardDocked || !!this.getActivePurchaseModalInput();
         const shouldPreserveKeyboardBase = overlay.classList.contains('active')
+            && shouldPreserveForKeyboard
             && baseHeight > measuredHeight;
         const overlayHeight = shouldPreserveKeyboardBase ? baseHeight : measuredHeight;
         this.setCssVariables(overlay, {
@@ -7234,7 +7254,7 @@ const ShopClient = {
             '--shop-purchase-overlay-height': `${overlayHeight}px`
         });
         if (shouldPreserveKeyboardBase) return;
-        if (!force && baseHeight >= measuredHeight) return;
+        if (!force && baseHeight === measuredHeight) return;
         this.purchaseModalKeyboardBaseViewportHeight = measuredHeight;
     },
 
@@ -7258,6 +7278,38 @@ const ShopClient = {
         this.purchaseModalViewportSyncRafId = requestAnimationFrame(() => {
             this.purchaseModalViewportSyncRafId = null;
             this.syncPurchaseModalOverlayViewport(force);
+        });
+    },
+
+    clearPurchaseModalOpenViewportStabilization: function () {
+        if (!Array.isArray(this.purchaseModalOpenViewportSyncTimers)) {
+            this.purchaseModalOpenViewportSyncTimers = [];
+            return;
+        }
+
+        this.purchaseModalOpenViewportSyncTimers.forEach((timerId) => {
+            window.clearTimeout(timerId);
+        });
+        this.purchaseModalOpenViewportSyncTimers = [];
+    },
+
+    schedulePurchaseModalOpenViewportStabilization: function () {
+        const { overlay } = this.getPurchaseModalElements();
+        if (!overlay?.classList.contains('active')) return;
+
+        this.clearPurchaseModalOpenViewportStabilization();
+        this.schedulePurchaseModalViewportSync(true);
+
+        [48, 140, 320].forEach((delayMs) => {
+            const timerId = window.setTimeout(() => {
+                this.purchaseModalOpenViewportSyncTimers = this.purchaseModalOpenViewportSyncTimers
+                    .filter((candidate) => candidate !== timerId);
+                if (!overlay.classList.contains('active')) return;
+
+                this.syncPurchaseModalOverlayViewport(true);
+                this.syncPurchaseModalKeyboardDock();
+            }, delayMs);
+            this.purchaseModalOpenViewportSyncTimers.push(timerId);
         });
     },
 
@@ -7291,6 +7343,7 @@ const ShopClient = {
     },
 
     detachPurchaseModalViewportSync: function () {
+        this.clearPurchaseModalOpenViewportStabilization();
         if (typeof this.purchaseModalViewportSyncCleanup === 'function') {
             this.purchaseModalViewportSyncCleanup();
         }
@@ -8449,6 +8502,116 @@ const ShopClient = {
         const ua = navigator.userAgent || '';
         const isiOS = /iPad|iPhone|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
         return isiOS && window.matchMedia?.('(max-width: 768px)').matches;
+    },
+
+    shouldUseShopBackdropTouchFallback: function () {
+        return this.isIOSMobileViewport() && /CriOS/i.test(navigator.userAgent || '');
+    },
+
+    shouldUsePurchaseModalLightOpenLock: function () {
+        return this.shouldUseShopBackdropTouchFallback();
+    },
+
+    clearShopModalBackdropTapGuard: function () {
+        if (this.shopModalBackdropTapGuardTimer) {
+            clearTimeout(this.shopModalBackdropTapGuardTimer);
+            this.shopModalBackdropTapGuardTimer = null;
+        }
+        if (typeof this.shopModalBackdropTapGuardCleanup === 'function') {
+            this.shopModalBackdropTapGuardCleanup();
+            this.shopModalBackdropTapGuardCleanup = null;
+        }
+        this.shopModalBackdropTapGuardUntil = 0;
+    },
+
+    armShopModalBackdropTapGuard: function (durationMs = 650) {
+        if (typeof document === 'undefined' || typeof document.addEventListener !== 'function') return;
+
+        this.clearShopModalBackdropTapGuard();
+        const guardUntil = Date.now() + Math.max(160, Math.trunc(Number(durationMs || 0) || 650));
+        this.shopModalBackdropTapGuardUntil = guardUntil;
+
+        const guardedTypes = ['mousedown', 'mouseup', 'click', 'auxclick'];
+        const consumeSyntheticClick = (event) => {
+            if (Date.now() > this.shopModalBackdropTapGuardUntil) {
+                this.clearShopModalBackdropTapGuard();
+                return;
+            }
+
+            event?.preventDefault?.();
+            event?.stopPropagation?.();
+            event?.stopImmediatePropagation?.();
+        };
+
+        guardedTypes.forEach((type) => {
+            document.addEventListener(type, consumeSyntheticClick, true);
+        });
+
+        this.shopModalBackdropTapGuardCleanup = () => {
+            guardedTypes.forEach((type) => {
+                document.removeEventListener(type, consumeSyntheticClick, true);
+            });
+        };
+
+        this.shopModalBackdropTapGuardTimer = setTimeout(() => {
+            this.clearShopModalBackdropTapGuard();
+        }, Math.max(220, guardUntil - Date.now()));
+    },
+
+    bindShopModalBackdropTouchFallback: function (element, bindingKey, closeHandler) {
+        if (!(element instanceof HTMLElement) || typeof closeHandler !== 'function') return;
+
+        const safeKey = String(bindingKey || 'modal').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        const boundAttribute = `data-shop-backdrop-touch-${safeKey || 'modal'}`;
+        if (element.getAttribute(boundAttribute) === '1') return;
+
+        let touchStart = null;
+        element.setAttribute(boundAttribute, '1');
+        element.addEventListener('touchstart', (event) => {
+            if (!this.shouldUseShopBackdropTouchFallback() || event.target !== element) {
+                touchStart = null;
+                return;
+            }
+
+            const touch = event.changedTouches?.[0] || event.touches?.[0] || null;
+            if (!touch) {
+                touchStart = null;
+                return;
+            }
+
+            touchStart = {
+                x: touch.clientX,
+                y: touch.clientY,
+                time: Date.now()
+            };
+        }, { passive: true });
+
+        element.addEventListener('touchend', (event) => {
+            if (!this.shouldUseShopBackdropTouchFallback() || event.target !== element) {
+                touchStart = null;
+                return;
+            }
+
+            const touch = event.changedTouches?.[0] || null;
+            const start = touchStart;
+            touchStart = null;
+            if (!touch || !start) return;
+
+            const movedX = Math.abs(touch.clientX - start.x);
+            const movedY = Math.abs(touch.clientY - start.y);
+            const elapsed = Date.now() - start.time;
+            if (movedX > 18 || movedY > 18 || elapsed > 1200) return;
+
+            if (event.cancelable) event.preventDefault();
+            event.stopPropagation?.();
+            event.stopImmediatePropagation?.();
+            this.armShopModalBackdropTapGuard();
+            closeHandler(event, element);
+        }, { passive: false });
+
+        element.addEventListener('touchcancel', () => {
+            touchStart = null;
+        }, { passive: true });
     },
 
     requestMobileBrowserChromeInsetSync: function () {
@@ -9809,6 +9972,7 @@ const ShopClient = {
 
     freezePurchaseModalPage: function () {
         if (this.purchaseModalPageFrozen || !this.isPurchaseModalKeyboardDockEnabled()) return;
+        if (this.shouldUsePurchaseModalLightOpenLock()) return;
 
         const theme = this.getCurrentThemeChromeMode();
         const themeColor = this.getThemeChromeColor(theme);
@@ -9934,7 +10098,27 @@ const ShopClient = {
             clearTimeout(this.purchaseModalKeyboardTransitionTimer);
             this.purchaseModalKeyboardTransitionTimer = null;
         }
+        if (this.purchaseModalKeyboardFocusedReleaseTimer) {
+            clearTimeout(this.purchaseModalKeyboardFocusedReleaseTimer);
+            this.purchaseModalKeyboardFocusedReleaseTimer = null;
+        }
         this.purchaseModalKeyboardPendingInset = 0;
+    },
+
+    schedulePurchaseModalFocusedRelease: function () {
+        if (this.purchaseModalKeyboardFocusedReleaseTimer) return;
+
+        this.purchaseModalKeyboardFocusedReleaseTimer = setTimeout(() => {
+            this.purchaseModalKeyboardFocusedReleaseTimer = null;
+            const { overlay } = this.getPurchaseModalElements();
+            if (!overlay?.classList.contains('active')) return;
+            if (!this.purchaseModalKeyboardDocked || !this.getActivePurchaseModalInput()) return;
+
+            const liveMetrics = this.getPurchaseModalViewportMetrics();
+            if (liveMetrics.bottomInset <= 24) {
+                this.releasePurchaseModalKeyboardDock(true);
+            }
+        }, 48);
     },
 
     schedulePurchaseModalKeyboardContentSync: function () {
@@ -10048,6 +10232,10 @@ const ShopClient = {
         const { overlay, card } = this.getPurchaseModalElements();
         if (!overlay || !card) return;
 
+        if (this.purchaseModalKeyboardFocusedReleaseTimer) {
+            clearTimeout(this.purchaseModalKeyboardFocusedReleaseTimer);
+            this.purchaseModalKeyboardFocusedReleaseTimer = null;
+        }
         const metrics = this.getPurchaseModalViewportMetrics();
         if (!this.purchaseModalKeyboardBaseCardHeight) {
             const liveHeight = Math.round(card.offsetHeight || card.getBoundingClientRect().height || 420);
@@ -10080,6 +10268,10 @@ const ShopClient = {
         const { overlay, card } = this.getPurchaseModalElements();
         if (!overlay || !card) return;
 
+        if (this.purchaseModalKeyboardFocusedReleaseTimer) {
+            clearTimeout(this.purchaseModalKeyboardFocusedReleaseTimer);
+            this.purchaseModalKeyboardFocusedReleaseTimer = null;
+        }
         overlay.classList.remove('keyboard-docked');
         this.setCssVariables(overlay, { '--shop-purchase-translate-y': '0px' });
         card.classList.remove('shop-purchase-height-locked');
@@ -10165,21 +10357,13 @@ const ShopClient = {
         }
 
         if (isInsetDroppingWhileFocused) {
-            this.purchaseModalKeyboardPendingInset = nextInset;
-            if (!this.purchaseModalKeyboardInsetDropTimer) {
-                this.purchaseModalKeyboardInsetDropTimer = setTimeout(() => {
-                    this.purchaseModalKeyboardInsetDropTimer = null;
-                    const settledInset = this.purchaseModalKeyboardPendingInset;
-                    this.purchaseModalKeyboardPendingInset = 0;
-                    if (settledInset > 24) {
-                        this.applyPurchaseModalKeyboardDock(settledInset, false);
-                    }
-                }, 90);
-            }
+            this.purchaseModalKeyboardPendingInset = 0;
+            this.applyPurchaseModalKeyboardDock(nextInset, false);
             return;
         }
 
         if (this.purchaseModalKeyboardDocked && activeInput && nextInset <= 24) {
+            this.schedulePurchaseModalFocusedRelease();
             return;
         }
 
@@ -10218,6 +10402,8 @@ const ShopClient = {
 
         vv.addEventListener('resize', handleViewportChange, { passive: true });
         vv.addEventListener('scroll', handleViewportChange, { passive: true });
+        window.addEventListener('resize', handleViewportChange, { passive: true });
+        window.addEventListener('orientationchange', handleViewportChange, { passive: true });
         inputs.forEach((input) => {
             input.addEventListener('focus', handleViewportChange);
             input.addEventListener('blur', handleViewportChange);
@@ -10226,6 +10412,8 @@ const ShopClient = {
         this.purchaseModalKeyboardViewportCleanup = () => {
             vv.removeEventListener('resize', handleViewportChange);
             vv.removeEventListener('scroll', handleViewportChange);
+            window.removeEventListener('resize', handleViewportChange);
+            window.removeEventListener('orientationchange', handleViewportChange);
             inputs.forEach((input) => {
                 input.removeEventListener('focus', handleViewportChange);
                 input.removeEventListener('blur', handleViewportChange);
@@ -10469,6 +10657,7 @@ const ShopClient = {
         modal.classList.add('active');
         this.attachPurchaseModalViewportSync();
         this.attachPurchaseModalKeyboardDock();
+        this.schedulePurchaseModalOpenViewportStabilization();
         void this.refreshPurchaseDiscountAssets({ silent: true });
         if (runtimeCartDiscount) {
             void this.refreshAppliedDiscountPreview({ silent: true });

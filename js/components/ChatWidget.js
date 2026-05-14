@@ -20846,6 +20846,24 @@ class ChatWidget {
                         transform 360ms cubic-bezier(0.18, 0.88, 0.24, 1) !important;
                 }
 
+                .chat-window:not(.admin-mode-layout).keyboard-docked,
+                .chat-window:not(.admin-mode-layout).keyboard-docked.active,
+                .chat-window:not(.admin-mode-layout).keyboard-docked.is-active,
+                .chat-window:not(.admin-mode-layout).keyboard-docked.is-handoff,
+                .chat-window:not(.admin-mode-layout).keyboard-docked.is-handoff:not(.is-active),
+                .chat-window:not(.admin-mode-layout).chat-window--keyboard-height-locked.keyboard-docked,
+                .chat-window:not(.admin-mode-layout).chat-window--keyboard-height-locked.keyboard-docked.active,
+                .chat-window:not(.admin-mode-layout).chat-window--keyboard-height-locked.keyboard-docked.is-active,
+                .chat-window:not(.admin-mode-layout).chat-window--keyboard-height-locked.keyboard-docked.is-handoff,
+                .chat-window:not(.admin-mode-layout).chat-window--keyboard-height-locked.keyboard-docked.is-handoff:not(.is-active) {
+                    top: 50% !important;
+                    left: 50% !important;
+                    right: auto !important;
+                    bottom: auto !important;
+                    transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(1) !important;
+                    transform-origin: center center !important;
+                }
+
             }
             
             /* Enforce instant scrolling for user mode too */
@@ -21235,6 +21253,8 @@ class ChatWidget {
         this._onViewportChange = () => this._requestViewportSync();
         window.visualViewport.addEventListener('resize', this._onViewportChange, { passive: true });
         window.visualViewport.addEventListener('scroll', this._onViewportChange, { passive: true });
+        window.addEventListener('resize', this._onViewportChange, { passive: true });
+        window.addEventListener('orientationchange', this._onViewportChange, { passive: true });
 
         this._onChatFocusIn = () => {
             this._keyboardBlurUndocking = false;
@@ -21268,6 +21288,8 @@ class ChatWidget {
                     this._resetKeyboardViewportStyles(true);
                 }
                 this._requestViewportSync();
+                setTimeout(() => this._requestViewportSync(), 140);
+                setTimeout(() => this._requestViewportSync(), 320);
             });
         };
         this.chatWindow?.addEventListener('focusin', this._onChatFocusIn, true);
@@ -21280,6 +21302,8 @@ class ChatWidget {
         if (window.visualViewport && this._onViewportChange) {
             window.visualViewport.removeEventListener('resize', this._onViewportChange);
             window.visualViewport.removeEventListener('scroll', this._onViewportChange);
+            window.removeEventListener('resize', this._onViewportChange);
+            window.removeEventListener('orientationchange', this._onViewportChange);
             this._onViewportChange = null;
         }
         if (this._viewportThrottleTimer) {
