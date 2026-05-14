@@ -87,7 +87,8 @@ test('public verify submit handler returns queued task metadata for authenticate
             resolveVerifyRequestSite() {
                 return 'cn';
             },
-            async loadVerifyRuntimeConfig() {
+            async loadVerifyRuntimeConfig(_supabase, _env, options) {
+                assert.equal(options?.site, 'cn');
                 return {
                     apiKey: 'SYS-38147DAAF78A',
                     apiKeys: ['SYS-38147DAAF78A', 'SYS-92AF0C7712BD'],
@@ -206,7 +207,8 @@ test('public verify status handler returns normalized job progress for authentic
             parseHistoryMessage(message) {
                 return JSON.parse(message);
             },
-            async loadVerifyRuntimeConfig() {
+            async loadVerifyRuntimeConfig(_supabase, _env, options) {
+                assert.equal(options?.site, 'cn');
                 return {
                     apiKey: 'SYS-38147DAAF78A',
                     apiKeys: ['SYS-38147DAAF78A', 'SYS-92AF0C7712BD'],
@@ -308,7 +310,8 @@ test('public verify submit handler forwards the selected CDKey from the pool to 
             resolveVerifyRequestSite() {
                 return 'cn';
             },
-            async loadVerifyRuntimeConfig() {
+            async loadVerifyRuntimeConfig(_supabase, _env, options) {
+                assert.equal(options?.site, 'cn');
                 return {
                     apiKey: 'SYS-AAA111',
                     apiKeys: ['SYS-AAA111', 'SYS-BBB222'],

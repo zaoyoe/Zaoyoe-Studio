@@ -131,6 +131,9 @@ const {
     normalizeCommerceSuccessMonitorConfig,
     runCommerceSuccessSweep
 } = require('../api/_lib/commerce-success-alerts');
+const {
+    resolveSiteScopedSystemConfigValue
+} = require('./api-handlers/_site-scoped-system-config');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -353,14 +356,18 @@ app.get('/health', async (req, res) => {
 // =============================================
 // Helpers
 // =============================================
-async function getVerifyConfig() {
+async function getVerifyConfig(site = 'cn') {
     const { data: configData } = await supabase
         .from('system_config')
         .select('config_value')
         .eq('config_key', 'verify_settings')
         .single();
 
-    const config = configData?.config_value || {};
+    const storedConfig = configData?.config_value || {};
+    const resolvedConfig = resolveSiteScopedSystemConfigValue(storedConfig, site);
+    const config = resolvedConfig && typeof resolvedConfig === 'object' && !Array.isArray(resolvedConfig)
+        ? resolvedConfig
+        : {};
     const prices = getVerifyPriceMap(config);
     const apiKeys = normalizeVerifyCredentialList([
         ...(Array.isArray(config.verify_cdkeys) ? config.verify_cdkeys : []),
@@ -373,6 +380,7 @@ async function getVerifyConfig() {
     ]);
 
     return {
+        site: sanitizeSite(site || 'cn'),
         pricePerVerify: prices.extract,
         pricePerVerifyExtract: prices.extract,
         pricePerVerifyFull: prices.full,
@@ -2057,6 +2065,7 @@ async function applyAfdianPaymentIntentClaim({
         await safeSyncPaymentUserTags({
             userId: String(user?.id || '').trim(),
             status: 'completed',
+            site: claimSite || targetPaymentOrder.site || sourceOrder.site || 'cn',
             sourceEventId: targetPaymentOrder.id,
             sourceModule: 'payments.afdian_claim'
         });
@@ -2147,6 +2156,7 @@ async function tryFinalizeCustomRechargeFromQuote({
     await safeSyncPaymentUserTags({
         userId: user.id,
         status: 'completed',
+        site: matchedCandidate.quote.site || site || 'cn',
         sourceEventId: data.payment_order_id,
         sourceModule: 'payments.afdian_query'
     });
@@ -2563,7 +2573,7 @@ async function syncTrackedJobStatus({
         }
 
         let pointsDeducted = Number(existingRecord?.points_deducted) || 0;
-        const runtimeConfig = config || await getVerifyConfig();
+        const runtimeConfig = config || await getVerifyConfig(site);
 
         if (upstreamStatus === 'success') {
             pointsDeducted = await deductPointsForJob(
@@ -2589,6 +2599,7 @@ async function syncTrackedJobStatus({
         await safeSyncVerifyUserTags({
             userId,
             status: upstreamStatus === 'success' ? 'success' : 'failed',
+            site,
             sourceEventId: jobId,
             sourceModule: 'verify'
         });
@@ -2741,12 +2752,19 @@ async function sweepPendingJobs() {
     pendingJobSweepRunning = true;
 
     try {
-        const config = await getVerifyConfig();
-        if (!config.apiKey) return;
-
         const pendingJobs = await loadPendingTrackedJobs();
+        const configBySite = new Map();
 
         for (const job of pendingJobs) {
+            const jobSite = sanitizeSite(job.site || 'cn');
+            if (!configBySite.has(jobSite)) {
+                configBySite.set(jobSite, await getVerifyConfig(jobSite));
+            }
+            const config = configBySite.get(jobSite);
+            if (!config.apiKey) {
+                continue;
+            }
+
             const upstream = await fetchUpstreamJobStatus(config, job.jobId);
             if (!upstream.ok) {
                 console.warn(`[VerifyWorker] Failed to poll ${job.jobId}: ${upstream.message}`);
@@ -4512,7 +4530,7 @@ app.post('/api/verify', async (req, res) => {
     }
 
     try {
-        const config = await getVerifyConfig();
+        const config = await getVerifyConfig(currentSite);
 
         if (!config.apiKeys?.length) {
             return res.status(500).json({
@@ -4622,7 +4640,7 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
         }
 
         const trackedPayload = parseHistoryMessage(trackedRecord.message) || {};
-        const config = await getVerifyConfig();
+        const config = await getVerifyConfig(currentSite);
 
         if (!config.apiKeys?.length) {
             return res.status(500).json({ success: false, message: '验证服务未配置', code: 'api_key_missing' });
@@ -4697,7 +4715,8 @@ app.get('/api/quota', async (req, res) => {
     if (!quotaAccess) return;
 
     try {
-        const config = await getVerifyConfig();
+        const currentSite = resolveSecureRequestSite(req, req.query?.site || '');
+        const config = await getVerifyConfig(currentSite);
 
         if (!config.apiKeys?.length) {
             return res.status(500).json({ success: false, message: '验证服务未配置 CDKey' });
@@ -4780,7 +4799,8 @@ app.get('/api/queue', async (req, res) => {
     if (!queueAccess) return;
 
     try {
-        const config = await getVerifyConfig();
+        const currentSite = resolveSecureRequestSite(req, req.query?.site || '');
+        const config = await getVerifyConfig(currentSite);
 
         if (!config.apiKeys?.length) {
             return res.status(500).json({ success: false, message: '验证服务未配置 CDKey' });
@@ -5105,6 +5125,7 @@ app.post('/api/payments/hupijiao/webhook', async (req, res) => {
                 await safeSyncPaymentUserTags({
                     userId: paymentOrder.user_id,
                     status: 'completed',
+                    site: paymentOrder.site || currentSite || 'cn',
                     sourceEventId: paymentOrder.id,
                     sourceModule: 'payments.hupijiao_webhook'
                 });
@@ -5350,6 +5371,7 @@ app.post('/api/afdian/webhook', async (req, res) => {
                     await safeSyncPaymentUserTags({
                         userId: settledPaymentOrder.user_id,
                         status: 'completed',
+                        site: settledPaymentOrder.site || currentSite || 'cn',
                         sourceEventId: settledPaymentOrder.id,
                         sourceModule: 'payments.afdian_webhook'
                     });

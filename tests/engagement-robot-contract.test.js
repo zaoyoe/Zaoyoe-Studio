@@ -528,7 +528,9 @@ test('engagement audience targeting is persisted and respected by the public fee
     assert.match(adminSegments, /TAG_CENTER_CONFIG_KEY = 'engagement_user_tag_center'/);
     assert.match(adminSegments, /listKnownUserTagDefinitions/);
     assert.match(adminSegments, /mergeTagCenterWithUserTags/);
-    assert.match(adminSegments, /loadTagCenter\(supabase, \{ includeUserTags: false \}\)/);
+    assert.match(adminSegments, /loadTagCenter\(supabase, \{\s*includeUserTags: false,\s*site: normalizedSite\s*\}\)/);
+    assert.match(adminSegments, /saveSiteScopedConfig/);
+    assert.match(adminSegments, /listSegments\(supabase, site\)/);
     assert.match(adminSegments, /saveTagCenter/);
     assert.match(adminSegments, /normalizeTagAutomation/);
     assert.match(adminSegments, /automation:\s*normalizeTagAutomation/);
@@ -544,6 +546,7 @@ test('engagement audience targeting is persisted and respected by the public fee
     assert.match(publicHandler, /fetchUserTags/);
     assert.match(publicHandler, /\.from\('user_tags'\)/);
     assert.match(publicHandler, /fetchAudienceSegments/);
+    assert.match(publicHandler, /fetchAudienceSegments\(supabase, site\)/);
     assert.match(publicHandler, /normalizeTriggerType/);
     assert.match(publicHandler, /VALID_PLACEMENTS/);
     assert.match(publicHandler, /normalizePlacement/);

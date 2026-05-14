@@ -1,5 +1,6 @@
 const {
-    fetchDirectVerifyQuotaState
+    fetchDirectVerifyQuotaState,
+    loadVerifyRuntimeConfig
 } = require('../_verify-provider-runtime');
 const {
     SITE_LAYOUT_CONFIG_KEY,
@@ -114,9 +115,32 @@ function createPublicConfigHandlers({
             || (/schema cache/i.test(text) && /announcement_(rules|reads)/i.test(text));
     }
 
+    function isMissingAnnouncementSiteColumnError(error) {
+        const text = [
+            error?.code,
+            error?.message,
+            error?.details,
+            error?.hint
+        ].filter(Boolean).join(' ');
+        return error?.code === '42703'
+            || /column .*site.* does not exist/i.test(text)
+            || /could not find .*site.*announcement_rules/i.test(text)
+            || (/schema cache/i.test(text) && /announcement_rules/i.test(text) && /site/i.test(text));
+    }
+
+    function normalizeAnnouncementSite(value = '') {
+        return String(value || '').trim().toLowerCase() === 'intl' ? 'intl' : 'cn';
+    }
+
+    function filterAnnouncementRulesBySite(rows = [], site = 'cn') {
+        const normalizedSite = normalizeAnnouncementSite(site);
+        return rows.filter((row) => normalizeAnnouncementSite(row.site || 'cn') === normalizedSite);
+    }
+
     function normalizeAnnouncementRule(row = {}) {
         return {
             id: sanitizeText(row.id, 120),
+            site: normalizeAnnouncementSite(row.site || 'cn'),
             title: sanitizeText(row.title || '站内公告', 160) || '站内公告',
             announcement_enabled: row.enabled === true,
             announcement_content: String(row.content || '').slice(0, 12000),
@@ -152,15 +176,31 @@ function createPublicConfigHandlers({
         return true;
     }
 
-    async function fetchPublicAnnouncementRules(supabase) {
-        const { data, error } = await supabase
-            .from('announcement_rules')
-            .select('*')
-            .eq('enabled', true)
-            .eq('status', 'approved')
-            .order('priority', { ascending: false })
-            .order('updated_at', { ascending: false })
-            .limit(50);
+    async function fetchPublicAnnouncementRules(supabase, site = 'cn') {
+        const normalizedSite = normalizeAnnouncementSite(site);
+        const buildQuery = (withSiteFilter = true) => {
+            let query = supabase
+                .from('announcement_rules')
+                .select('*')
+                .eq('enabled', true)
+                .eq('status', 'approved');
+
+            if (withSiteFilter) {
+                query = query.eq('site', normalizedSite);
+            }
+
+            return query
+                .order('priority', { ascending: false })
+                .order('updated_at', { ascending: false })
+                .limit(50);
+        };
+
+        let { data, error } = await buildQuery(true);
+        let usedLegacyFallback = false;
+        if (error && isMissingAnnouncementSiteColumnError(error)) {
+            ({ data, error } = await buildQuery(false));
+            usedLegacyFallback = true;
+        }
 
         if (error) {
             if (isMissingAnnouncementTableError(error)) {
@@ -170,7 +210,10 @@ function createPublicConfigHandlers({
         }
 
         const now = new Date();
-        return (Array.isArray(data) ? data : [])
+        const rows = usedLegacyFallback
+            ? filterAnnouncementRulesBySite(Array.isArray(data) ? data : [], normalizedSite)
+            : (Array.isArray(data) ? data : []);
+        return rows
             .map(normalizeAnnouncementRule)
             .filter((rule) => isAnnouncementRuleCurrentlyVisible(rule, now));
     }
@@ -195,26 +238,31 @@ function createPublicConfigHandlers({
             });
         }
 
+        const url = new URL(req.url || '', 'http://localhost');
+        const site = resolveSiteScopedSystemConfigRequestSite(req, url, { fallback: 'cn' });
         const [{ data, error }, rules] = await Promise.all([
             supabase
                 .from('system_config')
                 .select('config_value')
                 .eq('config_key', 'notifications')
                 .maybeSingle(),
-            fetchPublicAnnouncementRules(supabase)
+            fetchPublicAnnouncementRules(supabase, site)
         ]);
 
         if (error) {
             throw error;
         }
 
-        const config = sanitizeAnnouncementConfig(data?.config_value || {});
+        const config = sanitizeAnnouncementConfig(
+            resolveSiteScopedSystemConfigForRead('notifications', data?.config_value || {}, site) || {}
+        );
         config.announcement_rules = rules;
 
         res.setHeader('Cache-Control', 'no-store');
         return sendJson(res, 200, {
             success: true,
             key: 'notifications',
+            site,
             config
         });
     }
@@ -353,6 +401,11 @@ function createPublicConfigHandlers({
         }
 
         const body = typeof parseJsonBody === 'function' ? await parseJsonBody(req) : (req.body || {});
+        const eventUrl = new URL(req.url || '', 'http://localhost');
+        if (body.site) {
+            eventUrl.searchParams.set('site', body.site);
+        }
+        const site = resolveSiteScopedSystemConfigRequestSite(req, eventUrl, { fallback: 'cn' });
         const announcementId = sanitizeText(body.announcement_id || body.id, 120);
         const readerKey = sanitizeText(body.reader_key, 160);
         const eventType = sanitizeText(body.event_type || 'read', 40).toLowerCase();
@@ -371,9 +424,12 @@ function createPublicConfigHandlers({
             event_type: eventType,
             ack_key: sanitizeText(body.ack_key, 240),
             user_agent: sanitizeText(req.headers?.['user-agent'] || req.headers?.['User-Agent'], 500),
-            metadata: body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
-                ? body.metadata
-                : {}
+            metadata: {
+                ...(body.metadata && typeof body.metadata === 'object' && !Array.isArray(body.metadata)
+                    ? body.metadata
+                    : {}),
+                site
+            }
         };
 
         const { error } = await supabase
@@ -417,6 +473,8 @@ function createPublicConfigHandlers({
         }
 
         await requireAuthenticatedUser(req);
+        const url = new URL(req.url || '', 'http://localhost');
+        const site = resolveSiteScopedSystemConfigRequestSite(req, url, { fallback: 'cn' });
 
         const supabase = typeof getOptionalSupabaseAdmin === 'function'
             ? getOptionalSupabaseAdmin()
@@ -430,11 +488,57 @@ function createPublicConfigHandlers({
         }
 
         const quotaState = await fetchDirectVerifyQuotaState(supabase, {
-            fetchImpl: global.fetch
+            fetchImpl: global.fetch,
+            site
         });
 
         res.setHeader('Cache-Control', 'no-store');
         return sendJson(res, quotaState?.status || 500, quotaState);
+    }
+
+    function sanitizeVerifyPublicSettings(config = {}) {
+        const extractPrice = Math.max(
+            1,
+            Number(config.pricePerVerifyExtract || config.price_per_verify_extract || config.pricePerVerify || config.price_per_verify) || 10
+        );
+        const fullPrice = Math.max(
+            extractPrice,
+            Number(config.pricePerVerifyFull || config.price_per_verify_full) || Math.round(extractPrice * 2)
+        );
+
+        return {
+            enabled: config.enabled !== false,
+            price_per_verify: extractPrice,
+            price_per_verify_extract: extractPrice,
+            price_per_verify_full: fullPrice,
+            pricePerVerify: extractPrice,
+            pricePerVerifyExtract: extractPrice,
+            pricePerVerifyFull: fullPrice
+        };
+    }
+
+    async function verifySettingsHandler(req, res) {
+        if (req.method !== 'GET') {
+            res.setHeader('Allow', 'GET');
+            return sendJson(res, 405, {
+                success: false,
+                message: 'Method not allowed'
+            });
+        }
+
+        const url = new URL(req.url || '', 'http://localhost');
+        const site = resolveSiteScopedSystemConfigRequestSite(req, url, { fallback: 'cn' });
+        const supabase = typeof getOptionalSupabaseAdmin === 'function'
+            ? getOptionalSupabaseAdmin()
+            : null;
+        const config = await loadVerifyRuntimeConfig(supabase, process.env, { site });
+
+        res.setHeader('Cache-Control', 'no-store');
+        return sendJson(res, 200, {
+            success: true,
+            site: config.site || site,
+            config: sanitizeVerifyPublicSettings(config)
+        });
     }
 
     return {
@@ -485,6 +589,16 @@ function createPublicConfigHandlers({
                 return sendJson(res, error.statusCode || 500, {
                     success: false,
                     message: error.message || 'Public verify quota request failed'
+                });
+            }
+        },
+        'verify-settings': async (req, res) => {
+            try {
+                return await verifySettingsHandler(req, res);
+            } catch (error) {
+                return sendJson(res, error.statusCode || 500, {
+                    success: false,
+                    message: error.message || 'Public verify settings request failed'
                 });
             }
         }

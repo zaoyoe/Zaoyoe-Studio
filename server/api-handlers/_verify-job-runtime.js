@@ -618,7 +618,9 @@ async function syncTrackedJobStatus({
             }
         }
 
-        const runtimeConfig = config || await loadVerifyRuntimeConfig(supabase);
+        const runtimeConfig = config || await loadVerifyRuntimeConfig(supabase, process.env, {
+            site
+        });
         let pointsDeducted = Number(existingRecord?.points_deducted) || 0;
         if (upstreamStatus === 'success') {
             pointsDeducted = await deductPointsForJob({
@@ -646,6 +648,7 @@ async function syncTrackedJobStatus({
         await safeSyncVerifyUserTags(supabase, {
             userId,
             status: upstreamStatus === 'success' ? 'success' : 'failed',
+            site,
             sourceEventId: jobId,
             sourceModule: 'verify'
         });

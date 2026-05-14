@@ -52,6 +52,14 @@ function getQueryParams(req) {
     return url.searchParams;
 }
 
+function normalizeVerifyMonitorSite(value = '', fallback = 'all') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'intl') return 'intl';
+    if (normalized === 'cn') return 'cn';
+    if (normalized === 'all') return 'all';
+    return fallback === 'intl' || fallback === 'cn' || fallback === 'all' ? fallback : 'all';
+}
+
 function normalizePageNumber(value, fallback = 1) {
     const parsed = Number.parseInt(value, 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -500,6 +508,11 @@ function getVerifyAlertTargetId(job = {}) {
         || 'unknown';
 }
 
+function getVerifyAlertSite(job = {}) {
+    const payload = normalizePayload(job.payload);
+    return normalizeVerifyMonitorSite(payload.site || 'cn', 'cn');
+}
+
 function getVerifyAlertReference(job = {}) {
     const payload = normalizePayload(job.payload);
     if (normalizeText(payload.key_name, 160)) {
@@ -570,12 +583,14 @@ function buildVerifyAlertWorkspaceItem(job = {}, caseRecord = null, caseEventsBy
     const payload = normalizePayload(job.payload);
     const targetId = getVerifyAlertTargetId(job);
     const reference = getVerifyAlertReference(job);
-    const caseKey = buildOpsAlertCaseKey('verify', targetId);
-    const caseState = buildOpsAlertItemCaseState('verify', targetId, caseRecord, caseEventsByKey);
+    const site = getVerifyAlertSite(job);
+    const caseKey = buildOpsAlertCaseKey('verify', targetId, site);
+    const caseState = buildOpsAlertItemCaseState('verify', targetId, caseRecord, caseEventsByKey, { site });
     const hasCaseRecord = Boolean(caseRecord || (caseEventsByKey instanceof Map && Array.isArray(caseEventsByKey.get(caseKey)) && caseEventsByKey.get(caseKey).length));
 
     return {
         id: sanitizeText(job.id, 160) || null,
+        site,
         category_key: 'verify',
         alert_type: sanitizeText(job.alert_type, 120).toLowerCase() || null,
         severity: sanitizeText(job.severity, 40).toLowerCase() || 'warning',
@@ -599,10 +614,12 @@ function buildVerifyMonitorWorkspaceItems(alertJobs = [], caseMap = new Map(), c
 
     for (const job of Array.isArray(alertJobs) ? alertJobs : []) {
         const targetId = getVerifyAlertTargetId(job);
-        const caseRecord = caseMap instanceof Map ? caseMap.get(buildOpsAlertCaseKey('verify', targetId)) || null : null;
+        const site = getVerifyAlertSite(job);
+        const caseRecord = caseMap instanceof Map ? caseMap.get(buildOpsAlertCaseKey('verify', targetId, site)) || null : null;
         const item = buildVerifyAlertWorkspaceItem(job, caseRecord, caseEventsByKey);
-        if (!latestByTarget.has(item.target_id)) {
-            latestByTarget.set(item.target_id, item);
+        const itemKey = buildOpsAlertCaseKey('verify', item.target_id, item.site);
+        if (!latestByTarget.has(itemKey)) {
+            latestByTarget.set(itemKey, item);
         }
     }
 
@@ -658,6 +675,7 @@ module.exports = async (req, res) => {
         const taskPageSize = normalizePageSize(searchParams.get('taskPageSize'), VERIFY_MONITOR_DEFAULT_TASK_PAGE_SIZE);
         const failurePage = normalizePageNumber(searchParams.get('failurePage'), 1);
         const failurePageSize = normalizePageSize(searchParams.get('failurePageSize'), VERIFY_MONITOR_DEFAULT_FAILURE_PAGE_SIZE);
+        const site = normalizeVerifyMonitorSite(searchParams.get('site') || req.adminSite, 'all');
         const verifyAlertSinceIso = new Date(now.getTime() - VERIFY_MONITOR_ALERT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
         const [
             verificationLogs,
@@ -667,7 +685,13 @@ module.exports = async (req, res) => {
             fetchRecentVerifyAlertJobs(supabase, verifyAlertSinceIso)
         ]);
 
-        const rawDedupedRows = dedupeLatestMonitorRows(verificationLogs || []);
+        const scopedVerificationLogs = site === 'all'
+            ? (verificationLogs || [])
+            : (verificationLogs || []).filter((row) => normalizeVerifyMonitorSite(row.site || 'cn', 'cn') === site);
+        const scopedVerifyAlertJobs = site === 'all'
+            ? (verifyAlertJobs || [])
+            : (verifyAlertJobs || []).filter((job) => getVerifyAlertSite(job) === site);
+        const rawDedupedRows = dedupeLatestMonitorRows(scopedVerificationLogs);
         const verifyLedgerSubmitters = await fetchVerifyLedgerSubmitterRows(supabase, rawDedupedRows);
         const rowsWithLedgerSubmitters = enrichVerifyRowsWithLedgerAndProfiles(
             rawDedupedRows,
@@ -694,7 +718,8 @@ module.exports = async (req, res) => {
             if (!Number.isFinite(oldestMs)) return row;
             return currentMs < oldestMs ? row : oldest;
         }, null);
-        const verifyAlertTargets = verifyAlertJobs.map((job) => ({
+        const verifyAlertTargets = scopedVerifyAlertJobs.map((job) => ({
+            site: getVerifyAlertSite(job),
             category_key: 'verify',
             target_id: getVerifyAlertTargetId(job)
         }));
@@ -705,7 +730,7 @@ module.exports = async (req, res) => {
             fetchOpsAlertCasesByTargets(supabase, verifyAlertTargets),
             fetchOpsAlertCaseEventsByTargets(supabase, verifyAlertTargets)
         ]);
-        const alertItems = buildVerifyMonitorWorkspaceItems(verifyAlertJobs, verifyCaseMap, verifyCaseEventsByKey);
+        const alertItems = buildVerifyMonitorWorkspaceItems(scopedVerifyAlertJobs, verifyCaseMap, verifyCaseEventsByKey);
         const facts = buildVerifyMonitorFacts(dedupedRows, activeRows, failureRows, nowMs);
         const taskCollection = buildPagedCollection(dedupedRows, taskPage, taskPageSize);
         const failureCollection = buildPagedCollection(failureRows, failurePage, failurePageSize);
@@ -715,6 +740,7 @@ module.exports = async (req, res) => {
             fetched_at: now.toISOString(),
             summary: {
                 sample_size: verificationLogs.length,
+                site,
                 scan_page_size: VERIFY_MONITOR_RAW_SCAN_PAGE_SIZE,
                 scan_max_pages: VERIFY_MONITOR_RAW_SCAN_MAX_PAGES,
                 deduped_task_count: dedupedRows.length,

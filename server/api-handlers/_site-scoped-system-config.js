@@ -7,16 +7,32 @@ const {
 
 const SITE_SCOPED_SYSTEM_CONFIG_MARKER = '__site_scoped';
 const SITE_SCOPED_SYSTEM_CONFIG_KEYS = new Set([
+    'unlock_pricing',
     'payment_channels',
     'recharge_options',
+    'discount_trigger_rules',
     'affiliate_program',
-    'affiliate_poster'
+    'affiliate_poster',
+    'rewards',
+    'checkin_system',
+    'notifications',
+    'verify_settings',
+    'ops_alerts',
+    'engagement_asset_style_center',
+    'engagement_support_entry_center',
+    'engagement_page_scenes',
+    'engagement_external_embed_policy',
+    'engagement_user_tag_center'
 ]);
 const PUBLIC_SITE_SYSTEM_CONFIG_KEYS = new Set([
+    'unlock_pricing',
     'payment_channels',
     'recharge_options',
     'affiliate_program',
-    'affiliate_poster'
+    'affiliate_poster',
+    'rewards',
+    'checkin_system',
+    'notifications'
 ]);
 
 function isPlainObject(value) {

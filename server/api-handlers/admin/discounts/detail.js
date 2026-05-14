@@ -137,6 +137,37 @@ function getRiskSummaryDiscountCode(job = {}) {
     ).toUpperCase();
 }
 
+function getRiskAlertSite(job = {}, fallback = 'cn') {
+    const payload = normalizePayload(job?.payload);
+    const normalized = normalizeSite(payload?.site || payload?.site_id || payload?.siteId || fallback);
+    return normalized === 'intl' ? 'intl' : 'cn';
+}
+
+function getRiskCaseSites(site = 'all') {
+    const normalized = normalizeSite(site);
+    return normalized === 'all' ? ['cn', 'intl'] : [normalized === 'intl' ? 'intl' : 'cn'];
+}
+
+function buildRiskCaseTargets(discountCodes = [], site = 'all') {
+    const sites = getRiskCaseSites(site);
+    return [...new Set((Array.isArray(discountCodes) ? discountCodes : [discountCodes])
+        .map((code) => normalizeText(code, 160).toUpperCase())
+        .filter(Boolean))]
+        .flatMap((discountCode) => sites.map((caseSite) => ({
+            site: caseSite,
+            category_key: 'shop_risk',
+            target_id: `shop_order_risk:coupon:${discountCode}`
+        })));
+}
+
+function filterRiskJobsForSite(jobs = [], site = 'all') {
+    const normalized = normalizeSite(site);
+    if (normalized === 'all') {
+        return Array.isArray(jobs) ? jobs : [];
+    }
+    return (Array.isArray(jobs) ? jobs : []).filter((job) => getRiskAlertSite(job, normalized) === normalized);
+}
+
 async function fetchPagedRows(buildQuery, pageSize = 200, maxPages = 5) {
     const rows = [];
 
@@ -492,7 +523,7 @@ async function fetchRecentShopRiskAlertJobs(supabase) {
     }
 }
 
-function buildRiskSummary(discountCode = '', jobs = [], caseMap = new Map(), caseEventsByKey = new Map()) {
+function buildRiskSummary(discountCode = '', jobs = [], caseMap = new Map(), caseEventsByKey = new Map(), site = 'cn') {
     const normalizedCode = normalizeText(discountCode, 160).toUpperCase();
     const targetId = `shop_order_risk:coupon:${normalizedCode}`;
     const latestJob = (jobs || []).find((job) => {
@@ -501,8 +532,12 @@ function buildRiskSummary(discountCode = '', jobs = [], caseMap = new Map(), cas
         return jobTargetId === targetId || jobDiscountCode === normalizedCode;
     }) || null;
     const latestPayload = normalizePayload(latestJob?.payload);
-    const caseRecord = caseMap.get(buildOpsAlertCaseKey('shop_risk', targetId)) || null;
-    const caseState = buildOpsAlertItemCaseState('shop_risk', targetId, caseRecord, caseEventsByKey, { eventLimit: DETAIL_TIMELINE_LIMIT });
+    const caseSite = latestJob ? getRiskAlertSite(latestJob, site) : getRiskCaseSites(site)[0];
+    const caseRecord = caseMap.get(buildOpsAlertCaseKey('shop_risk', targetId, caseSite)) || null;
+    const caseState = buildOpsAlertItemCaseState('shop_risk', targetId, caseRecord, caseEventsByKey, {
+        eventLimit: DETAIL_TIMELINE_LIMIT,
+        site: caseSite
+    });
     const hasCaseState = Boolean(caseRecord) || (Array.isArray(caseState?.case_recent_events) && caseState.case_recent_events.length > 0);
     const latestAlertType = normalizeText(latestJob?.alert_type, 120).toLowerCase();
     const isRecovered = latestAlertType === 'shop_order_risk_recovered';
@@ -767,12 +802,9 @@ module.exports = async function adminDiscountsDetailHandler(req, res) {
             ]
         );
 
-        const riskTargets = [{
-            category_key: 'shop_risk',
-            target_id: `shop_order_risk:coupon:${discountCode}`
-        }];
+        const riskTargets = buildRiskCaseTargets(discountCode, site);
         const recentRiskJobs = await fetchRecentShopRiskAlertJobs(supabase);
-        const filteredRiskJobs = recentRiskJobs.filter((job) => {
+        const filteredRiskJobs = filterRiskJobsForSite(recentRiskJobs, site).filter((job) => {
             const jobTargetId = getRiskAlertTargetId(job);
             const jobDiscountCode = getRiskSummaryDiscountCode(job) || (jobTargetId.startsWith('shop_order_risk:coupon:') ? jobTargetId.split(':').slice(2).join(':').toUpperCase() : '');
             return jobDiscountCode === discountCode || jobTargetId === `shop_order_risk:coupon:${discountCode}`;
@@ -796,7 +828,7 @@ module.exports = async function adminDiscountsDetailHandler(req, res) {
             assets: discountAssets,
             events: discountEvents
         });
-        const riskSummary = buildRiskSummary(discountCode, filteredRiskJobs, opsAlertCasesByKey, caseEventsByKey);
+        const riskSummary = buildRiskSummary(discountCode, filteredRiskJobs, opsAlertCasesByKey, caseEventsByKey, site);
 
         return sendJson(res, 200, {
             success: true,

@@ -9,7 +9,8 @@ const {
 } = require('../../../../api/_lib/admin-notifications');
 const {
     insertOpsAlertCaseEvents,
-    isMissingTableAccessError
+    isMissingTableAccessError,
+    resolveOpsAlertCaseSite
 } = require('./_ops-alert-case-events');
 const {
     sanitizeText,
@@ -141,6 +142,7 @@ function normalizeRequestItems(body = {}) {
 
     if (items && items.length) {
         return items.map((item) => ({
+            site: resolveOpsAlertCaseSite(item, resolveOpsAlertCaseSite(body, 'cn')),
             category_key: normalizeCategoryKey(item?.category_key || item?.categoryKey || body.category_key || body.categoryKey, item?.target_id || item?.targetId),
             target_id: sanitizeText(item?.target_id || item?.targetId, 200),
             alert_type: sanitizeText(item?.alert_type || item?.alertType || body.alert_type || body.alertType, 120).toLowerCase(),
@@ -162,6 +164,7 @@ function normalizeRequestItems(body = {}) {
     }
 
     return [{
+        site: resolveOpsAlertCaseSite(body, 'cn'),
         category_key: categoryKey,
         target_id: targetId,
         alert_type: sanitizeText(body.alert_type || body.alertType || body?.metadata?.alert_type, 120).toLowerCase(),
@@ -230,7 +233,7 @@ module.exports = async (req, res) => {
         };
 
         for (const item of items) {
-            const existingCase = await fetchExistingCase(supabase, item.category_key, item.target_id);
+            const existingCase = await fetchExistingCase(supabase, item.category_key, item.target_id, item.site);
 
             if (!existingCase && action === 'reopen') {
                 skipped.push({
@@ -311,6 +314,7 @@ module.exports = async (req, res) => {
                 skipped_count: skipped.length,
                 targets: results.map((item) => ({
                     category_key: item.category_key,
+                    site: item.site,
                     target_id: item.target_id,
                     alert_type: item.alert_type || null,
                     status: item.status,

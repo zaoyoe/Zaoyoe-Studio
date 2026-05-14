@@ -21,6 +21,7 @@ const HomepageAdmin = (() => {
     let initialized = false;
     let loadingPromise = null;
     let loadingSite = '';
+    let homepageLoadRequestId = 0;
     let previewLanguage = 'zh';
     let previewDevice = 'desktop';
     let homepageFeaturedPromptPendingState = null;
@@ -1537,6 +1538,10 @@ const HomepageAdmin = (() => {
         const targetSite = getHomepageReadSite();
         const normalizedTargetSite = normalizeHomepageSite(targetSite);
 
+        if (loadingPromise && loadingSite && loadingSite !== normalizedTargetSite) {
+            homepageLoadRequestId += 1;
+        }
+
         if (!force && hasHomepageConfigForSite(normalizedTargetSite)) {
             applyHomepageConfigForSite(normalizedTargetSite);
             return true;
@@ -1547,12 +1552,17 @@ const HomepageAdmin = (() => {
         }
 
         loadingSite = normalizedTargetSite;
-        loadingPromise = Promise.resolve()
-            .then(() => loadAllConfig())
+        const requestId = homepageLoadRequestId + 1;
+        homepageLoadRequestId = requestId;
+        const nextLoadingPromise = Promise.resolve()
+            .then(() => loadAllConfig(normalizedTargetSite, requestId))
             .finally(() => {
-                loadingPromise = null;
-                loadingSite = '';
+                if (loadingPromise === nextLoadingPromise) {
+                    loadingPromise = null;
+                    loadingSite = '';
+                }
             });
+        loadingPromise = nextLoadingPromise;
 
         return loadingPromise;
     }
@@ -1633,16 +1643,27 @@ const HomepageAdmin = (() => {
     // DATA LOADING
     // ============================================
 
-    async function loadAllConfig() {
-        currentReadSite = getHomepageReadSite();
-        const siteLayoutPromise = fetchHomepageSiteLayout(currentReadSite);
-        const result = await fetchHomepageConfigRows(currentReadSite);
+    function isCurrentHomepageConfigRequest(site, requestId) {
+        return requestId === homepageLoadRequestId
+            && normalizeHomepageSite(getHomepageReadSite()) === normalizeHomepageSite(site);
+    }
+
+    async function loadAllConfig(site = getHomepageReadSite(), requestId = homepageLoadRequestId) {
+        const requestSite = normalizeHomepageSite(site);
+        currentReadSite = requestSite;
+        const siteLayoutPromise = fetchHomepageSiteLayout(requestSite);
+        const result = await fetchHomepageConfigRows(requestSite);
         const siteLayoutResult = await siteLayoutPromise;
         const rows = Array.isArray(result.rows) ? result.rows : [];
         const publishedRows = Array.isArray(result.published_rows) ? result.published_rows : rows;
+
+        if (!isCurrentHomepageConfigRequest(requestSite, requestId)) {
+            return false;
+        }
+
         applyHomepageSiteLayoutPayload(siteLayoutResult);
 
-        if (isHomepageAggregateMode(currentReadSite)) {
+        if (isHomepageAggregateMode(requestSite)) {
             configCacheBySite = { cn: {}, intl: {} };
             publishedConfigCacheBySite = { cn: {}, intl: {} };
 
@@ -1655,7 +1676,7 @@ const HomepageAdmin = (() => {
                 publishedConfigCacheBySite[entry.site][entry.section] = entry;
             });
         } else {
-            const normalizedSite = normalizeHomepageSite(currentReadSite);
+            const normalizedSite = normalizeHomepageSite(requestSite);
             configCacheBySite[normalizedSite] = buildHomepageSectionCache(rows);
             publishedConfigCacheBySite[normalizedSite] = buildHomepageSectionCache(publishedRows);
             homepageDraftMetaBySite[normalizedSite] = result.draft || null;
@@ -1663,14 +1684,16 @@ const HomepageAdmin = (() => {
             homepageHealthBySite[normalizedSite] = result.health || null;
         }
 
-        configCache = isHomepageAggregateMode(currentReadSite)
+        configCache = isHomepageAggregateMode(requestSite)
             ? buildAggregateHomepageConfigCache(configCacheBySite)
-            : { ...(configCacheBySite[normalizeHomepageSite(currentReadSite)] || {}) };
+            : { ...(configCacheBySite[normalizeHomepageSite(requestSite)] || {}) };
 
+        currentReadSite = requestSite;
         console.log('[Homepage] Loaded config for site:', currentReadSite, Object.keys(configCache));
 
         // Render all sections
         renderAllSections();
+        return true;
     }
 
     // ============================================

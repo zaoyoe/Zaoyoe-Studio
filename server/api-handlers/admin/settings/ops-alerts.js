@@ -1,6 +1,8 @@
 const {
+    normalizeAdminSite,
     parseJsonBody,
     requireAdmin,
+    requireWritableAdminSite,
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
@@ -18,6 +20,9 @@ const {
     sendFeishuAlert,
     sendTelegramAlert
 } = require('../../../../api/_lib/ops-alerts');
+const {
+    upsertSiteScopedSystemConfigValue
+} = require('../../_site-scoped-system-config');
 const {
     insertOpsAlertCaseEvents,
     normalizeJsonObject,
@@ -995,12 +1000,34 @@ function buildPaymentConfigIncidentRecoveredSampleJob(user) {
     };
 }
 
-async function upsertSystemConfig(supabase, configKey, configValue, userId, description) {
+async function loadSystemConfigValue(supabase, configKey) {
+    const query = supabase
+        .from('system_config');
+
+    if (typeof query.select !== 'function') {
+        return null;
+    }
+
+    const { data, error } = await query
+        .select('config_value')
+        .eq('config_key', configKey);
+
+    if (error) {
+        throw new Error(error.message || `Failed to load ${configKey}`);
+    }
+
+    const row = Array.isArray(data) ? data[0] : data;
+    return row?.config_value ?? null;
+}
+
+async function upsertSystemConfig(supabase, configKey, configValue, userId, description, site = 'cn') {
+    const previousValue = await loadSystemConfigValue(supabase, configKey);
+    const storedValue = upsertSiteScopedSystemConfigValue(previousValue, site, configValue);
     const { error } = await supabase
         .from('system_config')
         .upsert({
             config_key: configKey,
-            config_value: configValue,
+            config_value: storedValue,
             description,
             updated_by: userId,
             updated_at: new Date().toISOString()
@@ -1009,16 +1036,21 @@ async function upsertSystemConfig(supabase, configKey, configValue, userId, desc
     if (error) {
         throw new Error(error.message || `Failed to save ${configKey}`);
     }
+
+    return storedValue;
 }
 
 module.exports = async (req, res) => {
     try {
         const { supabase, user } = await requireAdmin(req, { permission: 'ops_alerts.manage' });
+        const requestUrl = new URL(req.url || '/api/admin/settings/ops-alerts', 'http://localhost');
 
         if (req.method === 'GET') {
-            const runtime = await loadOpsAlertsRuntimeConfig(supabase);
+            const site = normalizeAdminSite(requestUrl.searchParams.get('site') || req.adminSite, { defaultValue: 'all' }) || 'all';
+            const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env, { site });
             return sendJson(res, 200, {
                 success: true,
+                site,
                 config: runtime.config,
                 secrets: buildOpsAlertSecretStatus(runtime)
             });
@@ -1026,6 +1058,7 @@ module.exports = async (req, res) => {
 
         if (req.method === 'POST') {
             const body = await parseJsonBody(req);
+            const requestSite = normalizeAdminSite(body.site || req.adminSite, { defaultValue: 'all' }) || 'all';
             if (
                 sanitizeText(body.action) === 'send_test_telegram'
                 || sanitizeText(body.action) === 'send_sample_refund_telegram'
@@ -1054,7 +1087,7 @@ module.exports = async (req, res) => {
                 || sanitizeText(body.action) === 'send_sample_payment_config_incident_recovered'
                 || sanitizeText(body.action) === 'send_sample_payment_config_recovered'
             ) {
-                const storedRuntime = await loadOpsAlertsRuntimeConfig(supabase);
+                const storedRuntime = await loadOpsAlertsRuntimeConfig(supabase, process.env, { site: requestSite });
                 const runtime = {
                     config: normalizeOpsAlertsConfig(body.config),
                     secrets: mergeRuntimeSecrets(storedRuntime?.secrets, body.secrets)
@@ -1169,6 +1202,7 @@ module.exports = async (req, res) => {
                                                     ? 'admin.ops_alerts.payment_config_recovered_sample'
                             : 'admin.ops_alerts.telegram_test',
                     details: {
+                        site: requestSite,
                         ok: result?.ok === true,
                         channels: result?.channels || [],
                         delivery_count: Array.isArray(result?.deliveries) ? result.deliveries.length : 0
@@ -1239,6 +1273,10 @@ module.exports = async (req, res) => {
                 });
             }
 
+            const writableSite = requireWritableAdminSite(body.site || req.adminSite || 'cn', {
+                fieldName: 'site',
+                message: '保存站外运维告警配置前，请先选择国内站或国际站。'
+            });
             const nextConfig = normalizeOpsAlertsConfig(body.config);
             const incomingSecrets = body.secrets && typeof body.secrets === 'object' ? body.secrets : {};
             const caseEventEntries = buildOpsAlertCaseEventEntries(user, body.case_events);
@@ -1250,7 +1288,8 @@ module.exports = async (req, res) => {
                 OPS_ALERTS_CONFIG_KEY,
                 nextConfig,
                 user.id,
-                '站外运维告警配置'
+                '站外运维告警配置',
+                writableSite
             );
 
             for (const [secretName, secretKey] of Object.entries(secretKeys)) {
@@ -1306,6 +1345,7 @@ module.exports = async (req, res) => {
                 adminId: user.id,
                 actionType: 'admin.ops_alerts.upsert',
                 details: {
+                    site: writableSite,
                     enabled: nextConfig.enabled,
                     temporary_mute_until: sanitizeText(nextConfig.temporary_mute?.until, 120) || null,
                     temporary_mute_allow_critical: nextConfig.temporary_mute?.allow_critical !== false,
@@ -1587,9 +1627,10 @@ module.exports = async (req, res) => {
                 }
             });
 
-            const runtime = await loadOpsAlertsRuntimeConfig(supabase);
+            const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env, { site: writableSite });
             return sendJson(res, 200, {
                 success: true,
+                site: writableSite,
                 message: '站外运维告警配置已保存。',
                 config: runtime.config,
                 secrets: buildOpsAlertSecretStatus(runtime)
@@ -1598,6 +1639,7 @@ module.exports = async (req, res) => {
 
         if (req.method === 'DELETE') {
             const body = await parseJsonBody(req);
+            const requestSite = normalizeAdminSite(body.site || req.adminSite, { defaultValue: 'all' }) || 'all';
             const secretName = sanitizeText(body.secretName, 100);
             const secretKey = getOpsAlertSecretKeys()[secretName];
 
@@ -1615,13 +1657,15 @@ module.exports = async (req, res) => {
                 adminId: user.id,
                 actionType: 'admin.ops_alerts.secret.delete',
                 details: {
+                    site: requestSite,
                     secret_name: secretName
                 }
             });
 
-            const runtime = await loadOpsAlertsRuntimeConfig(supabase);
+            const runtime = await loadOpsAlertsRuntimeConfig(supabase, process.env, { site: requestSite });
             return sendJson(res, 200, {
                 success: true,
+                site: requestSite,
                 message: '站外告警密钥已删除。',
                 config: runtime.config,
                 secrets: buildOpsAlertSecretStatus(runtime)

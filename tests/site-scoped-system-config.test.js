@@ -3,11 +3,52 @@ const assert = require('node:assert/strict');
 
 const {
     buildSiteScopedSystemConfigEnvelope,
+    isPublicSiteSystemConfigKey,
+    isSiteScopedSystemConfigKey,
     resolveSiteScopedSystemConfigForRead,
     resolveSiteScopedSystemConfigRequestSite,
     resolveSiteScopedSystemConfigValue,
     upsertSiteScopedSystemConfigValue
 } = require('../server/api-handlers/_site-scoped-system-config');
+
+test('commerce, affiliate, and reward settings that affect users are site-scoped', () => {
+    [
+        'unlock_pricing',
+        'payment_channels',
+        'recharge_options',
+        'discount_trigger_rules',
+        'affiliate_program',
+        'affiliate_poster',
+        'rewards',
+        'checkin_system',
+        'notifications',
+        'verify_settings',
+        'ops_alerts',
+        'engagement_asset_style_center',
+        'engagement_support_entry_center',
+        'engagement_page_scenes',
+        'engagement_external_embed_policy',
+        'engagement_user_tag_center'
+    ].forEach((key) => {
+        assert.equal(isSiteScopedSystemConfigKey(key), true, `${key} should be site-scoped for Admin Studio saves`);
+    });
+
+    [
+        'unlock_pricing',
+        'payment_channels',
+        'recharge_options',
+        'affiliate_program',
+        'affiliate_poster',
+        'rewards',
+        'checkin_system',
+        'notifications'
+    ].forEach((key) => {
+        assert.equal(isPublicSiteSystemConfigKey(key), true, `${key} should be available through the public site config resolver`);
+    });
+
+    assert.equal(isPublicSiteSystemConfigKey('discount_trigger_rules'), false, 'card linkage rules should stay server-side only');
+    assert.equal(isPublicSiteSystemConfigKey('verify_settings'), false, 'verify settings contain CDKeys and must not use the generic public resolver');
+});
 
 test('site-scoped system config resolves per-site override with legacy default fallback', () => {
     const wrapped = buildSiteScopedSystemConfigEnvelope({

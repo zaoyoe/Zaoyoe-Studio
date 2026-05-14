@@ -52,9 +52,44 @@ const DEFAULT_USER_TAG_AUTOMATION = Object.freeze({
         inactive_days: 30
     })
 });
+const SITE_SCOPED_CONFIG_MARKER = '__site_scoped';
 
 function sanitizeText(value, maxLength = 120) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
+}
+
+function isPlainObject(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function normalizeConfigSite(value = 'cn') {
+    return sanitizeText(value, 20).toLowerCase() === 'intl' ? 'intl' : 'cn';
+}
+
+function normalizeOptionalConfigSite(value = '') {
+    const normalized = sanitizeText(value, 20).toLowerCase();
+    if (!normalized) return '';
+    return normalized === 'intl' ? 'intl' : 'cn';
+}
+
+function applyOptionalSiteFilter(query, site = '') {
+    const normalizedSite = normalizeOptionalConfigSite(site);
+    if (!normalizedSite || typeof query?.eq !== 'function') {
+        return query;
+    }
+    return query.eq('site', normalizedSite);
+}
+
+function resolveSiteScopedUserTagCenterConfig(value, site = 'cn') {
+    if (!isPlainObject(value) || value[SITE_SCOPED_CONFIG_MARKER] !== true) {
+        return value || {};
+    }
+    const normalizedSite = normalizeConfigSite(site);
+    const sites = isPlainObject(value.sites) ? value.sites : {};
+    if (Object.prototype.hasOwnProperty.call(sites, normalizedSite)) {
+        return sites[normalizedSite] || {};
+    }
+    return value.default || {};
 }
 
 function isUuid(value = '') {
@@ -133,7 +168,10 @@ function normalizeUserTagAutomationConfig(value = {}) {
 
 async function loadUserTagAutomationConfig(supabase, options = {}) {
     if (options.automation || options.tagCenter || options.tag_center) {
-        return normalizeUserTagAutomationConfig(options.automation || options.tagCenter || options.tag_center);
+        return normalizeUserTagAutomationConfig(resolveSiteScopedUserTagCenterConfig(
+            options.automation || options.tagCenter || options.tag_center,
+            options.site || options.site_id
+        ));
     }
 
     if (!supabase?.from) {
@@ -155,7 +193,10 @@ async function loadUserTagAutomationConfig(supabase, options = {}) {
             return normalizeUserTagAutomationConfig();
         }
         const configValue = Array.isArray(data) ? data[0]?.config_value : data?.config_value;
-        return normalizeUserTagAutomationConfig(configValue || {});
+        return normalizeUserTagAutomationConfig(resolveSiteScopedUserTagCenterConfig(
+            configValue || {},
+            options.site || options.site_id
+        ));
     } catch (_) {
         return normalizeUserTagAutomationConfig();
     }
@@ -235,8 +276,9 @@ function getSinceIso(days = 7) {
     return new Date(Date.now() - normalizedDays * 24 * 60 * 60 * 1000).toISOString();
 }
 
-async function getUserCommerceMetrics(supabase, userId) {
+async function getUserCommerceMetrics(supabase, userId, options = {}) {
     const normalizedUserId = sanitizeText(userId, 80);
+    const site = normalizeOptionalConfigSite(options.site || options.site_id);
     if (!supabase?.from || !normalizedUserId) {
         return {
             paidAmount: 0,
@@ -246,18 +288,18 @@ async function getUserCommerceMetrics(supabase, userId) {
     }
 
     const paymentRows = await fetchOptionalRows(() => withOptionalLimit(
-        supabase
+        applyOptionalSiteFilter(supabase
             .from('payment_orders')
             .select('id, paid_amount, expected_amount, points_amount, status')
             .eq('user_id', normalizedUserId)
-            .in('status', ['paid', 'redeemed']),
+            .in('status', ['paid', 'redeemed']), site),
         1000
     ));
     const shopRows = await fetchOptionalRows(() => withOptionalLimit(
-        supabase
+        applyOptionalSiteFilter(supabase
             .from('shop_orders')
             .select('id, total_price, price_paid')
-            .eq('user_id', normalizedUserId),
+            .eq('user_id', normalizedUserId), site),
         1000
     ));
 
@@ -292,15 +334,16 @@ function getInactiveCutoffIso(config = {}) {
     return new Date(Date.now() - inactiveDays * 24 * 60 * 60 * 1000).toISOString();
 }
 
-async function getUserLastActivityAt(supabase, userId) {
+async function getUserLastActivityAt(supabase, userId, options = {}) {
     const normalizedUserId = sanitizeText(userId, 80);
+    const site = normalizeOptionalConfigSite(options.site || options.site_id);
     if (!supabase?.from || !normalizedUserId) return '';
 
     const activityRows = await fetchOptionalRows(() => withOptionalLimit(
-        supabase
+        applyOptionalSiteFilter(supabase
             .from('engagement_user_activity')
             .select('last_active_at')
-            .eq('user_id', normalizedUserId),
+            .eq('user_id', normalizedUserId), site),
         1
     ));
     const loginRows = await fetchOptionalRows(() => withOptionalLimit(
@@ -311,10 +354,10 @@ async function getUserLastActivityAt(supabase, userId) {
         1000
     ));
     const engagementRows = await fetchOptionalRows(() => withOptionalLimit(
-        supabase
+        applyOptionalSiteFilter(supabase
             .from('engagement_events')
             .select('created_at')
-            .eq('user_id', normalizedUserId),
+            .eq('user_id', normalizedUserId), site),
         1000
     ));
 
@@ -344,7 +387,7 @@ async function recordUserActivity(supabase, options = {}) {
         };
         const { error } = await supabase
             .from('engagement_user_activity')
-            .upsert(payload, { onConflict: 'user_id' });
+            .upsert(payload, { onConflict: 'user_id,site' });
         if (error) throw error;
         return {
             ok: true,
@@ -388,7 +431,7 @@ async function maybeMarkHighValueUser(supabase, options = {}) {
         };
     }
 
-    const metrics = await getUserCommerceMetrics(supabase, userId);
+    const metrics = await getUserCommerceMetrics(supabase, userId, options);
     if (!userMeetsHighValueThreshold(metrics, automation.high_value)) {
         return {
             ok: false,
@@ -404,43 +447,45 @@ async function maybeMarkHighValueUser(supabase, options = {}) {
     });
 }
 
-async function countRecentPaymentFailures(supabase, userId, config = {}) {
+async function countRecentPaymentFailures(supabase, userId, config = {}, options = {}) {
     const normalizedUserId = sanitizeText(userId, 80);
+    const site = normalizeOptionalConfigSite(options.site || options.site_id);
     if (!supabase?.from || !normalizedUserId) return 0;
     const sinceIso = getSinceIso(config.window_days);
     const statuses = ['failed', 'cancelled', 'canceled', 'expired', 'rejected'];
     const paymentRows = await fetchOptionalRows(() => withOptionalLimit(
-        supabase
+        applyOptionalSiteFilter(supabase
             .from('payment_orders')
             .select('id, status, created_at')
             .eq('user_id', normalizedUserId)
             .in('status', statuses)
-            .gte('created_at', sinceIso),
+            .gte('created_at', sinceIso), site),
         1000
     ));
     const checkoutRows = await fetchOptionalRows(() => withOptionalLimit(
-        supabase
+        applyOptionalSiteFilter(supabase
             .from('payment_checkout_sessions')
             .select('id, status, created_at')
             .eq('user_id', normalizedUserId)
             .in('status', statuses)
-            .gte('created_at', sinceIso),
+            .gte('created_at', sinceIso), site),
         1000
     ));
     return paymentRows.length + checkoutRows.length;
 }
 
-async function countRecentVerifyFailures(supabase, userId, config = {}) {
+async function countRecentVerifyFailures(supabase, userId, config = {}, options = {}) {
     const normalizedUserId = sanitizeText(userId, 80);
+    const site = normalizeOptionalConfigSite(options.site || options.site_id);
     if (!supabase?.from || !normalizedUserId) return 0;
     const sinceIso = getSinceIso(config.window_days);
     const rows = await fetchOptionalRows(() => withOptionalLimit(
-        supabase
+        applyOptionalSiteFilter(supabase
             .from('verification_logs')
             .select('id, status, created_at')
             .eq('user_id', normalizedUserId)
             .eq('status', 'failed')
-            .gte('created_at', sinceIso),
+            .gte('created_at', sinceIso), site),
         1000
     ));
     return rows.length;
@@ -696,7 +741,7 @@ async function syncInactiveUserTagForUser(supabase, options = {}) {
     }
 
     const lastActiveAt = sanitizeText(options.lastActiveAt || options.last_active_at, 120)
-        || await getUserLastActivityAt(supabase, userId);
+        || await getUserLastActivityAt(supabase, userId, options);
     if (!lastActiveAt) {
         return {
             ok: false,
@@ -742,11 +787,12 @@ async function sweepInactiveUserTags(supabase, options = {}) {
 
     const cutoffIso = getInactiveCutoffIso(automation.inactive);
     const limit = normalizeNumber(options.limit, 500, 1, 5000);
+    const site = normalizeOptionalConfigSite(options.site || options.site_id);
     const staleRows = await fetchOptionalRows(() => withOptionalLimit(
-        supabase
+        applyOptionalSiteFilter(supabase
             .from('engagement_user_activity')
             .select('user_id,last_active_at')
-            .lte('last_active_at', cutoffIso),
+            .lte('last_active_at', cutoffIso), site),
         limit
     ));
     const userIds = normalizeUniqueStrings(
@@ -794,7 +840,7 @@ async function markPaymentFailed(supabase, options = {}) {
     const recentCount = Math.max(
         1,
         Number(options.observedCount || options.observed_count || 0) || 0,
-        await countRecentPaymentFailures(supabase, userId, automation.payment_failed)
+        await countRecentPaymentFailures(supabase, userId, automation.payment_failed, options)
     );
     if (recentCount < Number(automation.payment_failed.min_count || 1)) {
         return {
@@ -823,7 +869,7 @@ async function markVerifyFailed(supabase, options = {}) {
     const recentCount = Math.max(
         1,
         Number(options.observedCount || options.observed_count || 0) || 0,
-        await countRecentVerifyFailures(supabase, userId, automation.verify_failed)
+        await countRecentVerifyFailures(supabase, userId, automation.verify_failed, options)
     );
     if (recentCount < Number(automation.verify_failed.min_count || 1)) {
         return {

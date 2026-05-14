@@ -10,8 +10,12 @@ const {
 const {
     emitExternalMonitoringEventFailOpen
 } = require('./external-monitoring');
+const {
+    normalizeSiteValue
+} = require('./site');
 
 const OPS_ALERTS_CONFIG_KEY = 'ops_alerts';
+const OPS_ALERTS_SITE_SCOPED_CONFIG_MARKER = '__site_scoped';
 const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
     telegram_bot_token: 'ops_alert_telegram_bot_token',
     feishu_webhook_url: 'ops_alert_feishu_webhook_url',
@@ -797,6 +801,106 @@ function normalizeJsonObject(value) {
         : {};
 }
 
+function normalizeOpsAlertConfigSite(value, options = {}) {
+    const allowAll = options.allowAll === true;
+    const fallbackInput = String(options.fallback ?? 'cn').trim().toLowerCase();
+    const fallback = allowAll && fallbackInput === 'all'
+        ? 'all'
+        : (fallbackInput === ''
+            ? ''
+            : normalizeSiteValue(fallbackInput, { fallback: 'cn' }));
+    const normalized = normalizeText(value).toLowerCase();
+
+    if (!normalized) {
+        return fallback;
+    }
+
+    if (allowAll && normalized === 'all') {
+        return 'all';
+    }
+
+    return normalizeSiteValue(normalized, {
+        fallback: fallback === 'all' ? 'cn' : fallback,
+        allowEmpty: fallback === ''
+    });
+}
+
+function isOpsAlertsSiteScopedConfigEnvelope(value) {
+    return Boolean(value)
+        && typeof value === 'object'
+        && !Array.isArray(value)
+        && value[OPS_ALERTS_SITE_SCOPED_CONFIG_MARKER] === true;
+}
+
+function getOpsAlertsSiteScopedConfigDefaultValue(value) {
+    if (!isOpsAlertsSiteScopedConfigEnvelope(value)) {
+        return value ?? null;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(value, 'default')) {
+        return value.default;
+    }
+
+    return null;
+}
+
+function resolveOpsAlertsConfigValueForSite(value, site = 'all') {
+    if (!isOpsAlertsSiteScopedConfigEnvelope(value)) {
+        return value ?? null;
+    }
+
+    const normalizedSite = normalizeOpsAlertConfigSite(site, {
+        allowAll: true,
+        fallback: 'all'
+    });
+    if (normalizedSite === 'all') {
+        return getOpsAlertsSiteScopedConfigDefaultValue(value);
+    }
+
+    const sites = value.sites && typeof value.sites === 'object' && !Array.isArray(value.sites)
+        ? value.sites
+        : {};
+    if (Object.prototype.hasOwnProperty.call(sites, normalizedSite)) {
+        return sites[normalizedSite];
+    }
+
+    return getOpsAlertsSiteScopedConfigDefaultValue(value);
+}
+
+function resolveOpsAlertInputSite(input = {}, options = {}) {
+    const payload = normalizeJsonObject(input.payload);
+    const candidates = [
+        options.site,
+        input.site,
+        input.site_context,
+        payload.site
+    ];
+    const siteLabels = Array.isArray(payload.site_labels)
+        ? payload.site_labels.map((item) => normalizeOpsAlertConfigSite(item, { fallback: '' })).filter(Boolean)
+        : [];
+    if (siteLabels.length === 1) {
+        candidates.push(siteLabels[0]);
+    }
+
+    const explicitSite = candidates.find((item) => normalizeText(item));
+    return {
+        site: normalizeOpsAlertConfigSite(explicitSite, { fallback: 'cn' }),
+        explicit: Boolean(explicitSite)
+    };
+}
+
+function withOpsAlertSitePayload(payload = {}, siteContext = {}) {
+    const normalizedPayload = normalizeJsonObject(payload);
+    if (!siteContext?.explicit) {
+        return normalizedPayload;
+    }
+
+    return {
+        ...normalizedPayload,
+        site: normalizeOpsAlertConfigSite(siteContext.site, { fallback: 'cn' })
+    };
+}
+
 function isMissingTableAccessError(error, tableName = '') {
     const normalizedTableName = normalizeText(tableName).toLowerCase();
     const code = normalizeText(error?.code).toUpperCase();
@@ -902,6 +1006,9 @@ function shouldAutoReopenOpsAlertCase(alertType = '') {
 
 function buildOpsAlertCaseMetadata(existingCase = {}, input = {}) {
     const payload = normalizeJsonObject(input.payload);
+    const siteContext = resolveOpsAlertInputSite(input, {
+        site: existingCase.site || input.site
+    });
     const existingMetadata = normalizeJsonObject(existingCase.metadata);
     const nextMetadata = {
         ...existingMetadata,
@@ -924,6 +1031,7 @@ function buildOpsAlertCaseMetadata(existingCase = {}, input = {}) {
     if (referenceValue) {
         nextMetadata.reference_value = referenceValue;
     }
+    nextMetadata.site = siteContext.site;
 
     return nextMetadata;
 }
@@ -947,6 +1055,8 @@ async function reopenResolvedOpsAlertCaseForJob(supabase, input = {}, options = 
     const payload = normalizeJsonObject(input.payload);
     const targetId = normalizeText(payload.target_id || input.target_id);
     const categoryKey = inferOpsAlertCaseCategoryKey(alertType, targetId);
+    const siteContext = resolveOpsAlertInputSite(input, options);
+    const site = siteContext.site;
     if (!categoryKey || !targetId) {
         return {
             reopened: false,
@@ -959,6 +1069,7 @@ async function reopenResolvedOpsAlertCaseForJob(supabase, input = {}, options = 
         const { data, error } = await supabase
             .from('ops_alert_cases')
             .select('*')
+            .eq('site', site)
             .eq('category_key', categoryKey)
             .eq('target_id', targetId)
             .maybeSingle();
@@ -996,6 +1107,7 @@ async function reopenResolvedOpsAlertCaseForJob(supabase, input = {}, options = 
     const metadata = buildOpsAlertCaseMetadata(existingCase, input);
     const nextRecord = {
         ...existingCase,
+        site,
         category_key: categoryKey,
         target_id: targetId,
         alert_type: alertType || normalizeText(existingCase.alert_type).toLowerCase() || null,
@@ -1003,14 +1115,14 @@ async function reopenResolvedOpsAlertCaseForJob(supabase, input = {}, options = 
         resolution: null,
         metadata,
         last_action: 'reopened',
-        last_action_by: 'system:ops_alerts',
+        last_action_by: null,
         last_action_at: nowIso
     };
 
     try {
         const { error } = await supabase
             .from('ops_alert_cases')
-            .upsert(nextRecord, { onConflict: 'category_key,target_id' })
+            .upsert(nextRecord, { onConflict: 'site,category_key,target_id' })
             .select('*')
             .single();
 
@@ -1031,6 +1143,7 @@ async function reopenResolvedOpsAlertCaseForJob(supabase, input = {}, options = 
         const { error } = await supabase
             .from('ops_alert_case_events')
             .insert({
+                site,
                 category_key: categoryKey,
                 target_id: targetId,
                 alert_type: nextRecord.alert_type,
@@ -1038,7 +1151,7 @@ async function reopenResolvedOpsAlertCaseForJob(supabase, input = {}, options = 
                 status: 'open',
                 owner_admin_id: normalizeText(nextRecord.owner_admin_id) || null,
                 owner_label: normalizeText(nextRecord.owner_label) || null,
-                actor_admin_id: 'system:ops_alerts',
+                actor_admin_id: null,
                 actor_label: '系统告警',
                 note: '同目标出现新的站外告警，系统已自动重新打开该告警。',
                 resolution: null,
@@ -1062,6 +1175,7 @@ async function reopenResolvedOpsAlertCaseForJob(supabase, input = {}, options = 
     return {
         reopened: true,
         reason: 'auto_reopened',
+        site,
         category_key: categoryKey,
         target_id: targetId
     };
@@ -3345,14 +3459,20 @@ async function resolveOpsAlertSecrets(supabase, env = process.env) {
     };
 }
 
-async function loadOpsAlertsRuntimeConfig(supabase, env = process.env) {
+async function loadOpsAlertsRuntimeConfig(supabase, env = process.env, options = {}) {
     const storedConfig = await loadStoredSystemConfig(supabase, OPS_ALERTS_CONFIG_KEY).catch(() => null);
-    const config = normalizeOpsAlertsConfig(storedConfig || {}, env);
+    const site = normalizeOpsAlertConfigSite(options.site, {
+        allowAll: true,
+        fallback: 'all'
+    });
+    const configValue = resolveOpsAlertsConfigValueForSite(storedConfig, site);
+    const config = normalizeOpsAlertsConfig(configValue || {}, env);
     const secrets = await resolveOpsAlertSecrets(supabase, env);
 
     return {
         config,
-        secrets
+        secrets,
+        site
     };
 }
 
@@ -3754,7 +3874,10 @@ async function loadExistingOpsAlertSummaryJob(supabase, alertType, dedupeKey) {
 }
 
 async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
-    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, options.env);
+    const siteContext = resolveOpsAlertInputSite(input, options);
+    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, options.env, {
+        site: siteContext.site
+    });
     const alertType = normalizeText(input.alertType || input.alert_type);
     const explicitCreatedAt = normalizeText(input.createdAt || input.created_at);
     const referenceDate = options.now instanceof Date
@@ -3790,7 +3913,7 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
         alertType,
         title: input.title,
         content: input.content,
-        payload: input.payload
+        payload: withOpsAlertSitePayload(input.payload, siteContext)
     });
     const summaryDedupeKey = crypto
         .createHash('sha256')
@@ -3805,6 +3928,7 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
             summaryConfig.work_hours?.start_hour,
             summaryConfig.work_hours?.end_hour,
             summaryConfig.work_hours?.timezone,
+            siteContext.site,
             bucket.start_at,
             bucket.end_at
         ].join(':'))
@@ -3834,7 +3958,7 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
         alertType,
         dedupeKey: itemDedupeKey,
         payload: {
-            ...normalizeJsonObject(input.payload),
+            ...withOpsAlertSitePayload(input.payload, siteContext),
             summary_source_alert_type: alertType
         },
         title: input.title,
@@ -3878,6 +4002,8 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
             work_hours_timezone: summaryConfig.work_hours?.timezone,
             window_start_at: bucket.start_at,
             window_end_at: bucket.end_at,
+            site: siteContext.site,
+            site_labels: [siteContext.site],
             target_id: summaryTargetId,
             item_count: existingItems.length,
             items: existingItems,
@@ -3954,6 +4080,8 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
             work_hours_timezone: summaryConfig.work_hours?.timezone,
             window_start_at: bucket.start_at,
             window_end_at: bucket.end_at,
+            site: siteContext.site,
+            site_labels: [siteContext.site],
             target_id: summaryTargetId,
             item_count: 1,
             items: [newItem],
@@ -4015,12 +4143,15 @@ async function queueOpsAlertSummaryJob(supabase, input = {}, options = {}) {
 }
 
 async function enqueueOpsAlertJob(supabase, input = {}, options = {}) {
-    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, options.env);
+    const siteContext = resolveOpsAlertInputSite(input, options);
+    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, options.env, {
+        site: siteContext.site
+    });
     const alertType = normalizeText(input.alertType || input.alert_type);
     const title = normalizeText(input.title);
     const content = formatTimestampsInsideText(input.content);
     const severity = normalizeSeverity(input.severity, 'warning');
-    const payload = input.payload && typeof input.payload === 'object' ? input.payload : {};
+    const payload = withOpsAlertSitePayload(input.payload, siteContext);
     const requestedChannels = Array.isArray(input.allowedChannels)
         ? input.allowedChannels.map((item) => normalizeChannelName(item)).filter(Boolean)
         : [];
@@ -6335,6 +6466,9 @@ async function shouldSuppressResolvedOpsAlertJob(supabase, job = {}) {
     const payload = normalizeJsonObject(job.payload);
     const targetId = normalizeText(payload.target_id);
     const categoryKey = inferOpsAlertCaseCategoryKey(alertType, targetId);
+    const siteContext = resolveOpsAlertInputSite({
+        payload
+    });
     if (!supabase?.from || !categoryKey || !targetId) {
         return {
             suppressed: false,
@@ -6346,6 +6480,7 @@ async function shouldSuppressResolvedOpsAlertJob(supabase, job = {}) {
         const { data, error } = await supabase
             .from('ops_alert_cases')
             .select('status,last_action,last_action_at,resolution')
+            .eq('site', siteContext.site)
             .eq('category_key', categoryKey)
             .eq('target_id', targetId)
             .maybeSingle();
@@ -6463,7 +6598,9 @@ async function processOpsAlertJob(supabase, job, runtime, options = {}) {
 }
 
 async function sweepOpsAlertJobs(supabase, options = {}) {
-    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, options.env);
+    const runtime = options.runtime || await loadOpsAlertsRuntimeConfig(supabase, options.env, {
+        site: options.site || 'all'
+    });
     if (!runtime.config.enabled) {
         return {
             claimed: 0,
@@ -6479,9 +6616,30 @@ async function sweepOpsAlertJobs(supabase, options = {}) {
     let delivered = 0;
     let retried = 0;
     let suppressed = 0;
+    const runtimeBySite = new Map();
+
+    async function resolveRuntimeForJob(job = {}) {
+        if (options.runtime) {
+            return runtime;
+        }
+
+        const siteContext = resolveOpsAlertInputSite({
+            payload: job.payload
+        }, options);
+        if (!siteContext.explicit) {
+            return runtime;
+        }
+
+        const site = siteContext.site;
+        if (!runtimeBySite.has(site)) {
+            runtimeBySite.set(site, loadOpsAlertsRuntimeConfig(supabase, options.env, { site }));
+        }
+        return runtimeBySite.get(site);
+    }
 
     for (const job of claimedJobs) {
-        const result = await processOpsAlertJob(supabase, job, runtime, options);
+        const jobRuntime = await resolveRuntimeForJob(job);
+        const result = await processOpsAlertJob(supabase, job, jobRuntime, options);
         if (result.suppressed) {
             suppressed += 1;
         } else if (result.delivered) {
@@ -6522,11 +6680,15 @@ module.exports = {
         getNextRetryAt,
         getRetryDelayMs,
         hasRecentOpsAlertJob,
+        isOpsAlertsSiteScopedConfigEnvelope,
         mirrorOpsAlertAttemptToExternalMonitoring,
         normalizeChannelName,
+        normalizeOpsAlertConfigSite,
         normalizeCustomerChatQuickReplyTemplates,
         normalizeTicketReplyTemplates,
         resolveEnabledChannels,
+        resolveOpsAlertInputSite,
+        resolveOpsAlertsConfigValueForSite,
         normalizeSeverity,
         normalizeStringArray,
         recordOpsAlertAttempt,

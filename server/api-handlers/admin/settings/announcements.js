@@ -1,6 +1,8 @@
 const {
+    normalizeAdminSite,
     parseJsonBody,
     requireAdmin,
+    requireWritableAdminSite,
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
@@ -12,6 +14,10 @@ const ANNOUNCEMENT_PAGES = new Set(['all', 'prompts', 'index', 'shop', 'verify',
 
 function sanitizeText(value, maxLength = 4000) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
+}
+
+function normalizeAnnouncementSite(value, fallback = 'all') {
+    return normalizeAdminSite(value, { defaultValue: fallback }) || fallback;
 }
 
 function uniqueValues(values = []) {
@@ -110,6 +116,7 @@ function normalizeAnnouncementInput(input = {}, existing = {}) {
 function normalizeAnnouncementRow(row = {}) {
     return {
         id: row.id,
+        site: normalizeAnnouncementSite(row.site, 'cn'),
         title: row.title || '未命名公告',
         content: row.content || '',
         type: row.type || 'banner',
@@ -157,43 +164,95 @@ function isMissingAnnouncementTableError(error) {
         || (/schema cache/i.test(text) && /announcement_(rules|history|reads)/i.test(text));
 }
 
-async function fetchAnnouncementRows(supabase, options = {}) {
-    const limit = Math.max(1, Math.min(200, Number(options.limit || 80)));
-    let query = supabase
-        .from('announcement_rules')
-        .select('*')
-        .order('priority', { ascending: false })
-        .order('updated_at', { ascending: false })
-        .limit(limit);
+function isMissingAnnouncementSiteColumnError(error) {
+    const text = [
+        error?.code,
+        error?.message,
+        error?.details,
+        error?.hint
+    ].filter(Boolean).join(' ');
+    return error?.code === '42703'
+        || /column .*site.* does not exist/i.test(text)
+        || /could not find .*site.*announcement_rules/i.test(text)
+        || (/schema cache/i.test(text) && /announcement_rules/i.test(text) && /site/i.test(text));
+}
 
-    if (options.status) {
-        query = query.eq('status', options.status);
+function filterAnnouncementRowsBySite(rows = [], site = 'all') {
+    const normalizedSite = normalizeAnnouncementSite(site, 'all');
+    if (normalizedSite === 'all') {
+        return rows;
     }
 
-    const { data, error } = await query;
+    return rows.filter((row) => normalizeAnnouncementSite(row.site, 'cn') === normalizedSite);
+}
+
+async function fetchAnnouncementRows(supabase, options = {}) {
+    const limit = Math.max(1, Math.min(200, Number(options.limit || 80)));
+    const site = normalizeAnnouncementSite(options.site, 'all');
+    const buildQuery = (withSiteFilter = true) => {
+        let query = supabase
+            .from('announcement_rules')
+            .select('*')
+            .order('priority', { ascending: false })
+            .order('updated_at', { ascending: false })
+            .limit(limit);
+
+        if (options.status) {
+            query = query.eq('status', options.status);
+        }
+        if (withSiteFilter && site !== 'all') {
+            query = query.eq('site', site);
+        }
+
+        return query;
+    };
+    let { data, error } = await buildQuery(true);
+    let usedLegacyFallback = false;
+    if (error && site !== 'all' && isMissingAnnouncementSiteColumnError(error)) {
+        ({ data, error } = await buildQuery(false));
+        usedLegacyFallback = true;
+    }
     if (error) {
         throw error;
     }
-    return Array.isArray(data) ? data.map(normalizeAnnouncementRow) : [];
+    const rows = Array.isArray(data) ? data.map(normalizeAnnouncementRow) : [];
+    return usedLegacyFallback ? filterAnnouncementRowsBySite(rows, site) : rows;
 }
 
-async function fetchAnnouncementByID(supabase, id) {
+async function fetchAnnouncementByID(supabase, id, site = 'all') {
     const announcementId = sanitizeText(id, 80);
     if (!announcementId) {
         return null;
     }
+    const normalizedSite = normalizeAnnouncementSite(site, 'all');
 
-    const { data, error } = await supabase
-        .from('announcement_rules')
-        .select('*')
-        .eq('id', announcementId)
-        .maybeSingle();
+    const buildQuery = (withSiteFilter = true) => {
+        let query = supabase
+            .from('announcement_rules')
+            .select('*')
+            .eq('id', announcementId);
+        if (withSiteFilter && normalizedSite !== 'all') {
+            query = query.eq('site', normalizedSite);
+        }
+        return query.maybeSingle();
+    };
+
+    let { data, error } = await buildQuery(true);
+    let usedLegacyFallback = false;
+    if (error && normalizedSite !== 'all' && isMissingAnnouncementSiteColumnError(error)) {
+        ({ data, error } = await buildQuery(false));
+        usedLegacyFallback = true;
+    }
 
     if (error) {
         throw error;
     }
 
-    return data ? normalizeAnnouncementRow(data) : null;
+    const row = data ? normalizeAnnouncementRow(data) : null;
+    if (!row || !usedLegacyFallback) {
+        return row;
+    }
+    return filterAnnouncementRowsBySite([row], normalizedSite)[0] || null;
 }
 
 async function fetchAnnouncementHistory(supabase, announcementIds = []) {
@@ -313,8 +372,10 @@ async function insertAnnouncementHistory(supabase, {
 }
 
 async function createAnnouncement(supabase, user, input = {}) {
+    const site = normalizeAnnouncementSite(input.site, 'cn');
     const payload = {
         ...normalizeAnnouncementInput(input),
+        site,
         created_by: user.id,
         updated_by: user.id
     };
@@ -342,7 +403,8 @@ async function createAnnouncement(supabase, user, input = {}) {
 }
 
 async function updateAnnouncement(supabase, user, id, input = {}) {
-    const existing = await fetchAnnouncementByID(supabase, id);
+    const site = normalizeAnnouncementSite(input.site, 'cn');
+    const existing = await fetchAnnouncementByID(supabase, id, site);
     if (!existing) {
         const error = new Error('Announcement not found');
         error.statusCode = 404;
@@ -379,7 +441,8 @@ async function updateAnnouncement(supabase, user, id, input = {}) {
 }
 
 async function transitionAnnouncement(supabase, user, id, action, fields = {}) {
-    const existing = await fetchAnnouncementByID(supabase, id);
+    const site = normalizeAnnouncementSite(fields.site, 'cn');
+    const existing = await fetchAnnouncementByID(supabase, id, site);
     if (!existing) {
         const error = new Error('Announcement not found');
         error.statusCode = 404;
@@ -458,6 +521,7 @@ async function listResponse(supabase, options = {}) {
     ]);
 
     return {
+        site: normalizeAnnouncementSite(options.site, 'all'),
         items,
         history,
         stats: buildAnnouncementStats(readRows)
@@ -468,9 +532,11 @@ async function handleGet(req, res, supabase) {
     const url = new URL(req.url || '', 'http://localhost');
     const status = sanitizeText(url.searchParams.get('status'), 80).toLowerCase();
     const limit = Number(url.searchParams.get('limit') || 80);
+    const site = normalizeAnnouncementSite(url.searchParams.get('site') || req.adminSite, 'all');
     const payload = await listResponse(supabase, {
         status: ANNOUNCEMENT_STATUSES.has(status) ? status : '',
-        limit
+        limit,
+        site
     });
 
     return sendJson(res, 200, {
@@ -498,14 +564,25 @@ module.exports = async function announcementSettingsHandler(req, res) {
         const body = await parseJsonBody(req);
         const action = sanitizeText(body.action || 'save', 80).toLowerCase();
         const id = sanitizeText(body.id || body.announcement_id, 80);
+        const site = requireWritableAdminSite(body.site || req.adminSite, { fieldName: 'site' });
+        const actionBody = {
+            ...body,
+            site
+        };
         let announcement;
 
         if (action === 'create' || (action === 'save' && !id)) {
-            announcement = await createAnnouncement(supabase, user, body.announcement || body);
+            announcement = await createAnnouncement(supabase, user, {
+                ...(body.announcement || body),
+                site
+            });
         } else if (action === 'update' || action === 'save') {
-            announcement = await updateAnnouncement(supabase, user, id, body.announcement || body);
+            announcement = await updateAnnouncement(supabase, user, id, {
+                ...(body.announcement || body),
+                site
+            });
         } else if (['submit_review', 'approve', 'reject', 'archive', 'restore_draft'].includes(action)) {
-            announcement = await transitionAnnouncement(supabase, user, id, action, body);
+            announcement = await transitionAnnouncement(supabase, user, id, action, actionBody);
         } else {
             return sendJson(res, 400, {
                 success: false,
@@ -520,12 +597,13 @@ module.exports = async function announcementSettingsHandler(req, res) {
             actionType: `announcement.${action}`,
             details: {
                 announcement_id: announcement.id,
+                site,
                 title: announcement.title,
                 status: announcement.status
             }
         });
 
-        const payload = await listResponse(supabase);
+        const payload = await listResponse(supabase, { site });
         return sendJson(res, 200, {
             success: true,
             announcement,

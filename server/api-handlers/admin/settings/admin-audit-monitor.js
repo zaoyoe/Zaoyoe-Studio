@@ -399,8 +399,9 @@ function buildAdminAuditWorkspaceItem(job = {}, caseRecord = null, caseEventsByK
     const categoryKey = getAuditWorkspaceAlertCategoryKey(alertType);
     const targetId = getAuditWorkspaceAlertTargetId(job);
     const reference = getAuditWorkspaceAlertReference(job);
-    const caseKey = buildOpsAlertCaseKey(categoryKey, targetId);
-    const caseState = buildOpsAlertItemCaseState(categoryKey, targetId, caseRecord, caseEventsByKey);
+    const site = inferAuditWorkspaceAlertSite(job) || 'cn';
+    const caseKey = buildOpsAlertCaseKey(categoryKey, targetId, site);
+    const caseState = buildOpsAlertItemCaseState(categoryKey, targetId, caseRecord, caseEventsByKey, { site });
     const hasCaseRecord = Boolean(caseRecord || (caseEventsByKey instanceof Map && Array.isArray(caseEventsByKey.get(caseKey)) && caseEventsByKey.get(caseKey).length));
 
     return {
@@ -412,7 +413,7 @@ function buildAdminAuditWorkspaceItem(job = {}, caseRecord = null, caseEventsByK
         message: getAuditWorkspaceAlertExcerpt(job),
         response_summary: buildAuditWorkspaceAlertDetailSummary(job) || null,
         created_at: normalizeText(job.created_at, 80) || null,
-        site: inferAuditWorkspaceAlertSite(job) || null,
+        site,
         target_id: targetId,
         reference_label: reference.label,
         reference_value: reference.value,
@@ -435,7 +436,8 @@ function buildAdminAuditWorkspaceItems(alertJobs = [], caseMap = new Map(), case
             continue;
         }
 
-        const compositeKey = buildOpsAlertCaseKey(categoryKey, targetId);
+        const site = inferAuditWorkspaceAlertSite(job) || 'cn';
+        const compositeKey = buildOpsAlertCaseKey(categoryKey, targetId, site);
         const caseRecord = caseMap instanceof Map ? caseMap.get(compositeKey) || null : null;
         const item = buildAdminAuditWorkspaceItem(job, caseRecord, caseEventsByKey);
         if (!latestByTarget.has(compositeKey)) {
@@ -682,6 +684,7 @@ module.exports = async function adminAuditMonitorHandler(req, res) {
         ).map(mapPaymentConfigAlert));
         const scopedAuditWorkspaceAlertJobs = auditWorkspaceAlertJobs.filter((job) => shouldIncludeAuditWorkspaceAlertJobForAdminSite(job, adminSite));
         const auditWorkspaceTargets = scopedAuditWorkspaceAlertJobs.map((job) => ({
+            site: inferAuditWorkspaceAlertSite(job) || 'cn',
             category_key: getAuditWorkspaceAlertCategoryKey(job.alert_type),
             target_id: getAuditWorkspaceAlertTargetId(job)
         })).filter((item) => item.category_key && item.target_id);

@@ -929,7 +929,8 @@ function buildOpsAlertCaseMutationContext(source = {}) {
         sessionId: source.sessionId || source.session_id || source.payload?.session_id || '',
         caseStatus: source.caseStatus || source.case_status || '',
         caseOwnerAdminId: source.caseOwnerAdminId || source.case_owner_admin_id || '',
-        caseOwnerLabel: source.caseOwnerLabel || source.case_owner_label || ''
+        caseOwnerLabel: source.caseOwnerLabel || source.case_owner_label || '',
+        site: source.site || source.site_context || source.siteContext || source.payload?.site || ''
     });
 }
 
@@ -952,6 +953,9 @@ function buildOpsAlertCaseMutationItem(item = {}, categoryKey = '') {
         reference_value: normalizedContext.referenceValue
     };
 
+    if (normalizedContext.site) {
+        nextItem.site = normalizedContext.site;
+    }
     if (Object.keys(metadata).length) {
         nextItem.metadata = metadata;
     }
@@ -5094,7 +5098,13 @@ async function fetchAdminWorkbenchOpsAlertSettings(headers = {}, options = {}) {
 
     const endpoint = String(options.endpoint || '/api/admin/settings/ops-alerts').trim()
         || '/api/admin/settings/ops-alerts';
-    const response = await fetchImpl(endpoint, {
+    const normalizedSite = ['all', 'cn', 'intl'].includes(String(options.site || '').trim().toLowerCase())
+        ? String(options.site || '').trim().toLowerCase()
+        : '';
+    const requestTarget = normalizedSite
+        ? `${endpoint}${endpoint.includes('?') ? '&' : '?'}site=${encodeURIComponent(normalizedSite)}`
+        : endpoint;
+    const response = await fetchImpl(requestTarget, {
         method: 'GET',
         headers
     });
@@ -5116,8 +5126,14 @@ async function submitAdminWorkbenchOpsAlertSettings(headers = {}, body = {}, opt
     const endpoint = String(options.endpoint || '/api/admin/settings/ops-alerts').trim()
         || '/api/admin/settings/ops-alerts';
     const requestBody = body && typeof body === 'object' && !Array.isArray(body)
-        ? body
+        ? { ...body }
         : {};
+    const normalizedSite = ['all', 'cn', 'intl'].includes(String(options.site || '').trim().toLowerCase())
+        ? String(options.site || '').trim().toLowerCase()
+        : '';
+    if (normalizedSite && !requestBody.site) {
+        requestBody.site = normalizedSite;
+    }
     const response = await fetchImpl(endpoint, {
         method: 'POST',
         headers,
@@ -5141,10 +5157,16 @@ async function deleteAdminWorkbenchOpsAlertSecret(headers = {}, secretName = '',
     const endpoint = String(options.endpoint || '/api/admin/settings/ops-alerts').trim()
         || '/api/admin/settings/ops-alerts';
     const normalizedSecretName = String(secretName || '').trim();
+    const normalizedSite = ['all', 'cn', 'intl'].includes(String(options.site || '').trim().toLowerCase())
+        ? String(options.site || '').trim().toLowerCase()
+        : '';
     const response = await fetchImpl(endpoint, {
         method: 'DELETE',
         headers,
-        body: JSON.stringify({ secretName: normalizedSecretName })
+        body: JSON.stringify({
+            secretName: normalizedSecretName,
+            ...(normalizedSite ? { site: normalizedSite } : {})
+        })
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload.success === false) {
@@ -5180,6 +5202,12 @@ async function fetchAdminWorkbenchOpsAlertHealth(headers = {}, options = {}) {
 
     const endpoint = String(options.endpoint || '/api/admin/settings/ops-alert-health').trim()
         || '/api/admin/settings/ops-alert-health';
+    const normalizedSite = ['all', 'cn', 'intl'].includes(String(options.site || '').trim().toLowerCase())
+        ? String(options.site || '').trim().toLowerCase()
+        : '';
+    const requestTarget = normalizedSite
+        ? `${endpoint}${endpoint.includes('?') ? '&' : '?'}site=${encodeURIComponent(normalizedSite)}`
+        : endpoint;
     const timeoutMs = Number(options.timeoutMs || 0);
     const AbortControllerImpl = typeof options.AbortController === 'function'
         ? options.AbortController
@@ -5196,7 +5224,7 @@ async function fetchAdminWorkbenchOpsAlertHealth(headers = {}, options = {}) {
         : 0;
 
     try {
-        const response = await fetchImpl(endpoint, {
+        const response = await fetchImpl(requestTarget, {
             method: 'GET',
             headers,
             signal: controller?.signal
@@ -6225,6 +6253,9 @@ function buildOpsAlertCaseMutationRequest(action, context = {}, options = {}) {
             ...requestMetadata
         }
     };
+    if (normalizedContext.site) {
+        requestBody.metadata.site = normalizedContext.site;
+    }
     const ownerAdminId = String(options.ownerAdminId || options.owner_admin_id || '').trim();
     const ownerLabel = String(options.ownerLabel || options.owner_label || '').trim();
 
@@ -6235,6 +6266,9 @@ function buildOpsAlertCaseMutationRequest(action, context = {}, options = {}) {
         requestBody.target_id = normalizedContext.targetId;
         requestBody.alert_type = normalizedContext.alertType || '';
         requestBody.title = normalizedContext.title || '';
+        if (normalizedContext.site) {
+            requestBody.site = normalizedContext.site;
+        }
     }
 
     if (ownerAdminId) {

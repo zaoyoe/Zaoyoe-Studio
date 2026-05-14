@@ -258,6 +258,64 @@ test('recharge linkage issues a user-assigned coupon when the rule matches', asy
     assert.equal(state.discountUserAssets[0].source_type, 'recharge_linkage');
 });
 
+test('recharge linkage resolves site-scoped trigger rules before matching', async () => {
+    const state = {
+        systemConfigRows: [
+            {
+                config_key: DISCOUNT_TRIGGER_CONFIG_KEY,
+                config_value: {
+                    __site_scoped: true,
+                    default: {
+                        recharge: {
+                            enabled: true,
+                            rules: [
+                                {
+                                    discount_id: 'discount-cn',
+                                    min_paid_amount: 9.9
+                                }
+                            ]
+                        }
+                    },
+                    sites: {
+                        intl: {
+                            recharge: {
+                                enabled: true,
+                                rules: [
+                                    {
+                                        discount_id: 'discount-intl',
+                                        min_paid_amount: 9.9
+                                    }
+                                ]
+                            }
+                        }
+                    }
+                }
+            }
+        ],
+        discountCodes: [
+            createActiveDiscount('discount-cn'),
+            createActiveDiscount('discount-intl', { applicable_site: 'intl' })
+        ]
+    };
+    const supabase = createSupabaseDouble(state);
+
+    const result = await maybeIssueRechargeDiscountAssets({
+        supabase,
+        userId: 'user-intl',
+        site: 'intl',
+        paidPoints: 100,
+        bonusPoints: 0,
+        paidAmount: 9.9,
+        paymentOrderId: 'po-intl-1',
+        paymentProvider: 'mock'
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.issued_count, 1);
+    assert.deepEqual(result.assigned_discount_ids, ['discount-intl']);
+    assert.equal(state.discountUserAssets[0].discount_id, 'discount-intl');
+});
+
 test('recharge linkage respects first-recharge-only rules', async () => {
     const state = {
         systemConfigRows: [

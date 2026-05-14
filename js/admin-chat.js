@@ -5035,8 +5035,36 @@ class AdminChat {
         return categoryMap[normalizedAlertType] || '';
     }
 
-    buildOpsAlertCaseKey(categoryKey = '', targetId = '') {
-        return `${String(categoryKey || '').trim().toLowerCase()}::${String(targetId || '').trim()}`;
+    normalizeOpsAlertCaseSite(value = '', fallback = 'cn') {
+        const fallbackText = String(fallback || '').trim().toLowerCase();
+        const normalizedFallback = ['cn', 'intl', 'all'].includes(fallbackText)
+            ? fallbackText
+            : (fallbackText ? 'cn' : '');
+        const normalized = String(value || '').trim().toLowerCase();
+        if (['cn', 'intl', 'all'].includes(normalized)) {
+            return normalized;
+        }
+        return normalizedFallback;
+    }
+
+    getOpsAlertCaseSite(alert = {}) {
+        const payload = alert.payload && typeof alert.payload === 'object' && !Array.isArray(alert.payload)
+            ? alert.payload
+            : {};
+        const siteLabels = Array.isArray(payload.site_labels)
+            ? payload.site_labels.map((item) => this.normalizeOpsAlertCaseSite(item, '')).filter(Boolean)
+            : [];
+        if (siteLabels.length === 1) {
+            return siteLabels[0];
+        }
+        if (siteLabels.length > 1) {
+            return 'all';
+        }
+        return this.normalizeOpsAlertCaseSite(alert.caseSite || alert.site || payload.site || payload.site_context, 'cn');
+    }
+
+    buildOpsAlertCaseKey(categoryKey = '', targetId = '', site = 'cn') {
+        return `${this.normalizeOpsAlertCaseSite(site, 'cn')}::${String(categoryKey || '').trim().toLowerCase()}::${String(targetId || '').trim()}`;
     }
 
     getOpsAlertCaseTargetIds(alert = {}) {
@@ -5056,7 +5084,7 @@ class AdminChat {
         if (!alertType || !alertType.endsWith('_summary')) {
             return '';
         }
-        return `${String(alert.caseCategoryKey || '').trim().toLowerCase()}::${alertType}`;
+        return `${this.getOpsAlertCaseSite(alert)}::${String(alert.caseCategoryKey || '').trim().toLowerCase()}::${alertType}`;
     }
 
     pickPreferredOpsAlertCaseRecord(current = null, candidate = null) {
@@ -5086,7 +5114,7 @@ class AdminChat {
             this.getOpsAlertCaseTargetIds(alert)
                 .filter((targetId) => targetId && targetId !== alert.caseTargetId)
                 .forEach((targetId) => {
-                    const legacyCase = caseMap.get(this.buildOpsAlertCaseKey(alert.caseCategoryKey, targetId));
+                    const legacyCase = caseMap.get(this.buildOpsAlertCaseKey(alert.caseCategoryKey, targetId, this.getOpsAlertCaseSite(alert)));
                     if (!legacyCase) {
                         return;
                     }
@@ -5104,8 +5132,9 @@ class AdminChat {
             if (!fallbackCase || !alert.caseCategoryKey || !alert.caseTargetId) {
                 return;
             }
-            fallbackMap.set(this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId), {
+            fallbackMap.set(this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId, this.getOpsAlertCaseSite(alert)), {
                 ...fallbackCase,
+                site: this.getOpsAlertCaseSite(alert),
                 category_key: String(alert.caseCategoryKey || '').trim().toLowerCase(),
                 target_id: String(alert.caseTargetId || '').trim()
             });
@@ -5201,6 +5230,7 @@ class AdminChat {
 
         return {
             id: String(row.id || '').trim(),
+            site: this.normalizeOpsAlertCaseSite(row.site || row.metadata?.site, 'cn'),
             category_key: categoryKey,
             target_id: targetId,
             status: String(row.status || 'open').trim().toLowerCase() || 'open',
@@ -5243,6 +5273,7 @@ class AdminChat {
 
         return {
             id: String(row.id || '').trim(),
+            site: this.normalizeOpsAlertCaseSite(row.site || metadata.site, 'cn'),
             category_key: categoryKey,
             target_id: targetId,
             action,
@@ -5278,6 +5309,7 @@ class AdminChat {
 
         return {
             id: '',
+            site: this.getOpsAlertCaseSite(alert),
             category_key: String(alert.caseCategoryKey || '').trim().toLowerCase(),
             target_id: String(alert.caseTargetId || '').trim(),
             action,
@@ -5602,6 +5634,7 @@ class AdminChat {
             alert_type: String(alert.alertType || alert.alert_type || '').trim().toLowerCase(),
             category: String(alert.caseCategoryKey || alert.category || alert.category_key || '').trim().toLowerCase(),
             category_key: String(alert.caseCategoryKey || alert.category || alert.category_key || '').trim().toLowerCase(),
+            site: this.getOpsAlertCaseSite(alert),
             referenceLabel: String(alert.referenceLabel || alert.reference_label || '').trim(),
             referenceValue: String(alert.referenceValue || alert.reference_value || '').trim(),
             targetId: String(alert.caseTargetId || alert.targetId || alert.target_id || '').trim(),
@@ -5646,17 +5679,24 @@ class AdminChat {
             ? window.buildOpsAlertCaseMutationRequest(action, context, options)
             : (() => {
                 const requestItems = (Array.isArray(options.items) ? options.items : [])
-                    .map((item) => ({
-                        category_key: String(item.category_key || item.category || item.caseCategoryKey || context.category || '').trim().toLowerCase(),
-                        target_id: String(item.target_id || item.targetId || item.caseTargetId || '').trim(),
-                        alert_type: String(item.alert_type || item.alertType || '').trim().toLowerCase(),
-                        title: String(item.title || '').trim(),
-                        reference_label: String(item.reference_label || item.referenceLabel || '').trim(),
-                        reference_value: String(item.reference_value || item.referenceValue || '').trim(),
-                        metadata: item.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata)
-                            ? item.metadata
-                            : undefined
-                    }))
+                    .map((item) => {
+                        const nextItem = {
+                            category_key: String(item.category_key || item.category || item.caseCategoryKey || context.category || '').trim().toLowerCase(),
+                            target_id: String(item.target_id || item.targetId || item.caseTargetId || '').trim(),
+                            alert_type: String(item.alert_type || item.alertType || '').trim().toLowerCase(),
+                            title: String(item.title || '').trim(),
+                            reference_label: String(item.reference_label || item.referenceLabel || '').trim(),
+                            reference_value: String(item.reference_value || item.referenceValue || '').trim(),
+                            metadata: item.metadata && typeof item.metadata === 'object' && !Array.isArray(item.metadata)
+                                ? item.metadata
+                                : undefined
+                        };
+                        const itemSite = this.normalizeOpsAlertCaseSite(item.site || item.caseSite || item.site_context || context.site, '');
+                        if (itemSite) {
+                            nextItem.site = itemSite;
+                        }
+                        return nextItem;
+                    })
                     .filter((item) => item.category_key && item.target_id);
                 const requestBody = {
                     action: String(action || '').trim().toLowerCase(),
@@ -5674,6 +5714,9 @@ class AdminChat {
                             : {})
                     }
                 };
+                if (context.site) {
+                    requestBody.metadata.site = context.site;
+                }
 
                 if (requestItems.length) {
                     requestBody.items = requestItems;
@@ -5681,6 +5724,9 @@ class AdminChat {
                     requestBody.category_key = context.category || '';
                     requestBody.target_id = context.targetId || '';
                     requestBody.alert_type = context.alertType || '';
+                    if (context.site) {
+                        requestBody.site = context.site;
+                    }
                     requestBody.title = context.title || '';
                 }
 
@@ -6110,7 +6156,7 @@ class AdminChat {
         filteredAlerts
             .filter((alert) => !this.isOpsAlertClosed(alert))
             .forEach((alert) => {
-                const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId);
+                const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId, this.getOpsAlertCaseSite(alert));
                 if (!alert.caseCategoryKey || !alert.caseTargetId || caseMap.has(caseKey)) {
                     return;
                 }
@@ -6129,12 +6175,12 @@ class AdminChat {
             (Array.isArray(cases) ? cases : [])
                 .map((row) => this.normalizeOpsAlertCaseRecord(row))
                 .filter(Boolean)
-                .map((row) => [this.buildOpsAlertCaseKey(row.category_key, row.target_id), row])
+                .map((row) => [this.buildOpsAlertCaseKey(row.category_key, row.target_id, row.site), row])
         );
 
         this.opsAlertMessages = (Array.isArray(this.opsAlertMessages) ? this.opsAlertMessages : [])
             .map((alert) => {
-                const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId);
+                const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId, this.getOpsAlertCaseSite(alert));
                 return caseMap.has(caseKey)
                     ? this.applyOpsAlertCaseRecord(alert, caseMap.get(caseKey))
                     : alert;
@@ -6571,12 +6617,14 @@ class AdminChat {
             if (!item.caseTargetId) {
                 return;
             }
-            const caseKey = this.buildOpsAlertCaseKey(item.caseCategoryKey, item.caseTargetId);
+            const caseSite = this.getOpsAlertCaseSite(item);
+            const caseKey = this.buildOpsAlertCaseKey(item.caseCategoryKey, item.caseTargetId, caseSite);
             if (itemMap.has(caseKey)) {
                 return;
             }
             itemMap.set(caseKey, {
                 category_key: item.caseCategoryKey,
+                site: caseSite,
                 target_id: item.caseTargetId,
                 alert_type: item.alertType || '',
                 title: item.title || '',
@@ -6592,9 +6640,11 @@ class AdminChat {
         });
 
         if (!itemMap.size && sourceAlert?.caseTargetId) {
-            const caseKey = this.buildOpsAlertCaseKey(sourceAlert.caseCategoryKey, sourceAlert.caseTargetId);
+            const caseSite = this.getOpsAlertCaseSite(sourceAlert);
+            const caseKey = this.buildOpsAlertCaseKey(sourceAlert.caseCategoryKey, sourceAlert.caseTargetId, caseSite);
             itemMap.set(caseKey, {
                 category_key: sourceAlert.caseCategoryKey,
+                site: caseSite,
                 target_id: sourceAlert.caseTargetId,
                 alert_type: sourceAlert.alertType || '',
                 title: sourceAlert.title || '',
@@ -6712,15 +6762,17 @@ class AdminChat {
         const normalizedAlerts = Array.isArray(alerts) ? alerts : [];
         const targetIds = [...new Set(normalizedAlerts.flatMap((alert) => this.getOpsAlertCaseTargetIds(alert)))];
         const categoryKeys = [...new Set(normalizedAlerts.map((alert) => String(alert.caseCategoryKey || '').trim().toLowerCase()).filter(Boolean))];
+        const sites = [...new Set(normalizedAlerts.map((alert) => this.getOpsAlertCaseSite(alert)).filter(Boolean))];
 
-        if (!targetIds.length || !categoryKeys.length || !this.supabase?.from) {
+        if (!targetIds.length || !categoryKeys.length || !sites.length || !this.supabase?.from) {
             return new Map();
         }
 
         try {
             const { data, error } = await this.supabase
                 .from('ops_alert_cases')
-                .select('id, category_key, target_id, status, owner_admin_id, owner_label, note, resolution, last_action, last_action_at, created_at, updated_at')
+                .select('id, site, category_key, target_id, status, owner_admin_id, owner_label, note, resolution, last_action, last_action_at, created_at, updated_at')
+                .in('site', sites)
                 .in('category_key', categoryKeys)
                 .in('target_id', targetIds);
 
@@ -6732,7 +6784,7 @@ class AdminChat {
                 (Array.isArray(data) ? data : [])
                     .map((row) => this.normalizeOpsAlertCaseRecord(row))
                     .filter(Boolean)
-                    .map((row) => [this.buildOpsAlertCaseKey(row.category_key, row.target_id), row])
+                    .map((row) => [this.buildOpsAlertCaseKey(row.category_key, row.target_id, row.site), row])
             );
         } catch (error) {
             if (this.isMissingOpsAlertCasesTableError(error)) {
@@ -6751,25 +6803,32 @@ class AdminChat {
 
         const groupedTargets = normalizedAlerts.reduce((accumulator, alert) => {
             const categoryKey = String(alert.caseCategoryKey || '').trim().toLowerCase();
+            const site = this.getOpsAlertCaseSite(alert);
             const targetIds = this.getOpsAlertCaseTargetIds(alert);
             if (!categoryKey || !targetIds.length) {
                 return accumulator;
             }
-            if (!accumulator.has(categoryKey)) {
-                accumulator.set(categoryKey, []);
+            const groupKey = this.buildOpsAlertCaseKey(categoryKey, '', site);
+            if (!accumulator.has(groupKey)) {
+                accumulator.set(groupKey, {
+                    site,
+                    categoryKey,
+                    targetIds: []
+                });
             }
-            accumulator.get(categoryKey).push(...targetIds);
+            accumulator.get(groupKey).targetIds.push(...targetIds);
             return accumulator;
         }, new Map());
 
         const eventMap = new Map();
         try {
-            for (const [categoryKey, targetIds] of groupedTargets.entries()) {
+            for (const group of groupedTargets.values()) {
                 const { data, error } = await this.supabase
                     .from('ops_alert_case_events')
-                    .select('id, category_key, target_id, action, status, owner_admin_id, owner_label, actor_admin_id, actor_label, note, resolution, metadata, created_at')
-                    .in('category_key', [categoryKey])
-                    .in('target_id', Array.from(new Set(targetIds)))
+                    .select('id, site, category_key, target_id, action, status, owner_admin_id, owner_label, actor_admin_id, actor_label, note, resolution, metadata, created_at')
+                    .in('site', [group.site])
+                    .in('category_key', [group.categoryKey])
+                    .in('target_id', Array.from(new Set(group.targetIds)))
                     .order('created_at', { ascending: false });
 
                 if (error) {
@@ -6781,7 +6840,7 @@ class AdminChat {
                     if (!event) {
                         return;
                     }
-                    const caseKey = this.buildOpsAlertCaseKey(event.category_key, event.target_id);
+                    const caseKey = this.buildOpsAlertCaseKey(event.category_key, event.target_id, event.site);
                     if (!eventMap.has(caseKey)) {
                         eventMap.set(caseKey, []);
                     }
@@ -6807,7 +6866,7 @@ class AdminChat {
         ]);
         const summaryFallbackCaseMap = this.buildOpsAlertSummaryFallbackCaseMap(alerts, caseMap);
         return (Array.isArray(alerts) ? alerts : []).map((alert) => {
-            const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId);
+            const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId, this.getOpsAlertCaseSite(alert));
             this.applyOpsAlertCaseRecord(alert, caseMap.get(caseKey) || summaryFallbackCaseMap.get(caseKey) || null);
             return this.applyOpsAlertCaseEvents(alert, eventMap.get(caseKey) || []);
         });
@@ -6817,7 +6876,7 @@ class AdminChat {
         const uniqueAlerts = Array.from(new Map(
             (Array.isArray(alerts) ? alerts : [])
                 .filter((alert) => alert?.caseCategoryKey && alert?.caseTargetId)
-                .map((alert) => [this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId), alert])
+                .map((alert) => [this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId, this.getOpsAlertCaseSite(alert)), alert])
         ).values());
         if (!uniqueAlerts.length) {
             return [];
@@ -6830,7 +6889,7 @@ class AdminChat {
         const summaryFallbackCaseMap = this.buildOpsAlertSummaryFallbackCaseMap(uniqueAlerts, caseMap);
 
         uniqueAlerts.forEach((alert) => {
-            const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId);
+            const caseKey = this.buildOpsAlertCaseKey(alert.caseCategoryKey, alert.caseTargetId, this.getOpsAlertCaseSite(alert));
             this.applyOpsAlertCaseRecord(alert, caseMap.get(caseKey) || summaryFallbackCaseMap.get(caseKey) || null);
             this.applyOpsAlertCaseEvents(alert, eventMap.get(caseKey) || []);
         });
@@ -7133,6 +7192,10 @@ class AdminChat {
             dedupe_key: String(row.dedupe_key || '').trim(),
             caseCategoryKey,
             caseTargetId: targetId,
+            caseSite: this.getOpsAlertCaseSite({
+                payload,
+                site: payload.site
+            }),
             referenceLabel: this.getOpsAlertReferenceLabel(payload),
             referenceValue: this.getOpsAlertReferenceValue(payload),
             case_status: '',
@@ -7164,8 +7227,8 @@ class AdminChat {
         const siteFilter = String(this.getActiveSiteFilter() || 'all').trim().toLowerCase();
         if (siteFilter === 'all') return true;
 
-        const site = String(alert.payload?.site || '').trim().toLowerCase();
-        return !site || site === siteFilter;
+        const site = this.getOpsAlertCaseSite(alert);
+        return site === siteFilter;
     }
 
     buildOpsAlertSession() {

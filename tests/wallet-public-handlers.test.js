@@ -490,6 +490,7 @@ test('wallet order detail handler returns purchased content and guidance through
             {
                 id: '341186be-1111-4222-8333-4444444423e8',
                 user_id: 'user-wallet-1',
+                site: 'cn',
                 product_id: '6f8468aa-2222-4333-8444-555555555555',
                 inventory_id: 'inv-1',
                 snapshot_product_name: '满两年带2FA随机地区gmail',
@@ -535,4 +536,41 @@ test('wallet order detail handler returns purchased content and guidance through
     assert.equal(payload.data.items[0].content, 'sdf');
     assert.equal(payload.data.guidance.purchase_notes, '注意事项 A');
     assert.equal(payload.data.guidance.usage_instructions, '使用说明 B');
+});
+
+test('wallet order detail handler does not return another site order', async () => {
+    const handlers = createHandlers({
+        shopOrders: [
+            {
+                id: '341186be-1111-4222-8333-4444444423e8',
+                user_id: 'user-wallet-1',
+                site: 'intl',
+                product_id: '6f8468aa-2222-4333-8444-555555555555',
+                inventory_id: 'inv-1',
+                snapshot_product_name: 'INTL order',
+                created_at: '2026-04-14T03:42:00.000Z',
+                price_paid: 1,
+                total_price: 1,
+                discount_code: null,
+                discount_amount: 0,
+                discount_snapshot: null,
+                item_count: 1
+            }
+        ]
+    });
+    const res = createMockResponse();
+
+    await handlers.orderDetail({
+        method: 'POST',
+        query: {
+            site: 'cn'
+        },
+        body: {
+            orderId: '341186be-1111-4222-8333-4444444423e8'
+        }
+    }, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 404);
+    assert.equal(payload.success, false);
 });

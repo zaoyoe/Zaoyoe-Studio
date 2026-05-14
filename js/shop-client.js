@@ -398,7 +398,7 @@ const SHOP_CARD_FRESH_ENTER_ANIMATION_ID = 'shop-card-fresh-enter';
 const SHOP_CARD_FRESH_ENTER_DURATION_MS = 1050;
 const SHOP_CARD_FRESH_ENTER_DELAY_STEP_MS = 150;
 const SHOP_CARD_FRESH_ENTER_BASE_DELAY_MS = 110;
-const SHOP_PREFETCH_SCHEMA_VERSION = '20260430_SHOP_GUIDANCE_BILINGUAL_1';
+const SHOP_PREFETCH_SCHEMA_VERSION = '20260513_SHOP_SITE_MARKETING_PRICING_1';
 const SHOP_PURCHASE_PREFILL_SCHEMA_VERSION = '20260415_SHOP_PURCHASE_PREFILL_1';
 const SHOP_PURCHASE_PREFILL_STORAGE_KEY = 'shop_purchase_prefill';
 const SHOP_DISCOUNT_ASSETS_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -470,7 +470,9 @@ const ShopClient = {
     shopCatalogPromise: null,
     prefetchedShopRevalidationPromise: null,
     agentPricesCache: null,
+    agentPricesCacheSite: '',
     agentPricesPromise: null,
+    agentPricesPromiseSite: '',
     currentUserPurchaseAccess: null,
     currentUserPurchaseAccessPromise: null,
     currentUserPurchaseAccessUserId: null,
@@ -705,11 +707,55 @@ const ShopClient = {
         }
     },
 
-    filterProductsForCurrentSite: function (products) {
-        if (window.SiteConfig?.filterProductsForCurrentSite) {
-            return window.SiteConfig.filterProductsForCurrentSite(products);
+    getCurrentShopSite: function () {
+        return String(window.SiteConfig?.site || 'cn').trim().toLowerCase() === 'intl'
+            ? 'intl'
+            : 'cn';
+    },
+
+    getProductSiteScopedMarketingValue: function (product = {}, baseField = '') {
+        if (!product || !baseField) {
+            return null;
         }
-        return Array.isArray(products) ? products : [];
+
+        if (this.getCurrentShopSite() === 'intl') {
+            const intlField = `${baseField}_intl`;
+            if (Object.prototype.hasOwnProperty.call(product, intlField)) {
+                return product[intlField];
+            }
+        }
+
+        return product?.[baseField];
+    },
+
+    normalizeProductMarketingForCurrentSite: function (product = {}) {
+        if (!product || typeof product !== 'object') {
+            return product;
+        }
+
+        const quantityRules = this.getProductSiteScopedMarketingValue(product, 'quantity_rules');
+        const flashSalePrice = this.getProductSiteScopedMarketingValue(product, 'flash_sale_price');
+        const flashSaleEnd = this.getProductSiteScopedMarketingValue(product, 'flash_sale_end');
+
+        return {
+            ...product,
+            quantity_rules: quantityRules ?? null,
+            flash_sale_price: flashSalePrice ?? null,
+            flash_sale_end: flashSaleEnd || null
+        };
+    },
+
+    filterProductsForCurrentSite: function (products) {
+        const normalizeVisibleProducts = (visibleProducts) => (
+            Array.isArray(visibleProducts)
+                ? visibleProducts.map((product) => this.normalizeProductMarketingForCurrentSite(product))
+                : []
+        );
+
+        if (window.SiteConfig?.filterProductsForCurrentSite) {
+            return normalizeVisibleProducts(window.SiteConfig.filterProductsForCurrentSite(products));
+        }
+        return normalizeVisibleProducts(products);
     },
 
     filterProductsForCategory: function (products, category = 'all') {
@@ -6525,6 +6571,10 @@ const ShopClient = {
 
             this.currentAgentId = data.id;
             this.currentAgentName = data.username;
+            this.agentPricesCache = null;
+            this.agentPricesCacheSite = '';
+            this.agentPricesPromise = null;
+            this.agentPricesPromiseSite = '';
             console.log(`🛍️ Welcome to Agent Store: ${this.currentAgentName}`);
 
             document.title = `${this.currentAgentName} ${window.i18n?.t('shop.agentStore') || '的专属福利商店'}`;
@@ -9325,40 +9375,83 @@ const ShopClient = {
         return request;
     },
 
+    isMissingAgentPriceSiteColumnError: function (error) {
+        const text = [
+            error?.code,
+            error?.message,
+            error?.details,
+            error?.hint
+        ].filter(Boolean).join(' ').toLowerCase();
+
+        return Boolean(text)
+            && text.includes('agent_prices')
+            && text.includes('site')
+            && (
+                text.includes('schema cache')
+                || text.includes('could not find')
+                || text.includes('does not exist')
+                || text.includes('column')
+            );
+    },
+
+    normalizeAgentPriceRows: function (rows = []) {
+        const agentPrices = {};
+        (Array.isArray(rows) ? rows : []).forEach((ap) => {
+            const productId = String(ap?.product_id || '').trim();
+            if (!productId) return;
+            agentPrices[productId] = ap.custom_price;
+        });
+        return agentPrices;
+    },
+
     getAgentPrices: async function () {
         if (!this.currentAgentId) return {};
+        const currentSite = this.getCurrentShopSite();
 
-        if (this.agentPricesCache) {
+        if (this.agentPricesCache && this.agentPricesCacheSite === currentSite) {
             return this.agentPricesCache;
         }
 
-        if (this.agentPricesPromise) {
+        if (this.agentPricesPromise && this.agentPricesPromiseSite === currentSite) {
             return this.agentPricesPromise;
         }
 
         const client = window.supabaseClient || supabaseClient;
-        const request = client
-            .from('agent_prices')
-            .select('product_id, custom_price')
-            .eq('agent_id', this.currentAgentId)
-            .then(({ data, error }) => {
-                if (error) throw error;
+        const request = (async () => {
+            let { data, error } = await client
+                .from('agent_prices')
+                .select('product_id, custom_price, site')
+                .eq('agent_id', this.currentAgentId)
+                .eq('site', currentSite);
 
-                const agentPrices = {};
-                (data || []).forEach(ap => {
-                    agentPrices[ap.product_id] = ap.custom_price;
-                });
+            if (error && this.isMissingAgentPriceSiteColumnError(error)) {
+                console.warn('[ShopClient] agent_prices.site is missing; falling back to legacy agent price lookup.');
+                const legacyResult = await client
+                    .from('agent_prices')
+                    .select('product_id, custom_price')
+                    .eq('agent_id', this.currentAgentId);
+                data = legacyResult.data;
+                error = legacyResult.error;
+            }
 
+            if (error) throw error;
+
+            return this.normalizeAgentPriceRows(data);
+        })()
+            .then((agentPrices) => {
                 this.agentPricesCache = agentPrices;
+                this.agentPricesCacheSite = currentSite;
                 return agentPrices;
             })
             .finally(() => {
                 if (this.agentPricesPromise === request) {
                     this.agentPricesPromise = null;
+                    this.agentPricesPromiseSite = '';
                 }
             });
 
         this.agentPricesPromise = request;
+        this.agentPricesPromiseSite = currentSite;
         return request;
     },
 
@@ -9367,7 +9460,8 @@ const ShopClient = {
             return Promise.resolve({});
         }
 
-        if (this.agentPricesCache) {
+        const currentSite = this.getCurrentShopSite();
+        if (this.agentPricesCache && this.agentPricesCacheSite === currentSite) {
             this.refreshVisibleProductCardPricing(this.agentPricesCache);
             return Promise.resolve(this.agentPricesCache);
         }

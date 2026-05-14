@@ -4,6 +4,12 @@ const {
     sendJson,
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
+const {
+    loadSiteScopedConfig,
+    normalizeEngagementConfigSite,
+    resolveEngagementConfigRequestSite,
+    saveSiteScopedConfig
+} = require('../../_engagement-site-config');
 
 const CONFIG_KEY = 'engagement_asset_style_center';
 const VALID_ASSET_TYPES = Object.freeze(new Set(['icon', 'image', 'badge', 'illustration']));
@@ -141,18 +147,13 @@ function normalizeAssetCenter(value = {}) {
     };
 }
 
-async function loadAssetCenter(supabase) {
-    const { data, error } = await supabase
-        .from('system_config')
-        .select('config_value')
-        .eq('config_key', CONFIG_KEY)
-        .maybeSingle();
-    if (error) throw error;
-    return normalizeAssetCenter(data?.config_value || {});
+async function loadAssetCenter(supabase, site = 'cn') {
+    return loadSiteScopedConfig(supabase, CONFIG_KEY, site, normalizeAssetCenter, {});
 }
 
-async function saveAssetCenter({ supabase, user, body }) {
-    const current = await loadAssetCenter(supabase);
+async function saveAssetCenter({ supabase, user, body, site }) {
+    const normalizedSite = normalizeEngagementConfigSite(body.site || site, { fallback: 'cn' });
+    const current = await loadAssetCenter(supabase, normalizedSite);
     const action = normalizeToken(body.action, 'save_style');
     let nextCenter = current;
 
@@ -184,25 +185,23 @@ async function saveAssetCenter({ supabase, user, body }) {
         updated_at: new Date().toISOString()
     };
 
-    const { error } = await supabase
-        .from('system_config')
-        .upsert({
-            config_key: CONFIG_KEY,
-            config_value: payload,
-            description: '客服系统素材与样式中心配置',
-            updated_by: user.id || null,
-            updated_at: new Date().toISOString()
-        }, {
-            onConflict: 'config_key'
-        });
-    if (error) throw error;
+    await saveSiteScopedConfig({
+        supabase,
+        key: CONFIG_KEY,
+        site: normalizedSite,
+        value: payload,
+        description: '客服系统素材与样式中心配置',
+        userId: user.id
+    });
 
     await writeAdminAuditLog({
         supabase,
         adminId: user.id,
         module: 'engagement',
+        site: normalizedSite,
         actionType: `engagement.assets.${action}`,
         details: {
+            site: normalizedSite,
             config_key: CONFIG_KEY,
             style: payload.style,
             asset_count: payload.assets.length,
@@ -220,9 +219,12 @@ module.exports = async function engagementAssetsHandler(req, res) {
         });
 
         if (req.method === 'GET') {
-            const assetCenter = await loadAssetCenter(supabase);
+            const url = new URL(req.url || '', 'http://localhost');
+            const site = resolveEngagementConfigRequestSite(req, url, { fallback: 'cn' });
+            const assetCenter = await loadAssetCenter(supabase, site);
             return sendJson(res, 200, {
                 success: true,
+                site,
                 asset_center: assetCenter
             });
         }
@@ -236,9 +238,12 @@ module.exports = async function engagementAssetsHandler(req, res) {
         }
 
         const body = await parseJsonBody(req);
-        const assetCenter = await saveAssetCenter({ supabase, user, body });
+        const url = new URL(req.url || '', 'http://localhost');
+        const site = normalizeEngagementConfigSite(body.site || url.searchParams.get('site') || req.adminSite, { fallback: 'cn' });
+        const assetCenter = await saveAssetCenter({ supabase, user, body, site });
         return sendJson(res, 200, {
             success: true,
+            site,
             asset_center: assetCenter
         });
     } catch (error) {

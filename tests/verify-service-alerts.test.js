@@ -88,9 +88,10 @@ function compareValue(left, right) {
 
 function applyFilters(rows, filters) {
     return rows.filter((row) => filters.every(({ op, column, value }) => {
-        if (op === 'eq') return row[column] === value;
-        if (op === 'gte') return compareValue(row[column], value) >= 0;
-        if (op === 'in') return Array.isArray(value) && value.includes(row[column]);
+        const rowValue = column === 'site' && !row[column] ? 'cn' : row[column];
+        if (op === 'eq') return rowValue === value;
+        if (op === 'gte') return compareValue(rowValue, value) >= 0;
+        if (op === 'in') return Array.isArray(value) && value.includes(rowValue);
         return true;
     }));
 }
@@ -159,7 +160,8 @@ function createSupabaseStub(state = {}) {
                             ...row
                         };
                         const existingIndex = cases.findIndex((item) => (
-                            item.category_key === nextRow.category_key
+                            (item.site || 'cn') === (nextRow.site || 'cn')
+                            && item.category_key === nextRow.category_key
                             && item.target_id === nextRow.target_id
                         ));
                         if (existingIndex >= 0) {

@@ -254,6 +254,92 @@ test('system config handler POST persists allowed keys and writes audit', async 
     });
 });
 
+test('system config handler stores reward-related settings per writable site', async () => {
+    await withSystemConfigHandler({
+        tables: {
+            system_config: [
+                {
+                    config_key: 'checkin_system',
+                    config_value: {
+                        base_points: 5,
+                        consecutive_7_points: 50
+                    }
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                key: 'checkin_system',
+                site: 'intl',
+                value: {
+                    base_points: 8,
+                    consecutive_7_points: 80
+                }
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.tables.system_config[0].config_value.__site_scoped, true);
+        assert.deepEqual(state.tables.system_config[0].config_value.default, {
+            base_points: 5,
+            consecutive_7_points: 50
+        });
+        assert.deepEqual(state.tables.system_config[0].config_value.sites.intl, {
+            base_points: 8,
+            consecutive_7_points: 80
+        });
+        assert.equal(state.auditEntries[0]?.details?.site_scoped, true);
+        assert.equal(state.auditEntries[0]?.details?.site, 'intl');
+    });
+});
+
+test('system config handler stores verify settings per writable site', async () => {
+    await withSystemConfigHandler({
+        tables: {
+            system_config: [
+                {
+                    config_key: 'verify_settings',
+                    config_value: {
+                        verify_cdkey: 'CN-CDKEY',
+                        price_per_verify: 10
+                    }
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                key: 'verify_settings',
+                site: 'intl',
+                value: {
+                    verify_cdkey: 'INTL-CDKEY',
+                    price_per_verify: 6
+                }
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.tables.system_config[0].config_value.__site_scoped, true);
+        assert.deepEqual(state.tables.system_config[0].config_value.default, {
+            verify_cdkey: 'CN-CDKEY',
+            price_per_verify: 10
+        });
+        assert.deepEqual(state.tables.system_config[0].config_value.sites.intl, {
+            verify_cdkey: 'INTL-CDKEY',
+            price_per_verify: 6
+        });
+    });
+});
+
 test('system config handler rejects unknown keys', async () => {
     await withSystemConfigHandler({}, async ({ handler, state }) => {
         const res = createMockResponse();
@@ -298,6 +384,7 @@ test('system config handler notifies other admins when announcement settings cha
             headers: {},
             body: {
                 key: 'notifications',
+                site: 'intl',
                 value: {
                     announcement_enabled: true,
                     announcement_content: '<p>今晚 23:00 维护</p>',
@@ -316,6 +403,9 @@ test('system config handler notifies other admins when announcement settings cha
         }, res);
 
         assert.equal(res.statusCode, 200);
+        assert.equal(res.json().site, 'intl');
+        assert.equal(state.tables.system_config[0].config_value.__site_scoped, true);
+        assert.equal(state.tables.system_config[0].config_value.sites.intl.announcement_enabled, true);
         assert.equal(state.notifications.length, 1);
         assert.deepEqual(state.notifications[0].userIds, ['admin_2', 'admin_3']);
         assert.equal(state.notifications[0].scope, 'admin_personal');

@@ -10,6 +10,10 @@
 
     // Current admin site filter: 'all' | 'cn' | 'intl'
     let currentFilter = normalizeSiteFilterValue(localStorage.getItem('admin_site_filter'));
+    let siteSwitchInProgress = false;
+    let siteSwitchTargetFilter = '';
+    let siteSwitchRequestId = 0;
+    let siteSwitchToast = null;
 
     const SITE_OPTIONS = Object.freeze({
         all: {
@@ -131,6 +135,55 @@
         return SITE_OPTIONS[normalizeSiteFilterValue(value)] || SITE_OPTIONS.all;
     }
 
+    function getSiteSwitchLabel(value = currentFilter) {
+        const option = getSiteOption(value);
+        return option.menuLabel || option.label || option.shortLabel || '当前站点';
+    }
+
+    function dismissSiteSwitchToast() {
+        if (!siteSwitchToast) {
+            return;
+        }
+        const toast = siteSwitchToast;
+        siteSwitchToast = null;
+        if (!toast.isConnected) {
+            return;
+        }
+        toast.classList?.add?.('is-dismissing');
+        const removeToast = () => toast.remove?.();
+        if (typeof window.setTimeout === 'function') {
+            window.setTimeout(removeToast, 180);
+        } else {
+            removeToast();
+        }
+    }
+
+    function showSiteSwitchToast(message = '', type = 'info', options = {}) {
+        dismissSiteSwitchToast();
+        if (typeof window.showToast !== 'function') {
+            return null;
+        }
+        siteSwitchToast = window.showToast(message, type, {
+            durationMs: options.durationMs ?? 0,
+            feedback: options.feedback
+        });
+        return siteSwitchToast;
+    }
+
+    function setSiteSwitchProgress(isBusy, target = currentFilter) {
+        siteSwitchInProgress = isBusy === true;
+        siteSwitchTargetFilter = siteSwitchInProgress ? normalizeSiteFilterValue(target) : '';
+        renderSiteSelector();
+    }
+
+    function closeDropdown() {
+        const menu = document.getElementById('siteSelectorMenu');
+        if (menu) menu.classList.remove('show');
+        const selector = document.getElementById('adminSiteSelector');
+        selector?.classList.remove('is-open');
+        selector?.querySelector('.site-selector-btn')?.setAttribute('aria-expanded', 'false');
+    }
+
     /**
      * Apply site filter to a Supabase query builder
      * If filter is 'all', no filter is applied (returns original query)
@@ -169,19 +222,26 @@
 
         const currentOption = getSiteOption(currentFilter);
         const currentShortLabel = currentOption.shortLabel || currentOption.label;
+        const busyLabel = siteSwitchInProgress ? `正在切换到${getSiteSwitchLabel(siteSwitchTargetFilter || currentFilter)}` : '切换站点视角';
 
         container.innerHTML = `
             <div class="admin-site-filter-toolbar">
-                <div class="admin-site-selector" id="adminSiteSelector">
+                <div class="admin-site-selector ${siteSwitchInProgress ? 'is-site-switching' : ''}" id="adminSiteSelector">
                     <button
-                        class="site-selector-btn"
+                        class="site-selector-btn ${siteSwitchInProgress ? 'is-loading' : ''}"
                         type="button"
                         data-admin-action="site-filter-toggle-dropdown"
                         aria-haspopup="listbox"
                         aria-expanded="false"
-                        aria-label="切换站点视角">
+                        aria-busy="${siteSwitchInProgress ? 'true' : 'false'}"
+                        aria-label="${busyLabel}"
+                        title="${busyLabel}"
+                        ${siteSwitchInProgress ? 'disabled' : ''}>
                         <span class="site-selector-btn__copy">
                             <span class="site-selector-label">${currentShortLabel}</span>
+                        </span>
+                        <span class="site-selector-spinner" aria-hidden="true">
+                            <i class="fas fa-spinner fa-spin"></i>
                         </span>
                         <span class="site-selector-chevron" aria-hidden="true">
                             <i class="fas fa-chevron-down"></i>
@@ -228,6 +288,9 @@
     }
 
     function toggleDropdown() {
+        if (siteSwitchInProgress) {
+            return;
+        }
         const menu = document.getElementById('siteSelectorMenu');
         const selector = document.getElementById('adminSiteSelector');
         const trigger = selector?.querySelector('.site-selector-btn');
@@ -238,8 +301,28 @@
         trigger?.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     }
 
-    function select(value) {
-        currentFilter = normalizeSiteFilterValue(value);
+    async function runActiveModuleSiteChange(changeDetail = {}) {
+        if (typeof window.AdminShell?.handleSiteChangeAsync === 'function') {
+            return window.AdminShell.handleSiteChangeAsync(changeDetail);
+        }
+
+        if (window.AdminShell?.handleSiteChange?.(changeDetail) !== true) {
+            return reloadCurrentModule(changeDetail);
+        }
+
+        return true;
+    }
+
+    async function select(value) {
+        const nextFilter = normalizeSiteFilterValue(value);
+        if (nextFilter === currentFilter && !siteSwitchInProgress) {
+            closeDropdown();
+            return false;
+        }
+
+        const requestId = siteSwitchRequestId + 1;
+        siteSwitchRequestId = requestId;
+        currentFilter = nextFilter;
         localStorage.setItem('admin_site_filter', currentFilter);
 
         if (typeof window.clearPendingPointsBatchOpen === 'function') {
@@ -252,7 +335,8 @@
             window.__pointsSiteChangeClosedBatchDetail = false;
         }
 
-        renderSiteSelector();
+        setSiteSwitchProgress(true, currentFilter);
+        showSiteSwitchToast(`正在切换到${getSiteSwitchLabel(currentFilter)}...`, 'info', { durationMs: 0 });
 
         const changeDetail = {
             site: currentFilter,
@@ -265,9 +349,28 @@
             detail: changeDetail
         }));
 
-        // Prefer the P1 Admin Shell site-change bus; keep the legacy reload path as a safe fallback.
-        if (window.AdminShell?.handleSiteChange?.(changeDetail) !== true) {
-            reloadCurrentModule(changeDetail);
+        try {
+            await Promise.resolve(runActiveModuleSiteChange(changeDetail));
+            if (requestId !== siteSwitchRequestId) {
+                return false;
+            }
+            dismissSiteSwitchToast();
+            setSiteSwitchProgress(false);
+            window.showToast?.(`已切换到${getSiteSwitchLabel(currentFilter)}`, 'success', {
+                durationMs: 1800
+            });
+            return true;
+        } catch (error) {
+            if (requestId !== siteSwitchRequestId) {
+                return false;
+            }
+            console.warn('[AdminSiteFilter] Failed to refresh active module after site change:', error);
+            dismissSiteSwitchToast();
+            setSiteSwitchProgress(false);
+            window.showToast?.(`已切换到${getSiteSwitchLabel(currentFilter)}，但当前模块刷新失败`, 'warning', {
+                durationMs: 3200
+            });
+            return false;
         }
     }
 
@@ -419,11 +522,7 @@
     // Close dropdown when clicking outside
     document.addEventListener('click', (e) => {
         if (!e.target.closest('#adminSiteSelector')) {
-            const menu = document.getElementById('siteSelectorMenu');
-            if (menu) menu.classList.remove('show');
-            const selector = document.getElementById('adminSiteSelector');
-            selector?.classList.remove('is-open');
-            selector?.querySelector('.site-selector-btn')?.setAttribute('aria-expanded', 'false');
+            closeDropdown();
         }
     });
 

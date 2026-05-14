@@ -236,6 +236,7 @@ function createShopHandlers({
             'name_en',
             'description_en',
             'quantity_rules',
+            'quantity_rules_intl',
             'max_purchase_quantity',
             'show_product_description',
             'show_purchase_notes',
@@ -247,7 +248,9 @@ function createShopHandlers({
             'usage_instructions_zh',
             'usage_instructions_en',
             'flash_sale_price',
-            'flash_sale_end'
+            'flash_sale_price_intl',
+            'flash_sale_end',
+            'flash_sale_end_intl'
         ].some((field) => isMissingColumnError(error, field));
     }
 
@@ -264,6 +267,30 @@ function createShopHandlers({
             return false;
         }
         return Number.isFinite(Number(rawValue));
+    }
+
+    function getSiteScopedShopMarketingValue(product = {}, baseField = '', currentSite = 'cn') {
+        if (currentSite === 'intl') {
+            const intlField = `${baseField}_intl`;
+            if (Object.prototype.hasOwnProperty.call(product, intlField)) {
+                return product[intlField];
+            }
+        }
+
+        return product?.[baseField];
+    }
+
+    function normalizeShopCatalogProductForSite(product = {}, currentSite = 'cn') {
+        const quantityRules = getSiteScopedShopMarketingValue(product, 'quantity_rules', currentSite);
+        const flashSalePrice = getSiteScopedShopMarketingValue(product, 'flash_sale_price', currentSite);
+        const flashSaleEnd = getSiteScopedShopMarketingValue(product, 'flash_sale_end', currentSite);
+
+        return {
+            ...product,
+            quantity_rules: quantityRules ?? null,
+            flash_sale_price: flashSalePrice ?? null,
+            flash_sale_end: flashSaleEnd || null
+        };
     }
 
     async function loadPublicShopCategories(dataSupabase) {
@@ -302,6 +329,7 @@ function createShopHandlers({
                 'display_order',
                 'is_active',
                 'quantity_rules',
+                'quantity_rules_intl',
                 'max_purchase_quantity',
                 'show_product_description',
                 'show_purchase_notes',
@@ -313,7 +341,9 @@ function createShopHandlers({
                 'usage_instructions_zh',
                 'usage_instructions_en',
                 'flash_sale_price',
-                'flash_sale_end'
+                'flash_sale_price_intl',
+                'flash_sale_end',
+                'flash_sale_end_intl'
             ].join(', '),
             [
                 'id',
@@ -357,7 +387,9 @@ function createShopHandlers({
             const { data, error } = await query;
             if (!error) {
                 const products = Array.isArray(data) ? data : [];
-                return products.filter((product) => isShopCatalogProductAvailableForSite(product, currentSite));
+                return products
+                    .filter((product) => isShopCatalogProductAvailableForSite(product, currentSite))
+                    .map((product) => normalizeShopCatalogProductForSite(product, currentSite));
             }
 
             lastError = error;
@@ -2074,6 +2106,7 @@ function createShopHandlers({
             .select('id, user_id, product_id, inventory_id, snapshot_product_name, created_at, price_paid, total_price, discount_code, discount_amount, discount_snapshot, item_count')
             .eq('id', normalizedOrderId)
             .eq('user_id', normalizedUserId)
+            .eq('site', site)
             .single();
 
         if (orderError || !order) {

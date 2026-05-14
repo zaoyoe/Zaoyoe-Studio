@@ -48,3 +48,12 @@ test('wallet site-scoped configs use public site-config endpoints instead of glo
     assert.doesNotMatch(walletSource, /rpc\('get_system_config',\s*\{\s*p_key:\s*'affiliate_program'/);
     assert.doesNotMatch(walletSource, /rpc\('get_system_config',\s*\{\s*p_key:\s*'affiliate_poster'/);
 });
+
+test('verify page price uses site-scoped public config instead of global system_config reads', () => {
+    const verifySource = readRepoFile('js/verify-page.js');
+
+    assert.match(verifySource, /route=verify-settings/);
+    assert.match(verifySource, /getVerifyRuntimeSite\(\)/);
+    assert.doesNotMatch(verifySource, /\.from\('system_config'\)/);
+    assert.doesNotMatch(verifySource, /config_key'\)\s*\.eq\('config_key',\s*'verify_settings'/);
+});

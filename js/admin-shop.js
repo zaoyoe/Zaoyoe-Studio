@@ -340,6 +340,18 @@ const ShopAdmin = {
         cn: { price: 'price_points', name: 'name', desc: 'description' },
         intl: { price: 'price_points_intl', name: 'name_en', desc: 'description_en' }
     },
+    SITE_MARKETING_FIELD_MAP: {
+        cn: {
+            quantityRules: 'quantity_rules',
+            flashSalePrice: 'flash_sale_price',
+            flashSaleEnd: 'flash_sale_end'
+        },
+        intl: {
+            quantityRules: 'quantity_rules_intl',
+            flashSalePrice: 'flash_sale_price_intl',
+            flashSaleEnd: 'flash_sale_end_intl'
+        }
+    },
 
     /** Get the active editing site based on admin site filter */
     getEditSite() {
@@ -524,6 +536,10 @@ const ShopAdmin = {
     /** Get field mapping for current editing site */
     getFieldMap() {
         return this.SITE_FIELD_MAP[this.getEditSite()];
+    },
+
+    getMarketingFieldMap(site = this.getEditSite()) {
+        return this.SITE_MARKETING_FIELD_MAP[site === 'intl' ? 'intl' : 'cn'];
     },
 
     /** Update modal labels and hint based on current site */
@@ -5302,6 +5318,101 @@ Example output format:
         cardImage.replaceWith(fallbackIcon);
     },
 
+    formatAdminProductPointValue: function (value, { maximumFractionDigits = 2 } = {}) {
+        const numericValue = Number(value);
+        if (!Number.isFinite(numericValue)) {
+            return '--';
+        }
+
+        const safeDigits = Math.max(0, Math.min(4, Number(maximumFractionDigits) || 0));
+        const rounded = Number(numericValue.toFixed(safeDigits));
+        if (Number.isInteger(rounded)) {
+            return String(rounded);
+        }
+
+        return rounded
+            .toFixed(safeDigits)
+            .replace(/(\.\d*?[1-9])0+$/, '$1')
+            .replace(/\.0+$/, '');
+    },
+
+    getAdminProductPointUnit: function () {
+        return ShopAdmin.getEditSite() === 'intl' ? 'Points' : '积分';
+    },
+
+    getAdminProductBasePrice: function (product = {}) {
+        const rawPrice = ShopAdmin.getEditSite() === 'intl'
+            ? product?.price_points_intl
+            : product?.price_points;
+        const price = Number(rawPrice);
+        return Number.isFinite(price) ? Math.max(0, price) : null;
+    },
+
+    normalizeAdminQuantityPricingRules: function (rules = []) {
+        let sourceRules = rules;
+        if (typeof sourceRules === 'string' && sourceRules.trim()) {
+            try {
+                sourceRules = JSON.parse(sourceRules);
+            } catch (_) {
+                sourceRules = [];
+            }
+        }
+
+        return (Array.isArray(sourceRules) ? sourceRules : [])
+            .map((rule) => {
+                const qty = Math.trunc(Number(rule?.qty ?? rule?.quantity ?? rule?.min_quantity));
+                const price = Number(rule?.price ?? rule?.unit_price);
+                return { qty, price };
+            })
+            .filter((rule) => Number.isFinite(rule.qty)
+                && Number.isFinite(rule.price)
+                && rule.qty > 0
+                && rule.price >= 0)
+            .sort((a, b) => (a.qty - b.qty) || (a.price - b.price));
+    },
+
+    getAdminProductDiscountTierRules: function (product = {}) {
+        const marketingFields = this.getMarketingFieldMap();
+        const basePrice = this.getAdminProductBasePrice(product);
+        if (basePrice == null) {
+            return [];
+        }
+
+        return this.normalizeAdminQuantityPricingRules(product?.[marketingFields.quantityRules])
+            .filter((rule) => rule.price < basePrice);
+    },
+
+    isAdminProductFlashSaleActive: function (product = {}) {
+        const marketingFields = this.getMarketingFieldMap();
+        const flashPrice = Number(product?.[marketingFields.flashSalePrice]);
+        const flashEndMs = Date.parse(product?.[marketingFields.flashSaleEnd] || '');
+        return Number.isFinite(flashPrice)
+            && flashPrice >= 0
+            && Number.isFinite(flashEndMs)
+            && flashEndMs > Date.now();
+    },
+
+    buildAdminProductSpecialPriceBadgeHtml: function (product = {}) {
+        const pointUnit = this.getAdminProductPointUnit();
+        const marketingFields = this.getMarketingFieldMap();
+        if (this.isAdminProductFlashSaleActive(product)) {
+            const flashPrice = this.formatAdminProductPointValue(product?.[marketingFields.flashSalePrice]);
+            const endLabel = new Date(product?.[marketingFields.flashSaleEnd]).toLocaleString('zh-CN');
+            const title = `秒杀价 ${flashPrice} ${pointUnit} · 截止 ${endLabel}`;
+            return `<div class="shop-admin-product-special-badge shop-admin-product-special-badge--flash" title="${this.escapeForAttr(title)}">秒杀</div>`;
+        }
+
+        const tierRules = this.getAdminProductDiscountTierRules(product);
+        if (!tierRules.length) {
+            return '';
+        }
+
+        const rulesLabel = tierRules
+            .map((rule) => `满 ${rule.qty} 件 ${this.formatAdminProductPointValue(rule.price)} ${pointUnit}`)
+            .join(' / ');
+        return `<div class="shop-admin-product-special-badge shop-admin-product-special-badge--tier" title="${this.escapeForAttr(`阶梯价：${rulesLabel}`)}">阶梯价</div>`;
+    },
+
     loadProducts: async function () {
         const container = document.getElementById('productsGrid');
         if (!container) return; // Grid container might be missing if HTML update failed
@@ -5385,6 +5496,7 @@ Example output format:
                     }
                     return `<div class="shop-admin-product-price shop-admin-product-price--cn">${p.price_points} <span>积分</span></div>`;
                 })();
+                const specialPriceBadgeHtml = this.buildAdminProductSpecialPriceBadgeHtml(p);
 
                 const card = document.createElement('div');
                 card.className = 'shop-card shop-admin-product-card' + (p.is_active ? '' : ' inactive-product');
@@ -5401,6 +5513,7 @@ Example output format:
                 card.innerHTML = `
                     <div class="shop-admin-product-cover">
                         ${displayHtml}
+                        ${specialPriceBadgeHtml}
                         <div class="product-checkbox-wrapper">
                             <input type="checkbox" class="inv-checkbox product-select-checkbox" data-product-id="${safeProductId}" 
                                 data-shop-change="product-selection-count">
@@ -5988,6 +6101,7 @@ Example output format:
         this.editingProductSnapshot = data;
         this.currentProductImageAsset = getShopProductImageAsset(data);
         const fields = this.getFieldMap();
+        const marketingFields = this.getMarketingFieldMap();
         const sortValue = Number.parseInt(data.display_order, 10);
         const normalizedDeliveryType = data.delivery_type === 'API' ? 'API' : 'KEY';
 
@@ -6019,20 +6133,21 @@ Example output format:
         );
 
         let parsedRules = [];
-        if (data.quantity_rules && Array.isArray(data.quantity_rules)) {
-            parsedRules = data.quantity_rules;
-        } else if (typeof data.quantity_rules === 'string' && data.quantity_rules.trim() !== '') {
+        const quantityRules = data?.[marketingFields.quantityRules];
+        if (quantityRules && Array.isArray(quantityRules)) {
+            parsedRules = quantityRules;
+        } else if (typeof quantityRules === 'string' && quantityRules.trim() !== '') {
             try {
-                parsedRules = JSON.parse(data.quantity_rules);
+                parsedRules = JSON.parse(quantityRules);
             } catch (error) {
                 console.error('Failed to parse quantity rules:', error);
             }
         }
         this.renderTieredPricingRules(parsedRules);
 
-        document.getElementById('prodFlashSalePrice').value = data.flash_sale_price != null ? data.flash_sale_price : '';
-        if (data.flash_sale_end) {
-            const date = new Date(data.flash_sale_end);
+        document.getElementById('prodFlashSalePrice').value = data?.[marketingFields.flashSalePrice] != null ? data[marketingFields.flashSalePrice] : '';
+        if (data?.[marketingFields.flashSaleEnd]) {
+            const date = new Date(data[marketingFields.flashSaleEnd]);
             const localIso = new Date(date.getTime() - (date.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
             document.getElementById('prodFlashSaleEnd').value = localIso;
         } else {
@@ -6638,6 +6753,7 @@ Example output format:
 
             const fields = this.getFieldMap();
             const editSite = this.getEditSite();
+            const marketingFields = this.getMarketingFieldMap(editSite);
             const sortInput = document.getElementById('prodSort').value;
             const parsedSort = Number.parseInt(sortInput, 10);
             const normalizedSort = Number.isFinite(parsedSort) ? parsedSort : 0;
@@ -6844,9 +6960,9 @@ Example output format:
                 webhook_target: normalizedDeliveryType === 'API' ? (webhookTargetValue || null) : null,
 
                 // Marketing fields
-                quantity_rules: null,
-                flash_sale_price: null,
-                flash_sale_end: null
+                [marketingFields.quantityRules]: null,
+                [marketingFields.flashSalePrice]: null,
+                [marketingFields.flashSaleEnd]: null
             };
 
             if (shouldPersistProductDescriptionVisibility) {
@@ -6899,17 +7015,17 @@ Example output format:
             }
 
             if (quantityRulesRaw) {
-                payload.quantity_rules = quantityRulesRaw;
+                payload[marketingFields.quantityRules] = quantityRulesRaw;
             }
 
             const flashPriceRaw = document.getElementById('prodFlashSalePrice').value.trim();
             if (flashPriceRaw !== '') {
-                payload.flash_sale_price = parseInt(flashPriceRaw);
+                payload[marketingFields.flashSalePrice] = parseInt(flashPriceRaw);
             }
 
             const flashEndRaw = document.getElementById('prodFlashSaleEnd').value;
             if (flashEndRaw) {
-                payload.flash_sale_end = new Date(flashEndRaw).toISOString();
+                payload[marketingFields.flashSaleEnd] = new Date(flashEndRaw).toISOString();
             }
 
             // For CN site, also save auto-translated English fields

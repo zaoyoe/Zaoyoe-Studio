@@ -292,6 +292,7 @@ test('admin audit monitor handler returns recent access rows, anomaly signals, a
         ],
         opsAlertCases: [
             {
+                site: 'cn',
                 category_key: 'payments',
                 target_id: 'payment_config_incident:global',
                 alert_type: 'payment_config_incident',
@@ -309,6 +310,7 @@ test('admin audit monitor handler returns recent access rows, anomaly signals, a
         opsAlertCaseEvents: [
             {
                 id: 'audit-event-1',
+                site: 'cn',
                 category_key: 'payments',
                 target_id: 'payment_config_incident:global',
                 alert_type: 'payment_config_incident',
@@ -430,6 +432,7 @@ test('admin audit monitor handler filters payment config rows and payment worksp
         ],
         opsAlertCases: [
             {
+                site: 'intl',
                 category_key: 'payments',
                 target_id: 'payment_config_incident:intl',
                 alert_type: 'payment_config_incident',
@@ -447,6 +450,7 @@ test('admin audit monitor handler filters payment config rows and payment worksp
         opsAlertCaseEvents: [
             {
                 id: 'audit-event-intl-1',
+                site: 'intl',
                 category_key: 'payments',
                 target_id: 'payment_config_incident:intl',
                 alert_type: 'payment_config_incident',
@@ -615,6 +619,7 @@ test('admin audit monitor handler excludes resolved problem alerts from actionab
         ],
         opsAlertCases: [
             {
+                site: 'cn',
                 category_key: 'security',
                 target_id: 'admin-user-resolved',
                 alert_type: 'security_admin_login_anomaly',

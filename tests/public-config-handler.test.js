@@ -109,6 +109,7 @@ test('public notifications config handler returns sanitized announcement config 
     assert.equal(res.statusCode, 200);
     assert.equal(res.headers['cache-control'], 'no-store');
     assert.equal(payload.success, true);
+    assert.equal(payload.site, 'cn');
     assert.deepEqual(payload.config.announcement_pages, ['index', 'guestbook']);
     assert.equal(payload.config.announcement_enabled, true);
     assert.equal(payload.config.announcement_type, 'modal');
@@ -123,6 +124,7 @@ test('public notifications config handler returns sanitized announcement config 
     assert.deepEqual(payload.config.announcement_rules, [{
         id: 'rule-1',
         title: '商城公告',
+        site: 'cn',
         announcement_enabled: true,
         announcement_content: '<p>shop rule</p>',
         announcement_type: 'toast',
@@ -199,13 +201,116 @@ test('public announcement event handler records read statistics without requirin
             event_type: 'read',
             ack_key: 'ack-1',
             user_agent: 'node-test',
-            metadata: {}
+            metadata: {
+                site: 'cn'
+            }
         },
         options: {
             onConflict: 'announcement_id,reader_key,page,event_type',
             ignoreDuplicates: true
         }
     });
+});
+
+test('public notifications config handler resolves site-scoped config and rules', async () => {
+    const rules = [
+        {
+            id: 'rule-cn',
+            site: 'cn',
+            title: 'CN 公告',
+            enabled: true,
+            status: 'approved',
+            content: '<p>cn</p>',
+            pages: ['all'],
+            updated_at: '2026-04-12T01:23:45.000Z'
+        },
+        {
+            id: 'rule-intl',
+            site: 'intl',
+            title: 'INTL Notice',
+            enabled: true,
+            status: 'approved',
+            content: '<p>intl</p>',
+            pages: ['all'],
+            updated_at: '2026-04-12T01:23:45.000Z'
+        }
+    ];
+    const handlers = createPublicConfigHandlers({
+        admin: {
+            getOptionalSupabaseAdmin() {
+                return {
+                    from(table) {
+                        if (table === 'announcement_rules') {
+                            const filters = {};
+                            return {
+                                select() { return this; },
+                                eq(field, value) {
+                                    filters[field] = value;
+                                    return this;
+                                },
+                                order() { return this; },
+                                async limit() {
+                                    return {
+                                        data: rules.filter((row) => Object.entries(filters).every(([field, value]) => (
+                                            String(row[field]) === String(value)
+                                        ))),
+                                        error: null
+                                    };
+                                }
+                            };
+                        }
+                        assert.equal(table, 'system_config');
+                        return {
+                            select() { return this; },
+                            eq() { return this; },
+                            async maybeSingle() {
+                                return {
+                                    data: {
+                                        config_value: {
+                                            __site_scoped: true,
+                                            default: {
+                                                announcement_enabled: true,
+                                                announcement_content: '<p>cn fallback</p>',
+                                                announcement_pages: ['all']
+                                            },
+                                            sites: {
+                                                intl: {
+                                                    announcement_enabled: true,
+                                                    announcement_content: '<p>intl config</p>',
+                                                    announcement_pages: ['all']
+                                                }
+                                            }
+                                        }
+                                    },
+                                    error: null
+                                };
+                            }
+                        };
+                    }
+                };
+            },
+            sendJson(res, status, payload) {
+                res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                res.end(JSON.stringify(payload));
+                return payload;
+            }
+        }
+    });
+
+    const res = createResponseRecorder();
+    await handlers.notifications({
+        method: 'GET',
+        url: '/api/public?scope=config&route=notifications&site=intl',
+        headers: {
+            host: 'localhost:3000'
+        }
+    }, res);
+    const payload = JSON.parse(String(res.body || '{}'));
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.site, 'intl');
+    assert.equal(payload.config.announcement_content, '<p>intl config</p>');
+    assert.deepEqual(payload.config.announcement_rules.map((rule) => rule.id), ['rule-intl']);
 });
 
 test('public notifications config handler rejects unsupported methods', async () => {
@@ -310,6 +415,73 @@ test('public verify quota handler returns remaining uses and derived task counts
     } finally {
         global.fetch = originalFetch;
     }
+});
+
+test('public verify settings handler resolves site price without exposing CDKeys', async () => {
+    const handlers = createPublicConfigHandlers({
+        admin: {
+            getOptionalSupabaseAdmin() {
+                return {
+                    from(table) {
+                        assert.equal(table, 'system_config');
+                        return {
+                            select() { return this; },
+                            eq() { return this; },
+                            async maybeSingle() {
+                                return {
+                                    data: {
+                                        config_value: {
+                                            __site_scoped: true,
+                                            default: {
+                                                enabled: true,
+                                                verify_cdkey: 'CN-SECRET',
+                                                price_per_verify: 10,
+                                                price_per_verify_full: 20,
+                                                verify_api_base_url: 'https://aidone.lol'
+                                            },
+                                            sites: {
+                                                intl: {
+                                                    enabled: true,
+                                                    verify_cdkey: 'INTL-SECRET',
+                                                    price_per_verify: 6,
+                                                    price_per_verify_full: 12,
+                                                    verify_api_base_url: 'https://aidone.lol'
+                                                }
+                                            }
+                                        }
+                                    },
+                                    error: null
+                                };
+                            }
+                        };
+                    }
+                };
+            },
+            sendJson(res, status, payload) {
+                res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                res.end(JSON.stringify(payload));
+                return payload;
+            }
+        }
+    });
+
+    const res = createResponseRecorder();
+    await handlers['verify-settings']({
+        method: 'GET',
+        url: '/api/public?scope=config&route=verify-settings&site=intl',
+        headers: {
+            host: 'www.zaoyoe.xyz'
+        }
+    }, res);
+    const payload = JSON.parse(String(res.body || '{}'));
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.site, 'intl');
+    assert.equal(payload.config.price_per_verify, 6);
+    assert.equal(payload.config.price_per_verify_full, 12);
+    assert.equal('verify_cdkey' in payload.config, false);
+    assert.equal('apiKey' in payload.config, false);
+    assert.equal(JSON.stringify(payload).includes('INTL-SECRET'), false);
 });
 
 test('public verify quota handler aggregates balances across a configured CDKey pool', async () => {

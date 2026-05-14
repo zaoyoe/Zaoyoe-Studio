@@ -421,6 +421,7 @@
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
+                    site: getAnnouncementRuntimeSite(),
                     announcement_id: announcementId,
                     reader_key: getAnnouncementReaderKey(),
                     page: normalizedPage,
@@ -500,13 +501,48 @@
     const ANNOUNCEMENT_CONFIG_SESSION_KEY = 'zaoyoe_announcement_config_cache_v1';
     const ANNOUNCEMENT_CONFIG_SESSION_TTL_MS = 5 * 60 * 1000;
 
+    function getAnnouncementRuntimeSite() {
+        const siteConfigSite = String(window.SiteConfig?.site || '').trim().toLowerCase();
+        if (siteConfigSite === 'intl' || siteConfigSite === 'cn') {
+            return siteConfigSite;
+        }
+        try {
+            const siteParam = new URLSearchParams(window.location?.search || '').get('site');
+            if (siteParam === 'intl' || siteParam === 'cn') {
+                return siteParam;
+            }
+        } catch (_) {
+            // Fall through to CN.
+        }
+        return 'cn';
+    }
+
+    function getAnnouncementConfigSessionKey() {
+        return `${ANNOUNCEMENT_CONFIG_SESSION_KEY}_${getAnnouncementRuntimeSite()}`;
+    }
+
+    function resolveSiteScopedAnnouncementConfig(value = {}) {
+        const source = value && typeof value === 'object' && !Array.isArray(value)
+            ? value
+            : {};
+        if (source.__site_scoped !== true) {
+            return source;
+        }
+
+        const sites = source.sites && typeof source.sites === 'object' && !Array.isArray(source.sites)
+            ? source.sites
+            : {};
+        const site = getAnnouncementRuntimeSite();
+        return sites[site] || source.default || {};
+    }
+
     function readAnnouncementConfigFromSession() {
         try {
-            const raw = sessionStorage.getItem(ANNOUNCEMENT_CONFIG_SESSION_KEY);
+            const raw = sessionStorage.getItem(getAnnouncementConfigSessionKey());
             if (!raw) return null;
             const parsed = JSON.parse(raw);
             if (!parsed?.cachedAt || Date.now() - parsed.cachedAt > ANNOUNCEMENT_CONFIG_SESSION_TTL_MS) {
-                sessionStorage.removeItem(ANNOUNCEMENT_CONFIG_SESSION_KEY);
+                sessionStorage.removeItem(getAnnouncementConfigSessionKey());
                 return null;
             }
             return normalizeAnnouncementConfig(parsed.config || {});
@@ -517,7 +553,7 @@
 
     function writeAnnouncementConfigToSession(config) {
         try {
-            sessionStorage.setItem(ANNOUNCEMENT_CONFIG_SESSION_KEY, JSON.stringify({
+            sessionStorage.setItem(getAnnouncementConfigSessionKey(), JSON.stringify({
                 config,
                 cachedAt: Date.now()
             }));
@@ -527,7 +563,8 @@
     }
 
     async function fetchAnnouncementConfigFromPublicApi() {
-        const response = await fetch('/api/public?scope=config&route=notifications', {
+        const requestUrl = `/api/public?scope=config&route=notifications&site=${encodeURIComponent(getAnnouncementRuntimeSite())}`;
+        const response = await fetch(requestUrl, {
             method: 'GET',
             credentials: 'same-origin'
         });
@@ -552,7 +589,7 @@
             throw error;
         }
 
-        return normalizeAnnouncementConfig(data || {});
+        return normalizeAnnouncementConfig(resolveSiteScopedAnnouncementConfig(data || {}));
     }
 
     async function fetchAnnouncementConfig() {

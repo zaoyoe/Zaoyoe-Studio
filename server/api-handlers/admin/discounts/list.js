@@ -369,6 +369,37 @@ function getRiskSummaryDiscountCode(job = {}) {
     , 160).toUpperCase();
 }
 
+function getRiskAlertSite(job = {}, fallback = 'cn') {
+    const payload = normalizePayload(job?.payload);
+    const normalized = normalizeSite(payload?.site || payload?.site_id || payload?.siteId || fallback);
+    return normalized === 'intl' ? 'intl' : 'cn';
+}
+
+function getRiskCaseSites(site = 'all') {
+    const normalized = normalizeSite(site);
+    return normalized === 'all' ? ['cn', 'intl'] : [normalized === 'intl' ? 'intl' : 'cn'];
+}
+
+function buildRiskCaseTargets(discountCodes = [], site = 'all') {
+    const sites = getRiskCaseSites(site);
+    return [...new Set((Array.isArray(discountCodes) ? discountCodes : [discountCodes])
+        .map((code) => normalizeText(code).toUpperCase())
+        .filter(Boolean))]
+        .flatMap((discountCode) => sites.map((caseSite) => ({
+            site: caseSite,
+            category_key: 'shop_risk',
+            target_id: `shop_order_risk:coupon:${discountCode}`
+        })));
+}
+
+function filterRiskJobsForSite(jobs = [], site = 'all') {
+    const normalized = normalizeSite(site);
+    if (normalized === 'all') {
+        return Array.isArray(jobs) ? jobs : [];
+    }
+    return (Array.isArray(jobs) ? jobs : []).filter((job) => getRiskAlertSite(job, normalized) === normalized);
+}
+
 async function fetchPagedRows(buildQuery, pageSize = 200, maxPages = 5) {
     const rows = [];
 
@@ -408,7 +439,7 @@ async function fetchRecentShopRiskAlertJobs(supabase) {
     }
 }
 
-function buildDiscountRiskSummaryMap(discountCodes = [], jobs = [], caseMap = new Map(), caseEventsByKey = new Map()) {
+function buildDiscountRiskSummaryMap(discountCodes = [], jobs = [], caseMap = new Map(), caseEventsByKey = new Map(), site = 'cn') {
     const normalizedCodes = new Set((Array.isArray(discountCodes) ? discountCodes : []).map((code) => normalizeText(code).toUpperCase()).filter(Boolean));
     const latestJobByTarget = new Map();
 
@@ -418,18 +449,24 @@ function buildDiscountRiskSummaryMap(discountCodes = [], jobs = [], caseMap = ne
         if (!targetId || !discountCode || !normalizedCodes.has(discountCode)) {
             continue;
         }
-        if (!latestJobByTarget.has(targetId)) {
-            latestJobByTarget.set(targetId, job);
+        const jobSite = getRiskAlertSite(job, site);
+        const jobKey = buildOpsAlertCaseKey('shop_risk', targetId, jobSite);
+        if (!latestJobByTarget.has(jobKey)) {
+            latestJobByTarget.set(jobKey, job);
         }
     }
 
     const summaryMap = new Map();
     normalizedCodes.forEach((discountCode) => {
         const targetId = `shop_order_risk:coupon:${discountCode}`;
-        const latestJob = latestJobByTarget.get(targetId) || null;
+        const fallbackSite = getRiskCaseSites(site)[0];
+        const latestJob = getRiskCaseSites(site)
+            .map((caseSite) => latestJobByTarget.get(buildOpsAlertCaseKey('shop_risk', targetId, caseSite)))
+            .find(Boolean) || null;
         const latestPayload = normalizePayload(latestJob?.payload);
-        const caseRecord = caseMap.get(buildOpsAlertCaseKey('shop_risk', targetId)) || null;
-        const caseState = buildOpsAlertItemCaseState('shop_risk', targetId, caseRecord, caseEventsByKey);
+        const caseSite = latestJob ? getRiskAlertSite(latestJob, fallbackSite) : fallbackSite;
+        const caseRecord = caseMap.get(buildOpsAlertCaseKey('shop_risk', targetId, caseSite)) || null;
+        const caseState = buildOpsAlertItemCaseState('shop_risk', targetId, caseRecord, caseEventsByKey, { site: caseSite });
         const hasCaseState = Boolean(caseRecord) || (Array.isArray(caseState?.case_recent_events) && caseState.case_recent_events.length > 0);
         const latestAlertType = normalizeText(latestJob?.alert_type, 120).toLowerCase();
         const isRecovered = latestAlertType === 'shop_order_risk_recovered';
@@ -603,16 +640,13 @@ module.exports = async function adminDiscountsListHandler(req, res) {
         const assetRows = await loadDiscountAssetRows(supabase, rows.map((row) => row?.id));
         const usageMap = buildRecentUsageMap(recentOrders, historicalOrders);
         const assetSummaryMap = buildDiscountAssetSummaryMap(assetRows);
-        const riskTargets = rows.map((row) => ({
-            category_key: 'shop_risk',
-            target_id: `shop_order_risk:coupon:${normalizeText(row?.code).toUpperCase()}`
-        }));
-        const recentRiskJobs = await fetchRecentShopRiskAlertJobs(supabase);
+        const riskTargets = buildRiskCaseTargets(rows.map((row) => row?.code), site);
+        const recentRiskJobs = filterRiskJobsForSite(await fetchRecentShopRiskAlertJobs(supabase), site);
         const [opsAlertCasesByKey, caseEventsByKey] = await Promise.all([
             fetchOpsAlertCasesByTargets(supabase, riskTargets),
             fetchOpsAlertCaseEventsByTargets(supabase, riskTargets)
         ]);
-        const riskSummaryMap = buildDiscountRiskSummaryMap(rows.map((row) => row?.code), recentRiskJobs, opsAlertCasesByKey, caseEventsByKey);
+        const riskSummaryMap = buildDiscountRiskSummaryMap(rows.map((row) => row?.code), recentRiskJobs, opsAlertCasesByKey, caseEventsByKey, site);
         const rowsWithLifecycle = attachLifecycleSummary(rows, new Date());
 
         return sendJson(res, 200, {

@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const SHOP_PREFETCH_SCHEMA_VERSION = '20260430_SHOP_GUIDANCE_BILINGUAL_1';
+    const SHOP_PREFETCH_SCHEMA_VERSION = '20260513_SHOP_SITE_MARKETING_PRICING_1';
     const HOMEPAGE_DEFERRED_STYLE_GROUP = 'homepage-overlays';
 
     function activateHomepageDeferredOverlays() {

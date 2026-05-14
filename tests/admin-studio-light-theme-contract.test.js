@@ -108,6 +108,26 @@ test('admin studio header exposes the transplanted theme toggle beside the site 
         'admin site selector trigger should not render the redundant kicker copy'
     );
     assert.equal(
+        siteFilterSource.includes('site-selector-spinner'),
+        true,
+        'admin site selector trigger should show a spinner while the site switch is refreshing the active module'
+    );
+    assert.equal(
+        siteFilterSource.includes('aria-busy="${siteSwitchInProgress ? \'true\' : \'false\'}"'),
+        true,
+        'admin site selector trigger should expose busy state to assistive tech during site switches'
+    );
+    assert.equal(
+        stylesSource.includes('.admin-site-selector.is-site-switching .site-selector-btn'),
+        true,
+        'admin studio site switcher should visibly mark the trigger while a site switch is in progress'
+    );
+    assert.equal(
+        stylesSource.includes('.site-selector-btn.is-loading .site-selector-spinner'),
+        true,
+        'admin studio site switcher should reveal the spinner only during loading'
+    );
+    assert.equal(
         stylesSource.includes('.site-selector-btn:hover,\n                .admin-site-selector.is-open .site-selector-btn {\n                    transform: none;'),
         true,
         'admin studio site switcher should not lift on hover or open state'
@@ -673,6 +693,16 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         stylesSource.includes('html[data-theme="light"] #toastContainer .toast'),
         true,
         'admin studio light theme should explicitly restyle success and error action toasts'
+    );
+    assert.equal(
+        stylesSource.includes('20260513_ADMIN_SITE_SWITCH_TOAST_INFO_RAIL_1'),
+        true,
+        'admin studio light theme should keep the site-switching info toast rail visible'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] #toastContainer .toast.info'),
+        true,
+        'admin studio light theme should explicitly restore the info toast left rail color'
     );
     assert.equal(
         stylesSource.includes('html[data-theme="light"] .admin-command-center__badge.is-alert'),

@@ -41,6 +41,7 @@ let paymentChannelAccordionState = {
     nowpayments: false
 };
 let discountTriggerRuleDraftCounter = 0;
+let discountTriggerOptionsLoadedSite = '';
 const ADMIN_CONFIG_TOGGLE_PULSE_CLASS = 'status-toggle--pulse';
 const ADMIN_CONFIG_SAVE_VISIBLE_CLASS = 'visible';
 const ADMIN_CONFIG_VERIFY_QUOTA_TONE_CLASSES = [
@@ -6849,6 +6850,7 @@ let settingsModuleInitPromise = null;
 const SETTINGS_MODULE_WARM_TTL_MS = 5 * 60 * 1000;
 const settingsDomainWarmPromises = new Map();
 const settingsDomainLastLoadedAt = new Map();
+let adminSettingsSiteScopedCacheSite = '';
 const SETTINGS_VIEW_DOMAIN_MAP = Object.freeze({
     pricing: ['commerce', 'affiliate'],
     security: ['governance'],
@@ -6882,6 +6884,7 @@ function getSettingsDomainsForView(viewName = '') {
 
 function renderSettingsViewSections(viewName = '') {
     const normalizedView = normalizeSettingsViewName(viewName);
+    ensureAdminSettingsSiteScopedCacheMatchesCurrentSite();
 
     if (normalizedView === 'pricing') {
         renderUnlockPricingConfig();
@@ -6965,9 +6968,14 @@ async function loadSystemConfigDomains(domains = []) {
         return [];
     }
 
+    const requestSite = getAdminSettingsSiteFilterValue();
     const settledResults = await Promise.allSettled(
         normalizedDomains.map((domain) => fetchSystemConfigDomain(domain))
     );
+
+    if (!isAdminSettingsSiteFilterStillCurrent(requestSite)) {
+        return settledResults;
+    }
 
     settledResults.forEach((result) => {
         if (result.status !== 'fulfilled') {
@@ -6980,6 +6988,7 @@ async function loadSystemConfigDomains(domains = []) {
         });
     });
 
+    adminSettingsSiteScopedCacheSite = normalizeAdminSettingsSiteContext(requestSite, 'all');
     return settledResults;
 }
 
@@ -7395,12 +7404,20 @@ async function handleAdminSettingsSiteChange(detail = {}) {
         return false;
     }
 
-    await activateSettingsModule({
-        site: detail?.site || '',
-        payload: {
-            defaultTab: viewName
-        }
-    }, {
+    if (typeof window.switchSettingsView === 'function') {
+        window.switchSettingsView(viewName, { warm: false });
+    } else {
+        renderSettingsViewSections(viewName);
+    }
+
+    await initSettingsModule({
+        bindListeners: true,
+        loadConfig: false,
+        renderView: true,
+        viewName
+    });
+
+    await warmSettingsViewConfigInBackground({
         force: true,
         viewName
     });
@@ -7453,14 +7470,30 @@ async function initSystemConfig() {
 
 const ADMIN_SYSTEM_CONFIG_DOMAINS = ['commerce', 'affiliate', 'governance', 'growth', 'verify'];
 const ADMIN_SITE_SCOPED_SYSTEM_CONFIG_KEYS = new Set([
+    'unlock_pricing',
     'payment_channels',
     'recharge_options',
+    'discount_trigger_rules',
     'affiliate_program',
-    'affiliate_poster'
+    'affiliate_poster',
+    'rewards',
+    'checkin_system',
+    'notifications',
+    'verify_settings',
+    'ops_alerts'
 ]);
 
 function getAdminSettingsSiteFilterValue() {
     return window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+}
+
+function isAdminSettingsSiteFilterStillCurrent(site = '') {
+    return normalizeAdminSettingsSiteContext(site, 'all') === normalizeAdminSettingsSiteContext(getAdminSettingsSiteFilterValue(), 'all');
+}
+
+function getAdminSettingsConcreteSiteFilterValue(fallback = 'cn') {
+    const normalized = normalizeAdminSettingsSiteContext(getAdminSettingsSiteFilterValue(), fallback);
+    return normalized === 'intl' ? 'intl' : 'cn';
 }
 
 function normalizeAdminSettingsSiteContext(value = '', fallback = 'all') {
@@ -7497,6 +7530,36 @@ function buildSettingsDomainWarmKey(domain = '') {
 
 function isAdminSiteScopedSystemConfigKey(key = '') {
     return ADMIN_SITE_SCOPED_SYSTEM_CONFIG_KEYS.has(String(key || '').trim());
+}
+
+function clearAdminSettingsSiteScopedConfigCache(options = {}) {
+    ADMIN_SITE_SCOPED_SYSTEM_CONFIG_KEYS.forEach((key) => {
+        delete systemConfigCache[key];
+    });
+    paymentChannelSecretStatus = getDefaultPaymentChannelSecretStatus();
+    paymentChannelRuntimeState = getDefaultPaymentChannelRuntimeState();
+    paymentChannelActivationChecks = getDefaultPaymentChannelActivationChecks();
+    if (discountTriggerSettingsState && typeof discountTriggerSettingsState === 'object') {
+        discountTriggerSettingsState.optionRows = [];
+        discountTriggerSettingsState.optionsLoaded = false;
+        discountTriggerSettingsState.optionsError = '';
+    }
+    discountTriggerOptionsLoadedSite = '';
+    loadPaymentChannelSettings._loadingPromise = null;
+    loadDiscountTriggerDiscountOptions._loadingPromise = null;
+    if (options.clearWarmState === true) {
+        settingsDomainWarmPromises.clear();
+        settingsDomainLastLoadedAt.clear();
+    }
+}
+
+function ensureAdminSettingsSiteScopedCacheMatchesCurrentSite() {
+    const currentSite = normalizeAdminSettingsSiteContext(getAdminSettingsSiteFilterValue(), 'all');
+    if (adminSettingsSiteScopedCacheSite && adminSettingsSiteScopedCacheSite !== currentSite) {
+        clearAdminSettingsSiteScopedConfigCache({ clearWarmState: true });
+    }
+    adminSettingsSiteScopedCacheSite = currentSite;
+    return currentSite;
 }
 
 function requireWritableAdminSettingsSite(label = '保存当前配置') {
@@ -8906,6 +8969,13 @@ function markDiscountTriggerSettingsDirty() {
 }
 
 async function loadDiscountTriggerDiscountOptions(force = false) {
+    const site = getAdminSettingsSiteFilterValue();
+    if (discountTriggerOptionsLoadedSite !== site) {
+        discountTriggerSettingsState.optionRows = [];
+        discountTriggerSettingsState.optionsLoaded = false;
+        loadDiscountTriggerDiscountOptions._loadingPromise = null;
+    }
+
     if (loadDiscountTriggerDiscountOptions._loadingPromise && !force) {
         return loadDiscountTriggerDiscountOptions._loadingPromise;
     }
@@ -8916,15 +8986,21 @@ async function loadDiscountTriggerDiscountOptions(force = false) {
         renderDiscountTriggerSettings();
 
         try {
-            const response = await (window.AdminApi?.fetch || fetch)('/api/admin/settings/discount-trigger-options?site=all', {
+            const requestUrl = `/api/admin/settings/discount-trigger-options?site=${encodeURIComponent(site)}`;
+            const response = await (window.AdminApi?.fetch || fetch)(requestUrl, {
                 method: 'GET',
                 credentials: 'include',
                 headers: await getAdminConfigApiHeaders()
             });
             const payload = await parseAdminConfigApiResponse(response);
 
+            if (getAdminSettingsSiteFilterValue() !== site) {
+                return payload;
+            }
+
             discountTriggerSettingsState.optionRows = Array.isArray(payload?.rows) ? payload.rows : [];
             discountTriggerSettingsState.optionsLoaded = true;
+            discountTriggerOptionsLoadedSite = site;
             discountTriggerSettingsState.optionsError = '';
             renderDiscountTriggerSettings();
             return payload;
@@ -15529,7 +15605,8 @@ function buildLocalOpsAlertMonitorActionContext(category = {}, item = {}) {
         sessionId: item.session_id || '',
         caseStatus: item.case_status || '',
         caseOwnerAdminId: item.case_owner_admin_id || '',
-        caseOwnerLabel: item.case_owner_label || ''
+        caseOwnerLabel: item.case_owner_label || '',
+        site: item.site || item.case_site || ''
     };
 }
 
@@ -15560,7 +15637,9 @@ function buildLocalOpsAlertWorkspaceContextAttrs(context = {}) {
         sessionId: normalizedContext.sessionId || normalizedContext.session_id || '',
         caseStatus: normalizedContext.caseStatus || normalizedContext.case_status || '',
         caseOwnerAdminId: normalizedContext.caseOwnerAdminId || normalizedContext.case_owner_admin_id || '',
-        caseOwnerLabel: normalizedContext.caseOwnerLabel || normalizedContext.case_owner_label || ''
+        caseOwnerLabel: normalizedContext.caseOwnerLabel || normalizedContext.case_owner_label || '',
+        site: normalizedContext.site || normalizedContext.site_context || '',
+        'data-workspace-site': normalizedContext.site || normalizedContext.site_context || ''
     };
 }
 
@@ -17532,14 +17611,21 @@ function setOpsAlertMonitorFilter(kind, value) {
 function buildLocalOpsAlertCaseMutationItems(items = [], categoryKey = '') {
     const normalizedCategoryKey = String(categoryKey || '').trim().toLowerCase();
     return (Array.isArray(items) ? items : [])
-        .map((item) => ({
-            category_key: normalizedCategoryKey || String(item.category_key || item.category || '').trim().toLowerCase(),
-            target_id: String(item.target_id || item.targetId || '').trim(),
-            alert_type: String(item.alert_type || item.alertType || '').trim().toLowerCase(),
-            title: String(item.title || '').trim(),
-            reference_label: String(item.reference_label || item.referenceLabel || '').trim(),
-            reference_value: String(item.reference_value || item.referenceValue || '').trim()
-        }))
+        .map((item) => {
+            const nextItem = {
+                category_key: normalizedCategoryKey || String(item.category_key || item.category || '').trim().toLowerCase(),
+                target_id: String(item.target_id || item.targetId || '').trim(),
+                alert_type: String(item.alert_type || item.alertType || '').trim().toLowerCase(),
+                title: String(item.title || '').trim(),
+                reference_label: String(item.reference_label || item.referenceLabel || '').trim(),
+                reference_value: String(item.reference_value || item.referenceValue || '').trim()
+            };
+            const site = String(item.site || item.case_site || item.site_context || '').trim().toLowerCase();
+            if (site) {
+                nextItem.site = site;
+            }
+            return nextItem;
+        })
         .filter((item) => item.category_key && item.target_id);
 }
 
@@ -17985,6 +18071,9 @@ async function saveConfig(key, value) {
         await parseAdminConfigApiResponse(response);
 
         systemConfigCache[key] = value;
+        if (isSiteScoped) {
+            adminSettingsSiteScopedCacheSite = normalizeAdminSettingsSiteContext(writableSite, 'all');
+        }
 
         return true;
     } catch (err) {
@@ -18073,11 +18162,11 @@ async function loadPaymentChannelSettings(force = false) {
         return loadPaymentChannelSettings._loadingPromise;
     }
 
+    const requestSite = getAdminSettingsSiteFilterValue();
     loadPaymentChannelSettings._loadingPromise = (async () => {
         try {
             const headers = await getAdminConfigApiHeaders();
-            const site = getAdminSettingsSiteFilterValue();
-            const response = await fetch(`/api/admin/settings/payment-channels?site=${encodeURIComponent(site)}`, {
+            const response = await fetch(`/api/admin/settings/payment-channels?site=${encodeURIComponent(requestSite)}`, {
                 method: 'GET',
                 headers
             });
@@ -18087,6 +18176,10 @@ async function loadPaymentChannelSettings(force = false) {
                 throw new Error(payload.message || '加载支付通道配置失败');
             }
 
+            if (!isAdminSettingsSiteFilterStillCurrent(requestSite)) {
+                return payload;
+            }
+
             systemConfigCache['payment_channels'] = normalizePaymentChannelsConfig(payload.config);
             paymentChannelSecretStatus = payload.secrets || getDefaultPaymentChannelSecretStatus();
             paymentChannelRuntimeState = normalizePaymentChannelRuntimeState(payload.runtime);
@@ -18094,11 +18187,15 @@ async function loadPaymentChannelSettings(force = false) {
             const rechargeOptions = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
             rechargeOptions.mock_payment_enabled = systemConfigCache['payment_channels'].active_provider === 'mock';
             systemConfigCache['recharge_options'] = rechargeOptions;
+            adminSettingsSiteScopedCacheSite = normalizeAdminSettingsSiteContext(requestSite, 'all');
             renderPaymentChannelsConfig();
             renderPackagesConfig();
             return payload;
         } catch (error) {
             console.warn('[Config] Payment channel settings load failed:', error.message);
+            if (!isAdminSettingsSiteFilterStillCurrent(requestSite)) {
+                return null;
+            }
             paymentChannelSecretStatus = getDefaultPaymentChannelSecretStatus();
             paymentChannelRuntimeState = getDefaultPaymentChannelRuntimeState();
             paymentChannelActivationChecks = getDefaultPaymentChannelActivationChecks();
@@ -18117,6 +18214,7 @@ async function loadPaymentChannelSettings(force = false) {
 
 async function fetchOpsAlertSettingsPayload(headers = {}) {
     return requireOpsAlertWorkbenchMethod('fetchAdminWorkbenchOpsAlertSettings')(headers, {
+        site: getAdminSettingsSiteFilterValue(),
         errorMessage: '加载站外告警配置失败'
     });
 }
@@ -18233,6 +18331,7 @@ async function loadOpsAlertSettings(force = false) {
 
 async function fetchOpsAlertHealthPayload(headers = {}) {
     return requireOpsAlertWorkbenchMethod('fetchAdminWorkbenchOpsAlertHealth')(headers, {
+        site: getAdminSettingsSiteFilterValue(),
         timeoutMs: OPS_ALERT_HEALTH_FETCH_TIMEOUT_MS,
         errorMessage: '加载站外告警通道健康状态失败'
     });
@@ -19323,6 +19422,7 @@ async function savePaymentChannelSettings(options = {}) {
         const rechargeOptions = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
         rechargeOptions.mock_payment_enabled = systemConfigCache['payment_channels'].active_provider === 'mock';
         systemConfigCache['recharge_options'] = rechargeOptions;
+        adminSettingsSiteScopedCacheSite = normalizeAdminSettingsSiteContext(writableSite, 'all');
 
         renderPaymentChannelsConfig();
         renderPackagesConfig();
@@ -20395,6 +20495,7 @@ function clearOpsAlertSecretInputs() {
 
 function buildLocalOpsAlertSettingsRequestBody(config, options = {}) {
     const body = {
+        site: normalizeAdminSettingsSiteContext(options.site || getAdminSettingsSiteFilterValue(), 'all'),
         config,
         secrets: options.secrets && typeof options.secrets === 'object' && !Array.isArray(options.secrets)
             ? options.secrets
@@ -20520,7 +20621,10 @@ async function submitLocalOpsAlertSecretDeletion(headers = {}, secretName = '', 
     const response = await fetch('/api/admin/settings/ops-alerts', {
         method: 'DELETE',
         headers,
-        body: JSON.stringify({ secretName })
+        body: JSON.stringify({
+            secretName,
+            site: normalizeAdminSettingsSiteContext(options.site || getAdminSettingsSiteFilterValue(), 'all')
+        })
     });
 
     const payload = await response.json().catch(() => ({}));
@@ -20535,6 +20639,7 @@ function resolveOpsAlertSecretDeletionSubmitter(options = {}) {
         'deleteAdminWorkbenchOpsAlertSecret',
         (headers = {}, secretName = '') => submitLocalOpsAlertSecretDeletion(headers, secretName, options),
         (headers = {}, secretName = '') => ({
+            site: normalizeAdminSettingsSiteContext(options.site || getAdminSettingsSiteFilterValue(), 'all'),
             errorMessage: options.errorMessage || '删除站外告警密钥失败'
         })
     );
@@ -20624,11 +20729,17 @@ function applyOpsAlertActionFeedback(payload = {}, options = {}) {
 }
 
 async function saveOpsAlertConfigOverride(config, options = {}) {
+    const writableSite = requireWritableAdminSettingsSite(options.siteLabel || '保存站外告警配置');
+    if (!writableSite) {
+        return false;
+    }
+
     setOpsAlertStrategySaveBusy(true);
     try {
         const headers = await getAdminConfigApiHeaders();
         const submissionState = resolveOpsAlertSettingsSubmissionState(config, {
             ...options,
+            site: writableSite,
             errorMessage: '保存站外告警配置失败'
         });
         const payload = await submitOpsAlertSettingsPayload(headers, submissionState.body, {
@@ -21518,6 +21629,9 @@ function buildLocalOpsAlertCaseMutationRequest(action, context = {}, options = {
             title: normalizedContext.title || ''
         }
     };
+    if (normalizedContext.site) {
+        body.metadata.site = normalizedContext.site;
+    }
     const ownerAdminId = String(options.ownerAdminId || options.owner_admin_id || '').trim();
     const ownerLabel = String(options.ownerLabel || options.owner_label || '').trim();
 
@@ -21528,6 +21642,9 @@ function buildLocalOpsAlertCaseMutationRequest(action, context = {}, options = {
         body.target_id = normalizedContext.targetId;
         body.alert_type = normalizedContext.alertType || '';
         body.title = normalizedContext.title || '';
+        if (normalizedContext.site) {
+            body.site = normalizedContext.site;
+        }
     }
 
     if (ownerAdminId) {
@@ -22896,6 +23013,7 @@ const ANNOUNCEMENT_CUSTOM_SELECT_LABELS = Object.freeze({
     }
 });
 let announcementRulesState = {
+    site: '',
     items: [],
     history: [],
     stats: {},
@@ -23588,12 +23706,55 @@ function isAnnouncementWorkflowUnavailableError(error = {}) {
         || (/schema cache/i.test(message) && /announcement_(rules|history|reads)/i.test(message));
 }
 
+function getAnnouncementRulesSiteContext() {
+    return normalizeAdminSettingsSiteContext(getAdminSettingsSiteFilterValue(), 'all');
+}
+
+function resetAnnouncementRulesStateForSite(site = getAnnouncementRulesSiteContext()) {
+    const normalizedSite = normalizeAdminSettingsSiteContext(site, 'all');
+    if (announcementRulesState.site === normalizedSite) {
+        return normalizedSite;
+    }
+
+    announcementRulesState = {
+        ...announcementRulesState,
+        site: normalizedSite,
+        items: [],
+        history: [],
+        stats: {},
+        selectedId: '',
+        loading: false,
+        loaded: false,
+        unavailable: false,
+        errorMessage: '',
+        loadPromise: null
+    };
+    return normalizedSite;
+}
+
 async function requestAnnouncementRulesApi(method = 'GET', body = null) {
-    const response = await (window.AdminApi?.fetch || fetch)('/api/admin/settings/announcements', {
-        method,
+    const normalizedMethod = String(method || 'GET').trim().toUpperCase() || 'GET';
+    const isWrite = normalizedMethod !== 'GET';
+    const site = isWrite
+        ? requireWritableAdminSettingsSite('保存当前站点公告')
+        : getAnnouncementRulesSiteContext();
+    if (isWrite && !site) {
+        throw new Error('请先选择 CN 或 EN 站点后再操作公告');
+    }
+
+    const requestUrl = new URL('/api/admin/settings/announcements', window.location.origin);
+    requestUrl.searchParams.set('site', site);
+    const requestBody = body
+        ? {
+            ...body,
+            site
+        }
+        : null;
+    const response = await (window.AdminApi?.fetch || fetch)(`${requestUrl.pathname}${requestUrl.search}`, {
+        method: normalizedMethod,
         credentials: 'include',
         headers: await getAdminConfigApiHeaders(),
-        ...(body ? { body: JSON.stringify(body) } : {})
+        ...(requestBody ? { body: JSON.stringify(requestBody) } : {})
     });
 
     let payload = {};
@@ -23614,6 +23775,7 @@ async function requestAnnouncementRulesApi(method = 'GET', body = null) {
 }
 
 function applyAnnouncementRulesPayload(payload = {}, options = {}) {
+    const payloadSite = normalizeAdminSettingsSiteContext(payload.site, announcementRulesState.site || 'all');
     const previousSelectedId = String(options.selectedId || payload.announcement?.id || announcementRulesState.selectedId || '').trim();
     const items = (Array.isArray(payload.items) ? payload.items : []).map(normalizeAnnouncementRuleItem);
     const selectedExists = previousSelectedId && items.some((item) => item.id === previousSelectedId);
@@ -23623,6 +23785,7 @@ function applyAnnouncementRulesPayload(payload = {}, options = {}) {
     announcementRulesState.stats = payload.stats && typeof payload.stats === 'object' && !Array.isArray(payload.stats)
         ? payload.stats
         : {};
+    announcementRulesState.site = payloadSite;
     announcementRulesState.selectedId = selectedExists
         ? previousSelectedId
         : (items[0]?.id || '');
@@ -23640,6 +23803,7 @@ function applyAnnouncementRulesPayload(payload = {}, options = {}) {
 }
 
 async function loadAnnouncementRules(force = false) {
+    resetAnnouncementRulesStateForSite();
     if (!force && (announcementRulesState.loaded || announcementRulesState.unavailable)) {
         renderAnnouncementRulesPanel();
         return announcementRulesState;
@@ -23654,8 +23818,12 @@ async function loadAnnouncementRules(force = false) {
     renderAnnouncementRulesPanel();
 
     announcementRulesState.loadPromise = (async () => {
+        const requestSite = announcementRulesState.site;
         try {
             const payload = await requestAnnouncementRulesApi('GET');
+            if (announcementRulesState.site !== requestSite) {
+                return announcementRulesState;
+            }
             applyAnnouncementRulesPayload(payload, { hydrate: true });
             return announcementRulesState;
         } catch (error) {
@@ -25597,7 +25765,9 @@ async function checkVerifyQuota() {
 
     try {
         const headers = await getAdminConfigApiHeaders();
-        const res = await fetch('/api/admin/settings/verify-monitor/quota', {
+        const quotaUrl = new URL('/api/admin/settings/verify-monitor/quota', window.location.origin);
+        quotaUrl.searchParams.set('site', getAdminSettingsConcreteSiteFilterValue());
+        const res = await fetch(`${quotaUrl.pathname}${quotaUrl.search}`, {
             method: 'GET',
             headers,
             signal: controller?.signal
@@ -25682,7 +25852,9 @@ async function loadVerifyQueueState() {
 
     try {
         const headers = await getAdminConfigApiHeaders();
-        const response = await fetch('/api/admin/settings/verify-monitor/queue', {
+        const queueUrl = new URL('/api/admin/settings/verify-monitor/queue', window.location.origin);
+        queueUrl.searchParams.set('site', getAdminSettingsConcreteSiteFilterValue());
+        const response = await fetch(`${queueUrl.pathname}${queueUrl.search}`, {
             method: 'GET',
             headers,
             signal: controller?.signal
@@ -25763,6 +25935,7 @@ async function loadVerifyMonitor(force = false) {
             requestUrl.searchParams.set('taskPageSize', String(taskPageSize));
             requestUrl.searchParams.set('failurePage', String(failurePage));
             requestUrl.searchParams.set('failurePageSize', String(failurePageSize));
+            requestUrl.searchParams.set('site', getAdminSettingsConcreteSiteFilterValue());
             const response = await fetch(`${requestUrl.pathname}${requestUrl.search}`, {
                 method: 'GET',
                 headers,

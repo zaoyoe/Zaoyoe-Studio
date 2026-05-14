@@ -6,6 +6,7 @@ const Module = require('node:module');
 const {
     __testUtils,
     enqueueOpsAlertJob,
+    loadOpsAlertsRuntimeConfig,
     normalizeOpsAlertsConfig,
     sendFeishuAlert,
     sweepOpsAlertJobs
@@ -47,6 +48,49 @@ test('buildOpsAlertSummaryTargetId returns a stable case target for summary aler
         }),
         ''
     );
+});
+
+test('loadOpsAlertsRuntimeConfig resolves site-scoped ops alert config overrides', async () => {
+    const supabase = createSupabaseStub({
+        systemConfig: [{
+            config_key: 'ops_alerts',
+            config_value: {
+                __site_scoped: true,
+                default: {
+                    enabled: true,
+                    dedupe_window_minutes: 15,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            chat_ids: ['cn-chat']
+                        }
+                    }
+                },
+                sites: {
+                    intl: {
+                        enabled: false,
+                        dedupe_window_minutes: 45,
+                        channels: {
+                            telegram: {
+                                enabled: true,
+                                chat_ids: ['intl-chat']
+                            }
+                        }
+                    }
+                }
+            }
+        }]
+    });
+
+    const cnRuntime = await loadOpsAlertsRuntimeConfig(supabase, {}, { site: 'cn' });
+    const intlRuntime = await loadOpsAlertsRuntimeConfig(supabase, {}, { site: 'intl' });
+
+    assert.equal(cnRuntime.config.enabled, true);
+    assert.equal(cnRuntime.config.dedupe_window_minutes, 15);
+    assert.deepEqual(cnRuntime.config.channels.telegram.chat_ids, ['cn-chat']);
+    assert.equal(intlRuntime.config.enabled, false);
+    assert.equal(intlRuntime.config.dedupe_window_minutes, 45);
+    assert.deepEqual(intlRuntime.config.channels.telegram.chat_ids, ['intl-chat']);
 });
 
 function createQueryBuilder(executor) {
@@ -145,10 +189,11 @@ function compareValue(left, right) {
 
 function applyFilters(rows, filters) {
     return rows.filter((row) => filters.every(({ op, column, value }) => {
-        if (op === 'eq') return row[column] === value;
-        if (op === 'in') return value.includes(row[column]);
-        if (op === 'gte') return compareValue(row[column], value) >= 0;
-        if (op === 'lte') return compareValue(row[column], value) <= 0;
+        const rowValue = column === 'site' && !row[column] ? 'cn' : row[column];
+        if (op === 'eq') return rowValue === value;
+        if (op === 'in') return value.includes(rowValue);
+        if (op === 'gte') return compareValue(rowValue, value) >= 0;
+        if (op === 'lte') return compareValue(rowValue, value) <= 0;
         return true;
     }));
 }
@@ -275,7 +320,8 @@ function createSupabaseStub(state = {}) {
                             ...row
                         };
                         const existingIndex = cases.findIndex((item) => (
-                            item.category_key === next.category_key
+                            (item.site || 'cn') === (next.site || 'cn')
+                            && item.category_key === next.category_key
                             && item.target_id === next.target_id
                         ));
                         if (existingIndex >= 0) {
@@ -3023,6 +3069,46 @@ test('enqueueOpsAlertJob auto-reopens a resolved case when an actionable summary
     assert.equal(state.caseEvents[0].target_id, 'ops_summary:verify_quota_summary');
 });
 
+test('enqueueOpsAlertJob keeps resolved cases isolated by site when auto-reopening', async () => {
+    const state = {
+        jobs: [],
+        cases: [{
+            site: 'cn',
+            category_key: 'verify',
+            target_id: 'verify_service:https://aidone.lol',
+            alert_type: 'verify_service_disabled',
+            status: 'resolved',
+            resolution: '国内站验证服务已恢复',
+            last_action: 'resolved',
+            last_action_at: '2026-04-11T12:02:28.000Z'
+        }],
+        caseEvents: []
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig();
+
+    const result = await enqueueOpsAlertJob(supabase, {
+        alertType: 'verify_service_disabled',
+        severity: 'critical',
+        title: '验证服务不可用',
+        content: '验证服务当前不可用，新的验证请求将无法正常创建。',
+        payload: {
+            site: 'intl',
+            target_id: 'verify_service:https://aidone.lol',
+            api_base_url: 'https://aidone.lol',
+            response_status: 404
+        },
+        createdAt: '2026-04-11T19:57:32.000Z',
+        source: 'verify_service_monitor'
+    }, { runtime });
+
+    assert.equal(result.queued, true);
+    assert.equal(result.caseSync?.reopened, false);
+    assert.equal(result.caseSync?.reason, 'missing_case');
+    assert.equal(state.cases[0].status, 'resolved');
+    assert.equal(state.caseEvents.length, 0);
+});
+
 test('sweepOpsAlertJobs delivers queued alerts and records per-channel attempts', async () => {
     const state = {
         jobs: [
@@ -3131,6 +3217,63 @@ test('sweepOpsAlertJobs suppresses stale verify service alerts after the case is
     assert.deepEqual(state.jobs[0].remaining_channels, []);
     assert.equal(state.jobs[0].attempt_count, 1);
     assert.equal(state.attempts.length, 0);
+});
+
+test('sweepOpsAlertJobs does not suppress an intl alert from a cn resolved case', async () => {
+    const state = {
+        jobs: [
+            {
+                id: 'job-intl-verify-active',
+                alert_type: 'verify_service_disabled',
+                severity: 'critical',
+                dedupe_key: 'dedupe-intl-verify-active',
+                title: '验证服务不可用',
+                content: '验证服务当前不可用，新的验证请求将无法正常创建。',
+                payload: {
+                    site: 'intl',
+                    target_id: 'verify_service:https://aidone.lol',
+                    api_base_url: 'https://aidone.lol',
+                    response_status: 404
+                },
+                channels: ['telegram'],
+                remaining_channels: ['telegram'],
+                status: 'pending',
+                attempt_count: 0,
+                max_attempts: 6,
+                next_retry_at: new Date(Date.now() - 1000).toISOString(),
+                created_at: new Date(Date.now() - 2000).toISOString()
+            }
+        ],
+        attempts: [],
+        cases: [{
+            site: 'cn',
+            category_key: 'verify',
+            target_id: 'verify_service:https://aidone.lol',
+            alert_type: 'verify_service_disabled',
+            status: 'resolved',
+            last_action: 'resolved',
+            resolution: '国内站验证服务已恢复'
+        }]
+    };
+    const supabase = createSupabaseStub(state);
+    const runtime = createRuntimeConfig();
+
+    const result = await sweepOpsAlertJobs(supabase, {
+        runtime,
+        fetchImpl: async () => ({
+            ok: true,
+            status: 200,
+            async text() {
+                return JSON.stringify({ ok: true });
+            }
+        })
+    });
+
+    assert.equal(result.claimed, 1);
+    assert.equal(result.delivered, 1);
+    assert.equal(result.suppressed, 0);
+    assert.equal(state.jobs[0].status, 'delivered');
+    assert.equal(state.attempts.length, 1);
 });
 
 test('sweepOpsAlertJobs keeps failed channels for retry without duplicating delivered channels', async () => {

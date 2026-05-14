@@ -122,7 +122,9 @@ function createPublicVerifyHandlers({
             });
         }
 
-        const config = await runtimeLoadVerifyRuntimeConfig(supabase, env);
+        const config = await runtimeLoadVerifyRuntimeConfig(supabase, env, {
+            site: currentSite
+        });
         if (!config.apiKey) {
             return sendJson(res, 500, {
                 success: false,
@@ -250,7 +252,9 @@ function createPublicVerifyHandlers({
         }
 
         const trackedPayload = runtimeParseHistoryMessage(trackedRecord?.message) || {};
-        const config = await runtimeLoadVerifyRuntimeConfig(supabase, env);
+        const config = await runtimeLoadVerifyRuntimeConfig(supabase, env, {
+            site: currentSite
+        });
 
         if (!config.apiKey) {
             return sendJson(res, 500, {
