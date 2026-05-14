@@ -3575,7 +3575,7 @@ class AdminChat {
                 ? (() => {
                     let query = this.supabase
                         .from('verification_logs')
-                        .select('verification_id, status, message, created_at')
+                        .select('verification_id, user_id, status, message, created_at')
                         .order('created_at', { ascending: false })
                         .limit(2);
                     if (userId) {
@@ -3673,6 +3673,49 @@ class AdminChat {
     getLatestUserContextRecord(items = []) {
         return (Array.isArray(items) ? items : [])
             .find((item) => item && typeof item === 'object') || null;
+    }
+
+    getUserContextVerificationPayload(item = {}) {
+        const rawMessage = String(item?.message || '').trim();
+        if (!rawMessage || !/^[{\[]/.test(rawMessage)) {
+            return {};
+        }
+
+        try {
+            const parsed = JSON.parse(rawMessage);
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        } catch (_error) {
+            return {};
+        }
+    }
+
+    getUserContextVerificationSubmitterLabel(item = {}, context = {}) {
+        const payload = this.getUserContextVerificationPayload(item);
+        const email = String(
+            item?.submitter_email
+            || item?.email
+            || item?.user_email
+            || payload.email
+            || context.email
+            || ''
+        ).trim();
+        const displayName = String(
+            item?.submitter_display_name
+            || item?.display_name
+            || item?.submitter_username
+            || item?.username
+            || payload.display_name
+            || payload.username
+            || context.displayName
+            || ''
+        ).trim();
+        const userId = String(item?.user_id || context.userId || '').trim();
+        return email || displayName || (userId ? `用户 ${this.truncateText(userId, 18)}` : '未记录提交者');
+    }
+
+    getUserContextVerificationReferenceLabel(item = {}) {
+        const verificationId = String(item?.verification_id || '').trim();
+        return verificationId ? `验证单号 ${this.truncateText(verificationId, 22)}` : '验证单号未记录';
     }
 
     buildUserContextWorkbenchEntry(kind = '', payload = {}) {
@@ -3928,7 +3971,7 @@ class AdminChat {
             actions.push({
                 key: 'verify',
                 label: '验证面板',
-                hint: this.truncateText(verificationId, 22),
+                hint: verificationId ? `验证单号 ${this.truncateText(verificationId, 18)}` : '最近验证',
                 workspaceKey: verifyEntry.workspaceKey,
                 context: verifyEntry.context
             });
@@ -3965,7 +4008,7 @@ class AdminChat {
         const latestSummary = [
             latestOrder ? `最近订单：${this.truncateText(latestOrder.snapshot_product_name || String(latestOrder.id || ''), 24)}（${this.formatUserContextStatus(latestOrder.delivery_status || latestOrder.refund_status)}）` : '',
             latestPayment ? `最近充值：${this.truncateText(latestPayment.package_name || String(latestPayment.id || ''), 24)}（${this.formatUserContextStatus(latestPayment.status)}）` : '',
-            latestVerification ? `最近验证：${this.truncateText(latestVerification.verification_id || '验证任务', 24)}（${this.formatUserContextStatus(latestVerification.status)}）` : ''
+            latestVerification ? `最近验证：${this.truncateText(this.getUserContextVerificationSubmitterLabel(latestVerification, context), 24)}（${this.formatUserContextStatus(latestVerification.status)}）` : ''
         ].filter(Boolean).join('\n');
         const displayTarget = this.truncateText(context.displayName || context.email || context.userId || context.sessionId || '当前会话', 24);
 
@@ -4512,8 +4555,8 @@ class AdminChat {
                 kind: 'verify',
                 label: '验证',
                 time: String(item.created_at || '').trim(),
-                title: this.truncateText(item.verification_id || '验证任务', 48),
-                meta: `${this.formatUserContextStatus(item.status)} · ${this.truncateText(item.message || '暂无描述', 30)}`,
+                title: this.truncateText(this.getUserContextVerificationSubmitterLabel(item, context), 48),
+                meta: `${this.formatUserContextStatus(item.status)} · ${this.getUserContextVerificationReferenceLabel(item)} · ${this.truncateText(item.message || '暂无描述', 30)}`,
                 action: accessibleAction,
                 isRecent: accessibleAction ? this.isUserContextActionRecent(context, accessibleAction) : false
             });
@@ -4705,8 +4748,8 @@ class AdminChat {
         })), '最近没有充值记录'));
 
         grid.appendChild(this.createUserContextSection('验证任务', context.verifications.map((item) => ({
-            main: this.truncateText(item.verification_id || '验证任务', 42),
-            sub: `${this.formatUserContextStatus(item.status)} · ${this.truncateText(item.message || '暂无描述', 26)} · ${this.formatUserContextDate(item.created_at)}`
+            main: this.truncateText(this.getUserContextVerificationSubmitterLabel(item, context), 42),
+            sub: `${this.formatUserContextStatus(item.status)} · ${this.getUserContextVerificationReferenceLabel(item)} · ${this.truncateText(item.message || '暂无描述', 26)} · ${this.formatUserContextDate(item.created_at)}`
         })), '最近没有验证记录'));
 
         grid.appendChild(this.createUserContextSection('售后工单', context.tickets.map((ticket) => ({

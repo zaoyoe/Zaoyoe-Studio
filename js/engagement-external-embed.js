@@ -7,7 +7,7 @@
     global.__zaoyoeExternalEngagementEmbedLoaded = true;
 
     const VERSION = '20260505_GONGYI_EXTERNAL_ENGAGEMENT_1';
-    const CHAT_WIDGET_LOADER_SRC = 'js/chat-widget-loader.js?v=20260514_CHAT_WIDGET_ADMIN_FIRST_OPEN_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';
+    const CHAT_WIDGET_LOADER_SRC = 'js/chat-widget-loader.js?v=20260514_CHAT_WIDGET_VERIFY_SUBMITTER_IDENTITY_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';
     const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=20260507_CHAT_WIDGET_ADAPTIVE_BUBBLE_1';
     const DEFAULT_PAGE_ID = 'gongyi';
     const DEFAULT_SITE = 'cn';

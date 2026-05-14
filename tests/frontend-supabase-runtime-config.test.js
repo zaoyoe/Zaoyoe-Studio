@@ -490,7 +490,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260514_CHAT_WIDGET_ADMIN_FIRST_OPEN_1';",
+        "const VERSION = '20260514_CHAT_WIDGET_VERIFY_SUBMITTER_IDENTITY_1';",
         "const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';",
         'function ensurePlaceholderPlacementStyles() {',
         '/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */',
@@ -519,7 +519,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'body.chat-widget-bootstrap-scroll-locked',
         "const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';",
         "const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';",
-        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260514_CHAT_WIDGET_ADMIN_FIRST_OPEN_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';",
+        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260514_CHAT_WIDGET_VERIFY_SUBMITTER_IDENTITY_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';",
         "const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';",
         'function getChatWidgetConstructor() {',
         'global.ChatWidget = ChatWidget;',
@@ -1653,6 +1653,8 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'buildUserContextTimelineAction(kind = \'\', item = {}, context = {})',
         'buildUserContextTimelineEntries(context = {})',
         'createUserContextTimelineSection(entries = [])',
+        'getUserContextVerificationSubmitterLabel(item = {}, context = {})',
+        'getUserContextVerificationReferenceLabel(item = {})',
         'session-name-row',
         'ops-alert-toolbar',
         'top: 4px;',
@@ -1885,6 +1887,8 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'buildUserContextTimelineAction(kind = \'\', item = {}, context = {})',
         'buildUserContextTimelineEntries(context = {})',
         'createUserContextTimelineSection(entries = [])',
+        'getUserContextVerificationSubmitterLabel(item = {}, context = {})',
+        'getUserContextVerificationReferenceLabel(item = {})',
         'admin-alert-toolbar',
         'session-queue-overview',
         'session-queue-card',
@@ -1931,6 +1935,12 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
     for (const marker of adminChatMarkers) {
         assert.equal(adminChatSource.includes(marker), true, `js/admin-chat.js should contain ${marker}`);
     }
+    assert.equal(chatWidgetSource.includes("latestVerification.verification_id || '验证任务'"), false, 'js/components/ChatWidget.js should not show verification ids as the recent verification submitter label');
+    assert.equal(chatWidgetSource.includes("item.verification_id || '验证任务'"), false, 'js/components/ChatWidget.js should not show verification ids as verification row titles');
+    assert.equal(adminChatSource.includes("latestVerification.verification_id || '验证任务'"), false, 'js/admin-chat.js should not show verification ids as the recent verification submitter label');
+    assert.equal(adminChatSource.includes("item.verification_id || '验证任务'"), false, 'js/admin-chat.js should not show verification ids as verification row titles');
+    assert.equal(chatWidgetSource.includes(".select('verification_id, user_id, status, message, created_at')"), true, 'js/components/ChatWidget.js should keep user ids available for verification identity fallback');
+    assert.equal(adminChatSource.includes(".select('verification_id, user_id, status, message, created_at')"), true, 'js/admin-chat.js should keep user ids available for verification identity fallback');
     assert.equal(
         adminChatSource.includes('return window.submitOpsAlertCaseMutationRequest(headers, action, context, {'),
         true,
@@ -2005,7 +2015,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
     }
 
     assert.equal(
-        adminStudioHtml.includes('js/admin-chat.js?v=20260505_CHAT_USER_ACTIVITY_1'),
+        adminStudioHtml.includes('js/admin-chat.js?v=20260514_CHAT_VERIFY_SUBMITTER_IDENTITY_1'),
         true,
         'admin-studio.html should load the latest admin chat case action runtime'
     );
@@ -2017,7 +2027,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/chat-widget-loader.js?v=20260514_CHAT_WIDGET_ADMIN_FIRST_OPEN_1'),
+            source.includes('js/chat-widget-loader.js?v=20260514_CHAT_WIDGET_VERIFY_SUBMITTER_IDENTITY_1'),
             true,
             'public entry pages should load the lazy chat widget bootstrap'
         );
@@ -14983,12 +14993,17 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
         "const opened = await window.AdminShell.openContext('shop', {",
         "const opened = await window.AdminShell.openContext('payments', {",
         "return this.openWorkbenchEntry('shop-risk-orders', {",
-        "return this.openWorkbenchEntry('payments-overview', context);"
+        "return this.openWorkbenchEntry('payments-overview', context);",
+        'getUserContextVerificationSubmitterLabel(item = {}, context = {})',
+        'getUserContextVerificationReferenceLabel(item = {})'
     ];
 
     for (const marker of runtimeMarkers) {
         assert.equal(adminChatSource.includes(marker), true, `js/admin-chat.js should contain ${marker}`);
     }
+    assert.equal(adminChatSource.includes("latestVerification.verification_id || '验证任务'"), false, 'js/admin-chat.js should not show verification ids as the recent verification submitter label');
+    assert.equal(adminChatSource.includes("item.verification_id || '验证任务'"), false, 'js/admin-chat.js should not show verification ids as verification row titles');
+    assert.equal(adminChatSource.includes(".select('verification_id, user_id, status, message, created_at')"), true, 'js/admin-chat.js should keep user ids available for verification identity fallback');
 
     const styleMarkers = [
         '.session-avatar--media',
@@ -15014,7 +15029,7 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
 
     const htmlMarkers = [
         'css/admin-chat.css?v=20260504_USER_ONLINE_GREEN_1',
-        'js/admin-chat.js?v=20260505_CHAT_USER_ACTIVITY_1'
+        'js/admin-chat.js?v=20260514_CHAT_VERIFY_SUBMITTER_IDENTITY_1'
     ];
 
     for (const marker of htmlMarkers) {

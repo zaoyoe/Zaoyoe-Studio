@@ -223,9 +223,9 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(shopHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
     assert.match(guestbookHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
     assert.match(guestbookHtml, /homepage-guestbook-modal\.js\?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1/);
-    assert.match(adminStudioHtml, /admin-chat\.js\?v=20260505_CHAT_USER_ACTIVITY_1/);
+    assert.match(adminStudioHtml, /admin-chat\.js\?v=20260514_CHAT_VERIFY_SUBMITTER_IDENTITY_1/);
     assert.match(adminStudioHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
-    assert.match(chatWidgetLoader, /const VERSION = '20260514_CHAT_WIDGET_ADMIN_FIRST_OPEN_1';/);
+    assert.match(chatWidgetLoader, /const VERSION = '20260514_CHAT_WIDGET_VERIFY_SUBMITTER_IDENTITY_1';/);
     assert.match(chatWidgetLoader, /<div class="chat-header-actions">[\s\S]*<button type="button" class="chat-header-mode-switch" tabindex="-1">常用入口<\/button>/);
     assert.match(chatWidgetLoader, /chat-widget-bootstrap-user-input \.chat-widget-bootstrap-user-emoji-btn \{[\s\S]*background: transparent;[\s\S]*box-shadow: none;/);
     assert.match(chatWidgetLoader, /chat-widget-bootstrap-user-input \.chat-send-btn \{[\s\S]*width: auto;[\s\S]*flex: 0 0 auto;/);
