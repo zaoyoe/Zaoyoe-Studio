@@ -10403,6 +10403,7 @@ test('admin studio security, verify, and affiliate controls route through delega
         'settings-unlock-account',
         'settings-save-ip-blacklist',
         'settings-refresh-verify-monitor',
+        'settings-open-verify-monitor-user',
         'settings-change-verify-monitor-task-page',
         'settings-change-verify-monitor-failure-page',
         'settings-save-verify-config',
@@ -10444,6 +10445,13 @@ test('admin studio security, verify, and affiliate controls route through delega
     assert.equal(adminStudioStyles.includes('.verify-monitor-list--compact'), true, 'admin-studio.css should keep recent verify tasks and failures inside compact scroll regions');
     assert.equal(adminStudioStyles.includes('.verify-monitor-item__chips'), true, 'admin-studio.css should support compact verify monitor detail chips');
     assert.equal(adminConfigSource.includes('class="verify-monitor-item__chips"'), true, 'admin-config.js should render verify monitor detail rows as compact chip groups');
+    assert.equal(adminConfigSource.includes('row.submitter_email || row.email'), true, 'admin-config.js should show the verify submitter email instead of the task id as the row title');
+    assert.equal(adminConfigSource.includes('data-admin-action="settings-open-verify-monitor-user"'), true, 'admin-config.js should make verify monitor submitters clickable');
+    assert.equal(adminConfigSource.includes('data-ledger-reference-id='), true, 'admin-config.js should pass the verify ledger reference into submitter links');
+    assert.equal(adminStudioScript.includes("case 'settings-open-verify-monitor-user':"), true, 'admin-studio.js should route verify monitor submitter clicks');
+    assert.equal(adminStudioScript.includes("source: 'verify-monitor'"), true, 'admin-studio.js should open submitter details with a verify monitor context');
+    assert.equal(adminStudioScript.includes('autoOpenLedgerDetail: true'), true, 'admin-studio.js should ask user details to auto-open the matching verify ledger row');
+    assert.equal(adminStudioStyles.includes('.verify-monitor-item__submitter-link'), true, 'admin-studio.css should style verify submitter links without changing the row layout');
     assert.equal(adminStudioStyles.includes('.verify-monitor-facts'), true, 'admin-studio.css should render the verify monitor facts grid');
     assert.equal(adminStudioStyles.includes('.verify-monitor-pagination'), true, 'admin-studio.css should style verify monitor pagination controls');
     assert.equal(adminConfigSource.includes('focusVerifyMonitorWorkspace'), true, 'admin-config.js should expose verify monitor workspace focusing for deep-linked alerts');

@@ -4331,6 +4331,117 @@ function bindAdminStudioDelegatedControls() {
                     silentErrors: true
                 });
                 break;
+            case 'settings-open-verify-monitor-user': {
+                const userId = String(actionEl.dataset.userId || '').trim();
+                const userEmail = String(actionEl.dataset.userEmail || '').trim();
+                const verificationId = String(actionEl.dataset.verificationId || '').trim();
+                const ledgerReferenceId = String(actionEl.dataset.ledgerReferenceId || verificationId).trim();
+                const site = String(actionEl.dataset.site || '').trim().toUpperCase();
+                const searchValue = userEmail || userId;
+                if (!userId && !searchValue) {
+                    break;
+                }
+
+                const analyticsContext = {
+                    contextType: 'verification',
+                    verificationId,
+                    verification_id: verificationId,
+                    ledgerReferenceId,
+                    ledger_reference_id: ledgerReferenceId,
+                    userId,
+                    user_id: userId,
+                    userEmail,
+                    user_email: userEmail,
+                    email: userEmail,
+                    site,
+                    defaultTab: 'ledger',
+                    tab: 'ledger',
+                    autoOpenLedgerDetail: true,
+                    auto_open_ledger_detail: true,
+                    sourceLabel: 'Google One API',
+                    signalLabel: '验证任务',
+                    referenceLabel: '验证单号',
+                    referenceValue: verificationId || ledgerReferenceId
+                };
+
+                if (typeof window.tryOpenOpsAlertWorkspaceUserModal === 'function') {
+                    void window.tryOpenOpsAlertWorkspaceUserModal(userId, {
+                        source: 'verify-monitor',
+                        notifyDenied: true,
+                        analyticsContext,
+                        email: userEmail,
+                        userEmail,
+                        defaultTab: 'ledger',
+                        fallbackEmail: userEmail
+                    });
+                    break;
+                }
+
+                void (async () => {
+                    const usersContext = {
+                        source: 'verify-monitor',
+                        entity: 'user',
+                        action: 'open-user',
+                        focus: {
+                            userId,
+                            user_id: userId,
+                            email: userEmail,
+                            userEmail,
+                            verificationId,
+                            verification_id: verificationId,
+                            ledgerReferenceId,
+                            ledger_reference_id: ledgerReferenceId
+                        },
+                        payload: {
+                            analyticsContext,
+                            defaultTab: 'ledger',
+                            tab: 'ledger',
+                            email: userEmail,
+                            userEmail,
+                            user_email: userEmail,
+                            fallbackEmail: userEmail,
+                            verificationId,
+                            verification_id: verificationId,
+                            ledgerReferenceId,
+                            ledger_reference_id: ledgerReferenceId,
+                            search: searchValue,
+                            searchQuery: searchValue,
+                            query: searchValue
+                        }
+                    };
+
+                    if (window.AdminShell?.openContext) {
+                        const opened = await window.AdminShell.openContext('users', usersContext, {
+                            settleMs: 0,
+                            silentDenied: true
+                        });
+                        if (opened) {
+                            return;
+                        }
+                    }
+
+                    const switched = window.switchModule?.('users');
+                    if (switched === false) {
+                        return;
+                    }
+
+                    if (typeof window.openAdminUsersShellContext === 'function') {
+                        await window.openAdminUsersShellContext(usersContext);
+                        return;
+                    }
+
+                    if (userId && typeof window.openUserModal === 'function') {
+                        await window.openUserModal(userId, {
+                            analyticsContext,
+                            defaultTab: 'ledger',
+                            fallbackEmail: userEmail
+                        });
+                    }
+                })().catch((error) => {
+                    console.warn('[AdminStudio] Failed to open verify monitor submitter:', error);
+                });
+                break;
+            }
             case 'settings-refocus-verify-monitor': {
                 const focusContext = typeof window.readOpsAlertWorkspaceContextDataset === 'function'
                     ? window.readOpsAlertWorkspaceContextDataset(actionEl.dataset)
