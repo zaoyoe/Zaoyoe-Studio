@@ -50,6 +50,22 @@ const UPLOAD_RATE_LIMITS: Record<UploadType, { limit: number; windowMs: number }
     homepage: { limit: 20, windowMs: 60 * 60 * 1000 }
 }
 const REQUIRED_HOMEPAGE_UPLOAD_PERMISSION = 'homepage.manage'
+const ADMIN_UPLOAD_PERMISSIONS: Partial<Record<UploadType, string>> = {
+    product: 'shop.manage',
+    poster: 'discounts.manage',
+    homepage: REQUIRED_HOMEPAGE_UPLOAD_PERMISSION
+}
+const DEFAULT_REMOTE_IMAGE_HOSTS = [
+    'lh3.googleusercontent.com',
+    'lh4.googleusercontent.com',
+    'lh5.googleusercontent.com',
+    'lh6.googleusercontent.com',
+    'avatars.githubusercontent.com'
+]
+const REMOTE_IMAGE_FETCH_TIMEOUT_MS = Math.max(
+    1000,
+    Number(Deno.env.get('UPLOAD_REMOTE_IMAGE_TIMEOUT_MS') || 5000) || 5000
+)
 
 function normalizeUploadType(value: unknown): UploadType {
     const normalized = String(value || 'avatar').trim().toLowerCase() as UploadType
@@ -68,6 +84,127 @@ function assertAllowedImageContentType(contentType: string, label = 'Image') {
     if (!ALLOWED_IMAGE_CONTENT_TYPES.has(normalized)) {
         throw new Error(`${label} type is not allowed`)
     }
+}
+
+function getAllowedRemoteImageHosts(): Set<string> {
+    const configured = String(Deno.env.get('UPLOAD_REMOTE_IMAGE_HOSTS') || '')
+        .split(',')
+        .map((host) => host.trim().toLowerCase())
+        .filter(Boolean)
+    return new Set(configured.length ? configured : DEFAULT_REMOTE_IMAGE_HOSTS)
+}
+
+function assertSafeRemoteImageUrl(rawUrl: string): URL {
+    const parsed = new URL(rawUrl)
+    if (parsed.protocol !== 'https:') {
+        throw new Error('Remote image must use HTTPS')
+    }
+
+    const hostname = parsed.hostname.toLowerCase()
+    if (!getAllowedRemoteImageHosts().has(hostname)) {
+        throw new Error('Remote image host is not allowed')
+    }
+
+    return parsed
+}
+
+async function fetchRemoteImage(url: URL): Promise<Response> {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), REMOTE_IMAGE_FETCH_TIMEOUT_MS)
+    try {
+        return await fetch(url.toString(), {
+            redirect: 'error',
+            signal: controller.signal
+        })
+    } finally {
+        clearTimeout(timer)
+    }
+}
+
+async function readResponseBytesWithLimit(response: Response, limit: number, label = 'Image'): Promise<Uint8Array> {
+    const reader = response.body?.getReader()
+    if (!reader) {
+        const bytes = new Uint8Array(await response.arrayBuffer())
+        if (bytes.length > limit) {
+            throw new Error(`${label} size exceeds ${Math.round(limit / 1024 / 1024)}MB limit`)
+        }
+        return bytes
+    }
+
+    const chunks: Uint8Array[] = []
+    let total = 0
+    while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        if (!value) continue
+        total += value.length
+        if (total > limit) {
+            try {
+                await reader.cancel()
+            } catch (_) {
+                // Best-effort stream cleanup before rejecting the upload.
+            }
+            throw new Error(`${label} size exceeds ${Math.round(limit / 1024 / 1024)}MB limit`)
+        }
+        chunks.push(value)
+    }
+
+    const bytes = new Uint8Array(total)
+    let offset = 0
+    for (const chunk of chunks) {
+        bytes.set(chunk, offset)
+        offset += chunk.length
+    }
+    return bytes
+}
+
+function detectImageContentType(bytes: Uint8Array | null): string {
+    if (!bytes || bytes.length < 4) return ''
+
+    const isJpeg = bytes.length >= 3
+        && bytes[0] === 0xff
+        && bytes[1] === 0xd8
+        && bytes[2] === 0xff
+    if (isJpeg) return 'image/jpeg'
+
+    const isPng = bytes.length >= 8
+        && bytes[0] === 0x89
+        && bytes[1] === 0x50
+        && bytes[2] === 0x4e
+        && bytes[3] === 0x47
+        && bytes[4] === 0x0d
+        && bytes[5] === 0x0a
+        && bytes[6] === 0x1a
+        && bytes[7] === 0x0a
+    if (isPng) return 'image/png'
+
+    const ascii = String.fromCharCode(...bytes.slice(0, Math.min(bytes.length, 12)))
+    if (ascii.startsWith('GIF87a') || ascii.startsWith('GIF89a')) {
+        return 'image/gif'
+    }
+
+    const isWebP = bytes.length >= 12
+        && ascii.slice(0, 4) === 'RIFF'
+        && ascii.slice(8, 12) === 'WEBP'
+    if (isWebP) return 'image/webp'
+
+    return ''
+}
+
+function assertImageMagicBytes(bytes: Uint8Array | null, expectedContentType: string, label = 'Image'): string {
+    const detected = detectImageContentType(bytes)
+    if (!detected) {
+        throw new Error(`${label} bytes do not match a supported image format`)
+    }
+
+    const expected = normalizeImageContentType(expectedContentType)
+    const normalizedExpected = expected === 'image/jpg' ? 'image/jpeg' : expected
+    if (normalizedExpected && normalizedExpected !== detected) {
+        throw new Error(`${label} content type does not match file bytes`)
+    }
+
+    assertAllowedImageContentType(detected, label)
+    return detected
 }
 
 function decodeImageData(imageData: string): Uint8Array {
@@ -364,12 +501,13 @@ serve(async (req) => {
             throw new Error('Either imageUrl or imageData is required')
         }
 
-        if (type === 'homepage') {
+        const requiredAdminPermission = ADMIN_UPLOAD_PERMISSIONS[type]
+        if (requiredAdminPermission) {
             await requireAdminImageUploadPermission(
                 supabaseClient,
                 user,
-                REQUIRED_HOMEPAGE_UPLOAD_PERMISSION,
-                'Homepage'
+                requiredAdminPermission,
+                type
             )
         }
 
@@ -383,12 +521,8 @@ serve(async (req) => {
 
         if (imageUrl) {
             console.log(`📥 Downloading from URL: ${imageUrl}`)
-            const parsedImageUrl = new URL(imageUrl)
-            if (!['http:', 'https:'].includes(parsedImageUrl.protocol)) {
-                throw new Error('Image URL protocol is not allowed')
-            }
-
-            const response = await fetch(imageUrl)
+            const parsedImageUrl = assertSafeRemoteImageUrl(imageUrl)
+            const response = await fetchRemoteImage(parsedImageUrl)
             if (!response.ok) {
                 throw new Error(`Failed to download image: ${response.statusText}`)
             }
@@ -400,13 +534,14 @@ serve(async (req) => {
             if (contentLength > UPLOAD_SIZE_LIMITS[type]) {
                 throw new Error(`Remote image size exceeds ${Math.round(UPLOAD_SIZE_LIMITS[type] / 1024 / 1024)}MB limit`)
             }
-            const arrayBuffer = await response.arrayBuffer()
-            imageBuffer = new Uint8Array(arrayBuffer)
+            imageBuffer = await readResponseBytesWithLimit(response, UPLOAD_SIZE_LIMITS[type], 'Remote image')
+            imageContentType = assertImageMagicBytes(imageBuffer, imageContentType, 'Remote image')
         } else if (imageData) {
             console.log(`📄 Processing Base64 data`)
             imageContentType = getImageDataContentType(imageData)
             assertAllowedImageContentType(imageContentType)
             imageBuffer = decodeImageData(imageData)
+            imageContentType = assertImageMagicBytes(imageBuffer, imageContentType)
         }
 
         assertImageSize(imageBuffer, type)
@@ -474,6 +609,7 @@ serve(async (req) => {
                     throw new Error('Product card image must be WebP')
                 }
                 const cardImageBuffer = decodeImageData(cardImageData)
+                assertImageMagicBytes(cardImageBuffer, 'image/webp', 'Product card image')
                 assertImageSize(cardImageBuffer, 'card', 'Product card image')
 
                 const cardFilename = `products/card/${productKeyBase}.webp`

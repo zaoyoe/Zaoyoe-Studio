@@ -124,24 +124,6 @@
             ]
         },
         {
-            "source": "/api/public",
-            "headers": [
-                {
-                    "key": "Cache-Control",
-                    "value": "public, max-age=120, s-maxage=60, stale-while-revalidate=600"
-                }
-            ]
-        },
-        {
-            "source": "/api/shop/:path*",
-            "headers": [
-                {
-                    "key": "Cache-Control",
-                    "value": "public, max-age=120, s-maxage=60, stale-while-revalidate=300"
-                }
-            ]
-        },
-        {
             "source": "/api/engagement/:path*",
             "headers": [
                 {

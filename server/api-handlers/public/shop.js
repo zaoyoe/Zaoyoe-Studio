@@ -66,6 +66,13 @@ function createShopHandlers({
         resolveDiscountStacking: resolvePricingDiscountStacking
     } = discountPricing || {};
 
+    function setPrivateApiCache(res) {
+        if (!res?.setHeader) return;
+        res.setHeader('Cache-Control', 'no-store, max-age=0');
+        res.setHeader('CDN-Cache-Control', 'no-store');
+        res.setHeader('Vercel-CDN-Cache-Control', 'no-store');
+    }
+
     function createServerTimingTracker() {
         return {
             startedAt: Date.now(),
@@ -2336,6 +2343,7 @@ function createShopHandlers({
                     message: 'Method not allowed'
                 });
             }
+            setPrivateApiCache(res);
 
             const clientIp = resolveClientIp(req, { env }) || 'unknown';
             const rateLimit = await takeRateLimitToken({
@@ -2488,6 +2496,7 @@ function createShopHandlers({
                     message: 'Method not allowed'
                 });
             }
+            setPrivateApiCache(res);
 
             const clientIp = resolveClientIp(req, { env }) || 'unknown';
             const rateLimit = await takeRateLimitToken({
@@ -2603,6 +2612,7 @@ function createShopHandlers({
                     message: 'Method not allowed'
                 });
             }
+            setPrivateApiCache(res);
 
             try {
                 const { supabase, adminSupabase, user } = await requireAuthenticatedUser(req);
@@ -2687,6 +2697,7 @@ function createShopHandlers({
                     message: 'Method not allowed'
                 });
             }
+            setPrivateApiCache(res);
 
             try {
                 const { supabase, requestSupabase, adminSupabase, user } = await requireAuthenticatedUser(req);
@@ -2883,6 +2894,7 @@ function createShopHandlers({
                     message: 'Method not allowed'
                 });
             }
+            setPrivateApiCache(res);
 
             const rateLimit = await takeRateLimitToken({
                 supabase: getOptionalSupabaseAdmin(),
@@ -2998,6 +3010,7 @@ function createShopHandlers({
                     message: 'Method not allowed'
                 });
             }
+            setPrivateApiCache(res);
 
             const adminSupabase = getOptionalSupabaseAdmin();
             const clientIp = resolveClientIp(req, { env }) || 'unknown';
@@ -3071,6 +3084,7 @@ function createShopHandlers({
                     message: 'Method not allowed'
                 });
             }
+            setPrivateApiCache(res);
 
             const adminSupabase = getOptionalSupabaseAdmin();
             const clientIp = resolveClientIp(req, { env }) || 'unknown';
@@ -3137,6 +3151,7 @@ function createShopHandlers({
                     message: 'Method not allowed'
                 });
             }
+            setPrivateApiCache(res);
 
             const adminSupabase = getOptionalSupabaseAdmin();
             const clientIp = resolveClientIp(req, { env }) || 'unknown';
