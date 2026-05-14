@@ -12,6 +12,7 @@ const {
 function createQueryBuilder(executor) {
     const state = {
         mode: 'select',
+        select: '',
         filters: [],
         order: null,
         payload: null,
@@ -20,7 +21,8 @@ function createQueryBuilder(executor) {
     };
 
     const builder = {
-        select() {
+        select(fields = '') {
+            state.select = fields;
             return builder;
         },
         eq(column, value) {
@@ -165,6 +167,20 @@ function createSupabaseStub(state = {}) {
                 }
 
                 if (table === 'profiles' && query.mode === 'select') {
+                    if (Array.isArray(state.profileSelects)) {
+                        state.profileSelects.push(query.select);
+                    }
+
+                    if (state.missingProfileDisplayName && String(query.select || '').includes('display_name')) {
+                        return {
+                            data: null,
+                            error: {
+                                code: '42703',
+                                message: 'column profiles.display_name does not exist'
+                            }
+                        };
+                    }
+
                     return {
                         data: applyRange(sortRows(applyFilters(profiles, query.filters), query.order), query.range),
                         error: null
@@ -344,6 +360,96 @@ test('normalizeShopOrderRiskMonitorConfig accepts nested ops alert shop risk con
     assert.equal(config.auto_ban_user_min_risk_score, 95);
     assert.equal(config.auto_ban_user_duration_days, 12);
     assert.equal(config.auto_suspend_product_min_risk_score, 98);
+});
+
+test('runShopOrderRiskSweep falls back when profiles display_name column is absent', async () => {
+    const state = {
+        jobs: [],
+        profileSelects: [],
+        missingProfileDisplayName: true,
+        orders: [
+            {
+                id: 'fallback-1',
+                user_id: 'buyer-1',
+                site: 'cn',
+                snapshot_product_name: 'Prompt Pro 年卡',
+                price_paid: 1,
+                total_price: 19.9,
+                item_count: 1,
+                discount_code: 'FLASH0',
+                discount_amount: 18.9,
+                created_at: '2026-03-27T10:00:00.000Z',
+                refund_status: 'none'
+            },
+            {
+                id: 'fallback-2',
+                user_id: 'buyer-2',
+                site: 'cn',
+                snapshot_product_name: 'Prompt Pro 年卡',
+                price_paid: 1,
+                total_price: 19.9,
+                item_count: 1,
+                discount_code: 'FLASH0',
+                discount_amount: 18.9,
+                created_at: '2026-03-27T10:01:00.000Z',
+                refund_status: 'none'
+            },
+            {
+                id: 'fallback-3',
+                user_id: 'buyer-3',
+                site: 'intl',
+                snapshot_product_name: '卡密周卡',
+                price_paid: 1,
+                total_price: 9.9,
+                item_count: 1,
+                discount_code: 'FLASH0',
+                discount_amount: 8.9,
+                created_at: '2026-03-27T10:02:00.000Z',
+                refund_status: 'none'
+            },
+            {
+                id: 'fallback-4',
+                user_id: 'buyer-1',
+                site: 'cn',
+                snapshot_product_name: '卡密周卡',
+                price_paid: 1,
+                total_price: 9.9,
+                item_count: 1,
+                discount_code: 'FLASH0',
+                discount_amount: 8.9,
+                created_at: '2026-03-27T10:03:00.000Z',
+                refund_status: 'none'
+            }
+        ],
+        profiles: [
+            { id: 'buyer-1', email: 'alpha@example.com', username: 'alpha', last_login_ip: '203.0.113.88' },
+            { id: 'buyer-2', email: 'beta@example.com', username: 'beta', last_login_ip: '203.0.113.88' },
+            { id: 'buyer-3', email: 'gamma@example.com', username: 'gamma', last_login_ip: '203.0.113.88' }
+        ],
+        entitlements: [],
+        loginHistory: []
+    };
+    const supabase = createSupabaseStub(state);
+
+    const result = await runShopOrderRiskSweep(supabase, {
+        runtime: createOpsRuntime(),
+        now: '2026-03-27T10:10:00.000Z',
+        config: {
+            auto_response_enabled: false,
+            zero_total_min_order_count: 99,
+            user_velocity_min_order_count: 99,
+            shared_login_ip_min_order_count: 99,
+            login_signature_min_order_count: 99
+        }
+    });
+
+    assert.equal(result.discount_code_spike_count, 1);
+    assert.equal(result.queued, 1);
+    assert.deepEqual(state.profileSelects, [
+        'id, email, display_name, username, last_login_ip',
+        'id, email, username, last_login_ip'
+    ]);
+    assert.match(state.jobs[0]?.content || '', /alpha/);
 });
 
 test('buildDiscountCodeSpikeAlerts flags coupon abuse across multiple users', () => {
