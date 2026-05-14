@@ -15,7 +15,7 @@ test('external engagement embed can mount the robot runtime on gongyi pages', ()
 
     assert.match(embed, /20260505_GONGYI_EXTERNAL_ENGAGEMENT_1/);
     assert.match(embed, /DEFAULT_PAGE_ID\s*=\s*'gongyi'/);
-    assert.match(embed, /CHAT_WIDGET_LOADER_SRC\s*=\s*'js\/chat-widget-loader\.js\?v=20260514_CHAT_WIDGET_IOS_CHROME_KEYBOARD_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1'/);
+    assert.match(embed, /CHAT_WIDGET_LOADER_SRC\s*=\s*'js\/chat-widget-loader\.js\?v=20260514_CHAT_WIDGET_ADMIN_FIRST_OPEN_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1'/);
     assert.match(embed, /CHAT_WIDGET_STYLE_SRC\s*=\s*'css\/chat-widget\.css\?v=20260507_CHAT_WIDGET_ADAPTIVE_BUBBLE_1'/);
     assert.match(embed, /data-page-id|pageId/);
     assert.match(embed, /data-api-origin|apiOrigin/);
