@@ -64,3 +64,22 @@ test('admin chat bootstrap adoption does not pin the real layout to narrow mode'
         'narrow admin handoff guard should use centered modal geometry instead of the desktop right edge anchor'
     );
 });
+
+test('admin chat first open keeps admin mode through auth cache and queued open replay', () => {
+    const source = readRepoFile(path.join('js', 'components', 'ChatWidget.js'));
+
+    const requiredMarkers = [
+        'getAdminAccessCacheStorageKey()',
+        "return 'zaoyoe_admin_access_cache_v1';",
+        'readRecentAdminAccessCache(userId = \'\')',
+        'const access = await window.AdminAccess?.getCurrentAdminAccess?.({ forceRefresh: false });',
+        'if (access?.error && cachedAdminAccess?.isAdmin) {',
+        'const verifiedAccess = await window.AdminAccess?.getCurrentAdminAccess?.({',
+        'if (cachedAdminAccess?.isAdmin) {',
+        'return this.openChat().catch((error) => {'
+    ];
+
+    for (const marker of requiredMarkers) {
+        assert.equal(source.includes(marker), true, `js/components/ChatWidget.js should contain ${marker}`);
+    }
+});

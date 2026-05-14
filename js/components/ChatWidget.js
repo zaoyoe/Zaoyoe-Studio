@@ -254,11 +254,10 @@ class ChatWidget {
             .then(() => {
                 this._chatWidgetReady = true;
                 if (this._pendingOpenAfterInit) {
-                    this._pendingOpenAfterInit = false;
                     try {
-                        void this.openChat().catch((error) => {
+                        return this.openChat().catch((error) => {
                             console.error('[ChatWidget] Failed to replay queued open:', error);
-                        });
+                        }).then(() => this);
                     } catch (error) {
                         console.error('[ChatWidget] Failed to replay queued open:', error);
                     }
@@ -496,6 +495,48 @@ class ChatWidget {
 
     getBootstrapShellModeStorageKey() {
         return 'zaoyoe_chat_widget_last_shell_mode_v1';
+    }
+
+    getAdminAccessCacheStorageKey() {
+        return 'zaoyoe_admin_access_cache_v1';
+    }
+
+    getAdminAccessCacheMaxAgeMs() {
+        return 5 * 60 * 1000;
+    }
+
+    readRecentAdminAccessCache(userId = '') {
+        if (typeof window === 'undefined' || typeof window.sessionStorage === 'undefined') {
+            return null;
+        }
+
+        try {
+            const rawValue = window.sessionStorage.getItem(this.getAdminAccessCacheStorageKey());
+            if (!rawValue) return null;
+
+            const parsed = JSON.parse(rawValue);
+            const cachedAt = Number(parsed?.cachedAt || 0);
+            if (!Number.isFinite(cachedAt) || (Date.now() - cachedAt) > this.getAdminAccessCacheMaxAgeMs()) {
+                return null;
+            }
+
+            const cachedUserId = String(parsed?.userId || '').trim();
+            const expectedUserId = String(userId || '').trim();
+            if (expectedUserId && cachedUserId && cachedUserId !== expectedUserId) {
+                return null;
+            }
+
+            return {
+                userId: cachedUserId,
+                isAdmin: Boolean(parsed?.access?.isAdmin),
+                isSuperAdmin: Boolean(parsed?.access?.isSuperAdmin),
+                permissions: Array.isArray(parsed?.access?.permissions) ? parsed.access.permissions : [],
+                cachedAt
+            };
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to read admin access cache:', error);
+            return null;
+        }
     }
 
     persistBootstrapShellMode(mode = 'user') {
@@ -3243,9 +3284,65 @@ class ChatWidget {
     }
 
     async resolveAdminModeAccess() {
+        if (window.adminStudioAccessGranted === true || window.isAdmin === true || window.isSuperAdmin === true) {
+            return true;
+        }
+
+        const cachedAdminAccess = this.readRecentAdminAccessCache();
+        try {
+            const access = await window.AdminAccess?.getCurrentAdminAccess?.({ forceRefresh: false });
+            if (access?.user && typeof access.isAdmin === 'boolean') {
+                if (access.isAdmin) {
+                    return true;
+                }
+                if (!access.cached && !access.error) {
+                    return false;
+                }
+            }
+
+            if (access?.error && cachedAdminAccess?.isAdmin) {
+                return true;
+            }
+
+            const verifiedAccess = await window.AdminAccess?.getCurrentAdminAccess?.({
+                user: access?.user || null,
+                forceRefresh: true
+            });
+            if (verifiedAccess?.user && typeof verifiedAccess.isAdmin === 'boolean') {
+                if (verifiedAccess.error && cachedAdminAccess?.isAdmin) {
+                    return true;
+                }
+                if (!verifiedAccess.error) {
+                    return Boolean(verifiedAccess.isAdmin);
+                }
+            }
+
+            if (cachedAdminAccess?.isAdmin) {
+                return true;
+            }
+        } catch (error) {
+            if (cachedAdminAccess?.isAdmin) {
+                return true;
+            }
+            console.warn('[ChatWidget] AdminAccess lookup failed:', error);
+        }
+
+        try {
+            const { data: { user } = {} } = await this.supabase.auth.getUser();
+            const userScopedCache = this.readRecentAdminAccessCache(user?.id || '');
+            if (userScopedCache?.isAdmin) {
+                return true;
+            }
+        } catch (error) {
+            console.warn('[ChatWidget] Failed to compare admin cache with auth user:', error);
+        }
+
         try {
             const access = await window.AdminAccess?.getCurrentAdminAccess?.({ forceRefresh: true });
             if (access?.user && typeof access.isAdmin === 'boolean') {
+                if (access.error && cachedAdminAccess?.isAdmin) {
+                    return true;
+                }
                 return Boolean(access.isAdmin);
             }
         } catch (error) {
