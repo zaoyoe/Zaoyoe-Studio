@@ -2242,14 +2242,23 @@ function buildVerifyMonitorFocusItem(context = {}) {
 
     const statusMeta = getVerifyMonitorStatusMeta(row.status);
     const stageLabel = String(row.stage_label || '').trim();
+    const submitterLabel = String(
+        row.submitter_email
+        || row.email
+        || row.submitter_display_name
+        || row.submitter_username
+        || ''
+    ).trim();
+    const verificationLabel = String(row.verification_id || row.id || '').trim();
     const summaryText = String(row.summary || row.error_message || '这条验证任务已在下方列表高亮。').trim() || '这条验证任务已在下方列表高亮。';
     return {
         rankLabel: matched.sourceLabel,
-        title: String(row.verification_id || row.id || '验证任务').trim() || '验证任务',
+        title: submitterLabel || (verificationLabel ? `验证单号 ${verificationLabel}` : '验证任务'),
         meta: [
             statusMeta.label,
             stageLabel,
-            String(row.email || row.user_id || '').trim(),
+            verificationLabel ? `验证单号 ${verificationLabel}` : '',
+            submitterLabel ? String(row.user_id || '').trim() : String(row.email || row.user_id || '').trim(),
             String(row.site || '').trim().toUpperCase(),
             row.created_at ? formatVerifyMonitorDateTime(row.created_at) : ''
         ].filter(Boolean),
