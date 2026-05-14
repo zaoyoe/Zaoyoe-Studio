@@ -323,8 +323,7 @@ function buildUpstreamHealthResponse(result = {}) {
             status: result.ok ? 'ok' : 'unavailable',
             http_status: statusCode,
             url: result.url || null,
-            error: result.error || null,
-            response: result.payload
+            error: result.error || null
         }
     };
 
@@ -341,16 +340,15 @@ app.get('/healthz', (req, res) => {
 
 // Readiness check for upstream dependency visibility.
 app.get('/ready', async (req, res) => {
+    if (!requireInternalHealthAccess(req, res)) return;
     const result = await probeUpstreamHealth();
     const response = buildUpstreamHealthResponse(result);
     return res.status(response.statusCode).json(response.payload);
 });
 
-// Backward-compatible upstream-aware health check.
-app.get('/health', async (req, res) => {
-    const result = await probeUpstreamHealth();
-    const response = buildUpstreamHealthResponse(result);
-    return res.status(response.statusCode).json(response.payload);
+// Backward-compatible liveness check; upstream readiness is protected at /ready.
+app.get('/health', (req, res) => {
+    return res.json(getLocalHealthPayload());
 });
 
 // =============================================
@@ -446,6 +444,38 @@ function isProductionLikeRuntime(env = process.env) {
     return vercelEnv === 'production'
         || railwayEnv === 'production'
         || deploymentTier === 'production';
+}
+
+function constantTimeTextEquals(left = '', right = '') {
+    const leftBuffer = Buffer.from(String(left || ''));
+    const rightBuffer = Buffer.from(String(right || ''));
+    if (leftBuffer.length !== rightBuffer.length) return false;
+    return crypto.timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function getBearerToken(req) {
+    const authorization = String(req?.headers?.authorization || req?.headers?.Authorization || '').trim();
+    const match = authorization.match(/^Bearer\s+(.+)$/i);
+    return match ? match[1].trim() : '';
+}
+
+function requireInternalHealthAccess(req, res) {
+    if (!isProductionLikeRuntime()) return true;
+
+    const expectedToken = String(process.env.INTERNAL_HEALTH_TOKEN || process.env.HEALTHCHECK_TOKEN || '').trim();
+    if (!expectedToken) {
+        console.warn('[Health] Readiness check blocked because INTERNAL_HEALTH_TOKEN is missing in production-like runtime');
+        res.status(503).json({ error: 'readiness token not configured' });
+        return false;
+    }
+
+    const receivedToken = getBearerToken(req);
+    if (!receivedToken || !constantTimeTextEquals(receivedToken, expectedToken)) {
+        res.status(404).json({ error: 'not_found' });
+        return false;
+    }
+
+    return true;
 }
 
 function resolveRequestClientIp(req, options = {}) {
@@ -5204,7 +5234,10 @@ app.post('/api/afdian/webhook', async (req, res) => {
     const eventKey = buildAfdianEventKey(orderNo, status, payload);
 
     try {
-        console.log('[Afdian] Raw payload:', JSON.stringify(payload).substring(0, 500));
+        console.log('[Afdian] Webhook payload accepted for processing:', {
+            order_no_present: Boolean(orderNo),
+            status
+        });
 
         const eventInsert = await recordPaymentEvent({
             provider: 'afdian',

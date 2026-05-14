@@ -263,7 +263,7 @@ function resolveClientIp(req, options = {}) {
         return forwardedIps[0];
     }
 
-    if (trustAllProxies || isPrivateOrLoopbackIp(socketIp) || isIpAllowed(socketIp, trustedProxies)) {
+    if (trustAllProxies || isIpAllowed(socketIp, trustedProxies)) {
         return forwardedIps[0];
     }
 
@@ -285,7 +285,6 @@ function explainClientIpResolution(req, options = {}) {
     const forwardedIps = extractForwardedIps(req);
     const directPeerTrusted = Boolean(socketIp) && (
         trustAllProxies
-        || isPrivateOrLoopbackIp(socketIp)
         || isIpAllowed(socketIp, trustedProxies)
     );
     const usedForwardedChain = Boolean(forwardedIps.length && (!socketIp || directPeerTrusted));
@@ -305,11 +304,9 @@ function explainClientIpResolution(req, options = {}) {
             ? 'missing_direct_peer'
             : trustAllProxies
                 ? 'trust_all_proxies'
-                : isPrivateOrLoopbackIp(socketIp)
-                    ? 'private_or_loopback_peer'
-                    : isIpAllowed(socketIp, trustedProxies)
-                        ? 'configured_trusted_proxy'
-                        : 'untrusted_peer'
+                : isIpAllowed(socketIp, trustedProxies)
+                    ? 'configured_trusted_proxy'
+                    : 'untrusted_peer'
     };
 }
 

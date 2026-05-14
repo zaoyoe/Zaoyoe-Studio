@@ -36,8 +36,22 @@ test('resolveClientIp trusts forwarded headers when the direct peer is trusted',
         }
     };
 
-    assert.equal(resolveClientIp(req, { env: {} }), '198.51.100.23');
-    assert.equal(resolveClientIp(req, { env: { TRUST_ALL_PROXIES: 'false' }, trustedProxies: '192.0.2.0/24' }), '198.51.100.23');
+    assert.equal(resolveClientIp(req, { env: { TRUST_ALL_PROXIES: 'false' }, trustedProxies: '10.0.0.0/8' }), '198.51.100.23');
+    assert.equal(resolveClientIp(req, { env: { TRUST_ALL_PROXIES: 'true' } }), '198.51.100.23');
+    assert.equal(resolveClientIp(req, { env: { TRUST_ALL_PROXIES: 'false' }, trustedProxies: '192.0.2.0/24' }), '10.0.0.2');
+});
+
+test('resolveClientIp does not trust forwarded headers only because the peer is private', () => {
+    const req = {
+        headers: {
+            'x-forwarded-for': '198.51.100.23'
+        },
+        socket: {
+            remoteAddress: '10.0.0.2'
+        }
+    };
+
+    assert.equal(resolveClientIp(req, { env: { TRUST_ALL_PROXIES: 'false' } }), '10.0.0.2');
 });
 
 test('resolveClientIp falls back to the direct peer when forwarded headers are untrusted', () => {
@@ -74,7 +88,7 @@ test('explainClientIpResolution returns proxy trust metadata for diagnostics', (
     assert.equal(diagnostic.resolvedClientIp, '198.51.100.23');
     assert.equal(diagnostic.directPeerTrusted, true);
     assert.equal(diagnostic.usedForwardedChain, true);
-    assert.equal(diagnostic.directPeerTrustReason, 'private_or_loopback_peer');
+    assert.equal(diagnostic.directPeerTrustReason, 'configured_trusted_proxy');
     assert.deepEqual(diagnostic.trustedProxies, ['10.0.0.0/8']);
 });
 

@@ -3,7 +3,7 @@
  * Analyzes images and extracts dominant colors
  */
 
-const getPixels = require('get-pixels');
+const sharp = require('sharp');
 const quantize = require('quantize');
 const fs = require('fs');
 const path = require('path');
@@ -71,54 +71,45 @@ function getColorName(r, g, b) {
 }
 
 // Extract colors from image
-function extractColors(imagePath) {
-    return new Promise((resolve, reject) => {
-        getPixels(imagePath, (err, pixels) => {
-            if (err) {
-                reject(err);
-                return;
-            }
+async function extractColors(imagePath) {
+    const { data } = await sharp(imagePath)
+        .ensureAlpha()
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+    const pixelArray = [];
 
-            const data = pixels.data;
-            const width = pixels.shape[0];
-            const height = pixels.shape[1];
-            const pixelArray = [];
+    // Sample every 10th pixel for performance
+    for (let i = 0; i < data.length; i += 40) { // 4 channels * 10
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const a = data[i + 3];
 
-            // Sample every 10th pixel for performance
-            for (let i = 0; i < data.length; i += 40) { // 4 channels * 10
-                const r = data[i];
-                const g = data[i + 1];
-                const b = data[i + 2];
-                const a = data[i + 3];
+        // Skip transparent pixels
+        if (a < 125) continue;
 
-                // Skip transparent pixels
-                if (a < 125) continue;
+        pixelArray.push([r, g, b]);
+    }
 
-                pixelArray.push([r, g, b]);
-            }
+    // Use quantize to get color palette
+    const colorMap = quantize(pixelArray, 5);
+    if (!colorMap) {
+        return ['gray'];
+    }
 
-            // Use quantize to get color palette
-            const colorMap = quantize(pixelArray, 5);
-            if (!colorMap) {
-                resolve(['gray']);
-                return;
-            }
+    const palette = colorMap.palette();
+    const colorNames = [];
+    const seen = new Set();
 
-            const palette = colorMap.palette();
-            const colorNames = [];
-            const seen = new Set();
+    for (const [r, g, b] of palette) {
+        const name = getColorName(r, g, b);
+        if (name !== 'unknown' && !seen.has(name)) {
+            seen.add(name);
+            colorNames.push(name);
+        }
+    }
 
-            for (const [r, g, b] of palette) {
-                const name = getColorName(r, g, b);
-                if (name !== 'unknown' && !seen.has(name)) {
-                    seen.add(name);
-                    colorNames.push(name);
-                }
-            }
-
-            resolve(colorNames.length > 0 ? colorNames.slice(0, 3) : ['gray']);
-        });
-    });
+    return colorNames.length > 0 ? colorNames.slice(0, 3) : ['gray'];
 }
 
 // Main function

@@ -20,6 +20,7 @@ function getHeaderValue(entry = {}, key = '') {
 test('vercel cache policy keeps admin shells and APIs uncached while allowing versioned static assets to reuse browser cache', () => {
     const config = readVercelConfig();
     const headers = Array.isArray(config.headers) ? config.headers : [];
+    const shopHandlerSource = readRepoFile('server/api-handlers/public/shop.js');
 
     const apiAdminRule = headers.find((entry) => entry?.source === '/api/admin/:path*');
     const apiAuthRule = headers.find((entry) => entry?.source === '/api/auth/:path*');
@@ -41,10 +42,11 @@ test('vercel cache policy keeps admin shells and APIs uncached while allowing ve
     assert.equal(getHeaderValue(apiAdminRule, 'Cache-Control'), 'no-store, max-age=0');
     assert.ok(apiAuthRule, 'vercel.json should keep an explicit API auth cache rule');
     assert.equal(getHeaderValue(apiAuthRule, 'Cache-Control'), 'no-store, max-age=0');
-    assert.ok(apiPublicRule, 'vercel.json should have a public API cache rule');
-    assert.equal(getHeaderValue(apiPublicRule, 'Cache-Control'), 'public, max-age=120, s-maxage=60, stale-while-revalidate=600');
-    assert.ok(apiShopRule, 'vercel.json should have a shop API cache rule');
-    assert.equal(getHeaderValue(apiShopRule, 'Cache-Control'), 'public, max-age=120, s-maxage=60, stale-while-revalidate=300');
+    assert.equal(apiPublicRule, undefined, 'vercel.json must not cache the shared /api/public dispatcher broadly');
+    assert.equal(apiShopRule, undefined, 'vercel.json must not cache mixed public/authenticated shop APIs broadly');
+    assert.match(shopHandlerSource, /res\.setHeader\('Cache-Control', 'public, max-age=60, s-maxage=300/);
+    assert.match(shopHandlerSource, /function setPrivateApiCache\(res\)/);
+    assert.match(shopHandlerSource, /res\.setHeader\('Cache-Control', 'no-store, max-age=0'\)/);
 
     assert.ok(adminStudioRule, 'vercel.json should keep admin-studio uncached');
     assert.equal(getHeaderValue(adminStudioRule, 'Cache-Control'), 'no-store, max-age=0');
