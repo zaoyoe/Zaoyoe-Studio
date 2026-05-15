@@ -378,6 +378,7 @@ function createPaymentsHandlers({
             } catch (error) {
                 return sendJson(res, error.statusCode || 500, {
                     success: false,
+                    code: error.code || undefined,
                     message: error.message || '模拟支付失败'
                 });
             }

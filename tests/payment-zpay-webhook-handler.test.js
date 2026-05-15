@@ -315,7 +315,7 @@ function buildDependencyMocks(state) {
     };
 }
 
-test('zpay webhook falls back to strict query verification mode when source allowlist is missing', async () => {
+test('zpay webhook fails closed when production source allowlist is missing', async () => {
     const state = {};
 
     await withZpayWebhookModule(buildDependencyMocks(state), async ({ createZpayWebhookHandler }) => {
@@ -340,14 +340,11 @@ test('zpay webhook falls back to strict query verification mode when source allo
         await handler(req, res);
 
         assert.equal(res.statusCode, 503);
-        assert.equal(res.body, 'payment order not ready');
-        assert.equal(state.insertedEvent.provider, 'zpay');
+        assert.equal(res.body, 'webhook source allowlist not configured');
+        assert.equal(state.insertedEvent, undefined);
         assert.equal(state.queryOrderRequest, undefined);
         assert.equal(state.rechargePayload, undefined);
-        assert.deepEqual(state.deletedEventWhere, {
-            column: 'event_key',
-            value: 'zpay:ZP123:TRADE-1:TRADE_SUCCESS'
-        });
+        assert.equal(state.deletedEventWhere, undefined);
         assert.equal(state.finalizedEvent, undefined);
     });
 });
@@ -567,7 +564,8 @@ test('zpay webhook does not credit points when active query reports a non-paid o
             env: {
                 APP_ENV: 'production',
                 APP_BASE_URL: 'https://www.zaoyoe.com',
-                TRUSTED_PROXY_IPS: '10.0.0.0/8'
+                TRUSTED_PROXY_IPS: '10.0.0.0/8',
+                ZPAY_WEBHOOK_ALLOWED_IPS: '203.0.113.10'
             }
         });
         const attachData = JSON.stringify({

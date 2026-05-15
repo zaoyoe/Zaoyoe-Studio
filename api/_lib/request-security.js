@@ -4,6 +4,26 @@ const sharedRateLimitStore = new Map();
 const MAX_RATE_LIMIT_BUCKETS = 5000;
 const MEMORY_RATE_LIMIT_BACKENDS = new Set(['memory', 'in-memory', 'local']);
 
+function isProductionLikeRuntime(env = process.env) {
+    const vercelEnv = String(env?.VERCEL_ENV || '').trim().toLowerCase();
+    const railwayEnv = String(env?.RAILWAY_ENVIRONMENT_NAME || '').trim().toLowerCase();
+    const deploymentTier = String(env?.DEPLOYMENT_TIER || env?.APP_ENV || '').trim().toLowerCase();
+
+    return vercelEnv === 'production'
+        || railwayEnv === 'production'
+        || deploymentTier === 'production';
+}
+
+function shouldTrustAllProxies(env, explicitTrustAll = false) {
+    if (isProductionLikeRuntime(env)) {
+        return false;
+    }
+
+    return explicitTrustAll === true
+        || String(env?.TRUST_ALL_PROXIES || '').trim() === '1'
+        || String(env?.TRUST_ALL_PROXIES || '').trim().toLowerCase() === 'true';
+}
+
 function normalizeIp(value) {
     let raw = String(value || '').trim();
     if (!raw) return '';
@@ -244,9 +264,7 @@ function extractForwardedIps(req) {
 function resolveClientIp(req, options = {}) {
     const env = options.env || process.env;
     const trustedProxies = options.trustedProxies || env.TRUSTED_PROXY_IPS || env.TRUSTED_PROXY_CIDRS || '';
-    const trustAllProxies = options.trustAllProxies === true
-        || String(env.TRUST_ALL_PROXIES || '').trim() === '1'
-        || String(env.TRUST_ALL_PROXIES || '').trim().toLowerCase() === 'true';
+    const trustAllProxies = shouldTrustAllProxies(env, options.trustAllProxies === true);
 
     const socketIp = normalizeIp(
         req?.socket?.remoteAddress
@@ -274,9 +292,7 @@ function explainClientIpResolution(req, options = {}) {
     const env = options.env || process.env;
     const trustedProxiesRaw = options.trustedProxies || env.TRUSTED_PROXY_IPS || env.TRUSTED_PROXY_CIDRS || '';
     const trustedProxies = splitIpRules(trustedProxiesRaw);
-    const trustAllProxies = options.trustAllProxies === true
-        || String(env.TRUST_ALL_PROXIES || '').trim() === '1'
-        || String(env.TRUST_ALL_PROXIES || '').trim().toLowerCase() === 'true';
+    const trustAllProxies = shouldTrustAllProxies(env, options.trustAllProxies === true);
     const socketIp = normalizeIp(
         req?.socket?.remoteAddress
         || req?.connection?.remoteAddress
@@ -492,8 +508,10 @@ module.exports = {
         extractForwardedIps,
         ipToBuffer,
         isPrivateOrLoopbackIp,
+        isProductionLikeRuntime,
         resetSharedRateLimitStore,
         sharedRateLimitStore,
+        shouldTrustAllProxies,
         shouldUsePersistentRateLimitStore,
         takeLocalRateLimitToken,
         takePersistentRateLimitToken,

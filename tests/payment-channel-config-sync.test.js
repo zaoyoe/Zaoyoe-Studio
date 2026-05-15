@@ -212,7 +212,7 @@ test('buildSyncPlan supports explicitly switching the stored config to nowpaymen
     assert.equal(plan.targetProviderValidation.ready, true);
 });
 
-test('getMockRuntimeForEnv recognizes a valid temporary override', () => {
+test('getMockRuntimeForEnv keeps production mock disabled despite temporary overrides', () => {
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const runtime = getMockRuntimeForEnv({
         DEPLOYMENT_TIER: 'production',
@@ -220,8 +220,9 @@ test('getMockRuntimeForEnv recognizes a valid temporary override', () => {
         ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL: tomorrow
     });
 
-    assert.equal(runtime.allowed, true);
-    assert.equal(runtime.reason, 'remote_whitelist_until_enabled');
+    assert.equal(runtime.allowed, false);
+    assert.equal(runtime.reason, 'production_like_runtime');
+    assert.equal(runtime.override_env_name, 'ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL');
 });
 
 test('assertExecuteAllowed blocks switching to mock when runtime override is missing', () => {

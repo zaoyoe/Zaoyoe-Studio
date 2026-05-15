@@ -117,7 +117,7 @@ test('admin access session POST issues a short-lived cookie for admins', async (
         assert.match(setCookieHeader, /zaoyoe_admin_studio=/);
         assert.match(setCookieHeader, /HttpOnly/);
         assert.match(setCookieHeader, /Secure/);
-        assert.match(setCookieHeader, /SameSite=Lax/);
+        assert.match(setCookieHeader, /SameSite=Strict/);
         assert.match(setCookieHeader, /Max-Age=120/);
 
         const token = decodeURIComponent(String(setCookieHeader).split(';')[0].split('=').slice(1).join('='));

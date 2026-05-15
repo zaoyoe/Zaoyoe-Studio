@@ -2,8 +2,13 @@
     'use strict';
 
     const CROPPER_SRC = 'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js';
-    const FLATPICKR_SRC = 'https://cdn.jsdelivr.net/npm/flatpickr';
-    const FLATPICKR_ZH_SRC = 'https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/zh.js';
+    const FLATPICKR_SRC = 'https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js';
+    const FLATPICKR_ZH_SRC = 'https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/l10n/zh.js';
+    const SCRIPT_INTEGRITY = new Map([
+        [CROPPER_SRC, 'sha384-jzwsV9ieM/KUDMeo+d8dc+jm0GEl7ywPNwg10alB5BodVuC/Kx9RpEnyrl2Om9zH'],
+        [FLATPICKR_SRC, 'sha384-5JqMv4L/Xa0hfvtF06qboNdhvuYXUku9ZrhZh3bSk8VXF0A/RuSLHpLsSV9Zqhl6'],
+        [FLATPICKR_ZH_SRC, 'sha384-VkrKIP0k00t+nCV0whCXV73obyqU1SxOHVMBi51kYfdGdJcg2UPxHUugSnmGCoid']
+    ]);
 
     let cropperPromise = null;
     let flatpickrPromise = null;
@@ -25,6 +30,11 @@
             const script = document.createElement('script');
             script.src = src;
             script.async = true;
+            const integrity = SCRIPT_INTEGRITY.get(src);
+            if (integrity) {
+                script.integrity = integrity;
+                script.crossOrigin = 'anonymous';
+            }
             script.onload = () => {
                 script.dataset.loaded = '1';
                 resolve();

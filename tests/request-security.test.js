@@ -41,6 +41,24 @@ test('resolveClientIp trusts forwarded headers when the direct peer is trusted',
     assert.equal(resolveClientIp(req, { env: { TRUST_ALL_PROXIES: 'false' }, trustedProxies: '192.0.2.0/24' }), '10.0.0.2');
 });
 
+test('resolveClientIp ignores TRUST_ALL_PROXIES in production-like runtimes', () => {
+    const req = {
+        headers: {
+            'x-forwarded-for': '198.51.100.23'
+        },
+        socket: {
+            remoteAddress: '10.0.0.2'
+        }
+    };
+
+    assert.equal(resolveClientIp(req, {
+        env: {
+            VERCEL_ENV: 'production',
+            TRUST_ALL_PROXIES: 'true'
+        }
+    }), '10.0.0.2');
+});
+
 test('resolveClientIp does not trust forwarded headers only because the peer is private', () => {
     const req = {
         headers: {

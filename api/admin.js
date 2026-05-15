@@ -1,5 +1,6 @@
 const {
     normalizeAdminSite,
+    requireAdmin,
     sendJson
 } = require('./_lib/admin');
 const analyticsPanelSupportBundleHandler = require('../server/api-handlers/admin/analytics/panel-support-bundle');
@@ -217,6 +218,11 @@ function resolveAdminRoute(url) {
     return pathRoute;
 }
 
+function shouldSkipDispatchAdminAuth(route, req) {
+    const method = String(req?.method || 'GET').trim().toUpperCase();
+    return route === 'access/session' && method === 'DELETE';
+}
+
 module.exports = async function handler(req, res) {
     const url = new URL(req.url || '', 'http://localhost');
     const route = resolveAdminRoute(url);
@@ -238,6 +244,18 @@ module.exports = async function handler(req, res) {
     req.adminRoute = route;
     if (querySite) {
         req.adminSite = querySite;
+    }
+
+    if (!shouldSkipDispatchAdminAuth(route, req)) {
+        try {
+            req.adminContext = await requireAdmin(req);
+        } catch (error) {
+            return sendJson(res, Number(error?.statusCode) || 401, {
+                success: false,
+                message: error?.message || 'Admin access required',
+                code: error?.code || 'admin_access_required'
+            });
+        }
     }
 
     return resolvedHandler(req, res);

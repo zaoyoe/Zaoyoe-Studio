@@ -246,17 +246,46 @@ const nowpaymentsWebhookHandler = createNowpaymentsWebhookHandler({
     env: process.env
 });
 
-// Middleware — merge env var origins WITH code defaults (env var alone used to override defaults)
-const defaultOrigins = [
-    'http://localhost:8000',
-    'http://127.0.0.1:8000',
-    'https://zaoyoe.com',
-    'https://www.zaoyoe.com',
-    'https://zaoyoe.xyz',
-    'https://www.zaoyoe.xyz'
-];
-const envOrigins = process.env.ALLOWED_ORIGINS?.split(',').map(s => s.trim()) || [];
-const allOrigins = [...new Set([...defaultOrigins, ...envOrigins])];
+function isLoopbackOrigin(origin) {
+    try {
+        const hostname = new URL(String(origin || '').trim()).hostname.toLowerCase();
+        return hostname === 'localhost'
+            || hostname === '127.0.0.1'
+            || hostname === '::1'
+            || hostname.endsWith('.localhost');
+    } catch (_) {
+        return false;
+    }
+}
+
+function normalizeAllowedOrigins(rawOrigins = [], { productionLike = false } = {}) {
+    return [...new Set(rawOrigins
+        .map((origin) => String(origin || '').trim())
+        .filter(Boolean)
+        .filter((origin) => !(productionLike && isLoopbackOrigin(origin))))];
+}
+
+// Middleware — production-like runtimes never include loopback origins.
+const productionLikeRuntime = isProductionLikeRuntime();
+const defaultOrigins = productionLikeRuntime
+    ? [
+        'https://zaoyoe.com',
+        'https://www.zaoyoe.com',
+        'https://zaoyoe.xyz',
+        'https://www.zaoyoe.xyz'
+    ]
+    : [
+        'http://localhost:8000',
+        'http://127.0.0.1:8000',
+        'https://zaoyoe.com',
+        'https://www.zaoyoe.com',
+        'https://zaoyoe.xyz',
+        'https://www.zaoyoe.xyz'
+    ];
+const envOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [];
+const allOrigins = normalizeAllowedOrigins([...defaultOrigins, ...envOrigins], {
+    productionLike: productionLikeRuntime
+});
 app.use(cors({
     origin: allOrigins,
     credentials: true
