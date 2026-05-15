@@ -1,9 +1,6 @@
 const admin = require('./_lib/admin');
 const requestSecurity = require('./_lib/request-security');
 const { buildSupabaseRuntimeScript } = require('./_lib/public-runtime-config');
-const {
-    createWalletCheckinHandler
-} = require('../server/api-handlers/public/wallet-checkin');
 
 const ROUTE_HANDLER_CACHE = new Map();
 
@@ -167,6 +164,9 @@ function createRouteHandlersForScope(scope) {
         const {
             createWalletHandlers
         } = require('../server/api-handlers/public/wallet');
+        const {
+            createWalletCheckinHandler
+        } = require('../server/api-handlers/public/wallet-checkin');
         const walletHandlers = createWalletHandlers({
             admin,
             site
