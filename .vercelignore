@@ -103,6 +103,7 @@ api/payments/create.js
 api/payments/mock/complete.js
 api/payments/status.js
 api/runtime/supabase-config.js
+api/runtime/section-visibility-preload.js
 api/shop/available-discounts.js
 api/shop/catalog.js
 api/shop/claim-discount.js
