@@ -103,7 +103,8 @@ async function withCodexConfigHandler(options, callback) {
                         baseUrl: next?.baseUrl || '',
                         apiFormat: next?.apiFormat || 'responses',
                         updatedAt: null,
-                        updatedBy: 'admin-1'
+                        updatedBy: 'admin-1',
+                        decryptErrorMessage: next?.decryptErrorMessage || ''
                     };
                 },
                 async upsertStoredAdminSecret(payload) {
@@ -203,6 +204,47 @@ test('codex config handler requires a key when no stored key exists', async () =
         assert.equal(res.statusCode, 400);
         assert.equal(state.upsertCalls.length, 0);
         assert.match(res.json().message, /请先录入有效的 Codex API Key/);
+    });
+});
+
+test('codex config handler lets admins overwrite an undecryptable stored key', async () => {
+    await withCodexConfigHandler({
+        runtimeConfigQueue: [
+            {
+                source: 'missing',
+                apiKey: '',
+                baseUrl: 'https://old.example.com',
+                model: 'gpt-5.4',
+                apiFormat: 'responses',
+                decryptErrorMessage: 'Codex API Key 无法解密。通常是 ADMIN_CONFIG_ENCRYPTION_KEY 已轮换，请重新录入该密钥。'
+            },
+            {
+                source: 'stored',
+                apiKey: 'sk-new-codex-key-1234567890',
+                baseUrl: 'https://api.cisct.xyz',
+                model: 'gpt-5.4',
+                apiFormat: 'responses'
+            }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                apiKey: 'sk-new-codex-key-1234567890',
+                baseUrl: 'https://api.cisct.xyz',
+                model: 'gpt-5.4',
+                apiFormat: 'responses'
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.upsertCalls.length, 1);
+        assert.equal(state.upsertCalls[0].secretValue, 'sk-new-codex-key-1234567890');
+        assert.equal(res.json().success, true);
+        assert.equal(res.json().decryptErrorMessage, '');
     });
 });
 

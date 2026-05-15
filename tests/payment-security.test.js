@@ -9,7 +9,12 @@ const {
     __testUtils: paymentTestUtils
 } = require('../api/_lib/payments/orders');
 const {
+    CODEX_SECRET_KEY,
     __testUtils: secretTestUtils
+} = require('../api/_lib/secrets');
+const {
+    getStoredAdminSecret,
+    upsertStoredAdminSecret
 } = require('../api/_lib/secrets');
 const {
     buildNowpaymentsIpnSignature,
@@ -473,6 +478,64 @@ test('admin secret encryption key must be independent', () => {
 
     assert.equal(Buffer.isBuffer(encryptionKey), true);
     assert.equal(encryptionKey.length, 32);
+});
+
+test('admin secret loader can report decrypt failures without blocking re-entry flows', async () => {
+    let storedRow = null;
+    const supabase = {
+        from() {
+            return {
+                select() {
+                    return this;
+                },
+                eq() {
+                    return { data: storedRow ? [storedRow] : [], error: null };
+                },
+                upsert(payload) {
+                    storedRow = payload;
+                    return { error: null };
+                }
+            };
+        }
+    };
+
+    const previousEncryptionKey = process.env.ADMIN_CONFIG_ENCRYPTION_KEY;
+    const previousServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    let storedSecret;
+
+    try {
+        process.env.ADMIN_CONFIG_ENCRYPTION_KEY = 'old-admin-config-secret';
+        process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-role-secret';
+        await upsertStoredAdminSecret({
+            supabase,
+            secretKey: CODEX_SECRET_KEY,
+            secretValue: 'sk-old-codex-secret-1234567890',
+            adminId: 'admin-1'
+        });
+
+        process.env.ADMIN_CONFIG_ENCRYPTION_KEY = 'new-admin-config-secret';
+        storedSecret = await getStoredAdminSecret(supabase, CODEX_SECRET_KEY, {
+            allowDecryptFailure: true
+        });
+    } finally {
+        if (previousEncryptionKey === undefined) {
+            delete process.env.ADMIN_CONFIG_ENCRYPTION_KEY;
+        } else {
+            process.env.ADMIN_CONFIG_ENCRYPTION_KEY = previousEncryptionKey;
+        }
+
+        if (previousServiceRoleKey === undefined) {
+            delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+        } else {
+            process.env.SUPABASE_SERVICE_ROLE_KEY = previousServiceRoleKey;
+        }
+    }
+
+    assert.equal(storedSecret.value, '');
+    assert.match(storedSecret.decryptErrorMessage, /Codex API Key 无法解密/);
+    assert.equal(secretTestUtils.isSecretDecryptAuthenticationError(
+        new Error('Unsupported state or unable to authenticate data')
+    ), true);
 });
 
 test('nowpayments ipn signature sorts nested payloads before hmac verification', () => {

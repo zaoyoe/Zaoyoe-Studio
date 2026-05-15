@@ -22,7 +22,8 @@ module.exports = async (req, res) => {
                 configured: config.configured,
                 source: config.source,
                 model: config.model,
-                updatedAt: config.updatedAt
+                updatedAt: config.updatedAt,
+                decryptErrorMessage: config.decryptErrorMessage || ''
             });
         }
 
@@ -64,7 +65,8 @@ module.exports = async (req, res) => {
                 message: 'Gemini Key 已安全保存到服务端。',
                 configured: config.configured,
                 source: config.source,
-                model: config.model
+                model: config.model,
+                decryptErrorMessage: config.decryptErrorMessage || ''
             });
         }
 

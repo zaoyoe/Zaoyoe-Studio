@@ -30,6 +30,17 @@ function wrapSecretStoreError(error, fallbackMessage) {
     return new Error(message);
 }
 
+function isSecretDecryptAuthenticationError(error) {
+    return String(error?.message || '').trim() === 'Unsupported state or unable to authenticate data';
+}
+
+function buildSecretDecryptFailureMessage(secretKey = '') {
+    const label = secretKey === GEMINI_SECRET_KEY
+        ? 'Gemini Key'
+        : (secretKey === CODEX_SECRET_KEY ? 'Codex API Key' : '后台密钥');
+    return `${label} 无法解密。通常是 ADMIN_CONFIG_ENCRYPTION_KEY 已轮换，请重新录入该密钥。`;
+}
+
 function readIndependentSecret(secretValue, label, env = process.env) {
     const normalizedSecret = String(secretValue || '').trim();
     if (!normalizedSecret) return '';
@@ -104,7 +115,7 @@ function decryptSecretValue(payload) {
     return plaintext.toString('utf8');
 }
 
-async function getStoredAdminSecret(supabase, secretKey) {
+async function getStoredAdminSecret(supabase, secretKey, options = {}) {
     const { data, error } = await supabase
         .from('admin_secret_store')
         .select('secret_key, encrypted_value, metadata, description, updated_at, updated_by')
@@ -117,10 +128,22 @@ async function getStoredAdminSecret(supabase, secretKey) {
     const row = Array.isArray(data) ? data[0] : data;
     if (!row) return null;
 
-    return {
-        ...row,
-        value: decryptSecretValue(row.encrypted_value)
-    };
+    try {
+        return {
+            ...row,
+            value: decryptSecretValue(row.encrypted_value),
+            decryptErrorMessage: ''
+        };
+    } catch (error) {
+        if (options.allowDecryptFailure === true && isSecretDecryptAuthenticationError(error)) {
+            return {
+                ...row,
+                value: '',
+                decryptErrorMessage: buildSecretDecryptFailureMessage(secretKey)
+            };
+        }
+        throw error;
+    }
 }
 
 async function upsertStoredAdminSecret({
@@ -222,7 +245,9 @@ async function resolveGeminiRuntimeConfig(supabase) {
     let storedSecret = null;
 
     try {
-        storedSecret = await getStoredAdminSecret(supabase, GEMINI_SECRET_KEY);
+        storedSecret = await getStoredAdminSecret(supabase, GEMINI_SECRET_KEY, {
+            allowDecryptFailure: true
+        });
     } catch (error) {
         if (!process.env.GEMINI_API_KEY) {
             throw error;
@@ -246,7 +271,8 @@ async function resolveGeminiRuntimeConfig(supabase) {
         model,
         apiKey,
         updatedAt: storedSecret?.updated_at || null,
-        updatedBy: storedSecret?.updated_by || null
+        updatedBy: storedSecret?.updated_by || null,
+        decryptErrorMessage: storedSecret?.decryptErrorMessage || ''
     };
 }
 
@@ -263,7 +289,9 @@ async function resolveCodexRuntimeConfig(supabase) {
     let storedSecret = null;
 
     try {
-        storedSecret = await getStoredAdminSecret(supabase, CODEX_SECRET_KEY);
+        storedSecret = await getStoredAdminSecret(supabase, CODEX_SECRET_KEY, {
+            allowDecryptFailure: true
+        });
     } catch (error) {
         if (!process.env.CODEX_API_KEY) {
             throw error;
@@ -303,13 +331,15 @@ async function resolveCodexRuntimeConfig(supabase) {
         baseUrl,
         apiFormat,
         updatedAt: storedSecret?.updated_at || null,
-        updatedBy: storedSecret?.updated_by || null
+        updatedBy: storedSecret?.updated_by || null,
+        decryptErrorMessage: storedSecret?.decryptErrorMessage || ''
     };
 }
 
 module.exports = {
     __testUtils: {
         getEncryptionKey,
+        isSecretDecryptAuthenticationError,
         readIndependentSecret
     },
     CODEX_SECRET_KEY,

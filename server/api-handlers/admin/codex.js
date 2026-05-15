@@ -714,7 +714,8 @@ module.exports = async (req, res) => {
                 model: config.model,
                 baseUrl: config.baseUrl,
                 apiFormat: config.apiFormat,
-                adminId: user.id
+                adminId: user.id,
+                decryptErrorMessage: config.decryptErrorMessage || ''
             });
         }
 
