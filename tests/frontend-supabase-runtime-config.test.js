@@ -2071,6 +2071,16 @@ test('vercel CSP does not allow unsafe-eval in frontend script execution', () =>
     assert.equal(cspValue.includes("'unsafe-eval'"), false);
 });
 
+test('vercel CSP allows the EmailJS verification code send endpoint', () => {
+    const cspValue = getGlobalCspHeaderValue();
+    const directives = parseCspDirectives(cspValue);
+    const scriptSrcElem = directives.get('script-src-elem') || [];
+    const connectSrc = directives.get('connect-src') || [];
+
+    assert.equal(scriptSrcElem.includes('https://cdn.jsdelivr.net'), true, 'EmailJS browser SDK should be allowed to load');
+    assert.equal(connectSrc.includes('https://api.emailjs.com'), true, 'EmailJS API should be allowed for verification code sends');
+});
+
 test('runtime entry pages no longer embed inline script blocks', () => {
     const runtimeInlineHashes = collectInlineScriptHashes(RUNTIME_PAGES);
     assert.deepEqual(runtimeInlineHashes, [], 'Runtime pages should not retain inline script blocks');
