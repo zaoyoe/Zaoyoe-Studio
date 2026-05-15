@@ -65,11 +65,68 @@ export function getAdminStudioAccessSecret() {
     const fromEnv = process.env.ADMIN_STUDIO_ACCESS_SECRET || process.env.ADMIN_CONFIG_ENCRYPTION_KEY || '';
     if (fromEnv) return fromEnv;
 
-    if ((process.env.NODE_ENV || '').toLowerCase() !== 'production') {
+    if (shouldAllowLocalDevAdminStudioSecret()) {
         return 'local-dev-admin-studio-access-secret';
     }
 
     throw new Error('Missing required environment variable: ADMIN_STUDIO_ACCESS_SECRET or ADMIN_CONFIG_ENCRYPTION_KEY');
+}
+
+function isTruthyFlag(value) {
+    if (value === true) return true;
+    const normalized = String(value || '').trim().toLowerCase();
+    return ['1', 'true', 'yes', 'on'].includes(normalized);
+}
+
+function isProductionLikeRuntime() {
+    const nodeEnv = String(process.env.NODE_ENV || '').trim().toLowerCase();
+    const vercelEnv = String(process.env.VERCEL_ENV || '').trim().toLowerCase();
+    const railwayEnv = String(process.env.RAILWAY_ENVIRONMENT_NAME || '').trim().toLowerCase();
+    const deploymentTier = String(process.env.DEPLOYMENT_TIER || process.env.APP_ENV || '').trim().toLowerCase();
+
+    return nodeEnv === 'production'
+        || vercelEnv === 'production'
+        || railwayEnv === 'production'
+        || deploymentTier === 'production';
+}
+
+function hostLooksPublic(value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (!raw) return false;
+
+    try {
+        const parsed = new URL(raw.includes('://') ? raw : `https://${raw}`);
+        const hostname = parsed.hostname;
+        return hostname === 'zaoyoe.com'
+            || hostname === 'www.zaoyoe.com'
+            || hostname === 'zaoyoe.xyz'
+            || hostname === 'www.zaoyoe.xyz'
+            || hostname.endsWith('.vercel.app')
+            || hostname.endsWith('.up.railway.app');
+    } catch (_) {
+        return raw.includes('zaoyoe.com')
+            || raw.includes('zaoyoe.xyz')
+            || raw.includes('vercel.app')
+            || raw.includes('up.railway.app');
+    }
+}
+
+function shouldAllowLocalDevAdminStudioSecret() {
+    if (isProductionLikeRuntime()) return false;
+
+    const vercelEnv = String(process.env.VERCEL_ENV || '').trim();
+    const railwayEnv = String(process.env.RAILWAY_ENVIRONMENT_NAME || '').trim();
+    const publicHost = hostLooksPublic(process.env.APP_BASE_URL)
+        || hostLooksPublic(process.env.VERCEL_URL)
+        || hostLooksPublic(process.env.RAILWAY_PUBLIC_DOMAIN);
+
+    if (publicHost) return false;
+
+    if (!vercelEnv && !railwayEnv) {
+        return String(process.env.NODE_ENV || '').trim().toLowerCase() !== 'production';
+    }
+
+    return isTruthyFlag(process.env.ALLOW_LOCAL_ADMIN_STUDIO_ACCESS_SECRET);
 }
 
 export function getAdminStudioCookieName() {
@@ -148,7 +205,7 @@ export function buildAdminStudioSetCookie(token, options = {}) {
         `${COOKIE_NAME}=${encodeURIComponent(String(token || ''))}`,
         'Path=/',
         'HttpOnly',
-        'SameSite=Lax',
+        'SameSite=Strict',
         `Max-Age=${Number.isFinite(maxAge) ? maxAge : getAdminStudioTtlSeconds()}`
     ];
 
@@ -164,7 +221,7 @@ export function buildClearAdminStudioCookie(options = {}) {
         `${COOKIE_NAME}=`,
         'Path=/',
         'HttpOnly',
-        'SameSite=Lax',
+        'SameSite=Strict',
         'Max-Age=0',
         'Expires=Thu, 01 Jan 1970 00:00:00 GMT'
     ];

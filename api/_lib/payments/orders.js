@@ -756,6 +756,14 @@ function buildMockPaymentRuntimeState(state = {}, overrideState = getRemoteMockP
 function getMockPaymentRuntimeState({ requestHost = '', env = process.env } = {}) {
     const overrideState = getRemoteMockPaymentOverrideState(env);
 
+    if (isProductionLikeRuntime(env)) {
+        return buildMockPaymentRuntimeState({
+            allowed: false,
+            reason: 'production_like_runtime',
+            message: '当前站点运行在生产环境，服务端硬性禁用模拟支付。'
+        }, overrideState);
+    }
+
     if (isLocalHostname(requestHost)) {
         return buildMockPaymentRuntimeState({
             allowed: true,
@@ -811,14 +819,6 @@ function getMockPaymentRuntimeState({ requestHost = '', env = process.env } = {}
             allowed: true,
             reason: 'remote_whitelist_enabled',
             message: '当前环境已通过长期白名单放行模拟支付。建议改用 ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL 设置自动失效时间。'
-        }, overrideState);
-    }
-
-    if (isProductionLikeRuntime(env)) {
-        return buildMockPaymentRuntimeState({
-            allowed: false,
-            reason: 'production_like_runtime',
-            message: '当前站点运行在生产环境，服务端默认禁用模拟支付；如需临时测试，建议设置 ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL 后重新部署。'
         }, overrideState);
     }
 
@@ -2566,6 +2566,13 @@ async function completeMockPayment({
     env = process.env,
     requestHost = ''
 }) {
+    if (isProductionLikeRuntime(env)) {
+        const error = new Error('mock_payments_disabled_in_production');
+        error.statusCode = 410;
+        error.code = 'mock_payments_disabled_in_production';
+        throw error;
+    }
+
     const site = requireSupportedSite(body.site);
 
     await ensureMockPaymentAvailable({

@@ -10,21 +10,13 @@ async function loadAdminStudioAccessHelpers() {
 }
 
 function shouldUseSecureAdminStudioCookie(req) {
-    const forwardedProto = String(req.headers?.['x-forwarded-proto'] || '')
-        .split(',')[0]
-        .trim()
-        .toLowerCase();
-    if (forwardedProto === 'https') return true;
-    if (forwardedProto === 'http') return false;
-
     const origin = String(req.headers?.origin || req.headers?.referer || '').trim().toLowerCase();
-    if (origin.startsWith('https://')) return true;
     if (origin.startsWith('http://127.0.0.1') || origin.startsWith('http://localhost')) return false;
 
     const host = String(req.headers?.host || '').trim().toLowerCase();
     if (host.startsWith('127.0.0.1') || host.startsWith('localhost')) return false;
 
-    return String(process.env.NODE_ENV || '').trim().toLowerCase() === 'production';
+    return true;
 }
 
 module.exports = async function adminAccessSessionHandler(req, res) {

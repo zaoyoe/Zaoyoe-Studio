@@ -2887,8 +2887,7 @@ test('shared theme preload replaces duplicated inline theme bootstraps on public
         'prompts.html',
         'verify.html',
         'admin-studio.html',
-        'admin-entry.html',
-        'admin-studio.html.bak'
+        'admin-entry.html'
     ];
 
     for (const relativePath of files) {
@@ -3182,6 +3181,7 @@ test('home, prompts, and admin studio pages externalize their remaining runtime 
     const indexSource = readRepoFile('index.html');
     const promptsSource = readRepoFile('prompts.html');
     const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminVendorLoaderSource = readRepoFile('js/admin-vendor-loader.js');
 
     const indexRemovedMarkers = [
         "if ('scrollRestoration' in history)",
@@ -3240,6 +3240,24 @@ test('home, prompts, and admin studio pages externalize their remaining runtime 
         adminStudioSource,
         /js\/admin-studio-bootstrap\.js\?v=[A-Za-z0-9_]+/,
         'admin-studio.html should load the shared admin studio bootstrap file'
+    );
+    assert.equal(
+        adminStudioSource.includes('https://unpkg.com/@supabase/supabase-js@2.95.3/dist/umd/supabase.js'),
+        true,
+        'admin-studio.html should pin the Supabase CDN runtime to a concrete version'
+    );
+    assert.equal(
+        adminStudioSource.includes('https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js')
+            && adminStudioSource.includes('sha384-QCIdq2UMVEoSRhR3ZWZwdz2/pivLowr+eokFMdYyukq7qI26VYRxFa4Nl6FKetmL'),
+        true,
+        'admin-studio.html should protect the SheetJS CDN runtime with SRI'
+    );
+    assert.equal(
+        adminVendorLoaderSource.includes('flatpickr@4.6.13/dist/flatpickr.min.js')
+            && adminVendorLoaderSource.includes('script.integrity = integrity;')
+            && adminVendorLoaderSource.includes("script.crossOrigin = 'anonymous';"),
+        true,
+        'js/admin-vendor-loader.js should pin dynamic CDN scripts and apply SRI'
     );
 });
 
@@ -3315,13 +3333,11 @@ test('non-production utility and preview pages no longer ship inline handler att
     assert.equal(previewBootstrapSource.includes('function bindPreviewInteractions()'), true, 'js/preview-icons-page.js should bind preview interactions centrally');
 });
 
-test('archived legacy pages externalize their bootstraps instead of embedding inline scripts', () => {
+test('archived index page externalizes its bootstrap and admin backup pages stay removed', () => {
     const archivedIndexSource = readRepoFile('index_old.html');
-    const archivedAdminSource = readRepoFile('admin-studio.html.bak');
     const archivedIndexScript = readRepoFile('js/index-old-page.js');
     const archivedRuntimeScript = readRepoFile('js/index-old-runtime-bootstrap.js');
     const archivedEmailScript = readRepoFile('js/index-old-emailjs-init.js');
-    const archivedAdminBootstrap = readRepoFile('js/admin-studio-backup-bootstrap.js');
 
     const removedIndexMarkers = [
         'emailjs.init("vawaxLVEzJMAVbut0");',
@@ -3350,27 +3366,20 @@ test('archived legacy pages externalize their bootstraps instead of embedding in
     assert.equal(archivedRuntimeScript.includes('window.supabaseClient = supabase.createClient'), true, 'js/index-old-runtime-bootstrap.js should initialize the archived Supabase client');
     assert.equal(archivedIndexScript.includes('function bindArchivedIndexHandlers()'), true, 'js/index-old-page.js should bind archived page actions centrally');
 
-    const removedAdminMarkers = [
-        "const savedTheme = localStorage.getItem('theme');",
-        'const runtimeConfig = window.__PUBLIC_RUNTIME_CONFIG__ || {};',
-        'window.supabaseClient = supabase.createClient'
-    ];
-
-    for (const marker of removedAdminMarkers) {
-        assert.equal(archivedAdminSource.includes(marker), false, `admin-studio.html.bak should not contain ${marker}`);
-    }
-
-    const adminBootstrapMarkers = [
-        'js/theme-preload.js',
-        'js/runtime-supabase-config.js',
+    const removedAdminBackupArtifacts = [
+        'admin-studio.html.bak',
+        'admin-studio.css.bak',
+        'admin-studio.js.bak',
         'js/admin-studio-backup-bootstrap.js'
     ];
 
-    for (const marker of adminBootstrapMarkers) {
-        assert.equal(archivedAdminSource.includes(marker), true, `admin-studio.html.bak should contain ${marker}`);
+    for (const relativePath of removedAdminBackupArtifacts) {
+        assert.equal(
+            fs.existsSync(path.join(REPO_ROOT, relativePath)),
+            false,
+            `${relativePath} should not be kept as a public backup artifact`
+        );
     }
-
-    assert.equal(archivedAdminBootstrap.includes('window.supabaseClient = supabase.createClient'), true, 'js/admin-studio-backup-bootstrap.js should initialize the backup admin Supabase client');
 });
 
 test('repository source files no longer ship inline handler attributes outside the test suite', () => {

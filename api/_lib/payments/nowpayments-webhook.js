@@ -361,7 +361,8 @@ async function handleNowpaymentsWebhook({
     const webhookTrustedProxies = getNowpaymentsWebhookTrustedProxies(env);
     const webhookAllowedIps = String(env.NOWPAYMENTS_WEBHOOK_ALLOWED_IPS || '').trim();
     if (isProductionLikeRuntime(env) && !webhookAllowedIps) {
-        console.warn('[NOWPayments] NOWPAYMENTS_WEBHOOK_ALLOWED_IPS is missing; relying on HMAC signature verification');
+        console.warn('[NOWPayments] Webhook blocked because NOWPAYMENTS_WEBHOOK_ALLOWED_IPS is missing in a production-like runtime');
+        return sendPlainText(res, 503, 'webhook source allowlist not configured');
     }
     const webhookContext = buildRequestNetworkContext(req, {
         env,

@@ -15,7 +15,6 @@ const SECRET_HYGIENE_TARGETS = [
     'R2_AVATAR_DEPLOYMENT.md',
     'R2_EDGE_FUNCTION_DEPLOYMENT.md',
     'SHOP_IMAGE_ANALYSIS.md',
-    'admin-studio.html.bak',
     'index_old.html',
     'test-realtime-simple.html',
     'supabase/functions/DEPLOY.md',

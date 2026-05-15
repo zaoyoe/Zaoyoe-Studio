@@ -156,6 +156,23 @@ async function withAdminApiRouter(callback) {
 
     delete require.cache[handlerPath];
     Module._load = function patchedLoad(request, parent, isMain) {
+        if (request === './_lib/admin') {
+            return {
+                ...originalLoad.call(this, request, parent, isMain),
+                async requireAdmin(req) {
+                    state.requireAdminCalls = state.requireAdminCalls || [];
+                    state.requireAdminCalls.push({
+                        adminRoute: req.adminRoute,
+                        adminSite: req.adminSite
+                    });
+                    return {
+                        user: { id: 'admin-user-1', email: 'admin@example.com' },
+                        supabase: {}
+                    };
+                }
+            };
+        }
+
         if (request.startsWith('../server/api-handlers/admin/')) {
             return async function mockHandler(req, res) {
                 state.handlerCalls.push({
@@ -197,6 +214,8 @@ test('admin router exposes normalized route and site context to handlers', async
         }, res);
 
         assert.equal(res.statusCode, 200);
+        assert.equal(state.requireAdminCalls.length, 1);
+        assert.equal(state.requireAdminCalls[0].adminRoute, 'payments/summary');
         assert.equal(state.handlerCalls.length, 1);
         assert.equal(state.handlerCalls[0].adminRoute, 'payments/summary');
         assert.equal(state.handlerCalls[0].adminSite, 'intl');

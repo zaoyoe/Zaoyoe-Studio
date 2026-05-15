@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -113,6 +114,9 @@ func runSetupServer() {
 	// Get server address from config.yaml or environment variables (SERVER_HOST, SERVER_PORT)
 	// This allows users to run setup on a different address if needed
 	addr := config.GetServerAddress()
+	if isProductionRuntime() {
+		addr = forceLoopbackSetupAddress(addr)
+	}
 	log.Printf("Setup wizard available at http://%s", addr)
 	log.Println("Complete the setup wizard to configure Sub2API")
 
@@ -126,6 +130,29 @@ func runSetupServer() {
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		log.Fatalf("Failed to start setup server: %v", err)
 	}
+}
+
+func isProductionRuntime() bool {
+	for _, name := range []string{"RAILWAY_ENVIRONMENT_NAME", "VERCEL_ENV", "DEPLOYMENT_TIER", "APP_ENV", "SUB2API_ENV"} {
+		if strings.EqualFold(strings.TrimSpace(os.Getenv(name)), "production") {
+			return true
+		}
+	}
+	return false
+}
+
+func forceLoopbackSetupAddress(addr string) string {
+	host, port, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil || strings.TrimSpace(port) == "" {
+		return "127.0.0.1:8080"
+	}
+
+	normalizedHost := strings.Trim(strings.ToLower(strings.TrimSpace(host)), "[]")
+	if normalizedHost == "127.0.0.1" || normalizedHost == "localhost" || normalizedHost == "::1" {
+		return addr
+	}
+
+	return net.JoinHostPort("127.0.0.1", port)
 }
 
 func runMainServer() {
