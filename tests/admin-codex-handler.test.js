@@ -174,7 +174,8 @@ test('codex handler GET returns runtime config summary', async () => {
             model: 'gpt-5-codex',
             baseUrl: 'https://relay.example.com/v1',
             apiFormat: 'chat.completions',
-            adminId: 'admin-1'
+            adminId: 'admin-1',
+            decryptErrorMessage: ''
         });
     });
 });

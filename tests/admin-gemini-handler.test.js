@@ -142,7 +142,8 @@ test('gemini handler GET returns runtime config summary', async () => {
             configured: true,
             source: 'stored',
             model: 'gemini-2.5-flash',
-            adminId: 'admin-1'
+            adminId: 'admin-1',
+            decryptErrorMessage: ''
         });
     });
 });

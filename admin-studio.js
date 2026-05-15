@@ -7877,6 +7877,7 @@ async function checkApiKey() {
         if (normalizedCurrentService === 'gemini') {
             window.GEMINI_API_KEY = payload.configured ? '__server_proxy__' : '';
             window.GEMINI_API_SOURCE = payload.source || (payload.configured ? 'environment' : 'missing');
+            window.GEMINI_API_DECRYPT_ERROR = payload.decryptErrorMessage || '';
         }
 
         if (payload.configured) {
@@ -7940,6 +7941,17 @@ function saveApiKeys() {
 
 function getGeminiSourceMeta() {
     const source = window.GEMINI_API_SOURCE || 'missing';
+    const decryptErrorMessage = String(window.GEMINI_API_DECRYPT_ERROR || '').trim();
+
+    if (decryptErrorMessage) {
+        return {
+            source: 'missing',
+            title: '需要重新录入',
+            preview: decryptErrorMessage,
+            badge: '需重录',
+            statusText: decryptErrorMessage
+        };
+    }
 
     if (source === 'stored') {
         return {
@@ -7975,7 +7987,8 @@ const DEFAULT_CODEX_CONFIG = Object.freeze({
     source: 'missing',
     baseUrl: '',
     model: 'gpt-5.4',
-    apiFormat: 'responses'
+    apiFormat: 'responses',
+    decryptErrorMessage: ''
 });
 
 function normalizeCodexBaseUrl(value) {
@@ -7999,7 +8012,8 @@ function getCodexRuntimeConfig() {
         ...current,
         baseUrl: normalizeCodexBaseUrl(current.baseUrl),
         model: String(current.model || DEFAULT_CODEX_CONFIG.model).trim() || DEFAULT_CODEX_CONFIG.model,
-        apiFormat: normalizeCodexApiFormat(current.apiFormat)
+        apiFormat: normalizeCodexApiFormat(current.apiFormat),
+        decryptErrorMessage: String(current.decryptErrorMessage || '').trim()
     };
 }
 
@@ -8029,6 +8043,10 @@ function setCodexRuntimeConfig(payload = {}) {
         next.apiFormat = normalizeCodexApiFormat(payload.apiFormat);
     }
 
+    if (Object.prototype.hasOwnProperty.call(payload, 'decryptErrorMessage')) {
+        next.decryptErrorMessage = String(payload.decryptErrorMessage || '').trim();
+    }
+
     window.CODEX_RUNTIME_CONFIG = next;
     window.CODEX_CONFIG_SOURCE = next.source;
     return next;
@@ -8046,6 +8064,17 @@ function getCodexSourceMeta() {
     const config = getCodexRuntimeConfig();
     const source = config.source || 'missing';
     const relaySummary = buildCodexRelaySummary(config);
+    const decryptErrorMessage = String(config.decryptErrorMessage || '').trim();
+
+    if (decryptErrorMessage) {
+        return {
+            source: 'missing',
+            title: '需要重新录入',
+            preview: decryptErrorMessage,
+            badge: '需重录',
+            statusText: decryptErrorMessage
+        };
+    }
 
     if (source === 'stored') {
         return {
@@ -8253,6 +8282,7 @@ async function promptForApiKey() {
         const payload = await saveServerManagedGeminiKey(apiKey);
         window.GEMINI_API_KEY = payload.configured ? '__server_proxy__' : '';
         window.GEMINI_API_SOURCE = payload.source || 'stored';
+        window.GEMINI_API_DECRYPT_ERROR = payload.decryptErrorMessage || '';
         window.AdminAI.configured = Boolean(payload.configured);
         window.AdminAI.source = window.GEMINI_API_SOURCE;
         renderApiKeySelector();
@@ -8288,6 +8318,7 @@ async function deleteApiKey() {
         const payload = await deleteServerManagedGeminiKey();
         window.GEMINI_API_KEY = payload.configured ? '__server_proxy__' : '';
         window.GEMINI_API_SOURCE = payload.source || 'missing';
+        window.GEMINI_API_DECRYPT_ERROR = payload.decryptErrorMessage || '';
         window.AdminAI.configured = Boolean(payload.configured);
         window.AdminAI.source = window.GEMINI_API_SOURCE;
         renderApiKeySelector();

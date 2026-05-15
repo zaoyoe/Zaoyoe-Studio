@@ -201,7 +201,8 @@ module.exports = async (req, res) => {
                 model: config.model,
                 baseUrl: config.baseUrl,
                 apiFormat: config.apiFormat,
-                updatedAt: config.updatedAt
+                updatedAt: config.updatedAt,
+                decryptErrorMessage: config.decryptErrorMessage || ''
             });
         }
 
@@ -319,7 +320,8 @@ module.exports = async (req, res) => {
                 source: config.source,
                 model: config.model,
                 baseUrl: config.baseUrl,
-                apiFormat: config.apiFormat
+                apiFormat: config.apiFormat,
+                decryptErrorMessage: config.decryptErrorMessage || ''
             });
         }
 

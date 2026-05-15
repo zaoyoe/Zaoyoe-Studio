@@ -54,7 +54,8 @@ module.exports = async (req, res) => {
                 configured: config.configured,
                 source: config.source,
                 model: config.model,
-                adminId: user.id
+                adminId: user.id,
+                decryptErrorMessage: config.decryptErrorMessage || ''
             });
         }
 
