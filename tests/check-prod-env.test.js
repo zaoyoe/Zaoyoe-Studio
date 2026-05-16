@@ -396,8 +396,33 @@ test('runAppRuntimeValidation checks runtime config and payment config endpoint 
                     status: 200,
                     body: [
                         '<script src="./js/site-config.js?v=d87130bd22f8"></script>',
-                        '<link rel="stylesheet" href="./css/index.css?v=d87130bd22f8">'
+                        '<link rel="stylesheet" href="./css/index.css?v=d87130bd22f8">',
+                        '<script src="./js/wallet-modal-loader.js?v=d87130bd22f8&iosChromeKeyboard=keep"></script>'
                     ].join('\n')
+                });
+            }
+
+            if (String(url) === 'https://www.zaoyoe.com/js/wallet-modal-loader.js?v=d87130bd22f8&iosChromeKeyboard=keep') {
+                return createFetchResponse({
+                    status: 200,
+                    body: [
+                        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=d87130bd22f8';",
+                        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=d87130bd22f8';"
+                    ].join('\n')
+                });
+            }
+
+            if (String(url) === 'https://www.zaoyoe.com/js/services/PointsService.js?v=d87130bd22f8') {
+                return createFetchResponse({
+                    status: 200,
+                    body: 'function refreshSupabaseSession() {}\nwindow.PointsService = PointsService;'
+                });
+            }
+
+            if (String(url) === 'https://www.zaoyoe.com/js/components/WalletModal.js?v=d87130bd22f8') {
+                return createFetchResponse({
+                    status: 200,
+                    body: 'window.WalletModal = WalletModal;'
                 });
             }
 
@@ -451,6 +476,9 @@ test('runAppRuntimeValidation checks runtime config and payment config endpoint 
 
     assert.deepEqual(calls, [
         'https://www.zaoyoe.com/',
+        'https://www.zaoyoe.com/js/wallet-modal-loader.js?v=d87130bd22f8&iosChromeKeyboard=keep',
+        'https://www.zaoyoe.com/js/services/PointsService.js?v=d87130bd22f8',
+        'https://www.zaoyoe.com/js/components/WalletModal.js?v=d87130bd22f8',
         'https://www.zaoyoe.com/api/runtime/supabase-config',
         'https://www.zaoyoe.com/api/shop/catalog?site=cn',
         'https://www.zaoyoe.com/api/payments/config',
@@ -459,14 +487,20 @@ test('runAppRuntimeValidation checks runtime config and payment config endpoint 
     assert.equal(checks[0].label, 'app runtime base url');
     assert.equal(checks[1].label, 'app static asset version');
     assert.equal(checks[1].ok, true);
-    assert.equal(checks[2].label, 'app runtime Supabase config');
+    assert.equal(checks[2].label, 'app wallet loader asset');
     assert.equal(checks[2].ok, true);
-    assert.equal(checks[3].label, 'app shop catalog endpoint');
+    assert.equal(checks[3].label, 'app wallet service asset');
     assert.equal(checks[3].ok, true);
-    assert.equal(checks[4].label, 'app payment config endpoint');
+    assert.equal(checks[4].label, 'app wallet modal asset');
     assert.equal(checks[4].ok, true);
-    assert.equal(checks[5].label, 'app payment auth-check endpoint');
+    assert.equal(checks[5].label, 'app runtime Supabase config');
     assert.equal(checks[5].ok, true);
+    assert.equal(checks[6].label, 'app shop catalog endpoint');
+    assert.equal(checks[6].ok, true);
+    assert.equal(checks[7].label, 'app payment config endpoint');
+    assert.equal(checks[7].ok, true);
+    assert.equal(checks[8].label, 'app payment auth-check endpoint');
+    assert.equal(checks[8].ok, true);
 });
 
 test('runAppRuntimeValidation reports remote runtime loader failures clearly', async () => {
@@ -530,14 +564,117 @@ test('runAppRuntimeValidation reports remote runtime loader failures clearly', a
         }
     });
 
-    assert.equal(checks[1].ok, false);
-    assert.match(checks[1].details, /does not match expected/);
-    assert.equal(checks[2].ok, false);
-    assert.match(checks[2].details, /Missing required environment variable: SUPABASE_PUBLISHABLE_KEY/);
-    assert.equal(checks[3].ok, false);
-    assert.match(checks[3].details, /商城数据暂时不可用/);
-    assert.equal(checks[4].ok, false);
-    assert.match(checks[4].details, /broken payment config/);
-    assert.equal(checks[5].ok, false);
-    assert.match(checks[5].details, /redeploy required/);
+    const assetVersionCheck = checks.find((check) => check.label === 'app static asset version');
+    const walletLoaderCheck = checks.find((check) => check.label === 'app wallet loader asset');
+    const runtimeConfigCheck = checks.find((check) => check.label === 'app runtime Supabase config');
+    const shopCatalogCheck = checks.find((check) => check.label === 'app shop catalog endpoint');
+    const paymentConfigCheck = checks.find((check) => check.label === 'app payment config endpoint');
+    const authCheck = checks.find((check) => check.label === 'app payment auth-check endpoint');
+
+    assert.equal(assetVersionCheck.ok, false);
+    assert.match(assetVersionCheck.details, /does not match expected/);
+    assert.equal(walletLoaderCheck.ok, false);
+    assert.match(walletLoaderCheck.details, /does not reference js\/wallet-modal-loader\.js/);
+    assert.equal(runtimeConfigCheck.ok, false);
+    assert.match(runtimeConfigCheck.details, /Missing required environment variable: SUPABASE_PUBLISHABLE_KEY/);
+    assert.equal(shopCatalogCheck.ok, false);
+    assert.match(shopCatalogCheck.details, /商城数据暂时不可用/);
+    assert.equal(paymentConfigCheck.ok, false);
+    assert.match(paymentConfigCheck.details, /broken payment config/);
+    assert.equal(authCheck.ok, false);
+    assert.match(authCheck.details, /redeploy required/);
+});
+
+test('runAppRuntimeValidation catches wallet dynamic scripts that resolve to HTML', async () => {
+    const checks = await runAppRuntimeValidation({
+        env: {
+            APP_BASE_URL: 'https://www.zaoyoe.com',
+            SUPABASE_URL: 'https://demo.supabase.co',
+            SUPABASE_PUBLISHABLE_KEY: 'publishable-key'
+        },
+        expectedAssetVersion: 'd87130bd22f8',
+        fetchImpl: async (url) => {
+            const normalizedUrl = String(url);
+            if (normalizedUrl === 'https://www.zaoyoe.com/') {
+                return createFetchResponse({
+                    status: 200,
+                    body: [
+                        '<script src="./js/site-config.js?v=d87130bd22f8"></script>',
+                        '<script src="./js/wallet-modal-loader.js?v=d87130bd22f8"></script>'
+                    ].join('\n')
+                });
+            }
+
+            if (normalizedUrl === 'https://www.zaoyoe.com/js/wallet-modal-loader.js?v=d87130bd22f8') {
+                return createFetchResponse({
+                    status: 200,
+                    body: [
+                        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=d87130bd22f8';",
+                        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=d87130bd22f8';"
+                    ].join('\n')
+                });
+            }
+
+            if (normalizedUrl === 'https://www.zaoyoe.com/js/services/PointsService.js?v=d87130bd22f8') {
+                return createFetchResponse({
+                    status: 200,
+                    body: '<!DOCTYPE html><html><body>homepage fallback</body></html>'
+                });
+            }
+
+            if (normalizedUrl === 'https://www.zaoyoe.com/js/components/WalletModal.js?v=d87130bd22f8') {
+                return createFetchResponse({
+                    status: 200,
+                    body: 'window.WalletModal = WalletModal;'
+                });
+            }
+
+            if (normalizedUrl.endsWith('/api/runtime/supabase-config')) {
+                return createFetchResponse({
+                    status: 200,
+                    body: [
+                        '(function (global) {',
+                        '  global.__ZAOYOE_SUPABASE_CONFIG__ = { url: "https://demo.supabase.co", publishableKey: "publishable-key" };',
+                        '}(typeof window !== "undefined" ? window : globalThis));'
+                    ].join('\n')
+                });
+            }
+
+            if (normalizedUrl.endsWith('/api/shop/catalog?site=cn')) {
+                return createFetchResponse({
+                    status: 200,
+                    body: JSON.stringify({
+                        success: true,
+                        products: [{ id: 'prod_1' }],
+                        categories: []
+                    })
+                });
+            }
+
+            if (normalizedUrl.endsWith('/api/payments/auth-check')) {
+                return createFetchResponse({
+                    status: 401,
+                    statusText: 'Unauthorized',
+                    body: JSON.stringify({ success: false, message: 'Unauthorized' })
+                });
+            }
+
+            return createFetchResponse({
+                status: 200,
+                body: JSON.stringify({
+                    success: true,
+                    runtime: {
+                        mock_payment: {
+                            allowed: false,
+                            reason: 'production_like_runtime'
+                        }
+                    }
+                })
+            });
+        }
+    });
+
+    const walletServiceCheck = checks.find((check) => check.label === 'app wallet service asset');
+    assert.equal(walletServiceCheck.ok, false);
+    assert.match(walletServiceCheck.details, /returned HTML instead of JavaScript/);
 });

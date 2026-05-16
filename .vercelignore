@@ -17,15 +17,15 @@ node_modules/
 *.p12
 
 # Backend/source-only directories that must never be static assets.
-server/
+/server/
 /services/
-supabase/
-tests/
-tools/
-scripts/
-docs/
-cloud-functions/
-functions/
+/supabase/
+/tests/
+/tools/
+/scripts/
+/docs/
+/cloud-functions/
+/functions/
 
 # Database, docs, backups, and generated internals.
 **/*.sql

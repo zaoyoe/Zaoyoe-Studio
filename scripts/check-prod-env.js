@@ -613,6 +613,189 @@ function buildStaticAssetVersionCheckResult(response = {}, expectedAssetVersion 
     };
 }
 
+function extractAssetReference(source = '', matcher = '') {
+    const needle = String(matcher || '').trim();
+    if (!needle) return '';
+
+    const pattern = /\b(?:href|src)=["']([^"']+)["']/gi;
+    let match = null;
+    while ((match = pattern.exec(String(source || ''))) !== null) {
+        const reference = String(match[1] || '').trim();
+        if (!reference) continue;
+        const pathOnly = reference.split('?')[0].replace(/^\.\//, '').replace(/^\/+/, '');
+        if (pathOnly === needle.replace(/^\.\//, '').replace(/^\/+/, '')) {
+            return reference;
+        }
+    }
+
+    return '';
+}
+
+function extractScriptConstantSource(source = '', constantName = '') {
+    const normalizedName = String(constantName || '').trim();
+    if (!/^[A-Z0-9_]+$/.test(normalizedName)) {
+        return '';
+    }
+
+    const pattern = new RegExp(`\\b${normalizedName}\\s*=\\s*['"]([^'"]+)['"]`);
+    const match = String(source || '').match(pattern);
+    return String(match?.[1] || '').trim();
+}
+
+function resolveRuntimeAssetUrl(baseUrl = '', reference = '') {
+    const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
+    const normalizedReference = String(reference || '').trim();
+    if (!normalizedBaseUrl || !normalizedReference) {
+        return '';
+    }
+
+    try {
+        return new URL(normalizedReference, `${normalizedBaseUrl}/`).toString();
+    } catch (_) {
+        return '';
+    }
+}
+
+function buildStaticScriptAssetProbeResult(response = {}, {
+    label = 'app static script asset',
+    marker = '',
+    markers = []
+} = {}) {
+    const detail = String(response.text || '').trim();
+    const markerList = [
+        ...new Set([
+            ...((Array.isArray(markers) ? markers : []).map((item) => String(item || '').trim()).filter(Boolean)),
+            String(marker || '').trim()
+        ].filter(Boolean))
+    ];
+
+    if (!response.ok) {
+        return {
+            label,
+            ok: false,
+            details: `status=${response.status} ${response.statusText || ''} ${detail.slice(0, 160)}`.trim()
+        };
+    }
+
+    if (/^\s*<!doctype\s+html\b/i.test(detail) || /<html[\s>]/i.test(detail.slice(0, 500))) {
+        return {
+            label,
+            ok: false,
+            details: `status=${response.status} ${response.statusText || 'OK'} returned HTML instead of JavaScript`
+        };
+    }
+
+    const missingMarker = markerList.find((item) => !detail.includes(item));
+    if (missingMarker) {
+        return {
+            label,
+            ok: false,
+            details: `status=${response.status} ${response.statusText || 'OK'} missing marker=${missingMarker}`
+        };
+    }
+
+    return {
+        label,
+        ok: true,
+        details: `status=${response.status} ${response.statusText || 'OK'} bytes=${detail.length}`
+    };
+}
+
+async function runWalletRuntimeAssetValidation({
+    baseUrl = '',
+    homepageHtml = '',
+    timeoutMs = 10000,
+    fetchImpl = globalThis.fetch
+} = {}) {
+    const checks = [];
+    const walletLoaderReference = extractAssetReference(homepageHtml, 'js/wallet-modal-loader.js');
+    if (!walletLoaderReference) {
+        return [{
+            label: 'app wallet loader asset',
+            ok: false,
+            details: 'homepage does not reference js/wallet-modal-loader.js'
+        }];
+    }
+
+    const walletLoaderUrl = resolveRuntimeAssetUrl(baseUrl, walletLoaderReference);
+    if (!walletLoaderUrl) {
+        return [{
+            label: 'app wallet loader asset',
+            ok: false,
+            details: `unable to resolve ${walletLoaderReference}`
+        }];
+    }
+
+    let walletLoaderResponse = null;
+    try {
+        walletLoaderResponse = await fetchText(walletLoaderUrl, timeoutMs, fetchImpl);
+        const loaderCheck = buildStaticScriptAssetProbeResult(walletLoaderResponse, {
+            label: 'app wallet loader asset',
+            markers: [
+                'POINTS_SERVICE_SRC',
+                'WALLET_MODAL_SRC'
+            ]
+        });
+        checks.push(loaderCheck);
+        if (!loaderCheck.ok) {
+            return checks;
+        }
+    } catch (error) {
+        return [{
+            label: 'app wallet loader asset',
+            ok: false,
+            details: error.message || 'fetch failed'
+        }];
+    }
+
+    const dynamicAssets = [
+        {
+            label: 'app wallet service asset',
+            constantName: 'POINTS_SERVICE_SRC',
+            markers: [
+                'window.PointsService = PointsService',
+                'refreshSupabaseSession'
+            ]
+        },
+        {
+            label: 'app wallet modal asset',
+            constantName: 'WALLET_MODAL_SRC',
+            markers: [
+                'window.WalletModal = WalletModal'
+            ]
+        }
+    ];
+
+    for (const asset of dynamicAssets) {
+        const reference = extractScriptConstantSource(walletLoaderResponse.text, asset.constantName);
+        const url = resolveRuntimeAssetUrl(baseUrl, reference);
+        if (!url) {
+            checks.push({
+                label: asset.label,
+                ok: false,
+                details: `unable to resolve ${asset.constantName}`
+            });
+            continue;
+        }
+
+        try {
+            const response = await fetchText(url, timeoutMs, fetchImpl);
+            checks.push(buildStaticScriptAssetProbeResult(response, {
+                label: asset.label,
+                markers: asset.markers
+            }));
+        } catch (error) {
+            checks.push({
+                label: asset.label,
+                ok: false,
+                details: error.message || 'fetch failed'
+            });
+        }
+    }
+
+    return checks;
+}
+
 function buildShopCatalogProbeResult(response = {}) {
     const detail = String(response.payload?.message || response.text || '').trim();
     const products = Array.isArray(response.payload?.products)
@@ -725,6 +908,7 @@ async function runAppRuntimeValidation({
         ok: true,
         details: resolvedBaseUrl
     }];
+    let homepageHtml = '';
 
     try {
         const homepageResponse = await fetchText(
@@ -732,12 +916,28 @@ async function runAppRuntimeValidation({
             timeoutMs,
             fetchImpl
         );
+        homepageHtml = homepageResponse.text || '';
         checks.push(buildStaticAssetVersionCheckResult(homepageResponse, expectedAssetVersion));
     } catch (error) {
         checks.push({
             label: 'app static asset version',
             ok: false,
             details: error.message || 'fetch failed'
+        });
+    }
+
+    if (homepageHtml) {
+        checks.push(...await runWalletRuntimeAssetValidation({
+            baseUrl: resolvedBaseUrl,
+            homepageHtml,
+            timeoutMs,
+            fetchImpl
+        }));
+    } else {
+        checks.push({
+            label: 'app wallet loader asset',
+            ok: false,
+            details: 'homepage unavailable'
         });
     }
 
@@ -927,9 +1127,12 @@ module.exports = {
     buildPlatformEnvChecklist,
     buildRuntimeConfigCheckResult,
     buildShopCatalogProbeResult,
+    buildStaticScriptAssetProbeResult,
     buildStaticAssetVersionCheckResult,
     classifySupabaseKey,
     collectStaticAssetVersionsFromHtml,
+    extractAssetReference,
+    extractScriptConstantSource,
     fetchJson,
     fetchText,
     fingerprintSecret,
@@ -942,5 +1145,6 @@ module.exports = {
     resolveExpectedStaticAssetVersion,
     resolveAppBaseUrl,
     runAppRuntimeValidation,
+    runWalletRuntimeAssetValidation,
     runSupabaseValidation
 };
