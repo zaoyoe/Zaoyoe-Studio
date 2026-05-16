@@ -167,6 +167,7 @@
         icon.setAttribute('aria-hidden', 'true');
         icon.innerHTML = '<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true"><path fill="currentColor" d="M12 12.25c2.35 0 4.25-1.9 4.25-4.25S14.35 3.75 12 3.75 7.75 5.65 7.75 8s1.9 4.25 4.25 4.25Zm0 2c-3.32 0-6.25 2.03-7.5 5.07-.24.58.2 1.18.82 1.18h13.36c.62 0 1.06-.6.82-1.18-1.25-3.04-4.18-5.07-7.5-5.07Z"></path></svg>';
         button.appendChild(icon);
+        return icon;
     }
 
     function buildAuthButton(profile) {
@@ -174,7 +175,6 @@
         const avatarSeed = profile?.email || profile?.username || profile?.nickname || 'User';
         const cachedAvatarUrl = normalizeFastPaintAvatarUrl(profile?.avatarUrl);
         const avatarUrl = cachedAvatarUrl || (isLoggedIn ? getInstantFallbackAvatarUrl(avatarSeed) : '');
-        const hasAvatar = !!(isLoggedIn && avatarUrl);
 
         const button = document.createElement('button');
         button.id = 'authBtn';
@@ -183,17 +183,42 @@
         button.dataset.authFastPaint = '1';
         button.setAttribute('aria-label', 'Open account menu');
 
-        appendDefaultIcon(button, hasAvatar);
+        const defaultIcon = appendDefaultIcon(button, false);
 
         const avatar = document.createElement('img');
         avatar.id = 'navUserAvatar';
-        avatar.className = `nav-user-avatar${hasAvatar ? ' show' : ' auth-display-none'}`;
+        avatar.className = 'nav-user-avatar auth-display-none';
         avatar.alt = 'Avatar';
         avatar.loading = 'eager';
         avatar.decoding = 'sync';
         avatar.fetchPriority = 'high';
+        avatar.referrerPolicy = 'no-referrer';
+        const showAvatar = () => {
+            avatar.classList.add('show');
+            avatar.classList.remove('auth-display-none');
+            defaultIcon.classList.add('auth-display-none');
+        };
+        const showFallbackIcon = () => {
+            avatar.classList.remove('show');
+            avatar.classList.add('auth-display-none');
+            defaultIcon.classList.remove('auth-display-none');
+        };
+        avatar.addEventListener('load', showAvatar);
+        avatar.addEventListener('error', () => {
+            if (avatar.dataset.fallbackApplied !== '1' && isLoggedIn) {
+                const fallbackAvatarUrl = getInstantFallbackAvatarUrl(avatarSeed);
+                if (avatar.getAttribute('src') !== fallbackAvatarUrl) {
+                    avatar.dataset.fallbackApplied = '1';
+                    avatar.src = fallbackAvatarUrl;
+                    return;
+                }
+            }
+            showFallbackIcon();
+        });
         if (avatarUrl) {
             avatar.src = avatarUrl;
+        } else {
+            showFallbackIcon();
         }
         button.appendChild(avatar);
 

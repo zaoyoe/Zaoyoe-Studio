@@ -431,6 +431,47 @@ function clearLegacyRememberedAuthSecrets() {
     });
 }
 
+function clearAuthStateForLogout() {
+    try {
+        window.AdminAccess?.clearAccessCache?.();
+        window.AdminAccess?.clearCachedAdminStudioSession?.();
+    } catch (error) {
+        console.warn('Failed to clear admin access caches during logout:', error?.message || error);
+    }
+
+    try {
+        sessionStorage.removeItem('zaoyoe_admin_access_cache_v1');
+        sessionStorage.removeItem('zaoyoe_admin_studio_session_cache_v1');
+        localStorage.removeItem('zaoyoe_chat_widget_last_shell_mode_v1');
+        localStorage.removeItem('cached_user_profile');
+    } catch (_) {
+        // ignore local cache cleanup failures
+    }
+
+    try {
+        window.adminStudioAccessGranted = false;
+        window.isAdmin = false;
+        window.isSuperAdmin = false;
+        window.__ZAOYOE_ADMIN_MODE_HINT__ = 'user';
+    } catch (_) {
+        // ignore global state cleanup failures
+    }
+
+    const wipeStorage = (storage) => {
+        const keysToRemove = [];
+        for (let i = 0; i < storage.length; i++) {
+            const key = storage.key(i);
+            if (key && (key.includes('-auth-token') || key.includes('supabase.auth') || key.startsWith('sb-'))) {
+                keysToRemove.push(key);
+            }
+        }
+        keysToRemove.forEach((key) => storage.removeItem(key));
+    };
+
+    wipeStorage(localStorage);
+    wipeStorage(sessionStorage);
+}
+
 function readRememberedLoginEmail() {
     try {
         const raw = localStorage.getItem(REMEMBERED_LOGIN_EMAIL_KEY);
@@ -1244,6 +1285,7 @@ async function handleLogout(event) {
     }
 
     try {
+        clearAuthStateForLogout();
         await window.AdminAccess?.clearAdminStudioSession?.();
         await window.supabaseClient.auth.signOut();
     } catch (error) {
@@ -1256,18 +1298,7 @@ async function handleLogout(event) {
     }
     console.log('🗑️ 已清除历史密码缓存');
 
-    // 重置UI
-    const defaultIcon = document.getElementById('defaultAuthIcon');
-    const navAvatar = document.getElementById('navUserAvatar');
-    const btnText = document.getElementById('authBtnText');
-
-    setAuthDisplayState(defaultIcon, false, 'inline');
-    setAuthAvatarVisualState(navAvatar, false);
-    if (btnText) btnText.textContent = 'Sign In';
-
-    const authBtn = document.getElementById('authBtn');
-    if (authBtn) authBtn.classList.remove('logged-in');
-
+    updateUserUI(null, { clearCacheOnLogout: true });
     closeUserDropdown();
 }
 
@@ -1843,8 +1874,21 @@ function normalizeDisplayAvatarUrl(url) {
     }
 }
 
+function escapeSvgText(value) {
+    return String(value || '').replace(/[&<>"']/g, (char) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&apos;'
+    }[char]));
+}
+
 function getAvatarFallbackUrl(seed) {
-    return `https://ui-avatars.com/api/?name=${encodeURIComponent(seed || 'User')}&background=6b9ece&color=fff`;
+    const raw = String(seed || 'User').trim();
+    const initial = escapeSvgText((Array.from(raw)[0] || 'U').toUpperCase());
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="32" fill="#6b9ece"/><text x="50%" y="53%" dominant-baseline="middle" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="28" font-weight="700" fill="#fff">${initial}</text></svg>`;
+    return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
 function isGeneratedAvatarUrl(url) {
@@ -2389,6 +2433,10 @@ function updateUserUI(user, options = {}) {
             console.warn('Failed to resolve admin entry access:', error);
         });
     } else {
+        if (clearCacheOnLogout) {
+            clearAuthStateForLogout();
+        }
+
         if (defaultIcon) {
             setAuthDisplayState(defaultIcon, false, 'inline');
         }
@@ -4023,26 +4071,12 @@ async function forceLogout(event) {
         if (typeof guardStorage !== 'undefined') {
             guardStorage._locked = false;
         }
+        clearAuthStateForLogout();
         await window.AdminAccess?.clearAdminStudioSession?.();
         await window.supabaseClient.auth.signOut();
     } catch (e) {
         console.error('Supabase signOut error:', e);
     }
-
-    // 🔴 CRITICAL FIX: Manually delete the token because signOut() will abort 
-    // and fail to delete it if the network request is blocked by CORS!
-    const wipeStorage = (storage) => {
-        const keysToRemove = [];
-        for (let i = 0; i < storage.length; i++) {
-            const key = storage.key(i);
-            if (key && (key.includes('-auth-token') || key.includes('supabase.auth') || key.startsWith('sb-'))) {
-                keysToRemove.push(key);
-            }
-        }
-        keysToRemove.forEach(k => storage.removeItem(k));
-    };
-    wipeStorage(localStorage);
-    wipeStorage(sessionStorage);
 
     clearLegacyRememberedAuthSecrets();
     localStorage.removeItem('cached_user_profile');
@@ -5567,6 +5601,7 @@ async function handleSwitchAccount(event) {
 
     // 退出登录
     try {
+        clearAuthStateForLogout();
         await window.AdminAccess?.clearAdminStudioSession?.();
         await window.supabaseClient.auth.signOut();
     } catch (e) {

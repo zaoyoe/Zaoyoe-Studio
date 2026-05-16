@@ -122,3 +122,21 @@ test('auth dropdown keeps a guest menu before opening the login sheet', () => {
         );
     }
 });
+
+test('logout cleanup clears admin chat bootstrap state before guest UI is restored', () => {
+    const authSource = readRepoFile('supabase-auth-functions.js');
+
+    assert.match(authSource, /function clearAuthStateForLogout\(\)/);
+    assert.match(authSource, /window\.AdminAccess\?\.clearAccessCache\?\.\(\)/);
+    assert.match(authSource, /window\.AdminAccess\?\.clearCachedAdminStudioSession\?\.\(\)/);
+    assert.match(authSource, /sessionStorage\.removeItem\('zaoyoe_admin_access_cache_v1'\)/);
+    assert.match(authSource, /sessionStorage\.removeItem\('zaoyoe_admin_studio_session_cache_v1'\)/);
+    assert.match(authSource, /localStorage\.removeItem\('zaoyoe_chat_widget_last_shell_mode_v1'\)/);
+    assert.match(authSource, /window\.adminStudioAccessGranted = false;/);
+    assert.match(authSource, /window\.isAdmin = false;/);
+    assert.match(authSource, /window\.isSuperAdmin = false;/);
+    assert.match(authSource, /window\.__ZAOYOE_ADMIN_MODE_HINT__ = 'user';/);
+    assert.match(authSource, /key\.includes\('-auth-token'\) \|\| key\.includes\('supabase\.auth'\) \|\| key\.startsWith\('sb-'\)/);
+    assert.match(authSource, /if \(clearCacheOnLogout\) \{\s*clearAuthStateForLogout\(\);/);
+    assert.match(authSource, /async function handleLogout[\s\S]*?clearAuthStateForLogout\(\);[\s\S]*?window\.supabaseClient\.auth\.signOut\(\)/);
+});
