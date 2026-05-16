@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const { execFileSync } = require('child_process');
 const path = require('path');
 const vm = require('vm');
 const dotenv = require('dotenv');
@@ -96,6 +97,54 @@ function normalizeBaseUrl(value) {
 
     const candidate = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
     return candidate.replace(/\/+$/, '');
+}
+
+function normalizeExpectedStaticAssetVersion(value = '') {
+    const normalized = String(value || '')
+        .trim()
+        .replace(/[^A-Za-z0-9_-]/g, '');
+
+    if (/^[0-9a-f]{13,40}$/i.test(normalized)) {
+        return normalized.slice(0, 12);
+    }
+
+    return normalized.slice(0, 40);
+}
+
+function resolveExpectedStaticAssetVersion({
+    options = {},
+    env = process.env,
+    rootDir = process.cwd(),
+    execFileSyncImpl = execFileSync
+} = {}) {
+    const explicitVersion = normalizeExpectedStaticAssetVersion(
+        options.expectedAssetVersion
+        || env.EXPECTED_STATIC_ASSET_VERSION
+        || env.STATIC_ASSET_VERSION
+        || ''
+    );
+    if (explicitVersion) {
+        return explicitVersion;
+    }
+
+    if (!options.expectCurrentGitVersion) {
+        return '';
+    }
+
+    const envCommitSha = normalizeExpectedStaticAssetVersion(env.VERCEL_GIT_COMMIT_SHA || '');
+    if (envCommitSha) {
+        return envCommitSha;
+    }
+
+    try {
+        return normalizeExpectedStaticAssetVersion(execFileSyncImpl('git', ['rev-parse', 'HEAD'], {
+            cwd: rootDir,
+            encoding: 'utf8',
+            stdio: ['ignore', 'pipe', 'ignore']
+        }));
+    } catch (_) {
+        return '';
+    }
 }
 
 function resolveAppBaseUrl(options = {}, env = process.env) {
@@ -196,6 +245,8 @@ function parseArgs(argv = []) {
         runtimeOnly: false,
         validateSupabase: false,
         validatePaymentSchema: false,
+        expectedAssetVersion: '',
+        expectCurrentGitVersion: false,
         timeoutMs: 10000
     };
 
@@ -228,6 +279,11 @@ function parseArgs(argv = []) {
             continue;
         }
 
+        if (value === '--expect-current-git-version') {
+            options.expectCurrentGitVersion = true;
+            continue;
+        }
+
         if (value === '--env-file') {
             options.envFile = path.resolve(process.cwd(), String(argv[index + 1] || '').trim());
             index += 1;
@@ -236,6 +292,12 @@ function parseArgs(argv = []) {
 
         if (value === '--base-url') {
             options.baseUrl = String(argv[index + 1] || '').trim();
+            index += 1;
+            continue;
+        }
+
+        if (value === '--expected-asset-version') {
+            options.expectedAssetVersion = String(argv[index + 1] || '').trim();
             index += 1;
             continue;
         }
@@ -488,6 +550,105 @@ function buildAuthCheckProbeResult(response = {}) {
     };
 }
 
+function collectStaticAssetVersionsFromHtml(html = '') {
+    const versions = [];
+    const pattern = /\b(?:href|src)=["'][^"']+\.(?:css|js)\?[^"']*?\bv=([^&"'\s<>]+)/gi;
+    let match = null;
+
+    while ((match = pattern.exec(String(html || ''))) !== null) {
+        const version = normalizeExpectedStaticAssetVersion(match[1] || '');
+        if (version) {
+            versions.push(version);
+        }
+    }
+
+    return versions;
+}
+
+function buildStaticAssetVersionCheckResult(response = {}, expectedAssetVersion = '') {
+    const expected = normalizeExpectedStaticAssetVersion(expectedAssetVersion);
+    const detail = String(response.text || '').trim();
+
+    if (!response.ok) {
+        return {
+            label: 'app static asset version',
+            ok: false,
+            details: `status=${response.status} ${response.statusText || ''} ${detail.slice(0, 160)}`.trim()
+        };
+    }
+
+    const versions = collectStaticAssetVersionsFromHtml(response.text || '');
+    const uniqueVersions = [...new Set(versions)];
+    if (!uniqueVersions.length) {
+        return {
+            label: 'app static asset version',
+            ok: false,
+            details: 'homepage has no versioned CSS/JS asset references'
+        };
+    }
+
+    if (uniqueVersions.length > 1) {
+        return {
+            label: 'app static asset version',
+            ok: false,
+            details: `homepage has mixed asset versions: ${uniqueVersions.slice(0, 6).join(', ')}`
+        };
+    }
+
+    const actual = uniqueVersions[0];
+    if (expected && actual !== expected) {
+        return {
+            label: 'app static asset version',
+            ok: false,
+            details: `homepage version=${actual} does not match expected=${expected}`
+        };
+    }
+
+    return {
+        label: 'app static asset version',
+        ok: true,
+        details: expected
+            ? `version=${actual} refs=${versions.length} expected=${expected}`
+            : `version=${actual} refs=${versions.length}`
+    };
+}
+
+function buildShopCatalogProbeResult(response = {}) {
+    const detail = String(response.payload?.message || response.text || '').trim();
+    const products = Array.isArray(response.payload?.products)
+        ? response.payload.products
+        : Array.isArray(response.payload?.data?.products)
+            ? response.payload.data.products
+            : [];
+    const categories = Array.isArray(response.payload?.categories)
+        ? response.payload.categories
+        : Array.isArray(response.payload?.data?.categories)
+            ? response.payload.data.categories
+            : [];
+
+    if (!response.ok || response.payload?.success !== true) {
+        return {
+            label: 'app shop catalog endpoint',
+            ok: false,
+            details: `status=${response.status} ${response.statusText || ''} ${detail || 'unexpected response'}`.trim()
+        };
+    }
+
+    if (!products.length) {
+        return {
+            label: 'app shop catalog endpoint',
+            ok: false,
+            details: `status=${response.status} ${response.statusText || 'OK'} no active products returned`
+        };
+    }
+
+    return {
+        label: 'app shop catalog endpoint',
+        ok: true,
+        details: `status=${response.status} ${response.statusText || 'OK'} products=${products.length} categories=${categories.length}`
+    };
+}
+
 function renderChecklistValue(value, { sensitive = false } = {}) {
     const normalized = String(value || '').trim();
     if (!normalized) return '(missing)';
@@ -546,6 +707,7 @@ function buildPlatformEnvChecklist(env = process.env) {
 async function runAppRuntimeValidation({
     baseUrl = '',
     env = process.env,
+    expectedAssetVersion = '',
     timeoutMs = 10000,
     fetchImpl = globalThis.fetch
 } = {}) {
@@ -563,6 +725,21 @@ async function runAppRuntimeValidation({
         ok: true,
         details: resolvedBaseUrl
     }];
+
+    try {
+        const homepageResponse = await fetchText(
+            `${resolvedBaseUrl}/`,
+            timeoutMs,
+            fetchImpl
+        );
+        checks.push(buildStaticAssetVersionCheckResult(homepageResponse, expectedAssetVersion));
+    } catch (error) {
+        checks.push({
+            label: 'app static asset version',
+            ok: false,
+            details: error.message || 'fetch failed'
+        });
+    }
 
     try {
         const runtimeResponse = await fetchText(
@@ -587,6 +764,21 @@ async function runAppRuntimeValidation({
     } catch (error) {
         checks.push({
             label: 'app runtime Supabase config',
+            ok: false,
+            details: error.message || 'fetch failed'
+        });
+    }
+
+    try {
+        const shopCatalogResponse = await fetchJson(
+            `${resolvedBaseUrl}/api/shop/catalog?site=cn`,
+            timeoutMs,
+            fetchImpl
+        );
+        checks.push(buildShopCatalogProbeResult(shopCatalogResponse));
+    } catch (error) {
+        checks.push({
+            label: 'app shop catalog endpoint',
             ok: false,
             details: error.message || 'fetch failed'
         });
@@ -659,6 +851,10 @@ async function main() {
         checks.push(...await runAppRuntimeValidation({
             baseUrl: options.baseUrl,
             env: process.env,
+            expectedAssetVersion: resolveExpectedStaticAssetVersion({
+                options,
+                env: process.env
+            }),
             timeoutMs: Number.isFinite(options.timeoutMs) && options.timeoutMs > 0 ? options.timeoutMs : 10000
         }));
     }
@@ -692,17 +888,19 @@ async function main() {
     console.log(`- APP_BASE_URL=${readEnv('APP_BASE_URL') || '(empty)'}`);
     console.log(`- PAYMENT_SMOKE_BASE_URL=${readEnv('PAYMENT_SMOKE_BASE_URL') || '(empty)'}`);
 
-    console.log('');
-    console.log('Platform env checklist:');
-    const checklist = buildPlatformEnvChecklist(process.env);
-    console.log('- Vercel');
-    checklist.vercel.forEach((item) => {
-        console.log(`  - ${item.name}=${item.value}`);
-    });
-    console.log('- Railway / verify server');
-    checklist.railway.forEach((item) => {
-        console.log(`  - ${item.name}=${item.value}`);
-    });
+    if (!options.runtimeOnly) {
+        console.log('');
+        console.log('Platform env checklist:');
+        const checklist = buildPlatformEnvChecklist(process.env);
+        console.log('- Vercel');
+        checklist.vercel.forEach((item) => {
+            console.log(`  - ${item.name}=${item.value}`);
+        });
+        console.log('- Railway / verify server');
+        checklist.railway.forEach((item) => {
+            console.log(`  - ${item.name}=${item.value}`);
+        });
+    }
 
     const failedChecks = checks.filter((check) => !check.ok);
     if (failedChecks.length) {
@@ -728,15 +926,20 @@ module.exports = {
     buildLocalEnvironmentChecks,
     buildPlatformEnvChecklist,
     buildRuntimeConfigCheckResult,
+    buildShopCatalogProbeResult,
+    buildStaticAssetVersionCheckResult,
     classifySupabaseKey,
+    collectStaticAssetVersionsFromHtml,
     fetchJson,
     fetchText,
     fingerprintSecret,
     isProductionLikeRuntime,
     loadEnvFile,
     normalizeBaseUrl,
+    normalizeExpectedStaticAssetVersion,
     parseArgs,
     parseRuntimeConfigScript,
+    resolveExpectedStaticAssetVersion,
     resolveAppBaseUrl,
     runAppRuntimeValidation,
     runSupabaseValidation
