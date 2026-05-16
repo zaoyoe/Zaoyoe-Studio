@@ -7,7 +7,7 @@
     "git": {
         "deploymentEnabled": {
             "bot": false,
-            "main": false,
+            "main": true,
             "codex/*": false
         }
     },

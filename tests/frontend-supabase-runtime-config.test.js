@@ -291,11 +291,12 @@ test('settings split Google One API into its own tab immediately after content s
     assert.equal(adminStudioStyles.includes('#settings-view-google-one .settings-google-one-monitor-columns'), true, 'admin-studio.css should define dedicated monitor columns for Google One API operations panels');
 });
 
-test('vercel config disables automatic preview deployments for codex work branches', () => {
+test('vercel config deploys main automatically while keeping codex preview branches disabled', () => {
     const vercelConfig = readVercelConfig();
 
     assert.equal(vercelConfig.$schema, 'https://openapi.vercel.sh/vercel.json');
     assert.equal(vercelConfig.git?.deploymentEnabled?.bot, false);
+    assert.equal(vercelConfig.git?.deploymentEnabled?.main, true);
     assert.equal(vercelConfig.git?.deploymentEnabled?.['codex/*'], false);
 });
 
