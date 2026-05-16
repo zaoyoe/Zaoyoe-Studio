@@ -490,7 +490,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260514_CHAT_WIDGET_VERIFY_SUBMITTER_IDENTITY_1';",
+        "const VERSION = '20260516_HOME_AUTH_CHAT_CACHE_BUST_1';",
         "const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';",
         'function ensurePlaceholderPlacementStyles() {',
         '/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */',
@@ -519,7 +519,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'body.chat-widget-bootstrap-scroll-locked',
         "const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';",
         "const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';",
-        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260514_CHAT_WIDGET_VERIFY_SUBMITTER_IDENTITY_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';",
+        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';",
         "const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';",
         'function getChatWidgetConstructor() {',
         'global.ChatWidget = ChatWidget;',
@@ -2027,7 +2027,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/chat-widget-loader.js?v=20260514_CHAT_WIDGET_VERIFY_SUBMITTER_IDENTITY_1'),
+            source.includes('js/chat-widget-loader.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1'),
             true,
             'public entry pages should load the lazy chat widget bootstrap'
         );
@@ -2333,7 +2333,7 @@ test('auth runtime renderers centralize avatar, google loading, and profile moda
             'auth entry pages should load the latest auth sheet stylesheet'
         );
         assert.equal(
-            source.includes('supabase-auth-functions.js?v=20260512_NAV_AUTH_SESSION_MATCH_1'),
+            source.includes('supabase-auth-functions.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1'),
             true,
             'auth entry pages should load the latest auth runtime script'
         );
@@ -16351,7 +16351,7 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
         assert.equal(source.includes('overscroll-behavior'), true, `${file} should keep backdrop scroll chained inside the modal layer`);
     }
 
-    const expectedHref = '20260428_PUBLIC_ASSET_CACHE_SWEEP_1';
+    const expectedHref = '20260512_NAV_AUTH_SESSION_MATCH_1';
     const pageSources = [
         readRepoFile('index.html'),
         readRepoFile('guestbook.html'),
