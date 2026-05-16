@@ -115,6 +115,15 @@ test('PointsService routes wallet overview and transaction reads through wallet 
     assert.equal(source.includes('getWalletDiscountAssets({ site = \'\', force = false } = {})'), true, 'PointsService should expose a cached wallet card loader');
 });
 
+test('Vercel ignore rules do not hide the public PointsService bundle', () => {
+    const ignoreSource = readRepoFile('.vercelignore');
+    const walletLoaderSource = readRepoFile('js/wallet-modal-loader.js');
+
+    assert.match(walletLoaderSource, /POINTS_SERVICE_SRC = 'js\/services\/PointsService\.js\?v=/);
+    assert.equal(/^services\/$/m.test(ignoreSource), false, 'services/ would also ignore js/services on Vercel');
+    assert.equal(/^\/services\/$/m.test(ignoreSource), true, 'root services directory should stay private without hiding js/services');
+});
+
 test('WalletModal main browse and search paths use PointsService transaction API instead of direct wallet table reads', () => {
     const source = readRepoFile('js/components/WalletModal.js');
 
