@@ -35,10 +35,10 @@ function shouldDisableLocalPreviewCache(filePath = '') {
 function getDefaultEnvFiles(repoRoot) {
     return [
         path.join(repoRoot, 'server/.env.staging'),
-        path.join(repoRoot, '.vercel/.env.production.local'),
         path.join(repoRoot, 'server/.env'),
         path.join(repoRoot, '.env'),
-        path.join(repoRoot, '.env.local')
+        path.join(repoRoot, '.env.local'),
+        path.join(repoRoot, '.vercel/.env.production.local')
     ];
 }
 
