@@ -83,3 +83,28 @@ test('admin chat first open keeps admin mode through auth cache and queued open 
         assert.equal(source.includes(marker), true, `js/components/ChatWidget.js should contain ${marker}`);
     }
 });
+
+test('admin chat first open keeps the session skeleton until sessions finish bootstrapping', () => {
+    const source = readRepoFile(path.join('js', 'components', 'ChatWidget.js'));
+
+    assert.match(
+        source,
+        /const restoredSessions = this\.restoreAdminSessionSnapshot\(\);[\s\S]*if \(restoredSessions\.length > 0\) \{[\s\S]*this\._adminSessionListBootstrapping = false;[\s\S]*this\.setAdminChatSessions\(restoredSessions\);[\s\S]*\} else \{[\s\S]*this\._adminSessionListBootstrapping = true;/,
+        'admin mode should enter a bootstrapping state when there is no cached session snapshot'
+    );
+    assert.match(
+        source,
+        /renderAdminSessionList\(\) \{[\s\S]*if \(this\._adminSessionListBootstrapping && \(!Array\.isArray\(this\.sessions\) \|\| this\.sessions\.length === 0\)\) \{[\s\S]*return;[\s\S]*\}/,
+        'admin list rendering should keep the skeleton instead of painting the empty state during first load'
+    );
+    assert.match(
+        source,
+        /const initialSessions = buildSessionsFromProfileMaps\(\);[\s\S]*this\._adminSessionListBootstrapping = false;[\s\S]*this\.setAdminChatSessions\(initialSessions\);/,
+        'the empty-state guard should be released only after the first admin session query settles'
+    );
+    assert.match(
+        source,
+        /catch \(err\) \{[\s\S]*if \(requestId !== this\._adminSessionLoadRequestId\) return;[\s\S]*this\._adminSessionListBootstrapping = false;[\s\S]*this\.sessionList\.innerHTML = `<div class="session-loading">\$\{this\.t\('chat\.loadFailed', '加载失败'\)\}<\/div>`;/,
+        'load failures should release the guard and show the failure state'
+    );
+});

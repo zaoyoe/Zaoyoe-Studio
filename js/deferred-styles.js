@@ -74,6 +74,18 @@
     window.addEventListener(eventName, () => activateDeferredStyles('all'), { once: true, passive: true });
   });
 
+  // 20260515_HOME_HARDREFRESH_STABILITY_1: activate idle-eligible deferred styles as soon as the DOM is parsed,
+  // so the homepage stops flashing unstyled section text on hard refresh while we wait for `load`.
+  function activateOnDomReady() {
+    activateDeferredStyles('idle');
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', activateOnDomReady, { once: true });
+  } else {
+    activateOnDomReady();
+  }
+
   if (document.readyState === 'complete') {
     scheduleDeferredStyles();
   } else {

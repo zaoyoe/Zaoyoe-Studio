@@ -152,8 +152,12 @@
             // Check for special attributes
             const attr = el.getAttribute('data-i18n-attr');
             if (attr) {
-                el.setAttribute(attr, translation);
-            } else {
+                // 20260515_HOME_HARDREFRESH_STABILITY_1: skip identical writes so we don't trigger
+                // a layout invalidation on every applyTranslations() pass.
+                if (el.getAttribute(attr) !== translation) {
+                    el.setAttribute(attr, translation);
+                }
+            } else if (el.textContent !== translation) {
                 el.textContent = translation;
             }
         });
@@ -163,7 +167,9 @@
         placeholders.forEach(el => {
             const key = el.getAttribute('data-i18n-placeholder');
             const translation = t(key);
-            if (translation !== null) el.placeholder = translation;
+            if (translation !== null && el.placeholder !== translation) {
+                el.placeholder = translation;
+            }
         });
 
         // Handle titles
@@ -171,7 +177,9 @@
         titles.forEach(el => {
             const key = el.getAttribute('data-i18n-title');
             const translation = t(key);
-            if (translation !== null) el.title = translation;
+            if (translation !== null && el.title !== translation) {
+                el.title = translation;
+            }
         });
     }
 

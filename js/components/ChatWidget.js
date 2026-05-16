@@ -85,6 +85,7 @@ class ChatWidget {
         this._adminSessionPrewarmHandle = null;
         this._adminSessionHydrationTimer = null;
         this._adminSessionHydrationRequestId = 0;
+        this._adminSessionListBootstrapping = false;
         this._pendingAdminSessionHydrationUserIds = new Set();
         this._pendingAdminSessionHydrationEmails = new Set();
         this.currentAdminUserId = '';
@@ -3964,7 +3965,343 @@ class ChatWidget {
             setInterval(() => this.checkAdminStatus(), 60000);
         }
 
+        this.bindAdminRoleAuthListener();
         this.initEngagementRuntime();
+    }
+
+    /**
+     * Bind a Supabase auth state listener that detects when the
+     * signed-in user transitions between regular-user and admin roles.
+     *
+     * The chat widget renders either the user-facing chat or the admin
+     * console based on a one-time admin-access check in init(). When a
+     * user signs in to an admin account from the public page, that check
+     * never re-runs, so the widget keeps showing the user shell until a
+     * full page refresh. This listener bridges that gap by reloading the
+     * widget once the role changes.
+     */
+    bindAdminRoleAuthListener() {
+        if (this.adminRoleAuthSubscription || !this.supabase?.auth?.onAuthStateChange) {
+            return;
+        }
+
+        try {
+            const { data } = this.supabase.auth.onAuthStateChange((event, session) => {
+                // INITIAL_SESSION fires on every page load; ignore it so we don't
+                // race the initial init() decision. TOKEN_REFRESHED / USER_UPDATED
+                // don't change the user identity, so they cannot change role.
+                if (event !== 'SIGNED_IN' && event !== 'SIGNED_OUT') {
+                    return;
+                }
+
+                void this.handleAdminRoleAuthChange(event, session).catch((error) => {
+                    console.warn(
+                        '[ChatWidget] Failed to handle admin role auth change:',
+                        error?.message || error
+                    );
+                });
+            });
+            this.adminRoleAuthSubscription = data?.subscription || null;
+        } catch (error) {
+            console.warn(
+                '[ChatWidget] Failed to bind admin role auth state listener:',
+                error?.message || error
+            );
+        }
+    }
+
+    /**
+     * Re-evaluate admin access after a sign-in / sign-out event and, if the
+     * effective role does not match the currently rendered widget mode,
+     * tear down the existing chat widget and rebuild it via the bootstrap
+     * loader so it boots in the correct mode. This avoids the manual page
+     * refresh that used to be required after logging in to an admin
+     * account, without disturbing the rest of the page (hero animations,
+     * scroll position, other widgets, etc.).
+     */
+    async handleAdminRoleAuthChange(event /* , session */) {
+        // Mirror the SIGNED_OUT init guard from supabase-auth-functions.js:
+        // Supabase can spuriously fire SIGNED_OUT during the first few seconds
+        // after page load (e.g., when _getUser() fails due to CORS on a custom
+        // domain) even though the session is still valid. Reinitializing on
+        // that false signal would cause unwanted widget churn, so ignore
+        // early SIGNED_OUT events here as well.
+        if (event === 'SIGNED_OUT' && typeof window !== 'undefined') {
+            const pageLoadTime = Number(window._pageLoadTime || 0);
+            if (pageLoadTime > 0 && (Date.now() - pageLoadTime) < 5000) {
+                return;
+            }
+        }
+
+        const reinitToken = (this._adminRoleReinitToken = (this._adminRoleReinitToken || 0) + 1);
+
+        const wasAdmin = Boolean(this.isAdmin);
+        let isAdminNow = false;
+
+        if (event === 'SIGNED_OUT') {
+            isAdminNow = false;
+        } else {
+            // SIGNED_IN: fetch fresh access info; AdminAccess writes the
+            // session-storage cache that the bootstrap loader consults
+            // when picking the initial shell skeleton.
+            try {
+                if (window.AdminAccess?.getCurrentAdminAccess) {
+                    const access = await window.AdminAccess.getCurrentAdminAccess({
+                        forceRefresh: true
+                    });
+                    isAdminNow = Boolean(access?.isAdmin);
+                } else if (typeof this.resolveAdminModeAccess === 'function') {
+                    isAdminNow = await this.resolveAdminModeAccess();
+                }
+            } catch (error) {
+                console.warn(
+                    '[ChatWidget] Failed to resolve admin access after sign-in:',
+                    error?.message || error
+                );
+                // Fall back to current state so we don't churn the widget
+                // when admin access verification is temporarily unavailable.
+                isAdminNow = wasAdmin;
+            }
+        }
+
+        if (isAdminNow === wasAdmin) {
+            return;
+        }
+        // Persist the target shell mode so any future page load (and the
+        // recreated widget's own bootstrap-shell handoff) starts in the
+        // correct skeleton.
+        try {
+            this.persistBootstrapShellMode(isAdminNow ? 'admin' : 'user');
+        } catch (error) {
+            console.warn(
+                '[ChatWidget] Failed to persist bootstrap shell mode before reinit:',
+                error?.message || error
+            );
+        }
+
+        this._adminRoleReinitScheduled = true;
+
+        // Delay slightly so other auth handlers (UI updates, presence sync,
+        // remembered-email persistence in supabase-auth-functions.js) can
+        // finish before we tear the widget down.
+        const reinitDelayMs = 250;
+        const scheduleReinit = () => {
+            if (this._adminRoleReinitToken !== reinitToken) {
+                return;
+            }
+            try {
+                this.reinitializeChatWidget();
+            } catch (error) {
+                console.warn(
+                    '[ChatWidget] Failed to reinitialize chat widget after admin role change:',
+                    error?.message || error
+                );
+            }
+        };
+
+        if (typeof window !== 'undefined' && typeof window.setTimeout === 'function') {
+            window.setTimeout(scheduleReinit, reinitDelayMs);
+        } else {
+            scheduleReinit();
+        }
+    }
+
+    /**
+     * Tear down the current chat widget instance and ask the shared
+     * bootstrap loader to recreate it. This rebuilds only the chat widget;
+     * the rest of the page (hero animations, scroll position, other
+     * components) keeps its state.
+     */
+    reinitializeChatWidget() {
+        const bootstrap = (typeof window !== 'undefined' && window.ZaoyoeChatWidgetBootstrap) || null;
+
+        this._teardownForReinit();
+
+        if (typeof window !== 'undefined') {
+            try {
+                if (window.chatWidget === this) {
+                    window.chatWidget = null;
+                }
+            } catch (_) {
+                // ignore inability to clear the global handle
+            }
+        }
+
+        if (bootstrap && typeof bootstrap.warm === 'function') {
+            try {
+                const warmResult = bootstrap.warm();
+                if (warmResult && typeof warmResult.catch === 'function') {
+                    warmResult.catch((error) => {
+                        console.warn(
+                            '[ChatWidget] Failed to warm chat widget after admin role change:',
+                            error?.message || error
+                        );
+                    });
+                }
+            } catch (error) {
+                console.warn(
+                    '[ChatWidget] Failed to invoke ZaoyoeChatWidgetBootstrap.warm after admin role change:',
+                    error?.message || error
+                );
+            }
+        }
+    }
+
+    /**
+     * Best-effort cleanup of resources held by this widget instance so
+     * it can be replaced in place without leaking realtime channels,
+     * timers, or DOM nodes. Anything we miss will be garbage-collected
+     * with the dropped instance reference once window.chatWidget is
+     * reassigned.
+     */
+    _teardownForReinit() {
+        // Stop ambient FAB motion before we drop the FAB element.
+        try {
+            this._clearFabAmbientMotionTimers?.();
+        } catch (_) {
+            // ignore best-effort timer cleanup
+        }
+
+        // Stop shared admin / user presence so the next widget instance
+        // can claim a fresh tab key cleanly.
+        try {
+            window?.ZaoyoeAdminPresence?.stop?.();
+        } catch (_) {
+            // ignore best-effort presence cleanup
+        }
+        try {
+            window?.ZaoyoeUserPresence?.stop?.();
+        } catch (_) {
+            // ignore best-effort presence cleanup
+        }
+
+        // Unsubscribe Supabase realtime channels we own.
+        const channelKeys = [
+            'adminMessageChannel',
+            'adminOpsAlertChannel',
+            'adminTicketChannel',
+            'adminPaymentChannel',
+            'adminVerificationChannel',
+            'adminPresenceChannel',
+            'userPresenceChannel',
+            'userMessageChannel',
+            'userActivityChannel',
+            'engagementNotificationChannel',
+            'engagementDeliveryChannel',
+            'engagementUserTagsChannel',
+            'engagementFeedBroadcastChannel',
+            'engagementFeedInvalidationsChannel'
+        ];
+        for (const key of channelKeys) {
+            const channel = this[key];
+            if (channel && this.supabase?.removeChannel) {
+                try {
+                    this.supabase.removeChannel(channel);
+                } catch (_) {
+                    // ignore best-effort channel cleanup
+                }
+            }
+            this[key] = null;
+        }
+
+        // Unsubscribe Supabase auth state listeners owned by this instance.
+        try {
+            this.engagementAuthSubscription?.unsubscribe?.();
+        } catch (_) {
+            // ignore best-effort unsubscribe
+        }
+        this.engagementAuthSubscription = null;
+
+        try {
+            this.adminRoleAuthSubscription?.unsubscribe?.();
+        } catch (_) {
+            // ignore best-effort unsubscribe
+        }
+        this.adminRoleAuthSubscription = null;
+
+        // Clear repeating timers we know about.
+        const timerKeys = [
+            'adminPresenceStatusTimer',
+            'userPresenceStatusTimer',
+            'userActivityRefreshTimer',
+            'engagementNotificationRefreshTimer',
+            'engagementUserTagsRefreshTimer',
+            'engagementFeedBroadcastRefreshTimer',
+            'engagementFeedInvalidationsRefreshTimer',
+            'engagementScheduledRuleRefreshTimer',
+            'engagementRefreshTimer',
+            'engagementConditionEvaluationTimer',
+            'engagementTimeTriggerTimer',
+            'engagementPendingFlushTimer',
+            'adminOpsAlertPollTimer',
+            'adminSessionSlaTimer',
+            '_adminSessionHydrationTimer',
+            '_sessionLoadingOverlayTimer',
+            '_fabAmbientPeekTimer',
+            '_fabAmbientReturnTimer',
+            '_fabAmbientResumeTimer',
+            '_keyboardSettleTimer',
+            '_userComposerInteractionUnlockTimer',
+            '_userComposerUnlockTimer',
+            '_userComposerSkeletonRemoveTimer',
+            '_bootstrapContentSettleTimer',
+            '_motionVisualLockTimer',
+            '_transitionCleanupTimer',
+            '_openingAnimationTimer',
+            '_closingAnimationTimer',
+            '_viewportThrottleTimer',
+            '_pendingUndockTimer',
+            '_pendingFirstDockTimer'
+        ];
+        for (const key of timerKeys) {
+            const handle = this[key];
+            if (handle != null) {
+                try { clearTimeout(handle); } catch (_) { /* not a timeout */ }
+                try { clearInterval(handle); } catch (_) { /* not an interval */ }
+                this[key] = null;
+            }
+        }
+
+        // Drop DOM nodes owned by this widget. We also sweep any stale
+        // siblings that earlier renders may have left behind so the next
+        // bootstrap pass starts from a clean slate.
+        try { this.chatWindow?.remove(); } catch (_) { /* ignore */ }
+        this.chatWindow = null;
+
+        try { this.overlay?.remove(); } catch (_) { /* ignore */ }
+        this.overlay = null;
+
+        try { this.fab?.remove(); } catch (_) { /* ignore */ }
+        this.fab = null;
+
+        if (typeof document !== 'undefined') {
+            const selectors = [
+                '.chat-window',
+                '.chat-overlay',
+                '.chat-widget-fab',
+                '.chat-widget-bootstrap-overlay'
+            ];
+            for (const selector of selectors) {
+                try {
+                    document.querySelectorAll(selector).forEach((node) => {
+                        try { node.remove(); } catch (_) { /* ignore */ }
+                    });
+                } catch (_) {
+                    // ignore best-effort DOM sweep
+                }
+            }
+        }
+
+        this.isOpen = false;
+        this._chatWidgetReady = false;
+        this._pendingOpenAfterInit = false;
+
+        if (typeof window !== 'undefined') {
+            window.adminStudioAccessGranted = false;
+            window.isAdmin = false;
+            window.isSuperAdmin = false;
+            window.__ZAOYOE_ADMIN_MODE_HINT__ = 'user';
+        }
     }
 
     async checkAdminStatus() {
@@ -8961,7 +9298,10 @@ class ChatWidget {
 
         const restoredSessions = this.restoreAdminSessionSnapshot();
         if (restoredSessions.length > 0) {
+            this._adminSessionListBootstrapping = false;
             this.setAdminChatSessions(restoredSessions);
+        } else {
+            this._adminSessionListBootstrapping = true;
         }
 
         // Prewarm admin conversations in the background so opening the widget feels faster.
@@ -15333,6 +15673,10 @@ class ChatWidget {
     renderAdminSessionList() {
         if (!this.sessionList) return;
 
+        if (this._adminSessionListBootstrapping && (!Array.isArray(this.sessions) || this.sessions.length === 0)) {
+            return;
+        }
+
         const existingSessionItems = new Map(
             Array.from(this.sessionList.querySelectorAll(':scope > .session-item'))
                 .map((item) => [item.dataset.sessionId || '', item])
@@ -16079,6 +16423,7 @@ class ChatWidget {
             });
 
             const initialSessions = buildSessionsFromProfileMaps();
+            this._adminSessionListBootstrapping = false;
             this.setAdminChatSessions(initialSessions);
             void this.refreshUserActivityForAdminSessions(initialSessions, { render: true });
 
@@ -16115,6 +16460,7 @@ class ChatWidget {
         } catch (err) {
             console.error('Failed to load sessions:', err);
             if (requestId !== this._adminSessionLoadRequestId) return;
+            this._adminSessionListBootstrapping = false;
             this.sessionList.innerHTML = `<div class="session-loading">${this.t('chat.loadFailed', '加载失败')}</div>`;
         }
     }
