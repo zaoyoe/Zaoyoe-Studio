@@ -12,6 +12,7 @@ const {
     createSmokeResultStore,
     DEFAULT_LOCAL_PREVIEW_BODY_LIMIT,
     getDefaultEnvFiles,
+    loadPreviewEnv,
     loadFreshAdminApiHandler,
     loadFreshPaymentsApiHandler,
     loadFreshPublicApiHandler,
@@ -53,17 +54,36 @@ test('local preview server serves Supabase runtime config from local env files',
     assert.match(body, /local-google-intl/);
 });
 
-test('local preview server includes pulled vercel env ahead of generic local env files', () => {
+test('local preview server gives pulled vercel env precedence over generic local env files', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-env-order-'));
     const envFiles = getDefaultEnvFiles(tempRoot);
 
     assert.deepEqual(envFiles, [
         path.join(tempRoot, 'server/.env.staging'),
-        path.join(tempRoot, '.vercel/.env.production.local'),
         path.join(tempRoot, 'server/.env'),
         path.join(tempRoot, '.env'),
-        path.join(tempRoot, '.env.local')
+        path.join(tempRoot, '.env.local'),
+        path.join(tempRoot, '.vercel/.env.production.local')
     ]);
+});
+
+test('local preview server lets pulled vercel env override stale server env values', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-env-precedence-'));
+    fs.mkdirSync(path.join(tempRoot, 'server'), { recursive: true });
+    fs.mkdirSync(path.join(tempRoot, '.vercel'), { recursive: true });
+    fs.writeFileSync(path.join(tempRoot, 'server/.env'), [
+        'SUPABASE_URL=https://stale.supabase.co',
+        'SUPABASE_SERVICE_ROLE_KEY=stale-service-key'
+    ].join('\n'));
+    fs.writeFileSync(path.join(tempRoot, '.vercel/.env.production.local'), [
+        'SUPABASE_URL=https://fresh.supabase.co',
+        'SUPABASE_SERVICE_ROLE_KEY=fresh-service-key'
+    ].join('\n'));
+
+    const env = loadPreviewEnv(getDefaultEnvFiles(tempRoot), {});
+
+    assert.equal(env.SUPABASE_URL, 'https://fresh.supabase.co');
+    assert.equal(env.SUPABASE_SERVICE_ROLE_KEY, 'fresh-service-key');
 });
 
 test('local preview server returns executable fallback script when public config is missing', async () => {
