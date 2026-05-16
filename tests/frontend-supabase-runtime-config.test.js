@@ -293,8 +293,11 @@ test('settings split Google One API into its own tab immediately after content s
 
 test('vercel config deploys main automatically while keeping codex preview branches disabled', () => {
     const vercelConfig = readVercelConfig();
+    const packageConfig = JSON.parse(readRepoFile('package.json'));
 
     assert.equal(vercelConfig.$schema, 'https://openapi.vercel.sh/vercel.json');
+    assert.equal(vercelConfig.buildCommand, 'npm run build:vercel');
+    assert.equal(packageConfig.scripts?.['build:vercel'], 'node api/_lib/static-asset-versioner.js');
     assert.equal(vercelConfig.git?.deploymentEnabled?.bot, false);
     assert.equal(vercelConfig.git?.deploymentEnabled?.main, true);
     assert.equal(vercelConfig.git?.deploymentEnabled?.['codex/*'], false);
