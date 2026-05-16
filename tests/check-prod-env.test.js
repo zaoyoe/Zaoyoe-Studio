@@ -6,9 +6,14 @@ const {
     buildLocalEnvironmentChecks,
     buildPlatformEnvChecklist,
     buildRuntimeConfigCheckResult,
+    buildShopCatalogProbeResult,
+    buildStaticAssetVersionCheckResult,
     classifySupabaseKey,
+    collectStaticAssetVersionsFromHtml,
+    normalizeExpectedStaticAssetVersion,
     parseArgs,
     parseRuntimeConfigScript,
+    resolveExpectedStaticAssetVersion,
     resolveAppBaseUrl,
     runAppRuntimeValidation
 } = require('../scripts/check-prod-env');
@@ -32,6 +37,8 @@ test('check-prod-env parseArgs collects app runtime flags', () => {
         '--check-app-runtime',
         '--runtime-only',
         '--base-url', 'https://www.zaoyoe.com',
+        '--expected-asset-version', 'd87130bd22f8',
+        '--expect-current-git-version',
         '--timeout-ms', '4321',
         '--allow-non-production'
     ]);
@@ -42,6 +49,8 @@ test('check-prod-env parseArgs collects app runtime flags', () => {
     assert.equal(options.checkAppRuntime, true);
     assert.equal(options.runtimeOnly, true);
     assert.equal(options.baseUrl, 'https://www.zaoyoe.com');
+    assert.equal(options.expectedAssetVersion, 'd87130bd22f8');
+    assert.equal(options.expectCurrentGitVersion, true);
     assert.equal(options.timeoutMs, 4321);
     assert.equal(options.allowNonProduction, true);
 });
@@ -151,6 +160,91 @@ test('resolveAppBaseUrl prefers explicit CLI value and normalizes trailing slash
         resolveAppBaseUrl({}, { PAYMENT_SMOKE_BASE_URL: 'preview.zaoyoe.com/' }),
         'https://preview.zaoyoe.com'
     );
+});
+
+test('static asset version helpers normalize and compare homepage versions', () => {
+    assert.equal(normalizeExpectedStaticAssetVersion('d87130bd22f8be419817c02e33b8abb0915d436f'), 'd87130bd22f8');
+    assert.deepEqual(
+        collectStaticAssetVersionsFromHtml([
+            '<script src="./js/site-config.js?v=d87130bd22f8"></script>',
+            '<link rel="stylesheet" href="./css/index.css?v=d87130bd22f8">'
+        ].join('\n')),
+        ['d87130bd22f8', 'd87130bd22f8']
+    );
+
+    const okResult = buildStaticAssetVersionCheckResult(
+        {
+            ok: true,
+            status: 200,
+            statusText: 'OK',
+            text: '<script src="./js/site-config.js?v=d87130bd22f8"></script>'
+        },
+        'd87130bd22f8be419817c02e33b8abb0915d436f'
+    );
+    assert.equal(okResult.ok, true);
+    assert.match(okResult.details, /expected=d87130bd22f8/);
+
+    const mismatch = buildStaticAssetVersionCheckResult(
+        {
+            ok: true,
+            status: 200,
+            statusText: 'OK',
+            text: '<script src="./js/site-config.js?v=21257c39264f"></script>'
+        },
+        'd87130bd22f8'
+    );
+    assert.equal(mismatch.ok, false);
+    assert.match(mismatch.details, /does not match expected/);
+});
+
+test('resolveExpectedStaticAssetVersion prefers explicit env and can fall back to git', () => {
+    assert.equal(
+        resolveExpectedStaticAssetVersion({
+            options: {},
+            env: {
+                EXPECTED_STATIC_ASSET_VERSION: 'd87130bd22f8'
+            }
+        }),
+        'd87130bd22f8'
+    );
+
+    assert.equal(
+        resolveExpectedStaticAssetVersion({
+            options: {
+                expectCurrentGitVersion: true
+            },
+            env: {},
+            execFileSyncImpl: () => '21257c39264f5c516f7c2b84d57c09608b7eb695\n'
+        }),
+        '21257c39264f'
+    );
+});
+
+test('buildShopCatalogProbeResult requires a successful catalog with active products', () => {
+    const okResult = buildShopCatalogProbeResult({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        payload: {
+            success: true,
+            products: [{ id: 'prod_1' }],
+            categories: [{ id: 'cat_1' }]
+        }
+    });
+    assert.equal(okResult.ok, true);
+    assert.match(okResult.details, /products=1 categories=1/);
+
+    const unavailable = buildShopCatalogProbeResult({
+        ok: false,
+        status: 503,
+        statusText: 'Service Unavailable',
+        payload: {
+            success: false,
+            message: '商城数据暂时不可用，请稍后刷新重试'
+        }
+    });
+    assert.equal(unavailable.ok, false);
+    assert.match(unavailable.details, /商城数据暂时不可用/);
 });
 
 test('parseRuntimeConfigScript extracts config or surfaces the inline loader error', () => {
@@ -294,8 +388,19 @@ test('runAppRuntimeValidation checks runtime config and payment config endpoint 
             SUPABASE_URL: 'https://demo.supabase.co',
             SUPABASE_PUBLISHABLE_KEY: 'publishable-key'
         },
+        expectedAssetVersion: 'd87130bd22f8',
         fetchImpl: async (url) => {
             calls.push(url);
+            if (String(url) === 'https://www.zaoyoe.com/') {
+                return createFetchResponse({
+                    status: 200,
+                    body: [
+                        '<script src="./js/site-config.js?v=d87130bd22f8"></script>',
+                        '<link rel="stylesheet" href="./css/index.css?v=d87130bd22f8">'
+                    ].join('\n')
+                });
+            }
+
             if (String(url).endsWith('/api/runtime/supabase-config')) {
                 return createFetchResponse({
                     status: 200,
@@ -304,6 +409,17 @@ test('runAppRuntimeValidation checks runtime config and payment config endpoint 
                         '  global.__ZAOYOE_SUPABASE_CONFIG__ = { url: "https://demo.supabase.co", publishableKey: "publishable-key" };',
                         '}(typeof window !== "undefined" ? window : globalThis));'
                     ].join('\n')
+                });
+            }
+
+            if (String(url).endsWith('/api/shop/catalog?site=cn')) {
+                return createFetchResponse({
+                    status: 200,
+                    body: JSON.stringify({
+                        success: true,
+                        products: [{ id: 'prod_1' }, { id: 'prod_2' }],
+                        categories: [{ id: 'cat_1' }]
+                    })
                 });
             }
 
@@ -334,17 +450,23 @@ test('runAppRuntimeValidation checks runtime config and payment config endpoint 
     });
 
     assert.deepEqual(calls, [
+        'https://www.zaoyoe.com/',
         'https://www.zaoyoe.com/api/runtime/supabase-config',
+        'https://www.zaoyoe.com/api/shop/catalog?site=cn',
         'https://www.zaoyoe.com/api/payments/config',
         'https://www.zaoyoe.com/api/payments/auth-check'
     ]);
     assert.equal(checks[0].label, 'app runtime base url');
-    assert.equal(checks[1].label, 'app runtime Supabase config');
+    assert.equal(checks[1].label, 'app static asset version');
     assert.equal(checks[1].ok, true);
-    assert.equal(checks[2].label, 'app payment config endpoint');
+    assert.equal(checks[2].label, 'app runtime Supabase config');
     assert.equal(checks[2].ok, true);
-    assert.equal(checks[3].label, 'app payment auth-check endpoint');
+    assert.equal(checks[3].label, 'app shop catalog endpoint');
     assert.equal(checks[3].ok, true);
+    assert.equal(checks[4].label, 'app payment config endpoint');
+    assert.equal(checks[4].ok, true);
+    assert.equal(checks[5].label, 'app payment auth-check endpoint');
+    assert.equal(checks[5].ok, true);
 });
 
 test('runAppRuntimeValidation reports remote runtime loader failures clearly', async () => {
@@ -354,7 +476,15 @@ test('runAppRuntimeValidation reports remote runtime loader failures clearly', a
             SUPABASE_URL: 'https://demo.supabase.co',
             SUPABASE_PUBLISHABLE_KEY: 'publishable-key'
         },
+        expectedAssetVersion: 'd87130bd22f8',
         fetchImpl: async (url) => {
+            if (String(url) === 'https://www.zaoyoe.com/') {
+                return createFetchResponse({
+                    status: 200,
+                    body: '<script src="./js/site-config.js?v=21257c39264f"></script>'
+                });
+            }
+
             if (String(url).endsWith('/api/runtime/supabase-config')) {
                 return createFetchResponse({
                     status: 200,
@@ -364,6 +494,17 @@ test('runAppRuntimeValidation reports remote runtime loader failures clearly', a
                         '  global.__ZAOYOE_SUPABASE_CONFIG__ = null;',
                         '}(typeof window !== "undefined" ? window : globalThis));'
                     ].join('\n')
+                });
+            }
+
+            if (String(url).endsWith('/api/shop/catalog?site=cn')) {
+                return createFetchResponse({
+                    status: 503,
+                    statusText: 'Service Unavailable',
+                    body: JSON.stringify({
+                        success: false,
+                        message: '商城数据暂时不可用，请稍后刷新重试'
+                    })
                 });
             }
 
@@ -390,9 +531,13 @@ test('runAppRuntimeValidation reports remote runtime loader failures clearly', a
     });
 
     assert.equal(checks[1].ok, false);
-    assert.match(checks[1].details, /Missing required environment variable: SUPABASE_PUBLISHABLE_KEY/);
+    assert.match(checks[1].details, /does not match expected/);
     assert.equal(checks[2].ok, false);
-    assert.match(checks[2].details, /broken payment config/);
+    assert.match(checks[2].details, /Missing required environment variable: SUPABASE_PUBLISHABLE_KEY/);
     assert.equal(checks[3].ok, false);
-    assert.match(checks[3].details, /redeploy required/);
+    assert.match(checks[3].details, /商城数据暂时不可用/);
+    assert.equal(checks[4].ok, false);
+    assert.match(checks[4].details, /broken payment config/);
+    assert.equal(checks[5].ok, false);
+    assert.match(checks[5].details, /redeploy required/);
 });
