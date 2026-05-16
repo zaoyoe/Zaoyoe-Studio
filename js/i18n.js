@@ -9,7 +9,7 @@
     const I18N_STORAGE_KEY = 'zaoyoe_language';
     const DEFAULT_LANG = 'zh';
     const SUPPORTED_LANGS = ['zh', 'en'];
-    const I18N_ASSET_VERSION_FALLBACK = '20260512_NAV_AUTH_I18N_CACHE_1';
+    const I18N_ASSET_VERSION_FALLBACK = '20260516_HOME_AUTH_CHAT_CACHE_BUST_1';
     const I18N_ASSET_VERSION = (() => {
         try {
             const scriptUrl = new URL(document.currentScript?.src || '', window.location.href);
