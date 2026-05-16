@@ -80,3 +80,4 @@ supabase/.temp/
 # dataconnect generated files
 .dataconnect
 .vercel
+.vercel-static/

@@ -3,6 +3,7 @@ node_modules/
 .DS_Store
 *.log
 .vercel
+.vercel-static/
 .git
 .github/
 
@@ -119,3 +120,18 @@ api/wallet/overview.js
 api/wallet/prompt-titles.js
 api/wallet/transactions.js
 api/wallet/verify-log.js
+
+# Function bundle inputs. These stay out of the static site because Vercel
+# serves only .vercel-static, but they must be present for includeFiles.
+!docs/
+!docs/*.md
+!scripts/
+!scripts/*.js
+!server/
+server/*
+!server/api-handlers/
+!server/api-handlers/**
+!supabase/
+supabase/*
+!supabase/migrations/
+!supabase/migrations/*.sql
