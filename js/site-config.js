@@ -40,6 +40,65 @@
         'products',
         'prompts'
     ]);
+    const LEGACY_SERVICE_WORKER_CACHE_RE = /^(?:prompts-gallery|static|images)-v/i;
+
+    function isSameOriginUrl(rawUrl) {
+        try {
+            return new URL(rawUrl, window.location.origin).origin === window.location.origin;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    function retireLegacyServiceWorkerCaches() {
+        if (!('caches' in window)) {
+            return Promise.resolve();
+        }
+
+        return window.caches.keys()
+            .then(cacheNames => Promise.all(
+                cacheNames
+                    .filter(cacheName => LEGACY_SERVICE_WORKER_CACHE_RE.test(String(cacheName || '')))
+                    .map(cacheName => window.caches.delete(cacheName))
+            ))
+            .catch(error => {
+                console.warn('🌐 [SiteConfig] Legacy cache cleanup failed:', error);
+            });
+    }
+
+    function retireLegacyServiceWorkers() {
+        retireLegacyServiceWorkerCaches();
+
+        if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+            return;
+        }
+
+        navigator.serviceWorker.getRegistrations()
+            .then(registrations => Promise.all(registrations.map(registration => {
+                const scope = String(registration?.scope || '');
+                const scriptURL = String(
+                    registration?.active?.scriptURL
+                    || registration?.waiting?.scriptURL
+                    || registration?.installing?.scriptURL
+                    || ''
+                );
+
+                if (!isSameOriginUrl(scope) || (scriptURL && !isSameOriginUrl(scriptURL))) {
+                    return false;
+                }
+
+                return registration.unregister();
+            })))
+            .then(results => {
+                if (results.some(Boolean)) {
+                    return retireLegacyServiceWorkerCaches();
+                }
+                return null;
+            })
+            .catch(error => {
+                console.warn('🌐 [SiteConfig] Service worker cleanup failed:', error);
+            });
+    }
 
     /**
      * 检测当前站点
@@ -203,6 +262,7 @@
 
     // 暴露到全局
     window.SiteConfig = SiteConfig;
+    retireLegacyServiceWorkers();
 
     console.log(`🌐 [SiteConfig] Initialized: site=${SiteConfig.site}, currency=${SiteConfig.currency}`);
 })();
