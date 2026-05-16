@@ -2,9 +2,103 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 function readRepoFile(relativePath) {
     return fs.readFileSync(path.resolve(__dirname, '..', relativePath), 'utf8');
+}
+
+function encodeBase64Url(value) {
+    return Buffer.from(JSON.stringify(value)).toString('base64url');
+}
+
+function createTestJwt(payload = {}) {
+    return [
+        encodeBase64Url({ alg: 'none', typ: 'JWT' }),
+        encodeBase64Url(payload),
+        'signature'
+    ].join('.');
+}
+
+function createLocalStorage(initialValues = {}) {
+    const store = new Map(Object.entries(initialValues));
+    return {
+        get length() {
+            return store.size;
+        },
+        key(index) {
+            return Array.from(store.keys())[index] || null;
+        },
+        getItem(key) {
+            return store.has(key) ? store.get(key) : null;
+        },
+        setItem(key, value) {
+            store.set(key, String(value));
+        },
+        removeItem(key) {
+            store.delete(key);
+        }
+    };
+}
+
+function loadPointsServiceContext({ session = null, persistedSession = null, refreshSession } = {}) {
+    const source = readRepoFile('js/services/PointsService.js');
+    const fetchCalls = [];
+    const context = {
+        console,
+        URLSearchParams,
+        setTimeout,
+        clearTimeout,
+        fetch: async (url, init = {}) => {
+            fetchCalls.push({ url, init });
+            return {
+                ok: true,
+                async json() {
+                    return { success: true };
+                }
+            };
+        },
+        window: {
+            SiteConfig: { site: 'cn' },
+            location: { hostname: 'www.zaoyoe.com' },
+            setTimeout,
+            clearTimeout,
+            atob(value) {
+                return Buffer.from(value, 'base64').toString('binary');
+            },
+            localStorage: createLocalStorage(persistedSession ? {
+                'sb-test-auth-token': JSON.stringify({ currentSession: persistedSession })
+            } : {}),
+            supabaseClient: {
+                auth: {
+                    async getSession() {
+                        return { data: { session } };
+                    },
+                    onAuthStateChange() {},
+                    refreshSession
+                },
+                from() {
+                    return {
+                        select() {
+                            return this;
+                        },
+                        eq() {
+                            return this;
+                        },
+                        order() {
+                            return Promise.resolve({ data: [], error: null });
+                        }
+                    };
+                }
+            }
+        }
+    };
+    context.globalThis = context;
+    vm.runInNewContext(source, context);
+    return {
+        pointsService: context.window.PointsService,
+        fetchCalls
+    };
 }
 
 test('PointsService routes wallet overview and transaction reads through wallet APIs', () => {
@@ -40,4 +134,73 @@ test('WalletModal main browse and search paths use PointsService transaction API
     assert.equal(source.includes('restoreWalletBalanceFromCache({ animate:'), true, 'WalletModal should hydrate the balance view from cache through the shared restore helper');
     assert.equal(source.includes('this.restoreWalletBalanceFromCache({ animate: true })'), true, 'WalletModal should restore cached balance with the number animation when opening');
     assert.equal(source.includes('const hadCachedBalance = this.getCurrentWalletTotalBalance() !== null'), true, 'WalletModal should avoid stomping the opening animation with a second cache hydration during load');
+});
+
+test('PointsService wallet reads fall back to the guarded persisted Supabase session', async () => {
+    const expiresAt = Math.floor(Date.now() / 1000) + 3600;
+    const token = createTestJwt({
+        sub: 'user-persisted-1',
+        email: 'wallet@example.com',
+        exp: expiresAt
+    });
+    const { pointsService, fetchCalls } = loadPointsServiceContext({
+        session: null,
+        persistedSession: {
+            access_token: token,
+            refresh_token: 'refresh-persisted',
+            user: { id: 'user-persisted-1', email: 'wallet@example.com' },
+            expires_at: expiresAt
+        }
+    });
+
+    const context = await pointsService._getSessionContext();
+    assert.equal(context.userId, 'user-persisted-1');
+    assert.equal(context.accessToken, token);
+
+    await pointsService._fetchWalletJson('/api/wallet/overview', { site: 'cn' });
+    assert.equal(fetchCalls.length, 1);
+    assert.equal(fetchCalls[0].url, '/api/wallet/overview?site=cn');
+    assert.equal(fetchCalls[0].init.headers.Authorization, `Bearer ${token}`);
+});
+
+test('PointsService refreshes an expired wallet token before calling wallet APIs', async () => {
+    const now = Math.floor(Date.now() / 1000);
+    const expiredToken = createTestJwt({
+        sub: 'user-refresh-1',
+        email: 'refresh@example.com',
+        exp: now - 60
+    });
+    const freshToken = createTestJwt({
+        sub: 'user-refresh-1',
+        email: 'refresh@example.com',
+        exp: now + 3600
+    });
+    let refreshCalls = 0;
+    const { pointsService, fetchCalls } = loadPointsServiceContext({
+        session: {
+            access_token: expiredToken,
+            refresh_token: 'refresh-token-1',
+            user: { id: 'user-refresh-1', email: 'refresh@example.com' },
+            expires_at: now - 60
+        },
+        refreshSession: async (payload) => {
+            refreshCalls += 1;
+            assert.equal(payload.refresh_token, 'refresh-token-1');
+            return {
+                data: {
+                    session: {
+                        access_token: freshToken,
+                        refresh_token: 'refresh-token-2',
+                        user: { id: 'user-refresh-1', email: 'refresh@example.com' },
+                        expires_at: now + 3600
+                    }
+                }
+            };
+        }
+    });
+
+    await pointsService._fetchWalletJson('/api/wallet/overview', { site: 'cn' });
+    assert.equal(refreshCalls, 1);
+    assert.equal(fetchCalls.length, 1);
+    assert.equal(fetchCalls[0].init.headers.Authorization, `Bearer ${freshToken}`);
 });

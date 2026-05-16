@@ -21,10 +21,128 @@
 
     const WALLET_DISCOUNT_ASSETS_CACHE_TTL_MS = 30_000;
     const WALLET_SHOP_ORDER_DETAIL_CACHE_TTL_MS = 60_000;
+    const WALLET_AUTH_TOKEN_REFRESH_SKEW_SECONDS = 60;
+    const WALLET_AUTH_RESOLVE_TIMEOUT_MS = 4_000;
 
     function isUnsafeDirectRechargeAllowed() {
         const host = String(window.location.hostname || '').toLowerCase();
         return host === 'localhost' || host === '127.0.0.1';
+    }
+
+    function resolveWithTimeout(factory, timeoutMs = WALLET_AUTH_RESOLVE_TIMEOUT_MS, fallback = null) {
+        let timeoutId = 0;
+        return Promise.race([
+            Promise.resolve().then(factory),
+            new Promise((resolve) => {
+                timeoutId = window.setTimeout(() => resolve(fallback), timeoutMs);
+            })
+        ]).catch(() => fallback).finally(() => {
+            if (timeoutId) {
+                window.clearTimeout(timeoutId);
+            }
+        });
+    }
+
+    function decodeJwtPayload(token = '') {
+        const raw = String(token || '').trim();
+        if (!raw || raw.split('.').length < 2) {
+            return null;
+        }
+
+        try {
+            const encoded = raw.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+            const padded = encoded + '='.repeat((4 - (encoded.length % 4)) % 4);
+            const decode = typeof window.atob === 'function'
+                ? window.atob.bind(window)
+                : (typeof atob === 'function' ? atob : null);
+            if (!decode) {
+                return null;
+            }
+            return JSON.parse(decode(padded));
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function isUsableAccessToken(token = '') {
+        const raw = String(token || '').trim();
+        if (!raw) {
+            return false;
+        }
+
+        const payload = decodeJwtPayload(raw);
+        if (!payload?.exp) {
+            return raw.split('.').length >= 3 && raw.length > 40;
+        }
+
+        const nowSeconds = Math.floor(Date.now() / 1000);
+        return Number(payload.exp) > (nowSeconds + WALLET_AUTH_TOKEN_REFRESH_SKEW_SECONDS);
+    }
+
+    function normalizeSessionCandidate(value = null) {
+        if (!value || typeof value !== 'object') {
+            return null;
+        }
+        return value.currentSession || value.session || value;
+    }
+
+    function getSessionAccessToken(session = null) {
+        return String(session?.access_token || '').trim();
+    }
+
+    function getSessionUserId(session = null) {
+        const directUserId = String(session?.user?.id || session?.user_id || '').trim();
+        if (directUserId) {
+            return directUserId;
+        }
+
+        const payload = decodeJwtPayload(getSessionAccessToken(session));
+        return String(payload?.sub || '').trim();
+    }
+
+    function readPersistedSupabaseSession() {
+        try {
+            const storage = window.localStorage;
+            if (!storage) {
+                return null;
+            }
+
+            for (let index = 0; index < storage.length; index += 1) {
+                const key = storage.key(index);
+                if (!key || !key.startsWith('sb-') || !key.endsWith('-auth-token')) {
+                    continue;
+                }
+
+                const raw = storage.getItem(key);
+                if (!raw) {
+                    continue;
+                }
+
+                const session = normalizeSessionCandidate(JSON.parse(raw));
+                if (getSessionAccessToken(session)) {
+                    return session;
+                }
+            }
+        } catch (_) {
+            return null;
+        }
+
+        return null;
+    }
+
+    async function refreshSupabaseSession(session = null) {
+        const refreshToken = String(session?.refresh_token || '').trim();
+        if (!refreshToken || typeof supabase.auth?.refreshSession !== 'function') {
+            return null;
+        }
+
+        const result = await resolveWithTimeout(
+            () => supabase.auth.refreshSession({ refresh_token: refreshToken }),
+            WALLET_AUTH_RESOLVE_TIMEOUT_MS,
+            null
+        );
+        const refreshedSession = result?.data?.session || null;
+        return isUsableAccessToken(getSessionAccessToken(refreshedSession)) ? refreshedSession : null;
     }
 
     function isSimulatedPaymentAllowed(options = {}) {
@@ -112,8 +230,52 @@
         },
 
         async _getSessionContext() {
-            const { data: { session } } = await supabase.auth.getSession();
-            const nextUserId = session?.user?.id || null;
+            const sessionResult = await resolveWithTimeout(
+                () => supabase.auth.getSession(),
+                WALLET_AUTH_RESOLVE_TIMEOUT_MS,
+                null
+            );
+            let session = sessionResult?.data?.session || null;
+            const persistedSession = readPersistedSupabaseSession();
+            let accessToken = getSessionAccessToken(session);
+            let userId = getSessionUserId(session);
+
+            if (!isUsableAccessToken(accessToken)) {
+                const refreshedSession = await refreshSupabaseSession(session || persistedSession);
+                if (refreshedSession) {
+                    session = refreshedSession;
+                    accessToken = getSessionAccessToken(refreshedSession);
+                    userId = getSessionUserId(refreshedSession);
+                }
+            }
+
+            if (!isUsableAccessToken(accessToken) && typeof supabase.accessToken === 'function') {
+                const runtimeAccessToken = String(await resolveWithTimeout(
+                    () => supabase.accessToken(),
+                    WALLET_AUTH_RESOLVE_TIMEOUT_MS,
+                    ''
+                ) || '').trim();
+                if (isUsableAccessToken(runtimeAccessToken)) {
+                    accessToken = runtimeAccessToken;
+                    userId = userId || getSessionUserId(persistedSession) || String(decodeJwtPayload(runtimeAccessToken)?.sub || '').trim();
+                }
+            }
+
+            if (!isUsableAccessToken(accessToken) && persistedSession) {
+                const persistedAccessToken = getSessionAccessToken(persistedSession);
+                if (isUsableAccessToken(persistedAccessToken)) {
+                    session = session || persistedSession;
+                    accessToken = persistedAccessToken;
+                    userId = userId || getSessionUserId(persistedSession);
+                }
+            }
+
+            if (!isUsableAccessToken(accessToken)) {
+                accessToken = '';
+                userId = '';
+            }
+
+            const nextUserId = userId || null;
 
             if (nextUserId !== this._cachedUserId) {
                 this.clearWalletReadCaches();
@@ -123,7 +285,7 @@
 
             return {
                 session,
-                accessToken: session?.access_token || '',
+                accessToken,
                 userId: nextUserId
             };
         },
@@ -753,7 +915,7 @@
 
     if (typeof supabase.auth?.onAuthStateChange === 'function') {
         supabase.auth.onAuthStateChange((_event, session) => {
-            const nextUserId = session?.user?.id || null;
+            const nextUserId = getSessionUserId(session) || null;
             if (nextUserId !== PointsService._cachedUserId) {
                 PointsService.clearWalletReadCaches();
             }
