@@ -118,10 +118,23 @@ test('PointsService routes wallet overview and transaction reads through wallet 
 test('Vercel ignore rules do not hide the public PointsService bundle', () => {
     const ignoreSource = readRepoFile('.vercelignore');
     const walletLoaderSource = readRepoFile('js/wallet-modal-loader.js');
+    const rootOnlyPrivateDirs = [
+        'server',
+        'services',
+        'supabase',
+        'tests',
+        'tools',
+        'scripts',
+        'docs',
+        'cloud-functions',
+        'functions'
+    ];
 
     assert.match(walletLoaderSource, /POINTS_SERVICE_SRC = 'js\/services\/PointsService\.js\?v=/);
-    assert.equal(/^services\/$/m.test(ignoreSource), false, 'services/ would also ignore js/services on Vercel');
-    assert.equal(/^\/services\/$/m.test(ignoreSource), true, 'root services directory should stay private without hiding js/services');
+    for (const dirname of rootOnlyPrivateDirs) {
+        assert.equal(new RegExp(`^${dirname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/$`, 'm').test(ignoreSource), false, `${dirname}/ would also ignore public nested ${dirname} asset directories on Vercel`);
+        assert.equal(new RegExp(`^\\/${dirname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\/$`, 'm').test(ignoreSource), true, `root ${dirname} directory should stay private without hiding public nested ${dirname} assets`);
+    }
 });
 
 test('WalletModal main browse and search paths use PointsService transaction API instead of direct wallet table reads', () => {
