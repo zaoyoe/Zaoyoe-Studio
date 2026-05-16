@@ -18,7 +18,7 @@ node_modules/
 
 # Backend/source-only directories that must never be static assets.
 server/
-services/
+/services/
 supabase/
 tests/
 tools/
