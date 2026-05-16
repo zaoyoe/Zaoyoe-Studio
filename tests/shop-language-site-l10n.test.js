@@ -75,12 +75,42 @@ test('site config keeps shared image records canonical while exposing intl CDN d
     assert.match(framerHomeSource, /getZaoyoeAssetCdnOrigin\(\)/);
     assert.match(chatWidgetSource, /window\.SiteConfig\?\.normalizeAssetUrlForCurrentSite\?\.\(parsed\.href\)/);
     assert.ok(
-        adminStudioHtml.indexOf('./js/site-config.js?v=20260510_SITE_ASSET_CDN_1') < adminStudioHtml.indexOf('admin-studio.js?v='),
+        adminStudioHtml.indexOf('./js/site-config.js?v=20260516_SERVICE_WORKER_RETIRE_1') < adminStudioHtml.indexOf('admin-studio.js?v='),
         'admin studio should load site config before admin gallery image rendering'
     );
     assert.ok(
-        adminStudioHtml.indexOf('./js/site-config.js?v=20260510_SITE_ASSET_CDN_1') < adminStudioHtml.indexOf('js/admin-shop.js?v='),
+        adminStudioHtml.indexOf('./js/site-config.js?v=20260516_SERVICE_WORKER_RETIRE_1') < adminStudioHtml.indexOf('js/admin-shop.js?v='),
         'admin studio should load site config before admin shop image rendering'
+    );
+});
+
+test('site config retires legacy service worker caches before they can pin stale shells', () => {
+    const siteConfigSource = readRepoFile('js/site-config.js');
+    const indexSource = readRepoFile('index.html');
+
+    assert.match(
+        siteConfigSource,
+        /LEGACY_SERVICE_WORKER_CACHE_RE = \/\^\(\?:prompts-gallery\|static\|images\)-v\/i/,
+        'SiteConfig should target the historical service worker cache families'
+    );
+    assert.match(
+        siteConfigSource,
+        /navigator\.serviceWorker\.getRegistrations\(\)/,
+        'SiteConfig should find existing same-origin service worker registrations'
+    );
+    assert.match(
+        siteConfigSource,
+        /registration\.unregister\(\)/,
+        'SiteConfig should unregister legacy same-origin service workers'
+    );
+    assert.match(
+        siteConfigSource,
+        /window\.caches\.delete\(cacheName\)/,
+        'SiteConfig should delete stale Cache Storage entries'
+    );
+    assert.ok(
+        indexSource.includes('./js/site-config.js?v=20260516_SERVICE_WORKER_RETIRE_1'),
+        'homepage should cache-bust the service worker retirement runtime'
     );
 });
 

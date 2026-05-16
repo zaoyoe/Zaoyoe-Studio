@@ -558,7 +558,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
         '/api/runtime/supabase-config',
         './js/runtime-supabase-config.js?v=20260510_REALTIME_GRACEFUL_FALLBACK_1',
         './supabase-client.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1',
-        './js/site-config.js?v=20260510_SITE_ASSET_CDN_1',
+        './js/site-config.js?v=20260516_SERVICE_WORKER_RETIRE_1',
         './js/homepage-contract.js?v=20260512_HOMEPAGE_CONTRACT_VERIFY_I18N_1',
         './js/section-visibility.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
         './js/i18n.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1',

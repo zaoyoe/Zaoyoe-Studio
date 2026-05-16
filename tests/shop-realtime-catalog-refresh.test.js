@@ -44,13 +44,23 @@ test('shop realtime catalog refresh bypasses stale HTTP and worker caches', () =
     );
     assert.match(
         serviceWorker,
-        /url\.pathname\.startsWith\('\/api\/'\)/,
-        'the service worker should recognize dynamic API requests'
+        /LEGACY_CACHE_NAME_RE = \/\^\(\?:prompts-gallery\|static\|images\)-v\/i/,
+        'legacy worker cleanup should target the historical static/image cache families'
     );
     assert.match(
         serviceWorker,
-        /isApiRequest \|\| event\.request\.cache === 'no-store'/,
-        'the service worker should not satisfy API or no-store requests from its static cache'
+        /self\.registration\.unregister\(\)/,
+        'the legacy service worker should unregister itself after cleanup'
+    );
+    assert.doesNotMatch(
+        serviceWorker,
+        /addEventListener\('fetch'/,
+        'the retired service worker should not intercept runtime requests'
+    );
+    assert.match(
+        shopHtml,
+        /js\/site-config\.js\?v=20260516_SERVICE_WORKER_RETIRE_1/,
+        'shop.html should load the cache cleanup runtime with a fresh version key'
     );
     assert.equal(
         shopHtml.includes('js/shop-client.js?v=20260513_SHOP_MOBILE_TAP_FALLBACK_1'),
