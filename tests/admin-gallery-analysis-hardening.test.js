@@ -230,6 +230,7 @@ test('vercel admin function gets an explicit longer max duration', () => {
 
 test('vercel recovery readiness functions include non-runtime audit assets', () => {
     const config = JSON.parse(readRepoFile('vercel.json'));
+    const vercelIgnore = readRepoFile('.vercelignore');
     const requiredGlobParts = [
         'api/_lib/*.js',
         'api/public.js',
@@ -255,4 +256,10 @@ test('vercel recovery readiness functions include non-runtime audit assets', () 
             );
         }
     }
+
+    assert.equal(config.outputDirectory, '.vercel-static');
+    assert.match(vercelIgnore, /!server\/api-handlers\/\*\*/);
+    assert.match(vercelIgnore, /!scripts\/\*\.js/);
+    assert.match(vercelIgnore, /!docs\/\*\.md/);
+    assert.match(vercelIgnore, /!supabase\/migrations\/\*\.sql/);
 });

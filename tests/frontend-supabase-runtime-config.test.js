@@ -297,7 +297,8 @@ test('vercel config deploys main automatically while keeping codex preview branc
 
     assert.equal(vercelConfig.$schema, 'https://openapi.vercel.sh/vercel.json');
     assert.equal(vercelConfig.buildCommand, 'npm run build:vercel');
-    assert.equal(packageConfig.scripts?.['build:vercel'], 'node api/_lib/static-asset-versioner.js');
+    assert.equal(vercelConfig.outputDirectory, '.vercel-static');
+    assert.equal(packageConfig.scripts?.['build:vercel'], 'node api/_lib/vercel-build.js');
     assert.equal(vercelConfig.git?.deploymentEnabled?.bot, false);
     assert.equal(vercelConfig.git?.deploymentEnabled?.main, true);
     assert.equal(vercelConfig.git?.deploymentEnabled?.['codex/*'], false);
