@@ -620,6 +620,12 @@ html[lang^="en"] .hero-subtitle {
     transform: translateY(0);
 }
 
+/* 20260517_HOME_SHOP_TITLE_FIRST_1: keep shop cards hidden until the title has painted. */
+.shop-carousel-wrapper[data-home-shop-staged="pending"] {
+    opacity: 0;
+    transform: translateY(12px);
+}
+
 .hero-noise-overlay {
     position: absolute;
     inset: 0;

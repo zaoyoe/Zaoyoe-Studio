@@ -4619,12 +4619,12 @@ const FramerHome = {
     });
 
     section.innerHTML = `
-      <div class="section-header fade-in-up">
+      <div class="section-header fade-in-up visible" data-home-shop-header="ready">
         <h2 class="section-title">${escapeHomeHtml(sectionTitle)}</h2>
         <p class="section-subtitle">${escapeHomeHtml(sectionSubtitle)}</p>
       </div>
       
-      <div class="shop-carousel-wrapper">
+      <div class="shop-carousel-wrapper" data-home-shop-staged="pending">
         <div class="shop-carousel-track" data-home-animation-duration="" data-home-speed-value="${shopSpeed}">
           <div class="shop-carousel-group" data-home-shop-cycle="1">
             ${cycleProducts.map(renderShopCard).join('')}
@@ -4676,6 +4676,7 @@ const FramerHome = {
         '--home-shop-cycle-width': cycleWidth ? `${cycleWidth}px` : ''
       });
     });
+    this.scheduleHomeShopCarouselReveal(section);
     section.querySelectorAll('[data-home-shop-id]').forEach((card) => {
       card.addEventListener('click', () => {
         trackHomepageAnalyticsEvent('homepage_shop_click', {
@@ -4689,6 +4690,29 @@ const FramerHome = {
       });
     });
     observeHomepageSectionImpression(section, 'shop');
+  },
+
+  scheduleHomeShopCarouselReveal(section) {
+    const wrapper = section?.querySelector?.('[data-home-shop-staged="pending"]');
+    if (!wrapper) {
+      return;
+    }
+
+    const reveal = () => {
+      if (!wrapper.isConnected || wrapper.dataset.homeShopStaged !== 'pending') {
+        return;
+      }
+      wrapper.dataset.homeShopStaged = 'ready';
+    };
+
+    if (typeof window.requestAnimationFrame === 'function') {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(reveal);
+      });
+      return;
+    }
+
+    window.setTimeout(reveal, 80);
   },
 
   renderGongyi() {
