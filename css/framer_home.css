@@ -3736,6 +3736,7 @@ body.home-page .framer-footer {
 
 #guestbook-section {
     --home-guestbook-scroll-progress: 0;
+    --home-guestbook-card-outset: 220px;
     --home-guestbook-card-bg: #182634;
     --home-guestbook-card-border: rgba(255, 255, 255, 0.08);
     --home-guestbook-card-text: rgba(241, 245, 249, 0.92);
@@ -4028,7 +4029,7 @@ body.home-page .framer-footer {
 
 #guestbook-section .home-guestbook-card--l1 {
     top: 56px;
-    left: 72px;
+    left: calc(72px - var(--home-guestbook-card-outset, 0px));
     width: 212px;
     z-index: 1;
     --card-rotate-start: -11;
@@ -4040,7 +4041,7 @@ body.home-page .framer-footer {
 
 #guestbook-section .home-guestbook-card--l2 {
     top: 344px;
-    left: 132px;
+    left: calc(132px - var(--home-guestbook-card-outset, 0px));
     width: 260px;
     z-index: 3;
     --card-rotate-start: 8;
@@ -4051,7 +4052,7 @@ body.home-page .framer-footer {
 }
 
 #guestbook-section .home-guestbook-card--l3 {
-    left: 120px;
+    left: calc(120px - var(--home-guestbook-card-outset, 0px));
     bottom: 26px;
     width: 220px;
     z-index: 2;
@@ -4064,7 +4065,7 @@ body.home-page .framer-footer {
 
 #guestbook-section .home-guestbook-card--r1 {
     top: 92px;
-    right: 126px;
+    right: calc(126px - var(--home-guestbook-card-outset, 0px));
     width: 180px;
     z-index: 2;
     --card-rotate-start: 6;
@@ -4076,7 +4077,7 @@ body.home-page .framer-footer {
 
 #guestbook-section .home-guestbook-card--r2 {
     top: 286px;
-    right: 78px;
+    right: calc(78px - var(--home-guestbook-card-outset, 0px));
     width: 238px;
     z-index: 4;
     --card-rotate-start: -9;
@@ -4087,7 +4088,7 @@ body.home-page .framer-footer {
 }
 
 #guestbook-section .home-guestbook-card--r3 {
-    right: 96px;
+    right: calc(96px - var(--home-guestbook-card-outset, 0px));
     bottom: 42px;
     width: 210px;
     z-index: 1;
@@ -4104,6 +4105,7 @@ body.home-page .framer-footer {
 
 @media (max-width: 1500px) {
     #guestbook-section {
+        --home-guestbook-card-outset: 84px;
         max-width: min(1540px, calc(100vw - 10px));
     }
 
@@ -4116,42 +4118,42 @@ body.home-page .framer-footer {
     }
 
     #guestbook-section .home-guestbook-card--l1 {
-        left: 68px;
+        left: calc(68px - var(--home-guestbook-card-outset, 0px));
         top: 64px;
         width: 184px;
         --card-fly-distance: 356px;
     }
 
     #guestbook-section .home-guestbook-card--l2 {
-        left: 104px;
+        left: calc(104px - var(--home-guestbook-card-outset, 0px));
         top: 312px;
         width: 226px;
         --card-fly-distance: 286px;
     }
 
     #guestbook-section .home-guestbook-card--l3 {
-        left: 86px;
+        left: calc(86px - var(--home-guestbook-card-outset, 0px));
         bottom: 34px;
         width: 196px;
         --card-fly-distance: 382px;
     }
 
     #guestbook-section .home-guestbook-card--r1 {
-        right: 104px;
+        right: calc(104px - var(--home-guestbook-card-outset, 0px));
         top: 118px;
         width: 160px;
         --card-fly-distance: 278px;
     }
 
     #guestbook-section .home-guestbook-card--r2 {
-        right: 64px;
+        right: calc(64px - var(--home-guestbook-card-outset, 0px));
         top: 284px;
         width: 212px;
         --card-fly-distance: 340px;
     }
 
     #guestbook-section .home-guestbook-card--r3 {
-        right: 82px;
+        right: calc(82px - var(--home-guestbook-card-outset, 0px));
         bottom: 44px;
         width: 182px;
         --card-fly-distance: 266px;
@@ -4160,6 +4162,7 @@ body.home-page .framer-footer {
 
 @media (max-width: 1180px) {
     #guestbook-section {
+        --home-guestbook-card-outset: 34px;
         max-width: min(1180px, calc(100vw - 16px));
     }
 
@@ -4197,42 +4200,42 @@ body.home-page .framer-footer {
     }
 
     #guestbook-section .home-guestbook-card--l1 {
-        left: 42px;
+        left: calc(42px - var(--home-guestbook-card-outset, 0px));
         top: 60px;
         width: 166px;
         --card-fly-distance: 280px;
     }
 
     #guestbook-section .home-guestbook-card--l2 {
-        left: 64px;
+        left: calc(64px - var(--home-guestbook-card-outset, 0px));
         top: 286px;
         width: 208px;
         --card-fly-distance: 220px;
     }
 
     #guestbook-section .home-guestbook-card--l3 {
-        left: 52px;
+        left: calc(52px - var(--home-guestbook-card-outset, 0px));
         bottom: 30px;
         width: 170px;
         --card-fly-distance: 300px;
     }
 
     #guestbook-section .home-guestbook-card--r1 {
-        right: 56px;
+        right: calc(56px - var(--home-guestbook-card-outset, 0px));
         top: 94px;
         width: 146px;
         --card-fly-distance: 220px;
     }
 
     #guestbook-section .home-guestbook-card--r2 {
-        right: 40px;
+        right: calc(40px - var(--home-guestbook-card-outset, 0px));
         top: 252px;
         width: 192px;
         --card-fly-distance: 260px;
     }
 
     #guestbook-section .home-guestbook-card--r3 {
-        right: 48px;
+        right: calc(48px - var(--home-guestbook-card-outset, 0px));
         bottom: 42px;
         width: 162px;
         --card-fly-distance: 212px;
@@ -4241,6 +4244,7 @@ body.home-page .framer-footer {
 
 @media (max-width: 980px) {
     #guestbook-section {
+        --home-guestbook-card-outset: 8px;
         max-width: min(980px, calc(100vw - 18px));
         padding-top: 48px;
         padding-bottom: 76px;
@@ -4290,42 +4294,42 @@ body.home-page .framer-footer {
     }
 
     #guestbook-section .home-guestbook-card--l1 {
-        left: 24px;
+        left: calc(24px - var(--home-guestbook-card-outset, 0px));
         top: 46px;
         width: 174px;
         --card-fly-distance: 210px;
     }
 
     #guestbook-section .home-guestbook-card--l2 {
-        left: 42px;
+        left: calc(42px - var(--home-guestbook-card-outset, 0px));
         top: 248px;
         width: 220px;
         --card-fly-distance: 164px;
     }
 
     #guestbook-section .home-guestbook-card--l3 {
-        left: 30px;
+        left: calc(30px - var(--home-guestbook-card-outset, 0px));
         bottom: 28px;
         width: 180px;
         --card-fly-distance: 224px;
     }
 
     #guestbook-section .home-guestbook-card--r1 {
-        right: 36px;
+        right: calc(36px - var(--home-guestbook-card-outset, 0px));
         top: 74px;
         width: 156px;
         --card-fly-distance: 176px;
     }
 
     #guestbook-section .home-guestbook-card--r2 {
-        right: 20px;
+        right: calc(20px - var(--home-guestbook-card-outset, 0px));
         top: 228px;
         width: 206px;
         --card-fly-distance: 214px;
     }
 
     #guestbook-section .home-guestbook-card--r3 {
-        right: 32px;
+        right: calc(32px - var(--home-guestbook-card-outset, 0px));
         bottom: 44px;
         width: 174px;
         --card-fly-distance: 168px;
