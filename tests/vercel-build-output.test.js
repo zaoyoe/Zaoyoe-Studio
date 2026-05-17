@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const {
+    assertSafeProductionSource,
     buildStaticOutput,
     shouldCopyStaticAsset
 } = require('../api/_lib/vercel-build');
@@ -47,4 +48,38 @@ test('vercel static asset filter does not treat real image assets as preview har
     assert.equal(shouldCopyStaticAsset('preview-hero-effects.html'), false);
     assert.equal(shouldCopyStaticAsset('css/preview-hero-effects.css'), false);
     assert.equal(shouldCopyStaticAsset('js/preview-icons-page.js'), false);
+});
+
+test('vercel production builds are only allowed from main', () => {
+    assert.deepEqual(
+        assertSafeProductionSource({
+            VERCEL_ENV: 'production',
+            VERCEL_GIT_COMMIT_REF: 'main'
+        }),
+        {
+            checked: true,
+            production: true,
+            ref: 'main'
+        }
+    );
+
+    assert.throws(
+        () => assertSafeProductionSource({
+            VERCEL_ENV: 'production',
+            VERCEL_GIT_COMMIT_REF: 'codex/dark-hero-liquid-matrix'
+        }),
+        /Blocked Vercel production build from codex\/dark-hero-liquid-matrix/
+    );
+
+    assert.deepEqual(
+        assertSafeProductionSource({
+            VERCEL_ENV: 'preview',
+            VERCEL_GIT_COMMIT_REF: 'codex/example'
+        }),
+        {
+            checked: false,
+            production: false,
+            ref: 'codex/example'
+        }
+    );
 });
