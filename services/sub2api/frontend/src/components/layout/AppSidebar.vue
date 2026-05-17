@@ -7,7 +7,13 @@
     ]"
   >
     <!-- Logo/Brand -->
-    <div class="sidebar-header" :class="{ 'sidebar-header-collapsed': sidebarCollapsed }">
+    <a
+      :href="brandHomeUrl"
+      class="sidebar-header sidebar-header-link"
+      :class="{ 'sidebar-header-collapsed': sidebarCollapsed }"
+      :title="brandHomeTitle"
+      :aria-label="brandHomeTitle"
+    >
       <!-- Custom Logo or Default Logo -->
       <div class="sidebar-logo flex h-9 w-9 items-center justify-center overflow-hidden rounded-xl shadow-glow">
         <img v-if="settingsLoaded" :src="siteLogo || '/logo.png'" alt="Logo" class="h-full w-full object-contain" />
@@ -19,7 +25,7 @@
         <!-- Version Badge -->
         <VersionBadge :version="siteVersion" />
       </div>
-    </div>
+    </a>
 
     <!-- Navigation -->
     <nav class="sidebar-nav scrollbar-hide">
@@ -217,6 +223,16 @@ const siteName = computed(() => appStore.siteName)
 const siteLogo = computed(() => appStore.siteLogo)
 const siteVersion = computed(() => appStore.siteVersion)
 const settingsLoaded = computed(() => appStore.publicSettingsLoaded)
+const currentSite = computed<'cn' | 'intl'>(() => {
+  const hostname = window.location.hostname.toLowerCase()
+  return hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz') ? 'intl' : 'cn'
+})
+const brandHomeUrl = computed(() => (
+  currentSite.value === 'intl' ? 'https://www.zaoyoe.xyz/' : 'https://www.zaoyoe.com/'
+))
+const brandHomeTitle = computed(() => (
+  currentSite.value === 'intl' ? t('home.brand.openInternationalHome') : t('home.brand.openDomesticHome')
+))
 
 // SVG Icon Components
 const DashboardIcon = {
@@ -793,6 +809,20 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.sidebar-header-link {
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.sidebar-header-link:hover {
+  background: rgba(20, 184, 166, 0.06);
+}
+
+.sidebar-header-link:focus-visible {
+  outline: 2px solid rgb(20 184 166);
+  outline-offset: -2px;
+}
+
 .sidebar-logo {
   flex: 0 0 2.25rem;
   min-width: 2.25rem;
