@@ -4319,7 +4319,7 @@ const FramerHome = {
     });
 
     section.dataset.homeHeroCentering = '1';
-    section.innerHTML = this.buildHeroStaticMarkup(data, visibleEntries);
+    section.innerHTML = `${this.buildHeroStaticMarkup(data, visibleEntries)}`;
     section.dataset.renderSignature = heroSignature;
     this.writeHeroTextCache(data);
     this.initHeroLiquidMatrix(section);
