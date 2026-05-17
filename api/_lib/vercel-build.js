@@ -8,6 +8,7 @@ const {
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const DEFAULT_STATIC_OUTPUT_DIR = '.vercel-static';
+const PRODUCTION_BRANCH = 'main';
 const PRIVATE_SOURCE_DIRS = new Set([
     '.git',
     '.github',
@@ -172,7 +173,40 @@ function collectOutputFiles(outputRoot) {
     return files.sort();
 }
 
+function getVercelProductionRef(env = process.env) {
+    return String(env.VERCEL_GIT_COMMIT_REF || '').trim();
+}
+
+function assertSafeProductionSource(env = process.env) {
+    const vercelEnv = String(env.VERCEL_ENV || '').trim().toLowerCase();
+
+    if (vercelEnv !== 'production') {
+        return {
+            checked: false,
+            production: false,
+            ref: getVercelProductionRef(env)
+        };
+    }
+
+    const ref = getVercelProductionRef(env);
+    if (ref !== PRODUCTION_BRANCH) {
+        throw new Error([
+            `Blocked Vercel production build from ${ref || '(unknown ref)'}.`,
+            `Production deploys must be built from ${PRODUCTION_BRANCH}.`,
+            'Merge the change into main and let the Git production deployment run, or deploy from a clean main checkout.'
+        ].join(' '));
+    }
+
+    return {
+        checked: true,
+        production: true,
+        ref
+    };
+}
+
 function runVercelBuild(argv = process.argv.slice(2), env = process.env, rootDir = REPO_ROOT) {
+    assertSafeProductionSource(env);
+
     const dryRun = argv.includes('--check') || argv.includes('--dry-run');
     const version = resolveStaticAssetVersion(env, rootDir);
     const versionResult = applyStaticAssetVersion({ rootDir, version, dryRun });
@@ -195,8 +229,10 @@ if (require.main === module) {
 }
 
 module.exports = {
+    assertSafeProductionSource,
     buildStaticOutput,
     collectOutputFiles,
+    getVercelProductionRef,
     runVercelBuild,
     shouldCopyStaticAsset
 };
