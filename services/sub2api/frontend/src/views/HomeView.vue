@@ -41,9 +41,26 @@
       <nav class="mx-auto flex max-w-6xl items-center justify-between">
         <!-- Logo -->
         <div class="flex items-center">
-          <div class="h-10 w-10 overflow-hidden rounded-xl shadow-md">
+          <a
+            :href="brandHomeUrl"
+            class="group inline-flex items-center gap-2 rounded-2xl p-1.5 pr-3 transition-all duration-200 hover:-translate-y-0.5 hover:bg-white/70 hover:shadow-lg hover:shadow-primary-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary-500 focus-visible:ring-offset-2 focus-visible:ring-offset-gray-50 dark:hover:bg-dark-800/70 dark:focus-visible:ring-offset-dark-950"
+            :title="brandHomeTitle"
+            :aria-label="brandHomeTitle"
+          >
+            <span
+              class="h-10 w-10 overflow-hidden rounded-xl bg-white shadow-md ring-1 ring-gray-900/5 transition-transform duration-200 group-hover:scale-105 dark:bg-dark-800 dark:ring-white/10"
+            >
             <img :src="siteLogo || '/logo.png'" alt="Logo" class="h-full w-full object-contain" />
-          </div>
+            </span>
+            <span class="hidden text-left sm:block">
+              <span class="block text-sm font-semibold leading-tight text-gray-900 dark:text-white">
+                {{ siteName }}
+              </span>
+              <span class="block text-[11px] font-medium leading-tight text-primary-600 dark:text-primary-400">
+                {{ currentSiteHomeLabel }}
+              </span>
+            </span>
+          </a>
         </div>
 
         <!-- Nav Actions -->
@@ -422,6 +439,20 @@ const siteLogo = computed(() => appStore.cachedPublicSettings?.site_logo || appS
 const siteSubtitle = computed(() => appStore.cachedPublicSettings?.site_subtitle || 'AI API Gateway Platform')
 const docUrl = computed(() => appStore.cachedPublicSettings?.doc_url || appStore.docUrl || '')
 const homeContent = computed(() => appStore.cachedPublicSettings?.home_content || '')
+
+const currentSite = computed<'cn' | 'intl'>(() => {
+  const hostname = window.location.hostname.toLowerCase()
+  return hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz') ? 'intl' : 'cn'
+})
+const brandHomeUrl = computed(() => (
+  currentSite.value === 'intl' ? 'https://www.zaoyoe.xyz/' : 'https://www.zaoyoe.com/'
+))
+const currentSiteHomeLabel = computed(() => (
+  currentSite.value === 'intl' ? t('home.brand.internationalSite') : t('home.brand.domesticSite')
+))
+const brandHomeTitle = computed(() => (
+  currentSite.value === 'intl' ? t('home.brand.openInternationalHome') : t('home.brand.openDomesticHome')
+))
 
 // Check if homeContent is a URL (for iframe display)
 const isHomeContentUrl = computed(() => {

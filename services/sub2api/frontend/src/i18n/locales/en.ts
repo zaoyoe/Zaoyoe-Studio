@@ -10,6 +10,12 @@ export default {
     login: 'Login',
     getStarted: 'Get Started',
     goToDashboard: 'Go to Dashboard',
+    brand: {
+      domesticSite: 'China Site Home',
+      internationalSite: 'International Site Home',
+      openDomesticHome: 'Open Zaoyoe China site home',
+      openInternationalHome: 'Open Zaoyoe international site home'
+    },
     // User-focused value proposition
     heroSubtitle: 'One Key, All AI Models',
     heroDescription: 'No need to manage multiple subscriptions. Access Claude, GPT, Gemini and more with a single API key',
