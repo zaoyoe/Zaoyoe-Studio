@@ -7631,7 +7631,7 @@
         getDefaultAffiliatePosterConfig() {
             return {
                 chip_label: window.i18n?.t('wallet.affiliate') || '推广',
-                title: window.i18n?.t('wallet.posterTitle') || '专属邀请函',
+                title: window.i18n?.t('wallet.posterTitle') || '邀请函',
                 subtitle: window.i18n?.t('wallet.posterSubtitle') || '扫码注册 · 即享专属奖励',
                 reward_badge_text: '',
                 invite_code_label: window.i18n?.t('wallet.inviteCode') || '邀请码',
@@ -7696,19 +7696,33 @@
         getAffiliatePosterPreset(templateId) {
             const presets = {
                 midnight: {
-                    accent: '#10b981',
+                    accent: '#38bdf8',
                     text: '#f8fafc',
                     muted: 'rgba(226, 232, 240, 0.82)',
-                    badgeBg: 'rgba(16, 185, 129, 0.18)',
-                    badgeText: '#dcfce7',
+                    badgeBg: 'rgba(56, 189, 248, 0.16)',
+                    badgeText: '#e0f2fe',
                     qrCardBg: 'rgba(255, 255, 255, 0.95)',
                     qrLabelColor: '#0f172a',
-                    codeColor: '#86efac',
-                    overlayOpacity: 0.52,
+                    codeColor: '#0f172a',
+                    cardBodyColor: '#334155',
+                    cardMutedColor: '#64748b',
+                    apiCallout: {
+                        panelStops: ['rgba(15, 23, 42, 0.88)', 'rgba(30, 58, 138, 0.82)', 'rgba(14, 116, 144, 0.72)'],
+                        border: 'rgba(191, 219, 254, 0.34)',
+                        shadow: 'rgba(2, 8, 23, 0.24)',
+                        title: '#f8fafc',
+                        accent: '#67e8f9',
+                        body: '#dbeafe',
+                        ctaStops: ['#0ea5e9', '#2563eb'],
+                        ctaText: '#ffffff',
+                        iconStops: ['#38bdf8', '#2563eb', '#4f46e5'],
+                        iconBackground: 'rgba(255, 255, 255, 0.14)'
+                    },
+                    overlayOpacity: 0.34,
                     gradientStops: [
-                        { offset: 0, color: '#020617' },
-                        { offset: 0.45, color: '#0f172a' },
-                        { offset: 1, color: '#134e4a' }
+                        { offset: 0, color: '#0f172a' },
+                        { offset: 0.52, color: '#1e3a8a' },
+                        { offset: 1, color: '#dbeafe' }
                     ]
                 },
                 sunset: {
@@ -7719,7 +7733,21 @@
                     badgeText: '#ffedd5',
                     qrCardBg: 'rgba(255, 251, 235, 0.96)',
                     qrLabelColor: '#7c2d12',
-                    codeColor: '#fde68a',
+                    codeColor: '#c2410c',
+                    cardBodyColor: '#334155',
+                    cardMutedColor: '#64748b',
+                    apiCallout: {
+                        panelStops: ['#fffaf0', '#ffedd5', '#fed7aa'],
+                        border: 'rgba(251, 146, 60, 0.42)',
+                        shadow: 'rgba(154, 52, 18, 0.18)',
+                        title: '#7c2d12',
+                        accent: '#ea580c',
+                        body: '#9a3412',
+                        ctaStops: ['#ea580c', '#f59e0b'],
+                        ctaText: '#fff7ed',
+                        iconStops: ['#fb923c', '#ea580c', '#f59e0b'],
+                        iconBackground: '#fff7ed'
+                    },
                     overlayOpacity: 0.42,
                     gradientStops: [
                         { offset: 0, color: '#431407' },
@@ -7736,6 +7764,20 @@
                     qrCardBg: 'rgba(255, 255, 255, 0.96)',
                     qrLabelColor: '#1e293b',
                     codeColor: '#1d4ed8',
+                    cardBodyColor: '#334155',
+                    cardMutedColor: '#64748b',
+                    apiCallout: {
+                        panelStops: ['#ffffff', '#f8fbff', '#e0f2fe'],
+                        border: 'rgba(37, 99, 235, 0.22)',
+                        shadow: 'rgba(37, 99, 235, 0.12)',
+                        title: '#0f172a',
+                        accent: '#2563eb',
+                        body: '#475569',
+                        ctaStops: ['#2563eb', '#0ea5e9'],
+                        ctaText: '#ffffff',
+                        iconStops: ['#60a5fa', '#2563eb', '#818cf8'],
+                        iconBackground: '#ffffff'
+                    },
                     overlayOpacity: 0.2,
                     gradientStops: [
                         { offset: 0, color: '#eff6ff' },
@@ -7819,6 +7861,13 @@
             return safeName ? safeName.charAt(0).toUpperCase() : 'U';
         },
 
+        getAffiliatePosterPointsText(value) {
+            const unit = this.tr('wallet.pointsUnit', '积分');
+            return this.isEnglishLanguage()
+                ? `${this.formatPoints(value)} ${unit}`
+                : `${this.formatPoints(value)}${unit}`;
+        },
+
         getPosterRewardBadgeText(stats = this.affiliateStats || {}, posterConfig = this.affiliatePosterConfig || {}) {
             const registrationRewardPoints = Number(stats.registration_reward_points);
             const safeRegistrationRewardPoints = Number.isFinite(registrationRewardPoints) ? registrationRewardPoints : 0;
@@ -7829,19 +7878,45 @@
             if (!customTemplate) {
                 return [
                     safeRegistrationRewardPoints > 0
-                        ? this.tr('wallet.signupReward', '拉新奖励 {value}', { value: this.formatPointsWithUnit(safeRegistrationRewardPoints) })
+                        ? this.tr('wallet.signupReward', '拉新奖励 {value}', { value: this.getAffiliatePosterPointsText(safeRegistrationRewardPoints) })
                         : '',
                     this.tr('wallet.shopCommissionRate', '商城返佣：{rate}', { rate: this.formatAffiliatePercent(safeCommissionRateShop) })
                 ].filter(Boolean).join(' · ');
             }
 
             return customTemplate
-                .replace(/\{registration_reward_text\}/g, safeRegistrationRewardPoints > 0 ? this.formatPointsWithUnit(safeRegistrationRewardPoints) : this.tr('wallet.notEnabled', '未开启'))
+                .replace(/\{registration_reward_text\}/g, safeRegistrationRewardPoints > 0 ? this.getAffiliatePosterPointsText(safeRegistrationRewardPoints) : this.tr('wallet.notEnabled', '未开启'))
                 .replace(/\{registration_reward\}/g, this.formatPoints(safeRegistrationRewardPoints))
                 .replace(/\{shop_commission\}/g, this.formatAffiliatePercent(safeCommissionRateShop))
                 .replace(/\{shop_commission_rate\}/g, this.formatAffiliatePercent(safeCommissionRateShop))
                 .replace(/\s+/g, ' ')
                 .trim();
+        },
+
+        getAffiliatePosterRewardDetail(stats = this.affiliateStats || {}) {
+            const commissionRateShop = Number(stats.commission_rate_shop);
+            const safeCommissionRateShop = Number.isFinite(commissionRateShop) ? commissionRateShop : 0.10;
+            const commissionRateAgent = Number(stats.commission_rate_agent);
+            const safeCommissionRateAgent = Number.isFinite(commissionRateAgent) ? commissionRateAgent : 0.10;
+            const registrationReward = Number(stats.registration_reward_points);
+            const safeRegistrationReward = Number.isFinite(registrationReward) ? registrationReward : 0;
+            const requiresPurchase = stats.registration_reward_requires_purchase !== false && String(stats.registration_reward_requires_purchase) !== 'false';
+            return {
+                groups: [
+                    {
+                        title: `固定拉新奖励：${safeRegistrationReward > 0 ? this.getAffiliatePosterPointsText(safeRegistrationReward) : '当前未开启'}`,
+                        note: requiresPurchase ? '好友首充或首单后发放' : '好友注册后发放'
+                    },
+                    {
+                        title: `商城消费返佣：${this.formatAffiliatePercent(safeCommissionRateShop)}`,
+                        note: '好友商城消费持续返佣'
+                    },
+                    {
+                        title: `分销资源返佣：${this.formatAffiliatePercent(safeCommissionRateAgent)}`,
+                        note: '好友购买分销资源返佣'
+                    }
+                ]
+            };
         },
 
         getAffiliateRewardExplanation(stats = this.affiliateStats || {}) {
@@ -8357,7 +8432,7 @@
                 const legalDisclaimer = typeof stats.legal_disclaimer === 'string' && stats.legal_disclaimer.trim()
                     ? stats.legal_disclaimer.trim()
                     : '活动最终解释权归平台所有';
-                const rewardSummary = this.getPosterRewardBadgeText(stats, posterConfig);
+                const rewardDetail = this.getAffiliatePosterRewardDetail(stats);
                 const profileDisplayName = this.affiliateProfile?.displayName || 'U';
                 const profileInitial = this.getPosterInitial(profileDisplayName);
 
@@ -8394,7 +8469,11 @@
                 // Decorative shapes
                 ctx.save();
                 ctx.globalAlpha = activeTemplate?.id === 'crystal' ? 0.65 : 0.14;
-                ctx.fillStyle = activeTemplate?.id === 'sunset' ? '#fed7aa' : '#bfdbfe';
+                ctx.fillStyle = activeTemplate?.id === 'sunset'
+                    ? '#fed7aa'
+                    : activeTemplate?.id === 'midnight'
+                        ? '#cbd5e1'
+                        : '#bfdbfe';
                 ctx.beginPath();
                 ctx.arc(canvas.width * 0.88, 160, 220, 0, Math.PI * 2);
                 ctx.fill();
@@ -8402,22 +8481,15 @@
 
                 ctx.save();
                 ctx.globalAlpha = activeTemplate?.id === 'crystal' ? 0.45 : 0.18;
-                ctx.fillStyle = activeTemplate?.id === 'sunset' ? '#fdba74' : '#6ee7b7';
+                ctx.fillStyle = activeTemplate?.id === 'sunset'
+                    ? '#fdba74'
+                    : activeTemplate?.id === 'midnight'
+                        ? '#bfdbfe'
+                        : '#6ee7b7';
                 ctx.beginPath();
                 ctx.arc(120, canvas.height - 220, 180, 0, Math.PI * 2);
                 ctx.fill();
                 ctx.restore();
-
-                // Header chip
-                ctx.font = '700 24px "Helvetica Neue", Arial, sans-serif';
-                const chipLabel = posterConfig.chip_label || (window.i18n?.t('wallet.affiliate') || '推广');
-                const chipWidth = Math.max(144, Math.min(280, ctx.measureText(chipLabel).width + 64));
-                this.drawRoundedRect(ctx, 72, 76, chipWidth, 52, 26);
-                ctx.fillStyle = preset.badgeBg;
-                ctx.fill();
-                ctx.fillStyle = preset.badgeText;
-                ctx.textAlign = 'left';
-                ctx.fillText(chipLabel, 104, 109);
 
                 // Title + Subtitle
                 ctx.fillStyle = preset.text;
@@ -8436,29 +8508,11 @@
                 ctx.font = '500 34px "Helvetica Neue", Arial, sans-serif';
                 const subtitleLayout = this.drawPosterTextBlock(ctx, posterConfig.subtitle, 72, titleLayout.nextY + 18, 760, 46, 2);
 
-                let rewardBadgeBottom = subtitleLayout.nextY;
-                if (rewardSummary) {
-                    const rewardBadgeWidth = Math.max(280, Math.min(620, 170 + rewardSummary.length * 20));
-                    const rewardBadgeY = subtitleLayout.nextY + 42;
-                    this.drawRoundedRect(ctx, 72, rewardBadgeY, rewardBadgeWidth, 66, 24);
-                    ctx.fillStyle = preset.badgeBg;
-                    ctx.fill();
-                    ctx.fillStyle = preset.badgeText;
-                    let rewardBadgeFontSize = 26;
-                    ctx.font = `600 ${rewardBadgeFontSize}px "Helvetica Neue", Arial, sans-serif`;
-                    while (ctx.measureText(rewardSummary).width > rewardBadgeWidth - 60 && rewardBadgeFontSize > 18) {
-                        rewardBadgeFontSize -= 1;
-                        ctx.font = `600 ${rewardBadgeFontSize}px "Helvetica Neue", Arial, sans-serif`;
-                    }
-                    ctx.fillText(rewardSummary, 102, rewardBadgeY + 42);
-                    rewardBadgeBottom = rewardBadgeY + 66;
-                }
-
                 // Invite card
                 const cardX = 72;
-                const cardY = Math.max(652, rewardBadgeBottom + 84);
+                const cardY = Math.min(Math.max(570, subtitleLayout.nextY + 86), 650);
                 const cardWidth = canvas.width - 144;
-                const cardHeight = 548;
+                const cardHeight = 620;
 
                 this.drawRoundedRect(ctx, cardX, cardY, cardWidth, cardHeight, 42);
                 ctx.fillStyle = preset.qrCardBg;
@@ -8475,6 +8529,7 @@
 
                 this.drawPosterAvatar(ctx, {
                     image: avatarImage,
+                    missingAvatar: !avatarImage,
                     centerX: cardX + cardWidth / 2,
                     centerY: cardY + 8,
                     radius: 58,
@@ -8489,34 +8544,95 @@
                 // Fetch QR Code image
                 const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent(linkEl.value)}&margin=1`;
                 const qrImg = await this.loadCanvasImage(qrUrl);
-                this.drawRoundedRect(ctx, cardX + 54, cardY + 118, 360, 360, 30);
+                const qrCardX = cardX + 54;
+                const qrCardY = cardY + 104;
+                const qrCardSize = 328;
+                const qrImageSize = 252;
+                const qrImageX = qrCardX + (qrCardSize - qrImageSize) / 2;
+                const qrImageY = qrCardY + 22;
+                this.drawRoundedRect(ctx, qrCardX, qrCardY, qrCardSize, qrCardSize, 28);
                 ctx.fillStyle = '#ffffff';
                 ctx.fill();
-                ctx.drawImage(qrImg, cardX + 84, cardY + 148, 300, 300);
+                ctx.drawImage(qrImg, qrImageX, qrImageY, qrImageSize, qrImageSize);
 
                 ctx.fillStyle = preset.qrLabelColor;
-                ctx.font = '600 28px "Helvetica Neue", Arial, sans-serif';
-                this.drawPosterTextBlock(ctx, posterConfig.qr_label, cardX + 90, cardY + 468, 300, 34, 2);
+                ctx.font = '700 25px "Helvetica Neue", Arial, sans-serif';
+                ctx.textAlign = 'center';
+                this.drawPosterTextBlock(ctx, posterConfig.qr_label, qrCardX + qrCardSize / 2, qrCardY + 310, 288, 30, 1);
+                ctx.textAlign = 'left';
 
+                const detailX = cardX + 464;
+                const detailWidth = 430;
                 ctx.fillStyle = preset.qrLabelColor;
-                ctx.font = '600 26px "Helvetica Neue", Arial, sans-serif';
-                ctx.fillText(posterConfig.invite_code_label, cardX + 464, cardY + 184);
+                ctx.font = '700 30px "Helvetica Neue", Arial, sans-serif';
+                ctx.fillText(this.tr('wallet.rewardRulesTitle', '奖励规则'), detailX, cardY + 174);
 
-                ctx.fillStyle = preset.codeColor;
-                ctx.font = '700 56px "Helvetica Neue", Arial, sans-serif';
-                const codeLayout = this.drawPosterTextBlock(ctx, this.currentInviteCode, cardX + 464, cardY + 246, 430, 62, 2);
+                let detailY = cardY + 226;
+                const rewardGroups = Array.isArray(rewardDetail.groups) ? rewardDetail.groups : [];
+                rewardGroups.forEach((group) => {
+                    const title = String(group?.title || '').trim();
+                    const note = String(group?.note || '').trim();
 
-                ctx.fillStyle = '#475569';
-                ctx.font = '500 28px "Helvetica Neue", Arial, sans-serif';
-                const footerLayout = this.drawPosterTextBlock(ctx, posterConfig.footer, cardX + 464, codeLayout.nextY + 36, 430, 42, 3);
+                    ctx.fillStyle = preset.accent;
+                    ctx.beginPath();
+                    ctx.arc(detailX + 7, detailY - 8, 5, 0, Math.PI * 2);
+                    ctx.fill();
 
-                ctx.fillStyle = preset.accent;
-                ctx.font = '700 28px "Helvetica Neue", Arial, sans-serif';
-                this.drawPosterTextBlock(ctx, linkEl.value, cardX + 464, footerLayout.nextY + 42, 430, 38, 3);
+                    ctx.font = '700 24px "Helvetica Neue", Arial, sans-serif';
+                    ctx.fillStyle = preset.cardBodyColor || '#334155';
+                    const titleLayout = this.drawPosterTextBlock(
+                        ctx,
+                        title,
+                        detailX + 24,
+                        detailY,
+                        detailWidth - 24,
+                        30,
+                        1
+                    );
+
+                    let nextY = titleLayout.nextY;
+                    if (note) {
+                        ctx.font = '500 21px "Helvetica Neue", Arial, sans-serif';
+                        ctx.fillStyle = preset.cardMutedColor || '#64748b';
+                        const noteLayout = this.drawPosterTextBlock(
+                            ctx,
+                            note,
+                            detailX + 24,
+                            titleLayout.nextY + 8,
+                            detailWidth - 24,
+                            26,
+                            1
+                        );
+                        nextY = noteLayout.nextY;
+                    }
+
+                    detailY = nextY + 24;
+                });
+
+                const iconImages = await this.loadAffiliatePosterBenefitIcons();
+                this.drawAffiliatePosterBenefitIcons(ctx, {
+                    cardX,
+                    cardY,
+                    cardWidth,
+                    cardHeight,
+                    icons: iconImages
+                });
+
+                const apiCalloutIcon = await this.loadAffiliatePosterApiCalloutIcon();
+                this.drawAffiliatePosterApiCallout(ctx, {
+                    cardX,
+                    cardY,
+                    cardWidth,
+                    cardHeight,
+                    icon: apiCalloutIcon,
+                    preset
+                });
 
                 // Footer disclaimer
-                ctx.fillStyle = preset.text;
-                ctx.font = '500 28px "Helvetica Neue", Arial, sans-serif';
+                ctx.fillStyle = activeTemplate?.id === 'crystal'
+                    ? 'rgba(71, 85, 105, 0.44)'
+                    : 'rgba(255, 255, 255, 0.46)';
+                ctx.font = '500 22px "Helvetica Neue", Arial, sans-serif';
                 ctx.fillText(legalDisclaimer, 72, 1508);
 
                 // Download Image
@@ -8552,11 +8668,389 @@
         async loadCanvasImage(src) {
             return await new Promise((resolve, reject) => {
                 const image = new Image();
-                image.crossOrigin = 'Anonymous';
+                try {
+                    const imageUrl = new URL(src, window.location.href);
+                    if (imageUrl.origin !== window.location.origin && !src.startsWith('data:') && !src.startsWith('blob:')) {
+                        image.crossOrigin = 'Anonymous';
+                    }
+                } catch (error) {
+                    image.crossOrigin = 'Anonymous';
+                }
                 image.onload = () => resolve(image);
                 image.onerror = () => reject(new Error('图片加载失败'));
                 image.src = src;
             });
+        },
+
+        getAffiliatePosterBenefitIconSpecs() {
+            const iconBasePath = `${window.location.origin}/assets/affiliate-poster-icons`;
+            return [
+                { label: 'Gemini', src: `${iconBasePath}/gemini.png` },
+                { label: 'GPT', src: `${iconBasePath}/gpt.png` },
+                { label: 'Claude', src: `${iconBasePath}/claude.png` },
+                { label: 'Apple id', src: `${iconBasePath}/apple-id.svg` },
+                { label: 'Gift card', type: 'gift-card' },
+                { label: 'Gmail', src: `${iconBasePath}/gmail.png` }
+            ];
+        },
+
+        async loadAffiliatePosterBenefitIcons() {
+            const specs = this.getAffiliatePosterBenefitIconSpecs();
+            return Promise.all(specs.map(async (spec) => {
+                if (!spec.src) return { ...spec, image: null };
+                try {
+                    const image = await this.loadCanvasImage(spec.src);
+                    return { ...spec, image };
+                } catch (error) {
+                    console.warn('[WalletModal] Failed to load affiliate poster benefit icon:', spec.label, error);
+                    return { ...spec, image: null };
+                }
+            }));
+        },
+
+        async loadAffiliatePosterApiCalloutIcon() {
+            const iconPath = `${window.location.origin}/assets/affiliate-poster-icons/api-transfer.svg`;
+            try {
+                return await this.loadCanvasImage(iconPath);
+            } catch (error) {
+                console.warn('[WalletModal] Failed to load affiliate poster API callout icon:', error);
+                return null;
+            }
+        },
+
+        drawAffiliatePosterBenefitIcons(ctx, options = {}) {
+            const cardX = Number(options.cardX) || 0;
+            const cardY = Number(options.cardY) || 0;
+            const cardWidth = Number(options.cardWidth) || 0;
+            const cardHeight = Number(options.cardHeight) || 0;
+            const icons = Array.isArray(options.icons) ? options.icons : this.getAffiliatePosterBenefitIconSpecs();
+            const iconSize = icons.length > 5 ? 56 : 60;
+            const labelGap = 6;
+            const sidePadding = icons.length > 5 ? 38 : 42;
+            const availableWidth = Math.max(0, cardWidth - sidePadding * 2);
+            const columnWidth = Math.max(iconSize + 38, Math.min(154, availableWidth / Math.max(icons.length, 1)));
+            const totalWidth = columnWidth * icons.length;
+            const startX = cardX + Math.max(sidePadding, (cardWidth - totalWidth) / 2);
+            const iconTop = cardY + Math.min(470, cardHeight - 130);
+            const labelY = iconTop + iconSize + 34;
+
+            ctx.save();
+            ctx.fillStyle = 'rgba(148, 163, 184, 0.22)';
+            ctx.fillRect(cardX + 48, iconTop - 24, cardWidth - 96, 1);
+
+            icons.forEach((icon, index) => {
+                const centerX = startX + index * columnWidth + columnWidth / 2;
+                const iconX = centerX - iconSize / 2;
+
+                ctx.save();
+                ctx.shadowColor = 'rgba(15, 23, 42, 0.10)';
+                ctx.shadowBlur = 12;
+                ctx.shadowOffsetY = 5;
+                this.drawRoundedRect(ctx, iconX - 5, iconTop - 5, iconSize + 10, iconSize + 10, 17);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+                ctx.restore();
+
+                if (icon.image) {
+                    ctx.save();
+                    this.drawRoundedRect(ctx, iconX, iconTop, iconSize, iconSize, 16);
+                    ctx.clip();
+                    this.drawCoverImage(ctx, icon.image, iconX, iconTop, iconSize, iconSize);
+                    ctx.restore();
+                } else if (icon.type === 'gift-card') {
+                    this.drawAffiliatePosterGiftCardIcon(ctx, iconX, iconTop, iconSize);
+                } else {
+                    this.drawAffiliatePosterFallbackBenefitIcon(ctx, icon, iconX, iconTop, iconSize);
+                }
+
+                ctx.fillStyle = '#64748b';
+                ctx.font = '600 17px "Helvetica Neue", Arial, sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'alphabetic';
+                const label = String(icon.label || '').trim();
+                while (label && ctx.measureText(label).width > columnWidth - labelGap * 2) {
+                    const currentSize = Number((ctx.font.match(/(\d+)px/) || [])[1]) || 15;
+                    if (currentSize <= 12) break;
+                    ctx.font = `600 ${currentSize - 1}px "Helvetica Neue", Arial, sans-serif`;
+                }
+                ctx.fillText(label, centerX, labelY);
+            });
+
+            ctx.restore();
+        },
+
+        drawAffiliatePosterApiCallout(ctx, options = {}) {
+            const cardX = Number(options.cardX) || 0;
+            const cardY = Number(options.cardY) || 0;
+            const cardWidth = Number(options.cardWidth) || 0;
+            const cardHeight = Number(options.cardHeight) || 0;
+            const preset = options.preset || {};
+            const calloutWidth = cardWidth - 104;
+            const calloutHeight = 120;
+            const calloutX = cardX + (cardWidth - calloutWidth) / 2;
+            const calloutY = cardY + cardHeight + 50;
+            const calloutPalette = preset.apiCallout || {};
+            const panelStops = Array.isArray(calloutPalette.panelStops) && calloutPalette.panelStops.length
+                ? calloutPalette.panelStops
+                : ['#ffffff', '#f5faff', '#eef6ff'];
+            const ctaStops = Array.isArray(calloutPalette.ctaStops) && calloutPalette.ctaStops.length
+                ? calloutPalette.ctaStops
+                : ['#2563eb', '#38bdf8'];
+            const mainTextColor = calloutPalette.title || '#0f172a';
+            const accentColor = calloutPalette.accent || preset.accent || '#38bdf8';
+            const bodyTextColor = calloutPalette.body || '#475569';
+
+            ctx.save();
+            ctx.shadowColor = calloutPalette.shadow || 'rgba(37, 99, 235, 0.10)';
+            ctx.shadowBlur = 20;
+            ctx.shadowOffsetY = 8;
+            this.drawRoundedRect(ctx, calloutX, calloutY, calloutWidth, calloutHeight, 28);
+            const panelGradient = ctx.createLinearGradient(calloutX, calloutY, calloutX + calloutWidth, calloutY + calloutHeight);
+            panelStops.forEach((color, index) => {
+                panelGradient.addColorStop(panelStops.length === 1 ? 0 : index / (panelStops.length - 1), color);
+            });
+            ctx.fillStyle = panelGradient;
+            ctx.fill();
+            ctx.restore();
+
+            ctx.save();
+            this.drawRoundedRect(ctx, calloutX, calloutY, calloutWidth, calloutHeight, 28);
+            ctx.strokeStyle = calloutPalette.border || 'rgba(96, 165, 250, 0.24)';
+            ctx.lineWidth = 1.6;
+            ctx.stroke();
+
+            const iconSize = 68;
+            const iconX = calloutX + 26;
+            const iconY = calloutY + (calloutHeight - iconSize) / 2;
+            ctx.save();
+            ctx.shadowColor = 'rgba(37, 99, 235, 0.12)';
+            ctx.shadowBlur = 12;
+            ctx.shadowOffsetY = 5;
+            this.drawRoundedRect(ctx, iconX - 4, iconY - 4, iconSize + 8, iconSize + 8, 20);
+            ctx.fillStyle = calloutPalette.iconBackground || '#ffffff';
+            ctx.fill();
+            ctx.restore();
+
+            if (Array.isArray(calloutPalette.iconStops) && calloutPalette.iconStops.length) {
+                this.drawAffiliatePosterApiFallbackIcon(ctx, iconX, iconY, iconSize, calloutPalette);
+            } else if (options.icon) {
+                ctx.save();
+                this.drawRoundedRect(ctx, iconX, iconY, iconSize, iconSize, 18);
+                ctx.clip();
+                this.drawCoverImage(ctx, options.icon, iconX, iconY, iconSize, iconSize);
+                ctx.restore();
+            } else {
+                this.drawAffiliatePosterApiFallbackIcon(ctx, iconX, iconY, iconSize, calloutPalette);
+            }
+
+            const textX = iconX + iconSize + 26;
+            const mainY = calloutY + 48;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'alphabetic';
+            ctx.font = '800 27px "Helvetica Neue", Arial, sans-serif';
+            ctx.fillStyle = mainTextColor;
+            ctx.fillText('满血 ', textX, mainY);
+            const prefixWidth = ctx.measureText('满血 ').width;
+            ctx.font = '900 34px "Helvetica Neue", Arial, sans-serif';
+            ctx.fillStyle = accentColor;
+            ctx.fillText('API 中转', textX + prefixWidth, mainY);
+
+            ctx.font = '600 21px "Helvetica Neue", Arial, sans-serif';
+            ctx.fillStyle = bodyTextColor;
+            ctx.fillText('一站式服务 · 人气商品热销中', textX, calloutY + 84);
+
+            const ctaWidth = 154;
+            const ctaHeight = 38;
+            const ctaX = calloutX + calloutWidth - ctaWidth - 24;
+            const ctaY = calloutY + 58;
+            const ctaGradient = ctx.createLinearGradient(ctaX, ctaY, ctaX + ctaWidth, ctaY + ctaHeight);
+            ctaStops.forEach((color, index) => {
+                ctaGradient.addColorStop(ctaStops.length === 1 ? 0 : index / (ctaStops.length - 1), color);
+            });
+            this.drawRoundedRect(ctx, ctaX, ctaY, ctaWidth, ctaHeight, 19);
+            ctx.fillStyle = ctaGradient;
+            ctx.fill();
+            ctx.font = '700 18px "Helvetica Neue", Arial, sans-serif';
+            ctx.fillStyle = calloutPalette.ctaText || '#ffffff';
+            ctx.fillText('扫码了解更多', ctaX + 18, ctaY + 25);
+            ctx.strokeStyle = calloutPalette.ctaArrow || 'rgba(255, 255, 255, 0.78)';
+            ctx.lineWidth = 2;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(ctaX + ctaWidth - 27, ctaY + 15);
+            ctx.lineTo(ctaX + ctaWidth - 20, ctaY + 19);
+            ctx.lineTo(ctaX + ctaWidth - 27, ctaY + 23);
+            ctx.stroke();
+            ctx.restore();
+        },
+
+        drawAffiliatePosterApiFallbackIcon(ctx, x, y, size, palette = {}) {
+            const gradient = ctx.createLinearGradient(x, y, x + size, y + size);
+            const iconStops = Array.isArray(palette.iconStops) && palette.iconStops.length
+                ? palette.iconStops
+                : ['#38bdf8', '#2563eb', '#4f46e5'];
+            iconStops.forEach((color, index) => {
+                gradient.addColorStop(iconStops.length === 1 ? 0 : index / (iconStops.length - 1), color);
+            });
+            this.drawRoundedRect(ctx, x, y, size, size, 18);
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            ctx.strokeStyle = palette.iconLine || '#ffffff';
+            ctx.lineWidth = 4;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            const leftX = x + size * 0.28;
+            const rightX = x + size * 0.72;
+            const topY = y + size * 0.34;
+            const bottomY = y + size * 0.70;
+            ctx.beginPath();
+            ctx.arc(leftX, topY, size * 0.11, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(rightX, topY, size * 0.11, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(x + size * 0.5, bottomY, size * 0.11, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(leftX + size * 0.12, topY);
+            ctx.lineTo(rightX - size * 0.12, topY);
+            ctx.moveTo(leftX + size * 0.06, topY + size * 0.12);
+            ctx.lineTo(x + size * 0.43, bottomY - size * 0.10);
+            ctx.moveTo(rightX - size * 0.06, topY + size * 0.12);
+            ctx.lineTo(x + size * 0.57, bottomY - size * 0.10);
+            ctx.stroke();
+        },
+
+        drawAffiliatePosterFallbackBenefitIcon(ctx, icon, x, y, size) {
+            const label = String(icon?.label || '').toLowerCase();
+            ctx.save();
+
+            if (label.includes('gemini')) {
+                const gradient = ctx.createLinearGradient(x, y, x + size, y + size);
+                gradient.addColorStop(0, '#9168c0');
+                gradient.addColorStop(0.5, '#5684d1');
+                gradient.addColorStop(1, '#1ba1e3');
+                this.drawRoundedRect(ctx, x, y, size, size, 16);
+                ctx.fillStyle = '#f8fafc';
+                ctx.fill();
+                ctx.translate(x + size / 2, y + size / 2);
+                ctx.fillStyle = gradient;
+                ctx.beginPath();
+                ctx.moveTo(0, -size * 0.34);
+                ctx.bezierCurveTo(size * 0.07, -size * 0.12, size * 0.18, -size * 0.05, size * 0.34, 0);
+                ctx.bezierCurveTo(size * 0.18, size * 0.05, size * 0.07, size * 0.12, 0, size * 0.34);
+                ctx.bezierCurveTo(-size * 0.07, size * 0.12, -size * 0.18, size * 0.05, -size * 0.34, 0);
+                ctx.bezierCurveTo(-size * 0.18, -size * 0.05, -size * 0.07, -size * 0.12, 0, -size * 0.34);
+                ctx.fill();
+            } else if (label.includes('gpt')) {
+                this.drawRoundedRect(ctx, x, y, size, size, 16);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+                ctx.strokeStyle = '#0f172a';
+                ctx.lineWidth = 4;
+                ctx.beginPath();
+                ctx.arc(x + size / 2, y + size / 2, size * 0.25, 0, Math.PI * 2);
+                ctx.stroke();
+                for (let index = 0; index < 6; index += 1) {
+                    const angle = (Math.PI * 2 / 6) * index;
+                    const cx = x + size / 2 + Math.cos(angle) * size * 0.21;
+                    const cy = y + size / 2 + Math.sin(angle) * size * 0.21;
+                    ctx.beginPath();
+                    ctx.arc(cx, cy, size * 0.15, angle - 1.2, angle + 1.2);
+                    ctx.stroke();
+                }
+            } else if (label.includes('claude')) {
+                const gradient = ctx.createLinearGradient(x, y, x + size, y + size);
+                gradient.addColorStop(0, '#f59e0b');
+                gradient.addColorStop(1, '#c2410c');
+                this.drawRoundedRect(ctx, x, y, size, size, 16);
+                ctx.fillStyle = gradient;
+                ctx.fill();
+                ctx.fillStyle = '#fff7ed';
+                ctx.beginPath();
+                ctx.arc(x + size / 2, y + size / 2, size * 0.25, 0, Math.PI * 2);
+                ctx.fill();
+                for (let index = 0; index < 8; index += 1) {
+                    const angle = (Math.PI * 2 / 8) * index;
+                    ctx.beginPath();
+                    ctx.moveTo(x + size / 2, y + size / 2);
+                    ctx.lineTo(x + size / 2 + Math.cos(angle) * size * 0.36, y + size / 2 + Math.sin(angle) * size * 0.36);
+                    ctx.strokeStyle = '#fff7ed';
+                    ctx.lineWidth = 4;
+                    ctx.stroke();
+                }
+            } else if (label.includes('apple id')) {
+                const gradient = ctx.createLinearGradient(x, y, x + size, y + size);
+                gradient.addColorStop(0, '#38bdf8');
+                gradient.addColorStop(1, '#2563eb');
+                this.drawRoundedRect(ctx, x, y, size, size, 16);
+                ctx.fillStyle = gradient;
+                ctx.fill();
+                ctx.strokeStyle = '#ffffff';
+                ctx.lineWidth = 5;
+                ctx.lineCap = 'round';
+                ctx.beginPath();
+                ctx.moveTo(x + size * 0.32, y + size * 0.72);
+                ctx.lineTo(x + size * 0.50, y + size * 0.30);
+                ctx.lineTo(x + size * 0.68, y + size * 0.72);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(x + size * 0.28, y + size * 0.63);
+                ctx.lineTo(x + size * 0.72, y + size * 0.63);
+                ctx.stroke();
+            } else if (label.includes('gmail')) {
+                this.drawRoundedRect(ctx, x, y, size, size, 16);
+                ctx.fillStyle = '#ffffff';
+                ctx.fill();
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                ctx.lineWidth = size * 0.105;
+                ctx.strokeStyle = '#1a73e8';
+                ctx.beginPath();
+                ctx.moveTo(x + size * 0.22, y + size * 0.34);
+                ctx.lineTo(x + size * 0.22, y + size * 0.72);
+                ctx.stroke();
+                ctx.strokeStyle = '#34a853';
+                ctx.beginPath();
+                ctx.moveTo(x + size * 0.78, y + size * 0.34);
+                ctx.lineTo(x + size * 0.78, y + size * 0.72);
+                ctx.stroke();
+                ctx.strokeStyle = '#ea4335';
+                ctx.beginPath();
+                ctx.moveTo(x + size * 0.22, y + size * 0.34);
+                ctx.lineTo(x + size * 0.50, y + size * 0.56);
+                ctx.lineTo(x + size * 0.78, y + size * 0.34);
+                ctx.stroke();
+                ctx.strokeStyle = '#fbbc04';
+                ctx.beginPath();
+                ctx.moveTo(x + size * 0.28, y + size * 0.67);
+                ctx.lineTo(x + size * 0.72, y + size * 0.67);
+                ctx.stroke();
+            } else {
+                ctx.fillStyle = '#e2e8f0';
+                this.drawRoundedRect(ctx, x, y, size, size, 16);
+                ctx.fill();
+            }
+
+            ctx.restore();
+        },
+
+        drawAffiliatePosterGiftCardIcon(ctx, x, y, size) {
+            const gradient = ctx.createLinearGradient(x, y, x + size, y + size);
+            gradient.addColorStop(0, '#60a5fa');
+            gradient.addColorStop(0.45, '#a78bfa');
+            gradient.addColorStop(1, '#fb7185');
+            ctx.save();
+            this.drawRoundedRect(ctx, x, y, size, size, 13);
+            ctx.fillStyle = gradient;
+            ctx.fill();
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.88)';
+            ctx.font = `700 ${Math.round(size * 0.48)}px "Helvetica Neue", Arial, sans-serif`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText('', x + size / 2, y + size / 2 + 1);
+            ctx.restore();
         },
 
         drawCoverImage(ctx, image, x, y, width, height) {
@@ -8648,6 +9142,7 @@
             const radius = Number(options.radius) || 56;
             const ringRadius = radius + 10;
             const fallbackInitial = options.fallbackInitial || 'U';
+            const missingAvatar = Boolean(options.missingAvatar);
 
             ctx.save();
             ctx.shadowColor = 'rgba(15, 23, 42, 0.18)';
@@ -8659,6 +9154,8 @@
             ctx.fill();
             ctx.restore();
 
+            this.drawGoogleOneAvatarRing(ctx, centerX, centerY, ringRadius - 4, 8);
+
             ctx.save();
             ctx.beginPath();
             ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
@@ -8667,6 +9164,16 @@
 
             if (options.image) {
                 this.drawCoverImage(ctx, options.image, centerX - radius, centerY - radius, radius * 2, radius * 2);
+            } else if (missingAvatar) {
+                ctx.fillStyle = '#e5e7eb';
+                ctx.fillRect(centerX - radius, centerY - radius, radius * 2, radius * 2);
+                ctx.fillStyle = '#94a3b8';
+                ctx.beginPath();
+                ctx.arc(centerX, centerY - 18, radius * 0.28, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.ellipse(centerX, centerY + 32, radius * 0.46, radius * 0.34, 0, 0, Math.PI * 2);
+                ctx.fill();
             } else {
                 const fallbackGradient = ctx.createLinearGradient(centerX - radius, centerY - radius, centerX + radius, centerY + radius);
                 if (options.fallbackBackground === 'sunset') {
@@ -8689,8 +9196,43 @@
             ctx.save();
             ctx.beginPath();
             ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-            ctx.strokeStyle = options.borderColor || 'rgba(255, 255, 255, 0.38)';
-            ctx.lineWidth = 6;
+            ctx.strokeStyle = options.borderColor || 'rgba(255, 255, 255, 0.92)';
+            ctx.lineWidth = 4;
+            ctx.stroke();
+            ctx.restore();
+        },
+
+        drawGoogleOneAvatarRing(ctx, centerX, centerY, radius, lineWidth) {
+            const segments = [
+                { color: '#ea4335', start: -45, end: 45 },
+                { color: '#1a73e8', start: 45, end: 135 },
+                { color: '#34a853', start: 135, end: 225 },
+                { color: '#fbbc04', start: 225, end: 315 }
+            ];
+
+            ctx.save();
+            ctx.lineWidth = lineWidth;
+            ctx.lineCap = 'butt';
+            segments.forEach((segment) => {
+                ctx.beginPath();
+                ctx.arc(
+                    centerX,
+                    centerY,
+                    radius,
+                    (segment.start - 90) * Math.PI / 180,
+                    (segment.end - 90) * Math.PI / 180
+                );
+                ctx.strokeStyle = segment.color;
+                ctx.stroke();
+            });
+
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)';
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius - lineWidth / 2 - 1, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius + lineWidth / 2 + 1, 0, Math.PI * 2);
             ctx.stroke();
             ctx.restore();
         },
