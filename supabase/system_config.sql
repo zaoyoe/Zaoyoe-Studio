@@ -208,7 +208,7 @@ ON CONFLICT (config_key) DO NOTHING;
 INSERT INTO public.system_config (config_key, config_value, description) VALUES
 ('affiliate_poster', '{
     "chip_label": "推广",
-    "title": "专属邀请函",
+    "title": "邀请函",
     "subtitle": "扫码注册 · 即享专属奖励",
     "reward_badge_text": "",
     "invite_code_label": "邀请码",

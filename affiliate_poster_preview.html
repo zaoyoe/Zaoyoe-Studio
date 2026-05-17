@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>推广海报预览</title>
+    <link rel="stylesheet" href="assets/affiliate-poster-preview.css">
+</head>
+<body>
+    <main class="page-shell">
+        <header class="topbar">
+            <div>
+                <p class="eyebrow">Affiliate Poster Preview</p>
+                <h1>推广海报样式预览</h1>
+                <p>复刻钱包推广中心当前的 1080 x 1600 Canvas 生成逻辑，左侧改文案和样式，右侧实时看最终海报。</p>
+            </div>
+            <div class="topbar-actions">
+                <button class="button button-quiet" type="button" id="resetBtn">恢复默认</button>
+                <button class="button button-primary" type="button" id="downloadBtn">下载 PNG</button>
+            </div>
+        </header>
+
+        <section class="workspace">
+            <aside class="panel controls" aria-label="海报调整面板">
+                <div class="control-section">
+                    <h2 class="section-title">模板</h2>
+                    <div class="template-options" role="group" aria-label="选择海报模板">
+                        <button class="template-btn active" type="button" data-template="midnight">
+                            <span class="template-swatch swatch-midnight"></span>
+                            <span class="template-name">星幕邀请函</span>
+                        </button>
+                        <button class="template-btn" type="button" data-template="sunset">
+                            <span class="template-swatch swatch-sunset"></span>
+                            <span class="template-name">暖金品牌卡</span>
+                        </button>
+                        <button class="template-btn" type="button" data-template="crystal">
+                            <span class="template-swatch swatch-crystal"></span>
+                            <span class="template-name">清透极简版</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <h2 class="section-title">文案</h2>
+                    <div class="control-grid">
+                        <div class="field">
+                            <label for="posterTitle">主标题</label>
+                            <input class="input" id="posterTitle" type="text" value="邀请函">
+                        </div>
+                        <div class="field">
+                            <label for="posterSubtitle">副标题</label>
+                            <input class="input" id="posterSubtitle" type="text" value="扫码注册 · 即享专属奖励">
+                        </div>
+                        <div class="field">
+                            <label for="qrLabel">二维码说明</label>
+                            <input class="input" id="qrLabel" type="text" value="扫码注册领取新人福利">
+                        </div>
+                        <div class="field">
+                            <label for="posterLink">二维码跳转链接</label>
+                            <textarea class="textarea" id="posterLink">https://www.zaoyoe.com/?ref=ZAOYOE88</textarea>
+                            <div class="hint">仅写入二维码，不展示在海报画面上。</div>
+                        </div>
+                        <div class="field">
+                            <label for="legalText">底部声明</label>
+                            <input class="input" id="legalText" type="text" value="活动最终解释权归平台所有">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <h2 class="section-title">奖励规则</h2>
+                    <div class="control-grid">
+                        <div class="field field-inline">
+                            <div>
+                                <label for="registrationReward">固定拉新奖励</label>
+                                <input class="input" id="registrationReward" type="number" min="0" step="0.1" value="5">
+                            </div>
+                            <div>
+                                <label for="pointsUnit">积分单位</label>
+                                <input class="input" id="pointsUnit" type="text" value="分">
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="rewardTrigger">触发条件</label>
+                            <select class="select" id="rewardTrigger">
+                                <option value="purchase" selected>好友完成首笔充值或消费</option>
+                                <option value="register">好友完成注册</option>
+                            </select>
+                        </div>
+                        <div class="field field-inline">
+                            <div>
+                                <label for="shopCommission">商城消费返佣</label>
+                                <input class="input" id="shopCommission" type="number" min="0" step="0.1" value="5">
+                            </div>
+                            <div>
+                                <label for="agentCommission">分销资源返佣</label>
+                                <input class="input" id="agentCommission" type="number" min="0" step="0.1" value="9">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <h2 class="section-title">人物</h2>
+                    <div class="control-grid">
+                        <div class="field">
+                            <label for="displayName">昵称</label>
+                            <input class="input" id="displayName" type="text" value="Zaoyoe">
+                        </div>
+                        <div class="field">
+                            <label for="avatarUrl">头像 URL</label>
+                            <input class="input" id="avatarUrl" type="url" value="">
+                            <div class="hint">优先自动读取当前登录用户头像；如果预览页不是同站点打开，需要手动填 URL 或上传头像。</div>
+                        </div>
+                        <div class="field">
+                            <label for="avatarFile">上传头像</label>
+                            <input class="input" id="avatarFile" type="file" accept="image/*">
+                            <div class="hint">用于检查真实头像在圆形区域里的裁切效果。</div>
+                        </div>
+                        <div class="profile-source-status" id="avatarStatus" data-tone="warning">正在尝试读取真实用户头像...</div>
+                        <button class="button button-quiet" type="button" id="loadProfileBtn">重新读取当前用户头像</button>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <h2 class="section-title">背景</h2>
+                    <div class="control-grid">
+                        <div class="field">
+                            <label for="backgroundFile">上传背景图</label>
+                            <input class="input" id="backgroundFile" type="file" accept="image/*">
+                        </div>
+                        <div class="field">
+                            <label for="overlayOpacity">背景遮罩</label>
+                            <div class="range-row">
+                                <input id="overlayOpacity" type="range" min="0" max="90" value="52">
+                                <span class="range-value" id="overlayValue">52%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <h2 class="section-title">布局微调</h2>
+                    <div class="control-grid">
+                        <div class="field">
+                            <label for="titleSize">标题字号</label>
+                            <div class="range-row">
+                                <input id="titleSize" type="range" min="68" max="104" value="88">
+                                <span class="range-value" id="titleSizeValue">88px</span>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="cardY">卡片位置</label>
+                            <div class="range-row">
+                                <input id="cardY" type="range" min="540" max="660" value="570">
+                                <span class="range-value" id="cardYValue">570</span>
+                            </div>
+                        </div>
+                        <div class="field">
+                            <label for="cardRadius">卡片圆角</label>
+                            <div class="range-row">
+                                <input id="cardRadius" type="range" min="12" max="70" value="42">
+                                <span class="range-value" id="cardRadiusValue">42</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </aside>
+
+            <section class="panel preview-panel">
+                <div class="preview-toolbar">
+                    <div>
+                        <h2 class="preview-title">Canvas 预览</h2>
+                        <p class="preview-meta">实际画布尺寸：1080 x 1600，导出为 PNG。</p>
+                    </div>
+                    <button class="button button-primary" type="button" id="renderBtn">刷新预览</button>
+                </div>
+                <div class="poster-stage">
+                    <div class="poster-frame">
+                        <canvas id="posterCanvas" width="1080" height="1600"></canvas>
+                        <div class="canvas-status" id="canvasStatus"></div>
+                    </div>
+                </div>
+            </section>
+        </section>
+    </main>
+
+    <script src="assets/affiliate-poster-preview.js"></script>
+</body>
+</html>
