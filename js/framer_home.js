@@ -107,6 +107,10 @@ const HOMEPAGE_SECTION_SHELL_CARD_COUNTS = {
   ticker: 2
 };
 
+const HOMEPAGE_HERO_MATRIX_SCROLL_SPEED = 4 / 9;
+const HOMEPAGE_HERO_MATRIX_CHARSET = ['0', '1', 'A', 'B', 'C', 'D', 'E', 'F'];
+const HOMEPAGE_HERO_MATRIX_FONT = '"Share Tech Mono", monospace';
+
 function getHomepageRuntimeSite() {
   return HomepageContract?.normalizeSite?.(window.SiteConfig?.site) || (window.SiteConfig?.site === 'intl' ? 'intl' : 'cn');
 }
@@ -4008,6 +4012,168 @@ const FramerHome = {
           `;
   },
 
+  buildHeroStaticMarkup(data, visibleEntries) {
+    return `
+      <div class="hero-prism-preview-bg" aria-hidden="true">
+        <div class="hero-prism-preview-effect-layer"></div>
+      </div>
+      <div class="hero-prismchrono-scene" aria-hidden="true">
+        <div class="hero-prismchrono-field">
+          <i></i><i></i><i></i>
+          <span><b></b><b></b><b></b><b></b></span>
+          <span><b></b><b></b><b></b><b></b></span>
+          <span><b></b><b></b><b></b><b></b></span>
+          <em></em><em></em><em></em><em></em>
+        </div>
+      </div>
+      <canvas class="hero-fx-liquid" id="heroLiquidCanvas" aria-hidden="true"></canvas>
+      <div class="hero-noise-overlay" aria-hidden="true"></div>
+      <h1 class="hero-title fade-in-up">${escapeHomeHtml(data.title || '')}</h1>
+      <p class="hero-subtitle fade-in-up">${escapeHomeHtml(data.subtitle || '')}</p>
+      <div class="hero-progress fade-in-up" aria-hidden="true">
+        <div class="hero-progress-track">
+          <div class="hero-progress-thumb"></div>
+          ${Array(20).fill(0).map(() => `<span class="progress-tick"></span>`).join('')}
+        </div>
+      </div>
+      <div class="hero-carousel fade-in-up">
+        <div class="hero-carousel-track">
+          ${visibleEntries.map((entry, index) => this.buildHeroEntryCardMarkup(entry, index)).join('')}
+        </div>
+      </div>
+    `;
+  },
+
+  initHeroLiquidMatrix(section) {
+    if (this.heroLiquidRuntime) {
+      this.destroyHeroLiquidMatrix();
+    }
+
+    const canvas = section?.querySelector('#heroLiquidCanvas');
+    if (!section || !canvas) {
+      return;
+    }
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return;
+    }
+
+    const runtime = {
+      section,
+      canvas,
+      ctx,
+      width: 0,
+      height: 0,
+      time: 0,
+      frame: 0,
+      resizeObserver: null
+    };
+
+    const fit = () => {
+      if (!this.heroLiquidRuntime || this.heroLiquidRuntime !== runtime) {
+        return;
+      }
+      const dpr = window.devicePixelRatio || 1;
+      const width = Math.max(1, Math.floor(section.clientWidth));
+      const height = Math.max(1, Math.floor(section.clientHeight));
+      canvas.width = Math.max(1, Math.floor(width * dpr));
+      canvas.height = Math.max(1, Math.floor(height * dpr));
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      runtime.width = width;
+      runtime.height = height;
+    };
+
+    const draw = (dt) => {
+      if (!this.heroLiquidRuntime || this.heroLiquidRuntime !== runtime) {
+        return;
+      }
+
+      const { width: lw, height: lh } = runtime;
+      if (!lw || !lh) {
+        return;
+      }
+
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, lw, lh);
+
+      const cols = 60;
+      const rows = 38;
+      const spacing = 42;
+      const cx = lw / 2;
+      const cy = lh * 0.30;
+      const fov = 400;
+      const hueVal = 150;
+
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+
+      for (let y = 0; y < rows; y += 1) {
+        for (let x = 0; x < cols; x += 1) {
+          const wx = (x - (cols / 2)) * spacing;
+          const zOff = (runtime.time * 1.0) % spacing;
+          const wz = ((rows - y) * spacing) - zOff;
+          const wy = 150
+            + Math.sin((wx * 0.02) + (runtime.time * 0.02)) * 40
+            + Math.cos((wz * 0.015) - (runtime.time * 0.03)) * 60
+            + Math.sin(((wx + wz) * 0.01) + (runtime.time * 0.04)) * 30;
+          const scale = fov / (fov + wz);
+          const px = cx + (wx * scale);
+          const py = cy + (wy * scale);
+
+          if (wz > 0 && scale > 0) {
+            const alpha = Math.max(0.2, 1 - (wz / (rows * spacing)));
+            let ch = '0';
+            if (wy < 140) ch = '1';
+            if (wy < 100) ch = HOMEPAGE_HERO_MATRIX_CHARSET[Math.floor((x + y + (runtime.time * 0.1)) % HOMEPAGE_HERO_MATRIX_CHARSET.length)];
+            const fs = Math.max(3, 14 * scale);
+            ctx.font = `${fs}px ${HOMEPAGE_HERO_MATRIX_FONT}`;
+            const light = Math.max(20, 90 - (wy - 50));
+            ctx.fillStyle = `hsla(${hueVal}, 100%, ${light}%, ${alpha})`;
+            ctx.fillText(ch, px, py);
+          }
+        }
+      }
+
+      runtime.time += dt * HOMEPAGE_HERO_MATRIX_SCROLL_SPEED;
+      runtime.frame = window.requestAnimationFrame((now) => {
+        const nextDt = Math.min(2, (now - (runtime.lastNow || now)) / 16.6667);
+        runtime.lastNow = now;
+        draw(nextDt);
+      });
+    };
+
+    runtime.resizeObserver = typeof window.ResizeObserver === 'function'
+      ? new ResizeObserver(fit)
+      : null;
+
+    this.heroLiquidRuntime = runtime;
+    fit();
+    runtime.lastNow = performance.now();
+    runtime.frame = window.requestAnimationFrame((now) => {
+      runtime.lastNow = now;
+      draw(1);
+    });
+    runtime.resizeObserver?.observe(section);
+  },
+
+  destroyHeroLiquidMatrix() {
+    const runtime = this.heroLiquidRuntime;
+    if (!runtime) {
+      return;
+    }
+
+    if (runtime.resizeObserver) {
+      runtime.resizeObserver.disconnect();
+    }
+
+    if (runtime.frame) {
+      window.cancelAnimationFrame(runtime.frame);
+    }
+
+    this.heroLiquidRuntime = null;
+  },
+
   hydrateStaticHeroSection(section, data, visibleEntries, heroSignature) {
     if (!section || section.dataset.homeStaticHero !== '1' || section.dataset.renderSignature) {
       return false;
@@ -4082,6 +4248,7 @@ const FramerHome = {
     });
 
     section.dataset.homeHeroCentering = '1';
+    this.initHeroLiquidMatrix(section);
     section.dataset.renderSignature = heroSignature;
     section.dataset.homeHeroHydrated = '1';
     this.writeHeroTextCache(data);
@@ -4141,6 +4308,7 @@ const FramerHome = {
       return;
     }
 
+    this.destroyHeroLiquidMatrix();
     setHomeRuntimeStyle(section, {
       backgroundImage: data.customImage
         ? `linear-gradient(180deg, rgba(0, 0, 0, 0.72), rgba(0, 0, 0, 0.9)), url("${String(data.customImage).replace(/"/g, '%22')}")`
@@ -4151,45 +4319,10 @@ const FramerHome = {
     });
 
     section.dataset.homeHeroCentering = '1';
-    section.innerHTML = `
-      <div class="hero-prism-preview-bg" aria-hidden="true">
-        <div class="hero-prism-preview-effect-layer"></div>
-      </div>
-      <div class="hero-prismchrono-scene" aria-hidden="true">
-        <div class="hero-prismchrono-field">
-          <i></i><i></i><i></i>
-          <span><b></b><b></b><b></b><b></b></span>
-          <span><b></b><b></b><b></b><b></b></span>
-          <span><b></b><b></b><b></b><b></b></span>
-          <em></em><em></em><em></em><em></em>
-        </div>
-      </div>
-      <div class="raycast-beams">
-        <div class="ray-beam ray-1"></div>
-        <div class="ray-beam ray-2"></div>
-        <div class="ray-beam ray-3"></div>
-        <div class="ray-beam ray-4"></div>
-      </div>
-      <div class="hero-noise-overlay"></div>
-      <h1 class="hero-title fade-in-up">${escapeHomeHtml(data.title || '')}</h1>
-      <p class="hero-subtitle fade-in-up">${escapeHomeHtml(data.subtitle || '')}</p>
-      <!-- Progress Indicator (Ruler Style) -->
-      <div class="hero-progress fade-in-up">
-        <div class="hero-progress-track">
-          <div class="hero-progress-thumb"></div>
-          ${Array(20).fill(0).map(() => `<span class="progress-tick"></span>`).join('')}
-        </div>
-      </div>
-      
-      <!-- Horizontal Scroll Carousel -->
-      <div class="hero-carousel fade-in-up">
-        <div class="hero-carousel-track">
-          ${visibleEntries.map((entry, index) => this.buildHeroEntryCardMarkup(entry, index)).join('')}
-        </div>
-      </div>
-    `;
+    section.innerHTML = `${this.buildHeroStaticMarkup(data, visibleEntries)}`;
     section.dataset.renderSignature = heroSignature;
     this.writeHeroTextCache(data);
+    this.initHeroLiquidMatrix(section);
 
     // Hero is above-the-fold; reveal immediately instead of waiting for observer.
     section.querySelectorAll('.fade-in-up').forEach(el => {

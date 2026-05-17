@@ -953,13 +953,8 @@ body.mobile-menu-open .chat-widget-fab {
     isolation: isolate;
 }
 
-/* ========== Raycast Light Beams (Hero BG) =========== */
 .hero-section {
     background: #000;
-}
-
-.hero-section[style*="background-image"] .raycast-beams {
-    opacity: 0.78;
 }
 
 /* Bottom gradient fade — smooth transition to site background */
@@ -975,78 +970,14 @@ body.mobile-menu-open .chat-widget-fab {
     z-index: 1;
 }
 
-.raycast-beams {
+.hero-fx-liquid {
     position: absolute;
-    top: -50%;
-    left: -50%;
-    width: 200%;
-    height: 200%;
-    transform: rotate(-45deg);
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: none;
     pointer-events: none;
     z-index: 0;
-}
-
-.ray-beam {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    background: linear-gradient(90deg, transparent, rgba(225, 29, 72, 0.4), transparent);
-    filter: blur(40px);
-    mix-blend-mode: screen;
-    opacity: 0;
-    animation: ray-move 10s infinite ease-in-out;
-}
-
-.ray-1 {
-    left: 30%;
-    width: 100px;
-    animation-duration: 8s;
-    animation-delay: 0s;
-    background: linear-gradient(90deg, transparent, rgba(220, 38, 38, 0.5), transparent);
-}
-
-.ray-2 {
-    left: 45%;
-    width: 150px;
-    animation-duration: 12s;
-    animation-delay: -2s;
-    background: linear-gradient(90deg, transparent, rgba(157, 23, 77, 0.5), transparent);
-}
-
-.ray-3 {
-    left: 60%;
-    width: 80px;
-    animation-duration: 15s;
-    animation-delay: -5s;
-    background: linear-gradient(90deg, transparent, rgba(190, 24, 93, 0.4), transparent);
-}
-
-.ray-4 {
-    left: 75%;
-    width: 200px;
-    animation-duration: 20s;
-    animation-delay: -8s;
-    background: linear-gradient(90deg, transparent, rgba(127, 29, 29, 0.3), transparent);
-}
-
-@keyframes ray-move {
-    0% {
-        transform: translateX(-100px);
-        opacity: 0;
-    }
-
-    20% {
-        opacity: 0.8;
-    }
-
-    80% {
-        opacity: 0.8;
-    }
-
-    100% {
-        transform: translateX(100px);
-        opacity: 0;
-    }
 }
 
 /* Noise overlay for film texture */
@@ -1456,6 +1387,20 @@ html[lang^="en"] .hero-subtitle {
     width: fit-content;
     position: relative;
     z-index: 3;
+}
+
+html[data-theme="dark"] body.home-page .hero-carousel .entry-card-ui {
+    opacity: 1 !important;
+}
+
+@media (min-width: 1440px) and (min-height: 900px) {
+    html[data-theme="dark"] body.home-page .hero-progress {
+        margin-top: calc(var(--spacing-xl) + 34px);
+    }
+
+    html[data-theme="dark"] body.home-page .hero-carousel {
+        margin-top: 216px;
+    }
 }
 
 .hero-section[data-home-static-hero="1"]:not([data-render-signature]) .hero-progress-thumb {
@@ -4942,10 +4887,6 @@ html[data-theme="light"] body.home-page #prompts-section::before {
     background: linear-gradient(to bottom, #f8fafc, transparent);
 }
 
-html[data-theme="light"] body.home-page .raycast-beams {
-    display: none;
-}
-
 html[data-theme="light"] body.home-page .hero-noise-overlay {
     display: none;
 }
@@ -4962,6 +4903,14 @@ html[data-theme="light"] body.home-page .hero-prism-preview-effect-layer {
     mix-blend-mode: normal;
     animation: none;
     transform: none;
+}
+
+html[data-theme="dark"] body.home-page .hero-fx-liquid {
+    display: block;
+}
+
+html[data-theme="light"] body.home-page .hero-fx-liquid {
+    display: none;
 }
 
 html[data-theme="light"] body.home-page .hero-cta .hero-cta-btn {
