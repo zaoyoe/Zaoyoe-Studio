@@ -4084,7 +4084,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'index.html should load the latest framer_home stylesheet version'
     );
     assert.equal(
-        homepageSource.includes('./js/framer_home.js?v=20260512_HOME_GONGYI_BRAND_VERIFY_I18N_1'),
+        homepageSource.includes('./js/framer_home.js?v=20260517_HOME_SHOP_TITLE_FIRST_1'),
         true,
         'index.html should load the latest framer_home script version'
     );

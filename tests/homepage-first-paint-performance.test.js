@@ -26,7 +26,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'static hero title should render immediately and still be localized by i18n'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260512_HOME_GONGYI_BRAND_VERIFY_I18N_1'),
+        indexSource.includes('./js/framer_home.js?v=20260517_HOME_SHOP_TITLE_FIRST_1'),
         true,
         'index.html should cache-bust the first-paint homepage runtime'
     );
@@ -36,17 +36,17 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should cache-bust the prompt no-repaint homepage runtime fix'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home_critical.css?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1'),
+        indexSource.includes('./css/framer_home_critical.css?v=20260517_HOME_SHOP_TITLE_FIRST_1'),
         true,
         'index.html should load a small blocking homepage critical stylesheet'
     );
     assert.match(
         indexSource,
-        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260513_HOME_PROMPT_MASK_CENTER_1" media="print" data-deferred-style="1">/,
+        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260517_HOME_SHOP_TITLE_FIRST_1" media="print" data-deferred-style="1">/,
         'index.html should defer the full homepage stylesheet after the first-paint shell'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home.css?v=20260513_HOME_PROMPT_MASK_CENTER_1'),
+        indexSource.includes('./css/framer_home.css?v=20260517_HOME_SHOP_TITLE_FIRST_1'),
         true,
         'index.html should keep cache-busting the full static hero stability styles'
     );
@@ -544,6 +544,56 @@ test('homepage prompt masonry keeps first refresh light while warming thumbnails
         framerSource,
         /rootMargin: '900px 0px'/,
         'homepage prompt thumbnail warmup should also start when the section nears the viewport'
+    );
+});
+
+test('homepage shop title paints before delayed product cards', () => {
+    const indexSource = readRepoFile('index.html');
+    const framerSource = readRepoFile('js/framer_home.js');
+    const framerStyles = readRepoFile('css/framer_home.css');
+    const criticalStyles = readRepoFile('css/framer_home_critical.css');
+    const renderShopStart = framerSource.indexOf('  renderShop() {');
+    const renderShopEnd = framerSource.indexOf('renderGongyi()', renderShopStart);
+
+    assert.notEqual(renderShopStart, -1, 'FramerHome.renderShop should exist');
+    assert.notEqual(renderShopEnd, -1, 'FramerHome.renderShop should appear before renderGongyi');
+
+    const renderShopSegment = framerSource.slice(renderShopStart, renderShopEnd);
+
+    assert.match(
+        renderShopSegment,
+        /<div class="section-header fade-in-up visible" data-home-shop-header="ready">/,
+        'shop heading should be visible immediately when live products mount'
+    );
+    assert.match(
+        renderShopSegment,
+        /<div class="shop-carousel-wrapper" data-home-shop-staged="pending">[\s\S]*this\.scheduleHomeShopCarouselReveal\(section\);/,
+        'shop product cards should be staged until after the heading has painted'
+    );
+    assert.match(
+        renderShopSegment,
+        /scheduleHomeShopCarouselReveal\(section\)[\s\S]*requestAnimationFrame\(\(\) => \{[\s\S]*requestAnimationFrame\(reveal\);/,
+        'shop carousel reveal should wait for two animation frames before showing product cards'
+    );
+    assert.match(
+        framerStyles,
+        /\.shop-carousel-wrapper\[data-home-shop-staged="pending"\]\s*\{[\s\S]*opacity:\s*0;[\s\S]*transform:\s*translateY\(12px\);[\s\S]*\.shop-carousel-wrapper\[data-home-shop-staged="ready"\]\s*\{[\s\S]*opacity:\s*1;[\s\S]*transition:\s*opacity 0\.32s ease, transform 0\.32s ease;/,
+        'shop carousel CSS should hide pending cards and fade in the ready state'
+    );
+    assert.match(
+        criticalStyles,
+        /20260517_HOME_SHOP_TITLE_FIRST_1[\s\S]*\.shop-carousel-wrapper\[data-home-shop-staged="pending"\]\s*\{[\s\S]*opacity:\s*0;[\s\S]*transform:\s*translateY\(12px\);/,
+        'critical CSS should hide pending shop cards before deferred styles finish loading'
+    );
+    assert.equal(
+        indexSource.includes('./js/framer_home.js?v=20260517_HOME_SHOP_TITLE_FIRST_1'),
+        true,
+        'index.html should cache-bust the shop title-first homepage runtime'
+    );
+    assert.equal(
+        indexSource.includes('./css/framer_home.css?v=20260517_HOME_SHOP_TITLE_FIRST_1'),
+        true,
+        'index.html should cache-bust the shop title-first homepage styles'
     );
 });
 
