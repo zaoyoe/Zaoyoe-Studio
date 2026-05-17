@@ -26,7 +26,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'static hero title should render immediately and still be localized by i18n'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260517_HOME_SHOP_TITLE_FIRST_1'),
+        indexSource.includes('./js/framer_home.js?v=20260517_HOME_PROMPTS_TITLE_FIRST_1'),
         true,
         'index.html should cache-bust the first-paint homepage runtime'
     );
@@ -547,6 +547,23 @@ test('homepage prompt masonry keeps first refresh light while warming thumbnails
     );
 });
 
+test('homepage prompts title paints immediately when prompt cards mount', () => {
+    const framerSource = readRepoFile('js/framer_home.js');
+    const renderPromptsStart = framerSource.indexOf('  renderPrompts() {');
+    const renderPromptsEnd = framerSource.indexOf('renderShop()', renderPromptsStart);
+
+    assert.notEqual(renderPromptsStart, -1, 'FramerHome.renderPrompts should exist');
+    assert.notEqual(renderPromptsEnd, -1, 'FramerHome.renderPrompts should appear before renderShop');
+
+    const renderPromptsSegment = framerSource.slice(renderPromptsStart, renderPromptsEnd);
+
+    assert.match(
+        renderPromptsSegment,
+        /<div class="section-header fade-in-up visible" data-home-prompts-header="ready">/,
+        'prompts heading should be visible immediately when prompt cards mount'
+    );
+});
+
 test('homepage shop title paints before delayed product cards', () => {
     const indexSource = readRepoFile('index.html');
     const framerSource = readRepoFile('js/framer_home.js');
@@ -586,7 +603,7 @@ test('homepage shop title paints before delayed product cards', () => {
         'critical CSS should hide pending shop cards before deferred styles finish loading'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260517_HOME_SHOP_TITLE_FIRST_1'),
+        indexSource.includes('./js/framer_home.js?v=20260517_HOME_PROMPTS_TITLE_FIRST_1'),
         true,
         'index.html should cache-bust the shop title-first homepage runtime'
     );

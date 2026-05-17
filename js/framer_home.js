@@ -4409,7 +4409,7 @@ const FramerHome = {
     });
 
     section.innerHTML = `
-      <div class="section-header fade-in-up">
+      <div class="section-header fade-in-up visible" data-home-prompts-header="ready">
         <h2 class="section-title">${escapeHomeHtml(sectionTitle)}</h2>
         <p class="section-subtitle">${escapeHomeHtml(sectionSubtitle)}</p>
       </div>
