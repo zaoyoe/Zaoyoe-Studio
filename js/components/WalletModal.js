@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260506_PAYMENT_METHOD_PAYABLE_ACCENT_1';
+    const walletCssHref = 'css/wallet.css?v=20260518_MOBILE_ALIPAY_HANDOFF_1';
     let walletCssReady = false;
     let walletCssReadyPromise = Promise.resolve();
 
@@ -3143,7 +3143,8 @@
                 throw new Error(this.tr('wallet.missingPaymentLink', '缺少支付链接'));
             }
 
-            const useSameTab = options.sameTab === true || this.isMobilePaymentBrowser();
+            const preserveCurrentPage = options.preserveCurrentPage === true;
+            const useSameTab = options.sameTab === true || (this.isMobilePaymentBrowser() && !preserveCurrentPage);
             if (useSameTab) {
                 window.location.assign(url);
                 return 'same-tab';
@@ -3949,18 +3950,19 @@
 
         tryPresentHostedPaymentQrModal(paymentResult = {}, options = {}) {
             const provider = String(paymentResult?.provider || '').trim().toLowerCase();
-            if (provider !== 'zpay' || this.isMobilePaymentBrowser()) {
+            if (provider !== 'zpay') {
                 return false;
             }
+            const isMobilePayment = this.isMobilePaymentBrowser();
 
             const providerSummary = paymentResult?.provider_summary && typeof paymentResult.provider_summary === 'object'
                 ? paymentResult.provider_summary
                 : {};
-            const qrcodeImgUrl = String(providerSummary.qrcode_img_url || '').trim();
+            const qrcodeImgUrl = isMobilePayment ? '' : String(providerSummary.qrcode_img_url || '').trim();
             const qrcodeUrl = String(providerSummary.qrcode_url || '').trim();
             const checkoutUrl = String(paymentResult?.checkout_url || '').trim();
 
-            if (!qrcodeImgUrl && !qrcodeUrl) {
+            if (!qrcodeImgUrl && !qrcodeUrl && !checkoutUrl) {
                 return false;
             }
 
@@ -3971,8 +3973,23 @@
             const pointsAmount = Number(paymentResult?.points_amount || 0) || 0;
             const copyValue = qrcodeUrl || checkoutUrl || '';
             const openUrl = checkoutUrl || qrcodeUrl || '';
-            const showOpenAction = Boolean(openUrl) && (!this.isHostedPaymentQrDesktopLayout() || !qrcodeImgUrl);
+            const showOpenAction = Boolean(openUrl) && (isMobilePayment || !this.isHostedPaymentQrDesktopLayout() || !qrcodeImgUrl);
             const hasActions = Boolean(copyValue || showOpenAction);
+            const titleHint = isMobilePayment
+                ? this.tr('wallet.mobileAlipayPaymentSubtitle', '支付完成后回到本页，系统会自动同步到账')
+                : this.tr('wallet.scanAlipayToPay', '请使用支付宝扫码支付');
+            const initialStatusMessage = isMobilePayment
+                ? this.tr('wallet.mobileAlipayPaymentReady', '支付页已准备好。请打开支付宝支付，完成后回到此页面等待同步。')
+                : this.tr('wallet.scanAlipayToPay', '请使用支付宝扫码支付。');
+            const waitingMessage = isMobilePayment
+                ? this.tr('wallet.mobileAlipayPaymentWaiting', '请在支付宝完成付款，回到此页面后会继续同步结果。')
+                : this.tr('wallet.paymentWaiting', '请支付并保持此页面，正在等待支付结果同步');
+            const fallbackCopy = isMobilePayment
+                ? this.tr('wallet.mobileAlipayPaymentHint', '请点击下方按钮打开支付宝支付。支付完成后回到此页面，系统会自动同步到账。')
+                : this.tr('wallet.paymentQrFallback', '当前通道没有返回二维码图片，请使用下方按钮打开支付页继续付款。');
+            const openActionLabel = isMobilePayment
+                ? this.tr('wallet.openAlipayToPay', '打开支付宝支付')
+                : this.tr('wallet.openPaymentPage', '打开支付页');
             const detailRows = [
                 pricing.hasFee && pricing.baseAmount > 0
                     ? `
@@ -4017,19 +4034,19 @@
             const detailOverlay = document.createElement('div');
             detailOverlay.className = 'wallet-order-modal-overlay';
             detailOverlay.innerHTML = `
-                <div class="wallet-order-modal wallet-order-modal--compact wallet-payment-qr-modal">
+                <div class="wallet-order-modal wallet-order-modal--compact wallet-payment-qr-modal${isMobilePayment ? ' wallet-payment-qr-modal--mobile-handoff' : ''}">
                     <div class="wallet-order-modal-header">
                         <div class="wallet-order-modal-title wallet-payment-qr-title">
                             <span class="wallet-payment-qr-title-icon">${this.renderWalletInlineIcon('fa-qrcode', '#fbbf24')}</span>
                             <span class="wallet-payment-qr-title-copy">
                                 <strong>${this.escapeHtml(modalTitle)}</strong>
-                                <small>${this.tr('wallet.scanAlipayToPay', '请使用支付宝扫码支付')}</small>
+                                <small>${this.escapeHtml(titleHint)}</small>
                             </span>
                         </div>
                     </div>
                     <div class="wallet-order-modal-body wallet-order-modal-body--fade">
                         <div class="wallet-payment-qr-panel">
-                            <div class="wallet-payment-qr-status js-wallet-payment-qr-status is-info">${this.tr('wallet.scanAlipayToPay', '请使用支付宝扫码支付。')}</div>
+                            <div class="wallet-payment-qr-status js-wallet-payment-qr-status is-info">${this.escapeHtml(initialStatusMessage)}</div>
                             ${qrcodeImgUrl
                                 ? `
                                     <div class="wallet-payment-qr-card js-wallet-payment-qr-visual">
@@ -4048,7 +4065,7 @@
                                 : `
                                     <div class="wallet-payment-qr-card js-wallet-payment-qr-visual">
                                         <div class="wallet-payment-qr-fallback js-wallet-payment-qr-fallback">
-                                        ${this.tr('wallet.paymentQrFallback', '当前通道没有返回二维码图片，请使用下方按钮打开支付页继续付款。')}
+                                        ${this.escapeHtml(fallbackCopy)}
                                         </div>
                                         <div class="wallet-payment-qr-success js-wallet-payment-qr-success" hidden>
                                             <div class="wallet-payment-qr-success-mark" aria-hidden="true">
@@ -4069,7 +4086,7 @@
                                     ? `<button class="action-btn secondary wallet-action-btn--grow js-wallet-copy-payment-qr" type="button">${this.tr('wallet.copyPaymentLink', '复制付款链接')}</button>`
                                     : ''}
                                 ${showOpenAction
-                                    ? `<button class="action-btn primary wallet-action-btn--grow js-wallet-open-payment-qr" type="button">${this.tr('wallet.openPaymentPage', '打开支付页')}</button>`
+                                    ? `<button class="action-btn primary wallet-action-btn--grow js-wallet-open-payment-qr" type="button">${this.escapeHtml(openActionLabel)}</button>`
                                     : ''}
                             </div>
                         </div>
@@ -4091,11 +4108,20 @@
             });
             detailOverlay.querySelector('.js-wallet-open-payment-qr')?.addEventListener('click', () => {
                 if (!openUrl) return;
-                this.openPaymentCheckoutUrl(openUrl);
+                this.openPaymentCheckoutUrl(openUrl, { preserveCurrentPage: isMobilePayment });
+                if (isMobilePayment) {
+                    this.updateHostedPaymentQrStatus(detailOverlay, waitingMessage, 'info', {
+                        loading: true
+                    });
+                }
             });
 
             document.body.appendChild(detailOverlay);
-            this.startHostedPaymentQrPolling(detailOverlay, paymentResult, options);
+            this.startHostedPaymentQrPolling(detailOverlay, paymentResult, {
+                ...options,
+                initialStatusMessage,
+                waitingMessage
+            });
             this.animateHostedPaymentQrEntry(detailOverlay);
             return true;
         },

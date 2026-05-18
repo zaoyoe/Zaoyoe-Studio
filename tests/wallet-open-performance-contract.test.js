@@ -12,9 +12,9 @@ test('wallet loader and auth runtime prewarm the wallet shell before modal open'
     const authSource = readRepoFile('supabase-auth-functions.js');
 
     const loaderMarkers = [
-        "const VERSION = '20260510_WALLET_REALTIME_FALLBACK_1';",
-        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260510_WALLET_REALTIME_FALLBACK_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260510_WALLET_REALTIME_FALLBACK_1';",
+        "const VERSION = '20260518_MOBILE_ALIPAY_HANDOFF_1';",
+        "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260518_MOBILE_ALIPAY_HANDOFF_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260518_MOBILE_ALIPAY_HANDOFF_1';",
         'function ensurePointsServiceReady() {',
         'function warmWalletOverview(options = {}) {',
         'function warmWalletRuntime() {',
