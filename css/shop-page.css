@@ -5256,18 +5256,6 @@
             animation-play-state: paused;
         }
 
-        .shop-card.breathing.shop-card-breathe-deferred {
-            animation: none;
-            --shop-card-breathe-y: 0px;
-            --shop-card-breathe-amplitude: 0px;
-        }
-
-        .shop-card.shop-card-filter-enter:not(.shop-card-mobile-fresh-enter),
-        .shop-card.shop-card-filter-exit,
-        .shop-card.shop-card-filter-moving {
-            animation: none !important;
-        }
-
         /* Flash Sale Breathing Effect */
         @keyframes flashSaleBreathe {
 
@@ -6048,15 +6036,18 @@ html:not([data-theme="dark"]) body.shop-page .shop-card--in-cart {
 
     body.shop-page .shop-card.user-product-card.shop-card-filter-enter {
         opacity: 0;
-        transform: translateY(20px);
+        --shop-card-enter-y: 20px;
+        --shop-card-enter-scale: 1;
     }
 
     body.shop-page .shop-card.user-product-card.shop-card-filter-enter.is-visible {
         opacity: 1;
-        transform: translateY(0);
+        --shop-card-enter-y: 0px;
+        --shop-card-enter-scale: 1;
         transition:
             opacity 1.05s ease var(--shop-card-filter-delay, 0ms),
-            transform 1.05s ease var(--shop-card-filter-delay, 0ms),
+            --shop-card-enter-y 1.05s ease var(--shop-card-filter-delay, 0ms),
+            --shop-card-enter-scale 1.05s ease var(--shop-card-filter-delay, 0ms),
             box-shadow 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
             border-color 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
             background 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
@@ -6073,17 +6064,16 @@ html:not([data-theme="dark"]) body.shop-page .shop-card--in-cart {
 @keyframes shopMobileFreshCardEnter {
     0% {
         opacity: 0;
-        transform: translateY(20px);
+        --shop-card-enter-y: 20px;
     }
 
     100% {
         opacity: 1;
-        transform: translateY(0);
+        --shop-card-enter-y: 0px;
     }
 }
 
 body.shop-page .shop-card.user-product-card.shop-card-mobile-fresh-enter {
-    animation: shopMobileFreshCardEnter 1.05s ease var(--shop-card-filter-delay, 0ms) both !important;
     transform-origin: center top;
 }
 

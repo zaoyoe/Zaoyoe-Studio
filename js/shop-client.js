@@ -391,8 +391,8 @@ function buildShopTrackingMetadata(baseMetadata = {}, sourceContext = {}) {
 
 const SHOP_GRID_EAGER_IMAGE_COUNT = 4;
 const SHOP_PRODUCT_SKELETON_COUNT = 5;
-const SHOP_CARD_BREATHE_MAX_DELAY_S = 4;
-const SHOP_CARD_BREATHE_ACTIVATE_DELAY_MS = 850;
+const SHOP_CARD_BREATHE_PHASE_MAX_S = 4;
+const SHOP_CARD_BREATHE_ACTIVATE_DELAY_MS = 0;
 const SHOP_CARD_ENTER_SETTLE_FALLBACK_BUFFER_MS = 180;
 const SHOP_CARD_FRESH_ENTER_ANIMATION_ID = 'shop-card-fresh-enter';
 const SHOP_CARD_FRESH_ENTER_DURATION_MS = 1050;
@@ -7367,7 +7367,7 @@ const ShopClient = {
             return '0s';
         }
 
-        return `${(Math.random() * SHOP_CARD_BREATHE_MAX_DELAY_S).toFixed(2)}s`;
+        return `-${(Math.random() * SHOP_CARD_BREATHE_PHASE_MAX_S).toFixed(2)}s`;
     },
 
     isShopCardBreathingEnabled: function () {
@@ -7398,49 +7398,12 @@ const ShopClient = {
     },
 
     playShopCardFreshEnterAnimation: function (card) {
-        if (!(card instanceof Element) || typeof card.animate !== 'function' || this.prefersReducedMotion()) {
+        if (!(card instanceof Element)) {
             return null;
         }
 
-        const delayMs = Math.max(0, Number.parseFloat(card.dataset.shopFreshEnterDelayMs || '0') || 0);
-        try {
-            const animation = card.animate(
-                [
-                    { opacity: 0, transform: 'translateY(20px)' },
-                    { opacity: 1, transform: 'translateY(0)' }
-                ],
-                {
-                    duration: SHOP_CARD_FRESH_ENTER_DURATION_MS,
-                    delay: delayMs,
-                    easing: 'ease',
-                    fill: 'both'
-                }
-            );
-            animation.id = SHOP_CARD_FRESH_ENTER_ANIMATION_ID;
-
-            const clearDelay = () => {
-                delete card.dataset.shopFreshEnterDelayMs;
-            };
-            const finish = () => {
-                clearDelay();
-                try {
-                    animation.cancel();
-                } catch (_error) {
-                    // The final visible state is held by the card class.
-                }
-            };
-
-            if (typeof animation.addEventListener === 'function') {
-                animation.addEventListener('finish', finish, { once: true });
-                animation.addEventListener('cancel', clearDelay, { once: true });
-            } else if (animation.finished?.then) {
-                animation.finished.then(finish, clearDelay);
-            }
-
-            return animation;
-        } catch (_error) {
-            return null;
-        }
+        delete card.dataset.shopFreshEnterDelayMs;
+        return null;
     },
 
     getShopCardCurrentTranslateY: function (card) {
@@ -8440,6 +8403,52 @@ const ShopClient = {
         });
     },
 
+    reuseShopProductCardElement: function (currentCard, nextCard) {
+        if (!(currentCard instanceof Element) || !(nextCard instanceof Element)) {
+            return nextCard;
+        }
+
+        const breatheDelay = currentCard.dataset.shopBreatheDelay
+            || currentCard.style.getPropertyValue('--breathe-delay')
+            || nextCard.dataset.shopBreatheDelay
+            || '0s';
+
+        Array.from(currentCard.attributes).forEach(attribute => {
+            if (!nextCard.hasAttribute(attribute.name)) {
+                currentCard.removeAttribute(attribute.name);
+            }
+        });
+        Array.from(nextCard.attributes).forEach(attribute => {
+            currentCard.setAttribute(attribute.name, attribute.value);
+        });
+
+        currentCard.innerHTML = nextCard.innerHTML;
+        currentCard.classList.remove(
+            'shop-card-breathe-deferred',
+            'shop-card-filter-enter',
+            'shop-card-filter-enter--initial',
+            'shop-card-mobile-fresh-enter',
+            'shop-card-filter-exit',
+            'shop-card-filter-hidden',
+            'is-visible',
+            'is-leaving'
+        );
+        if (nextCard.classList.contains('breathing')) {
+            currentCard.classList.add('breathing');
+        }
+        currentCard.dataset.shopBreatheDelay = breatheDelay;
+        this.setCssVariables(currentCard, {
+            '--breathe-delay': breatheDelay,
+            '--shop-card-filter-delay': null,
+            '--shop-card-enter-y': null,
+            '--shop-card-enter-scale': null,
+            '--shop-card-shift-x': null,
+            '--shop-card-shift-y': null
+        });
+
+        return currentCard;
+    },
+
     clearProductGridTransitionArtifacts: function (container = document.getElementById('userShopGrid')) {
         if (this.gridTransitionCleanupTimer) {
             clearTimeout(this.gridTransitionCleanupTimer);
@@ -8687,14 +8696,15 @@ const ShopClient = {
         }
 
         const cartQuantity = this.getCartQuantity(productId);
+        const breatheDelay = this.getShopCardBreatheDelay();
 
         const el = document.createElement('div');
         el.className = `shop-card user-product-card breathing shop-card-breathe-deferred ${cartQuantity > 0 ? 'shop-card--in-cart' : ''}`;
         el.dataset.productId = productId;
         el.dataset.productCategory = String(product.category || '');
-        el.dataset.shopBreatheDelay = this.getShopCardBreatheDelay();
+        el.dataset.shopBreatheDelay = breatheDelay;
         this.setCssVariables(el, {
-            '--breathe-delay': null,
+            '--breathe-delay': breatheDelay,
             '--shop-card-filter-delay': null
         });
 
@@ -8873,6 +8883,14 @@ const ShopClient = {
                 })
                 .filter(Boolean)
         );
+        const existingCardsByProductId = new Map(
+            existingCards
+                .map(card => {
+                    const productId = String(card.dataset.productId || '').trim();
+                    return productId ? [productId, card] : null;
+                })
+                .filter(Boolean)
+        );
         const previousIds = new Set(
             existingCards
                 .map(card => String(card.dataset.productId || '').trim())
@@ -8883,6 +8901,12 @@ const ShopClient = {
                 .map(card => String(card.dataset.productId || '').trim())
                 .filter(Boolean)
         );
+
+        cardElements = cardElements.map(card => {
+            const productId = String(card?.dataset?.productId || '').trim();
+            const reusableCard = productId ? existingCardsByProductId.get(productId) : null;
+            return reusableCard ? this.reuseShopProductCardElement(reusableCard, card) : card;
+        });
 
         if (!shouldAnimate) {
             this.gridTransitionActiveUntil = 0;
@@ -8946,9 +8970,7 @@ const ShopClient = {
                 return null;
             }
 
-            const watchedProperties = window.matchMedia?.('(max-width: 768px)')?.matches === true
-                ? new Set(['transform'])
-                : new Set(['--shop-card-enter-y', '--shop-card-enter-scale']);
+            const watchedProperties = new Set(['--shop-card-enter-y', '--shop-card-enter-scale']);
             const listeners = [];
             let timeoutId = null;
             let resolvePromise = null;
@@ -8958,8 +8980,6 @@ const ShopClient = {
                 listeners.forEach(({ card, handler }) => {
                     card.removeEventListener('transitionend', handler);
                     card.removeEventListener('transitioncancel', handler);
-                    card.removeEventListener('animationend', handler);
-                    card.removeEventListener('animationcancel', handler);
                 });
                 if (timeoutId) {
                     window.clearTimeout(timeoutId);
@@ -8983,10 +9003,8 @@ const ShopClient = {
                     const isWatchedTransition = event.type !== 'animationend'
                         && event.type !== 'animationcancel'
                         && watchedProperties.has(event.propertyName);
-                    const isWatchedAnimation = (event.type === 'animationend' || event.type === 'animationcancel')
-                        && event.animationName === 'shopMobileFreshCardEnter';
 
-                    if (event.target !== card || (!isWatchedTransition && !isWatchedAnimation)) {
+                    if (event.target !== card || !isWatchedTransition) {
                         return;
                     }
 
@@ -8998,8 +9016,6 @@ const ShopClient = {
 
                 card.addEventListener('transitionend', handler);
                 card.addEventListener('transitioncancel', handler);
-                card.addEventListener('animationend', handler);
-                card.addEventListener('animationcancel', handler);
                 listeners.push({ card, handler });
             });
 
@@ -9104,8 +9120,8 @@ const ShopClient = {
         const renderNextState = ({ enterDelayBase = 0 } = {}) => {
             if (transitionId !== this.gridTransitionSequence) return;
 
-            container.innerHTML = '';
             if (empty) {
+                container.innerHTML = '';
                 container.classList.add('is-empty');
                 container.appendChild(this.buildEmptyStateElement());
                 this.syncMobileProductFocusMode();
@@ -9118,56 +9134,37 @@ const ShopClient = {
             }
 
             container.classList.remove('is-empty');
+            const finalCardSet = new Set(cardElements);
+            Array.from(container.children).forEach(child => {
+                if (child.classList?.contains('shop-grid-transition-layer')) {
+                    return;
+                }
+                if (!finalCardSet.has(child)) {
+                    child.remove();
+                }
+            });
             cardElements.forEach(card => container.appendChild(card));
 
             const movingCards = [];
-            const moveOverlay = document.createElement('div');
-            moveOverlay.className = 'shop-grid-transition-layer';
-            moveOverlay.setAttribute('aria-hidden', 'true');
             let moveOrder = 0;
-            if (!forceFreshEnterActive) {
-                cardElements.forEach(card => {
-                    const productId = String(card.dataset.productId || '').trim();
-                    const previousState = previousCardState.get(productId);
-                    if (!previousState) return;
+            cardElements.forEach(card => {
+                const productId = String(card.dataset.productId || '').trim();
+                const previousState = previousCardState.get(productId);
+                if (!previousState) return;
 
-                    const moveX = card.offsetLeft - previousState.left;
-                    const moveY = card.offsetTop - previousState.top;
-                    if (Math.abs(moveX) < 1 && Math.abs(moveY) < 1) return;
+                const moveX = previousState.left - card.offsetLeft;
+                const moveY = previousState.top - card.offsetTop;
+                if (Math.abs(moveX) < 1 && Math.abs(moveY) < 1) return;
 
-                    const clone = previousState.card.cloneNode(true);
-                    clone.classList.remove(
-                        'shop-card-filter-enter',
-                        'shop-card-filter-exit',
-                        'shop-card-filter-moving',
-                        'shop-card-filter-hidden',
-                        'shop-card-filter-motion-lock',
-                        'shop-card--active-focus',
-                        'shop-card--observed-focus',
-                        'breathing',
-                        'is-visible',
-                        'is-leaving'
-                    );
-                    clone.classList.add('shop-card-transition-clone', 'shop-card-transition-clone--moving');
-                    clone.style.width = `${previousState.width}px`;
-                    clone.style.height = `${previousState.height}px`;
-                    clone.style.left = `${previousState.left}px`;
-                    clone.style.top = `${previousState.top}px`;
-                    clone.style.transform = `translate3d(0px, ${previousState.translateY || 0}px, 0) scale(1)`;
-                    this.setCssVariables(clone, {
-                        '--shop-card-filter-delay': `${moveOrder * 18}ms`
-                    });
-                    moveOverlay.appendChild(clone);
-
-                    card.classList.add('shop-card-filter-hidden', 'shop-card-filter-motion-lock');
-                    movingCards.push({ card, clone, productId, moveX, moveY });
-                    moveOrder += 1;
+                card.classList.add('shop-card-filter-moving', 'shop-card-filter-motion-lock');
+                this.setCssVariables(card, {
+                    '--shop-card-filter-delay': `${moveOrder * 18}ms`,
+                    '--shop-card-shift-x': `${moveX}px`,
+                    '--shop-card-shift-y': `${moveY}px`
                 });
-            }
-            const moveOverlayNode = moveOverlay.childElementCount > 0 ? moveOverlay : null;
-            if (moveOverlayNode) {
-                container.appendChild(moveOverlayNode);
-            }
+                movingCards.push({ card, productId });
+                moveOrder += 1;
+            });
 
             const isInitialEntrance = previousIds.size === 0 && hadSkeletonCards;
             const enterDelayStepMs = usesPromptStyleEnter ? SHOP_CARD_FRESH_ENTER_DELAY_STEP_MS : (isInitialEntrance ? 136 : 38);
@@ -9178,7 +9175,7 @@ const ShopClient = {
             let enterOrder = 0;
             cardElements.forEach(card => {
                 const productId = String(card.dataset.productId || '').trim();
-                if (!forceFreshEnterActive && previousIds.has(productId)) {
+                if (previousIds.has(productId)) {
                     return;
                 }
 
@@ -9208,7 +9205,7 @@ const ShopClient = {
                     enteringCards,
                     cleanupDurationMs: 0,
                     finalCards: cardElements,
-                    overlay: moveOverlayNode ? [moveOverlayNode] : []
+                    overlay: []
                 };
             }
 
@@ -9220,19 +9217,15 @@ const ShopClient = {
                 : 0;
             const cleanupDurationMs = Math.max(moveDurationMs, enterDurationMs);
             const enterSettlePromise = createEnteringSettlePromise(enteringCards, enterDurationMs);
-            movingCards.forEach((entry) => {
-                entry.targetShiftY = entry.moveY;
-            });
 
             const revealEnteringCards = () => {
                 if (transitionId !== this.gridTransitionSequence) return;
-                movingCards.forEach(({ clone, moveX, targetShiftY = 0 }) => {
-                    if (!clone) return;
-                    clone.style.transform = `translate3d(${moveX}px, ${targetShiftY}px, 0) scale(1)`;
+                movingCards.forEach(({ card }) => {
+                    this.setCssVariables(card, {
+                        '--shop-card-shift-x': '0px',
+                        '--shop-card-shift-y': '0px'
+                    });
                 });
-                if (forceFreshEnterActive) {
-                    enteringCards.forEach(card => this.playShopCardFreshEnterAnimation(card));
-                }
                 enteringCards.forEach(card => card.classList.add('is-visible'));
             };
 
@@ -9251,7 +9244,7 @@ const ShopClient = {
                 cleanupDurationMs,
                 enterSettlePromise,
                 finalCards: cardElements,
-                overlay: moveOverlayNode ? [moveOverlayNode] : []
+                overlay: []
             };
         };
 
