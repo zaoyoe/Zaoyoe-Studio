@@ -34,7 +34,7 @@ test('normalizeZpayConfig derives official endpoint urls and reports missing fie
     assert.equal(config.pid, 'pid-123');
     assert.equal(config.mapiUrl, 'https://zpayz.cn/mapi.php');
     assert.equal(config.apiUrl, 'https://zpayz.cn/api.php');
-    assert.equal(config.refundUrl, 'https://zpayz.cn/api.php');
+    assert.equal(config.refundUrl, 'https://zpayz.cn/api.php?act=refund');
     assert.equal(config.paymentType, 'wxpay');
     assert.equal(config.createReady, true);
     assert.deepEqual(config.missingFields, []);
@@ -152,7 +152,7 @@ test('buildZpayMapiPayload and follow-up payloads match the documented field nam
         outTradeNo: 'ZPORDER001',
         money: 9.9
     });
-    assert.equal(refundPayload.act, 'refund');
+    assert.equal(Object.prototype.hasOwnProperty.call(refundPayload, 'act'), false);
     assert.equal(refundPayload.out_trade_no, 'ZPORDER001');
     assert.equal(refundPayload.money, '9.90');
 });
@@ -234,6 +234,48 @@ test('createZpayPayment posts form data to the mapi endpoint', async () => {
 
     assert.equal(result.response.data.payurl, 'https://zpayz.cn/pay/demo/1');
     assert.equal(result.requestPayload.out_trade_no, 'ZPORDER001');
+});
+
+test('refundZpayPayment posts refund fields to the documented act=refund endpoint', async () => {
+    const result = await refundZpayPayment({
+        channelConfig: {
+            pid: 'pid-123',
+            checkout_url: 'https://zpayz.cn',
+            notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook'
+        },
+        secretValues: {
+            zpay_pkey: 'pkey-123'
+        },
+        outTradeNo: 'ZPORDER001',
+        money: 9.9
+    }, {
+        fetchImpl: async (url, request) => {
+            assert.equal(url, 'https://zpayz.cn/api.php?act=refund');
+            assert.equal(request.method, 'POST');
+            assert.match(String(request.body || ''), /pid=pid-123/);
+            assert.match(String(request.body || ''), /out_trade_no=ZPORDER001/);
+            assert.match(String(request.body || ''), /money=9\.90/);
+            assert.doesNotMatch(String(request.body || ''), /(?:^|&)act=refund(?:&|$)/);
+
+            return {
+                ok: true,
+                status: 200,
+                statusText: 'OK',
+                async text() {
+                    return JSON.stringify({
+                        code: 1,
+                        msg: '退款成功',
+                        out_trade_no: 'ZPORDER001',
+                        trade_no: 'TRADE_001',
+                        status: 2
+                    });
+                }
+            };
+        }
+    });
+
+    assert.equal(result.requestPayload.out_trade_no, 'ZPORDER001');
+    assert.equal(result.response.data.code, 1);
 });
 
 test('requestZpayJson wraps upstream fetch failures with a friendly message', async () => {
