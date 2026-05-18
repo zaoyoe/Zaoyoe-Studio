@@ -395,8 +395,7 @@ async function handleZpayWebhook({
     const webhookTrustedProxies = getZpayWebhookTrustedProxies(env);
     const webhookAllowedIps = String(env.ZPAY_WEBHOOK_ALLOWED_IPS || '').trim();
     if (isProductionLikeRuntime(env) && !webhookAllowedIps) {
-        console.warn('[ZPAY] Webhook blocked because ZPAY_WEBHOOK_ALLOWED_IPS is missing in a production-like runtime');
-        return sendPlainText(res, 503, 'webhook source allowlist not configured');
+        console.warn('[ZPAY] Webhook source allowlist is missing; continuing with strict signature, local-order, and active-query verification');
     }
     const webhookContext = buildRequestNetworkContext(req, {
         env,

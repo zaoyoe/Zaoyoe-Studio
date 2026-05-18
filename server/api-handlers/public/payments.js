@@ -92,6 +92,7 @@ function createPaymentsHandlers({
     const {
         buildPublicPaymentConfig,
         buildPublicPaymentRuntime,
+        buildPaymentSecretStatus,
         loadStoredPaymentConfigs
     } = paymentProviders || {};
     const {
@@ -225,7 +226,11 @@ function createPaymentsHandlers({
                         env
                     })
                 };
-                const publicConfig = buildPublicPaymentConfig(paymentChannels, rechargeOptions, runtime);
+                const publicConfigOptions = { env };
+                if (typeof buildPaymentSecretStatus === 'function') {
+                    publicConfigOptions.secretStatus = await buildPaymentSecretStatus(supabase, env, { site });
+                }
+                const publicConfig = buildPublicPaymentConfig(paymentChannels, rechargeOptions, runtime, publicConfigOptions);
                 const publicRuntime = buildPublicPaymentRuntime(runtime);
 
                 return sendJson(res, 200, {

@@ -307,7 +307,9 @@ test('payment config endpoint resolves site-scoped payment config for explicit s
     };
 
     await withEnv({
-        SUPABASE_SERVICE_ROLE_KEY: 'service-role-key'
+        SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+        NOWPAYMENTS_API_KEY: 'np-api-key',
+        NOWPAYMENTS_IPN_SECRET: 'np-ipn-secret'
     }, async () => {
         await withConfigHandler({
             adminModule: {
@@ -367,6 +369,142 @@ test('payment config endpoint resolves site-scoped payment config for explicit s
             assert.equal(payload.config.providers.nowpayments.display_name, 'USDT-BEP20');
             assert.equal(payload.recharge_options.custom_amount_enabled, true);
             assert.equal(payload.recharge_options.mock_payment_enabled, false);
+        });
+    });
+});
+
+test('payment config endpoint hides real providers that are enabled but missing runtime secrets', async () => {
+    const supabase = {
+        from(table) {
+            if (table === 'admin_secret_store') {
+                return {
+                    select() {
+                        return this;
+                    },
+                    eq() {
+                        return Promise.resolve({
+                            data: [],
+                            error: null
+                        });
+                    }
+                };
+            }
+
+            assert.equal(table, 'system_config');
+            return {
+                select() {
+                    return this;
+                },
+                in(column, values) {
+                    assert.equal(column, 'config_key');
+                    assert.deepEqual(values, ['payment_channels', 'recharge_options']);
+                    return Promise.resolve({
+                        data: [
+                            {
+                                config_key: 'payment_channels',
+                                config_value: {
+                                    active_provider: 'zpay',
+                                    providers: {
+                                        afdian: {
+                                            enabled: false,
+                                            display_name: '爱发电',
+                                            checkout_url: 'https://afdian.com/a/zaoyoe'
+                                        },
+                                        zpay: {
+                                            enabled: true,
+                                            display_name: '易支付',
+                                            checkout_url: 'https://zpayz.cn',
+                                            pid: '2026041807323142',
+                                            notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook'
+                                        },
+                                        nowpayments: {
+                                            enabled: true,
+                                            display_name: 'USDT-BEP20',
+                                            pay_currency: 'usdtbsc',
+                                            ipn_callback_url: 'https://www.zaoyoe.com/api/payments/nowpayments/webhook'
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                config_key: 'recharge_options',
+                                config_value: {
+                                    custom_amount_enabled: true,
+                                    mock_payment_enabled: false
+                                }
+                            }
+                        ],
+                        error: null
+                    });
+                }
+            };
+        }
+    };
+
+    await withEnv({
+        SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+        ZPAY_PKEY: undefined,
+        ZPAY_KEY: undefined,
+        NOWPAYMENTS_API_KEY: undefined,
+        NOWPAYMENTS_IPN_SECRET: undefined
+    }, async () => {
+        await withConfigHandler({
+            adminModule: {
+                getSupabaseAdmin() {
+                    return supabase;
+                },
+                getOptionalSupabaseAdmin() {
+                    return supabase;
+                },
+                getSupabasePublicClient() {
+                    return supabase;
+                },
+                sendJson(res, status, payload) {
+                    res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                    res.end(JSON.stringify(payload));
+                }
+            },
+            requestSecurityModule: {
+                resolveClientIp() {
+                    return '203.0.113.8';
+                },
+                async takeRateLimitToken() {
+                    return {
+                        allowed: true,
+                        limit: 120,
+                        remaining: 119,
+                        resetAt: Date.now() + 60_000
+                    };
+                },
+                applyRateLimitHeaders() {}
+            },
+            ordersModule: {
+                getMockPaymentRuntimeState() {
+                    return {
+                        allowed: false,
+                        reason: 'production_like_runtime'
+                    };
+                }
+            }
+        }, async (handler) => {
+            const req = {
+                method: 'GET',
+                url: '/api/payments/config?site=cn',
+                headers: {
+                    host: 'www.zaoyoe.com'
+                }
+            };
+            const res = createMockResponse();
+
+            await handler(req, res);
+            const payload = res.json();
+
+            assert.equal(res.statusCode, 200);
+            assert.equal(payload.success, true);
+            assert.equal(payload.config.active_provider, 'afdian');
+            assert.equal(payload.config.providers.zpay.enabled, false);
+            assert.equal(payload.config.providers.nowpayments.enabled, false);
+            assert.equal(payload.config.providers.afdian.enabled, true);
         });
     });
 });

@@ -191,11 +191,12 @@ function buildDependencyMocks(state) {
                     },
                     verifyWebhook({ payload, runtimeContext }) {
                         state.verificationRequest = { payload, runtimeContext };
+                        const valid = state.signatureValid !== false;
                         return {
                             supported: true,
-                            valid: true,
+                            valid,
                             expectedSign: 'expected-sign',
-                            receivedSign: 'expected-sign'
+                            receivedSign: valid ? 'expected-sign' : 'bad-sign'
                         };
                     },
                     async queryOrder({ runtimeContext, providerOrderNo, tradeNo }) {
@@ -274,6 +275,9 @@ function buildDependencyMocks(state) {
                 state.rateLimitHeadersApplied = true;
             },
             explainClientIpResolution(req, { env, trustedProxies }) {
+                const resolvedClientIp = state.resolvedClientIp
+                    || String(req?.headers?.['x-forwarded-for'] || '203.0.113.10').split(',')[0].trim()
+                    || '203.0.113.10';
                 state.ipResolutionRequest = {
                     env,
                     trustedProxies,
@@ -281,8 +285,8 @@ function buildDependencyMocks(state) {
                 };
                 return {
                     socketIp: '10.0.0.2',
-                    forwardedIps: ['203.0.113.10'],
-                    resolvedClientIp: '203.0.113.10',
+                    forwardedIps: [resolvedClientIp],
+                    resolvedClientIp,
                     trustedProxies: ['10.0.0.0/8'],
                     trustAllProxies: false,
                     directPeerTrusted: true,
@@ -291,10 +295,13 @@ function buildDependencyMocks(state) {
                 };
             },
             isIpAllowed(ip) {
+                if (typeof state.ipAllowedResult === 'boolean') {
+                    return state.ipAllowedResult;
+                }
                 return String(ip || '') === '203.0.113.10';
             },
             resolveClientIp() {
-                return '203.0.113.10';
+                return state.resolvedClientIp || '203.0.113.10';
             },
             splitIpRules(value) {
                 return String(value || '')
@@ -315,8 +322,34 @@ function buildDependencyMocks(state) {
     };
 }
 
-test('zpay webhook fails closed when production source allowlist is missing', async () => {
-    const state = {};
+test('zpay webhook uses strict verification mode when production source allowlist is missing', async () => {
+    const state = {
+        existingPaymentOrder: {
+            id: 'payment-order-no-allowlist',
+            user_id: 'user-1',
+            provider: 'zpay',
+            provider_order_no: 'ZP123',
+            checkout_session_id: 'checkout-session-1',
+            site: 'cn',
+            package_id: 'pkg-1',
+            package_name: '月度积分充值',
+            expected_amount: 12.34,
+            paid_amount: null,
+            points_amount: 100,
+            status: 'pending',
+            sign_verified: false,
+            amount_verified: false,
+            provider_metadata: {
+                payment_type: 'alipay'
+            },
+            raw_payload: {
+                request: {
+                    points_amount: 80,
+                    bonus_points: 20
+                }
+            }
+        }
+    };
 
     await withZpayWebhookModule(buildDependencyMocks(state), async ({ createZpayWebhookHandler }) => {
         const handler = createZpayWebhookHandler({
@@ -339,13 +372,121 @@ test('zpay webhook fails closed when production source allowlist is missing', as
 
         await handler(req, res);
 
-        assert.equal(res.statusCode, 503);
-        assert.equal(res.body, 'webhook source allowlist not configured');
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.body, 'success');
+        assert.equal(state.insertedEvent.provider, 'zpay');
+        assert.equal(state.verificationRequest.payload.out_trade_no, 'ZP123');
+        assert.equal(state.queryOrderRequest.providerOrderNo, 'ZP123');
+        assert.equal(state.paymentOrderPatch.status, 'redeemed');
+        assert.equal(state.paymentOrderPatch.sign_verified, true);
+        assert.equal(state.paymentOrderPatch.amount_verified, true);
+        assert.equal(state.rechargePayload.referenceId, 'zpay_ZP123');
+        assert.equal(state.finalizedEvent.processing_result, 'processed_paid');
+        assert.equal(state.finalizedEvent.signature_valid, true);
+        assert.equal(state.finalizedEvent.amount_valid, true);
+    });
+});
+
+test('zpay webhook without source allowlist still rejects invalid signatures before active query', async () => {
+    const state = {
+        signatureValid: false,
+        existingPaymentOrder: {
+            id: 'payment-order-bad-sign',
+            user_id: 'user-1',
+            provider: 'zpay',
+            provider_order_no: 'ZP-BAD-SIGN',
+            checkout_session_id: 'checkout-session-bad-sign',
+            site: 'cn',
+            package_id: 'pkg-1',
+            package_name: '月度积分充值',
+            expected_amount: 12.34,
+            paid_amount: null,
+            points_amount: 100,
+            status: 'pending',
+            sign_verified: false,
+            amount_verified: false,
+            provider_metadata: {},
+            raw_payload: {
+                request: {
+                    points_amount: 80,
+                    bonus_points: 20
+                }
+            }
+        }
+    };
+
+    await withZpayWebhookModule(buildDependencyMocks(state), async ({ createZpayWebhookHandler }) => {
+        const handler = createZpayWebhookHandler({
+            supabase: createSupabaseMock(state),
+            env: {
+                DEPLOYMENT_TIER: 'production',
+                APP_BASE_URL: 'https://www.zaoyoe.com',
+                TRUSTED_PROXY_IPS: '10.0.0.0/8'
+            }
+        });
+        const attachData = JSON.stringify({
+            user_id: 'user-1',
+            site: 'cn',
+            expected_amount: 12.34,
+            charge_type: 'package',
+            checkout_session_id: 'checkout-session-bad-sign'
+        });
+        const req = {
+            method: 'GET',
+            url: `/api/payments/zpay/webhook?out_trade_no=ZP-BAD-SIGN&trade_no=TRADE-BAD-SIGN&trade_status=TRADE_SUCCESS&money=12.34&pid=2026041807323142&type=alipay&param=${encodeURIComponent(attachData)}`,
+            headers: {
+                host: 'www.zaoyoe.com',
+                'x-forwarded-for': '198.51.100.22'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+
+        assert.equal(res.statusCode, 401);
+        assert.equal(res.body, 'invalid signature');
+        assert.equal(state.queryOrderRequest, undefined);
+        assert.equal(state.rechargePayload, undefined);
+        assert.equal(state.paymentOrderPatch.status, 'pending');
+        assert.equal(state.paymentOrderPatch.sign_verified, false);
+        assert.equal(state.finalizedEvent.processing_result, 'signature_mismatch');
+        assert.equal(state.finalizedEvent.signature_valid, false);
+        assert.equal(state.finalizedEvent.response_status, 401);
+    });
+});
+
+test('zpay webhook rejects requests outside the configured source IP allowlist', async () => {
+    const state = {
+        resolvedClientIp: '198.51.100.22'
+    };
+
+    await withZpayWebhookModule(buildDependencyMocks(state), async ({ createZpayWebhookHandler }) => {
+        const handler = createZpayWebhookHandler({
+            supabase: createSupabaseMock(state),
+            env: {
+                APP_ENV: 'production',
+                APP_BASE_URL: 'https://www.zaoyoe.com',
+                TRUSTED_PROXY_IPS: '10.0.0.0/8',
+                ZPAY_WEBHOOK_ALLOWED_IPS: '203.0.113.10'
+            }
+        });
+        const req = {
+            method: 'GET',
+            url: '/api/payments/zpay/webhook?out_trade_no=ZP-IP-BLOCKED&trade_no=TRADE-IP-BLOCKED&trade_status=TRADE_SUCCESS&money=12.34&pid=2026041807323142&type=alipay&param=%7B%22user_id%22%3A%22user-1%22%7D',
+            headers: {
+                host: 'www.zaoyoe.com',
+                'x-forwarded-for': '198.51.100.22'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+
+        assert.equal(res.statusCode, 403);
+        assert.equal(res.body, 'forbidden');
         assert.equal(state.insertedEvent, undefined);
         assert.equal(state.queryOrderRequest, undefined);
         assert.equal(state.rechargePayload, undefined);
-        assert.equal(state.deletedEventWhere, undefined);
-        assert.equal(state.finalizedEvent, undefined);
     });
 });
 
