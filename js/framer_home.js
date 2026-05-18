@@ -4045,6 +4045,10 @@ const FramerHome = {
   },
 
   initHeroLiquidMatrix(section) {
+    if (window.__homeHeroLiquidBootstrap && typeof window.__homeHeroLiquidBootstrap.stop === 'function') {
+      window.__homeHeroLiquidBootstrap.stop();
+    }
+
     if (this.heroLiquidRuntime) {
       this.destroyHeroLiquidMatrix();
     }
@@ -4149,15 +4153,16 @@ const FramerHome = {
 
     this.heroLiquidRuntime = runtime;
     fit();
-    runtime.lastNow = performance.now();
-    runtime.frame = window.requestAnimationFrame((now) => {
-      runtime.lastNow = now;
-      draw(1);
-    });
     runtime.resizeObserver?.observe(section);
+    runtime.lastNow = performance.now();
+    draw(1);
   },
 
   destroyHeroLiquidMatrix() {
+    if (window.__homeHeroLiquidBootstrap && typeof window.__homeHeroLiquidBootstrap.stop === 'function') {
+      window.__homeHeroLiquidBootstrap.stop();
+    }
+
     const runtime = this.heroLiquidRuntime;
     if (!runtime) {
       return;

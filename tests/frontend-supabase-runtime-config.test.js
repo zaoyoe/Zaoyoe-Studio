@@ -181,7 +181,7 @@ function collectRepositorySourceFiles(rootDir = REPO_ROOT) {
             const normalizedPath = relativePath.replace(/\\/g, '/').replace(/^\.\//, '');
 
             if (entry.isDirectory()) {
-                if (['.git', 'node_modules', 'coverage', 'docs', 'tests'].includes(entry.name)) {
+                if (['.git', '.vercel-static', 'node_modules', 'coverage', 'docs', 'tests'].includes(entry.name)) {
                     continue;
                 }
                 stack.push(relativePath);
@@ -3594,14 +3594,14 @@ test('shop storefront uses a 21:9 media ratio for mobile product cards', () => {
     );
 });
 
-test('shop initial product entrance defers idle breathe until lift animation completes', () => {
+test('shop product entrance keeps idle breathe continuous through grid transitions', () => {
     const shopCssSource = readRepoFile('css/shop-page.css');
     const shopClientSource = readRepoFile('js/shop-client.js');
 
-    assert.match(
+    assert.doesNotMatch(
         shopCssSource,
-        /\.shop-card\.breathing\.shop-card-breathe-deferred\s*\{[\s\S]*?animation:\s*none;[\s\S]*?--shop-card-breathe-y:\s*0px;/,
-        'initial entering cards should not run the idle breathe animation while the lift animation is active'
+        /\.shop-card\.breathing\.shop-card-breathe-deferred\s*\{[\s\S]*?(?:--shop-card-breathe-y|--shop-card-breathe-amplitude|animation:\s*none)/,
+        'entering cards should not zero or disable the idle breathe timeline'
     );
     assert.doesNotMatch(
         shopCssSource,
@@ -3615,18 +3615,33 @@ test('shop initial product entrance defers idle breathe until lift animation com
     );
     assert.match(
         shopCssSource,
-        /body\.shop-page \.shop-card\.user-product-card\.shop-card-filter-enter\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?transform:\s*translateY\(20px\);[\s\S]*?body\.shop-page \.shop-card\.user-product-card\.shop-card-filter-enter\.is-visible\s*\{[\s\S]*?opacity:\s*1;[\s\S]*?transform:\s*translateY\(0\);[\s\S]*?opacity 1\.05s ease var\(--shop-card-filter-delay, 0ms\),[\s\S]*?transform 1\.05s ease var\(--shop-card-filter-delay, 0ms\)/,
-        'mobile initial and category entrances should reuse the prompt-card opacity/translateY transition'
+        /body\.shop-page \.shop-card\.user-product-card\.shop-card-filter-enter\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?--shop-card-enter-y:\s*20px;[\s\S]*?body\.shop-page \.shop-card\.user-product-card\.shop-card-filter-enter\.is-visible\s*\{[\s\S]*?opacity:\s*1;[\s\S]*?--shop-card-enter-y:\s*0px;[\s\S]*?opacity 1\.05s ease var\(--shop-card-filter-delay, 0ms\),[\s\S]*?--shop-card-enter-y 1\.05s ease var\(--shop-card-filter-delay, 0ms\)/,
+        'mobile initial and category entrances should animate the enter offset variable so breathe remains composed'
     );
     assert.match(
         shopCssSource,
-        /@keyframes shopMobileFreshCardEnter\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?transform:\s*translateY\(20px\);[\s\S]*?opacity:\s*1;[\s\S]*?transform:\s*translateY\(0\);[\s\S]*?body\.shop-page \.shop-card\.user-product-card\.shop-card-mobile-fresh-enter\s*\{[\s\S]*?animation:\s*shopMobileFreshCardEnter 1\.05s ease var\(--shop-card-filter-delay, 0ms\) both !important;/,
-        'mobile category fresh-enter cards should use a dedicated keyframe so early cards cannot skip the entrance'
+        /@keyframes shopMobileFreshCardEnter\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?--shop-card-enter-y:\s*20px;[\s\S]*?opacity:\s*1;[\s\S]*?--shop-card-enter-y:\s*0px;/,
+        'legacy mobile fresh-enter keyframes should only touch the enter offset variable'
+    );
+    assert.doesNotMatch(
+        shopCssSource,
+        /body\.shop-page \.shop-card\.user-product-card\.shop-card-mobile-fresh-enter\s*\{[\s\S]*?animation:/,
+        'category fresh-enter cards should not replace the breathe animation with a transform keyframe'
+    );
+    assert.doesNotMatch(
+        shopCssSource,
+        /\.shop-card\.shop-card-filter-enter:not\(\.shop-card-mobile-fresh-enter\)[\s\S]*?animation:\s*none !important;/,
+        'entering cards should not disable the breathe timeline after the lift transition'
     );
     assert.match(
         shopCssSource,
-        /\.shop-card\.shop-card-filter-enter:not\(\.shop-card-mobile-fresh-enter\),[\s\S]*?\.shop-card\.shop-card-filter-exit,[\s\S]*?\.shop-card\.shop-card-filter-moving\s*\{[\s\S]*?animation:\s*none !important;/,
-        'generic transition animation suppression should not disable mobile fresh-enter keyframes'
+        /\.shop-card-transition-clone\s*\{[\s\S]*?animation:\s*none !important;/,
+        'transition clones can still suppress idle breathe animation because they preserve a sampled visual transform'
+    );
+    assert.doesNotMatch(
+        shopCssSource,
+        /\.shop-card\.shop-card-filter-(?:exit|moving)[\s\S]*?animation:\s*none !important;/,
+        'real exiting and moving cards should not reset the breathe animation'
     );
     assert.equal(shopCssSource.includes('shopMobileInitialCardEnter'), false, 'mobile initial entrance should not keep a separate keyframe path');
     const mobileInitialRule = shopCssSource.match(
@@ -3634,10 +3649,12 @@ test('shop initial product entrance defers idle breathe until lift animation com
     );
     assert.ok(mobileInitialRule, 'mobile initial entrance should keep a focused initial-state rule');
     assert.doesNotMatch(mobileInitialRule[1], /transition:\s*none|animation:/, 'mobile initial entrance should not bypass the shared desktop transition');
-    assert.match(
-        shopClientSource,
-        /const SHOP_CARD_BREATHE_MAX_DELAY_S = 4;[\s\S]*?const SHOP_CARD_BREATHE_ACTIVATE_DELAY_MS = 850;[\s\S]*?getShopCardBreatheDelay:\s*function \(\) \{[\s\S]*?Math\.random\(\) \* SHOP_CARD_BREATHE_MAX_DELAY_S[\s\S]*?toFixed\(2\)\}s`;/,
-        'initial storefront cards should prepare a randomized idle breathe delay instead of re-entering in a synchronized phase'
+    assert.equal(shopClientSource.includes('const SHOP_CARD_BREATHE_PHASE_MAX_S = 4;'), true, 'shop cards should keep a bounded randomized breathe phase range');
+    assert.equal(shopClientSource.includes('const SHOP_CARD_BREATHE_ACTIVATE_DELAY_MS = 0;'), true, 'shop cards should not add a second activation wait after entrance settles');
+    assert.equal(
+        shopClientSource.includes('return `-${(Math.random() * SHOP_CARD_BREATHE_PHASE_MAX_S).toFixed(2)}s`;'),
+        true,
+        'initial storefront cards should prepare a randomized negative idle breathe phase instead of waiting through a positive delay'
     );
     assert.match(
         shopClientSource,
@@ -3651,8 +3668,23 @@ test('shop initial product entrance defers idle breathe until lift animation com
     );
     assert.match(
         shopClientSource,
-        /transitionProductGrid:\s*function \(container, cardElements = \[\], \{ empty = false, forceFreshEnter = false \} = \{\}\) \{[\s\S]*?const forceFreshEnterActive = forceFreshEnter === true;[\s\S]*?if \(!forceFreshEnterActive\) \{[\s\S]*?cardElements\.forEach\(card => \{[\s\S]*?const effectiveEnterDelayBase = forceFreshEnterActive\s*\? Math\.max\(SHOP_CARD_FRESH_ENTER_BASE_DELAY_MS, enterDelayBase\)[\s\S]*?if \(!forceFreshEnterActive && previousIds\.has\(productId\)\) \{/,
-        'category tab switches should not treat already-rendered products as static persistent cards'
+        /reuseShopProductCardElement:\s*function \(currentCard, nextCard\) \{[\s\S]*?currentCard\.innerHTML = nextCard\.innerHTML;[\s\S]*?currentCard\.dataset\.shopBreatheDelay = breatheDelay;/,
+        'category tab switches should reuse persistent product cards so their breathe timeline does not restart'
+    );
+    assert.match(
+        shopClientSource,
+        /cardElements = cardElements\.map\(card => \{[\s\S]*?const reusableCard = productId \? existingCardsByProductId\.get\(productId\) : null;[\s\S]*?this\.reuseShopProductCardElement\(reusableCard, card\)/,
+        'grid transitions should replace newly built cards with reusable live nodes when product ids persist'
+    );
+    assert.match(
+        shopClientSource,
+        /const moveX = previousState\.left - card\.offsetLeft;[\s\S]*?const moveY = previousState\.top - card\.offsetTop;[\s\S]*?card\.classList\.add\('shop-card-filter-moving', 'shop-card-filter-motion-lock'\);[\s\S]*?'--shop-card-shift-x': `\$\{moveX\}px`,[\s\S]*?'--shop-card-shift-y': `\$\{moveY\}px`/,
+        'persistent cards should FLIP on the real card using shift variables instead of moving through a fixed clone'
+    );
+    assert.match(
+        shopClientSource,
+        /if \(previousIds\.has\(productId\)\) \{[\s\S]*?return;[\s\S]*?\}/,
+        'persistent products should move in place instead of re-entering on category switches'
     );
     assert.match(
         shopClientSource,
@@ -3661,18 +3693,18 @@ test('shop initial product entrance defers idle breathe until lift animation com
     );
     assert.match(
         shopClientSource,
-        /playShopCardFreshEnterAnimation:\s*function \(card\) \{[\s\S]*?typeof card\.animate !== 'function'[\s\S]*?card\.animate\([\s\S]*?opacity:\s*0, transform:\s*'translateY\(20px\)'[\s\S]*?opacity:\s*1, transform:\s*'translateY\(0\)'[\s\S]*?duration:\s*SHOP_CARD_FRESH_ENTER_DURATION_MS[\s\S]*?animation\.id = SHOP_CARD_FRESH_ENTER_ANIMATION_ID;/,
-        'category fresh-enter cards should also trigger an explicit Web Animations entrance'
+        /const watchedProperties = new Set\(\['--shop-card-enter-y', '--shop-card-enter-scale'\]\);/,
+        'category fresh-enter cards should settle from composed enter-offset transitions instead of transform animations'
+    );
+    assert.doesNotMatch(
+        shopClientSource,
+        /card\.animate\([\s\S]*?transform:\s*'translateY/,
+        'category fresh-enter cards should not use Web Animations to overwrite the composed card transform'
     );
     assert.match(
         shopClientSource,
-        /card\.addEventListener\('animationend', handler\);[\s\S]*?card\.addEventListener\('animationcancel', handler\);/,
-        'mobile category fresh-enter cards should settle on animation completion'
-    );
-    assert.match(
-        shopClientSource,
-        /const revealEnteringCards = \(\) => \{[\s\S]*?if \(forceFreshEnterActive\) \{[\s\S]*?enteringCards\.forEach\(card => this\.playShopCardFreshEnterAnimation\(card\)\);[\s\S]*?enteringCards\.forEach\(card => card\.classList\.add\('is-visible'\)\);[\s\S]*?if \(forceFreshEnterActive\) \{[\s\S]*?window\.requestAnimationFrame\(revealEnteringCards\);/,
-        'category tab switches should reveal fresh-enter cards on the next frame so the first card animates'
+        /const revealEnteringCards = \(\) => \{[\s\S]*?enteringCards\.forEach\(card => card\.classList\.add\('is-visible'\)\);[\s\S]*?if \(forceFreshEnterActive\) \{[\s\S]*?window\.requestAnimationFrame\(revealEnteringCards\);/,
+        'category tab switches should reveal fresh-enter cards on the next frame while preserving breathe'
     );
     assert.match(
         shopClientSource,
@@ -3681,13 +3713,13 @@ test('shop initial product entrance defers idle breathe until lift animation com
     );
     assert.match(
         shopClientSource,
-        /el\.className = `shop-card user-product-card breathing shop-card-breathe-deferred \$\{cartQuantity > 0 \? 'shop-card--in-cart' : ''\}`;[\s\S]*?el\.dataset\.shopBreatheDelay = this\.getShopCardBreatheDelay\(\);[\s\S]*?'\-\-breathe-delay': null/,
-        'product cards should enter with breathing deferred and stash the randomized delay until the entrance flow finishes'
+        /const breatheDelay = this\.getShopCardBreatheDelay\(\);[\s\S]*?el\.className = `shop-card user-product-card breathing shop-card-breathe-deferred \$\{cartQuantity > 0 \? 'shop-card--in-cart' : ''\}`;[\s\S]*?el\.dataset\.shopBreatheDelay = breatheDelay;[\s\S]*?'\-\-breathe-delay': breatheDelay/,
+        'product cards should enter with the randomized breathe phase already active'
     );
     assert.match(
         shopClientSource,
         /releaseDeferredShopCardBreathe:\s*function \(card, \{ activateDelayMs = SHOP_CARD_BREATHE_ACTIVATE_DELAY_MS \} = \{\}\) \{[\s\S]*?this\.setCssVariables\(card, \{\s*'\-\-breathe-delay': card\.dataset\.shopBreatheDelay \|\| '0s'[\s\S]*?const activate = \(\) => \{[\s\S]*?card\.classList\.remove\('shop-card-breathe-deferred'\);[\s\S]*?if \(activateDelayMs <= 0\) \{[\s\S]*?const timerId = window\.setTimeout\(\(\) => \{[\s\S]*?activate\(\);[\s\S]*?\}, activateDelayMs\);/,
-        'grid cleanup should restore the stored idle breathe delay and release the deferred class through the timed activation path'
+        'grid cleanup should restore the stored idle breathe phase and release the deferred class without an extra activation wait'
     );
     assert.match(
         shopClientSource,
