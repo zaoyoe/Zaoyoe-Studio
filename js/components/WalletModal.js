@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260518_MOBILE_ALIPAY_HANDOFF_1';
+    const walletCssHref = 'css/wallet.css?v=20260518_MOBILE_ALIPAY_DIRECT_APP_1';
     let walletCssReady = false;
     let walletCssReadyPromise = Promise.resolve();
 
@@ -3133,6 +3133,101 @@
             return /android|iphone|ipad|ipod|mobile|micromessenger|wechat|harmonyos/.test(userAgent);
         },
 
+        normalizeAlipayAppSchemeUrl(value = '') {
+            const normalized = String(value || '').trim();
+            if (!/^alipays:\/\//i.test(normalized)) {
+                return '';
+            }
+            return normalized.replace(/^alipays:\/\//i, 'alipays://');
+        },
+
+        extractAlipayAppSchemeUrl(value = '', depth = 0) {
+            const normalized = String(value || '').trim();
+            if (!normalized || depth > 3) {
+                return '';
+            }
+
+            const directScheme = this.normalizeAlipayAppSchemeUrl(normalized);
+            if (directScheme) {
+                return directScheme;
+            }
+
+            const decodedCandidates = [normalized];
+            let decoded = normalized;
+            for (let index = 0; index < 3; index += 1) {
+                try {
+                    const nextDecoded = decodeURIComponent(decoded);
+                    if (!nextDecoded || nextDecoded === decoded) {
+                        break;
+                    }
+                    decoded = nextDecoded;
+                    decodedCandidates.push(decoded);
+                    const decodedScheme = this.normalizeAlipayAppSchemeUrl(decoded);
+                    if (decodedScheme) {
+                        return decodedScheme;
+                    }
+                } catch (_) {
+                    break;
+                }
+            }
+
+            for (const candidate of decodedCandidates) {
+                try {
+                    const parsed = new URL(candidate, window.location.href);
+                    for (const paramValue of parsed.searchParams.values()) {
+                        const nestedScheme = this.extractAlipayAppSchemeUrl(paramValue, depth + 1);
+                        if (nestedScheme) {
+                            return nestedScheme;
+                        }
+                    }
+                } catch (_) {
+                    // Not a parseable URL; keep looking at other decoded forms.
+                }
+            }
+
+            return '';
+        },
+
+        buildAlipayAppLaunchUrl(paymentUrl = '') {
+            const normalized = String(paymentUrl || '').trim();
+            if (!normalized) {
+                return '';
+            }
+
+            const directScheme = this.extractAlipayAppSchemeUrl(normalized);
+            if (directScheme) {
+                return directScheme;
+            }
+
+            try {
+                const parsed = new URL(normalized, window.location.href);
+                if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+                    return '';
+                }
+                if (/\.(?:apng|avif|gif|jpe?g|png|svg|webp)(?:$|[?#])/i.test(parsed.pathname)) {
+                    return '';
+                }
+                return `alipays://platformapi/startapp?appId=20000067&url=${encodeURIComponent(parsed.href)}`;
+            } catch (_) {
+                return '';
+            }
+        },
+
+        resolveMobileAlipayAppLaunchUrl(...paymentUrls) {
+            if (!this.isMobilePaymentBrowser()) {
+                return '';
+            }
+
+            for (const paymentUrl of paymentUrls) {
+                const launchUrl = this.buildAlipayAppLaunchUrl(paymentUrl);
+                if (launchUrl) {
+                    return launchUrl;
+                }
+            }
+
+            return '';
+        },
+
         isHostedPaymentQrDesktopLayout() {
             return !window.matchMedia('(max-width: 760px)').matches;
         },
@@ -3144,6 +3239,12 @@
             }
 
             const preserveCurrentPage = options.preserveCurrentPage === true;
+            const mobileAppLaunchUrl = this.normalizeAlipayAppSchemeUrl(options.mobileAppLaunchUrl);
+            if (preserveCurrentPage && mobileAppLaunchUrl && this.isMobilePaymentBrowser()) {
+                window.location.href = mobileAppLaunchUrl;
+                return 'app-scheme';
+            }
+
             const useSameTab = options.sameTab === true || (this.isMobilePaymentBrowser() && !preserveCurrentPage);
             if (useSameTab) {
                 window.location.assign(url);
@@ -3776,6 +3877,8 @@
             const startedAt = Date.now();
             let timer = null;
             let stopped = false;
+            let polling = false;
+            let pollAgainAfterCurrent = false;
 
             const stop = () => {
                 if (timer) {
@@ -3783,6 +3886,7 @@
                     timer = null;
                 }
                 stopped = true;
+                removeResumeListeners();
                 if (detailOverlay && detailOverlay._walletPaymentQrCleanup === stop) {
                     detailOverlay._walletPaymentQrCleanup = null;
                 }
@@ -3812,7 +3916,37 @@
                 if (stopped) {
                     return;
                 }
+                if (timer) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
                 timer = window.setTimeout(runPoll, delay);
+            };
+
+            const runSoon = (delay = 160) => {
+                if (stopped) {
+                    return;
+                }
+                scheduleNext(Math.max(80, Number(delay) || 160));
+            };
+
+            const handlePaymentResume = () => {
+                if (document.visibilityState && document.visibilityState !== 'visible') {
+                    return;
+                }
+                runSoon(120);
+            };
+
+            const addResumeListeners = () => {
+                document.addEventListener('visibilitychange', handlePaymentResume);
+                window.addEventListener('focus', handlePaymentResume);
+                window.addEventListener('pageshow', handlePaymentResume);
+            };
+
+            const removeResumeListeners = () => {
+                document.removeEventListener('visibilitychange', handlePaymentResume);
+                window.removeEventListener('focus', handlePaymentResume);
+                window.removeEventListener('pageshow', handlePaymentResume);
             };
 
             const updateWaitingStatus = () => {
@@ -3832,108 +3966,127 @@
                 if (stopped) {
                     return;
                 }
-
-                if ((Date.now() - startedAt) >= timeoutMs) {
-                    if (continueAfterQuoteExpired) {
-                        updateWaitingStatus();
-                        scheduleNext(intervalMs);
-                        return;
-                    }
-                    if (options.deferTimeoutUntilQuoteExpired === true && this.isCryptoCheckoutQuoteActive(detailOverlay)) {
-                        scheduleNext(intervalMs);
-                        return;
-                    }
-                    stop();
-                    const timeoutRendered = this.renderHostedPaymentQrTimeout(detailOverlay);
-                    if (!timeoutRendered) {
-                        this.updateHostedPaymentQrStatus(
-                            detailOverlay,
-                            this.tr('wallet.paymentSyncTimeout', '暂未自动同步到支付结果。若你已完成付款，请稍后刷新钱包或在订单记录中查看，或联系人工客服。'),
-                            'info'
-                        );
-                    }
-                    if (typeof options.onTimeout === 'function') {
-                        options.onTimeout();
-                    }
+                if (timer) {
+                    clearTimeout(timer);
+                    timer = null;
+                }
+                if (polling) {
+                    pollAgainAfterCurrent = true;
                     return;
                 }
 
+                polling = true;
+
                 try {
-                    updateWaitingStatus();
-                    const statusResult = await PointsService.getPaymentRequestStatus({
-                        checkout_session_id: checkoutSessionId,
-                        provider_order_no: String(
-                            paymentResult?.provider_order_no
-                            || paymentResult?.provider_summary?.out_trade_no
-                            || ''
-                        ).trim() || null,
-                        site: paymentResult?.site || window.SiteConfig?.site || 'cn'
-                    });
-                    if (stopped) {
-                        return;
-                    }
-
-                    const paymentState = String(statusResult?.status || '').trim().toLowerCase();
-                    if (paymentState === 'completed') {
+                    if ((Date.now() - startedAt) >= timeoutMs) {
+                        if (continueAfterQuoteExpired) {
+                            updateWaitingStatus();
+                            scheduleNext(intervalMs);
+                            return;
+                        }
+                        if (options.deferTimeoutUntilQuoteExpired === true && this.isCryptoCheckoutQuoteActive(detailOverlay)) {
+                            scheduleNext(intervalMs);
+                            return;
+                        }
                         stop();
-                        this.transitionHostedPaymentQrToSuccess(detailOverlay);
-                        if (typeof options.onCompleted === 'function') {
-                            await options.onCompleted(statusResult);
-                        }
-                        closeIfNeeded();
-                        return;
-                    }
-
-	                    if (paymentState === 'failed') {
-                        const timeoutStatus = this.isHostedPaymentTimeoutStatus(statusResult);
-                        if (timeoutStatus && continueAfterQuoteExpired) {
-                            updateWaitingStatus();
-                            scheduleNext(intervalMs);
-                            return;
-                        }
-                        if (timeoutStatus && options.deferTimeoutUntilQuoteExpired === true && this.isCryptoCheckoutQuoteActive(detailOverlay)) {
-                            updateWaitingStatus();
-                            scheduleNext(intervalMs);
-                            return;
-                        }
-	                        stop();
-	                        if (!timeoutStatus) {
-	                            this.updateHostedPaymentQrStatus(
+                        const timeoutRendered = this.renderHostedPaymentQrTimeout(detailOverlay);
+                        if (!timeoutRendered) {
+                            this.updateHostedPaymentQrStatus(
                                 detailOverlay,
-                                statusResult.message || this.tr('wallet.paymentFailedRetry', '支付未成功，请重新发起支付。'),
-                                'error'
+                                this.tr('wallet.paymentSyncTimeout', '暂未自动同步到支付结果。若你已完成付款，请稍后刷新钱包或在订单记录中查看，或联系人工客服。'),
+                                'info'
                             );
-                        } else {
-                            this.renderHostedPaymentQrTimeout(detailOverlay);
                         }
-                        if (typeof options.onFailed === 'function') {
-                            options.onFailed(statusResult);
+                        if (typeof options.onTimeout === 'function') {
+                            options.onTimeout();
                         }
                         return;
                     }
 
-                    if (paymentState === 'review') {
-                        this.updateHostedPaymentQrStatus(
-                            detailOverlay,
-                            statusResult.message || this.tr('wallet.paymentSubmittedReview', '支付已提交，正在等待平台确认，请稍后。'),
-                            'info'
-                        );
-                        scheduleNext(intervalMs);
-                        return;
+                    try {
+                        updateWaitingStatus();
+                        const statusResult = await PointsService.getPaymentRequestStatus({
+                            checkout_session_id: checkoutSessionId,
+                            provider_order_no: String(
+                                paymentResult?.provider_order_no
+                                || paymentResult?.provider_summary?.out_trade_no
+                                || ''
+                            ).trim() || null,
+                            site: paymentResult?.site || window.SiteConfig?.site || 'cn'
+                        });
+                        if (stopped) {
+                            return;
+                        }
+
+                        const paymentState = String(statusResult?.status || '').trim().toLowerCase();
+                        if (paymentState === 'completed') {
+                            stop();
+                            this.transitionHostedPaymentQrToSuccess(detailOverlay);
+                            if (typeof options.onCompleted === 'function') {
+                                await options.onCompleted(statusResult);
+                            }
+                            closeIfNeeded();
+                            return;
+                        }
+
+                        if (paymentState === 'failed') {
+                            const timeoutStatus = this.isHostedPaymentTimeoutStatus(statusResult);
+                            if (timeoutStatus && continueAfterQuoteExpired) {
+                                updateWaitingStatus();
+                                scheduleNext(intervalMs);
+                                return;
+                            }
+                            if (timeoutStatus && options.deferTimeoutUntilQuoteExpired === true && this.isCryptoCheckoutQuoteActive(detailOverlay)) {
+                                updateWaitingStatus();
+                                scheduleNext(intervalMs);
+                                return;
+                            }
+                            stop();
+                            if (!timeoutStatus) {
+                                this.updateHostedPaymentQrStatus(
+                                    detailOverlay,
+                                    statusResult.message || this.tr('wallet.paymentFailedRetry', '支付未成功，请重新发起支付。'),
+                                    'error'
+                                );
+                            } else {
+                                this.renderHostedPaymentQrTimeout(detailOverlay);
+                            }
+                            if (typeof options.onFailed === 'function') {
+                                options.onFailed(statusResult);
+                            }
+                            return;
+                        }
+
+                        if (paymentState === 'review') {
+                            this.updateHostedPaymentQrStatus(
+                                detailOverlay,
+                                statusResult.message || this.tr('wallet.paymentSubmittedReview', '支付已提交，正在等待平台确认，请稍后。'),
+                                'info'
+                            );
+                            scheduleNext(intervalMs);
+                            return;
+                        }
+
+                        updateWaitingStatus();
+                    } catch (_) {
+                        if (stopped) {
+                            return;
+                        }
+                        updateWaitingStatus();
                     }
 
-                    updateWaitingStatus();
-                } catch (_) {
-                    if (stopped) {
-                        return;
+                    scheduleNext(intervalMs);
+                } finally {
+                    polling = false;
+                    if (pollAgainAfterCurrent && !stopped) {
+                        pollAgainAfterCurrent = false;
+                        runSoon(180);
                     }
-                    updateWaitingStatus();
                 }
-
-                scheduleNext(intervalMs);
             };
 
             detailOverlay._walletPaymentQrCleanup = stop;
+            addResumeListeners();
             this.resetHostedPaymentQrPresentation(detailOverlay, {
                 initialStatusMessage,
                 initialStatusHidden: hideInitialStatus
@@ -3961,6 +4114,7 @@
             const qrcodeImgUrl = isMobilePayment ? '' : String(providerSummary.qrcode_img_url || '').trim();
             const qrcodeUrl = String(providerSummary.qrcode_url || '').trim();
             const checkoutUrl = String(paymentResult?.checkout_url || '').trim();
+            const paymentType = String(providerSummary.payment_type || paymentResult?.payment_type || 'alipay').trim().toLowerCase();
 
             if (!qrcodeImgUrl && !qrcodeUrl && !checkoutUrl) {
                 return false;
@@ -3973,19 +4127,22 @@
             const pointsAmount = Number(paymentResult?.points_amount || 0) || 0;
             const copyValue = qrcodeUrl || checkoutUrl || '';
             const openUrl = checkoutUrl || qrcodeUrl || '';
+            const mobileAppLaunchUrl = isMobilePayment && paymentType === 'alipay'
+                ? this.resolveMobileAlipayAppLaunchUrl(openUrl, qrcodeUrl, checkoutUrl)
+                : '';
             const showOpenAction = Boolean(openUrl) && (isMobilePayment || !this.isHostedPaymentQrDesktopLayout() || !qrcodeImgUrl);
             const hasActions = Boolean(copyValue || showOpenAction);
             const titleHint = isMobilePayment
                 ? this.tr('wallet.mobileAlipayPaymentSubtitle', '支付完成后回到本页，系统会自动同步到账')
                 : this.tr('wallet.scanAlipayToPay', '请使用支付宝扫码支付');
             const initialStatusMessage = isMobilePayment
-                ? this.tr('wallet.mobileAlipayPaymentReady', '支付页已准备好。请打开支付宝支付，完成后回到此页面等待同步。')
+                ? this.tr('wallet.mobileAlipayPaymentReady', '支付页已准备好。请打开支付宝 App 支付，完成后回到此页面等待同步。')
                 : this.tr('wallet.scanAlipayToPay', '请使用支付宝扫码支付。');
             const waitingMessage = isMobilePayment
-                ? this.tr('wallet.mobileAlipayPaymentWaiting', '请在支付宝完成付款，回到此页面后会继续同步结果。')
+                ? this.tr('wallet.mobileAlipayPaymentWaiting', '请在支付宝完成付款，回到此页面后会立即同步结果。')
                 : this.tr('wallet.paymentWaiting', '请支付并保持此页面，正在等待支付结果同步');
             const fallbackCopy = isMobilePayment
-                ? this.tr('wallet.mobileAlipayPaymentHint', '请点击下方按钮打开支付宝支付。支付完成后回到此页面，系统会自动同步到账。')
+                ? this.tr('wallet.mobileAlipayPaymentHint', '请点击下方按钮直接拉起支付宝 App。支付完成后回到本页，系统会自动同步到账。')
                 : this.tr('wallet.paymentQrFallback', '当前通道没有返回二维码图片，请使用下方按钮打开支付页继续付款。');
             const openActionLabel = isMobilePayment
                 ? this.tr('wallet.openAlipayToPay', '打开支付宝支付')
@@ -4108,7 +4265,10 @@
             });
             detailOverlay.querySelector('.js-wallet-open-payment-qr')?.addEventListener('click', () => {
                 if (!openUrl) return;
-                this.openPaymentCheckoutUrl(openUrl, { preserveCurrentPage: isMobilePayment });
+                this.openPaymentCheckoutUrl(openUrl, {
+                    preserveCurrentPage: isMobilePayment,
+                    mobileAppLaunchUrl
+                });
                 if (isMobilePayment) {
                     this.updateHostedPaymentQrStatus(detailOverlay, waitingMessage, 'info', {
                         loading: true
