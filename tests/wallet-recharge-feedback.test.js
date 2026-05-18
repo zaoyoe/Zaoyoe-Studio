@@ -117,14 +117,19 @@ test('wallet mobile zpay checkout preserves the wallet page and polls while Alip
     assert.match(script, /wallet-payment-qr-modal--mobile-handoff/);
     assert.match(script, /wallet\.openAlipayToPay/);
     assert.match(script, /mobileAlipayPaymentWaiting/);
-    assert.match(script, /this\.openPaymentCheckoutUrl\(openUrl, \{ preserveCurrentPage: isMobilePayment \}\)/);
+    assert.match(script, /resolveMobileAlipayAppLaunchUrl\(...paymentUrls\)/);
+    assert.match(script, /alipays:\/\/platformapi\/startapp\?appId=20000067&url=/);
+    assert.match(script, /window\.location\.href = mobileAppLaunchUrl/);
+    assert.match(script, /document\.addEventListener\('visibilitychange', handlePaymentResume\)/);
+    assert.match(script, /window\.addEventListener\('pageshow', handlePaymentResume\)/);
+    assert.match(script, /this\.openPaymentCheckoutUrl\(openUrl, \{\s*preserveCurrentPage: isMobilePayment,\s*mobileAppLaunchUrl\s*\}\)/);
     assert.match(script, /this\.startHostedPaymentQrPolling\(detailOverlay, paymentResult, \{\s*\.\.\.options,\s*initialStatusMessage,\s*waitingMessage\s*\}\)/);
     assert.doesNotMatch(script, /支付页面被浏览器拦截，请允许弹窗后重试/);
 
     assert.equal(zh.wallet.openAlipayToPay, '打开支付宝支付');
-    assert.equal(Boolean(zh.wallet.mobileAlipayPaymentHint), true);
+    assert.match(zh.wallet.mobileAlipayPaymentHint, /直接拉起支付宝 App/);
     assert.equal(en.wallet.openAlipayToPay, 'Open Alipay');
-    assert.equal(Boolean(en.wallet.mobileAlipayPaymentHint), true);
+    assert.match(en.wallet.mobileAlipayPaymentHint, /Alipay app directly/);
 });
 
 test('wallet localizes payment intent creation errors from stable gateway codes', () => {
