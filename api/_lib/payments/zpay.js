@@ -7,6 +7,7 @@ const ZPAY_DEFAULT_BASE_URL = 'https://zpayz.cn';
 const ZPAY_SUBMIT_PATH = '/submit.php';
 const ZPAY_MAPI_PATH = '/mapi.php';
 const ZPAY_API_PATH = '/api.php';
+const ZPAY_REFUND_PATH = `${ZPAY_API_PATH}?act=refund`;
 const ZPAY_SIGN_TYPE = 'MD5';
 const ZPAY_PARAM_PREFIX = 'zp1';
 
@@ -266,7 +267,7 @@ function normalizeZpayConfig({
         submitUrl: resolveZpayEndpointUrl(baseSeed, ZPAY_SUBMIT_PATH),
         mapiUrl: resolveZpayEndpointUrl(baseSeed, ZPAY_MAPI_PATH),
         apiUrl: resolveZpayEndpointUrl(baseSeed, ZPAY_API_PATH),
-        refundUrl: resolveZpayEndpointUrl(baseSeed, ZPAY_API_PATH),
+        refundUrl: resolveZpayEndpointUrl(baseSeed, ZPAY_REFUND_PATH),
         notifyUrl,
         returnUrl: returnUrl || normalizeUrl(requestOrigin) || ZPAY_DEFAULT_BASE_URL,
         paymentType,
@@ -362,7 +363,6 @@ function buildZpayRefundPayload({
     }
 
     const payload = {
-        act: 'refund',
         pid: config.pid,
         key: config.pkey,
         money: normalizeAmount(money)
@@ -511,6 +511,7 @@ module.exports = {
     ZPAY_DEFAULT_BASE_URL,
     ZPAY_MAPI_PATH,
     ZPAY_PARAM_PREFIX,
+    ZPAY_REFUND_PATH,
     ZPAY_SIGN_TYPE,
     ZPAY_SUBMIT_PATH,
     buildZpayMapiPayload,
