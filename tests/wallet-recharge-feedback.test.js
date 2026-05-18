@@ -74,7 +74,7 @@ test('wallet recharge UI exposes pending feedback hooks for package and custom r
     assert.doesNotMatch(script, /请在倒计时结束前完成转账，超时请重新发起支付。/);
     assert.doesNotMatch(script, /js-wallet-copy-usdt-address-bottom/);
     assert.doesNotMatch(script, /js-wallet-copy-usdt-amount-bottom/);
-    assert.match(script, /startHostedPaymentQrPolling\(detailOverlay, paymentResult, options\)/);
+    assert.match(script, /startHostedPaymentQrPolling\(detailOverlay, paymentResult, \{\s*\.\.\.options,\s*initialStatusMessage,\s*waitingMessage\s*\}\)/);
     assert.match(script, /PointsService\.getPaymentRequestStatus\(/);
     assert.match(script, /qrcode_img_url/);
     assert.match(script, /qrcode_url/);
@@ -100,14 +100,31 @@ test('wallet recharge UI exposes pending feedback hooks for package and custom r
     assert.doesNotMatch(script, /请复制上方精确金额付款/);
 });
 
-test('wallet mobile checkout uses same-tab redirect instead of popup-blocker error path', () => {
+test('wallet mobile zpay checkout preserves the wallet page and polls while Alipay opens', () => {
     const script = fs.readFileSync(walletScriptPath, 'utf8');
+    const zh = JSON.parse(fs.readFileSync(zhLocalePath, 'utf8'));
+    const en = JSON.parse(fs.readFileSync(enLocalePath, 'utf8'));
 
     assert.match(script, /openPaymentCheckoutUrl\(checkoutUrl, options = \{\}\)/);
-    assert.match(script, /options\.sameTab === true \|\| this\.isMobilePaymentBrowser\(\)/);
+    assert.match(script, /preserveCurrentPage = options\.preserveCurrentPage === true/);
+    assert.match(script, /options\.sameTab === true \|\| \(this\.isMobilePaymentBrowser\(\) && !preserveCurrentPage\)/);
     assert.match(script, /window\.location\.assign\(url\)/);
-    assert.match(script, /this\.openPaymentCheckoutUrl\(paymentResult\.checkout_url\)/);
+    assert.match(script, /if \(provider !== 'zpay'\)/);
+    assert.doesNotMatch(script, /provider !== 'zpay' \|\| this\.isMobilePaymentBrowser\(\)/);
+    assert.match(script, /const isMobilePayment = this\.isMobilePaymentBrowser\(\)/);
+    assert.match(script, /const qrcodeImgUrl = isMobilePayment \? '' : String\(providerSummary\.qrcode_img_url/);
+    assert.match(script, /!qrcodeImgUrl && !qrcodeUrl && !checkoutUrl/);
+    assert.match(script, /wallet-payment-qr-modal--mobile-handoff/);
+    assert.match(script, /wallet\.openAlipayToPay/);
+    assert.match(script, /mobileAlipayPaymentWaiting/);
+    assert.match(script, /this\.openPaymentCheckoutUrl\(openUrl, \{ preserveCurrentPage: isMobilePayment \}\)/);
+    assert.match(script, /this\.startHostedPaymentQrPolling\(detailOverlay, paymentResult, \{\s*\.\.\.options,\s*initialStatusMessage,\s*waitingMessage\s*\}\)/);
     assert.doesNotMatch(script, /支付页面被浏览器拦截，请允许弹窗后重试/);
+
+    assert.equal(zh.wallet.openAlipayToPay, '打开支付宝支付');
+    assert.equal(Boolean(zh.wallet.mobileAlipayPaymentHint), true);
+    assert.equal(en.wallet.openAlipayToPay, 'Open Alipay');
+    assert.equal(Boolean(en.wallet.mobileAlipayPaymentHint), true);
 });
 
 test('wallet localizes payment intent creation errors from stable gateway codes', () => {

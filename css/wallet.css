@@ -5454,6 +5454,21 @@ body.wallet-modal-lock {
     transition: height 0.34s ease, min-height 0.34s ease;
 }
 
+.wallet-payment-qr-modal--mobile-handoff .wallet-payment-qr-card {
+    min-height: 172px;
+}
+
+.wallet-payment-qr-modal--mobile-handoff .wallet-payment-qr-fallback {
+    max-width: 300px;
+    padding: 22px;
+    text-align: center;
+    font-size: 14px;
+}
+
+.wallet-payment-qr-modal--mobile-handoff .wallet-modal-actions--compact {
+    margin-top: 12px;
+}
+
 .wallet-payment-qr-title {
     display: flex;
     align-items: center;
@@ -7859,6 +7874,15 @@ html:not([data-theme="dark"]) .wallet-crypto-warning {
 }
 
 @media (max-width: 600px) {
+    .wallet-payment-qr-modal--mobile-handoff .wallet-modal-actions--compact {
+        flex-direction: column-reverse;
+    }
+
+    .wallet-payment-qr-modal--mobile-handoff .wallet-order-modal-body .action-btn {
+        width: 100%;
+        min-height: 48px;
+    }
+
     .wallet-crypto-countdown {
         grid-template-columns: 1fr auto;
     }
