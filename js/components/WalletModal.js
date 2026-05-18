@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260518_MOBILE_PAY_FAST_SYNC_1';
+    const walletCssHref = 'css/wallet.css?v=20260518_MOBILE_PAY_FAST_CONFIRM_1';
     let walletCssReady = false;
     let walletCssReadyPromise = Promise.resolve();
 
@@ -3870,6 +3870,7 @@
             const fastIntervalMs = Math.max(1000, Number(options.fastIntervalMs || intervalMs) || intervalMs);
             const fastPollWindowMs = Math.max(0, Number(options.fastPollWindowMs || 0) || 0);
             const resumeFastPollMs = Math.max(0, Number(options.resumeFastPollMs || 0) || 0);
+            const resumeForceProviderRefreshMs = Math.max(0, Number(options.resumeForceProviderRefreshMs || 0) || 0);
             const initialDelayMs = Math.max(800, Number(options.initialDelayMs || 1500) || 1500);
             const rawTimeoutMs = options.timeoutMs === Infinity
                 ? Infinity
@@ -3884,6 +3885,9 @@
             let pollAgainAfterCurrent = false;
             let fastPollUntil = fastPollWindowMs > 0
                 ? startedAt + fastPollWindowMs
+                : 0;
+            let forceProviderRefreshUntil = options.forceProviderRefresh === true
+                ? startedAt + Math.max(resumeForceProviderRefreshMs, fastPollWindowMs)
                 : 0;
 
             const stop = () => {
@@ -3932,6 +3936,14 @@
                 fastPollUntil = Math.max(fastPollUntil, Date.now() + normalizedDuration);
             };
 
+            const extendForceProviderRefresh = (durationMs = resumeForceProviderRefreshMs) => {
+                const normalizedDuration = Math.max(0, Number(durationMs || 0) || 0);
+                if (!normalizedDuration) {
+                    return;
+                }
+                forceProviderRefreshUntil = Math.max(forceProviderRefreshUntil, Date.now() + normalizedDuration);
+            };
+
             const scheduleNext = (delay = intervalMs) => {
                 if (stopped) {
                     return;
@@ -3955,6 +3967,13 @@
                     return;
                 }
                 extendFastPolling();
+                extendForceProviderRefresh();
+                this.updateHostedPaymentQrStatus(
+                    detailOverlay,
+                    options.resumeWaitingMessage || waitingMessage,
+                    'info',
+                    { loading: true }
+                );
                 runSoon(120);
             };
 
@@ -4033,7 +4052,8 @@
                                 || paymentResult?.provider_summary?.out_trade_no
                                 || ''
                             ).trim() || null,
-                            site: paymentResult?.site || window.SiteConfig?.site || 'cn'
+                            site: paymentResult?.site || window.SiteConfig?.site || 'cn',
+                            force_provider_refresh: forceProviderRefreshUntil > Date.now()
                         });
                         if (stopped) {
                             return;
@@ -4303,6 +4323,7 @@
                 fastIntervalMs: 1200,
                 fastPollWindowMs: 45000,
                 resumeFastPollMs: 30000,
+                resumeForceProviderRefreshMs: 12000,
                 closeDelayMs: Math.min(1200, Math.max(800, Number(options.closeDelayMs || 1000) || 1000))
             } : {};
 

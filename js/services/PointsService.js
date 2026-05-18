@@ -707,7 +707,8 @@
             return this._postWalletJson('/api/payments/status', {
                 checkout_session_id: checkoutSessionId,
                 provider_order_no: String(payload?.provider_order_no || '').trim() || undefined,
-                site: payload.site || window.SiteConfig?.site || 'cn'
+                site: payload.site || window.SiteConfig?.site || 'cn',
+                force_provider_refresh: payload?.force_provider_refresh === true
             });
         },
 
