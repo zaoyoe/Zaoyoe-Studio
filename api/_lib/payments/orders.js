@@ -1841,7 +1841,8 @@ async function attemptZpayPaymentStatusRefresh({
     supabase,
     checkoutSession,
     paymentOrder,
-    env = process.env
+    env = process.env,
+    forceProviderRefresh = false
 } = {}) {
     const normalizedProvider = sanitizeText(
         paymentOrder?.provider || checkoutSession?.provider,
@@ -1868,7 +1869,8 @@ async function attemptZpayPaymentStatusRefresh({
         ? paymentOrder.provider_metadata
         : {};
     const lastQueryAt = Date.parse(String(providerMetadata.query_verified_at || providerMetadata.status_poll_query_at || ''));
-    if (Number.isFinite(lastQueryAt) && (Date.now() - lastQueryAt) < 8_000) {
+    const queryThrottleMs = forceProviderRefresh === true ? 1_200 : 8_000;
+    if (Number.isFinite(lastQueryAt) && (Date.now() - lastQueryAt) < queryThrottleMs) {
         return { refreshed: false, reason: 'query_throttled' };
     }
 
@@ -2211,7 +2213,8 @@ async function getPaymentRequestStatus({
                 supabase,
                 checkoutSession: activeCheckoutSession,
                 paymentOrder: activePaymentOrder,
-                env
+                env,
+                forceProviderRefresh: body.force_provider_refresh === true
             });
 
             if (refreshResult?.refreshed) {

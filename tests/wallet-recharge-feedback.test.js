@@ -127,6 +127,9 @@ test('wallet mobile zpay checkout preserves the wallet page and polls while Alip
     assert.match(script, /fastIntervalMs: 1200/);
     assert.match(script, /fastPollWindowMs: 45000/);
     assert.match(script, /resumeFastPollMs: 30000/);
+    assert.match(script, /resumeForceProviderRefreshMs: 12000/);
+    assert.match(script, /extendForceProviderRefresh\(\)/);
+    assert.match(script, /force_provider_refresh: forceProviderRefreshUntil > Date\.now\(\)/);
     assert.match(script, /closeDelayMs: Math\.min\(1200, Math\.max\(800, Number\(options\.closeDelayMs \|\| 1000\) \|\| 1000\)\)/);
     assert.match(script, /this\.openPaymentCheckoutUrl\(openUrl, \{\s*preserveCurrentPage: isMobilePayment,\s*mobileAppLaunchUrl\s*\}\)/);
     assert.match(script, /this\.startHostedPaymentQrPolling\(detailOverlay, paymentResult, \{\s*\.\.\.options,\s*\.\.\.mobileFastPollingOptions,\s*initialStatusMessage,\s*waitingMessage\s*\}\)/);

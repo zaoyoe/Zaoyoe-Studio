@@ -311,3 +311,170 @@ test('getPaymentRequestStatus actively refreshes a pending zpay order into compl
         assert.equal(calls.recharge.referenceId, 'zpay_ZPAY_REFRESH_ORDER_1');
     });
 });
+
+test('getPaymentRequestStatus lets mobile return requests bypass the long zpay status query throttle', async () => {
+    const now = Date.now();
+    const nowIso = new Date(now).toISOString();
+    const recentQueryIso = new Date(now - 2_000).toISOString();
+    const state = {
+        payment_checkout_sessions: [
+            {
+                id: 'pcs-zpay-force-refresh-1',
+                user_id: 'user-zpay-force-refresh-1',
+                provider: 'zpay',
+                site: 'cn',
+                package_id: null,
+                package_name: '自定义充值',
+                requested_points: 0.01,
+                granted_points: 0.01,
+                expected_amount: 0.01,
+                payment_order_id: null,
+                status: 'redirect_ready',
+                error_message: null,
+                created_at: nowIso,
+                updated_at: nowIso,
+                completed_at: null,
+                session_key: 'PCS_ZPAY_FORCE_REFRESH_1',
+                provider_metadata: {
+                    provider_order_no: 'ZPAY_FORCE_REFRESH_ORDER_1'
+                }
+            }
+        ],
+        payment_orders: [
+            {
+                id: 'po-zpay-force-refresh-1',
+                user_id: 'user-zpay-force-refresh-1',
+                provider: 'zpay',
+                provider_order_no: 'ZPAY_FORCE_REFRESH_ORDER_1',
+                checkout_session_id: 'pcs-zpay-force-refresh-1',
+                site: 'cn',
+                package_id: null,
+                package_name: '自定义充值',
+                expected_amount: 0.01,
+                paid_amount: null,
+                points_amount: 0.01,
+                status: 'pending',
+                last_error: null,
+                created_at: nowIso,
+                updated_at: nowIso,
+                paid_at: null,
+                claimed_at: null,
+                verified_at: null,
+                raw_payload: {},
+                provider_metadata: {
+                    query_verified_at: recentQueryIso,
+                    status_poll_query_at: recentQueryIso
+                }
+            }
+        ]
+    };
+    const calls = {
+        query: 0,
+        recharge: null
+    };
+
+    const mocks = {
+        '../site': require('../api/_lib/site'),
+        './provider-adapters': {
+            getPaymentProviderAdapter(providerKey) {
+                if (providerKey === 'zpay') {
+                    return {
+                        async resolveRuntimeContext() {
+                            return {};
+                        },
+                        async queryOrder({ providerOrderNo }) {
+                            calls.query += 1;
+                            return {
+                                supported: true,
+                                success: true,
+                                providerOrderNo,
+                                tradeNo: 'TRADE_FORCE_REFRESH_1',
+                                paidAmount: 0.01,
+                                status: 'paid',
+                                statusRaw: 'TRADE_SUCCESS',
+                                responsePayload: {
+                                    code: '1',
+                                    status: 1
+                                }
+                            };
+                        }
+                    };
+                }
+
+                return {};
+            },
+            normalizePointValue(value) {
+                const parsed = Number(value);
+                return Number.isFinite(parsed) ? parsed : 0;
+            },
+            amountsMatch(expected, actual) {
+                return Math.abs(Number(expected || 0) - Number(actual || 0)) < 0.0001;
+            }
+        },
+        './providers': {
+            async loadStoredPaymentConfigs() {
+                return {
+                    paymentChannels: {},
+                    rechargeOptions: {}
+                };
+            }
+        },
+        './rpc': {
+            async rechargePointsForPayment(payload) {
+                calls.recharge = payload;
+                return {
+                    error: null
+                };
+            }
+        },
+        '../discount-trigger-linkage': {
+            async maybeIssueAffiliateDiscountAssetsForRecharge() {},
+            async maybeIssueRechargeDiscountAssets() {}
+        },
+        './zpay-points': {
+            deriveZpayPointBreakdown() {
+                return {
+                    paidPoints: 0.01,
+                    bonusPoints: 0
+                };
+            }
+        }
+    };
+
+    await withOrdersModule(mocks, async ({ getPaymentRequestStatus }) => {
+        const throttledPayload = await getPaymentRequestStatus({
+            supabase: createSupabaseStub(state),
+            user: {
+                id: 'user-zpay-force-refresh-1'
+            },
+            body: {
+                checkout_session_id: 'pcs-zpay-force-refresh-1',
+                provider_order_no: 'ZPAY_FORCE_REFRESH_ORDER_1',
+                site: 'cn'
+            }
+        });
+
+        assert.equal(throttledPayload.status, 'pending');
+        assert.equal(calls.query, 0);
+        assert.equal(state.payment_orders[0].status, 'pending');
+
+        const forcedPayload = await getPaymentRequestStatus({
+            supabase: createSupabaseStub(state),
+            user: {
+                id: 'user-zpay-force-refresh-1'
+            },
+            body: {
+                checkout_session_id: 'pcs-zpay-force-refresh-1',
+                provider_order_no: 'ZPAY_FORCE_REFRESH_ORDER_1',
+                site: 'cn',
+                force_provider_refresh: true
+            }
+        });
+
+        assert.equal(calls.query, 1);
+        assert.equal(forcedPayload.status, 'completed');
+        assert.equal(forcedPayload.payment_order_status, 'redeemed');
+        assert.equal(state.payment_orders[0].status, 'redeemed');
+        assert.equal(calls.recharge.referenceId, 'zpay_ZPAY_FORCE_REFRESH_ORDER_1');
+    });
+});
