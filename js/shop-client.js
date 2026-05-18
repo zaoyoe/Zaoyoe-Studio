@@ -9156,7 +9156,7 @@ const ShopClient = {
                 const moveY = previousState.top - card.offsetTop;
                 if (Math.abs(moveX) < 1 && Math.abs(moveY) < 1) return;
 
-                card.classList.add('shop-card-filter-moving', 'shop-card-filter-motion-lock');
+                card.classList.add('shop-card-filter-motion-lock');
                 this.setCssVariables(card, {
                     '--shop-card-filter-delay': `${moveOrder * 18}ms`,
                     '--shop-card-shift-x': `${moveX}px`,
@@ -9210,7 +9210,7 @@ const ShopClient = {
             }
 
             const moveDurationMs = movingCards.length > 0
-                ? 860 + Math.max(0, movingCards.length - 1) * 12
+                ? 980 + Math.max(0, movingCards.length - 1) * 18
                 : 0;
             const enterDurationMs = enteringCards.length > 0
                 ? effectiveEnterDelayBase + enterDurationBaseMs + Math.max(0, enteringCards.length - 1) * enterDelayStepMs
@@ -9220,6 +9220,12 @@ const ShopClient = {
 
             const revealEnteringCards = () => {
                 if (transitionId !== this.gridTransitionSequence) return;
+                movingCards.forEach(({ card }) => {
+                    card.classList.add('shop-card-filter-moving');
+                });
+                if (movingCards.length > 0) {
+                    void container.offsetWidth;
+                }
                 movingCards.forEach(({ card }) => {
                     this.setCssVariables(card, {
                         '--shop-card-shift-x': '0px',

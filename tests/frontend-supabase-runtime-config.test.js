@@ -3620,6 +3620,11 @@ test('shop product entrance keeps idle breathe continuous through grid transitio
     );
     assert.match(
         shopCssSource,
+        /body\.shop-page \.shop-card\.user-product-card\.shop-card-filter-moving\s*\{[\s\S]*?--shop-card-shift-x 0\.96s cubic-bezier\(0\.25, 0\.1, 0\.25, 1\) var\(--shop-card-filter-delay, 0ms\),[\s\S]*?--shop-card-shift-y 0\.96s cubic-bezier\(0\.25, 0\.1, 0\.25, 1\) var\(--shop-card-filter-delay, 0ms\);/,
+        'mobile moving cards should keep the FLIP shift-variable transition instead of falling back to the base mobile transition'
+    );
+    assert.match(
+        shopCssSource,
         /@keyframes shopMobileFreshCardEnter\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?--shop-card-enter-y:\s*20px;[\s\S]*?opacity:\s*1;[\s\S]*?--shop-card-enter-y:\s*0px;/,
         'legacy mobile fresh-enter keyframes should only touch the enter offset variable'
     );
@@ -3678,8 +3683,13 @@ test('shop product entrance keeps idle breathe continuous through grid transitio
     );
     assert.match(
         shopClientSource,
-        /const moveX = previousState\.left - card\.offsetLeft;[\s\S]*?const moveY = previousState\.top - card\.offsetTop;[\s\S]*?card\.classList\.add\('shop-card-filter-moving', 'shop-card-filter-motion-lock'\);[\s\S]*?'--shop-card-shift-x': `\$\{moveX\}px`,[\s\S]*?'--shop-card-shift-y': `\$\{moveY\}px`/,
-        'persistent cards should FLIP on the real card using shift variables instead of moving through a fixed clone'
+        /const moveX = previousState\.left - card\.offsetLeft;[\s\S]*?const moveY = previousState\.top - card\.offsetTop;[\s\S]*?card\.classList\.add\('shop-card-filter-motion-lock'\);[\s\S]*?'--shop-card-shift-x': `\$\{moveX\}px`,[\s\S]*?'--shop-card-shift-y': `\$\{moveY\}px`[\s\S]*?const revealEnteringCards = \(\) => \{[\s\S]*?movingCards\.forEach\(\(\{ card \}\) => \{[\s\S]*?card\.classList\.add\('shop-card-filter-moving'\);[\s\S]*?if \(movingCards\.length > 0\) \{[\s\S]*?void container\.offsetWidth;[\s\S]*?'\-\-shop-card-shift-y': '0px'/,
+        'persistent cards should set the FLIP inverse before enabling the shift transition back to zero'
+    );
+    assert.match(
+        shopClientSource,
+        /const moveDurationMs = movingCards\.length > 0\s*\? 980 \+ Math\.max\(0, movingCards\.length - 1\) \* 18\s*: 0;/,
+        'grid cleanup should wait for the full FLIP shift transition and stagger before removing moving classes'
     );
     assert.match(
         shopClientSource,

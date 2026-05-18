@@ -3965,8 +3965,8 @@
                 background 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
                 filter 0.42s ease,
                 --shop-card-breathe-amplitude 1.35s cubic-bezier(0.4, 0, 0.2, 1),
-                --shop-card-shift-x 0.96s cubic-bezier(0.18, 0.88, 0.24, 1) var(--shop-card-filter-delay, 0ms),
-                --shop-card-shift-y 0.96s cubic-bezier(0.18, 0.88, 0.24, 1) var(--shop-card-filter-delay, 0ms);
+                --shop-card-shift-x 0.96s cubic-bezier(0.25, 0.1, 0.25, 1) var(--shop-card-filter-delay, 0ms),
+                --shop-card-shift-y 0.96s cubic-bezier(0.25, 0.1, 0.25, 1) var(--shop-card-filter-delay, 0ms);
         }
 
         .shop-card-filter-enter {
@@ -6053,6 +6053,17 @@ html:not([data-theme="dark"]) body.shop-page .shop-card--in-cart {
             background 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
             filter 0.42s ease,
             --shop-card-breathe-amplitude 1.35s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    body.shop-page .shop-card.user-product-card.shop-card-filter-moving {
+        transition:
+            box-shadow 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+            border-color 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+            background 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+            filter 0.42s ease,
+            --shop-card-breathe-amplitude 1.35s cubic-bezier(0.4, 0, 0.2, 1),
+            --shop-card-shift-x 0.96s cubic-bezier(0.25, 0.1, 0.25, 1) var(--shop-card-filter-delay, 0ms),
+            --shop-card-shift-y 0.96s cubic-bezier(0.25, 0.1, 0.25, 1) var(--shop-card-filter-delay, 0ms);
     }
 
     body.shop-page .shop-card.user-product-card.shop-card-filter-enter--initial.is-visible {
