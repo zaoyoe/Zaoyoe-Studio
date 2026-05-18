@@ -74,7 +74,7 @@ test('wallet recharge UI exposes pending feedback hooks for package and custom r
     assert.doesNotMatch(script, /请在倒计时结束前完成转账，超时请重新发起支付。/);
     assert.doesNotMatch(script, /js-wallet-copy-usdt-address-bottom/);
     assert.doesNotMatch(script, /js-wallet-copy-usdt-amount-bottom/);
-    assert.match(script, /startHostedPaymentQrPolling\(detailOverlay, paymentResult, \{\s*\.\.\.options,\s*initialStatusMessage,\s*waitingMessage\s*\}\)/);
+    assert.match(script, /startHostedPaymentQrPolling\(detailOverlay, paymentResult, \{\s*\.\.\.options,\s*\.\.\.mobileFastPollingOptions,\s*initialStatusMessage,\s*waitingMessage\s*\}\)/);
     assert.match(script, /PointsService\.getPaymentRequestStatus\(/);
     assert.match(script, /qrcode_img_url/);
     assert.match(script, /qrcode_url/);
@@ -122,8 +122,17 @@ test('wallet mobile zpay checkout preserves the wallet page and polls while Alip
     assert.match(script, /window\.location\.href = mobileAppLaunchUrl/);
     assert.match(script, /document\.addEventListener\('visibilitychange', handlePaymentResume\)/);
     assert.match(script, /window\.addEventListener\('pageshow', handlePaymentResume\)/);
+    assert.match(script, /const fastIntervalMs = Math\.max\(1000, Number\(options\.fastIntervalMs \|\| intervalMs\) \|\| intervalMs\)/);
+    assert.match(script, /extendFastPolling\(\)/);
+    assert.match(script, /fastIntervalMs: 1200/);
+    assert.match(script, /fastPollWindowMs: 45000/);
+    assert.match(script, /resumeFastPollMs: 30000/);
+    assert.match(script, /closeDelayMs: Math\.min\(1200, Math\.max\(800, Number\(options\.closeDelayMs \|\| 1000\) \|\| 1000\)\)/);
     assert.match(script, /this\.openPaymentCheckoutUrl\(openUrl, \{\s*preserveCurrentPage: isMobilePayment,\s*mobileAppLaunchUrl\s*\}\)/);
-    assert.match(script, /this\.startHostedPaymentQrPolling\(detailOverlay, paymentResult, \{\s*\.\.\.options,\s*initialStatusMessage,\s*waitingMessage\s*\}\)/);
+    assert.match(script, /this\.startHostedPaymentQrPolling\(detailOverlay, paymentResult, \{\s*\.\.\.options,\s*\.\.\.mobileFastPollingOptions,\s*initialStatusMessage,\s*waitingMessage\s*\}\)/);
+    assert.match(script, /this\.loadData\(\{ forceBalance: true \}\)/);
+    assert.match(script, /PointsService\.clearWalletReadCaches\(\)/);
+    assert.match(script, /force: forceBalance/);
     assert.doesNotMatch(script, /支付页面被浏览器拦截，请允许弹窗后重试/);
 
     assert.equal(zh.wallet.openAlipayToPay, '打开支付宝支付');

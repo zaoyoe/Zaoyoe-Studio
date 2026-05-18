@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260518_MOBILE_ALIPAY_DIRECT_APP_1';
+    const walletCssHref = 'css/wallet.css?v=20260518_MOBILE_PAY_FAST_SYNC_1';
     let walletCssReady = false;
     let walletCssReadyPromise = Promise.resolve();
 
@@ -3754,7 +3754,7 @@
                 }, 2600);
             }
 
-            await this.loadData().catch((error) => {
+            await this.loadData({ forceBalance: true }).catch((error) => {
                 console.error('[WalletModal] Wallet reload after QR completion failed:', error);
             });
         },
@@ -3866,7 +3866,10 @@
 
             this.stopHostedPaymentQrPolling(detailOverlay);
 
-            const intervalMs = Math.max(2000, Number(options.intervalMs || 3000) || 3000);
+            const intervalMs = Math.max(1200, Number(options.intervalMs || 3000) || 3000);
+            const fastIntervalMs = Math.max(1000, Number(options.fastIntervalMs || intervalMs) || intervalMs);
+            const fastPollWindowMs = Math.max(0, Number(options.fastPollWindowMs || 0) || 0);
+            const resumeFastPollMs = Math.max(0, Number(options.resumeFastPollMs || 0) || 0);
             const initialDelayMs = Math.max(800, Number(options.initialDelayMs || 1500) || 1500);
             const rawTimeoutMs = options.timeoutMs === Infinity
                 ? Infinity
@@ -3879,6 +3882,9 @@
             let stopped = false;
             let polling = false;
             let pollAgainAfterCurrent = false;
+            let fastPollUntil = fastPollWindowMs > 0
+                ? startedAt + fastPollWindowMs
+                : 0;
 
             const stop = () => {
                 if (timer) {
@@ -3909,7 +3915,21 @@
                         options.onAfterCompletedClose();
                     }
                     this.resumeShopAfterRechargeIfNeeded();
-                }, Math.max(1200, Number(options.closeDelayMs || 3000) || 3000));
+                }, Math.max(800, Number(options.closeDelayMs || 3000) || 3000));
+            };
+
+            const getNextPollDelay = () => (
+                fastPollUntil > Date.now()
+                    ? fastIntervalMs
+                    : intervalMs
+            );
+
+            const extendFastPolling = (durationMs = resumeFastPollMs) => {
+                const normalizedDuration = Math.max(0, Number(durationMs || 0) || 0);
+                if (!normalizedDuration) {
+                    return;
+                }
+                fastPollUntil = Math.max(fastPollUntil, Date.now() + normalizedDuration);
             };
 
             const scheduleNext = (delay = intervalMs) => {
@@ -3934,6 +3954,7 @@
                 if (document.visibilityState && document.visibilityState !== 'visible') {
                     return;
                 }
+                extendFastPolling();
                 runSoon(120);
             };
 
@@ -3981,11 +4002,11 @@
                     if ((Date.now() - startedAt) >= timeoutMs) {
                         if (continueAfterQuoteExpired) {
                             updateWaitingStatus();
-                            scheduleNext(intervalMs);
+                            scheduleNext(getNextPollDelay());
                             return;
                         }
                         if (options.deferTimeoutUntilQuoteExpired === true && this.isCryptoCheckoutQuoteActive(detailOverlay)) {
-                            scheduleNext(intervalMs);
+                            scheduleNext(getNextPollDelay());
                             return;
                         }
                         stop();
@@ -4033,12 +4054,12 @@
                             const timeoutStatus = this.isHostedPaymentTimeoutStatus(statusResult);
                             if (timeoutStatus && continueAfterQuoteExpired) {
                                 updateWaitingStatus();
-                                scheduleNext(intervalMs);
+                                scheduleNext(getNextPollDelay());
                                 return;
                             }
                             if (timeoutStatus && options.deferTimeoutUntilQuoteExpired === true && this.isCryptoCheckoutQuoteActive(detailOverlay)) {
                                 updateWaitingStatus();
-                                scheduleNext(intervalMs);
+                                scheduleNext(getNextPollDelay());
                                 return;
                             }
                             stop();
@@ -4063,7 +4084,7 @@
                                 statusResult.message || this.tr('wallet.paymentSubmittedReview', '支付已提交，正在等待平台确认，请稍后。'),
                                 'info'
                             );
-                            scheduleNext(intervalMs);
+                            scheduleNext(getNextPollDelay());
                             return;
                         }
 
@@ -4075,7 +4096,7 @@
                         updateWaitingStatus();
                     }
 
-                    scheduleNext(intervalMs);
+                    scheduleNext(getNextPollDelay());
                 } finally {
                     polling = false;
                     if (pollAgainAfterCurrent && !stopped) {
@@ -4276,9 +4297,19 @@
                 }
             });
 
+            const mobileFastPollingOptions = isMobilePayment ? {
+                initialDelayMs: 800,
+                intervalMs: 1800,
+                fastIntervalMs: 1200,
+                fastPollWindowMs: 45000,
+                resumeFastPollMs: 30000,
+                closeDelayMs: Math.min(1200, Math.max(800, Number(options.closeDelayMs || 1000) || 1000))
+            } : {};
+
             document.body.appendChild(detailOverlay);
             this.startHostedPaymentQrPolling(detailOverlay, paymentResult, {
                 ...options,
+                ...mobileFastPollingOptions,
                 initialStatusMessage,
                 waitingMessage
             });
@@ -9426,7 +9457,7 @@
         /**
          * Load data into the modal - OPTIMIZED with parallel requests
          */
-        async loadData() {
+        async loadData(options = {}) {
             try {
                 console.log('[WalletModal] 🔄 Loading wallet data...');
 
@@ -9435,10 +9466,16 @@
                     throw new Error('PointsService not available');
                 }
 
+                const forceBalance = options.forceBalance === true || options.force === true;
+                if (forceBalance && typeof PointsService.clearWalletReadCaches === 'function') {
+                    PointsService.clearWalletReadCaches();
+                }
+
                 // Start all requests in parallel, but render the balance as soon as it is ready.
                 const paymentRuntimePromise = this.loadPaymentRuntimeConfig();
                 const balancePromise = PointsService.getBalance({
-                    site: window.SiteConfig?.site || 'cn'
+                    site: window.SiteConfig?.site || 'cn',
+                    force: forceBalance
                 });
                 const auxiliaryWalletDataPromise = Promise.allSettled([
                     PointsService.getPackages(),
