@@ -672,14 +672,71 @@ function resolvePublicActiveProvider(paymentChannels = {}) {
     return resolvePreferredEnabledProviderKey(providers, 'afdian');
 }
 
+function clonePlainObject(value) {
+    return JSON.parse(JSON.stringify(value || {}));
+}
+
+function normalizeSecretStatusOption(options = {}) {
+    if (!Object.prototype.hasOwnProperty.call(options, 'secretStatus')) {
+        return null;
+    }
+
+    return options.secretStatus && typeof options.secretStatus === 'object'
+        ? options.secretStatus
+        : {};
+}
+
+function applyPublicProviderReadiness(paymentChannels = {}, secretStatus = {}, env = process.env) {
+    const nextPaymentChannels = clonePlainObject(paymentChannels);
+    const providers = nextPaymentChannels.providers || {};
+
+    ['hupijiao', 'zpay', 'nowpayments'].forEach((providerKey) => {
+        if (providers?.[providerKey]?.enabled !== true) {
+            return;
+        }
+
+        const activationCheck = buildPaymentProviderActivationCheck(
+            providerKey,
+            nextPaymentChannels,
+            secretStatus,
+            env
+        );
+
+        if (activationCheck.ready !== true) {
+            providers[providerKey].enabled = false;
+        }
+    });
+
+    const activeProviderKey = String(nextPaymentChannels.active_provider || '').trim().toLowerCase();
+    if (!providers?.[activeProviderKey]?.enabled) {
+        nextPaymentChannels.active_provider = resolvePreferredEnabledProviderKey(providers, 'afdian');
+    }
+
+    if (!providers?.[nextPaymentChannels.active_provider]?.enabled && providers.afdian && hasCheckoutUrl(providers.afdian)) {
+        providers.afdian.enabled = true;
+        nextPaymentChannels.active_provider = 'afdian';
+    }
+
+    return nextPaymentChannels;
+}
+
 function buildPublicPaymentConfig(paymentChannels, rechargeOptions, runtime = null, options = {}) {
-    const normalizedPaymentChannels = normalizePaymentChannelsConfig(
+    let normalizedPaymentChannels = normalizePaymentChannelsConfig(
         paymentChannels,
         rechargeOptions,
         options
     );
     const normalizedRechargeOptions = normalizeRechargeOptionsConfig(rechargeOptions);
     const mockRuntime = getMockRuntimeState(runtime);
+    const secretStatus = normalizeSecretStatusOption(options);
+
+    if (secretStatus) {
+        normalizedPaymentChannels = applyPublicProviderReadiness(
+            normalizedPaymentChannels,
+            secretStatus,
+            options.env || process.env
+        );
+    }
 
     if (mockRuntime.allowed === true) {
         return {
@@ -848,6 +905,7 @@ module.exports = {
     DEFAULT_AFDIAN_CHECKOUT_URL,
     DEFAULT_SITE_ORIGIN,
     PROVIDER_KEYS,
+    applyPublicProviderReadiness,
     buildPaymentSecretStatus,
     getDefaultPaymentChannelsConfig,
     getProviderSecretNames,
