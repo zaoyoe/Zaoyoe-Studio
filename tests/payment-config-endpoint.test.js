@@ -639,3 +639,115 @@ test('payment config endpoint reuses the hot cache for repeated public config re
         });
     });
 });
+
+test('payment config endpoint keeps public read rate limiting in memory', async () => {
+    const {
+        createPaymentsHandlers
+    } = require('../server/api-handlers/public/payments');
+    const requestSecurity = require('../api/_lib/request-security');
+    requestSecurity._private.resetSharedRateLimitStore();
+
+    let optionalAdminCalls = 0;
+    let configLoads = 0;
+    const dataSupabase = {};
+    const handler = createPaymentsHandlers({
+        admin: {
+            getOptionalSupabaseAdmin() {
+                optionalAdminCalls += 1;
+                return {
+                    rpc() {
+                        throw new Error('payment config rate limit should not use persistent RPC');
+                    }
+                };
+            },
+            getSupabasePublicClient() {
+                return dataSupabase;
+            },
+            sendJson(res, status, payload) {
+                res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                res.end(JSON.stringify(payload));
+            }
+        },
+        requestSecurity,
+        paymentProviders: {
+            async loadStoredPaymentConfigs(supabase) {
+                assert.equal(supabase, dataSupabase);
+                configLoads += 1;
+                return {
+                    paymentChannels: {
+                        active_provider: 'afdian',
+                        providers: {
+                            afdian: {
+                                enabled: true,
+                                display_name: '爱发电',
+                                checkout_url: 'https://afdian.com/a/zaoyoe'
+                            }
+                        }
+                    },
+                    rechargeOptions: {
+                        custom_amount_enabled: true,
+                        mock_payment_enabled: false
+                    }
+                };
+            },
+            buildPublicPaymentConfig(paymentChannels, rechargeOptions) {
+                return {
+                    paymentChannels,
+                    rechargeOptions
+                };
+            },
+            buildPublicPaymentRuntime(runtime) {
+                return runtime;
+            }
+        },
+        paymentOrders: {
+            getMockPaymentRuntimeState() {
+                return {
+                    allowed: false,
+                    reason: 'production_like_runtime'
+                };
+            }
+        },
+        env: {
+            RATE_LIMIT_BACKEND: 'supabase',
+            PAYMENTS_CONFIG_HOT_CACHE_TTL_MS: '0',
+            PAYMENTS_CONFIG_RATE_LIMIT_MAX: '1',
+            PAYMENTS_CONFIG_RATE_LIMIT_WINDOW_MS: '60000'
+        }
+    }).config;
+
+    const firstReq = {
+        method: 'GET',
+        url: '/api/payments/config?site=cn',
+        headers: {
+            host: 'www.zaoyoe.com'
+        },
+        socket: {
+            remoteAddress: '203.0.113.55'
+        }
+    };
+    const secondReq = {
+        ...firstReq,
+        headers: {
+            host: 'www.zaoyoe.com'
+        },
+        socket: {
+            remoteAddress: '203.0.113.55'
+        }
+    };
+    const firstRes = createMockResponse();
+    const secondRes = createMockResponse();
+
+    await handler(firstReq, firstRes);
+    await handler(secondReq, secondRes);
+
+    assert.equal(firstRes.statusCode, 200);
+    assert.equal(secondRes.statusCode, 429);
+    assert.equal(configLoads, 1);
+    assert.equal(optionalAdminCalls, 0);
+    assert.equal(firstRes.headers['x-ratelimit-limit'], '1');
+    assert.equal(secondRes.headers['retry-after'], '60');
+    assert.equal(secondRes.json().code, 'rate_limited');
+
+    requestSecurity._private.resetSharedRateLimitStore();
+});
