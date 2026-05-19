@@ -410,6 +410,44 @@ const SHOP_REALTIME_SUBSCRIBE_TIMEOUT_MS = 2600;
 const SHOP_REALTIME_REFRESH_DEBOUNCE_MS = 650;
 const SHOP_REALTIME_RETRY_MS = 30000;
 const SHOP_REALTIME_FALLBACK_REFRESH_MS = 30000;
+const SHOP_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.zaoyoe.com';
+const SHOP_CATALOG_BROWSER_CACHE_TTL_MS = 30000;
+const SHOP_CATALOG_BROWSER_CACHE_PREFIX = 'zaoyoe_shop_catalog_v2';
+
+function getShopPublicApiBaseUrl() {
+    const configured = String(
+        window.ZAOYOE_PUBLIC_API_BASE_URL
+        || window.VERIFY_SERVER_URL
+        || SHOP_PUBLIC_API_DEFAULT_BASE_URL
+    ).trim();
+
+    try {
+        const parsed = new URL(configured || SHOP_PUBLIC_API_DEFAULT_BASE_URL, window.location.origin);
+        if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+            return '';
+        }
+        return parsed.origin.replace(/\/+$/, '');
+    } catch (_error) {
+        return SHOP_PUBLIC_API_DEFAULT_BASE_URL;
+    }
+}
+
+function buildShopPublicApiUrl(pathname, params = {}) {
+    const baseUrl = getShopPublicApiBaseUrl();
+    if (!baseUrl) return '';
+
+    try {
+        const url = new URL(pathname, `${baseUrl}/`);
+        Object.entries(params || {}).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && String(value).trim() !== '') {
+                url.searchParams.set(key, String(value));
+            }
+        });
+        return url.toString();
+    } catch (_error) {
+        return '';
+    }
+}
 const shopCardImageWarmCache = new Set();
 
 async function ensureShopWalletModal(options = {}) {
@@ -9409,24 +9447,74 @@ const ShopClient = {
         };
     },
 
-    fetchShopCatalogFromApi: async function ({ forceRefresh = false } = {}) {
-        if (!forceRefresh && this.shopCatalogPromise) {
-            return this.shopCatalogPromise;
+    getShopCatalogBrowserCacheKey: function ({ site = 'cn', category = 'all' } = {}) {
+        const normalizedSite = String(site || 'cn').trim().toLowerCase() || 'cn';
+        const normalizedCategory = String(category || 'all').trim().toLowerCase() || 'all';
+        return `${SHOP_CATALOG_BROWSER_CACHE_PREFIX}:${SHOP_PREFETCH_SCHEMA_VERSION}:${normalizedSite}:${normalizedCategory}`;
+    },
+
+    readShopCatalogBrowserCache: function ({ site = 'cn', category = 'all' } = {}) {
+        try {
+            const raw = window.sessionStorage?.getItem(this.getShopCatalogBrowserCacheKey({ site, category }));
+            if (!raw) return null;
+
+            const cached = JSON.parse(raw);
+            const ageMs = Date.now() - Number(cached?.cachedAt || 0);
+            if (
+                cached?.version !== SHOP_PREFETCH_SCHEMA_VERSION
+                || ageMs < 0
+                || ageMs > SHOP_CATALOG_BROWSER_CACHE_TTL_MS
+                || !Array.isArray(cached?.categories)
+                || !Array.isArray(cached?.products)
+            ) {
+                return null;
+            }
+
+            return {
+                categories: cached.categories,
+                products: cached.products
+            };
+        } catch (_error) {
+            return null;
+        }
+    },
+
+    writeShopCatalogBrowserCache: function ({ site = 'cn', category = 'all', categories = [], products = [] } = {}) {
+        if (!Array.isArray(categories) || !Array.isArray(products)) {
+            return;
         }
 
-        const request = (async () => {
-            const currentSite = window.SiteConfig?.site || 'cn';
-            const catalogParams = new URLSearchParams({ site: currentSite });
-            if (forceRefresh) {
-                catalogParams.set('refresh', String(Date.now()));
-            }
-            const catalogUrl = `/api/shop/catalog?${catalogParams.toString()}`;
-            let response = null;
+        try {
+            window.sessionStorage?.setItem(this.getShopCatalogBrowserCacheKey({ site, category }), JSON.stringify({
+                version: SHOP_PREFETCH_SCHEMA_VERSION,
+                cachedAt: Date.now(),
+                categories,
+                products
+            }));
+        } catch (_error) {
+            // Browser storage may be disabled.
+        }
+    },
 
+    fetchShopCatalogPayloadFromApi: async function ({ site = 'cn', category = 'all', forceRefresh = false } = {}) {
+        const catalogParams = new URLSearchParams({ site });
+        if (category && category !== 'all') {
+            catalogParams.set('category', category);
+        }
+        if (forceRefresh) {
+            catalogParams.set('refresh', String(Date.now()));
+        }
+        const relativeUrl = `/api/shop/catalog?${catalogParams.toString()}`;
+        const directUrl = buildShopPublicApiUrl('/api/shop/catalog', Object.fromEntries(catalogParams));
+        const candidates = Array.from(new Set([directUrl, relativeUrl].filter(Boolean)));
+        let lastError = null;
+
+        for (const url of candidates) {
             try {
-                response = await fetch(catalogUrl, {
+                const response = await fetch(url, {
                     method: 'GET',
                     cache: forceRefresh ? 'no-store' : 'default',
+                    credentials: url.startsWith('http') ? 'omit' : 'same-origin',
                     headers: {
                         Accept: 'application/json',
                         ...(forceRefresh ? {
@@ -9435,35 +9523,77 @@ const ShopClient = {
                         } : {})
                     }
                 });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || payload?.success === false) {
+                    throw new Error(payload?.message || this.getShopCatalogUnavailableMessage());
+                }
+                return payload;
+            } catch (error) {
+                lastError = error;
+                if (url === relativeUrl) {
+                    break;
+                }
+                console.warn('Shop catalog direct API unavailable, falling back to same-origin route:', error?.message || error);
+            }
+        }
+
+        throw lastError || new Error(this.getShopCatalogUnavailableMessage());
+    },
+
+    fetchShopCatalogFromApi: async function ({ forceRefresh = false } = {}) {
+        if (!forceRefresh && this.shopCatalogPromise) {
+            return this.shopCatalogPromise;
+        }
+
+        const request = (async () => {
+            const currentSite = window.SiteConfig?.site || 'cn';
+            const category = 'all';
+
+            if (!forceRefresh) {
+                const cachedCatalog = this.readShopCatalogBrowserCache({
+                    site: currentSite,
+                    category
+                });
+                if (cachedCatalog) {
+                    void this.fetchShopCatalogFromApi({ forceRefresh: true }).catch((error) => {
+                        console.debug('Shop catalog background refresh skipped:', error?.message || error);
+                    });
+                    return {
+                        categories: cachedCatalog.categories,
+                        products: this.filterProductsForCurrentSite(cachedCatalog.products)
+                    };
+                }
+            }
+
+            try {
+                const payload = await this.fetchShopCatalogPayloadFromApi({
+                    site: currentSite,
+                    category,
+                    forceRefresh
+                });
+
+                const categories = Array.isArray(payload?.categories)
+                    ? payload.categories
+                    : (Array.isArray(payload?.data?.categories) ? payload.data.categories : []);
+                const products = Array.isArray(payload?.products)
+                    ? payload.products
+                    : (Array.isArray(payload?.data?.products) ? payload.data.products : []);
+
+                this.writeShopCatalogBrowserCache({
+                    site: currentSite,
+                    category,
+                    categories,
+                    products
+                });
+
+                return {
+                    categories,
+                    products: this.filterProductsForCurrentSite(products)
+                };
             } catch (error) {
                 console.warn('Shop catalog API unavailable, falling back to direct query:', error?.message || error);
                 return this.fetchShopCatalogDirect();
             }
-
-            if (response.status === 404 || response.status === 405) {
-                console.warn('Shop catalog API route missing, falling back to direct query');
-                return this.fetchShopCatalogDirect();
-            }
-
-            const payload = await response.json().catch(() => ({}));
-            if (!response.ok || payload?.success === false) {
-                const fallbackMessage = this.getShopCatalogUnavailableMessage();
-                throw this.normalizeShopRequestError(new Error(payload?.message || fallbackMessage), {
-                    fallbackMessage
-                });
-            }
-
-            const categories = Array.isArray(payload?.categories)
-                ? payload.categories
-                : (Array.isArray(payload?.data?.categories) ? payload.data.categories : []);
-            const products = Array.isArray(payload?.products)
-                ? payload.products
-                : (Array.isArray(payload?.data?.products) ? payload.data.products : []);
-
-            return {
-                categories,
-                products: this.filterProductsForCurrentSite(products)
-            };
         })();
 
         const trackedRequest = request.finally(() => {

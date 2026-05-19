@@ -15,6 +15,9 @@
 
     // Inject CSS if not already present
     const walletCssHref = 'css/wallet.css?v=20260518_MOBILE_PAY_FAST_CONFIRM_1';
+    const WALLET_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.zaoyoe.com';
+    const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_TTL_MS = 30000;
+    const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_PREFIX = 'zaoyoe_payment_config_v2';
     let walletCssReady = false;
     let walletCssReadyPromise = Promise.resolve();
 
@@ -5218,6 +5221,11 @@
 
             const site = window.SiteConfig?.site || 'cn';
             void this.ensureWalletRealtimeForCurrentSession({ reason: 'wallet_prefetch' });
+            void this.loadPaymentRuntimeConfig().then(() => {
+                console.log('[WalletModal] ✅ Payment config prefetched in background');
+            }).catch((err) => {
+                console.warn('[WalletModal] Payment config prefetch failed (non-critical):', err);
+            });
 
             if (!this._prefetched && !this.ordersLoaded && pointsService?.getWalletTransactions) {
                 this._prefetched = true;
@@ -7085,30 +7093,152 @@
             };
         },
 
+        getWalletPublicApiBaseUrl() {
+            const configured = String(
+                window.ZAOYOE_PUBLIC_API_BASE_URL
+                || window.VERIFY_SERVER_URL
+                || WALLET_PUBLIC_API_DEFAULT_BASE_URL
+            ).trim();
+
+            try {
+                const parsed = new URL(configured || WALLET_PUBLIC_API_DEFAULT_BASE_URL, window.location.origin);
+                if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+                    return '';
+                }
+                return parsed.origin.replace(/\/+$/, '');
+            } catch (_error) {
+                return WALLET_PUBLIC_API_DEFAULT_BASE_URL;
+            }
+        },
+
+        buildWalletPublicApiUrl(pathname, params = {}) {
+            const baseUrl = this.getWalletPublicApiBaseUrl();
+            if (!baseUrl) {
+                return '';
+            }
+
+            try {
+                const url = new URL(pathname, `${baseUrl}/`);
+                Object.entries(params || {}).forEach(([key, value]) => {
+                    if (value !== undefined && value !== null && String(value).trim() !== '') {
+                        url.searchParams.set(key, String(value));
+                    }
+                });
+                return url.toString();
+            } catch (_error) {
+                return '';
+            }
+        },
+
+        getPaymentConfigBrowserCacheKey(site = 'cn') {
+            const normalizedSite = String(site || 'cn').trim().toLowerCase() || 'cn';
+            return `${WALLET_PAYMENT_CONFIG_BROWSER_CACHE_PREFIX}:${normalizedSite}`;
+        },
+
+        readPaymentConfigBrowserCache(site = 'cn') {
+            try {
+                const raw = window.sessionStorage?.getItem(this.getPaymentConfigBrowserCacheKey(site));
+                if (!raw) return null;
+                const cached = JSON.parse(raw);
+                const ageMs = Date.now() - Number(cached?.cachedAt || 0);
+                if (!cached?.payload || ageMs < 0 || ageMs > WALLET_PAYMENT_CONFIG_BROWSER_CACHE_TTL_MS) {
+                    return null;
+                }
+                return cached.payload;
+            } catch (_error) {
+                return null;
+            }
+        },
+
+        writePaymentConfigBrowserCache(site = 'cn', payload = null) {
+            if (!payload?.success) return;
+
+            try {
+                window.sessionStorage?.setItem(this.getPaymentConfigBrowserCacheKey(site), JSON.stringify({
+                    cachedAt: Date.now(),
+                    payload
+                }));
+            } catch (_error) {
+                // Browser storage can be unavailable in private mode.
+            }
+        },
+
+        applyPaymentConfigPayload(payload = {}) {
+            if (payload?.config) {
+                this.paymentChannelsConfig = this.normalizePaymentChannelsConfig(payload.config);
+            }
+
+            if (payload?.recharge_options) {
+                this.rechargeOptionsConfig = this.normalizeRechargeOptionsConfig(payload.recharge_options);
+            }
+
+            this.paymentRuntimeConfig = this.normalizePaymentRuntimeConfig(payload?.runtime);
+            return this.paymentRuntimeConfig;
+        },
+
+        async fetchPaymentConfigPayload(site = 'cn', options = {}) {
+            const normalizedSite = String(site || 'cn').trim() || 'cn';
+            const relativeUrl = `/api/payments/config?site=${encodeURIComponent(normalizedSite)}`;
+            const directUrl = this.buildWalletPublicApiUrl('/api/payments/config', {
+                site: normalizedSite
+            });
+            const candidates = Array.from(new Set([directUrl, relativeUrl].filter(Boolean)));
+            let lastError = null;
+
+            for (const url of candidates) {
+                try {
+                    const response = await fetch(url, {
+                        method: 'GET',
+                        cache: options.forceRefresh === true ? 'no-store' : 'default',
+                        credentials: url.startsWith('http') ? 'omit' : 'same-origin',
+                        headers: {
+                            Accept: 'application/json',
+                            ...(options.forceRefresh === true ? {
+                                'Cache-Control': 'no-cache',
+                                Pragma: 'no-cache'
+                            } : {})
+                        }
+                    });
+                    const payload = await response.json().catch(() => ({}));
+
+                    if (!response.ok || payload?.success === false) {
+                        throw new Error(payload?.message || '加载支付环境配置失败');
+                    }
+
+                    return payload;
+                } catch (error) {
+                    lastError = error;
+                    if (url === relativeUrl) {
+                        break;
+                    }
+                    console.warn('[WalletModal] Direct payment config fetch failed, retrying same-origin route:', error?.message || error);
+                }
+            }
+
+            throw lastError || new Error('加载支付环境配置失败');
+        },
+
         async loadPaymentRuntimeConfig(forceRefresh = false) {
             if (!forceRefresh && this.paymentRuntimeConfig) {
                 return this.paymentRuntimeConfig;
             }
 
+            const site = this.getWalletSiteScope();
+            if (!forceRefresh) {
+                const cachedPayload = this.readPaymentConfigBrowserCache(site);
+                if (cachedPayload) {
+                    const runtimeConfig = this.applyPaymentConfigPayload(cachedPayload);
+                    void this.loadPaymentRuntimeConfig(true).catch((error) => {
+                        console.debug('[WalletModal] Background payment config refresh skipped:', error?.message || error);
+                    });
+                    return runtimeConfig;
+                }
+            }
+
             try {
-                const response = await fetch(`/api/payments/config?site=${encodeURIComponent(this.getWalletSiteScope())}`, {
-                    method: 'GET'
-                });
-                const payload = await response.json().catch(() => ({}));
-
-                if (!response.ok || payload?.success === false) {
-                    throw new Error(payload?.message || '加载支付环境配置失败');
-                }
-
-                if (payload?.config) {
-                    this.paymentChannelsConfig = this.normalizePaymentChannelsConfig(payload.config);
-                }
-
-                if (payload?.recharge_options) {
-                    this.rechargeOptionsConfig = this.normalizeRechargeOptionsConfig(payload.recharge_options);
-                }
-
-                this.paymentRuntimeConfig = this.normalizePaymentRuntimeConfig(payload?.runtime);
+                const payload = await this.fetchPaymentConfigPayload(site, { forceRefresh });
+                this.writePaymentConfigBrowserCache(site, payload);
+                this.applyPaymentConfigPayload(payload);
             } catch (runtimeError) {
                 console.warn('[WalletModal] Failed to load payment runtime config:', runtimeError);
                 await this.recoverPaymentConfigsFromSystemConfig();

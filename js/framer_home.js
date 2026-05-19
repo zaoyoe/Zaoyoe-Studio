@@ -68,6 +68,7 @@ const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated
 const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260518_HOME_GONGYI_SUB2API_1';
 const HOMEPAGE_CONFIG_CACHE_KEY = 'homepage_config_sub2api_1';
 const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';
+const HOMEPAGE_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.zaoyoe.com';
 const HOMEPAGE_PROMPT_LIVE_SELECT = [
   'id',
   'title',
@@ -114,6 +115,55 @@ const HOMEPAGE_HERO_MATRIX_FONT = '"Share Tech Mono", monospace';
 
 function getHomepageRuntimeSite() {
   return HomepageContract?.normalizeSite?.(window.SiteConfig?.site) || (window.SiteConfig?.site === 'intl' ? 'intl' : 'cn');
+}
+
+function buildHomepagePublicApiUrl(pathname, params = {}) {
+  const configuredBaseUrl = String(
+    window.ZAOYOE_PUBLIC_API_BASE_URL
+    || window.VERIFY_SERVER_URL
+    || HOMEPAGE_PUBLIC_API_DEFAULT_BASE_URL
+  ).trim().replace(/\/+$/, '');
+
+  try {
+    const url = new URL(pathname, `${configuredBaseUrl}/`);
+    Object.entries(params || {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && String(value).trim() !== '') {
+        url.searchParams.set(key, String(value));
+      }
+    });
+    return url.toString();
+  } catch (_error) {
+    return '';
+  }
+}
+
+async function fetchHomepageShopCatalogPayload(site = getHomepageRuntimeSite()) {
+  const relativeUrl = `/api/shop/catalog?site=${encodeURIComponent(site)}`;
+  const directUrl = buildHomepagePublicApiUrl('/api/shop/catalog', { site });
+  const candidates = Array.from(new Set([directUrl, relativeUrl].filter(Boolean)));
+  let lastError = null;
+
+  for (const url of candidates) {
+    try {
+      const response = await fetch(url, {
+        method: 'GET',
+        credentials: url.startsWith('http') ? 'omit' : 'same-origin',
+        headers: {
+          Accept: 'application/json'
+        }
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.message || 'shop catalog api failed');
+      }
+      return payload;
+    } catch (error) {
+      lastError = error;
+      if (url === relativeUrl) break;
+    }
+  }
+
+  throw lastError || new Error('shop catalog api failed');
 }
 
 function getHomepagePrefetchCacheKey(site = getHomepageRuntimeSite()) {
@@ -2851,16 +2901,7 @@ const FramerHome = {
       return await Cache.loadWithCache('shop_products', async () => {
         const baseFields = 'id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, category, is_active, display_order';
         try {
-          const response = await fetch(`/api/shop/catalog?site=${encodeURIComponent(getHomepageRuntimeSite())}`, {
-            method: 'GET',
-            headers: {
-              Accept: 'application/json'
-            }
-          });
-          const payload = await response.json().catch(() => ({}));
-          if (!response.ok || payload?.success === false) {
-            throw new Error(payload?.message || 'shop catalog api failed');
-          }
+          const payload = await fetchHomepageShopCatalogPayload(getHomepageRuntimeSite());
           const products = Array.isArray(payload?.products)
             ? payload.products
             : (Array.isArray(payload?.data?.products) ? payload.data.products : []);

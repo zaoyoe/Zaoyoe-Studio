@@ -1809,7 +1809,7 @@ test('shop discount assets can surface as robot engagement bubbles', () => {
     assert.match(shopClient, /shop_product_discount_assets/);
     assert.match(shopClient, /\/shop\.html\?productId=/);
     assert.match(shopClient, /this\.maybeShowShopDiscountEngagement\(\)/);
-    assert.match(shopHtml, /20260513_SHOP_MOBILE_TAP_FALLBACK_1/);
+    assert.match(shopHtml, /20260519_PUBLIC_API_FAST_PATH_1/);
 });
 
 test('business terminal events automatically maintain engagement user tags', () => {

@@ -247,7 +247,7 @@ test('shop storefront realtime refreshes catalog and orders without replacing fa
     }
 
     assert.equal(
-        shopHtml.includes('js/shop-client.js?v=20260513_SHOP_MOBILE_TAP_FALLBACK_1'),
+        shopHtml.includes('js/shop-client.js?v=20260519_PUBLIC_API_FAST_PATH_1'),
         true,
         'shop.html should cache-bust the storefront realtime fallback runtime'
     );

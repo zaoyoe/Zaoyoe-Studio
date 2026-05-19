@@ -21,7 +21,7 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
     );
 
     assert.equal(
-        shopHtml.includes('js/shop-client.js?v=20260513_SHOP_MOBILE_TAP_FALLBACK_1'),
+        shopHtml.includes('js/shop-client.js?v=20260519_PUBLIC_API_FAST_PATH_1'),
         true,
         'shop.html should load the viewport-sync cache-busted storefront runtime'
     );

@@ -44,7 +44,9 @@ test('wallet site-scoped configs use public site-config endpoints instead of glo
 
     assert.match(walletSource, /url\.searchParams\.set\('route', 'site-system-config'\)/);
     assert.match(walletSource, /url\.searchParams\.set\('site', this\.getWalletSiteScope\(\)\)/);
-    assert.match(walletSource, /fetch\(`\/api\/payments\/config\?site=\$\{encodeURIComponent\(this\.getWalletSiteScope\(\)\)\}`/);
+    assert.match(walletSource, /const site = this\.getWalletSiteScope\(\);/);
+    assert.match(walletSource, /const relativeUrl = `\/api\/payments\/config\?site=\$\{encodeURIComponent\(normalizedSite\)\}`/);
+    assert.match(walletSource, /buildWalletPublicApiUrl\('\/api\/payments\/config',\s*\{\s*site: normalizedSite\s*\}\)/);
     assert.doesNotMatch(walletSource, /rpc\('get_system_config',\s*\{\s*p_key:\s*'affiliate_program'/);
     assert.doesNotMatch(walletSource, /rpc\('get_system_config',\s*\{\s*p_key:\s*'affiliate_poster'/);
 });

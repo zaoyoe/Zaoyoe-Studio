@@ -63,7 +63,7 @@ test('shop realtime catalog refresh bypasses stale HTTP and worker caches', () =
         'shop.html should load the cache cleanup runtime with a fresh version key'
     );
     assert.equal(
-        shopHtml.includes('js/shop-client.js?v=20260513_SHOP_MOBILE_TAP_FALLBACK_1'),
+        shopHtml.includes('js/shop-client.js?v=20260519_PUBLIC_API_FAST_PATH_1'),
         true,
         'shop.html should cache-bust the realtime catalog refresh runtime'
     );

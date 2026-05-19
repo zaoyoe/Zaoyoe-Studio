@@ -233,7 +233,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /js\/shop-client\.js\?v=20260513_SHOP_MOBILE_TAP_FALLBACK_1/,
+        /js\/shop-client\.js\?v=20260519_PUBLIC_API_FAST_PATH_1/,
         'shop.html should load the purchase-guidance rich-text runtime with the visible yellow normalization fix'
     );
     assert.match(
