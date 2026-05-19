@@ -248,7 +248,6 @@ function createPaymentsHandlers({
             }
 
             const rateLimit = await takeRateLimitToken({
-                supabase: getOptionalSupabaseAdmin(),
                 key: `payments-config:${resolveClientIp(req, { env }) || 'unknown'}`,
                 limit: Math.max(1, Number(env.PAYMENTS_CONFIG_RATE_LIMIT_MAX || 120)),
                 windowMs: Math.max(10_000, Number(env.PAYMENTS_CONFIG_RATE_LIMIT_WINDOW_MS || 60_000))
