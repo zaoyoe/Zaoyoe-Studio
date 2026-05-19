@@ -26,6 +26,9 @@ function createMockResponse() {
         json() {
             return state.body ? JSON.parse(state.body) : {};
         },
+        get headers() {
+            return state.headers;
+        },
         get statusCode() {
             return state.statusCode;
         }
@@ -505,6 +508,134 @@ test('payment config endpoint hides real providers that are enabled but missing 
             assert.equal(payload.config.providers.zpay.enabled, false);
             assert.equal(payload.config.providers.nowpayments.enabled, false);
             assert.equal(payload.config.providers.afdian.enabled, true);
+        });
+    });
+});
+
+test('payment config endpoint reuses the hot cache for repeated public config reads', async () => {
+    let systemConfigReads = 0;
+    const supabase = {
+        from(table) {
+            if (table === 'admin_secret_store') {
+                return {
+                    select() {
+                        return this;
+                    },
+                    eq() {
+                        return Promise.resolve({
+                            data: [],
+                            error: null
+                        });
+                    }
+                };
+            }
+
+            assert.equal(table, 'system_config');
+            return {
+                select() {
+                    return this;
+                },
+                in(column, values) {
+                    assert.equal(column, 'config_key');
+                    assert.deepEqual(values, ['payment_channels', 'recharge_options']);
+                    systemConfigReads += 1;
+                    return Promise.resolve({
+                        data: [
+                            {
+                                config_key: 'payment_channels',
+                                config_value: {
+                                    active_provider: 'afdian',
+                                    providers: {
+                                        afdian: {
+                                            enabled: true,
+                                            display_name: `爱发电 ${systemConfigReads}`,
+                                            checkout_url: 'https://afdian.com/a/zaoyoe'
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                config_key: 'recharge_options',
+                                config_value: {
+                                    custom_amount_enabled: true,
+                                    mock_payment_enabled: false
+                                }
+                            }
+                        ],
+                        error: null
+                    });
+                }
+            };
+        }
+    };
+
+    await withEnv({
+        SUPABASE_SERVICE_ROLE_KEY: 'service-role-key',
+        PAYMENTS_CONFIG_HOT_CACHE_TTL_MS: '60000'
+    }, async () => {
+        await withConfigHandler({
+            adminModule: {
+                getSupabaseAdmin() {
+                    return supabase;
+                },
+                getOptionalSupabaseAdmin() {
+                    return null;
+                },
+                getSupabasePublicClient() {
+                    return supabase;
+                },
+                sendJson(res, status, payload) {
+                    res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                    res.end(JSON.stringify(payload));
+                }
+            },
+            requestSecurityModule: {
+                resolveClientIp() {
+                    return '203.0.113.8';
+                },
+                async takeRateLimitToken() {
+                    return {
+                        allowed: true,
+                        limit: 120,
+                        remaining: 119,
+                        resetAt: Date.now() + 60_000
+                    };
+                },
+                applyRateLimitHeaders() {}
+            },
+            ordersModule: {
+                getMockPaymentRuntimeState() {
+                    return {
+                        allowed: false,
+                        reason: 'production_like_runtime'
+                    };
+                }
+            }
+        }, async (handler) => {
+            const req = {
+                method: 'GET',
+                url: '/api/payments/config?site=cn',
+                headers: {
+                    host: 'www.zaoyoe.com'
+                }
+            };
+            const firstRes = createMockResponse();
+            const secondRes = createMockResponse();
+
+            await handler(req, firstRes);
+            await handler(req, secondRes);
+
+            const firstPayload = firstRes.json();
+            const secondPayload = secondRes.json();
+
+            assert.equal(firstRes.statusCode, 200);
+            assert.equal(secondRes.statusCode, 200);
+            assert.equal(systemConfigReads, 1);
+            assert.equal(firstRes.headers['x-zaoyoe-cache'], 'miss');
+            assert.equal(secondRes.headers['x-zaoyoe-cache'], 'hit');
+            assert.equal(firstPayload.config.providers.afdian.display_name, '爱发电 1');
+            assert.equal(secondPayload.config.providers.afdian.display_name, '爱发电 1');
+            assert.match(secondRes.headers['server-timing'], /payments-config-cache;dur=\d+;desc="hit"/);
         });
     });
 });

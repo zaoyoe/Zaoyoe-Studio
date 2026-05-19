@@ -7,6 +7,10 @@ const {
 const {
     resolveSiteScopedSystemConfigRequestSite
 } = require('../_site-scoped-system-config');
+const {
+    applyHotCacheResponseHeaders,
+    createHotCache
+} = require('./_hot-cache');
 
 const PAYMENT_CREATION_ERROR_PATTERNS = Object.freeze([
     {
@@ -65,6 +69,46 @@ function normalizePaymentCreationError(error, fallbackMessage = '创建支付请
             raw_message: rawMessage || null
         }
     };
+}
+
+function normalizePositiveInteger(value, fallback, minimum = 0) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+        return Math.max(minimum, fallback);
+    }
+    return Math.max(minimum, Math.floor(numericValue));
+}
+
+function getRequestHost(req) {
+    return String(req?.headers?.host || req?.headers?.Host || '').trim().toLowerCase();
+}
+
+function buildPaymentsConfigCacheKey(req, {
+    site = 'cn',
+    env = process.env
+} = {}) {
+    return [
+        'payments-config',
+        site,
+        getRequestHost(req),
+        String(env.APP_BASE_URL || '').trim().replace(/\/+$/, ''),
+        String(env.PAYMENT_AFDIAN_URL || '').trim()
+    ].join(':');
+}
+
+function maybeLogSlowPaymentsConfigRequest({
+    env = process.env,
+    site = 'cn',
+    statusCode = 200,
+    cacheStatus = 'miss',
+    totalMs = 0
+} = {}) {
+    const thresholdMs = normalizePositiveInteger(env.PAYMENTS_CONFIG_SLOW_REQUEST_MS, 800, 100);
+    if (totalMs < thresholdMs) return;
+
+    console.warn(
+        `[PaymentsConfig] Slow request status=${statusCode} total=${Math.round(totalMs)}ms cache=${cacheStatus} site=${site}`
+    );
 }
 
 function createPaymentsHandlers({
@@ -138,6 +182,10 @@ function createPaymentsHandlers({
         getSupabase: getWebhookSupabaseClient,
         env
     });
+    const paymentsConfigCache = createHotCache({
+        ttlMs: normalizePositiveInteger(env.PAYMENTS_CONFIG_HOT_CACHE_TTL_MS, 10_000, 0),
+        maxEntries: normalizePositiveInteger(env.PAYMENTS_CONFIG_HOT_CACHE_MAX_ENTRIES, 64, 1)
+    });
 
     return {
         'auth-check': async function paymentsAuthCheckHandler(req, res) {
@@ -186,6 +234,11 @@ function createPaymentsHandlers({
             }
         },
         config: async function paymentsConfigHandler(req, res) {
+            const startedAt = Date.now();
+            let site = 'cn';
+            let cacheStatus = 'miss';
+            let loadMs = 0;
+
             if (req.method !== 'GET') {
                 res.setHeader('Allow', 'GET');
                 return sendJson(res, 405, {
@@ -213,34 +266,70 @@ function createPaymentsHandlers({
             try {
                 const supabase = getConfigSupabaseClient();
                 const url = new URL(req.url || '', 'http://localhost');
-                const site = resolveSiteScopedSystemConfigRequestSite(req, url, { fallback: 'cn' });
-                const { paymentChannels, rechargeOptions } = await loadStoredPaymentConfigs(supabase, {
-                    site,
-                    requestHost: req.headers.host || req.headers.Host || '',
-                    origin: env.APP_BASE_URL,
-                    afdianCheckoutUrl: env.PAYMENT_AFDIAN_URL
-                });
-                const runtime = {
-                    mock_payment: getMockPaymentRuntimeState({
-                        requestHost: req.headers.host || req.headers.Host || '',
-                        env
-                    })
-                };
-                const publicConfigOptions = { env };
-                if (typeof buildPaymentSecretStatus === 'function') {
-                    publicConfigOptions.secretStatus = await buildPaymentSecretStatus(supabase, env, { site });
-                }
-                const publicConfig = buildPublicPaymentConfig(paymentChannels, rechargeOptions, runtime, publicConfigOptions);
-                const publicRuntime = buildPublicPaymentRuntime(runtime);
+                site = resolveSiteScopedSystemConfigRequestSite(req, url, { fallback: 'cn' });
+                const cacheKey = buildPaymentsConfigCacheKey(req, { site, env });
+                const loadStartedAt = Date.now();
+                const cachedResult = await paymentsConfigCache.getOrLoad(cacheKey, async () => {
+                    const { paymentChannels, rechargeOptions } = await loadStoredPaymentConfigs(supabase, {
+                        site,
+                        requestHost: getRequestHost(req),
+                        origin: env.APP_BASE_URL,
+                        afdianCheckoutUrl: env.PAYMENT_AFDIAN_URL
+                    });
+                    const runtime = {
+                        mock_payment: getMockPaymentRuntimeState({
+                            requestHost: getRequestHost(req),
+                            env
+                        })
+                    };
+                    const publicConfigOptions = { env };
+                    if (typeof buildPaymentSecretStatus === 'function') {
+                        publicConfigOptions.secretStatus = await buildPaymentSecretStatus(supabase, env, { site });
+                    }
+                    const publicConfig = buildPublicPaymentConfig(paymentChannels, rechargeOptions, runtime, publicConfigOptions);
+                    const publicRuntime = buildPublicPaymentRuntime(runtime);
 
-                return sendJson(res, 200, {
-                    success: true,
-                    site,
-                    config: publicConfig.paymentChannels,
-                    recharge_options: publicConfig.rechargeOptions,
-                    runtime: publicRuntime
+                    return {
+                        success: true,
+                        site,
+                        config: publicConfig.paymentChannels,
+                        recharge_options: publicConfig.rechargeOptions,
+                        runtime: publicRuntime
+                    };
                 });
+                loadMs = Math.max(0, Date.now() - loadStartedAt);
+                cacheStatus = cachedResult.status;
+                const totalMs = Math.max(0, Date.now() - startedAt);
+                applyHotCacheResponseHeaders(res, {
+                    label: 'payments-config',
+                    status: cacheStatus,
+                    totalMs,
+                    loadMs
+                });
+                maybeLogSlowPaymentsConfigRequest({
+                    env,
+                    site,
+                    statusCode: 200,
+                    cacheStatus,
+                    totalMs
+                });
+
+                return sendJson(res, 200, cachedResult.value);
             } catch (error) {
+                const totalMs = Math.max(0, Date.now() - startedAt);
+                applyHotCacheResponseHeaders(res, {
+                    label: 'payments-config',
+                    status: cacheStatus === 'miss' ? 'error' : cacheStatus,
+                    totalMs,
+                    loadMs
+                });
+                maybeLogSlowPaymentsConfigRequest({
+                    env,
+                    site,
+                    statusCode: error.statusCode || 500,
+                    cacheStatus: cacheStatus === 'miss' ? 'error' : cacheStatus,
+                    totalMs
+                });
                 return sendJson(res, error.statusCode || 500, {
                     success: false,
                     message: error.message || '加载支付配置失败'
