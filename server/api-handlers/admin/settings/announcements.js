@@ -101,6 +101,10 @@ function normalizeAnnouncementInput(input = {}, existing = {}) {
         color: sanitizeText(input.color ?? input.announcement_color ?? existing.color ?? 'purple', 80).toLowerCase() || 'purple',
         size: ANNOUNCEMENT_SIZES.has(size) ? size : 'medium',
         decoration: sanitizeText(input.decoration ?? input.announcement_decoration ?? existing.decoration ?? 'none', 80).toLowerCase() || 'none',
+        theme: (() => {
+            const raw = sanitizeText(input.theme ?? input.announcement_theme ?? existing.theme ?? 'auto', 40).toLowerCase();
+            return ['auto', 'light', 'dark'].includes(raw) ? raw : 'auto';
+        })(),
         pages: normalizeAnnouncementPages(input.pages ?? input.announcement_pages ?? existing.pages ?? ['all']),
         page_overrides: normalizeAnnouncementOverrides(input.page_overrides ?? input.announcement_page_overrides ?? existing.page_overrides),
         enabled: input.enabled ?? input.announcement_enabled ?? existing.enabled ?? false,
@@ -123,6 +127,10 @@ function normalizeAnnouncementRow(row = {}) {
         color: row.color || 'purple',
         size: row.size || 'medium',
         decoration: row.decoration || 'none',
+        theme: (() => {
+            const raw = String(row.theme || 'auto').trim().toLowerCase();
+            return ['auto', 'light', 'dark'].includes(raw) ? raw : 'auto';
+        })(),
         pages: normalizeAnnouncementPages(row.pages || ['all']),
         page_overrides: normalizeAnnouncementOverrides(row.page_overrides || {}),
         enabled: row.enabled === true,

@@ -113,6 +113,7 @@ test('public notifications config handler returns sanitized announcement config 
     assert.deepEqual(payload.config.announcement_pages, ['index', 'guestbook']);
     assert.equal(payload.config.announcement_enabled, true);
     assert.equal(payload.config.announcement_type, 'modal');
+    assert.equal(payload.config.announcement_theme, 'auto');
     assert.equal(payload.config.announcement_content, '<a href="https://zaoyoe.com">zaoyoe</a>');
     assert.deepEqual(payload.config.announcement_page_overrides, {
         shop: {
@@ -131,6 +132,7 @@ test('public notifications config handler returns sanitized announcement config 
         announcement_color: 'blue',
         announcement_size: 'medium',
         announcement_decoration: 'snow',
+        announcement_theme: 'auto',
         announcement_pages: ['shop'],
         announcement_page_overrides: {
             verify: {

@@ -10,8 +10,12 @@
 
 /* 20260512_NAV_AUTH_SESSION_MATCH_1 */
 :root {
-    --auth-sheet-overlay: rgba(7, 9, 12, 0.28);
-    --auth-sheet-overlay-filter: blur(14px) saturate(108%);
+    --app-modal-backdrop: rgba(34, 41, 52, 0.48);
+    --app-modal-backdrop-filter: blur(6px) saturate(106%);
+    --public-light-modal-backdrop: var(--app-modal-backdrop);
+    --public-light-modal-backdrop-filter: var(--app-modal-backdrop-filter);
+    --auth-sheet-overlay: var(--app-modal-backdrop);
+    --auth-sheet-overlay-filter: var(--app-modal-backdrop-filter);
     --auth-sheet-backdrop-glow: rgba(0, 0, 0, 0);
     --auth-sheet-panel: rgba(12, 14, 18, 0.98);
     --auth-sheet-panel-strong: rgba(15, 18, 22, 0.995);
@@ -58,8 +62,10 @@
 
 html[data-theme="light"],
 html:not([data-theme="dark"]) {
-    --auth-sheet-overlay: rgba(34, 41, 52, 0.48);
-    --auth-sheet-overlay-filter: blur(12px) saturate(106%);
+    --app-modal-backdrop: rgba(31, 76, 118, 0.20);
+    --app-modal-backdrop-filter: blur(8px) saturate(108%);
+    --auth-sheet-overlay: var(--app-modal-backdrop);
+    --auth-sheet-overlay-filter: var(--app-modal-backdrop-filter);
     --auth-sheet-panel: rgba(252, 253, 255, 0.985);
     --auth-sheet-panel-strong: #ffffff;
     --auth-sheet-surface: rgba(248, 250, 252, 0.94);

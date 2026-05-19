@@ -20,9 +20,11 @@ canvas#starryCanvas,
     --snow-color: #3b82f6;
     /* Vivid Blue for Light Mode */
     --modal-bg: #ffffff;
-    --modal-overlay: rgba(34, 41, 52, 0.48);
-    --public-light-modal-backdrop: rgba(34, 41, 52, 0.48);
-    --public-light-modal-backdrop-filter: blur(12px) saturate(106%);
+    --app-modal-backdrop: rgba(34, 41, 52, 0.48);
+    --app-modal-backdrop-filter: blur(6px) saturate(106%);
+    --modal-overlay: var(--app-modal-backdrop);
+    --public-light-modal-backdrop: var(--app-modal-backdrop);
+    --public-light-modal-backdrop-filter: var(--app-modal-backdrop-filter);
     --footer-border: rgba(0, 0, 0, 0.05);
     --ambient-color-1: rgba(155, 93, 229, 0.15);
     --ambient-color-2: rgba(139, 92, 246, 0.12);
@@ -36,6 +38,12 @@ canvas#starryCanvas,
     --prompts-mobile-nav-gap: 44px;
     --prompt-auth-top-bar-shield: calc(env(safe-area-inset-top, 0px) + 34px);
     --prompt-auth-bottom-bar-shield: calc(env(safe-area-inset-bottom, 0px) + 96px);
+}
+
+html[data-theme="light"],
+html:not([data-theme="dark"]) {
+    --app-modal-backdrop: rgba(31, 76, 118, 0.20);
+    --app-modal-backdrop-filter: blur(8px) saturate(108%);
 }
 
 /* ========================================
@@ -152,7 +160,7 @@ canvas#starryCanvas,
     --card-bg: rgba(30, 41, 59, 0.5);
     --card-border: rgba(51, 65, 85, 0.5);
     --modal-bg: rgba(15, 23, 42, 0.85);
-    --modal-overlay: rgba(0, 0, 0, 0.65);
+    --modal-overlay: var(--app-modal-backdrop);
     --footer-border: rgba(255, 255, 255, 0.05);
     --accent-starry: #6b9ece;
     --snow-color: #ffffff;
@@ -805,9 +813,9 @@ body {
     position: fixed;
     inset: 0;
     /* Semi-transparent backdrop with blur - same as prompt modal */
-    background: rgba(0, 0, 0, 0.3);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    background: var(--app-modal-backdrop);
+    backdrop-filter: var(--app-modal-backdrop-filter);
+    -webkit-backdrop-filter: var(--app-modal-backdrop-filter);
     z-index: 9999;
     display: flex;
     align-items: center;
@@ -1100,9 +1108,9 @@ body {
 .announcement-toast-backdrop {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.3);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    background: var(--app-modal-backdrop);
+    backdrop-filter: var(--app-modal-backdrop-filter);
+    -webkit-backdrop-filter: var(--app-modal-backdrop-filter);
     z-index: 9997;
     animation: modalOverlayIn 0.3s ease-out;
 }
@@ -2963,9 +2971,9 @@ body.prompts-page .prompt-card--loading .card-fav-btn {
     left: 0;
     width: 100%;
     height: calc(100% - env(safe-area-inset-top, 0px));
-    background: rgba(0, 0, 0, 0.45);
-    backdrop-filter: blur(25px) saturate(120%);
-    -webkit-backdrop-filter: blur(25px) saturate(120%);
+    background: var(--app-modal-backdrop);
+    backdrop-filter: var(--app-modal-backdrop-filter);
+    -webkit-backdrop-filter: var(--app-modal-backdrop-filter);
     /* Force independent GPU compositor layer to prevent Safari purple star tearing */
     transform: translate3d(0, 0, 0);
     -webkit-transform: translate3d(0, 0, 0);
@@ -3009,7 +3017,7 @@ body.prompts-page .prompt-card--loading .card-fav-btn {
 }
 
 .poetry-modal-backdrop.closing {
-    background: rgba(0, 0, 0, 0.45) !important;
+    background: var(--app-modal-backdrop) !important;
 }
 
 body.modal-open .prompt-card {
@@ -4292,9 +4300,9 @@ body.modal-open .prompt-card {
     justify-content: center;
     --composer-keyboard-offset: 0px;
     --composer-translate-y: 0px;
-    background: rgba(7, 9, 12, 0.28);
-    backdrop-filter: blur(14px) saturate(108%);
-    -webkit-backdrop-filter: blur(14px) saturate(108%);
+    background: var(--app-modal-backdrop);
+    backdrop-filter: var(--app-modal-backdrop-filter);
+    -webkit-backdrop-filter: var(--app-modal-backdrop-filter);
     z-index: 10030;
     padding: 24px 18px 18px;
     box-sizing: border-box;

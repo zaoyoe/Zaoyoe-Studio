@@ -2340,7 +2340,7 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
     assert.equal(
         stylesSource.includes('20260424_ADMIN_STUDIO_LIGHT_THEME_MUTED_BLUEGRAY_BACKDROPS_2'),
         true,
-        'admin studio styles should include the light-theme muted blue-gray modal backdrop layer'
+        'admin studio styles should include the light-theme shared modal backdrop layer'
     );
     assert.equal(
         stylesSource.includes('20260424_ADMIN_STUDIO_LIGHT_THEME_RISK_COMPOSER_1'),
@@ -2544,7 +2544,7 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         stylesSource.indexOf('20260424_ADMIN_STUDIO_LIGHT_THEME_MUTED_BLUEGRAY_BACKDROPS_2') >
             stylesSource.indexOf('20260424_ADMIN_STUDIO_LIGHT_THEME_COMMENT_DETAIL_DRAWER_1'),
         true,
-        'muted blue-gray modal backdrops should load after drawer and modal-specific light surface cleanup'
+        'shared modal backdrops should load after drawer and modal-specific light surface cleanup'
     );
     assert.equal(
         stylesSource.indexOf('20260424_ADMIN_STUDIO_LIGHT_THEME_RISK_COMPOSER_1') >
@@ -2612,14 +2612,14 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'comment detail drawer backdrop should receive an explicit light-theme overlay'
     );
     assert.equal(
-        stylesSource.includes('--admin-studio-modal-backdrop: rgba(34, 41, 52, 0.48);'),
+        stylesSource.includes('--admin-studio-modal-backdrop: var(--app-modal-backdrop, rgba(31, 76, 118, 0.20));'),
         true,
-        'light theme modal and drawer backdrops should use a restrained blue-gray base'
+        'light theme modal and drawer backdrops should reuse the shared app modal backdrop token'
     );
     assert.equal(
-        stylesSource.includes('backdrop-filter: blur(12px) saturate(106%) !important;'),
+        stylesSource.includes('--admin-studio-modal-backdrop-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(108%));'),
         true,
-        'light theme modal and drawer backdrops should keep a softer blur over the restrained blue-gray base'
+        'light theme modal and drawer backdrops should reuse the shared app modal backdrop filter token'
     );
     assert.equal(
         stylesSource.includes('overscroll-behavior: contain !important;'),
@@ -2655,6 +2655,16 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         stylesSource.includes('    .shop-order-content-overlay,'),
         true,
         'the unified soft backdrop layer should include shop order popups'
+    );
+    assert.equal(
+        stylesSource.includes('    .points-code-action-modal-overlay,'),
+        true,
+        'the unified soft backdrop layer should include points code action popups'
+    );
+    assert.equal(
+        stylesSource.includes('    .admin-studio-large-modal-overlay,'),
+        true,
+        'the unified soft backdrop layer should include promoted large modal overlays'
     );
     assert.equal(
         stylesSource.includes('html[data-theme="light"] .comment-detail-drawer__panel'),

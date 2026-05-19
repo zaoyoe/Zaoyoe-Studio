@@ -6,9 +6,9 @@
     }
     global.__zaoyoeEngagementRuntimeBootstrapLoaded = true;
 
-    const VERSION = '20260510_NOTIFICATION_SCHEMA_FALLBACK_1';
+    const VERSION = '20260519_ANNOUNCEMENT_HAIRLINE_1';
     const NOTIFICATION_SRC = 'notification-client.js?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1';
-    const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=20260503_ANNOUNCEMENT_MODAL_CHROME_CLOSE_1';
+    const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1';
     const NOTIFICATION_IDLE_TIMEOUT_MS = 1800;
     const ANNOUNCEMENT_BOOT_DELAY_MS = 0;
 

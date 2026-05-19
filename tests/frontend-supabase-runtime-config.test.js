@@ -885,7 +885,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'chat-overlay--active',
         '_showChatOverlay()',
         'backdrop-filter: blur(0) saturate(100%) !important;',
-        'backdrop-filter: var(--chat-overlay-filter, blur(14px) saturate(108%)) !important;',
+        'backdrop-filter: var(--chat-overlay-filter, var(--app-modal-backdrop-filter, blur(6px) saturate(106%))) !important;',
         'completeBootstrapShellAdoption()',
         'chatWidgetBootstrapAdopted',
         "&& this.chatWindow?.hasAttribute('data-chat-widget-bootstrap-shell')",
@@ -1017,23 +1017,23 @@ test('public pages lazy-load notifications and head-preload announcement runtime
         if (/<script[^>]+src=["'][^"']*announcement-loader\.js\?v=/.test(source)) {
             violations.push(`${relativePath} should not execute announcement-loader.js outside the shared engagement loader`);
         }
-        if (!source.includes('rel="preload" href="announcement-loader.js?v=20260503_ANNOUNCEMENT_MODAL_CHROME_CLOSE_1" as="script"')) {
+        if (!source.includes('rel="preload" href="announcement-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1" as="script"')) {
             violations.push(`${relativePath} should preload announcement-loader.js from the document head`);
         }
         const headEndIndex = source.indexOf('</head>');
-        const engagementIndex = source.indexOf('js/engagement-runtime-loader.js?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1');
+        const engagementIndex = source.indexOf('js/engagement-runtime-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1');
         if (headEndIndex === -1 || engagementIndex === -1 || engagementIndex > headEndIndex) {
             violations.push(`${relativePath} should start the shared engagement loader from the document head`);
         }
-        if (!/js\/engagement-runtime-loader\.js\?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1"[^>]*data-load-announcement="1"[^>]*async/.test(source)) {
+        if (!/js\/engagement-runtime-loader\.js\?v=20260519_ANNOUNCEMENT_HAIRLINE_1"[^>]*data-load-announcement="1"[^>]*async/.test(source)) {
             violations.push(`${relativePath} should run the announcement engagement bootstrap asynchronously from the head`);
         }
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260510_NOTIFICATION_SCHEMA_FALLBACK_1';",
+        "const VERSION = '20260519_ANNOUNCEMENT_HAIRLINE_1';",
         "const NOTIFICATION_SRC = 'notification-client.js?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1';",
-        "const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=20260503_ANNOUNCEMENT_MODAL_CHROME_CLOSE_1';",
+        "const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1';",
         'const NOTIFICATION_IDLE_TIMEOUT_MS = 1800;',
         'const ANNOUNCEMENT_BOOT_DELAY_MS = 0;',
         "const shouldLoadNotification = bootstrapScript?.dataset.loadNotification !== '0';",
@@ -1242,7 +1242,8 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         '--chat-panel-shadow: none;',
         '--chat-avatar-bg: rgba(107, 158, 206, 0.18);',
         'html[data-theme="light"] .chat-window:not(.admin-mode-layout) .message.user',
-        '--chat-overlay-bg: rgba(34, 41, 52, 0.48);',
+        '--chat-overlay-bg: var(--app-modal-backdrop, rgba(34, 41, 52, 0.48));',
+        '--chat-overlay-filter: var(--app-modal-backdrop-filter, blur(6px) saturate(106%));',
         '--chat-mascot-head: #6b9ece;',
         '--chat-fab-mascot-detail: #ffffff;',
         '--chat-mobile-fab-glass-bg: rgba(0, 0, 0, 0.48);',
@@ -15642,7 +15643,7 @@ test('final frontend runtime remnants route through delegated or bound listeners
 
     const notificationAssetMarkers = [
         'css/notification-client.css?v=20260513_NOTIFICATION_MOBILE_STAGGER_1',
-        'js/engagement-runtime-loader.js?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1'
+        'js/engagement-runtime-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1'
     ];
 
     for (const marker of notificationAssetMarkers) {
@@ -16075,10 +16076,10 @@ test('announcement runtime renderers externalize decoration particles and physic
         "setAnnouncementTransformState(p.el, p.x, p.y);",
         'zaoyoe-announcement-banner',
         'zaoyoe-announcement-modal',
-        'background: rgba(34, 41, 52, 0.48);',
-        'backdrop-filter: blur(12px) saturate(106%);',
-        'background: rgba(7, 9, 12, 0.28);',
-        'backdrop-filter: blur(14px) saturate(108%);',
+        'background: var(--app-modal-backdrop, rgba(34, 41, 52, 0.48));',
+        'backdrop-filter: var(--app-modal-backdrop-filter, blur(6px) saturate(106%));',
+        'background: var(--app-modal-backdrop, rgba(31, 76, 118, 0.20));',
+        'backdrop-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(108%));',
         'background: rgba(30, 41, 59, 0.85);',
         'backdrop-filter: blur(18px) saturate(115%);',
         '--announcement-snow-particle-color: rgba(191, 219, 254, 0.88);',
@@ -16104,12 +16105,12 @@ test('announcement runtime renderers externalize decoration particles and physic
     }
 
     assert.equal(
-        indexSource.includes('./js/engagement-runtime-loader.js?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1'),
+        indexSource.includes('./js/engagement-runtime-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1'),
         true,
         'index.html should defer announcement loading through the shared engagement bootstrap'
     );
     assert.equal(
-        guestbookSource.includes('js/engagement-runtime-loader.js?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1'),
+        guestbookSource.includes('js/engagement-runtime-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1'),
         true,
         'guestbook.html should defer announcement loading through the shared engagement bootstrap'
     );
@@ -16121,7 +16122,7 @@ test('announcement runtime renderers externalize decoration particles and physic
 
     for (const source of [verifySource, shopSource, legacyIndexSource]) {
         assert.equal(
-            source.includes('js/engagement-runtime-loader.js?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1'),
+            source.includes('js/engagement-runtime-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1'),
             true,
             'announcement entry pages should defer announcement loading through the shared engagement bootstrap'
         );
@@ -16377,7 +16378,7 @@ test('admin studio modules emit unified command feedback for recent processing r
     }
 });
 
-test('public light theme modal backdrops reuse the muted blue-gray glass material', () => {
+test('public modal backdrops route through the shared app modal material tokens', () => {
     const files = [
         'css/auth-sheet.css',
         'css/homepage-overlays.css',
@@ -16393,9 +16394,13 @@ test('public light theme modal backdrops reuse the muted blue-gray glass materia
         const expectedMarker = file === 'css/auth-sheet.css'
             ? '20260512_NAV_AUTH_SESSION_MATCH_1'
             : '20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1';
-        assert.equal(source.includes(expectedMarker), true, `${file} should carry the public light modal backdrop marker`);
-        assert.equal(source.includes('rgba(34, 41, 52, 0.48)'), true, `${file} should use the shared muted blue-gray backdrop`);
-        assert.equal(source.includes('blur(12px) saturate(106%)'), true, `${file} should use the shared glass blur`);
+        assert.equal(source.includes(expectedMarker), true, `${file} should carry the public modal backdrop marker`);
+        assert.equal(source.includes('--app-modal-backdrop'), true, `${file} should route backdrop color through the shared app token`);
+        assert.equal(source.includes('--app-modal-backdrop-filter'), true, `${file} should route backdrop blur through the shared app token`);
+        if (file !== 'css/profile-modal.css') {
+            assert.equal(source.includes('rgba(31, 76, 118, 0.20)'), true, `${file} should expose the public light backdrop fallback`);
+            assert.equal(source.includes('blur(8px) saturate(108%)'), true, `${file} should expose the public light backdrop filter fallback`);
+        }
         assert.equal(source.includes('overscroll-behavior'), true, `${file} should keep backdrop scroll chained inside the modal layer`);
     }
 

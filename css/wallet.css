@@ -4,8 +4,8 @@
  */
 
 :root {
-    --wallet-sheet-overlay: var(--auth-sheet-overlay, rgba(7, 9, 12, 0.28));
-    --wallet-sheet-overlay-filter: var(--auth-sheet-overlay-filter, blur(14px) saturate(108%));
+    --wallet-sheet-overlay: var(--app-modal-backdrop, var(--auth-sheet-overlay, rgba(34, 41, 52, 0.48)));
+    --wallet-sheet-overlay-filter: var(--app-modal-backdrop-filter, var(--auth-sheet-overlay-filter, blur(6px) saturate(106%)));
     --wallet-sheet-panel: var(--auth-sheet-panel, rgba(12, 14, 18, 0.98));
     --wallet-sheet-panel-strong: var(--auth-sheet-panel-strong, rgba(15, 18, 22, 0.995));
     --wallet-sheet-surface: var(--auth-sheet-surface, rgba(255, 255, 255, 0.04));
@@ -3736,8 +3736,9 @@ body.wallet-modal-lock {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(8px);
+    background: var(--wallet-sheet-overlay);
+    backdrop-filter: var(--wallet-sheet-overlay-filter);
+    -webkit-backdrop-filter: var(--wallet-sheet-overlay-filter);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -4792,8 +4793,9 @@ body.wallet-modal-lock {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(8px);
+    background: var(--wallet-sheet-overlay);
+    backdrop-filter: var(--wallet-sheet-overlay-filter);
+    -webkit-backdrop-filter: var(--wallet-sheet-overlay-filter);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -6605,8 +6607,8 @@ body.wallet-modal-lock {
 html[data-theme="light"],
 body[data-theme="light"],
 html:not([data-theme="dark"]) {
-    --wallet-sheet-overlay: rgba(34, 41, 52, 0.48);
-    --wallet-sheet-overlay-filter: blur(12px) saturate(106%);
+    --wallet-sheet-overlay: var(--app-modal-backdrop, var(--auth-sheet-overlay, rgba(31, 76, 118, 0.20)));
+    --wallet-sheet-overlay-filter: var(--app-modal-backdrop-filter, var(--auth-sheet-overlay-filter, blur(8px) saturate(108%)));
     --wallet-sheet-panel: rgba(255, 255, 255, 0.975);
     --wallet-sheet-panel-strong: rgba(255, 255, 255, 0.995);
     --wallet-sheet-surface: rgba(244, 248, 252, 0.82);
