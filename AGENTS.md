@@ -20,3 +20,10 @@ workflow `Deploy KVM4 Verify Server`. After a PR merges into `main`, the
 workflow runs `npm run deploy:kvm4:verify` and verifies the public routes. Use
 manual KVM4 deploys only from latest clean `main` for emergency follow-up or
 workflow recovery.
+
+KVM4 Sub2API deploys are automated from `main` by the GitHub Actions workflow
+`Deploy KVM4 Sub2API`. After a PR merges into `main`, the workflow runs
+`npm run deploy:kvm4:sub2api` and verifies `https://sub2api.zaoyoe.com/health`.
+Use manual Sub2API KVM4 deploys only from latest clean `main` for emergency
+follow-up or workflow recovery. The deploy updates only the Sub2API app
+container and must preserve the existing PostgreSQL and Redis data directories.

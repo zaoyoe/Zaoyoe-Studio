@@ -1,4 +1,4 @@
-name: Deploy KVM4 Verify Server
+name: Deploy KVM4 Sub2API
 
 on:
   push:
@@ -15,28 +15,23 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy latest main to KVM4
+    name: Deploy latest main Sub2API to KVM4
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 60
     if: github.ref == 'refs/heads/main'
     env:
       KVM4_HOST: ${{ vars.KVM4_HOST || '76.13.188.218' }}
       KVM4_PORT: ${{ vars.KVM4_PORT || '2222' }}
       KVM4_USER: ${{ vars.KVM4_USER || 'root' }}
-      KVM4_ROOT: ${{ vars.KVM4_ROOT || '/opt/zaoyoe-verify-server' }}
-      KVM4_KEY: /tmp/kvm4_deploy_key_${{ github.run_id }}
-      KEEP_RELEASES: ${{ vars.KVM4_KEEP_RELEASES || '8' }}
+      KVM4_SUB2API_ROOT: ${{ vars.KVM4_SUB2API_ROOT || '/opt/sub2api' }}
+      KVM4_KEY: /tmp/kvm4_sub2api_deploy_key_${{ github.run_id }}
+      KEEP_RELEASES: ${{ vars.KVM4_SUB2API_KEEP_RELEASES || '5' }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
 
       - name: Prepare SSH access
         env:
@@ -66,18 +61,13 @@ jobs:
           git checkout -B main origin/main
           git status --short --branch
 
-      - name: Deploy KVM4 verify server
-        run: npm run deploy:kvm4:verify
+      - name: Deploy KVM4 Sub2API
+        run: npm run deploy:kvm4:sub2api
 
-      - name: Verify production routes
+      - name: Verify Sub2API public route
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          curl -fsS --retry 5 --retry-delay 3 https://verify-api.zaoyoe.com/healthz
-
-          curl -fsS --retry 5 --retry-delay 3 'https://www.zaoyoe.com/api/payments/config?site=cn' > /tmp/kvm4-payments-config.json
-          node -e "const fs=require('fs'); const payload=JSON.parse(fs.readFileSync('/tmp/kvm4-payments-config.json','utf8')); if (!payload.success) throw new Error('payments config failed'); console.log(JSON.stringify({payments_config:true, active_provider:payload.config?.active_provider || null}));"
-
-          curl -fsS --retry 5 --retry-delay 3 'https://www.zaoyoe.com/api/shop/catalog?site=cn' > /tmp/kvm4-shop-catalog.json
-          node -e "const fs=require('fs'); const payload=JSON.parse(fs.readFileSync('/tmp/kvm4-shop-catalog.json','utf8')); if (!payload.success) throw new Error('shop catalog failed'); console.log(JSON.stringify({shop_catalog:true, categories:Array.isArray(payload.categories)?payload.categories.length:null, products:Array.isArray(payload.products)?payload.products.length:null}));"
+          curl -fsS --retry 5 --retry-delay 3 https://sub2api.zaoyoe.com/health > /tmp/kvm4-sub2api-health.json
+          node -e "const fs=require('fs'); const payload=JSON.parse(fs.readFileSync('/tmp/kvm4-sub2api-health.json','utf8')); if (payload.status !== 'ok') throw new Error('sub2api health failed'); console.log(JSON.stringify({sub2api_health: payload.status}));"
