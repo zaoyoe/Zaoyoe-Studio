@@ -33,7 +33,12 @@
   - `scripts/`
   - `docs/`
   - `supabase/`
-- `CRON_SECRET` 需要同时存在于 Vercel Production 环境和 KVM4 `/opt/zaoyoe-verify-server/.env`，否则 Vercel Cron 转到 KVM4 后会被 `/api/ops/*` 拒绝。
+- `recovery-readiness-sweep` 已从 Vercel Cron 迁到 KVM4 systemd timer：
+  - timer: `zaoyoe-recovery-readiness-sweep.timer`
+  - service: `zaoyoe-recovery-readiness-sweep.service`
+  - schedule: daily around `00:08 UTC`
+  - target: `http://127.0.0.1:3001/api/ops/recovery-readiness-sweep`
+- `CRON_SECRET` 必须存在于 KVM4 `/opt/zaoyoe-verify-server/.env`。Vercel Production 中的同名变量可保留作回滚备用，但 Vercel 不再负责触发该 cron。
 - 合并触发新 Production Deployment 后，至少复核：
   - [https://www.zaoyoe.com/api/payments/config?site=cn](https://www.zaoyoe.com/api/payments/config?site=cn)
   - [https://www.zaoyoe.com/api/shop/catalog?site=cn](https://www.zaoyoe.com/api/shop/catalog?site=cn)
