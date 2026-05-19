@@ -14,3 +14,9 @@ When the user asks Codex to deploy:
 Emergency rollback is allowed with `npx vercel rollback <deployment-url-or-id> --yes`.
 
 The build command also blocks production builds when `VERCEL_ENV=production` and `VERCEL_GIT_COMMIT_REF` is not `main`.
+
+KVM4 verify server deploys are automated from `main` by the GitHub Actions
+workflow `Deploy KVM4 Verify Server`. After a PR merges into `main`, the
+workflow runs `npm run deploy:kvm4:verify` and verifies the public routes. Use
+manual KVM4 deploys only from latest clean `main` for emergency follow-up or
+workflow recovery.
