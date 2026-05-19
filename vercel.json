@@ -61,6 +61,30 @@
     ],
     "rewrites": [
         {
+            "source": "/api/admin",
+            "destination": "https://verify-api.zaoyoe.com/api/admin"
+        },
+        {
+            "source": "/api/admin/:path*",
+            "destination": "https://verify-api.zaoyoe.com/api/admin/:path*"
+        },
+        {
+            "source": "/api/payments/:path*",
+            "destination": "https://verify-api.zaoyoe.com/api/payments/:path*"
+        },
+        {
+            "source": "/api/shop/:path*",
+            "destination": "https://verify-api.zaoyoe.com/api/shop/:path*"
+        },
+        {
+            "source": "/api/wallet/:path*",
+            "destination": "https://verify-api.zaoyoe.com/api/wallet/:path*"
+        },
+        {
+            "source": "/api/ops/:path*",
+            "destination": "https://verify-api.zaoyoe.com/api/ops/:path*"
+        },
+        {
             "source": "/favicon.ico",
             "destination": "/assets/favicon.png"
         },

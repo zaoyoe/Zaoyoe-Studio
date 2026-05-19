@@ -18,7 +18,13 @@ function resolveScope(url) {
         return queryScope;
     }
 
-    const [scope] = normalizeRouteValue(url.pathname).split('/');
+    const pathParts = normalizeRouteValue(url.pathname).split('/').filter(Boolean);
+    const [firstPart, secondPart] = pathParts;
+    if (firstPart === 'api' && secondPart && secondPart !== 'public') {
+        return secondPart;
+    }
+
+    const [scope] = pathParts;
     return scope || '';
 }
 
@@ -29,6 +35,19 @@ function resolveRoute(url, scope) {
     }
 
     const normalizedPath = normalizeRouteValue(url.pathname);
+    const pathParts = normalizedPath.split('/').filter(Boolean);
+    if (pathParts[0] === 'api') {
+        if (pathParts[1] === 'public') {
+            if (pathParts[2] === scope) {
+                return pathParts.slice(3).join('/');
+            }
+            return pathParts.slice(2).join('/');
+        }
+        if (pathParts[1] === scope) {
+            return pathParts.slice(2).join('/');
+        }
+    }
+
     if (!scope || !normalizedPath.startsWith(`${scope}/`)) {
         return normalizedPath;
     }

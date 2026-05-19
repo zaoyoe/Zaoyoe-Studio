@@ -311,6 +311,50 @@ test('public wallet scope exposes kebab-case route aliases used by Vercel rewrit
     });
 });
 
+test('public handler resolves direct KVM4-style /api scope paths', async () => {
+    await withPublicHandler((request, parent, isMain, originalLoad) => {
+        if (request === '../server/api-handlers/public/wallet') {
+            return {
+                createWalletHandlers() {
+                    return {
+                        async overview(req, res) {
+                            res.status(200).setHeader('Content-Type', 'application/json; charset=utf-8');
+                            res.end(JSON.stringify({
+                                success: true,
+                                route: 'wallet-overview'
+                            }));
+                        }
+                    };
+                }
+            };
+        }
+
+        if (request === './_lib/site') {
+            return {
+                requireSupportedSite(value) {
+                    return String(value || 'cn').trim().toLowerCase() || 'cn';
+                }
+            };
+        }
+
+        return originalLoad.call(Module, request, parent, isMain);
+    }, async (handler) => {
+        const req = {
+            method: 'GET',
+            url: '/api/wallet/overview?site=cn'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.deepEqual(res.json(), {
+            success: true,
+            route: 'wallet-overview'
+        });
+    });
+});
+
 test('public wallet checkin is served by the shared handler instead of the API route entrypoint', async () => {
     await withPublicHandler((request, parent, isMain, originalLoad) => {
         if (request === '../server/api-handlers/public/wallet') {
