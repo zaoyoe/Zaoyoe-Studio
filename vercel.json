@@ -20,12 +20,6 @@
             "includeFiles": "{api/_lib/*.js,api/public.js,docs/*.md,js/runtime-supabase-config.js,scripts/*.js,server/api-handlers/**/*.js,supabase/migrations/*.sql}"
         }
     },
-    "crons": [
-        {
-            "path": "/api/ops/recovery-readiness-sweep",
-            "schedule": "0 0 * * *"
-        }
-    ],
     "redirects": [
         {
             "source": "/gongyi",
