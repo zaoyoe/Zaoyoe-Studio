@@ -8,6 +8,10 @@ const {
 const {
     markUserAsPaid
 } = require('../../../api/_lib/user-tags');
+const {
+    applyHotCacheResponseHeaders,
+    createHotCache
+} = require('./_hot-cache');
 
 let vercelWaitUntil = null;
 try {
@@ -26,6 +30,52 @@ async function safeMarkShopBuyerAsPaid(supabase, options = {}) {
             skipped: 'tag_sync_failed'
         };
     }
+}
+
+function normalizePositiveInteger(value, fallback, minimum = 0) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) {
+        return Math.max(minimum, fallback);
+    }
+    return Math.max(minimum, Math.floor(numericValue));
+}
+
+function shouldBypassShopCatalogHotCache(req, requestUrl) {
+    const headers = req?.headers || {};
+    const cacheControl = String(headers['cache-control'] || headers['Cache-Control'] || '').toLowerCase();
+    const pragma = String(headers.pragma || headers.Pragma || '').toLowerCase();
+
+    return requestUrl.searchParams.has('refresh')
+        || cacheControl.includes('no-cache')
+        || cacheControl.includes('no-store')
+        || pragma.includes('no-cache');
+}
+
+function buildShopCatalogCacheKey({
+    site = 'cn',
+    category = 'all'
+} = {}) {
+    return [
+        'shop-catalog',
+        String(site || 'cn').trim().toLowerCase(),
+        String(category || 'all').trim().toLowerCase()
+    ].join(':');
+}
+
+function maybeLogSlowShopCatalogRequest({
+    env = process.env,
+    site = 'cn',
+    category = 'all',
+    statusCode = 200,
+    cacheStatus = 'miss',
+    totalMs = 0
+} = {}) {
+    const thresholdMs = normalizePositiveInteger(env.SHOP_CATALOG_SLOW_REQUEST_MS, 800, 100);
+    if (totalMs < thresholdMs) return;
+
+    console.warn(
+        `[ShopCatalog] Slow request status=${statusCode} total=${Math.round(totalMs)}ms cache=${cacheStatus} site=${site} category=${category}`
+    );
 }
 
 function createShopHandlers({
@@ -65,6 +115,10 @@ function createShopHandlers({
         normalizeDiscountSelection: normalizePricingDiscountSelection,
         resolveDiscountStacking: resolvePricingDiscountStacking
     } = discountPricing || {};
+    const shopCatalogCache = createHotCache({
+        ttlMs: normalizePositiveInteger(env.SHOP_CATALOG_HOT_CACHE_TTL_MS, 15_000, 0),
+        maxEntries: normalizePositiveInteger(env.SHOP_CATALOG_HOT_CACHE_MAX_ENTRIES, 128, 1)
+    });
 
     function setPrivateApiCache(res) {
         if (!res?.setHeader) return;
@@ -2281,6 +2335,12 @@ function createShopHandlers({
 
     return {
         catalog: async function catalogHandler(req, res) {
+            const startedAt = Date.now();
+            let currentSite = 'cn';
+            let category = 'all';
+            let cacheStatus = 'miss';
+            let loadMs = 0;
+
             if (req.method !== 'GET' && req.method !== 'HEAD') {
                 res.setHeader('Allow', 'GET, HEAD');
                 return sendJson(res, 405, {
@@ -2292,6 +2352,12 @@ function createShopHandlers({
             try {
                 const adminSupabase = getOptionalSupabaseAdmin();
                 if (!adminSupabase) {
+                    applyHotCacheResponseHeaders(res, {
+                        label: 'shop-catalog',
+                        status: 'error',
+                        totalMs: Math.max(0, Date.now() - startedAt),
+                        loadMs
+                    });
                     return sendJson(res, 503, {
                         success: false,
                         code: 'shop_catalog_unavailable',
@@ -2300,34 +2366,78 @@ function createShopHandlers({
                 }
 
                 const requestUrl = new URL(req.url || '/', 'http://localhost');
-                const currentSite = requireSupportedSite(requestUrl.searchParams.get('site') || 'cn', {
+                currentSite = requireSupportedSite(requestUrl.searchParams.get('site') || 'cn', {
                     fieldName: 'site'
                 });
-                const category = normalizeShopCatalogCategory(requestUrl.searchParams.get('category') || 'all');
-                const [categories, products] = await Promise.all([
-                    loadPublicShopCategories(adminSupabase),
-                    loadPublicShopProducts(adminSupabase, {
+                category = normalizeShopCatalogCategory(requestUrl.searchParams.get('category') || 'all');
+                const bypassHotCache = shouldBypassShopCatalogHotCache(req, requestUrl);
+                const cacheKey = buildShopCatalogCacheKey({
+                    site: currentSite,
+                    category
+                });
+                const loadStartedAt = Date.now();
+                const cachedResult = await shopCatalogCache.getOrLoad(cacheKey, async () => {
+                    const [categories, products] = await Promise.all([
+                        loadPublicShopCategories(adminSupabase),
+                        loadPublicShopProducts(adminSupabase, {
+                            category,
+                            currentSite
+                        })
+                    ]);
+
+                    return {
+                        success: true,
+                        site: currentSite,
                         category,
-                        currentSite
-                    })
-                ]);
+                        categories,
+                        products,
+                        data: {
+                            categories,
+                            products
+                        }
+                    };
+                }, {
+                    forceRefresh: bypassHotCache
+                });
+                loadMs = Math.max(0, Date.now() - loadStartedAt);
+                cacheStatus = cachedResult.status;
 
                 res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=300, stale-while-revalidate=86400');
                 res.setHeader('CDN-Cache-Control', 'max-age=300, stale-while-revalidate=86400');
                 res.setHeader('Vercel-CDN-Cache-Control', 'max-age=300, stale-while-revalidate=86400');
-                return sendJson(res, 200, {
-                    success: true,
+                const totalMs = Math.max(0, Date.now() - startedAt);
+                applyHotCacheResponseHeaders(res, {
+                    label: 'shop-catalog',
+                    status: cacheStatus,
+                    totalMs,
+                    loadMs
+                });
+                maybeLogSlowShopCatalogRequest({
+                    env,
                     site: currentSite,
                     category,
-                    categories,
-                    products,
-                    data: {
-                        categories,
-                        products
-                    }
+                    statusCode: 200,
+                    cacheStatus,
+                    totalMs
                 });
+                return sendJson(res, 200, cachedResult.value);
             } catch (error) {
                 console.warn('[ShopCatalog] Failed to load public catalog:', error?.message || error);
+                const totalMs = Math.max(0, Date.now() - startedAt);
+                applyHotCacheResponseHeaders(res, {
+                    label: 'shop-catalog',
+                    status: cacheStatus === 'miss' ? 'error' : cacheStatus,
+                    totalMs,
+                    loadMs
+                });
+                maybeLogSlowShopCatalogRequest({
+                    env,
+                    site: currentSite,
+                    category,
+                    statusCode: error.statusCode || 503,
+                    cacheStatus: cacheStatus === 'miss' ? 'error' : cacheStatus,
+                    totalMs
+                });
                 return sendJson(res, error.statusCode || 503, {
                     success: false,
                     code: 'shop_catalog_unavailable',
