@@ -649,14 +649,14 @@ html[data-theme="light"] .chat-widget-bootstrap-shell {
 }
 
 .chat-widget-bootstrap-overlay.is-active {
-    background: var(--chat-overlay-bg, rgba(7, 9, 12, 0.12));
-    backdrop-filter: var(--chat-overlay-filter, blur(14px) saturate(108%));
-    -webkit-backdrop-filter: var(--chat-overlay-filter, blur(14px) saturate(108%));
+    background: var(--chat-overlay-bg, var(--app-modal-backdrop, rgba(34, 41, 52, 0.48)));
+    backdrop-filter: var(--chat-overlay-filter, var(--app-modal-backdrop-filter, blur(6px) saturate(106%)));
+    -webkit-backdrop-filter: var(--chat-overlay-filter, var(--app-modal-backdrop-filter, blur(6px) saturate(106%)));
     opacity: 1;
 }
 
 html[data-theme="light"] .chat-widget-bootstrap-overlay.is-active {
-    background: var(--chat-overlay-bg, rgba(34, 41, 52, 0.48));
+    background: var(--chat-overlay-bg, var(--app-modal-backdrop, rgba(31, 76, 118, 0.20)));
 }
 
 .chat-widget-bootstrap-shell.is-active {

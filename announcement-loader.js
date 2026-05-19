@@ -238,6 +238,10 @@
             announcement_color: String(rule.announcement_color || rule.color || 'purple').trim().toLowerCase() || 'purple',
             announcement_size: String(rule.announcement_size || rule.size || 'medium').trim().toLowerCase() || 'medium',
             announcement_decoration: String(rule.announcement_decoration || rule.decoration || 'none').trim().toLowerCase() || 'none',
+            announcement_theme: (() => {
+                const raw = String(rule.announcement_theme || rule.theme || 'auto').trim().toLowerCase();
+                return ['auto', 'light', 'dark'].includes(raw) ? raw : 'auto';
+            })(),
             announcement_pages: normalizeAnnouncementPageTargets(rule.announcement_pages ?? rule.pages),
             announcement_page_overrides: normalizeAnnouncementPageOverrides(rule.announcement_page_overrides ?? rule.page_overrides),
             announcement_updated_at: String(rule.announcement_updated_at || rule.updated_at || '').trim(),
@@ -266,6 +270,10 @@
             announcement_color: String(config.announcement_color || 'purple').trim().toLowerCase() || 'purple',
             announcement_size: String(config.announcement_size || 'medium').trim().toLowerCase() || 'medium',
             announcement_decoration: String(config.announcement_decoration || 'none').trim().toLowerCase() || 'none',
+            announcement_theme: (() => {
+                const raw = String(config.announcement_theme || 'auto').trim().toLowerCase();
+                return ['auto', 'light', 'dark'].includes(raw) ? raw : 'auto';
+            })(),
             announcement_pages: normalizeAnnouncementPageTargets(config.announcement_pages),
             announcement_page_overrides: normalizeAnnouncementPageOverrides(config.announcement_page_overrides),
             announcement_updated_at: String(config.announcement_updated_at || '').trim(),
@@ -683,9 +691,12 @@
                 }
 
                 const decoration = pageConfig.announcement_decoration || 'none';
+                const themeRaw = String(pageConfig.announcement_theme || 'auto').trim().toLowerCase();
+                const theme = ['auto', 'light', 'dark'].includes(themeRaw) ? themeRaw : 'auto';
                 showAnnouncement(type, color, size, content, ackKey, decoration, {
                     announcementConfig: pageConfig,
-                    currentPage
+                    currentPage,
+                    theme
                 });
                 void recordAnnouncementEvent(pageConfig, currentPage, ackKey, 'view');
                 triggerAnnouncementMaintenanceEngagement(pageConfig, currentPage, ackKey);
@@ -738,6 +749,38 @@
         }
     }
 
+    function resolveAnnouncementTheme(context = {}) {
+        const requested = String(context.theme || 'auto').trim().toLowerCase();
+        if (requested === 'light' || requested === 'dark') {
+            return requested;
+        }
+        try {
+            const root = document.documentElement;
+            const explicit = root.getAttribute('data-theme');
+            if (explicit === 'light' || explicit === 'dark') {
+                return explicit;
+            }
+            if (root.classList.contains('light-theme') || document.body?.classList.contains('light-theme')) {
+                return 'light';
+            }
+            if (root.classList.contains('dark-theme') || document.body?.classList.contains('dark-theme')) {
+                return 'dark';
+            }
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: light)').matches) {
+                return 'light';
+            }
+        } catch (_) {
+            // ignore detection errors and fall through to dark default
+        }
+        return 'dark';
+    }
+
+    function applyAnnouncementTheme(rootEl, context = {}) {
+        if (!rootEl) return;
+        const theme = resolveAnnouncementTheme(context);
+        rootEl.setAttribute('data-announcement-theme', theme);
+    }
+
     // Inject required CSS if not already present
     function injectAnnouncementStyles() {
         if (document.getElementById('announcement-loader-styles')) return;
@@ -752,9 +795,9 @@
                 left: 0;
                 right: 0;
                 bottom: 0;
-                background: rgba(34, 41, 52, 0.48);
-                backdrop-filter: blur(12px) saturate(106%);
-                -webkit-backdrop-filter: blur(12px) saturate(106%);
+                background: var(--app-modal-backdrop, rgba(31, 76, 118, 0.20));
+                backdrop-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(108%));
+                -webkit-backdrop-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(108%));
                 z-index: 99999;
                 display: flex;
                 align-items: center;
@@ -797,10 +840,10 @@
                 background: rgba(30, 41, 59, 0.85);
                 backdrop-filter: blur(18px) saturate(115%);
                 -webkit-backdrop-filter: blur(18px) saturate(115%);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 24px;
-                width: 90%;
-                max-width: 480px;
+                border: 0.25px solid rgba(255, 255, 255, 0.018);
+                border-radius: 28px;
+                width: min(92vw, 620px);
+                max-width: 620px;
                 color: #fff;
                 box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
                 animation: modalPop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -809,29 +852,29 @@
             }
             
             .zaoyoe-announcement-header {
-                padding: 20px 24px 16px;
+                padding: 28px 20px 0;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                gap: 10px;
-                border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+                gap: 14px;
+                border-bottom: 0.25px solid rgba(255, 255, 255, 0.015);
                 position: relative;
                 z-index: 10;
             }
             
             .zaoyoe-announcement-header i {
-                font-size: 1.3rem;
+                font-size: 1.65rem;
                 color: #6b9ece;
             }
             
             .zaoyoe-announcement-title {
-                font-size: 1.15rem;
+                font-size: 1.45rem;
                 font-weight: 600;
                 color: #fff;
             }
             
             .zaoyoe-announcement-body {
-                padding: 16px 24px 24px;
+                padding: 20px 20px 20px;
                 position: relative;
                 z-index: 10;
             }
@@ -841,16 +884,15 @@
                 background: rgba(30, 41, 59, 0.35);
                 backdrop-filter: blur(14px) saturate(125%);
                 -webkit-backdrop-filter: blur(14px) saturate(125%);
-                border: 1px solid rgba(255, 255, 255, 0.15);
-                border-radius: 12px;
-                padding: 16px;
+                border: 0.25px solid rgba(255, 255, 255, 0.025);
+                border-radius: 16px;
+                padding: 24px 28px;
                 color: rgba(255, 255, 255, 0.9);
-                font-size: 0.9rem;
-                line-height: 1.6;
-                max-height: 300px;
+                font-size: 1.08rem;
+                line-height: 1.72;
+                max-height: min(52vh, 430px);
                 overflow-y: auto;
-                box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+                box-shadow: none;
             }
             
             .zaoyoe-announcement-text a {
@@ -859,7 +901,7 @@
             }
             
             .zaoyoe-announcement-footer {
-                padding: 16px 24px 20px;
+                padding: 0 20px 24px;
                 display: flex;
                 justify-content: center;
                 position: relative;
@@ -872,7 +914,7 @@
                 background: rgba(255, 255, 255, 0.15);
                 backdrop-filter: blur(14px) saturate(125%);
                 -webkit-backdrop-filter: blur(14px) saturate(125%);
-                border: 1px solid rgba(255, 255, 255, 0.25);
+                border: 0.25px solid rgba(255, 255, 255, 0.08);
                 border-radius: 12px;
                 color: #fff;
                 font-size: 0.9rem;
@@ -888,10 +930,11 @@
                 box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             }
 
-            [data-theme="dark"] .zaoyoe-announcement-overlay {
-                background: rgba(7, 9, 12, 0.28);
-                backdrop-filter: blur(14px) saturate(108%);
-                -webkit-backdrop-filter: blur(14px) saturate(108%);
+            [data-theme="dark"] .zaoyoe-announcement-overlay,
+            .zaoyoe-announcement-overlay[data-announcement-theme="dark"] {
+                background: var(--app-modal-backdrop, rgba(34, 41, 52, 0.48));
+                backdrop-filter: var(--app-modal-backdrop-filter, blur(6px) saturate(106%));
+                -webkit-backdrop-filter: var(--app-modal-backdrop-filter, blur(6px) saturate(106%));
             }
 
             [data-theme="dark"] .zaoyoe-announcement-modal {
@@ -902,13 +945,13 @@
                 background: rgba(30, 41, 59, 0.85);
                 backdrop-filter: blur(18px) saturate(115%);
                 -webkit-backdrop-filter: blur(18px) saturate(115%);
-                border-color: rgba(255, 255, 255, 0.1);
+                border-color: rgba(255, 255, 255, 0.018);
                 color: #fff;
                 box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
             }
 
             [data-theme="dark"] .zaoyoe-announcement-header {
-                border-bottom-color: rgba(255, 255, 255, 0.06);
+                border-bottom-color: rgba(255, 255, 255, 0.015);
             }
 
             [data-theme="dark"] .zaoyoe-announcement-title {
@@ -917,15 +960,14 @@
 
             [data-theme="dark"] .zaoyoe-announcement-text {
                 background: rgba(30, 41, 59, 0.35);
-                border-color: rgba(255, 255, 255, 0.15);
+                border-color: rgba(255, 255, 255, 0.025);
                 color: rgba(255, 255, 255, 0.9);
-                box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15),
-                    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+                box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
             }
 
             [data-theme="dark"] .zaoyoe-announcement-ack-btn {
                 background: rgba(255, 255, 255, 0.15);
-                border-color: rgba(255, 255, 255, 0.25);
+                border-color: rgba(255, 255, 255, 0.08);
                 color: #fff;
                 box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
             }
@@ -934,7 +976,96 @@
                 background: rgba(255, 255, 255, 0.25);
                 box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
             }
-            
+
+            /* ===== Light theme override for announcement modal/banner/toast ===== */
+            .zaoyoe-announcement-overlay[data-announcement-theme="light"] {
+                background: var(--app-modal-backdrop, rgba(31, 76, 118, 0.20));
+                backdrop-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(108%));
+                -webkit-backdrop-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(108%));
+            }
+            .zaoyoe-announcement-overlay[data-announcement-theme="light"] .zaoyoe-announcement-modal {
+                background: rgba(255, 255, 255, 0.92);
+                backdrop-filter: blur(18px) saturate(120%);
+                -webkit-backdrop-filter: blur(18px) saturate(120%);
+                border: 0.5px solid rgba(15, 23, 42, 0.08);
+                color: #1f2937;
+                box-shadow: 0 24px 60px rgba(15, 23, 42, 0.18);
+            }
+            .zaoyoe-announcement-overlay[data-announcement-theme="light"] .zaoyoe-announcement-header {
+                border-bottom-color: rgba(15, 23, 42, 0.06);
+            }
+            .zaoyoe-announcement-overlay[data-announcement-theme="light"] .zaoyoe-announcement-header i {
+                color: #6b9ece;
+            }
+            .zaoyoe-announcement-overlay[data-announcement-theme="light"] .zaoyoe-announcement-title {
+                color: #0f172a;
+            }
+            .zaoyoe-announcement-overlay[data-announcement-theme="light"] .zaoyoe-announcement-text {
+                background: rgba(241, 245, 249, 0.85);
+                border: 0.5px solid rgba(15, 23, 42, 0.06);
+                color: #1f2937;
+                box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.6);
+            }
+            .zaoyoe-announcement-overlay[data-announcement-theme="light"] .zaoyoe-announcement-text a {
+                color: #6b9ece;
+            }
+            .zaoyoe-announcement-overlay[data-announcement-theme="light"] .zaoyoe-announcement-ack-btn {
+                background: rgba(15, 23, 42, 0.06);
+                border: 0.5px solid rgba(15, 23, 42, 0.12);
+                color: #1f2937;
+                box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+            }
+            .zaoyoe-announcement-overlay[data-announcement-theme="light"] .zaoyoe-announcement-ack-btn:hover {
+                background: rgba(15, 23, 42, 0.12);
+                box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12);
+            }
+
+            /* Banner — light */
+            .zaoyoe-announcement-banner[data-announcement-theme="light"] {
+                background: rgba(255, 255, 255, 0.92);
+                border-bottom: 1px solid rgba(15, 23, 42, 0.08);
+                box-shadow: 0 4px 20px rgba(15, 23, 42, 0.08);
+                color: #1f2937;
+            }
+            .zaoyoe-announcement-banner[data-announcement-theme="light"] .zaoyoe-announcement-text {
+                color: #1f2937;
+            }
+            .zaoyoe-announcement-banner[data-announcement-theme="light"] .zaoyoe-announcement-close {
+                background: rgba(15, 23, 42, 0.08);
+                color: #1f2937;
+            }
+            .zaoyoe-announcement-banner[data-announcement-theme="light"] .announcement-banner-icon {
+                color: #6b9ece;
+            }
+
+            /* Toast — light */
+            .zaoyoe-announcement-toast[data-announcement-theme="light"] {
+                background: rgba(255, 255, 255, 0.94);
+                border: 1px solid rgba(15, 23, 42, 0.08);
+                box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
+                color: #1f2937;
+            }
+            .zaoyoe-announcement-toast[data-announcement-theme="light"] .zaoyoe-announcement-header i {
+                color: #6b9ece;
+            }
+            .zaoyoe-announcement-toast[data-announcement-theme="light"] .zaoyoe-announcement-title {
+                color: #0f172a;
+            }
+            .zaoyoe-announcement-toast[data-announcement-theme="light"] .zaoyoe-announcement-text {
+                background: rgba(241, 245, 249, 0.85);
+                border: 0.5px solid rgba(15, 23, 42, 0.06);
+                color: #1f2937;
+            }
+            .zaoyoe-announcement-toast[data-announcement-theme="light"] .zaoyoe-announcement-ack-btn {
+                background: rgba(15, 23, 42, 0.06);
+                border: 0.5px solid rgba(15, 23, 42, 0.12);
+                color: #1f2937;
+            }
+            .zaoyoe-announcement-toast[data-announcement-theme="light"] .zaoyoe-announcement-ack-btn:hover {
+                background: rgba(15, 23, 42, 0.12);
+            }
+            /* ===== End light theme overrides ===== */
+
             /* Banner Style */
             .zaoyoe-announcement-banner {
                 position: fixed;
@@ -1090,28 +1221,28 @@
 
             @media (max-width: 768px) {
                 .zaoyoe-announcement-modal {
-                    width: 95%;
+                    width: calc(100vw - 32px);
+                    max-width: 620px;
+                    border-radius: 24px;
                 }
 
                 .zaoyoe-announcement-modal .zaoyoe-announcement-header {
-                    padding-top: 21px;
-                    padding-bottom: 17px;
+                    padding: 24px 14px 0;
                 }
 
                 .zaoyoe-announcement-modal .zaoyoe-announcement-body {
-                    padding-top: 17px;
-                    padding-bottom: 25px;
+                    padding: 14px 14px 14px;
                 }
 
                 .zaoyoe-announcement-modal .zaoyoe-announcement-text {
-                    padding-top: 17px;
-                    padding-bottom: 17px;
-                    max-height: 317px;
+                    padding: 20px 22px;
+                    font-size: 1rem;
+                    max-height: 52vh;
                 }
 
                 .zaoyoe-announcement-modal .zaoyoe-announcement-footer {
-                    padding-top: 17px;
-                    padding-bottom: 21px;
+                    padding-top: 0;
+                    padding-bottom: 20px;
                 }
 
                 .zaoyoe-announcement-modal .zaoyoe-announcement-ack-btn {
@@ -1674,6 +1805,7 @@
             <span class="zaoyoe-announcement-text">${content}</span>
             <button class="zaoyoe-announcement-close" data-announcement-action="acknowledge">已读</button>
         `;
+        applyAnnouncementTheme(banner, context);
         hydrateDecorationParticleStyles(banner);
         bindAnnouncementActions(banner, ackKey, context);
         document.body.appendChild(banner);
@@ -1704,6 +1836,7 @@
                 </div>
             </div>
         `;
+        applyAnnouncementTheme(overlay, context);
         hydrateDecorationParticleStyles(overlay);
         bindAnnouncementActions(overlay, ackKey, { ...context, dismissOnBackdrop: true });
 
@@ -1737,6 +1870,7 @@
                 <button class="zaoyoe-announcement-ack-btn" data-announcement-action="acknowledge">已读</button>
             </div>
         `;
+        applyAnnouncementTheme(toast, context);
         hydrateDecorationParticleStyles(toast);
         bindAnnouncementActions(toast, ackKey, context);
 

@@ -53,6 +53,10 @@
             --shop-media-shell-bg: #e8f2ff;
             --shop-skeleton-shell-bg: #f1f7ff;
             --shop-mobile-browser-chrome-bottom-gap: 0px;
+            --app-modal-backdrop: rgba(31, 76, 118, 0.20);
+            --app-modal-backdrop-filter: blur(8px) saturate(108%);
+            --public-light-modal-backdrop: var(--app-modal-backdrop);
+            --public-light-modal-backdrop-filter: var(--app-modal-backdrop-filter);
         }
 
         [data-theme="dark"] {
@@ -73,6 +77,8 @@
             --shop-media-accent: #7db5ea;
             --shop-media-shell-bg: #182634;
             --shop-skeleton-shell-bg: #182634;
+            --app-modal-backdrop: rgba(34, 41, 52, 0.48);
+            --app-modal-backdrop-filter: blur(6px) saturate(106%);
         }
 
         /* Keep overscroll and theme transitions aligned with the current page theme. */
@@ -1931,11 +1937,9 @@
             opacity: 1;
             visibility: visible;
             pointer-events: auto;
-            background:
-                radial-gradient(circle at 50% 50%, rgba(255, 179, 98, 0.08) 0%, transparent 30%),
-                linear-gradient(180deg, rgba(4, 6, 9, 0.18) 0%, rgba(4, 6, 9, 0.56) 34%, rgba(4, 6, 9, 0.82) 100%);
-            backdrop-filter: blur(12px) saturate(0.92);
-            -webkit-backdrop-filter: blur(12px) saturate(0.92);
+            background: var(--app-modal-backdrop, var(--public-light-modal-backdrop, rgba(31, 76, 118, 0.20)));
+            backdrop-filter: var(--app-modal-backdrop-filter, var(--public-light-modal-backdrop-filter, blur(8px) saturate(108%)));
+            -webkit-backdrop-filter: var(--app-modal-backdrop-filter, var(--public-light-modal-backdrop-filter, blur(8px) saturate(108%)));
             transition-delay: 0s;
         }
 
@@ -2866,11 +2870,9 @@
                 opacity: 1;
                 visibility: visible;
                 pointer-events: auto;
-                background:
-                    radial-gradient(circle at 50% 100%, rgba(255, 179, 98, 0.14) 0%, transparent 32%),
-                    linear-gradient(180deg, rgba(4, 6, 9, 0.06) 0%, rgba(4, 6, 9, 0.58) 34%, rgba(4, 6, 9, 0.88) 100%);
-                backdrop-filter: blur(10px) saturate(0.92);
-                -webkit-backdrop-filter: blur(10px) saturate(0.92);
+                background: var(--app-modal-backdrop, var(--public-light-modal-backdrop, rgba(31, 76, 118, 0.20)));
+                backdrop-filter: var(--app-modal-backdrop-filter, var(--public-light-modal-backdrop-filter, blur(8px) saturate(108%)));
+                -webkit-backdrop-filter: var(--app-modal-backdrop-filter, var(--public-light-modal-backdrop-filter, blur(8px) saturate(108%)));
                 transition-delay: 0s;
             }
 
@@ -7287,8 +7289,8 @@ html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card--collapsi
 
 /* 20260424_PUBLIC_LIGHT_MODAL_BACKDROP_1 */
 html:not([data-theme="dark"]) body.shop-page {
-    --shop-light-modal-backdrop: rgba(34, 41, 52, 0.48);
-    --shop-light-modal-backdrop-filter: blur(12px) saturate(106%);
+    --shop-light-modal-backdrop: var(--app-modal-backdrop, rgba(31, 76, 118, 0.20));
+    --shop-light-modal-backdrop-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(108%));
 }
 
 html:not([data-theme="dark"]) body.shop-page[data-shop-cart-open="true"] .shop-cart-backdrop,

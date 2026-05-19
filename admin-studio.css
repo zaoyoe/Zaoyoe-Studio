@@ -51611,7 +51611,7 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__empty {
 .announcement-preview-large .preview-body {
     /* Light mode: light gray background */
     background: rgba(0, 0, 0, 0.04);
-    border: 1px solid rgba(0, 0, 0, 0.06);
+    border: 1px solid rgba(0, 0, 0, 0.04);
     border-radius: 12px;
     padding: 20px 24px;
 }
@@ -51619,7 +51619,7 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__empty {
 /* Dark mode: deeper glass effect for content */
 [data-theme="dark"] .announcement-preview-large .preview-body {
     background: rgba(0, 0, 0, 0.25);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 .announcement-preview-large .preview-body span {
@@ -51665,13 +51665,13 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__empty {
     font-size: 0.9rem;
     font-weight: 500;
     /* Light mode: dark border and text */
-    border: 1px solid rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(0, 0, 0, 0.12);
     color: #1e293b;
     cursor: default;
 }
 
 [data-theme="dark"] .announcement-preview-large .preview-ack-btn {
-    border-color: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.12);
     color: white;
 }
 
@@ -51762,7 +51762,7 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__empty {
 
 .announcement-preview-large.toast-style .preview-ack-btn {
     background: rgba(0, 0, 0, 0.06);
-    border: 1px solid rgba(0, 0, 0, 0.12);
+    border: 1px solid rgba(0, 0, 0, 0.08);
     color: #1e293b;
     padding: 8px 16px;
     border-radius: 8px;
@@ -51772,12 +51772,12 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__empty {
 /* Dark mode toast preview */
 [data-theme="dark"] .announcement-preview-large.toast-style {
     background: rgba(30, 41, 59, 0.70);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.05);
     color: white;
 }
 
 [data-theme="dark"] .announcement-preview-large.toast-style .preview-header {
-    border-bottom-color: rgba(255, 255, 255, 0.15);
+    border-bottom-color: rgba(255, 255, 255, 0.08);
 }
 
 [data-theme="dark"] .announcement-preview-large.toast-style .preview-header i,
@@ -51787,7 +51787,7 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__empty {
 
 [data-theme="dark"] .announcement-preview-large.toast-style .preview-ack-btn {
     background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.12);
     color: white;
 }
 
@@ -52269,7 +52269,7 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__empty {
 }
 
 #settings-view-notifications .announcement-preview-modal {
-    width: min(100%, 560px) !important;
+    width: min(100%, 620px) !important;
 }
 
 /* Color Palette inside Preview */
@@ -52378,6 +52378,20 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__empty {
 .wysiwyg-editor:focus {
     border-color: var(--accent-starry);
     box-shadow: 0 0 0 3px rgba(100, 126, 234, 0.15);
+}
+
+#settings-view-notifications #announcementToolbar.announcement-toolbar {
+    border: 0.5px solid rgba(148, 163, 184, 0.08);
+    border-bottom: 0;
+}
+
+#settings-view-notifications #cfgAnnouncementContent.wysiwyg-editor {
+    border: 0.5px solid rgba(148, 163, 184, 0.08);
+}
+
+#settings-view-notifications #cfgAnnouncementContent.wysiwyg-editor:focus {
+    border-color: rgba(107, 158, 206, 0.22);
+    box-shadow: 0 0 0 1px rgba(100, 126, 234, 0.05);
 }
 
 .wysiwyg-editor.is-announcement-fallback {
@@ -53923,7 +53937,10 @@ body::-webkit-scrollbar-corner {
    Admin Modal Surface Sweep
    ========================================= */
 :root {
-    --admin-studio-modal-backdrop: rgba(4, 11, 24, 0.62);
+    --app-modal-backdrop: rgba(34, 41, 52, 0.48);
+    --app-modal-backdrop-filter: blur(6px) saturate(106%);
+    --admin-studio-modal-backdrop: var(--app-modal-backdrop);
+    --admin-studio-modal-backdrop-filter: var(--app-modal-backdrop-filter);
     --admin-studio-modal-surface-solid: #1f2a40;
     --admin-studio-modal-surface-border: rgba(107, 158, 206, 0.16);
     --admin-studio-modal-surface-shadow: 0 28px 90px rgba(2, 8, 23, 0.46);
@@ -53939,8 +53956,8 @@ body::-webkit-scrollbar-corner {
 .admin-ticket-reply-modal,
 .admin-shop-risk-case-modal {
     background: var(--admin-studio-modal-backdrop) !important;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: var(--admin-studio-modal-backdrop-filter);
+    -webkit-backdrop-filter: var(--admin-studio-modal-backdrop-filter);
 }
 
 #discountGenerateModal > div,
@@ -55109,4 +55126,42 @@ html[data-theme="light"] body .admin-main-content .module-container:is(#module-a
 html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#module-analytics, #module-business-overview, #module-growth-center, #module-commerce-center) .analytics-panel-note {
     color: #64748b !important;
     -webkit-text-fill-color: #64748b !important;
+}
+
+/* 20260519_UNIFIED_MODAL_BACKDROP — admin full-screen modal overlays */
+:is(
+    .modal-overlay,
+    .custom-modal-overlay,
+    .user-modal-overlay,
+    .codes-modal-overlay,
+    .edit-modal-overlay,
+    .batch-modal-overlay,
+    .batch-action-modal-overlay,
+    .batch-export-modal-overlay,
+    .points-code-action-modal-overlay,
+    .admin-ledger-modal-overlay,
+    .users-coupon-confirm-modal-overlay,
+    .admin-discount-generate-modal,
+    .admin-discount-detail-overlay,
+    .admin-discount-restore-overlay,
+    .admin-ticket-reply-modal,
+    .admin-ticket-summary-job-modal,
+    .admin-shop-risk-case-modal,
+    .shop-order-content-overlay,
+    .shop-refund-modal-overlay,
+    .shop-inventory-detail-overlay,
+    .shop-inventory-fault-overlay,
+    .admin-studio-large-modal-overlay,
+    .admin-studio-inline-style-attr-121,
+    .admin-studio-inline-style-attr-202,
+    .admin-studio-inline-style-attr-216,
+    .drawer-overlay,
+    .lightbox-overlay,
+    .comment-detail-drawer__backdrop
+) {
+    background: var(--admin-studio-modal-backdrop, var(--app-modal-backdrop, rgba(34, 41, 52, 0.48))) !important;
+    backdrop-filter: var(--admin-studio-modal-backdrop-filter, var(--app-modal-backdrop-filter, blur(6px) saturate(106%))) !important;
+    -webkit-backdrop-filter: var(--admin-studio-modal-backdrop-filter, var(--app-modal-backdrop-filter, blur(6px) saturate(106%))) !important;
+    overscroll-behavior: contain !important;
+    overscroll-behavior-y: contain !important;
 }

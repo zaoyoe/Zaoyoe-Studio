@@ -11015,6 +11015,9 @@ body.admin-access-pending,
 
 /* 20260408_ADMIN_STUDIO_USER_MODAL_THEME_1 */
 body {
+    --app-modal-backdrop: rgba(34, 41, 52, 0.48);
+    --app-modal-backdrop-filter: blur(6px) saturate(106%);
+    --admin-studio-modal-backdrop-filter: var(--app-modal-backdrop-filter);
     --admin-studio-user-modal-bg: linear-gradient(135deg, #1b2029 0%, #11151c 100%);
     --admin-studio-user-modal-panel-bg: rgba(255, 255, 255, 0.015);
     --admin-studio-user-modal-panel-strong-bg: rgba(8, 10, 14, 0.28);
@@ -11036,7 +11039,7 @@ body {
     --bg-secondary: rgba(255, 255, 255, 0.035);
     --text-primary: #f8fafc;
     --text-secondary: rgba(148, 163, 184, 0.82);
-    --admin-studio-modal-backdrop: rgba(4, 11, 24, 0.72);
+    --admin-studio-modal-backdrop: var(--app-modal-backdrop);
     --admin-studio-modal-surface-solid: var(--admin-studio-user-modal-bg);
     --admin-studio-modal-surface-border: var(--admin-studio-user-modal-border);
     --admin-studio-modal-surface-shadow: var(--admin-studio-user-modal-shadow);
@@ -16322,6 +16325,9 @@ select[data-shop-custom-select="true"].shop-native-select--hidden {
 html[data-theme="light"] body,
 html:not([data-theme="dark"]) body {
     color-scheme: light;
+    --app-modal-backdrop: rgba(31, 76, 118, 0.20);
+    --app-modal-backdrop-filter: blur(8px) saturate(108%);
+    --admin-studio-modal-backdrop-filter: var(--app-modal-backdrop-filter);
     --bg-color: #f8fafc;
     --bg-main: #ffffff;
     --bg-secondary: rgba(241, 245, 249, 0.92);
@@ -16359,7 +16365,7 @@ html:not([data-theme="dark"]) body {
     --admin-studio-subcard-header-text: rgba(15, 23, 42, 0.9);
     --admin-studio-subcard-header-muted: rgba(71, 85, 105, 0.68);
     --admin-studio-subcard-header-divider: rgba(15, 23, 42, 0.07);
-    --admin-studio-modal-backdrop: rgba(34, 41, 52, 0.48);
+    --admin-studio-modal-backdrop: var(--app-modal-backdrop);
     --admin-studio-modal-surface-solid: rgba(255, 255, 255, 0.98);
     --admin-studio-modal-surface-border: rgba(15, 23, 42, 0.1);
     --admin-studio-modal-surface-shadow: 0 28px 80px rgba(15, 23, 42, 0.18);
@@ -16625,8 +16631,8 @@ html:not([data-theme="dark"]) :is(input, textarea, select, .config-input, .modal
 html[data-theme="light"] :is(.modal-overlay, .custom-modal-overlay, .codes-modal-overlay, .edit-modal-overlay, .batch-modal-overlay, .batch-action-modal-overlay, .admin-discount-generate-modal, .admin-ticket-reply-modal, .admin-shop-risk-case-modal),
 html:not([data-theme="dark"]) :is(.modal-overlay, .custom-modal-overlay, .codes-modal-overlay, .edit-modal-overlay, .batch-modal-overlay, .batch-action-modal-overlay, .admin-discount-generate-modal, .admin-ticket-reply-modal, .admin-shop-risk-case-modal) {
     background: var(--admin-studio-modal-backdrop) !important;
-    backdrop-filter: blur(12px) saturate(106%) !important;
-    -webkit-backdrop-filter: blur(12px) saturate(106%) !important;
+    backdrop-filter: var(--admin-studio-modal-backdrop-filter) !important;
+    -webkit-backdrop-filter: var(--admin-studio-modal-backdrop-filter) !important;
     overscroll-behavior: contain !important;
     overscroll-behavior-y: contain !important;
 }
@@ -17235,8 +17241,8 @@ html[data-theme="light"] .admin-command-center__dock::before {
 html[data-theme="light"] #discountGenerateModal.admin-discount-generate-modal,
 html[data-theme="light"] :is(#discountBatchRestoreHistoryOverlay, #discountBatchRestoreHistoryRunDetailOverlay).admin-discount-restore-overlay {
     background: var(--admin-studio-modal-backdrop) !important;
-    backdrop-filter: blur(12px) saturate(106%) !important;
-    -webkit-backdrop-filter: blur(12px) saturate(106%) !important;
+    backdrop-filter: blur(6px) saturate(106%) !important;
+    -webkit-backdrop-filter: blur(6px) saturate(106%) !important;
 }
 
 html[data-theme="light"] #discountGenerateModal .admin-discount-form-modal__dialog {
@@ -21137,8 +21143,8 @@ html[data-theme="light"] .comment-detail-drawer {
 
 html[data-theme="light"] .comment-detail-drawer__backdrop {
     background: var(--admin-studio-modal-backdrop) !important;
-    backdrop-filter: blur(12px) saturate(106%) !important;
-    -webkit-backdrop-filter: blur(12px) saturate(106%) !important;
+    backdrop-filter: blur(6px) saturate(106%) !important;
+    -webkit-backdrop-filter: blur(6px) saturate(106%) !important;
 }
 
 html[data-theme="light"] .comment-detail-drawer__panel {
@@ -21358,8 +21364,8 @@ html[data-theme="light"] .comment-detail-drawer__workflow-feedback {
 /* 20260424_ADMIN_STUDIO_LIGHT_THEME_POINTS_BATCH_MODALS_1 */
 html[data-theme="light"] :is(.edit-modal-overlay, .codes-modal-overlay, .batch-modal-overlay) {
     background: var(--admin-studio-modal-backdrop) !important;
-    backdrop-filter: blur(12px) saturate(106%) !important;
-    -webkit-backdrop-filter: blur(12px) saturate(106%) !important;
+    backdrop-filter: blur(6px) saturate(106%) !important;
+    -webkit-backdrop-filter: blur(6px) saturate(106%) !important;
 }
 
 html[data-theme="light"] :is(
@@ -22856,8 +22862,8 @@ html[data-theme="light"] #module-shop #shop-view-orders .shop-order-row--focused
 
 html[data-theme="light"] .shop-order-content-overlay {
     background: var(--admin-studio-modal-backdrop) !important;
-    backdrop-filter: blur(12px) saturate(106%) !important;
-    -webkit-backdrop-filter: blur(12px) saturate(106%) !important;
+    backdrop-filter: blur(6px) saturate(106%) !important;
+    -webkit-backdrop-filter: blur(6px) saturate(106%) !important;
 }
 
 html[data-theme="light"] .shop-order-content-shell {
@@ -23071,8 +23077,8 @@ html[data-theme="light"] .shop-order-detail-inline-btn--danger:is(:hover, :focus
 html[data-theme="light"] .shop-inventory-detail-overlay,
 html:not([data-theme="dark"]) .shop-inventory-detail-overlay {
     background: var(--admin-studio-modal-backdrop, rgba(34, 41, 52, 0.48)) !important;
-    backdrop-filter: blur(12px) saturate(106%) !important;
-    -webkit-backdrop-filter: blur(12px) saturate(106%) !important;
+    backdrop-filter: blur(6px) saturate(106%) !important;
+    -webkit-backdrop-filter: blur(6px) saturate(106%) !important;
 }
 
 html[data-theme="light"] .shop-inventory-detail-modal,
@@ -26644,8 +26650,8 @@ html[data-theme="light"] #module-growth-center :is(
 /* 20260424_ADMIN_STUDIO_LIGHT_THEME_COMMENT_DETAIL_DRAWER_1 */
 html[data-theme="light"] .comment-detail-drawer__backdrop {
     background: var(--admin-studio-modal-backdrop) !important;
-    backdrop-filter: blur(12px) saturate(106%) !important;
-    -webkit-backdrop-filter: blur(12px) saturate(106%) !important;
+    backdrop-filter: blur(6px) saturate(106%) !important;
+    -webkit-backdrop-filter: blur(6px) saturate(106%) !important;
 }
 
 html[data-theme="light"] .comment-detail-drawer__panel {
@@ -26736,7 +26742,8 @@ html[data-theme="light"] .comment-detail-note-input::placeholder {
 /* 20260424_ADMIN_STUDIO_LIGHT_THEME_MUTED_BLUEGRAY_BACKDROPS_2 */
 html[data-theme="light"],
 html:not([data-theme="dark"]) {
-    --admin-studio-modal-backdrop: rgba(34, 41, 52, 0.48);
+    --admin-studio-modal-backdrop: var(--app-modal-backdrop, rgba(31, 76, 118, 0.20));
+    --admin-studio-modal-backdrop-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(108%));
 }
 
 html[data-theme="light"] :is(
@@ -26748,6 +26755,7 @@ html[data-theme="light"] :is(
     .batch-modal-overlay,
     .batch-action-modal-overlay,
     .batch-export-modal-overlay,
+    .points-code-action-modal-overlay,
     .admin-ledger-modal-overlay,
     .users-coupon-confirm-modal-overlay,
     .admin-discount-generate-modal,
@@ -26760,6 +26768,10 @@ html[data-theme="light"] :is(
     .shop-refund-modal-overlay,
     .shop-inventory-detail-overlay,
     .shop-inventory-fault-overlay,
+    .admin-studio-large-modal-overlay,
+    .admin-studio-inline-style-attr-121,
+    .admin-studio-inline-style-attr-202,
+    .admin-studio-inline-style-attr-216,
     .drawer-overlay,
     .lightbox-overlay,
     .comment-detail-drawer__backdrop
@@ -26790,8 +26802,8 @@ html:not([data-theme="dark"]) :is(
     .comment-detail-drawer__backdrop
 ) {
     background: var(--admin-studio-modal-backdrop) !important;
-    backdrop-filter: blur(12px) saturate(106%) !important;
-    -webkit-backdrop-filter: blur(12px) saturate(106%) !important;
+    backdrop-filter: var(--admin-studio-modal-backdrop-filter) !important;
+    -webkit-backdrop-filter: var(--admin-studio-modal-backdrop-filter) !important;
     overscroll-behavior: contain !important;
     overscroll-behavior-y: contain !important;
 }
@@ -26802,8 +26814,8 @@ html[data-theme="light"] #opsAlertBatchMuteModal,
 html:not([data-theme="dark"]) #shopRiskCaseComposerModal,
 html:not([data-theme="dark"]) #opsAlertBatchMuteModal {
     background: var(--admin-studio-modal-backdrop) !important;
-    backdrop-filter: blur(12px) saturate(106%) !important;
-    -webkit-backdrop-filter: blur(12px) saturate(106%) !important;
+    backdrop-filter: var(--admin-studio-modal-backdrop-filter) !important;
+    -webkit-backdrop-filter: var(--admin-studio-modal-backdrop-filter) !important;
 }
 
 html[data-theme="light"] #shopRiskCaseComposerModal .admin-shop-risk-case-modal__dialog,
@@ -36434,8 +36446,8 @@ html:not([data-theme="dark"]) .codes-modal--batch .points-inline-feedback--succe
 html[data-theme="light"] .points-code-action-modal-overlay,
 html:not([data-theme="dark"]) .points-code-action-modal-overlay {
     background: rgba(15, 23, 42, 0.42) !important;
-    backdrop-filter: blur(12px) saturate(106%) !important;
-    -webkit-backdrop-filter: blur(12px) saturate(106%) !important;
+    backdrop-filter: blur(6px) saturate(106%) !important;
+    -webkit-backdrop-filter: blur(6px) saturate(106%) !important;
 }
 
 html[data-theme="light"] .points-code-action-modal-overlay .edit-modal--code-action,
@@ -57923,4 +57935,37 @@ html:not([data-theme="dark"]) :is(
         min-width: 0 !important;
         white-space: normal !important;
     }
+}
+
+/* 20260519_UNIFIED_MODAL_BACKDROP — admin full-screen modal overlays */
+:is(
+    .modal-overlay,
+    .custom-modal-overlay,
+    .user-modal-overlay,
+    .codes-modal-overlay,
+    .edit-modal-overlay,
+    .batch-modal-overlay,
+    .batch-action-modal-overlay,
+    .batch-export-modal-overlay,
+    .admin-ledger-modal-overlay,
+    .users-coupon-confirm-modal-overlay,
+    .admin-discount-generate-modal,
+    .admin-discount-detail-overlay,
+    .admin-discount-restore-overlay,
+    .admin-ticket-reply-modal,
+    .admin-ticket-summary-job-modal,
+    .admin-shop-risk-case-modal,
+    .shop-order-content-overlay,
+    .shop-refund-modal-overlay,
+    .shop-inventory-detail-overlay,
+    .shop-inventory-fault-overlay,
+    .drawer-overlay,
+    .lightbox-overlay,
+    .comment-detail-drawer__backdrop
+) {
+    background: var(--admin-studio-modal-backdrop, var(--app-modal-backdrop, rgba(34, 41, 52, 0.48))) !important;
+    backdrop-filter: var(--admin-studio-modal-backdrop-filter, var(--app-modal-backdrop-filter, blur(6px) saturate(106%))) !important;
+    -webkit-backdrop-filter: var(--admin-studio-modal-backdrop-filter, var(--app-modal-backdrop-filter, blur(6px) saturate(106%))) !important;
+    overscroll-behavior: contain !important;
+    overscroll-behavior-y: contain !important;
 }

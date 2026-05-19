@@ -729,7 +729,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
         'guestbook intent loader should open the modal after loading deferred runtimes'
     );
     assert.equal(
-        indexSource.includes('./js/engagement-runtime-loader.js?v=20260510_NOTIFICATION_SCHEMA_FALLBACK_1'),
+        indexSource.includes('./js/engagement-runtime-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1'),
         true,
         'homepage should cache-bust the split engagement bootstrap'
     );

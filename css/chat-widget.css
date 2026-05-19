@@ -20,8 +20,9 @@
     --chat-shell-filter: none;
     --chat-panel-filter: none;
     --chat-shell-shadow: 0 24px 60px rgba(0, 0, 0, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-    --chat-overlay-bg: rgba(7, 9, 12, 0.12);
-    --chat-overlay-filter: blur(14px) saturate(108%);
+    /* 20260519_UNIFIED_MODAL_BACKDROP — 与全站 .modal-overlay / 钱包 / 登录共用同一套数值 */
+    --chat-overlay-bg: var(--app-modal-backdrop, rgba(34, 41, 52, 0.48));
+    --chat-overlay-filter: var(--app-modal-backdrop-filter, blur(6px) saturate(106%));
     --chat-panel-bg: rgba(12, 15, 22, 0.98);
     --chat-panel-border: rgba(255, 255, 255, 0.12);
     --chat-panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -109,8 +110,9 @@ html[data-theme="light"] {
     --chat-shell-filter: none;
     --chat-panel-filter: none;
     --chat-shell-shadow: 0 28px 70px rgba(148, 163, 184, 0.2), 0 8px 24px rgba(15, 23, 42, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.94);
-    --chat-overlay-bg: rgba(34, 41, 52, 0.48);
-    --chat-overlay-filter: blur(12px) saturate(106%);
+    /* 20260519_UNIFIED_MODAL_BACKDROP — 浅色主题下同样走全站 token */
+    --chat-overlay-bg: var(--app-modal-backdrop, rgba(31, 76, 118, 0.20));
+    --chat-overlay-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(108%));
     --chat-panel-bg: rgba(243, 247, 251, 0.96);
     --chat-panel-border: rgba(148, 163, 184, 0.14);
     --chat-panel-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.86), inset 0 -10px 20px rgba(148, 163, 184, 0.08);

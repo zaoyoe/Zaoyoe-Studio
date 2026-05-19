@@ -51,7 +51,9 @@ html.${PROFILE_MODAL_CRITICAL_CLASS} #profileModal.active {
     justify-content: center;
     box-sizing: border-box;
     padding: 24px;
-    background: rgba(15, 23, 42, 0.48);
+    background: var(--app-modal-backdrop, rgba(31, 76, 118, 0.20));
+    backdrop-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(108%));
+    -webkit-backdrop-filter: var(--app-modal-backdrop-filter, blur(8px) saturate(108%));
 }
 html.${PROFILE_MODAL_CRITICAL_CLASS} #profileModal .modal-content.profile-modal {
     width: min(400px, 90vw);

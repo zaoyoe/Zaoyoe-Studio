@@ -24264,6 +24264,11 @@ function hydrateAnnouncementRuleIntoEditor(rule = null) {
     document.querySelectorAll('input[name="announcementColor"]').forEach((radio) => {
         radio.checked = radio.value === (rule.color || 'purple');
     });
+    const ruleThemeRaw = String(rule.theme || 'auto').trim().toLowerCase();
+    const ruleTheme = ['auto', 'light', 'dark'].includes(ruleThemeRaw) ? ruleThemeRaw : 'auto';
+    document.querySelectorAll('input[name="announcementTheme"]').forEach((radio) => {
+        radio.checked = radio.value === ruleTheme;
+    });
 
     const decoration = rule.decoration || 'none';
     const decorationEnabled = document.getElementById('decorationEnabled');
@@ -24339,6 +24344,13 @@ function collectAnnouncementRuleDraft(previousConfig = {}) {
         ? 'draft'
         : normalizeAnnouncementWorkflowStatus(selectedRule?.status || 'draft');
 
+    const themeRadioForDraft = document.querySelector('input[name="announcementTheme"]:checked');
+    const themeRaw = themeRadioForDraft?.value
+        || selectedRule?.theme
+        || previousConfig.announcement_theme
+        || 'auto';
+    const themeValue = ['auto', 'light', 'dark'].includes(themeRaw) ? themeRaw : 'auto';
+
     return {
         title,
         content: announcementContentDrafts.all || '',
@@ -24346,6 +24358,7 @@ function collectAnnouncementRuleDraft(previousConfig = {}) {
         color: colorRadio?.value || selectedRule?.color || previousConfig.announcement_color || 'purple',
         size: selectedRule?.size || previousConfig.announcement_size || 'medium',
         decoration: getCurrentDecoration(),
+        theme: themeValue,
         pages: computeAnnouncementTargetPages(
             announcementContentDrafts.all || '',
             Object.fromEntries(
@@ -24495,6 +24508,7 @@ function renderNotificationsConfig() {
         announcement_color: 'purple',
         announcement_size: 'medium',
         announcement_decoration: 'none',
+        announcement_theme: 'auto',
         announcement_pages: ['all']
     };
 
@@ -24525,6 +24539,15 @@ function renderNotificationsConfig() {
         if (radio.value === (config.announcement_color || 'purple')) {
             radio.checked = true;
         }
+    });
+
+    // Announcement theme (radio buttons)
+    const themeRadios = document.querySelectorAll('input[name="announcementTheme"]');
+    const savedTheme = ['auto', 'light', 'dark'].includes(config.announcement_theme)
+        ? config.announcement_theme
+        : 'auto';
+    themeRadios.forEach(radio => {
+        radio.checked = radio.value === savedTheme;
     });
 
     // Decoration theme
@@ -24592,6 +24615,10 @@ async function saveAnnouncement(triggerEl = null) {
     config.announcement_type = typeRadio?.value || 'banner';
     // Save decoration theme
     config.announcement_decoration = getCurrentDecoration();
+    // Save modal color theme (auto / light / dark)
+    const themeRadio = document.querySelector('input[name="announcementTheme"]:checked');
+    const themeValue = themeRadio?.value || 'auto';
+    config.announcement_theme = ['auto', 'light', 'dark'].includes(themeValue) ? themeValue : 'auto';
     config.announcement_pages = computeAnnouncementTargetPages(
         config.announcement_content,
         Object.fromEntries(

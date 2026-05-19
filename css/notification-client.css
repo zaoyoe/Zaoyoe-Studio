@@ -25,9 +25,9 @@ body.notif-scroll-locked .chat-widget-fab {
 .notif-backdrop {
     position: fixed;
     inset: 0;
-    background: var(--public-light-modal-backdrop, rgba(34, 41, 52, 0.48));
-    backdrop-filter: var(--public-light-modal-backdrop-filter, blur(12px) saturate(106%));
-    -webkit-backdrop-filter: var(--public-light-modal-backdrop-filter, blur(12px) saturate(106%));
+    background: var(--app-modal-backdrop, var(--public-light-modal-backdrop, rgba(31, 76, 118, 0.20)));
+    backdrop-filter: var(--app-modal-backdrop-filter, var(--public-light-modal-backdrop-filter, blur(8px) saturate(108%)));
+    -webkit-backdrop-filter: var(--app-modal-backdrop-filter, var(--public-light-modal-backdrop-filter, blur(8px) saturate(108%)));
     z-index: 2150;
     opacity: 0;
     visibility: hidden;

@@ -13,24 +13,32 @@
     --danger-color: #f87171;
     --font-main: 'Inter', sans-serif;
     --font-display: 'Outfit', sans-serif;
-    --public-light-modal-backdrop: rgba(34, 41, 52, 0.48);
-    --public-light-modal-backdrop-filter: blur(12px) saturate(106%);
+    --app-modal-backdrop: rgba(34, 41, 52, 0.48);
+    --app-modal-backdrop-filter: blur(6px) saturate(106%);
+    --public-light-modal-backdrop: var(--app-modal-backdrop);
+    --public-light-modal-backdrop-filter: var(--app-modal-backdrop-filter);
+}
+
+html[data-theme="light"],
+html:not([data-theme="dark"]) {
+    --app-modal-backdrop: rgba(31, 76, 118, 0.20);
+    --app-modal-backdrop-filter: blur(8px) saturate(108%);
 }
 
 /*
   Auth-sheet backdrop override:
   some pages load style.css after auth-sheet.css, and legacy .login-overlay
   rules here can otherwise re-darken the new login modal. Keep the shared
-  login-overlay hooks, but force #loginModal back to the lighter chat-style
+  login-overlay hooks, but force #loginModal back to the shared app modal
   backdrop material.
 */
 #loginModal.auth-sheet-overlay,
 #loginModal.auth-sheet-overlay.active,
 #loginModal.auth-sheet-overlay.login-overlay,
 #loginModal.auth-sheet-overlay.login-overlay.active {
-    background: rgba(7, 9, 12, 0.28) !important;
-    backdrop-filter: blur(14px) saturate(108%) !important;
-    -webkit-backdrop-filter: blur(14px) saturate(108%) !important;
+    background: var(--app-modal-backdrop) !important;
+    backdrop-filter: var(--app-modal-backdrop-filter) !important;
+    -webkit-backdrop-filter: var(--app-modal-backdrop-filter) !important;
     overscroll-behavior: contain !important;
     overscroll-behavior-y: contain !important;
 }
@@ -1434,11 +1442,9 @@ input.submit-btn {
     bottom: 0;
     /* Use bottom: 0 to ensure full coverage regardless of address bar */
     height: auto;
-    background: rgba(0, 0, 0, 0.6);
-    /* Darker background for less transparency - copied from login-overlay */
-    backdrop-filter: blur(8px);
-    /* Blur background to focus attention - copied from login-overlay */
-    -webkit-backdrop-filter: blur(8px);
+    background: var(--app-modal-backdrop);
+    backdrop-filter: var(--app-modal-backdrop-filter);
+    -webkit-backdrop-filter: var(--app-modal-backdrop-filter);
     z-index: 9999;
     /* Very high z-index to appear above mobile browser UI */
     display: flex;
@@ -4604,11 +4610,9 @@ input.login-submit-btn {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.6);
-    /* Darkened background */
-    backdrop-filter: blur(8px);
-    /* Blur background to focus attention */
-    -webkit-backdrop-filter: blur(8px);
+    background: var(--app-modal-backdrop);
+    backdrop-filter: var(--app-modal-backdrop-filter);
+    -webkit-backdrop-filter: var(--app-modal-backdrop-filter);
     z-index: 3000;
     /* Higher than other modals (profile modal is 2000) */
     display: flex;
@@ -4626,9 +4630,9 @@ input.login-submit-btn {
     opacity: 1;
     visibility: visible;
     /* 确保激活时恢复背景和模糊效果 */
-    backdrop-filter: blur(8px) !important;
-    -webkit-backdrop-filter: blur(8px) !important;
-    background: rgba(0, 0, 0, 0.6) !important;
+    backdrop-filter: var(--app-modal-backdrop-filter) !important;
+    -webkit-backdrop-filter: var(--app-modal-backdrop-filter) !important;
+    background: var(--app-modal-backdrop) !important;
     pointer-events: all !important;
 }
 
@@ -4788,11 +4792,9 @@ input.login-submit-btn {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.6);
-    /* Match modal overlay */
-    backdrop-filter: blur(8px);
-    /* Match modal overlay */
-    -webkit-backdrop-filter: blur(8px);
+    background: var(--app-modal-backdrop);
+    backdrop-filter: var(--app-modal-backdrop-filter);
+    -webkit-backdrop-filter: var(--app-modal-backdrop-filter);
     z-index: 1999;
     /* 低于弹窗 (2000) 以免遮挡弹窗交互 */
     opacity: 0;
@@ -8154,9 +8156,9 @@ input[type="submit"],
     right: auto !important;
     bottom: auto !important;
     width: var(--guestbook-modal-viewport-width) !important;
-    background: rgba(7, 9, 12, 0.28) !important;
-    backdrop-filter: blur(14px) saturate(108%) !important;
-    -webkit-backdrop-filter: blur(14px) saturate(108%) !important;
+    background: var(--app-modal-backdrop) !important;
+    backdrop-filter: var(--app-modal-backdrop-filter) !important;
+    -webkit-backdrop-filter: var(--app-modal-backdrop-filter) !important;
     height: var(--guestbook-modal-overlay-height) !important;
     min-height: var(--guestbook-modal-overlay-height) !important;
     padding: 24px 18px 18px !important;
@@ -8834,9 +8836,9 @@ body:not(.guestbook-page) #guestbookModal .guestbook-composer-actions {
     --comment-modal-translate-y: 0px;
     --comment-modal-card-height: 420px;
     --comment-modal-card-max-height: calc(100svh - 56px);
-    background: rgba(7, 9, 12, 0.28) !important;
-    backdrop-filter: blur(14px) saturate(108%) !important;
-    -webkit-backdrop-filter: blur(14px) saturate(108%) !important;
+    background: var(--app-modal-backdrop) !important;
+    backdrop-filter: var(--app-modal-backdrop-filter) !important;
+    -webkit-backdrop-filter: var(--app-modal-backdrop-filter) !important;
     height: var(--comment-modal-overlay-height) !important;
     min-height: var(--comment-modal-overlay-height) !important;
     padding: 24px 18px 18px !important;

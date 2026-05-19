@@ -95,6 +95,10 @@ function createPublicConfigHandlers({
             announcement_color: sanitizeText(config.announcement_color, 80).toLowerCase() || 'purple',
             announcement_size: sanitizeText(config.announcement_size, 80).toLowerCase() || 'medium',
             announcement_decoration: sanitizeText(config.announcement_decoration, 80).toLowerCase() || 'none',
+            announcement_theme: (() => {
+                const raw = sanitizeText(config.announcement_theme, 40).toLowerCase();
+                return ['auto', 'light', 'dark'].includes(raw) ? raw : 'auto';
+            })(),
             announcement_pages: normalizeAnnouncementPages(config.announcement_pages),
             announcement_page_overrides: normalizeAnnouncementPageOverrides(config.announcement_page_overrides),
             announcement_updated_at: sanitizeText(config.announcement_updated_at, 120)
@@ -148,6 +152,10 @@ function createPublicConfigHandlers({
             announcement_color: sanitizeText(row.color, 80).toLowerCase() || 'purple',
             announcement_size: sanitizeText(row.size, 80).toLowerCase() || 'medium',
             announcement_decoration: sanitizeText(row.decoration, 80).toLowerCase() || 'none',
+            announcement_theme: (() => {
+                const raw = sanitizeText(row.theme, 40).toLowerCase();
+                return ['auto', 'light', 'dark'].includes(raw) ? raw : 'auto';
+            })(),
             announcement_pages: normalizeAnnouncementPages(row.pages),
             announcement_page_overrides: normalizeAnnouncementPageOverrides(row.page_overrides),
             priority: Number(row.priority || 0),

@@ -1,7 +1,21 @@
+/* 20260519_UNIFIED_MODAL_BACKDROP — 全站弹窗全屏背景统一 token
+   浅色：blur(8px) saturate(108%) + rgba(31, 76, 118, 0.20)
+   深色：blur(6px) saturate(106%) + rgba(34, 41, 52, 0.48) */
+:root {
+    --app-modal-backdrop: rgba(34, 41, 52, 0.48);
+    --app-modal-backdrop-filter: blur(6px) saturate(106%);
+}
+
+html[data-theme="light"],
+html:not([data-theme="dark"]) {
+    --app-modal-backdrop: rgba(31, 76, 118, 0.20);
+    --app-modal-backdrop-filter: blur(8px) saturate(108%);
+}
+
 .modal-overlay,
 #guestbookModal {
-    --public-light-modal-backdrop: rgba(34, 41, 52, 0.48);
-    --public-light-modal-backdrop-filter: blur(12px) saturate(106%);
+    --public-light-modal-backdrop: var(--app-modal-backdrop);
+    --public-light-modal-backdrop-filter: var(--app-modal-backdrop-filter);
 }
 
 .modal-overlay {
@@ -15,9 +29,9 @@
     visibility: hidden;
     pointer-events: none;
     z-index: 9999;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
+    background: var(--app-modal-backdrop);
+    backdrop-filter: var(--app-modal-backdrop-filter);
+    -webkit-backdrop-filter: var(--app-modal-backdrop-filter);
     transition: opacity 0.3s ease, visibility 0s linear 0.3s;
     will-change: opacity;
     transform: translateZ(0);
@@ -289,9 +303,9 @@ html:not([data-theme="dark"]) #guestbookModal .guestbook-submit-btn.guestbook-co
     transform: none !important;
     will-change: opacity !important;
     isolation: isolate !important;
-    background: rgba(7, 9, 12, 0.28) !important;
-    backdrop-filter: blur(14px) saturate(108%) !important;
-    -webkit-backdrop-filter: blur(14px) saturate(108%) !important;
+    background: var(--app-modal-backdrop) !important;
+    backdrop-filter: var(--app-modal-backdrop-filter) !important;
+    -webkit-backdrop-filter: var(--app-modal-backdrop-filter) !important;
 }
 
 #guestbookModal.guestbook-modal-force-hidden {
