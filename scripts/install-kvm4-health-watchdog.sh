@@ -84,6 +84,6 @@ rm -rf "$REMOTE_TMP"
 systemctl daemon-reload
 systemctl start zaoyoe-kvm4-health-watchdog.service
 systemctl enable --now zaoyoe-kvm4-health-watchdog.timer
-systemctl status zaoyoe-kvm4-health-watchdog.service --no-pager
+systemctl status zaoyoe-kvm4-health-watchdog.service --no-pager || true
 systemctl list-timers --all --no-pager | grep zaoyoe-kvm4-health-watchdog
 REMOTE

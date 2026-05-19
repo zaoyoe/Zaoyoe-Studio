@@ -2,8 +2,7 @@
 Description=Run Zaoyoe KVM4 service health watchdog every minute
 
 [Timer]
-OnBootSec=2min
-OnUnitActiveSec=1min
+OnCalendar=*-*-* *:*:00
 AccuracySec=15s
 Persistent=true
 Unit=zaoyoe-kvm4-health-watchdog.service
