@@ -126,7 +126,7 @@ test('section visibility preload injects hidden nav rules from cached intl visib
     assert.ok(styleElement);
     assert.equal(windowObject.SectionVisibilityPreload.detectSite(), 'intl');
     assert.match(styleElement.textContent, /\/prompts\.html/);
-    assert.match(styleElement.textContent, /gongyi\.zaoyoe\.com/);
+    assert.match(styleElement.textContent, /sub2api\.zaoyoe\.com/);
     assert.match(styleElement.textContent, /\/guestbook\.html/);
     assert.match(styleElement.textContent, /data-submenu="prompts-mobile"/);
     assert.doesNotMatch(styleElement.textContent, /\.nav-menu a\[href="\/verify\.html"\]/);

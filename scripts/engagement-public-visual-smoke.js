@@ -25,7 +25,7 @@ const PAGE_DEFINITIONS = Object.freeze({
         label: 'Gongyi',
         path: '/gongyi.html',
         externalRedirect: true,
-        externalHost: 'gongyi.zaoyoe.com'
+        externalHost: 'sub2api.zaoyoe.com'
     }
 });
 const SCENARIO_DEFINITIONS = Object.freeze({

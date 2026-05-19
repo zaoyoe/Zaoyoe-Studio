@@ -45,16 +45,16 @@
         gongyi: Object.freeze({
             sections: Object.freeze(['#gongyi-section']),
             navDesktop: Object.freeze([
-                '.nav-menu a[href="https://gongyi.zaoyoe.com"]',
-                '.nav-container a[href="https://gongyi.zaoyoe.com"]'
+                '.nav-menu a[href="https://sub2api.zaoyoe.com"]',
+                '.nav-container a[href="https://sub2api.zaoyoe.com"]'
             ]),
             navMobile: Object.freeze([
-                '.mobile-menu-items a.mobile-menu-link[href="https://gongyi.zaoyoe.com"]',
-                '.mobile-menu-item a.mobile-menu-link[href="https://gongyi.zaoyoe.com"]'
+                '.mobile-menu-items a.mobile-menu-link[href="https://sub2api.zaoyoe.com"]',
+                '.mobile-menu-item a.mobile-menu-link[href="https://sub2api.zaoyoe.com"]'
             ]),
             footer: Object.freeze([
-                'footer a[href="https://gongyi.zaoyoe.com"]',
-                '.framer-footer a[href="https://gongyi.zaoyoe.com"]'
+                'footer a[href="https://sub2api.zaoyoe.com"]',
+                '.framer-footer a[href="https://sub2api.zaoyoe.com"]'
             ])
         }),
         verify: Object.freeze({

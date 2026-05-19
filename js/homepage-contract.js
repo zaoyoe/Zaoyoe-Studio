@@ -4,6 +4,8 @@
     const MANAGED_SECTION_ORDER = Object.freeze(['hero', 'prompts', 'shop', 'gongyi', 'verify', 'guestbook', 'ticker']);
     const LEGACY_SECTIONS = Object.freeze(['footer']);
     const VISIBILITY_SECTION_ORDER = Object.freeze([...MANAGED_SECTION_ORDER, ...LEGACY_SECTIONS]);
+    const GONGYI_TARGET_URL = 'https://sub2api.zaoyoe.com';
+    const LEGACY_GONGYI_HOSTS = new Set(['gongyi.zaoyoe.com', 'www.gongyi.zaoyoe.com']);
     const SECTION_ALIAS_MAP = Object.freeze({
         gallery: 'prompts'
     });
@@ -109,6 +111,25 @@
         return normalized;
     }
 
+    function normalizeGongyiUrl(value) {
+        const normalized = String(value || '').trim();
+        if (!normalized) {
+            return '';
+        }
+
+        try {
+            const parsed = new URL(normalized);
+            if (LEGACY_GONGYI_HOSTS.has(parsed.hostname.toLowerCase())) {
+                const path = parsed.pathname === '/' ? '' : parsed.pathname;
+                return `${GONGYI_TARGET_URL}${path}${parsed.search}${parsed.hash}`;
+            }
+        } catch (_error) {
+            // Keep non-absolute URLs unchanged.
+        }
+
+        return normalized;
+    }
+
     function normalizeTranslatedPair(target, fieldBase, maxLength = 240) {
         const base = sanitizeText(target?.[fieldBase], '', maxLength);
         const zh = sanitizeText(target?.[`${fieldBase}_zh`], '', maxLength);
@@ -195,11 +216,11 @@
         const cta = {
             primary: {
                 text: sanitizeText(source?.primary?.text, '', 48),
-                link: sanitizeUrl(source?.primary?.link, '', 1024)
+                link: normalizeGongyiUrl(sanitizeUrl(source?.primary?.link, '', 1024))
             },
             secondary: {
                 text: sanitizeText(source?.secondary?.text, '', 48),
-                link: sanitizeUrl(source?.secondary?.link, '', 1024)
+                link: normalizeGongyiUrl(sanitizeUrl(source?.secondary?.link, '', 1024))
             }
         };
 
@@ -233,7 +254,7 @@
                     text,
                     text_zh: sanitizeText(item.text_zh, '', 48),
                     text_en: sanitizeText(item.text_en, '', 48),
-                    link: sanitizeUrl(item.link, '', 1024),
+                    link: normalizeGongyiUrl(sanitizeUrl(item.link, '', 1024)),
                     icon: sanitizeText(item.icon, '', 80),
                     color: sanitizeText(item.color, '', 40),
                     action: sanitizeText(item.action, '', 80),
@@ -552,7 +573,7 @@
                     brand_name: 'Zaoyoe',
                     brand_subtitle: 'Subscription to API Conversion Platform',
                     cta_text: '进入控制台',
-                    cta_link: 'https://gongyi.zaoyoe.com',
+                    cta_link: GONGYI_TARGET_URL,
                     highlight_items: ['订阅转 API', '会话保持', '按量计费'],
                     feature_1_title: '一键接入',
                     feature_1_description: '获取一个 API 密钥，即可调用所有已接入的 AI 模型，无需分别申请。',
@@ -676,7 +697,7 @@
                 next.brand_name = Object.prototype.hasOwnProperty.call(source, 'brand_name') ? sanitizeText(source.brand_name, '', 80) : next.brand_name;
                 next.brand_subtitle = Object.prototype.hasOwnProperty.call(source, 'brand_subtitle') ? sanitizeText(source.brand_subtitle, '', 240) : next.brand_subtitle;
                 next.cta_text = Object.prototype.hasOwnProperty.call(source, 'cta_text') ? sanitizeText(source.cta_text, '', 48) : next.cta_text;
-                next.cta_link = Object.prototype.hasOwnProperty.call(source, 'cta_link') ? sanitizeUrl(source.cta_link, '', 1024) : next.cta_link;
+                next.cta_link = Object.prototype.hasOwnProperty.call(source, 'cta_link') ? normalizeGongyiUrl(sanitizeUrl(source.cta_link, '', 1024)) : next.cta_link;
                 next.highlight_items = Object.prototype.hasOwnProperty.call(source, 'highlight_items')
                     ? normalizeStringList(source.highlight_items, { maxItems: 6, maxLength: 48 })
                     : next.highlight_items;

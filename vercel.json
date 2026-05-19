@@ -29,12 +29,12 @@
     "redirects": [
         {
             "source": "/gongyi",
-            "destination": "https://gongyi.zaoyoe.com",
+            "destination": "https://sub2api.zaoyoe.com",
             "permanent": false
         },
         {
             "source": "/gongyi.html",
-            "destination": "https://gongyi.zaoyoe.com",
+            "destination": "https://sub2api.zaoyoe.com",
             "permanent": false
         },
         {

@@ -8516,7 +8516,7 @@
             enabled: source.enabled !== false,
             allowed_origins: Array.isArray(source.allowed_origins) && source.allowed_origins.length
                 ? source.allowed_origins
-                : ['https://gongyi.zaoyoe.com', 'https://www.gongyi.zaoyoe.com'],
+                : ['https://sub2api.zaoyoe.com', 'https://www.sub2api.zaoyoe.com'],
             allow_local_preview: source.allow_local_preview !== false,
             api_origin: source.api_origin || 'https://www.zaoyoe.com',
             asset_base: source.asset_base || 'https://www.zaoyoe.com/',
@@ -8620,7 +8620,7 @@
                             </label>
                             <label class="engagement-field engagement-field--full">
                                 <span>CORS 白名单域名（一行一个）</span>
-                                <textarea name="allowed_origins" rows="4" placeholder="https://gongyi.zaoyoe.com">${escapeHtml(external.allowed_origins.join('\n'))}</textarea>
+                                <textarea name="allowed_origins" rows="4" placeholder="https://sub2api.zaoyoe.com">${escapeHtml(external.allowed_origins.join('\n'))}</textarea>
                             </label>
                         </div>
                         <div class="engagement-form-actions">
