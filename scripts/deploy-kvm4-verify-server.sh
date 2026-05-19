@@ -152,6 +152,32 @@ healthcheck() {
 [[ -f "$KVM4_ROOT/.env" ]] || die "$KVM4_ROOT/.env missing"
 [[ -f "$REMOTE_TMP/app.tar.gz" ]] || die "release archive missing"
 
+WATCHDOG_TIMER="zaoyoe-kvm4-health-watchdog.timer"
+WATCHDOG_SERVICE="zaoyoe-kvm4-health-watchdog.service"
+WATCHDOG_WAS_ACTIVE=0
+
+restore_watchdog() {
+  if [[ "$WATCHDOG_WAS_ACTIVE" == "1" ]]; then
+    systemctl start "$WATCHDOG_TIMER" >/dev/null 2>&1 || true
+  fi
+}
+
+cleanup_remote_tmp() {
+  restore_watchdog
+  rm -rf "$REMOTE_TMP"
+}
+
+trap cleanup_remote_tmp EXIT
+
+if command -v systemctl >/dev/null 2>&1 && systemctl cat "$WATCHDOG_TIMER" >/dev/null 2>&1; then
+  if systemctl is-active --quiet "$WATCHDOG_TIMER"; then
+    WATCHDOG_WAS_ACTIVE=1
+  fi
+
+  echo "Pausing KVM4 watchdog during deploy"
+  systemctl stop "$WATCHDOG_TIMER" "$WATCHDOG_SERVICE" >/dev/null 2>&1 || true
+fi
+
 mkdir -p "$KVM4_ROOT/releases" "$KVM4_ROOT/backups"
 release_root="$KVM4_ROOT/releases/$RELEASE_ID"
 release_app="$release_root/app"
@@ -202,7 +228,6 @@ fi
 
 docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'NAMES|zaoyoe-verify-server'
 curl -fsS http://127.0.0.1:3001/healthz
-rm -rf "$REMOTE_TMP"
 REMOTE
 
 echo
