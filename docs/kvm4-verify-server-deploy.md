@@ -53,6 +53,43 @@ KVM4_ROOT=/opt/zaoyoe-verify-server
 
 Override any of these as environment variables when needed.
 
+## Automatic Main Deploy
+
+GitHub Actions deploys KVM4 automatically after a pull request is merged into
+`main`. The workflow is:
+
+```text
+PR merge -> push to main -> Deploy KVM4 Verify Server workflow -> npm run deploy:kvm4:verify
+```
+
+Required repository secret:
+
+```text
+KVM4_SSH_PRIVATE_KEY
+```
+
+Optional repository variables can override the defaults:
+
+```text
+KVM4_HOST=76.13.188.218
+KVM4_PORT=2222
+KVM4_USER=root
+KVM4_ROOT=/opt/zaoyoe-verify-server
+KVM4_KEEP_RELEASES=8
+```
+
+The workflow checks out the latest `origin/main`, writes the SSH private key to
+a temporary file on the runner, runs the same guarded deploy script used for
+manual deploys, then verifies:
+
+```text
+https://verify-api.zaoyoe.com/healthz
+https://www.zaoyoe.com/api/payments/config?site=cn
+https://www.zaoyoe.com/api/shop/catalog?site=cn
+```
+
+Manual deploy remains available for emergency use after `main` is current.
+
 ## Rollback
 
 Rollback to the previous release:
