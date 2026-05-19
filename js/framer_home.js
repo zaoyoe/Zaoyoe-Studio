@@ -108,6 +108,38 @@ const HOMEPAGE_SECTION_SHELL_CARD_COUNTS = {
   guestbook: 6,
   ticker: 2
 };
+const HOMEPAGE_SECTION_SHELL_COPY = {
+  prompts: {
+    titleKey: 'home.prompts.title',
+    subtitleKey: 'home.prompts.subtitle',
+    title: { zh: 'AI 提示词工作室', en: 'AI Prompt Studio' },
+    subtitle: { zh: '让创作更高效，让灵感更自由', en: 'Make creation more efficient, inspiration more free' }
+  },
+  shop: {
+    titleKey: 'home.shop.title',
+    subtitleKey: 'home.shop.subtitle',
+    title: { zh: '精选资源商城', en: 'Featured Resource Store' },
+    subtitle: { zh: '优质资源，助力成长', en: 'Quality resources for growth' }
+  },
+  gongyi: {
+    titleKey: 'home.gongyi.title',
+    subtitleKey: 'home.gongyi.subtitle',
+    title: { zh: 'API中转', en: 'API Relay' },
+    subtitle: { zh: '订阅转 API 转换平台', en: 'Subscription to API conversion platform' }
+  },
+  verify: {
+    titleKey: 'home.verify.title',
+    subtitleKey: 'home.verify.subtitle',
+    title: { zh: 'Gemini Pro', en: 'Gemini Pro' },
+    subtitle: { zh: '提交账号任务，自动获取试用链接', en: 'Submit account jobs and fetch trial links automatically' }
+  },
+  guestbook: {
+    titleKey: 'home.guestbook.title',
+    subtitleKey: 'home.guestbook.subtitle',
+    title: { zh: '留言板', en: 'Guestbook' },
+    subtitle: { zh: '用户的声音', en: 'Community Voice' }
+  }
+};
 
 const HOMEPAGE_HERO_MATRIX_SCROLL_SPEED = 4 / 9;
 const HOMEPAGE_HERO_MATRIX_CHARSET = ['0', '1', 'A', 'B', 'C', 'D', 'E', 'F'];
@@ -1671,6 +1703,33 @@ function getHomepageSectionShellBaseClass(sectionKey) {
   return sectionKey === 'ticker' ? 'ticker-section' : 'content-section';
 }
 
+function getHomepageSectionShellCopy(sectionKey) {
+  const copy = HOMEPAGE_SECTION_SHELL_COPY[sectionKey];
+  if (!copy) {
+    return null;
+  }
+
+  return {
+    titleKey: copy.titleKey,
+    subtitleKey: copy.subtitleKey,
+    title: getHomepageLanguageFallback(copy.titleKey, copy.title),
+    subtitle: getHomepageLanguageFallback(copy.subtitleKey, copy.subtitle)
+  };
+}
+
+function renderHomepageSectionShellHeader(sectionKey) {
+  const copy = getHomepageSectionShellCopy(sectionKey);
+  if (!copy) {
+    return '';
+  }
+
+  return `
+      <div class="home-section-shell__header">
+        <h2 class="section-title" data-i18n="${escapeHomeHtml(copy.titleKey)}">${escapeHomeHtml(copy.title)}</h2>
+        <p class="section-subtitle" data-i18n="${escapeHomeHtml(copy.subtitleKey)}">${escapeHomeHtml(copy.subtitle)}</p>
+      </div>`;
+}
+
 function renderHomepageSectionShell(sectionKey, section) {
   if (!section) return;
   const normalizedSectionKey = String(sectionKey || '').trim().toLowerCase();
@@ -1682,6 +1741,7 @@ function renderHomepageSectionShell(sectionKey, section) {
     && section.dataset.homepageShellSection === normalizedSectionKey
   ) {
     setHomeSectionVisibility(section, true);
+    section.setAttribute('aria-busy', 'true');
     return;
   }
 
@@ -1689,14 +1749,12 @@ function renderHomepageSectionShell(sectionKey, section) {
   section.dataset.homepageShell = '1';
   section.dataset.homepageShellSection = normalizedSectionKey;
   section.dataset.homepageDeferredRender = '1';
+  section.setAttribute('aria-busy', 'true');
   section.className = `${baseClass} home-section-shell-section home-section-shell-section--${normalizedSectionKey}`;
   section.innerHTML = `
-    <div class="home-section-shell" aria-hidden="true">
-      <div class="home-section-shell__header">
-        <span class="home-section-shell__line home-section-shell__line--title"></span>
-        <span class="home-section-shell__line home-section-shell__line--subtitle"></span>
-      </div>
-      <div class="home-section-shell__body home-section-shell__body--${normalizedSectionKey}">
+    <div class="home-section-shell">
+      ${renderHomepageSectionShellHeader(normalizedSectionKey)}
+      <div class="home-section-shell__body home-section-shell__body--${normalizedSectionKey}" aria-hidden="true">
         ${Array.from({ length: cardCount }, (_, index) => (
           `<span class="home-section-shell__tile home-section-shell__tile--${(index % 3) + 1}"></span>`
         )).join('')}
@@ -1709,6 +1767,8 @@ function clearHomepageSectionShell(section) {
   if (!section) return;
   delete section.dataset.homepageShell;
   delete section.dataset.homepageShellSection;
+  delete section.dataset.homepageStaticShell;
+  section.removeAttribute('aria-busy');
 }
 
 const FramerHome = {

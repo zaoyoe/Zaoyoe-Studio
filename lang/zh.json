@@ -91,6 +91,10 @@
             "title": "精选资源商城",
             "subtitle": "优质资源，助力成长"
         },
+        "gongyi": {
+            "title": "API中转",
+            "subtitle": "订阅转 API 转换平台"
+        },
         "verify": {
             "title": "Gemini Pro",
             "subtitle": "提交账号任务，自动获取试用链接",

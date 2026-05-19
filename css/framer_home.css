@@ -139,9 +139,8 @@ body.home-page #main-content {
 
 .home-section-shell-section {
     --home-shell-min-height: 520px;
-    --home-shell-line-bg: rgba(255, 255, 255, 0.12);
     --home-shell-tile-bg: rgba(255, 255, 255, 0.075);
-    --home-shell-tile-border: rgba(255, 255, 255, 0.07);
+    --home-shell-tile-border: rgba(255, 255, 255, 0.08);
     width: 100%;
     max-width: 1400px;
     min-height: var(--home-shell-min-height);
@@ -166,42 +165,44 @@ body.home-page #main-content {
 
 .home-section-shell {
     width: min(1120px, 100%);
-    opacity: 0.82;
+    opacity: 0.92;
     pointer-events: none;
+    transition: opacity 0.28s ease, transform 0.28s ease;
 }
 
 .home-section-shell__header {
-    width: min(560px, 72vw);
+    width: min(640px, 88vw);
     margin: 0 auto var(--spacing-xl);
     display: grid;
-    gap: 14px;
+    gap: 12px;
     justify-items: center;
+    text-align: center;
 }
 
-.home-section-shell__line,
+.home-section-shell__header .section-title {
+    font-size: clamp(32px, 5vw, 68px);
+    font-weight: 600;
+    letter-spacing: 0;
+    line-height: 1.12;
+    margin: 0;
+}
+
+.home-section-shell__header .section-subtitle {
+    max-width: 620px;
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: clamp(16px, 2vw, 20px);
+    line-height: 1.6;
+}
+
 .home-section-shell__tile {
     display: block;
     background:
         linear-gradient(110deg, transparent 0%, rgba(255, 255, 255, 0.08) 42%, transparent 76%),
-        var(--home-shell-line-bg);
+        var(--home-shell-tile-bg);
     background-size: 220% 100%, 100% 100%;
     border: 1px solid var(--home-shell-tile-border);
     animation: home-section-shell-shimmer 1.8s ease-in-out infinite;
-}
-
-.home-section-shell__line {
-    height: 18px;
-    border-radius: 999px;
-}
-
-.home-section-shell__line--title {
-    width: min(320px, 62vw);
-}
-
-.home-section-shell__line--subtitle {
-    width: min(460px, 72vw);
-    height: 12px;
-    opacity: 0.72;
 }
 
 .home-section-shell__body {
@@ -247,7 +248,6 @@ body.home-page #main-content {
 }
 
 html[data-theme="light"] body.home-page .home-section-shell-section {
-    --home-shell-line-bg: rgba(15, 23, 42, 0.08);
     --home-shell-tile-bg: rgba(15, 23, 42, 0.045);
     --home-shell-tile-border: rgba(15, 23, 42, 0.06);
 }
