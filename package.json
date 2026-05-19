@@ -17,6 +17,7 @@
     "cleanup:payment-fixtures": "node scripts/payment-cleanup-fixtures.js",
     "check:prod-env": "node scripts/check-prod-env.js",
     "deploy:kvm4:verify": "bash scripts/deploy-kvm4-verify-server.sh",
+    "install:kvm4:watchdog": "bash scripts/install-kvm4-health-watchdog.sh",
     "inspect:proxy-chain": "node scripts/inspect-proxy-chain.js",
     "lockdown:supabase-image-buckets": "node scripts/lockdown-supabase-image-buckets.js",
     "migrate:chat-images": "node scripts/migrate-chat-images-to-r2.js",

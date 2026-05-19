@@ -1,0 +1,9 @@
+[Unit]
+Description=Zaoyoe KVM4 service health watchdog
+Wants=network-online.target docker.service
+After=network-online.target docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/zaoyoe-kvm4-health-watchdog
+Nice=5

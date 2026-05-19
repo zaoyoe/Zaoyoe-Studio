@@ -83,3 +83,24 @@ On KVM4:
 docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 systemctl list-timers --all --no-pager | grep zaoyoe
 ```
+
+## Health Watchdog
+
+KVM4 can run a systemd watchdog that checks the persistent API and `sub2api`
+every minute. If either service stops responding or enters Docker `unhealthy`,
+the watchdog recreates the affected container through Docker Compose and logs
+the result to journald.
+
+Install or update it from local `main`:
+
+```bash
+npm run install:kvm4:watchdog
+```
+
+Useful checks:
+
+```bash
+systemctl status zaoyoe-kvm4-health-watchdog.timer --no-pager
+systemctl status zaoyoe-kvm4-health-watchdog.service --no-pager
+journalctl -u zaoyoe-kvm4-health-watchdog.service --no-pager -n 80
+```
