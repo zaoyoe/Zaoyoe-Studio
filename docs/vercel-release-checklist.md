@@ -17,6 +17,30 @@
 - 本次文档变更用于通过 PR 合并生成新的 `main` 提交，触发 Vercel Git 集成重新创建 `Production Deployment`。
 - 合并后确认 Vercel `Production` 的 commit 已跟随最新 `main`。
 
+## 2026-05-19 KVM4 动态 API 迁移记录
+
+- `www.zaoyoe.com` 继续由 Vercel 承载静态页面和 CDN。
+- 以下高并发 / 长耗时动态 API 已通过 `vercel.json` rewrite 转发到 KVM4 的 `https://verify-api.zaoyoe.com`：
+  - `/api/admin/*`
+  - `/api/payments/*`
+  - `/api/shop/*`
+  - `/api/wallet/*`
+  - `/api/ops/*`
+- KVM4 上的 `verify-server` 镜像必须包含这些目录：
+  - `api/`
+  - `server/`
+  - `js/`
+  - `scripts/`
+  - `docs/`
+  - `supabase/`
+- `CRON_SECRET` 需要同时存在于 Vercel Production 环境和 KVM4 `/opt/zaoyoe-verify-server/.env`，否则 Vercel Cron 转到 KVM4 后会被 `/api/ops/*` 拒绝。
+- 合并触发新 Production Deployment 后，至少复核：
+  - [https://www.zaoyoe.com/api/payments/config?site=cn](https://www.zaoyoe.com/api/payments/config?site=cn)
+  - [https://www.zaoyoe.com/api/shop/catalog?site=cn](https://www.zaoyoe.com/api/shop/catalog?site=cn)
+  - [https://www.zaoyoe.com/api/wallet/overview?site=cn](https://www.zaoyoe.com/api/wallet/overview?site=cn) 未登录应返回 `401`
+  - [https://www.zaoyoe.com/api/admin/network/request-context](https://www.zaoyoe.com/api/admin/network/request-context) 未登录应返回 `401`
+  - 带 `Authorization: Bearer <CRON_SECRET>` 请求 `/api/ops/recovery-readiness-sweep` 应返回 `success: true`
+
 ## 1. 当前分支策略
 
 - `main`
