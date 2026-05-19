@@ -26,7 +26,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'static hero title should render immediately and still be localized by i18n'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260517_HOME_PROMPTS_TITLE_FIRST_1'),
+        indexSource.includes('./js/framer_home.js?v=20260519_HOME_PROGRESSIVE_SHELL_1'),
         true,
         'index.html should cache-bust the first-paint homepage runtime'
     );
@@ -36,17 +36,17 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should cache-bust the prompt no-repaint homepage runtime fix'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home_critical.css?v=20260517_HOME_SHOP_TITLE_FIRST_1'),
+        indexSource.includes('./css/framer_home_critical.css?v=20260519_HOME_PROGRESSIVE_SHELL_1'),
         true,
         'index.html should load a small blocking homepage critical stylesheet'
     );
     assert.match(
         indexSource,
-        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260517_HOME_SHOP_TITLE_FIRST_1" media="print" data-deferred-style="1">/,
+        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260519_HOME_PROGRESSIVE_SHELL_1" media="print" data-deferred-style="1">/,
         'index.html should defer the full homepage stylesheet after the first-paint shell'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home.css?v=20260517_HOME_SHOP_TITLE_FIRST_1'),
+        indexSource.includes('./css/framer_home.css?v=20260519_HOME_PROGRESSIVE_SHELL_1'),
         true,
         'index.html should keep cache-busting the full static hero stability styles'
     );
@@ -367,6 +367,71 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
     );
 });
 
+test('homepage ships static progressive shells below the hero before runtime hydration', () => {
+    const indexSource = readRepoFile('index.html');
+    const framerSource = readRepoFile('js/framer_home.js');
+    const framerStyles = readRepoFile('css/framer_home.css');
+    const criticalStyles = readRepoFile('css/framer_home_critical.css');
+    const zhMessages = JSON.parse(readRepoFile('lang/zh.json'));
+    const enMessages = JSON.parse(readRepoFile('lang/en.json'));
+    const sectionExpectations = [
+        ['prompts', 'content-section', 'home.prompts.title', 'AI 提示词工作室'],
+        ['shop', 'content-section', 'home.shop.title', '精选资源商城'],
+        ['gongyi', 'content-section', 'home.gongyi.title', 'API中转'],
+        ['verify', 'content-section', 'home.verify.title', 'Gemini Pro'],
+        ['guestbook', 'content-section', 'home.guestbook.title', '留言板'],
+        ['ticker', 'ticker-section', '', '']
+    ];
+
+    for (const [sectionKey, baseClass, titleKey, fallbackTitle] of sectionExpectations) {
+        const sectionPattern = new RegExp(
+            `<section id="${sectionKey}-section" class="${baseClass} home-section-shell-section home-section-shell-section--${sectionKey}"[\\s\\S]*?data-homepage-static-shell="1"[\\s\\S]*?<div class="home-section-shell">[\\s\\S]*?<div class="home-section-shell__body home-section-shell__body--${sectionKey}" aria-hidden="true">[\\s\\S]*?</section>`
+        );
+        assert.match(
+            indexSource,
+            sectionPattern,
+            `${sectionKey} should ship a visible static shell instead of an empty black section`
+        );
+
+        assert.equal(
+            indexSource.includes(`<section id="${sectionKey}-section" class="${baseClass}"></section>`),
+            false,
+            `${sectionKey} should not regress to an empty placeholder section`
+        );
+
+        if (titleKey) {
+            assert.equal(
+                indexSource.includes(`data-i18n="${titleKey}">${fallbackTitle}</h2>`),
+                true,
+                `${sectionKey} shell should include the real localized title text in initial HTML`
+            );
+        }
+    }
+
+    assert.equal(zhMessages.home.gongyi.title, 'API中转');
+    assert.equal(enMessages.home.gongyi.title, 'API Relay');
+    assert.match(
+        criticalStyles,
+        /20260519_HOME_PROGRESSIVE_SHELL_1[\s\S]*\.home-section-shell__header \.section-title[\s\S]*\.home-section-shell__tile[\s\S]*animation:\s*home-section-shell-shimmer/,
+        'critical CSS should render readable progressive section shells before deferred CSS loads'
+    );
+    assert.match(
+        framerStyles,
+        /\.home-section-shell__header \.section-title[\s\S]*letter-spacing:\s*0;[\s\S]*\.home-section-shell__tile[\s\S]*animation:\s*home-section-shell-shimmer/,
+        'full CSS should keep static and runtime section shells visually aligned'
+    );
+    assert.match(
+        framerSource,
+        /const HOMEPAGE_SECTION_SHELL_COPY = \{[\s\S]*gongyi:[\s\S]*titleKey: 'home\.gongyi\.title'[\s\S]*function renderHomepageSectionShellHeader\(sectionKey\)[\s\S]*<h2 class="section-title" data-i18n="\$\{escapeHomeHtml\(copy\.titleKey\)\}">/,
+        'runtime fallback shells should use the same readable titles as the initial HTML shells'
+    );
+    assert.match(
+        framerSource,
+        /function clearHomepageSectionShell\(section\)[\s\S]*delete section\.dataset\.homepageStaticShell;[\s\S]*section\.removeAttribute\('aria-busy'\);/,
+        'runtime hydration should clear static shell markers and busy state when real content takes over'
+    );
+});
+
 test('homepage deferred runtime does not force users back to the top after scroll', () => {
     const indexSource = readRepoFile('index.html');
     const scrollBootstrap = readRepoFile('js/index-scroll-bootstrap.js');
@@ -603,12 +668,12 @@ test('homepage shop title paints before delayed product cards', () => {
         'critical CSS should hide pending shop cards before deferred styles finish loading'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260517_HOME_PROMPTS_TITLE_FIRST_1'),
+        indexSource.includes('./js/framer_home.js?v=20260519_HOME_PROGRESSIVE_SHELL_1'),
         true,
         'index.html should cache-bust the shop title-first homepage runtime'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home.css?v=20260517_HOME_SHOP_TITLE_FIRST_1'),
+        indexSource.includes('./css/framer_home.css?v=20260519_HOME_PROGRESSIVE_SHELL_1'),
         true,
         'index.html should cache-bust the shop title-first homepage styles'
     );

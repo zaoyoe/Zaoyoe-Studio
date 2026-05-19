@@ -91,6 +91,10 @@
             "title": "Featured Resource Store",
             "subtitle": "Quality resources for growth"
         },
+        "gongyi": {
+            "title": "API Relay",
+            "subtitle": "Subscription to API conversion platform"
+        },
         "verify": {
             "title": "Gemini Pro",
             "subtitle": "Submit account jobs and fetch trial links automatically",
