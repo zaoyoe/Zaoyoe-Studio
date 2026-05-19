@@ -34,6 +34,7 @@ test('vercel cache policy keeps admin shells and APIs uncached while allowing ve
     const authPopupCloseHtmlRule = headers.find((entry) => entry?.source === '/auth-popup-close.html');
     const smokeNotificationsRule = headers.find((entry) => entry?.source === '/smoke-notifications');
     const swRule = headers.find((entry) => entry?.source === '/sw.js');
+    const vendorRule = headers.find((entry) => entry?.source === '/vendor/:path*');
     const versionedJsRule = headers.find((entry) => entry?.source === '/:path*.js');
     const versionedCssRule = headers.find((entry) => entry?.source === '/:path*.css');
     const globalRule = headers.find((entry) => entry?.source === '/(.*)');
@@ -65,6 +66,9 @@ test('vercel cache policy keeps admin shells and APIs uncached while allowing ve
     assert.equal(getHeaderValue(smokeNotificationsRule, 'Cache-Control'), 'no-store, max-age=0');
     assert.ok(swRule, 'vercel.json should keep the service worker uncached');
     assert.equal(getHeaderValue(swRule, 'Cache-Control'), 'no-store, max-age=0');
+
+    assert.ok(vendorRule, 'vercel.json should cache version-pinned first-party vendor assets');
+    assert.equal(getHeaderValue(vendorRule, 'Cache-Control'), 'public, max-age=31536000, immutable');
 
     assert.ok(versionedJsRule, 'vercel.json should define a versioned JavaScript cache rule');
     assert.deepEqual(versionedJsRule.has, [{ type: 'query', key: 'v' }]);

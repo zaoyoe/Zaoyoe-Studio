@@ -621,7 +621,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
     const engagementLoaderSource = readRepoFile('js/engagement-runtime-loader.js');
     const vercelConfig = JSON.parse(readRepoFile('vercel.json'));
     const deferredScripts = [
-        'https://unpkg.com/@supabase/supabase-js@2',
+        'vendor/supabase/2.95.3/supabase.js?v=20260519_VENDOR_PUBLIC_1',
         '/api/runtime/supabase-config',
         './js/runtime-supabase-config.js?v=20260510_REALTIME_GRACEFUL_FALLBACK_1',
         './supabase-client.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1',
@@ -708,8 +708,8 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
     );
     assert.match(
         indexSource,
-        /rel="stylesheet" href="https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/font-awesome\/6\.0\.0\/css\/all\.min\.css" media="print" data-deferred-style="1"/,
-        'homepage should not block first paint on external Font Awesome CSS'
+        /rel="stylesheet" href="vendor\/fontawesome\/6\.4\.0\/css\/all\.min\.css\?v=20260519_VENDOR_PUBLIC_1" media="print" data-deferred-style="1"/,
+        'homepage should not block first paint on Font Awesome CSS'
     );
 
     for (const src of deferredScripts) {

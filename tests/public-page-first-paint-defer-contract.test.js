@@ -54,7 +54,7 @@ test('subpage Supabase and shared runtime chains are deferred in dependency orde
     ['shop.html', 'verify.html', 'prompts.html'].forEach((relativePath) => {
         const source = readRepoFile(relativePath);
         [
-            'https://unpkg.com/@supabase/supabase-js@2',
+            'vendor/supabase/2.95.3/supabase.js?v=20260519_VENDOR_PUBLIC_1',
             '/api/runtime/supabase-config',
             './js/runtime-supabase-config.js?v=20260510_REALTIME_GRACEFUL_FALLBACK_1',
             './supabase-client.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1',
@@ -82,9 +82,9 @@ test('heavy page runtimes and engagement chrome load without blocking first pain
             'js/chat-widget-loader.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1'
         ],
         'prompts.html': [
-            'https://cdn.jsdelivr.net/npm/dayjs@1/dayjs.min.js',
-            'https://cdn.jsdelivr.net/npm/dayjs@1/plugin/relativeTime.js',
-            'https://cdn.jsdelivr.net/npm/dayjs@1/locale/zh-cn.js',
+            'vendor/dayjs/1.11.13/dayjs.min.js?v=20260519_VENDOR_PUBLIC_1',
+            'vendor/dayjs/1.11.13/plugin/relativeTime.js?v=20260519_VENDOR_PUBLIC_1',
+            'vendor/dayjs/1.11.13/locale/zh-cn.js?v=20260519_VENDOR_PUBLIC_1',
             './js/prompts-runtime-bootstrap.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
             './js/prompts-dataset-bootstrap.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
             './js/prompt-image-variants.js?v=20260430_RESPONSIVE_IMAGE_VARIANTS_1',
@@ -102,6 +102,37 @@ test('heavy page runtimes and engagement chrome load without blocking first pain
         const source = readRepoFile(relativePath);
         srcList.forEach((src) => {
             assert.match(source, scriptTagPattern(src), `${relativePath} should defer ${src}`);
+        });
+    });
+});
+
+test('active public pages load key vendor runtimes from first-party assets', () => {
+    const publicPages = [
+        'index.html',
+        'shop.html',
+        'verify.html',
+        'prompts.html',
+        'guestbook.html',
+        'privacy.html',
+        'reset-password.html',
+        'auth-callback.html'
+    ];
+
+    const retiredCdnMarkers = [
+        'https://unpkg.com/@supabase/supabase-js@2',
+        'https://cdn.jsdelivr.net/npm/dayjs@1',
+        'https://cdnjs.cloudflare.com/ajax/libs/font-awesome'
+    ];
+
+    publicPages.forEach((relativePath) => {
+        const source = readRepoFile(relativePath);
+
+        retiredCdnMarkers.forEach((marker) => {
+            assert.equal(
+                source.includes(marker),
+                false,
+                `${relativePath} should not depend on ${marker}`
+            );
         });
     });
 });
