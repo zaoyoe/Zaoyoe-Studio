@@ -107,7 +107,7 @@ archive_path="$tmp_dir/zaoyoe-verify-$release_id.tar.gz"
 trap 'rm -rf "$tmp_dir"' EXIT
 
 echo "Creating release archive $release_id"
-tar -czf "$archive_path" "${PACKAGE_PATHS[@]}"
+COPYFILE_DISABLE=1 tar --no-xattrs -czf "$archive_path" "${PACKAGE_PATHS[@]}"
 
 if [[ "$DRY_RUN" == "1" ]]; then
   echo "Dry run complete: $archive_path"
