@@ -41,7 +41,7 @@ INSERT INTO homepage_config (section, content, is_visible, display_order) VALUES
     "enable_auto": true,
     "max_items": 50,
     "sort": "popular",
-    "section_title": "AI 提示词工作室",
+    "section_title": "提示词",
     "section_subtitle": "让创作更高效，让灵感更自由",
     "featured_items": []
 }'::JSONB, true, 2),

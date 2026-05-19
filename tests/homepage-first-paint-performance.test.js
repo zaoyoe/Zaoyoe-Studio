@@ -375,7 +375,7 @@ test('homepage ships static progressive shells below the hero before runtime hyd
     const zhMessages = JSON.parse(readRepoFile('lang/zh.json'));
     const enMessages = JSON.parse(readRepoFile('lang/en.json'));
     const sectionExpectations = [
-        ['prompts', 'content-section', 'home.prompts.title', 'AI 提示词工作室'],
+        ['prompts', 'content-section', 'home.prompts.title', '提示词'],
         ['shop', 'content-section', 'home.shop.title', '精选资源商城'],
         ['gongyi', 'content-section', 'home.gongyi.title', 'API中转'],
         ['verify', 'content-section', 'home.verify.title', 'Gemini Pro'],
