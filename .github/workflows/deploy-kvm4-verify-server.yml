@@ -24,7 +24,7 @@ jobs:
       KVM4_PORT: ${{ vars.KVM4_PORT || '2222' }}
       KVM4_USER: ${{ vars.KVM4_USER || 'root' }}
       KVM4_ROOT: ${{ vars.KVM4_ROOT || '/opt/zaoyoe-verify-server' }}
-      KVM4_KEY: ${{ runner.temp }}/kvm4_deploy_key
+      KVM4_KEY: /tmp/kvm4_deploy_key_${{ github.run_id }}
       KEEP_RELEASES: ${{ vars.KVM4_KEEP_RELEASES || '8' }}
 
     steps:
