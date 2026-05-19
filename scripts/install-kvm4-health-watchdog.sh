@@ -82,8 +82,8 @@ install -o root -g root -m 0644 "$REMOTE_TMP/zaoyoe-kvm4-health-watchdog.timer" 
 rm -rf "$REMOTE_TMP"
 
 systemctl daemon-reload
-systemctl enable --now zaoyoe-kvm4-health-watchdog.timer
 systemctl start zaoyoe-kvm4-health-watchdog.service
+systemctl enable --now zaoyoe-kvm4-health-watchdog.timer
 systemctl status zaoyoe-kvm4-health-watchdog.service --no-pager
 systemctl list-timers --all --no-pager | grep zaoyoe-kvm4-health-watchdog
 REMOTE
