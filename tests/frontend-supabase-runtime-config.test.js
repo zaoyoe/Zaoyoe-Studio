@@ -316,11 +316,11 @@ test('vercel public redirects send gongyi and status entry paths to dedicated su
     const statusRedirectIndex = redirects.findIndex((entry) => entry?.source === '/status');
 
     assert.ok(gongyiRedirect, 'vercel.json should redirect /gongyi to the dedicated community subdomain');
-    assert.equal(gongyiRedirect.destination, 'https://gongyi.zaoyoe.com');
+    assert.equal(gongyiRedirect.destination, 'https://sub2api.zaoyoe.com');
     assert.equal(gongyiRedirect.permanent, false);
 
     assert.ok(gongyiHtmlRedirect, 'vercel.json should redirect /gongyi.html to the dedicated community subdomain');
-    assert.equal(gongyiHtmlRedirect.destination, 'https://gongyi.zaoyoe.com');
+    assert.equal(gongyiHtmlRedirect.destination, 'https://sub2api.zaoyoe.com');
     assert.equal(gongyiHtmlRedirect.permanent, false);
 
     assert.ok(statusRedirect, 'vercel.json should redirect /status to the dedicated status subdomain');
@@ -4034,7 +4034,8 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'function setHomeSectionVisibility(section, visible)',
         'function getHomeLoopPixelsPerSecond(speedValue)',
         'function getHomeLoopDurationSeconds(cycleWidth, speedValue)',
-        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260512_HOME_GONGYI_BRAND_VERIFY_I18N_1';",
+        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260518_HOME_GONGYI_SUB2API_1';",
+        "const HOMEPAGE_CONFIG_CACHE_KEY = 'homepage_config_sub2api_1';",
         "const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';",
         "const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';",
         'async fetchVisiblePromptPool(options = {}) {',
@@ -4192,14 +4193,14 @@ test('homepage subpages load the latest prefetch-home runtime script version', (
 
     for (const source of subpageSources) {
         assert.equal(
-            source.includes('./js/prefetch-home.js?v=20260512_HOME_GONGYI_BRAND_VERIFY_I18N_1'),
+            source.includes('./js/prefetch-home.js?v=20260518_HOME_GONGYI_SUB2API_1'),
             true,
             'subpages should load the latest prefetch-home script version'
         );
     }
 
     assert.equal(
-        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260512_HOME_GONGYI_BRAND_VERIFY_I18N_1';"),
+        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260518_HOME_GONGYI_SUB2API_1';"),
         true,
         'js/prefetch-home.js should version homepage prefetch payloads after the homepage P2 runtime changes'
     );

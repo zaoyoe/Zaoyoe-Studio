@@ -12,7 +12,7 @@
     const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
     const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
     const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260512_HOME_GONGYI_BRAND_VERIFY_I18N_1';
+    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260518_HOME_GONGYI_SUB2API_1';
     const HOMEPAGE_GUESTBOOK_CARD_LIMIT = 6;
     const HOMEPAGE_PROMPT_LIVE_SELECT = [
         'id',
@@ -225,6 +225,26 @@
         const text = String(value || '').trim();
         const legacyLabels = new Set(['验证', 'Verify', 'API 验证', 'API Verification', 'Gemini 验证', 'Gemini Verify', 'Gemini验证', 'Google One', 'Google one']);
         return legacyLabels.has(text) ? 'Gemini Pro' : text;
+    }
+
+    function normalizeGongyiUrl(value) {
+        const normalized = String(value || '').trim();
+        if (!normalized) {
+            return '';
+        }
+
+        try {
+            const parsed = new URL(normalized);
+            const hostname = parsed.hostname.toLowerCase();
+            if (hostname === 'gongyi.zaoyoe.com' || hostname === 'www.gongyi.zaoyoe.com') {
+                const path = parsed.pathname === '/' ? '' : parsed.pathname;
+                return `https://sub2api.zaoyoe.com${path}${parsed.search}${parsed.hash}`;
+            }
+        } catch (error) {
+            // Keep non-absolute URLs unchanged.
+        }
+
+        return normalized;
     }
 
     function resolveGongyiBrandName(value) {
@@ -863,7 +883,7 @@
             ? config.entries
             : [
                 { id: 'prompts', icon: 'fa-wand-magic-sparkles', text: window.i18n?.t('home.entries.prompts') || '提示词', link: '/prompts.html', color: '#f472b6', section: 'prompts' },
-                { id: 'gongyi', icon: 'home-entry-card-icon--gongyi', text: window.i18n?.t('home.entries.gongyi') || 'API中转', link: 'https://gongyi.zaoyoe.com', color: '#5ed8f8', section: 'gongyi' },
+                { id: 'gongyi', icon: 'home-entry-card-icon--gongyi', text: window.i18n?.t('home.entries.gongyi') || 'API中转', link: 'https://sub2api.zaoyoe.com', color: '#5ed8f8', section: 'gongyi' },
                 { id: 'shop', icon: 'fa-store', text: window.i18n?.t('home.entries.shop') || '商城', link: '/shop.html', color: '#4ade80', section: 'shop' },
                 { id: 'verify', icon: 'fa-robot', text: window.i18n?.t('home.entries.verify') || 'Gemini Pro', link: '/verify.html', color: '#667eea', section: 'verify' },
                 { id: 'guestbook', icon: 'fa-comment-dots', text: window.i18n?.t('home.entries.guestbook') || '留言板', link: '#', color: '#f59e0b', action: 'openGuestbookModal', section: 'guestbook' }
@@ -891,7 +911,7 @@
                             zh: entryFallback.zh,
                             en: entryFallback.en
                         }),
-                        link: String(item?.link || (item?.section ? `#${item.section}` : '#')).trim() || '#',
+                        link: normalizeGongyiUrl(String(item?.link || (item?.section ? `#${item.section}` : '#')).trim() || '#'),
                         color: String(item?.color || '#ffffff').trim() || '#ffffff',
                         action: String(item?.action || '').trim(),
                         section: String(item?.section || '').trim()
@@ -963,7 +983,7 @@
                 zh: '进入控制台',
                 en: 'Open Console'
             }),
-            ctaLink: String(config.cta_link || '').trim() || 'https://gongyi.zaoyoe.com',
+            ctaLink: normalizeGongyiUrl(String(config.cta_link || '').trim() || 'https://sub2api.zaoyoe.com'),
             highlights: resolveLocalizedTextList(
                 config.highlight_items,
                 isEnglish ? ['Subscription to API', 'Session continuity', 'Usage billing'] : ['订阅转 API', '会话保持', '按量计费']

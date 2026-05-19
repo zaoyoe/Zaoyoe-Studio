@@ -32,7 +32,7 @@ test('engagement public visual smoke covers local pages and external gongyi expl
     assert.equal(smoke.PAGE_DEFINITIONS.verify.path, '/verify.html');
     assert.equal(smoke.PAGE_DEFINITIONS.guestbook.path, '/guestbook.html');
     assert.equal(smoke.PAGE_DEFINITIONS.gongyi.externalRedirect, true);
-    assert.equal(smoke.PAGE_DEFINITIONS.gongyi.externalHost, 'gongyi.zaoyoe.com');
+    assert.equal(smoke.PAGE_DEFINITIONS.gongyi.externalHost, 'sub2api.zaoyoe.com');
 });
 
 test('engagement public visual smoke feed item exercises route CTA and wallet cards', () => {

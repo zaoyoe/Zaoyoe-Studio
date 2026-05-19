@@ -87,7 +87,7 @@ test('public engagement API allows controlled CORS for external gongyi host', ()
 
 test('external engagement policy builds deployable snippets and diagnostics', () => {
     const policy = externalPolicy.normalizeExternalEmbedPolicy({
-        allowed_origins: 'https://gongyi.zaoyoe.com\nhttps://custom.example.com',
+        allowed_origins: 'https://sub2api.zaoyoe.com\nhttps://custom.example.com',
         api_origin: 'https://www.zaoyoe.com/api/../',
         asset_base: 'https://cdn.zaoyoe.com/assets',
         default_page_id: 'gongyi',
@@ -95,7 +95,7 @@ test('external engagement policy builds deployable snippets and diagnostics', ()
     });
 
     assert.equal(policy.enabled, true);
-    assert.deepEqual(policy.allowed_origins, ['https://gongyi.zaoyoe.com', 'https://custom.example.com']);
+    assert.deepEqual(policy.allowed_origins, ['https://sub2api.zaoyoe.com', 'https://custom.example.com']);
     assert.equal(policy.api_origin, 'https://www.zaoyoe.com');
     assert.equal(policy.asset_base, 'https://cdn.zaoyoe.com/assets/');
 

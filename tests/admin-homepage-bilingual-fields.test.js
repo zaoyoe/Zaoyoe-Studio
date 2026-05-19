@@ -14,7 +14,7 @@ const shopClientPath = path.resolve(__dirname, '../js/shop-client.js');
 
 function loadBrowserHomepageContract() {
     const source = fs.readFileSync(homepageContractPath, 'utf8');
-    const sandbox = { window: {} };
+    const sandbox = { window: {}, URL };
     vm.runInNewContext(source, sandbox, { filename: homepageContractPath });
     return sandbox.window.HomepageContract;
 }
@@ -78,6 +78,37 @@ test('homepage browser contract preserves localized section title pairs', () => 
     });
     assert.equal(verify.section_title, 'Gemini Pro');
     assert.equal(verify.section_title_en, 'Gemini Pro');
+});
+
+test('homepage normalizers rewrite legacy API relay links to sub2api', () => {
+    const contract = loadBrowserHomepageContract();
+    const browserHero = contract.normalizeContent('hero', {
+        entries: [
+            { id: 'gongyi', text: 'API中转', link: 'https://gongyi.zaoyoe.com' }
+        ],
+        cta: {
+            primary: { text: 'API中转', link: 'https://gongyi.zaoyoe.com' },
+            secondary: { text: 'Console', link: 'https://www.gongyi.zaoyoe.com/dashboard?tab=keys#top' }
+        }
+    });
+    const browserGongyi = contract.normalizeContent('gongyi', {
+        cta_link: 'https://gongyi.zaoyoe.com'
+    });
+    const sharedHero = homepageShared.normalizeHomepageContent('hero', {
+        entries: [
+            { id: 'gongyi', text: 'API中转', link: 'https://gongyi.zaoyoe.com' }
+        ]
+    });
+    const sharedGongyi = homepageShared.normalizeHomepageContent('gongyi', {
+        cta_link: 'https://www.gongyi.zaoyoe.com/dashboard'
+    });
+
+    assert.equal(browserHero.entries[0].link, 'https://sub2api.zaoyoe.com');
+    assert.equal(browserHero.cta.primary.link, 'https://sub2api.zaoyoe.com');
+    assert.equal(browserHero.cta.secondary.link, 'https://sub2api.zaoyoe.com/dashboard?tab=keys#top');
+    assert.equal(browserGongyi.cta_link, 'https://sub2api.zaoyoe.com');
+    assert.equal(sharedHero.entries[0].link, 'https://sub2api.zaoyoe.com');
+    assert.equal(sharedGongyi.cta_link, 'https://sub2api.zaoyoe.com/dashboard');
 });
 
 test('homepage admin save path seeds the current site localized fallback', () => {
