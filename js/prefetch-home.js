@@ -48,6 +48,55 @@
         return Contract?.normalizeSite?.(window.SiteConfig?.site) || window.SiteConfig?.site || 'cn';
     }
 
+    function buildPublicApiUrl(pathname, params = {}) {
+        const configuredBaseUrl = String(
+            window.ZAOYOE_PUBLIC_API_BASE_URL
+            || window.VERIFY_SERVER_URL
+            || 'https://verify-api.zaoyoe.com'
+        ).trim().replace(/\/+$/, '');
+
+        try {
+            const url = new URL(pathname, `${configuredBaseUrl}/`);
+            Object.entries(params || {}).forEach(([key, value]) => {
+                if (value !== undefined && value !== null && String(value).trim() !== '') {
+                    url.searchParams.set(key, String(value));
+                }
+            });
+            return url.toString();
+        } catch (_error) {
+            return '';
+        }
+    }
+
+    async function fetchPublicShopCatalogPayload(site = getCurrentSite()) {
+        const relativeUrl = `/api/shop/catalog?site=${encodeURIComponent(site)}`;
+        const directUrl = buildPublicApiUrl('/api/shop/catalog', { site });
+        const candidates = Array.from(new Set([directUrl, relativeUrl].filter(Boolean)));
+        let lastError = null;
+
+        for (const url of candidates) {
+            try {
+                const response = await fetch(url, {
+                    method: 'GET',
+                    credentials: url.startsWith('http') ? 'omit' : 'same-origin',
+                    headers: {
+                        Accept: 'application/json'
+                    }
+                });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || payload?.success === false) {
+                    throw new Error(payload?.message || 'shop catalog api failed');
+                }
+                return payload;
+            } catch (error) {
+                lastError = error;
+                if (url === relativeUrl) break;
+            }
+        }
+
+        throw lastError || new Error('shop catalog api failed');
+    }
+
     function getHomepagePrefetchCacheKey(site = getCurrentSite()) {
         return `${HOMEPAGE_PREFETCH_CACHE_KEY}_${site === 'intl' ? 'intl' : 'cn'}`;
     }
@@ -1154,18 +1203,7 @@
             const { items: promptPool, source: promptPoolSource } = await fetchVisiblePromptPool();
 
             const [shopCatalog, guestbookMessages] = await Promise.all([
-                fetch(`/api/shop/catalog?site=${encodeURIComponent(getCurrentSite())}`, {
-                    method: 'GET',
-                    headers: {
-                        Accept: 'application/json'
-                    }
-                }).then(async (response) => {
-                    const payload = await response.json().catch(() => ({}));
-                    if (!response.ok || payload?.success === false) {
-                        throw new Error(payload?.message || 'shop catalog api failed');
-                    }
-                    return payload;
-                }).catch(async (apiError) => {
+                fetchPublicShopCatalogPayload(getCurrentSite()).catch(async (apiError) => {
                     console.warn('Homepage shop catalog API prefetch failed, using direct fetch:', apiError?.message || apiError);
                     const result = await window.supabaseClient
                         .from('shop_products')

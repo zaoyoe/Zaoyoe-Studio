@@ -963,9 +963,9 @@ test('public pages wire wallet modal through the shared bootstrap loader', () =>
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260518_MOBILE_PAY_FAST_CONFIRM_1';",
+        "const VERSION = '20260519_PUBLIC_API_FAST_PATH_1';",
         "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260518_MOBILE_PAY_FAST_CONFIRM_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260518_MOBILE_PAY_FAST_CONFIRM_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260519_PUBLIC_API_FAST_PATH_1';",
         'function ensureWalletModalReady() {',
         'function warmWalletModal(options = {}) {',
         "function openWalletModal(view = 'balance', context = {}) {",
@@ -3549,7 +3549,7 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should not render a secondary text loading message after the skeleton'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260513_SHOP_MOBILE_TAP_FALLBACK_1'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260519_PUBLIC_API_FAST_PATH_1'),
         true,
         'shop.html should reference the latest shop client runtime for the cart-enabled storefront flow'
     );
@@ -13344,9 +13344,9 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), false, 'index.html should not eagerly load the full guestbook runtime');
     assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260510_GUESTBOOK_R2_IMAGE_UPLOAD_1'), true, 'guestbook.html should load the latest guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260510_GUESTBOOK_R2_IMAGE_UPLOAD_1'), true, 'index_old.html should load the latest guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260513_SHOP_MOBILE_TAP_FALLBACK_1'), true, 'shop.html should load the latest cart-aware shop runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260519_PUBLIC_API_FAST_PATH_1'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260510_SHOP_REALTIME_FALLBACK_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
-    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260518_MOBILE_PAY_FAST_CONFIRM_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
+    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260519_PUBLIC_API_FAST_PATH_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
 
 test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {

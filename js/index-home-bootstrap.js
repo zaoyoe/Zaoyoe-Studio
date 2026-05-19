@@ -45,6 +45,54 @@
     const prefetching = {};
 
     const site = () => window.SiteConfig?.site || 'cn';
+    const publicApiBaseUrl = () => String(
+        window.ZAOYOE_PUBLIC_API_BASE_URL
+        || window.VERIFY_SERVER_URL
+        || 'https://verify-api.zaoyoe.com'
+    ).trim().replace(/\/+$/, '');
+
+    function buildPublicApiUrl(pathname, params = {}) {
+        try {
+            const url = new URL(pathname, `${publicApiBaseUrl()}/`);
+            Object.entries(params || {}).forEach(([key, value]) => {
+                if (value !== undefined && value !== null && String(value).trim() !== '') {
+                    url.searchParams.set(key, String(value));
+                }
+            });
+            return url.toString();
+        } catch (_error) {
+            return '';
+        }
+    }
+
+    async function fetchShopCatalogPayload(currentSite) {
+        const relativeUrl = `/api/shop/catalog?site=${encodeURIComponent(currentSite)}`;
+        const directUrl = buildPublicApiUrl('/api/shop/catalog', { site: currentSite });
+        const candidates = Array.from(new Set([directUrl, relativeUrl].filter(Boolean)));
+        let lastError = null;
+
+        for (const url of candidates) {
+            try {
+                const response = await fetch(url, {
+                    method: 'GET',
+                    credentials: url.startsWith('http') ? 'omit' : 'same-origin',
+                    headers: {
+                        Accept: 'application/json'
+                    }
+                });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || payload?.success === false) {
+                    throw new Error(payload?.message || 'shop catalog api failed');
+                }
+                return payload;
+            } catch (error) {
+                lastError = error;
+                if (url === relativeUrl) break;
+            }
+        }
+
+        throw lastError || new Error('shop catalog api failed');
+    }
 
     async function prefetchGuestbook() {
         try {
@@ -73,16 +121,7 @@
             let products = [];
 
             try {
-                const response = await fetch(`/api/shop/catalog?site=${encodeURIComponent(currentSite)}`, {
-                    method: 'GET',
-                    headers: {
-                        Accept: 'application/json'
-                    }
-                });
-                const payload = await response.json().catch(() => ({}));
-                if (!response.ok || payload?.success === false) {
-                    throw new Error(payload?.message || 'shop catalog api failed');
-                }
+                const payload = await fetchShopCatalogPayload(currentSite);
                 categories = Array.isArray(payload?.categories)
                     ? payload.categories
                     : (Array.isArray(payload?.data?.categories) ? payload.data.categories : []);
