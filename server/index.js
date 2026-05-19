@@ -134,6 +134,8 @@ const {
 const {
     resolveSiteScopedSystemConfigValue
 } = require('./api-handlers/_site-scoped-system-config');
+const publicApiHandler = require('../api/public');
+const adminApiHandler = require('../api/admin');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -297,6 +299,12 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+function dispatchSharedApiHandler(handler) {
+    return (req, res, next) => {
+        Promise.resolve(handler(req, res)).catch(next);
+    };
+}
 
 function getLocalHealthPayload() {
     return {
@@ -5764,6 +5772,24 @@ async function handleAfdianQueryRequest(req, res) {
 // GET/POST /api/afdian/query - Query redemption code by order number
 app.get('/api/afdian/query', handleAfdianQueryRequest);
 app.post('/api/afdian/query', handleAfdianQueryRequest);
+
+app.all([
+    '/api/public',
+    '/api/public/*',
+    '/api/auth/*',
+    '/api/payments/*',
+    '/api/runtime/*',
+    '/api/monitoring/*',
+    '/api/ops/*',
+    '/api/engagement/*',
+    '/api/shop/*',
+    '/api/wallet/*'
+], dispatchSharedApiHandler(publicApiHandler));
+
+app.all([
+    '/api/admin',
+    '/api/admin/*'
+], dispatchSharedApiHandler(adminApiHandler));
 
 function startServer(port = PORT) {
     return app.listen(port, () => {
