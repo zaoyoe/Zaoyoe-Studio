@@ -112,7 +112,7 @@ const HOMEPAGE_SECTION_SHELL_COPY = {
   prompts: {
     titleKey: 'home.prompts.title',
     subtitleKey: 'home.prompts.subtitle',
-    title: { zh: 'AI 提示词工作室', en: 'AI Prompt Studio' },
+    title: { zh: '提示词', en: 'Prompts' },
     subtitle: { zh: '让创作更高效，让灵感更自由', en: 'Make creation more efficient, inspiration more free' }
   },
   shop: {
@@ -3632,7 +3632,7 @@ const FramerHome = {
     const promptPool = this.getPromptPool();
     this.config = {
       hero: { enable_auto: true },
-      prompts: { enable_auto: true, max_items: 24, sort: 'popular', section_title: 'AI 提示词工作室', section_subtitle: '让创作更高效，让灵感更自由' },
+      prompts: { enable_auto: true, max_items: 24, sort: 'popular', section_title: '提示词', section_subtitle: '让创作更高效，让灵感更自由' },
       shop: { enable_auto: true, max_items: 8, section_title: '精选资源商城', section_subtitle: '优质资源，助力成长' },
       gongyi: { enable_auto: false, section_tag: 'API中转', brand_name: 'Zaoyoe', brand_subtitle: 'Subscription to API Conversion Platform', cta_text: '进入控制台', cta_link: 'https://sub2api.zaoyoe.com' },
       verify: { enable_auto: true, section_title: 'Gemini Pro', section_subtitle: '快速验证您的 API 密钥' },
@@ -4527,8 +4527,8 @@ const FramerHome = {
     const columns = this.distributeCardsToColumns(promptRenderItems, columnCount);
 
     const sectionTitle = resolveHomepageLocalizedText(this.getLocalizedField(config, 'section_title'), 'home.prompts.title', {
-      zh: 'AI 提示词工作室',
-      en: 'AI Prompt Studio'
+      zh: '提示词',
+      en: 'Prompts'
     });
     const sectionSubtitle = resolveHomepageLocalizedText(this.getLocalizedField(config, 'section_subtitle'), 'home.prompts.subtitle', {
       zh: '让创作更高效，让灵感更自由',

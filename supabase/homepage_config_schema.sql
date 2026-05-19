@@ -82,7 +82,7 @@ INSERT INTO homepage_config (site, section, content, display_order) VALUES
     "enable_auto": true,
     "max_items": 6,
     "sort": "popular",
-    "section_title": "AI 提示词工作室",
+    "section_title": "提示词",
     "section_subtitle": "让创作更高效，让灵感更自由"
 }'::JSONB, 2),
 
@@ -90,9 +90,9 @@ INSERT INTO homepage_config (site, section, content, display_order) VALUES
     "enable_auto": true,
     "max_items": 6,
     "sort": "popular",
-    "section_title": "AI Prompt Studio",
+    "section_title": "Prompts",
     "section_subtitle": "Create faster, ideate freer",
-    "section_title_zh": "AI 提示词工作室",
+    "section_title_zh": "提示词",
     "section_subtitle_zh": "让创作更高效，让灵感更自由"
 }'::JSONB, 2),
 
