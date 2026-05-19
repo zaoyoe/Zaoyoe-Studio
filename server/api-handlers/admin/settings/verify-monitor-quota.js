@@ -10,7 +10,7 @@ const {
     fetchDirectVerifyQuotaState
 } = require('../../_verify-provider-runtime');
 
-const DEFAULT_VERIFY_SERVER_URL = 'https://zaoyoe-verify-server-production.up.railway.app';
+const DEFAULT_VERIFY_SERVER_URL = 'https://verify-api.zaoyoe.com';
 const VERIFY_MONITOR_PROXY_TIMEOUT_MS = 5000;
 
 function getVerifyServerUrl() {

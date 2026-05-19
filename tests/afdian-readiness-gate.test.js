@@ -11,7 +11,7 @@ test('afdian-readiness-gate parseArgs collects handoff flags', () => {
     const options = parseArgs([
         '--env-file', 'server/.env.staging',
         '--base-url', 'https://www.zaoyoe.com',
-        '--verify-server-url', 'https://zaoyoe-verify-server-production.up.railway.app',
+        '--verify-server-url', 'https://verify-api.zaoyoe.com',
         '--admin-email', 'zaoyoe@gmail.com',
         '--access-token', 'token-123',
         '--samples', '7',
@@ -22,7 +22,7 @@ test('afdian-readiness-gate parseArgs collects handoff flags', () => {
 
     assert.match(options.envFile, /server\/\.env\.staging$/);
     assert.equal(options.baseUrl, 'https://www.zaoyoe.com');
-    assert.equal(options.verifyServerUrl, 'https://zaoyoe-verify-server-production.up.railway.app');
+    assert.equal(options.verifyServerUrl, 'https://verify-api.zaoyoe.com');
     assert.equal(options.adminEmail, 'zaoyoe@gmail.com');
     assert.equal(options.accessToken, 'token-123');
     assert.equal(options.sampleCount, 7);
