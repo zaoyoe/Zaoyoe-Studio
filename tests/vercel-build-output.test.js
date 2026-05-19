@@ -22,6 +22,8 @@ test('vercel static output keeps public assets while excluding function sources'
     writeTempFile(tempRoot, 'index.html', '<!doctype html><title>ok</title>');
     writeTempFile(tempRoot, 'js/site-config.js', 'window.SiteConfig = {};');
     writeTempFile(tempRoot, 'assets/verify-preview.png', 'png');
+    writeTempFile(tempRoot, 'vendor/supabase/2.95.3/supabase.js', 'window.supabase = {};');
+    writeTempFile(tempRoot, 'vendor/fontawesome/6.4.0/webfonts/fa-solid-900.woff2', 'font');
     writeTempFile(tempRoot, 'api/public.js', 'module.exports = {};');
     writeTempFile(tempRoot, 'server/api-handlers/public/runtime-supabase-config.js', 'module.exports = {};');
     writeTempFile(tempRoot, 'scripts/local-preview-server.js', 'console.log("preview");');
@@ -35,6 +37,8 @@ test('vercel static output keeps public assets while excluding function sources'
     assert.equal(files.has('index.html'), true);
     assert.equal(files.has('js/site-config.js'), true);
     assert.equal(files.has('assets/verify-preview.png'), true);
+    assert.equal(files.has('vendor/supabase/2.95.3/supabase.js'), true);
+    assert.equal(files.has('vendor/fontawesome/6.4.0/webfonts/fa-solid-900.woff2'), true);
     assert.equal(files.has('api/public.js'), false);
     assert.equal(files.has('server/api-handlers/public/runtime-supabase-config.js'), false);
     assert.equal(files.has('scripts/local-preview-server.js'), false);
