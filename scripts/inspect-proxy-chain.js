@@ -16,7 +16,7 @@ const {
 
 const DEFAULT_ENV_FILE = path.resolve(__dirname, '../server/.env.production');
 const DEFAULT_BASE_URL = 'https://www.zaoyoe.com';
-const DEFAULT_VERIFY_SERVER_URL = 'https://zaoyoe-verify-server-production.up.railway.app';
+const DEFAULT_VERIFY_SERVER_URL = 'https://verify-api.zaoyoe.com';
 const DEFAULT_SAMPLE_COUNT = 5;
 const DEFAULT_TIMEOUT_MS = 15000;
 function parseArgs(argv = []) {

@@ -11,7 +11,7 @@
         pricePerVerifyExtract: 10,
         pricePerVerifyFull: 20,
         enabled: true,
-        nodeServerUrl: window.VERIFY_SERVER_URL || 'https://zaoyoe-verify-server-production.up.railway.app',
+        nodeServerUrl: window.VERIFY_SERVER_URL || 'https://verify-api.zaoyoe.com',
         containerId: 'verify-widget-container',
         pollInterval: 3000,
         pollTimeout: 300000,

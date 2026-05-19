@@ -145,7 +145,7 @@ test('createPaymentRequest launches ZPAY checkout and precreates the payment ord
                             pid: 'pid-123',
                             payment_type: 'alipay',
                             channel_ids: '',
-                            notify_url: 'https://zaoyoe-verify-server-production.up.railway.app/api/payments/zpay/webhook',
+                            notify_url: 'https://verify-api.zaoyoe.com/api/payments/zpay/webhook',
                             return_url: 'https://www.zaoyoe.com/wallet',
                             package_hint: '请完成易支付支付',
                             custom_amount_hint: ''

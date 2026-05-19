@@ -142,6 +142,11 @@ const PORT = process.env.PORT || 3001;
 const DEFAULT_VERIFY_API_BASE_URL = 'https://aidone.lol';
 const VERIFY_API_BASE = process.env.VERIFY_API_BASE_URL || DEFAULT_VERIFY_API_BASE_URL;
 const HEALTHCHECK_UPSTREAM_TIMEOUT_MS = Math.max(1000, Number(process.env.HEALTHCHECK_UPSTREAM_TIMEOUT_MS || 5000));
+const BACKGROUND_WORKERS_ENABLED = !['0', 'false', 'no', 'off'].includes(
+    String(process.env.VERIFY_SERVER_WORKERS_ENABLED ?? process.env.BACKGROUND_WORKERS_ENABLED ?? 'true')
+        .trim()
+        .toLowerCase()
+);
 const ACTIVE_TRACKED_JOB_STATUSES = ['queued', 'running', 'processing', 'pending'];
 const TERMINAL_TRACKED_JOB_STATUSES = ['success', 'failed'];
 const DEFAULT_VERIFY_TASK_TYPE = 'extract';
@@ -5763,6 +5768,10 @@ app.post('/api/afdian/query', handleAfdianQueryRequest);
 function startServer(port = PORT) {
     return app.listen(port, () => {
         console.log(`🚀 Verify proxy server running on port ${port}`);
+        if (!BACKGROUND_WORKERS_ENABLED) {
+            console.log('[Workers] Background workers disabled by VERIFY_SERVER_WORKERS_ENABLED');
+            return;
+        }
         startPendingJobSweep();
         startShopDeliverySweep();
         startOpsAlertSweep();

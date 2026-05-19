@@ -859,7 +859,7 @@ test('quota endpoint requires admin privileges for authenticated external users'
             url: '/api/quota',
             headers: {
                 Authorization: 'Bearer member-token',
-                Host: 'zaoyoe-verify-server-production.up.railway.app'
+                Host: 'verify-api.zaoyoe.com'
             }
         });
         const payload = response.json();
@@ -905,7 +905,7 @@ test('quota endpoint allows admins and proxies upstream data', async () => {
                 url: '/api/quota',
                 headers: {
                     Authorization: 'Bearer admin-token',
-                    Host: 'zaoyoe-verify-server-production.up.railway.app'
+                    Host: 'verify-api.zaoyoe.com'
                 }
             });
             const payload = response.json();
@@ -1178,7 +1178,7 @@ test('network request-context endpoint returns proxy diagnostics for admins', as
             url: '/api/admin/network/request-context',
             headers: {
                 Authorization: 'Bearer admin-token',
-                Host: 'zaoyoe-verify-server-production.up.railway.app',
+                Host: 'verify-api.zaoyoe.com',
                 'x-forwarded-for': '198.51.100.23, 10.0.0.2',
                 forwarded: 'for=198.51.100.23;proto=https'
             },
@@ -1217,7 +1217,7 @@ test('network request-context endpoint flags mismatched trusted proxy rules', as
             url: '/api/admin/network/request-context',
             headers: {
                 Authorization: 'Bearer admin-token',
-                Host: 'zaoyoe-verify-server-production.up.railway.app',
+                Host: 'verify-api.zaoyoe.com',
                 'x-forwarded-for': '198.51.100.23',
                 'x-real-ip': '198.51.100.23'
             },
@@ -1800,7 +1800,7 @@ test('afdian webhook resolves site from the linked pending checkout session when
             method: 'POST',
             url: '/api/afdian/webhook',
             headers: {
-                host: 'zaoyoe-verify-server-production.up.railway.app'
+                host: 'verify-api.zaoyoe.com'
             },
             body: {
                 ec: 200,

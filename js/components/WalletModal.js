@@ -10828,7 +10828,7 @@
                     .filter(Boolean);
 
                 // Get server URL from verify config or default
-                const serverUrl = window.VERIFY_SERVER_URL || 'https://zaoyoe-verify-server-production.up.railway.app';
+                const serverUrl = window.VERIFY_SERVER_URL || 'https://verify-api.zaoyoe.com';
                 const response = await fetch(`${serverUrl}/api/afdian/query`, {
                     method: 'POST',
                     headers: {

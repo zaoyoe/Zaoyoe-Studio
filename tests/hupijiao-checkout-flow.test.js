@@ -138,7 +138,7 @@ test('createPaymentRequest launches Hupijiao checkout and precreates the payment
                             checkout_url: '',
                             gateway_url: 'https://api.xunhupay.com/payment/do.html',
                             merchant_id: 'appid-123',
-                            notify_url: 'https://zaoyoe-verify-server-production.up.railway.app/api/payments/hupijiao/webhook',
+                            notify_url: 'https://verify-api.zaoyoe.com/api/payments/hupijiao/webhook',
                             return_url: 'https://www.zaoyoe.com/wallet',
                             package_hint: '请完成虎皮椒支付',
                             custom_amount_hint: ''
