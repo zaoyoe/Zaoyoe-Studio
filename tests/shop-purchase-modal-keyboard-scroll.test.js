@@ -15,13 +15,13 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
     const shopHtml = readRepoFile('shop.html');
 
     assert.equal(
-        shopHtml.includes('css/shop-page.css?v=20260513_SHOP_PURCHASE_QTY_SHADOW_1'),
+        shopHtml.includes('css/shop-page.css?v=20260520_SHOP_CARD_PROMPT_BREATHE_3'),
         true,
         'shop.html should load the keyboard-dock cache-busted storefront stylesheet'
     );
 
     assert.equal(
-        shopHtml.includes('js/shop-client.js?v=20260519_PUBLIC_API_FAST_PATH_1'),
+        shopHtml.includes('js/shop-client.js?v=20260520_SHOP_CARD_PROMPT_BREATHE_3'),
         true,
         'shop.html should load the viewport-sync cache-busted storefront runtime'
     );

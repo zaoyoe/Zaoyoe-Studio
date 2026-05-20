@@ -1,41 +1,5 @@
 /* shop.html inline style block 1 (from line 41) */
 /* Theme Variables (Copied from Prompts Poetry) */
-        @property --shop-card-enter-y {
-            syntax: '<length>';
-            inherits: false;
-            initial-value: 0px;
-        }
-
-        @property --shop-card-enter-scale {
-            syntax: '<number>';
-            inherits: false;
-            initial-value: 1;
-        }
-
-        @property --shop-card-breathe-y {
-            syntax: '<length>';
-            inherits: false;
-            initial-value: 0px;
-        }
-
-        @property --shop-card-breathe-amplitude {
-            syntax: '<length>';
-            inherits: false;
-            initial-value: -6px;
-        }
-
-        @property --shop-card-shift-x {
-            syntax: '<length>';
-            inherits: false;
-            initial-value: 0px;
-        }
-
-        @property --shop-card-shift-y {
-            syntax: '<length>';
-            inherits: false;
-            initial-value: 0px;
-        }
-
         :root {
             /* Light Mode Defaults */
             --bg-color: #eef2f7;
@@ -116,36 +80,61 @@
 
         /* Shop Card Styles (Prompt Card Style) */
         .shop-card {
-            --shop-card-enter-y: 0px;
-            --shop-card-enter-scale: 1;
-            --shop-card-breathe-y: 0px;
-            --shop-card-breathe-amplitude: -6px;
-            --shop-card-shift-x: 0px;
-            --shop-card-shift-y: 0px;
+            position: relative;
+            overflow: visible;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+            /*
+             * 让 .shop-card 始终处于 promoted compositor layer：
+             *   - base 的 transform 与入场结束态 translate3d(0,0,0) 一致；
+             *   - cleanup 移除 .shop-card-filter-enter / .is-visible 时，transform 不变化，
+             *     父 layer 不降级 → 子 breathe-frame 不会因父层重栅格化而被横向亚像素吸附
+             *     （这是之前 “水平对齐抖一次” 的根因之一）。
+             */
+            transform: translate3d(0, 0, 0);
+            will-change: transform;
+        }
+
+        .shop-card-breathe-frame {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            height: 100%;
+            min-height: 0;
+            /* translate3d 强制提前创建独立合成层，避免 will-change 后置触发时的一次性 layer 重建。 */
+            transform: translate3d(0, 0, 0);
+            backface-visibility: hidden;
+            will-change: transform;
+            contain: layout paint;
+            /* isolation: isolate 强制独立 stacking context，
+               不受父 .shop-card z-index / class 变化引起的 compositor 重排影响。 */
+            isolation: isolate;
+        }
+
+        .shop-card-breathe-shell {
             position: relative;
             border-radius: 16px;
             overflow: hidden;
             background: var(--card-bg);
             border: 1px solid var(--card-border);
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
-            transform: translate3d(var(--shop-card-shift-x),
-                    calc(var(--shop-card-shift-y) + var(--shop-card-enter-y) + var(--shop-card-breathe-y)),
-                    0) scale(var(--shop-card-enter-scale));
             transition:
                 box-shadow 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
                 border-color 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
                 background 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-                filter 0.42s ease,
-                --shop-card-breathe-amplitude 1.35s cubic-bezier(0.4, 0, 0.2, 1);
-            padding: 0;
-            /* Remove padding for cover image */
+                filter 0.42s ease;
             display: flex;
             flex-direction: column;
             width: 100%;
             height: 100%;
+            min-height: 0;
         }
 
-        .shop-card:hover {
+        .shop-card:hover .shop-card-breathe-shell {
             box-shadow:
                 0 22px 46px rgba(93, 159, 216, 0.22),
                 0 0 0 1px rgba(93, 159, 216, 0.58),
@@ -169,36 +158,42 @@
 
         .shop-card--interactive:focus-visible {
             outline: none;
+        }
+
+        .shop-card--interactive:focus-visible .shop-card-breathe-shell {
             box-shadow: 0 0 0 3px rgba(93, 159, 216, 0.2), 0 14px 34px rgba(93, 159, 216, 0.24);
             border-color: rgba(117, 190, 255, 0.9);
         }
 
         .shop-card--sold-out:focus-visible {
             outline: none;
+        }
+
+        .shop-card--sold-out:focus-visible .shop-card-breathe-shell {
             box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.18), 0 14px 34px rgba(248, 113, 113, 0.18);
             border-color: rgba(248, 113, 113, 0.62);
         }
 
-        .shop-card.shop-card--spotlight {
+        .shop-card.shop-card--spotlight .shop-card-breathe-shell {
             border-color: rgba(251, 191, 36, 0.92);
             box-shadow:
                 0 0 0 4px rgba(251, 191, 36, 0.18),
                 0 18px 42px rgba(251, 191, 36, 0.16);
         }
 
-        [data-theme="dark"] .shop-card {
+        [data-theme="dark"] .shop-card .shop-card-breathe-shell {
             border-color: transparent;
             box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
         }
 
-        [data-theme="dark"] .shop-card:hover {
+        [data-theme="dark"] .shop-card:hover .shop-card-breathe-shell {
             box-shadow:
                 0 22px 46px rgba(0, 0, 0, 0.42),
                 0 0 0 1px rgba(125, 181, 234, 0.32);
             border-color: rgba(125, 181, 234, 0.58);
         }
 
-        [data-theme="dark"] .shop-card.shop-card--spotlight {
+        [data-theme="dark"] .shop-card.shop-card--spotlight .shop-card-breathe-shell {
             border-color: rgba(251, 191, 36, 0.96);
             box-shadow:
                 0 0 0 4px rgba(251, 191, 36, 0.24),
@@ -545,7 +540,7 @@
             box-shadow: none !important;
         }
 
-        .shop-card--in-cart {
+        .shop-card--in-cart .shop-card-breathe-shell {
             border-color: rgba(255, 214, 143, 0.14);
             box-shadow: 0 10px 28px rgba(0, 0, 0, 0.12);
         }
@@ -3951,6 +3946,8 @@
         }
 
         .shop-card-filter-motion-lock {
+            animation: none !important;
+            transition: none !important;
             will-change: transform, opacity;
         }
 
@@ -3961,58 +3958,36 @@
 
         .shop-card-filter-moving {
             z-index: 2;
-            transition:
-                box-shadow 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-                border-color 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-                background 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-                filter 0.42s ease,
-                --shop-card-breathe-amplitude 1.35s cubic-bezier(0.4, 0, 0.2, 1),
-                --shop-card-shift-x 0.96s cubic-bezier(0.25, 0.1, 0.25, 1) var(--shop-card-filter-delay, 0ms),
-                --shop-card-shift-y 0.96s cubic-bezier(0.25, 0.1, 0.25, 1) var(--shop-card-filter-delay, 0ms);
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
         }
 
+        /*
+         * 入场/退出 transform 还原到 .shop-card：呼吸 transform 在子 breathe-frame，
+         * 父子各自一个 transform 来源，互不打断；并且 .shop-card 始终是 promoted
+         * layer，cleanup 后 transform 回到 base 的 translate3d(0,0,0)（与终态等价），
+         * 不会降层、不引起子层重栅格化。
+         * .shop-card-filter-enter 上不再加 z-index，避免 stacking context 出现/消失。
+         */
         .shop-card-filter-enter {
-            z-index: 2;
             opacity: 0;
-            --shop-card-enter-y: 24px;
-            --shop-card-enter-scale: 0.992;
-            --shop-card-enter-opacity-duration: 0.42s;
-            --shop-card-enter-duration: 0.58s;
-            --shop-card-enter-ease: cubic-bezier(0.16, 1, 0.3, 1);
-        }
-
-        .shop-card-filter-enter--initial {
-            --shop-card-enter-y: 58px;
-            --shop-card-enter-scale: 0.976;
-            --shop-card-enter-opacity-duration: 0.84s;
-            --shop-card-enter-duration: 1.42s;
-            --shop-card-enter-ease: cubic-bezier(0.18, 0.9, 0.2, 1);
+            transform: translate3d(0, 20px, 0);
         }
 
         .shop-card-filter-enter.is-visible {
             opacity: 1;
-            transition:
-                opacity var(--shop-card-enter-opacity-duration) ease-out var(--shop-card-filter-delay, 0ms),
-                --shop-card-enter-y var(--shop-card-enter-duration) var(--shop-card-enter-ease) var(--shop-card-filter-delay, 0ms),
-                --shop-card-enter-scale var(--shop-card-enter-duration) var(--shop-card-enter-ease) var(--shop-card-filter-delay, 0ms);
-            --shop-card-enter-y: 0px;
-            --shop-card-enter-scale: 1;
+            transform: translate3d(0, 0, 0);
+            transition: opacity 0.8s ease, transform 0.8s ease;
         }
 
         .shop-card-filter-exit {
             opacity: 1;
-            --shop-card-enter-y: 0px;
-            --shop-card-enter-scale: 1;
+            transform: translate3d(0, 0, 0);
         }
 
         .shop-card-filter-exit.is-leaving {
             opacity: 0;
-            --shop-card-enter-y: 18px;
-            --shop-card-enter-scale: 0.988;
-            transition:
-                opacity 0.36s ease-in var(--shop-card-filter-delay, 0ms),
-                --shop-card-enter-y 0.46s cubic-bezier(0.4, 0, 0.2, 1) var(--shop-card-filter-delay, 0ms),
-                --shop-card-enter-scale 0.46s cubic-bezier(0.4, 0, 0.2, 1) var(--shop-card-filter-delay, 0ms);
+            transform: scale(0.9);
+            transition: opacity 0.3s ease, transform 0.3s ease;
         }
 
         .shop-card-transition-clone {
@@ -4109,7 +4084,7 @@
                 gap: 14px;
             }
 
-            .shop-card {
+            .shop-card-breathe-shell {
                 border-radius: 18px;
             }
 
@@ -5240,40 +5215,25 @@
 
             0%,
             100% {
-                --shop-card-breathe-y: 0px;
+                transform: translateY(0px);
             }
 
             50% {
-                --shop-card-breathe-y: var(--shop-card-breathe-amplitude);
+                transform: translateY(-6px);
             }
         }
 
-        .shop-card.breathing {
+        .shop-card-breathe-frame.shop-card-breathe-frame--breathing {
             animation: breathe 4s ease-in-out infinite;
             animation-delay: var(--breathe-delay, 0s);
             will-change: transform;
         }
 
-        .shop-card.breathing:hover {
+        .shop-card:hover .shop-card-breathe-frame.shop-card-breathe-frame--breathing {
             animation-play-state: paused;
         }
 
-        /* Flash Sale Breathing Effect */
-        @keyframes flashSaleBreathe {
-
-            0%,
-            100% {
-                box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1);
-            }
-
-            50% {
-                box-shadow: 0 10px 40px -10px rgba(239, 68, 68, 0.4), 0 0 0 1px rgba(239, 68, 68, 0.3);
-            }
-        }
-
-        .shop-card.flash-sale-card {
-            animation: breathe 4s ease-in-out infinite, flashSaleBreathe 2.4s ease-in-out infinite;
-            animation-delay: var(--breathe-delay, 0s), 0s;
+        .shop-card.flash-sale-card .shop-card-breathe-shell {
             border-color: rgba(239, 68, 68, 0.3);
         }
 
@@ -5381,23 +5341,19 @@
             letter-spacing: 0;
         }
 
-        /* Pause animation on hover (prioritize hover lift effect) */
-        .shop-card.breathing:hover {
-            animation-play-state: paused;
-        }
-
         @media (prefers-reduced-motion: reduce) {
+            .shop-card-breathe-frame.shop-card-breathe-frame--breathing,
             .shop-card-filter-enter,
+            .shop-card-filter-enter .shop-card-breathe-frame,
             .shop-card-filter-exit,
+            .shop-card-filter-exit .shop-card-breathe-frame,
             .shop-card-filter-moving,
             .shop-card-transition-clone {
                 animation: none !important;
                 transition: none !important;
                 opacity: 1 !important;
-                --shop-card-enter-y: 0px !important;
-                --shop-card-enter-scale: 1 !important;
-                --shop-card-shift-x: 0px !important;
-                --shop-card-shift-y: 0px !important;
+                transform: none !important;
+                translate: 0 0 !important;
             }
 
             .shop-card-filter-hidden {
@@ -6006,19 +5962,19 @@ html:not([data-theme="dark"]) body.shop-page .shop-subtitle {
     color: var(--shop-light-muted);
 }
 
-html:not([data-theme="dark"]) body.shop-page .shop-card,
+html:not([data-theme="dark"]) body.shop-page .shop-card .shop-card-breathe-shell,
 html:not([data-theme="dark"]) body.shop-page .skeleton-card {
     background: var(--shop-light-surface);
     border-color: var(--shop-light-border);
     box-shadow: var(--shop-light-shadow);
 }
 
-html:not([data-theme="dark"]) body.shop-page .shop-card:hover {
+html:not([data-theme="dark"]) body.shop-page .shop-card:hover .shop-card-breathe-shell {
     border-color: rgba(107, 158, 206, 0.3);
     box-shadow: 0 22px 52px rgba(32, 72, 112, 0.12);
 }
 
-html:not([data-theme="dark"]) body.shop-page .shop-card--in-cart {
+html:not([data-theme="dark"]) body.shop-page .shop-card--in-cart .shop-card-breathe-shell {
     border-color: rgba(245, 158, 11, 0.24);
     box-shadow:
         0 18px 44px rgba(15, 23, 42, 0.08),
@@ -6026,77 +5982,29 @@ html:not([data-theme="dark"]) body.shop-page .shop-card--in-cart {
 }
 
 @media (max-width: 768px) {
-    body.shop-page .shop-card.user-product-card {
-        will-change: transform, opacity, filter;
+    body.shop-page .shop-card.user-product-card .shop-card-breathe-shell {
         transition:
             box-shadow 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
             border-color 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
             background 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-            filter 0.42s ease,
-            --shop-card-breathe-amplitude 1.35s cubic-bezier(0.4, 0, 0.2, 1);
+            filter 0.42s ease;
     }
 
     body.shop-page .shop-card.user-product-card.shop-card-filter-enter {
         opacity: 0;
-        --shop-card-enter-y: 20px;
-        --shop-card-enter-scale: 1;
+        transform: translate3d(0, 20px, 0);
     }
 
     body.shop-page .shop-card.user-product-card.shop-card-filter-enter.is-visible {
         opacity: 1;
-        --shop-card-enter-y: 0px;
-        --shop-card-enter-scale: 1;
-        transition:
-            opacity 1.05s ease var(--shop-card-filter-delay, 0ms),
-            --shop-card-enter-y 1.05s ease var(--shop-card-filter-delay, 0ms),
-            --shop-card-enter-scale 1.05s ease var(--shop-card-filter-delay, 0ms),
-            box-shadow 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-            border-color 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-            background 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-            filter 0.42s ease,
-            --shop-card-breathe-amplitude 1.35s cubic-bezier(0.4, 0, 0.2, 1);
+        transform: translate3d(0, 0, 0);
+        transition: opacity 0.8s ease, transform 0.8s ease;
     }
 
     body.shop-page .shop-card.user-product-card.shop-card-filter-moving {
-        transition:
-            box-shadow 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-            border-color 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-            background 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-            filter 0.42s ease,
-            --shop-card-breathe-amplitude 1.35s cubic-bezier(0.4, 0, 0.2, 1),
-            --shop-card-shift-x 0.96s cubic-bezier(0.25, 0.1, 0.25, 1) var(--shop-card-filter-delay, 0ms),
-            --shop-card-shift-y 0.96s cubic-bezier(0.25, 0.1, 0.25, 1) var(--shop-card-filter-delay, 0ms);
+        transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
     }
 
-    body.shop-page .shop-card.user-product-card.shop-card-filter-enter--initial.is-visible {
-        transform-origin: center top;
-    }
-
-}
-
-@keyframes shopMobileFreshCardEnter {
-    0% {
-        opacity: 0;
-        --shop-card-enter-y: 20px;
-    }
-
-    100% {
-        opacity: 1;
-        --shop-card-enter-y: 0px;
-    }
-}
-
-body.shop-page .shop-card.user-product-card.shop-card-mobile-fresh-enter {
-    transform-origin: center top;
-}
-
-body.shop-page .shop-card.user-product-card.shop-card-mobile-fresh-enter.is-visible {
-    transition:
-        box-shadow 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-        border-color 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-        background 0.42s cubic-bezier(0.25, 0.46, 0.45, 0.94),
-        filter 0.42s ease,
-        --shop-card-breathe-amplitude 1.35s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 html:not([data-theme="dark"]) body.shop-page .shop-card-original-price {
