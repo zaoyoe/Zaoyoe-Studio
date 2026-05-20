@@ -1374,7 +1374,7 @@ test('public chat and shop scroll panels clamp accidental horizontal pan', () =>
         'shop usage instruction card should keep long content from causing lateral wobble'
     );
     assert.equal(
-        shopHtmlSource.includes('css/shop-page.css?v=20260513_SHOP_PURCHASE_QTY_SHADOW_1'),
+        shopHtmlSource.includes('css/shop-page.css?v=20260520_SHOP_CARD_PROMPT_BREATHE_3'),
         true,
         'shop.html should cache-bust the keyboard-scroll shop stylesheet'
     );
@@ -2775,7 +2775,7 @@ test('selected runtime, preview, and tooling pages externalize page-specific sty
         ['privacy.html', 'css/privacy-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
         ['profile_mobile_tab_preview.html', './css/profile-mobile-tab-preview.css?v=20260324_PROFILE_PREVIEW_STYLES_1'],
         ['index.html', './css/index-page.css?v=20260425_HOME_GUESTBOOK_MODAL_HIDE_1'],
-        ['shop.html', 'css/shop-page.css?v=20260513_SHOP_PURCHASE_QTY_SHADOW_1'],
+        ['shop.html', 'css/shop-page.css?v=20260520_SHOP_CARD_PROMPT_BREATHE_3'],
         ['admin-studio.html', 'css/admin-studio-page.css?v=20260427_ADMIN_SITE_SWITCHER_ACTIVE_HOVER_LOCK_1'],
         ['admin-entry.html', 'css/admin-entry-page.css?v=20260502_ADMIN_ENTRY_TAP_HIGHLIGHT_1'],
         ['auth-callback.html', './css/auth-callback-page.css?v=20260427_AUTH_CALLBACK_SILENT_2'],
@@ -2864,7 +2864,7 @@ test('selected preview showcase pages no longer embed inline style attributes', 
 
 test('shop and archived index pages no longer embed inline style attributes', () => {
     const expectations = new Map([
-        ['shop.html', 'css/shop-page.css?v=20260513_SHOP_PURCHASE_QTY_SHADOW_1'],
+        ['shop.html', 'css/shop-page.css?v=20260520_SHOP_CARD_PROMPT_BREATHE_3'],
         ['index_old.html', 'css/index-old.css?v=20260502_INDEX_OLD_TAP_HIGHLIGHT_1']
     ]);
     const inlineStyleAttributePattern = /\sstyle\s*=\s*["']/i;
@@ -3550,7 +3550,7 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
         'js/shop-client.js should not render a secondary text loading message after the skeleton'
     );
     assert.equal(
-        shopHtmlSource.includes('js/shop-client.js?v=20260519_PUBLIC_API_FAST_PATH_1'),
+        shopHtmlSource.includes('js/shop-client.js?v=20260520_SHOP_CARD_PROMPT_BREATHE_3'),
         true,
         'shop.html should reference the latest shop client runtime for the cart-enabled storefront flow'
     );
@@ -3589,7 +3589,7 @@ test('shop storefront uses a 21:9 media ratio for mobile product cards', () => {
         'mobile shop product cards and loading skeletons should keep the top media area at 21:9'
     );
     assert.equal(
-        shopHtmlSource.includes('css/shop-page.css?v=20260513_SHOP_PURCHASE_QTY_SHADOW_1'),
+        shopHtmlSource.includes('css/shop-page.css?v=20260520_SHOP_CARD_PROMPT_BREATHE_3'),
         true,
         'shop.html should bust the shop stylesheet cache for the latest shop card sizing'
     );
@@ -3599,10 +3599,10 @@ test('shop product entrance keeps idle breathe continuous through grid transitio
     const shopCssSource = readRepoFile('css/shop-page.css');
     const shopClientSource = readRepoFile('js/shop-client.js');
 
-    assert.doesNotMatch(
-        shopCssSource,
-        /\.shop-card\.breathing\.shop-card-breathe-deferred\s*\{[\s\S]*?(?:--shop-card-breathe-y|--shop-card-breathe-amplitude|animation:\s*none)/,
-        'entering cards should not zero or disable the idle breathe timeline'
+    assert.equal(
+        shopCssSource.includes('shop-card-breathe-deferred'),
+        false,
+        'shop cards should follow the prompts page model and avoid a deferred breathing class'
     );
     assert.doesNotMatch(
         shopCssSource,
@@ -3614,68 +3614,73 @@ test('shop product entrance keeps idle breathe continuous through grid transitio
         /--shop-card-focus-(?:y|scale)|--shop-card-mobile-focus-progress/,
         'shop card transforms should not include mobile center-focus lift variables'
     );
-    assert.match(
-        shopCssSource,
-        /body\.shop-page \.shop-card\.user-product-card\.shop-card-filter-enter\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?--shop-card-enter-y:\s*20px;[\s\S]*?body\.shop-page \.shop-card\.user-product-card\.shop-card-filter-enter\.is-visible\s*\{[\s\S]*?opacity:\s*1;[\s\S]*?--shop-card-enter-y:\s*0px;[\s\S]*?opacity 1\.05s ease var\(--shop-card-filter-delay, 0ms\),[\s\S]*?--shop-card-enter-y 1\.05s ease var\(--shop-card-filter-delay, 0ms\)/,
-        'mobile initial and category entrances should animate the enter offset variable so breathe remains composed'
-    );
-    assert.match(
-        shopCssSource,
-        /body\.shop-page \.shop-card\.user-product-card\.shop-card-filter-moving\s*\{[\s\S]*?--shop-card-shift-x 0\.96s cubic-bezier\(0\.25, 0\.1, 0\.25, 1\) var\(--shop-card-filter-delay, 0ms\),[\s\S]*?--shop-card-shift-y 0\.96s cubic-bezier\(0\.25, 0\.1, 0\.25, 1\) var\(--shop-card-filter-delay, 0ms\);/,
-        'mobile moving cards should keep the FLIP shift-variable transition instead of falling back to the base mobile transition'
-    );
-    assert.match(
-        shopCssSource,
-        /@keyframes shopMobileFreshCardEnter\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?--shop-card-enter-y:\s*20px;[\s\S]*?opacity:\s*1;[\s\S]*?--shop-card-enter-y:\s*0px;/,
-        'legacy mobile fresh-enter keyframes should only touch the enter offset variable'
-    );
     assert.doesNotMatch(
         shopCssSource,
-        /body\.shop-page \.shop-card\.user-product-card\.shop-card-mobile-fresh-enter\s*\{[\s\S]*?animation:/,
-        'category fresh-enter cards should not replace the breathe animation with a transform keyframe'
+        /--shop-card-enter-(?:y|scale)|--shop-card-breathe-amplitude/,
+        'shop card entrance and breathe should not use the old composed custom-property transform path'
     );
-    assert.doesNotMatch(
+    assert.match(
         shopCssSource,
-        /\.shop-card\.shop-card-filter-enter:not\(\.shop-card-mobile-fresh-enter\)[\s\S]*?animation:\s*none !important;/,
-        'entering cards should not disable the breathe timeline after the lift transition'
+        /@keyframes breathe\s*\{[\s\S]*?0%,\s*100%\s*\{[\s\S]*?transform:\s*translateY\(0px\);[\s\S]*?50%\s*\{[\s\S]*?transform:\s*translateY\(-6px\);/,
+        'shop card breathe should match the prompts page vertical motion on a stable frame'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-card-breathe-frame\.shop-card-breathe-frame--breathing\s*\{[\s\S]*?animation:\s*breathe 4s ease-in-out infinite;[\s\S]*?animation-delay:\s*var\(--breathe-delay,\s*0s\);[\s\S]*?will-change:\s*transform;/,
+        'shop card breathing should run the prompt-style CSS keyframes on the stable frame'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-card\s*\{[\s\S]*?overflow:\s*visible;[\s\S]*?transform:\s*translate3d\(0,\s*0,\s*0\);[\s\S]*?\.shop-card-breathe-frame\s*\{[\s\S]*?transform:\s*translate3d\(0,\s*0,\s*0\);[\s\S]*?backface-visibility:\s*hidden;[\s\S]*?\.shop-card-breathe-shell\s*\{[\s\S]*?border-radius:\s*16px;[\s\S]*?background:\s*var\(--card-bg\);[\s\S]*?box-shadow:\s*0 4px 20px/,
+        'shop card outer shell should stay transform-only while a stable frame owns breathing and the inner shell owns visual chrome'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-card-filter-enter\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?transform:\s*translate3d\(0,\s*20px,\s*0\);[\s\S]*?\.shop-card-filter-enter\.is-visible\s*\{[\s\S]*?opacity:\s*1;[\s\S]*?transform:\s*translate3d\(0,\s*0,\s*0\);[\s\S]*?transition:\s*opacity 0\.8s ease,\s*transform 0\.8s ease;/,
+        'shop card entrance should match the prompts page translateY loading animation'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-card-filter-moving\s*\{[\s\S]*?transition:\s*transform 0\.4s cubic-bezier\(0\.4, 0, 0\.2, 1\) !important;/,
+        'moving cards should use the same transform-only transition as prompt filtering'
+    );
+    assert.equal(shopCssSource.includes('shopMobileFreshCardEnter'), false, 'mobile fresh-enter should not keep a separate keyframe path');
+    assert.equal(shopCssSource.includes('shop-card-mobile-fresh-enter'), false, 'shop cards should not keep a separate mobile fresh-enter class path');
+    assert.match(
+        shopCssSource,
+        /\.shop-card-filter-motion-lock\s*\{[\s\S]*?animation:\s*none !important;[\s\S]*?transition:\s*none !important;[\s\S]*?will-change:\s*transform,\s*opacity;/,
+        'filtering/moving cards should keep prompt-style outer transform locking'
     );
     assert.match(
         shopCssSource,
         /\.shop-card-transition-clone\s*\{[\s\S]*?animation:\s*none !important;/,
         'transition clones can still suppress idle breathe animation because they preserve a sampled visual transform'
     );
-    assert.doesNotMatch(
-        shopCssSource,
-        /\.shop-card\.shop-card-filter-(?:exit|moving)[\s\S]*?animation:\s*none !important;/,
-        'real exiting and moving cards should not reset the breathe animation'
-    );
     assert.equal(shopCssSource.includes('shopMobileInitialCardEnter'), false, 'mobile initial entrance should not keep a separate keyframe path');
-    const mobileInitialRule = shopCssSource.match(
-        /body\.shop-page \.shop-card\.user-product-card\.shop-card-filter-enter--initial\.is-visible\s*\{([\s\S]*?)\n    \}/
-    );
-    assert.ok(mobileInitialRule, 'mobile initial entrance should keep a focused initial-state rule');
-    assert.doesNotMatch(mobileInitialRule[1], /transition:\s*none|animation:/, 'mobile initial entrance should not bypass the shared desktop transition');
     assert.equal(shopClientSource.includes('const SHOP_CARD_BREATHE_PHASE_MAX_S = 4;'), true, 'shop cards should keep a bounded randomized breathe phase range');
     assert.equal(shopClientSource.includes('const SHOP_CARD_BREATHE_ACTIVATE_DELAY_MS = 0;'), true, 'shop cards should not add a second activation wait after entrance settles');
+    assert.equal(shopClientSource.includes('const SHOP_CARD_PROMPT_ENTER_DELAY_STEP_MS = 50;'), true, 'shop card entrance stagger should match prompts page index * 50ms');
+    assert.equal(shopClientSource.includes('const SHOP_CARD_PROMPT_ENTER_DURATION_MS = 800;'), true, 'shop card entrance duration should match prompts page 0.8s transition');
+    assert.equal(shopClientSource.includes('const SHOP_CARD_PROMPT_BREATHE_DELAY_MS'), false, 'shop card breathe activation should not use a second per-card timer that can race cleanup');
     assert.equal(
-        shopClientSource.includes('return `-${(Math.random() * SHOP_CARD_BREATHE_PHASE_MAX_S).toFixed(2)}s`;'),
+        shopClientSource.includes('return `${(Math.random() * SHOP_CARD_BREATHE_PHASE_MAX_S).toFixed(2)}s`;'),
         true,
-        'initial storefront cards should prepare a randomized negative idle breathe phase instead of waiting through a positive delay'
+        'shop cards should match prompts page positive randomized breathe phase'
     );
     assert.match(
         shopClientSource,
-        /const SHOP_CARD_FRESH_ENTER_DELAY_STEP_MS = 150;[\s\S]*?const usesPromptStyleMobileEnter = window\.matchMedia\?\.\('\(max-width: 768px\)'\)\?\.matches === true;[\s\S]*?const forceFreshEnterActive = forceFreshEnter === true;[\s\S]*?const usesPromptStyleEnter = usesPromptStyleMobileEnter \|\| forceFreshEnterActive;[\s\S]*?const enterDelayStepMs = usesPromptStyleEnter \? SHOP_CARD_FRESH_ENTER_DELAY_STEP_MS : \(isInitialEntrance \? 136 : 38\);[\s\S]*?const enterDurationBaseMs = usesPromptStyleEnter \? SHOP_CARD_FRESH_ENTER_DURATION_MS : \(isInitialEntrance \? 1540 : 620\);/,
-        'mobile storefront cards should use a wider stagger and slower duration for refresh and category entrances'
+        /filterCategory:\s*function \(category, btn\) \{[\s\S]*?this\.loadProducts\(\);/,
+        'category tab switches should use the same prompt-style product loading path'
     );
     assert.match(
         shopClientSource,
-        /filterCategory:\s*function \(category, btn\) \{[\s\S]*?this\.loadProducts\(\{ forceFreshEnter: true \}\);/,
-        'mobile category tab switches should request a fresh card entrance sequence'
+        /reuseShopProductCardElement:\s*function \(currentCard, nextCard\) \{[\s\S]*?const currentBreatheFrame = currentCard\.querySelector\('\.shop-card-breathe-frame'\);[\s\S]*?const nextBreatheFrame = nextCard\.querySelector\('\.shop-card-breathe-frame'\);[\s\S]*?if \(wasBreathing && currentBreatheShell && nextBreatheShell\) \{[\s\S]*?currentBreatheShell\.innerHTML = nextBreatheShell\.innerHTML;[\s\S]*?\} else if \(currentCard\.innerHTML !== nextCard\.innerHTML\) \{[\s\S]*?currentCard\.innerHTML = nextCard\.innerHTML;[\s\S]*?\}[\s\S]*?currentCard\.dataset\.shopBreatheDelay = breatheDelay;/,
+        'category tab switches should preserve the live breathe frame so its animation timeline does not restart'
     );
     assert.match(
         shopClientSource,
-        /reuseShopProductCardElement:\s*function \(currentCard, nextCard\) \{[\s\S]*?currentCard\.innerHTML = nextCard\.innerHTML;[\s\S]*?currentCard\.dataset\.shopBreatheDelay = breatheDelay;/,
-        'category tab switches should reuse persistent product cards so their breathe timeline does not restart'
+        /const wasEntering = currentCard\.classList\.contains\('shop-card-filter-enter'\);[\s\S]*?const wasVisible = currentCard\.classList\.contains\('is-visible'\);[\s\S]*?Array\.from\(currentCard\.attributes\)[\s\S]*?if \(wasEntering\) currentCard\.classList\.add\('shop-card-filter-enter'\);[\s\S]*?if \(wasVisible\) currentCard\.classList\.add\('is-visible'\);/,
+        'reused shop cards should preserve the prompt-style enter/visible classes instead of flattening active breathe'
     );
     assert.match(
         shopClientSource,
@@ -3684,13 +3689,13 @@ test('shop product entrance keeps idle breathe continuous through grid transitio
     );
     assert.match(
         shopClientSource,
-        /const moveX = previousState\.left - card\.offsetLeft;[\s\S]*?const moveY = previousState\.top - card\.offsetTop;[\s\S]*?card\.classList\.add\('shop-card-filter-motion-lock'\);[\s\S]*?'--shop-card-shift-x': `\$\{moveX\}px`,[\s\S]*?'--shop-card-shift-y': `\$\{moveY\}px`[\s\S]*?const revealEnteringCards = \(\) => \{[\s\S]*?movingCards\.forEach\(\(\{ card \}\) => \{[\s\S]*?card\.classList\.add\('shop-card-filter-moving'\);[\s\S]*?if \(movingCards\.length > 0\) \{[\s\S]*?void container\.offsetWidth;[\s\S]*?'\-\-shop-card-shift-y': '0px'/,
-        'persistent cards should set the FLIP inverse before enabling the shift transition back to zero'
+        /const moveX = previousState\.left - card\.offsetLeft;[\s\S]*?const moveY = previousState\.top - card\.offsetTop;[\s\S]*?card\.classList\.add\('shop-card-filter-motion-lock'\);[\s\S]*?card\.style\.transform = `translate3d\(\$\{moveX\}px, \$\{moveY\}px, 0\)`;[\s\S]*?const revealEnteringCards = \(\) => \{[\s\S]*?card\.classList\.add\('shop-card-filter-moving'\);[\s\S]*?void container\.offsetWidth;[\s\S]*?card\.style\.transform = 'translate3d\(0px, 0px, 0\)';/,
+        'persistent cards should use prompt-style transform FLIP while filtering'
     );
     assert.match(
         shopClientSource,
-        /const moveDurationMs = movingCards\.length > 0\s*\? 980 \+ Math\.max\(0, movingCards\.length - 1\) \* 18\s*: 0;/,
-        'grid cleanup should wait for the full FLIP shift transition and stagger before removing moving classes'
+        /const moveDurationMs = movingCards\.length > 0\s*\? 400\s*: 0;/,
+        'grid cleanup should match the prompts page 0.4s transform filtering duration'
     );
     assert.match(
         shopClientSource,
@@ -3699,13 +3704,13 @@ test('shop product entrance keeps idle breathe continuous through grid transitio
     );
     assert.match(
         shopClientSource,
-        /if \(forceFreshEnterActive\) \{[\s\S]*?card\.classList\.add\('shop-card-mobile-fresh-enter'\);[\s\S]*?\}[\s\S]*?card\.dataset\.shopFreshEnterDelayMs = String\(enterDelayMs\);/,
-        'category fresh-enter cards should get the keyframe class and stable delay data'
+        /card\.classList\.add\('shop-card-filter-enter'\);[\s\S]*?const enterDelayMs = effectiveEnterDelayBase \+ \(enterOrder \* enterDelayStepMs\);[\s\S]*?card\.dataset\.shopFreshEnterDelayMs = String\(enterDelayMs\);/,
+        'entering shop cards should follow the prompts page enter class plus index delay data'
     );
     assert.match(
         shopClientSource,
-        /const watchedProperties = new Set\(\['--shop-card-enter-y', '--shop-card-enter-scale'\]\);/,
-        'category fresh-enter cards should settle from composed enter-offset transitions instead of transform animations'
+        /const watchedProperties = new Set\(\['opacity', 'transform'\]\);/,
+        'category fresh-enter cards should settle from prompt-style opacity and transform transitions'
     );
     assert.doesNotMatch(
         shopClientSource,
@@ -3714,8 +3719,18 @@ test('shop product entrance keeps idle breathe continuous through grid transitio
     );
     assert.match(
         shopClientSource,
-        /const revealEnteringCards = \(\) => \{[\s\S]*?enteringCards\.forEach\(card => card\.classList\.add\('is-visible'\)\);[\s\S]*?if \(forceFreshEnterActive\) \{[\s\S]*?window\.requestAnimationFrame\(revealEnteringCards\);/,
-        'category tab switches should reveal fresh-enter cards on the next frame while preserving breathe'
+        /enteringCards\.forEach\(\(card, index\) => \{[\s\S]*?const enterDelayMs = Number\(card\.dataset\.shopFreshEnterDelayMs \|\| index \* SHOP_CARD_PROMPT_ENTER_DELAY_STEP_MS\)[\s\S]*?window\.setTimeout\(\(\) => \{[\s\S]*?window\.requestAnimationFrame\(\(\) => \{[\s\S]*?card\.classList\.add\('is-visible'\);[\s\S]*?window\.setTimeout\(\(\) => \{[\s\S]*?this\.startShopCardBreathing\(card\);[\s\S]*?\}, SHOP_CARD_PROMPT_ENTER_DURATION_MS \+ 50\);[\s\S]*?\}\);[\s\S]*?\}, enterDelayMs\);/,
+        'category tab switches should reveal cards and start breathing with the same per-card prompt timing'
+    );
+    assert.match(
+        shopClientSource,
+        /querySelectorAll\('\.shop-card-filter-enter:not\(\.is-visible\), \.shop-card-filter-exit, \.shop-card-filter-moving, \.shop-card-filter-hidden'\)/,
+        'grid artifact cleanup should not strip prompt-style visible enter classes from breathing cards'
+    );
+    assert.match(
+        shopClientSource,
+        /const enteringCards = Array\.from\(container\.querySelectorAll\('\.shop-card-filter-enter:not\(\.is-visible\)'\)\);/,
+        'grid transitions should only treat not-yet-visible cards as entering work'
     );
     assert.match(
         shopClientSource,
@@ -3724,27 +3739,63 @@ test('shop product entrance keeps idle breathe continuous through grid transitio
     );
     assert.match(
         shopClientSource,
-        /const breatheDelay = this\.getShopCardBreatheDelay\(\);[\s\S]*?el\.className = `shop-card user-product-card breathing shop-card-breathe-deferred \$\{cartQuantity > 0 \? 'shop-card--in-cart' : ''\}`;[\s\S]*?el\.dataset\.shopBreatheDelay = breatheDelay;[\s\S]*?'\-\-breathe-delay': breatheDelay/,
-        'product cards should enter with the randomized breathe phase already active'
+        /const breatheDelay = this\.getShopCardBreatheDelay\(\);[\s\S]*?el\.dataset\.shopBreatheDelay = breatheDelay;[\s\S]*?const breathingEnabled = this\.isShopCardBreathingEnabled\(\);[\s\S]*?const negativeBreatheDelay = this\.getShopCardNegativeBreatheDelay\(breatheDelay\);[\s\S]*?el\.className = `shop-card user-product-card \$\{breathingEnabled \? 'breathing ' : ''\}\$\{pricingState\.flashShadowClass\} \$\{cartQuantity > 0 \? 'shop-card--in-cart' : ''\}`\.trim\(\);/,
+        'product cards should seed a randomized breathe phase and initial breathing state before first paint'
     );
     assert.match(
         shopClientSource,
-        /releaseDeferredShopCardBreathe:\s*function \(card, \{ activateDelayMs = SHOP_CARD_BREATHE_ACTIVATE_DELAY_MS \} = \{\}\) \{[\s\S]*?this\.setCssVariables\(card, \{\s*'\-\-breathe-delay': card\.dataset\.shopBreatheDelay \|\| '0s'[\s\S]*?const activate = \(\) => \{[\s\S]*?card\.classList\.remove\('shop-card-breathe-deferred'\);[\s\S]*?if \(activateDelayMs <= 0\) \{[\s\S]*?const timerId = window\.setTimeout\(\(\) => \{[\s\S]*?activate\(\);[\s\S]*?\}, activateDelayMs\);/,
-        'grid cleanup should restore the stored idle breathe phase and release the deferred class without an extra activation wait'
+        /const breatheFrameClass = breathingEnabled[\s\S]*?const breatheFrameStyleAttr = breathingEnabled[\s\S]*?el\.innerHTML = `[\s\S]*?<div class="\$\{breatheFrameClass\}"\$\{breatheFrameStyleAttr\}>[\s\S]*?<div class="shop-card-breathe-shell">[\s\S]*?<div class="shop-card-image">[\s\S]*?<div class="shop-content-padding">/,
+        'product card markup should wrap visual content in a stable breathe frame and inner shell'
     );
     assert.match(
         shopClientSource,
-        /releasePayloadBreathe\(payload\);[\s\S]*?if \(payload\.enterSettlePromise\) \{/,
-        'initial storefront cards should start idle breathe at the planned entrance end instead of waiting for cleanup fallback'
+        /const breatheFrameStyleAttr = breathingEnabled[\s\S]*?\? ` style="--breathe-delay: \$\{breatheDelay\}; animation-delay: \$\{negativeBreatheDelay\};"`[\s\S]*?: '';/,
+        'newly built product cards should inline the breathe delay so the stable frame starts without a later class rewrite'
+    );
+    assert.match(
+        shopClientSource,
+        /startShopCardBreathing:\s*function \(card, \{ activateDelayMs = SHOP_CARD_BREATHE_ACTIVATE_DELAY_MS \} = \{\}\) \{[\s\S]*?const breatheFrame = card\.querySelector\('\.shop-card-breathe-frame'\);[\s\S]*?card\.classList\.contains\('breathing'\)[\s\S]*?breatheFrame\.classList\.contains\('shop-card-breathe-frame--breathing'\)[\s\S]*?this\.clearShopCardBreatheTimer\(card\);[\s\S]*?return;[\s\S]*?const breatheDelay = card\.dataset\.shopBreatheDelay[\s\S]*?this\.setCssVariables\(breatheFrame, \{\s*'\-\-breathe-delay': breatheDelay[\s\S]*?card\.classList\.add\('breathing'\);[\s\S]*?activeBreatheFrame\.classList\.add\('shop-card-breathe-frame--breathing'\);[\s\S]*?const timerId = window\.setTimeout\(\(\) => \{[\s\S]*?activate\(\);[\s\S]*?\}, activateDelayMs\);/,
+        'grid cleanup should restore the stored idle breathe phase and start the frame CSS timeline idempotently'
+    );
+    assert.match(
+        shopClientSource,
+        /if \(\s*card\.classList\.contains\('breathing'\) && breatheFrame\.classList\.contains\('shop-card-breathe-frame--breathing'\)\s*\) \{[\s\S]*?this\.clearShopCardBreatheTimer\(card\);[\s\S]*?return;[\s\S]*?\}[\s\S]*?this\.setCssVariables\(breatheFrame, \{\s*'\-\-breathe-delay':/,
+        'starting breathe should not rewrite animation delay on frames with an active timeline'
+    );
+    assert.equal(shopClientSource.includes('shopCardBreatheAnimations'), false, 'shop card breathe should not use a WAAPI timeline that can be replaced during live card updates');
+    assert.match(
+        shopClientSource,
+        /enteringCards\.forEach\(card => \{[\s\S]*?this\.cancelShopCardFreshEnterAnimation\(card\);[\s\S]*?card\?\.classList\.remove\('shop-card-filter-enter', 'shop-card-filter-motion-lock', 'is-visible'\);/,
+        'entrance cleanup should clear only the outer loading classes after the inner breathe shell is independent'
+    );
+    assert.match(
+        shopClientSource,
+        /if \(attribute\.name === 'class' \|\| attribute\.name === 'style'\) return;[\s\S]*?if \(wasBreathing && currentBreatheShell && nextBreatheShell\) \{[\s\S]*?currentBreatheShell\.innerHTML = nextBreatheShell\.innerHTML;[\s\S]*?\}[\s\S]*?const restoredBreatheFrame = currentCard\.querySelector\('\.shop-card-breathe-frame'\);[\s\S]*?if \(!restoredBreatheFrame\.style\.getPropertyValue\('--breathe-delay'\)\) \{[\s\S]*?this\.setCssVariables\(restoredBreatheFrame,[\s\S]*?if \(!restoredBreatheFrame\.style\.animationDelay\) \{[\s\S]*?restoredBreatheFrame\.style\.animationDelay = this\.getShopCardNegativeBreatheDelay\(breatheDelay\);[\s\S]*?restoredBreatheFrame\.classList\.add\('shop-card-breathe-frame--breathing'\);/,
+        'reusing an already breathing card should preserve the frame delay style and only seed delay on rebuilt frames'
+    );
+    assert.match(
+        shopClientSource,
+        /const runCleanup = \(\) => \{[\s\S]*?cleanupAnimatedCards\(payload\);[\s\S]*?releasePayloadBreathe\(payload\);[\s\S]*?this\.gridTransitionCleanupTimer = null;/,
+        'initial storefront cleanup should start breathe only after outer entrance classes are gone'
+    );
+    assert.doesNotMatch(
+        shopClientSource,
+        /this\.gridTransitionCleanupTimer = window\.setTimeout\(\(\) => \{[\s\S]*?releasePayloadBreathe\(payload\);[\s\S]*?if \(payload\.enterSettlePromise\) \{/,
+        'fallback scheduling should not start breathe before the entrance settle promise runs cleanup'
+    );
+    assert.match(
+        shopClientSource,
+        /const cards = \(payload\.finalCards \|\| payload\.enteringCards \|\| \[\]\)[\s\S]*?\.filter\(card => card instanceof Element && !card\.matches\('\.shop-card-filter-enter:not\(\.is-visible\)'\)\);[\s\S]*?this\.startShopCardsBreathing\(cards\);/,
+        'cleanup should only start frame breathe for cards that have reached the visible entrance state'
     );
     assert.match(
         shopClientSource,
         /if \(movingCards\.length === 0 && enteringCards\.length === 0\) \{\s*return \{[\s\S]*?cleanupDurationMs: 0,[\s\S]*?finalCards: cardElements,/,
-        'language-only product rerenders should still release deferred breathe on rebuilt cards when no grid movement occurs'
+        'language-only product rerenders should still start breathe on rebuilt cards when no grid movement occurs'
     );
     assert.match(
         shopClientSource,
-        /isProductGridTransitionActive:\s*function \(container = document\.getElementById\('userShopGrid'\)\) \{[\s\S]*?gridTransitionActiveUntil > performance\.now\(\)[\s\S]*?shop-card-filter-enter/,
+        /isProductGridTransitionActive:\s*function \(container = document\.getElementById\('userShopGrid'\)\) \{[\s\S]*?gridTransitionActiveUntil > performance\.now\(\)[\s\S]*?shop-card-filter-enter:not\(\.is-visible\)/,
         'shop client should expose a transition-active guard for mobile viewport scroll events'
     );
     assert.doesNotMatch(
@@ -3774,8 +3825,28 @@ test('shop product entrance keeps idle breathe continuous through grid transitio
     );
     assert.match(
         shopCssSource,
-        /\.shop-card\.flash-sale-card\s*\{[\s\S]*?animation-delay:\s*var\(--breathe-delay,\s*0s\),\s*0s;/,
-        'flash-sale product cards should honor the same deferred breathe delay as regular product cards'
+        /\.shop-card\.flash-sale-card \.shop-card-breathe-shell\s*\{[\s\S]*?border-color:\s*rgba\(239,\s*68,\s*68,\s*0\.3\);[\s\S]*?\}/,
+        'flash-sale product cards should style the visual shell without overriding breathing'
+    );
+    assert.doesNotMatch(
+        shopCssSource,
+        /\.shop-card\.breathing\.flash-sale-card\s*\{[\s\S]*?flashSaleBreathe/,
+        'flash-sale cards should not add a second card-level animation on top of prompt-style breathe'
+    );
+    assert.equal(
+        shopClientSource.includes("const SHOP_STARRY_SKY_RUNTIME_SRC = 'starry-sky.js?v=20260520_SHOP_IDLE_STARRY_1';"),
+        true,
+        'shop should keep the starry sky runtime behind the same idle lazy-load path as prompts'
+    );
+    assert.match(
+        shopClientSource,
+        /shouldLoadShopStarrySkyRuntime:\s*function \(\{ force = false \} = \{\}\) \{[\s\S]*?return document\.documentElement\?\.getAttribute\('data-theme'\) === 'dark';/,
+        'shop starry sky should not run in light theme just because the canvas is hidden'
+    );
+    assert.match(
+        shopClientSource,
+        /loadShopStarrySkyRuntime:\s*function \(options = \{\}\) \{[\s\S]*?script\.src = SHOP_STARRY_SKY_RUNTIME_SRC;[\s\S]*?script\.dataset\.shopStarrySky = '1';/,
+        'shop should load starry-sky.js lazily from the runtime instead of an eager script tag'
     );
 });
 
@@ -13345,7 +13416,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(indexSource.includes('./supabase-guestbook-functions.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'), false, 'index.html should not eagerly load the full guestbook runtime');
     assert.equal(guestbookSource.includes('./supabase-guestbook-functions.js?v=20260510_GUESTBOOK_R2_IMAGE_UPLOAD_1'), true, 'guestbook.html should load the latest guestbook runtime');
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260510_GUESTBOOK_R2_IMAGE_UPLOAD_1'), true, 'index_old.html should load the latest guestbook runtime');
-    assert.equal(shopSource.includes('js/shop-client.js?v=20260519_PUBLIC_API_FAST_PATH_1'), true, 'shop.html should load the latest cart-aware shop runtime');
+    assert.equal(shopSource.includes('js/shop-client.js?v=20260520_SHOP_CARD_PROMPT_BREATHE_3'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260510_SHOP_REALTIME_FALLBACK_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
     assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260519_PUBLIC_API_FAST_PATH_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });

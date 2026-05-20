@@ -393,11 +393,11 @@ const SHOP_GRID_EAGER_IMAGE_COUNT = 4;
 const SHOP_PRODUCT_SKELETON_COUNT = 5;
 const SHOP_CARD_BREATHE_PHASE_MAX_S = 4;
 const SHOP_CARD_BREATHE_ACTIVATE_DELAY_MS = 0;
+const SHOP_CARD_PROMPT_ENTER_DELAY_STEP_MS = 50;
+const SHOP_CARD_PROMPT_ENTER_DURATION_MS = 800;
 const SHOP_CARD_ENTER_SETTLE_FALLBACK_BUFFER_MS = 180;
-const SHOP_CARD_FRESH_ENTER_ANIMATION_ID = 'shop-card-fresh-enter';
-const SHOP_CARD_FRESH_ENTER_DURATION_MS = 1050;
-const SHOP_CARD_FRESH_ENTER_DELAY_STEP_MS = 150;
-const SHOP_CARD_FRESH_ENTER_BASE_DELAY_MS = 110;
+const SHOP_STARRY_SKY_RUNTIME_SRC = 'starry-sky.js?v=20260520_SHOP_IDLE_STARRY_1';
+const SHOP_STARRY_SKY_IDLE_DELAY_MS = 1200;
 const SHOP_PREFETCH_SCHEMA_VERSION = '20260513_SHOP_SITE_MARKETING_PRICING_1';
 const SHOP_PURCHASE_PREFILL_SCHEMA_VERSION = '20260415_SHOP_PURCHASE_PREFILL_1';
 const SHOP_PURCHASE_PREFILL_STORAGE_KEY = 'shop_purchase_prefill';
@@ -549,6 +549,8 @@ const ShopClient = {
     deferredUiBindingsBound: false,
     deferredUiBindingsHandle: null,
     shopCardBreatheTimers: new WeakMap(),
+    shopStarrySkyRuntimePromise: null,
+    shopThemeObserver: null,
     pendingProductSpotlight: null,
     productSpotlightTimer: null,
     postRenderEnhancementHandle: null,
@@ -2388,6 +2390,45 @@ const ShopClient = {
         }, SHOP_REALTIME_REFRESH_DEBOUNCE_MS);
     },
 
+    computeShopCatalogSignature: function (products) {
+        if (!Array.isArray(products) || products.length === 0) {
+            return '';
+        }
+        try {
+            return products
+                .map((p) => {
+                    if (!p || typeof p !== 'object') return '';
+                    // 仅采样会影响商品卡可见呈现的字段；其它字段（更新时间、内部 flag 等）
+                    // 即便变化也不应触发整页 grid 重渲染。
+                    return [
+                        p.id || '',
+                        p.product_id || '',
+                        p.category || '',
+                        p.name || '',
+                        p.name_en || '',
+                        p.description || '',
+                        p.description_en || '',
+                        p.icon_url || '',
+                        p.cover_image || '',
+                        p.image_url || '',
+                        p.price ?? '',
+                        p.original_price ?? '',
+                        p.currency || '',
+                        p.stock_count ?? p.stockCount ?? '',
+                        p.max_purchase_quantity ?? '',
+                        p.is_active ? 1 : 0,
+                        p.sold_out ? 1 : 0,
+                        p.flash_sale_price ?? '',
+                        p.flash_sale_end_time || p.flash_sale_end_at || '',
+                        Array.isArray(p.tiered_pricing) ? p.tiered_pricing.length : 0
+                    ].join('|');
+                })
+                .join('~');
+        } catch (_error) {
+            return '';
+        }
+    },
+
     refreshStorefrontCatalogFromRealtime: async function () {
         const catalog = await this.fetchShopCatalogFromApi({ forceRefresh: true });
         const categories = Array.isArray(catalog?.categories) ? catalog.categories : [];
@@ -2400,6 +2441,16 @@ const ShopClient = {
                 this.renderCategoryFilterButtons(filtersContainer, categories);
             }
         }
+
+        // 短路：当 realtime 事件触发但商品可见字段并未变化时，跳过整页 grid 重渲染。
+        // 这避免了 reuseShopProductCardElement 周期性地替换 breathe-shell.innerHTML 与
+        // setAttribute('class', ...)，进而消除了呼吸过程中 “每 4-5 个循环水平对齐一下” 的现象。
+        const nextSignature = this.computeShopCatalogSignature(products);
+        if (nextSignature && nextSignature === this.lastShopCatalogSignature) {
+            this.hydrateProductCaches(products);
+            return;
+        }
+        this.lastShopCatalogSignature = nextSignature;
 
         this.hydrateProductCaches(products);
         await this.loadProducts();
@@ -6382,6 +6433,8 @@ const ShopClient = {
         this.restoreCartState();
         this.renderCart();
         this.syncCartHashFocusFromLocation();
+        this.bindShopThemeStarryLoader();
+        this.scheduleShopStarrySkyRuntime();
 
         // Read URL parameters
         const urlParams = new URLSearchParams(window.location.search);
@@ -6529,6 +6582,76 @@ const ShopClient = {
         } else {
             window.setTimeout(run, 220);
         }
+    },
+
+    shouldLoadShopStarrySkyRuntime: function ({ force = false } = {}) {
+        if (force === true) return true;
+        return document.documentElement?.getAttribute('data-theme') === 'dark';
+    },
+
+    loadShopStarrySkyRuntime: function (options = {}) {
+        if (!document.getElementById('starryCanvas') || !this.shouldLoadShopStarrySkyRuntime(options)) {
+            return Promise.resolve();
+        }
+
+        if (this.shopStarrySkyRuntimePromise) {
+            return this.shopStarrySkyRuntimePromise;
+        }
+
+        const existingScript = document.querySelector('script[data-shop-starry-sky="1"], script[src*="starry-sky.js"]');
+        if (existingScript) {
+            return Promise.resolve(existingScript);
+        }
+
+        this.shopStarrySkyRuntimePromise = new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = SHOP_STARRY_SKY_RUNTIME_SRC;
+            script.async = true;
+            script.defer = true;
+            script.dataset.shopStarrySky = '1';
+            script.addEventListener('load', () => resolve(script), { once: true });
+            script.addEventListener('error', () => {
+                this.shopStarrySkyRuntimePromise = null;
+                reject(new Error('Failed to load shop starry sky runtime'));
+            }, { once: true });
+            document.head.appendChild(script);
+        });
+
+        return this.shopStarrySkyRuntimePromise;
+    },
+
+    scheduleShopStarrySkyRuntime: function () {
+        const run = () => {
+            void this.loadShopStarrySkyRuntime().catch((error) => {
+                console.warn('[Shop] Starry sky runtime failed to load:', error?.message || error);
+            });
+        };
+
+        window.setTimeout(() => {
+            if (typeof window.requestIdleCallback === 'function') {
+                window.requestIdleCallback(run, { timeout: SHOP_DEFERRED_TASK_TIMEOUT_MS });
+            } else {
+                run();
+            }
+        }, SHOP_STARRY_SKY_IDLE_DELAY_MS);
+    },
+
+    bindShopThemeStarryLoader: function () {
+        if (this.shopThemeObserver || typeof MutationObserver !== 'function') {
+            return;
+        }
+
+        this.shopThemeObserver = new MutationObserver(() => {
+            if (this.shouldLoadShopStarrySkyRuntime()) {
+                void this.loadShopStarrySkyRuntime({ force: true }).catch((error) => {
+                    console.warn('[Shop] Starry sky runtime failed to load after theme switch:', error?.message || error);
+                });
+            }
+        });
+        this.shopThemeObserver.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['data-theme']
+        });
     },
 
     schedulePostRenderEnhancements: function ({ products = [], requestToken = 0 } = {}) {
@@ -7405,7 +7528,15 @@ const ShopClient = {
             return '0s';
         }
 
-        return `-${(Math.random() * SHOP_CARD_BREATHE_PHASE_MAX_S).toFixed(2)}s`;
+        return `${(Math.random() * SHOP_CARD_BREATHE_PHASE_MAX_S).toFixed(2)}s`;
+    },
+
+    getShopCardNegativeBreatheDelay: function (breatheDelay = '0s') {
+        const seconds = Number.parseFloat(String(breatheDelay || '').trim());
+        if (!Number.isFinite(seconds) || seconds <= 0) {
+            return '0s';
+        }
+        return `${(-seconds).toFixed(2)}s`;
     },
 
     isShopCardBreathingEnabled: function () {
@@ -7423,25 +7554,7 @@ const ShopClient = {
 
     cancelShopCardFreshEnterAnimation: function (card) {
         if (!(card instanceof Element)) return;
-        try {
-            card.getAnimations?.().forEach(animation => {
-                if (animation?.id === SHOP_CARD_FRESH_ENTER_ANIMATION_ID) {
-                    animation.cancel();
-                }
-            });
-        } catch (_error) {
-            // Ignore animation cleanup failures from older browsers.
-        }
         delete card.dataset.shopFreshEnterDelayMs;
-    },
-
-    playShopCardFreshEnterAnimation: function (card) {
-        if (!(card instanceof Element)) {
-            return null;
-        }
-
-        delete card.dataset.shopFreshEnterDelayMs;
-        return null;
     },
 
     getShopCardCurrentTranslateY: function (card) {
@@ -7449,7 +7562,17 @@ const ShopClient = {
             return 0;
         }
 
-        const transform = window.getComputedStyle(card).transform;
+        const computedStyle = window.getComputedStyle(card);
+        const translate = String(computedStyle.translate || '').trim();
+        if (translate && translate !== 'none') {
+            const parts = translate.split(/\s+/);
+            const translateY = Number.parseFloat(parts[1] || parts[0] || '0');
+            if (Number.isFinite(translateY)) {
+                return translateY;
+            }
+        }
+
+        const transform = computedStyle.transform;
         if (!transform || transform === 'none') {
             return 0;
         }
@@ -8049,7 +8172,7 @@ const ShopClient = {
         });
         btn.classList.add('active');
         btn.setAttribute('aria-pressed', 'true');
-        this.loadProducts({ forceFreshEnter: true });
+        this.loadProducts();
     },
 
     hasCategoryProductsCache: function (category) {
@@ -8112,6 +8235,10 @@ const ShopClient = {
 
         this.allProductsCache = safeProducts;
         this.categoryProductsCache = grouped;
+        const catalogSignature = this.computeShopCatalogSignature(safeProducts);
+        if (catalogSignature) {
+            this.lastShopCatalogSignature = catalogSignature;
+        }
         this.persistPrefetchedShopData();
     },
 
@@ -8180,7 +8307,7 @@ const ShopClient = {
         }
 
         return !!container?.querySelector?.(
-            '.shop-card-filter-enter, .shop-card-filter-exit, .shop-card-filter-moving, .shop-card-filter-hidden'
+            '.shop-card-filter-enter:not(.is-visible), .shop-card-filter-exit, .shop-card-filter-moving, .shop-card-filter-hidden'
         );
     },
 
@@ -8402,25 +8529,52 @@ const ShopClient = {
         });
     },
 
-    releaseDeferredShopCardBreathe: function (card, { activateDelayMs = SHOP_CARD_BREATHE_ACTIVATE_DELAY_MS } = {}) {
+    startShopCardBreathing: function (card, { activateDelayMs = SHOP_CARD_BREATHE_ACTIVATE_DELAY_MS } = {}) {
         if (!(card instanceof Element)) return;
-        if (!card.classList.contains('shop-card-breathe-deferred') && !card.dataset.shopBreatheDelay) {
+        const breatheFrame = card.querySelector('.shop-card-breathe-frame');
+        if (!(breatheFrame instanceof Element)) return;
+
+        if (card.classList.contains('breathing') && breatheFrame.classList.contains('shop-card-breathe-frame--breathing')) {
+            this.clearShopCardBreatheTimer(card);
+            return;
+        }
+
+        const breatheDelay = card.dataset.shopBreatheDelay
+            || card.style.getPropertyValue('--breathe-delay')
+            || breatheFrame.style.getPropertyValue('--breathe-delay')
+            || '0s';
+        if (!breatheDelay) {
             return;
         }
 
         this.clearShopCardBreatheTimer(card);
-        this.setCssVariables(card, {
-            '--breathe-delay': card.dataset.shopBreatheDelay || '0s'
-        });
+        if (!card.style.getPropertyValue('--breathe-delay')) {
+            this.setCssVariables(card, {
+                '--breathe-delay': breatheDelay
+            });
+        }
+        if (!breatheFrame.style.getPropertyValue('--breathe-delay')) {
+            this.setCssVariables(breatheFrame, {
+                '--breathe-delay': breatheDelay
+            });
+        }
+        if (!breatheFrame.style.animationDelay) {
+            breatheFrame.style.animationDelay = this.getShopCardNegativeBreatheDelay(breatheDelay);
+        }
 
         if (!this.isShopCardBreathingEnabled()) {
-            card.classList.remove('shop-card-breathe-deferred', 'breathing');
+            card.classList.remove('breathing');
+            breatheFrame.classList.remove('shop-card-breathe-frame--breathing');
             return;
         }
 
         const activate = () => {
             if (!card.isConnected) return;
-            card.classList.remove('shop-card-breathe-deferred');
+            const activeBreatheFrame = card.querySelector('.shop-card-breathe-frame');
+            if (!(activeBreatheFrame instanceof Element)) return;
+            if (card.classList.contains('breathing') && activeBreatheFrame.classList.contains('shop-card-breathe-frame--breathing')) return;
+            card.classList.add('breathing');
+            activeBreatheFrame.classList.add('shop-card-breathe-frame--breathing');
         };
 
         if (activateDelayMs <= 0) {
@@ -8435,54 +8589,127 @@ const ShopClient = {
         this.shopCardBreatheTimers.set(card, timerId);
     },
 
-    releaseDeferredShopCardsBreathe: function (cards = [], options = {}) {
+    startShopCardsBreathing: function (cards = [], options = {}) {
         (Array.isArray(cards) ? cards : []).forEach(card => {
-            this.releaseDeferredShopCardBreathe(card, options);
+            this.startShopCardBreathing(card, options);
         });
     },
+
+    // 状态类：与动画/过渡相关，需要在 reuse 过程中被保留，不能因为 nextCard 没有这些 class 就被清掉。
+    SHOP_CARD_REUSE_PRESERVED_CLASSES: Object.freeze([
+        'breathing',
+        'shop-card-filter-enter',
+        'shop-card-filter-exit',
+        'shop-card-filter-moving',
+        'shop-card-filter-motion-lock',
+        'shop-card-filter-hidden',
+        'is-visible',
+        'is-leaving',
+        'shop-card--active-focus',
+        'shop-card--observed-focus'
+    ]),
 
     reuseShopProductCardElement: function (currentCard, nextCard) {
         if (!(currentCard instanceof Element) || !(nextCard instanceof Element)) {
             return nextCard;
         }
 
+        const currentBreatheFrame = currentCard.querySelector('.shop-card-breathe-frame');
+        const nextBreatheFrame = nextCard.querySelector('.shop-card-breathe-frame');
+        const currentBreatheShell = currentCard.querySelector('.shop-card-breathe-shell');
+        const nextBreatheShell = nextCard.querySelector('.shop-card-breathe-shell');
+        const wasBreathing = currentCard.classList.contains('breathing')
+            || currentBreatheFrame?.classList.contains('shop-card-breathe-frame--breathing') === true
+            || nextCard.classList.contains('breathing') === true;
+        const wasEntering = currentCard.classList.contains('shop-card-filter-enter');
+        const wasVisible = currentCard.classList.contains('is-visible');
         const breatheDelay = currentCard.dataset.shopBreatheDelay
             || currentCard.style.getPropertyValue('--breathe-delay')
+            || currentBreatheFrame?.style.getPropertyValue('--breathe-delay')
             || nextCard.dataset.shopBreatheDelay
             || '0s';
 
-        Array.from(currentCard.attributes).forEach(attribute => {
-            if (!nextCard.hasAttribute(attribute.name)) {
+        // 1) 同步非 class/style 属性（增量，逐字段比较；不变则不动）。
+        const nextAttrNames = new Set();
+        Array.from(nextCard.attributes).forEach((attribute) => {
+            nextAttrNames.add(attribute.name);
+            if (attribute.name === 'class' || attribute.name === 'style') return;
+            if (currentCard.getAttribute(attribute.name) !== attribute.value) {
+                currentCard.setAttribute(attribute.name, attribute.value);
+            }
+        });
+        Array.from(currentCard.attributes).forEach((attribute) => {
+            if (attribute.name === 'class' || attribute.name === 'style') return;
+            if (!nextAttrNames.has(attribute.name)) {
                 currentCard.removeAttribute(attribute.name);
             }
         });
-        Array.from(nextCard.attributes).forEach(attribute => {
-            currentCard.setAttribute(attribute.name, attribute.value);
+
+        // 2) 增量同步 class：用 classList.add/remove 逐项处理，避免
+        //    setAttribute('class', ...) 整串覆写引发的样式重解析与合成层刷新
+        //    （这正是呼吸过程中 "4-5 个循环后水平对齐" 的来源之一）。
+        const preserved = this.SHOP_CARD_REUSE_PRESERVED_CLASSES;
+        const nextClassSet = new Set(Array.from(nextCard.classList));
+        // breathing 状态由 wasBreathing 决定，保证它继续存在；
+        // filter-enter / is-visible 也要在 reuse 后保持原样。
+        if (wasBreathing) nextClassSet.add('breathing');
+        if (wasEntering) nextClassSet.add('shop-card-filter-enter');
+        if (wasVisible) nextClassSet.add('is-visible');
+
+        Array.from(currentCard.classList).forEach((cls) => {
+            if (nextClassSet.has(cls)) return;
+            if (preserved.includes(cls)) return; // 保留动画状态类
+            currentCard.classList.remove(cls);
+        });
+        nextClassSet.forEach((cls) => {
+            if (!currentCard.classList.contains(cls)) {
+                currentCard.classList.add(cls);
+            }
         });
 
-        currentCard.innerHTML = nextCard.innerHTML;
+        // 3) 内容：仅当 HTML 真正变化时替换。
+        //    呼吸中优先替换 breathe-shell（保留 breathe-frame 节点 → 不打断呼吸动画）。
+        if (wasBreathing && currentBreatheShell && nextBreatheShell) {
+            if (currentBreatheShell.innerHTML !== nextBreatheShell.innerHTML) {
+                currentBreatheShell.innerHTML = nextBreatheShell.innerHTML;
+            }
+        } else if (currentCard.innerHTML !== nextCard.innerHTML) {
+            currentCard.innerHTML = nextCard.innerHTML;
+        }
+
+        // 4) 清理 exit/leaving 残留，重新固定状态类。
         currentCard.classList.remove(
-            'shop-card-breathe-deferred',
-            'shop-card-filter-enter',
-            'shop-card-filter-enter--initial',
-            'shop-card-mobile-fresh-enter',
             'shop-card-filter-exit',
             'shop-card-filter-hidden',
-            'is-visible',
             'is-leaving'
         );
-        if (nextCard.classList.contains('breathing')) {
+        if (wasEntering) currentCard.classList.add('shop-card-filter-enter');
+        if (wasVisible) currentCard.classList.add('is-visible');
+        if (wasBreathing || nextCard.classList.contains('breathing')) {
             currentCard.classList.add('breathing');
         }
+
+        // 5) 同步 --breathe-delay 与 breathe-frame 的 breathing class。
         currentCard.dataset.shopBreatheDelay = breatheDelay;
-        this.setCssVariables(currentCard, {
-            '--breathe-delay': breatheDelay,
-            '--shop-card-filter-delay': null,
-            '--shop-card-enter-y': null,
-            '--shop-card-enter-scale': null,
-            '--shop-card-shift-x': null,
-            '--shop-card-shift-y': null
-        });
+        const restoredBreatheFrame = currentCard.querySelector('.shop-card-breathe-frame');
+        if (restoredBreatheFrame instanceof Element) {
+            if (!restoredBreatheFrame.style.getPropertyValue('--breathe-delay')) {
+                this.setCssVariables(restoredBreatheFrame, {
+                    '--breathe-delay': breatheDelay
+                });
+            }
+            if (!restoredBreatheFrame.style.animationDelay) {
+                restoredBreatheFrame.style.animationDelay = this.getShopCardNegativeBreatheDelay(breatheDelay);
+            }
+            if (wasBreathing || nextCard.classList.contains('breathing')) {
+                restoredBreatheFrame.classList.add('shop-card-breathe-frame--breathing');
+            }
+        }
+        if (!wasBreathing) {
+            this.setCssVariables(currentCard, {
+                '--breathe-delay': breatheDelay
+            });
+        }
 
         return currentCard;
     },
@@ -8497,12 +8724,10 @@ const ShopClient = {
         if (!container) return;
 
         container.querySelectorAll('.shop-grid-transition-layer').forEach(layer => layer.remove());
-        container.querySelectorAll('.shop-card-filter-enter, .shop-card-filter-exit, .shop-card-filter-moving, .shop-card-filter-hidden').forEach(card => {
+        container.querySelectorAll('.shop-card-filter-enter:not(.is-visible), .shop-card-filter-exit, .shop-card-filter-moving, .shop-card-filter-hidden').forEach(card => {
             this.cancelShopCardFreshEnterAnimation(card);
             card.classList.remove(
                 'shop-card-filter-enter',
-                'shop-card-filter-enter--initial',
-                'shop-card-mobile-fresh-enter',
                 'shop-card-filter-exit',
                 'shop-card-filter-moving',
                 'shop-card-filter-hidden',
@@ -8511,14 +8736,14 @@ const ShopClient = {
                 'is-leaving'
             );
             this.clearShopCardBreatheTimer(card);
-            this.releaseDeferredShopCardBreathe(card, { activateDelayMs: 0 });
+            if (!card.classList.contains('breathing') || !card.querySelector('.shop-card-breathe-frame--breathing')) {
+                this.startShopCardBreathing(card, { activateDelayMs: 0 });
+            }
             card.style.transition = '';
             card.style.transform = '';
             card.style.opacity = '';
             this.setCssVariables(card, {
-                '--shop-card-filter-delay': null,
-                '--shop-card-shift-x': null,
-                '--shop-card-shift-y': null
+                '--shop-card-filter-delay': null
             });
         });
     },
@@ -8737,12 +8962,10 @@ const ShopClient = {
         const breatheDelay = this.getShopCardBreatheDelay();
 
         const el = document.createElement('div');
-        el.className = `shop-card user-product-card breathing shop-card-breathe-deferred ${cartQuantity > 0 ? 'shop-card--in-cart' : ''}`;
         el.dataset.productId = productId;
         el.dataset.productCategory = String(product.category || '');
         el.dataset.shopBreatheDelay = breatheDelay;
         this.setCssVariables(el, {
-            '--breathe-delay': breatheDelay,
             '--shop-card-filter-delay': null
         });
 
@@ -8784,7 +9007,20 @@ const ShopClient = {
         const displayHtml = hasCoverImage
             ? `<img class="shop-card-image-cover" alt="${safeCardImageAlt}" width="480" height="320">`
             : `<div class="shop-icon-wrapper">${coverIconMarkup}</div>`;
-        el.className = `shop-card user-product-card breathing shop-card-breathe-deferred ${pricingState.flashShadowClass} ${cartQuantity > 0 ? 'shop-card--in-cart' : ''}`.trim();
+        // breathing 现在从卡片诞生就启动：把 .breathing 与 .shop-card-breathe-frame--breathing
+        // 写进初始模板，并把 --breathe-delay 内联到 breathe-frame。元素第一次 paint 时浏览器
+        // 已经把 animation 应用进去，避免 "JS 后加 breathing class 时第一帧无 animation 导致
+        // 所有卡片同时停在 keyframes 0%（translateY(0)）" 的水平对齐抖动。
+        // 入场期间 opacity=0 看不见，呼吸期间因负 animation-delay 各自随机相位互不对齐。
+        const breathingEnabled = this.isShopCardBreathingEnabled();
+        const negativeBreatheDelay = this.getShopCardNegativeBreatheDelay(breatheDelay);
+        const breatheFrameClass = breathingEnabled
+            ? 'shop-card-breathe-frame shop-card-breathe-frame--breathing'
+            : 'shop-card-breathe-frame';
+        const breatheFrameStyleAttr = breathingEnabled
+            ? ` style="--breathe-delay: ${breatheDelay}; animation-delay: ${negativeBreatheDelay};"`
+            : '';
+        el.className = `shop-card user-product-card ${breathingEnabled ? 'breathing ' : ''}${pricingState.flashShadowClass} ${cartQuantity > 0 ? 'shop-card--in-cart' : ''}`.trim();
         if (!noStock) {
             el.classList.add('shop-card--interactive');
             el.dataset.shopAction = 'buy-product';
@@ -8798,40 +9034,50 @@ const ShopClient = {
             el.setAttribute('aria-disabled', 'true');
         }
         el.innerHTML = `
-            <div class="shop-card-image">
-                ${pricingState.flashSaleBadgeHtml}
-                ${pricingState.tieredPricingBadgeHtml}
-                ${displayHtml}
-                ${pricingState.agentBadgeHtml}
-                <div class="shop-stock-badge shop-stock-badge--floating ${noStock ? 'out-of-stock' : 'in-stock'}">
-                    ${stockLabel}
-                </div>
-            </div>
+            <div class="${breatheFrameClass}"${breatheFrameStyleAttr}>
+                <div class="shop-card-breathe-shell">
+                    <div class="shop-card-image">
+                        ${pricingState.flashSaleBadgeHtml}
+                        ${pricingState.tieredPricingBadgeHtml}
+                        ${displayHtml}
+                        ${pricingState.agentBadgeHtml}
+                        <div class="shop-stock-badge shop-stock-badge--floating ${noStock ? 'out-of-stock' : 'in-stock'}">
+                            ${stockLabel}
+                        </div>
+                    </div>
 
-            <div class="shop-content-padding">
-                <h3 class="shop-card-title">${this.escapeHtml(displayName)}</h3>
-                ${descriptionMarkup}
+                    <div class="shop-content-padding">
+                        <h3 class="shop-card-title">${this.escapeHtml(displayName)}</h3>
+                        ${descriptionMarkup}
 
-                <div class="shop-card-footer">
-                    <div class="shop-card-price">${pricingState.priceHtml}</div>
-                    <div class="shop-card-actions">
-                        <button
-                            type="button"
-                            ${noStock ? 'aria-disabled="true"' : ''}
-                            class="shop-card-cart-trigger${noStock ? ' is-disabled' : ''}"
-                            data-shop-action="add-product-to-cart"
-                            aria-label="${this.escapeAttribute(cartTriggerAriaLabel)}"
-                        >
-                            <span class="shop-card-cart-trigger__shell" aria-hidden="true">
-                                <svg viewBox="0 0 576 512" focusable="false" class="shop-card-cart-trigger__icon">
-                                    <path fill="currentColor" d="M0 24C0 10.7 10.7 0 24 0l45.5 0c22.2 0 41.5 15.2 46.7 36.8L122 64 552 64c15.4 0 29.9 7.4 38.9 19.9s11.3 28.7 6.2 43.1l-55.2 160c-7.1 20.6-26.5 34.5-48.3 34.5l-277.1 0c-22.2 0-41.5-15.2-46.7-36.8L124.2 96 24 96C10.7 96 0 85.3 0 72L0 24zM128 416a48 48 0 1 1 96 0 48 48 0 1 1 -96 0zm336 48a48 48 0 1 1 0-96 48 48 0 1 1 0 96z"/>
-                                </svg>
-                            </span>
-                        </button>
+                        <div class="shop-card-footer">
+                            <div class="shop-card-price">${pricingState.priceHtml}</div>
+                            <div class="shop-card-actions">
+                                <button
+                                    type="button"
+                                    ${noStock ? 'aria-disabled="true"' : ''}
+                                    class="shop-card-cart-trigger${noStock ? ' is-disabled' : ''}"
+                                    data-shop-action="add-product-to-cart"
+                                    aria-label="${this.escapeAttribute(cartTriggerAriaLabel)}"
+                                >
+                                    <span class="shop-card-cart-trigger__shell" aria-hidden="true">
+                                        <svg viewBox="0 0 576 512" focusable="false" class="shop-card-cart-trigger__icon">
+                                            <path fill="currentColor" d="M0 24C0 10.7 10.7 0 24 0l45.5 0c22.2 0 41.5 15.2 46.7 36.8L122 64 552 64c15.4 0 29.9 7.4 38.9 19.9s11.3 28.7 6.2 43.1l-55.2 160c-7.1 20.6-26.5 34.5-48.3 34.5l-277.1 0c-22.2 0-41.5-15.2-46.7-36.8L124.2 96 24 96C10.7 96 0 85.3 0 72L0 24zM128 416a48 48 0 1 1 96 0 48 48 0 1 1 -96 0zm336 48a48 48 0 1 1 0-96 48 48 0 1 1 0 96z"/>
+                                        </svg>
+                                    </span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
         `;
+
+        if (el instanceof Element) {
+            this.setCssVariables(el, {
+                '--breathe-delay': breatheDelay
+            });
+        }
 
         this.applyShopPurchaseDataset(el, purchaseDataset);
         el.dataset.maxPurchaseQuantity = String(maxPurchaseQuantity);
@@ -8883,17 +9129,13 @@ const ShopClient = {
         return renderedCards;
     },
 
-    transitionProductGrid: function (container, cardElements = [], { empty = false, forceFreshEnter = false } = {}) {
+    transitionProductGrid: function (container, cardElements = [], { empty = false } = {}) {
         if (!container) return;
 
         this.clearProductGridTransitionArtifacts(container);
         const existingCards = Array.from(container.querySelectorAll('.shop-card[data-product-id]'));
-        const hadSkeletonCards = container.querySelectorAll('.skeleton-card').length > 0;
         const shouldAnimate = !this.prefersReducedMotion() && (existingCards.length > 0 || (!empty && cardElements.length > 0));
         const transitionId = ++this.gridTransitionSequence;
-        const usesPromptStyleMobileEnter = window.matchMedia?.('(max-width: 768px)')?.matches === true;
-        const forceFreshEnterActive = forceFreshEnter === true;
-        const usesPromptStyleEnter = usesPromptStyleMobileEnter || forceFreshEnterActive;
 
         if (empty) {
             this.gridTransitionActiveUntil = 0;
@@ -8955,7 +9197,7 @@ const ShopClient = {
             } else {
                 container.classList.remove('is-empty');
                 cardElements.forEach(card => container.appendChild(card));
-                this.releaseDeferredShopCardsBreathe(cardElements);
+                this.startShopCardsBreathing(cardElements);
             }
             this.syncMobileProductFocusMode();
             return;
@@ -8970,23 +9212,16 @@ const ShopClient = {
                 card && (card.style.transform = '');
                 card && (card.style.opacity = '');
                 card && this.setCssVariables(card, {
-                    '--shop-card-filter-delay': null,
-                    '--shop-card-shift-x': null,
-                    '--shop-card-shift-y': null
+                    '--shop-card-filter-delay': null
                 });
                 clone?.remove();
             });
 
             enteringCards.forEach(card => {
                 this.cancelShopCardFreshEnterAnimation(card);
-                card.classList.remove('shop-card-filter-enter', 'shop-card-filter-enter--initial', 'shop-card-mobile-fresh-enter', 'shop-card-filter-motion-lock', 'is-visible');
-                card.style.transition = '';
-                card.style.transform = '';
-                card.style.opacity = '';
-                this.setCssVariables(card, {
-                    '--shop-card-filter-delay': null,
-                    '--shop-card-shift-x': null,
-                    '--shop-card-shift-y': null
+                card?.classList.remove('shop-card-filter-enter', 'shop-card-filter-motion-lock', 'is-visible');
+                card && this.setCssVariables(card, {
+                    '--shop-card-filter-delay': null
                 });
             });
 
@@ -9008,7 +9243,7 @@ const ShopClient = {
                 return null;
             }
 
-            const watchedProperties = new Set(['--shop-card-enter-y', '--shop-card-enter-scale']);
+            const watchedProperties = new Set(['opacity', 'transform']);
             const listeners = [];
             let timeoutId = null;
             let resolvePromise = null;
@@ -9065,10 +9300,27 @@ const ShopClient = {
             return promise;
         };
 
+        // Start breathing on persistent / moving cards only. New entering cards
+        // do not get the breathing class until their entrance has settled.
+        const releaseSettledBreathe = (payload = {}) => {
+            if (payload.settledBreatheReleased) return;
+            payload.settledBreatheReleased = true;
+            const allCards = payload.finalCards || payload.enteringCards || [];
+            const settledCards = allCards.filter(card =>
+                card instanceof Element
+                && !card.classList.contains('shop-card-filter-enter')
+            );
+            if (settledCards.length === 0) return;
+            this.startShopCardsBreathing(settledCards);
+        };
+
+        // Start breathing on every card in the payload for no-animation paths.
         const releasePayloadBreathe = (payload = {}) => {
-            if (payload.deferredBreatheReleased) return;
-            payload.deferredBreatheReleased = true;
-            this.releaseDeferredShopCardsBreathe(payload.finalCards || payload.enteringCards || []);
+            if (payload.breatheReleased) return;
+            payload.breatheReleased = true;
+            const cards = (payload.finalCards || payload.enteringCards || [])
+                .filter(card => card instanceof Element && !card.matches('.shop-card-filter-enter:not(.is-visible)'));
+            this.startShopCardsBreathing(cards);
         };
 
         const scheduleCleanup = (durationMs, payload = {}) => {
@@ -9076,8 +9328,8 @@ const ShopClient = {
                 if (transitionId === this.gridTransitionSequence) {
                     this.gridTransitionActiveUntil = 0;
                 }
-                releasePayloadBreathe(payload);
                 cleanupAnimatedCards(payload);
+                releasePayloadBreathe(payload);
                 return;
             }
 
@@ -9088,14 +9340,15 @@ const ShopClient = {
 
             const runCleanup = () => {
                 if (transitionId !== this.gridTransitionSequence) return;
-                releasePayloadBreathe(payload);
                 cleanupAnimatedCards(payload);
+                releasePayloadBreathe(payload);
                 this.gridTransitionCleanupTimer = null;
             };
 
             this.gridTransitionCleanupTimer = window.setTimeout(() => {
                 if (transitionId !== this.gridTransitionSequence) return;
-                releasePayloadBreathe(payload);
+                // Let runCleanup own both DOM mutations; the settle promise has
+                // its own fallback timer if transitionend never arrives.
                 if (payload.enterSettlePromise) {
                     payload.enterSettlePromise.then(runCleanup, runCleanup);
                     return;
@@ -9184,7 +9437,6 @@ const ShopClient = {
             cardElements.forEach(card => container.appendChild(card));
 
             const movingCards = [];
-            let moveOrder = 0;
             cardElements.forEach(card => {
                 const productId = String(card.dataset.productId || '').trim();
                 const previousState = previousCardState.get(productId);
@@ -9195,21 +9447,12 @@ const ShopClient = {
                 if (Math.abs(moveX) < 1 && Math.abs(moveY) < 1) return;
 
                 card.classList.add('shop-card-filter-motion-lock');
-                this.setCssVariables(card, {
-                    '--shop-card-filter-delay': `${moveOrder * 18}ms`,
-                    '--shop-card-shift-x': `${moveX}px`,
-                    '--shop-card-shift-y': `${moveY}px`
-                });
+                card.style.transform = `translate3d(${moveX}px, ${moveY}px, 0)`;
                 movingCards.push({ card, productId });
-                moveOrder += 1;
             });
 
-            const isInitialEntrance = previousIds.size === 0 && hadSkeletonCards;
-            const enterDelayStepMs = usesPromptStyleEnter ? SHOP_CARD_FRESH_ENTER_DELAY_STEP_MS : (isInitialEntrance ? 136 : 38);
-            const enterDurationBaseMs = usesPromptStyleEnter ? SHOP_CARD_FRESH_ENTER_DURATION_MS : (isInitialEntrance ? 1540 : 620);
-            const effectiveEnterDelayBase = forceFreshEnterActive
-                ? Math.max(SHOP_CARD_FRESH_ENTER_BASE_DELAY_MS, enterDelayBase)
-                : enterDelayBase;
+            const enterDelayStepMs = SHOP_CARD_PROMPT_ENTER_DELAY_STEP_MS;
+            const effectiveEnterDelayBase = enterDelayBase;
             let enterOrder = 0;
             cardElements.forEach(card => {
                 const productId = String(card.dataset.productId || '').trim();
@@ -9217,26 +9460,16 @@ const ShopClient = {
                     return;
                 }
 
-                card.classList.add('shop-card-filter-enter', 'shop-card-filter-motion-lock');
-                if (forceFreshEnterActive) {
-                    card.classList.add('shop-card-mobile-fresh-enter');
-                }
-                if (isInitialEntrance) {
-                    card.classList.add('shop-card-filter-enter--initial');
-                }
+                card.classList.add('shop-card-filter-enter');
+                // breathing 现已在 buildProductCardElement 渲染时挂好，新卡进 DOM 第一帧
+                // 浏览器就已应用 animation，不再需要在这里再 add class（避免 "JS 后加 class
+                // 引起的首帧无 animation" 水平对齐抖动）。
                 const enterDelayMs = effectiveEnterDelayBase + (enterOrder * enterDelayStepMs);
-                if (forceFreshEnterActive) {
-                    card.dataset.shopFreshEnterDelayMs = String(enterDelayMs);
-                } else {
-                    delete card.dataset.shopFreshEnterDelayMs;
-                }
-                this.setCssVariables(card, {
-                    '--shop-card-filter-delay': `${enterDelayMs}ms`
-                });
+                card.dataset.shopFreshEnterDelayMs = String(enterDelayMs);
                 enterOrder += 1;
             });
 
-            const enteringCards = Array.from(container.querySelectorAll('.shop-card-filter-enter'));
+            const enteringCards = Array.from(container.querySelectorAll('.shop-card-filter-enter:not(.is-visible)'));
             if (movingCards.length === 0 && enteringCards.length === 0) {
                 return {
                     movingCards,
@@ -9248,10 +9481,10 @@ const ShopClient = {
             }
 
             const moveDurationMs = movingCards.length > 0
-                ? 980 + Math.max(0, movingCards.length - 1) * 18
+                ? 400
                 : 0;
             const enterDurationMs = enteringCards.length > 0
-                ? effectiveEnterDelayBase + enterDurationBaseMs + Math.max(0, enteringCards.length - 1) * enterDelayStepMs
+                ? effectiveEnterDelayBase + SHOP_CARD_PROMPT_ENTER_DURATION_MS + Math.max(0, enteringCards.length - 1) * enterDelayStepMs
                 : 0;
             const cleanupDurationMs = Math.max(moveDurationMs, enterDurationMs);
             const enterSettlePromise = createEnteringSettlePromise(enteringCards, enterDurationMs);
@@ -9265,21 +9498,27 @@ const ShopClient = {
                     void container.offsetWidth;
                 }
                 movingCards.forEach(({ card }) => {
-                    this.setCssVariables(card, {
-                        '--shop-card-shift-x': '0px',
-                        '--shop-card-shift-y': '0px'
-                    });
+                    card.style.transform = 'translate3d(0px, 0px, 0)';
                 });
-                enteringCards.forEach(card => card.classList.add('is-visible'));
+                enteringCards.forEach((card, index) => {
+                    const enterDelayMs = Number(card.dataset.shopFreshEnterDelayMs || index * SHOP_CARD_PROMPT_ENTER_DELAY_STEP_MS) || 0;
+                    window.setTimeout(() => {
+                        if (transitionId !== this.gridTransitionSequence || !card.isConnected) return;
+                        window.requestAnimationFrame(() => {
+                            if (transitionId !== this.gridTransitionSequence || !card.isConnected) return;
+                            card.classList.add('is-visible');
+                            window.setTimeout(() => {
+                                if (transitionId !== this.gridTransitionSequence || !card.isConnected) return;
+                                this.startShopCardBreathing(card);
+                            }, SHOP_CARD_PROMPT_ENTER_DURATION_MS + 50);
+                        });
+                    }, enterDelayMs);
+                });
             };
 
             void container.offsetWidth;
             if (transitionId === this.gridTransitionSequence) {
-                if (forceFreshEnterActive) {
-                    window.requestAnimationFrame(revealEnteringCards);
-                } else {
-                    revealEnteringCards();
-                }
+                revealEnteringCards();
             }
 
             return {
@@ -9300,14 +9539,16 @@ const ShopClient = {
 
         if (exitingCards.length === 0) {
             const payload = renderNextState() || {};
-            releasePayloadBreathe(payload);
+            // Persistent/moving cards can keep breathing now; entering cards
+            // start through the same per-card prompt timers used above.
+            releaseSettledBreathe(payload);
             scheduleCleanup(payload.cleanupDurationMs || 0, payload);
             return;
         }
 
         if (!empty && persistentCount > 0) {
             const payload = renderNextState({ enterDelayBase: 0 }) || {};
-            releasePayloadBreathe(payload);
+            releaseSettledBreathe(payload);
             const blockedPositionKeys = new Set(
                 Array.from(container.querySelectorAll('.shop-card[data-product-id]')).map(card =>
                     `${Math.round(card.offsetLeft)}:${Math.round(card.offsetTop)}`
@@ -9354,7 +9595,7 @@ const ShopClient = {
             if (transitionId !== this.gridTransitionSequence) return;
             this.gridTransitionCleanupTimer = null;
             const payload = renderNextState() || {};
-            releasePayloadBreathe(payload);
+            releaseSettledBreathe(payload);
             scheduleCleanup(payload.cleanupDurationMs || 0, payload);
         }, exitDurationMs);
     },
@@ -9903,7 +10144,7 @@ const ShopClient = {
         }
     },
 
-    loadProducts: async function ({ forceRefresh = false, forceFreshEnter = false } = {}) {
+    loadProducts: async function ({ forceRefresh = false } = {}) {
         const container = document.getElementById('userShopGrid');
         if (!container) return;
 
@@ -9954,7 +10195,7 @@ const ShopClient = {
                 return;
             }
 
-            this.transitionProductGrid(container, renderedCards, { forceFreshEnter });
+            this.transitionProductGrid(container, renderedCards);
             this.lastSkeletonCount = Math.min(Math.max(renderedCards.length, 3), 8);
             this.scheduleVisibleDiscountAssetsPrefetch(data);
             this.renderCart();
