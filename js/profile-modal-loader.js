@@ -7,9 +7,9 @@
     global.__zaoyoeProfileModalBootstrapLoaded = true;
 
     const VERSION = '20260503_PROFILE_MODAL_CHROME_CLOSE_1';
-    const PROFILE_TEMPLATE_SRC = 'js/profile-modal-template.js?v=f5a4ba7fbfa7';
-    const SECURITY_CARDS_SRC = 'security-cards.js?v=f5a4ba7fbfa7';
-    const PROFILE_MODAL_STYLE_HREF = 'css/profile-modal.css?v=f5a4ba7fbfa7';
+    const PROFILE_TEMPLATE_SRC = 'js/profile-modal-template.js?v=077c87a52976';
+    const SECURITY_CARDS_SRC = 'security-cards.js?v=077c87a52976';
+    const PROFILE_MODAL_STYLE_HREF = 'css/profile-modal.css?v=077c87a52976';
 
     let profileModalPromise = null;
     let profileTemplatePromise = null;

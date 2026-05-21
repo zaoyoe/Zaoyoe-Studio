@@ -1331,7 +1331,7 @@ let walletWarmPrefetchHandle = null;
 let walletRuntimeWarmHandle = null;
 let profileModalWarmHandle = null;
 let profileModalBootstrapScriptPromise = null;
-const PROFILE_MODAL_BOOTSTRAP_SRC = 'js/profile-modal-loader.js?v=f5a4ba7fbfa7';
+const PROFILE_MODAL_BOOTSTRAP_SRC = 'js/profile-modal-loader.js?v=077c87a52976';
 
 function warmSupabaseAuthWalletRuntime(reason = 'auth-ready') {
     const loader = window.ZaoyoeWalletModalBootstrap;
@@ -3318,8 +3318,8 @@ function prefetchGooglePopupCloseShell() {
 
     const urls = [
         { href: new URL('/auth-popup-close', window.location.origin).toString(), as: 'document' },
-        { href: new URL(`/js/auth-popup-close-page.js?v=f5a4ba7fbfa7`, window.location.origin).toString(), as: 'script' },
-        { href: new URL(`/css/auth-popup-close.css?v=f5a4ba7fbfa7`, window.location.origin).toString(), as: 'style' }
+        { href: new URL(`/js/auth-popup-close-page.js?v=077c87a52976`, window.location.origin).toString(), as: 'script' },
+        { href: new URL(`/css/auth-popup-close.css?v=077c87a52976`, window.location.origin).toString(), as: 'style' }
     ];
 
     const head = document.head || document.documentElement;

@@ -66,12 +66,12 @@
 
     function scheduleOptionalGuestbookEnhancements() {
         scheduleOptionalTask(250, () => {
-            loadScript('./starry-sky.js?v=f5a4ba7fbfa7');
+            loadScript('./starry-sky.js?v=077c87a52976');
         }, 800);
 
         scheduleOptionalTask(2200, () => {
-            loadStylesheet('css/chat-widget.css?v=f5a4ba7fbfa7');
-            loadScript('js/components/ChatWidget.js?v=f5a4ba7fbfa7&siteAssetCdn=20260510_SITE_ASSET_CDN_1', initChatWidgetIfReady);
+            loadStylesheet('css/chat-widget.css?v=077c87a52976');
+            loadScript('js/components/ChatWidget.js?v=077c87a52976&siteAssetCdn=20260510_SITE_ASSET_CDN_1', initChatWidgetIfReady);
         }, 2200);
     }
 
