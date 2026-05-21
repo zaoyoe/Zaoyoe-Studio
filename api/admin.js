@@ -51,6 +51,7 @@ const shopCategoriesHandler = require('../server/api-handlers/admin/shop/categor
 const shopInventoryDetailHandler = require('../server/api-handlers/admin/shop/inventory-detail');
 const shopInventoryHandler = require('../server/api-handlers/admin/shop/inventory');
 const shopMutateHandler = require('../server/api-handlers/admin/shop/mutate');
+const shopMarketplaceOrdersHandler = require('../server/api-handlers/admin/shop/marketplace-orders');
 const shopOrderDetailHandler = require('../server/api-handlers/admin/shop/order-detail');
 const shopOrdersHandler = require('../server/api-handlers/admin/shop/orders');
 const shopProductsHandler = require('../server/api-handlers/admin/shop/products');
@@ -66,6 +67,7 @@ const settingsExternalMonitoringSmokeHandler = require('../server/api-handlers/a
 const settingsGeminiKeyHandler = require('../server/api-handlers/admin/settings/gemini-key');
 const settingsAdminAuditMonitorHandler = require('../server/api-handlers/admin/settings/admin-audit-monitor');
 const settingsAnnouncementsHandler = require('../server/api-handlers/admin/settings/announcements');
+const settingsMarketplaceChannelsHandler = require('../server/api-handlers/admin/settings/marketplace-channels');
 const settingsOpsAlertHealthHandler = require('../server/api-handlers/admin/settings/ops-alert-health');
 const settingsOpsAlertsHandler = require('../server/api-handlers/admin/settings/ops-alerts');
 const settingsOpsAlertMonitorHandler = require('../server/api-handlers/admin/settings/ops-alert-monitor');
@@ -140,6 +142,7 @@ const ROUTE_HANDLERS = {
     'settings/discount-trigger-options': settingsDiscountTriggerOptionsHandler,
     'settings/external-monitoring-smoke': settingsExternalMonitoringSmokeHandler,
     'settings/gemini-key': settingsGeminiKeyHandler,
+    'settings/marketplace-channels': settingsMarketplaceChannelsHandler,
     'settings/ops-alert-health': settingsOpsAlertHealthHandler,
     'settings/ops-alerts': settingsOpsAlertsHandler,
     'settings/ops-alert-monitor': settingsOpsAlertMonitorHandler,
@@ -163,6 +166,7 @@ const ROUTE_HANDLERS = {
     'shop/categories': shopCategoriesHandler,
     'shop/inventory-detail': shopInventoryDetailHandler,
     'shop/inventory': shopInventoryHandler,
+    'shop/marketplace-orders': shopMarketplaceOrdersHandler,
     'shop/mutate': shopMutateHandler,
     'shop/order-detail': shopOrderDetailHandler,
     'shop/orders': shopOrdersHandler,

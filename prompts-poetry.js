@@ -1540,8 +1540,8 @@ async function waitForPromptSupabaseClientReady(timeoutMs = 2200) {
     });
 }
 
-const STATIC_PROMPTS_SUMMARY_SRC = 'js/prompts-summary-data.js?v=20260501_PROMPTS_SUMMARY_DATA_1';
-const STATIC_PROMPTS_DETAIL_SRC = 'prompts-data.js?v=20260302_G_AUTH';
+const STATIC_PROMPTS_SUMMARY_SRC = 'js/prompts-summary-data.js?v=dcb98464f0c8';
+const STATIC_PROMPTS_DETAIL_SRC = 'prompts-data.js?v=dcb98464f0c8';
 const PROMPTS_SUPABASE_SUMMARY_SELECT = [
     'id',
     'title',
@@ -2401,7 +2401,7 @@ function loadPromptStarrySkyRuntime(options = {}) {
 
     promptStarrySkyRuntimePromise = new Promise((resolve, reject) => {
         const script = document.createElement('script');
-        script.src = 'starry-sky.js?v=20260501_PROMPTS_IDLE_STARRY_1';
+        script.src = 'starry-sky.js?v=dcb98464f0c8';
         script.async = true;
         script.dataset.promptStarrySky = '1';
         script.addEventListener('load', () => resolve(script), { once: true });

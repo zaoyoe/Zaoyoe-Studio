@@ -79,6 +79,14 @@ function buildOrderSearchExpression(query) {
         `snapshot_product_name.ilike.%${escapedLikeQuery}%`
     ];
 
+    if (normalizedQuery.length >= 3 || /[a-z_-]/i.test(normalizedQuery)) {
+        filters.push(
+            `source_channel.ilike.%${escapedLikeQuery}%`,
+            `channel_account_key.ilike.%${escapedLikeQuery}%`,
+            `external_order_id.ilike.%${escapedLikeQuery}%`
+        );
+    }
+
     if (isUuid(normalizedQuery)) {
         const escapedEqQuery = escapePostgrestEqValue(normalizedQuery);
         filters.unshift(

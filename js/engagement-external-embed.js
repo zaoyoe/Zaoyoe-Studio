@@ -7,8 +7,8 @@
     global.__zaoyoeExternalEngagementEmbedLoaded = true;
 
     const VERSION = '20260505_GONGYI_EXTERNAL_ENGAGEMENT_1';
-    const CHAT_WIDGET_LOADER_SRC = 'js/chat-widget-loader.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';
-    const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=20260507_CHAT_WIDGET_ADAPTIVE_BUBBLE_1';
+    const CHAT_WIDGET_LOADER_SRC = 'js/chat-widget-loader.js?v=dcb98464f0c8&siteAssetCdn=20260510_SITE_ASSET_CDN_1';
+    const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=dcb98464f0c8';
     const DEFAULT_PAGE_ID = 'gongyi';
     const DEFAULT_SITE = 'cn';
     const ASSET_CDN_ORIGINS = Object.freeze({
@@ -31,7 +31,7 @@
     ]);
 
     const currentScript = document.currentScript
-        || document.querySelector(`script[src*="js/engagement-external-embed.js?v=${VERSION}"]`)
+        || document.querySelector(`script[src*="js/engagement-external-embed.js?v=dcb98464f0c8"]`)
         || document.querySelector('script[src*="js/engagement-external-embed.js"]');
 
     function sanitizeToken(value = '', fallback = '') {

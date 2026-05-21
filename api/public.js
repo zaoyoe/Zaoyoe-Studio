@@ -125,6 +125,19 @@ function createRouteHandlersForScope(scope) {
             'client-event': clientMonitoringEventHandler
         };
     }
+    case 'marketplace': {
+        const {
+            createMarketplaceHandlers
+        } = require('../server/api-handlers/public/marketplace');
+
+        return {
+            ...createMarketplaceHandlers({
+                admin,
+                requestSecurity,
+                env: process.env
+            })
+        };
+    }
     case 'ops': {
         const {
             createOpsHandlers

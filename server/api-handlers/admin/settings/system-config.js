@@ -22,7 +22,11 @@ const SYSTEM_CONFIG_DOMAIN_KEY_MAP = Object.freeze({
         'recharge_options',
         'channels',
         'payment_channels',
+        'marketplace_channels',
         'discount_trigger_rules'
+    ],
+    marketplace: [
+        'marketplace_channels'
     ],
     affiliate: [
         'affiliate_program',

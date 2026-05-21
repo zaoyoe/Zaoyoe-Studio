@@ -10,7 +10,7 @@ window._pageLoadTime = Date.now();
 
 let SUPABASE_URL = '';
 let SUPABASE_KEY = '';
-const SUPABASE_SDK_FALLBACK_SRC = 'vendor/supabase/2.95.3/supabase.js?v=20260519_VENDOR_PUBLIC_1';
+const SUPABASE_SDK_FALLBACK_SRC = 'vendor/supabase/2.95.3/supabase.js?v=dcb98464f0c8';
 
 function setSupabaseClientInitState(status, extra = {}) {
     const nextState = {

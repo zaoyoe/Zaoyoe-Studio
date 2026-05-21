@@ -5780,6 +5780,8 @@ app.all([
     '/api/payments/*',
     '/api/runtime/*',
     '/api/monitoring/*',
+    '/api/marketplace',
+    '/api/marketplace/*',
     '/api/ops/*',
     '/api/engagement/*',
     '/api/shop/*',

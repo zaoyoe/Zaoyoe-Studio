@@ -271,6 +271,41 @@ test('shop orders handler supports free-text product search for analytics drill-
     });
 });
 
+test('shop orders handler includes marketplace channel fields in free-text search', async () => {
+    await withShopOrdersHandler({
+        shop_orders: [
+            {
+                id: '22222222-2222-4222-8222-222222222222',
+                user_id: '33333333-3333-4333-8333-333333333333',
+                product_id: '44444444-4444-4444-8444-444444444444',
+                snapshot_product_name: '闲鱼卡密',
+                source_channel: 'xianyu',
+                channel_account_key: 'main',
+                external_order_id: 'XY-ORDER-1001',
+                created_at: '2026-05-21T00:00:00.000Z'
+            }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'GET',
+            url: '/api/admin/shop/orders?query=XY-ORDER-1001&site=all',
+            headers: {}
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.rows.length, 1);
+        assert.equal(payload.rows[0].source_channel, 'xianyu');
+        const orderQuery = state.calls.find((call) => call.table === 'shop_orders' && call.orExpression);
+        assert.match(orderQuery.orExpression, /external_order_id\.ilike/);
+        assert.match(orderQuery.orExpression, /source_channel\.ilike/);
+        assert.match(orderQuery.orExpression, /channel_account_key\.ilike/);
+    });
+});
+
 test('shop orders handler resolves order content through exact order-item linkage when inventory_id is empty', async () => {
     await withShopOrdersHandler({
         shop_orders: [

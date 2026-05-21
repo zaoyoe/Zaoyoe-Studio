@@ -1,0 +1,32 @@
+[
+  {
+    "orderId": "XY-MOCK-1001",
+    "status": "买家已付款",
+    "buyerId": "buyer-demo-1",
+    "buyerNick": "闲鱼买家A",
+    "item": {
+      "itemId": "xianyu-demo-item-001",
+      "title": "示例数字商品",
+      "skuText": "标准版"
+    },
+    "quantity": 1,
+    "payAmount": "9.90",
+    "totalAmount": "9.90",
+    "createdAt": "2026-05-21T09:00:00.000Z"
+  },
+  {
+    "orderId": "XY-MOCK-1002",
+    "status": "待付款",
+    "buyerId": "buyer-demo-2",
+    "buyerNick": "闲鱼买家B",
+    "item": {
+      "itemId": "xianyu-demo-item-001",
+      "title": "示例数字商品",
+      "skuText": "标准版"
+    },
+    "quantity": 1,
+    "payAmount": "9.90",
+    "totalAmount": "9.90",
+    "createdAt": "2026-05-21T09:05:00.000Z"
+  }
+]

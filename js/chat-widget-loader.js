@@ -7,10 +7,10 @@
     global.__zaoyoeChatWidgetBootstrapLoaded = true;
 
     const VERSION = '20260516_HOME_AUTH_CHAT_CACHE_BUST_1';
-    const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';
-    const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';
-    const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';
-    const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=20260507_CHAT_WIDGET_ADAPTIVE_BUBBLE_1';
+    const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=dcb98464f0c8';
+    const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=dcb98464f0c8';
+    const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=dcb98464f0c8&siteAssetCdn=20260510_SITE_ASSET_CDN_1';
+    const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=dcb98464f0c8';
     const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';
     const CHAT_WIDGET_SHELL_MODE_KEY = 'zaoyoe_chat_widget_last_shell_mode_v1';
     const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';
@@ -41,7 +41,7 @@
             return bootstrapScript;
         }
         bootstrapScript = document.currentScript
-            || document.querySelector(`script[src*="js/chat-widget-loader.js?v=${VERSION}"]`)
+            || document.querySelector(`script[src*="js/chat-widget-loader.js?v=dcb98464f0c8"]`)
             || document.querySelector('script[src*="js/chat-widget-loader.js"]');
         return bootstrapScript;
     }
