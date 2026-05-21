@@ -29,6 +29,11 @@ function createPublicConfigHandlers({
         return String(value || '').trim().slice(0, Math.max(0, maxLength));
     }
 
+    function normalizeVerifyModeVisibility(value) {
+        const normalized = sanitizeText(value, 40).toLowerCase();
+        return ['both', 'extract_only', 'full_only'].includes(normalized) ? normalized : 'both';
+    }
+
     function uniqueValues(values = []) {
         return Array.from(new Set((Array.isArray(values) ? values : []).filter(Boolean)));
     }
@@ -473,14 +478,6 @@ function createPublicConfigHandlers({
             });
         }
 
-        if (typeof requireAuthenticatedUser !== 'function') {
-            return sendJson(res, 503, {
-                success: false,
-                message: 'Verify quota is unavailable'
-            });
-        }
-
-        await requireAuthenticatedUser(req);
         const url = new URL(req.url || '', 'http://localhost');
         const site = resolveSiteScopedSystemConfigRequestSite(req, url, { fallback: 'cn' });
 
@@ -514,8 +511,12 @@ function createPublicConfigHandlers({
             Number(config.pricePerVerifyFull || config.price_per_verify_full) || Math.round(extractPrice * 2)
         );
 
+        const modeVisibility = normalizeVerifyModeVisibility(config.mode_visibility || config.modeVisibility);
+
         return {
             enabled: config.enabled !== false,
+            mode_visibility: modeVisibility,
+            modeVisibility,
             price_per_verify: extractPrice,
             price_per_verify_extract: extractPrice,
             price_per_verify_full: fullPrice,

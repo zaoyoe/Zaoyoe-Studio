@@ -417,6 +417,10 @@ body {
     border-color: rgba(76, 131, 183, 0.18);
 }
 
+.verify-mode-selector--single {
+    grid-template-columns: minmax(0, 1fr);
+}
+
 .verify-mode-option input:checked+.verify-mode-option__body {
     background: linear-gradient(180deg, #eff7ff 0%, #e6f1fb 100%);
     border-color: rgba(76, 131, 183, 0.5);

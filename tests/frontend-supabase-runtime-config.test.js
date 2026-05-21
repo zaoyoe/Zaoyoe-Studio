@@ -278,6 +278,8 @@ test('settings split Google One API into its own tab immediately after content s
 
     assert.equal(contentViewSource.includes('cfgVerifyPrice'), false, 'settings-view-content should no longer include the Google One API pricing controls');
     assert.equal(googleOneViewSource.includes('cfgVerifyPrice'), true, 'settings-view-google-one should host the Google One API pricing controls');
+    assert.equal(googleOneViewSource.includes('verifyModeVisibilityDropdown'), true, 'settings-view-google-one should host the Google One frontend mode visibility dropdown');
+    assert.equal(googleOneViewSource.includes('id="cfgVerifyModeVisibility"'), false, 'settings-view-google-one should not use a native mode visibility select');
     assert.equal(googleOneViewSource.includes('cfgVerifyApiKey'), true, 'settings-view-google-one should host the Google One API credential controls');
     assert.equal(googleOneViewSource.includes('settings-google-one-hero'), true, 'settings-view-google-one should render the dedicated Google One API page hero');
     assert.equal(googleOneViewSource.includes('settings-google-one-top-grid'), true, 'settings-view-google-one should split Google One API configuration into a dedicated top card grid');
@@ -4199,7 +4201,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'index.html should load the latest framer_home stylesheet version'
     );
     assert.equal(
-        homepageSource.includes('./js/framer_home.js?v=20260519_HOME_PROGRESSIVE_SHELL_1'),
+        homepageSource.includes('./js/framer_home.js?v=20260521_HOME_SHOP_TITLE_1'),
         true,
         'index.html should load the latest framer_home script version'
     );
@@ -7308,7 +7310,7 @@ test('admin ops alert controls expose delegated settings actions and runtime wir
         'refreshOpsAlertHealthPanel,',
         "requireOpsAlertWorkbenchMethod('fetchAdminWorkbenchOpsAlertMonitor')",
         'const OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS = 20000;',
-        'const VERIFY_MONITOR_FETCH_TIMEOUT_MS = 8000;',
+        'const VERIFY_MONITOR_FETCH_TIMEOUT_MS = 15000;',
         'function getDefaultOpsAlertMonitorState()',
         'function getDefaultOpsAlertMonitorShiftReport()',
         'function normalizeOpsAlertMonitorShiftReport(raw)',
@@ -9549,6 +9551,14 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         "function setVerifyQuotaTone(target, tone = 'unknown')",
         'pollTimeoutFull: 30 * 60 * 1000',
         'function getTaskPollTimeoutMs(taskType = \'extract\')',
+        "function normalizeVerifyModeVisibility(value)",
+        "function getAvailableTaskTypes()",
+        "function syncModeSelectorFromConfig()",
+        "route=verify-settings&site=",
+        "CONFIG.modeVisibility = normalizeVerifyModeVisibility(config.mode_visibility || config.modeVisibility);",
+        "syncModeSelectorFromConfig();",
+        "const availableTaskTypes = getAvailableTaskTypes();",
+        "verify-mode-selector--single",
         "const pollTimeoutMs = getTaskPollTimeoutMs(taskInfoAtStart.taskType || entry.taskType || 'extract');",
         "setVerifyRuntimeStyles(widget, {",
         'setVerifyHidden(quotaBar, false);',
@@ -9594,7 +9604,7 @@ test('verify widget runtime renderers externalize progress, visibility, history 
     );
 
     assert.equal(
-        verifyPageSource.includes('verify-widget.css?v=20260506_ENGAGEMENT_ACTION_ROUTES_1'),
+        verifyPageSource.includes('verify-widget.css?v=20260520_VERIFY_MODE_VISIBILITY_2'),
         true,
         'verify.html should load the latest verify-widget stylesheet version'
     );
@@ -9604,7 +9614,7 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'verify.html should load the shared user event tracker before the verify widget runtime'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260506_ENGAGEMENT_ACTION_ROUTES_1'),
+        verifyPageSource.includes('./verify-widget.js?v=20260520_VERIFY_MODE_VISIBILITY_2'),
         true,
         'verify.html should load the latest verify-widget script version'
     );
@@ -10490,6 +10500,7 @@ test('admin studio security, verify, and affiliate controls route through delega
     const adminStudioSource = readRepoFile('admin-studio.html');
     const adminStudioScript = readRepoFile('admin-studio.js');
     const adminStudioStyles = readRepoFile('admin-studio.css');
+    const adminStudioPageStyles = readRepoFile('css/admin-studio-page.css');
     const adminConfigSource = readRepoFile('admin-config.js');
     const analyticsSource = readRepoFile('admin-analytics.js');
 
@@ -10531,6 +10542,11 @@ test('admin studio security, verify, and affiliate controls route through delega
         'data-admin-action="settings-unlock-all-accounts"',
         'data-admin-action="settings-save-ip-blacklist"',
         'data-admin-change-action="settings-save-verify-config"',
+        'id="verifyModeVisibilityDropdown"',
+        'class="custom-dropdown verify-mode-visibility-dropdown"',
+        'data-dropdown-id="verifyModeVisibilityDropdown"',
+        'data-option-value="extract_only"',
+        'data-option-value="full_only"',
         'data-admin-action="settings-refresh-verify-monitor"',
         'data-admin-focus-action="settings-verify-api-key-unlock"',
         'data-admin-blur-action="settings-verify-api-key-lock"',
@@ -10571,6 +10587,20 @@ test('admin studio security, verify, and affiliate controls route through delega
         assert.equal(adminStudioScript.includes(marker), true, `admin-studio.js should contain ${marker}`);
     }
 
+    [
+        'verifyModeVisibilityDropdown',
+        'mode_visibility',
+        'normalizeVerifyModeVisibility',
+        'getVerifyModeVisibilityLabel',
+        'getVerifyModeVisibilityDropdownLabel',
+        'getCustomDropdownSelectedValue',
+        'dropdown.dataset.value = String(value)',
+        "dropdown.setAttribute('data-value', String(value))",
+        "const storedValue = dropdown.getAttribute('data-value') || dropdown.dataset?.value"
+    ].forEach((marker) => {
+        assert.equal(adminConfigSource.includes(marker), true, `admin-config.js should contain ${marker}`);
+    });
+
     assert.equal(
         adminStudioSource.includes('id="userModalOverlay" data-admin-overlay-close="user-modal"'),
         true,
@@ -10590,6 +10620,11 @@ test('admin studio security, verify, and affiliate controls route through delega
     assert.equal(adminStudioStyles.includes('.admin-audit-monitor-card:focus-within'), true, 'admin-studio.css should highlight admin access summary cards while interacting with them');
     assert.equal(adminStudioStyles.includes('.admin-audit-monitor-panel:focus-within'), true, 'admin-studio.css should highlight admin access panels while interacting with them');
     assert.equal(adminStudioStyles.includes('.admin-audit-monitor-item:hover'), true, 'admin-studio.css should highlight admin access list items on hover');
+    assert.equal(adminStudioStyles.includes('#settings-view-google-one .verify-mode-visibility-dropdown'), true, 'admin-studio.css should style the Google One mode visibility custom dropdown');
+    assert.equal(adminStudioStyles.includes('#settings-view-google-one .verify-mode-visibility-dropdown .dropdown-menu.show'), true, 'admin-studio.css should support the generic dropdown show state for the Google One custom dropdown');
+    assert.equal(adminStudioPageStyles.includes('html[data-theme="light"] #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-trigger'), true, 'css/admin-studio-page.css should adapt the Google One custom dropdown trigger for light theme');
+    assert.equal(adminStudioPageStyles.includes('html[data-theme="light"] #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-menu'), true, 'css/admin-studio-page.css should adapt the Google One custom dropdown menu for light theme');
+    assert.match(adminStudioPageStyles, /\.verify-mode-visibility-dropdown \.dropdown-option\.selected[\s\S]*color:\s*var\(--admin-studio-ui-blue,\s*#769dca\) !important;/, 'css/admin-studio-page.css should render only the selected Google One custom dropdown option text with the Admin Studio UI blue');
     assert.equal(adminStudioSource.includes('verify-monitor-list verify-monitor-list--compact'), true, 'admin-studio.html should render verify monitor task and failure lists with compact scroll containers');
     assert.equal(adminStudioStyles.includes('.verify-monitor-list--compact'), true, 'admin-studio.css should keep recent verify tasks and failures inside compact scroll regions');
     assert.equal(adminStudioStyles.includes('.verify-monitor-item__chips'), true, 'admin-studio.css should support compact verify monitor detail chips');

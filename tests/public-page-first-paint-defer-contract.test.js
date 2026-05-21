@@ -77,7 +77,7 @@ test('heavy page runtimes and engagement chrome load without blocking first pain
         ],
         'verify.html': [
             './starry-sky.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
-            './verify-widget.js?v=20260506_ENGAGEMENT_ACTION_ROUTES_1',
+            './verify-widget.js?v=20260520_VERIFY_MODE_VISIBILITY_2',
             'js/chat-widget-loader.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1'
         ],
         'prompts.html': [

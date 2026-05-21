@@ -26,8 +26,8 @@ body.home-page .framer-footer {
 #main-content>:is(.content-section,.ticker-section){width:100%;position:relative;}
 #main-content>.content-section{max-width:1400px;margin:0 auto;padding:var(--spacing-2xl) var(--spacing-lg);}
 #main-content>.ticker-section{padding:var(--spacing-xl) 0;overflow:hidden;}
-/* 20260519_HOME_PROGRESSIVE_SHELL_1 */
-.home-section-shell__header .section-title{letter-spacing:0}.home-section-shell__body{display:grid;gap:14px}.home-section-shell__tile{display:block;min-height:120px;border-radius:12px;background:linear-gradient(110deg,transparent,rgba(255,255,255,.085),transparent),rgba(255,255,255,.075);background-size:220% 100%;animation:home-section-shell-shimmer 1.8s ease-in-out infinite}@keyframes home-section-shell-shimmer{0%{background-position:180% 0}100%{background-position:-80% 0}}
+/* 20260521_HOME_PROMPTS_SHELL_STABLE_2 */
+.home-section-shell-section{--home-shell-min-height:520px;min-height:var(--home-shell-min-height);display:flex;align-items:center;justify-content:center}.home-section-shell-section--prompts{--home-shell-min-height:820px}.home-section-shell__header,.section-header{width:min(640px,88vw);margin:0 auto var(--spacing-xl);display:grid;gap:12px;justify-items:center;text-align:center}.home-section-shell__header .section-title,.section-header .section-title{font-size:clamp(36px,5vw,72px);letter-spacing:0;line-height:1.2;margin:0}.home-section-shell__header .section-subtitle,.section-header .section-subtitle{max-width:620px;margin:0;color:var(--text-secondary);font-size:clamp(16px,2vw,20px);line-height:1.6}
 
 html.mobile-menu-open,
 body.mobile-menu-open {

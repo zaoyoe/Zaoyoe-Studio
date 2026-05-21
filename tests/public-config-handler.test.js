@@ -362,13 +362,6 @@ test('public verify quota handler returns remaining uses and derived task counts
     try {
         const handlers = createPublicConfigHandlers({
             admin: {
-                async requireAuthenticatedUser() {
-                    return {
-                        user: {
-                            id: 'user-1'
-                        }
-                    };
-                },
                 getOptionalSupabaseAdmin() {
                     return {
                         from(table) {
@@ -403,8 +396,9 @@ test('public verify quota handler returns remaining uses and derived task counts
         const res = createResponseRecorder();
         await handlers['verify-quota']({
             method: 'GET',
+            url: '/api/public?scope=config&route=verify-quota&site=cn',
             headers: {
-                authorization: 'Bearer member-token'
+                host: 'localhost:3000'
             }
         }, res);
         const payload = JSON.parse(String(res.body || '{}'));
@@ -439,6 +433,7 @@ test('public verify settings handler resolves site price without exposing CDKeys
                                                 verify_cdkey: 'CN-SECRET',
                                                 price_per_verify: 10,
                                                 price_per_verify_full: 20,
+                                                mode_visibility: 'both',
                                                 verify_api_base_url: 'https://aidone.lol'
                                             },
                                             sites: {
@@ -447,6 +442,7 @@ test('public verify settings handler resolves site price without exposing CDKeys
                                                     verify_cdkey: 'INTL-SECRET',
                                                     price_per_verify: 6,
                                                     price_per_verify_full: 12,
+                                                    mode_visibility: 'full_only',
                                                     verify_api_base_url: 'https://aidone.lol'
                                                 }
                                             }
@@ -481,9 +477,79 @@ test('public verify settings handler resolves site price without exposing CDKeys
     assert.equal(payload.site, 'intl');
     assert.equal(payload.config.price_per_verify, 6);
     assert.equal(payload.config.price_per_verify_full, 12);
+    assert.equal(payload.config.mode_visibility, 'full_only');
+    assert.equal(payload.config.modeVisibility, 'full_only');
     assert.equal('verify_cdkey' in payload.config, false);
     assert.equal('apiKey' in payload.config, false);
     assert.equal(JSON.stringify(payload).includes('INTL-SECRET'), false);
+});
+
+test('public verify settings handler inherits mode visibility from default config for site overrides', async () => {
+    const handlers = createPublicConfigHandlers({
+        admin: {
+            getOptionalSupabaseAdmin() {
+                return {
+                    from(table) {
+                        assert.equal(table, 'system_config');
+                        return {
+                            select() { return this; },
+                            eq() { return this; },
+                            async maybeSingle() {
+                                return {
+                                    data: {
+                                        config_value: {
+                                            __site_scoped: true,
+                                            default: {
+                                                enabled: true,
+                                                verify_cdkey: 'CN-SECRET',
+                                                price_per_verify: 10,
+                                                price_per_verify_full: 20,
+                                                mode_visibility: 'full_only',
+                                                verify_api_base_url: 'https://aidone.lol'
+                                            },
+                                            sites: {
+                                                cn: {
+                                                    enabled: true,
+                                                    verify_cdkey: 'CN-SITE-SECRET',
+                                                    price_per_verify: 41,
+                                                    price_per_verify_full: 60,
+                                                    verify_api_base_url: 'https://aidone.lol'
+                                                }
+                                            }
+                                        }
+                                    },
+                                    error: null
+                                };
+                            }
+                        };
+                    }
+                };
+            },
+            sendJson(res, status, payload) {
+                res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                res.end(JSON.stringify(payload));
+                return payload;
+            }
+        }
+    });
+
+    const res = createResponseRecorder();
+    await handlers['verify-settings']({
+        method: 'GET',
+        url: '/api/public?scope=config&route=verify-settings&site=cn',
+        headers: {
+            host: 'www.zaoyoe.com'
+        }
+    }, res);
+    const payload = JSON.parse(String(res.body || '{}'));
+
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.config.price_per_verify, 41);
+    assert.equal(payload.config.price_per_verify_full, 60);
+    assert.equal(payload.config.mode_visibility, 'full_only');
+    assert.equal(payload.config.modeVisibility, 'full_only');
+    assert.equal(JSON.stringify(payload).includes('CN-SITE-SECRET'), false);
+    assert.equal(JSON.stringify(payload).includes('CN-SECRET'), false);
 });
 
 test('public verify quota handler aggregates balances across a configured CDKey pool', async () => {
@@ -517,13 +583,6 @@ test('public verify quota handler aggregates balances across a configured CDKey 
     try {
         const handlers = createPublicConfigHandlers({
             admin: {
-                async requireAuthenticatedUser() {
-                    return {
-                        user: {
-                            id: 'user-2'
-                        }
-                    };
-                },
                 getOptionalSupabaseAdmin() {
                     return {
                         from(table) {
@@ -558,8 +617,9 @@ test('public verify quota handler aggregates balances across a configured CDKey 
         const res = createResponseRecorder();
         await handlers['verify-quota']({
             method: 'GET',
+            url: '/api/public?scope=config&route=verify-quota&site=cn',
             headers: {
-                authorization: 'Bearer member-token'
+                host: 'localhost:3000'
             }
         }, res);
         const payload = JSON.parse(String(res.body || '{}'));
@@ -572,6 +632,156 @@ test('public verify quota handler aggregates balances across a configured CDKey 
         assert.equal(payload.remaining_full_jobs, 1);
         assert.equal(payload.key_count, 2);
         assert.equal(payload.healthy_key_count, 2);
+    } finally {
+        global.fetch = originalFetch;
+    }
+});
+
+test('public verify quota handler returns healthy key balances when one CDKey times out', async () => {
+    const originalFetch = global.fetch;
+    const seenKeys = [];
+    global.fetch = async (input, init = {}) => {
+        assert.equal(String(input), 'https://aidone.lol/openapi');
+        assert.equal(init.method, 'POST');
+
+        const payload = JSON.parse(init.body);
+        seenKeys.push(payload.cdkey);
+        if (payload.cdkey === 'SYS-SLOW') {
+            const error = new Error('The operation was aborted due to timeout');
+            error.name = 'AbortError';
+            throw error;
+        }
+
+        return new Response(JSON.stringify({
+            success: true,
+            remaining_uses: 2,
+            total_used: 8
+        }), {
+            status: 200,
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+    };
+
+    try {
+        const handlers = createPublicConfigHandlers({
+            admin: {
+                getOptionalSupabaseAdmin() {
+                    return {
+                        from() {
+                            return {
+                                select() { return this; },
+                                eq() { return this; },
+                                async maybeSingle() {
+                                    return {
+                                        data: {
+                                            config_value: {
+                                                enabled: true,
+                                                verify_cdkeys: ['SYS-OK', 'SYS-SLOW'],
+                                                verify_api_base_url: 'https://aidone.lol'
+                                            }
+                                        },
+                                        error: null
+                                    };
+                                }
+                            };
+                        }
+                    };
+                },
+                sendJson(res, status, payload) {
+                    res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                    res.end(JSON.stringify(payload));
+                    return payload;
+                }
+            }
+        });
+
+        const res = createResponseRecorder();
+        await handlers['verify-quota']({
+            method: 'GET',
+            url: '/api/public?scope=config&route=verify-quota&site=cn',
+            headers: {
+                host: 'localhost:3000'
+            }
+        }, res);
+        const payload = JSON.parse(String(res.body || '{}'));
+
+        assert.deepEqual(seenKeys, ['SYS-OK', 'SYS-SLOW']);
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.remaining_uses, 2);
+        assert.equal(payload.key_count, 2);
+        assert.equal(payload.healthy_key_count, 1);
+        assert.equal(payload.key_states.length, 2);
+        assert.equal(payload.key_states[0].ok, true);
+        assert.equal(payload.key_states[1].ok, false);
+        assert.equal(payload.key_states[1].status, 504);
+        assert.equal(payload.key_states[1].message, '查询额度超时');
+    } finally {
+        global.fetch = originalFetch;
+    }
+});
+
+test('public verify quota handler is readable without authentication', async () => {
+    const originalFetch = global.fetch;
+    global.fetch = async () => new Response(JSON.stringify({
+        success: true,
+        remaining_uses: 2,
+        total_used: 8
+    }), {
+        status: 200,
+        headers: {
+            'Content-Type': 'application/json'
+        }
+    });
+
+    try {
+        const handlers = createPublicConfigHandlers({
+            admin: {
+                getOptionalSupabaseAdmin() {
+                    return {
+                        from() {
+                            return {
+                                select() { return this; },
+                                eq() { return this; },
+                                async maybeSingle() {
+                                    return {
+                                        data: {
+                                            config_value: {
+                                                enabled: true,
+                                                verify_cdkey: 'SYS-OPEN',
+                                                verify_api_base_url: 'https://aidone.lol'
+                                            }
+                                        },
+                                        error: null
+                                    };
+                                }
+                            };
+                        }
+                    };
+                },
+                sendJson(res, status, payload) {
+                    res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                    res.end(JSON.stringify(payload));
+                    return payload;
+                }
+            }
+        });
+
+        const res = createResponseRecorder();
+        await handlers['verify-quota']({
+            method: 'GET',
+            url: '/api/public?scope=config&route=verify-quota&site=cn',
+            headers: {
+                host: 'localhost:3000'
+            }
+        }, res);
+        const payload = JSON.parse(String(res.body || '{}'));
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.remaining_uses, 2);
     } finally {
         global.fetch = originalFetch;
     }
