@@ -8564,7 +8564,7 @@
         const deploymentSteps = Array.isArray(diagnostics.deployment_steps) ? diagnostics.deployment_steps : [];
         const snippet = external.embed_snippet || [
             '<script',
-            '  src="https://www.zaoyoe.com/js/engagement-external-embed.js?v=077c87a52976"',
+            '  src="https://www.zaoyoe.com/js/engagement-external-embed.js?v=994dcbe92774"',
             `  data-page-id="${external.default_page_id}"`,
             `  data-site="${external.default_site}"`,
             `  data-api-origin="${external.api_origin}"`,

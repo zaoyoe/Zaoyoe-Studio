@@ -6,13 +6,13 @@
     const HOMEPAGE_GUESTBOOK_RUNTIME_SOURCES = Object.freeze([
         {
             id: 'guestbook-data-runtime',
-            src: './supabase-guestbook-functions.js?v=077c87a52976',
+            src: './supabase-guestbook-functions.js?v=994dcbe92774',
             isReady: () => typeof window.loadGuestbookMessages === 'function'
                 && typeof window.addMessage === 'function'
         },
         {
             id: 'guestbook-modal-runtime',
-            src: `./js/homepage-guestbook-modal.js?v=077c87a52976&iosChromeKeyboard=${IOS_CHROME_KEYBOARD_VERSION}`,
+            src: `./js/homepage-guestbook-modal.js?v=994dcbe92774&iosChromeKeyboard=${IOS_CHROME_KEYBOARD_VERSION}`,
             isReady: () => typeof window.openGuestbookModal === 'function'
                 && window.openGuestbookModal.__homepageGuestbookIntentStub !== true
         }
