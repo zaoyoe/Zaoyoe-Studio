@@ -2,6 +2,7 @@ const {
     fetchVerifyQuotaSnapshot
 } = require('../../api/_lib/verify-quota-alerts');
 const {
+    getSiteScopedSystemConfigDefaultValue,
     normalizeSiteScopedSystemConfigSite,
     resolveSiteScopedSystemConfigValue
 } = require('./_site-scoped-system-config');
@@ -10,6 +11,10 @@ const ACTIVE_VERIFY_STATUSES = Object.freeze(['queued', 'running', 'processing',
 
 function normalizeText(value) {
     return String(value || '').trim();
+}
+
+function isPlainVerifyRuntimeConfig(value) {
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
 function getVerifyPriceMap(config = {}) {
@@ -28,6 +33,11 @@ function getVerifyPriceMap(config = {}) {
         extract: extractPrice,
         full: fullPrice
     };
+}
+
+function normalizeVerifyModeVisibility(value) {
+    const normalized = normalizeText(value).toLowerCase();
+    return ['both', 'extract_only', 'full_only'].includes(normalized) ? normalized : 'both';
 }
 
 function normalizeVerifyCredentialList(value) {
@@ -101,6 +111,14 @@ function buildVerifyQuotaKeyState(snapshot = {}) {
     };
 }
 
+function normalizeVerifySnapshotError(error) {
+    if (error?.name === 'AbortError' || error?.name === 'TimeoutError') {
+        return '查询额度超时';
+    }
+
+    return normalizeText(error?.message || error) || '查询额度失败';
+}
+
 async function loadVerifyRuntimeConfig(supabase, env = process.env, options = {}) {
     const site = normalizeSiteScopedSystemConfigSite(options?.site, { fallback: 'cn' });
     const fallbackKeys = normalizeVerifyCredentialList([
@@ -112,6 +130,7 @@ async function loadVerifyRuntimeConfig(supabase, env = process.env, options = {}
     const fallbackConfig = {
         site,
         enabled: true,
+        modeVisibility: 'both',
         apiKey: fallbackKeys[0] || '',
         apiKeys: fallbackKeys,
         apiBaseUrl: normalizeText(env?.VERIFY_API_BASE_URL || 'https://aidone.lol')
@@ -134,11 +153,20 @@ async function loadVerifyRuntimeConfig(supabase, env = process.env, options = {}
     const storedConfig = data?.config_value && typeof data.config_value === 'object'
         ? data.config_value
         : {};
+    const defaultConfig = isPlainVerifyRuntimeConfig(getSiteScopedSystemConfigDefaultValue(storedConfig))
+        ? getSiteScopedSystemConfigDefaultValue(storedConfig)
+        : {};
     const resolvedConfig = resolveSiteScopedSystemConfigValue(storedConfig, site);
     const config = resolvedConfig && typeof resolvedConfig === 'object' && !Array.isArray(resolvedConfig)
         ? resolvedConfig
         : {};
     const prices = getVerifyPriceMap(config);
+    const modeVisibility = normalizeVerifyModeVisibility(
+        config.mode_visibility
+        || config.modeVisibility
+        || defaultConfig.mode_visibility
+        || defaultConfig.modeVisibility
+    );
     const apiKeys = normalizeVerifyCredentialList([
         ...(Array.isArray(config.verify_cdkeys) ? config.verify_cdkeys : []),
         config.verify_cdkey,
@@ -155,7 +183,9 @@ async function loadVerifyRuntimeConfig(supabase, env = process.env, options = {}
         apiBaseUrl: normalizeText(config.verify_api_base_url || fallbackConfig.apiBaseUrl),
         pricePerVerify: prices.extract,
         pricePerVerifyExtract: prices.extract,
-        pricePerVerifyFull: prices.full
+        pricePerVerifyFull: prices.full,
+        modeVisibility,
+        mode_visibility: modeVisibility
     };
 }
 
@@ -164,20 +194,33 @@ async function fetchVerifyQuotaStates(config = {}, options = {}) {
     const fetchImpl = options.fetchImpl || global.fetch;
 
     const snapshots = await Promise.all(apiKeys.map(async (apiKey) => {
-        const snapshot = await fetchVerifyQuotaSnapshot({
-            apiKey,
-            apiBaseUrl: config.apiBaseUrl
-        }, {
-            fetchImpl,
-            timeoutMs: options.timeoutMs,
-            now: options.now
-        });
+        try {
+            const snapshot = await fetchVerifyQuotaSnapshot({
+                apiKey,
+                apiBaseUrl: config.apiBaseUrl
+            }, {
+                fetchImpl,
+                timeoutMs: options.timeoutMs,
+                now: options.now
+            });
 
-        return {
-            ...snapshot,
-            apiKey,
-            key_name: normalizeText(snapshot?.key_name) || maskVerifyCredential(apiKey)
-        };
+            return {
+                ...snapshot,
+                apiKey,
+                key_name: normalizeText(snapshot?.key_name) || maskVerifyCredential(apiKey)
+            };
+        } catch (error) {
+            return {
+                ok: false,
+                apiKey,
+                key_name: maskVerifyCredential(apiKey),
+                status: error?.name === 'AbortError' || error?.name === 'TimeoutError' ? 504 : 502,
+                code: normalizeText(error?.name) || null,
+                error: normalizeVerifySnapshotError(error),
+                message: normalizeVerifySnapshotError(error),
+                checked_at: new Date(options.now || Date.now()).toISOString()
+            };
+        }
     }));
 
     return snapshots;
@@ -308,6 +351,7 @@ module.exports = {
     getVerifyPriceMap,
     loadVerifyRuntimeConfig,
     maskVerifyCredential,
+    normalizeVerifyModeVisibility,
     normalizeVerifyCredentialList,
     selectVerifyCredentialForTask
 };

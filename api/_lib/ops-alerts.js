@@ -21,6 +21,9 @@ const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
     feishu_webhook_url: 'ops_alert_feishu_webhook_url',
     email_api_key: 'ops_alert_email_api_key'
 });
+const DEFAULT_OPS_ALERTS_TIMEOUT_MS = 15000;
+const DEFAULT_TELEGRAM_FETCH_RETRY_COUNT = 2;
+const DEFAULT_TELEGRAM_FETCH_RETRY_DELAY_MS = 750;
 const SUPPORTED_CHANNELS = Object.freeze(['telegram', 'feishu', 'email']);
 const DEFAULT_QUIET_HOURS_TIMEZONE = 'Asia/Shanghai';
 const DEFAULT_SUMMARY_SCHEDULE_MODE = 'rolling_window';
@@ -377,7 +380,7 @@ const DEFAULT_OPS_ALERTS_CONFIG = Object.freeze({
     max_attempts: 6,
     retry_base_delay_ms: 60000,
     retry_max_delay_ms: 1800000,
-    timeout_ms: 5000,
+    timeout_ms: DEFAULT_OPS_ALERTS_TIMEOUT_MS,
     temporary_mute: Object.freeze({
         until: '',
         allow_critical: true
@@ -940,6 +943,31 @@ function normalizeNumber(value, fallback, min = null, max = null) {
     if (Number.isFinite(min)) next = Math.max(min, next);
     if (Number.isFinite(max)) next = Math.min(max, next);
     return next;
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => {
+        setTimeout(resolve, Math.max(0, Number(ms || 0) || 0));
+    });
+}
+
+function isRetryableFetchError(error = {}) {
+    const name = normalizeText(error?.name).toLowerCase();
+    const message = normalizeText(error?.message).toLowerCase();
+    if (name === 'aborterror' || message.includes('aborted') || message.includes('abort')) {
+        return false;
+    }
+
+    return (
+        message.includes('fetch failed')
+        || message.includes('network')
+        || message.includes('socket')
+        || message.includes('econnreset')
+        || message.includes('etimedout')
+        || message.includes('econnrefused')
+        || message.includes('enotfound')
+        || message.includes('tls')
+    );
 }
 
 function normalizeSeverity(value, fallback = 'warning') {
@@ -6156,6 +6184,53 @@ async function postJson(url, body, {
     }
 }
 
+function resolveOpsAlertDeliveryTimeoutMs(runtime = {}, options = {}) {
+    if (Number.isFinite(Number(options.timeoutMs)) && Number(options.timeoutMs) > 0) {
+        return Number(options.timeoutMs);
+    }
+
+    return normalizeNumber(
+        runtime?.config?.timeout_ms,
+        DEFAULT_OPS_ALERTS_CONFIG.timeout_ms,
+        DEFAULT_OPS_ALERTS_TIMEOUT_MS,
+        30000
+    );
+}
+
+function resolveTelegramFetchRetryCount(options = {}) {
+    if (Number.isFinite(Number(options.telegramFetchRetryCount))) {
+        return Math.max(0, Math.min(4, Math.round(Number(options.telegramFetchRetryCount))));
+    }
+    return DEFAULT_TELEGRAM_FETCH_RETRY_COUNT;
+}
+
+function resolveTelegramFetchRetryDelayMs(options = {}) {
+    if (Number.isFinite(Number(options.telegramFetchRetryDelayMs))) {
+        return Math.max(0, Math.min(5000, Math.round(Number(options.telegramFetchRetryDelayMs))));
+    }
+    return DEFAULT_TELEGRAM_FETCH_RETRY_DELAY_MS;
+}
+
+async function postJsonWithRetry(url, body, options = {}) {
+    const maxRetries = resolveTelegramFetchRetryCount(options);
+    const retryDelayMs = resolveTelegramFetchRetryDelayMs(options);
+    let lastError = null;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+        try {
+            return await postJson(url, body, options);
+        } catch (error) {
+            lastError = error;
+            if (attempt >= maxRetries || !isRetryableFetchError(error)) {
+                throw error;
+            }
+            await sleep(retryDelayMs * (attempt + 1));
+        }
+    }
+
+    throw lastError || new Error('fetch failed');
+}
+
 function buildEmailAlertSubject(job = {}, runtime = {}) {
     const prefix = normalizeText(runtime?.config?.channels?.email?.subject_prefix)
         || DEFAULT_OPS_ALERTS_CONFIG.channels.email.subject_prefix;
@@ -6177,15 +6252,19 @@ async function sendTelegramAlert(job, runtime, options = {}) {
 
     const text = buildExternalAlertText(job);
     const results = [];
+    const deliveryOptions = {
+        ...options,
+        timeoutMs: resolveOpsAlertDeliveryTimeoutMs(runtime, options)
+    };
     for (const chatId of chatIds) {
-        const result = await postJson(
+        const result = await postJsonWithRetry(
             `https://api.telegram.org/bot${token}/sendMessage`,
             {
                 chat_id: chatId,
                 text,
                 disable_web_page_preview: true
             },
-            options
+            deliveryOptions
         );
         results.push({
             chatId,
@@ -6218,7 +6297,10 @@ async function sendFeishuAlert(job, runtime, options = {}) {
                 text: buildExternalAlertText(job)
             }
         },
-        options
+        {
+            ...options,
+            timeoutMs: resolveOpsAlertDeliveryTimeoutMs(runtime, options)
+        }
     );
 
     if (result.ok) {
@@ -6273,7 +6355,9 @@ async function sendEmailAlert(job, runtime, options = {}) {
         payload,
         {
             ...options,
+            timeoutMs: resolveOpsAlertDeliveryTimeoutMs(runtime, options),
             headers: {
+                ...(options.headers || {}),
                 Authorization: `Bearer ${apiKey}`
             }
         }
@@ -6686,6 +6770,11 @@ module.exports = {
         normalizeOpsAlertConfigSite,
         normalizeCustomerChatQuickReplyTemplates,
         normalizeTicketReplyTemplates,
+        isRetryableFetchError,
+        postJsonWithRetry,
+        resolveOpsAlertDeliveryTimeoutMs,
+        resolveTelegramFetchRetryCount,
+        resolveTelegramFetchRetryDelayMs,
         resolveEnabledChannels,
         resolveOpsAlertInputSite,
         resolveOpsAlertsConfigValueForSite,

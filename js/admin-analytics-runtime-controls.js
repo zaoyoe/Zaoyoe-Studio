@@ -481,6 +481,9 @@ function selectDropdownOption(dropdownId, value, label) {
     const dropdown = document.getElementById(dropdownId);
     if (!dropdown) return;
 
+    dropdown.dataset.value = String(value);
+    dropdown.setAttribute('data-value', String(value));
+
     const valueEl = dropdown.querySelector('.dropdown-value');
     if (valueEl) {
         valueEl.textContent = label;

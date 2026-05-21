@@ -217,6 +217,30 @@ test('local preview server reloads shared public handler modules without requiri
     assert.equal(secondLoad.version, 'v2');
 });
 
+test('local preview server reloads shared public helper modules without requiring a restart', () => {
+    const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-public-helper-'));
+    const tempApiDir = path.join(tempRoot, 'api');
+    const tempPublicHandlerDir = path.join(tempRoot, 'server/api-handlers/public');
+    const tempHelper = path.join(tempRoot, 'server/api-handlers/_shared-runtime.js');
+    const tempPublicEntry = path.join(tempApiDir, 'public.js');
+    const tempNestedHandler = path.join(tempPublicHandlerDir, 'route.js');
+
+    fs.mkdirSync(tempApiDir, { recursive: true });
+    fs.mkdirSync(tempPublicHandlerDir, { recursive: true });
+
+    fs.writeFileSync(tempPublicEntry, "module.exports = require('../server/api-handlers/public/route');\n");
+    fs.writeFileSync(tempNestedHandler, "module.exports = require('../_shared-runtime');\n");
+    fs.writeFileSync(tempHelper, "module.exports = { version: 'v1' };\n");
+
+    const firstLoad = loadFreshPublicApiHandler(tempRoot);
+    assert.equal(firstLoad.version, 'v1');
+
+    fs.writeFileSync(tempHelper, "module.exports = { version: 'v2' };\n");
+
+    const secondLoad = loadFreshPublicApiHandler(tempRoot);
+    assert.equal(secondLoad.version, 'v2');
+});
+
 test('local preview server reloads standalone shop handlers without requiring a restart', () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'local-preview-shop-handler-'));
     const tempShopHandlerDir = path.join(tempRoot, 'api/shop');

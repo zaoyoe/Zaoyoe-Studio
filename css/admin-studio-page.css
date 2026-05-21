@@ -17924,6 +17924,47 @@ html[data-theme="light"] #module-settings #settings-view-google-one :is(.verify-
     border-color: rgba(220, 38, 38, 0.2) !important;
 }
 
+html[data-theme="light"] #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-trigger,
+html[data-theme="light"] #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-trigger:is(:hover, :focus, :focus-visible, :active),
+html[data-theme="light"] #module-settings #settings-view-google-one .verify-mode-visibility-dropdown.open .dropdown-trigger,
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-trigger,
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-trigger:is(:hover, :focus, :focus-visible, :active),
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown.open .dropdown-trigger {
+    background: #ffffff !important;
+    background-image: none !important;
+    border-color: rgba(15, 23, 42, 0.12) !important;
+    color: #0f172a !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-menu,
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-menu {
+    background: rgba(255, 255, 255, 0.98) !important;
+    background-image: none !important;
+    border-color: rgba(15, 23, 42, 0.1) !important;
+    box-shadow: 0 18px 44px rgba(15, 23, 42, 0.12) !important;
+}
+
+html[data-theme="light"] #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option,
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option {
+    color: #0f172a !important;
+    -webkit-text-fill-color: #0f172a !important;
+}
+
+html[data-theme="light"] #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option:hover,
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option:hover {
+    background: rgba(118, 157, 202, 0.1) !important;
+    color: #0f172a !important;
+    -webkit-text-fill-color: #0f172a !important;
+}
+
+html[data-theme="light"] #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option.selected,
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option.selected {
+    background: rgba(118, 157, 202, 0.16) !important;
+    color: var(--admin-studio-ui-blue, #769dca) !important;
+    -webkit-text-fill-color: var(--admin-studio-ui-blue, #769dca) !important;
+}
+
 html[data-theme="light"] #module-settings #settings-view-google-one #verifyMonitorCasePanel .ops-alert-monitor-item__actions .btn-add-config:is([data-ops-alert-case-action="reopen"], [data-ops-alert-case-action="add_note"]),
 html:not([data-theme="dark"]) #module-settings #settings-view-google-one #verifyMonitorCasePanel .ops-alert-monitor-item__actions .btn-add-config:is([data-ops-alert-case-action="reopen"], [data-ops-alert-case-action="add_note"]) {
     border: 1px solid rgba(118, 157, 202, 0.52) !important;

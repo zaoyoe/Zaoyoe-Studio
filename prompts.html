@@ -168,7 +168,7 @@
             <div class="nav-search-wrapper">
                 <div class="nav-search">
                     <i class="fas fa-search"></i>
-                    <input type="text" id="gallerySearch" placeholder="Search prompts..."
+                    <input type="text" id="gallerySearch" placeholder="搜索提示词..."
                         data-i18n-placeholder="gallery.searchPlaceholder" autocomplete="off">
                 </div>
 
@@ -215,7 +215,7 @@
                 <div class="featured-overlay"></div>
             </div>
             <div class="featured-content">
-                <span class="featured-label" data-i18n="gallery.featured">✦ FEATURED</span>
+                <span class="featured-label" data-i18n="gallery.featured">✦ 精选推荐</span>
                 <h2 class="featured-title" id="featuredTitle"></h2>
                 <p class="featured-description" id="featuredDescription"></p>
             </div>
@@ -284,7 +284,7 @@
                 <!-- Prompt Area (FLIP Animation Source) -->
                 <div id="promptArea" class="prompt-area">
                     <div class="prompt-content-wrapper">
-                        <span class="prompt-label" data-i18n="gallery.prompt">Prompt</span>
+                        <span class="prompt-label" data-i18n="gallery.prompt">提示词</span>
                         <div id="modalPromptText" class="prompt-text blur-masked">
                             Loading prompt...
                         </div>
@@ -312,13 +312,13 @@
                     <div class="comment-header">
                         <div class="comment-sort-wrapper">
                             <button class="comment-sort-btn" id="commentSortBtn">
-                                <span id="currentSortLabel" data-i18n="gallery.top">Top</span>
+                                <span id="currentSortLabel" data-i18n="gallery.top">最热</span>
                                 <i class="fas fa-chevron-down"></i>
                             </button>
                             <div class="comment-sort-dropdown" id="commentSortDropdown">
-                                <div class="sort-option active" data-sort="top" data-i18n="gallery.top">Top</div>
-                                <div class="sort-option" data-sort="newest" data-i18n="gallery.newest">Newest</div>
-                                <div class="sort-option" data-sort="oldest" data-i18n="gallery.oldest">Oldest</div>
+                                <div class="sort-option active" data-sort="top" data-i18n="gallery.top">最热</div>
+                                <div class="sort-option" data-sort="newest" data-i18n="gallery.newest">最新</div>
+                                <div class="sort-option" data-sort="oldest" data-i18n="gallery.oldest">最早</div>
                             </div>
                         </div>
                     </div>
@@ -355,7 +355,7 @@
                         <input type="file" id="commentImageUpload" accept="image/*" class="prompts-comment-image-upload-hidden">
 
                         <!-- Upload button -->
-                        <button id="commentUploadBtn" class="comment-upload-btn" title="Attach image"
+                        <button id="commentUploadBtn" class="comment-upload-btn" title="添加图片"
                             data-i18n-title="gallery.attachImage">
                             <i class="fas fa-image"></i>
                         </button>
@@ -364,7 +364,7 @@
 
                         <!-- 发送按钮 -->
                         <!-- 发送按钮 (小飞机图标) -->
-                        <button id="sendCommentBtn" class="send-comment-btn" type="button" title="Send"
+                        <button id="sendCommentBtn" class="send-comment-btn" type="button" title="发送"
                             data-i18n-title="gallery.send">
                             <i class="fas fa-paper-plane"></i>
                         </button>

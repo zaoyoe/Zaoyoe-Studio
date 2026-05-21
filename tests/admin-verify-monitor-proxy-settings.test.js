@@ -168,6 +168,16 @@ test('verify monitor quota proxy forwards upstream quota data with internal auth
     }
 });
 
+test('verify monitor quota proxy uses a 15 second timeout budget', () => {
+    const source = require('node:fs').readFileSync(
+        path.resolve(__dirname, '../server/api-handlers/admin/settings/verify-monitor-quota.js'),
+        'utf8'
+    );
+
+    assert.equal(source.includes('const VERIFY_MONITOR_PROXY_TIMEOUT_MS = 15000;'), true);
+    assert.equal(source.includes('timeoutMs: VERIFY_MONITOR_PROXY_TIMEOUT_MS'), true);
+});
+
 test('verify monitor quota proxy falls back to forwarding admin authorization when internal auth key is missing', async () => {
     const originalFetch = global.fetch;
     global.fetch = async (input, init = {}) => {

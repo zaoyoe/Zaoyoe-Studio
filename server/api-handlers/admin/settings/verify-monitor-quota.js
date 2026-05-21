@@ -11,7 +11,7 @@ const {
 } = require('../../_verify-provider-runtime');
 
 const DEFAULT_VERIFY_SERVER_URL = 'https://verify-api.zaoyoe.com';
-const VERIFY_MONITOR_PROXY_TIMEOUT_MS = 5000;
+const VERIFY_MONITOR_PROXY_TIMEOUT_MS = 15000;
 
 function getVerifyServerUrl() {
     return String(process.env.VERIFY_SERVER_URL || DEFAULT_VERIFY_SERVER_URL).trim().replace(/\/+$/, '');

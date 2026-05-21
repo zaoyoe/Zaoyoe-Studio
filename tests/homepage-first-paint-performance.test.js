@@ -26,7 +26,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'static hero title should render immediately and still be localized by i18n'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260519_HOME_PROGRESSIVE_SHELL_1'),
+        indexSource.includes('./js/framer_home.js?v=20260521_HOME_SHOP_TITLE_1'),
         true,
         'index.html should cache-bust the first-paint homepage runtime'
     );
@@ -36,17 +36,17 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should cache-bust the prompt no-repaint homepage runtime fix'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home_critical.css?v=20260519_HOME_PROGRESSIVE_SHELL_1'),
+        indexSource.includes('./css/framer_home_critical.css?v=20260521_HOME_PROMPTS_SHELL_STABLE_2'),
         true,
         'index.html should load a small blocking homepage critical stylesheet'
     );
     assert.match(
         indexSource,
-        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260519_HOME_PROGRESSIVE_SHELL_1" media="print" data-deferred-style="1">/,
+        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260521_HOME_PROMPTS_SHELL_STABLE_2" media="print" data-deferred-style="1">/,
         'index.html should defer the full homepage stylesheet after the first-paint shell'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home.css?v=20260519_HOME_PROGRESSIVE_SHELL_1'),
+        indexSource.includes('./css/framer_home.css?v=20260521_HOME_PROMPTS_SHELL_STABLE_2'),
         true,
         'index.html should keep cache-busting the full static hero stability styles'
     );
@@ -376,7 +376,7 @@ test('homepage ships static progressive shells below the hero before runtime hyd
     const enMessages = JSON.parse(readRepoFile('lang/en.json'));
     const sectionExpectations = [
         ['prompts', 'content-section', 'home.prompts.title', '提示词'],
-        ['shop', 'content-section', 'home.shop.title', '精选资源商城'],
+        ['shop', 'content-section', 'home.shop.title', '资源商城'],
         ['gongyi', 'content-section', 'home.gongyi.title', 'API中转'],
         ['verify', 'content-section', 'home.verify.title', 'Gemini Pro'],
         ['guestbook', 'content-section', 'home.guestbook.title', '留言板'],
@@ -410,10 +410,25 @@ test('homepage ships static progressive shells below the hero before runtime hyd
 
     assert.equal(zhMessages.home.gongyi.title, 'API中转');
     assert.equal(enMessages.home.gongyi.title, 'API Relay');
-    assert.match(
-        criticalStyles,
-        /20260519_HOME_PROGRESSIVE_SHELL_1[\s\S]*\.home-section-shell__header \.section-title[\s\S]*\.home-section-shell__tile[\s\S]*animation:\s*home-section-shell-shimmer/,
-        'critical CSS should render readable progressive section shells before deferred CSS loads'
+    assert.equal(
+        criticalStyles.includes('.home-section-shell-section{--home-shell-min-height:520px;min-height:var(--home-shell-min-height);display:flex;align-items:center;justify-content:center}'),
+        true,
+        'critical CSS should center the progressive section shell before deferred CSS loads'
+    );
+    assert.equal(
+        criticalStyles.includes('.home-section-shell__header,.section-header{width:min(640px,88vw);margin:0 auto var(--spacing-xl);display:grid;gap:12px;justify-items:center;text-align:center}'),
+        true,
+        'critical CSS should center runtime section headers before deferred CSS loads'
+    );
+    assert.equal(
+        criticalStyles.includes('.home-section-shell__header .section-title,.section-header .section-title{font-size:clamp(36px,5vw,72px);letter-spacing:0;line-height:1.2;margin:0}'),
+        true,
+        'critical CSS should keep runtime section titles full-size before deferred CSS loads'
+    );
+    assert.equal(
+        criticalStyles.includes('.home-section-shell__header .section-subtitle,.section-header .section-subtitle{max-width:620px;margin:0;color:var(--text-secondary);font-size:clamp(16px,2vw,20px);line-height:1.6}'),
+        true,
+        'critical CSS should keep runtime section subtitles aligned before deferred CSS loads'
     );
     assert.match(
         framerStyles,
@@ -668,12 +683,12 @@ test('homepage shop title paints before delayed product cards', () => {
         'critical CSS should hide pending shop cards before deferred styles finish loading'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260519_HOME_PROGRESSIVE_SHELL_1'),
+        indexSource.includes('./js/framer_home.js?v=20260521_HOME_SHOP_TITLE_1'),
         true,
         'index.html should cache-bust the shop title-first homepage runtime'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home.css?v=20260519_HOME_PROGRESSIVE_SHELL_1'),
+        indexSource.includes('./css/framer_home.css?v=20260521_HOME_PROMPTS_SHELL_STABLE_2'),
         true,
         'index.html should cache-bust the shop title-first homepage styles'
     );
@@ -693,7 +708,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
         './js/site-config.js?v=20260516_SERVICE_WORKER_RETIRE_1',
         './js/homepage-contract.js?v=20260512_HOMEPAGE_CONTRACT_VERIFY_I18N_1',
         './js/section-visibility.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1',
-        './js/i18n.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1',
+        './js/i18n.js?v=20260521_HOME_SHOP_TITLE_1',
         './js/cache.js?v=20260512_HOME_CACHE_REFRESH_1',
         './js/homepage-prompts-data.js?v=20260501_HOME_PROMPTS_SUMMARY_1'
     ];

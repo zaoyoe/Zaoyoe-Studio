@@ -50,7 +50,7 @@ INSERT INTO homepage_config (section, content, is_visible, display_order) VALUES
     "enable_auto": true,
     "max_items": 8,
     "category": "all",
-    "section_title": "精选资源商城",
+    "section_title": "资源商城",
     "section_subtitle": "优质资源，助力成长",
     "custom_items": []
 }'::JSONB, true, 3),
@@ -58,8 +58,8 @@ INSERT INTO homepage_config (section, content, is_visible, display_order) VALUES
 ('verify', '{
     "enable_auto": true,
     "screenshot_path": "/assets/verify-preview.png",
-    "section_title": "Gemini 验证",
-    "section_subtitle": "快速验证您的 API 密钥，实时返回结果",
+    "section_title": "Gemini Pro",
+    "section_subtitle": "提交账号任务，自动获取试用链接",
     "features": ["免费", "实时", "安全"]
 }'::JSONB, true, 4),
 

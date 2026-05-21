@@ -1821,6 +1821,83 @@ test('sendFeishuAlert treats non-zero webhook result codes as delivery failures'
     assert.match(result.error || '', /Key Words Not Found|feishu_error_19024/);
 });
 
+test('sendTelegramAlert retries transient fetch failures before reporting failure', async () => {
+    let calls = 0;
+    const result = await __testUtils.sendTelegramAlert({
+        alert_type: 'ops_alert_test',
+        severity: 'warning',
+        title: 'Telegram retry smoke',
+        content: ['network retry']
+    }, {
+        config: normalizeOpsAlertsConfig({
+            timeout_ms: 15000,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['5104238366']
+                }
+            }
+        }),
+        secrets: {
+            telegram_bot_token: 'telegram-token'
+        }
+    }, {
+        telegramFetchRetryDelayMs: 0,
+        fetchImpl: async () => {
+            calls += 1;
+            if (calls < 3) {
+                throw new TypeError('fetch failed');
+            }
+            return {
+                ok: true,
+                status: 200,
+                text: async () => JSON.stringify({ ok: true })
+            };
+        }
+    });
+
+    assert.equal(calls, 3);
+    assert.equal(result.ok, true);
+    assert.equal(result.status, 200);
+});
+
+test('sendTelegramAlert does not retry aborted requests to avoid duplicate delivery', async () => {
+    let calls = 0;
+    await assert.rejects(
+        __testUtils.sendTelegramAlert({
+            alert_type: 'ops_alert_test',
+            severity: 'warning',
+            title: 'Telegram abort smoke'
+        }, {
+            config: normalizeOpsAlertsConfig({
+                timeout_ms: 15000,
+                channels: {
+                    telegram: {
+                        enabled: true,
+                        minimum_severity: 'warning',
+                        chat_ids: ['5104238366']
+                    }
+                }
+            }),
+            secrets: {
+                telegram_bot_token: 'telegram-token'
+            }
+        }, {
+            telegramFetchRetryDelayMs: 0,
+            fetchImpl: async () => {
+                calls += 1;
+                const error = new Error('This operation was aborted');
+                error.name = 'AbortError';
+                throw error;
+            }
+        }),
+        /aborted/
+    );
+
+    assert.equal(calls, 1);
+});
+
 test('buildExternalAlertText renders provider degradation details for payment gateway alerts', () => {
     const text = __testUtils.buildExternalAlertText({
         alert_type: 'payment_gateway_degraded',
