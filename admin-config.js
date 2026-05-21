@@ -13,6 +13,22 @@ let marketplaceChannelManifest = [];
 let marketplaceChannelSummary = {};
 let marketplaceXianyuAccountDraftCounter = 1;
 let marketplaceXianyuProductMappingDraftCounter = 1;
+let marketplaceProductPickerState = {
+    rows: [],
+    allProducts: [],
+    allProductsLoaded: false,
+    allProductsLoading: false,
+    allProductsPromise: null,
+    productById: new Map(),
+    optionsLoading: false,
+    optionsLoaded: false,
+    optionsError: '',
+    query: '',
+    requestSeq: 0,
+    selectedLabelLookupTried: new Set(),
+    searchTimers: {}
+};
+const MARKETPLACE_PRODUCT_PICKER_MAX_RESULTS = 50;
 let discountTriggerSettingsState = getDefaultDiscountTriggerSettingsState();
 let opsAlertSecretStatus = getDefaultOpsAlertSecretStatus();
 let opsAlertHealthState = getDefaultOpsAlertHealthState();
@@ -4592,6 +4608,732 @@ function normalizeMarketplaceProductMappings(value = [], options = {}) {
     }).filter(Boolean);
 }
 
+function ensureMarketplaceChannelConfigCardExpanded() {
+    const card = document.querySelector('.marketplace-channel-config-card');
+    if (!(card instanceof HTMLElement)) {
+        return;
+    }
+
+    card.classList.remove('collapsed');
+    const header = card.querySelector('.config-card-header');
+    if (header instanceof HTMLElement) {
+        header.setAttribute('aria-expanded', 'true');
+    }
+}
+
+function restoreMarketplaceAdvancedConfigState(wasOpen = false) {
+    const advancedConfig = document.querySelector('.marketplace-advanced-config');
+    if (advancedConfig instanceof HTMLDetailsElement) {
+        advancedConfig.open = wasOpen;
+    }
+}
+
+function getMarketplaceProductPickerRowKey(index = 0) {
+    return `marketplace-product-picker-${Number(index) || 0}`;
+}
+
+function formatMarketplaceProductPickerLabel(product = {}, fallbackId = '') {
+    const id = String(product?.id || fallbackId || '').trim();
+    const name = String(product?.name || product?.name_en || '').trim();
+    if (!id && !name) {
+        return '未选择商品';
+    }
+    if (!name) {
+        return id;
+    }
+    return `${name} · ${id}`;
+}
+
+function ensureMarketplaceProductPickerRowState(index = 0) {
+    const rowKey = getMarketplaceProductPickerRowKey(index);
+    let rowState = marketplaceProductPickerState.rows.find((item) => item.rowKey === rowKey);
+    if (!rowState) {
+        rowState = {
+            rowKey,
+            index,
+            query: '',
+            open: false,
+            selectedId: '',
+            selectedLabel: '',
+            results: [],
+            loading: false
+        };
+        marketplaceProductPickerState.rows.push(rowState);
+    }
+    rowState.index = index;
+    return rowState;
+}
+
+function getMarketplaceProductPickerRowState(index = 0) {
+    return ensureMarketplaceProductPickerRowState(index);
+}
+
+function normalizeMarketplaceProductPickerProduct(product = {}) {
+    const id = String(product?.id || product?.product_id || product?.productId || '').trim();
+    if (!id) {
+        return null;
+    }
+
+    return {
+        id,
+        name: String(product?.name || product?.title || '').trim(),
+        name_en: String(product?.name_en || product?.nameEn || '').trim(),
+        category: String(product?.category || '').trim(),
+        stock_count: Number(product?.stock_count ?? product?.stockCount ?? product?.stock ?? 0) || 0,
+        is_active: product?.is_active !== false && product?.isActive !== false,
+        delivery_type: String(product?.delivery_type || product?.deliveryType || '').trim()
+    };
+}
+
+function normalizeMarketplaceProductPickerProducts(products = []) {
+    return (Array.isArray(products) ? products : [])
+        .map((product) => normalizeMarketplaceProductPickerProduct(product))
+        .filter(Boolean);
+}
+
+function syncMarketplaceProductPickerCache(products = [], options = {}) {
+    const append = options.append === true;
+    const nextById = append ? new Map(marketplaceProductPickerState.productById) : new Map();
+
+    normalizeMarketplaceProductPickerProducts(products).forEach((product) => {
+        const existing = nextById.get(product.id) || {};
+        nextById.set(product.id, {
+            ...existing,
+            ...product
+        });
+    });
+
+    marketplaceProductPickerState.productById = nextById;
+}
+
+function setMarketplaceProductPickerCatalog(products = []) {
+    const activeProducts = normalizeMarketplaceProductPickerProducts(products)
+        .filter((product) => product.is_active !== false);
+    marketplaceProductPickerState.allProducts = dedupeMarketplaceProductPickerRows(activeProducts, { limit: 0 });
+    syncMarketplaceProductPickerCache(marketplaceProductPickerState.allProducts, { append: true });
+    return marketplaceProductPickerState.allProducts;
+}
+
+function getMarketplaceProductPickerCachedLabel(productId = '') {
+    const id = String(productId || '').trim();
+    if (!id) {
+        return '';
+    }
+    const product = marketplaceProductPickerState.productById.get(id);
+    return formatMarketplaceProductPickerLabel(product, id);
+}
+
+function normalizeMarketplaceProductPickerSearchText(value = '') {
+    return String(value || '').trim().toLowerCase();
+}
+
+function matchesMarketplaceProductPickerQuery(product = {}, query = '') {
+    const normalizedQuery = normalizeMarketplaceProductPickerSearchText(query);
+    if (!normalizedQuery) {
+        return true;
+    }
+
+    return [
+        product?.id,
+        product?.name,
+        product?.name_en,
+        product?.category,
+        product?.delivery_type
+    ].some((value) => normalizeMarketplaceProductPickerSearchText(value).includes(normalizedQuery));
+}
+
+function dedupeMarketplaceProductPickerRows(products = [], options = {}) {
+    const rowsById = new Map();
+    normalizeMarketplaceProductPickerProducts(products).forEach((product) => {
+        const productId = String(product?.id || '').trim();
+        if (!productId || rowsById.has(productId)) {
+            return;
+        }
+        rowsById.set(productId, product);
+    });
+    const rows = [...rowsById.values()];
+    const limit = Object.prototype.hasOwnProperty.call(options, 'limit')
+        ? Number(options.limit)
+        : MARKETPLACE_PRODUCT_PICKER_MAX_RESULTS;
+    return Number.isFinite(limit) && limit > 0 ? rows.slice(0, limit) : rows;
+}
+
+function getMarketplaceProductPickerLocalRows(query = '') {
+    const productCache = window.ShopAdmin?.productGridCache;
+    const cacheRows = productCache instanceof Map
+        ? [...productCache.values()]
+        : (Array.isArray(productCache) ? productCache : []);
+    const cachedRows = marketplaceProductPickerState.productById instanceof Map
+        ? [...marketplaceProductPickerState.productById.values()]
+        : [];
+
+    return dedupeMarketplaceProductPickerRows([
+        ...marketplaceProductPickerState.allProducts,
+        ...cacheRows,
+        ...cachedRows
+    ], { limit: 0 })
+        .filter((product) => product?.is_active !== false)
+        .filter((product) => matchesMarketplaceProductPickerQuery(product, query))
+        .slice(0, MARKETPLACE_PRODUCT_PICKER_MAX_RESULTS);
+}
+
+async function fetchMarketplaceProductPickerProducts(params = {}) {
+    const searchParams = new URLSearchParams();
+    Object.entries(params || {}).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === '') {
+            return;
+        }
+        searchParams.set(key, String(value));
+    });
+
+    const response = await (window.AdminApi?.fetch || fetch)(`/api/admin?route=shop/products&${searchParams.toString()}`, {
+        method: 'GET',
+        credentials: 'include',
+        headers: await getAdminConfigApiHeaders()
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.success) {
+        throw new Error(payload.message || '加载网站商品失败');
+    }
+
+    return Array.isArray(payload.rows) ? payload.rows : [];
+}
+
+async function loadMarketplaceProductPickerCatalog(options = {}) {
+    const force = options.force === true;
+    if (marketplaceProductPickerState.allProductsLoaded && !force) {
+        return marketplaceProductPickerState.allProducts;
+    }
+    if (marketplaceProductPickerState.allProductsPromise && !force) {
+        return marketplaceProductPickerState.allProductsPromise;
+    }
+
+    const loadPromise = (async () => {
+        marketplaceProductPickerState.allProductsLoading = true;
+        marketplaceProductPickerState.optionsError = '';
+
+        try {
+            let rows = [];
+            try {
+                rows = await fetchMarketplaceProductPickerProducts({
+                    status: 'active',
+                    fields: 'full',
+                    order: 'name_asc'
+                });
+            } catch (fullError) {
+                rows = await fetchMarketplaceProductPickerProducts({
+                    status: 'active',
+                    fields: 'picker',
+                    order: 'name_asc'
+                }).catch(() => {
+                    throw fullError;
+                });
+            }
+
+            const catalogRows = setMarketplaceProductPickerCatalog(rows);
+            marketplaceProductPickerState.allProductsLoaded = true;
+            marketplaceProductPickerState.optionsLoaded = true;
+            marketplaceProductPickerState.optionsError = '';
+            return catalogRows;
+        } catch (error) {
+            const localRows = getMarketplaceProductPickerLocalRows('');
+            if (localRows.length) {
+                const catalogRows = setMarketplaceProductPickerCatalog(localRows);
+                marketplaceProductPickerState.allProductsLoaded = true;
+                marketplaceProductPickerState.optionsLoaded = true;
+                marketplaceProductPickerState.optionsError = '';
+                return catalogRows;
+            }
+
+            marketplaceProductPickerState.optionsError = error.message || '加载网站商品失败';
+            throw error;
+        } finally {
+            marketplaceProductPickerState.allProductsLoading = false;
+            marketplaceProductPickerState.allProductsPromise = null;
+        }
+    })();
+
+    marketplaceProductPickerState.allProductsPromise = loadPromise;
+    return loadPromise;
+}
+
+function getMarketplaceProductPickerEmptyMessage(rowState = {}, query = '') {
+    const normalizedQuery = String(query || '').trim();
+    const loadedCount = getMarketplaceProductPickerLocalRows('').length;
+    const errorMessage = String(rowState?.error || '').trim();
+
+    if (errorMessage) {
+        return `网站商品加载失败：${errorMessage}`;
+    }
+    if (marketplaceProductPickerState.allProductsLoading || rowState?.loading === true) {
+        return '正在加载网站商品…';
+    }
+    if (normalizedQuery) {
+        return loadedCount > 0
+            ? `已加载 ${loadedCount} 个可发货商品，但没有匹配「${normalizedQuery}」`
+            : '没有找到可发货的网站商品，请确认商品已上架';
+    }
+
+    return loadedCount > 0
+        ? '输入商品名或商品 ID 过滤列表'
+        : '还没有可发货的网站商品，请先在商品管理里上架商品';
+}
+
+function refreshMarketplaceProductPickerOpenRows(errorMessage = '') {
+    marketplaceProductPickerState.rows.forEach((rowState) => {
+        if (!rowState?.open) {
+            return;
+        }
+        const rows = getMarketplaceProductPickerLocalRows(rowState.query);
+        rowState.results = rows;
+        rowState.loading = false;
+        rowState.error = rows.length ? '' : String(errorMessage || '').trim();
+        updateMarketplaceProductPickerRow(rowState, {
+            query: rowState.query,
+            results: rows,
+            loading: false,
+            error: rowState.error,
+            open: true
+        });
+    });
+}
+
+function preloadMarketplaceProductPickerCatalog() {
+    void loadMarketplaceProductPickerCatalog().then(() => {
+        refreshMarketplaceProductPickerOpenRows();
+    }).catch((error) => {
+        marketplaceProductPickerState.optionsError = error.message || '加载网站商品失败';
+        refreshMarketplaceProductPickerOpenRows(marketplaceProductPickerState.optionsError);
+    });
+}
+
+function updateMarketplaceProductPickerRow(rowState = null, options = {}) {
+    if (!rowState) return;
+    const row = document.querySelector(`[data-marketplace-product-mapping-index="${rowState.index}"]`);
+    if (!row) return;
+
+    const query = String(options.query ?? rowState.query ?? '').trim();
+    const selectedId = String(options.selectedId ?? rowState.selectedId ?? '').trim();
+    const selectedLabel = String(
+        options.selectedLabel
+        ?? rowState.selectedLabel
+        ?? getMarketplaceProductPickerCachedLabel(selectedId)
+        ?? ''
+    ).trim();
+    const results = Array.isArray(options.results) ? options.results : rowState.results;
+    const loading = options.loading === true || rowState.loading === true;
+    const open = options.open === true || rowState.open === true;
+    const errorMessage = String(options.error ?? rowState.error ?? '').trim();
+    const searchInput = row.querySelector('[data-marketplace-product-search-input]');
+    const hiddenInput = row.querySelector('[data-marketplace-product-mapping-field="product_id"]');
+    const labelEl = row.querySelector('[data-marketplace-product-search-selected-label]');
+    const metaEl = row.querySelector('[data-marketplace-product-search-meta]');
+    const menuEl = row.querySelector('[data-marketplace-product-search-menu]');
+    const loadingEl = row.querySelector('[data-marketplace-product-search-loading]');
+    const emptyEl = row.querySelector('[data-marketplace-product-search-empty]');
+    const pickerEl = row.querySelector('[data-marketplace-product-picker]');
+    const clearButton = row.querySelector('[data-admin-action="marketplace-clear-product-mapping"]');
+
+    if (hiddenInput instanceof HTMLInputElement && hiddenInput.value !== selectedId) {
+        hiddenInput.value = selectedId;
+    }
+
+    if (searchInput instanceof HTMLInputElement) {
+        searchInput.value = query;
+        searchInput.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
+    if (labelEl instanceof HTMLElement) {
+        labelEl.textContent = selectedLabel || selectedId || '未选择商品';
+    }
+    if (clearButton instanceof HTMLButtonElement) {
+        clearButton.disabled = !selectedId;
+    }
+    if (metaEl instanceof HTMLElement) {
+        metaEl.textContent = selectedId
+            ? `已绑定：${selectedId}`
+            : '输入商品名或商品 ID，选择网站商品';
+    }
+    if (loadingEl instanceof HTMLElement) {
+        loadingEl.hidden = !loading;
+    }
+    if (emptyEl instanceof HTMLElement) {
+        emptyEl.textContent = getMarketplaceProductPickerEmptyMessage({
+            ...rowState,
+            error: errorMessage,
+            loading
+        }, query);
+        emptyEl.hidden = !open || loading || results.length > 0;
+    }
+    if (menuEl instanceof HTMLElement) {
+        menuEl.hidden = !open || (!loading && !results.length);
+        menuEl.innerHTML = loading
+            ? '<div class="marketplace-product-picker__status">正在加载网站商品…</div>'
+            : (
+                results.length
+                    ? results.map((product) => {
+                        const productId = String(product?.id || '').trim();
+                        const isSelected = productId && productId === selectedId;
+                        const label = formatMarketplaceProductPickerLabel(product, productId);
+                        const meta = [
+                            product?.category ? `分类：${String(product.category)}` : '',
+                            Number.isFinite(Number(product?.stock_count)) ? `库存：${Number(product.stock_count)}` : '',
+                            product?.is_active === false ? '已停用' : ''
+                        ].filter(Boolean).join(' · ');
+
+                        return `
+                            <button
+                                type="button"
+                                class="marketplace-product-picker__option${isSelected ? ' is-selected' : ''}"
+                                data-admin-action="marketplace-select-product-mapping"
+                                data-mapping-index="${rowState.index}"
+                                data-product-id="${escapeConfigHtml(productId)}"
+                                data-product-label="${escapeConfigHtml(label)}"
+                            >
+                                <strong>${escapeConfigHtml(String(product?.name || product?.name_en || productId || '未命名商品'))}</strong>
+                                <span>${escapeConfigHtml(meta || productId || '点击选择这个网站商品')}</span>
+                            </button>
+                        `;
+                    }).join('')
+                    : ''
+            );
+    }
+    if (pickerEl instanceof HTMLElement) {
+        pickerEl.classList.toggle('is-open', open);
+        pickerEl.classList.toggle('is-loading', loading);
+    }
+}
+
+function renderMarketplaceProductPickerRow(index = 0, options = {}) {
+    const rowState = getMarketplaceProductPickerRowState(index);
+    const fallbackMapping = options.mapping || {};
+    const selectedId = String(options.selectedId ?? fallbackMapping.product_id ?? '').trim();
+    const selectedLabel = String((options.selectedLabel ?? getMarketplaceProductPickerCachedLabel(selectedId)) || '').trim();
+    rowState.selectedId = selectedId;
+    rowState.selectedLabel = selectedLabel || selectedId;
+    rowState.query = String(options.query ?? rowState.query ?? '').trim();
+    rowState.open = options.open === true ? true : rowState.open;
+    rowState.results = Array.isArray(options.results) ? options.results : rowState.results;
+    rowState.loading = options.loading === true ? true : rowState.loading;
+    updateMarketplaceProductPickerRow(rowState, {
+        selectedId,
+        selectedLabel,
+        query: rowState.query,
+        results: rowState.results,
+        loading: rowState.loading,
+        open: rowState.open
+    });
+}
+
+async function loadMarketplaceProductPickerOptions(indexValue = '', query = '', options = {}) {
+    const index = Number.parseInt(String(indexValue || ''), 10);
+    if (!Number.isInteger(index) || index < 0) {
+        return [];
+    }
+
+    const rowState = getMarketplaceProductPickerRowState(index);
+    const normalizedQuery = String(query || '').trim();
+
+    rowState.query = normalizedQuery;
+    rowState.loading = true;
+    rowState.open = true;
+    rowState.error = '';
+    rowState.requestSeq = (rowState.requestSeq || 0) + 1;
+    marketplaceProductPickerState.optionsLoading = true;
+    const requestSeq = rowState.requestSeq;
+    updateMarketplaceProductPickerRow(rowState, {
+        query: normalizedQuery,
+        loading: true,
+        open: true
+    });
+
+    try {
+        if (!normalizedQuery && options.allowEmptyQuery !== true) {
+            rowState.loading = false;
+            rowState.results = [];
+            updateMarketplaceProductPickerRow(rowState, {
+                query: normalizedQuery,
+                results: [],
+                loading: false,
+                open: true
+            });
+            return [];
+        }
+
+        await loadMarketplaceProductPickerCatalog({
+            force: options.force === true
+        });
+
+        if (requestSeq !== rowState.requestSeq) {
+            return getMarketplaceProductPickerLocalRows(normalizedQuery);
+        }
+
+        const matchedRows = getMarketplaceProductPickerLocalRows(normalizedQuery);
+        syncMarketplaceProductPickerCache(matchedRows, { append: true });
+        rowState.results = matchedRows;
+        rowState.loading = false;
+        rowState.error = '';
+        rowState.open = true;
+        marketplaceProductPickerState.optionsLoaded = true;
+        marketplaceProductPickerState.optionsError = '';
+        updateMarketplaceProductPickerRow(rowState, {
+            query: normalizedQuery,
+            results: matchedRows,
+            loading: false,
+            error: '',
+            open: true
+        });
+        return matchedRows;
+    } catch (error) {
+        if (requestSeq === rowState.requestSeq) {
+            const localRows = getMarketplaceProductPickerLocalRows(normalizedQuery);
+            if (localRows.length) {
+                syncMarketplaceProductPickerCache(localRows, { append: true });
+                rowState.loading = false;
+                rowState.error = '';
+                rowState.results = localRows;
+                updateMarketplaceProductPickerRow(rowState, {
+                    query: normalizedQuery,
+                    results: localRows,
+                    loading: false,
+                    error: '',
+                    open: true
+                });
+                return localRows;
+            }
+            marketplaceProductPickerState.optionsError = error.message || '加载网站商品失败';
+            rowState.loading = false;
+            rowState.results = [];
+            rowState.error = error.message || '加载网站商品失败';
+            updateMarketplaceProductPickerRow(rowState, {
+                query: normalizedQuery,
+                results: [],
+                loading: false,
+                error: rowState.error,
+                open: true
+            });
+        }
+        throw error;
+    } finally {
+        if (requestSeq === rowState.requestSeq) {
+            marketplaceProductPickerState.optionsLoading = false;
+        }
+    }
+}
+
+async function loadMarketplaceProductPickerSelectedLabels(productIds = []) {
+    const ids = [...new Set(
+        (Array.isArray(productIds) ? productIds : [])
+            .map((item) => String(item || '').trim())
+            .filter(Boolean)
+            .filter((id) => !marketplaceProductPickerState.productById.has(id))
+            .filter((id) => !marketplaceProductPickerState.selectedLabelLookupTried.has(id))
+    )];
+    if (!ids.length || marketplaceProductPickerState.selectedLabelsLoading === true) {
+        return [];
+    }
+
+    ids.forEach((id) => marketplaceProductPickerState.selectedLabelLookupTried.add(id));
+    marketplaceProductPickerState.selectedLabelsLoading = true;
+    try {
+        const searchParams = new URLSearchParams();
+        searchParams.set('status', 'all');
+        searchParams.set('fields', 'picker');
+        searchParams.set('order', 'name_asc');
+        searchParams.set('ids', ids.join(','));
+        const response = await (window.AdminApi?.fetch || fetch)(`/api/admin?route=shop/products&${searchParams.toString()}`, {
+            method: 'GET',
+            credentials: 'include',
+            headers: await getAdminConfigApiHeaders()
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '加载已选网站商品失败');
+        }
+        const rows = Array.isArray(payload.rows) ? payload.rows : [];
+        syncMarketplaceProductPickerCache(rows, { append: true });
+        marketplaceProductPickerState.rows.forEach((rowState) => {
+            if (!rowState?.selectedId) return;
+            const label = getMarketplaceProductPickerCachedLabel(rowState.selectedId);
+            if (!label || label === rowState.selectedId) return;
+            rowState.selectedLabel = label;
+            updateMarketplaceProductPickerRow(rowState, {
+                selectedId: rowState.selectedId,
+                selectedLabel: label,
+                open: rowState.open,
+                query: rowState.query,
+                results: rowState.results,
+                loading: rowState.loading
+            });
+        });
+        return rows;
+    } catch (error) {
+        console.warn('[Config] Marketplace selected product labels load failed:', error.message);
+        return [];
+    } finally {
+        marketplaceProductPickerState.selectedLabelsLoading = false;
+    }
+}
+
+function searchMarketplaceProductPickerOptions(indexValue = '', query = '') {
+    const index = Number.parseInt(String(indexValue || ''), 10);
+    if (!Number.isInteger(index) || index < 0) {
+        return;
+    }
+    const rowState = getMarketplaceProductPickerRowState(index);
+    const timerKey = rowState.rowKey;
+    if (marketplaceProductPickerState.searchTimers[timerKey]) {
+        window.clearTimeout(marketplaceProductPickerState.searchTimers[timerKey]);
+        delete marketplaceProductPickerState.searchTimers[timerKey];
+    }
+    rowState.query = String(query || '').trim();
+    rowState.open = true;
+    rowState.loading = !marketplaceProductPickerState.allProductsLoaded;
+    rowState.error = '';
+    rowState.results = marketplaceProductPickerState.allProductsLoaded
+        ? getMarketplaceProductPickerLocalRows(rowState.query)
+        : rowState.results;
+    updateMarketplaceProductPickerRow(rowState, {
+        loading: rowState.loading,
+        open: true,
+        query: rowState.query,
+        results: rowState.results
+    });
+
+    if (marketplaceProductPickerState.allProductsLoaded) {
+        return;
+    }
+
+    marketplaceProductPickerState.searchTimers[timerKey] = window.setTimeout(() => {
+        delete marketplaceProductPickerState.searchTimers[timerKey];
+        const requestQuery = rowState.query;
+        void loadMarketplaceProductPickerOptions(index, requestQuery, { allowEmptyQuery: true }).then((rows) => {
+            if (rowState.query !== requestQuery) {
+                return;
+            }
+            const nextRows = Array.isArray(rows) ? rows : [];
+            rowState.results = nextRows;
+            rowState.loading = false;
+            rowState.error = '';
+            rowState.open = true;
+            updateMarketplaceProductPickerRow(rowState, {
+                results: nextRows,
+                loading: false,
+                error: '',
+                open: true,
+                query: rowState.query
+            });
+        }).catch((error) => {
+            rowState.loading = false;
+            rowState.results = [];
+            rowState.error = error.message || '加载网站商品失败';
+            updateMarketplaceProductPickerRow(rowState, {
+                results: [],
+                loading: false,
+                error: rowState.error,
+                open: true,
+                query: rowState.query
+            });
+            if (typeof showToast === 'function') {
+                showToast(error.message || '加载网站商品失败', 'error');
+            }
+        });
+    }, 180);
+}
+
+function selectMarketplaceProductMapping(indexValue = '', productId = '', productLabel = '') {
+    const index = Number.parseInt(String(indexValue || ''), 10);
+    if (!Number.isInteger(index) || index < 0) {
+        return;
+    }
+    const rowState = getMarketplaceProductPickerRowState(index);
+    const selectedId = String(productId || '').trim();
+    const selectedLabel = String(productLabel || getMarketplaceProductPickerCachedLabel(selectedId) || selectedId || '').trim();
+    rowState.selectedId = selectedId;
+    rowState.selectedLabel = selectedLabel;
+    rowState.query = '';
+    rowState.open = false;
+    rowState.results = [];
+    updateMarketplaceProductPickerRow(rowState, {
+        selectedId,
+        selectedLabel,
+        query: '',
+        open: false,
+        results: []
+    });
+
+    const row = document.querySelector(`[data-marketplace-product-mapping-index="${index}"]`);
+    const searchInput = row?.querySelector?.('[data-marketplace-product-search-input]');
+    if (searchInput instanceof HTMLInputElement) {
+        searchInput.value = '';
+    }
+}
+
+function clearMarketplaceProductMapping(indexValue = '') {
+    selectMarketplaceProductMapping(indexValue, '', '');
+}
+
+function openMarketplaceProductPicker(indexValue = '') {
+    const index = Number.parseInt(String(indexValue || ''), 10);
+    if (!Number.isInteger(index) || index < 0) {
+        return;
+    }
+    const rowState = getMarketplaceProductPickerRowState(index);
+    rowState.open = true;
+    rowState.results = marketplaceProductPickerState.allProductsLoaded
+        ? getMarketplaceProductPickerLocalRows(rowState.query)
+        : rowState.results;
+    rowState.loading = !marketplaceProductPickerState.allProductsLoaded;
+    updateMarketplaceProductPickerRow(rowState, {
+        open: true,
+        query: rowState.query,
+        results: rowState.results,
+        loading: rowState.loading
+    });
+
+    if (!marketplaceProductPickerState.allProductsLoaded && !rowState.loading) {
+        void loadMarketplaceProductPickerOptions(index, rowState.query, { allowEmptyQuery: true }).catch((error) => {
+            if (typeof showToast === 'function') {
+                showToast(error.message || '加载网站商品失败', 'error');
+            }
+        });
+    }
+}
+
+function closeMarketplaceProductPickerMenus() {
+    marketplaceProductPickerState.rows.forEach((rowState) => {
+        if (!rowState) return;
+        rowState.open = false;
+        rowState.loading = false;
+        updateMarketplaceProductPickerRow(rowState, {
+            open: false,
+            loading: false,
+            query: rowState.query,
+            results: rowState.results
+        });
+    });
+}
+
+if (typeof document !== 'undefined' && !window.__marketplaceProductPickerGlobalHandlersInstalled) {
+    window.__marketplaceProductPickerGlobalHandlersInstalled = true;
+    document.addEventListener('click', (event) => {
+        const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+        if (!target) {
+            return;
+        }
+
+        if (!target.closest('[data-marketplace-product-picker]')) {
+            closeMarketplaceProductPickerMenus();
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            closeMarketplaceProductPickerMenus();
+        }
+    });
+}
+
 function findMarketplaceChannelByKey(config = {}, channelKey = '') {
     const normalizedKey = String(channelKey || '').trim().toLowerCase();
     return (Array.isArray(config.channels) ? config.channels : []).find((channel) => channel.key === normalizedKey) || null;
@@ -8458,6 +9200,43 @@ function buildMarketplaceXianyuProductMappingRow(mapping = {}, index = 0) {
         notes: ''
     };
     const title = safeMapping.label || safeMapping.xianyu_item_id || `商品映射 ${index + 1}`;
+    const productPickerState = getMarketplaceProductPickerRowState(index);
+    const selectedProductId = String(safeMapping.product_id || '').trim();
+    const selectedProductLabel = productPickerState.selectedId === selectedProductId && productPickerState.selectedLabel
+        ? productPickerState.selectedLabel
+        : getMarketplaceProductPickerCachedLabel(selectedProductId);
+    productPickerState.selectedId = selectedProductId;
+    productPickerState.selectedLabel = selectedProductLabel || selectedProductId;
+    const productPickerQuery = productPickerState.query || '';
+    const productPickerResults = Array.isArray(productPickerState.results) ? productPickerState.results : [];
+    const productPickerOpen = productPickerState.open === true;
+    const productPickerLoading = productPickerState.loading === true;
+    const productPickerMenu = productPickerLoading
+        ? '<div class="marketplace-product-picker__status">正在加载网站商品…</div>'
+        : productPickerResults.map((product) => {
+            const productId = String(product?.id || '').trim();
+            const isSelected = productId && productId === selectedProductId;
+            const label = formatMarketplaceProductPickerLabel(product, productId);
+            const meta = [
+                product?.category ? `分类：${String(product.category)}` : '',
+                Number.isFinite(Number(product?.stock_count)) ? `库存：${Number(product.stock_count)}` : '',
+                product?.is_active === false ? '已停用' : ''
+            ].filter(Boolean).join(' · ');
+
+            return `
+                <button
+                    type="button"
+                    class="marketplace-product-picker__option${isSelected ? ' is-selected' : ''}"
+                    data-admin-action="marketplace-select-product-mapping"
+                    data-mapping-index="${index}"
+                    data-product-id="${escapeConfigHtml(productId)}"
+                    data-product-label="${escapeConfigHtml(label)}"
+                >
+                    <strong>${escapeConfigHtml(String(product?.name || product?.name_en || productId || '未命名商品'))}</strong>
+                    <span>${escapeConfigHtml(meta || productId || '点击选择这个网站商品')}</span>
+                </button>
+            `;
+        }).join('');
 
     return `
         <article class="marketplace-product-mapping-row" data-marketplace-product-mapping-index="${index}">
@@ -8476,17 +9255,55 @@ function buildMarketplaceXianyuProductMappingRow(mapping = {}, index = 0) {
                     <span>显示名称</span>
                     <input type="text" class="config-input" data-marketplace-product-mapping-field="label" value="${escapeConfigHtml(safeMapping.label)}" placeholder="如：会员月卡">
                 </label>
-                <label class="marketplace-simple-field">
+                <label class="marketplace-simple-field marketplace-id-field">
                     <span>闲鱼商品 ID</span>
-                    <input type="text" class="config-input" data-marketplace-product-mapping-field="xianyu_item_id" value="${escapeConfigHtml(safeMapping.xianyu_item_id)}" placeholder="从闲鱼商品链接或抓单结果里复制">
+                    <input type="text" class="config-input marketplace-code-input" data-marketplace-product-mapping-field="xianyu_item_id" value="${escapeConfigHtml(safeMapping.xianyu_item_id)}" placeholder="如：1051635270711" inputmode="numeric" spellcheck="false">
                 </label>
-                <label class="marketplace-simple-field">
-                    <span>网站商品 ID</span>
-                    <input type="text" class="config-input" data-marketplace-product-mapping-field="product_id" value="${escapeConfigHtml(safeMapping.product_id)}" placeholder="网站商城商品 ID">
+                <label class="marketplace-simple-field marketplace-simple-field--wide marketplace-product-picker-field">
+                    <span>搜索并选择网站商品</span>
+                    <div class="marketplace-product-picker${productPickerOpen ? ' is-open' : ''}${productPickerLoading ? ' is-loading' : ''}" data-marketplace-product-picker data-mapping-index="${index}">
+                        <div class="marketplace-product-picker__selected">
+                            <div>
+                                <strong data-marketplace-product-search-selected-label>${escapeConfigHtml(selectedProductLabel || selectedProductId || '未选择商品')}</strong>
+                                <small data-marketplace-product-search-meta>${selectedProductId ? `已绑定：${escapeConfigHtml(selectedProductId)}` : '输入商品名或商品 ID，选择网站商品'}</small>
+                            </div>
+                            <button
+                                type="button"
+                                class="marketplace-product-picker__clear"
+                                data-admin-action="marketplace-clear-product-mapping"
+                                data-mapping-index="${index}"
+                                aria-label="清除已选网站商品"
+                                title="清除已选网站商品"
+                                ${selectedProductId ? '' : 'disabled'}
+                            >
+                                <i class="fas fa-times"></i>
+                            </button>
+                        </div>
+                        <input
+                            type="search"
+                            class="config-input marketplace-product-picker__search"
+                            data-admin-input-action="marketplace-search-product-mapping"
+                            data-admin-focus-action="marketplace-open-product-mapping"
+                            data-marketplace-product-search-input
+                            data-mapping-index="${index}"
+                            value="${escapeConfigHtml(productPickerQuery)}"
+                            placeholder="搜索网站商品名或 ID"
+                            autocomplete="off"
+                            role="combobox"
+                            aria-expanded="${productPickerOpen ? 'true' : 'false'}"
+                        >
+                        <input type="hidden" data-marketplace-product-mapping-field="product_id" value="${escapeConfigHtml(selectedProductId)}">
+                        <div class="marketplace-product-picker__menu" data-marketplace-product-search-menu ${productPickerOpen && (productPickerLoading || productPickerResults.length) ? '' : 'hidden'}>
+                            ${productPickerMenu}
+                        </div>
+                        <div class="marketplace-product-picker__empty" data-marketplace-product-search-empty ${productPickerOpen && !productPickerLoading && !productPickerResults.length ? '' : 'hidden'}>
+                            ${productPickerQuery ? '没有找到可发货的网站商品，请确认商品已上架或换个关键词' : '输入商品名或商品 ID 开始搜索'}
+                        </div>
+                    </div>
                 </label>
-                <label class="marketplace-simple-field">
+                <label class="marketplace-simple-field marketplace-id-field">
                     <span>SKU ID（可选）</span>
-                    <input type="text" class="config-input" data-marketplace-product-mapping-field="sku_id" value="${escapeConfigHtml(safeMapping.sku_id)}" placeholder="同一闲鱼商品多规格时填写">
+                    <input type="text" class="config-input marketplace-code-input" data-marketplace-product-mapping-field="sku_id" value="${escapeConfigHtml(safeMapping.sku_id)}" placeholder="同一闲鱼商品多规格时填写" spellcheck="false">
                 </label>
                 <label class="marketplace-simple-field marketplace-simple-field--wide">
                     <span>规格文字包含（可选）</span>
@@ -8503,9 +9320,19 @@ function renderMarketplaceXianyuProductMappings(xianyu = {}) {
     if (!list) return;
 
     const mappings = normalizeMarketplaceProductMappings(xianyu.product_mappings || [], { keepEmpty: true });
+    const missingProductIds = mappings
+        .map((mapping) => String(mapping.product_id || '').trim())
+        .filter((productId) => productId && !marketplaceProductPickerState.productById.has(productId));
     list.innerHTML = mappings.length
         ? mappings.map((mapping, index) => buildMarketplaceXianyuProductMappingRow(mapping, index)).join('')
         : '<div class="marketplace-empty-state">还没有商品映射。添加一条后，闲鱼订单才能知道该发网站里的哪个商品。</div>';
+
+    if (missingProductIds.length) {
+        void loadMarketplaceProductPickerSelectedLabels(missingProductIds);
+    }
+    if (mappings.length) {
+        preloadMarketplaceProductPickerCatalog();
+    }
 }
 
 function renderMarketplaceXianyuSimpleForm(config = {}, options = {}) {
@@ -8543,6 +9370,7 @@ function renderMarketplaceXianyuSimpleForm(config = {}, options = {}) {
 }
 
 function renderMarketplaceChannelsConfig(options = {}) {
+    const advancedConfigWasOpen = document.querySelector('.marketplace-advanced-config')?.open === true;
     const normalizeOptions = {
         keepEmptyProductMappings: options.keepEmptyProductMappings === true
     };
@@ -8566,6 +9394,8 @@ function renderMarketplaceChannelsConfig(options = {}) {
     }, 0);
 
     renderMarketplaceXianyuSimpleForm(configWithXianyu, options);
+    ensureMarketplaceChannelConfigCardExpanded();
+    restoreMarketplaceAdvancedConfigState(advancedConfigWasOpen);
 
     if (configTextarea && document.activeElement !== configTextarea) {
         configTextarea.value = stringifyAdminConfigJson(configWithXianyu);
@@ -20176,10 +21006,48 @@ function updateMarketplaceXianyuProductMappingsDraft(updater) {
     });
 }
 
+function focusMarketplaceXianyuProductMapping(indexValue = '') {
+    const index = Number.parseInt(String(indexValue || ''), 10);
+    if (!Number.isInteger(index) || index < 0) {
+        return;
+    }
+
+    ensureMarketplaceChannelConfigCardExpanded();
+
+    const row = document.querySelector(`[data-marketplace-product-mapping-index="${index}"]`);
+    if (!(row instanceof HTMLElement)) {
+        return;
+    }
+
+    row.classList.add('is-newly-added');
+    row.scrollIntoView({
+        behavior: 'smooth',
+        block: 'center'
+    });
+
+    const focusTarget = row.querySelector('[data-marketplace-product-mapping-field="xianyu_item_id"]')
+        || row.querySelector('[data-marketplace-product-mapping-field="label"]')
+        || row.querySelector('input, button');
+    if (focusTarget instanceof HTMLElement) {
+        window.setTimeout(() => {
+            focusTarget.focus({ preventScroll: true });
+            if (focusTarget instanceof HTMLInputElement) {
+                focusTarget.select();
+            }
+        }, 80);
+    }
+
+    window.setTimeout(() => {
+        row.classList.remove('is-newly-added');
+    }, 1500);
+}
+
 function addMarketplaceXianyuProductMapping() {
+    let addedIndex = -1;
     updateMarketplaceXianyuProductMappingsDraft((mappings) => {
         const nextIndex = mappings.length + marketplaceXianyuProductMappingDraftCounter;
         marketplaceXianyuProductMappingDraftCounter = nextIndex + 1;
+        addedIndex = mappings.length;
         return [
             ...mappings,
             {
@@ -20192,6 +21060,7 @@ function addMarketplaceXianyuProductMapping() {
             }
         ];
     });
+    focusMarketplaceXianyuProductMapping(addedIndex);
 }
 
 function removeMarketplaceXianyuProductMapping(indexValue = '') {
@@ -27693,6 +28562,11 @@ window.generateMarketplaceIngestToken = generateMarketplaceIngestToken;
 window.addMarketplaceXianyuProductMapping = addMarketplaceXianyuProductMapping;
 window.removeMarketplaceXianyuProductMapping = removeMarketplaceXianyuProductMapping;
 window.toggleMarketplaceXianyuProductMapping = toggleMarketplaceXianyuProductMapping;
+window.focusMarketplaceXianyuProductMapping = focusMarketplaceXianyuProductMapping;
+window.searchMarketplaceProductPickerOptions = searchMarketplaceProductPickerOptions;
+window.selectMarketplaceProductMapping = selectMarketplaceProductMapping;
+window.clearMarketplaceProductMapping = clearMarketplaceProductMapping;
+window.openMarketplaceProductPicker = openMarketplaceProductPicker;
 window.savePaymentChannelSettings = savePaymentChannelSettings;
 window.saveMarketplaceChannelSettings = saveMarketplaceChannelSettings;
 Object.assign(window, {

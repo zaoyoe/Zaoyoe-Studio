@@ -3677,6 +3677,16 @@ function bindAdminStudioDelegatedControls() {
             case 'marketplace-toggle-product-mapping':
                 window.toggleMarketplaceXianyuProductMapping?.(actionEl.dataset.mappingIndex);
                 break;
+            case 'marketplace-select-product-mapping':
+                window.selectMarketplaceProductMapping?.(
+                    actionEl.dataset.mappingIndex,
+                    actionEl.dataset.productId,
+                    actionEl.dataset.productLabel
+                );
+                break;
+            case 'marketplace-clear-product-mapping':
+                window.clearMarketplaceProductMapping?.(actionEl.dataset.mappingIndex);
+                break;
             case 'payments-toggle-range-menu':
                 window.AdminPayments?.toggleRangeMenu?.(event);
                 break;
@@ -5115,6 +5125,9 @@ function bindAdminStudioDelegatedControls() {
             case 'settings-verify-api-key-unlock':
                 actionEl.removeAttribute('readonly');
                 break;
+            case 'marketplace-open-product-mapping':
+                window.openMarketplaceProductPicker?.(actionEl.dataset.mappingIndex);
+                break;
             default:
                 break;
         }
@@ -5167,6 +5180,12 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'tickets-search':
                 window.AdminTickets?.search?.();
+                break;
+            case 'marketplace-search-product-mapping':
+                window.searchMarketplaceProductPickerOptions?.(
+                    actionEl.dataset.mappingIndex,
+                    actionEl.value
+                );
                 break;
             default:
                 break;
