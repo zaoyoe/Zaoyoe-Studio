@@ -7,7 +7,7 @@
     global.__zaoyoePublicScrollbarAutoHideLoaded = true;
 
     const VERSION = '20260430_PUBLIC_SCROLLBAR_FULL_HIDE_1';
-    const STYLE_HREF = 'css/public-scrollbar-auto-hide.css?v=994dcbe92774';
+    const STYLE_HREF = 'css/public-scrollbar-auto-hide.css?v=20260430_PUBLIC_SCROLLBAR_FULL_HIDE_1';
     const PUBLIC_SCROLLBAR_AUTO_HIDE_CLASS = 'public-scrollbar-auto-hide';
     const PUBLIC_SCROLLBAR_AUTO_HIDE_VISIBLE_CLASS = 'public-scrollbar-auto-hide--visible';
     const PUBLIC_SCROLLBAR_AUTO_HIDE_ROOT_CLASS = 'public-scrollbar-auto-hide--root';
