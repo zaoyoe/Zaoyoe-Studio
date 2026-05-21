@@ -57,8 +57,7 @@ function buildProductSearchExpression(searchQuery) {
     const escapedQuery = escapePostgrestLikeValue(normalizedQuery);
     const filters = [
         `name.ilike.%${escapedQuery}%`,
-        `category.ilike.%${escapedQuery}%`,
-        `delivery_type.ilike.%${escapedQuery}%`
+        `category.ilike.%${escapedQuery}%`
     ];
 
     if (isUuid(normalizedQuery)) {
@@ -71,6 +70,10 @@ function buildProductSearchExpression(searchQuery) {
 function getSelectClause(fieldsMode) {
     if (fieldsMode === 'names') {
         return 'id, name';
+    }
+
+    if (fieldsMode === 'picker') {
+        return 'id, name, category, stock_count, is_active';
     }
 
     if (fieldsMode === 'import') {
@@ -107,7 +110,7 @@ module.exports = async function adminShopProductsHandler(req, res) {
         const productId = normalizeText(searchParams.get('id') || searchParams.get('productId'), 160);
         const ids = parseIdList(searchParams.get('ids'));
         const status = normalizeEnum(searchParams.get('status'), ['all', 'active', 'deleted'], 'all');
-        const fields = normalizeEnum(searchParams.get('fields'), ['full', 'names', 'import'], 'full');
+        const fields = normalizeEnum(searchParams.get('fields'), ['full', 'names', 'import', 'picker'], 'full');
         const searchQuery = normalizeText(searchParams.get('query'), 160);
         const deliveryType = normalizeEnum(
             searchParams.get('deliveryType') || searchParams.get('delivery_type'),
@@ -117,7 +120,7 @@ module.exports = async function adminShopProductsHandler(req, res) {
         const order = normalizeEnum(
             searchParams.get('order'),
             ['display_order_desc', 'name_asc', 'sort_order_asc'],
-            fields === 'names' ? 'name_asc' : 'display_order_desc'
+            fields === 'names' || fields === 'picker' ? 'name_asc' : 'display_order_desc'
         );
         const category = normalizeText(searchParams.get('category'), 120);
 

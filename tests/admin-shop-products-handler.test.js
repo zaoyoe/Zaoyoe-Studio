@@ -230,6 +230,49 @@ test('shop products handler includes stock_count for import tree payloads', asyn
     });
 });
 
+test('shop products handler exposes searchable picker payloads for marketplace mapping', async () => {
+    await withShopProductsHandler({
+        queryResults: {
+            shop_products: [
+                {
+                    data: [{
+                        id: 'prod_gemini',
+                        name: 'Google AI 会员',
+                        category: 'account',
+                        stock_count: 8,
+                        is_active: true
+                    }],
+                    error: null
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const req = {
+            method: 'GET',
+            headers: {},
+            url: '/api/admin/shop/products?status=active&fields=picker&query=gemini'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.rows[0]?.stock_count, 8);
+        assert.deepEqual(state.queryCalls[0], {
+            table: 'shop_products',
+            operations: [
+                { method: 'select', args: ['id, name, category, stock_count, is_active'] },
+                { method: 'eq', args: ['is_active', true] },
+                { method: 'or', args: ['name.ilike.%gemini%,category.ilike.%gemini%'] },
+                { method: 'order', args: ['name', { ascending: true }] }
+            ],
+            mode: 'order'
+        });
+    });
+});
+
 test('shop products handler rejects non-GET methods', async () => {
     await withShopProductsHandler({}, async ({ handler }) => {
         const req = { method: 'POST', headers: {} };
@@ -274,7 +317,7 @@ test('shop products handler supports query and delivery filters for运营检索'
                 { method: 'select', args: ['*'] },
                 { method: 'eq', args: ['is_active', true] },
                 { method: 'eq', args: ['delivery_type', 'API'] },
-                { method: 'or', args: ['name.ilike.%Gift%,category.ilike.%Gift%,delivery_type.ilike.%Gift%'] },
+                { method: 'or', args: ['name.ilike.%Gift%,category.ilike.%Gift%'] },
                 { method: 'order', args: ['display_order', { ascending: false }] }
             ],
             mode: 'order'

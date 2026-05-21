@@ -69,6 +69,13 @@ function createMarketplaceConfig() {
                 source_channel: 'xianyu',
                 default_account_key: 'main',
                 multi_account: true,
+                product_mappings: [
+                    {
+                        label: '闲鱼测试商品',
+                        xianyu_item_id: 'xy-item-001',
+                        product_id: '11111111-1111-4111-8111-111111111111'
+                    }
+                ],
                 accounts: [
                     {
                         key: 'main',
@@ -270,4 +277,118 @@ test('public marketplace orders handler pins order channel to the authenticated 
     assert.equal(state.secretReads[0], 'marketplace__xianyu__main__ingest_token');
     assert.equal(state.rpcCalls[0].params.p_source_channel, 'xianyu');
     assert.equal(state.rpcCalls[0].params.p_channel_account_key, 'main');
+});
+
+test('public xianyu orders handler maps raw Xianyu orders through Admin Studio product mappings', async () => {
+    const { handlers, state } = createHandlers();
+    const res = createMockResponse();
+    const productId = '11111111-1111-4111-8111-111111111111';
+
+    await handlers['xianyu/orders']({
+        method: 'POST',
+        url: '/api/marketplace/xianyu/orders?account=main',
+        headers: {
+            authorization: 'Bearer main-token'
+        },
+        body: {
+            order: {
+                orderId: 'XY-RAW-1001',
+                status: '买家已付款',
+                buyerId: 'buyer-raw-1',
+                buyerNick: '闲鱼买家原始单',
+                item: {
+                    itemId: 'xy-item-001',
+                    title: '闲鱼测试商品标题',
+                    skuText: '标准版'
+                },
+                quantity: 1,
+                payAmount: '9.90',
+                totalAmount: '9.90',
+                createdAt: '2026-05-21T10:00:00.000Z'
+            }
+        }
+    }, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(payload.normalized_order.xianyu_item_id, 'xy-item-001');
+    assert.equal(payload.request.product_id, productId);
+    assert.equal(payload.request.channel_key, 'xianyu');
+    assert.equal(payload.request.channel_account_key, 'main');
+    assert.equal(state.secretReads[0], 'marketplace__xianyu__main__ingest_token');
+    assert.equal(state.rpcCalls.length, 1);
+    assert.deepEqual(state.rpcCalls[0], {
+        name: 'fn_create_marketplace_shop_order',
+        params: {
+            p_product_id: productId,
+            p_quantity: 1,
+            p_source_channel: 'xianyu',
+            p_channel_account_key: 'main',
+            p_external_order_id: 'XY-RAW-1001',
+            p_external_order_snapshot: {
+                adapter: 'xianyu-mvp',
+                pay_status: '买家已付款',
+                xianyu_item_id: 'xy-item-001',
+                sku_id: '',
+                sku_text: '标准版',
+                item_title: '闲鱼测试商品标题',
+                created_at: '2026-05-21T10:00:00.000Z',
+                mapping: {
+                    index: 0,
+                    label: '闲鱼测试商品'
+                },
+                raw: {
+                    orderId: 'XY-RAW-1001',
+                    status: '买家已付款',
+                    buyerId: 'buyer-raw-1',
+                    buyerNick: '闲鱼买家原始单',
+                    item: {
+                        itemId: 'xy-item-001',
+                        title: '闲鱼测试商品标题',
+                        skuText: '标准版'
+                    },
+                    quantity: 1,
+                    payAmount: '9.90',
+                    totalAmount: '9.90',
+                    createdAt: '2026-05-21T10:00:00.000Z'
+                }
+            },
+            p_site: 'cn',
+            p_user_id: null,
+            p_price_paid: 9.9,
+            p_total_price: 9.9,
+            p_external_buyer_id: 'buyer-raw-1',
+            p_external_buyer_name: '闲鱼买家原始单'
+        }
+    });
+});
+
+test('public xianyu orders handler skips unpaid raw orders before touching inventory RPC', async () => {
+    const { handlers, state } = createHandlers();
+    const res = createMockResponse();
+
+    await handlers['xianyu/orders']({
+        method: 'POST',
+        url: '/api/marketplace/xianyu/orders',
+        headers: {
+            'x-xianyu-ingest-token': 'main-token'
+        },
+        body: {
+            orderId: 'XY-RAW-1002',
+            status: '待付款',
+            item: {
+                itemId: 'xy-item-001',
+                title: '闲鱼测试商品标题'
+            }
+        }
+    }, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 202);
+    assert.equal(payload.success, true);
+    assert.equal(payload.skipped, true);
+    assert.equal(payload.reason, 'order_not_paid');
+    assert.equal(state.secretReads[0], 'marketplace__xianyu__main__ingest_token');
+    assert.deepEqual(state.rpcCalls, []);
 });

@@ -11,6 +11,11 @@ const {
 const {
     getStoredAdminSecret
 } = require('../../../api/_lib/secrets');
+const {
+    buildMarketplaceOrderPayload: buildXianyuMarketplaceOrderPayload,
+    isPaidXianyuOrder,
+    normalizeXianyuOrder
+} = require('../../../adapters/xianyu/core');
 
 const MARKETPLACE_INGEST_SECRET_NAME = 'ingest_token';
 
@@ -111,6 +116,36 @@ function buildChannelLookupPayload(req, body = {}) {
         account_key: resolvedAccount,
         accountKey: resolvedAccount,
         account: resolvedAccount
+    };
+}
+
+function resolveXianyuRawOrder(body = {}) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return {};
+    }
+
+    const candidates = [
+        body.order,
+        body.xianyu_order,
+        body.xianyuOrder,
+        body.raw_order,
+        body.rawOrder,
+        body.raw
+    ];
+    const nested = candidates.find((item) => item && typeof item === 'object' && !Array.isArray(item));
+    return nested || body;
+}
+
+function buildXianyuAdapterConfig(tokenContext = {}, body = {}) {
+    const channel = tokenContext.channel || {};
+    return {
+        channel: 'xianyu',
+        account: tokenContext.accountKey || 'main',
+        site: sanitizeText(body?.site, 20).toLowerCase() === 'intl' ? 'intl' : 'cn',
+        product_mappings: Array.isArray(channel.product_mappings) ? channel.product_mappings : [],
+        paid_statuses: Array.isArray(channel.paid_statuses) ? channel.paid_statuses : undefined,
+        blocked_statuses: Array.isArray(channel.blocked_statuses) ? channel.blocked_statuses : undefined,
+        allow_unknown_pay_status: channel.allow_unknown_pay_status === true
     };
 }
 
@@ -297,8 +332,139 @@ function createMarketplaceHandlers({
         }
     }
 
+    async function xianyuOrdersHandler(req, res) {
+        applyPrivateJsonHeaders(res);
+
+        if (String(req.method || '').toUpperCase() !== 'POST') {
+            res.setHeader('Allow', 'POST');
+            return writeJson(res, 405, {
+                success: false,
+                message: 'Method not allowed'
+            });
+        }
+
+        let supabase;
+        try {
+            supabase = getSupabaseAdmin?.();
+        } catch (error) {
+            return writeJson(res, 503, {
+                success: false,
+                code: 'marketplace_order_service_unavailable',
+                message: error?.message || 'Marketplace order service is unavailable'
+            });
+        }
+
+        if (!supabase) {
+            return writeJson(res, 503, {
+                success: false,
+                code: 'marketplace_order_service_unavailable',
+                message: 'Marketplace order service is unavailable'
+            });
+        }
+
+        const clientIp = typeof resolveClientIp === 'function'
+            ? resolveClientIp(req, { env })
+            : '';
+        if (typeof takeRateLimitToken === 'function') {
+            const rateLimit = await takeRateLimitToken({
+                supabase,
+                key: `marketplace-ingest:xianyu:${clientIp || 'unknown'}`,
+                limit: Math.max(1, Number(env.MARKETPLACE_INGEST_RATE_LIMIT_MAX || 120)),
+                windowMs: Math.max(10_000, Number(env.MARKETPLACE_INGEST_RATE_LIMIT_WINDOW_MS || 60_000))
+            });
+            if (typeof applyRateLimitHeaders === 'function') {
+                applyRateLimitHeaders(res, rateLimit);
+            }
+            if (!rateLimit.allowed) {
+                return writeJson(res, 429, {
+                    success: false,
+                    code: 'rate_limited',
+                    message: 'Too many marketplace ingest requests',
+                    retry_after_seconds: rateLimit.retryAfterSeconds
+                });
+            }
+        }
+
+        try {
+            const body = await parseBody(req);
+            const lookupBody = {
+                ...body,
+                channel: 'xianyu',
+                channel_key: 'xianyu',
+                marketplace: 'xianyu',
+                source_channel: 'xianyu'
+            };
+            const config = await resolvedChannels.loadMarketplaceChannelsConfig(supabase, env);
+            const tokenContext = await verifyMarketplaceIngestToken({
+                supabase,
+                req,
+                body: lookupBody,
+                config,
+                getStoredSecret: resolvedSecrets.getStoredAdminSecret
+            });
+            const rawOrder = resolveXianyuRawOrder(body);
+            const normalizedOrder = normalizeXianyuOrder(rawOrder);
+            const adapterConfig = buildXianyuAdapterConfig(tokenContext, body);
+
+            if (!isPaidXianyuOrder(normalizedOrder, adapterConfig)) {
+                return writeJson(res, 202, {
+                    success: true,
+                    skipped: true,
+                    reason: 'order_not_paid',
+                    message: 'Xianyu order is not paid, skipped',
+                    order: {
+                        external_order_id: normalizedOrder.external_order_id,
+                        pay_status: normalizedOrder.pay_status,
+                        xianyu_item_id: normalizedOrder.xianyu_item_id
+                    }
+                });
+            }
+
+            const payload = buildXianyuMarketplaceOrderPayload(normalizedOrder, adapterConfig);
+            const { request, result } = await resolvedOrders.createMarketplaceShopOrder({
+                supabase,
+                payload: {
+                    ...payload,
+                    channel_key: tokenContext.channelKey,
+                    channel: tokenContext.channelKey,
+                    source_channel: tokenContext.channel?.source_channel || tokenContext.channelKey,
+                    channel_account_key: tokenContext.accountKey,
+                    account_key: tokenContext.accountKey,
+                    account: tokenContext.accountKey
+                },
+                config,
+                env
+            });
+            const success = result?.success === true;
+
+            return writeJson(res, success ? 200 : 400, {
+                success,
+                duplicate: result?.duplicate === true,
+                message: result?.message || (success ? 'Xianyu marketplace order created' : 'Xianyu marketplace order failed'),
+                request,
+                normalized_order: {
+                    external_order_id: normalizedOrder.external_order_id,
+                    pay_status: normalizedOrder.pay_status,
+                    xianyu_item_id: normalizedOrder.xianyu_item_id,
+                    sku_id: normalizedOrder.sku_id,
+                    sku_text: normalizedOrder.sku_text,
+                    item_title: normalizedOrder.item_title
+                },
+                data: result?.data || null
+            });
+        } catch (error) {
+            return writeJson(res, Number(error?.statusCode) || 500, {
+                success: false,
+                code: error?.code || 'xianyu_marketplace_order_ingest_failed',
+                message: error?.message || 'Xianyu marketplace order ingest failed'
+            });
+        }
+    }
+
     return {
-        orders: ordersHandler
+        orders: ordersHandler,
+        'xianyu/orders': xianyuOrdersHandler,
+        'xianyu-orders': xianyuOrdersHandler
     };
 }
 
@@ -307,5 +473,6 @@ module.exports = {
     constantTimeTextEquals,
     createMarketplaceHandlers,
     getMarketplaceIngestToken,
+    resolveXianyuRawOrder,
     verifyMarketplaceIngestToken
 };

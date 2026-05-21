@@ -367,6 +367,13 @@ test('public handler resolves marketplace ingestion scope paths', async () => {
                                 success: true,
                                 route: 'marketplace-orders'
                             }));
+                        },
+                        'xianyu/orders': async function xianyuOrders(req, res) {
+                            res.status(200).setHeader('Content-Type', 'application/json; charset=utf-8');
+                            res.end(JSON.stringify({
+                                success: true,
+                                route: 'marketplace-xianyu-orders'
+                            }));
                         }
                     };
                 }
@@ -387,6 +394,20 @@ test('public handler resolves marketplace ingestion scope paths', async () => {
         assert.deepEqual(res.json(), {
             success: true,
             route: 'marketplace-orders'
+        });
+
+        const xianyuReq = {
+            method: 'POST',
+            url: '/api/marketplace/xianyu/orders'
+        };
+        const xianyuRes = createMockResponse();
+
+        await handler(xianyuReq, xianyuRes);
+
+        assert.equal(xianyuRes.statusCode, 200);
+        assert.deepEqual(xianyuRes.json(), {
+            success: true,
+            route: 'marketplace-xianyu-orders'
         });
     });
 });
