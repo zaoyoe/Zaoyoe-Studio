@@ -3645,6 +3645,38 @@ function bindAdminStudioDelegatedControls() {
                     silentErrors: true
                 });
                 break;
+            case 'marketplace-save-channel-settings':
+                runAdminStudioActionFeedback(actionEl, () => window.saveMarketplaceChannelSettings?.(), {
+                    loadingText: '保存中...',
+                    successText: '已保存',
+                    errorText: '保存失败',
+                    silentErrors: true
+                });
+                break;
+            case 'marketplace-toggle-xianyu-enabled':
+                window.toggleMarketplaceXianyuEnabled?.();
+                break;
+            case 'marketplace-toggle-xianyu-account':
+                window.toggleMarketplaceXianyuAccount?.(actionEl.dataset.accountKey, actionEl);
+                break;
+            case 'marketplace-add-xianyu-account':
+                window.addMarketplaceXianyuAccount?.();
+                break;
+            case 'marketplace-remove-xianyu-account':
+                window.removeMarketplaceXianyuAccount?.(actionEl.dataset.accountKey, actionEl);
+                break;
+            case 'marketplace-generate-ingest-token':
+                window.generateMarketplaceIngestToken?.(actionEl.dataset.accountKey, actionEl);
+                break;
+            case 'marketplace-add-product-mapping':
+                window.addMarketplaceXianyuProductMapping?.();
+                break;
+            case 'marketplace-remove-product-mapping':
+                window.removeMarketplaceXianyuProductMapping?.(actionEl.dataset.mappingIndex);
+                break;
+            case 'marketplace-toggle-product-mapping':
+                window.toggleMarketplaceXianyuProductMapping?.(actionEl.dataset.mappingIndex);
+                break;
             case 'payments-toggle-range-menu':
                 window.AdminPayments?.toggleRangeMenu?.(event);
                 break;
@@ -4966,6 +4998,9 @@ function bindAdminStudioDelegatedControls() {
             }
             case 'payments-change-active-provider':
                 window.handlePaymentChannelActiveChange?.(actionEl.value);
+                break;
+            case 'marketplace-change-default-account':
+                window.handleMarketplaceXianyuDefaultAccountChange?.(actionEl.value);
                 break;
             case 'settings-change-ops-alert-customer-chat-message-summary-schedule-mode':
                 window.handleOpsAlertCustomerChatMessageSummaryScheduleModeChange?.();

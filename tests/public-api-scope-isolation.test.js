@@ -355,6 +355,42 @@ test('public handler resolves direct KVM4-style /api scope paths', async () => {
     });
 });
 
+test('public handler resolves marketplace ingestion scope paths', async () => {
+    await withPublicHandler((request, parent, isMain, originalLoad) => {
+        if (request === '../server/api-handlers/public/marketplace') {
+            return {
+                createMarketplaceHandlers() {
+                    return {
+                        async orders(req, res) {
+                            res.status(200).setHeader('Content-Type', 'application/json; charset=utf-8');
+                            res.end(JSON.stringify({
+                                success: true,
+                                route: 'marketplace-orders'
+                            }));
+                        }
+                    };
+                }
+            };
+        }
+
+        return originalLoad.call(Module, request, parent, isMain);
+    }, async (handler) => {
+        const req = {
+            method: 'POST',
+            url: '/api/marketplace/orders'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.deepEqual(res.json(), {
+            success: true,
+            route: 'marketplace-orders'
+        });
+    });
+});
+
 test('public wallet checkin is served by the shared handler instead of the API route entrypoint', async () => {
     await withPublicHandler((request, parent, isMain, originalLoad) => {
         if (request === '../server/api-handlers/public/wallet') {

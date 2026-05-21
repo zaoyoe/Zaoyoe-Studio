@@ -8,6 +8,11 @@ let systemConfigCache = {};
 let paymentChannelSecretStatus = getDefaultPaymentChannelSecretStatus();
 let paymentChannelRuntimeState = getDefaultPaymentChannelRuntimeState();
 let paymentChannelActivationChecks = getDefaultPaymentChannelActivationChecks();
+let marketplaceChannelSecretStatus = {};
+let marketplaceChannelManifest = [];
+let marketplaceChannelSummary = {};
+let marketplaceXianyuAccountDraftCounter = 1;
+let marketplaceXianyuProductMappingDraftCounter = 1;
 let discountTriggerSettingsState = getDefaultDiscountTriggerSettingsState();
 let opsAlertSecretStatus = getDefaultOpsAlertSecretStatus();
 let opsAlertHealthState = getDefaultOpsAlertHealthState();
@@ -4446,6 +4451,229 @@ function getDefaultPaymentChannelsConfig() {
     };
 }
 
+function getDefaultMarketplaceChannelsConfig() {
+    return {
+        enabled: true,
+        default_channel_key: 'website',
+        inventory_mode: 'shared',
+        channels: [
+            {
+                key: 'website',
+                type: 'website',
+                label: '网站',
+                enabled: true,
+                inventory_mode: 'shared',
+                delivery_mode: 'manual',
+                source_channel: 'website',
+                default_account_key: '',
+                multi_account: false,
+                notes: '',
+                accounts: []
+            },
+            {
+                key: 'xianyu',
+                type: 'xianyu',
+                label: '闲鱼',
+                enabled: false,
+                inventory_mode: 'shared',
+                delivery_mode: 'auto',
+                source_channel: 'xianyu',
+                default_account_key: 'main',
+                multi_account: true,
+                notes: '闲鱼多账号与网站共享同一库存。',
+                product_mappings: [],
+                accounts: [
+                    {
+                        key: 'main',
+                        label: '主号',
+                        enabled: true,
+                        role: 'primary',
+                        notes: '',
+                        secret_names: ['session_cookie', 'refresh_token', 'ingest_token']
+                    }
+                ]
+            }
+        ]
+    };
+}
+
+function normalizeMarketplaceChannelsConfig(raw = null, options = {}) {
+    const source = raw && typeof raw === 'object' && !Array.isArray(raw)
+        ? raw
+        : getDefaultMarketplaceChannelsConfig();
+    const defaultConfig = getDefaultMarketplaceChannelsConfig();
+    const channelsSource = Array.isArray(source.channels) ? source.channels : defaultConfig.channels;
+    const channels = channelsSource.map((channel, index) => {
+        const safeChannel = channel && typeof channel === 'object' && !Array.isArray(channel) ? channel : {};
+        const key = String(safeChannel.key || safeChannel.type || `channel-${index + 1}`).trim().toLowerCase();
+        const accountsSource = Array.isArray(safeChannel.accounts) ? safeChannel.accounts : [];
+        return {
+            key,
+            type: String(safeChannel.type || key || 'generic').trim().toLowerCase(),
+            label: String(safeChannel.label || safeChannel.name || key || `渠道 ${index + 1}`).trim(),
+            enabled: safeChannel.enabled !== false,
+            inventory_mode: String(safeChannel.inventory_mode || safeChannel.inventoryMode || source.inventory_mode || 'shared').trim().toLowerCase() || 'shared',
+            delivery_mode: String(safeChannel.delivery_mode || safeChannel.deliveryMode || (key === 'xianyu' ? 'auto' : 'manual')).trim().toLowerCase() || 'manual',
+            source_channel: String(safeChannel.source_channel || safeChannel.sourceChannel || key || 'website').trim().toLowerCase(),
+            default_account_key: String(safeChannel.default_account_key || safeChannel.defaultAccountKey || '').trim().toLowerCase(),
+            multi_account: safeChannel.multi_account === true || safeChannel.multiAccount === true || accountsSource.length > 1,
+            notes: String(safeChannel.notes || safeChannel.description || '').trim(),
+            product_mappings: normalizeMarketplaceProductMappings(
+                safeChannel.product_mappings
+                || safeChannel.productMappings
+                || safeChannel.products
+                || safeChannel.product_map
+                || safeChannel.productMap,
+                { keepEmpty: options.keepEmptyProductMappings === true }
+            ),
+            accounts: accountsSource.map((account, accountIndex) => {
+                const safeAccount = account && typeof account === 'object' && !Array.isArray(account) ? account : {};
+                const accountKey = String(safeAccount.key || safeAccount.account_key || `account-${accountIndex + 1}`).trim().toLowerCase();
+                return {
+                    key: accountKey,
+                    label: String(safeAccount.label || safeAccount.name || accountKey || `账号 ${accountIndex + 1}`).trim(),
+                    enabled: safeAccount.enabled !== false,
+                    role: String(safeAccount.role || (accountIndex === 0 ? 'primary' : 'backup')).trim().toLowerCase(),
+                    notes: String(safeAccount.notes || safeAccount.description || '').trim(),
+                    secret_names: Array.isArray(safeAccount.secret_names)
+                        ? safeAccount.secret_names.map((item) => String(item || '').trim().toLowerCase()).filter(Boolean)
+                        : []
+                };
+            })
+        };
+    });
+
+    return {
+        enabled: source.enabled !== false,
+        default_channel_key: String(source.default_channel_key || source.defaultChannelKey || defaultConfig.default_channel_key).trim().toLowerCase() || 'website',
+        inventory_mode: String(source.inventory_mode || source.inventoryMode || defaultConfig.inventory_mode).trim().toLowerCase() || 'shared',
+        channels
+    };
+}
+
+function normalizeMarketplaceProductMappings(value = [], options = {}) {
+    const keepEmpty = options.keepEmpty === true;
+    const rawEntries = Array.isArray(value)
+        ? value
+        : (value && typeof value === 'object'
+            ? Object.entries(value).map(([xianyuItemId, productId]) => ({
+                xianyu_item_id: xianyuItemId,
+                product_id: productId
+            }))
+            : []);
+
+    return rawEntries.map((entry, index) => {
+        const safeEntry = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : {};
+        const xianyuItemId = String(safeEntry.xianyu_item_id || safeEntry.xianyuItemId || safeEntry.item_id || safeEntry.itemId || '').trim();
+        const productId = String(safeEntry.product_id || safeEntry.productId || safeEntry.website_product_id || safeEntry.websiteProductId || '').trim();
+        const skuId = String(safeEntry.sku_id || safeEntry.skuId || '').trim();
+        const skuTextContains = String(safeEntry.sku_text_contains || safeEntry.skuTextContains || '').trim();
+        const titleContains = String(safeEntry.title_contains || safeEntry.titleContains || '').trim();
+        const rawPath = String(safeEntry.raw_path || safeEntry.rawPath || '').trim();
+        const rawEquals = String(safeEntry.equals ?? safeEntry.value ?? '').trim();
+        const hasMatcher = Boolean(xianyuItemId || skuId || skuTextContains || titleContains || (rawPath && rawEquals));
+
+        if (!keepEmpty && !productId && !hasMatcher) {
+            return null;
+        }
+
+        return {
+            label: String(safeEntry.label || safeEntry.name || (xianyuItemId ? `闲鱼商品 ${xianyuItemId}` : `商品映射 ${index + 1}`)).trim(),
+            enabled: safeEntry.enabled !== false,
+            xianyu_item_id: xianyuItemId,
+            sku_id: skuId,
+            sku_text_contains: skuTextContains,
+            title_contains: titleContains,
+            raw_path: rawPath,
+            equals: rawEquals,
+            product_id: productId,
+            notes: String(safeEntry.notes || safeEntry.description || '').trim()
+        };
+    }).filter(Boolean);
+}
+
+function findMarketplaceChannelByKey(config = {}, channelKey = '') {
+    const normalizedKey = String(channelKey || '').trim().toLowerCase();
+    return (Array.isArray(config.channels) ? config.channels : []).find((channel) => channel.key === normalizedKey) || null;
+}
+
+function buildMarketplaceSecretKey(channelKey = '', accountKey = '', secretName = '') {
+    const parts = ['marketplace', channelKey, accountKey, secretName]
+        .map((part) => String(part || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '-').replace(/^[-_]+|[-_]+$/g, ''))
+        .filter(Boolean);
+    return parts.length === 4 ? parts.join('__') : '';
+}
+
+function ensureMarketplaceAccountSecretNames(account = {}) {
+    const secretNames = new Set(Array.isArray(account.secret_names) ? account.secret_names : []);
+    ['session_cookie', 'refresh_token', 'ingest_token'].forEach((secretName) => secretNames.add(secretName));
+    return {
+        ...account,
+        secret_names: [...secretNames]
+    };
+}
+
+function ensureXianyuMarketplaceChannel(config = {}, options = {}) {
+    const normalized = normalizeMarketplaceChannelsConfig(config, options);
+    const channels = Array.isArray(normalized.channels) ? normalized.channels.map((channel) => ({ ...channel })) : [];
+    let xianyuIndex = channels.findIndex((channel) => channel.key === 'xianyu');
+
+    if (xianyuIndex < 0) {
+        const defaultXianyu = findMarketplaceChannelByKey(getDefaultMarketplaceChannelsConfig(), 'xianyu');
+        channels.push(defaultXianyu ? { ...defaultXianyu } : {
+            key: 'xianyu',
+            type: 'xianyu',
+            label: '闲鱼',
+            enabled: false,
+            inventory_mode: 'shared',
+            delivery_mode: 'auto',
+            source_channel: 'xianyu',
+            default_account_key: 'main',
+            multi_account: true,
+            notes: '闲鱼多账号与网站共享同一库存。',
+            accounts: []
+        });
+        xianyuIndex = channels.length - 1;
+    }
+
+    const xianyu = {
+        ...channels[xianyuIndex],
+        key: 'xianyu',
+        type: 'xianyu',
+        label: channels[xianyuIndex].label || '闲鱼',
+        inventory_mode: 'shared',
+        delivery_mode: 'auto',
+        source_channel: 'xianyu',
+        multi_account: true
+    };
+    const accounts = Array.isArray(xianyu.accounts) && xianyu.accounts.length
+        ? xianyu.accounts
+        : [{ key: 'main', label: '主号', enabled: true, role: 'primary', notes: '', secret_names: [] }];
+    xianyu.accounts = accounts.map((account, index) => ensureMarketplaceAccountSecretNames({
+        ...account,
+        key: String(account.key || `account-${index + 1}`).trim().toLowerCase() || `account-${index + 1}`,
+        label: String(account.label || account.name || account.key || `账号 ${index + 1}`).trim(),
+        role: account.role || (index === 0 ? 'primary' : 'backup'),
+        enabled: account.enabled !== false
+    }));
+    xianyu.default_account_key = xianyu.accounts.some((account) => account.key === xianyu.default_account_key)
+        ? xianyu.default_account_key
+        : (xianyu.accounts.find((account) => account.enabled)?.key || xianyu.accounts[0]?.key || 'main');
+    xianyu.product_mappings = normalizeMarketplaceProductMappings(xianyu.product_mappings, {
+        keepEmpty: options.keepEmptyProductMappings === true
+    });
+    channels[xianyuIndex] = xianyu;
+
+    return {
+        ...normalized,
+        channels
+    };
+}
+
+function stringifyAdminConfigJson(value = {}) {
+    return JSON.stringify(value || {}, null, 2);
+}
+
 function getDefaultDiscountTriggerRulesConfig() {
     return {
         recharge: {
@@ -6922,6 +7150,7 @@ function renderSettingsViewSections(viewName = '') {
         renderUnlockPricingConfig();
         renderPackagesConfig();
         renderPaymentChannelsConfig();
+        renderMarketplaceChannelsConfig();
         hydrateDiscountTriggerSettingsDraft({ force: true });
         renderDiscountTriggerSettings();
         renderChannelsConfig();
@@ -6967,6 +7196,7 @@ async function warmSettingsSecondaryPanelsInBackground({ force = false, viewName
     if (normalizedView === 'pricing') {
         tasks.push(
             () => loadPaymentChannelSettings(force),
+            () => loadMarketplaceChannelSettings(force),
             () => loadDiscountTriggerDiscountOptions(force)
         );
     }
@@ -7500,7 +7730,7 @@ async function initSystemConfig() {
     }
 }
 
-const ADMIN_SYSTEM_CONFIG_DOMAINS = ['commerce', 'affiliate', 'governance', 'growth', 'verify'];
+const ADMIN_SYSTEM_CONFIG_DOMAINS = ['commerce', 'marketplace', 'affiliate', 'governance', 'growth', 'verify'];
 const ADMIN_SITE_SCOPED_SYSTEM_CONFIG_KEYS = new Set([
     'unlock_pricing',
     'payment_channels',
@@ -8031,6 +8261,348 @@ function renderPaymentChannelsConfig() {
     Object.entries(paymentChannelAccordionState).forEach(([providerKey, expanded]) => {
         setPaymentProviderPanelExpanded(providerKey, expanded);
     });
+}
+
+function normalizeMarketplaceKeyPart(value, fallback = '', maxLength = 80) {
+    const source = String(value || fallback || '').trim().toLowerCase();
+    return source
+        .replace(/[^a-z0-9_-]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/_+/g, '_')
+        .replace(/^[-_]+|[-_]+$/g, '')
+        .slice(0, maxLength);
+}
+
+function collectMarketplaceXianyuSecretInputs() {
+    const secrets = {};
+    document.querySelectorAll('[data-marketplace-account-key]').forEach((card, index) => {
+        const keyInput = card.querySelector('[data-marketplace-account-field="key"]');
+        const tokenInput = card.querySelector('[data-marketplace-secret-key]');
+        const accountKey = normalizeMarketplaceKeyPart(keyInput?.value, index === 0 ? 'main' : `account-${index + 1}`);
+        const tokenValue = String(tokenInput?.value || '').trim();
+        const secretKey = buildMarketplaceSecretKey('xianyu', accountKey, 'ingest_token');
+        if (secretKey && tokenValue) {
+            secrets[secretKey] = tokenValue;
+        }
+    });
+
+    document.querySelectorAll('[data-marketplace-secret-key]').forEach((input) => {
+        if (input.closest('[data-marketplace-account-key]')) return;
+        const secretKey = String(input.dataset.marketplaceSecretKey || '').trim();
+        const value = String(input.value || '').trim();
+        if (secretKey && value) {
+            secrets[secretKey] = value;
+        }
+    });
+    return secrets;
+}
+
+function findMarketplaceAccountCardByKey(accountKey = '') {
+    const normalizedAccountKey = normalizeMarketplaceKeyPart(accountKey, '');
+    if (!normalizedAccountKey) return null;
+    return [...document.querySelectorAll('[data-marketplace-account-key]')]
+        .find((card) => normalizeMarketplaceKeyPart(card.dataset.marketplaceAccountKey, '') === normalizedAccountKey) || null;
+}
+
+function getMarketplaceAccountCardForAction(accountKey = '', actionEl = null) {
+    const actionCard = actionEl?.closest?.('[data-marketplace-account-key]');
+    if (actionCard) return actionCard;
+    return findMarketplaceAccountCardByKey(accountKey);
+}
+
+function resolveMarketplaceAccountKeyForAction(accountKey = '', actionEl = null, fallback = 'main') {
+    const card = getMarketplaceAccountCardForAction(accountKey, actionEl);
+    const keyInput = card?.querySelector?.('[data-marketplace-account-field="key"]');
+    return normalizeMarketplaceKeyPart(keyInput?.value || accountKey, fallback) || fallback;
+}
+
+function getMarketplaceSecretStatus(secretKey = '') {
+    return marketplaceChannelSecretStatus?.[secretKey] || null;
+}
+
+function formatMarketplaceSecretStatus(secretKey = '') {
+    const status = getMarketplaceSecretStatus(secretKey);
+    if (status?.configured === true) {
+        return '已配置，留空则保持不变';
+    }
+    if (status?.decrypt_error_message) {
+        return status.decrypt_error_message;
+    }
+    if (status?.error) {
+        return status.error;
+    }
+    return '未配置，请填写一个长随机 token';
+}
+
+function formatMarketplaceAccountOptionLabel(account = {}, index = 0) {
+    const accountKey = normalizeMarketplaceKeyPart(account.key, `account-${index + 1}`) || `account-${index + 1}`;
+    const label = String(account.label || account.name || accountKey || `账号 ${index + 1}`).trim();
+    return `${label} (${accountKey})`;
+}
+
+function renderMarketplaceDefaultAccountDropdown(accounts = [], selectedKey = '') {
+    const dropdown = document.getElementById('marketplaceXianyuDefaultAccountDropdown');
+    if (!dropdown) return;
+
+    const safeAccounts = Array.isArray(accounts) && accounts.length
+        ? accounts
+        : [{ key: 'main', label: '主号', enabled: true }];
+    const normalizedSelectedKey = normalizeMarketplaceKeyPart(selectedKey, safeAccounts[0]?.key || 'main');
+    const selectedAccount = safeAccounts.find((account, index) => (
+        normalizeMarketplaceKeyPart(account.key, `account-${index + 1}`) === normalizedSelectedKey
+    )) || safeAccounts[0];
+    const selectedIndex = Math.max(0, safeAccounts.indexOf(selectedAccount));
+    const selectedLabel = formatMarketplaceAccountOptionLabel(selectedAccount, selectedIndex);
+    const valueEl = dropdown.querySelector('.dropdown-value');
+    const metaEl = dropdown.querySelector('[data-dropdown-role="meta"]');
+    const menuEl = dropdown.querySelector('.dropdown-menu');
+
+    if (valueEl) {
+        valueEl.textContent = selectedLabel;
+    }
+    if (metaEl) {
+        metaEl.textContent = selectedAccount?.enabled === false
+            ? '此账号当前停用，建议选择可用账号'
+            : '闲鱼订单默认使用此账号发货';
+    }
+    if (menuEl) {
+        menuEl.innerHTML = safeAccounts.map((account, index) => {
+            const accountKey = normalizeMarketplaceKeyPart(account.key, `account-${index + 1}`) || `account-${index + 1}`;
+            const label = formatMarketplaceAccountOptionLabel(account, index);
+            const meta = account.enabled === false ? '已停用' : (account.role === 'primary' ? '主账号' : '可用于多账号发货');
+            const isSelected = accountKey === normalizedSelectedKey;
+            return `
+                <button
+                    type="button"
+                    class="dropdown-option${isSelected ? ' selected' : ''}"
+                    data-value="${escapeConfigHtml(accountKey)}"
+                    data-admin-action="settings-select-dropdown-option"
+                    data-dropdown-id="marketplaceXianyuDefaultAccountDropdown"
+                    data-option-value="${escapeConfigHtml(accountKey)}"
+                    data-option-label="${escapeConfigHtml(label)}"
+                    data-option-meta="${escapeConfigHtml(meta)}"
+                    role="option"
+                    aria-selected="${isSelected ? 'true' : 'false'}"
+                >
+                    <span class="marketplace-default-account-dropdown__option">
+                        <strong>${escapeConfigHtml(label)}</strong>
+                        <small>${escapeConfigHtml(meta)}</small>
+                    </span>
+                </button>
+            `;
+        }).join('');
+    }
+}
+
+function buildMarketplaceXianyuAccountCard(account = {}, index = 0, options = {}) {
+    const accountKey = normalizeMarketplaceKeyPart(account.key, `account-${index + 1}`) || `account-${index + 1}`;
+    const label = String(account.label || account.name || accountKey || `账号 ${index + 1}`).trim();
+    const role = String(account.role || (index === 0 ? 'primary' : 'backup')).trim().toLowerCase();
+    const secretKey = buildMarketplaceSecretKey('xianyu', accountKey, 'ingest_token');
+    const status = getMarketplaceSecretStatus(secretKey);
+    const tokenDraft = options.secretDrafts?.[secretKey] || '';
+    const canRemove = accountKey !== 'main' && index > 0;
+    const statusClass = status?.configured === true ? 'is-ok' : 'is-missing';
+
+    return `
+        <article class="marketplace-account-card" data-marketplace-account-key="${escapeConfigHtml(accountKey)}">
+            <div class="marketplace-account-card__header">
+                <div>
+                    <div class="marketplace-account-card__title">${escapeConfigHtml(label || accountKey)}</div>
+                    <div class="marketplace-account-card__meta">接口识别名：${escapeConfigHtml(accountKey)}</div>
+                </div>
+                <div class="marketplace-account-card__actions">
+                    <span class="marketplace-secret-status ${statusClass}">${escapeConfigHtml(formatMarketplaceSecretStatus(secretKey))}</span>
+                    <div class="status-toggle ${account.enabled !== false ? 'active' : ''}" data-admin-action="marketplace-toggle-xianyu-account" data-account-key="${escapeConfigHtml(accountKey)}"></div>
+                </div>
+            </div>
+            <div class="marketplace-account-card__grid">
+                <label class="marketplace-simple-field">
+                    <span>账号名称</span>
+                    <input type="text" class="config-input" data-marketplace-account-field="label" value="${escapeConfigHtml(label)}" placeholder="如：主号、备用号">
+                </label>
+                <label class="marketplace-simple-field">
+                    <span>接口识别名</span>
+                    <input type="text" class="config-input" data-marketplace-account-field="key" value="${escapeConfigHtml(accountKey)}" placeholder="main">
+                </label>
+                <label class="marketplace-simple-field marketplace-simple-field--wide">
+                    <span>发货接口 Token</span>
+                    <div class="marketplace-token-row">
+                        <input type="password" class="config-input marketplace-ingest-token-input" data-marketplace-secret-key="${escapeConfigHtml(secretKey)}" value="${escapeConfigHtml(tokenDraft)}" placeholder="${status?.configured === true ? '留空保持现有 token 不变' : '粘贴或生成一个长随机 token'}">
+                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="marketplace-generate-ingest-token" data-account-key="${escapeConfigHtml(accountKey)}">
+                            生成
+                        </button>
+                    </div>
+                </label>
+            </div>
+            <div class="marketplace-account-card__footer">
+                <input type="hidden" data-marketplace-account-field="role" value="${escapeConfigHtml(role)}">
+                <input type="hidden" data-marketplace-account-field="enabled" value="${account.enabled !== false ? 'true' : 'false'}">
+                ${canRemove ? `<button type="button" class="btn-add-config btn-add-config--compact btn-add-config--danger" data-admin-action="marketplace-remove-xianyu-account" data-account-key="${escapeConfigHtml(accountKey)}">删除账号</button>` : '<span>主号会作为默认保底账号保留。</span>'}
+            </div>
+        </article>
+    `;
+}
+
+function buildMarketplaceXianyuProductMappingRow(mapping = {}, index = 0) {
+    const safeMapping = normalizeMarketplaceProductMappings([mapping])[0] || {
+        label: `商品映射 ${index + 1}`,
+        enabled: true,
+        xianyu_item_id: '',
+        sku_id: '',
+        sku_text_contains: '',
+        title_contains: '',
+        raw_path: '',
+        equals: '',
+        product_id: '',
+        notes: ''
+    };
+    const title = safeMapping.label || safeMapping.xianyu_item_id || `商品映射 ${index + 1}`;
+
+    return `
+        <article class="marketplace-product-mapping-row" data-marketplace-product-mapping-index="${index}">
+            <div class="marketplace-product-mapping-row__header">
+                <div>
+                    <div class="marketplace-account-card__title">${escapeConfigHtml(title)}</div>
+                    <div class="marketplace-account-card__meta">闲鱼商品成交后发网站这个商品的库存</div>
+                </div>
+                <div class="marketplace-account-card__actions">
+                    <div class="status-toggle ${safeMapping.enabled !== false ? 'active' : ''}" data-admin-action="marketplace-toggle-product-mapping" data-mapping-index="${index}"></div>
+                    <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--danger" data-admin-action="marketplace-remove-product-mapping" data-mapping-index="${index}">删除</button>
+                </div>
+            </div>
+            <div class="marketplace-product-mapping-row__grid">
+                <label class="marketplace-simple-field">
+                    <span>显示名称</span>
+                    <input type="text" class="config-input" data-marketplace-product-mapping-field="label" value="${escapeConfigHtml(safeMapping.label)}" placeholder="如：会员月卡">
+                </label>
+                <label class="marketplace-simple-field">
+                    <span>闲鱼商品 ID</span>
+                    <input type="text" class="config-input" data-marketplace-product-mapping-field="xianyu_item_id" value="${escapeConfigHtml(safeMapping.xianyu_item_id)}" placeholder="从闲鱼商品链接或抓单结果里复制">
+                </label>
+                <label class="marketplace-simple-field">
+                    <span>网站商品 ID</span>
+                    <input type="text" class="config-input" data-marketplace-product-mapping-field="product_id" value="${escapeConfigHtml(safeMapping.product_id)}" placeholder="网站商城商品 ID">
+                </label>
+                <label class="marketplace-simple-field">
+                    <span>SKU ID（可选）</span>
+                    <input type="text" class="config-input" data-marketplace-product-mapping-field="sku_id" value="${escapeConfigHtml(safeMapping.sku_id)}" placeholder="同一闲鱼商品多规格时填写">
+                </label>
+                <label class="marketplace-simple-field marketplace-simple-field--wide">
+                    <span>规格文字包含（可选）</span>
+                    <input type="text" class="config-input" data-marketplace-product-mapping-field="sku_text_contains" value="${escapeConfigHtml(safeMapping.sku_text_contains)}" placeholder="如：标准版、月卡、年卡">
+                </label>
+                <input type="hidden" data-marketplace-product-mapping-field="enabled" value="${safeMapping.enabled !== false ? 'true' : 'false'}">
+            </div>
+        </article>
+    `;
+}
+
+function renderMarketplaceXianyuProductMappings(xianyu = {}) {
+    const list = document.getElementById('marketplaceXianyuProductMappingsList');
+    if (!list) return;
+
+    const mappings = normalizeMarketplaceProductMappings(xianyu.product_mappings || [], { keepEmpty: true });
+    list.innerHTML = mappings.length
+        ? mappings.map((mapping, index) => buildMarketplaceXianyuProductMappingRow(mapping, index)).join('')
+        : '<div class="marketplace-empty-state">还没有商品映射。添加一条后，闲鱼订单才能知道该发网站里的哪个商品。</div>';
+}
+
+function renderMarketplaceXianyuSimpleForm(config = {}, options = {}) {
+    const xianyu = findMarketplaceChannelByKey(config, 'xianyu') || {};
+    const accounts = Array.isArray(xianyu.accounts) ? xianyu.accounts : [];
+    const enabledToggle = document.getElementById('marketplaceXianyuEnabledToggle');
+    const statusText = document.getElementById('marketplaceXianyuStatusText');
+    const defaultAccountSelect = document.getElementById('marketplaceXianyuDefaultAccount');
+    const accountList = document.getElementById('marketplaceXianyuAccountsList');
+    const isEnabled = xianyu.enabled === true;
+
+    if (enabledToggle) {
+        enabledToggle.classList.toggle('active', isEnabled);
+    }
+    if (statusText) {
+        statusText.textContent = isEnabled
+            ? '已启用。闲鱼适配器可使用账号 token 推送订单到网站共享库存。'
+            : '未启用。开启后，闲鱼成交订单才会进入网站共享库存自动发货。';
+    }
+    if (defaultAccountSelect) {
+        defaultAccountSelect.innerHTML = accounts.map((account, index) => {
+            const accountKey = normalizeMarketplaceKeyPart(account.key, `account-${index + 1}`);
+            return `<option value="${escapeConfigHtml(accountKey)}">${escapeConfigHtml(formatMarketplaceAccountOptionLabel(account, index))}</option>`;
+        }).join('');
+        defaultAccountSelect.value = xianyu.default_account_key || accounts[0]?.key || 'main';
+        renderMarketplaceDefaultAccountDropdown(accounts, defaultAccountSelect.value);
+    }
+    if (accountList) {
+        const secretDrafts = options.preserveSecretInputs === false ? {} : collectMarketplaceXianyuSecretInputs();
+        accountList.innerHTML = accounts.length
+            ? accounts.map((account, index) => buildMarketplaceXianyuAccountCard(account, index, { secretDrafts })).join('')
+            : '<div class="marketplace-empty-state">还没有闲鱼账号，点击下方按钮添加一个。</div>';
+    }
+    renderMarketplaceXianyuProductMappings(xianyu);
+}
+
+function renderMarketplaceChannelsConfig(options = {}) {
+    const normalizeOptions = {
+        keepEmptyProductMappings: options.keepEmptyProductMappings === true
+    };
+    const config = normalizeMarketplaceChannelsConfig(systemConfigCache['marketplace_channels'], normalizeOptions);
+    const configWithXianyu = ensureXianyuMarketplaceChannel(config, normalizeOptions);
+    const configTextarea = document.getElementById('marketplaceChannelsConfigJson');
+    const secretsTextarea = document.getElementById('marketplaceChannelsSecretsJson');
+    const summaryEl = document.getElementById('marketplaceChannelSummary');
+    const snapshotEl = document.getElementById('marketplaceChannelSnapshot');
+    const xianyu = findMarketplaceChannelByKey(configWithXianyu, 'xianyu') || {};
+    const enabledChannels = (configWithXianyu.channels || []).filter((channel) => channel.enabled);
+    const accountCount = (configWithXianyu.channels || []).reduce((total, channel) => total + (Array.isArray(channel.accounts) ? channel.accounts.length : 0), 0);
+    const configuredSecretCount = Object.values(marketplaceChannelSecretStatus || {}).filter((entry) => entry?.configured === true).length;
+    const secretCount = Array.isArray(marketplaceChannelManifest)
+        ? marketplaceChannelManifest.length
+        : Number(marketplaceChannelSummary?.secret_count || 0);
+    const xianyuAccounts = Array.isArray(xianyu.accounts) ? xianyu.accounts : [];
+    const configuredIngestCount = xianyuAccounts.reduce((total, account) => {
+        const secretKey = buildMarketplaceSecretKey('xianyu', account.key, 'ingest_token');
+        return total + (marketplaceChannelSecretStatus?.[secretKey]?.configured === true ? 1 : 0);
+    }, 0);
+
+    renderMarketplaceXianyuSimpleForm(configWithXianyu, options);
+
+    if (configTextarea && document.activeElement !== configTextarea) {
+        configTextarea.value = stringifyAdminConfigJson(configWithXianyu);
+    }
+
+    if (secretsTextarea && document.activeElement !== secretsTextarea && !secretsTextarea.value.trim()) {
+        const template = {};
+        (Array.isArray(marketplaceChannelManifest) ? marketplaceChannelManifest : []).forEach((entry) => {
+            if (entry?.secret_key && marketplaceChannelSecretStatus?.[entry.secret_key]?.configured !== true) {
+                template[entry.secret_key] = '';
+            }
+        });
+        secretsTextarea.value = stringifyAdminConfigJson(template);
+    }
+
+    if (summaryEl) {
+        const summaryText = xianyu.enabled
+            ? `闲鱼自动发货已启用 · ${xianyuAccounts.filter((account) => account.enabled !== false).length}/${xianyuAccounts.length} 个账号可发货 · ${configuredIngestCount}/${xianyuAccounts.length} 个 token 已配置`
+            : `闲鱼自动发货未启用 · 已准备 ${xianyuAccounts.length || accountCount} 个闲鱼账号`;
+        const span = summaryEl.querySelector('span');
+        if (span) {
+            span.textContent = summaryText;
+        } else {
+            summaryEl.textContent = summaryText;
+        }
+    }
+
+    if (snapshotEl) {
+        snapshotEl.textContent = (configWithXianyu.channels || []).map((channel) => {
+            const accountLabels = (Array.isArray(channel.accounts) ? channel.accounts : [])
+                .map((account) => `${account.label || account.key}${account.enabled ? '' : '(停用)'}`)
+                .join('、') || '无账号';
+            const inventoryLabel = channel.inventory_mode === 'shared' ? '共享网站库存' : `${channel.inventory_mode}库存`;
+            const deliveryLabel = channel.delivery_mode === 'auto' ? '自动发货' : '手动发货';
+            return `${channel.label || channel.key}: ${channel.enabled ? '启用' : '停用'} / ${inventoryLabel} / ${deliveryLabel} / ${accountLabels}`;
+        }).join('；') || '暂无渠道。';
+    }
 }
 
 function hydrateDiscountTriggerSettingsDraft(options = {}) {
@@ -18244,6 +18816,46 @@ async function loadPaymentChannelSettings(force = false) {
     }
 }
 
+async function loadMarketplaceChannelSettings(force = false) {
+    if (loadMarketplaceChannelSettings._loadingPromise && !force) {
+        return loadMarketplaceChannelSettings._loadingPromise;
+    }
+
+    loadMarketplaceChannelSettings._loadingPromise = (async () => {
+        try {
+            const headers = await getAdminConfigApiHeaders();
+            const response = await fetch('/api/admin/settings/marketplace-channels', {
+                method: 'GET',
+                headers
+            });
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok || !payload.success) {
+                throw new Error(payload.message || '加载商城渠道注册表失败');
+            }
+
+            systemConfigCache['marketplace_channels'] = normalizeMarketplaceChannelsConfig(payload.config);
+            marketplaceChannelManifest = Array.isArray(payload.manifest) ? payload.manifest : [];
+            marketplaceChannelSecretStatus = payload.secret_status || {};
+            marketplaceChannelSummary = payload.summary || {};
+            renderMarketplaceChannelsConfig();
+            return payload;
+        } catch (error) {
+            console.warn('[Config] Marketplace channel settings load failed:', error.message);
+            marketplaceChannelManifest = [];
+            marketplaceChannelSecretStatus = {};
+            marketplaceChannelSummary = {};
+            renderMarketplaceChannelsConfig();
+            return null;
+        }
+    })();
+
+    try {
+        return await loadMarketplaceChannelSettings._loadingPromise;
+    } finally {
+        loadMarketplaceChannelSettings._loadingPromise = null;
+    }
+}
+
 async function fetchOpsAlertSettingsPayload(headers = {}) {
     return requireOpsAlertWorkbenchMethod('fetchAdminWorkbenchOpsAlertSettings')(headers, {
         site: getAdminSettingsSiteFilterValue(),
@@ -19409,6 +20021,351 @@ function clearPaymentChannelSecretInputs() {
         const input = document.getElementById(id);
         if (input) input.value = '';
     });
+}
+
+function readMarketplaceChannelsJsonInput(id, fallback = {}) {
+    const input = document.getElementById(id);
+    const rawValue = String(input?.value || '').trim();
+    if (!rawValue) {
+        return fallback;
+    }
+
+    try {
+        return JSON.parse(rawValue);
+    } catch (error) {
+        throw new Error(`${id === 'marketplaceChannelsSecretsJson' ? '密钥 JSON' : '注册表 JSON'} 格式错误: ${error.message}`);
+    }
+}
+
+function getMarketplaceXianyuConfigDraft() {
+    return ensureXianyuMarketplaceChannel(systemConfigCache['marketplace_channels'], {
+        keepEmptyProductMappings: true
+    });
+}
+
+function updateMarketplaceXianyuConfigDraft(updater) {
+    const hasRenderedForm = Boolean(document.querySelector('[data-marketplace-account-key]'));
+    const config = hasRenderedForm ? collectMarketplaceXianyuConfigFromForm() : getMarketplaceXianyuConfigDraft();
+    const channels = Array.isArray(config.channels) ? config.channels.map((channel) => ({ ...channel })) : [];
+    const xianyuIndex = channels.findIndex((channel) => channel.key === 'xianyu');
+    if (xianyuIndex < 0) return config;
+
+    const xianyu = {
+        ...channels[xianyuIndex],
+        accounts: Array.isArray(channels[xianyuIndex].accounts)
+            ? channels[xianyuIndex].accounts.map((account) => ({ ...account }))
+            : []
+    };
+    const nextXianyu = typeof updater === 'function' ? (updater(xianyu) || xianyu) : xianyu;
+    channels[xianyuIndex] = nextXianyu;
+    const nextConfig = normalizeMarketplaceChannelsConfig({
+        ...config,
+        channels
+    }, {
+        keepEmptyProductMappings: true
+    });
+    systemConfigCache['marketplace_channels'] = nextConfig;
+    renderMarketplaceChannelsConfig({ keepEmptyProductMappings: true });
+    return nextConfig;
+}
+
+function collectMarketplaceXianyuConfigFromForm() {
+    const currentConfig = getMarketplaceXianyuConfigDraft();
+    const channels = Array.isArray(currentConfig.channels) ? currentConfig.channels.map((channel) => ({ ...channel })) : [];
+    const xianyuIndex = channels.findIndex((channel) => channel.key === 'xianyu');
+    if (xianyuIndex < 0) return currentConfig;
+
+    const previousXianyu = channels[xianyuIndex];
+    const accountCards = [...document.querySelectorAll('[data-marketplace-account-key]')];
+    const seenKeys = new Set();
+    const accounts = accountCards.map((card, index) => {
+        const readField = (fieldName, fallback = '') => {
+            const input = card.querySelector(`[data-marketplace-account-field="${fieldName}"]`);
+            return String(input?.value || fallback || '').trim();
+        };
+        const fallbackKey = index === 0 ? 'main' : `account-${index + 1}`;
+        let accountKey = normalizeMarketplaceKeyPart(readField('key', fallbackKey), fallbackKey);
+        if (!accountKey) accountKey = fallbackKey;
+        if (seenKeys.has(accountKey)) {
+            accountKey = `${accountKey}-${index + 1}`;
+        }
+        seenKeys.add(accountKey);
+
+        return ensureMarketplaceAccountSecretNames({
+            key: accountKey,
+            label: readField('label', accountKey) || accountKey,
+            enabled: readField('enabled', 'true') !== 'false',
+            role: readField('role', index === 0 ? 'primary' : 'backup') || (index === 0 ? 'primary' : 'backup'),
+            notes: ''
+        });
+    });
+    if (!accounts.length) {
+        accounts.push(ensureMarketplaceAccountSecretNames({
+            key: 'main',
+            label: '主号',
+            enabled: true,
+            role: 'primary',
+            notes: ''
+        }));
+    }
+    const productMappings = collectMarketplaceXianyuProductMappingsFromForm(previousXianyu.product_mappings || []);
+
+    const defaultAccountSelect = document.getElementById('marketplaceXianyuDefaultAccount');
+    const selectedDefault = normalizeMarketplaceKeyPart(defaultAccountSelect?.value, accounts[0]?.key || 'main');
+    const defaultAccountKey = accounts.some((account) => account.key === selectedDefault)
+        ? selectedDefault
+        : (accounts.find((account) => account.enabled !== false)?.key || accounts[0]?.key || 'main');
+
+    channels[xianyuIndex] = {
+        ...previousXianyu,
+        key: 'xianyu',
+        type: 'xianyu',
+        label: previousXianyu.label || '闲鱼',
+        enabled: document.getElementById('marketplaceXianyuEnabledToggle')?.classList.contains('active') === true,
+        inventory_mode: 'shared',
+        delivery_mode: 'auto',
+        source_channel: 'xianyu',
+        default_account_key: defaultAccountKey,
+        multi_account: accounts.length > 1,
+        notes: previousXianyu.notes || '闲鱼多账号与网站共享同一库存。',
+        product_mappings: productMappings,
+        accounts
+    };
+
+    return normalizeMarketplaceChannelsConfig({
+        ...currentConfig,
+        channels
+    }, {
+        keepEmptyProductMappings: true
+    });
+}
+
+function collectMarketplaceXianyuProductMappingsFromForm(fallbackMappings = []) {
+    const rows = [...document.querySelectorAll('[data-marketplace-product-mapping-index]')];
+    if (!rows.length) {
+        return normalizeMarketplaceProductMappings(fallbackMappings);
+    }
+
+    return normalizeMarketplaceProductMappings(rows.map((row, index) => {
+        const readField = (fieldName, fallback = '') => {
+            const input = row.querySelector(`[data-marketplace-product-mapping-field="${fieldName}"]`);
+            return String(input?.value || fallback || '').trim();
+        };
+        const enabledInput = row.querySelector('[data-marketplace-product-mapping-field="enabled"]');
+        return {
+            label: readField('label', `商品映射 ${index + 1}`),
+            enabled: String(enabledInput?.value || 'true').trim() !== 'false',
+            xianyu_item_id: readField('xianyu_item_id'),
+            sku_id: readField('sku_id'),
+            sku_text_contains: readField('sku_text_contains'),
+            product_id: readField('product_id')
+        };
+    }), { keepEmpty: true });
+}
+
+function updateMarketplaceXianyuProductMappingsDraft(updater) {
+    updateMarketplaceXianyuConfigDraft((xianyu) => {
+        const currentMappings = collectMarketplaceXianyuProductMappingsFromForm(xianyu.product_mappings || []);
+        const nextMappings = typeof updater === 'function'
+            ? updater(currentMappings)
+            : currentMappings;
+        return {
+            ...xianyu,
+            product_mappings: normalizeMarketplaceProductMappings(nextMappings, { keepEmpty: true })
+        };
+    });
+}
+
+function addMarketplaceXianyuProductMapping() {
+    updateMarketplaceXianyuProductMappingsDraft((mappings) => {
+        const nextIndex = mappings.length + marketplaceXianyuProductMappingDraftCounter;
+        marketplaceXianyuProductMappingDraftCounter = nextIndex + 1;
+        return [
+            ...mappings,
+            {
+                label: `商品映射 ${mappings.length + 1}`,
+                enabled: true,
+                xianyu_item_id: '',
+                product_id: '',
+                sku_id: '',
+                sku_text_contains: ''
+            }
+        ];
+    });
+}
+
+function removeMarketplaceXianyuProductMapping(indexValue = '') {
+    const index = Number.parseInt(String(indexValue || ''), 10);
+    if (!Number.isInteger(index) || index < 0) return;
+    updateMarketplaceXianyuProductMappingsDraft((mappings) => mappings.filter((_, mappingIndex) => mappingIndex !== index));
+}
+
+function toggleMarketplaceXianyuProductMapping(indexValue = '') {
+    const index = Number.parseInt(String(indexValue || ''), 10);
+    if (!Number.isInteger(index) || index < 0) return;
+    updateMarketplaceXianyuProductMappingsDraft((mappings) => mappings.map((mapping, mappingIndex) => (
+        mappingIndex === index
+            ? { ...mapping, enabled: mapping.enabled === false }
+            : mapping
+    )));
+}
+
+function mergeMarketplaceSecretPayloads(...sources) {
+    return sources.reduce((merged, source) => {
+        if (!source || typeof source !== 'object' || Array.isArray(source)) return merged;
+        Object.entries(source).forEach(([key, value]) => {
+            const normalizedKey = String(key || '').trim();
+            const normalizedValue = String(value || '').trim();
+            if (normalizedKey && normalizedValue) {
+                merged[normalizedKey] = normalizedValue;
+            }
+        });
+        return merged;
+    }, {});
+}
+
+async function saveMarketplaceChannelSettings() {
+    try {
+        const advancedOpen = document.querySelector('.marketplace-advanced-config')?.open === true;
+        const config = advancedOpen
+            ? normalizeMarketplaceChannelsConfig(
+                readMarketplaceChannelsJsonInput('marketplaceChannelsConfigJson', collectMarketplaceXianyuConfigFromForm())
+            )
+            : normalizeMarketplaceChannelsConfig(collectMarketplaceXianyuConfigFromForm());
+        const advancedSecrets = advancedOpen
+            ? readMarketplaceChannelsJsonInput('marketplaceChannelsSecretsJson', {})
+            : {};
+        const secrets = mergeMarketplaceSecretPayloads(advancedSecrets, collectMarketplaceXianyuSecretInputs());
+        const headers = await getAdminConfigApiHeaders();
+        const response = await fetch('/api/admin/settings/marketplace-channels', {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({
+                config,
+                secrets
+            })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '保存商城渠道注册表失败');
+        }
+
+        systemConfigCache['marketplace_channels'] = normalizeMarketplaceChannelsConfig(payload.config);
+        marketplaceChannelManifest = Array.isArray(payload.manifest) ? payload.manifest : [];
+        marketplaceChannelSecretStatus = payload.secret_status || {};
+        marketplaceChannelSummary = payload.summary || {};
+        const secretsInput = document.getElementById('marketplaceChannelsSecretsJson');
+        if (secretsInput) {
+            secretsInput.value = '';
+        }
+        renderMarketplaceChannelsConfig();
+        showConfigSavedToast(payload.message || '闲鱼自动发货设置已保存', {
+            source: 'settings-marketplace'
+        });
+        return true;
+    } catch (err) {
+        console.error('[Config] Save marketplace channels failed:', err);
+        showToast('保存失败: ' + (err.message || '未知错误'), 'error');
+        renderMarketplaceChannelsConfig();
+        return false;
+    }
+}
+
+function toggleMarketplaceXianyuEnabled() {
+    updateMarketplaceXianyuConfigDraft((xianyu) => ({
+        ...xianyu,
+        enabled: !document.getElementById('marketplaceXianyuEnabledToggle')?.classList.contains('active')
+    }));
+}
+
+function toggleMarketplaceXianyuAccount(accountKey = '', actionEl = null) {
+    const normalizedAccountKey = resolveMarketplaceAccountKeyForAction(accountKey, actionEl, '');
+    updateMarketplaceXianyuConfigDraft((xianyu) => ({
+        ...xianyu,
+        accounts: (Array.isArray(xianyu.accounts) ? xianyu.accounts : []).map((account) => (
+            account.key === normalizedAccountKey
+                ? { ...account, enabled: account.enabled === false }
+                : account
+        ))
+    }));
+}
+
+function addMarketplaceXianyuAccount() {
+    updateMarketplaceXianyuConfigDraft((xianyu) => {
+        const accounts = Array.isArray(xianyu.accounts) ? xianyu.accounts : [];
+        let nextIndex = accounts.length + marketplaceXianyuAccountDraftCounter;
+        let nextKey = normalizeMarketplaceKeyPart(`backup-${nextIndex}`, `backup-${nextIndex}`);
+        while (accounts.some((account) => account.key === nextKey)) {
+            nextIndex += 1;
+            nextKey = normalizeMarketplaceKeyPart(`backup-${nextIndex}`, `backup-${nextIndex}`);
+        }
+        marketplaceXianyuAccountDraftCounter = nextIndex + 1;
+        return {
+            ...xianyu,
+            multi_account: true,
+            accounts: [
+                ...accounts,
+                ensureMarketplaceAccountSecretNames({
+                    key: nextKey,
+                    label: `备用号 ${accounts.length}`,
+                    enabled: true,
+                    role: 'backup',
+                    notes: ''
+                })
+            ]
+        };
+    });
+}
+
+function removeMarketplaceXianyuAccount(accountKey = '', actionEl = null) {
+    const normalizedAccountKey = resolveMarketplaceAccountKeyForAction(accountKey, actionEl, '');
+    if (!normalizedAccountKey || normalizedAccountKey === 'main') {
+        showToast('主号会作为默认保底账号保留', 'info');
+        return;
+    }
+
+    updateMarketplaceXianyuConfigDraft((xianyu) => {
+        const accounts = (Array.isArray(xianyu.accounts) ? xianyu.accounts : []).filter((account) => account.key !== normalizedAccountKey);
+        const fallbackDefault = accounts.find((account) => account.enabled !== false)?.key || accounts[0]?.key || 'main';
+        return {
+            ...xianyu,
+            accounts,
+            default_account_key: xianyu.default_account_key === normalizedAccountKey ? fallbackDefault : xianyu.default_account_key,
+            multi_account: accounts.length > 1
+        };
+    });
+}
+
+function handleMarketplaceXianyuDefaultAccountChange(value = '') {
+    const nextDefault = normalizeMarketplaceKeyPart(value, 'main');
+    updateMarketplaceXianyuConfigDraft((xianyu) => ({
+        ...xianyu,
+        default_account_key: nextDefault
+    }));
+}
+
+function generateMarketplaceIngestToken(accountKey = '', actionEl = null) {
+    const card = getMarketplaceAccountCardForAction(accountKey, actionEl);
+    const normalizedAccountKey = resolveMarketplaceAccountKeyForAction(accountKey, actionEl, 'main');
+    const secretKey = buildMarketplaceSecretKey('xianyu', normalizedAccountKey, 'ingest_token');
+    const escapedSecretKey = window.CSS?.escape
+        ? window.CSS.escape(secretKey)
+        : secretKey.replace(/["\\]/g, '\\$&');
+    const input = card?.querySelector?.('[data-marketplace-secret-key]')
+        || (secretKey ? document.querySelector(`[data-marketplace-secret-key="${escapedSecretKey}"]`) : null);
+    const bytes = new Uint8Array(32);
+    if (window.crypto?.getRandomValues) {
+        window.crypto.getRandomValues(bytes);
+    } else {
+        for (let index = 0; index < bytes.length; index += 1) {
+            bytes[index] = Math.floor(Math.random() * 256);
+        }
+    }
+    const token = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+    if (input) {
+        input.value = `xy_${token}`;
+        input.focus();
+    }
 }
 
 async function savePaymentChannelSettings(options = {}) {
@@ -26494,6 +27451,7 @@ window.selectDropdownOption = function (dropdownId, value, displayText) {
     }
 
     const dropdown = document.getElementById(dropdownId);
+    let syncedSelectChange = false;
     if (dropdown instanceof HTMLElement) {
         const trigger = dropdown.querySelector('.dropdown-trigger');
         const syncSelectId = String(dropdown.dataset.syncSelectId || '').trim();
@@ -26501,6 +27459,7 @@ window.selectDropdownOption = function (dropdownId, value, displayText) {
         if (syncSelect instanceof HTMLSelectElement) {
             syncSelect.value = value;
             syncSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            syncedSelectChange = true;
         }
 
         const selectedOption = Array.from(dropdown.querySelectorAll('.dropdown-option'))
@@ -26517,7 +27476,11 @@ window.selectDropdownOption = function (dropdownId, value, displayText) {
     }
 
     // Handle gallery dropdowns
-    if (dropdownId === 'perPageDropdown') {
+    if (dropdownId === 'marketplaceXianyuDefaultAccountDropdown') {
+        if (!syncedSelectChange) {
+            handleMarketplaceXianyuDefaultAccountChange(value);
+        }
+    } else if (dropdownId === 'perPageDropdown') {
         const config = systemConfigCache['gallery'] || {};
         config.items_per_page = parseInt(value);
         saveConfig('gallery', config);
@@ -26720,7 +27683,18 @@ window.toggleMockPaymentStatus = toggleMockPaymentStatus;
 window.togglePaymentProviderEnabled = togglePaymentProviderEnabled;
 window.togglePaymentProviderPanel = togglePaymentProviderPanel;
 window.handlePaymentChannelActiveChange = handlePaymentChannelActiveChange;
+window.loadMarketplaceChannelSettings = loadMarketplaceChannelSettings;
+window.toggleMarketplaceXianyuEnabled = toggleMarketplaceXianyuEnabled;
+window.toggleMarketplaceXianyuAccount = toggleMarketplaceXianyuAccount;
+window.addMarketplaceXianyuAccount = addMarketplaceXianyuAccount;
+window.removeMarketplaceXianyuAccount = removeMarketplaceXianyuAccount;
+window.handleMarketplaceXianyuDefaultAccountChange = handleMarketplaceXianyuDefaultAccountChange;
+window.generateMarketplaceIngestToken = generateMarketplaceIngestToken;
+window.addMarketplaceXianyuProductMapping = addMarketplaceXianyuProductMapping;
+window.removeMarketplaceXianyuProductMapping = removeMarketplaceXianyuProductMapping;
+window.toggleMarketplaceXianyuProductMapping = toggleMarketplaceXianyuProductMapping;
 window.savePaymentChannelSettings = savePaymentChannelSettings;
+window.saveMarketplaceChannelSettings = saveMarketplaceChannelSettings;
 Object.assign(window, {
     loadOpsAlertSettings,
     loadOpsAlertHealth,

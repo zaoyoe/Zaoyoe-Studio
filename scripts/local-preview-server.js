@@ -571,6 +571,28 @@ function createLocalPreviewApp(options = {}) {
         });
     });
 
+    app.all('/api/marketplace', async (req, res) => {
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'marketplace public api',
+            buildHandlerUrl: (rawUrl) => buildLocalPreviewPublicHandlerUrl(
+                String(rawUrl || '/api/marketplace').replace(/^\/api\/marketplace/, '/api/public/marketplace')
+            ),
+            loadHandler: loadFreshPublicApiHandler,
+            repoRoot
+        });
+    });
+
+    app.all('/api/marketplace/*', async (req, res) => {
+        await dispatchLocalPreviewApiRequest(req, res, {
+            kind: 'marketplace public api',
+            buildHandlerUrl: (rawUrl) => buildLocalPreviewPublicHandlerUrl(
+                String(rawUrl || '/api/marketplace').replace(/^\/api\/marketplace/, '/api/public/marketplace')
+            ),
+            loadHandler: loadFreshPublicApiHandler,
+            repoRoot
+        });
+    });
+
     app.all('/api/shop', async (req, res) => {
         await dispatchLocalPreviewApiRequest(req, res, {
             kind: 'shop api',

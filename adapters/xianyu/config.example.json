@@ -1,0 +1,15 @@
+{
+  "website_base_url": "http://localhost:8011",
+  "channel": "xianyu",
+  "account": "main",
+  "site": "cn",
+  "dry_run": true,
+  "ingest_token_env": "XIANYU_MARKETPLACE_INGEST_TOKEN",
+  "product_mappings": [
+    {
+      "label": "示例数字商品",
+      "xianyu_item_id": "xianyu-demo-item-001",
+      "product_id": "11111111-1111-4111-8111-111111111111"
+    }
+  ]
+}

@@ -1527,6 +1527,103 @@
                                 </div>
                             </div>
 
+                            <div class="config-card marketplace-channel-config-card" data-config="marketplace-channels">
+                                <div class="config-card-header">
+                                    <div class="config-card-title">
+                                        <i class="fas fa-store"></i>
+                                        <span>闲鱼自动发货</span>
+                                    </div>
+                                </div>
+                                <div class="config-card-body">
+                                    <div class="config-inline-note" id="marketplaceChannelSummary">
+                                        <i class="fas fa-layer-group"></i>
+                                        <span>网站和闲鱼共用同一套库存，闲鱼成交后由你的网站统一扣库存并返回发货内容。</span>
+                                    </div>
+                                    <div class="marketplace-simple-panel">
+                                        <div class="marketplace-simple-toolbar">
+                                            <div class="config-info">
+                                                <div class="config-label">启用闲鱼自动发货</div>
+                                                <div class="config-desc" id="marketplaceXianyuStatusText">开启后，闲鱼适配器可以把已付款订单推送到网站共享库存。</div>
+                                            </div>
+                                            <div class="status-toggle" id="marketplaceXianyuEnabledToggle" data-admin-action="marketplace-toggle-xianyu-enabled"></div>
+                                        </div>
+                                        <div class="marketplace-simple-grid">
+                                            <div class="marketplace-simple-field marketplace-simple-field--default-account">
+                                                <label id="marketplaceXianyuDefaultAccountLabel">默认发货账号</label>
+                                                <select class="config-input marketplace-native-select" id="marketplaceXianyuDefaultAccount" data-admin-change-action="marketplace-change-default-account" aria-hidden="true" tabindex="-1"></select>
+                                                <div class="custom-dropdown marketplace-default-account-dropdown" id="marketplaceXianyuDefaultAccountDropdown" data-sync-select-id="marketplaceXianyuDefaultAccount">
+                                                    <button type="button" class="dropdown-trigger" data-admin-action="settings-toggle-custom-dropdown" data-dropdown-id="marketplaceXianyuDefaultAccountDropdown" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="marketplaceXianyuDefaultAccountLabel marketplaceXianyuDefaultAccountValue">
+                                                        <span class="marketplace-default-account-dropdown__copy">
+                                                            <span class="dropdown-value" id="marketplaceXianyuDefaultAccountValue">主号 (main)</span>
+                                                            <small data-dropdown-role="meta">闲鱼订单默认使用此账号发货</small>
+                                                        </span>
+                                                        <i class="fas fa-chevron-down"></i>
+                                                    </button>
+                                                    <div class="dropdown-menu" role="listbox" aria-labelledby="marketplaceXianyuDefaultAccountLabel"></div>
+                                                </div>
+                                            </div>
+                                            <div class="marketplace-simple-field">
+                                                <label>库存模式</label>
+                                                <div class="marketplace-readonly-pill">共享网站库存</div>
+                                            </div>
+                                            <div class="marketplace-simple-field">
+                                                <label>发货方式</label>
+                                                <div class="marketplace-readonly-pill">自动发货</div>
+                                            </div>
+                                        </div>
+                                        <div class="marketplace-account-list" id="marketplaceXianyuAccountsList"></div>
+                                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="marketplace-add-xianyu-account">
+                                            <i class="fas fa-plus"></i> 添加闲鱼账号
+                                        </button>
+                                        <div class="marketplace-product-mapping-section">
+                                            <div class="marketplace-section-header">
+                                                <div>
+                                                    <div class="config-label">闲鱼商品映射</div>
+                                                    <div class="config-desc">把闲鱼商品 ID 绑定到网站商品 ID，闲鱼成交后按这里扣网站库存。</div>
+                                                </div>
+                                                <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="marketplace-add-product-mapping">
+                                                    <i class="fas fa-plus"></i> 添加商品映射
+                                                </button>
+                                            </div>
+                                            <div class="marketplace-product-mapping-list" id="marketplaceXianyuProductMappingsList"></div>
+                                        </div>
+                                    </div>
+                                    <details class="marketplace-advanced-config">
+                                        <summary>开发者高级配置</summary>
+                                        <div class="config-desc">日常启用闲鱼、多账号和 token 都在上面的表单里完成。这里保留给接入其它渠道、批量迁移或排查配置时使用。</div>
+                                        <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">注册表 JSON</div>
+                                            <div class="config-desc">直接编辑渠道注册表，保存后会同步到后台配置和密钥仓。</div>
+                                        </div>
+                                        <div class="config-input-wrapper config-input-wrapper--stacked">
+                                            <textarea class="config-input config-input--code" id="marketplaceChannelsConfigJson" rows="18" spellcheck="false"></textarea>
+                                        </div>
+                                        </div>
+                                        <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">密钥 JSON</div>
+                                            <div class="config-desc">以 `marketplace__渠道__账号__密钥` 作为 key 提交。空值会被忽略。</div>
+                                        </div>
+                                        <div class="config-input-wrapper config-input-wrapper--stacked">
+                                            <textarea class="config-input config-input--code" id="marketplaceChannelsSecretsJson" rows="8" spellcheck="false"></textarea>
+                                        </div>
+                                        </div>
+                                    </details>
+                                    <div class="config-row">
+                                        <div class="config-info">
+                                            <div class="config-label">当前状态</div>
+                                            <div class="config-desc" id="marketplaceChannelSnapshot">等待加载中。</div>
+                                        </div>
+                                    </div>
+                                    <div class="config-actions">
+                                        <button type="button" class="btn-add-config" data-admin-action="marketplace-save-channel-settings">
+                                            保存闲鱼自动发货设置
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="config-card discount-trigger-config-card" data-config="discount-trigger-rules">
                                 <div class="config-card-header">
                                     <div class="config-card-title">
