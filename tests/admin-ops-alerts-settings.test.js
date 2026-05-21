@@ -596,6 +596,7 @@ function createDefaultState() {
         deletedSecrets: [],
         auditLogs: [],
         telegramTests: [],
+        telegramSendFailure: null,
         feishuTests: [],
         emailTests: []
     };
@@ -676,6 +677,7 @@ function createNormalizedConfig(raw) {
 
     return {
         enabled: normalizeBoolean(source.enabled, false),
+        timeout_ms: Math.min(30000, Math.max(15000, Number(source.timeout_ms || 15000) || 15000)),
         temporary_mute: {
             until: typeof temporaryMute.until === 'string' ? temporaryMute.until.trim() : '',
             allow_critical: normalizeBoolean(temporaryMute.allow_critical, true)
@@ -1282,6 +1284,13 @@ async function withOpsAlertsSettingsHandler(stateOverrides, callback) {
                         job: cloneValue(job),
                         runtime: cloneValue(runtime)
                     });
+
+                    if (state.telegramSendFailure) {
+                        const failure = state.telegramSendFailure;
+                        const error = new Error(String(failure.message || 'telegram delivery failed'));
+                        error.name = String(failure.name || 'Error');
+                        throw error;
+                    }
 
                     return {
                         ok: true,
@@ -2768,6 +2777,68 @@ test('ops alert settings POST can send a Telegram self-check without persisting 
         assert.match(state.telegramTests[0].job.title, /站外告警通道自检/);
         assert.equal(state.auditLogs.length, 1);
         assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.telegram_test');
+    });
+});
+
+test('ops alert settings POST reports Telegram self-check aborts as timeout failures', async () => {
+    await withOpsAlertsSettingsHandler({
+        config: createNormalizedConfig({
+            enabled: true,
+            timeout_ms: 15000,
+            channels: {
+                telegram: {
+                    enabled: true,
+                    minimum_severity: 'warning',
+                    chat_ids: ['stored-chat']
+                }
+            }
+        }),
+        secretStatus: {
+            telegram_bot_token: { configured: true, source: 'stored', updatedAt: '2026-03-25T08:00:00.000Z' },
+            feishu_webhook_url: { configured: false, source: 'missing', updatedAt: null }
+        },
+        runtimeSecrets: {
+            telegram_bot_token: 'stored-telegram-token',
+            feishu_webhook_url: ''
+        },
+        telegramSendFailure: {
+            name: 'AbortError',
+            message: 'This operation was aborted'
+        }
+    }, async (handler, state) => {
+        const req = {
+            method: 'POST',
+            body: {
+                action: 'send_test_telegram',
+                config: {
+                    enabled: true,
+                    timeout_ms: 15000,
+                    channels: {
+                        telegram: {
+                            enabled: true,
+                            minimum_severity: 'warning',
+                            chat_ids: ['5104238366']
+                        }
+                    }
+                },
+                secrets: {}
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 502);
+        assert.equal(payload.success, false);
+        assert.match(payload.message, /Telegram：请求超时或被中止（当前超时 15000ms）/);
+        assert.equal(state.systemConfigUpserts.length, 0);
+        assert.equal(state.upsertedSecrets.length, 0);
+        assert.equal(state.telegramTests.length, 1);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'admin.ops_alerts.telegram_test');
+        assert.deepEqual(state.auditLogs[0].details.channels, ['telegram']);
+        assert.equal(state.auditLogs[0].details.ok, false);
     });
 });
 

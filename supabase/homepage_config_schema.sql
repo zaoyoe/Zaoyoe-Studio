@@ -101,7 +101,7 @@ INSERT INTO homepage_config (site, section, content, display_order) VALUES
     "max_items": 8,
     "category": "all",
     "sort": "popular",
-    "section_title": "精选资源商城",
+    "section_title": "资源商城",
     "section_subtitle": "优质资源，助力成长"
 }'::JSONB, 3),
 
@@ -112,15 +112,15 @@ INSERT INTO homepage_config (site, section, content, display_order) VALUES
     "sort": "popular",
     "section_title": "Curated Marketplace",
     "section_subtitle": "Premium resources for faster growth",
-    "section_title_zh": "精选资源商城",
+    "section_title_zh": "资源商城",
     "section_subtitle_zh": "优质资源，助力成长"
 }'::JSONB, 3),
 
 ('cn', 'verify', '{
     "enable_auto": true,
     "screenshot_path": "/assets/verify-preview.png",
-    "section_title": "Gemini API 验证",
-    "section_subtitle": "快速验证您的 API 密钥，实时返回结果",
+    "section_title": "Gemini Pro",
+    "section_subtitle": "提交账号任务，自动获取试用链接",
     "features": ["免费", "实时", "安全"]
 }'::JSONB, 4),
 
@@ -129,8 +129,8 @@ INSERT INTO homepage_config (site, section, content, display_order) VALUES
     "screenshot_path": "/assets/verify-preview.png",
     "section_title": "Gemini API Check",
     "section_subtitle": "Validate your API key and get instant feedback",
-    "section_title_zh": "Gemini API 验证",
-    "section_subtitle_zh": "快速验证您的 API 密钥，实时返回结果",
+    "section_title_zh": "Gemini Pro",
+    "section_subtitle_zh": "提交账号任务，自动获取试用链接",
     "features": ["Free", "Realtime", "Secure"]
 }'::JSONB, 4),
 

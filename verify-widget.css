@@ -826,6 +826,10 @@
     gap: 12px;
 }
 
+.verify-mode-selector--single {
+    grid-template-columns: minmax(0, 1fr);
+}
+
 .verify-mode-option {
     position: relative;
     display: block;

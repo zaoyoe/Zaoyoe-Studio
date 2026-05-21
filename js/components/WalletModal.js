@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=dcb98464f0c8';
+    const walletCssHref = 'css/wallet.css?v=f5a4ba7fbfa7';
     const WALLET_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.zaoyoe.com';
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_TTL_MS = 30000;
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_PREFIX = 'zaoyoe_payment_config_v2';

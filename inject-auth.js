@@ -1,8 +1,8 @@
 (function () {
     'use strict';
 
-    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=dcb98464f0c8';
-    const SUPPORT_SCRIPT_SRC = './script.js?v=dcb98464f0c8';
+    const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=f5a4ba7fbfa7';
+    const SUPPORT_SCRIPT_SRC = './script.js?v=f5a4ba7fbfa7';
     const EMAILJS_SRC = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@3/dist/email.min.js';
     const EMAILJS_PUBLIC_KEY = 'vawaxLVEzJMAVbut0';
     const LEGACY_AUTH_STYLE_SELECTORS = [

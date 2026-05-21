@@ -35,6 +35,7 @@ const DEFAULT_OPS_ALERT_SECRET_KEYS = Object.freeze({
     feishu_webhook_url: 'ops_alert_feishu_webhook_url',
     email_api_key: 'ops_alert_email_api_key'
 });
+const DEFAULT_OPS_ALERT_PREVIEW_TIMEOUT_MS = 15000;
 
 function sanitizeText(value, maxLength = 4000) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
@@ -188,7 +189,32 @@ function validatePreviewRuntime(runtime, channels) {
 
 function extractDeliveryFailureMessage(channel, result = {}) {
     const message = extractTelegramFailureMessage(result);
-    return `${channel}：${message}`;
+    const label = channel === 'telegram'
+        ? 'Telegram'
+        : channel === 'feishu'
+            ? '飞书'
+            : channel === 'email'
+                ? '邮件'
+                : sanitizeText(channel) || 'unknown';
+    return `${label}：${message}`;
+}
+
+function formatPreviewDeliveryException(error = {}, runtime = {}) {
+    const message = sanitizeText(error?.message || error?.name || 'delivery_failed', 1000);
+    const timeoutMs = Math.max(
+        DEFAULT_OPS_ALERT_PREVIEW_TIMEOUT_MS,
+        Math.min(30000, Number(runtime?.config?.timeout_ms || DEFAULT_OPS_ALERT_PREVIEW_TIMEOUT_MS) || DEFAULT_OPS_ALERT_PREVIEW_TIMEOUT_MS)
+    );
+    if (
+        sanitizeText(error?.name).toLowerCase() === 'aborterror'
+        || /aborted|abort|timeout|timed out/i.test(message)
+    ) {
+        return timeoutMs
+            ? `请求超时或被中止（当前超时 ${timeoutMs}ms）`
+            : '请求超时或被中止';
+    }
+
+    return message || 'delivery_failed';
 }
 
 function formatPreviewChannelLabels(channels = []) {
@@ -216,17 +242,25 @@ async function sendOpsAlertPreview(job, runtime) {
     const deliveries = [];
     for (const channel of channels) {
         let result;
-        if (channel === 'telegram') {
-            result = await sendTelegramAlert(job, runtime);
-        } else if (channel === 'feishu') {
-            result = await sendFeishuAlert(job, runtime);
-        } else if (channel === 'email') {
-            result = await sendEmailAlert(job, runtime);
-        } else {
+        try {
+            if (channel === 'telegram') {
+                result = await sendTelegramAlert(job, runtime);
+            } else if (channel === 'feishu') {
+                result = await sendFeishuAlert(job, runtime);
+            } else if (channel === 'email') {
+                result = await sendEmailAlert(job, runtime);
+            } else {
+                result = {
+                    ok: false,
+                    status: 0,
+                    error: 'unsupported_channel'
+                };
+            }
+        } catch (error) {
             result = {
                 ok: false,
                 status: 0,
-                error: 'unsupported_channel'
+                error: formatPreviewDeliveryException(error, runtime)
             };
         }
 

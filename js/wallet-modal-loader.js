@@ -8,8 +8,8 @@
 
     const VERSION = '20260519_PUBLIC_API_FAST_PATH_1';
     const IOS_CHROME_KEYBOARD_VERSION = '20260514_ALL_KEYBOARD_RELEASE_1';
-    const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=dcb98464f0c8';
-    const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=dcb98464f0c8';
+    const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=f5a4ba7fbfa7';
+    const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=f5a4ba7fbfa7';
     const WALLET_MODAL_RUNTIME_SRC = `${WALLET_MODAL_SRC}&iosChromeKeyboard=${IOS_CHROME_KEYBOARD_VERSION}`;
     const POLL_INTERVAL_MS = 100;
     const MAX_WAIT_MS = 10000;

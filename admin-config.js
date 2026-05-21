@@ -75,6 +75,12 @@ const VERIFY_MONITOR_CARD_TONE_CLASSES = [
     'verify-monitor-card--warning',
     'verify-monitor-card--danger'
 ];
+const VERIFY_MODE_VISIBILITY_VALUES = new Set(['both', 'extract_only', 'full_only']);
+const VERIFY_MODE_VISIBILITY_DROPDOWN_LABELS = Object.freeze({
+    both: '仅提链 + 全流程包绑卡',
+    extract_only: '只显示仅提链',
+    full_only: '只显示全流程包绑卡'
+});
 const ADMIN_AUDIT_MONITOR_CARD_TONE_CLASSES = [
     'admin-audit-monitor-card--neutral',
     'admin-audit-monitor-card--success',
@@ -383,7 +389,7 @@ const EXTERNAL_MONITORING_SMOKE_TIMEOUT_MS = 12000;
 const OPS_ALERT_MONITOR_FETCH_TIMEOUT_MS = 20000;
 const OPS_ALERT_MONITOR_FETCH_RETRY_COUNT = 2;
 const OPS_ALERT_MONITOR_FETCH_RETRY_DELAY_MS = 450;
-const VERIFY_MONITOR_FETCH_TIMEOUT_MS = 8000;
+const VERIFY_MONITOR_FETCH_TIMEOUT_MS = 15000;
 const ADMIN_CONFIG_RICH_TEXT_VISIBLE_YELLOW = '#f4b400';
 const ADMIN_CONFIG_RICH_TEXT_LOW_CONTRAST_YELLOW_PATTERN = /#ffeb3b|rgb\s*\(\s*255\s*,\s*235\s*,\s*59\s*\)|rgba\s*\(\s*255\s*,\s*235\s*,\s*59\s*,\s*1(?:\.0+)?\s*\)/gi;
 const ADMIN_CONFIG_RICH_TEXT_COLOR_SWATCH_CLASS_MAP = Object.freeze({
@@ -745,6 +751,7 @@ function getVerifySettingsSnapshot() {
         enabled: config.enabled !== false,
         hasKey,
         keyCount: apiKeys.length,
+        modeVisibility: normalizeVerifyModeVisibility(config.mode_visibility),
         pricePerVerify: parseInt(config.price_per_verify, 10) || 10,
         pricePerVerifyExtract: extractPrice,
         pricePerVerifyFull: fullPrice
@@ -840,9 +847,10 @@ function renderVerifyMonitorOverview() {
             ? (quotaState.message || '额度接口探测失败')
             : (queueState.message || '队列接口探测失败');
     } else if (quotaState.status === 'ready' || queueState.status === 'ready') {
+        const modeVisibilityLabel = getVerifyModeVisibilityLabel(verifyConfig.modeVisibility);
         serviceTone = 'success';
         serviceValue = '运行正常';
-        serviceMeta = `验证服务已启用 · 已配置 ${formatVerifyMonitorInteger(verifyConfig.keyCount || 1)} 张 CDKey · 提链 ${formatVerifyMonitorInteger(verifyConfig.pricePerVerifyExtract)} 积分 / 全流程 ${formatVerifyMonitorInteger(verifyConfig.pricePerVerifyFull)} 积分`;
+        serviceMeta = `验证服务已启用 · ${modeVisibilityLabel} · 已配置 ${formatVerifyMonitorInteger(verifyConfig.keyCount || 1)} 张 CDKey · 提链 ${formatVerifyMonitorInteger(verifyConfig.pricePerVerifyExtract)} 积分 / 全流程 ${formatVerifyMonitorInteger(verifyConfig.pricePerVerifyFull)} 积分`;
     } else if (quotaState.status === 'loading' || queueState.status === 'loading') {
         serviceTone = 'neutral';
         serviceValue = '检测中...';
@@ -3241,7 +3249,7 @@ function getDefaultOpsAlertConfig() {
         max_attempts: 6,
         retry_base_delay_ms: 60000,
         retry_max_delay_ms: 1800000,
-        timeout_ms: 5000,
+        timeout_ms: 15000,
         temporary_mute: {
             until: '',
             allow_critical: true
@@ -26460,11 +26468,64 @@ function renderGalleryConfig() {
 // VERIFICATION SERVICE CONFIG
 // ============================================
 
+function normalizeVerifyModeVisibility(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    return VERIFY_MODE_VISIBILITY_VALUES.has(normalized) ? normalized : 'both';
+}
+
+function getVerifyModeVisibilityLabel(value) {
+    const normalized = normalizeVerifyModeVisibility(value);
+    if (normalized === 'extract_only') return '前台只显示仅提链';
+    if (normalized === 'full_only') return '前台只显示全流程';
+    return '前台显示两种模式';
+}
+
+function getVerifyModeVisibilityDropdownLabel(value) {
+    const normalized = normalizeVerifyModeVisibility(value);
+    return VERIFY_MODE_VISIBILITY_DROPDOWN_LABELS[normalized] || VERIFY_MODE_VISIBILITY_DROPDOWN_LABELS.both;
+}
+
+async function verifyPublicModeVisibilitySynced(expectedValue) {
+    const expected = normalizeVerifyModeVisibility(expectedValue);
+    const site = getAdminSettingsConcreteSiteFilterValue('cn');
+    const response = await fetch(`/api/public?scope=config&route=verify-settings&site=${encodeURIComponent(site)}`, {
+        credentials: 'include',
+        cache: 'no-store'
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.message || '无法回读前台业务模式配置');
+    }
+
+    const actual = normalizeVerifyModeVisibility(payload?.config?.mode_visibility || payload?.config?.modeVisibility);
+    if (actual !== expected) {
+        throw new Error(`前台业务模式未生效：当前公开配置仍为 ${getVerifyModeVisibilityDropdownLabel(actual)}`);
+    }
+
+    return true;
+}
+
+function getCustomDropdownSelectedValue(dropdownId, fallbackValue = '') {
+    const dropdown = document.getElementById(dropdownId);
+    if (!dropdown) return fallbackValue;
+
+    const storedValue = dropdown.getAttribute('data-value') || dropdown.dataset?.value;
+    if (storedValue) {
+        return storedValue;
+    }
+
+    const selectedOption = dropdown.querySelector('.dropdown-option.selected');
+    return selectedOption?.getAttribute('data-value')
+        || selectedOption?.getAttribute('data-option-value')
+        || fallbackValue;
+}
+
 function renderVerifyConfig() {
     const config = systemConfigCache['verify_settings'] || {
         price_per_verify: 10,
         price_per_verify_extract: 10,
         price_per_verify_full: 20,
+        mode_visibility: 'both',
         enabled: true,
         verify_api_key: '',
         verify_cdkeys: [],
@@ -26481,6 +26542,13 @@ function renderVerifyConfig() {
 
     const enabledToggle = document.getElementById('cfgVerifyEnabled');
     if (enabledToggle) enabledToggle.checked = config.enabled !== false;
+
+    const modeVisibility = normalizeVerifyModeVisibility(config.mode_visibility);
+    applyCustomDropdownValue(
+        'verifyModeVisibilityDropdown',
+        modeVisibility,
+        getVerifyModeVisibilityDropdownLabel(modeVisibility)
+    );
 
     const apiKeyInput = document.getElementById('cfgVerifyApiKey');
     const configuredKeys = normalizeVerifyCredentialList([
@@ -26527,11 +26595,19 @@ function applyCustomDropdownValue(dropdownId, value, label) {
     const dropdown = document.getElementById(dropdownId);
     if (!dropdown) return;
 
+    dropdown.dataset.value = String(value);
+    dropdown.setAttribute('data-value', String(value));
+
     const valueEl = dropdown.querySelector('.dropdown-value');
     if (valueEl) valueEl.textContent = label;
 
     dropdown.querySelectorAll('.dropdown-option').forEach((option) => {
-        option.classList.toggle('selected', String(option.dataset.value) === String(value));
+        const optionValue = option.getAttribute('data-value') || option.getAttribute('data-option-value');
+        const isSelected = String(optionValue) === String(value);
+        option.classList.toggle('selected', isSelected);
+        if (option.getAttribute('role') === 'option') {
+            option.setAttribute('aria-selected', isSelected ? 'true' : 'false');
+        }
     });
 }
 
@@ -26632,6 +26708,15 @@ async function saveVerifyConfig(options = {}) {
         config.enabled = enabledToggle.checked;
     }
 
+    config.mode_visibility = normalizeVerifyModeVisibility(
+        getCustomDropdownSelectedValue('verifyModeVisibilityDropdown', config.mode_visibility)
+    );
+    applyCustomDropdownValue(
+        'verifyModeVisibilityDropdown',
+        config.mode_visibility,
+        getVerifyModeVisibilityDropdownLabel(config.mode_visibility)
+    );
+
     const importedKeys = normalizeVerifyCredentialList(apiKeysInput?.value || '');
     const singleKeyInputValue = apiKeyInput && !apiKeyInput.value.includes('...')
         ? apiKeyInput.value.trim()
@@ -26653,8 +26738,21 @@ async function saveVerifyConfig(options = {}) {
     }
 
     const success = await saveConfig('verify_settings', config);
+    let publicModeSynced = true;
 
     if (success) {
+        try {
+            await verifyPublicModeVisibilitySynced(config.mode_visibility);
+        } catch (error) {
+            publicModeSynced = false;
+            console.warn('[Config] Verify mode visibility public readback failed:', error?.message || error);
+            if (typeof showToast === 'function') {
+                showToast(error?.message || '前台业务模式保存后未生效', 'error');
+            }
+        }
+    }
+
+    if (success && publicModeSynced) {
         const successMessage = options?.successMessage || 'Google One / aidone 配置已保存';
         if (options?.toast !== false && typeof showToast === 'function') {
             showToast(successMessage, 'success');
@@ -26679,7 +26777,7 @@ async function saveVerifyConfig(options = {}) {
         console.warn('[Config] Verify monitor refresh after save failed:', error.message);
     });
 
-    return success;
+    return success && publicModeSynced;
 }
 
 // Expose globally for HTML onclick handlers
@@ -27400,6 +27498,16 @@ window.selectDropdownOption = function (dropdownId, value, displayText) {
         saveConfig('integrations', config);
         systemConfigCache['integrations'] = config;
         applyAdminAIServicePreference({ syncDropdown: false, refreshService: true, checkHealth: true });
+    } else if (dropdownId === 'verifyModeVisibilityDropdown') {
+        const config = systemConfigCache['verify_settings'] || {};
+        config.mode_visibility = normalizeVerifyModeVisibility(value);
+        systemConfigCache['verify_settings'] = config;
+        applyCustomDropdownValue(
+            'verifyModeVisibilityDropdown',
+            config.mode_visibility,
+            getVerifyModeVisibilityDropdownLabel(config.mode_visibility)
+        );
+        void saveVerifyConfig();
     }
 };
 

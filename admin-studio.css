@@ -42166,6 +42166,83 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     padding-top: 10px;
 }
 
+#settings-view-google-one .verify-mode-visibility-dropdown {
+    width: clamp(220px, 22vw, 300px);
+    min-width: 220px;
+    z-index: 20;
+}
+
+#settings-view-google-one .verify-mode-visibility-dropdown.open {
+    z-index: 140;
+}
+
+#settings-view-google-one .verify-mode-visibility-dropdown .dropdown-trigger {
+    min-height: 44px;
+    padding: 0 16px;
+    border-radius: 12px;
+    background: rgba(12, 22, 38, 0.78);
+    border-color: rgba(107, 158, 206, 0.22);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+#settings-view-google-one .verify-mode-visibility-dropdown .dropdown-value {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#settings-view-google-one .verify-mode-visibility-dropdown .dropdown-menu {
+    left: auto;
+    right: 0;
+    width: max-content;
+    min-width: 100%;
+    max-width: min(340px, calc(100vw - 48px));
+    padding: 6px;
+    border-radius: 14px;
+    background: rgba(12, 22, 38, 0.98);
+    border-color: rgba(107, 158, 206, 0.26);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.32);
+}
+
+#settings-view-google-one .verify-mode-visibility-dropdown .dropdown-menu.show {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+#settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    padding: 11px 12px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-main);
+    -webkit-text-fill-color: var(--text-main);
+    font: inherit;
+    text-align: left;
+    line-height: 1.35;
+    white-space: nowrap;
+}
+
+#settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option + .dropdown-option {
+    margin-top: 2px;
+}
+
+#settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option:hover {
+    background: rgba(107, 158, 206, 0.16);
+    color: var(--text-main);
+    -webkit-text-fill-color: var(--text-main);
+}
+
+#settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option.selected {
+    background: rgba(107, 158, 206, 0.22);
+    color: var(--admin-studio-ui-blue, var(--accent-starry, #769dca));
+    -webkit-text-fill-color: var(--admin-studio-ui-blue, var(--accent-starry, #769dca));
+}
+
 #settings-view-google-one #cfgVerifyApiKeys.verify-key-pool-input {
     flex: 1 1 auto;
     width: 100%;
@@ -42350,6 +42427,22 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     #settings-view-google-one .settings-google-one-hero__actions {
         width: 100%;
         justify-content: space-between;
+    }
+
+    #settings-view-google-one .verify-mode-visibility-dropdown {
+        width: 100%;
+        min-width: 0;
+    }
+
+    #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-menu {
+        left: 0;
+        right: 0;
+        width: 100%;
+        max-width: none;
+    }
+
+    #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option {
+        white-space: normal;
     }
 
     #module-ops-alerts .module-content.ops-alert-settings-layout {

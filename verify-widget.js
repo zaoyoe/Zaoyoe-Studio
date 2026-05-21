@@ -10,6 +10,7 @@
         pricePerVerify: 10,
         pricePerVerifyExtract: 10,
         pricePerVerifyFull: 20,
+        modeVisibility: 'both',
         enabled: true,
         nodeServerUrl: window.VERIFY_SERVER_URL || 'https://verify-api.zaoyoe.com',
         containerId: 'verify-widget-container',
@@ -19,6 +20,7 @@
         pollTimeoutFull: 30 * 60 * 1000
     };
     const PENDING_TASK_STORAGE_KEY = 'verify_pending_google_one_job_v1';
+    const VERIFY_QUOTA_CACHE_KEY = 'verify_api_quota_cache_v1';
     const VERIFY_STYLE_DECL_KEY = 'style';
 
     let currentUser = null;
@@ -32,6 +34,8 @@
     let hadOptimisticLogin = false;
     let authNullConfirmTimer = null;
     let walletBalanceListenerBound = false;
+    let quotaRefreshTimer = null;
+    let quotaRefreshPending = false;
     let previewMode = 'success';
     let previewTimers = [];
     let ringResetTimer = null;
@@ -80,6 +84,35 @@
 
     function getCurrentSiteValue() {
         return window.SiteConfig?.site || 'cn';
+    }
+
+    function getQuotaCacheKey(site = getCurrentSiteValue()) {
+        return `${VERIFY_QUOTA_CACHE_KEY}:${String(site || 'cn').trim().toLowerCase() || 'cn'}`;
+    }
+
+    function readCachedApiQuota(site = getCurrentSiteValue()) {
+        try {
+            const raw = localStorage.getItem(getQuotaCacheKey(site));
+            if (!raw) return null;
+            const parsed = JSON.parse(raw);
+            const value = Number(parsed?.balance ?? parsed?.credits ?? parsed?.remaining_uses);
+            return Number.isFinite(value) ? value : null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function persistCachedApiQuota(value, site = getCurrentSiteValue()) {
+        try {
+            const balance = Number(value);
+            if (!Number.isFinite(balance)) return;
+            localStorage.setItem(getQuotaCacheKey(site), JSON.stringify({
+                balance: Math.max(0, Math.round(balance * 100) / 100),
+                checked_at: new Date().toISOString()
+            }));
+        } catch (_) {
+            // ignore cache write errors
+        }
     }
 
     function getVerifySourceValue() {
@@ -151,6 +184,26 @@
         return fallback;
     }
 
+    function normalizeVerifyModeVisibility(value) {
+        const normalized = String(value || '').trim().toLowerCase();
+        return ['both', 'extract_only', 'full_only'].includes(normalized) ? normalized : 'both';
+    }
+
+    function getAvailableTaskTypes() {
+        const modeVisibility = normalizeVerifyModeVisibility(CONFIG.modeVisibility);
+        if (modeVisibility === 'full_only') return ['full'];
+        if (modeVisibility === 'extract_only') return ['extract'];
+        return ['extract', 'full'];
+    }
+
+    function getDefaultTaskType() {
+        return getAvailableTaskTypes()[0] || 'extract';
+    }
+
+    function isTaskTypeAvailable(taskType = 'extract') {
+        return getAvailableTaskTypes().includes(normalizeTaskType(taskType));
+    }
+
     function getTaskTypePrice(taskType = 'extract') {
         return normalizeTaskType(taskType) === 'full'
             ? Number(CONFIG.pricePerVerifyFull || CONFIG.pricePerVerifyExtract || CONFIG.pricePerVerify || 20)
@@ -219,11 +272,14 @@
 
     function getSelectedTaskType() {
         const checked = document.querySelector('input[name="verifyTaskType"]:checked');
-        return normalizeTaskType(checked?.value || 'extract');
+        const normalized = normalizeTaskType(checked?.value || getDefaultTaskType(), getDefaultTaskType());
+        return isTaskTypeAvailable(normalized) ? normalized : getDefaultTaskType();
     }
 
     function setSelectedTaskType(taskType = 'extract') {
-        const normalized = normalizeTaskType(taskType);
+        const normalized = isTaskTypeAvailable(taskType)
+            ? normalizeTaskType(taskType)
+            : getDefaultTaskType();
         const target = document.querySelector(`input[name="verifyTaskType"][value="${normalized}"]`);
         if (target) {
             target.checked = true;
@@ -254,6 +310,28 @@
         if (extractMetaEl) extractMetaEl.textContent = getTaskTypeModeMeta('extract').description;
         if (fullMetaEl) fullMetaEl.textContent = getTaskTypeModeMeta('full').description;
         updateQuotaDisplay();
+    }
+
+    function syncModeSelectorFromConfig() {
+        const modeSelector = document.querySelector('.verify-mode-selector');
+        if (!modeSelector) return false;
+
+        const availableTaskTypes = getAvailableTaskTypes();
+        const showExtractMode = availableTaskTypes.includes('extract');
+        const showFullMode = availableTaskTypes.includes('full');
+        const extractOption = modeSelector.querySelector('input[name="verifyTaskType"][value="extract"]')?.closest('.verify-mode-option');
+        const fullOption = modeSelector.querySelector('input[name="verifyTaskType"][value="full"]')?.closest('.verify-mode-option');
+
+        if (extractOption) {
+            extractOption.hidden = !showExtractMode;
+        }
+        if (fullOption) {
+            fullOption.hidden = !showFullMode;
+        }
+
+        modeSelector.classList.toggle('verify-mode-selector--single', availableTaskTypes.length <= 1);
+        setSelectedTaskType(getSelectedTaskType());
+        return true;
     }
 
     function isTransientAvatarUrl(url) {
@@ -723,7 +801,7 @@
             return null;
         }
 
-        if (normalizedTaskType === 'full' && quotaSummary.extractJobs > 0) {
+        if (normalizedTaskType === 'full' && quotaSummary.extractJobs > 0 && isTaskTypeAvailable('extract')) {
             return {
                 tone: 'warning',
                 message: t(
@@ -1009,18 +1087,22 @@
 
     async function loadConfig() {
         try {
-            if (!window.supabaseClient) return;
-            const { data, error } = await window.supabaseClient
-                .from('system_config')
-                .select('config_value')
-                .eq('config_key', 'verify_settings')
-                .single();
-
-            if (!error && data?.config_value) {
-                CONFIG.pricePerVerify = Number(data.config_value.price_per_verify) || 10;
-                CONFIG.pricePerVerifyExtract = Number(data.config_value.price_per_verify_extract || data.config_value.price_per_verify) || 10;
-                CONFIG.pricePerVerifyFull = Number(data.config_value.price_per_verify_full) || Math.max(CONFIG.pricePerVerifyExtract, CONFIG.pricePerVerifyExtract * 2);
-                CONFIG.enabled = data.config_value.enabled !== false;
+            const site = getCurrentSiteValue();
+            const response = await fetch(`/api/public?scope=config&route=verify-settings&site=${encodeURIComponent(site)}`, {
+                credentials: 'same-origin',
+                cache: 'no-store'
+            });
+            if (response.ok) {
+                const payload = await response.json().catch(() => ({}));
+                const config = payload?.config;
+                if (payload?.success && config) {
+                    CONFIG.pricePerVerify = Number(config.price_per_verify || config.pricePerVerify) || 10;
+                    CONFIG.pricePerVerifyExtract = Number(config.price_per_verify_extract || config.price_per_verify || config.pricePerVerifyExtract || config.pricePerVerify) || 10;
+                    CONFIG.pricePerVerifyFull = Number(config.price_per_verify_full || config.pricePerVerifyFull) || Math.max(CONFIG.pricePerVerifyExtract, CONFIG.pricePerVerifyExtract * 2);
+                    CONFIG.modeVisibility = normalizeVerifyModeVisibility(config.mode_visibility || config.modeVisibility);
+                    CONFIG.enabled = config.enabled !== false;
+                    syncModeSelectorFromConfig();
+                }
             }
         } catch (_) {
             // ignore
@@ -1073,19 +1155,22 @@
     async function loadApiQuota() {
         try {
             const headers = await getVerifyRequestHeaders();
+            const site = getCurrentSiteValue();
             const quotaEndpoints = [
-                '/api/public?scope=config&route=verify-quota',
-                `${CONFIG.nodeServerUrl}/api/quota`
+                `/api/public?scope=config&route=verify-quota&site=${encodeURIComponent(site)}`,
+                `${CONFIG.nodeServerUrl}/api/quota?site=${encodeURIComponent(site)}`
             ];
 
-            apiCredits = -1;
+            const cachedQuota = readCachedApiQuota(site);
+            apiCredits = Number.isFinite(Number(cachedQuota)) ? Number(cachedQuota) : -1;
 
             for (const endpoint of quotaEndpoints) {
                 try {
-                    const res = await fetch(endpoint, { headers });
+                    const res = await fetch(endpoint, { headers, cache: 'no-store' });
                     const data = await res.json().catch(() => ({}));
                     if (res.ok && data.success) {
                         apiCredits = Number(data.balance ?? data.credits ?? data.remaining_uses ?? 0);
+                        persistCachedApiQuota(apiCredits, site);
                         break;
                     }
                 } catch (_) {
@@ -1093,9 +1178,29 @@
                 }
             }
         } catch (_) {
-            apiCredits = -1;
+            const cachedQuota = readCachedApiQuota();
+            apiCredits = Number.isFinite(Number(cachedQuota)) ? Number(cachedQuota) : -1;
         }
         updateQuotaDisplay();
+    }
+
+    function scheduleQuotaRefresh(delayMs = 0) {
+        if (quotaRefreshTimer) {
+            clearTimeout(quotaRefreshTimer);
+            quotaRefreshTimer = null;
+        }
+
+        quotaRefreshTimer = window.setTimeout(() => {
+            quotaRefreshTimer = null;
+            quotaRefreshPending = false;
+            void loadApiQuota();
+        }, Math.max(0, Number(delayMs) || 0));
+    }
+
+    function refreshQuotaSoon(delayMs = 0) {
+        if (quotaRefreshPending) return;
+        quotaRefreshPending = true;
+        scheduleQuotaRefresh(delayMs);
     }
 
     function updateQuotaDisplay() {
@@ -1148,6 +1253,33 @@
             ? 'https://support.google.com/googleone/answer/9080668?hl=zh-Hans'
             : 'https://support.google.com/googleone/answer/9080668?hl=en';
         const shopUrl = getShopUrl();
+        const availableTaskTypes = getAvailableTaskTypes();
+        const showExtractMode = availableTaskTypes.includes('extract');
+        const showFullMode = availableTaskTypes.includes('full');
+        const defaultTaskType = getDefaultTaskType();
+        const modeSelectorClass = availableTaskTypes.length <= 1
+            ? 'verify-mode-selector verify-mode-selector--single'
+            : 'verify-mode-selector';
+        const extractModeMarkup = showExtractMode
+            ? `
+                                        <label class="verify-mode-option">
+                                            <input type="radio" name="verifyTaskType" value="extract" ${defaultTaskType === 'extract' ? 'checked' : ''} />
+                                            <span class="verify-mode-option__body">
+                                                <span class="verify-mode-option__title">${t('verify.modeExtractTitle', '仅提链')}</span>
+                                                <span class="verify-mode-option__meta"><span id="verifyExtractModePrice">${CONFIG.pricePerVerifyExtract}</span> ${t('verify.points', '积分')} · <span id="verifyExtractModeMeta">${t('verify.modeDescExtract', '仅拿到可用订阅链接')}</span></span>
+                                            </span>
+                                        </label>`
+            : '';
+        const fullModeMarkup = showFullMode
+            ? `
+                                        <label class="verify-mode-option verify-mode-option--accent">
+                                            <input type="radio" name="verifyTaskType" value="full" ${defaultTaskType === 'full' ? 'checked' : ''} />
+                                            <span class="verify-mode-option__body">
+                                                <span class="verify-mode-option__title">${t('verify.modeFullTitle', '全流程包绑卡')}</span>
+                                                <span class="verify-mode-option__meta"><span id="verifyFullModePrice">${CONFIG.pricePerVerifyFull}</span> ${t('verify.points', '积分')} · <span id="verifyFullModeMeta">${t('verify.modeDescFull', '完成 Google One 订阅流程')}</span></span>
+                                            </span>
+                                        </label>`
+            : '';
 
         container.innerHTML = `
             <div class="verify-widget ring-idle">
@@ -1242,23 +1374,11 @@
 
                                 <div class="verify-form-field">
                                     <span class="verify-field-label">${t('verify.modeLabel', '业务模式')}</span>
-                                    <div class="verify-mode-selector">
-                                        <label class="verify-mode-option">
-                                            <input type="radio" name="verifyTaskType" value="extract" checked />
-                                            <span class="verify-mode-option__body">
-                                                <span class="verify-mode-option__title">${t('verify.modeExtractTitle', '仅提链')}</span>
-                                                <span class="verify-mode-option__meta"><span id="verifyExtractModePrice">${CONFIG.pricePerVerifyExtract}</span> ${t('verify.points', '积分')} · <span id="verifyExtractModeMeta">${t('verify.modeDescExtract', '仅拿到可用订阅链接')}</span></span>
-                                            </span>
-                                        </label>
-                                        <label class="verify-mode-option verify-mode-option--accent">
-                                            <input type="radio" name="verifyTaskType" value="full" />
-                                            <span class="verify-mode-option__body">
-                                                <span class="verify-mode-option__title">${t('verify.modeFullTitle', '全流程包绑卡')}</span>
-                                                <span class="verify-mode-option__meta"><span id="verifyFullModePrice">${CONFIG.pricePerVerifyFull}</span> ${t('verify.points', '积分')} · <span id="verifyFullModeMeta">${t('verify.modeDescFull', '完成 Google One 订阅流程')}</span></span>
-                                            </span>
-                                        </label>
+                                    <div class="${modeSelectorClass}">
+${extractModeMarkup}
+${fullModeMarkup}
                                     </div>
-                                    <div class="verify-mode-note" id="verifyTaskTypeNote">${t('verify.extractGuideNote', '提链模式成功后，请自行打开链接完成绑卡订阅；没有卡可前往商城购卡。')}</div>
+                                    <div class="verify-mode-note" id="verifyTaskTypeNote">${getTaskTypeGuideText(defaultTaskType)}</div>
                                 </div>
 
                                 <div class="verify-form-meta">
@@ -1592,10 +1712,14 @@
             if (event === 'SIGNED_OUT') {
                 authBootstrapResolved = true;
                 updateAuthState(null, { source: 'SIGNED_OUT', clearCache: true });
+                refreshQuotaSoon(0);
                 return;
             }
 
             applyResolvedAuthState(session?.user || null, `onAuthStateChange:${event || 'unknown'}`);
+            if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+                refreshQuotaSoon(50);
+            }
         });
     }
 
@@ -1614,6 +1738,7 @@
             persistMergedCachedProfile(currentUser);
             await loadUserBalance();
             restorePendingTask();
+            refreshQuotaSoon(0);
         } else {
             setVerifyHidden(loginPrompt, true);
             setVerifyHidden(form, false);
@@ -1755,7 +1880,7 @@
         }
         if (totpInput) totpInput.value = '';
         if (priorityToggle) priorityToggle.checked = false;
-        setSelectedTaskType('extract');
+        setSelectedTaskType(getDefaultTaskType());
         if (passwordToggle) {
             passwordToggle.innerHTML = '<i class="fas fa-eye"></i>';
             passwordToggle.setAttribute('aria-label', t('verify.showPassword', '显示密码'));
@@ -1914,7 +2039,8 @@
 
         clearPreviewTimers();
         clearRingResetTimer();
-        setSelectedTaskType(pending.taskType || 'extract');
+        const pendingTaskType = normalizeTaskType(pending.taskType || getDefaultTaskType(), getDefaultTaskType());
+        setSelectedTaskType(pendingTaskType);
         prepareExecutionDisplay(pending.email, t('verify.resumePending', '正在恢复任务状态...'));
 
         isLoading = true;
@@ -1934,8 +2060,8 @@
             timer: null,
             submittedAt: Date.now(),
             priority: 0,
-            taskType: normalizeTaskType(pending.taskType || 'extract'),
-            pointsCost: getTaskTypePrice(pending.taskType || 'extract'),
+            taskType: pendingTaskType,
+            pointsCost: getTaskTypePrice(pendingTaskType),
             restored: true
         });
         updateExecutionRing({ status: 'queued', queue_position: 0 });
@@ -2774,7 +2900,7 @@
         focusVerifyHelpHash();
         focusVerifyHistoryHash();
         setupAuthListener();
-        loadApiQuota();
+        refreshQuotaSoon(0);
 
         if (CONFIG.enabled === false) {
             applyMaintenanceState();
@@ -2809,7 +2935,10 @@
         loadHistory,
         exportHistory,
         copyId,
-        refreshQuota: loadApiQuota
+        refreshQuota: () => {
+            quotaRefreshPending = false;
+            return loadApiQuota();
+        }
     };
 
     if (document.readyState === 'loading') {

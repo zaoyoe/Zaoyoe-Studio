@@ -7,8 +7,8 @@
     global.__zaoyoeEngagementRuntimeBootstrapLoaded = true;
 
     const VERSION = '20260519_ANNOUNCEMENT_HAIRLINE_1';
-    const NOTIFICATION_SRC = 'notification-client.js?v=dcb98464f0c8';
-    const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=dcb98464f0c8';
+    const NOTIFICATION_SRC = 'notification-client.js?v=f5a4ba7fbfa7';
+    const ANNOUNCEMENT_SRC = 'announcement-loader.js?v=f5a4ba7fbfa7';
     const NOTIFICATION_IDLE_TIMEOUT_MS = 1800;
     const ANNOUNCEMENT_BOOT_DELAY_MS = 0;
 
@@ -20,7 +20,7 @@
 
     function getBootstrapScript() {
         return document.currentScript
-            || document.querySelector(`script[src*="js/engagement-runtime-loader.js?v=dcb98464f0c8"]`)
+            || document.querySelector(`script[src*="js/engagement-runtime-loader.js?v=f5a4ba7fbfa7"]`)
             || document.querySelector('script[src*="js/engagement-runtime-loader.js"]');
     }
 

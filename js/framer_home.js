@@ -118,7 +118,7 @@ const HOMEPAGE_SECTION_SHELL_COPY = {
   shop: {
     titleKey: 'home.shop.title',
     subtitleKey: 'home.shop.subtitle',
-    title: { zh: '精选资源商城', en: 'Featured Resource Store' },
+    title: { zh: '资源商城', en: 'Featured Resource Store' },
     subtitle: { zh: '优质资源，助力成长', en: 'Quality resources for growth' }
   },
   gongyi: {
@@ -3633,7 +3633,7 @@ const FramerHome = {
     this.config = {
       hero: { enable_auto: true },
       prompts: { enable_auto: true, max_items: 24, sort: 'popular', section_title: '提示词', section_subtitle: '让创作更高效，让灵感更自由' },
-      shop: { enable_auto: true, max_items: 8, section_title: '精选资源商城', section_subtitle: '优质资源，助力成长' },
+      shop: { enable_auto: true, max_items: 8, section_title: '资源商城', section_subtitle: '优质资源，助力成长' },
       gongyi: { enable_auto: false, section_tag: 'API中转', brand_name: 'Zaoyoe', brand_subtitle: 'Subscription to API Conversion Platform', cta_text: '进入控制台', cta_link: 'https://sub2api.zaoyoe.com' },
       verify: { enable_auto: true, section_title: 'Gemini Pro', section_subtitle: '快速验证您的 API 密钥' },
       guestbook: { enable_auto: true, max_items: 6, section_title: '留言板', section_subtitle: '用户的声音' },
@@ -4737,7 +4737,7 @@ const FramerHome = {
     // Read shop_scroll_speed from ticker config and convert it into pixels-per-second motion
     const shopSpeed = this.config.ticker?.shop_scroll_speed || 30;
     const sectionTitle = resolveHomepageLocalizedText(this.getLocalizedField(config, 'section_title'), 'home.shop.title', {
-      zh: '精选资源商城',
+      zh: '资源商城',
       en: 'Featured Resource Store'
     });
     const sectionSubtitle = resolveHomepageLocalizedText(this.getLocalizedField(config, 'section_subtitle'), 'home.shop.subtitle', {
