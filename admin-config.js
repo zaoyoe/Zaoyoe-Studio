@@ -7112,7 +7112,7 @@ const settingsDomainWarmPromises = new Map();
 const settingsDomainLastLoadedAt = new Map();
 let adminSettingsSiteScopedCacheSite = '';
 const SETTINGS_VIEW_DOMAIN_MAP = Object.freeze({
-    pricing: ['commerce', 'marketplace', 'affiliate'],
+    pricing: ['commerce', 'affiliate'],
     security: ['governance'],
     notifications: ['governance'],
     content: ['governance'],
