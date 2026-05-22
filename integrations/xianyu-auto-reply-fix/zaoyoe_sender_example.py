@@ -15,6 +15,15 @@ async def send_message(payload: Dict[str, Any]) -> Dict[str, Any]:
     order = payload.get("order") or {}
     buyer_id = str(payload.get("buyer_id") or order.get("buyerId") or "").strip()
     order_id = str(payload.get("external_order_id") or order.get("orderId") or "").strip()
+    item = order.get("item") if isinstance(order.get("item"), dict) else {}
+    item_id = str(
+        payload.get("item_id")
+        or order.get("itemId")
+        or order.get("item_id")
+        or item.get("itemId")
+        or item.get("id")
+        or ""
+    ).strip()
     chat_id = normalize_chat_id(
         payload.get("chat_id")
         or payload.get("sid")
@@ -37,24 +46,27 @@ async def send_message(payload: Dict[str, Any]) -> Dict[str, Any]:
         }
     if not buyer_id:
         raise HTTPException(status_code=400, detail="buyer_id is required for Xianyu chat send")
-    if not chat_id:
-        raise HTTPException(status_code=400, detail="chat_id or sid is required for Xianyu chat send")
+    if not chat_id and not item_id:
+        raise HTTPException(status_code=400, detail="chat_id/sid or item_id is required for Xianyu chat send")
 
     live_instance = resolve_live_instance(cookie_id)
     if not live_instance:
         raise HTTPException(status_code=400, detail=f"Xianyu account is not running: {cookie_id or 'auto'}")
 
-    connection_state = getattr(live_instance, "connection_state", None)
-    if str(getattr(connection_state, "value", connection_state)) != "connected":
-        raise HTTPException(status_code=400, detail=f"Xianyu account WebSocket is not connected: {cookie_id or getattr(live_instance, 'cookie_id', '')}")
-    if not getattr(live_instance, "ws", None):
-        raise HTTPException(status_code=400, detail="Xianyu account WebSocket is not ready")
-
-    await run_on_manager_loop(
-        getattr(live_instance, "cookie_id", cookie_id),
-        lambda: live_instance.send_msg(live_instance.ws, chat_id, buyer_id, content),
-        timeout=15,
-    )
+    if chat_id and is_live_websocket_ready(live_instance):
+        await run_on_manager_loop(
+            getattr(live_instance, "cookie_id", cookie_id),
+            lambda: send_via_live_chat(live_instance, chat_id, buyer_id, content),
+            timeout=15,
+        )
+        send_mode = "existing_chat"
+    else:
+        chat_id = await run_on_manager_loop(
+            getattr(live_instance, "cookie_id", cookie_id),
+            lambda: send_via_temporary_chat(live_instance, buyer_id, item_id, content, chat_id=chat_id),
+            timeout=45,
+        )
+        send_mode = "temporary_chat"
 
     return {
         "success": True,
@@ -62,6 +74,8 @@ async def send_message(payload: Dict[str, Any]) -> Dict[str, Any]:
         "cookie_id": getattr(live_instance, "cookie_id", cookie_id),
         "chat_id": chat_id,
         "buyer_id": buyer_id,
+        "item_id": item_id,
+        "send_mode": send_mode,
     }
 
 
@@ -101,6 +115,156 @@ def resolve_live_instance(cookie_id: str = ""):
         return connected[0]
 
     return None
+
+
+def is_live_websocket_ready(live_instance) -> bool:
+    connection_state = getattr(live_instance, "connection_state", None)
+    if str(getattr(connection_state, "value", connection_state)) != "connected":
+        return False
+
+    websocket = getattr(live_instance, "ws", None)
+    if not websocket:
+        return False
+    if getattr(websocket, "closed", False):
+        return False
+    return True
+
+
+async def send_via_live_chat(live_instance, chat_id: str, buyer_id: str, content: str) -> bool:
+    if not chat_id:
+        raise HTTPException(status_code=400, detail="chat_id is required for live chat send")
+    if not is_live_websocket_ready(live_instance):
+        raise HTTPException(status_code=400, detail="Xianyu account WebSocket is not ready")
+
+    await live_instance.send_msg(live_instance.ws, chat_id, buyer_id, content)
+    await asyncio.sleep(2.5)
+    return True
+
+
+async def send_via_temporary_chat(
+    live_instance,
+    buyer_id: str,
+    item_id: str,
+    content: str,
+    *,
+    chat_id: str = "",
+) -> str:
+    import certifi
+    import ssl
+    import websockets
+
+    if not chat_id and not item_id:
+        raise HTTPException(status_code=400, detail="item_id is required when chat_id is missing")
+
+    headers = live_instance._build_websocket_headers()
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
+
+    try:
+        async with websockets.connect(
+            live_instance.base_url,
+            extra_headers=headers,
+            ssl=ssl_context,
+            close_timeout=5,
+        ) as websocket:
+            return await create_or_send_on_temporary_chat(live_instance, websocket, buyer_id, item_id, content, chat_id)
+    except TypeError as error:
+        if "extra_headers" not in str(error):
+            raise
+        async with websockets.connect(
+            live_instance.base_url,
+            additional_headers=headers,
+            ssl=ssl_context,
+            close_timeout=5,
+        ) as websocket:
+            return await create_or_send_on_temporary_chat(live_instance, websocket, buyer_id, item_id, content, chat_id)
+
+
+async def create_or_send_on_temporary_chat(live_instance, websocket, buyer_id: str, item_id: str, content: str, chat_id: str = "") -> str:
+    await live_instance.init(websocket)
+
+    resolved_chat_id = normalize_chat_id(chat_id)
+    if not resolved_chat_id:
+        await live_instance.create_chat(websocket, buyer_id, item_id)
+        resolved_chat_id = await wait_for_created_chat_id(websocket)
+
+    if not resolved_chat_id:
+        raise HTTPException(status_code=502, detail="Xianyu chat create failed")
+
+    await live_instance.send_msg(websocket, resolved_chat_id, buyer_id, content)
+    await wait_for_send_settle(websocket, timeout=3.0)
+    return resolved_chat_id
+
+
+async def resolve_chat_id_via_new_chat(live_instance, buyer_id: str, item_id: str) -> str:
+    import certifi
+    import ssl
+    import websockets
+
+    headers = live_instance._build_websocket_headers()
+    ssl_context = ssl.create_default_context(cafile=certifi.where())
+
+    try:
+        async with websockets.connect(
+            live_instance.base_url,
+            extra_headers=headers,
+            ssl=ssl_context,
+            close_timeout=5,
+        ) as websocket:
+            result = await create_chat_and_wait_for_id(live_instance, websocket, buyer_id, item_id)
+    except TypeError as error:
+        if "extra_headers" not in str(error):
+            raise
+        async with websockets.connect(
+            live_instance.base_url,
+            additional_headers=headers,
+            ssl=ssl_context,
+            close_timeout=5,
+        ) as websocket:
+            result = await create_chat_and_wait_for_id(live_instance, websocket, buyer_id, item_id)
+
+    if not result:
+        raise HTTPException(status_code=502, detail="Xianyu chat create failed")
+    return result
+
+
+async def create_chat_and_wait_for_id(live_instance, websocket, buyer_id: str, item_id: str) -> str:
+    await live_instance.init(websocket)
+    await live_instance.create_chat(websocket, buyer_id, item_id)
+    return await wait_for_created_chat_id(websocket)
+
+
+async def wait_for_created_chat_id(websocket, timeout: float = 30) -> str:
+    import json
+    import time
+
+    start_time = time.time()
+
+    async for message in websocket:
+        if time.time() - start_time > timeout:
+            break
+
+        try:
+            parsed = json.loads(message)
+            cid = parsed["body"]["singleChatConversation"]["cid"]
+            return normalize_chat_id(cid)
+        except Exception:
+            continue
+
+    return ""
+
+
+async def wait_for_send_settle(websocket, timeout: float = 3.0) -> None:
+    import time
+
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        remaining = timeout - (time.time() - start_time)
+        try:
+            await asyncio.wait_for(websocket.recv(), timeout=max(0.1, remaining))
+        except asyncio.TimeoutError:
+            break
+        except Exception:
+            break
 
 
 async def run_on_manager_loop(
