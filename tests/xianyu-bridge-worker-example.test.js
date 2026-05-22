@@ -201,6 +201,10 @@ test('xianyu bridge posts delivery content to a bot chat endpoint', async () => 
         external_order_id: 'XY-BOT-1002',
         buyer_id: 'buyer-1002',
         buyer_name: '闲鱼买家',
+        chat_id: '',
+        sid: '',
+        cookie_id: '',
+        item_id: '',
         content: 'delivery-secret-1002',
         order: {
             orderId: 'XY-BOT-1002',
@@ -213,6 +217,51 @@ test('xianyu bridge posts delivery content to a bot chat endpoint', async () => 
             }
         }
     });
+});
+
+test('xianyu bridge includes chat and account context when sending delivery content', async () => {
+    const calls = [];
+    const fetchImpl = async (url, options) => {
+        calls.push({
+            url,
+            options
+        });
+        return {
+            ok: true,
+            status: 200,
+            async text() {
+                return JSON.stringify({
+                    success: true
+                });
+            }
+        };
+    };
+
+    await sendDeliveryToXianyuChat({
+        order: {
+            orderId: 'XY-BOT-1004',
+            buyerId: 'buyer-1004',
+            buyerNick: '闲鱼买家',
+            chatId: 'chat-1004@goofish',
+            sid: 'chat-1004@goofish',
+            cookie_id: 'main-cookie',
+            item: {
+                itemId: '1051635270711'
+            }
+        },
+        content: 'delivery-secret-1004',
+        response: {},
+        env: {
+            XIANYU_BOT_SEND_MESSAGE_URL: 'http://127.0.0.1:19090/chat/send'
+        },
+        fetchImpl
+    });
+
+    const payload = JSON.parse(calls[0].options.body);
+    assert.equal(payload.chat_id, 'chat-1004');
+    assert.equal(payload.sid, 'chat-1004@goofish');
+    assert.equal(payload.cookie_id, 'main-cookie');
+    assert.equal(payload.item_id, '1051635270711');
 });
 
 test('xianyu bridge treats duplicate website orders as already handled', async () => {

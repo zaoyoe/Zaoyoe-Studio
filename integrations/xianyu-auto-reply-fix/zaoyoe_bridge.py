@@ -73,6 +73,10 @@ class ChatSendPayload(BaseModel):
     external_order_id: str = ""
     buyer_id: str = ""
     buyer_name: str = ""
+    chat_id: str = ""
+    sid: str = ""
+    cookie_id: str = ""
+    item_id: str = ""
     content: str
     order: Dict[str, Any] = {}
     marketplace_response: Dict[str, Any] = {}
@@ -173,6 +177,8 @@ def normalize_order_row(row: sqlite3.Row, columns: List[str]) -> Optional[Dict[s
     status_col = pick_column(columns, ["status", "order_status", "trade_status", "delivery_status"])
     buyer_id_col = pick_column(columns, ["buyer_id", "buyer_user_id", "send_user_id", "user_id"])
     buyer_name_col = pick_column(columns, ["buyer_name", "buyer_nick", "send_user_name", "buyer"])
+    sid_col = pick_column(columns, ["sid", "session_id", "sessionId", "conversation_id", "conversationId"])
+    chat_id_col = pick_column(columns, ["chat_id", "chatId", "cid", "conversation_id", "conversationId", "sid"])
     item_id_col = pick_column(columns, ["item_id", "goods_id", "auction_id", "product_id"])
     item_title_col = pick_column(columns, ["item_title", "goods_title", "title", "item_name"])
     sku_col = pick_column(columns, ["sku_text", "sku", "spec_value", "spec_name"])
@@ -201,12 +207,32 @@ def normalize_order_row(row: sqlite3.Row, columns: List[str]) -> Optional[Dict[s
 
     item_id = sanitize_text(get_value(row, item_id_col) or raw.get("itemId") or raw.get("item_id"), 180)
     item_title = sanitize_text(get_value(row, item_title_col) or raw.get("title") or raw.get("itemTitle"), 500)
+    sid = sanitize_text(
+        get_value(row, sid_col)
+        or raw.get("sid")
+        or raw.get("sessionId")
+        or raw.get("session_id")
+        or raw.get("conversationId")
+        or raw.get("conversation_id"),
+        180,
+    )
+    chat_id = sanitize_text(
+        get_value(row, chat_id_col)
+        or raw.get("chatId")
+        or raw.get("chat_id")
+        or sid,
+        180,
+    )
+    if "@" in chat_id:
+        chat_id = chat_id.split("@", 1)[0]
 
     return {
         "orderId": order_id,
         "status": status or "买家已付款",
         "buyerId": sanitize_text(get_value(row, buyer_id_col) or raw.get("buyerId") or raw.get("buyer_id"), 180),
         "buyerNick": sanitize_text(get_value(row, buyer_name_col) or raw.get("buyerNick") or raw.get("buyer_name"), 180),
+        "chatId": chat_id,
+        "sid": sid,
         "item": {
             "itemId": item_id,
             "title": item_title,
@@ -219,6 +245,8 @@ def normalize_order_row(row: sqlite3.Row, columns: List[str]) -> Optional[Dict[s
         "cookie_id": sanitize_text(get_value(row, cookie_id_col), 180),
         "raw": {
             **raw,
+            "chatId": chat_id,
+            "sid": sid,
             "source": "xianyu-auto-reply-fix",
         },
     }

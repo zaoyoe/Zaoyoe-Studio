@@ -3668,6 +3668,9 @@ function bindAdminStudioDelegatedControls() {
             case 'marketplace-generate-ingest-token':
                 window.generateMarketplaceIngestToken?.(actionEl.dataset.accountKey, actionEl);
                 break;
+            case 'marketplace-copy-ingest-token':
+                window.copyMarketplaceIngestToken?.(actionEl.dataset.accountKey, actionEl);
+                break;
             case 'marketplace-add-product-mapping':
                 window.addMarketplaceXianyuProductMapping?.();
                 break;

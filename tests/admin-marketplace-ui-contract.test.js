@@ -59,6 +59,8 @@ test('admin marketplace settings render a no-code Xianyu auto-delivery form', ()
         'focusMarketplaceXianyuProductMapping',
         'scrollIntoView',
         'generateMarketplaceIngestToken',
+        'copyMarketplaceIngestToken',
+        'marketplace-copy-ingest-token',
         'resolveMarketplaceAccountKeyForAction',
         'loadMarketplaceProductPickerOptions',
         'loadMarketplaceProductPickerCatalog',
@@ -101,6 +103,7 @@ test('admin marketplace settings render a no-code Xianyu auto-delivery form', ()
         "case 'marketplace-add-xianyu-account'",
         "case 'marketplace-remove-xianyu-account'",
         "case 'marketplace-generate-ingest-token'",
+        "case 'marketplace-copy-ingest-token'",
         "case 'marketplace-add-product-mapping'",
         "case 'marketplace-remove-product-mapping'",
         "case 'marketplace-toggle-product-mapping'",
@@ -134,6 +137,7 @@ test('admin marketplace settings render a no-code Xianyu auto-delivery form', ()
         'max-width: none',
         'position: static',
         '.marketplace-token-row',
+        '.marketplace-copy-token-btn',
         '.marketplace-advanced-config'
     ].forEach((marker) => {
         assert.equal(css.includes(marker), true, `admin-studio.css should contain ${marker}`);

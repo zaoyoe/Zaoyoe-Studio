@@ -9174,6 +9174,9 @@ function buildMarketplaceXianyuAccountCard(account = {}, index = 0, options = {}
                         <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="marketplace-generate-ingest-token" data-account-key="${escapeConfigHtml(accountKey)}">
                             生成
                         </button>
+                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost marketplace-copy-token-btn" data-admin-action="marketplace-copy-ingest-token" data-account-key="${escapeConfigHtml(accountKey)}" ${tokenDraft ? '' : 'disabled'}>
+                            复制
+                        </button>
                     </div>
                 </label>
             </div>
@@ -21234,6 +21237,72 @@ function generateMarketplaceIngestToken(accountKey = '', actionEl = null) {
     if (input) {
         input.value = `xy_${token}`;
         input.focus();
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        const copyButton = card?.querySelector?.('[data-admin-action="marketplace-copy-ingest-token"]');
+        if (copyButton) {
+            copyButton.disabled = false;
+        }
+        copyMarketplaceIngestToken(normalizedAccountKey, copyButton || actionEl, { silentMissing: true });
+    }
+}
+
+async function writeAdminTextToClipboard(text = '') {
+    const value = String(text || '');
+    if (!value) return false;
+
+    if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(value);
+        return true;
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = value;
+    textarea.setAttribute('readonly', 'readonly');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+
+    try {
+        return document.execCommand('copy');
+    } finally {
+        textarea.remove();
+    }
+}
+
+async function copyMarketplaceIngestToken(accountKey = '', actionEl = null, options = {}) {
+    const card = getMarketplaceAccountCardForAction(accountKey, actionEl);
+    const normalizedAccountKey = resolveMarketplaceAccountKeyForAction(accountKey, actionEl, 'main');
+    const secretKey = buildMarketplaceSecretKey('xianyu', normalizedAccountKey, 'ingest_token');
+    const escapedSecretKey = window.CSS?.escape
+        ? window.CSS.escape(secretKey)
+        : secretKey.replace(/["\\]/g, '\\$&');
+    const input = card?.querySelector?.('[data-marketplace-secret-key]')
+        || (secretKey ? document.querySelector(`[data-marketplace-secret-key="${escapedSecretKey}"]`) : null);
+    const token = String(input?.value || '').trim();
+
+    if (!token) {
+        if (!options.silentMissing) {
+            showToast('先点击生成 Token，保存前才能复制。已保存的旧 Token 为安全起见不会明文回显。', 'warning');
+        }
+        return false;
+    }
+
+    try {
+        await writeAdminTextToClipboard(token);
+        showToast('Token 已复制，请先保存配置，再粘贴到 bridge worker 命令里。', 'success');
+        if (actionEl instanceof HTMLElement) {
+            actionEl.textContent = '已复制';
+            window.setTimeout(() => {
+                actionEl.textContent = '复制';
+            }, 1600);
+        }
+        return true;
+    } catch (error) {
+        console.warn('Failed to copy marketplace ingest token', error);
+        showToast('复制失败，请点击输入框手动全选复制。', 'error');
+        return false;
     }
 }
 
@@ -28559,6 +28628,7 @@ window.addMarketplaceXianyuAccount = addMarketplaceXianyuAccount;
 window.removeMarketplaceXianyuAccount = removeMarketplaceXianyuAccount;
 window.handleMarketplaceXianyuDefaultAccountChange = handleMarketplaceXianyuDefaultAccountChange;
 window.generateMarketplaceIngestToken = generateMarketplaceIngestToken;
+window.copyMarketplaceIngestToken = copyMarketplaceIngestToken;
 window.addMarketplaceXianyuProductMapping = addMarketplaceXianyuProductMapping;
 window.removeMarketplaceXianyuProductMapping = removeMarketplaceXianyuProductMapping;
 window.toggleMarketplaceXianyuProductMapping = toggleMarketplaceXianyuProductMapping;
