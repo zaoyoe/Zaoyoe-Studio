@@ -13,6 +13,7 @@ DRY_RUN=0
 PACKAGE_PATHS=(
   package.json
   package-lock.json
+  adapters
   api
   server
   js
