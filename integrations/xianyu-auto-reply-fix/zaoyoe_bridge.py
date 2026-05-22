@@ -18,6 +18,7 @@ import inspect
 import json
 import os
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -65,6 +66,11 @@ ORDER_TABLE_CANDIDATES = (
 BRIDGE_PREFIX = os.getenv("ZAOYOE_BRIDGE_PREFIX", "/zaoyoe")
 BRIDGE_TOKEN = os.getenv("ZAOYOE_BRIDGE_TOKEN", "")
 DB_PATH = os.getenv("DB_PATH", "data/xianyu_data.db")
+ORDER_SYNC_INTERVAL_SECONDS = max(0, int(os.getenv("ZAOYOE_ORDER_SYNC_INTERVAL_SECONDS", "20") or "20"))
+
+_last_order_api_sync_at = 0.0
+_last_order_api_sync_summary: Dict[str, Any] = {}
+_order_api_sync_lock = asyncio.Lock()
 
 router = APIRouter(prefix=BRIDGE_PREFIX, tags=["zaoyoe-bridge"])
 
@@ -276,6 +282,104 @@ def load_paid_orders_from_db(limit: int = 50) -> List[Dict[str, Any]]:
         return orders
 
 
+def clamp_int(value: Any, fallback: int, minimum: int, maximum: int) -> int:
+    try:
+        parsed = int(value)
+    except Exception:
+        parsed = fallback
+    return max(minimum, min(maximum, parsed))
+
+
+def save_history_candidate_to_db(db_manager: Any, cookie_id: str, candidate: Dict[str, Any]) -> bool:
+    order_id = sanitize_text(candidate.get("order_id"), 180)
+    if not order_id:
+        return False
+
+    return bool(db_manager.insert_or_update_order(
+        order_id=order_id,
+        item_id=sanitize_text(candidate.get("item_id"), 180) or None,
+        buyer_id=sanitize_text(candidate.get("buyer_id"), 180) or None,
+        buyer_nick=sanitize_text(candidate.get("buyer_nick"), 180) or None,
+        sid=sanitize_text(candidate.get("sid"), 180) or None,
+        amount=sanitize_text(candidate.get("amount"), 80) or None,
+        order_status=sanitize_text(candidate.get("order_status"), 80) or None,
+        cookie_id=cookie_id,
+        platform_created_at=sanitize_text(candidate.get("platform_created_at"), 120) or None,
+        platform_paid_at=sanitize_text(candidate.get("platform_paid_at"), 120) or None,
+        platform_completed_at=sanitize_text(candidate.get("platform_completed_at"), 120) or None,
+    ))
+
+
+async def sync_recent_orders_from_order_api(limit: int = 50, force: bool = False) -> Dict[str, Any]:
+    global _last_order_api_sync_at, _last_order_api_sync_summary
+
+    now = time.time()
+    if not force and ORDER_SYNC_INTERVAL_SECONDS and now - _last_order_api_sync_at < ORDER_SYNC_INTERVAL_SECONDS:
+        return {
+            **_last_order_api_sync_summary,
+            "skipped": True,
+            "reason": "sync_interval",
+            "last_synced_at": _last_order_api_sync_at,
+        }
+
+    async with _order_api_sync_lock:
+        now = time.time()
+        if not force and ORDER_SYNC_INTERVAL_SECONDS and now - _last_order_api_sync_at < ORDER_SYNC_INTERVAL_SECONDS:
+            return {
+                **_last_order_api_sync_summary,
+                "skipped": True,
+                "reason": "sync_interval",
+                "last_synced_at": _last_order_api_sync_at,
+            }
+
+        summary: Dict[str, Any] = {
+            "skipped": False,
+            "accounts": 0,
+            "scanned": 0,
+            "saved": 0,
+            "errors": [],
+        }
+
+        try:
+            from db_manager import db_manager
+            from utils.order_history_sync import OrderHistoryPageFetcher
+
+            cookies = db_manager.get_all_cookies()
+            summary["accounts"] = len(cookies)
+            max_orders = clamp_int(limit, 50, 1, 100) * 2
+
+            for cookie_id, cookie_value in cookies.items():
+                fetcher = OrderHistoryPageFetcher(
+                    cookie_value,
+                    cookie_id_for_log=str(cookie_id),
+                    headless=True,
+                )
+                try:
+                    result = await fetcher.fetch_recent_orders(max_orders=max_orders)
+                    candidates = list(result.get("orders") or [])
+                    summary["scanned"] += int(result.get("scanned_count") or len(candidates) or 0)
+                    for candidate in candidates:
+                        if save_history_candidate_to_db(db_manager, str(cookie_id), candidate):
+                            summary["saved"] += 1
+                except Exception as exc:
+                    summary["errors"].append({
+                        "cookie_id": str(cookie_id),
+                        "message": sanitize_text(exc, 500),
+                    })
+                finally:
+                    await fetcher.close()
+        except Exception as exc:
+            summary["errors"].append({
+                "cookie_id": "",
+                "message": sanitize_text(exc, 500),
+            })
+
+        _last_order_api_sync_at = time.time()
+        summary["last_synced_at"] = _last_order_api_sync_at
+        _last_order_api_sync_summary = dict(summary)
+        return summary
+
+
 async def maybe_await(value: Any) -> Any:
     if inspect.isawaitable(value):
         return await value
@@ -337,12 +441,18 @@ async def dispatch_chat_message(payload: Dict[str, Any]) -> Dict[str, Any]:
 @router.get("/orders/paid")
 async def list_paid_orders(
     limit: int = 50,
+    refresh: bool = True,
     _authorized: None = Depends(verify_bridge_token),
 ):
+    sync_summary = await sync_recent_orders_from_order_api(limit=limit, force=False) if refresh else {
+        "skipped": True,
+        "reason": "disabled_by_request",
+    }
     orders = load_paid_orders_from_db(limit=limit)
     return {
         "success": True,
         "orders": orders,
+        "sync": sync_summary,
     }
 
 
@@ -367,4 +477,6 @@ async def bridge_health(_authorized: None = Depends(verify_bridge_token)):
         "db_path": str(get_db_path()),
         "has_chat_sender": bool(os.getenv("ZAOYOE_BRIDGE_CHAT_SENDER")),
         "has_outbox_file": bool(os.getenv("ZAOYOE_BRIDGE_OUTBOX_FILE")),
+        "order_sync_interval_seconds": ORDER_SYNC_INTERVAL_SECONDS,
+        "last_order_sync": _last_order_api_sync_summary,
     }

@@ -3,6 +3,13 @@
 const fs = require('node:fs/promises');
 const path = require('node:path');
 const dotenv = require('dotenv');
+const {
+    buildMarketplaceOrderPayload,
+    resolveMarketplaceOrdersUrl
+} = require('./core');
+const {
+    loadXianyuAdminAdapterConfig
+} = require('./admin-runtime');
 
 function sanitizeText(value, maxLength = 500) {
     if (value === null || value === undefined) return '';
@@ -152,6 +159,79 @@ function buildBotHeaders(env = {}, prefix = 'XIANYU_BOT') {
     return headers;
 }
 
+function normalizeBoolean(value, fallback = false) {
+    if (value === true || value === false) return value;
+    const normalized = sanitizeText(value, 20).toLowerCase();
+    if (!normalized) return fallback;
+    if (['1', 'true', 'yes', 'y', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'n', 'off'].includes(normalized)) return false;
+    return fallback;
+}
+
+function parseProductMappings(value) {
+    const raw = sanitizeText(value, 100_000);
+    if (!raw) return [];
+
+    try {
+        const parsed = JSON.parse(raw);
+        return Array.isArray(parsed)
+            ? parsed
+            : (Array.isArray(parsed?.product_mappings) ? parsed.product_mappings : []);
+    } catch (_) {
+        return [];
+    }
+}
+
+function buildBridgeMarketplaceConfigFromEnv(env = process.env, {
+    baseUrl = '',
+    accountKey = ''
+} = {}) {
+    const resolvedBaseUrl = normalizeBaseUrl(
+        baseUrl
+        || env.XIANYU_BRIDGE_BASE_URL
+        || env.MARKETPLACE_WEBSITE_BASE_URL
+        || env.XIANYU_WEBSITE_BASE_URL
+        || 'https://www.zaoyoe.com'
+    );
+    const resolvedAccountKey = sanitizeText(accountKey || env.XIANYU_BRIDGE_ACCOUNT || 'main', 80) || 'main';
+
+    return {
+        website_base_url: resolvedBaseUrl,
+        channel: sanitizeText(env.XIANYU_BRIDGE_CHANNEL || 'xianyu', 80) || 'xianyu',
+        account: resolvedAccountKey,
+        site: sanitizeText(env.XIANYU_BRIDGE_SITE || 'cn', 20).toLowerCase() === 'intl' ? 'intl' : 'cn',
+        dry_run: false,
+        ingest_token: sanitizeText(
+            env.XIANYU_BRIDGE_INGEST_TOKEN
+            || env.XIANYU_MARKETPLACE_INGEST_TOKEN
+            || env.MARKETPLACE_INGEST_TOKEN,
+            4000
+        ),
+        product_mappings: parseProductMappings(env.XIANYU_BRIDGE_PRODUCT_MAPPINGS)
+    };
+}
+
+async function loadBridgeMarketplaceConfig(env = process.env, {
+    baseUrl = '',
+    accountKey = ''
+} = {}) {
+    if (normalizeBoolean(env.XIANYU_BRIDGE_FROM_ADMIN, false)) {
+        return loadXianyuAdminAdapterConfig({
+            accountKey: accountKey || env.XIANYU_BRIDGE_ACCOUNT || 'main',
+            websiteBaseUrl: baseUrl || env.XIANYU_BRIDGE_BASE_URL || env.MARKETPLACE_WEBSITE_BASE_URL || '',
+            site: env.XIANYU_BRIDGE_SITE || 'cn',
+            dryRun: false,
+            includeSecret: true,
+            env
+        });
+    }
+
+    return buildBridgeMarketplaceConfigFromEnv(env, {
+        baseUrl,
+        accountKey
+    });
+}
+
 async function readJsonFile(filePath) {
     const raw = await fs.readFile(filePath, 'utf8');
     return JSON.parse(raw);
@@ -209,7 +289,14 @@ async function fetchJson(url, {
     const parsedBody = await parseJsonResponse(response);
 
     if (!response.ok || parsedBody.success === false) {
-        throw Object.assign(new Error(parsedBody.message || `HTTP ${response.status}`), {
+        const responseMessage = sanitizeText(
+            parsedBody.message
+            || parsedBody.detail
+            || parsedBody.error
+            || parsedBody.raw,
+            2000
+        );
+        throw Object.assign(new Error(responseMessage || `HTTP ${response.status}`), {
             code: parsedBody.code || 'xianyu_bridge_http_failed',
             statusCode: response.status,
             response: parsedBody
@@ -220,6 +307,27 @@ async function fetchJson(url, {
         statusCode: response.status,
         body: parsedBody
     };
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+}
+
+function isRetryableChatSendError(error = {}) {
+    const message = sanitizeText(
+        error?.response?.detail || error?.response?.message || error?.message,
+        1000
+    ).toLowerCase();
+    return error?.statusCode >= 500
+        || message.includes('websocket')
+        || message.includes('not connected')
+        || message.includes('not ready')
+        || message.includes('reconnect')
+        || message.includes('未连接')
+        || message.includes('未就绪')
+        || message.includes('重连')
+        || message.includes('timed out')
+        || message.includes('timeout');
 }
 
 async function loadPaidOrdersFromXianyuBot(env = process.env, {
@@ -255,31 +363,38 @@ async function postXianyuOrder({
     baseUrl,
     accountKey = 'main',
     ingestToken,
+    marketplaceConfig = {},
     order,
     fetchImpl = globalThis.fetch
 } = {}) {
-    const resolvedBaseUrl = normalizeBaseUrl(baseUrl);
+    const resolvedConfig = {
+        ...marketplaceConfig,
+        website_base_url: normalizeBaseUrl(marketplaceConfig.website_base_url || baseUrl),
+        account: sanitizeText(marketplaceConfig.account || accountKey, 80) || 'main',
+        ingest_token: sanitizeText(marketplaceConfig.ingest_token || ingestToken, 4000)
+    };
+    const resolvedBaseUrl = normalizeBaseUrl(resolvedConfig.website_base_url);
     if (!resolvedBaseUrl) {
         throw Object.assign(new Error('XIANYU_BRIDGE_BASE_URL is required'), {
             code: 'xianyu_bridge_base_url_required'
         });
     }
-    if (!sanitizeText(ingestToken, 4000)) {
+    if (!sanitizeText(resolvedConfig.ingest_token, 4000)) {
         throw Object.assign(new Error('XIANYU_BRIDGE_INGEST_TOKEN is required'), {
             code: 'xianyu_bridge_ingest_token_required'
         });
     }
 
-    const url = new URL('/api/marketplace/xianyu/orders', resolvedBaseUrl);
-    url.searchParams.set('account', sanitizeText(accountKey, 80) || 'main');
+    const url = resolveMarketplaceOrdersUrl(resolvedConfig);
+    const payload = buildMarketplaceOrderPayload(order, resolvedConfig);
 
     return fetchJson(url.toString(), {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json; charset=utf-8',
-            Authorization: `Bearer ${ingestToken}`
+            Authorization: `Bearer ${resolvedConfig.ingest_token}`
         },
-        body: { order },
+        body: payload,
         fetchImpl
     }).catch((error) => {
         error.code = error.code === 'xianyu_bridge_http_failed'
@@ -320,18 +435,33 @@ async function sendDeliveryToXianyuChat({
         };
     }
 
-    const submitted = await fetchJson(sendUrl, {
-        method: 'POST',
-        headers: buildBotHeaders(env, 'XIANYU_BOT'),
-        body: payload,
-        fetchImpl
-    });
+    const maxAttempts = Math.max(1, Number(env.XIANYU_BRIDGE_CHAT_SEND_ATTEMPTS || 4));
+    let lastError;
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        try {
+            const submitted = await fetchJson(sendUrl, {
+                method: 'POST',
+                headers: buildBotHeaders(env, 'XIANYU_BOT'),
+                body: payload,
+                fetchImpl
+            });
 
-    return {
-        status: 'sent',
-        response: submitted.body,
-        payload
-    };
+            return {
+                status: 'sent',
+                response: submitted.body,
+                payload,
+                attempts: attempt
+            };
+        } catch (error) {
+            lastError = error;
+            if (attempt >= maxAttempts || !isRetryableChatSendError(error)) {
+                break;
+            }
+            await sleep(Math.min(12_000, 1500 * attempt));
+        }
+    }
+
+    throw lastError;
 }
 
 async function runBridgeWorker({
@@ -342,7 +472,11 @@ async function runBridgeWorker({
 } = {}) {
     const baseUrl = env.XIANYU_BRIDGE_BASE_URL || env.MARKETPLACE_WEBSITE_BASE_URL || 'https://www.zaoyoe.com';
     const accountKey = env.XIANYU_BRIDGE_ACCOUNT || 'main';
-    const ingestToken = env.XIANYU_BRIDGE_INGEST_TOKEN || env.XIANYU_MARKETPLACE_INGEST_TOKEN || '';
+    const marketplaceConfig = await loadBridgeMarketplaceConfig(env, {
+        baseUrl,
+        accountKey
+    });
+    const ingestToken = marketplaceConfig.ingest_token || env.XIANYU_BRIDGE_INGEST_TOKEN || env.XIANYU_MARKETPLACE_INGEST_TOKEN || '';
     const processedFile = sanitizeText(env.XIANYU_BRIDGE_PROCESSED_FILE, 1000);
     const processedOrderIds = await loadProcessedOrderIds(processedFile);
     const orders = await loadOrders(env, { fetchImpl });
@@ -364,11 +498,12 @@ async function runBridgeWorker({
                 baseUrl,
                 accountKey,
                 ingestToken,
+                marketplaceConfig,
                 order,
                 fetchImpl
             });
             const body = submitted.body || {};
-            const normalizedOrderId = body.normalized_order?.external_order_id || orderId;
+            const normalizedOrderId = body.normalized_order?.external_order_id || body.request?.external_order_id || orderId;
             const content = resolveDeliveryContent(body);
 
             if (body.skipped) {
@@ -380,7 +515,7 @@ async function runBridgeWorker({
                 continue;
             }
 
-            if (body.duplicate === true) {
+            if (body.duplicate === true && !content) {
                 if (normalizedOrderId) processedOrderIds.add(normalizedOrderId);
                 results.push({
                     status: 'skipped',
@@ -414,7 +549,9 @@ async function runBridgeWorker({
                 status: 'failed',
                 external_order_id: orderId,
                 code: error?.code || 'xianyu_bridge_failed',
-                message: error?.message || 'Xianyu bridge failed'
+                message: error?.message || 'Xianyu bridge failed',
+                status_code: error?.statusCode,
+                response: error?.response
             });
         }
     }
@@ -481,6 +618,15 @@ function parseArgs(argv = []) {
         }
         if (value === '--token') {
             options.overrides.XIANYU_BRIDGE_INGEST_TOKEN = String(argv[index + 1] || '').trim();
+            index += 1;
+            continue;
+        }
+        if (value === '--from-admin') {
+            options.overrides.XIANYU_BRIDGE_FROM_ADMIN = 'true';
+            continue;
+        }
+        if (value === '--site') {
+            options.overrides.XIANYU_BRIDGE_SITE = String(argv[index + 1] || '').trim();
             index += 1;
             continue;
         }
@@ -560,7 +706,9 @@ if (require.main === module) {
 module.exports = {
     applyEnvFile,
     buildBotHeaders,
+    buildBridgeMarketplaceConfigFromEnv,
     fetchJson,
+    loadBridgeMarketplaceConfig,
     loadPaidOrdersFromXianyuBot,
     loadProcessedOrderIds,
     main,

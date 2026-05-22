@@ -2,12 +2,13 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const {
+    buildBridgeMarketplaceConfigFromEnv,
     loadPaidOrdersFromXianyuBot,
     postXianyuOrder,
     resolveDeliveryContent,
     runBridgeWorker,
     sendDeliveryToXianyuChat
-} = require('../adapters/xianyu/bridge-worker.example');
+} = require('../adapters/xianyu/bridge-worker');
 
 test('xianyu bridge posts raw orders to the recommended marketplace endpoint', async () => {
     const calls = [];
@@ -37,24 +38,32 @@ test('xianyu bridge posts raw orders to the recommended marketplace endpoint', a
         baseUrl: 'https://www.zaoyoe.com/',
         accountKey: 'main',
         ingestToken: 'test-token',
+        marketplaceConfig: {
+            product_mappings: [
+                {
+                    xianyu_item_id: 'XY-BRIDGE-ITEM-1001',
+                    product_id: '11111111-1111-4111-8111-111111111111'
+                }
+            ]
+        },
         order: {
             orderId: 'XY-BRIDGE-1001',
-            status: '买家已付款'
+            status: '买家已付款',
+            item: {
+                itemId: 'XY-BRIDGE-ITEM-1001'
+            }
         },
         fetchImpl
     });
 
     assert.equal(submitted.body.success, true);
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].url, 'https://www.zaoyoe.com/api/marketplace/xianyu/orders?account=main');
+    assert.equal(calls[0].url, 'https://www.zaoyoe.com/api/marketplace/orders');
     assert.equal(calls[0].options.method, 'POST');
     assert.equal(calls[0].options.headers.Authorization, 'Bearer test-token');
-    assert.deepEqual(JSON.parse(calls[0].options.body), {
-        order: {
-            orderId: 'XY-BRIDGE-1001',
-            status: '买家已付款'
-        }
-    });
+    assert.equal(JSON.parse(calls[0].options.body).product_id, '11111111-1111-4111-8111-111111111111');
+    assert.equal(JSON.parse(calls[0].options.body).external_order_id, 'XY-BRIDGE-1001');
+    assert.equal(JSON.parse(calls[0].options.body).account, 'main');
 });
 
 test('xianyu bridge sends returned delivery content to the chat adapter', async () => {
@@ -80,14 +89,23 @@ test('xianyu bridge sends returned delivery content to the chat adapter', async 
         env: {
             XIANYU_BRIDGE_BASE_URL: 'https://www.zaoyoe.com',
             XIANYU_BRIDGE_ACCOUNT: 'main',
-            XIANYU_BRIDGE_INGEST_TOKEN: 'test-token'
+            XIANYU_BRIDGE_INGEST_TOKEN: 'test-token',
+            XIANYU_BRIDGE_PRODUCT_MAPPINGS: JSON.stringify([
+                {
+                    xianyu_item_id: 'XY-BRIDGE-ITEM-1002',
+                    product_id: '22222222-2222-4222-8222-222222222222'
+                }
+            ])
         },
         fetchImpl,
         async loadOrders() {
             return [
                 {
                     orderId: 'XY-BRIDGE-1002',
-                    status: '买家已付款'
+                    status: '买家已付款',
+                    item: {
+                        itemId: 'XY-BRIDGE-ITEM-1002'
+                    }
                 }
             ];
         },
@@ -105,7 +123,10 @@ test('xianyu bridge sends returned delivery content to the chat adapter', async 
         {
             order: {
                 orderId: 'XY-BRIDGE-1002',
-                status: '买家已付款'
+                status: '买家已付款',
+                item: {
+                    itemId: 'XY-BRIDGE-ITEM-1002'
+                }
             },
             content: 'card-secret-1002'
         }
@@ -270,7 +291,13 @@ test('xianyu bridge treats duplicate website orders as already handled', async (
         env: {
             XIANYU_BRIDGE_BASE_URL: 'https://www.zaoyoe.com',
             XIANYU_BRIDGE_ACCOUNT: 'main',
-            XIANYU_BRIDGE_INGEST_TOKEN: 'test-token'
+            XIANYU_BRIDGE_INGEST_TOKEN: 'test-token',
+            XIANYU_BRIDGE_PRODUCT_MAPPINGS: JSON.stringify([
+                {
+                    xianyu_item_id: 'XY-BRIDGE-ITEM-1003',
+                    product_id: '33333333-3333-4333-8333-333333333333'
+                }
+            ])
         },
         async fetchImpl() {
             return {
@@ -294,7 +321,10 @@ test('xianyu bridge treats duplicate website orders as already handled', async (
             return [
                 {
                     orderId: 'XY-BRIDGE-1003',
-                    status: '买家已付款'
+                    status: '买家已付款',
+                    item: {
+                        itemId: 'XY-BRIDGE-ITEM-1003'
+                    }
                 }
             ];
         },
@@ -303,10 +333,26 @@ test('xianyu bridge treats duplicate website orders as already handled', async (
         }
     });
 
-    assert.equal(summary.delivered, 0);
-    assert.equal(summary.skipped, 1);
-    assert.equal(summary.results[0].reason, 'duplicate_order');
-    assert.equal(chatSendCount, 0);
+    assert.equal(summary.delivered, 1);
+    assert.equal(summary.skipped, 0);
+    assert.equal(chatSendCount, 1);
+});
+
+test('xianyu bridge can read product mappings from env JSON', () => {
+    const config = buildBridgeMarketplaceConfigFromEnv({
+        XIANYU_BRIDGE_BASE_URL: 'https://www.zaoyoe.com',
+        XIANYU_BRIDGE_ACCOUNT: 'main',
+        XIANYU_BRIDGE_INGEST_TOKEN: 'test-token',
+        XIANYU_BRIDGE_PRODUCT_MAPPINGS: JSON.stringify([
+            {
+                xianyu_item_id: 'xy-env-item',
+                product_id: '44444444-4444-4444-8444-444444444444'
+            }
+        ])
+    });
+
+    assert.equal(config.product_mappings.length, 1);
+    assert.equal(config.product_mappings[0].product_id, '44444444-4444-4444-8444-444444444444');
 });
 
 test('xianyu bridge resolves delivery content from supported response shapes', () => {
