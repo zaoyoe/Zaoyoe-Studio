@@ -43925,9 +43925,14 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
 
 .marketplace-token-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 10px;
     align-items: center;
+}
+
+.marketplace-copy-token-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
 }
 
 .marketplace-advanced-config {

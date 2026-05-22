@@ -69,6 +69,57 @@ function resolveBuyerName(order = {}) {
     );
 }
 
+function resolveChatId(order = {}) {
+    const value = sanitizeText(
+        order.chat_id
+        || order.chatId
+        || order.cid
+        || order.sid
+        || order.session_id
+        || order.sessionId
+        || order.conversation_id
+        || order.conversationId
+        || order.raw?.chat_id
+        || order.raw?.chatId
+        || order.raw?.sid
+        || order.raw?.session_id
+        || order.raw?.sessionId,
+        180
+    );
+
+    return value.includes('@') ? value.split('@')[0].trim() : value;
+}
+
+function resolveCookieId(order = {}) {
+    return sanitizeText(
+        order.cookie_id
+        || order.cookieId
+        || order.account_id
+        || order.accountId
+        || order.seller_id
+        || order.sellerId
+        || order.raw?.cookie_id
+        || order.raw?.cookieId
+        || order.raw?.account_id
+        || order.raw?.accountId,
+        180
+    );
+}
+
+function resolveItemId(order = {}) {
+    return sanitizeText(
+        order.item_id
+        || order.itemId
+        || order.item?.itemId
+        || order.item?.id
+        || order.goods_id
+        || order.goodsId
+        || order.raw?.item_id
+        || order.raw?.itemId,
+        180
+    );
+}
+
 function resolveDeliveryContent(responseBody = {}) {
     return sanitizeText(
         responseBody?.data?.content
@@ -252,6 +303,10 @@ async function sendDeliveryToXianyuChat({
         external_order_id: orderId,
         buyer_id: resolveBuyerId(order),
         buyer_name: resolveBuyerName(order),
+        chat_id: resolveChatId(order),
+        sid: sanitizeText(order.sid || order.raw?.sid, 180),
+        cookie_id: resolveCookieId(order),
+        item_id: resolveItemId(order),
         content,
         order,
         marketplace_response: response
@@ -515,7 +570,10 @@ module.exports = {
     postXianyuOrder,
     resolveBuyerId,
     resolveBuyerName,
+    resolveChatId,
+    resolveCookieId,
     resolveDeliveryContent,
+    resolveItemId,
     resolveOrderId,
     runBridgeLoop,
     runBridgeWorker,

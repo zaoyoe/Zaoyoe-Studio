@@ -33,6 +33,19 @@ test('xianyu-auto-reply-fix bridge router exposes paid-order and chat-send route
     assert.match(router, /ZAOYOE_BRIDGE_OUTBOX_FILE/);
     assert.match(router, /ORDER_TABLE_CANDIDATES/);
     assert.match(router, /find_order_table/);
+    assert.match(router, /chat_id_col/);
+    assert.match(router, /sid_col/);
+    assert.match(router, /"chatId"/);
+});
+
+test('xianyu-auto-reply-fix sender binds bridge chat-send to live WebSocket sender', () => {
+    const sender = fs.readFileSync(path.join(integrationDir, 'zaoyoe_sender_example.py'), 'utf8');
+
+    assert.match(sender, /async def send_message/);
+    assert.match(sender, /resolve_live_instance/);
+    assert.match(sender, /send_msg\(live_instance\.ws, chat_id, buyer_id, content\)/);
+    assert.doesNotMatch(sender, /TODO/);
+    assert.doesNotMatch(sender, /NotImplementedError/);
 });
 
 test('xianyu-auto-reply-fix installer copies bridge files and mounts router idempotently', () => {
