@@ -24,6 +24,13 @@ test('xianyu-auto-reply-fix integration documents the bridge endpoints expected 
     assert.match(readme, /xianyu-auto-reply-fix/);
 });
 
+test('KVM4 verify server release includes Xianyu adapter modules', () => {
+    const deployScript = fs.readFileSync(path.join(repoRoot, 'scripts/deploy-kvm4-verify-server.sh'), 'utf8');
+
+    assert.match(deployScript, /PACKAGE_PATHS=\(/);
+    assert.match(deployScript, /(^|\n)\s+adapters\s*(\n|$)/);
+});
+
 test('xianyu-auto-reply-fix bridge router exposes paid-order and chat-send routes', () => {
     const router = fs.readFileSync(path.join(integrationDir, 'zaoyoe_bridge.py'), 'utf8');
 
