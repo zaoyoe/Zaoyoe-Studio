@@ -12,7 +12,9 @@ const {
     getStoredAdminSecret
 } = require('../../../api/_lib/secrets');
 const {
-    buildMarketplaceOrderPayload
+    buildMarketplaceOrderPayload,
+    isPaidXianyuOrder,
+    normalizeXianyuOrder
 } = require('../../../adapters/xianyu/core');
 
 const MARKETPLACE_INGEST_SECRET_NAME = 'ingest_token';
@@ -331,6 +333,36 @@ function buildXianyuMarketplaceOrderPayload(normalizedOrder = {}, tokenContext =
         cookie_id: normalizedOrder.cookie_id
     };
     return payload;
+}
+
+function resolveXianyuRawOrder(body = {}) {
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return {};
+    }
+
+    const candidates = [
+        body.order,
+        body.xianyu_order,
+        body.xianyuOrder,
+        body.raw_order,
+        body.rawOrder,
+        body.raw
+    ];
+    const nested = candidates.find((item) => item && typeof item === 'object' && !Array.isArray(item));
+    return nested || body;
+}
+
+function buildXianyuAdapterConfig(tokenContext = {}, body = {}) {
+    const channel = tokenContext.channel || {};
+    return {
+        channel: tokenContext.channelKey || 'xianyu',
+        account: tokenContext.accountKey || 'main',
+        site: sanitizeText(body?.site, 20).toLowerCase() === 'intl' ? 'intl' : 'cn',
+        product_mappings: Array.isArray(channel.product_mappings) ? channel.product_mappings : [],
+        paid_statuses: Array.isArray(channel.paid_statuses) ? channel.paid_statuses : undefined,
+        blocked_statuses: Array.isArray(channel.blocked_statuses) ? channel.blocked_statuses : undefined,
+        allow_unknown_pay_status: channel.allow_unknown_pay_status === true
+    };
 }
 
 function buildChannelLookupPayload(req, body = {}) {
@@ -699,9 +731,114 @@ function createMarketplaceHandlers({
         }
     }
 
+    async function xianyuOrdersHandler(req, res) {
+        applyPrivateJsonHeaders(res);
+
+        if (String(req.method || '').toUpperCase() !== 'POST') {
+            res.setHeader('Allow', 'POST');
+            return writeJson(res, 405, {
+                success: false,
+                message: 'Method not allowed'
+            });
+        }
+
+        const supabase = await loadSupabaseForMarketplace(res);
+        if (!supabase) return null;
+
+        const rateLimitAllowed = await applyMarketplaceRateLimit({
+            req,
+            res,
+            supabase,
+            keyPrefix: 'marketplace-ingest:xianyu'
+        });
+        if (!rateLimitAllowed) return null;
+
+        try {
+            const body = await parseBody(req);
+            const config = await resolvedChannels.loadMarketplaceChannelsConfig(supabase, env);
+            const tokenContext = await verifyMarketplaceIngestToken({
+                supabase,
+                req,
+                body: {
+                    ...body,
+                    channel: 'xianyu'
+                },
+                config,
+                getStoredSecret: resolvedSecrets.getStoredAdminSecret
+            });
+
+            if (tokenContext.channelKey !== 'xianyu' && tokenContext.channel?.type !== 'xianyu') {
+                return writeJson(res, 409, {
+                    success: false,
+                    code: 'xianyu_channel_required',
+                    message: 'This endpoint only accepts the xianyu marketplace channel'
+                });
+            }
+
+            const rawOrder = resolveXianyuRawOrder(body);
+            const normalizedOrder = normalizeXianyuOrder(rawOrder);
+            const adapterConfig = buildXianyuAdapterConfig(tokenContext, body);
+
+            if (!isPaidXianyuOrder(normalizedOrder, adapterConfig)) {
+                return writeJson(res, 202, {
+                    success: true,
+                    skipped: true,
+                    reason: 'order_not_paid',
+                    message: 'Xianyu order is not paid, skipped',
+                    order: {
+                        external_order_id: normalizedOrder.external_order_id,
+                        pay_status: normalizedOrder.pay_status,
+                        xianyu_item_id: normalizedOrder.xianyu_item_id
+                    }
+                });
+            }
+
+            const payload = buildMarketplaceOrderPayload(normalizedOrder, adapterConfig);
+            const { request, result } = await resolvedOrders.createMarketplaceShopOrder({
+                supabase,
+                payload: {
+                    ...payload,
+                    channel_key: tokenContext.channelKey,
+                    channel: tokenContext.channelKey,
+                    source_channel: tokenContext.channel?.source_channel || tokenContext.channelKey,
+                    channel_account_key: tokenContext.accountKey,
+                    account_key: tokenContext.accountKey,
+                    account: tokenContext.accountKey
+                },
+                config,
+                env
+            });
+            const success = result?.success === true;
+
+            return writeJson(res, success ? 200 : 400, {
+                success,
+                duplicate: result?.duplicate === true,
+                message: result?.message || (success ? 'Xianyu marketplace order created' : 'Xianyu marketplace order failed'),
+                request,
+                normalized_order: {
+                    external_order_id: normalizedOrder.external_order_id,
+                    pay_status: normalizedOrder.pay_status,
+                    xianyu_item_id: normalizedOrder.xianyu_item_id,
+                    sku_id: normalizedOrder.sku_id,
+                    sku_text: normalizedOrder.sku_text,
+                    item_title: normalizedOrder.item_title
+                },
+                data: result?.data || null
+            });
+        } catch (error) {
+            return writeJson(res, Number(error?.statusCode) || 500, {
+                success: false,
+                code: error?.code || 'xianyu_marketplace_order_ingest_failed',
+                message: error?.message || 'Xianyu marketplace order ingest failed'
+            });
+        }
+    }
+
     return {
         orders: ordersHandler,
-        'xianyu/deliver': xianyuDeliverHandler
+        'xianyu/deliver': xianyuDeliverHandler,
+        'xianyu/orders': xianyuOrdersHandler,
+        'xianyu-orders': xianyuOrdersHandler
     };
 }
 
@@ -711,5 +848,6 @@ module.exports = {
     createMarketplaceHandlers,
     getMarketplaceIngestToken,
     normalizeXianyuDeliverPayload,
+    resolveXianyuRawOrder,
     verifyMarketplaceIngestToken
 };
