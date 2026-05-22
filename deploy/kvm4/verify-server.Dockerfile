@@ -5,6 +5,7 @@ ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --omit=dev
 
+COPY adapters ./adapters
 COPY api ./api
 COPY server ./server
 COPY js ./js

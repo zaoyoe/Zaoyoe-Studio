@@ -26,9 +26,11 @@ test('xianyu-auto-reply-fix integration documents the bridge endpoints expected 
 
 test('KVM4 verify server release includes Xianyu adapter modules', () => {
     const deployScript = fs.readFileSync(path.join(repoRoot, 'scripts/deploy-kvm4-verify-server.sh'), 'utf8');
+    const dockerfile = fs.readFileSync(path.join(repoRoot, 'deploy/kvm4/verify-server.Dockerfile'), 'utf8');
 
     assert.match(deployScript, /PACKAGE_PATHS=\(/);
     assert.match(deployScript, /(^|\n)\s+adapters\s*(\n|$)/);
+    assert.match(dockerfile, /COPY\s+adapters\s+\.\/adapters/);
 });
 
 test('xianyu-auto-reply-fix bridge router exposes paid-order and chat-send routes', () => {
