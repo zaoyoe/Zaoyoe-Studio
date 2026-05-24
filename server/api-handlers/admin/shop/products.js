@@ -48,6 +48,31 @@ function isUuid(value) {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || '').trim());
 }
 
+function normalizeBoolean(value, fallback = false) {
+    if (typeof value === 'boolean') return value;
+    const normalized = normalizeText(value, 20).toLowerCase();
+    if (!normalized) return fallback;
+    if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+    if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+    return fallback;
+}
+
+const SHOP_PRODUCT_SKU_SELECT = [
+    'id',
+    'product_id',
+    'sku_code',
+    'sku_name',
+    'spec_values',
+    'price_points',
+    'price_points_intl',
+    'quantity_rules',
+    'quantity_rules_intl',
+    'is_default',
+    'is_active',
+    'stock_count',
+    'sort_order'
+].join(', ');
+
 function buildProductSearchExpression(searchQuery) {
     const normalizedQuery = normalizeText(searchQuery, 160);
     if (!normalizedQuery) {
@@ -123,6 +148,7 @@ module.exports = async function adminShopProductsHandler(req, res) {
             fields === 'names' || fields === 'picker' ? 'name_asc' : 'display_order_desc'
         );
         const category = normalizeText(searchParams.get('category'), 120);
+        const includeSkus = normalizeBoolean(searchParams.get('includeSkus') || searchParams.get('include_skus'), false);
 
         if (productId) {
             const { data, error } = await supabase
@@ -135,9 +161,28 @@ module.exports = async function adminShopProductsHandler(req, res) {
                 throw error;
             }
 
+            let product = data || null;
+            if (includeSkus && product?.id) {
+                const { data: skuRows, error: skuError } = await supabase
+                    .from('shop_product_skus')
+                    .select(SHOP_PRODUCT_SKU_SELECT)
+                    .eq('product_id', product.id)
+                    .order('sort_order', { ascending: true })
+                    .order('created_at', { ascending: true });
+
+                if (skuError) {
+                    throw skuError;
+                }
+
+                product = {
+                    ...product,
+                    skus: Array.isArray(skuRows) ? skuRows : []
+                };
+            }
+
             return sendJson(res, 200, {
                 success: true,
-                product: data || null
+                product
             });
         }
 
@@ -176,9 +221,40 @@ module.exports = async function adminShopProductsHandler(req, res) {
             throw error;
         }
 
+        let rows = Array.isArray(data) ? data : [];
+
+        if (includeSkus && rows.length) {
+            const productIds = rows.map((row) => normalizeText(row?.id, 160)).filter(Boolean);
+            const { data: skuRows, error: skuError } = await supabase
+                .from('shop_product_skus')
+                .select(SHOP_PRODUCT_SKU_SELECT)
+                .in('product_id', productIds)
+                .order('sort_order', { ascending: true })
+                .order('created_at', { ascending: true });
+
+            if (skuError) {
+                throw skuError;
+            }
+
+            const skusByProductId = new Map();
+            (Array.isArray(skuRows) ? skuRows : []).forEach((sku) => {
+                const skuProductId = normalizeText(sku?.product_id, 160);
+                if (!skuProductId) return;
+                if (!skusByProductId.has(skuProductId)) {
+                    skusByProductId.set(skuProductId, []);
+                }
+                skusByProductId.get(skuProductId).push(sku);
+            });
+
+            rows = rows.map((row) => ({
+                ...row,
+                skus: skusByProductId.get(normalizeText(row?.id, 160)) || []
+            }));
+        }
+
         return sendJson(res, 200, {
             success: true,
-            rows: Array.isArray(data) ? data : []
+            rows
         });
     } catch (error) {
         return sendJson(res, Number(error?.statusCode) || 500, {

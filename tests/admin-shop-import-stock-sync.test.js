@@ -60,4 +60,19 @@ test('shop import view patches product stock badges immediately after inventory 
         /this\.syncProductStockAfterInventoryMutation\(\{[\s\S]*productId: this\.selectedProductId,[\s\S]*stockCount: result\?\.stockCount,[\s\S]*imported,[\s\S]*status: importStatus[\s\S]*\}\);/,
         'legacy inventory import should also update cached stock counts'
     );
+    assert.match(
+        doImportFromViewBlock,
+        /const skuId = document\.getElementById\('importViewSkuSelect'\)\?\.value \|\| this\.selectedImportViewProductSkuId \|\| '';/,
+        'the import workspace should submit inventory into the selected product SKU'
+    );
+    assert.match(
+        importInventoryBlock,
+        /const skuId = document\.getElementById\('inventorySkuSelect'\)\?\.value \|\| this\.selectedProductSkuId \|\| '';/,
+        'the legacy inventory view should submit inventory into the selected product SKU'
+    );
+    assert.match(
+        shopSource,
+        /performInventoryImport: async function \(\{ productId, skuId = '', contentLines[\s\S]*skuId: String\(skuId \|\| ''\)\.trim\(\),/,
+        'the shared import helper should forward skuId to the admin mutation'
+    );
 });

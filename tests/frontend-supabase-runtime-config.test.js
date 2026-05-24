@@ -3890,13 +3890,18 @@ test('shop mobile purchase actions stay visible while guidance content scrolls',
     );
     assert.match(
         shopCssSource,
-        /#shopPurchaseModal #purchaseNotesBox\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
-        'mobile purchase guidance stage should shrink instead of pushing the action buttons down'
+        /#shopPurchaseModal #purchaseNotesBox,[\s\S]*?#shopPurchaseModal #purchaseUsageBox\s*\{[\s\S]*?flex:\s*0 0 auto;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*visible;[\s\S]*?#shopPurchaseModal #purchaseNotesBox\.is-expanded,[\s\S]*?#shopPurchaseModal #purchaseUsageBox\.is-expanded\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?margin-bottom:\s*18px !important;/,
+        'mobile purchase guidance stages should shrink by default and reserve space when either notes or usage is expanded'
     );
     assert.match(
         shopCssSource,
-        /#shopPurchaseModal #purchaseNotesCard\.shop-success-usage-card\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?max-height:\s*none;[\s\S]*?overflow-y:\s*auto;/,
-        'mobile purchase guidance card should own the vertical scrolling'
+        /#shopPurchaseModal #purchaseNotesCard\.shop-success-usage-card,[\s\S]*?#shopPurchaseModal #purchaseUsageCard\.shop-success-usage-card\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?max-height:\s*clamp\(160px, 34dvh, 320px\);[\s\S]*?overflow-y:\s*auto;/,
+        'mobile purchase guidance cards should both own the vertical scrolling'
+    );
+    assert.match(
+        shopCssSource,
+        /@media \(max-width: 900px\) \{[\s\S]*--shop-purchase-guidance-bottom-reserve:\s*clamp\(124px, 18dvh, 158px\);[\s\S]*--shop-purchase-guidance-dock-gap:\s*16px;[\s\S]*--shop-purchase-guidance-card-max:\s*clamp\(132px, 18dvh, 168px\);[\s\S]*--shop-purchase-guidance-card-bottom-inset:\s*20px;[\s\S]*#shopPurchaseModal \.shop-purchase-scroll\s*\{[\s\S]*scroll-padding-bottom:\s*var\(--shop-purchase-guidance-bottom-reserve\);[\s\S]*#shopPurchaseModal #purchaseNotesBox\.is-expanded,[\s\S]*#shopPurchaseModal #purchaseUsageBox\.is-expanded\s*\{[\s\S]*margin-bottom:\s*0 !important;[\s\S]*#shopPurchaseModal \.shop-purchase-body:has\(#purchaseNotesBox\.is-expanded\) \.shop-purchase-scroll,[\s\S]*#shopPurchaseModal \.shop-purchase-body:has\(#purchaseUsageBox\.is-expanded\) \.shop-purchase-scroll\s*\{[\s\S]*flex:\s*1 1 auto;[\s\S]*padding-bottom:\s*var\(--shop-purchase-guidance-dock-gap\);[\s\S]*#shopPurchaseModal #purchaseNotesCard\.shop-success-usage-card,[\s\S]*#shopPurchaseModal #purchaseUsageCard\.shop-success-usage-card\s*\{[\s\S]*max-height:\s*var\(--shop-purchase-guidance-card-max\);[\s\S]*padding-bottom:\s*var\(--shop-purchase-guidance-card-bottom-inset\) !important;[\s\S]*scroll-padding-bottom:\s*var\(--shop-purchase-guidance-card-bottom-inset\);[\s\S]*#shopPurchaseModal \.shop-purchase-body:has\(#purchaseNotesBox\.is-expanded\) \.shop-purchase-dock,[\s\S]*#shopPurchaseModal \.shop-purchase-body:has\(#purchaseUsageBox\.is-expanded\) \.shop-purchase-dock\s*\{[\s\S]*gap:\s*8px;[\s\S]*padding-top:\s*2px;[\s\S]*#shopPurchaseModal \.shop-purchase-body:has\(#purchaseNotesBox\.is-expanded\) \.shop-purchase-dock \.shop-purchase-stage-quantity,[\s\S]*#shopPurchaseModal \.shop-purchase-body:has\(#purchaseUsageBox\.is-expanded\) \.shop-purchase-dock \.shop-purchase-stage-quantity\s*\{[\s\S]*margin-top:\s*0 !important;/,
+        'narrow purchase guidance should reserve scroll runway without adding oversized blank space inside the guidance cards'
     );
     assert.match(
         shopCssSource,
@@ -3946,8 +3951,23 @@ test('shop success item delivery content expands with animated panel state', () 
     );
     assert.match(
         shopCssSource,
-        /\.shop-success-item\.is-content-expanded \.shop-success-item__content-panel\s*\{[\s\S]*?grid-template-rows:\s*1fr;[\s\S]*?opacity:\s*1;[\s\S]*?transform:\s*translateY\(0\);/,
-        'expanded success delivery panels should animate into the open state'
+        /\.shop-success-item\.is-content-expanded \.shop-success-item__content-panel\s*\{[\s\S]*?grid-template-rows:\s*1fr;[\s\S]*?max-height:\s*min\(24vh, 210px\);[\s\S]*?opacity:\s*1;[\s\S]*?transform:\s*translateY\(0\);/,
+        'expanded success delivery card content should animate open without being forced into the tall guidance height'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-success-item__notes-panel:not\(\[hidden\]\),[\s\S]*?\.shop-success-item__usage-panel:not\(\[hidden\]\)\s*\{[\s\S]*?max-height:\s*none;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*visible;/,
+        'success notes and usage panels should expand as ordinary content so the main success modal scroll area controls long guidance text'
+    );
+    assert.match(
+        shopCssSource,
+        /#shopSuccessModal \.shop-success-item__notes-panel,[\s\S]*?#shopSuccessModal \.shop-success-item__usage-panel\s*\{[\s\S]*?max-height:\s*none;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*visible;[\s\S]*?overscroll-behavior:\s*auto;/,
+        'success notes and usage panels should not trap wheel scrolling inside nested overflow cards'
+    );
+    assert.match(
+        shopCssSource,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopSuccessModal \.shop-success-item__notes-panel:not\(\[hidden\]\),[\s\S]*?\.shop-success-item__usage-panel:not\(\[hidden\]\)\s*\{[\s\S]*?max-height:\s*none;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*visible;/,
+        'light success modal should keep notes and usage in the main scroll flow after later shared panel styles cascade'
     );
     assert.match(
         shopClientSource,
@@ -10750,8 +10770,9 @@ test('shop admin pagination and inventory/product workflows no longer emit targe
         'data-shop-action="inventory-toggle-selection-mode"',
         'data-shop-action="inventory-open-release-modal"',
         'data-shop-action="product-upload-icon"',
-        'data-shop-action="product-add-tiered-pricing"',
-        'data-shop-action="product-remove-tiered-pricing-row"',
+        'data-shop-action="product-add-sku-row"',
+        'data-shop-action="product-toggle-sku-tier-editor"',
+        'data-shop-action="product-export-sku-inventory"',
         'data-shop-action="product-toggle-delivery-type-dropdown"',
         'data-shop-change="product-selection-count"',
         'data-shop-change="product-handle-icon-upload"',
@@ -11065,7 +11086,8 @@ test('shop admin import and editor helpers externalize runtime layout styling', 
     const runtimeMarkers = [
         'pagination-shell',
         'shop-delivery-switch-modal',
-        'shop-tiered-pricing-row',
+        'shop-product-sku-row__tier-panel',
+        'shop-sku-delete-guard-modal',
         'shop-import-tree-state',
         'shop-import-product-empty',
         'shop-import-target-product--visible',
@@ -11084,7 +11106,8 @@ test('shop admin import and editor helpers externalize runtime layout styling', 
         '.pagination-btn--step',
         '.pagination-total--compact',
         '.shop-delivery-switch-modal',
-        '.shop-tiered-pricing-row',
+        '.shop-product-sku-row',
+        '.shop-sku-delete-guard-modal',
         '.shop-import-tree-state',
         '.shop-import-product-empty',
         '.shop-import-target-product--visible',

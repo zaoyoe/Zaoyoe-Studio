@@ -21,9 +21,160 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
     );
 
     assert.equal(
+        shopHtml.includes('purchaseModalRoomier=20260523_SHOP_PURCHASE_MODAL_ROOMIER_1'),
+        true,
+        'shop.html should bust the storefront stylesheet cache after making the purchase modal roomier'
+    );
+    assert.equal(
+        shopHtml.includes('purchaseSkuCombo=20260524_SHOP_PURCHASE_SKU_COMBO_1'),
+        true,
+        'shop.html should bust storefront assets after switching purchase SKU selection to compact tags and grouped specs'
+    );
+    assert.equal(
+        shopHtml.includes('purchaseSkuCompact=20260524_SHOP_PURCHASE_SKU_COMPACT_2'),
+        true,
+        'shop.html should bust storefront styles after tightening the purchase SKU and coupon controls'
+    );
+    assert.equal(
+        shopHtml.includes('purchaseSplit=20260524_SHOP_PURCHASE_SPLIT_2'),
+        true,
+        'shop.html should bust storefront styles after widening the purchase modal checkout dock'
+    );
+    assert.equal(
+        shopHtml.includes('purchaseStagger=20260524_SHOP_PURCHASE_STAGGER_1'),
+        true,
+        'shop.html should bust storefront styles after restoring the purchase modal staggered entrance animation'
+    );
+    assert.equal(
+        shopHtml.includes('purchaseWideDefaults=20260524_SHOP_PURCHASE_WIDE_DEFAULTS_1'),
+        true,
+        'shop.html should bust storefront assets after locking wide purchase defaults'
+    );
+    assert.equal(
+        shopHtml.includes('purchaseNarrowUnified=20260524_SHOP_PURCHASE_NARROW_UNIFIED_1'),
+        true,
+        'shop.html should bust storefront styles after unifying the narrow purchase modal surface'
+    );
+    assert.equal(
+        shopHtml.includes('purchaseStockTone=20260524_SHOP_PURCHASE_STOCK_TONE_1'),
+        true,
+        'shop.html should bust storefront assets after adding purchase stock tone colors'
+    );
+    assert.equal(
+        shopHtml.includes('purchaseNarrowGuidanceGap=20260524_SHOP_PURCHASE_NARROW_GUIDANCE_GAP_7'),
+        true,
+        'shop.html should bust storefront styles after spacing narrow guidance panels away from the quantity dock'
+    );
+    assert.equal(
+        shopHtml.includes('successDeliveryPanel=20260524_SHOP_SUCCESS_DELIVERY_PANEL_3'),
+        true,
+        'shop.html should bust storefront styles after restoring compact success card content height'
+    );
+    assert.equal(
+        shopHtml.includes('purchaseTitleCompact=20260524_SHOP_PURCHASE_TITLE_COMPACT_1'),
+        true,
+        'shop.html should bust storefront styles after matching the purchase title to the compact success title'
+    );
+    assert.equal(
+        shopHtml.includes('successScrollHandoff=20260524_SHOP_SUCCESS_SCROLL_HANDOFF_2'),
+        true,
+        'shop.html should bust storefront styles after moving success guidance into the main modal scroll flow'
+    );
+    assert.match(
+        shopHtml,
+        /<h3 id="purchaseStageTitle" class="card-title shop-inline-style-attr-6">Product Name<\/h3>/,
+        'purchase modal should use the product name as its visible title instead of a generic confirm title'
+    );
+    assert.doesNotMatch(
+        shopHtml,
+        /id="purchaseStageTitle"[\s\S]{0,120}data-i18n="shop\.confirmRedeem"/,
+        'purchase modal title should not be reset to the generic confirm-redeem copy'
+    );
+    assert.match(
+        shopHtml,
+        /<p id="modalProductName" class="shop-inline-style-attr-7" hidden><\/p>/,
+        'purchase modal should keep the retired subtitle hidden so the product name is not duplicated'
+    );
+    assert.match(
+        shopStyles,
+        /#shopPurchaseModal #purchaseStageTitle\s*\{[\s\S]*font-size:\s*24px;[\s\S]*font-weight:\s*700;[\s\S]*line-height:\s*1\.6;[\s\S]*letter-spacing:\s*0\.5px;[\s\S]*text-align:\s*center;/,
+        'purchase modal product title should use the same compact card-title scale as the success modal title'
+    );
+    assert.match(
+        shopHtml,
+        /<div class="shop-purchase-body" data-purchase-step="configure">[\s\S]*<div class="shop-purchase-config-panel">[\s\S]*<div id="purchaseSkuSelector"[\s\S]*<div class="shop-purchase-dock" data-purchase-step="configure">[\s\S]*<details class="shop-purchase-stage shop-purchase-stage-discount shop-purchase-discount/,
+        'purchase modal should keep SKU configuration on the left and place collapsible coupon controls in the checkout dock'
+    );
+    assert.match(
+        shopHtml,
+        /<div class="shop-purchase-dock" data-purchase-step="configure">[\s\S]*<div class="shop-quantity-wrapper shop-purchase-stage shop-purchase-stage-quantity"[\s\S]*<div class="shop-purchase-stage shop-purchase-stage-summary[\s\S]*<details class="shop-purchase-stage shop-purchase-stage-discount shop-purchase-discount[\s\S]*<div class="shop-purchase-stage shop-purchase-stage-action/,
+        'purchase modal should place quantity, pricing, coupons, and actions in the checkout dock in that order'
+    );
+    assert.match(
+        shopStyles,
+        /#shopPurchaseModal \.modal-content>\.shop-purchase-stage,[\s\S]*#shopPurchaseModal \.shop-purchase-config-panel>\.shop-purchase-stage,[\s\S]*#shopPurchaseModal \.shop-purchase-dock>\.shop-purchase-stage[\s\S]*will-change: opacity, transform;/,
+        'purchase modal should animate both the header and the nested split-column stage blocks'
+    );
+    assert.match(
+        shopStyles,
+        /#shopPurchaseModal\.active \.modal-content>\.shop-purchase-stage,[\s\S]*#shopPurchaseModal\.active \.shop-purchase-config-panel>\.shop-purchase-stage,[\s\S]*#shopPurchaseModal\.active \.shop-purchase-dock>\.shop-purchase-stage \{[\s\S]*animation: shopPurchaseStaggeredRise 0\.52s cubic-bezier\(0\.25, 0\.46, 0\.45, 0\.94\) backwards;/,
+        'purchase modal stages should use the same staggered rise style as the profile modal instead of relying on direct-child-only transitions'
+    );
+    assert.match(
+        shopStyles,
+        /@keyframes shopPurchaseStaggeredRise \{[\s\S]*from \{[\s\S]*opacity: 0;[\s\S]*transform: translateY\(30px\);[\s\S]*to \{[\s\S]*opacity: 1;[\s\S]*transform: translateY\(0\);/,
+        'purchase modal should keep a named rise keyframe for the staggered entrance'
+    );
+    assert.match(
+        shopStyles,
+        /#shopPurchaseModal\.active \.shop-purchase-stage-sku \{[\s\S]*animation-delay: 0\.15s !important;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage-quantity \{[\s\S]*animation-delay: 0\.18s !important;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage-notes \{[\s\S]*animation-delay: 0\.21s !important;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage-summary \{[\s\S]*animation-delay: 0\.24s !important;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage-discount \{[\s\S]*animation-delay: 0\.3s !important;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage-action \{[\s\S]*animation-delay: 0\.35s !important;/,
+        'purchase modal should keep a compact stagger order across the left configuration pane and checkout dock'
+    );
+
+    assert.match(
+        shopStyles,
+        /\/\* 20260523_SHOP_PURCHASE_MODAL_ROOMIER_1 \*\/[\s\S]*@media \(min-width: 769px\) \{[\s\S]*#shopPurchaseModal \.modal-content \{[\s\S]*width: min\(calc\(100% - 72px\), 820px\) !important;[\s\S]*max-width: 820px !important;[\s\S]*padding: clamp\(38px, 3\.4vw, 50px\) clamp\(42px, 4\.2vw, 60px\) clamp\(34px, 3\.6vw, 46px\) !important;/,
+        'desktop purchase modal should have a wider, less cramped shell'
+    );
+
+    assert.match(
+        shopStyles,
+        /#shopPurchaseModal \.shop-sku-selector__options \{[\s\S]*grid-template-columns: repeat\(auto-fit, minmax\(184px, 1fr\)\);[\s\S]*gap: 14px;/,
+        'desktop purchase modal should give SKU choices enough horizontal room'
+    );
+
+    assert.match(
+        shopStyles,
+        /\/\* 20260523_SHOP_PURCHASE_MODAL_NARROW_1 \*\/[\s\S]*@media \(min-width: 769px\) and \(max-width: 980px\) \{[\s\S]*#shopPurchaseModal \.modal-content \{[\s\S]*width: min\(calc\(100% - 48px\), 720px\) !important;[\s\S]*max-width: 720px !important;[\s\S]*padding: 30px 34px 32px !important;/,
+        'narrow desktop purchase modal should not inherit the full wide desktop shell'
+    );
+
+    assert.match(
+        shopStyles,
+        /@media \(min-width: 769px\) and \(max-width: 980px\) \{[\s\S]*#shopPurchaseModal \.shop-sku-selector__options \{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);[\s\S]*gap: 10px;/,
+        'narrow desktop purchase modal should keep three compact SKU choices without crowding the viewport'
+    );
+
+    assert.match(
+        shopStyles,
+        /\/\* 20260523_SHOP_PURCHASE_MODAL_COMPACT_NARROW_1 \*\/[\s\S]*@media \(max-width: 768px\) \{[\s\S]*#shopPurchaseModal \.modal-content \{[\s\S]*width: min\(calc\(100% - 32px\), 600px\) !important;[\s\S]*padding: 22px 18px calc\(18px \+ env\(safe-area-inset-bottom, 0px\)\) !important;[\s\S]*border-radius: 28px !important;/,
+        'narrow viewport purchase modal should compact the shell instead of filling the window edge to edge'
+    );
+
+    assert.match(
+        shopStyles,
+        /@media \(max-width: 768px\) \{[\s\S]*#shopPurchaseModal \.shop-sku-selector__options \{[\s\S]*grid-template-columns: repeat\(3, minmax\(0, 1fr\)\);[\s\S]*gap: 8px;[\s\S]*@media \(max-width: 460px\) \{[\s\S]*#shopPurchaseModal \.shop-sku-selector__options \{[\s\S]*grid-template-columns: 1fr;/,
+        'narrow viewport SKU choices should stay compact, then fall back to one column on very small screens'
+    );
+    assert.equal(
         shopHtml.includes('js/shop-client.js?v=20260520_SHOP_CARD_PROMPT_BREATHE_3'),
         true,
         'shop.html should load the viewport-sync cache-busted storefront runtime'
+    );
+    assert.match(
+        shopHtml,
+        /js\/shop-client\.js\?[\s\S]*purchaseSplit=20260524_SHOP_PURCHASE_SPLIT_2[\s\S]*purchaseDiscountDrawer=20260524_SHOP_PURCHASE_DISCOUNT_DRAWER_3[\s\S]*purchaseGuidanceScrollState=20260524_SHOP_PURCHASE_GUIDANCE_SCROLL_STATE_2/,
+        'shop.html should bust the storefront runtime cache after switching the purchase coupon accordion and guidance scroll state logic'
     );
 
     assert.match(
@@ -72,6 +223,146 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
         shopClientSource,
         /const liveScrollHeight = Math\.round\(card\.scrollHeight \|\| 0\);[\s\S]*const baseCardHeight = Math\.max\(320,[\s\S]*liveScrollHeight\);/,
         'keyboard dock height should account for the full scrollHeight of coupon-rich modal content'
+    );
+    assert.match(
+        shopClientSource,
+        /buildPurchaseSkuSpecGroups:\s*function[\s\S]*renderPurchaseSkuSpecGroups/,
+        'purchase modal should support grouped spec selection when SKU spec_values are structured'
+    );
+    const selectedSkuSummarySource = shopClientSource.match(
+        /renderPurchaseSkuSelectedSummary:\s*function\s*\(sku = \{\}\) \{([\s\S]*?)\n    \},\n\n    renderPurchaseSkuPills:/
+    )?.[1] || '';
+    assert.match(
+        selectedSkuSummarySource,
+        /shop\.stock|库存/,
+        'selected SKU summary should keep the current stock label visible'
+    );
+    assert.match(
+        selectedSkuSummarySource,
+        /stock < 5 \? 'is-low-stock' : 'is-normal-stock'[\s\S]*shop-sku-selector__current-value/,
+        'selected SKU summary should color the stock number by low versus normal inventory'
+    );
+    assert.doesNotMatch(
+        selectedSkuSummarySource,
+        /formatShopPoints|getProductSkuPriceForCurrentSite/,
+        'selected SKU summary should not repeat the price already shown in the checkout dock'
+    );
+    const skuPillsSource = shopClientSource.match(
+        /renderPurchaseSkuPills:\s*function\s*\(skus = \[\], selectedSkuId = ''\) \{([\s\S]*?)\n    \},\n\n    renderPurchaseSkuSpecGroups:/
+    )?.[1] || '';
+    assert.match(
+        skuPillsSource,
+        /shop-sku-option__name/,
+        'compact SKU pills should still render the SKU name'
+    );
+    assert.doesNotMatch(
+        skuPillsSource,
+        /shop-sku-option__meta|formatShopPoints|getProductSkuPriceForCurrentSite|metaParts/,
+        'compact SKU pills should not show duplicate price or stock metadata beside the SKU name'
+    );
+    assert.match(
+        shopStyles,
+        /\/\* 20260524_SHOP_PURCHASE_SKU_COMBO_1 \*\/[\s\S]*#shopPurchaseModal \.shop-purchase-scroll\s*\{[\s\S]*overflow-y:\s*auto;[\s\S]*#shopPurchaseModal \.shop-purchase-dock\s*\{[\s\S]*flex:\s*0 0 auto;/,
+        'purchase modal should keep SKU content scrollable while the checkout dock stays fixed'
+    );
+    assert.match(
+        shopStyles,
+        /#shopPurchaseModal \.shop-sku-selector__options--pills,[\s\S]*#shopPurchaseModal \.shop-sku-spec-group__options\s*\{[\s\S]*display:\s*flex;[\s\S]*flex-wrap:\s*wrap;/,
+        'SKU choices should render as compact wrapping tags instead of large cards'
+    );
+    assert.match(
+        shopStyles,
+        /\/\* 20260524_SHOP_PURCHASE_SKU_COMPACT_2 \*\/[\s\S]*#shopPurchaseModal \.shop-sku-selector__options--pills\s*\{[\s\S]*margin-top:\s*-5px;[\s\S]*padding:\s*5px 2px 6px 0;/,
+        'compact SKU choices should keep enough internal room for hover lift without clipping'
+    );
+    assert.match(
+        shopStyles,
+        /@media \(max-width: 768px\) \{[\s\S]*#shopPurchaseModal \.shop-sku-selector__header\s*\{[\s\S]*align-items:\s*baseline;[\s\S]*flex-direction:\s*row;[\s\S]*justify-content:\s*space-between;[\s\S]*#shopPurchaseModal \.shop-sku-selector__current\s*\{[\s\S]*margin-left:\s*auto;[\s\S]*text-align:\s*right;/,
+        'narrow purchase modal should keep stock aligned to the right of the SKU label'
+    );
+    assert.match(
+        shopStyles,
+        /@media \(max-width: 768px\) \{[\s\S]*#shopPurchaseModal \.shop-sku-selector__label\s*\{[\s\S]*text-align:\s*left;/,
+        'narrow purchase modal should keep the SKU label left aligned'
+    );
+    assert.match(
+        shopStyles,
+        /#shopPurchaseModal \.shop-sku-selector__current-value\s*\{[\s\S]*color:\s*#22c55e;[\s\S]*#shopPurchaseModal \.shop-sku-selector__current\.is-low-stock \.shop-sku-selector__current-value\s*\{[\s\S]*color:\s*#ef4444;[\s\S]*#shopPurchaseModal \.shop-sku-selector__current\.is-normal-stock \.shop-sku-selector__current-value\s*\{[\s\S]*color:\s*#22c55e;/,
+        'purchase modal stock count should use red for low inventory and green for normal inventory'
+    );
+    assert.match(
+        shopStyles,
+        /@media \(max-width: 900px\) \{[\s\S]*#shopPurchaseModal \.modal-content\s*\{[\s\S]*padding-bottom:\s*clamp\(18px, 4vw, 24px\) !important;[\s\S]*#shopPurchaseModal \.shop-purchase-scroll\s*\{[\s\S]*margin:\s*0;[\s\S]*padding:\s*0 0 22px;[\s\S]*#shopPurchaseModal \.shop-purchase-dock\s*\{[\s\S]*margin:\s*0;[\s\S]*padding:\s*0 0 calc\(2px \+ env\(safe-area-inset-bottom, 0px\)\);[\s\S]*border-top:\s*0 !important;[\s\S]*background:\s*transparent !important;[\s\S]*box-shadow:\s*none !important;/,
+        'narrow purchase modal should use one continuous card surface instead of a separate checkout drawer'
+    );
+    assert.match(
+        shopStyles,
+        /@media \(max-width: 900px\) \{[\s\S]*#shopPurchaseModal\s*\{[\s\S]*--shop-purchase-guidance-bottom-reserve:\s*clamp\(124px, 18dvh, 158px\);[\s\S]*--shop-purchase-guidance-dock-gap:\s*16px;[\s\S]*--shop-purchase-guidance-card-max:\s*clamp\(132px, 18dvh, 168px\);[\s\S]*--shop-purchase-guidance-card-bottom-inset:\s*20px;[\s\S]*#shopPurchaseModal \.shop-purchase-scroll\s*\{[\s\S]*padding:\s*0 0 22px;[\s\S]*scroll-padding-bottom:\s*var\(--shop-purchase-guidance-bottom-reserve\);[\s\S]*#shopPurchaseModal #purchaseNotesBox\.is-expanded,[\s\S]*#shopPurchaseModal #purchaseUsageBox\.is-expanded\s*\{[\s\S]*margin-bottom:\s*0 !important;[\s\S]*#shopPurchaseModal \.shop-purchase-body:has\(#purchaseNotesBox\.is-expanded\) \.shop-purchase-scroll,[\s\S]*#shopPurchaseModal \.shop-purchase-body:has\(#purchaseUsageBox\.is-expanded\) \.shop-purchase-scroll\s*\{[\s\S]*flex:\s*1 1 auto;[\s\S]*padding-bottom:\s*var\(--shop-purchase-guidance-dock-gap\);[\s\S]*#shopPurchaseModal \.shop-purchase-body:has\(#purchaseNotesBox\.is-expanded\) \.shop-purchase-config-panel,[\s\S]*#shopPurchaseModal \.shop-purchase-body:has\(#purchaseUsageBox\.is-expanded\) \.shop-purchase-config-panel\s*\{[\s\S]*gap:\s*6px;[\s\S]*#shopPurchaseModal #purchaseNotesCard\.shop-success-usage-card,[\s\S]*#shopPurchaseModal #purchaseUsageCard\.shop-success-usage-card\s*\{[\s\S]*box-sizing:\s*border-box;[\s\S]*max-height:\s*var\(--shop-purchase-guidance-card-max\);[\s\S]*overflow-y:\s*auto;[\s\S]*padding-bottom:\s*var\(--shop-purchase-guidance-card-bottom-inset\) !important;[\s\S]*scroll-padding-bottom:\s*var\(--shop-purchase-guidance-card-bottom-inset\);[\s\S]*#shopPurchaseModal \.shop-purchase-body:has\(#purchaseNotesBox\.is-expanded\) \.shop-purchase-dock,[\s\S]*#shopPurchaseModal \.shop-purchase-body:has\(#purchaseUsageBox\.is-expanded\) \.shop-purchase-dock\s*\{[\s\S]*gap:\s*8px;[\s\S]*padding-top:\s*2px;[\s\S]*#shopPurchaseModal \.shop-purchase-body:has\(#purchaseNotesBox\.is-expanded\) \.shop-purchase-dock \.shop-purchase-stage-quantity,[\s\S]*#shopPurchaseModal \.shop-purchase-body:has\(#purchaseUsageBox\.is-expanded\) \.shop-purchase-dock \.shop-purchase-stage-quantity\s*\{[\s\S]*min-height:\s*0;[\s\S]*margin-top:\s*0 !important;[\s\S]*padding-block:\s*0;/,
+        'narrow purchase modal should keep a tight but non-overlapping gap between expanded guidance text and the quantity controls'
+    );
+    assert.match(
+        shopClientSource,
+        /bindContainedWheelIsolation: function \(scrollCard, \{ chainScrollTarget = null \} = \{\}\) \{[\s\S]*const getScrollEdgeBuffer = \(\) => \{[\s\S]*return Math\.min\(32, Math\.max\(0, paddingBottom\)\);[\s\S]*const effectiveMaxScrollTop = Math\.max\(0, maxScrollTop - getScrollEdgeBuffer\(\)\);[\s\S]*bindPurchaseGuidanceScrollState: function \(scrollCard\) \{[\s\S]*scrollCard\.classList\.toggle\('is-scroll-at-bottom', isAtBottom\);[\s\S]*scrollCard\.classList\.toggle\('is-scroll-away-from-bottom', isScrollable && !isAtBottom\);[\s\S]*ensurePurchaseGuidanceVisible: function \(scrollCard\) \{[\s\S]*const purchaseScroll = document\.querySelector\('#shopPurchaseModal \.shop-purchase-scroll'\);[\s\S]*const visibleGap = Math\.max\(12, Number\.parseFloat\(rawGap\) \|\| 16\);[\s\S]*purchaseScroll\.scrollTop = Math\.min\(maxScrollTop, purchaseScroll\.scrollTop \+ overflowBottom\);[\s\S]*bindPurchaseNotesWheelIsolation: function \(\) \{[\s\S]*const purchaseScroll = document\.querySelector\('#shopPurchaseModal \.shop-purchase-scroll'\);[\s\S]*const wheelCleanup = this\.bindContainedWheelIsolation\(notesCard, \{ chainScrollTarget: purchaseScroll \}\);[\s\S]*const scrollStateCleanup = this\.bindPurchaseGuidanceScrollState\(notesCard\);[\s\S]*bindPurchaseUsageWheelIsolation: function \(\) \{[\s\S]*const purchaseScroll = document\.querySelector\('#shopPurchaseModal \.shop-purchase-scroll'\);[\s\S]*const wheelCleanup = this\.bindContainedWheelIsolation\(usageCard, \{ chainScrollTarget: purchaseScroll \}\);[\s\S]*const scrollStateCleanup = this\.bindPurchaseGuidanceScrollState\(usageCard\);[\s\S]*this\.ensurePurchaseGuidanceVisible\(notesCard\);[\s\S]*this\.ensurePurchaseGuidanceVisible\(usageCard\);/,
+        'purchase guidance cards should hand off wheel scrolling, mark scroll state, and keep expanded panels above the quantity dock'
+    );
+    assert.match(
+        shopClientSource,
+        /setPurchaseStage:\s*function[\s\S]*stageTitle\.textContent = this\.getCurrentPurchaseDisplayName\(\);/,
+        'purchase stage title should be refreshed from the selected product name'
+    );
+    assert.match(
+        shopClientSource,
+        /renderModalProductName:\s*function[\s\S]*stageTitle\.textContent = displayName;[\s\S]*modalProductName\.hidden = true;/,
+        'rendering the purchase modal product should put the product name in the title and hide the duplicate subtitle'
+    );
+    assert.match(
+        shopStyles,
+        /#shopPurchaseModal #purchaseQuantity\.shop-qty-input\s*\{[\s\S]*width:\s*88px;[\s\S]*height:\s*42px;[\s\S]*#shopPurchaseModal \.shop-purchase-discount__input-wrap\s*\{[\s\S]*min-height:\s*46px;[\s\S]*#shopPurchaseModal \.shop-purchase-discount__input\s*\{[\s\S]*height:\s*38px;/,
+        'quantity and coupon controls should be compact inside the purchase modal'
+    );
+    assert.match(
+        shopStyles,
+        /\/\* 20260524_SHOP_PURCHASE_SPLIT_2 \*\/[\s\S]*#shopPurchaseModal \.shop-purchase-body\s*\{[\s\S]*display:\s*flex;[\s\S]*#shopPurchaseModal \.shop-purchase-discount\s*\{[\s\S]*contain:\s*paint;[\s\S]*#shopPurchaseModal \.shop-purchase-discount__summary\s*\{[\s\S]*min-height:\s*42px;[\s\S]*#shopPurchaseModal \.shop-purchase-discount__fold\s*\{[\s\S]*grid-template-rows:\s*0fr;[\s\S]*pointer-events:\s*none;[\s\S]*visibility:\s*hidden;[\s\S]*transition:[\s\S]*grid-template-rows 260ms[\s\S]*#shopPurchaseModal \.shop-purchase-discount\.is-expanded \.shop-purchase-discount__fold\s*\{[\s\S]*grid-template-rows:\s*1fr;[\s\S]*pointer-events:\s*auto;[\s\S]*visibility:\s*visible;[\s\S]*#shopPurchaseModal \.shop-purchase-discount__fold-inner\s*\{[\s\S]*overflow:\s*hidden;[\s\S]*will-change:\s*transform;[\s\S]*@media \(min-width: 901px\) \{[\s\S]*#shopPurchaseModal \.modal-content\s*\{[\s\S]*max-width:\s*1040px !important;[\s\S]*#shopPurchaseModal \.shop-purchase-body\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(340px, 380px\);[\s\S]*#shopPurchaseModal \.shop-purchase-dock\s*\{[\s\S]*justify-content:\s*flex-start;[\s\S]*gap:\s*14px;[\s\S]*#shopPurchaseModal \.shop-purchase-dock \.shop-purchase-discount\s*\{[\s\S]*width:\s*100%;/,
+        'wide purchase modal should use a roomier two-column checkout layout while preserving the mobile coupon drawer foundation'
+    );
+    assert.match(
+        shopStyles,
+        /@media \(min-width: 901px\) \{[\s\S]*#shopPurchaseModal \.shop-purchase-dock \.shop-purchase-discount__summary\s*\{[\s\S]*cursor:\s*default;[\s\S]*pointer-events:\s*none !important;[\s\S]*#shopPurchaseModal \.shop-purchase-dock \.shop-purchase-discount__summary::after\s*\{[\s\S]*content:\s*none;[\s\S]*display:\s*none;[\s\S]*#shopPurchaseModal \.shop-purchase-dock \.shop-purchase-discount__fold,[\s\S]*#shopPurchaseModal \.shop-purchase-dock \.shop-purchase-discount\.is-expanded \.shop-purchase-discount__fold\s*\{[\s\S]*grid-template-rows:\s*1fr;[\s\S]*opacity:\s*1;[\s\S]*visibility:\s*visible;[\s\S]*transition:\s*none;[\s\S]*#shopPurchaseModal \.shop-purchase-dock \.shop-purchase-discount__fold-inner,[\s\S]*#shopPurchaseModal \.shop-purchase-dock \.shop-purchase-discount\.is-expanded \.shop-purchase-discount__fold-inner\s*\{[\s\S]*transform:\s*none;[\s\S]*transition:\s*none;/,
+        'wide purchase modal should keep the coupon area expanded and remove the close affordance from the checkout dock'
+    );
+    assert.match(
+        shopStyles,
+        /#shopPurchaseModal \.shop-purchase-discount__summary\s*\{[\s\S]*height:\s*42px;[\s\S]*align-items:\s*center;[\s\S]*line-height:\s*1;[\s\S]*#shopPurchaseModal \.shop-purchase-discount__summary::after\s*\{[\s\S]*content:\s*"";[\s\S]*background-image:[\s\S]*linear-gradient\(currentColor, currentColor\)[\s\S]*transform:\s*translateY\(5px\);[\s\S]*#shopPurchaseModal \.shop-purchase-discount\.is-expanded \.shop-purchase-discount__summary::after\s*\{[\s\S]*transform:\s*translateY\(5px\) rotate\(45deg\);[\s\S]*#shopPurchaseModal \.shop-purchase-discount__label\s*\{[\s\S]*display:\s*inline-flex;[\s\S]*align-items:\s*center;[\s\S]*line-height:\s*20px;[\s\S]*transform:\s*translateY\(3\.5px\);[\s\S]*#shopPurchaseModal \.shop-purchase-discount__summary-meta\s*\{[\s\S]*display:\s*inline-flex;[\s\S]*align-items:\s*center;[\s\S]*line-height:\s*20px;[\s\S]*transform:\s*translateY\(3\.5px\);/,
+        'collapsed coupon capsule text and optional badge should use an optical vertical center correction'
+    );
+    assert.match(
+        shopStyles,
+        /#shopPurchaseModal \.shop-purchase-dock \.shop-purchase-stage-quantity\s*\{[\s\S]*justify-content:\s*center;[\s\S]*@media \(min-width: 901px\) \{[\s\S]*#shopPurchaseModal \.shop-purchase-stage-summary\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\);[\s\S]*border-top:\s*1px solid rgba\(148, 163, 184, 0\.16\);[\s\S]*#shopPurchaseModal \.shop-purchase-dock \.shop-purchase-stage-quantity\s*\{[\s\S]*min-height:\s*58px;[\s\S]*padding:\s*6px 0;[\s\S]*#shopPurchaseModal \.shop-purchase-actions\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) minmax\(0, 1fr\);/,
+        'checkout dock should center the quantity stepper above a left-right aligned price row and side-by-side actions'
+    );
+
+    assert.match(
+        shopClientSource,
+        /isWidePurchaseModalLayout:\s*function \(\) \{[\s\S]*window\.matchMedia\('\(min-width: 901px\)'\)\.matches[\s\S]*syncPurchaseDiscountDetailsForLayout:\s*function \(\) \{[\s\S]*summary\?\.setAttribute\('aria-disabled', 'true'\);[\s\S]*summary\?\.setAttribute\('tabindex', '-1'\);[\s\S]*this\.expandPurchaseDiscountDetails\(details\);[\s\S]*togglePurchaseDiscountDetails:\s*function \(detailsEl\) \{[\s\S]*if \(this\.isWidePurchaseModalLayout\(\)\) \{[\s\S]*this\.expandPurchaseDiscountDetails\(details\);[\s\S]*return;[\s\S]*const isOpening = !details\.classList\.contains\('is-expanded'\);[\s\S]*window\.clearTimeout\(Number\(details\.dataset\.animationTimer \|\| 0\)\);[\s\S]*details\.open = true;[\s\S]*details\.classList\.remove\('is-expanded'\);[\s\S]*\}, isOpening \? 320 : 300\)\);/,
+        'purchase coupon details should stay mounted on mobile but be forced open and non-interactive in wide layout'
+    );
+
+    assert.match(
+        shopClientSource,
+        /document\.querySelectorAll\('#shopPurchaseModal \.shop-purchase-discount'\)\.forEach\(\(details\) => \{[\s\S]*details\.classList\.remove\('is-expanded', 'is-animating', 'is-collapsing'\);[\s\S]*details\.open = true;[\s\S]*\}\);[\s\S]*this\.syncPurchaseDiscountDetailsForLayout\(\);/,
+        'opening a purchase modal should reset the coupon drawer, then apply the wide-layout expanded default'
+    );
+
+    assert.match(
+        shopClientSource,
+        /const shouldDefaultGuidanceOpen = this\.isWidePurchaseModalLayout\(\);[\s\S]*const defaultPurchaseNotesExpanded = shouldDefaultGuidanceOpen && normalizedPurchaseNotes\.length > 0;[\s\S]*const defaultUsageInstructionsExpanded = shouldDefaultGuidanceOpen[\s\S]*&& !defaultPurchaseNotesExpanded[\s\S]*&& normalizedUsageInstructions\.length > 0;[\s\S]*purchaseGuidanceDisclosureTouched: false,[\s\S]*ensureDefaultPurchaseGuidanceDisclosure:\s*function \(\{ force = false \} = \{\}\) \{[\s\S]*const nextPurchaseNotesExpanded = hasPurchaseNotes;[\s\S]*const nextUsageInstructionsExpanded = !hasPurchaseNotes && hasUsageInstructions;/,
+        'wide purchase modal should default exactly one guidance panel open, preferring purchase notes over usage instructions'
+    );
+
+    assert.match(
+        shopClientSource,
+        /event\.target\.closest\('#shopPurchaseModal \.shop-purchase-discount__summary'\)[\s\S]*this\.togglePurchaseDiscountDetails\([\s\S]*purchaseDiscountSummary\.closest\('\.shop-purchase-discount'\)/,
+        'purchase coupon summary clicks should be intercepted so the custom accordion animation runs'
     );
 
     assert.match(

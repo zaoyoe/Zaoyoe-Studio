@@ -388,19 +388,14 @@ test('admin studio product editor modal restores light-theme contrast', () => {
         'product editor modal active-state shell transitions should not target every modal overlay in admin studio'
     );
     assert.equal(
-        stylesSource.includes('#productModal .preview-label'),
-        true,
-        'product editor preview copy styles should stay scoped to the modal instead of leaking into other preview panels'
-    );
-    assert.equal(
         stylesSource.includes('html[data-theme="light"] #productModal .premium-modal-layout'),
         true,
         'product editor modal shell should receive an explicit light surface'
     );
     assert.equal(
-        stylesSource.includes('html[data-theme="light"] #productModal .preview-label'),
+        stylesSource.includes('#productModal .premium-modal-layout--product-form-only'),
         true,
-        'product editor preview eyebrow should not inherit low-contrast white text in light mode'
+        'product editor modal should support the form-only layout without the old preview column'
     );
     assert.equal(
         stylesSource.includes('html[data-theme="light"] #productModal .upload-box'),
@@ -463,9 +458,14 @@ test('admin studio product editor modal restores light-theme contrast', () => {
         'product editor light-theme editor root should not flatten descendant rich-text colors with a forced WebKit text fill'
     );
     assert.equal(
-        stylesSource.includes('html[data-theme="light"] #productModal .shop-tiered-pricing-row'),
+        stylesSource.includes('html[data-theme="light"] #productModal .shop-product-sku-row'),
         true,
-        'product editor tiered pricing rows should not keep dark cards in light theme'
+        'product editor SKU rows should not keep dark cards in light theme'
+    );
+    assert.equal(
+        stylesSource.includes('html[data-theme="light"] .shop-sku-delete-guard-modal'),
+        true,
+        'product editor SKU delete guard should keep readable light-theme contrast'
     );
     assert.equal(
         stylesSource.includes('.premium-modal-layout,\n    .admin-ticket-reply-modal'),
@@ -577,19 +577,14 @@ test('admin studio shop product stock badges keep dedicated capsule states', () 
         'shop product cards should include an empty-stock badge tone for frosted stock capsules'
     );
     assert.equal(
-        stylesSource.includes('.preview-stock--unknown'),
-        true,
-        'product preview card should include an unknown-stock badge tone for new products before inventory exists'
-    );
-    assert.equal(
         shopScript.includes('shop-admin-product-stock shop-admin-product-stock--empty'),
         true,
         'shop product card renderer should map zero stock into the empty-stock badge class'
     );
     assert.equal(
-        shopScript.includes('preview-stock--unknown'),
+        shopScript.includes('if (!previewTitle || !previewPrice)'),
         true,
-        'product preview renderer should preserve a dedicated unknown-stock state before a product is saved'
+        'product editor runtime should tolerate the form-only modal without preview DOM nodes'
     );
 });
 
@@ -3718,22 +3713,27 @@ test('admin studio shop module reserves mobile dock safe space and stacks narrow
     );
     assert.match(
         stylesSource,
-        /#module-shop #shop-view-inventory #invDateFilterDropdown \{[\s\S]*order: 3;[\s\S]*grid-column: 1 \/ 2;[\s\S]*grid-row: 2;[\s\S]*width: 100% !important;/,
-        'inventory date filter should share a row with the compact selection button on mobile'
+        /#module-shop #shop-view-inventory #inventorySkuFilterBadge \{[\s\S]*order: 3;[\s\S]*grid-column: 1 \/ -1;[\s\S]*min-height: 38px;/,
+        'inventory SKU filter badge should claim a compact full-width row when active on mobile'
     );
     assert.match(
         stylesSource,
-        /#module-shop #shop-view-inventory \.inv-search-box \{[\s\S]*order: 5;[\s\S]*grid-column: 1 \/ -1;[\s\S]*width: 100% !important;/,
+        /#module-shop #shop-view-inventory #invDateFilterDropdown \{[\s\S]*order: 4;[\s\S]*grid-column: 1 \/ 2;[\s\S]*grid-row: 3;[\s\S]*width: 100% !important;/,
+        'inventory date filter should share the third mobile row with compact selection controls'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory \.inv-search-box \{[\s\S]*order: 6;[\s\S]*grid-column: 1 \/ -1;[\s\S]*width: 100% !important;/,
         'inventory search should keep a full-width row below the compact date and selection controls'
     );
     assert.match(
         stylesSource,
-        /#module-shop #shop-view-inventory \.inv-filter-bar > #toggleSelectionBtn,[\s\S]*width: 42px !important;[\s\S]*height: 42px !important;[\s\S]*#module-shop #shop-view-inventory \.inv-filter-bar > #toggleSelectionBtn \{[\s\S]*order: 4;[\s\S]*grid-column: 2 \/ 3;[\s\S]*grid-row: 2;/,
+        /#module-shop #shop-view-inventory \.inv-filter-bar > #toggleSelectionBtn,[\s\S]*width: 42px !important;[\s\S]*height: 42px !important;[\s\S]*#module-shop #shop-view-inventory \.inv-filter-bar > #toggleSelectionBtn \{[\s\S]*order: 5;[\s\S]*grid-column: 2 \/ 3;[\s\S]*grid-row: 3;/,
         'inventory manage controls should remain icon-sized and sit beside the mobile date filter'
     );
     assert.match(
         stylesSource,
-        /#module-shop #shop-view-inventory \.inv-filter-bar \.batch-action-wrapper \{[\s\S]*order: 4;[\s\S]*grid-column: 2 \/ 3;[\s\S]*grid-row: 2;[\s\S]*margin-left: 50px !important;/,
+        /#module-shop #shop-view-inventory \.inv-filter-bar \.batch-action-wrapper \{[\s\S]*order: 5;[\s\S]*grid-column: 2 \/ 3;[\s\S]*grid-row: 3;[\s\S]*margin-left: 50px !important;/,
         'inventory batch actions button should sit to the right of the mobile selection button'
     );
     assert.match(

@@ -45,6 +45,26 @@ test('admin product saves upload purchase guidance as bilingual fields', () => {
     );
     assert.match(
         adminShopSource,
+        /当前 AI 翻译服务未配置，请先在后台配置 Gemini \/ Codex Relay/,
+        'product auto-translation should tell admins when the AI service is not configured instead of silently returning empty translations'
+    );
+    assert.match(
+        adminShopSource,
+        /generationConfig: \{ temperature: 0\.1, maxOutputTokens: 900 \}[\s\S]*tier: 'balanced'[\s\S]*maxInputChars: 9000[\s\S]*maxOutputTokens: 900/,
+        'product guidance translations should use enough budget for longer purchase notes and usage instructions'
+    );
+    assert.match(
+        adminShopSource,
+        /AI 翻译没有返回可解析的 JSON，已跳过英文同步/,
+        'product auto-translation should surface malformed AI output as a specific soft failure'
+    );
+    assert.match(
+        adminShopSource,
+        /productTranslationDetailMessage = productTranslationErrorMessage \|\| productTranslationWarningMessage/,
+        'product save feedback should include the concrete translation failure reason when guidance English text is missing'
+    );
+    assert.match(
+        adminShopSource,
         /商品已保存（英文翻译未完成：/,
         'product save success feedback should warn when enabled guidance was saved without usable English text'
     );

@@ -76,6 +76,13 @@ function createMarketplaceConfig() {
                         product_id: '22222222-2222-4222-8222-222222222222'
                     },
                     {
+                        label: 'Hostinger 年卡',
+                        xianyu_item_id: '1051635270711',
+                        sku_text_contains: '年卡',
+                        product_id: '22222222-2222-4222-8222-222222222222',
+                        product_sku_id: '33333333-3333-4333-8333-333333333333'
+                    },
+                    {
                         label: '闲鱼测试商品',
                         xianyu_item_id: 'xy-item-001',
                         product_id: '11111111-1111-4111-8111-111111111111'
@@ -255,7 +262,8 @@ test('public marketplace orders handler accepts account token and creates shared
             p_price_paid: null,
             p_total_price: null,
             p_external_buyer_id: '',
-            p_external_buyer_name: '闲鱼买家'
+            p_external_buyer_name: '闲鱼买家',
+            p_sku_id: null
         }
     });
 });
@@ -340,8 +348,9 @@ test('public xianyu orders handler maps raw Xianyu orders through Admin Studio p
                 item_title: '闲鱼测试商品标题',
                 created_at: '2026-05-21T10:00:00.000Z',
                 mapping: {
-                    index: 1,
-                    label: '闲鱼测试商品'
+                    index: 2,
+                    label: '闲鱼测试商品',
+                    product_sku_id: null
                 },
                 raw: {
                     orderId: 'XY-RAW-1001',
@@ -364,7 +373,8 @@ test('public xianyu orders handler maps raw Xianyu orders through Admin Studio p
             p_price_paid: 9.9,
             p_total_price: 9.9,
             p_external_buyer_id: 'buyer-raw-1',
-            p_external_buyer_name: '闲鱼买家原始单'
+            p_external_buyer_name: '闲鱼买家原始单',
+            p_sku_id: null
         }
     });
 });
@@ -421,7 +431,8 @@ test('public xianyu API-card delivery handler maps item to shared inventory and 
                 item_title: 'Hostinger 全场再打8折',
                 mapping: {
                     index: 0,
-                    label: 'Hostinger 闲鱼商品'
+                    label: 'Hostinger 闲鱼商品',
+                    product_sku_id: null
                 },
                 raw: {
                     account: 'main',
@@ -449,7 +460,8 @@ test('public xianyu API-card delivery handler maps item to shared inventory and 
             p_price_paid: null,
             p_total_price: null,
             p_external_buyer_id: '2993568887',
-            p_external_buyer_name: '起个什么名字呢'
+            p_external_buyer_name: '起个什么名字呢',
+            p_sku_id: null
         }
     });
 });
@@ -515,6 +527,42 @@ test('public xianyu delivery API-card handler returns sendable content without t
     assert.equal(state.rpcCalls[0].params.p_external_order_id, '3303221270099033174');
     assert.equal(state.rpcCalls[0].params.p_source_channel, 'xianyu');
     assert.equal(state.rpcCalls[0].params.p_channel_account_key, 'main');
+    assert.equal(state.rpcCalls[0].params.p_sku_id, null);
+});
+
+test('public xianyu API-card delivery handler maps xianyu spec text to website product sku', async () => {
+    const { handlers, state } = createHandlers();
+    const res = createMockResponse();
+    const productId = '22222222-2222-4222-8222-222222222222';
+    const productSkuId = '33333333-3333-4333-8333-333333333333';
+
+    await handlers['xianyu/deliver']({
+        method: 'POST',
+        url: '/api/marketplace/xianyu/deliver',
+        headers: {
+            authorization: 'Bearer main-token'
+        },
+        body: {
+            account: 'main',
+            order_id: 'XY-SKU-1001',
+            item_id: '1051635270711',
+            spec_value: '年卡套餐',
+            buyer_id: 'buyer_sku_1',
+            buyerNick: '规格买家'
+        }
+    }, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(payload.meta.request.product_id, productId);
+    assert.equal(payload.meta.request.product_sku_id, productSkuId);
+    assert.equal(state.rpcCalls[0]?.params?.p_product_id, productId);
+    assert.equal(state.rpcCalls[0]?.params?.p_sku_id, productSkuId);
+    assert.equal(
+        state.rpcCalls[0]?.params?.p_external_order_snapshot?.mapping?.product_sku_id,
+        productSkuId
+    );
 });
 
 test('public xianyu orders handler skips unpaid raw orders before touching inventory RPC', async () => {

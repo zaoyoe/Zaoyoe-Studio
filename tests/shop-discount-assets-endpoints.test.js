@@ -111,6 +111,7 @@ function createSupabaseStub(state) {
     state.notificationRows = Array.isArray(state.notificationRows) ? state.notificationRows : [];
     state.orderRows = Array.isArray(state.orderRows) ? state.orderRows : [];
     state.productRows = Array.isArray(state.productRows) ? state.productRows : [];
+    state.skuRows = Array.isArray(state.skuRows) ? state.skuRows : [];
     state.previewErrorByAssetId = state.previewErrorByAssetId && typeof state.previewErrorByAssetId === 'object'
         ? state.previewErrorByAssetId
         : {};
@@ -132,6 +133,7 @@ function createSupabaseStub(state) {
                 else if (table === 'discount_event_logs') rows = state.eventRows.slice().map(cloneRow);
                 else if (table === 'shop_orders') rows = state.orderRows.slice().map(cloneRow);
                 else if (table === 'shop_products') rows = state.productRows.slice().map(cloneRow);
+                else if (table === 'shop_product_skus') rows = state.skuRows.slice().map(cloneRow);
                 else throw new Error(`Unexpected table request: ${table}`);
 
                 if (query.mode === 'insert') {
@@ -420,7 +422,8 @@ test('available discounts endpoint exposes human-friendly source labels and scop
                 discount_type: 'fixed',
                 discount_value: 2,
                 scope_type: 'product',
-                scope_product_id: 'product_target_1'
+                scope_product_id: 'product_target_1',
+                scope_product_sku_id: 'sku_target_month'
             }
         ],
         productRows: [
@@ -429,6 +432,15 @@ test('available discounts endpoint exposes human-friendly source labels and scop
                 name: '周卡会员',
                 name_en: 'Weekly VIP',
                 category: '会员',
+                is_active: true
+            }
+        ],
+        skuRows: [
+            {
+                id: 'sku_target_month',
+                product_id: 'product_target_1',
+                sku_code: 'month',
+                sku_name: '月卡',
                 is_active: true
             }
         ],
@@ -468,8 +480,10 @@ test('available discounts endpoint exposes human-friendly source labels and scop
         assert.equal(payload.owned_discounts[0].source_label, '充值赠券');
         assert.equal(payload.owned_discounts[0].scope_type, 'product');
         assert.equal(payload.owned_discounts[0].scope_product_id, 'product_target_1');
+        assert.equal(payload.owned_discounts[0].scope_product_sku_id, 'sku_target_month');
         assert.equal(payload.owned_discounts[0].scope_product.display_name, '周卡会员');
-        assert.equal(payload.owned_discounts[0].scope_label, '指定商品 · 周卡会员');
+        assert.equal(payload.owned_discounts[0].scope_product_sku.display_name, '月卡');
+        assert.equal(payload.owned_discounts[0].scope_label, '指定商品 · 周卡会员 / 月卡');
     });
 });
 

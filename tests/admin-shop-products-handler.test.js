@@ -3,6 +3,8 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const Module = require('node:module');
 
+const SHOP_PRODUCT_SKU_SELECT = 'id, product_id, sku_code, sku_name, spec_values, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order';
+
 function createMockResponse() {
     const state = {
         statusCode: 200,
@@ -32,6 +34,7 @@ function createMockResponse() {
 
 function createQueryBuilder(state, table) {
     const operations = [];
+    let terminalMode = 'then';
 
     function finalize(mode) {
         state.queryCalls.push({ table, operations: [...operations], mode });
@@ -59,14 +62,15 @@ function createQueryBuilder(state, table) {
         },
         order(column, options) {
             operations.push({ method: 'order', args: [column, options] });
-            return finalize('order');
+            terminalMode = 'order';
+            return builder;
         },
         single() {
             operations.push({ method: 'single', args: [] });
             return finalize('single');
         },
         then(resolve, reject) {
-            return finalize('then').then(resolve, reject);
+            return finalize(terminalMode).then(resolve, reject);
         }
     };
 
@@ -267,6 +271,72 @@ test('shop products handler exposes searchable picker payloads for marketplace m
                 { method: 'eq', args: ['is_active', true] },
                 { method: 'or', args: ['name.ilike.%gemini%,category.ilike.%gemini%'] },
                 { method: 'order', args: ['name', { ascending: true }] }
+            ],
+            mode: 'order'
+        });
+    });
+});
+
+test('shop products handler can include product skus for inventory import selectors', async () => {
+    await withShopProductsHandler({
+        queryResults: {
+            shop_products: [
+                {
+                    data: [
+                        { id: 'prod_import_1', name: 'Import Product', stock_count: 12, is_active: true }
+                    ],
+                    error: null
+                }
+            ],
+            shop_product_skus: [
+                {
+                    data: [
+                        {
+                            id: 'sku_default_1',
+                            product_id: 'prod_import_1',
+                            sku_name: '默认规格',
+                            sku_code: 'default',
+                            is_default: true,
+                            is_active: true,
+                            stock_count: 2,
+                            sort_order: 0
+                        },
+                        {
+                            id: 'sku_year_1',
+                            product_id: 'prod_import_1',
+                            sku_name: '年卡',
+                            sku_code: 'year',
+                            is_default: false,
+                            is_active: true,
+                            stock_count: 10,
+                            sort_order: 1
+                        }
+                    ],
+                    error: null
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const req = {
+            method: 'GET',
+            headers: {},
+            url: '/api/admin/shop/products?fields=full&includeSkus=true'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.deepEqual(payload.rows[0]?.skus?.map((sku) => sku.id), ['sku_default_1', 'sku_year_1']);
+        assert.deepEqual(state.queryCalls[1], {
+            table: 'shop_product_skus',
+            operations: [
+                { method: 'select', args: [SHOP_PRODUCT_SKU_SELECT] },
+                { method: 'in', args: ['product_id', ['prod_import_1']] },
+                { method: 'order', args: ['sort_order', { ascending: true }] },
+                { method: 'order', args: ['created_at', { ascending: true }] }
             ],
             mode: 'order'
         });

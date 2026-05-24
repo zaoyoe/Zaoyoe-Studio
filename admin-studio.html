@@ -7675,6 +7675,23 @@
                             <div class="import-main-content">
                                 <input type="hidden" id="importViewProductId"> <!-- Hidden Input for ID -->
 
+                                <div class="shop-inventory-sku-field">
+                                    <label class="glass-label" for="importViewSkuSelect">商品规格</label>
+                                    <select id="importViewSkuSelect"
+                                        data-shop-custom-select="true"
+                                        data-shop-change="import-view-sku-select"
+                                        class="shop-inventory-sku-select">
+                                        <option value="">先选择商品</option>
+                                    </select>
+                                </div>
+
+                                <div id="importSkuInventoryOverview" class="shop-import-inventory-overview">
+                                    <div class="shop-import-inventory-overview__empty">
+                                        <i class="fas fa-box-open"></i>
+                                        <span>未选择商品</span>
+                                    </div>
+                                </div>
+
                                 <div class="admin-studio-inline-style-attr-63">
                                     <label class="glass-label">导入状态</label>
                                     <div class="status-options">
@@ -7778,6 +7795,7 @@
 
                         <div class="inv-filter-bar">
                             <input type="hidden" id="invFilterProduct" value="">
+                            <input type="hidden" id="invFilterSku" value="">
                             <input type="hidden" id="invFilterStatus" value="">
                             <!-- Product Dropdown -->
                             <div class="custom-dropdown" id="productDropdown">
@@ -7789,6 +7807,13 @@
                                     <div class="custom-dropdown-item selected" data-value="">所有商品</div>
                                 </div>
                             </div>
+                            <button type="button" id="inventorySkuFilterBadge"
+                                class="shop-inventory-sku-filter-badge admin-studio-inline-style-attr-3"
+                                data-shop-action="inventory-clear-sku-filter" title="清除规格筛选">
+                                <i class="fas fa-layer-group"></i>
+                                <span id="inventorySkuFilterLabel">全部规格</span>
+                                <i class="fas fa-times"></i>
+                            </button>
 
                             <!-- Status Dropdown -->
                             <div class="custom-dropdown" id="statusDropdown">
@@ -7968,6 +7993,17 @@
                                     <span><i class="fas fa-file-import"></i> 批量导入库存</span>
                                     <span id="targetProductName"
                                         class="admin-studio-inline-style-attr-112"></span>
+                                    <span id="targetProductSkuName"
+                                        class="shop-import-target-sku">默认规格</span>
+                                </div>
+                                <div class="shop-inventory-sku-field shop-inventory-sku-field--inventory">
+                                    <label class="admin-studio-inline-style-attr-114" for="inventorySkuSelect">商品规格</label>
+                                    <select id="inventorySkuSelect"
+                                        data-shop-custom-select="true"
+                                        data-shop-change="inventory-sku-select"
+                                        class="shop-inventory-sku-select">
+                                        <option value="">先选择商品</option>
+                                    </select>
                                 </div>
                                 <!-- Import Status Selection -->
                                 <div class="admin-studio-inline-style-attr-113">
@@ -8038,6 +8074,13 @@
                         <div class="admin-studio-inline-style-attr-124">
                             <label class="admin-studio-inline-style-attr-125">选择商品</label>
                             <select id="importProductSelect"
+                                data-shop-custom-select="true"
+                                data-shop-change="import-modal-product-select"
+                                class="admin-studio-inline-style-attr-126"></select>
+                        </div>
+                        <div class="admin-studio-inline-style-attr-124">
+                            <label class="admin-studio-inline-style-attr-125">选择规格</label>
+                            <select id="importModalSkuSelect"
                                 data-shop-custom-select="true"
                                 class="admin-studio-inline-style-attr-126"></select>
                         </div>
@@ -11104,10 +11147,30 @@
                                             role="listbox"></div>
                                     </div>
                                 </div>
+                                <div id="discountScopeProductSkuWrapper" class="admin-discount-form-modal__field" hidden>
+                                    <label class="admin-studio-inline-style-attr-177">指定规格</label>
+                                    <div class="admin-discount-form-modal__custom-select" id="discountScopeProductSkuSelect">
+                                        <input type="hidden" id="discountScopeProductSku" value="">
+                                        <button type="button"
+                                            id="discountScopeProductSkuTrigger"
+                                            data-discount-generate-select-trigger="scope-product-sku"
+                                            class="admin-discount-form-modal__select-trigger"
+                                            aria-haspopup="listbox"
+                                            aria-expanded="false"
+                                            aria-controls="discountScopeProductSkuDropdown">
+                                            <span id="discountScopeProductSkuLabel" class="admin-discount-form-modal__select-trigger-label">全部规格</span>
+                                            <i class="fas fa-chevron-down admin-discount-form-modal__select-trigger-chevron" aria-hidden="true"></i>
+                                        </button>
+                                        <div id="discountScopeProductSkuDropdown"
+                                            class="admin-discount-form-modal__select-dropdown"
+                                            aria-hidden="true"
+                                            role="listbox"></div>
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="admin-studio-inline-style-attr-173 admin-discount-form-modal__note">
-                                可将优惠券限制为单个站点、单个分类或单个商品使用；“每用户最多使用次数”用于限制同一账号可重复使用的次数。
+                                可将优惠券限制为单个站点、单个分类、单个商品或商品下的某个规格使用；“每用户最多使用次数”用于限制同一账号可重复使用的次数。
                             </div>
                             </section>
                             </div>
@@ -11704,36 +11767,8 @@
 
         
 
-        <div class="premium-modal-layout">
-            <!-- Left Column: Live Preview -->
-            <div class="modal-preview-sidebar">
-                <div class="preview-label">Live Preview</div>
-
-                <!-- Preview Card -->
-                <div class="preview-card" id="previewCard">
-                    <!-- Cover Image Area -->
-                    <div class="preview-icon-box" id="previewIconBox">
-                        <div class="preview-icon-media" id="previewIconMedia">
-                            <i class="fas fa-box"></i>
-                        </div>
-                        <span class="preview-stock preview-stock--unknown" id="previewStock">库存 -</span>
-                        <span class="preview-status preview-status--inactive" id="previewStatus" hidden>已下架</span>
-                    </div>
-
-                    <!-- Content Area -->
-                    <div class="preview-content">
-                        <div class="preview-title" id="previewTitle">商品名称</div>
-                        <div class="preview-desc" id="previewDesc">无描述...</div>
-                    </div>
-
-                    <!-- Footer Area -->
-                    <div class="preview-footer">
-                        <div class="preview-price" id="previewPrice">0 积分</div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Right Column: Form -->
+        <div class="premium-modal-layout premium-modal-layout--product-form-only">
+            <!-- Product Form -->
             <div class="modal-form-content" autocomplete="off">
                 <form autocomplete="off" id="productModalForm">
                     <div class="form-header">
@@ -11810,6 +11845,17 @@
                         </div>
                     </div>
 
+                    <div class="modern-form-group shop-product-sku-editor">
+                        <div class="shop-product-sku-editor__header">
+                            <label class="modern-label">商品规格 / SKU</label>
+                            <button type="button" class="shop-product-sku-editor__add" data-shop-action="product-add-sku-row">
+                                <i class="fas fa-plus"></i> 添加规格
+                            </button>
+                        </div>
+                        <div id="productSkuEditorRows" class="shop-product-sku-editor__rows"></div>
+                        <small class="form-hint">补库存时会按这里的规格上传卡密；每个规格可单独填阶梯价，例如 4:18, 5:16；闲鱼商品映射也可以指定到具体网站 SKU。</small>
+                    </div>
+
                     <div class="modern-form-group">
                         <label class="modern-label">商品图标</label>
                         <div class="upload-box" data-shop-action="product-upload-icon">
@@ -11839,28 +11885,6 @@
                         <small class="form-hint">关闭后，商城页面的商品卡片不显示商品描述。</small>
                     </div>
 
-                    <!-- Marketing Config (Phase 2) -->
-                    <div class="input-group-row">
-                        <div class="modern-form-group admin-studio-inline-style-attr-219">
-                            <label class="modern-label"><i class="fas fa-layer-group admin-studio-inline-style-attr-220"
-                                   ></i>阶梯定价规则 (买满 x 件享特价)</label>
-
-                            <!-- Visual Builder Container -->
-                            <div id="prodQuantityRulesContainer"
-                                class="admin-studio-inline-style-attr-221">
-                                <!-- Rows injected by JS -->
-                            </div>
-
-                            <!-- Add Rule Button -->
-                            <button type="button" data-shop-action="product-add-tiered-pricing"
-                                class="admin-studio-inline-style-attr-222">
-                                <i class="fas fa-plus"></i> 添加阶梯价
-                            </button>
-
-                            <!-- Hidden storage for actual JSON persistence -->
-                            <input type="hidden" id="prodQuantityRules" value="[]">
-                        </div>
-                    </div>
                     <div class="input-group-row">
                         <div class="modern-form-group">
                             <label class="modern-label"><i class="fas fa-bolt admin-studio-inline-style-attr-223"

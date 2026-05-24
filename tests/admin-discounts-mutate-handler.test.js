@@ -264,6 +264,7 @@ test('discounts mutate handler creates discount codes and writes audit context',
                     applicable_site: 'cn',
                     scope_type: 'product',
                     scope_product_id: 'prod_1',
+                    scope_product_sku_id: 'sku_1',
                     allow_zero_total: true,
                     is_active: true,
                     is_exclusive: false,
@@ -280,6 +281,7 @@ test('discounts mutate handler creates discount codes and writes audit context',
         assert.equal(state.discountRows.length, 1);
         assert.equal(state.discountRows[0].code, 'FLASH0');
         assert.equal(state.discountRows[0].scope_product_id, 'prod_1');
+        assert.equal(state.discountRows[0].scope_product_sku_id, 'sku_1');
         assert.equal(state.discountRows[0].allow_zero_total, true);
         assert.equal(state.discountRows[0].starts_at, '2099-04-10T00:00:00.000Z');
         assert.equal(state.discountRows[0].is_exclusive, false);
@@ -294,6 +296,7 @@ test('discounts mutate handler creates discount codes and writes audit context',
         assert.equal(state.auditCalls[0].module, 'discounts');
         assert.equal(state.auditCalls[0].actionType, 'discount.code.create');
         assert.equal(state.auditCalls[0].details.code, 'FLASH0');
+        assert.equal(state.auditCalls[0].details.scope_product_sku_id, 'sku_1');
     });
 });
 

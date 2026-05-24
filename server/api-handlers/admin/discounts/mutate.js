@@ -69,6 +69,7 @@ function normalizeCreatePayload(body = {}, options = {}) {
     const scopeType = normalizeText(sourcePayload.scope_type || sourcePayload.scopeType, 20).toLowerCase() || 'all';
     const scopeCategory = normalizeText(sourcePayload.scope_category ?? sourcePayload.scopeCategory, 120) || null;
     const scopeProductId = normalizeText(sourcePayload.scope_product_id ?? sourcePayload.scopeProductId, 160) || null;
+    const scopeProductSkuId = normalizeText(sourcePayload.scope_product_sku_id ?? sourcePayload.scopeProductSkuId, 160) || null;
     const allowZeroTotal = sourcePayload.allow_zero_total === true || sourcePayload.allowZeroTotal === true;
     const distributionMode = normalizeDistributionMode(
         sourcePayload.distribution_mode ?? sourcePayload.distributionMode,
@@ -186,6 +187,7 @@ function normalizeCreatePayload(body = {}, options = {}) {
         scope_type: scopeType,
         scope_category: scopeType === 'category' ? scopeCategory : null,
         scope_product_id: scopeType === 'product' ? scopeProductId : null,
+        scope_product_sku_id: scopeType === 'product' ? scopeProductSkuId : null,
         allow_zero_total: allowZeroTotal,
         distribution_mode: distributionMode,
         claim_starts_at: distributionMode === 'public_claim' ? claimStartsAt : null,
@@ -301,6 +303,7 @@ module.exports = async function adminDiscountsMutateHandler(req, res) {
                     scope_type: data.scope_type,
                     scope_category: data.scope_category || null,
                     scope_product_id: data.scope_product_id || null,
+                    scope_product_sku_id: data.scope_product_sku_id || null,
                     allow_zero_total: !!data.allow_zero_total,
                     distribution_mode: data.distribution_mode || 'general_code',
                     claim_starts_at: data.claim_starts_at || null,
@@ -395,6 +398,8 @@ module.exports = async function adminDiscountsMutateHandler(req, res) {
                     scope_category: data.scope_category || null,
                     previous_scope_product_id: existingRow.scope_product_id || null,
                     scope_product_id: data.scope_product_id || null,
+                    previous_scope_product_sku_id: existingRow.scope_product_sku_id || null,
+                    scope_product_sku_id: data.scope_product_sku_id || null,
                     previous_allow_zero_total: !!existingRow.allow_zero_total,
                     allow_zero_total: !!data.allow_zero_total,
                     previous_distribution_mode: existingRow.distribution_mode || 'general_code',

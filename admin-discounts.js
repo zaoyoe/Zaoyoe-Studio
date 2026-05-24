@@ -84,8 +84,10 @@ const AdminDiscounts = {
     generateSubmitInFlight: false,
     categories: [],
     products: [],
+    productSkusByProductId: new Map(),
     categoryNameMap: new Map(),
     productNameMap: new Map(),
+    productSkuNameMap: new Map(),
     workbenchContext: null,
     modalMode: 'create',
     editingDiscountId: '',
@@ -855,6 +857,15 @@ const AdminDiscounts = {
                     }))
                 ]
             },
+            'scope-product-sku': {
+                inputId: 'discountScopeProductSku',
+                triggerId: 'discountScopeProductSkuTrigger',
+                labelId: 'discountScopeProductSkuLabel',
+                dropdownId: 'discountScopeProductSkuDropdown',
+                optionSelector: '[data-discount-generate-select-option="scope-product-sku"]',
+                defaultValue: '',
+                options: this.buildScopeProductSkuOptions()
+            },
             'recovery-strategy': {
                 inputId: 'discountRecoveryStrategy',
                 triggerId: 'discountRecoveryStrategyTrigger',
@@ -1081,6 +1092,7 @@ const AdminDiscounts = {
 
     refreshGenerateCustomSelects: function () {
         this.getGenerateCustomSelectKeys().forEach((key) => this.syncGenerateCustomSelect(key));
+        this.refreshScopeProductSkuOptions();
         this.toggleScopeFields();
         this.toggleDistributionFields();
     },
@@ -1097,6 +1109,11 @@ const AdminDiscounts = {
         this.syncGenerateCustomSelect(key);
 
         if (key === 'scope-type') {
+            this.toggleScopeFields();
+        }
+
+        if (key === 'scope-product') {
+            this.refreshScopeProductSkuOptions({ resetInvalid: true });
             this.toggleScopeFields();
         }
 
@@ -1212,6 +1229,64 @@ const AdminDiscounts = {
         const normalized = String(productId ?? '').trim();
         if (!normalized) return '全部商品';
         return this.productNameMap.get(normalized) || normalized;
+    },
+
+    getProductSkuLabel: function (skuId) {
+        const normalized = String(skuId ?? '').trim();
+        if (!normalized) return '全部规格';
+        return this.productSkuNameMap.get(normalized) || normalized;
+    },
+
+    getProductSkuRowsForProduct: function (productId) {
+        const normalizedProductId = String(productId ?? '').trim();
+        if (!normalizedProductId || !(this.productSkusByProductId instanceof Map)) {
+            return [];
+        }
+        return this.productSkusByProductId.get(normalizedProductId) || [];
+    },
+
+    buildScopeProductSkuOptions: function () {
+        const productId = String(document.getElementById('discountScopeProduct')?.value || '').trim();
+        const rows = this.getProductSkuRowsForProduct(productId);
+        return [
+            { value: '', label: '全部规格', meta: productId ? '这张券适用于该商品下所有规格' : '先选择商品后可细分到规格' },
+            ...rows.map((sku) => {
+                const skuName = this.safeText(sku?.sku_name || sku?.skuName) || this.safeText(sku?.sku_code || sku?.skuCode) || String(sku?.id || '');
+                const skuCode = this.safeText(sku?.sku_code || sku?.skuCode);
+                return {
+                    value: String(sku.id || ''),
+                    label: skuName,
+                    meta: skuCode && skuCode !== skuName ? `编码 ${skuCode}` : '仅这个规格可使用'
+                };
+            }).filter((option) => option.value)
+        ];
+    },
+
+    refreshScopeProductSkuOptions: function (options = {}) {
+        const input = document.getElementById('discountScopeProductSku');
+        const currentValue = String(input?.value || '').trim();
+        const validValues = new Set(this.buildScopeProductSkuOptions().map((item) => String(item.value ?? '')));
+
+        if (input && options.resetInvalid === true && currentValue && !validValues.has(currentValue)) {
+            input.value = '';
+        }
+
+        this.syncGenerateCustomSelect('scope-product-sku');
+    },
+
+    formatDiscountScopeLabel: function (discount = {}) {
+        const scopeType = this.normalizeScopeType(discount.scope_type);
+        if (scopeType === 'category') {
+            return `分类 · ${this.getCategoryLabel(discount.scope_category)}`;
+        }
+        if (scopeType === 'product') {
+            const productLabel = this.getProductLabel(discount.scope_product_id);
+            const skuId = this.safeText(discount.scope_product_sku_id || discount.scopeProductSkuId);
+            return skuId
+                ? `商品 · ${productLabel} / ${this.getProductSkuLabel(skuId)}`
+                : `商品 · ${productLabel}`;
+        }
+        return '全部商品';
     },
 
     getLifecycleSummary: function (discount = {}, now = new Date()) {
@@ -1409,6 +1484,7 @@ const AdminDiscounts = {
             this.formatStatusReasonLabel(status.reasonKey),
             this.normalizeScopeType(discount?.scope_type) === 'category' ? this.getCategoryLabel(discount?.scope_category) : '',
             this.normalizeScopeType(discount?.scope_type) === 'product' ? this.getProductLabel(discount?.scope_product_id) : '',
+            this.normalizeScopeType(discount?.scope_type) === 'product' ? this.getProductSkuLabel(discount?.scope_product_sku_id) : '',
             discount?.allow_zero_total ? '允许全免' : '禁止全免',
             discount?.campaign_tag,
             discount?.audience_segment,
@@ -2009,12 +2085,7 @@ const AdminDiscounts = {
         const timelineFilter = this.normalizeDetailTimelineFilter(options.timelineFilter || this.detailTimelineFilter);
         const filterLabel = this.getDetailTimelineFilterLabel(timelineFilter);
         const timelineItems = this.getFilteredDiscountDetailTimelineItems(detail, timelineFilter);
-        const scopeType = this.normalizeScopeType(discount.scope_type);
-        const scopeLabel = scopeType === 'category'
-            ? `分类 · ${this.getCategoryLabel(discount.scope_category)}`
-            : (scopeType === 'product'
-                ? `商品 · ${this.getProductLabel(discount.scope_product_id)}`
-                : '全部商品');
+        const scopeLabel = this.formatDiscountScopeLabel(discount);
         const lines = [
             '优惠券审计摘要',
             `生成时间：${new Date().toLocaleString()}`,
@@ -2633,12 +2704,7 @@ const AdminDiscounts = {
         const usageSummary = this.getRecentUsageSummary(discount);
         const assetSummary = this.getAssetSummary(discount);
         const riskSummary = this.getRiskSummary(discount);
-        const scopeType = this.normalizeScopeType(discount.scope_type);
-        const scopeLabel = scopeType === 'category'
-            ? `分类 · ${this.getCategoryLabel(discount.scope_category)}`
-            : (scopeType === 'product'
-                ? `商品 · ${this.getProductLabel(discount.scope_product_id)}`
-                : '全部商品');
+        const scopeLabel = this.formatDiscountScopeLabel(discount);
 
         const summaryCards = [
             { label: '生效状态', value: statusState.label || '—' },
@@ -4466,6 +4532,11 @@ const AdminDiscounts = {
             policyLines.push(
                 `<div class="admin-discount-expiry-meta"><i class="fas fa-box-open"></i> 商品: ${this.escapeHtml(this.getProductLabel(discount.scope_product_id))}</div>`
             );
+            if (this.safeText(discount.scope_product_sku_id)) {
+                policyLines.push(
+                    `<div class="admin-discount-expiry-meta"><i class="fas fa-cubes"></i> 规格: ${this.escapeHtml(this.getProductSkuLabel(discount.scope_product_sku_id))}</div>`
+                );
+            }
         } else {
             policyLines.push('<div class="admin-discount-expiry-meta"><i class="fas fa-tags"></i> 范围: 全部商品</div>');
         }
@@ -4697,9 +4768,14 @@ const AdminDiscounts = {
         this.restrictionOptionsPromise = (async () => {
             let productData = [];
             let categoryData = [];
+            let skuData = [];
 
             try {
-                const [{ data: products, error: productsError }, { data: categories, error: categoriesError }] = await Promise.all([
+                const [
+                    { data: products, error: productsError },
+                    { data: categories, error: categoriesError },
+                    { data: skus, error: skusError }
+                ] = await Promise.all([
                     supabaseClient
                         .from('shop_products')
                         .select('id, name, category')
@@ -4708,6 +4784,11 @@ const AdminDiscounts = {
                     supabaseClient
                         .from('shop_categories')
                         .select('id, name, sort_order')
+                        .order('sort_order', { ascending: true }),
+                    supabaseClient
+                        .from('shop_product_skus')
+                        .select('id, product_id, sku_code, sku_name, is_active, is_default, sort_order')
+                        .eq('is_active', true)
                         .order('sort_order', { ascending: true })
                 ]);
 
@@ -4721,6 +4802,12 @@ const AdminDiscounts = {
                     console.warn('Failed to load discount category restriction options:', categoriesError);
                 } else if (Array.isArray(categories)) {
                     categoryData = categories;
+                }
+
+                if (skusError) {
+                    console.warn('Failed to load discount SKU restriction options:', skusError);
+                } else if (Array.isArray(skus)) {
+                    skuData = skus;
                 }
             } catch (err) {
                 console.warn('Failed to load discount restriction options:', err);
@@ -4746,6 +4833,26 @@ const AdminDiscounts = {
 
             this.products = productData;
             this.categories = categoryData;
+            this.productSkusByProductId = new Map();
+            this.productSkuNameMap = new Map();
+            skuData
+                .filter((sku) => sku?.is_active !== false)
+                .sort((left, right) => {
+                    const leftOrder = Number.parseInt(left?.sort_order, 10) || 0;
+                    const rightOrder = Number.parseInt(right?.sort_order, 10) || 0;
+                    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+                    return String(left?.sku_name || left?.id || '').localeCompare(String(right?.sku_name || right?.id || ''));
+                })
+                .forEach((sku) => {
+                    const productId = String(sku?.product_id || '').trim();
+                    const skuId = String(sku?.id || '').trim();
+                    if (!productId || !skuId) return;
+                    if (!this.productSkusByProductId.has(productId)) {
+                        this.productSkusByProductId.set(productId, []);
+                    }
+                    this.productSkusByProductId.get(productId).push(sku);
+                    this.productSkuNameMap.set(skuId, this.safeText(sku?.sku_name || sku?.sku_code) || skuId);
+                });
             this.productNameMap = new Map(productData.map((product) => [String(product.id), product.name || String(product.id)]));
             this.categoryNameMap = new Map();
             categoryData.forEach((category) => {
@@ -4776,20 +4883,27 @@ const AdminDiscounts = {
     populateRestrictionSelects: function () {
         this.syncGenerateCustomSelect('scope-category');
         this.syncGenerateCustomSelect('scope-product');
+        this.refreshScopeProductSkuOptions({ resetInvalid: true });
     },
 
     toggleScopeFields: function () {
         const scopeType = this.normalizeScopeType(document.getElementById('discountScopeType')?.value);
         const categoryWrapper = document.getElementById('discountScopeCategoryWrapper');
         const productWrapper = document.getElementById('discountScopeProductWrapper');
+        const productSkuWrapper = document.getElementById('discountScopeProductSkuWrapper');
         const categorySelect = document.getElementById('discountScopeCategory');
         const productSelect = document.getElementById('discountScopeProduct');
+        const productSkuSelect = document.getElementById('discountScopeProductSku');
+        const productId = String(productSelect?.value || '').trim();
 
         if (categoryWrapper) {
             categoryWrapper.hidden = scopeType !== 'category';
         }
         if (productWrapper) {
             productWrapper.hidden = scopeType !== 'product';
+        }
+        if (productSkuWrapper) {
+            productSkuWrapper.hidden = scopeType !== 'product' || !productId;
         }
 
         if (scopeType !== 'category' && categorySelect) {
@@ -4799,6 +4913,10 @@ const AdminDiscounts = {
         if (scopeType !== 'product' && productSelect) {
             productSelect.value = '';
             this.syncGenerateCustomSelect('scope-product');
+        }
+        if (scopeType !== 'product' && productSkuSelect) {
+            productSkuSelect.value = '';
+            this.syncGenerateCustomSelect('scope-product-sku');
         }
     },
 
@@ -5339,6 +5457,7 @@ const AdminDiscounts = {
         this.setGenerateCustomSelectValue('scope-type', 'all', { close: false });
         this.setGenerateCustomSelectValue('scope-category', '', { close: false });
         this.setGenerateCustomSelectValue('scope-product', '', { close: false });
+        this.setGenerateCustomSelectValue('scope-product-sku', '', { close: false });
         this.setGenerateCustomSelectValue('starts-at-time', '00:00', { close: false });
         this.setGenerateCustomSelectValue('expiry-time', '23:59', { close: false });
         this.setGenerateCustomSelectValue('distribution-mode', 'general_code', { close: false });
@@ -5360,6 +5479,7 @@ const AdminDiscounts = {
         this.setGenerateCustomSelectValue('scope-type', this.normalizeScopeType(discount.scope_type), { close: false });
         this.setGenerateCustomSelectValue('scope-category', this.safeText(discount.scope_category), { close: false });
         this.setGenerateCustomSelectValue('scope-product', this.safeText(discount.scope_product_id), { close: false });
+        this.setGenerateCustomSelectValue('scope-product-sku', this.safeText(discount.scope_product_sku_id || discount.scopeProductSkuId), { close: false });
         document.getElementById('discountAllowZeroTotal').checked = !!discount.allow_zero_total;
         document.getElementById('discountClaimStartsAtDate').value = this.toDateInputValue(discount.claim_starts_at);
         document.getElementById('discountClaimExpiresAtDate').value = this.toDateInputValue(discount.claim_expires_at);
@@ -5542,6 +5662,9 @@ const AdminDiscounts = {
             const scopeProductId = scopeType === 'product'
                 ? String(document.getElementById('discountScopeProduct')?.value || '').trim()
                 : null;
+            const scopeProductSkuId = scopeType === 'product'
+                ? String(document.getElementById('discountScopeProductSku')?.value || '').trim()
+                : null;
 
             if (scopeType === 'category' && !scopeCategory) {
                 this.notify('请选择优惠券适用的分类', 'warning');
@@ -5551,6 +5674,14 @@ const AdminDiscounts = {
             if (scopeType === 'product' && !scopeProductId) {
                 this.notify('请选择优惠券适用的商品', 'warning');
                 return;
+            }
+
+            if (scopeProductSkuId) {
+                const validSkuIds = new Set(this.getProductSkuRowsForProduct(scopeProductId).map((sku) => String(sku?.id || '').trim()).filter(Boolean));
+                if (!validSkuIds.has(scopeProductSkuId)) {
+                    this.notify('请选择当前商品下的有效规格', 'warning');
+                    return;
+                }
             }
 
             const allowZeroTotal = !!document.getElementById('discountAllowZeroTotal')?.checked;
@@ -5629,6 +5760,7 @@ const AdminDiscounts = {
                 scope_type: scopeType,
                 scope_category: scopeCategory,
                 scope_product_id: scopeProductId,
+                scope_product_sku_id: scopeProductSkuId,
                 allow_zero_total: allowZeroTotal,
                 distribution_mode: distributionMode,
                 claim_starts_at: claim_starts_at,

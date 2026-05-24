@@ -25,7 +25,7 @@ test('admin ai runtime requires explicit budget tiers and key call sites declare
         "tier: 'lean',\n                maxInputChars: 4000,\n                maxOutputTokens: 256",
         "tier: 'lean',\n                    maxInputChars: 5000,\n                    maxOutputTokens: 1000",
         "tier: 'balanced',\n                    maxInputChars: 12000,\n                    maxOutputTokens: 1200",
-        "tier: 'lean',\n                    maxInputChars: 5000,\n                    maxOutputTokens: 500",
+        "tier: 'balanced',\n                    maxInputChars: 9000,\n                    maxOutputTokens: 900",
         "tier: 'balanced',\n                maxInputChars: 12000,\n                maxOutputTokens: 1024"
     ];
 

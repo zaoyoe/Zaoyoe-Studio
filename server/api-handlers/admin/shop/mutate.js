@@ -6,12 +6,18 @@ const {
     writeAdminAuditLog
 } = require('../../../../api/_lib/admin');
 
-async function countAvailableInventory(supabase, productId) {
-    const { count } = await supabase
+async function countAvailableInventory(supabase, productId, skuId = '') {
+    let query = supabase
         .from('shop_inventory')
         .select('*', { count: 'exact', head: true })
         .eq('product_id', productId)
         .eq('status', 'available');
+
+    if (skuId) {
+        query = query.eq('sku_id', skuId);
+    }
+
+    const { count } = await query;
     return Number(count || 0);
 }
 
@@ -58,6 +64,43 @@ function normalizeText(value, maxLength = 200) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
 }
 
+function normalizeNullableNumber(value) {
+    if (value === null || value === undefined || value === '') {
+        return null;
+    }
+
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+        return null;
+    }
+
+    return Math.round(parsed * 100) / 100;
+}
+
+function normalizeSkuQuantityPricingRules(value) {
+    let sourceRules = value;
+    if (typeof sourceRules === 'string' && sourceRules.trim()) {
+        try {
+            sourceRules = JSON.parse(sourceRules);
+        } catch (_) {
+            sourceRules = [];
+        }
+    }
+
+    const rules = (Array.isArray(sourceRules) ? sourceRules : [])
+        .map((rule) => {
+            const qty = Math.trunc(Number(rule?.qty ?? rule?.quantity ?? rule?.min_quantity));
+            const price = normalizeNullableNumber(rule?.price ?? rule?.unit_price);
+            return { qty, price };
+        })
+        .filter((rule) => Number.isFinite(rule.qty)
+            && rule.qty > 0
+            && rule.price !== null)
+        .sort((left, right) => (left.qty - right.qty) || (left.price - right.price));
+
+    return rules.length ? rules : null;
+}
+
 function normalizeBoolean(value, fallback = false) {
     if (typeof value === 'boolean') {
         return value;
@@ -77,6 +120,344 @@ function normalizeBoolean(value, fallback = false) {
     }
 
     return fallback;
+}
+
+const SHOP_PRODUCT_SKU_SELECT = [
+    'id',
+    'product_id',
+    'sku_code',
+    'sku_name',
+    'spec_values',
+    'price_points',
+    'price_points_intl',
+    'quantity_rules',
+    'quantity_rules_intl',
+    'is_default',
+    'is_active',
+    'stock_count',
+    'sort_order'
+].join(', ');
+
+async function resolveProductSkuForInventoryImport(supabase, productId, requestedSkuId = '') {
+    const normalizedProductId = normalizeText(productId, 160);
+    const normalizedSkuId = normalizeText(requestedSkuId, 160);
+
+    if (!normalizedProductId) {
+        return null;
+    }
+
+    let query = supabase
+        .from('shop_product_skus')
+        .select('id, product_id, sku_name, sku_code, is_default, is_active, stock_count')
+        .eq('product_id', normalizedProductId);
+
+    query = normalizedSkuId
+        ? query.eq('id', normalizedSkuId)
+        : query.eq('is_default', true);
+
+    const { data, error } = await query.single();
+
+    if (error || !data) {
+        if (normalizedSkuId) {
+            throw Object.assign(new Error('选择的商品规格不存在，或不属于当前商品'), {
+                statusCode: 400,
+                code: 'shop_product_sku_not_found'
+            });
+        }
+        return null;
+    }
+
+    if (data.is_active === false) {
+        throw Object.assign(new Error('选择的商品规格已停用，不能导入库存'), {
+            statusCode: 400,
+            code: 'shop_product_sku_inactive'
+        });
+    }
+
+    return data;
+}
+
+function normalizeProductSkuDrafts(value = []) {
+    const rawEntries = Array.isArray(value) ? value : [];
+    const normalized = rawEntries
+        .map((entry, index) => {
+            const source = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : {};
+            const skuName = normalizeText(source.sku_name || source.skuName || source.name, 120);
+            const skuCode = normalizeText(source.sku_code || source.skuCode || source.code, 80);
+            const id = normalizeText(source.id || source.sku_id || source.skuId, 160);
+
+            if (!skuName && !skuCode && !id) {
+                return null;
+            }
+
+            return {
+                id,
+                sku_code: skuCode || null,
+                sku_name: skuName || skuCode || `规格 ${index + 1}`,
+                spec_values: source.spec_values && typeof source.spec_values === 'object' && !Array.isArray(source.spec_values)
+                    ? source.spec_values
+                    : {},
+                price_points: normalizeNullableNumber(source.price_points ?? source.pricePoints),
+                price_points_intl: normalizeNullableNumber(source.price_points_intl ?? source.pricePointsIntl),
+                quantity_rules: normalizeSkuQuantityPricingRules(source.quantity_rules ?? source.quantityRules),
+                quantity_rules_intl: normalizeSkuQuantityPricingRules(source.quantity_rules_intl ?? source.quantityRulesIntl),
+                is_default: normalizeBoolean(source.is_default ?? source.isDefault, false),
+                is_active: normalizeBoolean(source.is_active ?? source.isActive, true),
+                sort_order: normalizeNonNegativeInteger(source.sort_order ?? source.sortOrder) ?? index
+            };
+        })
+        .filter(Boolean);
+
+    const seenCodes = new Set();
+    normalized.forEach((sku) => {
+        const codeKey = normalizeText(sku.sku_code, 80).toLowerCase();
+        if (codeKey) {
+            if (seenCodes.has(codeKey)) {
+                sku.sku_code = null;
+            } else {
+                seenCodes.add(codeKey);
+            }
+        }
+    });
+
+    if (!normalized.length) {
+        return [];
+    }
+
+    const firstActiveIndex = normalized.findIndex((sku) => sku.is_active !== false);
+    let defaultIndex = normalized.findIndex((sku) => sku.is_default && sku.is_active !== false);
+    if (defaultIndex < 0) {
+        defaultIndex = firstActiveIndex >= 0 ? firstActiveIndex : 0;
+    }
+
+    return normalized.map((sku, index) => ({
+        ...sku,
+        is_default: index === defaultIndex
+    }));
+}
+
+async function ensureDefaultProductSku(supabase, product = {}) {
+    const productId = normalizeText(product?.id, 160);
+    if (!productId) {
+        return null;
+    }
+
+    const { data: existing, error: existingError } = await supabase
+        .from('shop_product_skus')
+        .select(SHOP_PRODUCT_SKU_SELECT)
+        .eq('product_id', productId)
+        .eq('is_default', true)
+        .limit(1);
+
+    if (existingError) {
+        throw existingError;
+    }
+
+    if (Array.isArray(existing) && existing.length) {
+        return existing[0];
+    }
+
+    const { data: existingDefaultCode, error: existingDefaultCodeError } = await supabase
+        .from('shop_product_skus')
+        .select(SHOP_PRODUCT_SKU_SELECT)
+        .eq('product_id', productId)
+        .eq('sku_code', 'default')
+        .limit(1);
+
+    if (existingDefaultCodeError) {
+        throw existingDefaultCodeError;
+    }
+
+    if (Array.isArray(existingDefaultCode) && existingDefaultCode.length) {
+        const defaultCodeSku = existingDefaultCode[0];
+        if (defaultCodeSku?.id && defaultCodeSku.is_default !== true) {
+            const { error: activateDefaultError } = await supabase
+                .from('shop_product_skus')
+                .update({ is_default: true, is_active: true })
+                .eq('id', defaultCodeSku.id);
+
+            if (activateDefaultError) {
+                throw activateDefaultError;
+            }
+
+            defaultCodeSku.is_default = true;
+            defaultCodeSku.is_active = true;
+        }
+        return defaultCodeSku;
+    }
+
+    const { data, error } = await supabase
+        .from('shop_product_skus')
+        .insert({
+            product_id: productId,
+            sku_code: 'default',
+            sku_name: normalizeText(product?.name, 120) || '默认规格',
+            spec_values: { label: '默认规格' },
+            price_points: normalizeNullableNumber(product?.price_points),
+            price_points_intl: normalizeNullableNumber(product?.price_points_intl),
+            quantity_rules: normalizeSkuQuantityPricingRules(product?.quantity_rules),
+            quantity_rules_intl: normalizeSkuQuantityPricingRules(product?.quantity_rules_intl),
+            is_default: true,
+            is_active: true,
+            sort_order: 0
+        })
+        .select(SHOP_PRODUCT_SKU_SELECT)
+        .limit(1);
+
+    if (error) {
+        throw error;
+    }
+
+    return Array.isArray(data) ? data[0] || null : null;
+}
+
+async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
+    const productId = normalizeText(product?.id, 160);
+    if (!productId) {
+        return [];
+    }
+
+    const normalizedDrafts = normalizeProductSkuDrafts(skuDrafts);
+    if (!normalizedDrafts.length) {
+        const defaultSku = await ensureDefaultProductSku(supabase, product);
+        return defaultSku ? [defaultSku] : [];
+    }
+
+    const { data: existingRows, error: existingError } = await supabase
+        .from('shop_product_skus')
+        .select(SHOP_PRODUCT_SKU_SELECT)
+        .eq('product_id', productId);
+
+    if (existingError) {
+        throw existingError;
+    }
+
+    const existingRowList = Array.isArray(existingRows) ? existingRows : [];
+    const existingIds = new Set(existingRowList
+        .map((row) => normalizeText(row?.id, 160))
+        .filter(Boolean));
+    const existingRowsByCode = new Map();
+    existingRowList.forEach((row) => {
+        const rowId = normalizeText(row?.id, 160);
+        const codeKey = normalizeText(row?.sku_code, 80).toLowerCase();
+        if (rowId && codeKey && !existingRowsByCode.has(codeKey)) {
+            existingRowsByCode.set(codeKey, row);
+        }
+    });
+    const retainedIds = new Set();
+    const savedRows = [];
+    let defaultSkuId = '';
+
+    for (const draft of normalizedDrafts) {
+        const draftCodeKey = normalizeText(draft.sku_code, 80).toLowerCase();
+        const matchedExistingByCode = draft.id && existingIds.has(draft.id)
+            ? null
+            : (draftCodeKey ? existingRowsByCode.get(draftCodeKey) || null : null);
+        const resolvedExistingId = draft.id && existingIds.has(draft.id)
+            ? draft.id
+            : normalizeText(matchedExistingByCode?.id, 160);
+        const basePayload = {
+            product_id: productId,
+            sku_code: draft.sku_code,
+            sku_name: draft.sku_name,
+            spec_values: draft.spec_values,
+            price_points: draft.price_points,
+            price_points_intl: draft.price_points_intl,
+            quantity_rules: draft.quantity_rules,
+            quantity_rules_intl: draft.quantity_rules_intl,
+            is_default: false,
+            is_active: draft.is_active,
+            sort_order: draft.sort_order
+        };
+        const hasExistingId = Boolean(resolvedExistingId && existingIds.has(resolvedExistingId));
+        const query = hasExistingId
+            ? supabase
+                .from('shop_product_skus')
+                .upsert({ ...basePayload, id: resolvedExistingId }, { onConflict: 'id' })
+            : supabase
+                .from('shop_product_skus')
+                .insert(basePayload);
+
+        const { data, error } = await query
+            .select(SHOP_PRODUCT_SKU_SELECT)
+            .limit(1);
+
+        if (error) {
+            throw error;
+        }
+
+        const saved = Array.isArray(data) ? data[0] || null : null;
+        if (saved?.id) {
+            retainedIds.add(saved.id);
+            if (draft.is_default) {
+                defaultSkuId = saved.id;
+            }
+            savedRows.push(saved);
+        }
+    }
+
+    if (defaultSkuId) {
+        const { error: clearDefaultError } = await supabase
+            .from('shop_product_skus')
+            .update({ is_default: false })
+            .eq('product_id', productId);
+
+        if (clearDefaultError) {
+            throw clearDefaultError;
+        }
+
+        const { error: setDefaultError } = await supabase
+            .from('shop_product_skus')
+            .update({ is_default: true, is_active: true })
+            .eq('id', defaultSkuId);
+
+        if (setDefaultError) {
+            throw setDefaultError;
+        }
+
+        savedRows.forEach((row) => {
+            row.is_default = row.id === defaultSkuId;
+            if (row.id === defaultSkuId) {
+                row.is_active = true;
+            }
+        });
+    }
+
+    const removableIds = [...existingIds].filter((id) => !retainedIds.has(id));
+    for (const removableId of removableIds) {
+        const { count, error: countError } = await supabase
+            .from('shop_inventory')
+            .select('*', { count: 'exact', head: true })
+            .eq('sku_id', removableId);
+
+        if (countError) {
+            throw countError;
+        }
+
+        const updatePayload = { is_active: false, is_default: false };
+        const { error: updateError } = await supabase
+            .from('shop_product_skus')
+            .update(updatePayload)
+            .eq('id', removableId);
+
+        if (updateError) {
+            throw updateError;
+        }
+
+        if (Number(count || 0) > 0) {
+            const existing = (Array.isArray(existingRows) ? existingRows : []).find((row) => row.id === removableId);
+            savedRows.push({
+                ...(existing || { id: removableId, product_id: productId }),
+                ...updatePayload
+            });
+        }
+    }
+
+    return savedRows.sort((left, right) => {
+        if (left.is_default !== right.is_default) return left.is_default ? -1 : 1;
+        return Number(left.sort_order || 0) - Number(right.sort_order || 0)
+            || normalizeText(left.sku_name, 120).localeCompare(normalizeText(right.sku_name, 120), 'zh-CN');
+    });
 }
 
 function normalizeStringArray(value, maxLength = 160) {
@@ -761,6 +1142,18 @@ module.exports = async (req, res) => {
             }
 
             const savedProduct = result.data[0];
+            let savedSkus = [];
+            try {
+                savedSkus = await syncProductSkus(supabase, savedProduct, body.skus || payload.skus || payload.product_skus);
+            } catch (error) {
+                return sendJson(res, Number(error?.statusCode) || 400, {
+                    success: false,
+                    message: error?.message || '保存商品规格失败',
+                    details: error?.details || '',
+                    hint: error?.hint || '',
+                    code: error?.code || 'shop_product_skus_save_failed'
+                });
+            }
 
             await writeAdminAuditLog({
                 supabase,
@@ -772,13 +1165,18 @@ module.exports = async (req, res) => {
                     product_id: savedProduct.id,
                     name: savedProduct.name,
                     category: savedProduct.category,
-                    is_active: savedProduct.is_active
+                    is_active: savedProduct.is_active,
+                    sku_count: savedSkus.length
                 }
             });
 
             return sendJson(res, 200, {
                 success: true,
-                product: savedProduct,
+                product: {
+                    ...savedProduct,
+                    skus: savedSkus
+                },
+                skus: savedSkus,
                 validation,
                 compatibilityFallback: writeResult.compatibilityFallback,
                 compatibilityRemovedFields: writeResult.compatibilityRemovedFields
@@ -1424,6 +1822,15 @@ module.exports = async (req, res) => {
 
         if (action === 'import_inventory') {
             const productId = String(body.productId || '').trim();
+            const skuId = normalizeText(
+                body.skuId
+                || body.sku_id
+                || body.productSkuId
+                || body.product_sku_id
+                || body.websiteSkuId
+                || body.website_sku_id,
+                160
+            );
             const lines = Array.isArray(body.lines) ? body.lines : [];
             const importStatus = String(body.importStatus || 'available').trim() || 'available';
             const batchId = body.batchId ? String(body.batchId) : `batch_${Date.now()}`;
@@ -1432,11 +1839,23 @@ module.exports = async (req, res) => {
                 return sendJson(res, 400, { success: false, message: 'productId and lines are required' });
             }
 
+            let sku = null;
+            try {
+                sku = await resolveProductSkuForInventoryImport(supabase, productId, skuId);
+            } catch (error) {
+                return sendJson(res, Number(error?.statusCode) || 400, {
+                    success: false,
+                    code: error?.code || 'shop_product_sku_invalid',
+                    message: error?.message || '商品规格无效'
+                });
+            }
+
             const inserts = lines
                 .map((line) => String(line || '').trim())
                 .filter(Boolean)
                 .map((content) => ({
                     product_id: productId,
+                    sku_id: sku?.id || null,
                     content,
                     status: importStatus,
                     batch_id: batchId
@@ -1452,6 +1871,7 @@ module.exports = async (req, res) => {
             }
 
             const stockCount = await countAvailableInventory(supabase, productId);
+            const skuStockCount = sku?.id ? await countAvailableInventory(supabase, productId, sku.id) : null;
             await supabase.from('shop_products').update({ stock_count: stockCount }).eq('id', productId);
 
             await writeAdminAuditLog({
@@ -1462,6 +1882,8 @@ module.exports = async (req, res) => {
                 actionType: 'shop.inventory.import',
                 details: {
                     product_id: productId,
+                    sku_id: sku?.id || null,
+                    sku_name: sku?.sku_name || null,
                     batch_id: batchId,
                     count: inserts.length,
                     import_status: importStatus
@@ -1471,7 +1893,9 @@ module.exports = async (req, res) => {
             return sendJson(res, 200, {
                 success: true,
                 imported: inserts.length,
-                stockCount
+                stockCount,
+                skuId: sku?.id || null,
+                skuStockCount
             });
         }
 

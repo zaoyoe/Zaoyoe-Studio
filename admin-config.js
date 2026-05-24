@@ -4582,6 +4582,15 @@ function normalizeMarketplaceProductMappings(value = [], options = {}) {
         const safeEntry = entry && typeof entry === 'object' && !Array.isArray(entry) ? entry : {};
         const xianyuItemId = String(safeEntry.xianyu_item_id || safeEntry.xianyuItemId || safeEntry.item_id || safeEntry.itemId || '').trim();
         const productId = String(safeEntry.product_id || safeEntry.productId || safeEntry.website_product_id || safeEntry.websiteProductId || '').trim();
+        const productSkuId = String(
+            safeEntry.product_sku_id
+            || safeEntry.productSkuId
+            || safeEntry.website_sku_id
+            || safeEntry.websiteSkuId
+            || safeEntry.shop_sku_id
+            || safeEntry.shopSkuId
+            || ''
+        ).trim();
         const skuId = String(safeEntry.sku_id || safeEntry.skuId || '').trim();
         const skuTextContains = String(safeEntry.sku_text_contains || safeEntry.skuTextContains || '').trim();
         const titleContains = String(safeEntry.title_contains || safeEntry.titleContains || '').trim();
@@ -4603,6 +4612,7 @@ function normalizeMarketplaceProductMappings(value = [], options = {}) {
             raw_path: rawPath,
             equals: rawEquals,
             product_id: productId,
+            product_sku_id: productSkuId,
             notes: String(safeEntry.notes || safeEntry.description || '').trim()
         };
     }).filter(Boolean);
@@ -9200,6 +9210,7 @@ function buildMarketplaceXianyuProductMappingRow(mapping = {}, index = 0) {
         raw_path: '',
         equals: '',
         product_id: '',
+        product_sku_id: '',
         notes: ''
     };
     const title = safeMapping.label || safeMapping.xianyu_item_id || `商品映射 ${index + 1}`;
@@ -9307,6 +9318,10 @@ function buildMarketplaceXianyuProductMappingRow(mapping = {}, index = 0) {
                 <label class="marketplace-simple-field marketplace-id-field">
                     <span>SKU ID（可选）</span>
                     <input type="text" class="config-input marketplace-code-input" data-marketplace-product-mapping-field="sku_id" value="${escapeConfigHtml(safeMapping.sku_id)}" placeholder="同一闲鱼商品多规格时填写" spellcheck="false">
+                </label>
+                <label class="marketplace-simple-field">
+                    <span>网站规格/SKU ID（可选）</span>
+                    <input type="text" class="config-input" data-marketplace-product-mapping-field="product_sku_id" value="${escapeConfigHtml(safeMapping.product_sku_id)}" placeholder="选择网站商品下的具体规格">
                 </label>
                 <label class="marketplace-simple-field marketplace-simple-field--wide">
                     <span>规格文字包含（可选）</span>
@@ -20991,7 +21006,8 @@ function collectMarketplaceXianyuProductMappingsFromForm(fallbackMappings = []) 
             xianyu_item_id: readField('xianyu_item_id'),
             sku_id: readField('sku_id'),
             sku_text_contains: readField('sku_text_contains'),
-            product_id: readField('product_id')
+            product_id: readField('product_id'),
+            product_sku_id: readField('product_sku_id')
         };
     }), { keepEmpty: true });
 }
@@ -21058,6 +21074,7 @@ function addMarketplaceXianyuProductMapping() {
                 enabled: true,
                 xianyu_item_id: '',
                 product_id: '',
+                product_sku_id: '',
                 sku_id: '',
                 sku_text_contains: ''
             }

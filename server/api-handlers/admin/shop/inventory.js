@@ -74,6 +74,13 @@ module.exports = async function adminShopInventoryHandler(req, res) {
         const page = normalizePositiveInteger(searchParams.get('page'), 1, 100000);
         const pageSize = normalizePositiveInteger(searchParams.get('pageSize'), 10, 10000);
         const productId = normalizeText(searchParams.get('productId') || searchParams.get('product_id'), 160) || null;
+        const skuId = normalizeText(
+            searchParams.get('skuId')
+            || searchParams.get('sku_id')
+            || searchParams.get('productSkuId')
+            || searchParams.get('product_sku_id'),
+            160
+        ) || null;
         const status = normalizeText(searchParams.get('status'), 40) || null;
         const search = normalizeText(searchParams.get('search'), 200) || null;
         const dateFrom = normalizeText(searchParams.get('dateFrom') || searchParams.get('date_from'), 80) || null;
@@ -86,7 +93,8 @@ module.exports = async function adminShopInventoryHandler(req, res) {
             p_page: page,
             p_page_size: pageSize,
             p_date_from: dateFrom,
-            p_date_to: dateTo
+            p_date_to: dateTo,
+            p_sku_id: skuId
         });
 
         if (error) {

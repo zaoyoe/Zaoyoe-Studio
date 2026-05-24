@@ -233,8 +233,54 @@ test('marketplace order helper validates channel account and builds shared-inven
         p_price_paid: null,
         p_total_price: null,
         p_external_buyer_id: '',
-        p_external_buyer_name: '闲鱼买家'
+        p_external_buyer_name: '闲鱼买家',
+        p_sku_id: null
     });
+});
+
+test('marketplace order helper treats marketplace sku_id separately from website product sku id', () => {
+    const {
+        buildMarketplaceOrderRpcParams
+    } = require('../api/_lib/marketplace-orders');
+    const productId = '11111111-1111-4111-8111-111111111111';
+    const productSkuId = '22222222-2222-4222-8222-222222222222';
+
+    const config = {
+        enabled: true,
+        channels: [
+            {
+                key: 'xianyu',
+                type: 'xianyu',
+                enabled: true,
+                inventory_mode: 'shared',
+                source_channel: 'xianyu',
+                default_account_key: 'main',
+                accounts: [{ key: 'main', enabled: true }]
+            }
+        ]
+    };
+
+    const withoutWebsiteSku = buildMarketplaceOrderRpcParams({
+        product_id: productId,
+        channel: 'xianyu',
+        account: 'main',
+        external_order_id: 'XY-SKU-RAW-1',
+        sku_id: productSkuId
+    }, config);
+
+    assert.equal(withoutWebsiteSku.normalized.product_sku_id, null);
+    assert.equal(withoutWebsiteSku.rpcParams.p_sku_id, null);
+
+    const withWebsiteSku = buildMarketplaceOrderRpcParams({
+        product_id: productId,
+        channel: 'xianyu',
+        account: 'main',
+        external_order_id: 'XY-SKU-MAPPED-1',
+        product_sku_id: productSkuId
+    }, config);
+
+    assert.equal(withWebsiteSku.normalized.product_sku_id, productSkuId);
+    assert.equal(withWebsiteSku.rpcParams.p_sku_id, productSkuId);
 });
 
 test('marketplace order helper rejects disabled accounts before touching inventory RPC', () => {
@@ -371,5 +417,29 @@ test('marketplace order ingest migration defines idempotent shared-inventory RPC
 
     for (const marker of markers) {
         assert.equal(migrationSource.includes(marker), true, `migration should contain ${marker}`);
+    }
+});
+
+test('product sku migration rebuilds marketplace order RPC without legacy overload ambiguity', () => {
+    const migrationSource = require('node:fs').readFileSync(
+        path.resolve(__dirname, '../supabase/migrations/20260523_add_shop_product_skus.sql'),
+        'utf8'
+    );
+
+    const markers = [
+        'DROP FUNCTION IF EXISTS public.fn_create_marketplace_shop_order(\n    UUID, INT, TEXT, TEXT, TEXT, JSONB, VARCHAR, UUID, NUMERIC, NUMERIC, TEXT, TEXT\n);',
+        'DROP FUNCTION IF EXISTS public.fn_create_marketplace_shop_order(\n    UUID, INT, TEXT, TEXT, TEXT, JSONB, VARCHAR, UUID, NUMERIC, NUMERIC, TEXT, TEXT, UUID\n);',
+        'p_sku_id UUID DEFAULT NULL',
+        'CREATE OR REPLACE FUNCTION public.fn_shop_products_ensure_default_sku()',
+        'CREATE TRIGGER tr_shop_products_ensure_default_sku',
+        'v_sku_id UUID := p_sku_id;',
+        'AND (\n                  sku_id = v_sku_id\n                  OR (v_sku_is_default AND sku_id IS NULL)\n              )',
+        'INSERT INTO public.shop_order_items (order_id, inventory_id, sku_id, snapshot_product_name, price_paid)',
+        "'product_sku_id', v_sku_id",
+        'GRANT EXECUTE ON FUNCTION public.fn_create_marketplace_shop_order(\n    UUID, INT, TEXT, TEXT, TEXT, JSONB, VARCHAR, UUID, NUMERIC, NUMERIC, TEXT, TEXT, UUID\n) TO service_role;'
+    ];
+
+    for (const marker of markers) {
+        assert.equal(migrationSource.includes(marker), true, `SKU migration should contain ${marker}`);
     }
 });
