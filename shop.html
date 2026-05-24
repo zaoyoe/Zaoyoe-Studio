@@ -46,7 +46,7 @@
     <!-- Unified Navigation CSS -->
     <link rel="stylesheet" href="css/framer_home.css?v=20260512_NAV_AUTH_SESSION_MATCH_1&themeChrome=20260428_IOS_SAFARI_SYNTH_MENU_TAP_6">
     <link rel="stylesheet" href="css/section-visibility.css?v=20260324_SECTION_VISIBILITY_RUNTIME_STYLE_1">
-    <link rel="stylesheet" href="css/shop-page.css?v=20260520_SHOP_CARD_PROMPT_BREATHE_3">
+    <link rel="stylesheet" href="css/shop-page.css?v=20260520_SHOP_CARD_PROMPT_BREATHE_3&shopProductSkus=20260523_SHOP_PRODUCT_SKUS_1&purchaseModalRoomier=20260523_SHOP_PURCHASE_MODAL_ROOMIER_1&purchaseSkuCombo=20260524_SHOP_PURCHASE_SKU_COMBO_1&purchaseSkuCompact=20260524_SHOP_PURCHASE_SKU_COMPACT_2&purchaseSplit=20260524_SHOP_PURCHASE_SPLIT_2&purchaseStagger=20260524_SHOP_PURCHASE_STAGGER_1&purchaseGuidancePreview=20260524_SHOP_PURCHASE_GUIDANCE_PREVIEW_1&purchaseWideDefaults=20260524_SHOP_PURCHASE_WIDE_DEFAULTS_1&purchaseNarrowUnified=20260524_SHOP_PURCHASE_NARROW_UNIFIED_1&purchaseStockTone=20260524_SHOP_PURCHASE_STOCK_TONE_1&cartDrawerNarrowWidth=20260524_SHOP_CART_DRAWER_NARROW_WIDTH_1&successDeliveryPanel=20260524_SHOP_SUCCESS_DELIVERY_PANEL_3&purchaseTitleCompact=20260524_SHOP_PURCHASE_TITLE_COMPACT_1&successScrollHandoff=20260524_SHOP_SUCCESS_SCROLL_HANDOFF_2&purchaseNarrowGuidanceGap=20260524_SHOP_PURCHASE_NARROW_GUIDANCE_GAP_7">
     <script src="./js/deferred-styles.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1" defer></script>
     <script src="./js/homepage-contract.js?v=20260512_HOMEPAGE_CONTRACT_VERIFY_I18N_1" defer></script>
 
@@ -298,99 +298,139 @@
         </div>
 
         <!-- Purchase Confirmation Modal (Quantity) -->
-        <div class="modal-overlay" id="shopPurchaseModal">
+        <div class="modal-overlay" id="shopPurchaseModal" aria-label="确认兑换">
             <div class="modal-content premium-modal">
                 <div class="shop-purchase-stage shop-purchase-stage-header shop-inline-style-attr-5">
-                    <h3 id="purchaseStageTitle" class="card-title shop-inline-style-attr-6"
-                        data-i18n="shop.confirmRedeem">
-                        确认兑换</h3>
-                    <p id="modalProductName" class="shop-inline-style-attr-7">Product Name</p>
+                    <h3 id="purchaseStageTitle" class="card-title shop-inline-style-attr-6">Product Name</h3>
+                    <p id="modalProductName" class="shop-inline-style-attr-7" hidden></p>
                 </div>
 
-                <!-- Quantity Selector -->
-                <div class="shop-quantity-wrapper shop-purchase-stage shop-purchase-stage-quantity" data-purchase-step="configure">
-                    <div class="shop-quantity-control">
-                        <button class="shop-qty-btn" type="button" data-shop-qty-delta="-1">−</button>
-                        <input type="number" id="purchaseQuantity" value="1" min="1" max="99" class="shop-qty-input">
-                        <button class="shop-qty-btn" type="button" data-shop-qty-delta="1">+</button>
-                    </div>
-                </div>
+                <div class="shop-purchase-body" data-purchase-step="configure">
+                    <div class="shop-purchase-scroll" data-purchase-step="configure">
+                        <div class="shop-purchase-config-panel">
+                            <div id="purchaseSkuSelector" class="shop-purchase-stage shop-purchase-stage-sku" data-purchase-step="configure" hidden></div>
 
-                <!-- Add Discount Code Input Here -->
-                <div class="shop-purchase-stage shop-purchase-stage-discount shop-purchase-discount shop-inline-style-attr-8" data-purchase-step="configure">
-                    <div
-                        data-i18n="shop.discountCode" class="shop-purchase-discount__label shop-inline-style-attr-9">优惠码 (选填)</div>
-                    <div class="shop-purchase-discount__field shop-inline-style-attr-10">
-                        <div class="shop-purchase-discount__input-wrap">
-                            <input type="text" id="purchaseDiscountCode" placeholder="请输入优惠码"
-                                data-i18n-placeholder="shop.enterDiscountCode"
-                                class="shop-purchase-discount__input shop-inline-style-attr-11">
-                            <button id="applyDiscountBtn" type="button" data-i18n="shop.verify"
-                                class="shop-purchase-discount__action shop-inline-style-attr-12">
-                                <span>验证</span>
-                            </button>
+                            <div id="purchaseNotesBox" class="shop-purchase-stage shop-purchase-stage-notes shop-inline-style-attr-21" data-purchase-step="configure">
+                                <div
+                                    class="shop-inline-style-attr-22">
+                                    <span class="shop-purchase-notes-title">
+                                        <i class="fas fa-triangle-exclamation shop-inline-style-attr-23"></i>
+                                        <span id="purchaseNotesTitle">注意事项</span>
+                                    </span>
+                                    <button
+                                        id="purchaseNotesToggle"
+                                        class="shop-purchase-notes-toggle"
+                                        type="button"
+                                        aria-controls="purchaseNotesCard"
+                                        aria-expanded="false"
+                                        aria-pressed="false">
+                                        <span class="shop-purchase-notes-toggle__switch" aria-hidden="true">
+                                            <span class="shop-purchase-notes-toggle__knob"></span>
+                                        </span>
+                                    </button>
+                                </div>
+                                <div id="purchaseNotesCard" class="glass-box shop-success-usage-card" hidden>
+                                    <div id="purchaseNotesContent"
+                                        class="shop-inline-style-attr-24">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="purchaseUsageBox" class="shop-purchase-stage shop-purchase-stage-notes shop-purchase-stage-usage shop-inline-style-attr-21" data-purchase-step="configure">
+                                <div
+                                    class="shop-inline-style-attr-22">
+                                    <span class="shop-purchase-notes-title">
+                                        <i class="fas fa-circle-info shop-purchase-usage-icon"></i>
+                                        <span id="purchaseUsageTitle">使用说明</span>
+                                    </span>
+                                    <button
+                                        id="purchaseUsageToggle"
+                                        class="shop-purchase-notes-toggle"
+                                        type="button"
+                                        aria-controls="purchaseUsageCard"
+                                        aria-expanded="false"
+                                        aria-pressed="false">
+                                        <span class="shop-purchase-notes-toggle__switch" aria-hidden="true">
+                                            <span class="shop-purchase-notes-toggle__knob"></span>
+                                        </span>
+                                    </button>
+                                </div>
+                                <div id="purchaseUsageCard" class="glass-box shop-success-usage-card" hidden>
+                                    <div id="purchaseUsageContent"
+                                        class="shop-inline-style-attr-24">
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div id="discountMessage" class="shop-purchase-discount__feedback shop-inline-style-attr-13"></div>
-                    <div id="purchaseDiscountAssetsPanel" class="shop-purchase-discount__feedback shop-inline-style-attr-13"></div>
-                </div>
 
-                <!-- Price Summary -->
-                <div class="shop-purchase-stage shop-purchase-stage-summary shop-inline-style-attr-14" data-purchase-step="configure"
-                   >
-                    <div class="shop-inline-style-attr-15">
-                        <div
-                            data-i18n="shop.unitPrice" class="shop-inline-style-attr-16">单价</div>
-                        <div class="shop-inline-style-attr-17"><span id="modalUnitPrice">0</span> <span
-                                data-i18n="shop.points">积分</span>
-                            <div id="modalPriceContextNote" class="shop-purchase-price-note" hidden aria-live="polite"></div>
+                    <div class="shop-purchase-dock" data-purchase-step="configure">
+                        <!-- Quantity Selector -->
+                        <div class="shop-quantity-wrapper shop-purchase-stage shop-purchase-stage-quantity" data-purchase-step="configure">
+                            <div class="shop-quantity-control">
+                                <button class="shop-qty-btn" type="button" data-shop-qty-delta="-1">−</button>
+                                <input type="number" id="purchaseQuantity" value="1" min="1" max="99" class="shop-qty-input">
+                                <button class="shop-qty-btn" type="button" data-shop-qty-delta="1">+</button>
+                            </div>
                         </div>
-                    </div>
-                    <div class="shop-inline-style-attr-18">
-                        <div
-                            data-i18n="shop.total" class="shop-inline-style-attr-16">总计</div>
-                        <div class="shop-inline-style-attr-19">
-                            <span id="modalTotalPrice">0</span> <span
-                                data-i18n="shop.points" class="shop-inline-style-attr-20">积分</span>
-                        </div>
-                    </div>
-                </div>
 
-                <div id="purchaseNotesBox" class="shop-purchase-stage shop-purchase-stage-notes shop-inline-style-attr-21" data-purchase-step="configure">
-                    <div
-                        class="shop-inline-style-attr-22">
-                        <span class="shop-purchase-notes-title">
-                            <i class="fas fa-triangle-exclamation shop-inline-style-attr-23"></i>
-                            <span id="purchaseNotesTitle">注意事项</span>
-                        </span>
-                        <button
-                            id="purchaseNotesToggle"
-                            class="shop-purchase-notes-toggle"
-                            type="button"
-                            aria-controls="purchaseNotesCard"
-                            aria-expanded="false"
-                            aria-pressed="false">
-                            <span class="shop-purchase-notes-toggle__switch" aria-hidden="true">
-                                <span class="shop-purchase-notes-toggle__knob"></span>
-                            </span>
-                        </button>
-                    </div>
-                    <div id="purchaseNotesCard" class="glass-box shop-success-usage-card" hidden>
-                        <div id="purchaseNotesContent"
-                            class="shop-inline-style-attr-24">
+                        <!-- Price Summary -->
+                        <div class="shop-purchase-stage shop-purchase-stage-summary shop-inline-style-attr-14" data-purchase-step="configure"
+                           >
+                            <div class="shop-inline-style-attr-15">
+                                <div
+                                    data-i18n="shop.unitPrice" class="shop-inline-style-attr-16">单价</div>
+                                <div class="shop-inline-style-attr-17"><span id="modalUnitPrice">0</span> <span
+                                        data-i18n="shop.points">积分</span>
+                                    <div id="modalPriceContextNote" class="shop-purchase-price-note" hidden aria-live="polite"></div>
+                                </div>
+                            </div>
+                            <div class="shop-inline-style-attr-18">
+                                <div
+                                    data-i18n="shop.total" class="shop-inline-style-attr-16">总计</div>
+                                <div class="shop-inline-style-attr-19">
+                                    <span id="modalTotalPrice">0</span> <span
+                                        data-i18n="shop.points" class="shop-inline-style-attr-20">积分</span>
+                                </div>
+                            </div>
                         </div>
-                    </div>
-                </div>
 
-                <!-- Actions -->
-                <div class="shop-purchase-stage shop-purchase-stage-action shop-inline-style-attr-25" data-purchase-step="configure">
-                    <div class="shop-purchase-actions shop-purchase-actions--single">
-                        <button id="purchaseAddToCartBtn" type="button" class="shop-btn shop-btn-secondary shop-add-cart-btn">
-                            <i class="fas fa-basket-shopping"></i> <span>加入购物车</span>
-                        </button>
-                        <button id="nextPurchaseStepBtn" type="button" class="shop-btn shop-btn-primary">
-                            <span>兑换</span>
-                        </button>
+                        <!-- Add Discount Code Input Here -->
+                        <details class="shop-purchase-stage shop-purchase-stage-discount shop-purchase-discount shop-inline-style-attr-8" data-purchase-step="configure">
+                            <summary class="shop-purchase-discount__summary">
+                                <span data-i18n="shop.discountCode" class="shop-purchase-discount__label shop-inline-style-attr-9">优惠码 / 卡券</span>
+                                <span class="shop-purchase-discount__summary-meta">可选</span>
+                            </summary>
+                            <div class="shop-purchase-discount__fold">
+                                <div class="shop-purchase-discount__fold-inner">
+                                    <div class="shop-purchase-discount__field shop-inline-style-attr-10">
+                                        <div class="shop-purchase-discount__input-wrap">
+                                            <input type="text" id="purchaseDiscountCode" placeholder="请输入优惠码"
+                                                data-i18n-placeholder="shop.enterDiscountCode"
+                                                class="shop-purchase-discount__input shop-inline-style-attr-11">
+                                            <button id="applyDiscountBtn" type="button" data-i18n="shop.verify"
+                                                class="shop-purchase-discount__action shop-inline-style-attr-12">
+                                                <span>验证</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div id="discountMessage" class="shop-purchase-discount__feedback shop-inline-style-attr-13"></div>
+                                    <div id="purchaseDiscountAssetsPanel" class="shop-purchase-discount__feedback shop-inline-style-attr-13"></div>
+                                </div>
+                            </div>
+                        </details>
+
+                        <!-- Actions -->
+                        <div class="shop-purchase-stage shop-purchase-stage-action shop-inline-style-attr-25" data-purchase-step="configure">
+                            <div class="shop-purchase-actions shop-purchase-actions--single">
+                                <button id="purchaseAddToCartBtn" type="button" class="shop-btn shop-btn-secondary shop-add-cart-btn">
+                                    <i class="fas fa-basket-shopping"></i> <span>加入购物车</span>
+                                </button>
+                                <button id="nextPurchaseStepBtn" type="button" class="shop-btn shop-btn-primary">
+                                    <span>兑换</span>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -502,7 +542,7 @@
     <script src="./supabase-auth-functions.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1&iosChromeKeyboard=20260514_ALL_KEYBOARD_RELEASE_1" defer></script>
     <script src="./js/public-scrollbar-auto-hide.js?v=20260430_PUBLIC_SCROLLBAR_FULL_HIDE_1" defer></script>
     <script src="./js/profile-modal-loader.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1" defer></script>
-    <script src="js/i18n.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1" defer></script>
+    <script src="js/i18n.js?v=20260524_SHOP_PURCHASE_GUIDANCE_PREVIEW_1" defer></script>
     <script src="js/ios-scroll-lock.js?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6" defer></script>
     <script src="inject-auth.js?v=20260512_NAV_AUTH_SESSION_MATCH_1&iosChromeKeyboard=20260514_ALL_KEYBOARD_RELEASE_1" defer></script>
     <script src="js/framer-nav-runtime.js?v=20260512_SUPPORT_STATUS_LINK_REMOVED_1" defer></script>
@@ -513,7 +553,7 @@
 
     <!-- Shop Logic -->
     <script src="js/shop-image-variants.js?v=20260430_RESPONSIVE_IMAGE_VARIANTS_1" defer></script>
-    <script src="js/shop-client.js?v=20260520_SHOP_CARD_PROMPT_BREATHE_3&siteMarketingPricing=20260513_SHOP_SITE_MARKETING_PRICING_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&iosChromeKeyboard=20260514_ALL_KEYBOARD_RELEASE_1&shopModalBackdropTap=20260514_SHOP_MODAL_CHROME_BACKDROP_TAP_1&purchaseModalCenter=20260514_SHOP_PURCHASE_CENTER_CHROME_1&purchaseLightLock=20260514_SHOP_PURCHASE_CHROME_LIGHT_LOCK_1" defer></script>
+    <script src="js/shop-client.js?v=20260520_SHOP_CARD_PROMPT_BREATHE_3&shopProductSkus=20260523_SHOP_PRODUCT_SKUS_1&siteMarketingPricing=20260513_SHOP_SITE_MARKETING_PRICING_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&iosChromeKeyboard=20260514_ALL_KEYBOARD_RELEASE_1&shopModalBackdropTap=20260514_SHOP_MODAL_CHROME_BACKDROP_TAP_1&purchaseModalCenter=20260514_SHOP_PURCHASE_CENTER_CHROME_1&purchaseLightLock=20260514_SHOP_PURCHASE_CHROME_LIGHT_LOCK_1&purchaseSkuCombo=20260524_SHOP_PURCHASE_SKU_COMBO_1&purchaseSplit=20260524_SHOP_PURCHASE_SPLIT_2&purchaseDiscountDrawer=20260524_SHOP_PURCHASE_DISCOUNT_DRAWER_3&purchaseGuidancePreview=20260524_SHOP_PURCHASE_GUIDANCE_PREVIEW_1&purchaseWideDefaults=20260524_SHOP_PURCHASE_WIDE_DEFAULTS_1&purchaseStockTone=20260524_SHOP_PURCHASE_STOCK_TONE_1&successDisclosureScroll=20260524_SHOP_SUCCESS_DISCLOSURE_SCROLL_5&purchaseGuidanceScrollState=20260524_SHOP_PURCHASE_GUIDANCE_SCROLL_STATE_2" defer></script>
 
     <!-- Chat Widget -->
     <link rel="stylesheet" href="css/chat-widget.css?v=20260507_CHAT_WIDGET_ADAPTIVE_BUBBLE_1" media="print" data-deferred-style="1" data-deferred-style-mode="manual" data-deferred-style-group="public-chat">

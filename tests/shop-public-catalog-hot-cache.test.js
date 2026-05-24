@@ -42,6 +42,9 @@ function createThenableQuery(getResult, onAwait) {
         select() {
             return this;
         },
+        in() {
+            return this;
+        },
         eq() {
             return this;
         },
@@ -63,6 +66,7 @@ test('public shop catalog hot cache preserves normal hits while refresh requests
     let catalogVersion = 1;
     let categoryReads = 0;
     let productReads = 0;
+    let skuReads = 0;
     const supabase = {
         from(table) {
             if (table === 'shop_categories') {
@@ -77,6 +81,27 @@ test('public shop catalog hot cache preserves normal hits while refresh requests
                     error: null
                 }), () => {
                     categoryReads += 1;
+                });
+            }
+
+            if (table === 'shop_product_skus') {
+                return createThenableQuery(() => ({
+                    data: [
+                        {
+                            id: `sku-${catalogVersion}`,
+                            product_id: `product-${catalogVersion}`,
+                            sku_name: `Default ${catalogVersion}`,
+                            price_points: 10,
+                            quantity_rules: [{ qty: 3, price: 8 }],
+                            stock_count: 5,
+                            is_default: true,
+                            is_active: true,
+                            sort_order: 0
+                        }
+                    ],
+                    error: null
+                }), () => {
+                    skuReads += 1;
                 });
             }
 
@@ -166,7 +191,10 @@ test('public shop catalog hot cache preserves normal hits while refresh requests
     assert.equal(finalRes.headers['x-zaoyoe-cache'], 'hit');
     assert.equal(categoryReads, 2);
     assert.equal(productReads, 2);
+    assert.equal(skuReads, 2);
     assert.equal(firstRes.json().products[0].id, 'product-1');
+    assert.equal(firstRes.json().products[0].skus[0].id, 'sku-1');
+    assert.deepEqual(firstRes.json().products[0].skus[0].quantity_rules, [{ qty: 3, price: 8 }]);
     assert.equal(secondRes.json().products[0].id, 'product-1');
     assert.equal(refreshRes.json().products[0].id, 'product-2');
     assert.equal(finalRes.json().products[0].id, 'product-2');

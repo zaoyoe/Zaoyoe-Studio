@@ -17,17 +17,19 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     const walletModalSource = readRepoFile(path.join('js', 'components', 'WalletModal.js'));
     const shopHtmlSource = readRepoFile('shop.html');
     const shopCssSource = readRepoFile(path.join('css', 'shop-page.css'));
+    const zhLang = JSON.parse(readRepoFile(path.join('lang', 'zh.json')));
+    const enLang = JSON.parse(readRepoFile(path.join('lang', 'en.json')));
     const publicScrollbarSource = readRepoFile(path.join('js', 'public-scrollbar-auto-hide.js'));
     const publicScrollbarCss = readRepoFile(path.join('css', 'public-scrollbar-auto-hide.css'));
 
     assert.match(
         shopClientSource,
-        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260513_SHOP_SITE_MARKETING_PRICING_1';/,
+        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260523_SHOP_PRODUCT_SKUS_1';/,
         'shop-client.js should define a dedicated schema version for prefetched shop payloads'
     );
     assert.match(
         shopClientSource,
-        /const initialQuantity = Math\.max\(1, Math\.min\(quantityCap[\s\S]*?void this\.prefetchDiscountAssetsForProduct\(\{\s+productId,\s+quantity: initialQuantity,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);\s+this\.openPurchaseModal\(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, \{\s+category: productCategory,\s+sourceContext,\s+initialQuantity\s+\}\);\s+void this\.refreshCurrentPurchaseGuidance\(productId\);\s+void this\.syncPurchaseAccessAfterOpen\(productId, quantityCap\);/s,
+        /const initialQuantity = Math\.max\(1, Math\.min\(quantityCap[\s\S]*?void this\.prefetchDiscountAssetsForProduct\(\{\s+productId,\s+quantity: initialQuantity,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);\s+this\.openPurchaseModal\(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, \{\s+category: productCategory,\s+sourceContext,\s+initialQuantity,\s+productSkuId: options\?\.productSkuId \|\| options\?\.skuId \|\| ''\s+\}\);\s+void this\.refreshCurrentPurchaseGuidance\(productId\);\s+void this\.syncPurchaseAccessAfterOpen\(productId, quantityCap\);/s,
         'shop purchase clicks should prefetch discount assets, open the modal immediately, refresh the latest product guidance, and sync purchase access in the background'
     );
     assert.doesNotMatch(
@@ -118,7 +120,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         homeBootstrapSource,
-        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260513_SHOP_SITE_MARKETING_PRICING_1';/,
+        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260523_SHOP_PRODUCT_SKUS_1';/,
         'homepage shop prefetch should use the same guidance-aware schema version'
     );
     assert.match(
@@ -203,7 +205,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopHtmlSource,
-        /css\/shop-page\.css\?v=20260520_SHOP_CARD_PROMPT_BREATHE_3/,
+        /css\/shop-page\.css\?v=20260520_SHOP_CARD_PROMPT_BREATHE_3&shopProductSkus=20260523_SHOP_PRODUCT_SKUS_1/,
         'shop.html should bust the shop stylesheet cache after updating purchase guidance light-theme color visibility'
     );
     assert.match(
@@ -243,13 +245,45 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopCssSource,
-        /#shopPurchaseModal #purchaseNotesContent,\s+html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseNotesContent :not\(\[style\*="color"\]\):not\(\[color\]\) \{/s,
-        'light-theme purchase notes should only force the default copy color onto nodes that do not already declare a rich-text color'
+        /#shopPurchaseModal #purchaseNotesContent,\s+html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseNotesContent :not\(\[style\*="color"\]\):not\(\[color\]\),\s+html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseUsageContent,\s+html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseUsageContent :not\(\[style\*="color"\]\):not\(\[color\]\) \{/s,
+        'light-theme purchase guidance should only force the default copy color onto nodes that do not already declare a rich-text color'
     );
+    assert.match(
+        shopClientSource,
+        /renderPurchaseSkuSelector: function \(\) \{[\s\S]*const shouldShow = skus\.length > 0;[\s\S]*container\.classList\.toggle\('is-single-sku', skus\.length === 1\);[\s\S]*window\.i18n\?\.t\('shop\.currentSpec'\)/s,
+        'purchase modal should still display a compact current-spec row when a product has only one SKU'
+    );
+    assert.match(
+        shopHtmlSource,
+        /id="purchaseNotesBox"[\s\S]*id="purchaseUsageBox"[\s\S]*id="purchaseUsageToggle"[\s\S]*id="purchaseUsageContent"[\s\S]*<div class="shop-purchase-dock"/s,
+        'purchase modal should expose usage instructions as a folded preview before the checkout dock'
+    );
+    assert.match(
+        shopClientSource,
+        /this\.renderPurchaseNotes\(\);\s+this\.renderPurchaseUsageInstructions\(\);[\s\S]*this\.setPurchaseStage\(this\.currentPurchase\.stage \|\| 'configure'\);/s,
+        'latest guidance refresh should update both purchase notes and usage instructions while the modal is open'
+    );
+    assert.match(
+        shopClientSource,
+        /purchaseUsageToggle[\s\S]*togglePurchaseUsageVisibility[\s\S]*renderPurchaseUsageInstructions: function \(\)/s,
+        'purchase usage instructions should have their own compact disclosure control'
+    );
+    assert.match(
+        shopCssSource,
+        /#purchaseNotesContent,\s+#purchaseNotesContent \*,\s+#purchaseUsageContent,\s+#purchaseUsageContent \*[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseUsageContent/s,
+        'purchase usage instructions should share selectable rich-text and light-theme readability rules'
+    );
+    assert.equal(zhLang.shop.currentSpec, '规格');
+    assert.equal(enLang.shop.currentSpec, 'Option');
     assert.match(
         shopHtmlSource,
         /id="shopCartAnchor"[\s\S]*id="shopCartAnchorBadge"[\s\S]*id="shopCartDrawer"[\s\S]*id="shopCartCheckoutModal"/,
         'shop.html should render the floating cart anchor count badge, drawer, and checkout review modal'
+    );
+    assert.equal(
+        shopHtmlSource.includes('cartDrawerNarrowWidth=20260524_SHOP_CART_DRAWER_NARROW_WIDTH_1'),
+        true,
+        'shop.html should bust storefront styles after aligning the narrow cart drawer width with the purchase modal'
     );
     assert.doesNotMatch(
         shopHtmlSource + shopCssSource + shopClientSource,
@@ -327,6 +361,11 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         'cart close should immediately hard-hide fixed drawer and backdrop layers so Safari stops sampling them'
     );
     assert.match(
+        shopCssSource,
+        /@media \(max-width: 720px\) \{[\s\S]*\.shop-cart-drawer \{[\s\S]*width: min\(calc\(100% - 28px\), 620px\);[\s\S]*max-height: min\(78dvh, 760px\);/s,
+        'narrow cart drawer should match the purchase modal width instead of using the older narrow 420px sheet'
+    );
+    assert.match(
         shopClientSource,
         /anchor\.setAttribute\('aria-label', anchorLabel\);[\s\S]*anchor\.setAttribute\('title', copy\.drawerTitle\);/,
         'icon-only floating cart should keep an accessible cart label after hiding the visible copy'
@@ -388,7 +427,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /getPurchaseQuantityCapForProduct: function \(product, fallbackMaxQuantity = null\) \{[\s\S]*stockCount[\s\S]*Math\.min\(99,\s*Math\.trunc\(stockCount\)\)/s,
+        /getPurchaseQuantityCapForProduct: function \(product, fallbackMaxQuantity = null, options = \{\}\) \{[\s\S]*selectedSku[\s\S]*stockCount[\s\S]*Math\.min\(99,\s*Math\.trunc\(stockCount\)\)/s,
         'purchase modals should derive their quantity cap from live stock when stock is available'
     );
     assert.match(
@@ -518,7 +557,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /openPurchaseModalFromCartEntry: function \(entry\) \{[\s\S]*const purchaseQuantityCap = this\.getPurchaseQuantityCapForProduct\(entry\.product, entry\.quantityCap\);/s,
+        /openPurchaseModalFromCartEntry: function \(entry\) \{[\s\S]*const purchaseQuantityCap = this\.getPurchaseQuantityCapForProduct\(entry\.product, entry\.quantityCap, \{\s+skuId: entry\.productSkuId \|\| ''\s+\}\);/s,
         'opening the purchase modal from the cart should also cap quantity by the current product stock'
     );
     assert.match(
@@ -550,6 +589,26 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         shopClientSource,
         /panel\.setAttribute\('aria-hidden', nextExpanded \? 'false' : 'true'\);[\s\S]*item\.classList\.toggle\('is-content-expanded', nextExpanded\);/,
         'success modal item toggles should drive animated expansion through class state instead of toggling display immediately'
+    );
+    assert.match(
+        shopClientSource,
+        /toggleSuccessItemDisclosure: function \(toggleButton\)[\s\S]*panel\.hidden = !nextExpanded;[\s\S]*this\.syncSuccessDisclosureScroll\(panel, \{ focusToggle: toggleButton, expanded: nextExpanded \}\);[\s\S]*syncSuccessDisclosureScroll: function \(panel, \{ focusToggle = null, expanded = true \} = \{\}\)[\s\S]*modalScroll\.scrollTo\(\{ top: nextScrollTop, behavior: 'auto' \}\);/s,
+        'success modal should jump opened notes or usage panels into view without a smooth-scroll animation fighting user wheel input'
+    );
+    assert.doesNotMatch(
+        shopClientSource,
+        /bindSuccessUsageWheelIsolation|clearSuccessUsageWheelIsolation|successUsageWheelCleanup/,
+        'success modal should use native main-scroll behavior without non-passive wheel interception'
+    );
+    assert.doesNotMatch(
+        shopClientSource,
+        /chainToSiblingPanels|chainSuccessDisclosureWheel|shop-success-handoff-spacer|is-scroll-handoff-ready/,
+        'success modal should no longer ship nested disclosure handoff paths that can block native scrolling'
+    );
+    assert.match(
+        shopHtmlSource,
+        /successDisclosureScroll=20260524_SHOP_SUCCESS_DISCLOSURE_SCROLL_5/,
+        'shop success modal should cache-bust the runtime after removing wheel interception from success disclosures'
     );
     assert.match(
         shopHtmlSource,

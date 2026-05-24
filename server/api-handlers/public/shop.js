@@ -105,7 +105,7 @@ function createShopHandlers({
     } = site || {};
     const {
         normalizeDistributionMode,
-        normalizeText,
+        normalizeText: normalizeDiscountAssetText,
         normalizeSite,
         isRefundedOrder
     } = discountAssets || {};
@@ -119,6 +119,10 @@ function createShopHandlers({
         ttlMs: normalizePositiveInteger(env.SHOP_CATALOG_HOT_CACHE_TTL_MS, 15_000, 0),
         maxEntries: normalizePositiveInteger(env.SHOP_CATALOG_HOT_CACHE_MAX_ENTRIES, 128, 1)
     });
+
+    const normalizeText = typeof normalizeDiscountAssetText === 'function'
+        ? normalizeDiscountAssetText
+        : ((value, maxLength = 160) => String(value || '').trim().slice(0, Math.max(0, maxLength)));
 
     function setPrivateApiCache(res) {
         if (!res?.setHeader) return;
@@ -341,17 +345,77 @@ function createShopHandlers({
         return product?.[baseField];
     }
 
+    function normalizePublicShopSkuForSite(sku = {}, product = {}, currentSite = 'cn') {
+        const skuPrice = currentSite === 'intl'
+            ? (sku.price_points_intl ?? sku.price_points ?? null)
+            : (sku.price_points ?? null);
+        const skuQuantityRules = getSiteScopedShopMarketingValue(sku, 'quantity_rules', currentSite);
+
+        return {
+            ...sku,
+            price_points: skuPrice,
+            quantity_rules: skuQuantityRules ?? null,
+            stock_count: Math.max(0, Number(sku.stock_count || 0) || 0)
+        };
+    }
+
     function normalizeShopCatalogProductForSite(product = {}, currentSite = 'cn') {
         const quantityRules = getSiteScopedShopMarketingValue(product, 'quantity_rules', currentSite);
         const flashSalePrice = getSiteScopedShopMarketingValue(product, 'flash_sale_price', currentSite);
         const flashSaleEnd = getSiteScopedShopMarketingValue(product, 'flash_sale_end', currentSite);
+        const rawSkus = Array.isArray(product?.skus) ? product.skus : [];
+        const skus = rawSkus
+            .filter((sku) => sku?.is_active !== false)
+            .map((sku) => normalizePublicShopSkuForSite(sku, product, currentSite))
+            .filter((sku) => sku.price_points !== null && sku.price_points !== undefined && sku.price_points !== '');
 
         return {
             ...product,
             quantity_rules: quantityRules ?? null,
             flash_sale_price: flashSalePrice ?? null,
-            flash_sale_end: flashSaleEnd || null
+            flash_sale_end: flashSaleEnd || null,
+            skus
         };
+    }
+
+    async function attachPublicShopProductSkus(dataSupabase, products = []) {
+        const rows = Array.isArray(products) ? products : [];
+        const productIds = rows.map((product) => normalizeText(product?.id, 160)).filter(Boolean);
+        if (!productIds.length) {
+            return rows;
+        }
+
+        try {
+            const { data, error } = await dataSupabase
+                .from('shop_product_skus')
+                .select('id, product_id, sku_code, sku_name, spec_values, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order')
+                .in('product_id', productIds)
+                .eq('is_active', true)
+                .order('sort_order', { ascending: true })
+                .order('created_at', { ascending: true });
+
+            if (error) throw error;
+
+            const skusByProductId = new Map();
+            (Array.isArray(data) ? data : []).forEach((sku) => {
+                const productId = normalizeText(sku?.product_id, 160);
+                if (!productId) return;
+                if (!skusByProductId.has(productId)) {
+                    skusByProductId.set(productId, []);
+                }
+                skusByProductId.get(productId).push(sku);
+            });
+
+            return rows.map((product) => ({
+                ...product,
+                skus: skusByProductId.get(normalizeText(product?.id, 160)) || []
+            }));
+        } catch (error) {
+            if (isMissingRelationError(error, 'shop_product_skus')) {
+                return rows;
+            }
+            throw error;
+        }
     }
 
     async function loadPublicShopCategories(dataSupabase) {
@@ -447,7 +511,7 @@ function createShopHandlers({
 
             const { data, error } = await query;
             if (!error) {
-                const products = Array.isArray(data) ? data : [];
+                const products = await attachPublicShopProductSkus(dataSupabase, Array.isArray(data) ? data : []);
                 return products
                     .filter((product) => isShopCatalogProductAvailableForSite(product, currentSite))
                     .map((product) => normalizeShopCatalogProductForSite(product, currentSite));
@@ -553,24 +617,39 @@ function createShopHandlers({
             return [];
         }
 
-        const { data, error } = await supabase
+        let response = await supabase
             .from('discount_codes')
-            .select('id, code, is_active, applicable_site, discount_type, discount_value, max_uses, used_count, max_uses_per_user, starts_at, expires_at, lifecycle_status, status_reason, scope_type, scope_category, scope_product_id, allow_zero_total, distribution_mode, claim_starts_at, claim_expires_at, claim_limit_per_user, campaign_tag, audience_segment, observation_ends_at, is_exclusive, stack_priority, pricing_apply_stage')
+            .select('id, code, is_active, applicable_site, discount_type, discount_value, max_uses, used_count, max_uses_per_user, starts_at, expires_at, lifecycle_status, status_reason, scope_type, scope_category, scope_product_id, scope_product_sku_id, allow_zero_total, distribution_mode, claim_starts_at, claim_expires_at, claim_limit_per_user, campaign_tag, audience_segment, observation_ends_at, is_exclusive, stack_priority, pricing_apply_stage')
             .in('id', discountIds);
 
-        if (error) throw error;
-        return Array.isArray(data) ? data : [];
+        if (response.error && isMissingColumnError(response.error, 'scope_product_sku_id')) {
+            response = await supabase
+                .from('discount_codes')
+                .select('id, code, is_active, applicable_site, discount_type, discount_value, max_uses, used_count, max_uses_per_user, starts_at, expires_at, lifecycle_status, status_reason, scope_type, scope_category, scope_product_id, allow_zero_total, distribution_mode, claim_starts_at, claim_expires_at, claim_limit_per_user, campaign_tag, audience_segment, observation_ends_at, is_exclusive, stack_priority, pricing_apply_stage')
+                .in('id', discountIds);
+        }
+
+        if (response.error) throw response.error;
+        return Array.isArray(response.data) ? response.data : [];
     }
 
     async function loadPublicClaimDiscounts(supabase) {
-        const { data, error } = await supabase
+        let response = await supabase
             .from('discount_codes')
-            .select('id, code, is_active, applicable_site, discount_type, discount_value, max_uses, used_count, max_uses_per_user, starts_at, expires_at, lifecycle_status, status_reason, scope_type, scope_category, scope_product_id, allow_zero_total, distribution_mode, claim_starts_at, claim_expires_at, claim_limit_per_user, campaign_tag, audience_segment, is_exclusive, stack_priority, pricing_apply_stage')
+            .select('id, code, is_active, applicable_site, discount_type, discount_value, max_uses, used_count, max_uses_per_user, starts_at, expires_at, lifecycle_status, status_reason, scope_type, scope_category, scope_product_id, scope_product_sku_id, allow_zero_total, distribution_mode, claim_starts_at, claim_expires_at, claim_limit_per_user, campaign_tag, audience_segment, is_exclusive, stack_priority, pricing_apply_stage')
             .eq('distribution_mode', 'public_claim')
             .order('created_at', { ascending: false });
 
-        if (error) throw error;
-        return Array.isArray(data) ? data : [];
+        if (response.error && isMissingColumnError(response.error, 'scope_product_sku_id')) {
+            response = await supabase
+                .from('discount_codes')
+                .select('id, code, is_active, applicable_site, discount_type, discount_value, max_uses, used_count, max_uses_per_user, starts_at, expires_at, lifecycle_status, status_reason, scope_type, scope_category, scope_product_id, allow_zero_total, distribution_mode, claim_starts_at, claim_expires_at, claim_limit_per_user, campaign_tag, audience_segment, is_exclusive, stack_priority, pricing_apply_stage')
+                .eq('distribution_mode', 'public_claim')
+                .order('created_at', { ascending: false });
+        }
+
+        if (response.error) throw response.error;
+        return Array.isArray(response.data) ? response.data : [];
     }
 
     async function loadShopOrdersByDiscountAssets(supabase, assets = []) {
@@ -673,12 +752,68 @@ function createShopHandlers({
         }
     }
 
+    async function loadShopProductSkusByIds(supabase, ids = []) {
+        const skuIds = [...new Set((Array.isArray(ids) ? ids : []).map((value) => normalizeText(value, 160)).filter(Boolean))];
+        if (!skuIds.length) {
+            return new Map();
+        }
+
+        try {
+            const { data, error } = await supabase
+                .from('shop_product_skus')
+                .select('id, product_id, sku_code, sku_name, is_active, is_default')
+                .in('id', skuIds);
+
+            if (error) throw error;
+
+            return new Map(
+                (Array.isArray(data) ? data : [])
+                    .map((row) => [normalizeText(row?.id, 160), row])
+                    .filter(([id]) => id)
+            );
+        } catch (error) {
+            if (isMissingRelationError(error, 'shop_product_skus')) {
+                return new Map();
+            }
+            throw error;
+        }
+    }
+
+    function resolveScopeProductSkuSummary(discount = {}, skuById = new Map()) {
+        const scopeType = normalizeClaimText(discount?.scope_type, 40).toLowerCase() || 'all';
+        if (scopeType !== 'product') {
+            return null;
+        }
+
+        const skuId = normalizeClaimText(discount?.scope_product_sku_id, 160);
+        if (!skuId) {
+            return null;
+        }
+
+        const sku = skuById instanceof Map
+            ? (skuById.get(skuId) || null)
+            : null;
+        const displayName = normalizeClaimText(sku?.sku_name, 120) || normalizeClaimText(sku?.sku_code, 120) || null;
+
+        return {
+            id: skuId,
+            product_id: normalizeClaimText(sku?.product_id, 160) || null,
+            sku_code: normalizeClaimText(sku?.sku_code, 120) || null,
+            sku_name: normalizeClaimText(sku?.sku_name, 160) || null,
+            is_active: sku ? sku.is_active !== false : null,
+            is_default: sku ? sku.is_default === true : null,
+            display_name: displayName,
+            is_missing: !sku
+        };
+    }
+
     async function loadScopedProductAvailabilityByAsset(supabase, {
         userId = '',
         site: currentSite = 'cn',
         assets = [],
         discountMap = new Map(),
-        productById = new Map()
+        productById = new Map(),
+        skuById = new Map()
     } = {}) {
         const availabilityByAssetId = new Map();
         const relevantAssets = (Array.isArray(assets) ? assets : []).filter((asset) => {
@@ -698,7 +833,9 @@ function createShopHandlers({
             const assetId = normalizeText(asset?.id, 160);
             const discount = discountMap.get(normalizeText(asset?.discount_id, 160));
             const productId = normalizeClaimText(discount?.scope_product_id, 160);
+            const skuId = normalizeClaimText(discount?.scope_product_sku_id, 160);
             const product = productById.get(productId) || null;
+            const sku = skuId ? (skuById.get(skuId) || null) : null;
 
             if (!productId) {
                 return [assetId, {
@@ -724,6 +861,22 @@ function createShopHandlers({
                 }];
             }
 
+            if (skuId && !sku) {
+                return [assetId, {
+                    available: false,
+                    message: '指定规格当前暂不可见，请联系管理员检查卡券配置',
+                    preview: null
+                }];
+            }
+
+            if (skuId && sku.is_active === false) {
+                return [assetId, {
+                    available: false,
+                    message: '指定规格当前已停用，暂时无法使用这张卡券',
+                    preview: null
+                }];
+            }
+
             try {
                 const payload = await previewDiscount(supabase, {
                     productId,
@@ -732,6 +885,7 @@ function createShopHandlers({
                     quantity: 1,
                     discountCode: discount?.code,
                     discountAssetId: assetId,
+                    productSkuId: skuId || null,
                     agentId: null
                 });
 
@@ -882,9 +1036,10 @@ function createShopHandlers({
         quantity,
         discountCode,
         discountAssetId,
+        productSkuId,
         agentId
     }) {
-        const { data, error } = await supabase.rpc('fn_validate_discount_code', {
+        const params = {
             p_product_id: productId,
             p_user_id: userId,
             p_site: currentSite,
@@ -892,7 +1047,17 @@ function createShopHandlers({
             p_discount_code: discountCode,
             p_discount_asset_id: discountAssetId || null,
             p_agent_id: agentId || null
-        });
+        };
+        if (productSkuId) {
+            params.p_sku_id = productSkuId;
+        }
+
+        let { data, error } = await supabase.rpc('fn_validate_discount_code', params);
+        if (error && productSkuId && isMissingRpcCapabilityError(error)) {
+            const legacyParams = { ...params };
+            delete legacyParams.p_sku_id;
+            ({ data, error } = await supabase.rpc('fn_validate_discount_code', legacyParams));
+        }
 
         if (error) throw error;
         return Array.isArray(data) ? data[0] : data;
@@ -905,7 +1070,8 @@ function createShopHandlers({
 
         const normalized = normalizePricingDiscountSelection({
             discount_code: selection?.discountCode ?? selection?.discount_code ?? selection?.code,
-            discount_asset_id: selection?.discountAssetId ?? selection?.discount_asset_id ?? selection?.assetId ?? selection?.asset_id
+            discount_asset_id: selection?.discountAssetId ?? selection?.discount_asset_id ?? selection?.assetId ?? selection?.asset_id,
+            scope_product_sku_id: selection?.scopeProductSkuId ?? selection?.scope_product_sku_id
         });
 
         if (!normalized?.code && !normalized?.asset_id) {
@@ -914,7 +1080,8 @@ function createShopHandlers({
 
         return {
             code: normalized.code || null,
-            assetId: normalized.asset_id || null
+            assetId: normalized.asset_id || null,
+            scopeProductSkuId: normalized.scope_product_sku_id || null
         };
     }
 
@@ -972,6 +1139,7 @@ function createShopHandlers({
         site: currentSite,
         quantity,
         selections = [],
+        productSkuId,
         agentId
     } = {}) {
         const normalizedSelections = normalizeDiscountSelectionsInput({
@@ -1003,6 +1171,7 @@ function createShopHandlers({
                 quantity,
                 discountCode: selection.code,
                 discountAssetId: selection.assetId,
+                productSkuId,
                 agentId
             });
 
@@ -1288,7 +1457,7 @@ function createShopHandlers({
         };
     }
 
-    function formatScopeLabel(discount = {}, productById = new Map()) {
+    function formatScopeLabel(discount = {}, productById = new Map(), skuById = new Map()) {
         const scopeType = normalizeClaimText(discount?.scope_type, 40).toLowerCase() || 'all';
         if (scopeType === 'category') {
             return normalizeClaimText(discount?.scope_category, 80)
@@ -1298,6 +1467,10 @@ function createShopHandlers({
 
         if (scopeType === 'product') {
             const scopeProduct = resolveScopeProductSummary(discount, productById);
+            const scopeSku = resolveScopeProductSkuSummary(discount, skuById);
+            if (scopeProduct?.display_name && scopeSku?.display_name) {
+                return `指定商品 · ${scopeProduct.display_name} / ${scopeSku.display_name}`;
+            }
             return scopeProduct?.display_name
                 ? `指定商品 · ${scopeProduct.display_name}`
                 : '指定商品';
@@ -1306,13 +1479,15 @@ function createShopHandlers({
         return '全场可用';
     }
 
-    function buildDiscountScopePayload(discount = {}, productById = new Map()) {
+    function buildDiscountScopePayload(discount = {}, productById = new Map(), skuById = new Map()) {
         return {
             scope_type: normalizeClaimText(discount?.scope_type, 40).toLowerCase() || 'all',
             scope_category: normalizeClaimText(discount?.scope_category, 120) || null,
             scope_product_id: normalizeClaimText(discount?.scope_product_id, 160) || null,
+            scope_product_sku_id: normalizeClaimText(discount?.scope_product_sku_id, 160) || null,
             scope_product: resolveScopeProductSummary(discount, productById),
-            scope_label: formatScopeLabel(discount, productById)
+            scope_product_sku: resolveScopeProductSkuSummary(discount, skuById),
+            scope_label: formatScopeLabel(discount, productById, skuById)
         };
     }
 
@@ -1394,6 +1569,7 @@ function createShopHandlers({
         discount = {},
         orderByAssetId = new Map(),
         productById = new Map(),
+        skuById = new Map(),
         now = new Date(),
         options = {}
     ) {
@@ -1408,6 +1584,7 @@ function createShopHandlers({
         const scopeProduct = resolveScopeProductSummary(discount, productById);
         const scopedProductAvailability = options?.scopedProductAvailability || null;
         const isProductScoped = normalizeClaimText(discount?.scope_type, 40).toLowerCase() === 'product';
+        const scopeProductSku = resolveScopeProductSkuSummary(discount, skuById);
 
         let statusGroup = 'inactive';
         let statusLabel = '已失效';
@@ -1476,11 +1653,13 @@ function createShopHandlers({
             scope_type: normalizeClaimText(discount?.scope_type, 40).toLowerCase() || 'all',
             scope_category: normalizeClaimText(discount?.scope_category, 120) || null,
             scope_product_id: normalizeClaimText(discount?.scope_product_id, 160) || null,
+            scope_product_sku_id: normalizeClaimText(discount?.scope_product_sku_id, 160) || null,
             scope_product: scopeProduct,
+            scope_product_sku: scopeProductSku,
             scoped_product_available: scopedProductAvailability?.available ?? null,
             scoped_product_message: scopedProductAvailability?.message || null,
             scoped_product_preview: scopedProductAvailability?.preview || null,
-            scope_label: formatScopeLabel(discount, productById),
+            scope_label: formatScopeLabel(discount, productById, skuById),
             source_label: formatSourceLabel(asset, discount),
             source_channel: asset.source_channel || null,
             discount_type: discount.discount_type || null,
@@ -1799,6 +1978,15 @@ function createShopHandlers({
         const quantity = Number.isFinite(quantityValue) ? Math.trunc(quantityValue) : NaN;
         const discountCode = String(body?.discountCode || body?.p_discount_code || '').trim().toUpperCase() || null;
         const discountAssetId = String(body?.discountAssetId || body?.p_discount_asset_id || '').trim() || null;
+        const rawProductSkuId = String(
+            body?.productSkuId
+            || body?.product_sku_id
+            || body?.skuId
+            || body?.sku_id
+            || body?.p_sku_id
+            || ''
+        ).trim();
+        const productSkuId = isUuid(rawProductSkuId) ? rawProductSkuId : null;
         const discountSelections = normalizeDiscountSelectionsInput(body, {
             discountCode,
             discountAssetId
@@ -1808,6 +1996,7 @@ function createShopHandlers({
             productId: String(body?.productId || body?.product_id || '').trim(),
             quantity,
             site: requireSupportedSite(body?.site || body?.p_site || 'cn', { fieldName: 'site' }),
+            productSkuId,
             discountCode,
             discountAssetId,
             discountSelections,
@@ -1955,6 +2144,7 @@ function createShopHandlers({
                 productId: payload.productId,
                 quantity: payload.quantity,
                 site: payload.site,
+                productSkuId: payload.productSkuId || '',
                 discountCode: payload.discountCode || '',
                 discountAssetId: payload.discountAssetId || '',
                 discountSelections: normalizedSelections,
@@ -2013,25 +2203,38 @@ function createShopHandlers({
             p_agent_id: payload.agentId
         };
 
-        if (options.includeDiscountAssetId !== false && payload.discountAssetId) {
-            params.p_discount_asset_id = payload.discountAssetId;
+        if (options.includeDiscountAssetId !== false && (payload.discountAssetId || payload.productSkuId)) {
+            params.p_discount_asset_id = payload.discountAssetId || null;
+        }
+        if (payload.productSkuId) {
+            params.p_sku_id = payload.productSkuId;
         }
 
         return params;
     }
 
     function buildMultiDiscountPurchaseRpcParams(payload = {}, userId = '') {
-        return {
+        const params = {
             p_product_id: payload.productId,
             p_user_id: userId,
             p_site: payload.site,
             p_quantity: payload.quantity,
-            p_discount_inputs: (Array.isArray(payload.discountSelections) ? payload.discountSelections : []).map((selection) => ({
-                discount_code: selection?.code || null,
-                discount_asset_id: selection?.assetId || null
-            })),
+            p_discount_inputs: (Array.isArray(payload.discountSelections) ? payload.discountSelections : []).map((selection) => {
+                const input = {
+                    discount_code: selection?.code || null,
+                    discount_asset_id: selection?.assetId || null
+                };
+                if (selection?.scopeProductSkuId) {
+                    input.scope_product_sku_id = selection.scopeProductSkuId;
+                }
+                return input;
+            }),
             p_agent_id: payload.agentId
         };
+        if (payload.productSkuId) {
+            params.p_sku_id = payload.productSkuId;
+        }
+        return params;
     }
 
     async function executeMultiDiscountPurchaseRpc({
@@ -2109,7 +2312,7 @@ function createShopHandlers({
         }
 
         const params = buildPurchaseRpcParams(payload, userId, {
-            includeDiscountAssetId: Boolean(payload.discountAssetId)
+            includeDiscountAssetId: Boolean(payload.discountAssetId || payload.productSkuId)
         });
         let lastError = null;
 
@@ -2129,7 +2332,7 @@ function createShopHandlers({
             }
         }
 
-        if (payload.discountAssetId && isMissingRpcCapabilityError(lastError)) {
+        if ((payload.discountAssetId || payload.productSkuId) && isMissingRpcCapabilityError(lastError)) {
             const error = new Error('商城购买接口版本不兼容，请检查 fn_purchase_shop_item 迁移和 schema cache');
             error.statusCode = 502;
             throw error;
@@ -2480,6 +2683,15 @@ function createShopHandlers({
                 const quantity = Number.isFinite(quantityValue) ? Math.max(1, Math.trunc(quantityValue)) : 1;
                 const currentSite = requireSupportedSite(body?.site || body?.p_site || 'cn', { fieldName: 'site' });
                 const agentId = String(body?.agentId || body?.agent_id || '').trim() || null;
+                const rawProductSkuId = String(
+                    body?.productSkuId
+                    || body?.product_sku_id
+                    || body?.skuId
+                    || body?.sku_id
+                    || body?.p_sku_id
+                    || ''
+                ).trim();
+                const productSkuId = isUuid(rawProductSkuId) ? rawProductSkuId : null;
                 const dataSupabase = adminSupabase || supabase;
 
                 if (!productId) {
@@ -2502,6 +2714,12 @@ function createShopHandlers({
                         .filter((row) => normalizeClaimText(row?.scope_type, 40).toLowerCase() === 'product')
                         .map((row) => row?.scope_product_id)
                 );
+                const scopedSkuById = await loadShopProductSkusByIds(
+                    dataSupabase,
+                    [...masterDiscountRows, ...publicClaimDiscounts]
+                        .filter((row) => normalizeClaimText(row?.scope_type, 40).toLowerCase() === 'product')
+                        .map((row) => row?.scope_product_sku_id)
+                );
 
                 const ownedDiscounts = [];
                 for (const asset of visibleOwnedAssets) {
@@ -2520,6 +2738,7 @@ function createShopHandlers({
                             quantity,
                             discountCode: masterDiscount.code,
                             discountAssetId: asset.id,
+                            productSkuId,
                             agentId
                         });
                         if (payload?.success === false) {
@@ -2541,7 +2760,7 @@ function createShopHandlers({
                         discount_id: masterDiscount.id,
                         code: masterDiscount.code,
                         benefit_label: formatBenefitLabel(masterDiscount),
-                        ...buildDiscountScopePayload(masterDiscount, scopedProductById),
+                        ...buildDiscountScopePayload(masterDiscount, scopedProductById, scopedSkuById),
                         discount_type: masterDiscount.discount_type || null,
                         discount_value: masterDiscount.discount_value == null ? null : Number(masterDiscount.discount_value),
                         distribution_mode: normalizeDistributionMode(masterDiscount.distribution_mode, 'general_code'),
@@ -2567,7 +2786,7 @@ function createShopHandlers({
                             discount_id: discount.id,
                             code: discount.code,
                             benefit_label: formatBenefitLabel(discount),
-                            ...buildDiscountScopePayload(discount, scopedProductById),
+                            ...buildDiscountScopePayload(discount, scopedProductById, scopedSkuById),
                             discount_type: discount.discount_type || null,
                             discount_value: discount.discount_value == null ? null : Number(discount.discount_value),
                             distribution_mode: 'public_claim',
@@ -2644,16 +2863,21 @@ function createShopHandlers({
                 const scopedProductIds = Array.from(discountMap.values())
                     .filter((row) => normalizeClaimText(row?.scope_type, 40).toLowerCase() === 'product')
                     .map((row) => row?.scope_product_id);
-                const [orderByAssetId, productById] = await Promise.all([
+                const scopedSkuIds = Array.from(discountMap.values())
+                    .filter((row) => normalizeClaimText(row?.scope_type, 40).toLowerCase() === 'product')
+                    .map((row) => row?.scope_product_sku_id);
+                const [orderByAssetId, productById, skuById] = await Promise.all([
                     loadShopOrdersByDiscountAssets(dataSupabase, scopedAssets),
-                    loadShopProductsByIds(dataSupabase, scopedProductIds)
+                    loadShopProductsByIds(dataSupabase, scopedProductIds),
+                    loadShopProductSkusByIds(dataSupabase, scopedSkuIds)
                 ]);
                 const scopedProductAvailabilityByAsset = await loadScopedProductAvailabilityByAsset(requestSupabase || supabase, {
                     userId: user.id,
                     site: currentSite,
                     assets: scopedAssets,
                     discountMap,
-                    productById
+                    productById,
+                    skuById
                 });
 
                 const availableAssets = [];
@@ -2669,6 +2893,7 @@ function createShopHandlers({
                         discount,
                         orderByAssetId,
                         productById,
+                        skuById,
                         now,
                         {
                             scopedProductAvailability: scopedProductAvailabilityByAsset.get(normalizeText(asset?.id, 160)) || null
@@ -3031,6 +3256,15 @@ function createShopHandlers({
                 const quantity = Number.isFinite(quantityValue) ? Math.max(1, Math.trunc(quantityValue)) : 1;
                 const currentSite = requireSupportedSite(body?.site || body?.p_site || 'cn', { fieldName: 'site' });
                 const agentId = String(body?.agentId || body?.agent_id || '').trim() || null;
+                const rawProductSkuId = String(
+                    body?.productSkuId
+                    || body?.product_sku_id
+                    || body?.skuId
+                    || body?.sku_id
+                    || body?.p_sku_id
+                    || ''
+                ).trim();
+                const productSkuId = isUuid(rawProductSkuId) ? rawProductSkuId : null;
                 const discountSelections = normalizeDiscountSelectionsInput(body);
 
                 if (!productId) {
@@ -3053,6 +3287,7 @@ function createShopHandlers({
                     site: currentSite,
                     quantity,
                     selections: discountSelections,
+                    productSkuId,
                     agentId
                 });
 

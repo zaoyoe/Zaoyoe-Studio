@@ -150,6 +150,7 @@ function applyLimit(rows, limit) {
 function createSupabaseStub(state) {
     state.inventoryRows = Array.isArray(state.inventoryRows) ? state.inventoryRows : [];
     state.productRows = Array.isArray(state.productRows) ? state.productRows : [];
+    state.skuRows = Array.isArray(state.skuRows) ? state.skuRows : [];
     state.inventoryInsertSeq = state.inventoryInsertSeq || 1;
 
     return {
@@ -216,6 +217,18 @@ function createSupabaseStub(state) {
                     };
                 }
 
+                if (table === 'shop_product_skus') {
+                    const filteredRows = applyLimit(sortRows(applyFilters(state.skuRows, query.filters), query.order), query.limit);
+                    if (query.single) {
+                        return {
+                            data: filteredRows[0] || null,
+                            error: filteredRows.length ? null : { message: 'Not found' }
+                        };
+                    }
+
+                    return { data: filteredRows, error: null };
+                }
+
                 throw new Error(`Unexpected table mock request: ${table}`);
             });
         }
@@ -276,8 +289,26 @@ async function withShopMutateHandler(initialState, callback) {
 test('shop mutate handler imports inventory through shared admin mutation flow', async () => {
     await withShopMutateHandler({
         productRows: [{ id: 'prod_1', stock_count: 1 }],
+        skuRows: [
+            {
+                id: 'sku_default_1',
+                product_id: 'prod_1',
+                sku_name: '默认规格',
+                sku_code: 'default',
+                is_default: true,
+                is_active: true,
+                stock_count: 1
+            }
+        ],
         inventoryRows: [
-            { id: 'inventory_existing', product_id: 'prod_1', status: 'available', content: 'legacy-account', created_at: '2026-04-01T00:00:00Z' }
+            {
+                id: 'inventory_existing',
+                product_id: 'prod_1',
+                sku_id: 'sku_default_1',
+                status: 'available',
+                content: 'legacy-account',
+                created_at: '2026-04-01T00:00:00Z'
+            }
         ]
     }, async ({ handler, state }) => {
         const res = createMockResponse();
@@ -303,21 +334,118 @@ test('shop mutate handler imports inventory through shared admin mutation flow',
         assert.deepEqual(
             state.inventoryRows.slice(1).map((row) => ({
                 product_id: row.product_id,
+                sku_id: row.sku_id,
                 status: row.status,
                 batch_id: row.batch_id,
                 content: row.content
             })),
             [
-                { product_id: 'prod_1', status: 'available', batch_id: 'batch_20260402', content: 'new-account-1' },
-                { product_id: 'prod_1', status: 'available', batch_id: 'batch_20260402', content: 'new-account-2' }
+                { product_id: 'prod_1', sku_id: 'sku_default_1', status: 'available', batch_id: 'batch_20260402', content: 'new-account-1' },
+                { product_id: 'prod_1', sku_id: 'sku_default_1', status: 'available', batch_id: 'batch_20260402', content: 'new-account-2' }
             ]
         );
+        assert.equal(res.json().skuId, 'sku_default_1');
+        assert.equal(res.json().skuStockCount, 3);
         assert.equal(state.productRows[0].stock_count, 3);
         assert.equal(state.auditCalls.length, 1);
         assert.equal(state.auditCalls[0].site, 'intl');
         assert.equal(state.auditCalls[0].actionType, 'shop.inventory.import');
         assert.equal(state.auditCalls[0].details.count, 2);
         assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'shop.manage' });
+    });
+});
+
+test('shop mutate handler imports inventory into the requested product sku', async () => {
+    await withShopMutateHandler({
+        productRows: [{ id: 'prod_1', stock_count: 0 }],
+        skuRows: [
+            {
+                id: 'sku_default_1',
+                product_id: 'prod_1',
+                sku_name: '默认规格',
+                is_default: true,
+                is_active: true,
+                stock_count: 0
+            },
+            {
+                id: 'sku_year_1',
+                product_id: 'prod_1',
+                sku_name: '年卡',
+                is_default: false,
+                is_active: true,
+                stock_count: 0
+            }
+        ],
+        inventoryRows: []
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'import_inventory',
+                site: 'cn',
+                productId: 'prod_1',
+                skuId: 'sku_year_1',
+                lines: ['year-card-1'],
+                importStatus: 'available',
+                batchId: 'batch_year'
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.skuId, 'sku_year_1');
+        assert.equal(payload.skuStockCount, 1);
+        assert.deepEqual(
+            state.inventoryRows.map((row) => ({
+                product_id: row.product_id,
+                sku_id: row.sku_id,
+                content: row.content
+            })),
+            [{ product_id: 'prod_1', sku_id: 'sku_year_1', content: 'year-card-1' }]
+        );
+        assert.equal(state.auditCalls[0]?.details?.sku_id, 'sku_year_1');
+        assert.equal(state.auditCalls[0]?.details?.sku_name, '年卡');
+    });
+});
+
+test('shop mutate handler rejects inventory import for a sku from another product', async () => {
+    await withShopMutateHandler({
+        productRows: [{ id: 'prod_1', stock_count: 0 }],
+        skuRows: [
+            {
+                id: 'sku_other_1',
+                product_id: 'prod_2',
+                sku_name: '其他商品规格',
+                is_default: false,
+                is_active: true,
+                stock_count: 0
+            }
+        ],
+        inventoryRows: []
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'import_inventory',
+                site: 'cn',
+                productId: 'prod_1',
+                skuId: 'sku_other_1',
+                lines: ['wrong-sku-card']
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 400);
+        assert.equal(payload.success, false);
+        assert.equal(payload.code, 'shop_product_sku_not_found');
+        assert.deepEqual(state.inventoryRows, []);
     });
 });
 

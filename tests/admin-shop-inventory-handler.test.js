@@ -164,9 +164,27 @@ test('shop inventory handler forwards filters to fn_admin_list_inventory through
                 p_page: 2,
                 p_page_size: 25,
                 p_date_from: '2026-04-01T00:00:00.000Z',
-                p_date_to: '2026-04-03T23:59:59.000Z'
+                p_date_to: '2026-04-03T23:59:59.000Z',
+                p_sku_id: null
             }
         });
+    });
+});
+
+test('shop inventory handler forwards product sku filters to fn_admin_list_inventory', async () => {
+    await withShopInventoryHandler({}, async ({ handler, state }) => {
+        const req = {
+            method: 'GET',
+            headers: {},
+            url: '/api/admin/shop/inventory?productId=prod_1&skuId=sku_1'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.rpcCalls[0]?.params?.p_product_id, 'prod_1');
+        assert.equal(state.rpcCalls[0]?.params?.p_sku_id, 'sku_1');
     });
 });
 

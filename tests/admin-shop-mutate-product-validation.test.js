@@ -110,6 +110,63 @@ function createShopProductsTableMock(state) {
     };
 }
 
+function createGenericTableMock(state, table) {
+    return {
+        select() {
+            return this;
+        },
+        eq(column, value) {
+            state.tableReads.push({ table, filters: [[column, value]] });
+            return this;
+        },
+        insert(payload) {
+            state.insertPayloadsByTable[table] = state.insertPayloadsByTable[table] || [];
+            state.insertPayloadsByTable[table].push(payload);
+            return this;
+        },
+        upsert(payload) {
+            state.upsertPayloadsByTable[table] = state.upsertPayloadsByTable[table] || [];
+            state.upsertPayloadsByTable[table].push(payload);
+            return this;
+        },
+        update(payload) {
+            state.updatePayloadsByTable[table] = state.updatePayloadsByTable[table] || [];
+            state.updatePayloadsByTable[table].push(payload);
+            return this;
+        },
+        limit() {
+            const queue = state.tableResults?.[table] || [];
+            if (queue.length) {
+                return Promise.resolve(queue.shift());
+            }
+
+            if (table === 'shop_product_skus') {
+                const insertPayloads = state.insertPayloadsByTable[table] || [];
+                const upsertPayloads = state.upsertPayloadsByTable[table] || [];
+                const lastPayload = insertPayloads.at(-1) || upsertPayloads.at(-1) || {};
+                return Promise.resolve({
+                    data: lastPayload.product_id
+                        ? [{
+                            id: lastPayload.id || `sku_${insertPayloads.length + upsertPayloads.length || 1}`,
+                            stock_count: 0,
+                            ...lastPayload
+                        }]
+                        : [],
+                    error: null
+                });
+            }
+
+            return Promise.resolve({ data: [], error: null });
+        },
+        then(resolve, reject) {
+            return this.limit().then(resolve, reject);
+        },
+        catch(reject) {
+            return this.then(undefined, reject);
+        }
+    };
+}
+
 async function withShopMutateHandler(initialState, callback) {
     const handlerPath = path.resolve(__dirname, '../server/api-handlers/admin/shop/mutate.js');
     const originalLoad = Module._load;
@@ -120,6 +177,10 @@ async function withShopMutateHandler(initialState, callback) {
         inventoryRows: [],
         insertPayloads: [],
         upsertPayloads: [],
+        insertPayloadsByTable: {},
+        upsertPayloadsByTable: {},
+        updatePayloadsByTable: {},
+        tableResults: {},
         ...initialState
     };
 
@@ -138,6 +199,10 @@ async function withShopMutateHandler(initialState, callback) {
 
                                 if (table === 'shop_inventory') {
                                     return createCountQueryBuilder(state, table);
+                                }
+
+                                if (table === 'shop_product_skus') {
+                                    return createGenericTableMock(state, table);
                                 }
 
                                 throw new Error(`Unexpected table mock request: ${table}`);
@@ -328,5 +393,173 @@ test('shop mutate upsert retries with legacy guidance payload when bilingual col
         assert.equal(Object.hasOwn(state.insertPayloads[1], 'purchase_notes_zh'), false);
         assert.equal(Object.hasOwn(state.insertPayloads[1], 'purchase_notes_en'), false);
         assert.equal(state.auditCalls.length, 1);
+    });
+});
+
+test('shop mutate upsert saves product skus for admin inventory selectors', async () => {
+    await withShopMutateHandler({}, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                payload: {
+                    name: 'SKU Product',
+                    category: 'cards',
+                    price_points: 10,
+                    delivery_type: 'KEY'
+                },
+                skus: [
+                    {
+                        sku_name: '月卡',
+                        sku_code: 'month',
+                        price_points: 10,
+                        quantity_rules: [
+                            { qty: 4, price: 8 }
+                        ],
+                        is_default: true,
+                        is_active: true
+                    },
+                    {
+                        sku_name: '年卡',
+                        sku_code: 'year',
+                        price_points: 99,
+                        quantity_rules_intl: [
+                            { qty: 2, price: 88 }
+                        ],
+                        is_default: false,
+                        is_active: true
+                    }
+                ]
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.deepEqual(
+            (state.insertPayloadsByTable.shop_product_skus || []).map((row) => ({
+                product_id: row.product_id,
+                sku_name: row.sku_name,
+                sku_code: row.sku_code,
+                is_default: row.is_default
+            })),
+            [
+                { product_id: 'prod_saved', sku_name: '月卡', sku_code: 'month', is_default: false },
+                { product_id: 'prod_saved', sku_name: '年卡', sku_code: 'year', is_default: false }
+            ]
+        );
+        assert.deepEqual(state.insertPayloadsByTable.shop_product_skus[0].quantity_rules, [
+            { qty: 4, price: 8 }
+        ]);
+        assert.deepEqual(state.insertPayloadsByTable.shop_product_skus[1].quantity_rules_intl, [
+            { qty: 2, price: 88 }
+        ]);
+        assert.deepEqual(
+            state.updatePayloadsByTable.shop_product_skus,
+            [
+                { is_default: false },
+                { is_default: true, is_active: true }
+            ]
+        );
+        assert.equal(payload.skus.length, 2);
+        assert.equal(payload.product.skus.length, 2);
+    });
+});
+
+test('shop mutate upsert reuses existing sku by code when edit payload omits sku id', async () => {
+    await withShopMutateHandler({
+        tableResults: {
+            shop_product_skus: [
+                {
+                    data: [{
+                        id: 'sku_existing_default',
+                        product_id: 'prod_saved',
+                        sku_code: 'default',
+                        sku_name: '默认规格',
+                        spec_values: { label: '默认规格' },
+                        price_points: 10,
+                        price_points_intl: null,
+                        quantity_rules: null,
+                        quantity_rules_intl: null,
+                        is_default: true,
+                        is_active: true,
+                        stock_count: 8,
+                        sort_order: 0
+                    }],
+                    error: null
+                },
+                {
+                    data: [{
+                        id: 'sku_existing_default',
+                        product_id: 'prod_saved',
+                        sku_code: 'default',
+                        sku_name: '默认规格',
+                        spec_values: {},
+                        price_points: 21,
+                        price_points_intl: null,
+                        quantity_rules: null,
+                        quantity_rules_intl: null,
+                        is_default: false,
+                        is_active: true,
+                        stock_count: 8,
+                        sort_order: 0
+                    }],
+                    error: null
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                productId: 'prod_saved',
+                payload: {
+                    id: 'prod_saved',
+                    name: 'SKU Product',
+                    category: 'cards',
+                    price_points: 21,
+                    delivery_type: 'KEY',
+                    show_purchase_notes: true,
+                    purchase_notes_zh: '购买前请确认账号地区',
+                    purchase_notes_en: 'Please confirm the account region before purchase.'
+                },
+                skus: [{
+                    sku_name: '默认规格',
+                    sku_code: 'default',
+                    price_points: 21,
+                    is_default: true,
+                    is_active: true
+                }]
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(state.insertPayloadsByTable.shop_product_skus, undefined);
+        assert.deepEqual(
+            state.upsertPayloadsByTable.shop_product_skus.map((row) => ({
+                id: row.id,
+                product_id: row.product_id,
+                sku_code: row.sku_code,
+                price_points: row.price_points
+            })),
+            [{
+                id: 'sku_existing_default',
+                product_id: 'prod_saved',
+                sku_code: 'default',
+                price_points: 21
+            }]
+        );
+        assert.equal(payload.skus[0].id, 'sku_existing_default');
     });
 });

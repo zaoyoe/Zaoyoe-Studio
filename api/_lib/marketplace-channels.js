@@ -140,6 +140,15 @@ function normalizeMarketplaceProductMappings(value) {
                     || source.websiteProductId,
                 160
             );
+            const productSkuId = sanitizeText(
+                source.product_sku_id
+                    || source.productSkuId
+                    || source.website_sku_id
+                    || source.websiteSkuId
+                    || source.shop_sku_id
+                    || source.shopSkuId,
+                160
+            );
             const skuId = sanitizeText(source.sku_id || source.skuId, 180);
             const skuTextContains = sanitizeText(source.sku_text_contains || source.skuTextContains, 500);
             const titleContains = sanitizeText(source.title_contains || source.titleContains, 500);
@@ -161,6 +170,7 @@ function normalizeMarketplaceProductMappings(value) {
                 raw_path: rawPath,
                 equals: rawEquals,
                 product_id: productId,
+                product_sku_id: productSkuId,
                 notes: sanitizeText(source.notes || source.description, 500)
             };
         })

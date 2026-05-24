@@ -146,6 +146,14 @@ function buildMarketplaceOrderRpcParams(payload = {}, config = {}) {
         ? payload
         : {};
     const productId = normalizeUuid(source.product_id || source.productId);
+    const productSkuId = normalizeUuid(
+        source.product_sku_id
+            || source.productSkuId
+            || source.website_sku_id
+            || source.websiteSkuId
+            || source.shop_sku_id
+            || source.shopSkuId
+    );
     const {
         channel,
         channelKey,
@@ -183,6 +191,7 @@ function buildMarketplaceOrderRpcParams(payload = {}, config = {}) {
     return {
         normalized: {
             product_id: productId,
+            product_sku_id: productSkuId || null,
             quantity,
             channel_key: channelKey,
             source_channel: sourceChannel,
@@ -208,7 +217,8 @@ function buildMarketplaceOrderRpcParams(payload = {}, config = {}) {
             p_price_paid: normalizeOptionalAmount(source.price_paid || source.pricePaid || source.amount_paid || source.amountPaid),
             p_total_price: normalizeOptionalAmount(source.total_price || source.totalPrice || source.gross_amount || source.grossAmount),
             p_external_buyer_id: sanitizeText(source.external_buyer_id || source.externalBuyerId || source.buyer_id || source.buyerId, 180),
-            p_external_buyer_name: sanitizeText(source.external_buyer_name || source.externalBuyerName || source.buyer_name || source.buyerName || source.buyerNick, 180)
+            p_external_buyer_name: sanitizeText(source.external_buyer_name || source.externalBuyerName || source.buyer_name || source.buyerName || source.buyerNick, 180),
+            p_sku_id: productSkuId || null
         }
     };
 }

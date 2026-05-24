@@ -479,8 +479,96 @@ test('shop purchase forwards discount asset id to the purchase rpc', async () =>
     });
 });
 
+test('shop purchase forwards selected product sku id to the purchase rpc', async () => {
+    const rpcCalls = [];
+    const productSkuId = '33333333-3333-4333-8333-333333333333';
+
+    await withShopPurchaseHandler({
+        async requireAuthenticatedUser() {
+            return {
+                user: {
+                    id: 'user-sku',
+                    email: 'member@example.com'
+                },
+                requestSupabase: {
+                    rpc(name, params) {
+                        rpcCalls.push({ name, params });
+                        return Promise.resolve({
+                            data: {
+                                success: true,
+                                data: {
+                                    order_id: 'order-sku-1',
+                                    remaining_points: 21,
+                                    content: 'KEY-SKU-001',
+                                    sku_id: productSkuId,
+                                    sku_name: '套餐 A'
+                                }
+                            },
+                            error: null
+                        });
+                    }
+                },
+                supabase: null
+            };
+        },
+        sendJson(res, status, payload) {
+            res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify(payload));
+        }
+    }, async (handler) => {
+        const req = {
+            method: 'POST',
+            headers: {
+                'x-forwarded-for': '203.0.113.79'
+            },
+            body: {
+                productId: 'product-sku-1',
+                productSkuId,
+                quantity: 1,
+                site: 'cn',
+                idempotencyKey: 'sku-submit-1'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.deepEqual(rpcCalls[0], {
+            name: 'fn_purchase_shop_item',
+            params: {
+                p_product_id: 'product-sku-1',
+                p_user_id: 'user-sku',
+                p_site: 'cn',
+                p_quantity: 1,
+                p_discount_code: null,
+                p_discount_asset_id: null,
+                p_agent_id: null,
+                p_sku_id: productSkuId
+            }
+        });
+    }, {
+        resolveClientIp() {
+            return '203.0.113.79';
+        },
+        takeRateLimitToken() {
+            return {
+                allowed: true,
+                limit: 10,
+                remaining: 9,
+                resetAt: Date.now() + 60_000,
+                retryAfterSeconds: 60
+            };
+        },
+        applyRateLimitHeaders() {}
+    });
+});
+
 test('shop purchase routes multiple selected coupons through the multi-discount rpc', async () => {
     const rpcCalls = [];
+    const productSkuId = '44444444-4444-4444-8444-444444444444';
 
     await withShopPurchaseHandler({
         async requireAuthenticatedUser() {
@@ -557,6 +645,7 @@ test('shop purchase routes multiple selected coupons through the multi-discount 
             },
             body: {
                 productId: 'product-stack-1',
+                productSkuId,
                 quantity: 1,
                 site: 'cn',
                 discountSelections: [
@@ -585,7 +674,8 @@ test('shop purchase routes multiple selected coupons through the multi-discount 
                     { discount_code: 'WELCOME10', discount_asset_id: null },
                     { discount_code: 'WALLET5', discount_asset_id: 'asset-stack-2' }
                 ],
-                p_agent_id: null
+                p_agent_id: null,
+                p_sku_id: productSkuId
             }
         });
         assert.equal(payload.data.benefit_label, '已叠加 2 张卡券');

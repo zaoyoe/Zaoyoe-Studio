@@ -1511,50 +1511,6 @@ body.admin-access-pending,
                             gap: 5px;
                         }
 
-                        .shop-tiered-pricing-row {
-                            display: flex;
-                            gap: 8px;
-                            align-items: center;
-                            background: rgba(0, 0, 0, 0.2);
-                            padding: 8px;
-                            border-radius: 8px;
-                            border: 1px solid rgba(255, 255, 255, 0.05);
-                            animation: modalFadeIn 0.2s ease-out;
-                        }
-
-                        .shop-tiered-pricing-row__field {
-                            flex: 1;
-                            display: flex;
-                            align-items: center;
-                            gap: 6px;
-                        }
-
-                        .shop-tiered-pricing-row__label {
-                            color: rgba(255, 255, 255, 0.5);
-                            font-size: 13px;
-                        }
-
-                        .shop-tiered-pricing-row__input {
-                            flex: 1;
-                            min-width: 50px;
-                            padding: 8px;
-                        }
-
-                        .shop-tiered-pricing-row__remove {
-                            width: 32px;
-                            height: 32px;
-                            border: none;
-                            border-radius: 6px;
-                            cursor: pointer;
-                            color: #ef4444;
-                            background: rgba(239, 68, 68, 0.1);
-                            transition: all 0.2s;
-                        }
-
-                        .shop-tiered-pricing-row__remove:hover {
-                            background: rgba(239, 68, 68, 0.18);
-                        }
-
                         .shop-delivery-switch-modal {
                             position: fixed;
                             inset: 0;
@@ -9244,14 +9200,14 @@ body.admin-access-pending,
 /* admin-studio.html inline style block 11 (from line 8682) */
 #productModal .premium-modal-layout {
                 display: grid;
-                grid-template-columns: 360px 1fr;
+                grid-template-columns: minmax(0, 1fr);
                 gap: 0;
                 background: rgba(30, 35, 50, 0.85);
                 border: 1px solid rgba(255, 255, 255, 0.1);
                 border-radius: 20px;
                 overflow: hidden;
                 width: 100%;
-                max-width: 900px;
+                max-width: min(960px, calc(100vw - 48px));
                 box-shadow: 0 40px 80px rgba(0, 0, 0, 0.6);
                 backdrop-filter: blur(20px);
                 transform: scale(0.95);
@@ -9260,6 +9216,10 @@ body.admin-access-pending,
 
             #productModal.active .premium-modal-layout {
                 transform: scale(1);
+            }
+
+            #productModal .premium-modal-layout--product-form-only {
+                grid-template-columns: minmax(0, 1fr);
             }
 
             /* LEFT SIDE: PREVIEW */
@@ -9441,6 +9401,7 @@ body.admin-access-pending,
                 padding: 30px;
                 max-height: 85vh;
                 overflow-y: auto;
+                min-width: 0;
             }
 
             #productModal .form-header {
@@ -23838,6 +23799,106 @@ html:not([data-theme="dark"]) #module-shop #shop-view-import .import-main-header
     text-shadow: none !important;
 }
 
+html[data-theme="light"] #module-shop :is(.shop-import-inventory-overview, .shop-import-inventory-overview__stat, .shop-import-inventory-overview__item),
+html:not([data-theme="dark"]) #module-shop :is(.shop-import-inventory-overview, .shop-import-inventory-overview__stat, .shop-import-inventory-overview__item) {
+    background: rgba(255, 255, 255, 0.86) !important;
+    border-color: rgba(15, 23, 42, 0.08) !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-inventory-overview__toggle,
+html:not([data-theme="dark"]) #module-shop .shop-import-inventory-overview__toggle {
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-inventory-overview__summary-counts button,
+html:not([data-theme="dark"]) #module-shop .shop-import-inventory-overview__summary-counts button {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.08) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.16) !important;
+    color: var(--admin-studio-save-btn-bg, var(--admin-studio-ui-blue, #769dca)) !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-inventory-overview__summary-counts button:is(:hover, :focus-visible, .is-active),
+html:not([data-theme="dark"]) #module-shop .shop-import-inventory-overview__summary-counts button:is(:hover, :focus-visible, .is-active) {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.13) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.28) !important;
+    color: var(--admin-studio-save-btn-hover-bg, #6f95c0) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-inventory-overview__title,
+html[data-theme="light"] #module-shop .shop-import-inventory-overview__stat strong,
+html[data-theme="light"] #module-shop .shop-import-inventory-overview__latest-title,
+html[data-theme="light"] #module-shop .shop-import-inventory-overview__item-content,
+html[data-theme="light"] #module-shop .shop-import-inventory-overview__toggle-main strong,
+html:not([data-theme="dark"]) #module-shop .shop-import-inventory-overview__title,
+html:not([data-theme="dark"]) #module-shop .shop-import-inventory-overview__stat strong,
+html:not([data-theme="dark"]) #module-shop .shop-import-inventory-overview__latest-title,
+html:not([data-theme="dark"]) #module-shop .shop-import-inventory-overview__item-content,
+html:not([data-theme="dark"]) #module-shop .shop-import-inventory-overview__toggle-main strong {
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] #module-shop :is(
+    .shop-import-inventory-overview__eyebrow,
+    .shop-import-inventory-overview__meta,
+    .shop-import-inventory-overview__stat span,
+    .shop-import-inventory-overview__item-meta,
+    .shop-import-inventory-overview__latest-title small,
+    .shop-import-inventory-overview__empty,
+    .shop-import-inventory-overview__empty-line,
+    .shop-import-inventory-overview__toggle-main small,
+    .shop-import-inventory-overview__pager
+),
+html:not([data-theme="dark"]) #module-shop :is(
+    .shop-import-inventory-overview__eyebrow,
+    .shop-import-inventory-overview__meta,
+    .shop-import-inventory-overview__stat span,
+    .shop-import-inventory-overview__item-meta,
+    .shop-import-inventory-overview__latest-title small,
+    .shop-import-inventory-overview__empty,
+    .shop-import-inventory-overview__empty-line,
+    .shop-import-inventory-overview__toggle-main small,
+    .shop-import-inventory-overview__pager
+) {
+    color: var(--admin-studio-shop-muted) !important;
+}
+
+html[data-theme="light"] #module-shop :is(.shop-import-inventory-overview__btn, .shop-import-inventory-overview__page-btn, .shop-inventory-sku-filter-badge),
+html:not([data-theme="dark"]) #module-shop :is(.shop-import-inventory-overview__btn, .shop-import-inventory-overview__page-btn, .shop-inventory-sku-filter-badge) {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.08) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.22) !important;
+    color: var(--admin-studio-save-btn-bg, var(--admin-studio-ui-blue, #769dca)) !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] #module-shop :is(.shop-import-inventory-overview__btn, .shop-import-inventory-overview__page-btn, .shop-inventory-sku-filter-badge):is(:hover, :focus-visible),
+html:not([data-theme="dark"]) #module-shop :is(.shop-import-inventory-overview__btn, .shop-import-inventory-overview__page-btn, .shop-inventory-sku-filter-badge):is(:hover, :focus-visible) {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.13) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.34) !important;
+    color: var(--admin-studio-save-btn-hover-bg, #6f95c0) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-inventory-overview__stat:is(:hover, :focus-visible, .is-active),
+html:not([data-theme="dark"]) #module-shop .shop-import-inventory-overview__stat:is(:hover, :focus-visible, .is-active) {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.1) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.28) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-inventory-overview__btn--primary,
+html:not([data-theme="dark"]) #module-shop .shop-import-inventory-overview__btn--primary {
+    background: var(--admin-studio-save-btn-bg, var(--admin-studio-ui-blue, #769dca)) !important;
+    border-color: var(--admin-studio-save-btn-border, var(--admin-studio-ui-blue, #769dca)) !important;
+    color: #ffffff !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-inventory-overview__btn--primary:is(:hover, :focus-visible),
+html:not([data-theme="dark"]) #module-shop .shop-import-inventory-overview__btn--primary:is(:hover, :focus-visible) {
+    background: var(--admin-studio-save-btn-hover-bg, #6f95c0) !important;
+    border-color: var(--admin-studio-save-btn-hover-border, #6f95c0) !important;
+    color: #ffffff !important;
+}
+
 html[data-theme="light"] #module-shop :is(
     .tree-category-count--danger,
     .tree-product-stock--empty,
@@ -24529,30 +24590,94 @@ html:not([data-theme="dark"]) #productModal .btn-save:is(:hover, :focus-visible)
 }
 
 /* 20260427_ADMIN_STUDIO_PRODUCT_MODAL_EDITOR_LIGHT_THEME_1 */
-html[data-theme="light"] #productModal .shop-tiered-pricing-row,
-html:not([data-theme="dark"]) #productModal .shop-tiered-pricing-row {
+html[data-theme="light"] #productModal .shop-product-sku-row,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row {
     background: rgba(248, 250, 252, 0.88) !important;
     border-color: rgba(15, 23, 42, 0.08) !important;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82) !important;
 }
 
-html[data-theme="light"] #productModal .shop-tiered-pricing-row__label,
-html:not([data-theme="dark"]) #productModal .shop-tiered-pricing-row__label {
-    color: rgba(71, 85, 105, 0.86) !important;
+html[data-theme="light"] #productModal .shop-product-sku-editor__loading,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-editor__loading {
+    background: rgba(248, 250, 252, 0.92) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.18) !important;
+    color: var(--admin-studio-product-modal-text) !important;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82) !important;
 }
 
-html[data-theme="light"] #productModal .shop-tiered-pricing-row__remove,
-html:not([data-theme="dark"]) #productModal .shop-tiered-pricing-row__remove {
+html[data-theme="light"] #productModal .shop-product-sku-row__tier-toggle,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__tier-toggle,
+html[data-theme="light"] #productModal .shop-product-sku-row__toggle,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__toggle {
+    background: rgba(248, 250, 252, 0.96) !important;
+    border-color: rgba(148, 163, 184, 0.32) !important;
+    color: rgba(71, 85, 105, 0.9) !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-sku-row__tier-toggle[aria-expanded="true"],
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__tier-toggle[aria-expanded="true"] {
+    background: rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.1) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.34) !important;
+    color: var(--admin-studio-save-btn-bg, var(--admin-studio-ui-blue, #769dca)) !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-sku-editor__add,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-editor__add,
+html[data-theme="light"] #productModal .shop-product-sku-row__toggle input,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__toggle input {
+    accent-color: var(--admin-studio-save-btn-bg, var(--admin-studio-ui-blue, #769dca)) !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-sku-row__toggle input,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__toggle input {
+    background: #ffffff !important;
+    border-color: rgba(100, 116, 139, 0.46) !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-sku-row__toggle input:checked,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__toggle input:checked {
+    border-color: var(--admin-studio-save-btn-bg, var(--admin-studio-ui-blue, #769dca)) !important;
+    box-shadow: 0 0 0 3px rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.12) !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-sku-row__toggle input[type="radio"]:checked,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__toggle input[type="radio"]:checked {
+    background: rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.12) !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-sku-row__toggle input[type="checkbox"]:checked,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__toggle input[type="checkbox"]:checked {
+    background: var(--admin-studio-save-btn-bg, var(--admin-studio-ui-blue, #769dca)) !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-sku-row__remove,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__remove {
     background: rgba(254, 242, 242, 0.96) !important;
     border: 1px solid rgba(248, 113, 113, 0.2) !important;
     color: #ef4444 !important;
     box-shadow: none !important;
 }
 
-html[data-theme="light"] #productModal .shop-tiered-pricing-row__remove:is(:hover, :focus-visible),
-html:not([data-theme="dark"]) #productModal .shop-tiered-pricing-row__remove:is(:hover, :focus-visible) {
+html[data-theme="light"] #productModal .shop-product-sku-row__remove:is(:hover, :focus-visible),
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__remove:is(:hover, :focus-visible) {
     background: rgba(254, 226, 226, 0.96) !important;
     border-color: rgba(248, 113, 113, 0.28) !important;
+}
+
+html[data-theme="light"] .shop-sku-delete-guard-modal,
+html:not([data-theme="dark"]) .shop-sku-delete-guard-modal {
+    background: rgba(255, 255, 255, 0.98) !important;
+    color: #0f172a !important;
+    border-color: rgba(15, 23, 42, 0.08) !important;
+}
+
+html[data-theme="light"] .shop-sku-delete-guard-modal__subtitle,
+html:not([data-theme="dark"]) .shop-sku-delete-guard-modal__subtitle,
+html[data-theme="light"] .shop-sku-delete-guard-modal__body,
+html:not([data-theme="dark"]) .shop-sku-delete-guard-modal__body {
+    color: rgba(71, 85, 105, 0.9) !important;
 }
 
 html[data-theme="light"] #productModal :is(.announcement-toolbar, .wysiwyg-editor, .emoji-picker, .align-picker),
@@ -43971,6 +44096,47 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-alert-health-card__errors.
         padding: 12px !important;
     }
 
+    #module-shop .shop-import-inventory-overview {
+        margin-bottom: 14px;
+        padding: 10px;
+    }
+
+    #module-shop .shop-import-inventory-overview__summary,
+    #module-shop .shop-import-inventory-overview__actions {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        justify-content: stretch;
+        width: 100%;
+    }
+
+    #module-shop .shop-import-inventory-overview__toggle {
+        align-items: flex-start;
+    }
+
+    #module-shop .shop-import-inventory-overview__summary-counts {
+        flex-wrap: wrap;
+        justify-content: flex-start;
+    }
+
+    #module-shop .shop-import-inventory-overview__toggle-main small {
+        max-width: min(280px, calc(100vw - 120px));
+    }
+
+    #module-shop .shop-import-inventory-overview__btn {
+        width: 100%;
+        min-height: 38px;
+    }
+
+    #module-shop .shop-import-inventory-overview__stats {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #module-shop .shop-import-inventory-overview__item {
+        grid-template-columns: minmax(0, 1fr);
+        align-items: start;
+        gap: 2px;
+    }
+
     #module-shop :is(.import-status, #importButtonContainer, .admin-studio-inline-style-attr-130) {
         width: 100%;
         flex-direction: column;
@@ -44292,6 +44458,7 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-alert-health-card__errors.
     #module-shop #shop-view-inventory .inv-filter-bar :is(
         .custom-dropdown,
         .inv-search-box,
+        .shop-inventory-sku-filter-badge,
         .batch-action-wrapper,
         .admin-studio-inline-style-attr-102
     ) {
@@ -44315,6 +44482,12 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-alert-health-card__errors.
 
     #module-shop #shop-view-inventory #statusDropdown {
         order: 2;
+    }
+
+    #module-shop #shop-view-inventory #inventorySkuFilterBadge {
+        order: 3;
+        grid-column: 1 / -1;
+        min-height: 38px;
     }
 
     #module-shop #shop-view-inventory .inv-filter-bar .custom-dropdown-menu {
@@ -44358,14 +44531,14 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-alert-health-card__errors.
     }
 
     #module-shop #shop-view-inventory #invDateFilterDropdown {
-        order: 3;
+        order: 4;
         grid-column: 1 / 2;
-        grid-row: 2;
+        grid-row: 3;
         width: 100% !important;
     }
 
     #module-shop #shop-view-inventory .inv-search-box {
-        order: 5;
+        order: 6;
         grid-column: 1 / -1;
     }
 
@@ -44396,15 +44569,15 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-alert-health-card__errors.
     }
 
     #module-shop #shop-view-inventory .inv-filter-bar > #toggleSelectionBtn {
-        order: 4;
+        order: 5;
         grid-column: 2 / 3;
-        grid-row: 2;
+        grid-row: 3;
     }
 
     #module-shop #shop-view-inventory .inv-filter-bar .batch-action-wrapper {
-        order: 4;
+        order: 5;
         grid-column: 2 / 3;
-        grid-row: 2;
+        grid-row: 3;
         margin-left: 50px !important;
     }
 

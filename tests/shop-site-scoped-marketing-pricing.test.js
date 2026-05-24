@@ -9,7 +9,7 @@ function readRepoFile(relativePath) {
     return fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
 }
 
-test('admin product editor saves tier and flash pricing into the active site only', () => {
+test('admin product editor keeps product-level tier pricing out of the modal and saves flash pricing into the active site only', () => {
     const source = readRepoFile('js/admin-shop.js');
 
     assert.match(
@@ -19,18 +19,23 @@ test('admin product editor saves tier and flash pricing into the active site onl
     );
     assert.match(
         source,
-        /fillProductModalFromData: function[\s\S]*const marketingFields = this\.getMarketingFieldMap\(\);[\s\S]*const quantityRules = data\?\.\[marketingFields\.quantityRules\]/,
-        'editing a product should hydrate tiered pricing from the current site field'
+        /fillProductModalFromData: function[\s\S]*const marketingFields = this\.getMarketingFieldMap\(\);[\s\S]*this\.renderProductSkuEditor\(this\.buildProductSkusForEditor\(data\)/,
+        'editing a product should hydrate tiered pricing through the SKU editor'
     );
     assert.match(
         source,
         /const marketingFields = this\.getMarketingFieldMap\(editSite\);[\s\S]*\[marketingFields\.quantityRules\]: null,[\s\S]*\[marketingFields\.flashSalePrice\]: null,[\s\S]*\[marketingFields\.flashSaleEnd\]: null/,
-        'saving a product should initialize only the current site marketing fields'
+        'saving a product should clear the legacy product-level tier field for the current site'
+    );
+    assert.doesNotMatch(
+        source,
+        /quantityRulesRaw|prodQuantityRulesContainer|product-add-tiered-pricing/,
+        'admin product editor should no longer write product-level tier pricing from a separate modal builder'
     );
     assert.match(
         source,
-        /payload\[marketingFields\.quantityRules\] = quantityRulesRaw;[\s\S]*payload\[marketingFields\.flashSalePrice\] = parseInt\(flashPriceRaw\);[\s\S]*payload\[marketingFields\.flashSaleEnd\] = new Date\(flashEndRaw\)\.toISOString\(\);/,
-        'saving tier and flash pricing should write through the site-scoped field map'
+        /payload\[marketingFields\.flashSalePrice\] = parseInt\(flashPriceRaw\);[\s\S]*payload\[marketingFields\.flashSaleEnd\] = new Date\(flashEndRaw\)\.toISOString\(\);/,
+        'saving flash pricing should still write through the site-scoped field map'
     );
 });
 
@@ -63,6 +68,163 @@ test('public shop catalog normalizes marketing pricing for the requested site', 
         mutateSource,
         /PRODUCT_SCHEMA_COMPATIBILITY_FIELDS[\s\S]*quantity_rules_intl[\s\S]*flash_sale_price_intl[\s\S]*flash_sale_end_intl/,
         'admin mutation fallback should understand the new site-scoped marketing columns'
+    );
+});
+
+test('SKU tier pricing is selected and persisted independently from product tier pricing', () => {
+    const adminHtml = readRepoFile('admin-studio.html');
+    const shopSource = readRepoFile('js/shop-client.js');
+    const adminSource = readRepoFile('js/admin-shop.js');
+    const adminStyles = readRepoFile('admin-studio.css');
+    const pageStyles = readRepoFile(path.join('css', 'admin-studio-page.css'));
+    const publicHandlerSource = readRepoFile('server/api-handlers/public/shop.js');
+    const mutateSource = readRepoFile('server/api-handlers/admin/shop/mutate.js');
+    const migrationSource = readRepoFile('supabase/migrations/20260523_add_shop_sku_quantity_rules.sql');
+
+    assert.match(
+        shopSource,
+        /resolveQuantityPricingRulesForSku: function[\s\S]*normalizedSku\.quantity_rules[\s\S]*normalizedSku\.is_default !== true[\s\S]*return \[\]/,
+        'storefront should use SKU tier rules first and avoid product fallback for non-default SKUs'
+    );
+    assert.match(
+        shopSource,
+        /selectPurchaseSku: function[\s\S]*this\.currentPurchase\.rules = this\.resolveQuantityPricingRulesForSku\(product, sku\)/,
+        'changing purchase SKU should swap the active tier rules'
+    );
+    assert.match(
+        adminSource,
+        /getSkuSiteFieldMap: function[\s\S]*price_points_intl[\s\S]*quantity_rules_intl/,
+        'admin SKU editor should map price and tier inputs to the active site'
+    );
+    assert.match(
+        adminSource,
+        /data-product-sku-site-field="price"[\s\S]*data-product-sku-site-field="quantity_rules"/,
+        'admin SKU editor should expose only the active site price and tier fields'
+    );
+    assert.match(
+        adminSource,
+        /data-product-sku-field="price_points_intl"[\s\S]*data-product-sku-field="quantity_rules_intl"/,
+        'admin SKU editor should preserve inactive-site SKU values in hidden fields'
+    );
+    assert.doesNotMatch(
+        adminSource,
+        /data-product-sku-field="price_points_intl"[^>]*class="modern-input/,
+        'admin SKU editor should not show a second visible INTL price field while editing CN'
+    );
+    assert.match(
+        adminSource,
+        /shop-product-sku-row__main[\s\S]*shop-product-sku-row__tier-toggle[\s\S]*shop-product-sku-row__actions[\s\S]*shop-product-sku-row__tier-panel/,
+        'admin SKU editor should keep the tier summary in the compact SKU row and expand only the input panel'
+    );
+    assert.doesNotMatch(
+        adminHtml,
+        /productBaseTierPricingSection|默认规格阶梯价|prodQuantityRulesContainer/,
+        'product-level default-SKU tier pricing should not appear as a separate modal section'
+    );
+    assert.doesNotMatch(
+        adminSource,
+        /syncProductBaseTierPricingVisibility|shop-product-sku-editor__rows--single/,
+        'admin should not keep visibility logic for the removed product-level tier editor'
+    );
+    assert.match(
+        adminSource,
+        /data-shop-action="product-toggle-sku-tier-editor"[\s\S]*data-product-sku-tier-summary[\s\S]*data-shop-input="product-sku-tier-input"/,
+        'SKU tier pricing should default to a compact summary with explicit edit expansion'
+    );
+    assert.match(
+        adminSource,
+        /buildProductSkusForEditor[\s\S]*productTierRules[\s\S]*nextSku\[field\] = productTierRules\[field\]/,
+        'legacy product-level tier pricing should be migrated into the default SKU editor when SKU rules are empty'
+    );
+    assert.match(
+        adminSource,
+        /removeProductSkuEditorRow: function[\s\S]*openProductSkuDeleteGuardModal[\s\S]*exportProductSkuInventory: async function[\s\S]*skuId/,
+        'removing an existing SKU should prompt operators to export that SKU inventory first'
+    );
+    assert.match(
+        adminSource,
+        /openProductSkuDeleteGuardModal: function[\s\S]*this\.bindOverlayDismiss\(overlay,[\s\S]*this\.closeDynamicModal\(modalId\)/,
+        'SKU delete guard should close by clicking outside the modal'
+    );
+    assert.doesNotMatch(
+        adminSource,
+        /shop-sku-delete-guard-modal__close/,
+        'SKU delete guard should not render a redundant top-right close button'
+    );
+    assert.match(
+        adminStyles,
+        /shop-product-sku-editor[\s\S]*container-type: inline-size;[\s\S]*shop-product-sku-row__main[\s\S]*minmax\(160px, 1\.35fr\)[\s\S]*shop-product-sku-row__tier-toggle\[aria-expanded="true"\][\s\S]*var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\)[\s\S]*shop-product-sku-row__tier-panel\[hidden\][\s\S]*shop-sku-delete-guard-modal/,
+        'admin SKU editor should use a compact one-line grid and the shared save-button color for active SKU controls'
+    );
+    assert.match(
+        adminStyles,
+        /shop-product-sku-editor__header[\s\S]*margin-bottom: 10px;[\s\S]*shop-product-sku-editor__add[\s\S]*color: var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\)[\s\S]*shop-product-sku-row__toggle input[\s\S]*appearance: none;[\s\S]*shop-product-sku-row__toggle input:checked[\s\S]*border-color: var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\)/,
+        'admin SKU add button should breathe away from rows and toggles should use custom save-blue controls'
+    );
+    assert.match(
+        pageStyles,
+        /#productModal \.shop-product-sku-row__tier-toggle\[aria-expanded="true"\][\s\S]*color: var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\) !important;[\s\S]*#productModal \.shop-product-sku-row__toggle input:checked[\s\S]*border-color: var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\) !important;/,
+        'product modal light-theme overrides should keep SKU blue controls aligned with save-button color'
+    );
+    assert.doesNotMatch(
+        adminStyles,
+        /shop-product-sku-editor__rows--single|shop-product-sku-row__tiers/,
+        'admin SKU styles should not keep duplicate single-SKU tier hiding rules'
+    );
+    assert.match(
+        mutateSource,
+        /quantity_rules: normalizeSkuQuantityPricingRules\(source\.quantity_rules \?\? source\.quantityRules\)[\s\S]*quantity_rules_intl: normalizeSkuQuantityPricingRules/,
+        'admin mutation should persist SKU tier rules'
+    );
+    assert.match(
+        publicHandlerSource,
+        /select\('id, product_id, sku_code, sku_name, spec_values, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order'\)/,
+        'public catalog should include SKU tier pricing columns'
+    );
+    assert.match(
+        migrationSource,
+        /ADD COLUMN IF NOT EXISTS quantity_rules JSONB[\s\S]*fn_purchase_shop_item_core[\s\S]*v_sku\.quantity_rules[\s\S]*WHEN v_sku_is_default THEN v_product\.quantity_rules/,
+        'incremental migration should add SKU tier fields and update purchase pricing fallback'
+    );
+});
+
+test('coupon scope can target a concrete product SKU', () => {
+    const adminHtml = readRepoFile('admin-studio.html');
+    const adminDiscountsSource = readRepoFile('admin-discounts.js');
+    const mutateSource = readRepoFile('server/api-handlers/admin/discounts/mutate.js');
+    const publicHandlerSource = readRepoFile('server/api-handlers/public/shop.js');
+    const shopSource = readRepoFile('js/shop-client.js');
+    const migrationSource = readRepoFile('supabase/migrations/20260523_add_discount_scope_product_sku.sql');
+
+    assert.match(
+        adminHtml,
+        /id="discountScopeProductSku"[\s\S]*data-discount-generate-select-trigger="scope-product-sku"/,
+        'discount modal should expose an optional product SKU scope selector'
+    );
+    assert.match(
+        adminDiscountsSource,
+        /scope-product-sku[\s\S]*buildScopeProductSkuOptions[\s\S]*scope_product_sku_id: scopeProductSkuId/,
+        'admin discount form should load SKU options and persist the selected SKU scope'
+    );
+    assert.match(
+        mutateSource,
+        /scopeProductSkuId[\s\S]*scope_product_sku_id: scopeType === 'product' \? scopeProductSkuId : null/,
+        'admin discount mutation should normalize and save SKU scope'
+    );
+    assert.match(
+        publicHandlerSource,
+        /scope_product_sku_id[\s\S]*resolveScopeProductSkuSummary[\s\S]*formatScopeLabel\(discount, productById, skuById\)/,
+        'public coupon payload should include SKU scope summaries'
+    );
+    assert.match(
+        shopSource,
+        /targetSkuId[\s\S]*this\.currentPurchase\.productSkuId[\s\S]*return targetSkuId === currentSkuId/,
+        'storefront should filter SKU-scoped coupons against the selected SKU'
+    );
+    assert.match(
+        migrationSource,
+        /ADD COLUMN IF NOT EXISTS scope_product_sku_id UUID[\s\S]*该优惠码仅适用于指定商品规格/,
+        'migration should add SKU scope and patch purchase/preview validation'
     );
 });
 

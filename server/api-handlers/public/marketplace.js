@@ -262,6 +262,14 @@ function buildXianyuMarketplaceOrderPayload(normalizedOrder = {}, tokenContext =
         || body.website_product_id
         || body.websiteProductId
     );
+    const explicitProductSkuId = normalizeUuid(
+        body.product_sku_id
+        || body.productSkuId
+        || body.website_sku_id
+        || body.websiteSkuId
+        || body.shop_sku_id
+        || body.shopSkuId
+    );
     const baseConfig = {
         channel: tokenContext.channelKey || 'xianyu',
         account: tokenContext.accountKey || 'main',
@@ -274,6 +282,7 @@ function buildXianyuMarketplaceOrderPayload(normalizedOrder = {}, tokenContext =
     if (explicitProductId) {
         return {
             product_id: explicitProductId,
+            product_sku_id: explicitProductSkuId || undefined,
             channel: baseConfig.channel,
             account: baseConfig.account,
             site: sanitizeText(body.site, 20).toLowerCase() === 'intl' ? 'intl' : 'cn',
@@ -286,6 +295,7 @@ function buildXianyuMarketplaceOrderPayload(normalizedOrder = {}, tokenContext =
             snapshot: {
                 adapter: 'xianyu-api-card',
                 mapping: { source: 'explicit_product_id' },
+                product_sku_id: explicitProductSkuId || null,
                 xianyu_item_id: normalizedOrder.xianyu_item_id,
                 sku_id: normalizedOrder.sku_id,
                 sku_text: normalizedOrder.sku_text,

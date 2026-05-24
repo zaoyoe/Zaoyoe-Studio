@@ -59,13 +59,53 @@ function createShopProductsTableMock(state) {
     };
 }
 
+function createGenericTableMock(state, table) {
+    return {
+        select() {
+            return this;
+        },
+        eq() {
+            return this;
+        },
+        insert(payload) {
+            state.tableInserts.push({ table, payload });
+            return this;
+        },
+        update(payload) {
+            state.tableUpdates.push({ table, payload });
+            return this;
+        },
+        limit() {
+            if (table === 'shop_product_skus') {
+                const lastInsert = state.tableInserts.findLast((entry) => entry.table === table)?.payload || {};
+                return Promise.resolve({
+                    data: lastInsert.product_id
+                        ? [{ id: 'sku_1', stock_count: 0, ...lastInsert }]
+                        : [],
+                    error: null
+                });
+            }
+
+            return Promise.resolve({ data: [], error: null });
+        },
+        then(resolve, reject) {
+            return this.limit().then(resolve, reject);
+        },
+        catch(reject) {
+            return this.then(undefined, reject);
+        }
+    };
+}
+
 async function withShopMutateHandler(callback) {
     const handlerPath = path.resolve(__dirname, '../server/api-handlers/admin/shop/mutate.js');
     const originalLoad = Module._load;
     const state = {
         requireAdminCalls: [],
         auditCalls: [],
-        fromCalls: []
+        fromCalls: [],
+        tableInserts: [],
+        tableUpdates: []
     };
 
     delete require.cache[handlerPath];
@@ -80,6 +120,10 @@ async function withShopMutateHandler(callback) {
                                 state.fromCalls.push(table);
                                 if (table === 'shop_products') {
                                     return createShopProductsTableMock(state);
+                                }
+
+                                if (table === 'shop_product_skus') {
+                                    return createGenericTableMock(state, table);
                                 }
 
                                 throw new Error(`Unexpected table mock request: ${table}`);
@@ -162,7 +206,7 @@ test('shop mutate handler accepts writable site and writes audit context', async
 
         assert.equal(res.statusCode, 200);
         assert.equal(res.json().success, true);
-        assert.deepEqual(state.fromCalls, ['shop_products']);
+        assert.deepEqual(state.fromCalls, ['shop_products', 'shop_product_skus', 'shop_product_skus', 'shop_product_skus']);
         assert.equal(state.auditCalls.length, 1);
         assert.equal(state.auditCalls[0].site, 'intl');
         assert.equal(state.auditCalls[0].module, 'shop');

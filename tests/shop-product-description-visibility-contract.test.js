@@ -22,7 +22,7 @@ test('shop product description visibility toggle is wired through admin, storefr
     assert.match(
         adminShopSource,
         /case 'product-toggle-description-visibility':\s+this\.updatePreview\(\);/s,
-        'admin shop runtime should refresh the live preview when the description visibility switch changes'
+        'admin shop runtime should keep the description visibility toggle wired'
     );
     assert.match(
         adminShopSource,
@@ -31,8 +31,8 @@ test('shop product description visibility toggle is wired through admin, storefr
     );
     assert.match(
         adminShopSource,
-        /previewDesc\.hidden = !showProductDescription;/,
-        'admin live preview should hide the description block when the switch is off'
+        /const previewDesc = document\.getElementById\('previewDesc'\);[\s\S]*if \(previewDesc\) \{/,
+        'admin runtime should tolerate product forms without the removed preview description node'
     );
     assert.match(
         shopClientSource,

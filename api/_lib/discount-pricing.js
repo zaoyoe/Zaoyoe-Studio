@@ -99,6 +99,7 @@ function normalizeDiscountSelection(source = {}) {
         code: normalizeText(source?.discount_code ?? source?.discountCode ?? source?.code, 80).toUpperCase() || null,
         asset_id: normalizeText(source?.discount_asset_id ?? source?.discountAssetId ?? source?.asset_id ?? source?.assetId, 160) || null,
         discount_id: normalizeText(source?.discount_id ?? source?.discountId ?? source?.id, 160) || null,
+        scope_product_sku_id: normalizeText(source?.scope_product_sku_id ?? source?.scopeProductSkuId, 160) || null,
         discount_type: discountType || null,
         discount_value: Number.isFinite(discountValue) ? discountValue : null,
         discount_amount: discountAmount,

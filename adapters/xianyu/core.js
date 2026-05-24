@@ -287,6 +287,17 @@ function getMappingProductId(mapping = {}) {
     return normalizeUuid(mapping.product_id || mapping.productId || mapping.website_product_id || mapping.websiteProductId);
 }
 
+function getMappingProductSkuId(mapping = {}) {
+    return normalizeUuid(
+        mapping.product_sku_id
+        || mapping.productSkuId
+        || mapping.website_sku_id
+        || mapping.websiteSkuId
+        || mapping.shop_sku_id
+        || mapping.shopSkuId
+    );
+}
+
 function containsText(source, needle) {
     const sourceText = sanitizeText(source, 1000).toLowerCase();
     const needleText = sanitizeText(needle, 1000).toLowerCase();
@@ -352,7 +363,8 @@ function resolveProductMapping(normalizedOrder = {}, config = {}) {
                 index,
                 score,
                 mapping,
-                product_id: getMappingProductId(mapping)
+                product_id: getMappingProductId(mapping),
+                product_sku_id: getMappingProductSkuId(mapping)
             };
         }
     });
@@ -428,6 +440,7 @@ function buildMarketplaceOrderPayload(rawOrder = {}, config = {}) {
 
     return {
         product_id: mapping.product_id,
+        product_sku_id: mapping.product_sku_id || undefined,
         channel,
         account,
         site: sanitizeText(config.site || DEFAULT_SITE, 20).toLowerCase() === 'intl' ? 'intl' : 'cn',
@@ -447,7 +460,8 @@ function buildMarketplaceOrderPayload(rawOrder = {}, config = {}) {
             created_at: normalizedOrder.created_at,
             mapping: {
                 index: mapping.index,
-                label: sanitizeText(mapping.mapping.label || mapping.mapping.name, 120)
+                label: sanitizeText(mapping.mapping.label || mapping.mapping.name, 120),
+                product_sku_id: mapping.product_sku_id || null
             },
             raw: normalizedOrder.raw
         }
