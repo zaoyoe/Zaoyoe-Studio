@@ -382,6 +382,150 @@ function buildMarketplaceChannelManifest(config = {}) {
     return manifest;
 }
 
+function buildMarketplaceReadinessItem(status = 'ok', code = '', message = '', details = {}) {
+    return {
+        status,
+        code: sanitizeText(code, 120),
+        message: sanitizeText(message, 500),
+        details: details && typeof details === 'object' && !Array.isArray(details) ? details : {}
+    };
+}
+
+function getMarketplaceReadinessStatus(items = []) {
+    const statuses = new Set((Array.isArray(items) ? items : []).map((item) => item?.status).filter(Boolean));
+    if (statuses.has('error')) return 'error';
+    if (statuses.has('warning')) return 'warning';
+    return 'ok';
+}
+
+function validateXianyuMarketplaceReadiness(config = {}, secretStatus = {}) {
+    const normalized = normalizeMarketplaceChannelsConfig(config);
+    const items = [];
+    const xianyu = (normalized.channels || []).find((channel) => channel.key === 'xianyu' || channel.type === 'xianyu') || null;
+
+    if (normalized.enabled !== true) {
+        items.push(buildMarketplaceReadinessItem('error', 'marketplace_disabled', '商城渠道总开关未启用。'));
+    }
+    if (!xianyu) {
+        items.push(buildMarketplaceReadinessItem('error', 'xianyu_channel_missing', '未找到闲鱼渠道配置。'));
+        return {
+            status: getMarketplaceReadinessStatus(items),
+            items,
+            counts: { ok: 0, warning: 0, error: items.length }
+        };
+    }
+    if (xianyu.enabled !== true) {
+        items.push(buildMarketplaceReadinessItem('warning', 'xianyu_disabled', '闲鱼自动发货未启用，保存后不会处理闲鱼订单。'));
+    }
+    if (!['shared', 'hybrid'].includes(xianyu.inventory_mode)) {
+        items.push(buildMarketplaceReadinessItem('error', 'xianyu_inventory_not_shared', '闲鱼渠道必须使用共享网站库存。'));
+    }
+    if (!['auto', 'hybrid'].includes(xianyu.delivery_mode)) {
+        items.push(buildMarketplaceReadinessItem('error', 'xianyu_delivery_not_auto', '闲鱼渠道必须启用自动发货模式。'));
+    }
+
+    const accounts = Array.isArray(xianyu.accounts) ? xianyu.accounts : [];
+    const enabledAccounts = accounts.filter((account) => account.enabled !== false);
+    const accountKeys = new Set();
+    const duplicateAccountKeys = new Set();
+    accounts.forEach((account) => {
+        const accountKey = normalizeKeyPart(account.key, '', 80);
+        if (!accountKey) {
+            items.push(buildMarketplaceReadinessItem('error', 'xianyu_account_key_missing', '存在未填写识别名的闲鱼账号。'));
+            return;
+        }
+        if (accountKeys.has(accountKey)) duplicateAccountKeys.add(accountKey);
+        accountKeys.add(accountKey);
+    });
+    duplicateAccountKeys.forEach((accountKey) => {
+        items.push(buildMarketplaceReadinessItem('error', 'xianyu_account_key_duplicate', `闲鱼账号识别名重复：${accountKey}`, { account_key: accountKey }));
+    });
+
+    if (!accounts.length) {
+        items.push(buildMarketplaceReadinessItem('error', 'xianyu_account_missing', '至少需要配置 1 个闲鱼账号。'));
+    }
+    if (!enabledAccounts.length) {
+        items.push(buildMarketplaceReadinessItem('error', 'xianyu_enabled_account_missing', '至少需要启用 1 个闲鱼账号。'));
+    }
+    if (!accounts.some((account) => account.key === xianyu.default_account_key)) {
+        items.push(buildMarketplaceReadinessItem('error', 'xianyu_default_account_missing', '默认发货账号不在账号列表中。'));
+    }
+
+    enabledAccounts.forEach((account) => {
+        const secretKey = buildMarketplaceSecretKey('xianyu', account.key, 'ingest_token');
+        const status = secretStatus?.[secretKey];
+        if (status?.decrypt_error_message || status?.error) {
+            items.push(buildMarketplaceReadinessItem('error', 'xianyu_ingest_token_unavailable', `${account.label || account.key} 的发货密钥无法读取。`, {
+                account_key: account.key,
+                secret_key: secretKey
+            }));
+            return;
+        }
+        if (status && status.configured !== true) {
+            items.push(buildMarketplaceReadinessItem('error', 'xianyu_ingest_token_missing', `${account.label || account.key} 还没有配置发货接口密钥。`, {
+                account_key: account.key,
+                secret_key: secretKey
+            }));
+        }
+    });
+
+    const mappings = Array.isArray(xianyu.product_mappings) ? xianyu.product_mappings : [];
+    const enabledMappings = mappings.filter((mapping) => mapping.enabled !== false);
+    if (!enabledMappings.length) {
+        items.push(buildMarketplaceReadinessItem('error', 'xianyu_mapping_missing', '至少需要启用 1 条商品发货规则。'));
+    }
+
+    const itemToProducts = new Map();
+    enabledMappings.forEach((mapping, index) => {
+        const label = sanitizeText(mapping.label || `发货规则 ${index + 1}`, 120);
+        const itemId = sanitizeText(mapping.xianyu_item_id, 180);
+        const productId = sanitizeText(mapping.product_id, 160);
+        const matcher = [
+            itemId,
+            sanitizeText(mapping.sku_id, 180),
+            sanitizeText(mapping.sku_text_contains, 500),
+            sanitizeText(mapping.title_contains, 500),
+            sanitizeText(mapping.raw_path, 200) && sanitizeText(mapping.equals, 500)
+        ].some(Boolean);
+
+        if (!matcher) {
+            items.push(buildMarketplaceReadinessItem('error', 'xianyu_mapping_matcher_missing', `${label} 没有填写闲鱼商品编号或规格匹配条件。`, { index }));
+        }
+        if (!productId) {
+            items.push(buildMarketplaceReadinessItem('error', 'xianyu_mapping_product_missing', `${label} 没有绑定网站商品。`, { index }));
+        }
+        if (itemId && productId) {
+            const productSet = itemToProducts.get(itemId) || new Set();
+            productSet.add(productId);
+            itemToProducts.set(itemId, productSet);
+        }
+    });
+    itemToProducts.forEach((productSet, itemId) => {
+        if (productSet.size > 1) {
+            items.push(buildMarketplaceReadinessItem('warning', 'xianyu_mapping_item_multiple_products', `闲鱼商品 ${itemId} 绑定了多个网站商品，请确认是否应改为同一商品下的多规格映射。`, {
+                xianyu_item_id: itemId,
+                product_ids: [...productSet]
+            }));
+        }
+    });
+
+    if (!items.length) {
+        items.push(buildMarketplaceReadinessItem('ok', 'xianyu_ready', '闲鱼自动发货配置已具备试运行条件。'));
+    }
+
+    const counts = items.reduce((accumulator, item) => {
+        const status = item.status || 'ok';
+        accumulator[status] = (accumulator[status] || 0) + 1;
+        return accumulator;
+    }, { ok: 0, warning: 0, error: 0 });
+
+    return {
+        status: getMarketplaceReadinessStatus(items),
+        items,
+        counts
+    };
+}
+
 async function loadMarketplaceChannelSecretStatus(supabase, config = {}) {
     const manifest = buildMarketplaceChannelManifest(config);
     const statusBySecretKey = {};
@@ -525,5 +669,6 @@ module.exports = {
     parseMarketplaceSecretKey,
     sanitizeText,
     upsertMarketplaceChannelSecret,
-    upsertMarketplaceChannelsConfig
+    upsertMarketplaceChannelsConfig,
+    validateXianyuMarketplaceReadiness
 };

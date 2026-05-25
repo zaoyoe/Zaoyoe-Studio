@@ -133,6 +133,96 @@ test('xianyu bridge sends returned delivery content to the chat adapter', async 
     ]);
 });
 
+test('xianyu bridge reports per-order delivery timing diagnostics', async () => {
+    const diagnostics = [];
+    const nowValues = [
+        200_000,
+        200_010,
+        200_040,
+        200_050,
+        200_060,
+        200_260,
+        200_270,
+        200_390,
+        200_460,
+        200_500
+    ];
+    const now = () => nowValues.shift() ?? 200_500;
+
+    const summary = await runBridgeWorker({
+        env: {
+            XIANYU_BRIDGE_BASE_URL: 'https://www.zaoyoe.com',
+            XIANYU_BRIDGE_ACCOUNT: 'main',
+            XIANYU_BRIDGE_INGEST_TOKEN: 'test-token',
+            XIANYU_BRIDGE_PRODUCT_MAPPINGS: JSON.stringify([
+                {
+                    xianyu_item_id: 'XY-BRIDGE-ITEM-1005',
+                    product_id: '55555555-5555-4555-8555-555555555555'
+                }
+            ]),
+            XIANYU_BRIDGE_DIAGNOSTICS: '1'
+        },
+        now,
+        diagnosticLogger(record) {
+            diagnostics.push(record);
+        },
+        async fetchImpl() {
+            return {
+                ok: true,
+                status: 200,
+                async text() {
+                    return JSON.stringify({
+                        success: true,
+                        duplicate: false,
+                        normalized_order: {
+                            external_order_id: 'XY-BRIDGE-1005'
+                        },
+                        data: {
+                            content: 'card-secret-1005'
+                        }
+                    });
+                }
+            };
+        },
+        async loadOrders() {
+            return [
+                {
+                    orderId: 'XY-BRIDGE-1005',
+                    paidAt: 125,
+                    item: {
+                        itemId: 'XY-BRIDGE-ITEM-1005'
+                    }
+                }
+            ];
+        },
+        async sendChat() {
+            return {
+                status: 'sent',
+                attempts: 2
+            };
+        }
+    });
+
+    assert.equal(summary.delivered, 1);
+    assert.deepEqual(summary.timing_ms, {
+        load_orders_ms: 30,
+        total_ms: 500
+    });
+    assert.deepEqual(summary.results[0].timing_ms, {
+        order_paid_age_ms: 75050,
+        load_orders_ms: 30,
+        queue_wait_ms: 10,
+        website_ms: 200,
+        chat_send_ms: 120,
+        total_ms: 410
+    });
+    assert.equal(summary.results[0].chat_attempts, 2);
+    assert.equal(diagnostics.length, 1);
+    assert.equal(diagnostics[0].event, 'order_delivered');
+    assert.equal(diagnostics[0].external_order_id, 'XY-BRIDGE-1005');
+    assert.deepEqual(diagnostics[0].timing_ms, summary.results[0].timing_ms);
+});
+
 test('xianyu bridge loads paid orders from a bot HTTP endpoint', async () => {
     const calls = [];
     const fetchImpl = async (url, options) => {

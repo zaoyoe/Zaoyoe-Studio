@@ -484,6 +484,8 @@ const ShopClient = {
     currentAgentName: null,
     purchaseUsageWheelCleanup: null,
     purchaseNotesHeightAnimationTimer: null,
+    purchaseModalStageSettledTimer: null,
+    purchaseModalOpeningStabilityTimer: null,
     purchaseModalViewportSyncCleanup: null,
     purchaseModalViewportSyncRafId: null,
     purchaseModalOpenViewportSyncTimers: [],
@@ -710,7 +712,7 @@ const ShopClient = {
         return this.normalizePurchaseQuantityCap(this.currentPurchase.maxQuantity);
     },
 
-    setCurrentPurchaseQuantityCap: function (maxQuantity, { unlimited = false } = {}) {
+    setCurrentPurchaseQuantityCap: function (maxQuantity, { unlimited = false, refreshDiscountAssets = true } = {}) {
         this.currentPurchase.maxQuantity = unlimited
             ? null
             : this.normalizePurchaseQuantityCap(maxQuantity);
@@ -730,7 +732,7 @@ const ShopClient = {
             if (quantityInput) {
                 quantityInput.value = String(quantityCap);
             }
-            this.updatePriceForQuantity(quantityCap);
+            this.updatePriceForQuantity(quantityCap, { refreshDiscountAssets });
         }
     },
 
@@ -769,6 +771,13 @@ const ShopClient = {
             </div>
             ${bodyHtml}
         `;
+
+        // 20260525_SHOP_PURCHASE_SKU_TOUCH_HITFIX_1
+        // innerHTML 重建会销毁 .shop-sku-selector__options--pills /
+        // .shop-sku-spec-group__options 容器，绑在旧容器上的 touchstart/touchend
+        // 监听器一并丢失；不重新绑定的话，从第二次切换 SKU 起就只能靠 modal 级 click
+        // 委托兜底，而 iOS 合成 click 的 target 在按钮边缘容易判飞，导致"靠下点不准"。
+        this.bindPurchaseSkuOptionsTapFallback();
     },
 
     getSkuSpecValues: function (sku = {}) {
@@ -885,6 +894,7 @@ const ShopClient = {
                     type="button"
                     class="shop-sku-option shop-sku-option--pill${selected ? ' is-selected' : ''}${disabled ? ' is-disabled' : ''}"
                     data-shop-sku-id="${this.escapeAttribute(skuId)}"
+                    data-purchase-stagger-child="sku-option"
                     aria-pressed="${selected ? 'true' : 'false'}"
                     aria-label="${this.escapeAttribute(`${name}，${stockLabel}`)}"
                     ${disabled ? 'disabled aria-disabled="true"' : ''}
@@ -917,6 +927,7 @@ const ShopClient = {
                         data-shop-sku-id="${this.escapeAttribute(skuId)}"
                         data-shop-sku-spec-name="${this.escapeAttribute(group.name)}"
                         data-shop-sku-spec-value="${this.escapeAttribute(value)}"
+                        data-purchase-stagger-child="sku-option"
                         aria-pressed="${selected ? 'true' : 'false'}"
                         ${disabled ? 'disabled aria-disabled="true"' : ''}
                     >
@@ -925,7 +936,7 @@ const ShopClient = {
                 `;
             }).join('');
             return `
-                <div class="shop-sku-spec-group">
+                <div class="shop-sku-spec-group" data-purchase-stagger-child="sku-group">
                     <div class="shop-sku-spec-group__label">${this.escapeHtml(group.name)}</div>
                     <div class="shop-sku-spec-group__options">${options}</div>
                 </div>
@@ -959,12 +970,31 @@ const ShopClient = {
             skuId: normalizedSkuId
         });
         this.setCurrentPurchaseQuantityCap(quantityCap, {
-            unlimited: this.currentPurchase.unlimitedPurchases === true
+            unlimited: this.currentPurchase.unlimitedPurchases === true,
+            refreshDiscountAssets: false
         });
+
+        const cachedDiscountAssetsPayload = this.readDiscountAssetsCache(this.buildCurrentPurchaseDiscountAssetsCacheKey());
+        if (cachedDiscountAssetsPayload) {
+            this.currentPurchase.availableDiscountAssets = Array.isArray(cachedDiscountAssetsPayload?.owned_discounts) ? cachedDiscountAssetsPayload.owned_discounts : [];
+            this.currentPurchase.claimableDiscounts = Array.isArray(cachedDiscountAssetsPayload?.claimable_discounts) ? cachedDiscountAssetsPayload.claimable_discounts : [];
+            this.currentPurchase.discountAssetsLoading = false;
+        } else {
+            this.currentPurchase.availableDiscountAssets = [];
+            this.currentPurchase.claimableDiscounts = [];
+            this.currentPurchase.discountAssetsLoading = true;
+        }
+        this.currentPurchase.discountPreviewRevision = Math.max(0, Number(this.currentPurchase.discountPreviewRevision || 0)) + 1;
         this.resetDiscountState({ clearMessage: true });
-        this.updatePriceForQuantity(Math.max(1, Number(this.currentPurchase.quantity || 1) || 1));
+        this.updatePriceForQuantity(Math.max(1, Number(this.currentPurchase.quantity || 1) || 1), {
+            refreshDiscountAssets: false
+        });
         this.renderPurchaseSkuSelector();
-        void this.refreshPurchaseDiscountAssets({ silent: true });
+        if (cachedDiscountAssetsPayload) {
+            this.maybeShowShopDiscountEngagement();
+            return;
+        }
+        void this.refreshPurchaseDiscountAssets({ silent: true, forceLoading: true, clearCurrent: true });
     },
 
     isInventoryStockErrorMessage: function (message = '') {
@@ -1808,11 +1838,13 @@ const ShopClient = {
         }
 
         const category = String(options.category || this.currentPurchase?.productCategory || '').trim() || null;
+        const productSkuId = String(options.productSkuId || options.skuId || normalizedDiscount.scopeProductSkuId || '').trim();
         return {
             version: SHOP_PURCHASE_PREFILL_SCHEMA_VERSION,
             timestamp: Date.now(),
             site: window.SiteConfig?.site || 'cn',
             productId,
+            productSkuId: productSkuId || null,
             category,
             ownedDiscounts: (normalizedDiscount.selections || []).map((selection) => ({
                 asset_id: selection.assetId || null,
@@ -1888,12 +1920,13 @@ const ShopClient = {
         }
     },
 
-    buildDiscountAssetsCacheKey: function ({ productId = '', quantity = 1, agentId = null, site = '', userKey = '' } = {}) {
+    buildDiscountAssetsCacheKey: function ({ productId = '', productSkuId = '', quantity = 1, agentId = null, site = '', userKey = '' } = {}) {
         const normalizedProductId = String(productId || '').trim();
         if (!normalizedProductId) {
             return '';
         }
 
+        const normalizedProductSkuId = String(productSkuId || '').trim() || 'default';
         const normalizedQuantity = Math.max(1, Math.trunc(Number(quantity || 1) || 1));
         const normalizedAgentId = String(agentId || 'public').trim() || 'public';
         const normalizedSite = String(site || window.SiteConfig?.site || 'cn').trim() || 'cn';
@@ -1904,6 +1937,7 @@ const ShopClient = {
             normalizedAgentId,
             normalizedUserKey,
             normalizedProductId,
+            normalizedProductSkuId,
             normalizedQuantity
         ].join('::');
     },
@@ -1951,6 +1985,7 @@ const ShopClient = {
 
         return this.buildDiscountAssetsCacheKey({
             productId: this.currentPurchase.productId,
+            productSkuId: this.currentPurchase.productSkuId || '',
             quantity: this.currentPurchase.quantity || 1,
             agentId: this.currentAgentId,
             site: window.SiteConfig?.site || 'cn',
@@ -2031,7 +2066,7 @@ const ShopClient = {
         return false;
     },
 
-    requestAvailableDiscountAssets: async function ({ productId = '', quantity = 1, agentId = null, site = '', preferCache = false, allowPending = true } = {}) {
+    requestAvailableDiscountAssets: async function ({ productId = '', productSkuId = '', quantity = 1, agentId = null, site = '', preferCache = false, allowPending = true } = {}) {
         const normalizedProductId = String(productId || '').trim();
         if (!normalizedProductId) {
             return {
@@ -2041,9 +2076,11 @@ const ShopClient = {
         }
 
         const token = await this.getAccessToken();
+        const normalizedProductSkuId = String(productSkuId || '').trim();
         const normalizedUserKey = String(this.discountAssetsCacheUserKey || 'guest').trim() || 'guest';
         const cacheKey = this.buildDiscountAssetsCacheKey({
             productId: normalizedProductId,
+            productSkuId: normalizedProductSkuId,
             quantity,
             agentId,
             site,
@@ -2099,6 +2136,7 @@ const ShopClient = {
                     signal: abortController?.signal,
                     body: JSON.stringify({
                         productId: normalizedProductId,
+                        productSkuId: normalizedProductSkuId || null,
                         quantity: Math.max(1, Math.trunc(Number(quantity || 1) || 1)),
                         agentId: agentId ?? this.currentAgentId,
                         site: site || window.SiteConfig?.site || 'cn'
@@ -2143,7 +2181,7 @@ const ShopClient = {
         return this.cloneDiscountAssetsPayload(payload);
     },
 
-    prefetchDiscountAssetsForProduct: async function ({ productId = '', quantity = 1, agentId = null, site = '' } = {}) {
+    prefetchDiscountAssetsForProduct: async function ({ productId = '', productSkuId = '', quantity = 1, agentId = null, site = '' } = {}) {
         const normalizedProductId = String(productId || '').trim();
         if (!normalizedProductId) {
             return;
@@ -2152,6 +2190,7 @@ const ShopClient = {
         try {
             await this.requestAvailableDiscountAssets({
                 productId: normalizedProductId,
+                productSkuId,
                 quantity,
                 agentId: agentId ?? this.currentAgentId,
                 site: site || window.SiteConfig?.site || 'cn',
@@ -5046,6 +5085,7 @@ const ShopClient = {
         this.closeCart();
         void this.prefetchDiscountAssetsForProduct({
             productId: entry.productId,
+            productSkuId: entry.productSkuId || '',
             quantity: entry.quantity,
             agentId: this.currentAgentId,
             site: window.SiteConfig?.site || 'cn'
@@ -5931,7 +5971,7 @@ const ShopClient = {
 
     formatDiscountUnavailableReason: function (item = {}, { short = false } = {}) {
         const rawMessage = String(item?.message || '').trim();
-        if (!rawMessage || /^(?:当前不可用|请稍后再试)$/u.test(rawMessage)) {
+        if (!rawMessage || /^(?:当前不可用|请稍后再试|该优惠码仅适用于指定商品规格)$/u.test(rawMessage)) {
             return '';
         }
 
@@ -5957,7 +5997,12 @@ const ShopClient = {
             return this.trShop('currentProductUnavailable', '当前商品不可用');
         }
 
-        return rawMessage.replace(/^指定商品当前不可用[:：]?\s*/u, '');
+        const cleanedMessage = rawMessage.replace(/^指定商品当前不可用[:：]?\s*/u, '');
+        if (/^该优惠码仅适用于指定商品规格$/u.test(cleanedMessage)) {
+            return '';
+        }
+
+        return cleanedMessage;
     },
 
     buildDiscountTargetProductsMarkup: function (item = {}, targetProducts = null) {
@@ -6015,14 +6060,13 @@ const ShopClient = {
         const hasProductTargets = targetProducts.length > 0;
         const isUnavailableCard = !claimable && item.available === false;
         const isCollapsibleUnavailableCard = isUnavailableCard && hasProductTargets;
-        const expiryLabel = this.formatDiscountExpiryLabel(item, { includePrefix: true });
         const label = claimable
             ? (claimPending
                 ? this.trShop('claiming', '领取中')
                 : (item.can_claim ? this.trShop('claimNow', '立即领取') : this.trShop('claimLimitReached', '已达上限')))
             : (item.available
                 ? (selected ? this.trShop('selected', '已选中') : this.trShop('tapToUse', '点击使用'))
-                : expiryLabel);
+                : '');
         const benefitLabel = this.getDiscountBenefitLabel(item);
         const stackingLabel = this.formatDiscountStackingLabel(item);
         const stackingSummary = this.formatDiscountStackingSummary(item);
@@ -6051,12 +6095,9 @@ const ShopClient = {
             }
         }
         if (isUnavailableCard) {
-            if (this.isEnglishShopLocale()) {
-                metaParts.push(this.trShop('validityInline', 'Valid until {date}', {
-                    date: this.formatDiscountExpiryLabel(item, { includePrefix: false })
-                }));
-            } else {
-                metaParts.push(`有效期 ${this.formatDiscountExpiryLabel(item, { includePrefix: false })}`);
+            const expiryText = this.formatDiscountExpiryLabel(item, { includePrefix: false });
+            if (expiryText && expiryText !== this.trShop('longTermValid', '长期有效')) {
+                metaParts.push(expiryText);
             }
         } else if (item.claim_expires_at) {
             metaParts.push(this.trShop('claimUntil', '领取至 {date}', {
@@ -6106,13 +6147,16 @@ const ShopClient = {
                             <span class="shop-discount-asset-card__chevron" aria-hidden="true"></span>
                         </span>
                     `
-                    : `<span class="shop-discount-asset-card__cta${isUnavailableCard ? ' shop-discount-asset-card__cta--expiry' : ''}">${this.escapeHtml(label)}</span>`}
+                    : (label ? `<span class="shop-discount-asset-card__cta">${this.escapeHtml(label)}</span>` : '')}
             </div>
         `;
         const summaryReasonMarkup = isCollapsibleUnavailableCard && unavailableSummaryReason
             ? `<div class="shop-discount-asset-card__summary-reason">${this.escapeHtml(unavailableSummaryReason)}</div>`
             : '';
-        const metaMarkup = `<div class="shop-discount-asset-card__meta">${this.escapeHtml(metaParts.join(' · ') || localizedHintText || this.trShop('availableForCurrentProduct', '可在当前商品结算时使用'))}</div>`;
+        const metaFallbackText = isUnavailableCard
+            ? this.trShop('currentProductUnavailable', '当前商品不可用')
+            : this.trShop('availableForCurrentProduct', '可在当前商品结算时使用');
+        const metaMarkup = `<div class="shop-discount-asset-card__meta">${this.escapeHtml(metaParts.join(' · ') || localizedHintText || metaFallbackText)}</div>`;
         const hintMarkup = shouldRenderHint ? `<div class="shop-discount-asset-card__hint">${this.escapeHtml(localizedHintText)}</div>` : '';
 
         if (isCollapsibleUnavailableCard) {
@@ -6399,9 +6443,11 @@ const ShopClient = {
         if (!normalizedProductId) {
             return;
         }
+        const productSkuId = String(options.productSkuId || options.skuId || '').trim();
 
         this.pendingProductSpotlight = {
             productId: normalizedProductId,
+            productSkuId,
             autoOpen: options.autoOpen !== false,
             sourceContext: {
                 sourcePage: 'purchase_modal',
@@ -6417,6 +6463,7 @@ const ShopClient = {
     loadAvailableDiscountAssetsWithServer: async function () {
         return this.requestAvailableDiscountAssets({
             productId: this.currentPurchase?.productId,
+            productSkuId: this.currentPurchase?.productSkuId || '',
             quantity: this.currentPurchase?.quantity,
             agentId: this.currentAgentId,
             site: window.SiteConfig?.site || 'cn',
@@ -6683,26 +6730,61 @@ const ShopClient = {
         }
     },
 
-    refreshPurchaseDiscountAssets: async function ({ silent = false } = {}) {
+    refreshPurchaseDiscountAssets: async function ({ silent = false, forceLoading = false, clearCurrent = false } = {}) {
         if (!this.currentPurchase) {
             return;
         }
 
+        const requestToken = Math.max(0, Number(this.currentPurchase.discountAssetsRefreshRevision || 0)) + 1;
+        const requestProductId = String(this.currentPurchase.productId || '').trim();
+        const requestProductSkuId = String(this.currentPurchase.productSkuId || '').trim();
+        const requestQuantity = Math.max(1, Math.trunc(Number(this.currentPurchase.quantity || 1) || 1));
+        const requestAgentId = this.currentAgentId;
+        const requestSite = window.SiteConfig?.site || 'cn';
+        this.currentPurchase.discountAssetsRefreshRevision = requestToken;
+
+        if (clearCurrent) {
+            this.currentPurchase.availableDiscountAssets = [];
+            this.currentPurchase.claimableDiscounts = [];
+        }
+
         const hasPrefilledItems = (Array.isArray(this.currentPurchase.availableDiscountAssets) && this.currentPurchase.availableDiscountAssets.length > 0)
             || (Array.isArray(this.currentPurchase.claimableDiscounts) && this.currentPurchase.claimableDiscounts.length > 0);
-        if (!hasPrefilledItems) {
+        if (forceLoading || clearCurrent || !hasPrefilledItems) {
             this.currentPurchase.discountAssetsLoading = true;
             this.renderPurchaseDiscountAssets();
         }
 
+        const isCurrentDiscountAssetsRequest = () => (
+            this.currentPurchase
+            && this.currentPurchase.discountAssetsRefreshRevision === requestToken
+            && String(this.currentPurchase.productId || '').trim() === requestProductId
+            && String(this.currentPurchase.productSkuId || '').trim() === requestProductSkuId
+            && Math.max(1, Math.trunc(Number(this.currentPurchase.quantity || 1) || 1)) === requestQuantity
+        );
+
         try {
-            const payload = await this.loadAvailableDiscountAssetsWithServer();
+            const payload = await this.requestAvailableDiscountAssets({
+                productId: requestProductId,
+                productSkuId: requestProductSkuId,
+                quantity: requestQuantity,
+                agentId: requestAgentId,
+                site: requestSite,
+                preferCache: false,
+                allowPending: true
+            });
+            if (!isCurrentDiscountAssetsRequest()) {
+                return;
+            }
             this.currentPurchase.availableDiscountAssets = Array.isArray(payload?.owned_discounts) ? payload.owned_discounts : [];
             this.currentPurchase.claimableDiscounts = Array.isArray(payload?.claimable_discounts) ? payload.claimable_discounts : [];
             this.currentPurchase.discountAssetsLoading = false;
             this.renderPurchaseDiscountAssets();
             this.maybeShowShopDiscountEngagement();
         } catch (error) {
+            if (!isCurrentDiscountAssetsRequest()) {
+                return;
+            }
             this.currentPurchase.availableDiscountAssets = [];
             this.currentPurchase.claimableDiscounts = [];
             this.currentPurchase.discountAssetsLoading = false;
@@ -7048,8 +7130,10 @@ const ShopClient = {
         const productSpotlightId = String(urlParams.get('productId') || urlParams.get('product_id') || '').trim();
         if (productSpotlightId) {
             const rechargeReturn = urlParams.get('rechargeReturn') === '1';
+            const productSkuId = String(urlParams.get('skuId') || urlParams.get('sku_id') || urlParams.get('productSkuId') || '').trim();
             this.pendingProductSpotlight = {
                 productId: productSpotlightId,
+                productSkuId,
                 autoOpen: true,
                 expandedSearch: false,
                 initialQuantity: Math.max(1, Math.trunc(Number(urlParams.get('quantity') || 1) || 1)),
@@ -7404,6 +7488,83 @@ const ShopClient = {
         }, { passive: true });
     },
 
+    resolvePurchaseSkuTriggerFromEvent: function (event) {
+        if (!event) return null;
+
+        const directTrigger = event.target instanceof Element
+            ? event.target.closest('[data-shop-sku-id]')
+            : null;
+        if (directTrigger) return directTrigger;
+
+        if (!window.matchMedia?.('(max-width: 768px)')?.matches) return null;
+
+        // 20260525_SHOP_PURCHASE_SKU_TOUCH_HITFIX_1
+        // TouchEvent 上没有 clientX/clientY（坐标在 changedTouches/touches 里），
+        // 这里兜底从 touch 列表取一次，否则 touchend 触发时 14px 贴边校正永远走不到。
+        let clientX = Number(event.clientX);
+        let clientY = Number(event.clientY);
+        if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) {
+            const touch = event.changedTouches?.[0] || event.touches?.[0] || null;
+            if (touch) {
+                clientX = Number(touch.clientX);
+                clientY = Number(touch.clientY);
+            }
+        }
+        if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return null;
+
+        const containers = Array.from(document.querySelectorAll(
+            '#shopPurchaseModal .shop-sku-selector__options--pills, #shopPurchaseModal .shop-sku-spec-group__options'
+        ));
+        const activeContainer = containers.find((container) => {
+            const rect = container.getBoundingClientRect();
+            return clientX >= rect.left - 8
+                && clientX <= rect.right + 8
+                && clientY >= rect.top - 12
+                && clientY <= rect.bottom + 12;
+        });
+        if (!activeContainer) return null;
+
+        let closestTrigger = null;
+        let closestDistance = Infinity;
+        activeContainer.querySelectorAll('[data-shop-sku-id]').forEach((trigger) => {
+            if (!(trigger instanceof HTMLElement) || trigger.disabled || trigger.getAttribute('aria-disabled') === 'true') {
+                return;
+            }
+            const rect = trigger.getBoundingClientRect();
+            const nearestX = Math.max(rect.left, Math.min(clientX, rect.right));
+            const nearestY = Math.max(rect.top, Math.min(clientY, rect.bottom));
+            const distance = Math.hypot(clientX - nearestX, clientY - nearestY);
+            if (distance < closestDistance) {
+                closestDistance = distance;
+                closestTrigger = trigger;
+            }
+        });
+
+        return closestDistance <= 14 ? closestTrigger : null;
+    },
+
+    handlePurchaseSkuTapFromEvent: function (event) {
+        const skuTrigger = this.resolvePurchaseSkuTriggerFromEvent(event);
+        if (!skuTrigger) return false;
+
+        event?.preventDefault?.();
+        event?.stopPropagation?.();
+        this.selectPurchaseSku(skuTrigger.dataset.shopSkuId || '');
+        return true;
+    },
+
+    bindPurchaseSkuOptionsTapFallback: function () {
+        const modal = document.getElementById('shopPurchaseModal');
+        if (!modal) return;
+
+        modal.querySelectorAll('.shop-sku-selector__options--pills, .shop-sku-spec-group__options')
+            .forEach((container) => {
+                this.bindShopMobileTapFallback(container, 'purchase-sku-near-edge', (event) => {
+                    this.handlePurchaseSkuTapFromEvent(event);
+                });
+            });
+    },
+
     resolvePurchaseActionButton: function (preferredButton = null) {
         if (preferredButton instanceof HTMLElement) {
             return preferredButton;
@@ -7516,6 +7677,7 @@ const ShopClient = {
         this.bindShopMobileTapFallback(document.getElementById('purchaseAddToCartBtn'), 'purchase-add-cart', () => {
             this.addCurrentPurchaseToCart();
         });
+        this.bindPurchaseSkuOptionsTapFallback();
         this.bindPurchaseDiscountActionTapFallbacks();
     },
 
@@ -7768,12 +7930,7 @@ const ShopClient = {
                 return;
             }
 
-            const skuTrigger = event.target instanceof Element
-                ? event.target.closest('[data-shop-sku-id]')
-                : null;
-            if (skuTrigger) {
-                event.preventDefault?.();
-                this.selectPurchaseSku(skuTrigger.dataset.shopSkuId || '');
+            if (this.handlePurchaseSkuTapFromEvent(event)) {
                 return;
             }
 
@@ -7988,6 +8145,14 @@ const ShopClient = {
 
     setElementHidden: function (element, hidden) {
         if (!element) return;
+        const shouldShow = hidden === false || hidden === 0 || hidden === null;
+        if (
+            shouldShow
+            && element.classList?.contains('shop-purchase-stage')
+            && document.getElementById('shopPurchaseModal')?.classList.contains('shop-purchase-opening-stable')
+        ) {
+            element.classList.add('shop-purchase-stage--opening-settled');
+        }
         element.hidden = !!hidden;
     },
 
@@ -8098,6 +8263,63 @@ const ShopClient = {
             window.clearTimeout(timerId);
         });
         this.purchaseModalOpenViewportSyncTimers = [];
+    },
+
+    clearPurchaseModalOpeningStability: function () {
+        if (this.purchaseModalOpeningStabilityTimer) {
+            window.clearTimeout(this.purchaseModalOpeningStabilityTimer);
+            this.purchaseModalOpeningStabilityTimer = null;
+        }
+
+        document.getElementById('shopPurchaseModal')?.classList.remove('shop-purchase-opening-stable');
+    },
+
+    clearPurchaseModalStageSettledState: function (modal = document.getElementById('shopPurchaseModal')) {
+        if (this.purchaseModalStageSettledTimer) {
+            window.clearTimeout(this.purchaseModalStageSettledTimer);
+            this.purchaseModalStageSettledTimer = null;
+        }
+
+        modal?.classList.remove('shop-purchase-stages-settled');
+    },
+
+    markPurchaseModalOpeningStaggerStages: function (modal = document.getElementById('shopPurchaseModal')) {
+        modal?.querySelectorAll('.shop-purchase-stage').forEach((element) => {
+            element.classList.remove('shop-purchase-stage--opening-stagger');
+            if (element.hidden) return;
+            element.classList.add('shop-purchase-stage--opening-stagger');
+        });
+    },
+
+    beginPurchaseModalStageSettledState: function (modal = document.getElementById('shopPurchaseModal')) {
+        if (!modal) return;
+
+        this.clearPurchaseModalStageSettledState(modal);
+        this.purchaseModalStageSettledTimer = window.setTimeout(() => {
+            this.purchaseModalStageSettledTimer = null;
+            if (!modal.classList.contains('active')) return;
+            modal.classList.add('shop-purchase-stages-settled');
+            modal.querySelectorAll('.shop-purchase-stage--opening-stagger').forEach((element) => {
+                element.classList.remove('shop-purchase-stage--opening-stagger');
+            });
+        }, 720);
+    },
+
+    resetPurchaseModalOpeningSettledStages: function (modal = document.getElementById('shopPurchaseModal')) {
+        modal?.querySelectorAll('.shop-purchase-stage--opening-settled').forEach((element) => {
+            element.classList.remove('shop-purchase-stage--opening-settled');
+        });
+    },
+
+    beginPurchaseModalOpeningStability: function (modal = document.getElementById('shopPurchaseModal')) {
+        if (!modal) return;
+
+        this.clearPurchaseModalOpeningStability();
+        modal.classList.add('shop-purchase-opening-stable');
+        this.purchaseModalOpeningStabilityTimer = window.setTimeout(() => {
+            this.purchaseModalOpeningStabilityTimer = null;
+            modal.classList.remove('shop-purchase-opening-stable');
+        }, 980);
     },
 
     schedulePurchaseModalOpenViewportStabilization: function () {
@@ -9133,6 +9355,9 @@ const ShopClient = {
 
             url.searchParams.delete('productId');
             url.searchParams.delete('product_id');
+            url.searchParams.delete('skuId');
+            url.searchParams.delete('sku_id');
+            url.searchParams.delete('productSkuId');
             if (hadRechargeReturnParam) {
                 url.searchParams.delete('rechargeReturn');
                 url.searchParams.delete('quantity');
@@ -9177,7 +9402,8 @@ const ShopClient = {
                         },
                         {
                             trackClick: false,
-                            initialQuantity: pending.initialQuantity
+                            initialQuantity: pending.initialQuantity,
+                            productSkuId: pending.productSkuId || ''
                         }
                     );
                 });
@@ -10988,6 +11214,7 @@ const ShopClient = {
         availableDiscountAssets: [],
         claimableDiscounts: [],
         discountAssetsLoading: false,
+        discountAssetsRefreshRevision: 0,
         purchaseNotes: '',
         usageInstructions: '',
         sourcePage: null,
@@ -11538,6 +11765,7 @@ const ShopClient = {
 
         void this.prefetchDiscountAssetsForProduct({
             productId,
+            productSkuId: options?.productSkuId || options?.skuId || '',
             quantity: initialQuantity,
             agentId: this.currentAgentId,
             site: window.SiteConfig?.site || 'cn'
@@ -11556,7 +11784,8 @@ const ShopClient = {
         const unlimitedPurchases = options?.unlimitedPurchases === true;
         const liveProductForPricing = this.getCachedProductById(productId);
         const purchaseSkus = this.getProductSkusForPurchase(liveProductForPricing);
-        const requestedSkuId = String(options?.productSkuId || options?.skuId || '').trim();
+        const storedPurchasePrefill = this.consumePurchasePrefillForProduct(productId);
+        const requestedSkuId = String(options?.productSkuId || options?.skuId || storedPurchasePrefill?.productSkuId || '').trim();
         const selectedSku = requestedSkuId
             ? purchaseSkus.find((sku) => String(sku.id || '').trim() === requestedSkuId)
             : this.getDefaultPurchaseSku(liveProductForPricing);
@@ -11577,13 +11806,14 @@ const ShopClient = {
             : this.normalizeQuantityPricingRules(rules);
         void this.prefetchDiscountAssetsForProduct({
             productId,
+            productSkuId: selectedSkuId,
             quantity: initialQuantity,
             agentId: this.currentAgentId,
             site: window.SiteConfig?.site || 'cn'
         });
-        const storedPurchasePrefill = this.consumePurchasePrefillForProduct(productId);
         const cachedDiscountAssetsPayload = this.readDiscountAssetsCache(this.buildDiscountAssetsCacheKey({
             productId,
+            productSkuId: selectedSkuId,
             quantity: initialQuantity,
             agentId: this.currentAgentId,
             site: window.SiteConfig?.site || 'cn'
@@ -11594,6 +11824,7 @@ const ShopClient = {
         });
         const runtimePurchasePrefill = this.buildPurchasePrefillFromCartDiscountSnapshot(runtimeCartDiscount, {
             productId,
+            productSkuId: selectedSkuId,
             category: String(options?.category || options?.productCategory || '').trim() || null
         });
         const prefilledOwnedDiscounts = [
@@ -11670,6 +11901,7 @@ const ShopClient = {
             claimableDiscounts: prefilledClaimableDiscounts,
             discountAssetsLoading: !hasImmediateVisibleDiscountData,
             discountPreviewRevision: 0,
+            discountAssetsRefreshRevision: 0,
             stage: 'configure',
             purchaseNotes: normalizedPurchaseNotes,
             purchaseNotesExpanded: defaultPurchaseNotesExpanded,
@@ -11755,6 +11987,7 @@ const ShopClient = {
         }
 
         const modal = document.getElementById('shopPurchaseModal');
+        this.clearPurchaseModalStageSettledState(modal);
         modal.classList.remove('shop-purchase-force-hidden');
         modal.hidden = false;
         modal.classList.remove('active');
@@ -11770,6 +12003,9 @@ const ShopClient = {
         this.renderPurchaseConfirmationStage();
         this.setPurchaseStage('configure');
         this.bindPurchaseModalControlTapFallbacks();
+        this.resetPurchaseModalOpeningSettledStages(modal);
+        this.markPurchaseModalOpeningStaggerStages(modal);
+        this.beginPurchaseModalOpeningStability(modal);
 
         // Flush the inactive layout first so newly revealed notes can join the stagger animation on first open.
         void modal.offsetHeight;
@@ -11780,6 +12016,7 @@ const ShopClient = {
         this.attachPurchaseModalViewportSync();
         this.attachPurchaseModalKeyboardDock();
         this.schedulePurchaseModalOpenViewportStabilization();
+        this.beginPurchaseModalStageSettledState(modal);
         void this.refreshPurchaseDiscountAssets({ silent: true });
         if (runtimeCartDiscount) {
             void this.refreshAppliedDiscountPreview({ silent: true });
@@ -11838,6 +12075,8 @@ const ShopClient = {
         this.clearPurchaseNotesWheelIsolation();
         this.clearPurchaseUsageWheelIsolation();
         this.clearPurchaseNotesHeightAnimation();
+        this.clearPurchaseModalOpeningStability();
+        this.clearPurchaseModalStageSettledState(modal);
         this.detachPurchaseModalViewportSync();
         this.detachPurchaseModalKeyboardDock();
         this.resetPurchaseModalKeyboardDockState();
@@ -11855,7 +12094,7 @@ const ShopClient = {
         this.purchaseModalBaseScrollY = 0;
     },
 
-    updatePriceForQuantity: function (qty) {
+    updatePriceForQuantity: function (qty, { refreshDiscountAssets = true } = {}) {
         let unitPrice = this.currentPurchase.basePrice;
         if (!this.currentPurchase.hasFlashSale) {
             const tieredPricing = this.getTieredPricingContext({
@@ -11894,7 +12133,9 @@ const ShopClient = {
             this.syncPricingWaterfall();
         }
 
-        void this.refreshPurchaseDiscountAssets({ silent: true });
+        if (refreshDiscountAssets) {
+            void this.refreshPurchaseDiscountAssets({ silent: true });
+        }
 
         return total;
     },

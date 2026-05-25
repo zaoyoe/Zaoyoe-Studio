@@ -13,7 +13,8 @@ const {
     parseMarketplaceSecretKey,
     normalizeMarketplaceChannelsConfig,
     upsertMarketplaceChannelSecret,
-    upsertMarketplaceChannelsConfig
+    upsertMarketplaceChannelsConfig,
+    validateXianyuMarketplaceReadiness
 } = require('../../../../api/_lib/marketplace-channels');
 const {
     sanitizeText
@@ -51,7 +52,10 @@ async function loadRuntimeSnapshot(supabase, rawConfig = {}) {
     return {
         config,
         manifest,
-        secret_status: secretStatus
+        secret_status: secretStatus,
+        readiness: {
+            xianyu: validateXianyuMarketplaceReadiness(config, secretStatus)
+        }
     };
 }
 
@@ -142,6 +146,7 @@ module.exports = async function adminMarketplaceChannelsHandler(req, res) {
                 config: runtime.config,
                 manifest: runtime.manifest,
                 secret_status: runtime.secret_status,
+                readiness: runtime.readiness,
                 summary
             });
         }
@@ -158,6 +163,9 @@ module.exports = async function adminMarketplaceChannelsHandler(req, res) {
                 user.id
             );
 
+            const refreshedRuntime = await loadRuntimeSnapshot(supabase, savedConfig);
+            const summary = buildSummary(refreshedRuntime.config, refreshedRuntime.manifest, refreshedRuntime.secret_status);
+
             await writeAdminAuditLog({
                 supabase,
                 adminId: user.id,
@@ -168,12 +176,10 @@ module.exports = async function adminMarketplaceChannelsHandler(req, res) {
                     inventory_mode: savedConfig.inventory_mode,
                     channel_count: Array.isArray(savedConfig.channels) ? savedConfig.channels.length : 0,
                     updated_secret_keys: savedSecretKeys,
-                    secret_error_count: secretErrors.length
+                    secret_error_count: secretErrors.length,
+                    xianyu_readiness_status: refreshedRuntime.readiness?.xianyu?.status || 'unknown'
                 }
             });
-
-            const refreshedRuntime = await loadRuntimeSnapshot(supabase, savedConfig);
-            const summary = buildSummary(refreshedRuntime.config, refreshedRuntime.manifest, refreshedRuntime.secret_status);
 
             return sendJson(res, 200, {
                 success: true,
@@ -183,6 +189,7 @@ module.exports = async function adminMarketplaceChannelsHandler(req, res) {
                 config: refreshedRuntime.config,
                 manifest: refreshedRuntime.manifest,
                 secret_status: refreshedRuntime.secret_status,
+                readiness: refreshedRuntime.readiness,
                 summary,
                 saved_secret_keys: savedSecretKeys,
                 secret_errors: secretErrors
@@ -225,6 +232,7 @@ module.exports = async function adminMarketplaceChannelsHandler(req, res) {
                 config: runtime.config,
                 manifest: runtime.manifest,
                 secret_status: runtime.secret_status,
+                readiness: runtime.readiness,
                 summary
             });
         }

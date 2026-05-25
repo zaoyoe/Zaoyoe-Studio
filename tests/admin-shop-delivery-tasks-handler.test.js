@@ -42,6 +42,11 @@ function getEqValue(operations, column) {
     return matched ? matched.args?.[1] : undefined;
 }
 
+function getInValue(operations, column) {
+    const matched = operations.find((operation) => operation.method === 'in' && operation.args?.[0] === column);
+    return matched ? matched.args?.[1] : undefined;
+}
+
 function createQueryBuilder(state, table) {
     const operations = [];
 
@@ -179,8 +184,15 @@ async function withDeliveryTasksHandler(callback) {
             if (table === 'shop_webhook_tasks') {
                 const selectOptions = operations.find((operation) => operation.method === 'select')?.args?.[1] || {};
                 const status = getEqValue(operations, 'status');
+                const statusIn = getInValue(operations, 'status');
+                const orderIds = getInValue(operations, 'order_id');
+                let taskRows = [taskMain, taskDead, taskLock];
+                if (Array.isArray(orderIds)) {
+                    taskRows = taskRows.filter((task) => orderIds.includes(task.order_id));
+                }
 
                 if (selectOptions?.head && status) {
+                    const count = taskRows.filter((task) => task.status === status).length;
                     const countMap = {
                         pending: 1,
                         processing: 1,
@@ -189,7 +201,7 @@ async function withDeliveryTasksHandler(callback) {
                         dead_letter: 1,
                         delivered: 0
                     };
-                    return { data: null, count: countMap[status] || 0, error: null };
+                    return { data: null, count: Array.isArray(orderIds) ? count : countMap[status] || 0, error: null };
                 }
 
                 if (selectOptions?.head && hasOperation(operations, 'gt', 'manual_replay_count')) {
@@ -213,74 +225,106 @@ async function withDeliveryTasksHandler(callback) {
                 }
 
                 if (hasOperation(operations, 'not', 'reservation_acquired_at')) {
-                    return { data: [taskLock], error: null };
+                    return { data: taskRows.filter((task) => task.id === 'task_lock'), error: null };
                 }
 
                 if (hasOperation(operations, 'in', 'id')) {
                     return {
-                        data: [taskMain, taskDead, taskLock].filter((task) => operations.find((operation) => operation.method === 'in' && operation.args?.[0] === 'id')?.args?.[1]?.includes(task.id)),
+                        data: taskRows.filter((task) => operations.find((operation) => operation.method === 'in' && operation.args?.[0] === 'id')?.args?.[1]?.includes(task.id)),
                         error: null
                     };
                 }
 
-                if (status === 'dead_letter') {
+                if (Array.isArray(statusIn)) {
+                    const filtered = taskRows.filter((task) => statusIn.includes(task.status));
                     if (mode === 'range') {
-                        return { data: [taskDead], count: 1, error: null };
+                        return { data: filtered, count: filtered.length, error: null };
                     }
-                    return { data: [taskDead], error: null };
+                    return { data: filtered, error: null };
+                }
+
+                if (status === 'dead_letter') {
+                    const filtered = taskRows.filter((task) => task.status === 'dead_letter');
+                    if (mode === 'range') {
+                        return { data: filtered, count: filtered.length, error: null };
+                    }
+                    return { data: filtered, error: null };
                 }
 
                 if (status === 'processing') {
+                    const filtered = taskRows.filter((task) => task.status === 'processing');
                     if (mode === 'range') {
-                        return { data: [taskLock], count: 1, error: null };
+                        return { data: filtered, count: filtered.length, error: null };
                     }
-                    return { data: [taskLock], error: null };
+                    return { data: filtered, error: null };
                 }
 
                 if (mode === 'range') {
-                    return { data: [taskMain], count: 1, error: null };
+                    return { data: taskRows.filter((task) => task.id === 'task_pending'), count: taskRows.filter((task) => task.id === 'task_pending').length, error: null };
                 }
 
                 return { data: [], error: null };
             }
 
             if (table === 'shop_orders') {
+                const sourceChannel = getEqValue(operations, 'source_channel');
+                const channelAccountKey = getEqValue(operations, 'channel_account_key');
+                const idFilter = getInValue(operations, 'id');
+                let rows = [
+                    {
+                        id: 'ord_1',
+                        user_id: 'user_1',
+                        snapshot_product_name: 'Season Pass',
+                        price_paid: 49,
+                        total_price: 49,
+                        delivery_status: 'pending',
+                        source_channel: 'website',
+                        channel_account_key: 'main',
+                        external_order_id: '',
+                        created_at: '2026-04-03T01:00:00.000Z',
+                        item_count: 1,
+                        refund_status: 'none'
+                    },
+                    {
+                        id: 'ord_2',
+                        user_id: 'user_2',
+                        snapshot_product_name: 'Prompt Pack',
+                        price_paid: 99,
+                        total_price: 99,
+                        delivery_status: 'dead_letter',
+                        source_channel: 'xianyu',
+                        channel_account_key: 'main',
+                        external_order_id: 'XY-1002',
+                        created_at: '2026-04-03T02:00:00.000Z',
+                        item_count: 1,
+                        refund_status: 'none'
+                    },
+                    {
+                        id: 'ord_3',
+                        user_id: 'user_3',
+                        snapshot_product_name: 'API Product',
+                        price_paid: 19,
+                        total_price: 19,
+                        delivery_status: 'processing',
+                        source_channel: 'xianyu',
+                        channel_account_key: 'backup-1',
+                        external_order_id: 'XY-1003',
+                        created_at: '2026-04-03T02:50:00.000Z',
+                        item_count: 1,
+                        refund_status: 'none'
+                    }
+                ];
+                if (sourceChannel) {
+                    rows = rows.filter((row) => row.source_channel === sourceChannel);
+                }
+                if (channelAccountKey) {
+                    rows = rows.filter((row) => row.channel_account_key === channelAccountKey);
+                }
+                if (Array.isArray(idFilter)) {
+                    rows = rows.filter((row) => idFilter.includes(row.id));
+                }
                 return {
-                    data: [
-                        {
-                            id: 'ord_1',
-                            user_id: 'user_1',
-                            snapshot_product_name: 'Season Pass',
-                            price_paid: 49,
-                            total_price: 49,
-                            delivery_status: 'pending',
-                            created_at: '2026-04-03T01:00:00.000Z',
-                            item_count: 1,
-                            refund_status: 'none'
-                        },
-                        {
-                            id: 'ord_2',
-                            user_id: 'user_2',
-                            snapshot_product_name: 'Prompt Pack',
-                            price_paid: 99,
-                            total_price: 99,
-                            delivery_status: 'dead_letter',
-                            created_at: '2026-04-03T02:00:00.000Z',
-                            item_count: 1,
-                            refund_status: 'none'
-                        },
-                        {
-                            id: 'ord_3',
-                            user_id: 'user_3',
-                            snapshot_product_name: 'API Product',
-                            price_paid: 19,
-                            total_price: 19,
-                            delivery_status: 'processing',
-                            created_at: '2026-04-03T02:50:00.000Z',
-                            item_count: 1,
-                            refund_status: 'none'
-                        }
-                    ],
+                    data: rows,
                     error: null
                 };
             }
@@ -389,5 +433,36 @@ test('shop delivery tasks handler returns paged task, dead letter, lock, and res
         assert.equal(payload.lockConflicts.tasks[0]?.order?.snapshot_product_name, 'API Product');
         assert.equal(payload.conflicts.records.length, 1);
         assert.equal(state.requireAdminCalls[0]?.options?.permission, 'shop.manage');
+    });
+});
+
+test('shop delivery tasks handler filters compact recovery tasks by marketplace source channel', async () => {
+    await withDeliveryTasksHandler(async ({ handler, state }) => {
+        const req = {
+            method: 'GET',
+            headers: {},
+            url: '/api/admin?route=shop/delivery-tasks&compact=marketplace_recovery&sourceChannel=xianyu&statuses=dead_letter,retry_waiting,requeued,processing&page=1&pageSize=6'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.tasks.length, 2);
+        assert.deepEqual(payload.tasks.map((task) => task.order_id).sort(), ['ord_2', 'ord_3']);
+        assert.equal(payload.tasks.every((task) => task.order?.source_channel === 'xianyu'), true);
+        assert.equal(payload.filters.marketplace.source_channel, 'xianyu');
+        assert.equal(payload.filters.marketplace.order_count, 2);
+        assert.equal(payload.summary.dead_letter, 1);
+        assert.equal(payload.summary.processing, 1);
+        assert.equal(
+            state.queryCalls.some((entry) => (
+                entry.table === 'shop_webhook_tasks'
+                && hasOperation(entry.operations, 'in', 'order_id')
+            )),
+            true
+        );
     });
 });

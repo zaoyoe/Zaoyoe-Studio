@@ -11,8 +11,19 @@ let paymentChannelActivationChecks = getDefaultPaymentChannelActivationChecks();
 let marketplaceChannelSecretStatus = {};
 let marketplaceChannelManifest = [];
 let marketplaceChannelSummary = {};
+let marketplaceChannelReadiness = {};
 let marketplaceXianyuAccountDraftCounter = 1;
 let marketplaceXianyuProductMappingDraftCounter = 1;
+let marketplaceXianyuFulfillmentActiveTab = 'overview';
+let marketplaceXianyuProductMappingCollapsedKeys = new Set();
+let marketplaceXianyuRecoveryState = {
+    loading: false,
+    loaded: false,
+    error: '',
+    page: 1,
+    pageSize: 6,
+    payload: null
+};
 let marketplaceProductPickerState = {
     rows: [],
     allProducts: [],
@@ -4594,6 +4605,7 @@ function normalizeMarketplaceProductMappings(value = [], options = {}) {
         const skuId = String(safeEntry.sku_id || safeEntry.skuId || '').trim();
         const skuTextContains = String(safeEntry.sku_text_contains || safeEntry.skuTextContains || '').trim();
         const titleContains = String(safeEntry.title_contains || safeEntry.titleContains || '').trim();
+        const draftGroupKey = String(safeEntry.draft_group_key || safeEntry.draftGroupKey || '').trim();
         const rawPath = String(safeEntry.raw_path || safeEntry.rawPath || '').trim();
         const rawEquals = String(safeEntry.equals ?? safeEntry.value ?? '').trim();
         const hasMatcher = Boolean(xianyuItemId || skuId || skuTextContains || titleContains || (rawPath && rawEquals));
@@ -4602,8 +4614,8 @@ function normalizeMarketplaceProductMappings(value = [], options = {}) {
             return null;
         }
 
-        return {
-            label: String(safeEntry.label || safeEntry.name || (xianyuItemId ? `闲鱼商品 ${xianyuItemId}` : `商品映射 ${index + 1}`)).trim(),
+        const normalizedMapping = {
+            label: String(safeEntry.label || safeEntry.name || (xianyuItemId ? `闲鱼商品 ${xianyuItemId}` : `发货规则 ${index + 1}`)).trim(),
             enabled: safeEntry.enabled !== false,
             xianyu_item_id: xianyuItemId,
             sku_id: skuId,
@@ -4615,6 +4627,10 @@ function normalizeMarketplaceProductMappings(value = [], options = {}) {
             product_sku_id: productSkuId,
             notes: String(safeEntry.notes || safeEntry.description || '').trim()
         };
+        if (keepEmpty && draftGroupKey) {
+            normalizedMapping.draft_group_key = draftGroupKey;
+        }
+        return normalizedMapping;
     }).filter(Boolean);
 }
 
@@ -4629,6 +4645,40 @@ function ensureMarketplaceChannelConfigCardExpanded() {
     if (header instanceof HTMLElement) {
         header.setAttribute('aria-expanded', 'true');
     }
+}
+
+function normalizeMarketplaceXianyuFulfillmentTab(tab = '') {
+    const normalized = String(tab || '').trim().toLowerCase();
+    return ['overview', 'mappings', 'accounts', 'advanced'].includes(normalized)
+        ? normalized
+        : 'overview';
+}
+
+function applyMarketplaceXianyuFulfillmentTabState(tab = marketplaceXianyuFulfillmentActiveTab) {
+    const moduleEl = document.getElementById('module-xianyu-fulfillment');
+    if (!moduleEl) return;
+
+    marketplaceXianyuFulfillmentActiveTab = normalizeMarketplaceXianyuFulfillmentTab(tab);
+    moduleEl.querySelectorAll('[data-xianyu-tab]').forEach((tabEl) => {
+        const isActive = tabEl.dataset.xianyuTab === marketplaceXianyuFulfillmentActiveTab;
+        tabEl.classList.toggle('active', isActive);
+        tabEl.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        tabEl.setAttribute('tabindex', isActive ? '0' : '-1');
+        if (isActive) {
+            requestAnimationFrame(() => window.updateAdminTabIndicator?.(tabEl));
+        }
+    });
+
+    moduleEl.querySelectorAll('[data-xianyu-panel]').forEach((panelEl) => {
+        const isActive = panelEl.dataset.xianyuPanel === marketplaceXianyuFulfillmentActiveTab;
+        panelEl.classList.toggle('active', isActive);
+        panelEl.hidden = !isActive;
+        panelEl.setAttribute('aria-hidden', isActive ? 'false' : 'true');
+    });
+}
+
+function switchMarketplaceXianyuFulfillmentTab(tab = 'overview') {
+    applyMarketplaceXianyuFulfillmentTabState(tab);
 }
 
 function restoreMarketplaceAdvancedConfigState(wasOpen = false) {
@@ -4648,10 +4698,7 @@ function formatMarketplaceProductPickerLabel(product = {}, fallbackId = '') {
     if (!id && !name) {
         return '未选择商品';
     }
-    if (!name) {
-        return id;
-    }
-    return `${name} · ${id}`;
+    return name;
 }
 
 function ensureMarketplaceProductPickerRowState(index = 0) {
@@ -4684,6 +4731,26 @@ function normalizeMarketplaceProductPickerProduct(product = {}) {
         return null;
     }
 
+    const normalizeSkus = typeof window.ShopAdmin?.normalizeProductSkus === 'function'
+        ? (skus) => window.ShopAdmin.normalizeProductSkus(skus)
+        : (skus) => (Array.isArray(skus) ? skus : [])
+            .filter((sku) => sku && typeof sku === 'object')
+            .map((sku) => ({
+                ...sku,
+                id: String(sku.id || '').trim(),
+                sku_name: String(sku.sku_name || sku.skuName || sku.name || '默认规格').trim() || '默认规格',
+                sku_code: String(sku.sku_code || sku.skuCode || '').trim(),
+                is_default: sku.is_default === true,
+                is_active: sku.is_active !== false,
+                stock_count: Number(sku.stock_count || 0) || 0,
+                sort_order: Number(sku.sort_order || 0) || 0
+            }))
+            .filter((sku) => sku.id)
+            .sort((left, right) => {
+                if (left.is_default !== right.is_default) return left.is_default ? -1 : 1;
+                return left.sort_order - right.sort_order || left.sku_name.localeCompare(right.sku_name, 'zh-CN');
+            });
+
     return {
         id,
         name: String(product?.name || product?.title || '').trim(),
@@ -4691,7 +4758,8 @@ function normalizeMarketplaceProductPickerProduct(product = {}) {
         category: String(product?.category || '').trim(),
         stock_count: Number(product?.stock_count ?? product?.stockCount ?? product?.stock ?? 0) || 0,
         is_active: product?.is_active !== false && product?.isActive !== false,
-        delivery_type: String(product?.delivery_type || product?.deliveryType || '').trim()
+        delivery_type: String(product?.delivery_type || product?.deliveryType || '').trim(),
+        skus: normalizeSkus(product?.skus || product?.product_skus || product?.productSkus || [])
     };
 }
 
@@ -4731,6 +4799,130 @@ function getMarketplaceProductPickerCachedLabel(productId = '') {
     }
     const product = marketplaceProductPickerState.productById.get(id);
     return formatMarketplaceProductPickerLabel(product, id);
+}
+
+function getMarketplaceProductPickerCachedProduct(productId = '') {
+    const id = String(productId || '').trim();
+    if (!id || !(marketplaceProductPickerState.productById instanceof Map)) {
+        return null;
+    }
+    return marketplaceProductPickerState.productById.get(id) || null;
+}
+
+function formatMarketplaceProductSkuOptionLabel(sku = {}) {
+    const name = String(sku?.sku_name || sku?.skuName || sku?.name || '').trim();
+    const code = String(sku?.sku_code || sku?.skuCode || '').trim();
+    const stock = Number(sku?.stock_count ?? sku?.stockCount ?? 0);
+    const parts = [];
+    parts.push(name || code || '未命名规格');
+    if (code && code !== name) {
+        parts.push(`编码 ${code}`);
+    }
+    if (Number.isFinite(stock)) {
+        parts.push(`库存 ${stock}`);
+    }
+    return parts.join(' · ');
+}
+
+function getMarketplaceProductSkuOptionParts(sku = {}) {
+    const name = String(sku?.sku_name || sku?.skuName || sku?.name || '').trim();
+    const code = String(sku?.sku_code || sku?.skuCode || '').trim();
+    const stock = Number(sku?.stock_count ?? sku?.stockCount ?? 0);
+    const title = name || code || '未命名规格';
+    const meta = [
+        code && code !== title ? `编码 ${code}` : '',
+        Number.isFinite(stock) ? `库存 ${stock}` : ''
+    ].filter(Boolean).join(' · ');
+    return { title, meta };
+}
+
+function renderMarketplaceProductSkuFieldHtml(productId = '', selectedSkuId = '', rowIndex = '') {
+    const product = getMarketplaceProductPickerCachedProduct(productId);
+    const skus = Array.isArray(product?.skus)
+        ? product.skus.filter((sku) => sku?.is_active !== false)
+        : [];
+    const normalizedSelectedSkuId = String(selectedSkuId || '').trim();
+
+    if (!String(productId || '').trim()) {
+        return `
+            <input type="hidden" data-marketplace-product-mapping-field="product_sku_id" value="${escapeConfigHtml(normalizedSelectedSkuId)}">
+            <div class="marketplace-sku-selector marketplace-sku-selector--empty">先选择网站商品，之后这里会显示可发货规格。</div>
+        `;
+    }
+
+    if (skus.length) {
+        const hasSelectedSku = skus.some((sku) => String(sku.id || '').trim() === normalizedSelectedSkuId);
+        const fieldToken = `${String(rowIndex || 'row').replace(/[^a-zA-Z0-9_-]/g, '_')}_${String(productId || 'product').replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+        const inputId = `marketplaceProductSkuInput_${fieldToken}`;
+        const dropdownId = `marketplaceProductSkuDropdown_${fieldToken}`;
+        const fallbackOption = normalizedSelectedSkuId && !hasSelectedSku
+            ? {
+                value: normalizedSelectedSkuId,
+                title: `已保存规格：${normalizedSelectedSkuId}`,
+                meta: '该规格暂未出现在当前商品规格列表中'
+            }
+            : null;
+        const options = [
+            { value: '', title: '默认规格 / 不指定', meta: '不指定网站规格，由网站按默认库存发货' },
+            ...(fallbackOption ? [fallbackOption] : []),
+            ...skus.map((sku) => {
+                const skuId = String(sku.id || '').trim();
+                const parts = getMarketplaceProductSkuOptionParts(sku);
+                return {
+                    value: skuId,
+                    title: parts.title,
+                    meta: parts.meta
+                };
+            })
+        ];
+        const selectedOption = options.find((option) => String(option.value || '') === normalizedSelectedSkuId) || options[0];
+        return `
+            <input
+                type="hidden"
+                id="${escapeConfigHtml(inputId)}"
+                data-marketplace-product-mapping-field="product_sku_id"
+                value="${escapeConfigHtml(normalizedSelectedSkuId)}"
+            >
+            <div class="custom-dropdown marketplace-sku-dropdown" id="${escapeConfigHtml(dropdownId)}" data-sync-input-id="${escapeConfigHtml(inputId)}">
+                <button type="button" class="dropdown-trigger" data-admin-action="settings-toggle-custom-dropdown" data-dropdown-id="${escapeConfigHtml(dropdownId)}" aria-haspopup="listbox" aria-expanded="false">
+                    <span class="marketplace-sku-dropdown__copy">
+                        <span class="dropdown-value">${escapeConfigHtml(selectedOption.title)}</span>
+                        <small data-dropdown-role="meta"${selectedOption.meta ? '' : ' hidden'}>${escapeConfigHtml(selectedOption.meta || '')}</small>
+                    </span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="dropdown-menu" role="listbox">
+                    ${options.map((option) => {
+                        const isSelected = String(option.value || '') === String(selectedOption.value || '');
+                        return `
+                            <button
+                                type="button"
+                                class="dropdown-option${isSelected ? ' selected' : ''}"
+                                data-value="${escapeConfigHtml(option.value || '')}"
+                                data-admin-action="settings-select-dropdown-option"
+                                data-dropdown-id="${escapeConfigHtml(dropdownId)}"
+                                data-option-value="${escapeConfigHtml(option.value || '')}"
+                                data-option-label="${escapeConfigHtml(option.title || '')}"
+                                data-option-meta="${escapeConfigHtml(option.meta || '')}"
+                                role="option"
+                                aria-selected="${isSelected ? 'true' : 'false'}"
+                            >
+                                <span class="marketplace-sku-dropdown__option">
+                                    <strong>${escapeConfigHtml(option.title || '')}</strong>
+                                    ${option.meta ? `<small>${escapeConfigHtml(option.meta)}</small>` : ''}
+                                </span>
+                            </button>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    return `
+        <input type="text" class="config-input" data-marketplace-product-mapping-field="product_sku_id" value="${escapeConfigHtml(normalizedSelectedSkuId)}" placeholder="无多规格可留空，或粘贴网站规格 ID">
+        <small class="marketplace-field-hint">这个网站商品暂时没有可选择规格；只有多规格商品才需要填写。</small>
+    `;
 }
 
 function normalizeMarketplaceProductPickerSearchText(value = '') {
@@ -4828,12 +5020,14 @@ async function loadMarketplaceProductPickerCatalog(options = {}) {
                 rows = await fetchMarketplaceProductPickerProducts({
                     status: 'active',
                     fields: 'full',
+                    includeSkus: true,
                     order: 'name_asc'
                 });
             } catch (fullError) {
                 rows = await fetchMarketplaceProductPickerProducts({
                     status: 'active',
                     fields: 'picker',
+                    includeSkus: true,
                     order: 'name_asc'
                 }).catch(() => {
                     throw fullError;
@@ -4943,6 +5137,7 @@ function updateMarketplaceProductPickerRow(rowState = null, options = {}) {
     const emptyEl = row.querySelector('[data-marketplace-product-search-empty]');
     const pickerEl = row.querySelector('[data-marketplace-product-picker]');
     const clearButton = row.querySelector('[data-admin-action="marketplace-clear-product-mapping"]');
+    const skuFieldEls = [...row.querySelectorAll('[data-marketplace-product-sku-field]')];
 
     if (hiddenInput instanceof HTMLInputElement && hiddenInput.value !== selectedId) {
         hiddenInput.value = selectedId;
@@ -4954,15 +5149,15 @@ function updateMarketplaceProductPickerRow(rowState = null, options = {}) {
     }
 
     if (labelEl instanceof HTMLElement) {
-        labelEl.textContent = selectedLabel || selectedId || '未选择商品';
+        labelEl.textContent = selectedLabel || (selectedId ? '已绑定网站商品' : '未选择商品');
     }
     if (clearButton instanceof HTMLButtonElement) {
         clearButton.disabled = !selectedId;
     }
     if (metaEl instanceof HTMLElement) {
         metaEl.textContent = selectedId
-            ? `已绑定：${selectedId}`
-            : '输入商品名或商品 ID，选择网站商品';
+            ? '已绑定网站商品'
+            : '搜索商品名，选择要发的网站商品';
     }
     if (loadingEl instanceof HTMLElement) {
         loadingEl.hidden = !loading;
@@ -5012,6 +5207,13 @@ function updateMarketplaceProductPickerRow(rowState = null, options = {}) {
         pickerEl.classList.toggle('is-open', open);
         pickerEl.classList.toggle('is-loading', loading);
     }
+    if (options.refreshSkuField === true && skuFieldEls.length) {
+        skuFieldEls.forEach((skuFieldEl, childIndex) => {
+            const currentSkuInput = skuFieldEl.querySelector('[data-marketplace-product-mapping-field="product_sku_id"]');
+            const selectedSkuId = options.resetSkuField === true ? '' : String(currentSkuInput?.value || '').trim();
+            skuFieldEl.innerHTML = renderMarketplaceProductSkuFieldHtml(selectedId, selectedSkuId, `${rowState.index}_${childIndex}`);
+        });
+    }
 }
 
 function renderMarketplaceProductPickerRow(index = 0, options = {}) {
@@ -5020,7 +5222,7 @@ function renderMarketplaceProductPickerRow(index = 0, options = {}) {
     const selectedId = String(options.selectedId ?? fallbackMapping.product_id ?? '').trim();
     const selectedLabel = String((options.selectedLabel ?? getMarketplaceProductPickerCachedLabel(selectedId)) || '').trim();
     rowState.selectedId = selectedId;
-    rowState.selectedLabel = selectedLabel || selectedId;
+    rowState.selectedLabel = selectedLabel;
     rowState.query = String(options.query ?? rowState.query ?? '').trim();
     rowState.open = options.open === true ? true : rowState.open;
     rowState.results = Array.isArray(options.results) ? options.results : rowState.results;
@@ -5033,6 +5235,53 @@ function renderMarketplaceProductPickerRow(index = 0, options = {}) {
         loading: rowState.loading,
         open: rowState.open
     });
+}
+
+function getMarketplaceProductMappingGroupKey(mapping = {}, index = 0) {
+    const itemId = String(mapping?.xianyu_item_id || '').trim();
+    const productId = String(mapping?.product_id || '').trim();
+    const draftGroupKey = String(mapping?.draft_group_key || '').trim();
+    if (!itemId && !productId) {
+        return draftGroupKey || `__draft__::${index}`;
+    }
+    return `${itemId || '__empty_item__'}::${productId || '__empty_product__'}`;
+}
+
+function getMarketplaceProductMappingCollapseKey(group = {}, index = 0) {
+    const rawKey = String(group?.key || '').trim();
+    const parentIndex = Number.isInteger(group?.parentIndex) ? group.parentIndex : index;
+    return rawKey || getMarketplaceProductMappingGroupKey(group, parentIndex);
+}
+
+function buildMarketplaceProductMappingGroups(mappings = []) {
+    const groups = [];
+    const groupByKey = new Map();
+    normalizeMarketplaceProductMappings(mappings, { keepEmpty: true }).forEach((mapping, index) => {
+        const key = getMarketplaceProductMappingGroupKey(mapping, index);
+        let group = groupByKey.get(key);
+        if (!group) {
+            group = {
+                key,
+                parentIndex: index,
+                label: mapping.label || `商品映射 ${groups.length + 1}`,
+                enabled: mapping.enabled !== false,
+                xianyu_item_id: mapping.xianyu_item_id || '',
+                product_id: mapping.product_id || '',
+                children: []
+            };
+            groupByKey.set(key, group);
+            groups.push(group);
+        }
+        group.children.push({
+            ...mapping,
+            sourceIndex: index,
+            childIndex: group.children.length
+        });
+        if (mapping.enabled !== false) {
+            group.enabled = true;
+        }
+    });
+    return groups;
 }
 
 async function loadMarketplaceProductPickerOptions(indexValue = '', query = '', options = {}) {
@@ -5149,6 +5398,7 @@ async function loadMarketplaceProductPickerSelectedLabels(productIds = []) {
         const searchParams = new URLSearchParams();
         searchParams.set('status', 'all');
         searchParams.set('fields', 'picker');
+        searchParams.set('includeSkus', 'true');
         searchParams.set('order', 'name_asc');
         searchParams.set('ids', ids.join(','));
         const response = await (window.AdminApi?.fetch || fetch)(`/api/admin?route=shop/products&${searchParams.toString()}`, {
@@ -5173,7 +5423,8 @@ async function loadMarketplaceProductPickerSelectedLabels(productIds = []) {
                 open: rowState.open,
                 query: rowState.query,
                 results: rowState.results,
-                loading: rowState.loading
+                loading: rowState.loading,
+                refreshSkuField: true
             });
         });
         return rows;
@@ -5258,7 +5509,7 @@ function selectMarketplaceProductMapping(indexValue = '', productId = '', produc
     }
     const rowState = getMarketplaceProductPickerRowState(index);
     const selectedId = String(productId || '').trim();
-    const selectedLabel = String(productLabel || getMarketplaceProductPickerCachedLabel(selectedId) || selectedId || '').trim();
+    const selectedLabel = String(productLabel || getMarketplaceProductPickerCachedLabel(selectedId) || '').trim();
     rowState.selectedId = selectedId;
     rowState.selectedLabel = selectedLabel;
     rowState.query = '';
@@ -5269,7 +5520,9 @@ function selectMarketplaceProductMapping(indexValue = '', productId = '', produc
         selectedLabel,
         query: '',
         open: false,
-        results: []
+        results: [],
+        refreshSkuField: true,
+        resetSkuField: true
     });
 
     const row = document.querySelector(`[data-marketplace-product-mapping-index="${index}"]`);
@@ -5281,6 +5534,100 @@ function selectMarketplaceProductMapping(indexValue = '', productId = '', produc
 
 function clearMarketplaceProductMapping(indexValue = '') {
     selectMarketplaceProductMapping(indexValue, '', '');
+}
+
+function resolveMarketplaceXianyuProductMappingRow(indexValue = '', actionEl = null) {
+    const actionRow = actionEl instanceof Element
+        ? actionEl.closest('[data-marketplace-product-mapping-index]')
+        : null;
+    if (actionRow instanceof HTMLElement) {
+        return actionRow;
+    }
+
+    const index = Number.parseInt(String(indexValue || ''), 10);
+    if (!Number.isInteger(index) || index < 0) {
+        return null;
+    }
+
+    const row = document.querySelector(`[data-marketplace-product-mapping-index="${index}"]`);
+    return row instanceof HTMLElement ? row : null;
+}
+
+function setMarketplaceXianyuProductMappingRowCollapsed(row = null, collapsed = true) {
+    if (!(row instanceof HTMLElement)) {
+        return;
+    }
+    const collapseKey = String(row.dataset.marketplaceProductMappingCollapseKey || '').trim()
+        || String(row.dataset.marketplaceProductMappingIndex || '').trim();
+    if (collapsed) {
+        marketplaceXianyuProductMappingCollapsedKeys.add(collapseKey);
+    } else {
+        marketplaceXianyuProductMappingCollapsedKeys.delete(collapseKey);
+    }
+
+    row.classList.toggle('is-collapsed', collapsed);
+    row.dataset.marketplaceProductMappingCollapsed = collapsed ? 'true' : 'false';
+    const body = row.querySelector('.marketplace-product-mapping-row__body');
+    if (body instanceof HTMLElement) {
+        body.hidden = collapsed;
+        body.setAttribute('aria-hidden', collapsed ? 'true' : 'false');
+        body.style.display = collapsed ? 'none' : '';
+    }
+    row.querySelectorAll('[data-admin-action="marketplace-toggle-product-mapping-collapse"]').forEach((button) => {
+        if (!(button instanceof HTMLElement)) {
+            return;
+        }
+        button.setAttribute('aria-expanded', String(!collapsed));
+        if (!button.classList.contains('marketplace-product-mapping-summary')) {
+            button.textContent = collapsed ? '展开编辑' : '收起';
+            button.setAttribute('aria-label', collapsed ? '展开编辑商品映射' : '收起商品映射');
+        }
+    });
+}
+
+function setMarketplaceXianyuProductMappingCollapsed(indexValue = '', collapsed = true, actionEl = null) {
+    const row = resolveMarketplaceXianyuProductMappingRow(indexValue, actionEl);
+    setMarketplaceXianyuProductMappingRowCollapsed(row, collapsed);
+}
+
+function toggleMarketplaceXianyuProductMappingCollapse(indexValue = '', actionEl = null) {
+    const row = resolveMarketplaceXianyuProductMappingRow(indexValue, actionEl);
+    if (!(row instanceof HTMLElement)) {
+        return;
+    }
+
+    const body = row.querySelector('.marketplace-product-mapping-row__body');
+    const isCollapsed = row.classList.contains('is-collapsed')
+        || row.dataset.marketplaceProductMappingCollapsed === 'true'
+        || (body instanceof HTMLElement && body.hidden === true);
+    setMarketplaceXianyuProductMappingRowCollapsed(row, !isCollapsed);
+}
+
+function handleMarketplaceXianyuProductMappingCollapseAction(actionEl = null, event = null) {
+    if (!(actionEl instanceof HTMLElement)) {
+        return false;
+    }
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    event?.stopImmediatePropagation?.();
+    toggleMarketplaceXianyuProductMappingCollapse(actionEl.dataset.mappingIndex, actionEl);
+    return true;
+}
+
+function bindMarketplaceXianyuProductMappingCollapseControls(root = document) {
+    const scope = root && typeof root.querySelectorAll === 'function' ? root : document;
+    scope.querySelectorAll('[data-admin-action="marketplace-toggle-product-mapping-collapse"]').forEach((actionEl) => {
+        if (!(actionEl instanceof HTMLElement)) {
+            return;
+        }
+        if (actionEl.dataset.marketplaceProductMappingCollapseBound === '1') {
+            return;
+        }
+        actionEl.dataset.marketplaceProductMappingCollapseBound = '1';
+        actionEl.addEventListener('click', (event) => {
+            handleMarketplaceXianyuProductMappingCollapseAction(actionEl, event);
+        });
+    });
 }
 
 function openMarketplaceProductPicker(indexValue = '') {
@@ -5420,6 +5767,443 @@ function ensureXianyuMarketplaceChannel(config = {}, options = {}) {
         ...normalized,
         channels
     };
+}
+
+function buildMarketplaceReadinessItem(status = 'ok', code = '', message = '', details = {}) {
+    return {
+        status,
+        code: String(code || '').trim(),
+        message: String(message || '').trim(),
+        details: details && typeof details === 'object' && !Array.isArray(details) ? details : {}
+    };
+}
+
+function resolveMarketplaceReadinessStatus(items = []) {
+    const statuses = new Set((Array.isArray(items) ? items : []).map((item) => item?.status).filter(Boolean));
+    if (statuses.has('error')) return 'error';
+    if (statuses.has('warning')) return 'warning';
+    return 'ok';
+}
+
+function validateMarketplaceXianyuReadiness(config = {}, secretStatus = marketplaceChannelSecretStatus || {}) {
+    const normalized = ensureXianyuMarketplaceChannel(config, { keepEmptyProductMappings: true });
+    const xianyu = findMarketplaceChannelByKey(normalized, 'xianyu');
+    const items = [];
+
+    if (normalized.enabled !== true) {
+        items.push(buildMarketplaceReadinessItem('error', 'marketplace_disabled', '商城渠道总开关未启用。'));
+    }
+    if (!xianyu) {
+        items.push(buildMarketplaceReadinessItem('error', 'xianyu_channel_missing', '未找到闲鱼渠道配置。'));
+        return { status: 'error', items, counts: { ok: 0, warning: 0, error: items.length } };
+    }
+    if (xianyu.enabled !== true) {
+        items.push(buildMarketplaceReadinessItem('warning', 'xianyu_disabled', '闲鱼自动发货未启用，保存后不会处理闲鱼订单。'));
+    }
+
+    const accounts = Array.isArray(xianyu.accounts) ? xianyu.accounts : [];
+    const enabledAccounts = accounts.filter((account) => account.enabled !== false);
+    const accountKeys = new Set();
+    const duplicateAccountKeys = new Set();
+    accounts.forEach((account) => {
+        const accountKey = normalizeMarketplaceKeyPart(account.key, '');
+        if (!accountKey) {
+            items.push(buildMarketplaceReadinessItem('error', 'xianyu_account_key_missing', '存在未填写识别名的闲鱼账号。'));
+            return;
+        }
+        if (accountKeys.has(accountKey)) duplicateAccountKeys.add(accountKey);
+        accountKeys.add(accountKey);
+    });
+    duplicateAccountKeys.forEach((accountKey) => {
+        items.push(buildMarketplaceReadinessItem('error', 'xianyu_account_key_duplicate', `闲鱼账号识别名重复：${accountKey}`));
+    });
+    if (!enabledAccounts.length) {
+        items.push(buildMarketplaceReadinessItem('error', 'xianyu_enabled_account_missing', '至少需要启用 1 个闲鱼账号。'));
+    }
+    if (!accounts.some((account) => account.key === xianyu.default_account_key)) {
+        items.push(buildMarketplaceReadinessItem('error', 'xianyu_default_account_missing', '默认发货账号不在账号列表中。'));
+    }
+    enabledAccounts.forEach((account) => {
+        const secretKey = buildMarketplaceSecretKey('xianyu', account.key, 'ingest_token');
+        const status = secretStatus?.[secretKey];
+        if (!secretKey) {
+            items.push(buildMarketplaceReadinessItem('error', 'xianyu_ingest_token_key_invalid', `${account.label || account.key} 的发货密钥标识无效。`));
+            return;
+        }
+        if (!status) {
+            items.push(buildMarketplaceReadinessItem('warning', 'xianyu_ingest_token_pending', `${account.label || account.key} 的发货密钥保存后会再次检查。`));
+            return;
+        }
+        if (status.decrypt_error_message || status.error) {
+            items.push(buildMarketplaceReadinessItem('error', 'xianyu_ingest_token_unavailable', `${account.label || account.key} 的发货密钥无法读取。`));
+            return;
+        }
+        if (status.configured !== true) {
+            items.push(buildMarketplaceReadinessItem('error', 'xianyu_ingest_token_missing', `${account.label || account.key} 还没有配置发货接口密钥。`));
+        }
+    });
+
+    const mappings = Array.isArray(xianyu.product_mappings) ? xianyu.product_mappings : [];
+    const enabledMappings = mappings.filter((mapping) => mapping.enabled !== false);
+    if (!enabledMappings.length) {
+        items.push(buildMarketplaceReadinessItem('error', 'xianyu_mapping_missing', '至少需要启用 1 条商品发货规则。'));
+    }
+
+    const itemToProducts = new Map();
+    enabledMappings.forEach((mapping, index) => {
+        const label = String(mapping.label || `发货规则 ${index + 1}`).trim();
+        const itemId = String(mapping.xianyu_item_id || '').trim();
+        const productId = String(mapping.product_id || '').trim();
+        const matcher = [
+            itemId,
+            mapping.sku_id,
+            mapping.sku_text_contains,
+            mapping.title_contains,
+            mapping.raw_path && mapping.equals
+        ].some((value) => String(value || '').trim());
+        if (!matcher) {
+            items.push(buildMarketplaceReadinessItem('error', 'xianyu_mapping_matcher_missing', `${label} 没有填写闲鱼商品编号或规格匹配条件。`));
+        }
+        if (!productId) {
+            items.push(buildMarketplaceReadinessItem('error', 'xianyu_mapping_product_missing', `${label} 没有绑定网站商品。`));
+        }
+        if (itemId && productId) {
+            const productSet = itemToProducts.get(itemId) || new Set();
+            productSet.add(productId);
+            itemToProducts.set(itemId, productSet);
+        }
+    });
+    itemToProducts.forEach((productSet, itemId) => {
+        if (productSet.size > 1) {
+            items.push(buildMarketplaceReadinessItem('warning', 'xianyu_mapping_item_multiple_products', `闲鱼商品 ${itemId} 绑定了多个网站商品，请确认是否应改为同一商品下的多规格映射。`));
+        }
+    });
+
+    if (!items.length) {
+        items.push(buildMarketplaceReadinessItem('ok', 'xianyu_ready', '闲鱼自动发货配置已具备试运行条件。'));
+    }
+
+    const counts = items.reduce((accumulator, item) => {
+        const status = item.status || 'ok';
+        accumulator[status] = (accumulator[status] || 0) + 1;
+        return accumulator;
+    }, { ok: 0, warning: 0, error: 0 });
+
+    return {
+        status: resolveMarketplaceReadinessStatus(items),
+        items,
+        counts
+    };
+}
+
+function renderMarketplaceXianyuReadiness(readiness = null) {
+    const panel = document.getElementById('marketplaceXianyuReadinessPanel');
+    const summaryEl = document.getElementById('marketplaceXianyuReadinessSummary');
+    const listEl = document.getElementById('marketplaceXianyuReadinessList');
+    if (!panel || !summaryEl || !listEl) return;
+
+    const normalized = readiness && typeof readiness === 'object'
+        ? readiness
+        : validateMarketplaceXianyuReadiness(collectMarketplaceXianyuConfigFromForm());
+    const items = Array.isArray(normalized.items) && normalized.items.length
+        ? normalized.items
+        : [buildMarketplaceReadinessItem('ok', 'xianyu_ready', '闲鱼自动发货配置已具备试运行条件。')];
+    const status = normalized.status || resolveMarketplaceReadinessStatus(items);
+    const counts = normalized.counts || items.reduce((accumulator, item) => {
+        const itemStatus = item.status || 'ok';
+        accumulator[itemStatus] = (accumulator[itemStatus] || 0) + 1;
+        return accumulator;
+    }, { ok: 0, warning: 0, error: 0 });
+    const summaryMap = {
+        ok: '自检通过，可以进入小流量试运行。',
+        warning: `自检有 ${counts.warning || 0} 个提醒，建议确认后再放量。`,
+        error: `自检发现 ${counts.error || 0} 个必须修复的问题。`
+    };
+    const iconMap = {
+        ok: 'fa-check-circle',
+        warning: 'fa-exclamation-triangle',
+        error: 'fa-times-circle',
+        neutral: 'fa-info-circle'
+    };
+
+    panel.dataset.readinessStatus = status;
+    summaryEl.textContent = summaryMap[status] || '等待运行自检。';
+    listEl.innerHTML = items.map((item) => {
+        const itemStatus = ['ok', 'warning', 'error'].includes(item.status) ? item.status : 'neutral';
+        return `
+            <div class="marketplace-readiness-item is-${escapeConfigHtml(itemStatus)}">
+                <i class="fas ${escapeConfigHtml(iconMap[itemStatus] || iconMap.neutral)}"></i>
+                <span>${escapeConfigHtml(item.message || item.code || '自检项')}</span>
+            </div>
+        `;
+    }).join('');
+}
+
+function runMarketplaceXianyuReadinessCheck(options = {}) {
+    const config = collectMarketplaceXianyuConfigFromForm();
+    const readiness = validateMarketplaceXianyuReadiness(config, {
+        ...(marketplaceChannelSecretStatus || {}),
+        ...Object.fromEntries(Object.keys(collectMarketplaceXianyuSecretInputs()).map((secretKey) => [
+            secretKey,
+            { configured: true, source: 'draft' }
+        ]))
+    });
+    marketplaceChannelReadiness = {
+        ...(marketplaceChannelReadiness || {}),
+        xianyu: readiness
+    };
+    renderMarketplaceXianyuReadiness(readiness);
+    if (options.toast !== false) {
+        if (readiness.status === 'error') {
+            showToast(`自检发现 ${readiness.counts?.error || 0} 个问题，请先修复`, 'error');
+        } else if (readiness.status === 'warning') {
+            showToast('自检有提醒，建议确认后再放量', 'warning');
+        } else {
+            showToast('闲鱼自动发货自检通过', 'success');
+        }
+    }
+    return readiness;
+}
+
+function buildAdminConfigRouteUrl(route, params = {}) {
+    const searchParams = new URLSearchParams();
+    searchParams.set('route', route);
+    Object.entries(params || {}).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === '') return;
+        if (Array.isArray(value)) {
+            if (value.length) searchParams.set(key, value.join(','));
+            return;
+        }
+        searchParams.set(key, String(value));
+    });
+    return `/api/admin?${searchParams.toString()}`;
+}
+
+function getMarketplaceDeliveryTaskStatusMeta(status = '') {
+    const normalized = String(status || '').trim().toLowerCase();
+    const map = {
+        pending: { label: '待履约', tone: 'waiting' },
+        processing: { label: '处理中', tone: 'processing' },
+        retry_waiting: { label: '待重试', tone: 'warning' },
+        requeued: { label: '已重排队', tone: 'processing' },
+        dead_letter: { label: '死信', tone: 'danger' },
+        delivered: { label: '已履约', tone: 'success' }
+    };
+    return map[normalized] || { label: normalized || '未知', tone: 'neutral' };
+}
+
+function renderMarketplaceRecoveryBadge(label = '', tone = 'neutral') {
+    return `<span class="marketplace-recovery-badge marketplace-recovery-badge--${escapeConfigHtml(tone)}">${escapeConfigHtml(label)}</span>`;
+}
+
+function renderMarketplaceXianyuRecoveryStats(summary = {}, filters = {}) {
+    const statsEl = document.getElementById('marketplaceXianyuRecoveryStats');
+    if (!statsEl) return;
+
+    const marketplace = filters?.marketplace || {};
+    const stats = [
+        `近期闲鱼订单 ${Number(marketplace.order_count || 0)}`,
+        `待处理 ${Number(summary.retryable || 0)}`,
+        `待重试 ${Number(summary.retry_waiting || 0)}`,
+        `死信 ${Number(summary.dead_letter || 0)}`,
+        `处理中 ${Number(summary.processing || 0)}`
+    ];
+    statsEl.innerHTML = stats.map((label) => `<span>${escapeConfigHtml(label)}</span>`).join('');
+}
+
+function renderMarketplaceXianyuRecoveryTask(task = {}) {
+    const statusMeta = getMarketplaceDeliveryTaskStatusMeta(task.status);
+    const order = task.order || {};
+    const productName = order.snapshot_product_name || task.payload?.product_name || task.dedupe_key || '未命名订单';
+    const externalOrderId = order.external_order_id || task.payload?.external_order_id || '';
+    const accountKey = order.channel_account_key || task.payload?.channel_account_key || 'main';
+    const errorText = task.last_error || order.delivery_last_error || task.last_conflict_note || '暂无错误详情';
+    const nextAttempt = task.next_attempt_at ? `下次 ${formatVerifyMonitorDateTime(task.next_attempt_at)}` : '';
+    const lastAttempt = task.last_attempt_at || task.updated_at || task.created_at;
+    const canForceUnlock = String(task.status || '').toLowerCase() === 'processing'
+        || ['locked_stale', 'lock_missing', 'locked_unknown'].includes(String(task.lock_state || '').toLowerCase());
+    const actionButtons = [
+        `<button type="button" class="marketplace-recovery-action" data-admin-action="marketplace-xianyu-delivery-action" data-delivery-task-id="${escapeConfigHtml(task.id || '')}" data-delivery-task-command="requeue">重排队</button>`,
+        `<button type="button" class="marketplace-recovery-action" data-admin-action="marketplace-xianyu-delivery-action" data-delivery-task-id="${escapeConfigHtml(task.id || '')}" data-delivery-task-command="replay">人工重放</button>`,
+        canForceUnlock
+            ? `<button type="button" class="marketplace-recovery-action" data-admin-action="marketplace-xianyu-delivery-action" data-delivery-task-id="${escapeConfigHtml(task.id || '')}" data-delivery-task-command="force_unlock">强制解锁</button>`
+            : '',
+        String(task.status || '').toLowerCase() !== 'dead_letter'
+            ? `<button type="button" class="marketplace-recovery-action marketplace-recovery-action--danger" data-admin-action="marketplace-xianyu-delivery-action" data-delivery-task-id="${escapeConfigHtml(task.id || '')}" data-delivery-task-command="mark_dead_letter">标死信</button>`
+            : ''
+    ].filter(Boolean).join('');
+
+    return `
+        <article class="marketplace-recovery-item" data-delivery-task-id="${escapeConfigHtml(task.id || '')}">
+            <div class="marketplace-recovery-item__main">
+                <div class="marketplace-recovery-item__title">
+                    ${renderMarketplaceRecoveryBadge(statusMeta.label, statusMeta.tone)}
+                    <strong>${escapeConfigHtml(productName)}</strong>
+                </div>
+                <div class="marketplace-recovery-item__meta">
+                    <span>账号 ${escapeConfigHtml(accountKey)}</span>
+                    ${externalOrderId ? `<span>闲鱼单号 ${escapeConfigHtml(externalOrderId)}</span>` : ''}
+                    <span>尝试 ${Number(task.attempt_count || 0)}/${Number(task.max_attempts || 0) || '-'}</span>
+                    <span>最近 ${escapeConfigHtml(formatVerifyMonitorDateTime(lastAttempt))}</span>
+                    ${nextAttempt ? `<span>${escapeConfigHtml(nextAttempt)}</span>` : ''}
+                </div>
+                <div class="marketplace-recovery-item__error" title="${escapeConfigHtml(errorText)}">${escapeConfigHtml(errorText)}</div>
+            </div>
+            <div class="marketplace-recovery-item__actions">
+                ${actionButtons}
+            </div>
+        </article>
+    `;
+}
+
+function renderMarketplaceXianyuRecovery(payload = marketplaceXianyuRecoveryState.payload) {
+    const panel = document.getElementById('marketplaceXianyuRecoveryPanel');
+    const summaryEl = document.getElementById('marketplaceXianyuRecoverySummary');
+    const listEl = document.getElementById('marketplaceXianyuRecoveryList');
+    if (!panel || !summaryEl || !listEl) return;
+
+    if (marketplaceXianyuRecoveryState.loading) {
+        panel.dataset.recoveryStatus = 'loading';
+        summaryEl.textContent = '正在加载近期闲鱼异常履约任务。';
+        listEl.innerHTML = '<div class="marketplace-recovery-empty">正在加载中...</div>';
+        return;
+    }
+
+    if (marketplaceXianyuRecoveryState.error) {
+        panel.dataset.recoveryStatus = 'error';
+        summaryEl.textContent = marketplaceXianyuRecoveryState.error;
+        listEl.innerHTML = `<div class="marketplace-recovery-empty is-error">${escapeConfigHtml(marketplaceXianyuRecoveryState.error)}</div>`;
+        return;
+    }
+
+    const tasks = Array.isArray(payload?.tasks) ? payload.tasks : [];
+    const summary = payload?.summary || {};
+    panel.dataset.recoveryStatus = Number(summary.dead_letter || 0) ? 'danger' : (Number(summary.retryable || 0) ? 'warning' : 'ok');
+    summaryEl.textContent = tasks.length
+        ? `发现 ${Number(payload?.total || tasks.length)} 条近期闲鱼异常履约任务，可在这里快速处理。`
+        : '近期没有需要人工处理的闲鱼发货异常。';
+    renderMarketplaceXianyuRecoveryStats(summary, payload?.filters || {});
+    listEl.innerHTML = tasks.length
+        ? tasks.map((task) => renderMarketplaceXianyuRecoveryTask(task)).join('')
+        : '<div class="marketplace-recovery-empty">近期没有死信、待重试或锁住的闲鱼订单。</div>';
+}
+
+async function loadMarketplaceXianyuRecoveryTasks(options = {}) {
+    if (marketplaceXianyuRecoveryState.loading && !options.force) {
+        return marketplaceXianyuRecoveryState.payload;
+    }
+
+    marketplaceXianyuRecoveryState = {
+        ...marketplaceXianyuRecoveryState,
+        loading: true,
+        error: ''
+    };
+    renderMarketplaceXianyuRecovery();
+
+    try {
+        const response = await (window.AdminApi?.fetch || fetch)(buildAdminConfigRouteUrl('shop/delivery-tasks', {
+            compact: 'marketplace_recovery',
+            sourceChannel: 'xianyu',
+            statuses: ['dead_letter', 'retry_waiting', 'requeued', 'processing'],
+            page: marketplaceXianyuRecoveryState.page,
+            pageSize: marketplaceXianyuRecoveryState.pageSize,
+            marketplaceOrderLimit: 500
+        }), {
+            method: 'GET',
+            credentials: 'include',
+            headers: await getAdminConfigApiHeaders()
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '闲鱼异常订单加载失败');
+        }
+
+        marketplaceXianyuRecoveryState = {
+            ...marketplaceXianyuRecoveryState,
+            loading: false,
+            loaded: true,
+            error: '',
+            payload
+        };
+        renderMarketplaceXianyuRecovery(payload);
+        return payload;
+    } catch (error) {
+        marketplaceXianyuRecoveryState = {
+            ...marketplaceXianyuRecoveryState,
+            loading: false,
+            loaded: true,
+            error: `异常订单加载失败：${error.message || '未知错误'}`
+        };
+        renderMarketplaceXianyuRecovery();
+        if (options.throwOnError === true) {
+            throw error;
+        }
+        return null;
+    }
+}
+
+async function performMarketplaceXianyuDeliveryAction(taskId = '', action = '', actionEl = null) {
+    const normalizedTaskId = String(taskId || '').trim();
+    const normalizedAction = String(action || '').trim().toLowerCase();
+    if (!normalizedTaskId || !normalizedAction) return false;
+
+    const actionLabels = {
+        requeue: '重排队',
+        replay: '人工重放',
+        force_unlock: '强制解锁',
+        mark_dead_letter: '标记死信'
+    };
+    const notePrompts = {
+        replay: '可选：填写人工重放备注',
+        force_unlock: '可选：填写强制解锁原因',
+        mark_dead_letter: '可选：填写死信备注'
+    };
+    const actionLabel = actionLabels[normalizedAction] || '处理';
+    let note = '';
+    if (notePrompts[normalizedAction]) {
+        const promptValue = window.prompt(notePrompts[normalizedAction], '');
+        if (promptValue === null) return false;
+        note = String(promptValue || '').trim();
+    }
+    if (!window.confirm(`确认要${actionLabel}这条闲鱼发货任务吗？`)) return false;
+
+    const originalText = actionEl?.textContent || '';
+    if (actionEl) {
+        actionEl.disabled = true;
+        actionEl.textContent = '处理中...';
+    }
+
+    try {
+        const response = await (window.AdminApi?.fetch || fetch)(buildAdminConfigRouteUrl('shop/delivery-actions'), {
+            method: 'POST',
+            credentials: 'include',
+            headers: await getAdminConfigApiHeaders(),
+            body: JSON.stringify({
+                taskId: normalizedTaskId,
+                action: normalizedAction,
+                note
+            })
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || !payload.success) {
+            throw new Error(payload.message || '履约任务操作失败');
+        }
+        if (typeof showToast === 'function') {
+            showToast(payload.message || `已${actionLabel}`, 'success');
+        }
+        await loadMarketplaceXianyuRecoveryTasks({ force: true });
+        return true;
+    } catch (error) {
+        if (typeof showToast === 'function') {
+            showToast(`处理失败：${error.message || '未知错误'}`, 'error');
+        }
+        return false;
+    } finally {
+        if (actionEl) {
+            actionEl.disabled = false;
+            actionEl.textContent = originalText;
+        }
+    }
 }
 
 function stringifyAdminConfigJson(value = {}) {
@@ -9075,7 +9859,7 @@ function getMarketplaceSecretStatus(secretKey = '') {
 function formatMarketplaceSecretStatus(secretKey = '') {
     const status = getMarketplaceSecretStatus(secretKey);
     if (status?.configured === true) {
-        return '已配置，留空则保持不变';
+        return '发货密钥已配置，留空保持不变';
     }
     if (status?.decrypt_error_message) {
         return status.decrypt_error_message;
@@ -9083,7 +9867,7 @@ function formatMarketplaceSecretStatus(secretKey = '') {
     if (status?.error) {
         return status.error;
     }
-    return '未配置，请填写一个长随机 token';
+    return '未配置，请先生成或粘贴发货密钥';
 }
 
 function formatMarketplaceAccountOptionLabel(account = {}, index = 0) {
@@ -9115,7 +9899,7 @@ function renderMarketplaceDefaultAccountDropdown(accounts = [], selectedKey = ''
     if (metaEl) {
         metaEl.textContent = selectedAccount?.enabled === false
             ? '此账号当前停用，建议选择可用账号'
-            : '闲鱼订单默认使用此账号发货';
+            : '未指定账号时使用；多账号仍可分别发货';
     }
     if (menuEl) {
         menuEl.innerHTML = safeAccounts.map((account, index) => {
@@ -9161,7 +9945,7 @@ function buildMarketplaceXianyuAccountCard(account = {}, index = 0, options = {}
             <div class="marketplace-account-card__header">
                 <div>
                     <div class="marketplace-account-card__title">${escapeConfigHtml(label || accountKey)}</div>
-                    <div class="marketplace-account-card__meta">接口识别名：${escapeConfigHtml(accountKey)}</div>
+                    <div class="marketplace-account-card__meta">账号识别名：${escapeConfigHtml(accountKey)}，通常不需要修改。</div>
                 </div>
                 <div class="marketplace-account-card__actions">
                     <span class="marketplace-secret-status ${statusClass}">${escapeConfigHtml(formatMarketplaceSecretStatus(secretKey))}</span>
@@ -9173,14 +9957,10 @@ function buildMarketplaceXianyuAccountCard(account = {}, index = 0, options = {}
                     <span>账号名称</span>
                     <input type="text" class="config-input" data-marketplace-account-field="label" value="${escapeConfigHtml(label)}" placeholder="如：主号、备用号">
                 </label>
-                <label class="marketplace-simple-field">
-                    <span>接口识别名</span>
-                    <input type="text" class="config-input" data-marketplace-account-field="key" value="${escapeConfigHtml(accountKey)}" placeholder="main">
-                </label>
                 <label class="marketplace-simple-field marketplace-simple-field--wide">
-                    <span>发货接口 Token</span>
+                    <span>发货接口密钥</span>
                     <div class="marketplace-token-row">
-                        <input type="password" class="config-input marketplace-ingest-token-input" data-marketplace-secret-key="${escapeConfigHtml(secretKey)}" value="${escapeConfigHtml(tokenDraft)}" placeholder="${status?.configured === true ? '留空保持现有 token 不变' : '粘贴或生成一个长随机 token'}">
+                        <input type="password" class="config-input marketplace-ingest-token-input" data-marketplace-secret-key="${escapeConfigHtml(secretKey)}" value="${escapeConfigHtml(tokenDraft)}" placeholder="${status?.configured === true ? '留空保持现有密钥不变' : '点击生成，或粘贴闲鱼发货服务里的密钥'}">
                         <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="marketplace-generate-ingest-token" data-account-key="${escapeConfigHtml(accountKey)}">
                             生成
                         </button>
@@ -9188,7 +9968,15 @@ function buildMarketplaceXianyuAccountCard(account = {}, index = 0, options = {}
                             复制
                         </button>
                     </div>
+                    <small class="marketplace-field-hint">密钥用于让闲鱼发货服务安全地把订单推送到网站。不会写代码也可以直接点“生成”。</small>
                 </label>
+                <details class="marketplace-rule-advanced marketplace-simple-field--wide">
+                    <summary>高级账号设置（通常不用改）</summary>
+                    <label class="marketplace-simple-field">
+                        <span>账号识别名</span>
+                        <input type="text" class="config-input marketplace-code-input" data-marketplace-account-field="key" value="${escapeConfigHtml(accountKey)}" placeholder="main">
+                    </label>
+                </details>
             </div>
             <div class="marketplace-account-card__footer">
                 <input type="hidden" data-marketplace-account-field="role" value="${escapeConfigHtml(role)}">
@@ -9199,32 +9987,42 @@ function buildMarketplaceXianyuAccountCard(account = {}, index = 0, options = {}
     `;
 }
 
-function buildMarketplaceXianyuProductMappingRow(mapping = {}, index = 0) {
-    const safeMapping = normalizeMarketplaceProductMappings([mapping])[0] || {
+function buildMarketplaceXianyuProductMappingRow(group = {}, index = 0) {
+    const children = Array.isArray(group.children) && group.children.length
+        ? group.children
+        : normalizeMarketplaceProductMappings([group], { keepEmpty: true }).map((mapping, childIndex) => ({
+            ...mapping,
+            sourceIndex: index,
+            childIndex
+        }));
+    const firstChild = children[0] || {
         label: `商品映射 ${index + 1}`,
         enabled: true,
         xianyu_item_id: '',
         sku_id: '',
         sku_text_contains: '',
-        title_contains: '',
-        raw_path: '',
-        equals: '',
         product_id: '',
-        product_sku_id: '',
-        notes: ''
+        product_sku_id: ''
     };
-    const title = safeMapping.label || safeMapping.xianyu_item_id || `商品映射 ${index + 1}`;
+    const title = group.label || firstChild.label || group.xianyu_item_id || `商品映射 ${index + 1}`;
     const productPickerState = getMarketplaceProductPickerRowState(index);
-    const selectedProductId = String(safeMapping.product_id || '').trim();
+    const selectedProductId = String(group.product_id || firstChild.product_id || '').trim();
     const selectedProductLabel = productPickerState.selectedId === selectedProductId && productPickerState.selectedLabel
         ? productPickerState.selectedLabel
         : getMarketplaceProductPickerCachedLabel(selectedProductId);
     productPickerState.selectedId = selectedProductId;
-    productPickerState.selectedLabel = selectedProductLabel || selectedProductId;
+    productPickerState.selectedLabel = selectedProductLabel || '';
     const productPickerQuery = productPickerState.query || '';
     const productPickerResults = Array.isArray(productPickerState.results) ? productPickerState.results : [];
     const productPickerOpen = productPickerState.open === true;
     const productPickerLoading = productPickerState.loading === true;
+    const collapseKey = getMarketplaceProductMappingCollapseKey(group, index);
+    const isCollapsed = marketplaceXianyuProductMappingCollapsedKeys.has(collapseKey);
+    const itemIdSummary = group.xianyu_item_id || firstChild.xianyu_item_id || '未填写商品编号';
+    const productSummary = selectedProductLabel || (selectedProductId ? '已绑定网站商品' : '未选择网站商品');
+    const childCount = children.length || 1;
+    const childSummary = `${childCount} 条规格`;
+    const enabledSummary = group.enabled !== false ? '已启用' : '已停用';
     const productPickerMenu = productPickerLoading
         ? '<div class="marketplace-product-picker__status">正在加载网站商品…</div>'
         : productPickerResults.map((product) => {
@@ -9251,83 +10049,143 @@ function buildMarketplaceXianyuProductMappingRow(mapping = {}, index = 0) {
                 </button>
             `;
         }).join('');
-
-    return `
-        <article class="marketplace-product-mapping-row" data-marketplace-product-mapping-index="${index}">
-            <div class="marketplace-product-mapping-row__header">
-                <div>
-                    <div class="marketplace-account-card__title">${escapeConfigHtml(title)}</div>
-                    <div class="marketplace-account-card__meta">闲鱼商品成交后发网站这个商品的库存</div>
+    const childRowsHtml = children.map((child, childIndex) => {
+        const sourceIndex = Number.isInteger(child.sourceIndex) ? child.sourceIndex : index;
+        const productSkuFieldHtml = renderMarketplaceProductSkuFieldHtml(selectedProductId, child.product_sku_id, `${index}_${childIndex}`);
+        const childTitle = child.sku_text_contains || child.product_sku_id || child.sku_id || (childIndex === 0 ? '默认规格' : `规格映射 ${childIndex + 1}`);
+        return `
+            <div class="marketplace-mapping-child-row" data-marketplace-product-mapping-child data-source-index="${escapeConfigHtml(String(sourceIndex))}">
+                <div class="marketplace-mapping-child-row__head">
+                    <span class="marketplace-mapping-child-row__title">${escapeConfigHtml(childTitle)}</span>
+                    <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--danger" data-admin-action="marketplace-remove-product-mapping-child" data-mapping-index="${escapeConfigHtml(String(sourceIndex))}">
+                        删除规格
+                    </button>
                 </div>
-                <div class="marketplace-account-card__actions">
-                    <div class="status-toggle ${safeMapping.enabled !== false ? 'active' : ''}" data-admin-action="marketplace-toggle-product-mapping" data-mapping-index="${index}"></div>
-                    <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--danger" data-admin-action="marketplace-remove-product-mapping" data-mapping-index="${index}">删除</button>
-                </div>
-            </div>
-            <div class="marketplace-product-mapping-row__grid">
                 <label class="marketplace-simple-field">
-                    <span>显示名称</span>
-                    <input type="text" class="config-input" data-marketplace-product-mapping-field="label" value="${escapeConfigHtml(safeMapping.label)}" placeholder="如：会员月卡">
+                    <span>闲鱼规格关键词</span>
+                    <input type="text" class="config-input" data-marketplace-product-child-field="sku_text_contains" value="${escapeConfigHtml(child.sku_text_contains)}" placeholder="如：月卡、年卡、季卡">
+                    <small class="marketplace-field-hint">填闲鱼规格里会出现的文字。建议写“年卡”“一个月”，不要只写“月”。</small>
                 </label>
-                <label class="marketplace-simple-field marketplace-id-field">
-                    <span>闲鱼商品 ID</span>
-                    <input type="text" class="config-input marketplace-code-input" data-marketplace-product-mapping-field="xianyu_item_id" value="${escapeConfigHtml(safeMapping.xianyu_item_id)}" placeholder="如：1051635270711" inputmode="numeric" spellcheck="false">
-                </label>
-                <label class="marketplace-simple-field marketplace-simple-field--wide marketplace-product-picker-field">
-                    <span>搜索并选择网站商品</span>
-                    <div class="marketplace-product-picker${productPickerOpen ? ' is-open' : ''}${productPickerLoading ? ' is-loading' : ''}" data-marketplace-product-picker data-mapping-index="${index}">
-                        <div class="marketplace-product-picker__selected">
-                            <div>
-                                <strong data-marketplace-product-search-selected-label>${escapeConfigHtml(selectedProductLabel || selectedProductId || '未选择商品')}</strong>
-                                <small data-marketplace-product-search-meta>${selectedProductId ? `已绑定：${escapeConfigHtml(selectedProductId)}` : '输入商品名或商品 ID，选择网站商品'}</small>
-                            </div>
-                            <button
-                                type="button"
-                                class="marketplace-product-picker__clear"
-                                data-admin-action="marketplace-clear-product-mapping"
-                                data-mapping-index="${index}"
-                                aria-label="清除已选网站商品"
-                                title="清除已选网站商品"
-                                ${selectedProductId ? '' : 'disabled'}
-                            >
-                                <i class="fas fa-times"></i>
-                            </button>
-                        </div>
-                        <input
-                            type="search"
-                            class="config-input marketplace-product-picker__search"
-                            data-admin-input-action="marketplace-search-product-mapping"
-                            data-admin-focus-action="marketplace-open-product-mapping"
-                            data-marketplace-product-search-input
-                            data-mapping-index="${index}"
-                            value="${escapeConfigHtml(productPickerQuery)}"
-                            placeholder="搜索网站商品名或 ID"
-                            autocomplete="off"
-                            role="combobox"
-                            aria-expanded="${productPickerOpen ? 'true' : 'false'}"
-                        >
-                        <input type="hidden" data-marketplace-product-mapping-field="product_id" value="${escapeConfigHtml(selectedProductId)}">
-                        <div class="marketplace-product-picker__menu" data-marketplace-product-search-menu ${productPickerOpen && (productPickerLoading || productPickerResults.length) ? '' : 'hidden'}>
-                            ${productPickerMenu}
-                        </div>
-                        <div class="marketplace-product-picker__empty" data-marketplace-product-search-empty ${productPickerOpen && !productPickerLoading && !productPickerResults.length ? '' : 'hidden'}>
-                            ${productPickerQuery ? '没有找到可发货的网站商品，请确认商品已上架或换个关键词' : '输入商品名或商品 ID 开始搜索'}
-                        </div>
+                <label class="marketplace-simple-field">
+                    <span>发哪个网站规格</span>
+                    <div data-marketplace-product-sku-field>
+                        ${productSkuFieldHtml}
                     </div>
                 </label>
-                <label class="marketplace-simple-field marketplace-id-field">
-                    <span>SKU ID（可选）</span>
-                    <input type="text" class="config-input marketplace-code-input" data-marketplace-product-mapping-field="sku_id" value="${escapeConfigHtml(safeMapping.sku_id)}" placeholder="同一闲鱼商品多规格时填写" spellcheck="false">
-                </label>
-                <label class="marketplace-simple-field">
-                    <span>网站规格/SKU ID（可选）</span>
-                    <input type="text" class="config-input" data-marketplace-product-mapping-field="product_sku_id" value="${escapeConfigHtml(safeMapping.product_sku_id)}" placeholder="选择网站商品下的具体规格">
-                </label>
-                <label class="marketplace-simple-field marketplace-simple-field--wide">
-                    <span>规格文字包含（可选）</span>
-                    <input type="text" class="config-input" data-marketplace-product-mapping-field="sku_text_contains" value="${escapeConfigHtml(safeMapping.sku_text_contains)}" placeholder="如：标准版、月卡、年卡">
-                </label>
-                <input type="hidden" data-marketplace-product-mapping-field="enabled" value="${safeMapping.enabled !== false ? 'true' : 'false'}">
+                <details class="marketplace-rule-advanced marketplace-mapping-child-row__advanced">
+                    <summary>高级匹配（通常不用填）</summary>
+                    <label class="marketplace-simple-field marketplace-id-field">
+                        <span>闲鱼规格 ID</span>
+                        <input type="text" class="config-input marketplace-code-input" data-marketplace-product-child-field="sku_id" value="${escapeConfigHtml(child.sku_id)}" placeholder="只有关键词无法区分规格时才填写" spellcheck="false">
+                    </label>
+                </details>
+            </div>
+        `;
+    }).join('');
+
+    return `
+        <article class="marketplace-product-mapping-row${isCollapsed ? ' is-collapsed' : ''}" data-marketplace-product-mapping-index="${index}" data-marketplace-product-mapping-collapse-key="${escapeConfigHtml(collapseKey)}" data-marketplace-product-mapping-collapsed="${isCollapsed ? 'true' : 'false'}">
+            <div class="marketplace-product-mapping-row__header">
+                <button
+                    type="button"
+                    class="marketplace-product-mapping-summary"
+                    data-admin-action="marketplace-toggle-product-mapping-collapse"
+                    data-mapping-index="${index}"
+                    aria-expanded="${isCollapsed ? 'false' : 'true'}"
+                >
+                    <span class="marketplace-product-mapping-summary__chevron" aria-hidden="true">
+                        <i class="fas fa-chevron-down"></i>
+                    </span>
+                    <span class="marketplace-product-mapping-summary__content">
+                        <span class="marketplace-account-card__title">${escapeConfigHtml(title)}</span>
+                        <span class="marketplace-product-mapping-summary__chips" aria-label="商品映射摘要">
+                            <span>闲鱼：${escapeConfigHtml(itemIdSummary)}</span>
+                            <span>${escapeConfigHtml(productSummary)}</span>
+                            <span>${escapeConfigHtml(childSummary)}</span>
+                            <span>${escapeConfigHtml(enabledSummary)}</span>
+                        </span>
+                        <span class="marketplace-account-card__meta">一个闲鱼商品只需要建一个映射，下面可以添加多条规格子映射。</span>
+                    </span>
+                </button>
+                <div class="marketplace-account-card__actions">
+                    <div class="status-toggle ${group.enabled !== false ? 'active' : ''}" data-admin-action="marketplace-toggle-product-mapping" data-mapping-index="${index}" title="${group.enabled !== false ? '点击停用这条商品映射' : '点击启用这条商品映射'}"></div>
+                    <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="marketplace-toggle-product-mapping-collapse" data-mapping-index="${index}">
+                        ${isCollapsed ? '展开编辑' : '收起'}
+                    </button>
+                    <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--danger" data-admin-action="marketplace-remove-product-mapping" data-mapping-index="${index}">删除商品映射</button>
+                </div>
+            </div>
+            <div class="marketplace-product-mapping-row__body" aria-hidden="${isCollapsed ? 'true' : 'false'}"${isCollapsed ? ' hidden style="display: none;"' : ''}>
+                <div class="marketplace-product-mapping-row__grid">
+                    <label class="marketplace-simple-field">
+                        <span>规则名称</span>
+                        <input type="text" class="config-input" data-marketplace-product-mapping-field="label" value="${escapeConfigHtml(title)}" placeholder="如：闲鱼 GPT Plus">
+                    </label>
+                    <label class="marketplace-simple-field marketplace-id-field">
+                        <span>闲鱼商品编号</span>
+                        <input type="text" class="config-input marketplace-code-input" data-marketplace-product-mapping-field="xianyu_item_id" value="${escapeConfigHtml(group.xianyu_item_id || firstChild.xianyu_item_id)}" placeholder="从闲鱼商品链接或订单里复制" inputmode="numeric" spellcheck="false">
+                    </label>
+                    <label class="marketplace-simple-field marketplace-simple-field--wide marketplace-product-picker-field">
+                        <span>发哪个网站商品</span>
+                        <div class="marketplace-product-picker${productPickerOpen ? ' is-open' : ''}${productPickerLoading ? ' is-loading' : ''}" data-marketplace-product-picker data-mapping-index="${index}">
+                            <div class="marketplace-product-picker__control-row">
+                                <input
+                                    type="search"
+                                    class="config-input marketplace-product-picker__search"
+                                    data-admin-input-action="marketplace-search-product-mapping"
+                                    data-admin-focus-action="marketplace-open-product-mapping"
+                                    data-marketplace-product-search-input
+                                    data-mapping-index="${index}"
+                                    value="${escapeConfigHtml(productPickerQuery)}"
+                                    placeholder="搜索网站商品名"
+                                    autocomplete="off"
+                                    role="combobox"
+                                    aria-expanded="${productPickerOpen ? 'true' : 'false'}"
+                                >
+                                <div class="marketplace-product-picker__selected">
+                                    <div>
+                                        <strong data-marketplace-product-search-selected-label>${escapeConfigHtml(selectedProductLabel || (selectedProductId ? '已绑定网站商品' : '未选择商品'))}</strong>
+                                        <small data-marketplace-product-search-meta>${selectedProductId ? '已绑定网站商品' : '搜索商品名，选择要发的网站商品'}</small>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        class="marketplace-product-picker__clear"
+                                        data-admin-action="marketplace-clear-product-mapping"
+                                        data-mapping-index="${index}"
+                                        aria-label="清除已选网站商品"
+                                        title="清除已选网站商品"
+                                        ${selectedProductId ? '' : 'disabled'}
+                                    >
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <input type="hidden" data-marketplace-product-mapping-field="product_id" value="${escapeConfigHtml(selectedProductId)}">
+                            <div class="marketplace-product-picker__menu" data-marketplace-product-search-menu ${productPickerOpen && (productPickerLoading || productPickerResults.length) ? '' : 'hidden'}>
+                                ${productPickerMenu}
+                            </div>
+                            <div class="marketplace-product-picker__empty" data-marketplace-product-search-empty ${productPickerOpen && !productPickerLoading && !productPickerResults.length ? '' : 'hidden'}>
+                                ${productPickerQuery ? '没有找到可发货的网站商品，请确认商品已上架或换个关键词' : '输入商品名或商品 ID 开始搜索'}
+                            </div>
+                        </div>
+                    </label>
+                    <input type="hidden" data-marketplace-product-mapping-field="enabled" value="${group.enabled !== false ? 'true' : 'false'}">
+                    <input type="hidden" data-marketplace-product-mapping-field="draft_group_key" value="${escapeConfigHtml(group.key && group.key.startsWith('__draft__::') ? group.key : '')}">
+                </div>
+                <div class="marketplace-mapping-child-section">
+                    <div class="marketplace-mapping-child-section__header">
+                        <div>
+                            <div class="config-label">规格子映射</div>
+                            <div class="config-desc">一个闲鱼规格对应一个网站规格。多个规格就在这里添加多条，不用重复建商品映射。</div>
+                        </div>
+                        <button type="button" class="btn-add-config btn-add-config--compact btn-add-config--ghost" data-admin-action="marketplace-add-product-mapping-child" data-mapping-index="${index}">
+                            <i class="fas fa-plus"></i> 添加规格映射
+                        </button>
+                    </div>
+                    <div class="marketplace-mapping-child-list">
+                        ${childRowsHtml}
+                    </div>
+                </div>
             </div>
         </article>
     `;
@@ -9338,17 +10196,19 @@ function renderMarketplaceXianyuProductMappings(xianyu = {}) {
     if (!list) return;
 
     const mappings = normalizeMarketplaceProductMappings(xianyu.product_mappings || [], { keepEmpty: true });
+    const groups = buildMarketplaceProductMappingGroups(mappings);
     const missingProductIds = mappings
         .map((mapping) => String(mapping.product_id || '').trim())
         .filter((productId) => productId && !marketplaceProductPickerState.productById.has(productId));
-    list.innerHTML = mappings.length
-        ? mappings.map((mapping, index) => buildMarketplaceXianyuProductMappingRow(mapping, index)).join('')
-        : '<div class="marketplace-empty-state">还没有商品映射。添加一条后，闲鱼订单才能知道该发网站里的哪个商品。</div>';
+    list.innerHTML = groups.length
+        ? groups.map((group, index) => buildMarketplaceXianyuProductMappingRow(group, index)).join('')
+        : '<div class="marketplace-empty-state">还没有发货规则。添加一条后，闲鱼订单才能知道该发网站里的哪个商品。</div>';
+    bindMarketplaceXianyuProductMappingCollapseControls();
 
     if (missingProductIds.length) {
         void loadMarketplaceProductPickerSelectedLabels(missingProductIds);
     }
-    if (mappings.length) {
+    if (groups.length) {
         preloadMarketplaceProductPickerCatalog();
     }
 }
@@ -9367,7 +10227,7 @@ function renderMarketplaceXianyuSimpleForm(config = {}, options = {}) {
     }
     if (statusText) {
         statusText.textContent = isEnabled
-            ? '已启用。闲鱼适配器可使用账号 token 推送订单到网站共享库存。'
+            ? '已启用。闲鱼成交订单会进入网站共享库存自动发货。'
             : '未启用。开启后，闲鱼成交订单才会进入网站共享库存自动发货。';
     }
     if (defaultAccountSelect) {
@@ -9414,6 +10274,16 @@ function renderMarketplaceChannelsConfig(options = {}) {
     renderMarketplaceXianyuSimpleForm(configWithXianyu, options);
     ensureMarketplaceChannelConfigCardExpanded();
     restoreMarketplaceAdvancedConfigState(advancedConfigWasOpen);
+    applyMarketplaceXianyuFulfillmentTabState();
+    renderMarketplaceXianyuReadiness(marketplaceChannelReadiness?.xianyu || validateMarketplaceXianyuReadiness(configWithXianyu));
+    renderMarketplaceXianyuRecovery(marketplaceXianyuRecoveryState.payload);
+    if (
+        document.getElementById('marketplaceXianyuRecoveryPanel')
+        && !marketplaceXianyuRecoveryState.loaded
+        && !marketplaceXianyuRecoveryState.loading
+    ) {
+        void loadMarketplaceXianyuRecoveryTasks();
+    }
 
     if (configTextarea && document.activeElement !== configTextarea) {
         configTextarea.value = stringifyAdminConfigJson(configWithXianyu);
@@ -9431,7 +10301,7 @@ function renderMarketplaceChannelsConfig(options = {}) {
 
     if (summaryEl) {
         const summaryText = xianyu.enabled
-            ? `闲鱼自动发货已启用 · ${xianyuAccounts.filter((account) => account.enabled !== false).length}/${xianyuAccounts.length} 个账号可发货 · ${configuredIngestCount}/${xianyuAccounts.length} 个 token 已配置`
+            ? `闲鱼自动发货已启用 · ${xianyuAccounts.filter((account) => account.enabled !== false).length}/${xianyuAccounts.length} 个账号可发货 · ${configuredIngestCount}/${xianyuAccounts.length} 个发货密钥已配置`
             : `闲鱼自动发货未启用 · 已准备 ${xianyuAccounts.length || accountCount} 个闲鱼账号`;
         const span = summaryEl.querySelector('span');
         if (span) {
@@ -19685,6 +20555,7 @@ async function loadMarketplaceChannelSettings(force = false) {
             marketplaceChannelManifest = Array.isArray(payload.manifest) ? payload.manifest : [];
             marketplaceChannelSecretStatus = payload.secret_status || {};
             marketplaceChannelSummary = payload.summary || {};
+            marketplaceChannelReadiness = payload.readiness || {};
             renderMarketplaceChannelsConfig();
             return payload;
         } catch (error) {
@@ -20994,22 +21865,47 @@ function collectMarketplaceXianyuProductMappingsFromForm(fallbackMappings = []) 
         return normalizeMarketplaceProductMappings(fallbackMappings);
     }
 
-    return normalizeMarketplaceProductMappings(rows.map((row, index) => {
+    const collected = [];
+    rows.forEach((row, index) => {
         const readField = (fieldName, fallback = '') => {
             const input = row.querySelector(`[data-marketplace-product-mapping-field="${fieldName}"]`);
             return String(input?.value || fallback || '').trim();
         };
         const enabledInput = row.querySelector('[data-marketplace-product-mapping-field="enabled"]');
-        return {
+        const baseMapping = {
             label: readField('label', `商品映射 ${index + 1}`),
             enabled: String(enabledInput?.value || 'true').trim() !== 'false',
             xianyu_item_id: readField('xianyu_item_id'),
-            sku_id: readField('sku_id'),
-            sku_text_contains: readField('sku_text_contains'),
             product_id: readField('product_id'),
-            product_sku_id: readField('product_sku_id')
+            draft_group_key: readField('draft_group_key')
         };
-    }), { keepEmpty: true });
+        const childRows = [...row.querySelectorAll('[data-marketplace-product-mapping-child]')];
+        if (!childRows.length) {
+            collected.push({
+                ...baseMapping,
+                sku_id: '',
+                sku_text_contains: '',
+                product_sku_id: ''
+            });
+            return;
+        }
+        childRows.forEach((childRow, childIndex) => {
+            const readChildField = (fieldName, fallback = '') => {
+                const input = childRow.querySelector(`[data-marketplace-product-child-field="${fieldName}"], [data-marketplace-product-mapping-field="${fieldName}"]`);
+                return String(input?.value || fallback || '').trim();
+            };
+            collected.push({
+                ...baseMapping,
+                label: childIndex === 0
+                    ? baseMapping.label
+                    : `${baseMapping.label} - 规格 ${childIndex + 1}`,
+                sku_id: readChildField('sku_id'),
+                sku_text_contains: readChildField('sku_text_contains'),
+                product_sku_id: readChildField('product_sku_id')
+            });
+        });
+    });
+    return normalizeMarketplaceProductMappings(collected, { keepEmpty: true });
 }
 
 function updateMarketplaceXianyuProductMappingsDraft(updater) {
@@ -21025,6 +21921,10 @@ function updateMarketplaceXianyuProductMappingsDraft(updater) {
     });
 }
 
+function getMarketplaceXianyuProductMappingGroupCount() {
+    return document.querySelectorAll('[data-marketplace-product-mapping-index]').length;
+}
+
 function focusMarketplaceXianyuProductMapping(indexValue = '') {
     const index = Number.parseInt(String(indexValue || ''), 10);
     if (!Number.isInteger(index) || index < 0) {
@@ -21032,6 +21932,7 @@ function focusMarketplaceXianyuProductMapping(indexValue = '') {
     }
 
     ensureMarketplaceChannelConfigCardExpanded();
+    setMarketplaceXianyuProductMappingCollapsed(index, false);
 
     const row = document.querySelector(`[data-marketplace-product-mapping-index="${index}"]`);
     if (!(row instanceof HTMLElement)) {
@@ -21062,16 +21963,17 @@ function focusMarketplaceXianyuProductMapping(indexValue = '') {
 }
 
 function addMarketplaceXianyuProductMapping() {
-    let addedIndex = -1;
+    const addedIndex = getMarketplaceXianyuProductMappingGroupCount();
     updateMarketplaceXianyuProductMappingsDraft((mappings) => {
         const nextIndex = mappings.length + marketplaceXianyuProductMappingDraftCounter;
         marketplaceXianyuProductMappingDraftCounter = nextIndex + 1;
-        addedIndex = mappings.length;
+        const draftGroupKey = `__draft__::${nextIndex}`;
         return [
             ...mappings,
             {
-                label: `商品映射 ${mappings.length + 1}`,
+                label: `发货规则 ${mappings.length + 1}`,
                 enabled: true,
+                draft_group_key: draftGroupKey,
                 xianyu_item_id: '',
                 product_id: '',
                 product_sku_id: '',
@@ -21086,17 +21988,61 @@ function addMarketplaceXianyuProductMapping() {
 function removeMarketplaceXianyuProductMapping(indexValue = '') {
     const index = Number.parseInt(String(indexValue || ''), 10);
     if (!Number.isInteger(index) || index < 0) return;
-    updateMarketplaceXianyuProductMappingsDraft((mappings) => mappings.filter((_, mappingIndex) => mappingIndex !== index));
+    updateMarketplaceXianyuProductMappingsDraft((mappings) => {
+        const groups = buildMarketplaceProductMappingGroups(mappings);
+        const group = groups[index];
+        if (!group) return mappings;
+        const removeIndexes = new Set(group.children.map((child) => child.sourceIndex));
+        return mappings.filter((_, mappingIndex) => !removeIndexes.has(mappingIndex));
+    });
 }
 
 function toggleMarketplaceXianyuProductMapping(indexValue = '') {
     const index = Number.parseInt(String(indexValue || ''), 10);
     if (!Number.isInteger(index) || index < 0) return;
-    updateMarketplaceXianyuProductMappingsDraft((mappings) => mappings.map((mapping, mappingIndex) => (
-        mappingIndex === index
-            ? { ...mapping, enabled: mapping.enabled === false }
-            : mapping
-    )));
+    updateMarketplaceXianyuProductMappingsDraft((mappings) => {
+        const groups = buildMarketplaceProductMappingGroups(mappings);
+        const group = groups[index];
+        if (!group) return mappings;
+        const targetEnabled = group.enabled === false;
+        const targetIndexes = new Set(group.children.map((child) => child.sourceIndex));
+        return mappings.map((mapping, mappingIndex) => (
+            targetIndexes.has(mappingIndex)
+                ? { ...mapping, enabled: targetEnabled }
+                : mapping
+        ));
+    });
+}
+
+function addMarketplaceXianyuProductMappingChild(indexValue = '') {
+    const index = Number.parseInt(String(indexValue || ''), 10);
+    if (!Number.isInteger(index) || index < 0) return;
+    updateMarketplaceXianyuProductMappingsDraft((mappings) => {
+        const groups = buildMarketplaceProductMappingGroups(mappings);
+        const group = groups[index];
+        if (!group) return mappings;
+        const fallbackChild = group.children[group.children.length - 1] || {};
+        return [
+            ...mappings,
+            {
+                label: group.label || `商品映射 ${index + 1}`,
+                enabled: group.enabled !== false,
+                draft_group_key: group.key && group.key.startsWith('__draft__::') ? group.key : '',
+                xianyu_item_id: group.xianyu_item_id || fallbackChild.xianyu_item_id || '',
+                product_id: group.product_id || fallbackChild.product_id || '',
+                product_sku_id: '',
+                sku_id: '',
+                sku_text_contains: ''
+            }
+        ];
+    });
+    focusMarketplaceXianyuProductMapping(index);
+}
+
+function removeMarketplaceXianyuProductMappingChild(indexValue = '') {
+    const index = Number.parseInt(String(indexValue || ''), 10);
+    if (!Number.isInteger(index) || index < 0) return;
+    updateMarketplaceXianyuProductMappingsDraft((mappings) => mappings.filter((_, mappingIndex) => mappingIndex !== index));
 }
 
 function mergeMarketplaceSecretPayloads(...sources) {
@@ -21125,6 +22071,20 @@ async function saveMarketplaceChannelSettings() {
             ? readMarketplaceChannelsJsonInput('marketplaceChannelsSecretsJson', {})
             : {};
         const secrets = mergeMarketplaceSecretPayloads(advancedSecrets, collectMarketplaceXianyuSecretInputs());
+        if (!advancedOpen) {
+            const readiness = validateMarketplaceXianyuReadiness(config, {
+                ...(marketplaceChannelSecretStatus || {}),
+                ...Object.fromEntries(Object.keys(secrets).map((secretKey) => [
+                    secretKey,
+                    { configured: true, source: 'draft' }
+                ]))
+            });
+            renderMarketplaceXianyuReadiness(readiness);
+            if (readiness.status === 'error') {
+                switchMarketplaceXianyuFulfillmentTab('overview');
+                throw new Error(`上线自检未通过：${readiness.counts?.error || 1} 个问题需要先修复`);
+            }
+        }
         const headers = await getAdminConfigApiHeaders();
         const response = await fetch('/api/admin/settings/marketplace-channels', {
             method: 'POST',
@@ -21143,6 +22103,7 @@ async function saveMarketplaceChannelSettings() {
         marketplaceChannelManifest = Array.isArray(payload.manifest) ? payload.manifest : [];
         marketplaceChannelSecretStatus = payload.secret_status || {};
         marketplaceChannelSummary = payload.summary || {};
+        marketplaceChannelReadiness = payload.readiness || {};
         const secretsInput = document.getElementById('marketplaceChannelsSecretsJson');
         if (secretsInput) {
             secretsInput.value = '';
@@ -21301,14 +22262,14 @@ async function copyMarketplaceIngestToken(accountKey = '', actionEl = null, opti
 
     if (!token) {
         if (!options.silentMissing) {
-            showToast('先点击生成 Token，保存前才能复制。已保存的旧 Token 为安全起见不会明文回显。', 'warning');
+            showToast('先点击生成发货密钥，保存前才能复制。已保存的旧密钥为安全起见不会明文回显。', 'warning');
         }
         return false;
     }
 
     try {
         await writeAdminTextToClipboard(token);
-        showToast('Token 已复制，请先保存配置，再粘贴到 bridge worker 命令里。', 'success');
+        showToast('发货密钥已复制。请先保存配置，再粘贴到闲鱼发货服务里。', 'success');
         if (actionEl instanceof HTMLElement) {
             actionEl.textContent = '已复制';
             window.setTimeout(() => {
@@ -28416,6 +29377,12 @@ window.selectDropdownOption = function (dropdownId, value, displayText) {
             syncSelect.dispatchEvent(new Event('change', { bubbles: true }));
             syncedSelectChange = true;
         }
+        const syncInputId = String(dropdown.dataset.syncInputId || '').trim();
+        const syncInput = syncInputId ? document.getElementById(syncInputId) : null;
+        if (syncInput instanceof HTMLInputElement) {
+            syncInput.value = value;
+            syncInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
 
         const selectedOption = Array.from(dropdown.querySelectorAll('.dropdown-option'))
             .find((option) => String(option.getAttribute('data-value') || '') === String(value || ''));
@@ -28646,14 +29613,23 @@ window.removeMarketplaceXianyuAccount = removeMarketplaceXianyuAccount;
 window.handleMarketplaceXianyuDefaultAccountChange = handleMarketplaceXianyuDefaultAccountChange;
 window.generateMarketplaceIngestToken = generateMarketplaceIngestToken;
 window.copyMarketplaceIngestToken = copyMarketplaceIngestToken;
+window.switchMarketplaceXianyuFulfillmentTab = switchMarketplaceXianyuFulfillmentTab;
+window.applyMarketplaceXianyuFulfillmentTabState = applyMarketplaceXianyuFulfillmentTabState;
 window.addMarketplaceXianyuProductMapping = addMarketplaceXianyuProductMapping;
 window.removeMarketplaceXianyuProductMapping = removeMarketplaceXianyuProductMapping;
 window.toggleMarketplaceXianyuProductMapping = toggleMarketplaceXianyuProductMapping;
+window.toggleMarketplaceXianyuProductMappingCollapse = toggleMarketplaceXianyuProductMappingCollapse;
+window.handleMarketplaceXianyuProductMappingCollapseAction = handleMarketplaceXianyuProductMappingCollapseAction;
+window.bindMarketplaceXianyuProductMappingCollapseControls = bindMarketplaceXianyuProductMappingCollapseControls;
 window.focusMarketplaceXianyuProductMapping = focusMarketplaceXianyuProductMapping;
 window.searchMarketplaceProductPickerOptions = searchMarketplaceProductPickerOptions;
 window.selectMarketplaceProductMapping = selectMarketplaceProductMapping;
 window.clearMarketplaceProductMapping = clearMarketplaceProductMapping;
 window.openMarketplaceProductPicker = openMarketplaceProductPicker;
+window.runMarketplaceXianyuReadinessCheck = runMarketplaceXianyuReadinessCheck;
+window.validateMarketplaceXianyuReadiness = validateMarketplaceXianyuReadiness;
+window.loadMarketplaceXianyuRecoveryTasks = loadMarketplaceXianyuRecoveryTasks;
+window.performMarketplaceXianyuDeliveryAction = performMarketplaceXianyuDeliveryAction;
 window.savePaymentChannelSettings = savePaymentChannelSettings;
 window.saveMarketplaceChannelSettings = saveMarketplaceChannelSettings;
 Object.assign(window, {

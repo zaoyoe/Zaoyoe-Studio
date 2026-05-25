@@ -965,9 +965,9 @@ test('public pages wire wallet modal through the shared bootstrap loader', () =>
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260519_PUBLIC_API_FAST_PATH_1';",
+        "const VERSION = '20260525_WALLET_DISCOUNT_SKU_SCOPE_1';",
         "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260518_MOBILE_PAY_FAST_CONFIRM_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260519_PUBLIC_API_FAST_PATH_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260525_WALLET_DISCOUNT_SKU_SCOPE_1';",
         'function ensureWalletModalReady() {',
         'function warmWalletModal(options = {}) {',
         "function openWalletModal(view = 'balance', context = {}) {",
@@ -13476,7 +13476,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260510_GUESTBOOK_R2_IMAGE_UPLOAD_1'), true, 'index_old.html should load the latest guestbook runtime');
     assert.equal(shopSource.includes('js/shop-client.js?v=20260520_SHOP_CARD_PROMPT_BREATHE_3'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260510_SHOP_REALTIME_FALLBACK_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
-    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260519_PUBLIC_API_FAST_PATH_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
+    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260525_WALLET_DISCOUNT_SKU_SCOPE_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
 
 test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {
@@ -16558,7 +16558,7 @@ test('public modal backdrops route through the shared app modal material tokens'
         'profile modal loader should cache-bust the light backdrop material'
     );
     assert.equal(
-        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260518_MOBILE_PAY_FAST_CONFIRM_1'),
+        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260525_WALLET_DISCOUNT_SKU_SCOPE_1'),
         true,
         'wallet modal loader should cache-bust the latest wallet surface stylesheet'
     );

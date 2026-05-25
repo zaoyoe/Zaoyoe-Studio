@@ -3325,7 +3325,7 @@
         #shopPurchaseModal .modal-content>.shop-purchase-stage,
         #shopPurchaseModal .shop-purchase-config-panel>.shop-purchase-stage,
         #shopPurchaseModal .shop-purchase-dock>.shop-purchase-stage {
-            transition: opacity 0.48s cubic-bezier(0.25, 0.46, 0.45, 0.94), transform 0.48s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            transition: none;
         }
 
         #shopSuccessModal .shop-success-modal>.shop-success-scroll {
@@ -3345,67 +3345,206 @@
         #shopSuccessModal:not(.active) .shop-success-modal>.shop-success-stage,
         #shopSuccessModal:not(.active) .shop-success-scroll>.shop-success-scroll-stage {
             opacity: 0 !important;
-            transform: translateY(24px) !important;
+            transform: translate3d(0, 14px, 0) !important;
         }
 
         #shopPurchaseModal.active .modal-content>.shop-purchase-stage,
         #shopPurchaseModal.active .shop-purchase-config-panel>.shop-purchase-stage,
         #shopPurchaseModal.active .shop-purchase-dock>.shop-purchase-stage {
             opacity: 1;
-            transform: translateY(0);
-            animation: shopPurchaseStaggeredRise 0.52s cubic-bezier(0.25, 0.46, 0.45, 0.94) backwards;
+            transform: translate3d(0, 0, 0);
+            animation: none;
+        }
+
+        #shopPurchaseModal .modal-content>.shop-purchase-stage--opening-stagger,
+        #shopPurchaseModal .shop-purchase-config-panel>.shop-purchase-stage--opening-stagger,
+        #shopPurchaseModal .shop-purchase-dock>.shop-purchase-stage--opening-stagger,
+        #shopPurchaseModal .shop-purchase-stage--opening-stagger .shop-sku-selector__header {
+            opacity: 0;
+            transform: translate3d(0, 14px, 0);
+            animation: none;
+        }
+
+        #shopPurchaseModal .shop-purchase-stage--opening-stagger .shop-sku-option--pill,
+        #shopPurchaseModal .shop-purchase-stage--opening-stagger .shop-sku-spec-option {
+            opacity: 0;
+            transform: translate3d(0, 0, 0);
+            animation: none;
+        }
+
+        #shopPurchaseModal.active .modal-content>.shop-purchase-stage--opening-stagger,
+        #shopPurchaseModal.active .shop-purchase-config-panel>.shop-purchase-stage--opening-stagger,
+        #shopPurchaseModal.active .shop-purchase-dock>.shop-purchase-stage--opening-stagger {
+            animation: shopPurchaseStaggeredRise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        #shopPurchaseModal.active .shop-purchase-stage--opening-stagger .shop-sku-selector__header {
+            animation: shopPurchaseStaggeredRise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        #shopPurchaseModal.active .shop-purchase-stage--opening-stagger .shop-sku-option--pill,
+        #shopPurchaseModal.active .shop-purchase-stage--opening-stagger .shop-sku-spec-option {
+            animation: shopPurchaseSkuTagFadeIn 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        #shopPurchaseModal.active .shop-purchase-stage--opening-stagger .shop-sku-option--pill.is-disabled,
+        #shopPurchaseModal.active .shop-purchase-stage--opening-stagger .shop-sku-option--pill:disabled,
+        #shopPurchaseModal.active .shop-purchase-stage--opening-stagger .shop-sku-spec-option.is-disabled,
+        #shopPurchaseModal.active .shop-purchase-stage--opening-stagger .shop-sku-spec-option:disabled {
+            animation-name: shopPurchaseSkuDisabledFadeIn;
         }
 
         #shopSuccessModal.active .shop-success-modal>.shop-success-stage,
         #shopSuccessModal.active .shop-success-scroll>.shop-success-scroll-stage {
             opacity: 1 !important;
-            transform: translateY(0) !important;
+            transform: translate3d(0, 0, 0) !important;
         }
 
+        /* 20260525_SHOP_PURCHASE_STAGGER_RHYTHM_1
+           外层 stage 统一 60ms 等距节奏，SKU 内部子项统一 40ms 等距节奏，
+           原来 80/120/40/40/60/60ms 的混乱间距导致"标题→内容"和"内容→内容"
+           视觉不协调。 */
         #shopPurchaseModal.active .shop-purchase-stage-header {
-            animation-delay: 0.1s !important;
-            transition-delay: 0.1s !important;
+            animation-delay: 0s !important;
+            transition-delay: 0s !important;
+        }
+
+        @media (min-width: 769px) {
+            #shopPurchaseModal .shop-purchase-stage-header.shop-purchase-stage--opening-stagger {
+                opacity: 1;
+                transform: translate3d(0, 0, 0);
+                animation: none;
+            }
+
+            #shopPurchaseModal .shop-purchase-stage-header > #purchaseStageTitle,
+            #shopPurchaseModal .shop-purchase-stage-header > #modalProductName {
+                will-change: opacity, transform;
+            }
+
+            #shopPurchaseModal:not(.active) .shop-purchase-stage-header > #purchaseStageTitle,
+            #shopPurchaseModal:not(.active) .shop-purchase-stage-header > #modalProductName,
+            #shopPurchaseModal .shop-purchase-stage-header.shop-purchase-stage--opening-stagger > #purchaseStageTitle,
+            #shopPurchaseModal .shop-purchase-stage-header.shop-purchase-stage--opening-stagger > #modalProductName {
+                opacity: 0;
+                transform: translate3d(0, 14px, 0);
+            }
+
+            #shopPurchaseModal.active .shop-purchase-stage-header.shop-purchase-stage--opening-stagger > #purchaseStageTitle {
+                animation: shopPurchaseStaggeredRise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+                animation-delay: 0.03s !important;
+            }
+
+            #shopPurchaseModal.active .shop-purchase-stage-header.shop-purchase-stage--opening-stagger > #modalProductName {
+                animation: shopPurchaseStaggeredRise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+                animation-delay: 0.09s !important;
+            }
+
+            #shopPurchaseModal.active.shop-purchase-stages-settled .shop-purchase-stage-header > #purchaseStageTitle,
+            #shopPurchaseModal.active.shop-purchase-stages-settled .shop-purchase-stage-header > #modalProductName {
+                animation: none !important;
+                opacity: 1 !important;
+                transform: translate3d(0, 0, 0) !important;
+            }
         }
 
         #shopPurchaseModal.active .shop-purchase-stage-sku {
-            animation-delay: 0.15s !important;
-            transition-delay: 0.15s !important;
+            animation-delay: 0.08s !important;
+            transition-delay: 0.08s !important;
         }
 
         #shopPurchaseModal.active .shop-purchase-stage-quantity {
-            animation-delay: 0.18s !important;
-            transition-delay: 0.18s !important;
+            animation-delay: 0.2s !important;
+            transition-delay: 0.2s !important;
         }
 
         #shopPurchaseModal.active .shop-purchase-stage-notes {
-            animation-delay: 0.21s !important;
-            transition-delay: 0.21s !important;
-        }
-
-        #shopPurchaseModal.active .shop-purchase-stage-summary {
             animation-delay: 0.24s !important;
             transition-delay: 0.24s !important;
         }
 
+        #shopPurchaseModal.active .shop-purchase-stage-summary {
+            animation-delay: 0.28s !important;
+            transition-delay: 0.28s !important;
+        }
+
         #shopPurchaseModal.active .shop-purchase-stage-discount {
-            animation-delay: 0.3s !important;
-            transition-delay: 0.3s !important;
+            animation-delay: 0.34s !important;
+            transition-delay: 0.34s !important;
         }
 
         #shopPurchaseModal.active .shop-purchase-stage-action {
-            animation-delay: 0.35s !important;
-            transition-delay: 0.35s !important;
+            animation-delay: 0.4s !important;
+            transition-delay: 0.4s !important;
+        }
+
+        #shopPurchaseModal.active .shop-purchase-stage-sku.shop-purchase-stage--opening-stagger {
+            opacity: 1;
+            transform: translate3d(0, 0, 0);
+            animation: none;
+        }
+
+        #shopPurchaseModal.active .shop-purchase-stage--opening-stagger .shop-sku-selector__header {
+            animation-delay: 0.06s !important;
+        }
+
+        #shopPurchaseModal.active .shop-purchase-stage--opening-stagger .shop-sku-option--pill:nth-of-type(1),
+        #shopPurchaseModal.active .shop-purchase-stage--opening-stagger .shop-sku-spec-option:nth-of-type(1) {
+            animation-delay: 0.14s !important;
+        }
+
+        #shopPurchaseModal.active .shop-purchase-stage--opening-stagger .shop-sku-option--pill:nth-of-type(2),
+        #shopPurchaseModal.active .shop-purchase-stage--opening-stagger .shop-sku-spec-option:nth-of-type(2) {
+            animation-delay: 0.18s !important;
+        }
+
+        #shopPurchaseModal.active .shop-purchase-stage--opening-stagger .shop-sku-option--pill:nth-of-type(3),
+        #shopPurchaseModal.active .shop-purchase-stage--opening-stagger .shop-sku-spec-option:nth-of-type(3) {
+            animation-delay: 0.22s !important;
+        }
+
+        #shopPurchaseModal.active .shop-purchase-stage--opening-stagger .shop-sku-option--pill:nth-of-type(n+4),
+        #shopPurchaseModal.active .shop-purchase-stage--opening-stagger .shop-sku-spec-option:nth-of-type(n+4) {
+            animation-delay: 0.26s !important;
         }
 
         @keyframes shopPurchaseStaggeredRise {
             from {
                 opacity: 0;
-                transform: translateY(30px);
+                transform: translate3d(0, 14px, 0);
             }
 
             to {
                 opacity: 1;
-                transform: translateY(0);
+                transform: translate3d(0, 0, 0);
+            }
+        }
+
+        @keyframes shopPurchaseSkuTagFadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes shopPurchaseSkuDisabledFadeIn {
+            from {
+                opacity: 0;
+            }
+
+            to {
+                opacity: 0.42;
+            }
+        }
+
+        @media (min-width: 769px) and (prefers-reduced-motion: reduce) {
+            #shopPurchaseModal .shop-purchase-stage-header > #purchaseStageTitle,
+            #shopPurchaseModal .shop-purchase-stage-header > #modalProductName {
+                animation: none !important;
+                opacity: 1 !important;
+                transform: translate3d(0, 0, 0) !important;
             }
         }
 
@@ -3532,8 +3671,9 @@
             color: #fff;
             text-align: left;
             display: grid;
+            align-items: start;
             position: relative;
-            gap: 6px;
+            gap: 5px;
             transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
         }
 
@@ -3563,24 +3703,28 @@
             color: rgba(255, 255, 255, 0.82);
         }
 
-        .shop-discount-asset-card:not(.has-product-targets) {
-            padding-right: 96px;
-        }
-
         .shop-discount-asset-card__top {
-            display: flex;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
             align-items: flex-start;
-            justify-content: space-between;
-            gap: 12px;
+            gap: 6px 10px;
             font-size: 14px;
+            line-height: 1.25;
         }
 
         .shop-discount-asset-card__identity {
             display: flex;
             flex-wrap: wrap;
             align-items: center;
-            gap: 8px;
+            gap: 6px;
             min-width: 0;
+        }
+
+        .shop-discount-asset-card__identity strong {
+            min-width: 0;
+            max-width: 100%;
+            line-height: 1.2;
+            overflow-wrap: anywhere;
         }
 
         .shop-discount-asset-card__benefit {
@@ -3626,29 +3770,11 @@
         .shop-discount-asset-card__cta {
             display: inline-flex;
             align-items: center;
+            justify-self: end;
             font-size: 12px;
             color: rgba(255, 255, 255, 0.72);
+            line-height: 1.2;
             white-space: nowrap;
-        }
-
-        .shop-discount-asset-card:not(.has-product-targets) .shop-discount-asset-card__cta:not(.shop-discount-asset-card__cta--expiry) {
-            position: absolute;
-            top: 50%;
-            right: 12px;
-            transform: translateY(-50%);
-            min-height: 24px;
-            justify-content: center;
-        }
-
-        .shop-discount-asset-card__cta--expiry {
-            display: inline-flex;
-            align-items: center;
-            justify-content: flex-end;
-            white-space: normal;
-            text-align: right;
-            line-height: 1.3;
-            max-width: 170px;
-            font-weight: 600;
         }
 
         .shop-discount-asset-card__disclosure {
@@ -3805,19 +3931,30 @@
         .shop-discount-asset-card__meta {
             font-size: 12px;
             color: rgba(255, 255, 255, 0.72);
-            line-height: 1.5;
+            line-height: 1.35;
         }
 
         .shop-discount-asset-card__hint {
             font-size: 12px;
             color: rgba(255, 255, 255, 0.84);
-            line-height: 1.45;
+            line-height: 1.35;
         }
 
         .shop-discount-asset-card__targets {
             display: grid;
-            gap: 10px;
-            margin-top: 4px;
+            gap: 6px;
+            margin-top: 2px;
+        }
+
+        .shop-discount-asset-card__targets--static {
+            grid-template-columns: minmax(0, 1fr);
+            align-items: start;
+            gap: 4px 8px;
+            margin-top: 0;
+        }
+
+        .shop-discount-asset-card__targets--static .shop-discount-asset-card__targets-label {
+            display: none;
         }
 
         .shop-discount-asset-card__targets-head {
@@ -3916,10 +4053,13 @@
         .shop-discount-asset-card__scope {
             font-size: 12px;
             color: rgba(255, 255, 255, 0.76);
-            line-height: 1.5;
-            padding: 10px 12px;
-            border-radius: 14px;
-            background: rgba(255, 255, 255, 0.05);
+            line-height: 1.35;
+            min-width: 0;
+            padding: 0;
+            border-radius: 0;
+            background: transparent;
+            overflow-wrap: anywhere;
+            text-align: left;
         }
 
         .shop-discount-assets-empty {
@@ -4710,6 +4850,38 @@
 
         #shopPurchaseModal.active:not(:focus-within):not(.ios-focus-lock):not(.keyboard-docked) .modal-content {
             transition: transform 0.3s ease-out !important;
+        }
+
+        #shopPurchaseModal.shop-purchase-opening-stable .modal-content,
+        #shopPurchaseModal.shop-purchase-opening-stable.active .modal-content,
+        #shopPurchaseModal.shop-purchase-opening-stable.active:not(:focus-within):not(.ios-focus-lock):not(.keyboard-docked) .modal-content,
+        #shopPurchaseModal.shop-purchase-opening-stable.keyboard-docked .modal-content,
+        #shopPurchaseModal.shop-purchase-opening-stable .modal-content.shop-purchase-height-locked,
+        #shopPurchaseModal.shop-purchase-opening-stable .modal-content.shop-purchase-sheet-animating,
+        #shopPurchaseModal.shop-purchase-opening-stable .modal-content.shop-purchase-notes-height-animating {
+            transition: none !important;
+        }
+
+        #shopPurchaseModal.shop-purchase-opening-stable .shop-purchase-stage[hidden] {
+            animation: none !important;
+            transition: none !important;
+        }
+
+        #shopPurchaseModal.active .shop-purchase-stage--opening-settled {
+            animation: none !important;
+        }
+
+        #shopPurchaseModal.active.shop-purchase-stages-settled .modal-content>.shop-purchase-stage,
+        #shopPurchaseModal.active.shop-purchase-stages-settled .shop-purchase-config-panel>.shop-purchase-stage,
+        #shopPurchaseModal.active.shop-purchase-stages-settled .shop-purchase-dock>.shop-purchase-stage {
+            animation: none !important;
+            transition-delay: 0s !important;
+        }
+
+        #shopPurchaseModal.shop-purchase-opening-stable .shop-purchase-discount,
+        #shopPurchaseModal.shop-purchase-opening-stable .shop-purchase-discount__fold,
+        #shopPurchaseModal.shop-purchase-opening-stable .shop-purchase-discount__fold-inner {
+            transition: none !important;
         }
 
         @media (max-width: 768px) {
@@ -7197,6 +7369,24 @@ html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card__target-l
     box-shadow: none;
 }
 
+html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card__benefit {
+    background: rgba(219, 39, 119, 0.1);
+    border-color: rgba(219, 39, 119, 0.3);
+    color: #be185d;
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card__stacking--exclusive {
+    background: rgba(217, 119, 6, 0.12);
+    border-color: rgba(217, 119, 6, 0.34);
+    color: #b45309;
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card__stacking--stackable {
+    background: rgba(13, 148, 136, 0.1);
+    border-color: rgba(13, 148, 136, 0.28);
+    color: #0f766e;
+}
+
 html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card__target-link:hover {
     background: #ffffff;
     border-color: rgba(16, 185, 129, 0.24);
@@ -7782,6 +7972,8 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+    position: relative;
+    isolation: isolate;
 }
 
 #shopPurchaseModal .shop-sku-selector__options--pills {
@@ -7810,7 +8002,10 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
     line-height: 1.15;
     cursor: pointer;
     box-shadow: none;
-    transition: background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease, transform 0.16s ease;
+    transform: translateZ(0);
+    transform-origin: center;
+    touch-action: manipulation;
+    transition: background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease, color 0.16s ease;
 }
 
 #shopPurchaseModal .shop-sku-option--pill {
@@ -7828,7 +8023,6 @@ html:not([data-theme="dark"]) body.shop-page #shopCartCheckoutModal.active {
 
 #shopPurchaseModal .shop-sku-option--pill:hover:not(:disabled),
 #shopPurchaseModal .shop-sku-spec-option:hover:not(:disabled) {
-    transform: translateY(-1px);
     border-color: rgba(134, 239, 172, 0.4);
     background: rgba(34, 197, 94, 0.12);
 }
@@ -7920,6 +8114,16 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-sku-spec-o
         0 5px 14px rgba(15, 23, 42, 0.045);
 }
 
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-sku-option--pill.is-disabled,
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-sku-option--pill:disabled,
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-sku-spec-option.is-disabled,
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-sku-spec-option:disabled {
+    border-color: rgba(148, 163, 184, 0.2);
+    background: rgba(241, 245, 249, 0.72);
+    color: rgba(71, 85, 105, 0.62);
+    box-shadow: none;
+}
+
 @media (min-width: 769px) {
     #shopPurchaseModal .shop-purchase-actions {
         justify-content: space-between;
@@ -7987,13 +8191,13 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-sku-spec-o
 
 /* 20260524_SHOP_PURCHASE_SKU_COMPACT_2 */
 #shopPurchaseModal .shop-sku-selector__options--pills {
-    margin-top: -5px;
-    padding: 5px 2px 6px 0;
+    margin-top: 0;
+    padding: 6px 2px 8px 0;
     scroll-padding-top: 8px;
 }
 
 #shopPurchaseModal .shop-sku-spec-group__options {
-    padding: 4px 0 5px;
+    padding: 6px 0 7px;
 }
 
 #shopPurchaseModal .shop-purchase-stage-quantity {
@@ -8361,8 +8565,8 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-purchase-d
     #shopPurchaseModal .shop-purchase-scroll {
         min-height: 0;
         max-height: min(500px, calc(100dvh - 210px));
-        margin: -5px 0 0;
-        padding: 5px 2px 6px 0;
+        margin: 0;
+        padding: 6px 2px 6px 0;
         border: 0;
     }
 

@@ -109,10 +109,10 @@ test('shop purchase discount cards humanize coupon channels and expose jumpable 
         /if \(!isUnavailableCard\) \{[\s\S]*Number\.isFinite\(effectiveFinalTotal\)/,
         'shop-client.js should keep unavailable coupon cards from surfacing misleading discounted totals'
     );
-    assert.match(
+    assert.doesNotMatch(
         shopClientSource,
-        /metaParts\.push\(`有效期 \$\{this\.formatDiscountExpiryLabel\(item, \{ includePrefix: false \}\)\}`\);/,
-        'shop-client.js should keep the validity label inside the unavailable coupon fold body'
+        /metaParts\.push\(`有效期/,
+        'shop-client.js should not add a redundant validity prefix to unavailable coupon cards'
     );
     assert.match(
         shopClientSource,
@@ -178,6 +178,68 @@ test('shop purchase discount cards humanize coupon channels and expose jumpable 
         shopCssSource,
         /\.shop-discount-asset-card--collapsible\.is-collapsing\s+\.shop-discount-asset-card__chevron\s*\{/,
         'shop-page.css should style the collapsing state so the accordion arrow animates smoothly on close'
+    );
+});
+
+test('shop purchase discount cards keep unavailable coupon copy compact', () => {
+    const shopClientSource = readRepoFile(path.join('js', 'shop-client.js'));
+    const shopCssSource = readRepoFile(path.join('css', 'shop-page.css'));
+    const shopHtmlSource = readRepoFile('shop.html');
+
+    assert.match(
+        shopClientSource,
+        /: \(item\.available[\s\S]*\? \(selected \? this\.trShop\('selected', '已选中'\) : this\.trShop\('tapToUse', '点击使用'\)\)[\s\S]*: ''\);/,
+        'unavailable coupon cards without product target accordions should not place expiry copy in the top-right action slot'
+    );
+    assert.doesNotMatch(
+        shopClientSource,
+        /shop-discount-asset-card__cta--expiry/,
+        'purchase coupon cards should not render a special expiry CTA that creates a mostly empty right column'
+    );
+    assert.doesNotMatch(
+        shopCssSource,
+        /padding-right:\s*96px/,
+        'coupon cards should not reserve a hard-coded right gutter for action text'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-discount-asset-card__top\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\) auto;[\s\S]*gap:\s*6px 10px;[\s\S]*line-height:\s*1\.25;/s,
+        'coupon card headers should use a compact flowing layout'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-discount-asset-card__meta\s*\{[\s\S]*line-height:\s*1\.35;[\s\S]*\.shop-discount-asset-card__hint\s*\{[\s\S]*line-height:\s*1\.35;/s,
+        'coupon meta and hint copy should use tighter line-height so wrapped text does not feel detached'
+    );
+    assert.match(
+        shopClientSource,
+        /该优惠码仅适用于指定商品规格[\s\S]*return '';/,
+        'redundant SKU-scope unavailable copy should be suppressed when the scope line already names the spec'
+    );
+    assert.match(
+        shopClientSource,
+        /const expiryText = this\.formatDiscountExpiryLabel\(item, \{ includePrefix: false \}\);[\s\S]*expiryText !== this\.trShop\('longTermValid', '长期有效'\)[\s\S]*metaParts\.push\(expiryText\);/s,
+        'long-term unavailable coupons should omit the redundant validity line'
+    );
+    assert.match(
+        shopClientSource,
+        /const metaFallbackText = isUnavailableCard[\s\S]*\? this\.trShop\('currentProductUnavailable', '当前商品不可用'\)[\s\S]*: this\.trShop\('availableForCurrentProduct', '可在当前商品结算时使用'\);[\s\S]*metaParts\.join\(' · '\) \|\| localizedHintText \|\| metaFallbackText/s,
+        'unavailable coupon cards should never fall back to available-for-current-product copy'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-discount-asset-card__targets--static\s*\{[\s\S]*grid-template-columns:\s*minmax\(0, 1fr\);[\s\S]*\.shop-discount-asset-card__targets--static \.shop-discount-asset-card__targets-label\s*\{[\s\S]*display:\s*none;[\s\S]*\.shop-discount-asset-card__scope\s*\{[\s\S]*text-align:\s*left;/s,
+        'static coupon scope should be left-aligned without a visible scope label'
+    );
+    assert.match(
+        shopCssSource,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-discount-asset-card__benefit\s*\{[\s\S]*color:\s*#be185d;[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-discount-asset-card__stacking--exclusive\s*\{[\s\S]*color:\s*#b45309;/s,
+        'light theme should give discount benefit and exclusive badges enough contrast'
+    );
+    assert.match(
+        shopHtmlSource,
+        /discountCouponPolish=20260525_SHOP_DISCOUNT_COUPON_POLISH_2/,
+        'shop.html should bust storefront assets after tightening coupon card layout and SKU coupon refresh'
     );
 });
 
@@ -301,6 +363,57 @@ test('wallet-to-shop product jumps can prefill coupon assets before the live ref
         /scoped_product_preview: scopedProductAvailability\?\.preview \|\| null/,
         'wallet discount assets should expose the scoped product preview so the shop jump can reuse it instantly'
     );
+    assert.match(
+        walletModalSource,
+        /'wallet-product-sku-id': this\.encodeActionValue\(asset\.scope_product_sku_id \|\| asset\.scope_product_sku\?\.id \|\| ''\)/,
+        'wallet coupon product actions should carry the scoped SKU id'
+    );
+    assert.match(
+        walletModalSource,
+        /query\.set\('skuId', productSkuId\)/,
+        'wallet coupon product jumps should include the SKU in the shop URL'
+    );
+    assert.match(
+        walletModalSource,
+        /productSkuId: String\(asset\?\.scope_product_sku_id \|\| asset\?\.scope_product_sku\?\.id \|\| ''\)\.trim\(\) \|\| null/,
+        'wallet purchase prefills should preserve the scoped SKU id'
+    );
+    assert.match(
+        shopClientSource,
+        /const storedPurchasePrefill = this\.consumePurchasePrefillForProduct\(productId\);[\s\S]*const requestedSkuId = String\(options\?\.productSkuId \|\| options\?\.skuId \|\| storedPurchasePrefill\?\.productSkuId \|\| ''\)\.trim\(\);/s,
+        'shop purchase modal should select a wallet-prefilled SKU before loading coupon data'
+    );
+});
+
+test('wallet discount cards surface scoped product specs in the wallet UI', () => {
+    const walletModalSource = readRepoFile(path.join('js', 'components', 'WalletModal.js'));
+    const walletCssSource = readRepoFile(path.join('css', 'wallet.css'));
+
+    assert.match(
+        walletModalSource,
+        /getLocalizedDiscountSkuLabel\(asset = \{\}\)/,
+        'WalletModal should normalize human-readable scoped SKU labels'
+    );
+    assert.match(
+        walletModalSource,
+        /const productLabel = skuName && productName[\s\S]*\? `\$\{productName\} \/ \$\{skuName\}`/s,
+        'wallet coupon scope labels should append the scoped SKU when present'
+    );
+    assert.match(
+        walletModalSource,
+        /scope_product_sku_id: asset\.scope_product_sku_id \|\| asset\.scope_product_sku\?\.id \|\| null/,
+        'wallet coupon prefills should include scoped SKU metadata'
+    );
+    assert.match(
+        walletModalSource,
+        /wallet-discount-assets-card-sku/,
+        'wallet coupon card details should render the applicable spec line'
+    );
+    assert.match(
+        walletCssSource,
+        /\.wallet-discount-assets-card-sku\s*\{/,
+        'wallet.css should style the scoped SKU detail line'
+    );
 });
 
 test('wallet discount cards surface the coupon stacking rule in both summary chips and detail copy', () => {
@@ -364,7 +477,7 @@ test('shop product cards prefetch discount assets so direct product opens can re
     );
     assert.match(
         shopClientSource,
-        /requestAvailableDiscountAssets: async function \(\{ productId = '', quantity = 1, agentId = null, site = '', preferCache = false, allowPending = true \} = \{\}\)/,
+        /requestAvailableDiscountAssets: async function \(\{ productId = '', productSkuId = '', quantity = 1, agentId = null, site = '', preferCache = false, allowPending = true \} = \{\}\)/,
         'shop-client.js should expose a reusable discount asset request helper with cache and pending request controls'
     );
     assert.match(
@@ -399,8 +512,33 @@ test('shop product cards prefetch discount assets so direct product opens can re
     );
     assert.match(
         shopClientSource,
-        /void this\.prefetchDiscountAssetsForProduct\(\{\s+productId,\s+quantity: initialQuantity,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);[\s\S]*const hasImmediateVisibleDiscountData = Boolean\(cachedDiscountAssetsPayload\)/s,
-        'purchase modal should kick off discount prefetch before opening and still treat cached discount data as immediately renderable'
+        /void this\.prefetchDiscountAssetsForProduct\(\{\s+productId,\s+productSkuId: selectedSkuId,\s+quantity: initialQuantity,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);[\s\S]*const cachedDiscountAssetsPayload = this\.readDiscountAssetsCache\(this\.buildDiscountAssetsCacheKey\(\{\s+productId,\s+productSkuId: selectedSkuId,[\s\S]*const hasImmediateVisibleDiscountData = Boolean\(cachedDiscountAssetsPayload\)/s,
+        'purchase modal should kick off SKU-specific discount prefetch before opening and still treat cached discount data as immediately renderable'
+    );
+    assert.match(
+        shopClientSource,
+        /body: JSON\.stringify\(\{\s+productId: normalizedProductId,\s+productSkuId: normalizedProductSkuId \|\| null,/s,
+        'available discount requests should send the selected SKU to the server'
+    );
+});
+
+test('switching purchase SKU immediately refreshes coupon availability for that spec', () => {
+    const shopClientSource = readRepoFile(path.join('js', 'shop-client.js'));
+
+    assert.match(
+        shopClientSource,
+        /selectPurchaseSku: function \(skuId = ''\) \{[\s\S]*const cachedDiscountAssetsPayload = this\.readDiscountAssetsCache\(this\.buildCurrentPurchaseDiscountAssetsCacheKey\(\)\);[\s\S]*if \(cachedDiscountAssetsPayload\) \{[\s\S]*this\.currentPurchase\.availableDiscountAssets = Array\.isArray\(cachedDiscountAssetsPayload\?\.owned_discounts\)[\s\S]*this\.currentPurchase\.discountAssetsLoading = false;[\s\S]*\} else \{[\s\S]*this\.currentPurchase\.availableDiscountAssets = \[\];[\s\S]*this\.currentPurchase\.discountAssetsLoading = true;[\s\S]*if \(cachedDiscountAssetsPayload\) \{[\s\S]*return;[\s\S]*void this\.refreshPurchaseDiscountAssets\(\{ silent: true, forceLoading: true, clearCurrent: true \}\);/s,
+        'selecting a SKU should reuse already loaded coupon assets for that spec and only sync unknown specs'
+    );
+    assert.match(
+        shopClientSource,
+        /refreshPurchaseDiscountAssets: async function \(\{ silent = false, forceLoading = false, clearCurrent = false \} = \{\}\) \{[\s\S]*const requestProductSkuId = String\(this\.currentPurchase\.productSkuId \|\| ''\)\.trim\(\);[\s\S]*this\.currentPurchase\.discountAssetsRefreshRevision = requestToken;[\s\S]*if \(clearCurrent\) \{[\s\S]*this\.currentPurchase\.availableDiscountAssets = \[\];[\s\S]*this\.currentPurchase\.claimableDiscounts = \[\];[\s\S]*if \(forceLoading \|\| clearCurrent \|\| !hasPrefilledItems\) \{[\s\S]*this\.currentPurchase\.discountAssetsLoading = true;[\s\S]*const isCurrentDiscountAssetsRequest = \(\) => \([\s\S]*String\(this\.currentPurchase\.productSkuId \|\| ''\)\.trim\(\) === requestProductSkuId[\s\S]*if \(!isCurrentDiscountAssetsRequest\(\)\) \{[\s\S]*return;[\s\S]*this\.currentPurchase\.availableDiscountAssets = Array\.isArray\(payload\?\.owned_discounts\) \? payload\.owned_discounts : \[\];/s,
+        'coupon-list refresh should ignore stale responses for an older SKU or quantity'
+    );
+    assert.match(
+        shopClientSource,
+        /updatePriceForQuantity: function \(qty, \{ refreshDiscountAssets = true \} = \{\}\)/,
+        'quantity pricing updates should allow SKU switching to avoid launching a duplicate stale coupon refresh'
     );
 });
 

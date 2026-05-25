@@ -3653,6 +3653,35 @@ function bindAdminStudioDelegatedControls() {
                     silentErrors: true
                 });
                 break;
+            case 'marketplace-run-xianyu-readiness':
+                runAdminStudioActionFeedback(actionEl, () => {
+                    window.runMarketplaceXianyuReadinessCheck?.();
+                    return true;
+                }, {
+                    loadingText: '自检中...',
+                    successText: '已检查',
+                    errorText: '自检失败',
+                    silentErrors: true
+                });
+                break;
+            case 'marketplace-refresh-xianyu-failures':
+                runAdminStudioActionFeedback(actionEl, () => window.loadMarketplaceXianyuRecoveryTasks?.({ force: true, throwOnError: true }), {
+                    loadingText: '刷新中...',
+                    successText: '已刷新',
+                    errorText: '刷新失败',
+                    silentErrors: true
+                });
+                break;
+            case 'marketplace-xianyu-delivery-action':
+                void window.performMarketplaceXianyuDeliveryAction?.(
+                    actionEl.dataset.deliveryTaskId,
+                    actionEl.dataset.deliveryTaskCommand,
+                    actionEl
+                );
+                break;
+            case 'marketplace-switch-xianyu-tab':
+                window.switchMarketplaceXianyuFulfillmentTab?.(actionEl.dataset.xianyuTab);
+                break;
             case 'marketplace-toggle-xianyu-enabled':
                 window.toggleMarketplaceXianyuEnabled?.();
                 break;
@@ -3677,8 +3706,24 @@ function bindAdminStudioDelegatedControls() {
             case 'marketplace-remove-product-mapping':
                 window.removeMarketplaceXianyuProductMapping?.(actionEl.dataset.mappingIndex);
                 break;
+            case 'marketplace-add-product-mapping-child':
+                window.addMarketplaceXianyuProductMappingChild?.(actionEl.dataset.mappingIndex);
+                break;
+            case 'marketplace-remove-product-mapping-child':
+                window.removeMarketplaceXianyuProductMappingChild?.(actionEl.dataset.mappingIndex);
+                break;
             case 'marketplace-toggle-product-mapping':
                 window.toggleMarketplaceXianyuProductMapping?.(actionEl.dataset.mappingIndex);
+                break;
+            case 'marketplace-toggle-product-mapping-collapse':
+                if (typeof window.handleMarketplaceXianyuProductMappingCollapseAction === 'function') {
+                    window.handleMarketplaceXianyuProductMappingCollapseAction(actionEl, event);
+                } else {
+                    window.toggleMarketplaceXianyuProductMappingCollapse?.(actionEl.dataset.mappingIndex, actionEl);
+                    event.preventDefault();
+                    event.stopPropagation();
+                    event.stopImmediatePropagation?.();
+                }
                 break;
             case 'marketplace-select-product-mapping':
                 window.selectMarketplaceProductMapping?.(

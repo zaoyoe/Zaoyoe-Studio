@@ -11,6 +11,7 @@ const {
 } = require('../../../../api/_lib/payments/shop-delivery-strategy');
 
 const SUMMARY_STATUSES = ['pending', 'processing', 'retry_waiting', 'requeued', 'dead_letter', 'delivered'];
+const SUMMARY_STATUS_SET = new Set(SUMMARY_STATUSES);
 const DEAD_LETTER_REASON_KEYS = new Set(['all', 'manual', 'missing_target', 'timeout', 'upstream_4xx', 'upstream_5xx', 'max_attempts', 'network_failure', 'conflict_strategy', 'unknown']);
 const LOCK_STATE_KEYS = new Set(['all', 'active', 'stale']);
 const CONFLICT_AUDIT_REASON_KEYS = new Set(['all', 'target_conflicts', 'target_max_inflight', 'target_min_interval', 'channel_conflicts', 'channel_max_inflight', 'channel_min_interval', 'manual_force_unlock', 'unknown_conflict']);
@@ -87,6 +88,10 @@ const ORDER_SELECT = `
     delivery_attempt_count,
     delivery_last_error,
     delivery_completed_at,
+    source_channel,
+    channel_account_key,
+    external_order_id,
+    external_order_snapshot,
     created_at,
     item_count,
     refund_status
@@ -151,6 +156,21 @@ function normalizeFilterValue(value, allowedValues = null, fallback = 'all') {
 function normalizeExactFilterValue(value) {
     const normalized = String(value || '').trim();
     return normalized || null;
+}
+
+function normalizeMarketplaceFilterValue(value) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized || normalized === 'all') return null;
+    return /^[a-z0-9_-]{1,80}$/.test(normalized) ? normalized : null;
+}
+
+function normalizeTaskStatusList(value) {
+    return unique(
+        String(value || '')
+            .split(',')
+            .map((item) => item.trim().toLowerCase())
+            .filter((item) => SUMMARY_STATUS_SET.has(item))
+    );
 }
 
 function normalizeTextFilterValue(value) {
@@ -642,6 +662,23 @@ function applyTaskIdentityFilter(taskQuery, taskIdentity = null) {
     return taskQuery;
 }
 
+function hasEmptyOrderFilter(orderFilter = null) {
+    return orderFilter?.active && !(orderFilter.order_ids || []).length;
+}
+
+function applyTaskOrderFilter(taskQuery, orderFilter = null) {
+    if (!orderFilter?.active) return taskQuery;
+    const orderIds = unique(orderFilter.order_ids || []);
+    if (!orderIds.length) return taskQuery;
+    return taskQuery.in('order_id', orderIds);
+}
+
+function matchesTaskOrderFilter(task = {}, orderFilter = null) {
+    if (!orderFilter?.active) return true;
+    const orderIds = orderFilter.order_id_set || new Set(orderFilter.order_ids || []);
+    return Boolean(task?.order_id && orderIds.has(task.order_id));
+}
+
 function matchesTaskIdentity(task = {}, taskIdentity = null) {
     if (!taskIdentity) return true;
     if (taskIdentity.task_id && String(task?.id || '').trim() !== String(taskIdentity.task_id || '').trim()) {
@@ -948,17 +985,24 @@ function applyTaskSearch(taskQuery, query) {
     ].join(','));
 }
 
-async function countTasksByStatus(supabase, status) {
-    const { count, error } = await supabase
+async function countTasksByStatus(supabase, status, orderFilter = null) {
+    if (hasEmptyOrderFilter(orderFilter)) return 0;
+
+    let query = supabase
         .from('shop_webhook_tasks')
         .select('*', { count: 'exact', head: true })
         .eq('status', status);
 
+    query = applyTaskOrderFilter(query, orderFilter);
+
+    const { count, error } = await query;
     if (error) throw error;
     return Number(count || 0);
 }
 
-async function countTasksByLockState(supabase, mode) {
+async function countTasksByLockState(supabase, mode, orderFilter = null) {
+    if (hasEmptyOrderFilter(orderFilter)) return 0;
+
     const nowIso = new Date().toISOString();
     let query = supabase
         .from('shop_webhook_tasks')
@@ -979,33 +1023,48 @@ async function countTasksByLockState(supabase, mode) {
         query = query.not('lock_token', 'is', null);
     }
 
+    query = applyTaskOrderFilter(query, orderFilter);
+
     const { count, error } = await query;
     if (error) throw error;
     return Number(count || 0);
 }
 
-async function countManualReplayTasks(supabase) {
-    const { count, error } = await supabase
+async function countManualReplayTasks(supabase, orderFilter = null) {
+    if (hasEmptyOrderFilter(orderFilter)) return 0;
+
+    let query = supabase
         .from('shop_webhook_tasks')
         .select('*', { count: 'exact', head: true })
         .gt('manual_replay_count', 0);
 
+    query = applyTaskOrderFilter(query, orderFilter);
+
+    const { count, error } = await query;
     if (error) throw error;
     return Number(count || 0);
 }
 
-async function countTasksWithConflicts(supabase) {
-    const { count, error } = await supabase
+async function countTasksWithConflicts(supabase, orderFilter = null) {
+    if (hasEmptyOrderFilter(orderFilter)) return 0;
+
+    let query = supabase
         .from('shop_webhook_tasks')
         .select('*', { count: 'exact', head: true })
         .gt('conflict_count', 0);
 
+    query = applyTaskOrderFilter(query, orderFilter);
+
+    const { count, error } = await query;
     if (error) throw error;
     return Number(count || 0);
 }
 
-async function fetchTaskPage({ supabase, page, pageSize, status, query, lockState = 'all', sortColumn = 'created_at', ascending = false, conflictBucket = null, taskIdentity = null }) {
-    if (conflictBucket?.active && !(conflictBucket.task_ids || []).length && !(conflictBucket.order_ids || []).length) {
+async function fetchTaskPage({ supabase, page, pageSize, status, query, lockState = 'all', sortColumn = 'created_at', ascending = false, conflictBucket = null, taskIdentity = null, orderFilter = null, statuses = [] }) {
+    if (
+        (conflictBucket?.active && !(conflictBucket.task_ids || []).length && !(conflictBucket.order_ids || []).length)
+        || hasEmptyOrderFilter(orderFilter)
+    ) {
         return {
             page,
             pageSize,
@@ -1023,11 +1082,15 @@ async function fetchTaskPage({ supabase, page, pageSize, status, query, lockStat
         .order(sortColumn, { ascending })
         .order('created_at', { ascending: false });
 
-    if (status && status !== 'all') {
+    const statusList = normalizeTaskStatusList(statuses);
+    if (statusList.length) {
+        taskQuery = taskQuery.in('status', statusList);
+    } else if (status && status !== 'all') {
         taskQuery = taskQuery.eq('status', status);
     }
 
     taskQuery = applyConflictBucketTaskQuery(taskQuery, conflictBucket);
+    taskQuery = applyTaskOrderFilter(taskQuery, orderFilter);
     taskQuery = applyTaskSearch(taskQuery, query);
     taskQuery = applyTaskIdentityFilter(taskQuery, taskIdentity);
     taskQuery = applyTaskLockStateFilter(taskQuery, lockState);
@@ -1043,8 +1106,11 @@ async function fetchTaskPage({ supabase, page, pageSize, status, query, lockStat
     };
 }
 
-async function fetchDeadLetterPage({ supabase, page, pageSize, reason, query, conflictBucket = null, taskIdentity = null }) {
-    if (conflictBucket?.active && !(conflictBucket.task_ids || []).length && !(conflictBucket.order_ids || []).length) {
+async function fetchDeadLetterPage({ supabase, page, pageSize, reason, query, conflictBucket = null, taskIdentity = null, orderFilter = null }) {
+    if (
+        (conflictBucket?.active && !(conflictBucket.task_ids || []).length && !(conflictBucket.order_ids || []).length)
+        || hasEmptyOrderFilter(orderFilter)
+    ) {
         return {
             ...paginateRows([], page, pageSize),
             allTasks: []
@@ -1063,6 +1129,7 @@ async function fetchDeadLetterPage({ supabase, page, pageSize, reason, query, co
 
         taskQuery = applyTaskSearch(taskQuery, query);
         taskQuery = applyTaskIdentityFilter(taskQuery, taskIdentity);
+        taskQuery = applyTaskOrderFilter(taskQuery, orderFilter);
         const { data, count, error } = await taskQuery.range(from, to);
         if (error) throw error;
 
@@ -1076,6 +1143,7 @@ async function fetchDeadLetterPage({ supabase, page, pageSize, reason, query, co
 
             summaryQuery = applyTaskSearch(summaryQuery, query);
             summaryQuery = applyTaskIdentityFilter(summaryQuery, taskIdentity);
+            summaryQuery = applyTaskOrderFilter(summaryQuery, orderFilter);
             return summaryQuery;
         }, 100, 20);
 
@@ -1097,6 +1165,7 @@ async function fetchDeadLetterPage({ supabase, page, pageSize, reason, query, co
             .order('created_at', { ascending: false });
 
         taskQuery = applyConflictBucketTaskQuery(taskQuery, conflictBucket);
+        taskQuery = applyTaskOrderFilter(taskQuery, orderFilter);
         taskQuery = applyTaskSearch(taskQuery, query);
         taskQuery = applyTaskIdentityFilter(taskQuery, taskIdentity);
         return taskQuery;
@@ -1106,6 +1175,7 @@ async function fetchDeadLetterPage({ supabase, page, pageSize, reason, query, co
         matchesDeadLetterReason(task, reason)
         && matchesConflictBucketTask(task, conflictBucket)
         && matchesTaskIdentity(task, taskIdentity)
+        && matchesTaskOrderFilter(task, orderFilter)
     ));
 
     let tasks = filtered;
@@ -1142,8 +1212,11 @@ async function fetchDeadLetterPage({ supabase, page, pageSize, reason, query, co
     };
 }
 
-async function fetchLockConflictPage({ supabase, page, pageSize, lockState, query, conflictBucket = null, taskIdentity = null }) {
-    if (conflictBucket?.active && !(conflictBucket.task_ids || []).length && !(conflictBucket.order_ids || []).length) {
+async function fetchLockConflictPage({ supabase, page, pageSize, lockState, query, conflictBucket = null, taskIdentity = null, orderFilter = null }) {
+    if (
+        (conflictBucket?.active && !(conflictBucket.task_ids || []).length && !(conflictBucket.order_ids || []).length)
+        || hasEmptyOrderFilter(orderFilter)
+    ) {
         return {
             ...paginateRows([], page, pageSize),
             allTasks: []
@@ -1160,6 +1233,7 @@ async function fetchLockConflictPage({ supabase, page, pageSize, lockState, quer
         .order('created_at', { ascending: false });
 
     taskQuery = applyConflictBucketTaskQuery(taskQuery, conflictBucket);
+    taskQuery = applyTaskOrderFilter(taskQuery, orderFilter);
     taskQuery = applyTaskSearch(taskQuery, query);
     taskQuery = applyTaskIdentityFilter(taskQuery, taskIdentity);
     taskQuery = applyTaskLockStateFilter(taskQuery, lockState);
@@ -1176,6 +1250,7 @@ async function fetchLockConflictPage({ supabase, page, pageSize, lockState, quer
             .order('created_at', { ascending: false });
 
         summaryQuery = applyConflictBucketTaskQuery(summaryQuery, conflictBucket);
+        summaryQuery = applyTaskOrderFilter(summaryQuery, orderFilter);
         summaryQuery = applyTaskSearch(summaryQuery, query);
         summaryQuery = applyTaskIdentityFilter(summaryQuery, taskIdentity);
         summaryQuery = applyTaskLockStateFilter(summaryQuery, lockState);
@@ -1235,8 +1310,11 @@ function compareReservationTasks(left = {}, right = {}) {
         - Number(new Date(left?.updated_at || left?.created_at || 0).getTime());
 }
 
-async function fetchReservationOverview({ supabase, limit = 8, query, conflictBucket = null, taskIdentity = null }) {
-    if (conflictBucket?.active && !(conflictBucket.task_ids || []).length && !(conflictBucket.order_ids || []).length) {
+async function fetchReservationOverview({ supabase, limit = 8, query, conflictBucket = null, taskIdentity = null, orderFilter = null }) {
+    if (
+        (conflictBucket?.active && !(conflictBucket.task_ids || []).length && !(conflictBucket.order_ids || []).length)
+        || hasEmptyOrderFilter(orderFilter)
+    ) {
         return {
             total: 0,
             tasks: [],
@@ -1254,12 +1332,14 @@ async function fetchReservationOverview({ supabase, limit = 8, query, conflictBu
 
         taskQuery = applyTaskSearch(taskQuery, query);
         taskQuery = applyTaskIdentityFilter(taskQuery, taskIdentity);
+        taskQuery = applyTaskOrderFilter(taskQuery, orderFilter);
         return taskQuery;
     });
 
     const sorted = [...(allTasks || [])]
         .filter((task) => matchesConflictBucketTask(task, conflictBucket))
         .filter((task) => matchesTaskIdentity(task, taskIdentity))
+        .filter((task) => matchesTaskOrderFilter(task, orderFilter))
         .sort(compareReservationTasks);
     return {
         total: sorted.length,
@@ -1352,6 +1432,41 @@ async function fetchOrdersByIds(supabase, orderIds = []) {
 
     if (error) throw error;
     return Object.fromEntries((data || []).map((order) => [order.id, order]));
+}
+
+async function buildMarketplaceOrderFilter({ supabase, sourceChannel = null, channelAccountKey = null, limit = 500 } = {}) {
+    const normalizedSourceChannel = normalizeMarketplaceFilterValue(sourceChannel);
+    const normalizedAccountKey = normalizeMarketplaceFilterValue(channelAccountKey);
+    if (!normalizedSourceChannel && !normalizedAccountKey) {
+        return null;
+    }
+
+    let query = supabase
+        .from('shop_orders')
+        .select('id, source_channel, channel_account_key')
+        .order('created_at', { ascending: false });
+
+    if (normalizedSourceChannel) {
+        query = query.eq('source_channel', normalizedSourceChannel);
+    }
+    if (normalizedAccountKey) {
+        query = query.eq('channel_account_key', normalizedAccountKey);
+    }
+
+    const cappedLimit = Math.max(1, Math.min(Number(limit || 500), 5000));
+    const { data, error } = await query.limit(cappedLimit);
+    if (error) throw error;
+
+    const orderIds = unique((Array.isArray(data) ? data : []).map((order) => order.id));
+    return {
+        active: true,
+        source_channel: normalizedSourceChannel || null,
+        channel_account_key: normalizedAccountKey || null,
+        order_ids: orderIds,
+        order_id_set: new Set(orderIds),
+        order_count: orderIds.length,
+        scan_limit: cappedLimit
+    };
 }
 
 async function fetchTaskAttempts(supabase, taskIds = []) {
@@ -1476,8 +1591,13 @@ module.exports = async (req, res) => {
         const page = parsePositiveInt(url.searchParams.get('page'), 1, 100000);
         const pageSize = parsePositiveInt(url.searchParams.get('pageSize'), 8, 50);
         const statusFilter = String(url.searchParams.get('status') || 'all').trim().toLowerCase();
+        const statusList = normalizeTaskStatusList(url.searchParams.get('statuses'));
         const query = String(url.searchParams.get('query') || '').trim();
         const lockState = normalizeFilterValue(url.searchParams.get('lockState'), LOCK_STATE_KEYS, 'all');
+        const sourceChannel = normalizeMarketplaceFilterValue(url.searchParams.get('sourceChannel'));
+        const channelAccountKey = normalizeMarketplaceFilterValue(url.searchParams.get('channelAccountKey'));
+        const marketplaceOrderLimit = parsePositiveInt(url.searchParams.get('marketplaceOrderLimit'), 500, 5000);
+        const compactMode = String(url.searchParams.get('compact') || '').trim().toLowerCase();
         const analyticsWindow = resolveAnalyticsWindow(url.searchParams.get('analyticsWindow'));
         const conflictBucketStartAt = normalizeIsoTimestamp(url.searchParams.get('conflictBucketStartAt'));
         const conflictBucketEndAt = normalizeIsoTimestamp(url.searchParams.get('conflictBucketEndAt'));
@@ -1502,6 +1622,63 @@ module.exports = async (req, res) => {
         const lockPageSize = parsePositiveInt(url.searchParams.get('lockPageSize'), 5, 20);
         const replayPage = parsePositiveInt(url.searchParams.get('replayPage'), 1, 100000);
         const replayPageSize = parsePositiveInt(url.searchParams.get('replayPageSize'), 5, 20);
+        const marketplaceOrderFilter = await buildMarketplaceOrderFilter({
+            supabase,
+            sourceChannel,
+            channelAccountKey,
+            limit: marketplaceOrderLimit
+        });
+
+        if (compactMode === 'marketplace_recovery') {
+            const mainPage = await fetchTaskPage({
+                supabase,
+                page,
+                pageSize,
+                status: statusFilter,
+                query,
+                lockState,
+                orderFilter: marketplaceOrderFilter,
+                statuses: statusList.length ? statusList : ['dead_letter', 'retry_waiting', 'requeued', 'processing']
+            });
+            const orderIds = unique(mainPage.tasks.map((task) => task.order_id));
+            const ordersById = await fetchOrdersByIds(supabase, orderIds);
+            const taskIdsForAttempts = unique(mainPage.tasks.map((task) => task.id));
+            const attemptsByTask = await fetchTaskAttempts(supabase, taskIdsForAttempts);
+            const tasks = enrichTasks(mainPage.tasks, ordersById, attemptsByTask);
+
+            const summaryCounts = await Promise.all(SUMMARY_STATUSES.map(async (status) => {
+                const taskCount = await countTasksByStatus(supabase, status, marketplaceOrderFilter);
+                return [status, taskCount];
+            }));
+            const summary = Object.fromEntries(summaryCounts);
+            summary.total = SUMMARY_STATUSES.reduce((acc, status) => acc + Number(summary[status] || 0), 0);
+            summary.retryable = Number(summary.pending || 0)
+                + Number(summary.processing || 0)
+                + Number(summary.retry_waiting || 0)
+                + Number(summary.requeued || 0);
+
+            return sendJson(res, 200, {
+                success: true,
+                page,
+                pageSize,
+                total: mainPage.total,
+                summary,
+                filters: {
+                    query,
+                    statuses: statusList,
+                    compact: compactMode,
+                    marketplace: marketplaceOrderFilter?.active
+                        ? {
+                            source_channel: marketplaceOrderFilter.source_channel,
+                            channel_account_key: marketplaceOrderFilter.channel_account_key,
+                            order_count: marketplaceOrderFilter.order_count,
+                            scan_limit: marketplaceOrderFilter.scan_limit
+                        }
+                        : null
+                },
+                tasks
+            });
+        }
 
         const [replayPageData, analyticsConflictRecords, latestConflictAuditData] = await Promise.all([
             fetchReplayLogs({
@@ -1551,7 +1728,9 @@ module.exports = async (req, res) => {
                 query,
                 lockState,
                 conflictBucket,
-                taskIdentity
+                taskIdentity,
+                orderFilter: marketplaceOrderFilter,
+                statuses: statusList
             }),
             fetchDeadLetterPage({
                 supabase,
@@ -1560,7 +1739,8 @@ module.exports = async (req, res) => {
                 reason: deadLetterReason,
                 query,
                 conflictBucket,
-                taskIdentity
+                taskIdentity,
+                orderFilter: marketplaceOrderFilter
             }),
             fetchLockConflictPage({
                 supabase,
@@ -1569,14 +1749,16 @@ module.exports = async (req, res) => {
                 lockState,
                 query,
                 conflictBucket,
-                taskIdentity
+                taskIdentity,
+                orderFilter: marketplaceOrderFilter
             }),
             fetchReservationOverview({
                 supabase,
                 limit: 8,
                 query,
                 conflictBucket,
-                taskIdentity
+                taskIdentity,
+                orderFilter: marketplaceOrderFilter
             })
         ]);
 
@@ -1701,17 +1883,17 @@ module.exports = async (req, res) => {
         });
 
         const summaryCounts = await Promise.all(SUMMARY_STATUSES.map(async (status) => {
-            const taskCount = await countTasksByStatus(supabase, status);
+            const taskCount = await countTasksByStatus(supabase, status, marketplaceOrderFilter);
             return [status, taskCount];
         }));
 
         const [activeLocks, staleLocks, manualReplays, conflictTasks] = await Promise.all([
-            countTasksByLockState(supabase, 'active'),
-            countTasksByLockState(supabase, 'stale'),
-            countManualReplayTasks(supabase),
-            countTasksWithConflicts(supabase)
+            countTasksByLockState(supabase, 'active', marketplaceOrderFilter),
+            countTasksByLockState(supabase, 'stale', marketplaceOrderFilter),
+            countManualReplayTasks(supabase, marketplaceOrderFilter),
+            countTasksWithConflicts(supabase, marketplaceOrderFilter)
         ]);
-        const missingLocks = await countTasksByLockState(supabase, 'missing');
+        const missingLocks = await countTasksByLockState(supabase, 'missing', marketplaceOrderFilter);
 
         const summary = Object.fromEntries(summaryCounts);
         summary.total = SUMMARY_STATUSES.reduce((acc, status) => acc + Number(summary[status] || 0), 0);
@@ -1752,6 +1934,15 @@ module.exports = async (req, res) => {
             summary,
             filters: {
                 query,
+                statuses: statusList,
+                marketplace: marketplaceOrderFilter?.active
+                    ? {
+                        source_channel: marketplaceOrderFilter.source_channel,
+                        channel_account_key: marketplaceOrderFilter.channel_account_key,
+                        order_count: marketplaceOrderFilter.order_count,
+                        scan_limit: marketplaceOrderFilter.scan_limit
+                    }
+                    : null,
                 analyticsWindow: analyticsWindow.key,
                 conflictBucket: conflictBucket?.active
                     ? {

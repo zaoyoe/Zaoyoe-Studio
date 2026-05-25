@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260518_MOBILE_PAY_FAST_CONFIRM_1';
+    const walletCssHref = 'css/wallet.css?v=20260525_WALLET_DISCOUNT_SKU_SCOPE_1';
     const WALLET_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.zaoyoe.com';
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_TTL_MS = 30000;
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_PREFIX = 'zaoyoe_payment_config_v2';
@@ -1939,10 +1939,14 @@
             const scopeType = String(asset?.scope_type || '').trim().toLowerCase();
             const category = String(asset?.scope_category || asset?.category || '').trim();
             const productName = this.getLocalizedProductNameFromPayload(asset?.scope_product || {}, '');
+            const skuName = this.getLocalizedDiscountSkuLabel(asset);
 
             if (scopeType === 'product') {
-                return productName
-                    ? this.tr('wallet.specificProduct', '指定商品 · {product}', { product: productName })
+                const productLabel = skuName && productName
+                    ? `${productName} / ${skuName}`
+                    : (skuName || productName);
+                return productLabel
+                    ? this.tr('wallet.specificProduct', '指定商品 · {product}', { product: productLabel })
                     : this.tr('wallet.specificProductOnly', '指定商品');
             }
             if (scopeType === 'category') {
@@ -1951,6 +1955,29 @@
                     : this.tr('wallet.categoryLimited', '指定分类');
             }
             return this.tr('wallet.allProducts', '全场可用');
+        },
+
+        getLocalizedDiscountSkuLabel(asset = {}) {
+            const sku = asset?.scope_product_sku && typeof asset.scope_product_sku === 'object'
+                ? asset.scope_product_sku
+                : null;
+            const displayName = String(
+                sku?.display_name
+                || sku?.sku_name
+                || sku?.sku_code
+                || asset?.scope_product_sku_name
+                || ''
+            ).trim();
+
+            if (displayName && (!this.isEnglishLanguage() || !this.containsCjkText(displayName))) {
+                return displayName;
+            }
+
+            if (sku?.id || asset?.scope_product_sku_id) {
+                return this.tr('wallet.specificSpec', '指定规格');
+            }
+
+            return '';
         },
 
         getLocalizedDiscountSourceLabel(asset = {}) {
@@ -2192,6 +2219,7 @@
                 case 'open-discount-assets-product': {
                     const assetId = this.decodeActionValue(actionEl.dataset.walletDiscountAssetId);
                     const productId = this.decodeActionValue(actionEl.dataset.walletProductId);
+                    const productSkuId = this.decodeActionValue(actionEl.dataset.walletProductSkuId);
                     const productCategory = this.decodeActionValue(actionEl.dataset.walletProductCategory);
                     const availableAssets = this.getDiscountAssetsListByTab('available');
                     const matchedAsset = availableAssets.find((asset) => String(asset?.asset_id || asset?.id || '').trim() === String(assetId || '').trim()) || null;
@@ -2206,6 +2234,9 @@
                     }
                     if (productCategory) {
                         query.set('category', productCategory);
+                    }
+                    if (productSkuId) {
+                        query.set('skuId', productSkuId);
                     }
                     this.close();
                     window.location.href = query.toString() ? `/shop.html?${query.toString()}` : '/shop.html';
@@ -2319,6 +2350,7 @@
         openShopProductFromWalletDetail(productId = '', detailOverlay = null) {
             const normalizedProductId = String(productId || '').trim();
             if (!normalizedProductId) return;
+            const productSkuId = String(detailOverlay?.dataset?.walletProductSkuId || '').trim();
 
             detailOverlay?.remove?.();
             this.close();
@@ -2329,12 +2361,16 @@
                 && typeof window.ShopClient.jumpToDiscountTargetProduct === 'function'
             ) {
                 void window.ShopClient.jumpToDiscountTargetProduct(normalizedProductId, {
-                    autoOpen: true
+                    autoOpen: true,
+                    productSkuId
                 });
                 return;
             }
 
-            window.location.href = `/shop.html?productId=${encodeURIComponent(normalizedProductId)}`;
+            const targetUrl = `/shop.html?productId=${encodeURIComponent(normalizedProductId)}`;
+            window.location.href = productSkuId
+                ? `${targetUrl}&skuId=${encodeURIComponent(productSkuId)}`
+                : targetUrl;
         },
 
         openPromptFromWalletDetail(promptId = '', detailOverlay = null) {
@@ -6131,6 +6167,7 @@
                         'wallet-action': 'open-discount-assets-product',
                         'wallet-discount-asset-id': this.encodeActionValue(asset.asset_id || asset.id || ''),
                         'wallet-product-id': this.encodeActionValue(scopeProduct.id),
+                        'wallet-product-sku-id': this.encodeActionValue(asset.scope_product_sku_id || asset.scope_product_sku?.id || ''),
                         'wallet-product-category': this.encodeActionValue(scopeProduct.category || '')
                     })
                 };
@@ -6160,11 +6197,14 @@
                 timestamp: Date.now(),
                 site: window.SiteConfig?.site || 'cn',
                 productId: normalizedProductId,
+                productSkuId: String(asset?.scope_product_sku_id || asset?.scope_product_sku?.id || '').trim() || null,
                 category: String(productCategory || asset?.scope_product?.category || '').trim() || null,
                 ownedDiscounts: [{
                     asset_id: asset.asset_id || asset.id || null,
                     discount_id: asset.discount_id || null,
                     code: asset.code || '',
+                    scope_product_sku_id: asset.scope_product_sku_id || asset.scope_product_sku?.id || null,
+                    scope_product_sku: asset.scope_product_sku || null,
                     benefit_label: asset.benefit_label || '',
                     discount_type: asset.discount_type || null,
                     discount_value: asset.discount_value ?? null,
@@ -6277,6 +6317,10 @@
                 ? asset.scope_product
                 : null;
             const scopeProductName = this.getLocalizedProductNameFromPayload(scopeProduct || {}, '');
+            const scopeSkuLabelRaw = this.getLocalizedDiscountSkuLabel(asset);
+            const scopeSkuLabel = scopeSkuLabelRaw
+                ? this.escapeHtml(scopeSkuLabelRaw)
+                : '';
             const scopeProductLabel = asset.scope_type === 'product'
                 ? this.escapeHtml(scopeProductName
                     ? (scopeProduct?.is_active === false
@@ -6317,6 +6361,7 @@
                         <div class="wallet-discount-assets-card-line-content">
                             <span>${this.tr('wallet.applicableProduct', '适用商品')}</span>
                             <strong>${scopeProductLabel}</strong>
+                            ${scopeSkuLabel ? `<small class="wallet-discount-assets-card-sku">${this.tr('wallet.applicableSpec', '适用规格')} · ${scopeSkuLabel}</small>` : ''}
                         </div>
                     </div>
                 `

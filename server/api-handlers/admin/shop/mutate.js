@@ -236,6 +236,52 @@ function normalizeProductSkuDrafts(value = []) {
     }));
 }
 
+function normalizeProductSkuCodeKey(value) {
+    return normalizeText(value, 80).toLowerCase();
+}
+
+function extractDuplicateProductSkuCode(error = {}) {
+    const text = [
+        error?.details,
+        error?.message,
+        error?.hint
+    ].filter(Boolean).join(' ');
+    const detailMatch = text.match(/Key\s*\([^)]*sku_code[^)]*\)=\([^,]+,\s*([^)]+)\)/i);
+    if (detailMatch?.[1]) {
+        return normalizeText(detailMatch[1].replace(/^"|"$/g, ''), 80);
+    }
+
+    return '';
+}
+
+function isDuplicateProductSkuCodeError(error = {}) {
+    const text = [
+        error?.code,
+        error?.message,
+        error?.details,
+        error?.hint
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    return text.includes('23505')
+        || text.includes('ux_shop_product_skus_product_code')
+        || text.includes('duplicate key value violates unique constraint');
+}
+
+function createDuplicateProductSkuCodeError(skuCode = '', sourceError = null) {
+    const normalizedCode = normalizeText(skuCode || extractDuplicateProductSkuCode(sourceError), 80);
+    const codeLabel = normalizedCode ? `「${normalizedCode}」` : '当前编码';
+    const error = Object.assign(
+        new Error(`商品规格编码重复：同一个商品下已存在编码 ${codeLabel}。请给每个规格设置唯一编码，或先把旧规格改成其它编码后再保存。`),
+        {
+            statusCode: 400,
+            code: 'shop_product_sku_code_duplicate',
+            details: sourceError?.details || '',
+            hint: sourceError?.hint || ''
+        }
+    );
+    return error;
+}
+
 async function ensureDefaultProductSku(supabase, product = {}) {
     const productId = normalizeText(product?.id, 160);
     if (!productId) {
@@ -339,23 +385,60 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
     const existingRowsByCode = new Map();
     existingRowList.forEach((row) => {
         const rowId = normalizeText(row?.id, 160);
-        const codeKey = normalizeText(row?.sku_code, 80).toLowerCase();
+        const codeKey = normalizeProductSkuCodeKey(row?.sku_code);
         if (rowId && codeKey && !existingRowsByCode.has(codeKey)) {
             existingRowsByCode.set(codeKey, row);
         }
     });
+    const matchedDrafts = normalizedDrafts.map((draft) => {
+        const draftId = normalizeText(draft.id, 160);
+        const draftCodeKey = normalizeProductSkuCodeKey(draft.sku_code);
+        const matchedExistingByCode = draftCodeKey ? existingRowsByCode.get(draftCodeKey) || null : null;
+        const resolvedExistingId = draftId && existingIds.has(draftId)
+            ? draftId
+            : normalizeText(matchedExistingByCode?.id, 160);
+
+        return {
+            draft,
+            draftCodeKey,
+            resolvedExistingId
+        };
+    });
+    const desiredCodeTargets = new Map();
+    for (const entry of matchedDrafts) {
+        if (!entry.draftCodeKey) continue;
+        const previousTarget = desiredCodeTargets.get(entry.draftCodeKey);
+        if (previousTarget && previousTarget !== entry.resolvedExistingId) {
+            throw createDuplicateProductSkuCodeError(entry.draft.sku_code);
+        }
+        desiredCodeTargets.set(entry.draftCodeKey, entry.resolvedExistingId);
+    }
+
+    for (const [codeKey, targetId] of desiredCodeTargets.entries()) {
+        const existingOwner = existingRowsByCode.get(codeKey) || null;
+        const existingOwnerId = normalizeText(existingOwner?.id, 160);
+        if (!existingOwnerId || existingOwnerId === targetId) {
+            continue;
+        }
+
+        const { error: releaseCodeError } = await supabase
+            .from('shop_product_skus')
+            .update({ sku_code: null })
+            .eq('id', existingOwnerId);
+
+        if (releaseCodeError) {
+            if (isDuplicateProductSkuCodeError(releaseCodeError)) {
+                throw createDuplicateProductSkuCodeError(existingOwner?.sku_code, releaseCodeError);
+            }
+            throw releaseCodeError;
+        }
+    }
+
     const retainedIds = new Set();
     const savedRows = [];
     let defaultSkuId = '';
 
-    for (const draft of normalizedDrafts) {
-        const draftCodeKey = normalizeText(draft.sku_code, 80).toLowerCase();
-        const matchedExistingByCode = draft.id && existingIds.has(draft.id)
-            ? null
-            : (draftCodeKey ? existingRowsByCode.get(draftCodeKey) || null : null);
-        const resolvedExistingId = draft.id && existingIds.has(draft.id)
-            ? draft.id
-            : normalizeText(matchedExistingByCode?.id, 160);
+    for (const { draft, resolvedExistingId } of matchedDrafts) {
         const basePayload = {
             product_id: productId,
             sku_code: draft.sku_code,
@@ -373,7 +456,8 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
         const query = hasExistingId
             ? supabase
                 .from('shop_product_skus')
-                .upsert({ ...basePayload, id: resolvedExistingId }, { onConflict: 'id' })
+                .update(basePayload)
+                .eq('id', resolvedExistingId)
             : supabase
                 .from('shop_product_skus')
                 .insert(basePayload);
@@ -383,6 +467,9 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
             .limit(1);
 
         if (error) {
+            if (isDuplicateProductSkuCodeError(error)) {
+                throw createDuplicateProductSkuCodeError(draft.sku_code, error);
+            }
             throw error;
         }
 
@@ -434,7 +521,7 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
             throw countError;
         }
 
-        const updatePayload = { is_active: false, is_default: false };
+        const updatePayload = { is_active: false, is_default: false, sku_code: null };
         const { error: updateError } = await supabase
             .from('shop_product_skus')
             .update(updatePayload)
