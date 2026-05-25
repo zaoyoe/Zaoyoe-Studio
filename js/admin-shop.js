@@ -7068,6 +7068,17 @@ Example output format:
     },
 
     getFriendlySaveErrorMessage: function (err) {
+        const rawErrorText = `${err?.code || ''} ${err?.message || ''} ${err?.details || ''} ${err?.hint || ''}`.toLowerCase();
+        if (
+            err?.code === 'shop_product_sku_code_duplicate'
+            || rawErrorText.includes('ux_shop_product_skus_product_code')
+            || rawErrorText.includes('duplicate key value violates unique constraint')
+        ) {
+            return err?.message && err.message !== '管理员接口调用失败'
+                ? err.message
+                : '商品规格编码重复：同一个商品下每个规格的编码必须唯一，请修改重复编码后再保存。';
+        }
+
         if (this.isProductGuidanceBilingualSchemaError(err)) {
             return '保存失败：当前 Supabase 数据库还没有“注意事项 / 使用说明”的双语字段。请先执行 `supabase/migrations/20260430_add_bilingual_shop_guidance.sql`，再保存商品。';
         }

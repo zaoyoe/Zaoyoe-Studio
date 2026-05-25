@@ -137,6 +137,91 @@ function resolveDeliveryContent(responseBody = {}) {
     );
 }
 
+function parseTimestampMs(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (value instanceof Date) {
+        const time = value.getTime();
+        return Number.isFinite(time) ? time : null;
+    }
+
+    if (typeof value === 'number' || /^\d+(\.\d+)?$/.test(String(value).trim())) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric) || numeric <= 0) return null;
+        return numeric < 10_000_000_000 ? Math.round(numeric * 1000) : Math.round(numeric);
+    }
+
+    const parsed = Date.parse(String(value));
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function resolveOrderPaidAtMs(order = {}) {
+    return parseTimestampMs(
+        order.paid_at
+        || order.paidAt
+        || order.pay_time
+        || order.payTime
+        || order.payment_time
+        || order.paymentTime
+        || order.pay_success_at
+        || order.paySuccessAt
+        || order.gmt_pay
+        || order.gmtPay
+        || order.raw?.paid_at
+        || order.raw?.paidAt
+        || order.raw?.pay_time
+        || order.raw?.payTime
+        || order.raw?.payment_time
+        || order.raw?.paymentTime
+        || order.raw?.pay_success_at
+        || order.raw?.paySuccessAt
+        || order.raw?.gmt_pay
+        || order.raw?.gmtPay
+    );
+}
+
+function callNow(now = () => Date.now()) {
+    const value = Number(now());
+    return Number.isFinite(value) ? Math.round(value) : Date.now();
+}
+
+function elapsedMs(startedAt, endedAt) {
+    if (!Number.isFinite(startedAt) || !Number.isFinite(endedAt)) return undefined;
+    return Math.max(0, Math.round(endedAt - startedAt));
+}
+
+function compactTimingMs(timing = {}) {
+    return Object.fromEntries(Object.entries(timing).filter(([, value]) => Number.isFinite(value)));
+}
+
+function createBridgeDiagnosticEmitter(env = process.env, diagnosticLogger = null) {
+    const enabled = normalizeBoolean(
+        env.XIANYU_BRIDGE_DIAGNOSTICS
+        || env.XIANYU_BRIDGE_TIMING_LOGS
+        || env.XIANYU_BRIDGE_DEBUG_TIMING,
+        false
+    ) || typeof diagnosticLogger === 'function';
+
+    return function emitBridgeDiagnostic(event, payload = {}) {
+        if (!enabled) return;
+
+        const record = {
+            event,
+            at: new Date().toISOString(),
+            ...payload
+        };
+
+        try {
+            if (typeof diagnosticLogger === 'function') {
+                diagnosticLogger(record);
+                return;
+            }
+            process.stderr.write(`[xianyu-bridge] ${JSON.stringify(record)}\n`);
+        } catch (_) {
+            // Diagnostics should never block delivery.
+        }
+    };
+}
+
 function resolveHeaderToken(env = {}, prefix = 'XIANYU_BOT') {
     return sanitizeText(
         env[`${prefix}_TOKEN`]
@@ -468,8 +553,12 @@ async function runBridgeWorker({
     env = process.env,
     fetchImpl = globalThis.fetch,
     loadOrders = loadPaidOrdersFromXianyuBot,
-    sendChat = sendDeliveryToXianyuChat
+    sendChat = sendDeliveryToXianyuChat,
+    diagnosticLogger = null,
+    now = () => Date.now()
 } = {}) {
+    const workerStartedAt = callNow(now);
+    const emitDiagnostic = createBridgeDiagnosticEmitter(env, diagnosticLogger);
     const baseUrl = env.XIANYU_BRIDGE_BASE_URL || env.MARKETPLACE_WEBSITE_BASE_URL || 'https://www.zaoyoe.com';
     const accountKey = env.XIANYU_BRIDGE_ACCOUNT || 'main';
     const marketplaceConfig = await loadBridgeMarketplaceConfig(env, {
@@ -479,21 +568,47 @@ async function runBridgeWorker({
     const ingestToken = marketplaceConfig.ingest_token || env.XIANYU_BRIDGE_INGEST_TOKEN || env.XIANYU_MARKETPLACE_INGEST_TOKEN || '';
     const processedFile = sanitizeText(env.XIANYU_BRIDGE_PROCESSED_FILE, 1000);
     const processedOrderIds = await loadProcessedOrderIds(processedFile);
+    const loadOrdersStartedAt = callNow(now);
     const orders = await loadOrders(env, { fetchImpl });
+    const loadOrdersEndedAt = callNow(now);
     const results = [];
 
     for (const order of orders) {
+        const orderStartedAt = callNow(now);
         const orderId = resolveOrderId(order);
+        const paidAtMs = resolveOrderPaidAtMs(order);
+        const initialTiming = compactTimingMs({
+            order_paid_age_ms: paidAtMs ? elapsedMs(paidAtMs, orderStartedAt) : undefined,
+            load_orders_ms: elapsedMs(loadOrdersStartedAt, loadOrdersEndedAt),
+            queue_wait_ms: elapsedMs(loadOrdersEndedAt, orderStartedAt)
+        });
+
         if (orderId && processedOrderIds.has(orderId)) {
+            const finishedAt = callNow(now);
+            const timing_ms = compactTimingMs({
+                ...initialTiming,
+                total_ms: elapsedMs(orderStartedAt, finishedAt)
+            });
             results.push({
                 status: 'skipped',
                 reason: 'already_processed',
-                external_order_id: orderId
+                external_order_id: orderId,
+                timing_ms
+            });
+            emitDiagnostic('order_skipped', {
+                external_order_id: orderId,
+                reason: 'already_processed',
+                timing_ms
             });
             continue;
         }
 
+        let websiteStartedAt;
+        let websiteEndedAt;
+        let chatStartedAt;
+        let chatEndedAt;
         try {
+            websiteStartedAt = callNow(now);
             const submitted = await postXianyuOrder({
                 baseUrl,
                 accountKey,
@@ -502,25 +617,50 @@ async function runBridgeWorker({
                 order,
                 fetchImpl
             });
+            websiteEndedAt = callNow(now);
             const body = submitted.body || {};
             const normalizedOrderId = body.normalized_order?.external_order_id || body.request?.external_order_id || orderId;
             const content = resolveDeliveryContent(body);
 
             if (body.skipped) {
+                const finishedAt = callNow(now);
+                const timing_ms = compactTimingMs({
+                    ...initialTiming,
+                    website_ms: elapsedMs(websiteStartedAt, websiteEndedAt),
+                    total_ms: elapsedMs(orderStartedAt, finishedAt)
+                });
                 results.push({
                     status: 'skipped',
                     reason: body.reason || 'remote_skipped',
-                    external_order_id: normalizedOrderId
+                    external_order_id: normalizedOrderId,
+                    timing_ms
+                });
+                emitDiagnostic('order_skipped', {
+                    external_order_id: normalizedOrderId,
+                    reason: body.reason || 'remote_skipped',
+                    timing_ms
                 });
                 continue;
             }
 
             if (body.duplicate === true && !content) {
                 if (normalizedOrderId) processedOrderIds.add(normalizedOrderId);
+                const finishedAt = callNow(now);
+                const timing_ms = compactTimingMs({
+                    ...initialTiming,
+                    website_ms: elapsedMs(websiteStartedAt, websiteEndedAt),
+                    total_ms: elapsedMs(orderStartedAt, finishedAt)
+                });
                 results.push({
                     status: 'skipped',
                     reason: 'duplicate_order',
-                    external_order_id: normalizedOrderId
+                    external_order_id: normalizedOrderId,
+                    timing_ms
+                });
+                emitDiagnostic('order_skipped', {
+                    external_order_id: normalizedOrderId,
+                    reason: 'duplicate_order',
+                    timing_ms
                 });
                 continue;
             }
@@ -531,6 +671,7 @@ async function runBridgeWorker({
                 });
             }
 
+            chatStartedAt = callNow(now);
             const chatResult = await sendChat({
                 order,
                 content,
@@ -538,31 +679,71 @@ async function runBridgeWorker({
                 env,
                 fetchImpl
             });
+            chatEndedAt = callNow(now);
             if (normalizedOrderId) processedOrderIds.add(normalizedOrderId);
-            results.push({
+            const finishedAt = callNow(now);
+            const timing_ms = compactTimingMs({
+                ...initialTiming,
+                website_ms: elapsedMs(websiteStartedAt, websiteEndedAt),
+                chat_send_ms: elapsedMs(chatStartedAt, chatEndedAt),
+                total_ms: elapsedMs(orderStartedAt, finishedAt)
+            });
+            const chatAttempts = Number(chatResult?.attempts);
+            const deliveredEntry = {
                 status: 'delivered',
                 external_order_id: normalizedOrderId,
-                chat_status: chatResult?.status || 'sent'
-            });
+                chat_status: chatResult?.status || 'sent',
+                timing_ms
+            };
+            const deliveredDiagnostic = {
+                external_order_id: normalizedOrderId,
+                chat_status: chatResult?.status || 'sent',
+                timing_ms
+            };
+            if (Number.isFinite(chatAttempts)) {
+                deliveredEntry.chat_attempts = chatAttempts;
+                deliveredDiagnostic.chat_attempts = chatAttempts;
+            }
+            results.push(deliveredEntry);
+            emitDiagnostic('order_delivered', deliveredDiagnostic);
         } catch (error) {
+            const failedAt = callNow(now);
+            const timing_ms = compactTimingMs({
+                ...initialTiming,
+                website_ms: elapsedMs(websiteStartedAt, websiteEndedAt || failedAt),
+                chat_send_ms: elapsedMs(chatStartedAt, chatEndedAt || failedAt),
+                total_ms: elapsedMs(orderStartedAt, failedAt)
+            });
             results.push({
                 status: 'failed',
                 external_order_id: orderId,
                 code: error?.code || 'xianyu_bridge_failed',
                 message: error?.message || 'Xianyu bridge failed',
                 status_code: error?.statusCode,
-                response: error?.response
+                response: error?.response,
+                timing_ms
+            });
+            emitDiagnostic('order_failed', {
+                external_order_id: orderId,
+                code: error?.code || 'xianyu_bridge_failed',
+                message: error?.message || 'Xianyu bridge failed',
+                timing_ms
             });
         }
     }
 
     await saveProcessedOrderIds(processedFile, processedOrderIds);
+    const workerFinishedAt = callNow(now);
 
     return {
         total: orders.length,
         delivered: results.filter((entry) => entry.status === 'delivered').length,
         skipped: results.filter((entry) => entry.status === 'skipped').length,
         failed: results.filter((entry) => entry.status === 'failed').length,
+        timing_ms: compactTimingMs({
+            load_orders_ms: elapsedMs(loadOrdersStartedAt, loadOrdersEndedAt),
+            total_ms: elapsedMs(workerStartedAt, workerFinishedAt)
+        }),
         results
     };
 }

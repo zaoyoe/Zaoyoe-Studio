@@ -124,6 +124,15 @@ npm run marketplace:xianyu:bridge -- \
   --interval-ms 30000
 ```
 
+如果希望更快发现闲鱼已付款订单，可以把 `--interval-ms` 调到 `5000` 到 `10000`。例如：
+
+```bash
+npm run marketplace:xianyu:bridge -- \
+  --env-file server/.env.xianyu-bridge \
+  --loop \
+  --interval-ms 5000
+```
+
 环境变量写法：
 
 ```bash
@@ -135,6 +144,19 @@ XIANYU_BOT_SEND_MESSAGE_URL=http://127.0.0.1:19090/chat/send
 XIANYU_BOT_TOKEN=闲鱼自动化项目自己的访问 Token
 XIANYU_BRIDGE_PROCESSED_FILE=.cache/xianyu-main-processed-orders.json
 ```
+
+排查“付款后多久才发货”时，可以临时开启诊断日志：
+
+```bash
+XIANYU_BRIDGE_DIAGNOSTICS=1
+```
+
+开启后，bridge worker 会在每笔订单完成、跳过或失败时输出分段耗时：
+
+- `order_paid_age_ms`：闲鱼付款时间到 bridge worker 开始处理的时间。如果这里很大，通常是闲鱼订单同步或 bridge 轮询慢。
+- `website_ms`：bridge worker 调用网站创建发货订单的耗时。如果这里很大，通常是网站接口、库存匹配或数据库慢。
+- `chat_send_ms`：把发货内容发回闲鱼聊天框的耗时。如果这里很大，通常是闲鱼聊天自动化端连接、WebSocket 或重试慢。
+- `total_ms`：这笔订单在 bridge worker 内部的总处理时间。
 
 多账号时，不需要改代码。给每个闲鱼账号准备一份不同的 `XIANYU_BRIDGE_ACCOUNT`、`XIANYU_BRIDGE_INGEST_TOKEN`、`XIANYU_BRIDGE_PROCESSED_FILE`，分别启动一个 worker 即可。
 

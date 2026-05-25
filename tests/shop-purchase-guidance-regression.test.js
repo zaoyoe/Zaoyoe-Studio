@@ -29,7 +29,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /const initialQuantity = Math\.max\(1, Math\.min\(quantityCap[\s\S]*?void this\.prefetchDiscountAssetsForProduct\(\{\s+productId,\s+quantity: initialQuantity,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);\s+this\.openPurchaseModal\(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, \{\s+category: productCategory,\s+sourceContext,\s+initialQuantity,\s+productSkuId: options\?\.productSkuId \|\| options\?\.skuId \|\| ''\s+\}\);\s+void this\.refreshCurrentPurchaseGuidance\(productId\);\s+void this\.syncPurchaseAccessAfterOpen\(productId, quantityCap\);/s,
+        /const initialQuantity = Math\.max\(1, Math\.min\(quantityCap[\s\S]*?void this\.prefetchDiscountAssetsForProduct\(\{\s+productId,\s+productSkuId: options\?\.productSkuId \|\| options\?\.skuId \|\| '',\s+quantity: initialQuantity,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);\s+this\.openPurchaseModal\(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, \{\s+category: productCategory,\s+sourceContext,\s+initialQuantity,\s+productSkuId: options\?\.productSkuId \|\| options\?\.skuId \|\| ''\s+\}\);\s+void this\.refreshCurrentPurchaseGuidance\(productId\);\s+void this\.syncPurchaseAccessAfterOpen\(productId, quantityCap\);/s,
         'shop purchase clicks should prefetch discount assets, open the modal immediately, refresh the latest product guidance, and sync purchase access in the background'
     );
     assert.doesNotMatch(
@@ -395,6 +395,16 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         /const shouldWaitForLiveAvailableItems = discountAssetsLoading[\s\S]*currentlyUnavailableItems\.length > 0;[\s\S]*if \(\(\!ownedItems\.length && !claimableItems\.length\) \|\| shouldWaitForLiveAvailableItems\) \{\s+container\.innerHTML = discountAssetsLoading\s+\? `<div class="shop-discount-assets-empty">\$\{this\.trShop\('syncingCurrentCoupons', '正在同步当前商品可用卡券\.\.\.'\)\}<\/div>`[\s\S]*: `<div class="shop-discount-assets-empty">\$\{this\.trShop\('noSelectableCoupons', '当前没有可直接选择的卡券，仍可继续输入暗码。'\)\}<\/div>`;/s,
         'purchase modal should keep the localized unified loading state while only stale unavailable coupon prefills are present'
     );
+    assert.match(
+        shopClientSource,
+        /selectPurchaseSku: function \(skuId = ''\) \{[\s\S]*const cachedDiscountAssetsPayload = this\.readDiscountAssetsCache\(this\.buildCurrentPurchaseDiscountAssetsCacheKey\(\)\);[\s\S]*this\.currentPurchase\.discountAssetsLoading = false;[\s\S]*\} else \{[\s\S]*this\.currentPurchase\.discountAssetsLoading = true;[\s\S]*void this\.refreshPurchaseDiscountAssets\(\{ silent: true, forceLoading: true, clearCurrent: true \}\);/s,
+        'switching specs should reuse loaded coupon cards when available and only show loading for unknown specs'
+    );
+    assert.match(
+        shopClientSource,
+        /const requestProductSkuId = String\(this\.currentPurchase\.productSkuId \|\| ''\)\.trim\(\);[\s\S]*const isCurrentDiscountAssetsRequest = \(\) => \([\s\S]*String\(this\.currentPurchase\.productSkuId \|\| ''\)\.trim\(\) === requestProductSkuId[\s\S]*if \(!isCurrentDiscountAssetsRequest\(\)\) \{\s+return;\s+\}/s,
+        'coupon refreshes should guard against slower responses from a previously selected spec'
+    );
     assert.doesNotMatch(
         shopHtmlSource,
         /shopCartCloseBtn|shopCartDrawerBody|先继续逛商品，再统一结算。/,
@@ -422,7 +432,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /openPurchaseModalFromCartEntry: function \(entry\) \{[\s\S]*void this\.prefetchDiscountAssetsForProduct\(\{\s+productId: entry\.productId,\s+quantity: entry\.quantity,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);[\s\S]*this\.openPurchaseModal\(/s,
+        /openPurchaseModalFromCartEntry: function \(entry\) \{[\s\S]*void this\.prefetchDiscountAssetsForProduct\(\{\s+productId: entry\.productId,\s+productSkuId: entry\.productSkuId \|\| '',\s+quantity: entry\.quantity,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);[\s\S]*this\.openPurchaseModal\(/s,
         'cart re-entry should prefetch matching quantity coupon data before reopening the product modal'
     );
     assert.match(

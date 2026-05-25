@@ -1996,6 +1996,14 @@ body.wallet-modal-lock {
     overflow-wrap: anywhere;
 }
 
+.wallet-discount-assets-card-sku {
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+}
+
 .wallet-discount-assets-card-note {
     padding: 12px 14px;
     border-radius: 14px;
@@ -7155,6 +7163,7 @@ html:not([data-theme="dark"]) .wallet-recharge-method-btn--usdt:hover:not(:disab
 [data-theme="light"] .wallet-discount-assets-summary-card strong,
 [data-theme="light"] .wallet-discount-assets-section-title,
 [data-theme="light"] .wallet-discount-assets-card-line strong,
+[data-theme="light"] .wallet-discount-assets-card-sku,
 [data-theme="light"] .wallet-discount-assets-card-benefit-side,
 [data-theme="light"] .wallet-discount-assets-card-benefit-side--plain,
 [data-theme="light"] .wallet-discount-assets-card-benefit-side--fixed,

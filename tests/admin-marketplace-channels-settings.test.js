@@ -204,6 +204,79 @@ test('marketplace channel helpers keep website and xianyu defaults and build nam
     );
 });
 
+test('marketplace channel helpers validate xianyu readiness before go-live', async () => {
+    const helpers = require('../api/_lib/marketplace-channels');
+    const readyConfig = helpers.normalizeMarketplaceChannelsConfig({
+        enabled: true,
+        channels: [
+            {
+                key: 'xianyu',
+                type: 'xianyu',
+                enabled: true,
+                inventory_mode: 'shared',
+                delivery_mode: 'auto',
+                default_account_key: 'main',
+                accounts: [
+                    {
+                        key: 'main',
+                        label: '主号',
+                        enabled: true,
+                        secret_names: ['ingest_token']
+                    }
+                ],
+                product_mappings: [
+                    {
+                        label: '闲鱼 GPT',
+                        xianyu_item_id: 'xy-item-ready',
+                        product_id: '11111111-1111-4111-8111-111111111111'
+                    }
+                ]
+            }
+        ]
+    });
+    const readySecretStatus = {
+        marketplace__xianyu__main__ingest_token: {
+            configured: true
+        }
+    };
+    const ready = helpers.validateXianyuMarketplaceReadiness(readyConfig, readySecretStatus);
+    assert.equal(ready.status, 'ok');
+    assert.equal(ready.items.some((item) => item.code === 'xianyu_ready'), true);
+
+    const broken = helpers.validateXianyuMarketplaceReadiness({
+        enabled: true,
+        channels: [
+            {
+                key: 'xianyu',
+                type: 'xianyu',
+                enabled: true,
+                accounts: [
+                    {
+                        key: 'main',
+                        label: '主号',
+                        enabled: true,
+                        secret_names: ['ingest_token']
+                    }
+                ],
+                product_mappings: [
+                    {
+                        label: '空映射',
+                        xianyu_item_id: 'xy-item-broken',
+                        product_id: ''
+                    }
+                ]
+            }
+        ]
+    }, {
+        marketplace__xianyu__main__ingest_token: {
+            configured: false
+        }
+    });
+    assert.equal(broken.status, 'error');
+    assert.equal(broken.items.some((item) => item.code === 'xianyu_ingest_token_missing'), true);
+    assert.equal(broken.items.some((item) => item.code === 'xianyu_mapping_product_missing'), true);
+});
+
 test('marketplace channel settings persist registry and secrets through admin handler', async () => {
     const state = {
         auditLogs: [],
@@ -279,6 +352,7 @@ test('marketplace channel settings persist registry and secrets through admin ha
         assert.equal(getRes.statusCode, 200);
         assert.equal(getPayload.success, true);
         assert.equal(getPayload.summary.channel_count >= 2, true);
+        assert.equal(['ok', 'warning', 'error'].includes(getPayload.readiness.xianyu.status), true);
         assert.equal(getPayload.manifest.some((entry) => entry.secret_key === 'marketplace__xianyu__main__session_cookie'), true);
         assert.equal(getPayload.manifest.some((entry) => entry.secret_key === 'marketplace__xianyu__main__ingest_token'), true);
 
@@ -332,6 +406,7 @@ test('marketplace channel settings persist registry and secrets through admin ha
         const postPayload = postRes.json();
         assert.equal(postRes.statusCode, 200);
         assert.equal(postPayload.success, true);
+        assert.equal(postPayload.readiness.xianyu.status, 'ok');
         assert.equal(postPayload.saved_secret_keys.length, 3);
         const savedXianyuChannel = postPayload.config.channels.find((channel) => channel.key === 'xianyu');
         assert.equal(savedXianyuChannel.product_mappings.length, 1);

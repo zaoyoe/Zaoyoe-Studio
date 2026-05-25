@@ -117,18 +117,28 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
     );
     assert.match(
         shopStyles,
-        /#shopPurchaseModal\.active \.modal-content>\.shop-purchase-stage,[\s\S]*#shopPurchaseModal\.active \.shop-purchase-config-panel>\.shop-purchase-stage,[\s\S]*#shopPurchaseModal\.active \.shop-purchase-dock>\.shop-purchase-stage \{[\s\S]*animation: shopPurchaseStaggeredRise 0\.52s cubic-bezier\(0\.25, 0\.46, 0\.45, 0\.94\) backwards;/,
-        'purchase modal stages should use the same staggered rise style as the profile modal instead of relying on direct-child-only transitions'
+        /#shopPurchaseModal:not\(\.active\) \.modal-content>\.shop-purchase-stage,[\s\S]*transform: translate3d\(0, 14px, 0\) !important;[\s\S]*#shopPurchaseModal \.modal-content>\.shop-purchase-stage--opening-stagger,[\s\S]*transform: translate3d\(0, 14px, 0\);[\s\S]*#shopPurchaseModal \.shop-purchase-stage--opening-stagger \.shop-sku-option--pill,[\s\S]*transform: translate3d\(0, 0, 0\);[\s\S]*#shopPurchaseModal\.active \.modal-content>\.shop-purchase-stage--opening-stagger,[\s\S]*#shopPurchaseModal\.active \.shop-purchase-dock>\.shop-purchase-stage--opening-stagger \{[\s\S]*animation: shopPurchaseStaggeredRise 0\.42s cubic-bezier\(0\.22, 1, 0\.36, 1\) both;/,
+        'purchase modal should prepare the product title and content at the same rise origin before the active frame'
     );
     assert.match(
         shopStyles,
-        /@keyframes shopPurchaseStaggeredRise \{[\s\S]*from \{[\s\S]*opacity: 0;[\s\S]*transform: translateY\(30px\);[\s\S]*to \{[\s\S]*opacity: 1;[\s\S]*transform: translateY\(0\);/,
+        /#shopPurchaseModal\.active \.shop-purchase-stage--opening-stagger \.shop-sku-selector__header \{[\s\S]*animation: shopPurchaseStaggeredRise 0\.42s cubic-bezier\(0\.22, 1, 0\.36, 1\) both;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage--opening-stagger \.shop-sku-option--pill,[\s\S]*animation: shopPurchaseSkuTagFadeIn 0\.3s cubic-bezier\(0\.22, 1, 0\.36, 1\) both;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage--opening-stagger \.shop-sku-option--pill\.is-disabled,[\s\S]*animation-name: shopPurchaseSkuDisabledFadeIn;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage-sku\.shop-purchase-stage--opening-stagger \{[\s\S]*animation: none;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage--opening-stagger \.shop-sku-option--pill:nth-of-type\(1\)[\s\S]*animation-delay: 0\.14s !important;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage--opening-stagger \.shop-sku-option--pill:nth-of-type\(2\)[\s\S]*animation-delay: 0\.18s !important;/,
+        'purchase modal should stagger SKU tags with opacity only and keep disabled tags gray during opening'
+    );
+    assert.match(
+        shopStyles,
+        /@keyframes shopPurchaseStaggeredRise \{[\s\S]*from \{[\s\S]*opacity: 0;[\s\S]*transform: translate3d\(0, 14px, 0\);[\s\S]*to \{[\s\S]*opacity: 1;[\s\S]*transform: translate3d\(0, 0, 0\);/,
         'purchase modal should keep a named rise keyframe for the staggered entrance'
     );
     assert.match(
         shopStyles,
-        /#shopPurchaseModal\.active \.shop-purchase-stage-sku \{[\s\S]*animation-delay: 0\.15s !important;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage-quantity \{[\s\S]*animation-delay: 0\.18s !important;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage-notes \{[\s\S]*animation-delay: 0\.21s !important;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage-summary \{[\s\S]*animation-delay: 0\.24s !important;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage-discount \{[\s\S]*animation-delay: 0\.3s !important;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage-action \{[\s\S]*animation-delay: 0\.35s !important;/,
-        'purchase modal should keep a compact stagger order across the left configuration pane and checkout dock'
+        /@keyframes shopPurchaseSkuTagFadeIn \{[\s\S]*to \{[\s\S]*opacity: 1;[\s\S]*@keyframes shopPurchaseSkuDisabledFadeIn \{[\s\S]*to \{[\s\S]*opacity: 0\.42;/,
+        'SKU opening animations should keep unavailable specs in their disabled opacity instead of flashing active text'
+    );
+    assert.match(
+        shopStyles,
+        /#shopPurchaseModal\.active \.shop-purchase-stage-header \{[\s\S]*animation-delay: 0s !important;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage-sku \{[\s\S]*animation-delay: 0\.08s !important;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage-quantity \{[\s\S]*animation-delay: 0\.2s !important;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage-notes \{[\s\S]*animation-delay: 0\.24s !important;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage-summary \{[\s\S]*animation-delay: 0\.28s !important;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage-discount \{[\s\S]*animation-delay: 0\.34s !important;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage-action \{[\s\S]*animation-delay: 0\.4s !important;/,
+        'purchase modal should start the title immediately and keep a compact stagger order across the content'
     );
 
     assert.match(
@@ -255,6 +265,11 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
         /shop-sku-option__name/,
         'compact SKU pills should still render the SKU name'
     );
+    assert.match(
+        skuPillsSource,
+        /data-purchase-stagger-child="sku-option"/,
+        'compact SKU pills should expose a stable child-stage marker for individual opening animation'
+    );
     assert.doesNotMatch(
         skuPillsSource,
         /shop-sku-option__meta|formatShopPoints|getProductSkuPriceForCurrentSite|metaParts/,
@@ -272,8 +287,31 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
     );
     assert.match(
         shopStyles,
-        /\/\* 20260524_SHOP_PURCHASE_SKU_COMPACT_2 \*\/[\s\S]*#shopPurchaseModal \.shop-sku-selector__options--pills\s*\{[\s\S]*margin-top:\s*-5px;[\s\S]*padding:\s*5px 2px 6px 0;/,
-        'compact SKU choices should keep enough internal room for hover lift without clipping'
+        /\/\* 20260524_SHOP_PURCHASE_SKU_COMPACT_2 \*\/[\s\S]*#shopPurchaseModal \.shop-sku-selector__options--pills\s*\{[\s\S]*margin-top:\s*0;[\s\S]*padding:\s*6px 2px 8px 0;[\s\S]*#shopPurchaseModal \.shop-sku-spec-group__options\s*\{[\s\S]*padding:\s*6px 0 7px;/,
+        'compact SKU choices should keep real hit area padding instead of relying on negative offsets'
+    );
+    assert.match(
+        shopStyles,
+        /#shopPurchaseModal \.shop-sku-option--pill,[\s\S]*#shopPurchaseModal \.shop-sku-spec-option \{[\s\S]*transform:\s*translateZ\(0\);[\s\S]*touch-action:\s*manipulation;[\s\S]*transition:\s*background-color 0\.16s ease, border-color 0\.16s ease, box-shadow 0\.16s ease, color 0\.16s ease;/,
+        'SKU pills should use a stable compositor layer and avoid transform transitions on normal interaction'
+    );
+    assert.match(
+        shopStyles,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal \.shop-sku-option--pill\.is-disabled,[\s\S]*color:\s*rgba\(71, 85, 105, 0\.62\);/,
+        'light theme disabled SKU pills should keep gray text instead of flashing as active black text'
+    );
+    const skuHoverRule = shopStyles.match(
+        /#shopPurchaseModal \.shop-sku-option--pill:hover:not\(:disabled\),\s*#shopPurchaseModal \.shop-sku-spec-option:hover:not\(:disabled\)\s*\{(?<body>[\s\S]*?)\n\}/
+    )?.groups?.body || '';
+    assert.doesNotMatch(
+        skuHoverRule,
+        /transform\s*:\s*translateY/,
+        'SKU pill hover should not move the visual target away from its click hit area'
+    );
+    assert.match(
+        shopClientSource,
+        /resolvePurchaseSkuTriggerFromEvent:\s*function \(event\) \{[\s\S]*event\.target\.closest\('\[data-shop-sku-id\]'\)[\s\S]*matchMedia\?\.\('\(max-width: 768px\)'\)[\s\S]*closestDistance <= 14[\s\S]*handlePurchaseSkuTapFromEvent:\s*function \(event\) \{[\s\S]*this\.selectPurchaseSku\(skuTrigger\.dataset\.shopSkuId \|\| ''\);[\s\S]*modal\.querySelectorAll\('\.shop-sku-selector__options--pills, \.shop-sku-spec-group__options'\)[\s\S]*purchase-sku-near-edge[\s\S]*this\.handlePurchaseSkuTapFromEvent\(event\)/,
+        'mobile SKU taps should resolve near-edge touches to the closest available pill'
     );
     assert.match(
         shopStyles,
@@ -447,6 +485,24 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
         shopClientSource,
         /modal\.classList\.remove\('shop-purchase-force-hidden'\);\s+modal\.hidden = false;\s+modal\.classList\.remove\('active'\);\s+this\.freezePurchaseModalPage\(\);\s+this\.capturePurchaseModalOverlayHeight\(true\);\s+if \(!this\.purchaseModalPageFrozen && window\.iOSScrollLock\) \{[\s\S]*window\.iOSScrollLock\.lockLight\(modal, \{[\s\S]*restoreScrollDuringViewport: true[\s\S]*modal\.classList\.add\('active'\);\s+this\.attachPurchaseModalViewportSync\(\);\s+this\.attachPurchaseModalKeyboardDock\(\);\s+this\.schedulePurchaseModalOpenViewportStabilization\(\);/,
         'purchase modal should freeze the iOS page and capture the visual viewport before the active overlay frame is painted'
+    );
+
+    assert.match(
+        shopClientSource,
+        /purchaseModalOpeningStabilityTimer: null,[\s\S]*beginPurchaseModalOpeningStability: function \(modal = document\.getElementById\('shopPurchaseModal'\)\) \{[\s\S]*modal\.classList\.add\('shop-purchase-opening-stable'\);[\s\S]*window\.setTimeout\(\(\) => \{[\s\S]*modal\.classList\.remove\('shop-purchase-opening-stable'\);[\s\S]*\}, 980\);[\s\S]*this\.bindPurchaseModalControlTapFallbacks\(\);\s+this\.resetPurchaseModalOpeningSettledStages\(modal\);\s+this\.markPurchaseModalOpeningStaggerStages\(modal\);\s+this\.beginPurchaseModalOpeningStability\(modal\);[\s\S]*void modal\.offsetHeight;[\s\S]*this\.schedulePurchaseModalOpenViewportStabilization\(\);[\s\S]*void this\.refreshPurchaseDiscountAssets\(\{ silent: true \}\);/,
+        'purchase modal should silence async viewport, coupon, and guidance layout changes during the opening settle window'
+    );
+
+    assert.match(
+        shopClientSource,
+        /purchaseModalStageSettledTimer: null,[\s\S]*markPurchaseModalOpeningStaggerStages: function \(modal = document\.getElementById\('shopPurchaseModal'\)\) \{[\s\S]*element\.classList\.remove\('shop-purchase-stage--opening-stagger'\);[\s\S]*if \(element\.hidden\) return;[\s\S]*element\.classList\.add\('shop-purchase-stage--opening-stagger'\);[\s\S]*beginPurchaseModalStageSettledState: function \(modal = document\.getElementById\('shopPurchaseModal'\)\) \{[\s\S]*this\.purchaseModalStageSettledTimer = window\.setTimeout\(\(\) => \{[\s\S]*modal\.classList\.add\('shop-purchase-stages-settled'\);[\s\S]*element\.classList\.remove\('shop-purchase-stage--opening-stagger'\);[\s\S]*\}, 720\);[\s\S]*this\.markPurchaseModalOpeningStaggerStages\(modal\);\s+this\.beginPurchaseModalOpeningStability\(modal\);[\s\S]*modal\.classList\.add\('active'\);[\s\S]*this\.beginPurchaseModalStageSettledState\(modal\);[\s\S]*closePurchaseModal:[\s\S]*this\.clearPurchaseModalStageSettledState\(modal\);/,
+        'purchase modal should only grant stagger animation to initially visible stages so late async content cannot replay the staggered rise'
+    );
+
+    assert.match(
+        shopStyles,
+        /#shopPurchaseModal\.active \.modal-content>\.shop-purchase-stage--opening-stagger,[\s\S]*#shopPurchaseModal\.active \.shop-purchase-dock>\.shop-purchase-stage--opening-stagger \{[\s\S]*animation: shopPurchaseStaggeredRise[\s\S]*#shopPurchaseModal\.shop-purchase-opening-stable \.modal-content,[\s\S]*#shopPurchaseModal\.shop-purchase-opening-stable\.active:not\(:focus-within\):not\(\.ios-focus-lock\):not\(\.keyboard-docked\) \.modal-content,[\s\S]*transition: none !important;[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage--opening-settled \{[\s\S]*animation: none !important;[\s\S]*#shopPurchaseModal\.active\.shop-purchase-stages-settled \.shop-purchase-dock>\.shop-purchase-stage \{[\s\S]*animation: none !important;[\s\S]*#shopPurchaseModal\.shop-purchase-opening-stable \.shop-purchase-discount__fold-inner \{[\s\S]*transition: none !important;/,
+        'purchase modal opening settle styles should suppress the second visible squirm without disabling normal later interactions'
     );
 
     assert.match(

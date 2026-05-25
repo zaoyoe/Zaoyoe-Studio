@@ -111,12 +111,20 @@ function createShopProductsTableMock(state) {
 }
 
 function createGenericTableMock(state, table) {
+    const queryState = {
+        filters: []
+    };
+
     return {
         select() {
             return this;
         },
         eq(column, value) {
-            state.tableReads.push({ table, filters: [[column, value]] });
+            queryState.filters.push([column, value]);
+            if (queryState.activeUpdateEntry) {
+                queryState.activeUpdateEntry.filters.push([column, value]);
+            }
+            state.tableReads.push({ table, filters: queryState.filters.map(([filterColumn, filterValue]) => [filterColumn, filterValue]) });
             return this;
         },
         insert(payload) {
@@ -131,7 +139,12 @@ function createGenericTableMock(state, table) {
         },
         update(payload) {
             state.updatePayloadsByTable[table] = state.updatePayloadsByTable[table] || [];
-            state.updatePayloadsByTable[table].push(payload);
+            const entry = {
+                payload,
+                filters: queryState.filters.map(([column, value]) => [column, value])
+            };
+            state.updatePayloadsByTable[table].push(entry);
+            queryState.activeUpdateEntry = entry;
             return this;
         },
         limit() {
@@ -143,11 +156,14 @@ function createGenericTableMock(state, table) {
             if (table === 'shop_product_skus') {
                 const insertPayloads = state.insertPayloadsByTable[table] || [];
                 const upsertPayloads = state.upsertPayloadsByTable[table] || [];
-                const lastPayload = insertPayloads.at(-1) || upsertPayloads.at(-1) || {};
+                const updatePayloads = state.updatePayloadsByTable[table] || [];
+                const lastUpdate = updatePayloads.at(-1) || {};
+                const lastPayload = insertPayloads.at(-1) || upsertPayloads.at(-1) || lastUpdate.payload || {};
+                const updateId = lastUpdate.filters?.find(([column]) => column === 'id')?.[1] || '';
                 return Promise.resolve({
                     data: lastPayload.product_id
                         ? [{
-                            id: lastPayload.id || `sku_${insertPayloads.length + upsertPayloads.length || 1}`,
+                            id: lastPayload.id || updateId || `sku_${insertPayloads.length + upsertPayloads.length || 1}`,
                             stock_count: 0,
                             ...lastPayload
                         }]
@@ -461,8 +477,8 @@ test('shop mutate upsert saves product skus for admin inventory selectors', asyn
         assert.deepEqual(
             state.updatePayloadsByTable.shop_product_skus,
             [
-                { is_default: false },
-                { is_default: true, is_active: true }
+                { payload: { is_default: false }, filters: [['product_id', 'prod_saved']] },
+                { payload: { is_default: true, is_active: true }, filters: [['id', 'sku_1']] }
             ]
         );
         assert.equal(payload.skus.length, 2);
@@ -547,19 +563,135 @@ test('shop mutate upsert reuses existing sku by code when edit payload omits sku
         assert.equal(payload.success, true);
         assert.equal(state.insertPayloadsByTable.shop_product_skus, undefined);
         assert.deepEqual(
-            state.upsertPayloadsByTable.shop_product_skus.map((row) => ({
-                id: row.id,
-                product_id: row.product_id,
-                sku_code: row.sku_code,
-                price_points: row.price_points
+            state.updatePayloadsByTable.shop_product_skus.slice(0, 1).map((entry) => ({
+                filters: entry.filters,
+                product_id: entry.payload.product_id,
+                sku_code: entry.payload.sku_code,
+                price_points: entry.payload.price_points
             })),
             [{
-                id: 'sku_existing_default',
+                filters: [['id', 'sku_existing_default']],
                 product_id: 'prod_saved',
                 sku_code: 'default',
                 price_points: 21
             }]
         );
         assert.equal(payload.skus[0].id, 'sku_existing_default');
+    });
+});
+
+test('shop mutate upsert releases removed sku code before reusing it on another sku', async () => {
+    await withShopMutateHandler({
+        tableResults: {
+            shop_product_skus: [
+                {
+                    data: [
+                        {
+                            id: 'sku_old_code_3',
+                            product_id: 'prod_saved',
+                            sku_code: '3',
+                            sku_name: '旧三号规格',
+                            spec_values: { label: '旧三号规格' },
+                            price_points: 10,
+                            price_points_intl: null,
+                            quantity_rules: null,
+                            quantity_rules_intl: null,
+                            is_default: false,
+                            is_active: true,
+                            stock_count: 0,
+                            sort_order: 0
+                        },
+                        {
+                            id: 'sku_target',
+                            product_id: 'prod_saved',
+                            sku_code: '2',
+                            sku_name: '目标规格',
+                            spec_values: { label: '目标规格' },
+                            price_points: 20,
+                            price_points_intl: null,
+                            quantity_rules: null,
+                            quantity_rules_intl: null,
+                            is_default: true,
+                            is_active: true,
+                            stock_count: 0,
+                            sort_order: 1
+                        }
+                    ],
+                    error: null
+                },
+                {
+                    data: [{
+                        id: 'sku_target',
+                        product_id: 'prod_saved',
+                        sku_code: '3',
+                        sku_name: '目标规格',
+                        spec_values: {},
+                        price_points: 30,
+                        price_points_intl: null,
+                        quantity_rules: null,
+                        quantity_rules_intl: null,
+                        is_default: false,
+                        is_active: true,
+                        stock_count: 0,
+                        sort_order: 0
+                    }],
+                    error: null
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                productId: 'prod_saved',
+                payload: {
+                    id: 'prod_saved',
+                    name: 'SKU Product',
+                    category: 'cards',
+                    price_points: 30,
+                    delivery_type: 'KEY'
+                },
+                skus: [{
+                    id: 'sku_target',
+                    sku_name: '目标规格',
+                    sku_code: '3',
+                    price_points: 30,
+                    is_default: true,
+                    is_active: true
+                }]
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(state.insertPayloadsByTable.shop_product_skus, undefined);
+        assert.deepEqual(
+            state.updatePayloadsByTable.shop_product_skus.slice(0, 2),
+            [
+                { payload: { sku_code: null }, filters: [['id', 'sku_old_code_3']] },
+                {
+                    payload: {
+                        product_id: 'prod_saved',
+                        sku_code: '3',
+                        sku_name: '目标规格',
+                        spec_values: {},
+                        price_points: 30,
+                        price_points_intl: null,
+                        quantity_rules: null,
+                        quantity_rules_intl: null,
+                        is_default: false,
+                        is_active: true,
+                        sort_order: 0
+                    },
+                    filters: [['id', 'sku_target']]
+                }
+            ]
+        );
     });
 });

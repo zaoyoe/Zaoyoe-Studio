@@ -473,7 +473,7 @@
                     label: '设置',
                     icon: '⚙️',
                     description: '系统配置、安全策略与运维开关',
-                    modules: ['settings']
+                    modules: ['settings', 'xianyu-fulfillment']
                 },
                 {
                     key: 'analytics.view',
@@ -545,6 +545,10 @@
         payments: {
             label: '支付对账',
             anyOf: ['payments.manage']
+        },
+        'xianyu-fulfillment': {
+            label: '闲鱼发货',
+            anyOf: ['settings.manage']
         },
         'ops-alerts': {
             label: '站外告警',
@@ -844,6 +848,16 @@
         });
     }
 
+    function warmXianyuFulfillmentModuleData() {
+        try {
+            void Promise.resolve(window.loadMarketplaceChannelSettings?.()).catch((error) => {
+                console.warn('[AdminStudio] Xianyu fulfillment warm failed:', error);
+            });
+        } catch (error) {
+            console.warn('[AdminStudio] Xianyu fulfillment warm failed:', error);
+        }
+    }
+
     function baseSwitchModule(moduleId) {
         const normalizedRequestedModuleId = normalizeAdminModuleValue(moduleId);
         const analyticsConfig = resolveAdminAnalyticsModuleConfig(normalizedRequestedModuleId);
@@ -892,6 +906,10 @@
                 window.initSettingsModule?.({ bindListeners: true, loadConfig: false });
                 window.initOpsAlertsModule?.();
                 warmOpsAlertsModuleData();
+            }
+            if (normalizedModuleId === 'xianyu-fulfillment') {
+                window.initSettingsModule?.({ bindListeners: true, loadConfig: false });
+                warmXianyuFulfillmentModuleData();
             }
             if (normalizedModuleId === 'comments') {
                 window.initCommentsModule?.();
@@ -1125,8 +1143,12 @@
                 document.querySelector('.module-container.active')?.id?.replace(/^module-/, '')
                 || document.querySelector('.sidebar-item.active[data-module]')?.dataset?.module
             );
+            const preferredSidebarModule = getAdminSidebarModuleId(options.preferredModule || preferredModule);
+            const preferredAccessible = preferredSidebarModule && hasModulePermission(preferredSidebarModule);
 
-            if (!activeModule || !hasModulePermission(activeModule)) {
+            if (preferredAccessible && preferredSidebarModule !== activeModule) {
+                activateAdminStudioModule(preferredSidebarModule);
+            } else if (!activeModule || !hasModulePermission(activeModule)) {
                 const fallbackModule = getFirstAccessibleAdminModule(preferredModule);
                 if (fallbackModule) {
                     activateAdminStudioModule(fallbackModule);
@@ -1402,6 +1424,8 @@
                 return () => window.prefetchPointsModule?.();
             case 'payments':
                 return () => window.AdminPayments?.scheduleTabPrefetch?.(window.AdminPayments?.getActiveTab?.() || 'overview');
+            case 'xianyu-fulfillment':
+                return () => window.loadMarketplaceChannelSettings?.();
             case 'settings':
                 return () => window.prefetchSettingsModule?.();
             case 'ops-alerts':

@@ -410,6 +410,57 @@ test('available discounts endpoint returns owned assets and public claimable cou
     });
 });
 
+test('available discounts endpoint forwards selected SKU to preview RPCs', async () => {
+    const productSkuId = '11111111-1111-4111-8111-111111111111';
+
+    await withShopHandler('../api/shop/available-discounts.js', {
+        discountRows: [
+            {
+                id: 'discount_sku_scoped',
+                code: 'SKU90',
+                is_active: true,
+                applicable_site: 'cn',
+                distribution_mode: 'user_assigned',
+                discount_type: 'percent',
+                discount_value: 90,
+                scope_type: 'product',
+                scope_product_id: 'product_1',
+                scope_product_sku_id: productSkuId
+            }
+        ],
+        assetRows: [
+            {
+                id: 'asset_sku_scoped',
+                discount_id: 'discount_sku_scoped',
+                user_id: 'user_1',
+                asset_status: 'available',
+                assigned_at: '2026-05-25T09:00:00.000Z',
+                claimed_at: '2026-05-25T09:00:00.000Z',
+                source_channel: 'manual_grant'
+            }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                productId: 'product_1',
+                productSkuId,
+                quantity: 1,
+                site: 'cn'
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(state.rpcCalls.length, 1);
+        assert.equal(state.rpcCalls[0].name, 'fn_validate_discount_code');
+        assert.equal(state.rpcCalls[0].params.p_sku_id, productSkuId);
+    });
+});
+
 test('available discounts endpoint exposes human-friendly source labels and scoped target product info', async () => {
     await withShopHandler('../api/shop/available-discounts.js', {
         discountRows: [
