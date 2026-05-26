@@ -58,6 +58,109 @@ function normalizeSnapshot(value) {
     return Array.isArray(value) ? { raw: value } : value;
 }
 
+function resolveLocalizedUsageInstructions(product = {}, site = 'cn') {
+    if (product?.show_usage_instructions !== true) return '';
+
+    const usageInstructions = sanitizeText(product?.usage_instructions, 4000);
+    const usageInstructionsZh = sanitizeText(product?.usage_instructions_zh, 4000);
+    const usageInstructionsEn = sanitizeText(product?.usage_instructions_en, 4000);
+
+    if (normalizeSite(site) === 'intl') {
+        return usageInstructionsEn || usageInstructions || usageInstructionsZh;
+    }
+
+    return usageInstructionsZh || usageInstructions || usageInstructionsEn;
+}
+
+function isMissingGuidanceColumnError(error) {
+    const message = sanitizeText(error?.message, 500).toLowerCase();
+    return error?.code === '42703'
+        || /column .* does not exist/.test(message)
+        || message.includes('could not find')
+        || message.includes('schema cache');
+}
+
+async function loadMarketplaceProductUsageInstructions(supabase, productId, site = 'cn') {
+    if (!supabase?.from || !normalizeUuid(productId)) {
+        return {
+            show_usage_instructions: false,
+            usage_instructions: ''
+        };
+    }
+
+    const selects = [
+        'id, show_usage_instructions, usage_instructions, usage_instructions_zh, usage_instructions_en',
+        'id, show_usage_instructions, usage_instructions'
+    ];
+
+    for (const selectClause of selects) {
+        const query = supabase
+            .from('shop_products')
+            .select(selectClause)
+            .eq('id', productId);
+        const { data, error } = await query.maybeSingle();
+
+        if (!error) {
+            const usageInstructions = resolveLocalizedUsageInstructions(data || {}, site);
+            return {
+                show_usage_instructions: Boolean(usageInstructions),
+                usage_instructions: usageInstructions
+            };
+        }
+
+        if (!isMissingGuidanceColumnError(error)) {
+            return {
+                show_usage_instructions: false,
+                usage_instructions: ''
+            };
+        }
+    }
+
+    return {
+        show_usage_instructions: false,
+        usage_instructions: ''
+    };
+}
+
+async function enrichMarketplaceOrderResultWithUsageInstructions({
+    supabase,
+    result = {},
+    request = {}
+} = {}) {
+    if (result?.success !== true || !result?.data || typeof result.data !== 'object') {
+        return result;
+    }
+
+    const existingUsageInstructions = sanitizeText(result.data.usage_instructions, 4000);
+    if (result.data.show_usage_instructions === true && existingUsageInstructions) {
+        return result;
+    }
+
+    const productId = normalizeUuid(result.data.product_id || request.product_id);
+    if (!productId) return result;
+
+    const guidance = await loadMarketplaceProductUsageInstructions(supabase, productId, result.data.site || request.site);
+    if (!guidance.usage_instructions) {
+        return {
+            ...result,
+            data: {
+                ...result.data,
+                show_usage_instructions: false,
+                usage_instructions: null
+            }
+        };
+    }
+
+    return {
+        ...result,
+        data: {
+            ...result.data,
+            show_usage_instructions: true,
+            usage_instructions: guidance.usage_instructions
+        }
+    };
+}
+
 function findMarketplaceChannel(config = {}, channelKey = '') {
     const normalizedConfig = normalizeMarketplaceChannelsConfig(config);
     const normalizedChannelKey = normalizeKeyPart(channelKey, normalizedConfig.default_channel_key || 'xianyu');
@@ -244,24 +347,33 @@ async function createMarketplaceShopOrder({
         });
     }
 
-    return {
-        request: normalized,
+    const result = await enrichMarketplaceOrderResultWithUsageInstructions({
+        supabase,
         result: data || {
             success: false,
             message: 'Marketplace order RPC returned no data'
-        }
+        },
+        request: normalized
+    });
+
+    return {
+        request: normalized,
+        result
     };
 }
 
 module.exports = {
     buildMarketplaceOrderRpcParams,
     createMarketplaceShopOrder,
+    enrichMarketplaceOrderResultWithUsageInstructions,
     findMarketplaceChannel,
+    loadMarketplaceProductUsageInstructions,
     normalizeKeyPart,
     normalizeOptionalAmount,
     normalizeQuantity,
     normalizeSite,
     normalizeUuid,
+    resolveLocalizedUsageInstructions,
     resolveMarketplaceAccount,
     resolveMarketplaceOrderChannelContext
 };
