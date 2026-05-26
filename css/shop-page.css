@@ -109,7 +109,8 @@
             transform: translate3d(0, 0, 0);
             backface-visibility: hidden;
             will-change: transform;
-            contain: layout paint;
+            overflow: visible;
+            contain: layout;
             /* isolation: isolate 强制独立 stacking context，
                不受父 .shop-card z-index / class 变化引起的 compositor 重排影响。 */
             isolation: isolate;
@@ -4920,6 +4921,17 @@
                 transform: translate3d(0, var(--shop-purchase-translate-y, 0px), 0) scale(1) !important;
                 transition: none !important;
                 will-change: transform, height !important;
+            }
+
+            #shopPurchaseModal .modal-content.shop-purchase-notes-height-animating,
+            #shopPurchaseModal.active .modal-content.shop-purchase-notes-height-animating,
+            #shopPurchaseModal.active:focus-within .modal-content.shop-purchase-notes-height-animating,
+            #shopPurchaseModal.ios-focus-lock .modal-content.shop-purchase-notes-height-animating,
+            #shopPurchaseModal.keyboard-docked .modal-content.shop-purchase-notes-height-animating {
+                overflow: hidden !important;
+                transition:
+                    height 240ms cubic-bezier(0.22, 1, 0.36, 1),
+                    max-height 240ms cubic-bezier(0.22, 1, 0.36, 1) !important;
             }
 
             #shopPurchaseModal .shop-purchase-stage-header,
