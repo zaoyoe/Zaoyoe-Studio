@@ -253,6 +253,15 @@ function normalizeBoolean(value, fallback = false) {
     return fallback;
 }
 
+function normalizeInteger(value, fallback, {
+    min = Number.MIN_SAFE_INTEGER,
+    max = Number.MAX_SAFE_INTEGER
+} = {}) {
+    const parsed = Number.parseInt(String(value ?? ''), 10);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(max, Math.max(min, parsed));
+}
+
 function parseProductMappings(value) {
     const raw = sanitizeText(value, 100_000);
     if (!raw) return [];
@@ -415,6 +424,28 @@ function isRetryableChatSendError(error = {}) {
         || message.includes('timeout');
 }
 
+function isLocalProductMappingMiss(error = {}) {
+    return error?.code === 'xianyu_product_mapping_not_found'
+        && !error?.statusCode
+        && !error?.response;
+}
+
+function resolveMappingMissRetryOptions(env = process.env) {
+    const fromAdmin = normalizeBoolean(env.XIANYU_BRIDGE_FROM_ADMIN, false);
+    return {
+        retries: normalizeInteger(
+            env.XIANYU_BRIDGE_MAPPING_MISS_RETRIES,
+            fromAdmin ? 2 : 0,
+            { min: 0, max: 5 }
+        ),
+        delayMs: normalizeInteger(
+            env.XIANYU_BRIDGE_MAPPING_MISS_RETRY_DELAY_MS,
+            750,
+            { min: 0, max: 5000 }
+        )
+    };
+}
+
 async function loadPaidOrdersFromXianyuBot(env = process.env, {
     fetchImpl = globalThis.fetch
 } = {}) {
@@ -490,6 +521,68 @@ async function postXianyuOrder({
     });
 }
 
+async function postXianyuOrderWithMappingRecovery({
+    baseUrl,
+    accountKey = 'main',
+    ingestToken,
+    marketplaceConfig = {},
+    order,
+    env = process.env,
+    fetchImpl = globalThis.fetch,
+    loadMarketplaceConfig = loadBridgeMarketplaceConfig,
+    emitDiagnostic = () => {}
+} = {}) {
+    const options = resolveMappingMissRetryOptions(env);
+    let activeConfig = marketplaceConfig;
+    let activeIngestToken = ingestToken;
+    let retryCount = 0;
+
+    while (true) {
+        try {
+            const submitted = await postXianyuOrder({
+                baseUrl,
+                accountKey,
+                ingestToken: activeIngestToken,
+                marketplaceConfig: activeConfig,
+                order,
+                fetchImpl
+            });
+            return {
+                submitted,
+                marketplaceConfig: activeConfig,
+                ingestToken: activeIngestToken,
+                mapping_retry_count: retryCount
+            };
+        } catch (error) {
+            if (!isLocalProductMappingMiss(error) || retryCount >= options.retries) {
+                if (retryCount > 0) {
+                    error.mapping_retry_count = retryCount;
+                }
+                throw error;
+            }
+
+            retryCount += 1;
+            emitDiagnostic('mapping_retry', {
+                external_order_id: resolveOrderId(order),
+                code: error?.code || 'xianyu_product_mapping_not_found',
+                message: error?.message || 'Xianyu product mapping not found',
+                retry: retryCount,
+                retry_delay_ms: options.delayMs
+            });
+
+            if (options.delayMs > 0) {
+                await sleep(options.delayMs);
+            }
+
+            activeConfig = await loadMarketplaceConfig(env, {
+                baseUrl,
+                accountKey
+            });
+            activeIngestToken = activeConfig.ingest_token || activeIngestToken;
+        }
+    }
+}
+
 async function sendDeliveryToXianyuChat({
     order,
     content,
@@ -553,6 +646,7 @@ async function runBridgeWorker({
     env = process.env,
     fetchImpl = globalThis.fetch,
     loadOrders = loadPaidOrdersFromXianyuBot,
+    loadMarketplaceConfig = loadBridgeMarketplaceConfig,
     sendChat = sendDeliveryToXianyuChat,
     diagnosticLogger = null,
     now = () => Date.now()
@@ -561,11 +655,11 @@ async function runBridgeWorker({
     const emitDiagnostic = createBridgeDiagnosticEmitter(env, diagnosticLogger);
     const baseUrl = env.XIANYU_BRIDGE_BASE_URL || env.MARKETPLACE_WEBSITE_BASE_URL || 'https://www.zaoyoe.com';
     const accountKey = env.XIANYU_BRIDGE_ACCOUNT || 'main';
-    const marketplaceConfig = await loadBridgeMarketplaceConfig(env, {
+    let marketplaceConfig = await loadMarketplaceConfig(env, {
         baseUrl,
         accountKey
     });
-    const ingestToken = marketplaceConfig.ingest_token || env.XIANYU_BRIDGE_INGEST_TOKEN || env.XIANYU_MARKETPLACE_INGEST_TOKEN || '';
+    let ingestToken = marketplaceConfig.ingest_token || env.XIANYU_BRIDGE_INGEST_TOKEN || env.XIANYU_MARKETPLACE_INGEST_TOKEN || '';
     const processedFile = sanitizeText(env.XIANYU_BRIDGE_PROCESSED_FILE, 1000);
     const processedOrderIds = await loadProcessedOrderIds(processedFile);
     const loadOrdersStartedAt = callNow(now);
@@ -609,14 +703,21 @@ async function runBridgeWorker({
         let chatEndedAt;
         try {
             websiteStartedAt = callNow(now);
-            const submitted = await postXianyuOrder({
+            const submittedResult = await postXianyuOrderWithMappingRecovery({
                 baseUrl,
                 accountKey,
                 ingestToken,
                 marketplaceConfig,
                 order,
-                fetchImpl
+                env,
+                fetchImpl,
+                loadMarketplaceConfig,
+                emitDiagnostic
             });
+            const submitted = submittedResult.submitted;
+            marketplaceConfig = submittedResult.marketplaceConfig;
+            ingestToken = submittedResult.ingestToken || ingestToken;
+            const mappingRetryCount = Number(submittedResult.mapping_retry_count);
             websiteEndedAt = callNow(now);
             const body = submitted.body || {};
             const normalizedOrderId = body.normalized_order?.external_order_id || body.request?.external_order_id || orderId;
@@ -633,12 +734,18 @@ async function runBridgeWorker({
                     status: 'skipped',
                     reason: body.reason || 'remote_skipped',
                     external_order_id: normalizedOrderId,
-                    timing_ms
+                    timing_ms,
+                    ...(Number.isFinite(mappingRetryCount) && mappingRetryCount > 0
+                        ? { mapping_retry_count: mappingRetryCount }
+                        : {})
                 });
                 emitDiagnostic('order_skipped', {
                     external_order_id: normalizedOrderId,
                     reason: body.reason || 'remote_skipped',
-                    timing_ms
+                    timing_ms,
+                    ...(Number.isFinite(mappingRetryCount) && mappingRetryCount > 0
+                        ? { mapping_retry_count: mappingRetryCount }
+                        : {})
                 });
                 continue;
             }
@@ -655,12 +762,18 @@ async function runBridgeWorker({
                     status: 'skipped',
                     reason: 'duplicate_order',
                     external_order_id: normalizedOrderId,
-                    timing_ms
+                    timing_ms,
+                    ...(Number.isFinite(mappingRetryCount) && mappingRetryCount > 0
+                        ? { mapping_retry_count: mappingRetryCount }
+                        : {})
                 });
                 emitDiagnostic('order_skipped', {
                     external_order_id: normalizedOrderId,
                     reason: 'duplicate_order',
-                    timing_ms
+                    timing_ms,
+                    ...(Number.isFinite(mappingRetryCount) && mappingRetryCount > 0
+                        ? { mapping_retry_count: mappingRetryCount }
+                        : {})
                 });
                 continue;
             }
@@ -704,9 +817,14 @@ async function runBridgeWorker({
                 deliveredEntry.chat_attempts = chatAttempts;
                 deliveredDiagnostic.chat_attempts = chatAttempts;
             }
+            if (Number.isFinite(mappingRetryCount) && mappingRetryCount > 0) {
+                deliveredEntry.mapping_retry_count = mappingRetryCount;
+                deliveredDiagnostic.mapping_retry_count = mappingRetryCount;
+            }
             results.push(deliveredEntry);
             emitDiagnostic('order_delivered', deliveredDiagnostic);
         } catch (error) {
+            const mappingRetryCount = Number(error?.mapping_retry_count);
             const failedAt = callNow(now);
             const timing_ms = compactTimingMs({
                 ...initialTiming,
@@ -721,13 +839,19 @@ async function runBridgeWorker({
                 message: error?.message || 'Xianyu bridge failed',
                 status_code: error?.statusCode,
                 response: error?.response,
-                timing_ms
+                timing_ms,
+                ...(Number.isFinite(mappingRetryCount) && mappingRetryCount > 0
+                    ? { mapping_retry_count: mappingRetryCount }
+                    : {})
             });
             emitDiagnostic('order_failed', {
                 external_order_id: orderId,
                 code: error?.code || 'xianyu_bridge_failed',
                 message: error?.message || 'Xianyu bridge failed',
-                timing_ms
+                timing_ms,
+                ...(Number.isFinite(mappingRetryCount) && mappingRetryCount > 0
+                    ? { mapping_retry_count: mappingRetryCount }
+                    : {})
             });
         }
     }
@@ -759,7 +883,22 @@ async function runBridgeLoop({
 
     while (true) {
         runs += 1;
-        const summary = await runBridgeWorker({ env, fetchImpl });
+        let summary;
+        try {
+            summary = await runBridgeWorker({ env, fetchImpl });
+        } catch (error) {
+            summary = {
+                total: 0,
+                delivered: 0,
+                skipped: 0,
+                failed: 1,
+                error: {
+                    code: error?.code || 'xianyu_bridge_loop_run_failed',
+                    message: error?.message || 'Xianyu bridge loop run failed'
+                },
+                results: []
+            };
+        }
         onSummary(summary);
 
         if (stopAfterRuns > 0 && runs >= stopAfterRuns) {
@@ -897,6 +1036,7 @@ module.exports = {
     normalizeOrdersJson,
     parseArgs,
     postXianyuOrder,
+    postXianyuOrderWithMappingRecovery,
     resolveBuyerId,
     resolveBuyerName,
     resolveChatId,

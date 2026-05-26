@@ -6512,21 +6512,27 @@
             <div id="module-xianyu-fulfillment" class="module-container">
                 <div class="module-content xianyu-fulfillment-layout">
                     <div class="xianyu-fulfillment-shell">
-                        <nav class="admin-tabs xianyu-fulfillment-tabs" id="xianyuFulfillmentTabsNav" aria-label="闲鱼发货分栏" role="tablist">
-                            <button type="button" class="admin-tab active" id="xianyuFulfillmentTabOverview" data-xianyu-tab="overview" data-admin-action="marketplace-switch-xianyu-tab" aria-controls="xianyu-fulfillment-panel-overview" aria-selected="true" role="tab">
-                                总览
-                            </button>
-                            <button type="button" class="admin-tab" id="xianyuFulfillmentTabMappings" data-xianyu-tab="mappings" data-admin-action="marketplace-switch-xianyu-tab" aria-controls="xianyu-fulfillment-panel-mappings" aria-selected="false" role="tab">
-                                商品映射
-                            </button>
-                            <button type="button" class="admin-tab" id="xianyuFulfillmentTabAccounts" data-xianyu-tab="accounts" data-admin-action="marketplace-switch-xianyu-tab" aria-controls="xianyu-fulfillment-panel-accounts" aria-selected="false" role="tab">
-                                账号接口
-                            </button>
-                            <button type="button" class="admin-tab" id="xianyuFulfillmentTabAdvanced" data-xianyu-tab="advanced" data-admin-action="marketplace-switch-xianyu-tab" aria-controls="xianyu-fulfillment-panel-advanced" aria-selected="false" role="tab">
-                                高级配置
-                            </button>
-                            <div class="admin-tab-indicator"></div>
-                        </nav>
+                        <div class="xianyu-fulfillment-topbar">
+                            <nav class="admin-tabs xianyu-fulfillment-tabs" id="xianyuFulfillmentTabsNav" aria-label="闲鱼发货分栏" role="tablist">
+                                <button type="button" class="admin-tab active" id="xianyuFulfillmentTabOverview" data-xianyu-tab="overview" data-admin-action="marketplace-switch-xianyu-tab" aria-controls="xianyu-fulfillment-panel-overview" aria-selected="true" role="tab">
+                                    总览
+                                </button>
+                                <button type="button" class="admin-tab" id="xianyuFulfillmentTabMappings" data-xianyu-tab="mappings" data-admin-action="marketplace-switch-xianyu-tab" aria-controls="xianyu-fulfillment-panel-mappings" aria-selected="false" role="tab">
+                                    商品映射
+                                </button>
+                                <button type="button" class="admin-tab" id="xianyuFulfillmentTabAccounts" data-xianyu-tab="accounts" data-admin-action="marketplace-switch-xianyu-tab" aria-controls="xianyu-fulfillment-panel-accounts" aria-selected="false" role="tab">
+                                    账号接口
+                                </button>
+                                <button type="button" class="admin-tab" id="xianyuFulfillmentTabAdvanced" data-xianyu-tab="advanced" data-admin-action="marketplace-switch-xianyu-tab" aria-controls="xianyu-fulfillment-panel-advanced" aria-selected="false" role="tab">
+                                    高级配置
+                                </button>
+                                <div class="admin-tab-indicator"></div>
+                            </nav>
+                            <a class="xianyu-fulfillment-admin-link" href="https://xianyu-admin.zaoyoe.com/admin" target="_blank" rel="noopener noreferrer" aria-label="在新窗口打开 KVM4 闲鱼管理台">
+                                <i class="fas fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                                <span>打开 KVM4 管理台</span>
+                            </a>
+                        </div>
 
                         <div class="config-card marketplace-channel-config-card" data-config="marketplace-channels">
                             <div class="config-card-body xianyu-fulfillment-panels">

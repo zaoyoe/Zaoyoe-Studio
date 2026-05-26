@@ -47,6 +47,17 @@ test('xianyu-auto-reply-fix bridge router exposes paid-order and chat-send route
     assert.match(router, /"chatId"/);
 });
 
+test('xianyu-auto-reply-fix bridge hides orders that already have local delivery evidence', () => {
+    const router = fs.readFileSync(path.join(integrationDir, 'zaoyoe_bridge.py'), 'utf8');
+
+    assert.match(router, /def has_local_delivery_evidence\(conn: sqlite3\.Connection, order_id: str\)/);
+    assert.match(router, /FROM delivery_finalization_states/);
+    assert.match(router, /status IN \('sent', 'finalized'\)/);
+    assert.match(router, /FROM delivery_logs/);
+    assert.match(router, /status = 'success'/);
+    assert.match(router, /has_local_delivery_evidence\(conn, normalized\.get\("orderId", ""\)\)/);
+});
+
 test('xianyu-auto-reply-fix sender binds bridge chat-send to live WebSocket sender', () => {
     const sender = fs.readFileSync(path.join(integrationDir, 'zaoyoe_sender_example.py'), 'utf8');
 

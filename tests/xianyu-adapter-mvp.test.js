@@ -76,6 +76,29 @@ test('xianyu adapter requires an explicit product mapping before delivery', () =
     );
 });
 
+test('xianyu adapter matches sku text regardless of spacing around units', () => {
+    const payload = buildMarketplaceOrderPayload(createRawOrder({
+        item: {
+            itemId: 'xy-item-001',
+            title: '星星人手办',
+            skuText: '6 米'
+        }
+    }), createConfig({
+        product_mappings: [
+            {
+                label: '星星人手办 - 规格 6',
+                xianyu_item_id: 'xy-item-001',
+                sku_text_contains: '6米',
+                product_id: '11111111-1111-4111-8111-111111111111',
+                product_sku_id: '22222222-2222-4222-8222-222222222222'
+            }
+        ]
+    }));
+
+    assert.equal(payload.product_sku_id, '22222222-2222-4222-8222-222222222222');
+    assert.equal(payload.snapshot.sku_text, '6 米');
+});
+
 test('xianyu adapter dry-run builds payloads without calling network', async () => {
     let fetchCalled = false;
     const summary = await runXianyuAdapter({

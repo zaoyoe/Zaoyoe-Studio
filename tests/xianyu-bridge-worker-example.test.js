@@ -6,6 +6,7 @@ const {
     loadPaidOrdersFromXianyuBot,
     postXianyuOrder,
     resolveDeliveryContent,
+    runBridgeLoop,
     runBridgeWorker,
     sendDeliveryToXianyuChat
 } = require('../adapters/xianyu/bridge-worker');
@@ -223,6 +224,97 @@ test('xianyu bridge reports per-order delivery timing diagnostics', async () => 
     assert.deepEqual(diagnostics[0].timing_ms, summary.results[0].timing_ms);
 });
 
+test('xianyu bridge refreshes admin mappings after a local mapping miss', async () => {
+    const diagnostics = [];
+    const websiteRequests = [];
+    let configReads = 0;
+    const configs = [
+        {
+            website_base_url: 'https://www.zaoyoe.com',
+            account: 'main',
+            ingest_token: 'old-token',
+            product_mappings: []
+        },
+        {
+            website_base_url: 'https://www.zaoyoe.com',
+            account: 'main',
+            ingest_token: 'fresh-token',
+            product_mappings: [
+                {
+                    xianyu_item_id: 'XY-BRIDGE-ITEM-1006',
+                    product_id: '66666666-6666-4666-8666-666666666666'
+                }
+            ]
+        }
+    ];
+
+    const summary = await runBridgeWorker({
+        env: {
+            XIANYU_BRIDGE_BASE_URL: 'https://www.zaoyoe.com',
+            XIANYU_BRIDGE_ACCOUNT: 'main',
+            XIANYU_BRIDGE_FROM_ADMIN: 'true',
+            XIANYU_BRIDGE_MAPPING_MISS_RETRY_DELAY_MS: '0',
+            XIANYU_BRIDGE_DIAGNOSTICS: '1'
+        },
+        async loadMarketplaceConfig() {
+            configReads += 1;
+            return configs[Math.min(configReads - 1, configs.length - 1)];
+        },
+        diagnosticLogger(record) {
+            diagnostics.push(record);
+        },
+        async fetchImpl(url, options) {
+            websiteRequests.push({
+                url,
+                options
+            });
+            return {
+                ok: true,
+                status: 200,
+                async text() {
+                    return JSON.stringify({
+                        success: true,
+                        normalized_order: {
+                            external_order_id: 'XY-BRIDGE-1006'
+                        },
+                        data: {
+                            content: 'card-secret-1006'
+                        }
+                    });
+                }
+            };
+        },
+        async loadOrders() {
+            return [
+                {
+                    orderId: 'XY-BRIDGE-1006',
+                    status: '买家已付款',
+                    item: {
+                        itemId: 'XY-BRIDGE-ITEM-1006'
+                    }
+                }
+            ];
+        },
+        async sendChat() {
+            return {
+                status: 'sent',
+                attempts: 1
+            };
+        }
+    });
+
+    assert.equal(configReads, 2);
+    assert.equal(websiteRequests.length, 1);
+    assert.equal(websiteRequests[0].options.headers.Authorization, 'Bearer fresh-token');
+    assert.equal(JSON.parse(websiteRequests[0].options.body).product_id, '66666666-6666-4666-8666-666666666666');
+    assert.equal(summary.delivered, 1);
+    assert.equal(summary.failed, 0);
+    assert.equal(summary.results[0].mapping_retry_count, 1);
+    assert.equal(diagnostics[0].event, 'mapping_retry');
+    assert.equal(diagnostics[1].event, 'order_delivered');
+    assert.equal(diagnostics[1].mapping_retry_count, 1);
+});
+
 test('xianyu bridge loads paid orders from a bot HTTP endpoint', async () => {
     const calls = [];
     const fetchImpl = async (url, options) => {
@@ -263,6 +355,44 @@ test('xianyu bridge loads paid orders from a bot HTTP endpoint', async () => {
     assert.equal(calls[0].url, 'http://127.0.0.1:19090/orders/paid');
     assert.equal(calls[0].options.method, 'GET');
     assert.equal(calls[0].options.headers.Authorization, 'Bearer bot-token');
+});
+
+test('xianyu bridge loop keeps running after a single worker failure', async () => {
+    const summaries = [];
+    let callCount = 0;
+
+    const summary = await runBridgeLoop({
+        env: {
+            XIANYU_BOT_ORDERS_URL: 'http://127.0.0.1:19090/orders/paid'
+        },
+        intervalMs: 1,
+        stopAfterRuns: 2,
+        onSummary(entry) {
+            summaries.push(entry);
+        },
+        fetchImpl: async () => {
+            callCount += 1;
+            if (callCount === 1) {
+                throw new Error('fetch failed');
+            }
+            return {
+                ok: true,
+                status: 200,
+                async text() {
+                    return JSON.stringify({
+                        success: true,
+                        orders: []
+                    });
+                }
+            };
+        }
+    });
+
+    assert.equal(summaries.length, 2);
+    assert.equal(summaries[0].failed, 1);
+    assert.equal(summaries[0].error.message, 'fetch failed');
+    assert.equal(summaries[1].failed, 0);
+    assert.equal(summary.failed, 0);
 });
 
 test('xianyu bridge posts delivery content to a bot chat endpoint', async () => {

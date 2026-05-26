@@ -43576,6 +43576,14 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     white-space: nowrap;
 }
 
+.xianyu-fulfillment-topbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 14px;
+    width: 100%;
+}
+
 .xianyu-fulfillment-tabs.admin-tabs {
     justify-content: center;
     gap: 6px;
@@ -43610,6 +43618,35 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
 .xianyu-fulfillment-tabs .admin-tab-indicator,
 .xianyu-fulfillment-tabs .admin-tab.active::after {
     background: var(--accent-starry);
+}
+
+.xianyu-fulfillment-admin-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 0 16px;
+    border: 1px solid rgba(107, 158, 206, 0.28);
+    border-radius: 999px;
+    color: var(--text-main);
+    background: linear-gradient(135deg, rgba(107, 158, 206, 0.16), rgba(255, 255, 255, 0.78));
+    box-shadow: 0 12px 30px rgba(36, 78, 118, 0.08);
+    font-size: 0.88rem;
+    font-weight: 800;
+    line-height: 1;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.xianyu-fulfillment-admin-link:hover,
+.xianyu-fulfillment-admin-link:focus-visible {
+    border-color: rgba(107, 158, 206, 0.48);
+    box-shadow: 0 16px 38px rgba(36, 78, 118, 0.13);
+    color: var(--text-main);
+    text-decoration: none;
+    transform: translateY(-1px);
 }
 
 .xianyu-fulfillment-panels {
@@ -44815,12 +44852,22 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
         justify-content: center;
     }
 
+    .xianyu-fulfillment-topbar {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
     .xianyu-fulfillment-tabs.admin-tabs {
         padding-bottom: 8px;
     }
 
     .xianyu-fulfillment-tabs .admin-tab {
         padding: 10px 14px;
+    }
+
+    .xianyu-fulfillment-admin-link {
+        width: 100%;
+        min-height: 44px;
     }
 
     .marketplace-product-picker-field {
