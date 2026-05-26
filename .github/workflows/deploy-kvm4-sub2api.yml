@@ -31,7 +31,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          ref: main
+          fetch-depth: 1
 
       - name: Prepare SSH access
         env:
@@ -53,13 +54,13 @@ jobs:
           ssh-keyscan -T 10 -p "$KVM4_PORT" "$KVM4_HOST" >> "$HOME/.ssh/known_hosts"
           chmod 600 "$HOME/.ssh/known_hosts"
 
-      - name: Pin checkout to latest main
+      - name: Verify checkout is latest main
         shell: bash
         run: |
           set -Eeuo pipefail
-          git fetch origin main
-          git checkout -B main origin/main
           git status --short --branch
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          printf 'Checked out main commit %s\n' "$GITHUB_SHA"
 
       - name: Deploy KVM4 Sub2API
         run: npm run deploy:kvm4:sub2api
