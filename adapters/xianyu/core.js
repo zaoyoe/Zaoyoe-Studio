@@ -41,6 +41,12 @@ function sanitizeText(value, maxLength = 500) {
         .slice(0, maxLength);
 }
 
+function normalizeTextForContains(value, maxLength = 1000) {
+    return sanitizeText(value, maxLength)
+        .toLowerCase()
+        .replace(/\s+/g, '');
+}
+
 function normalizeUuid(value) {
     const normalized = sanitizeText(value, 120);
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalized)
@@ -301,7 +307,12 @@ function getMappingProductSkuId(mapping = {}) {
 function containsText(source, needle) {
     const sourceText = sanitizeText(source, 1000).toLowerCase();
     const needleText = sanitizeText(needle, 1000).toLowerCase();
-    return Boolean(sourceText && needleText && sourceText.includes(needleText));
+    if (!sourceText || !needleText) return false;
+    if (sourceText.includes(needleText)) return true;
+
+    const compactSourceText = normalizeTextForContains(sourceText, 1000);
+    const compactNeedleText = normalizeTextForContains(needleText, 1000);
+    return Boolean(compactSourceText && compactNeedleText && compactSourceText.includes(compactNeedleText));
 }
 
 function scoreProductMapping(mapping = {}, normalizedOrder = {}) {

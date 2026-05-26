@@ -178,6 +178,43 @@ def status_looks_paid(status: str) -> bool:
     )
 
 
+def has_local_delivery_evidence(conn: sqlite3.Connection, order_id: str) -> bool:
+    normalized_order_id = sanitize_text(order_id, 180)
+    if not normalized_order_id:
+        return False
+
+    try:
+        if table_exists(conn, "delivery_finalization_states"):
+            row = conn.execute(
+                """
+                SELECT 1
+                FROM delivery_finalization_states
+                WHERE order_id = ? AND status IN ('sent', 'finalized')
+                LIMIT 1
+                """,
+                (normalized_order_id,),
+            ).fetchone()
+            if row:
+                return True
+
+        if table_exists(conn, "delivery_logs"):
+            row = conn.execute(
+                """
+                SELECT 1
+                FROM delivery_logs
+                WHERE order_id = ? AND status = 'success'
+                LIMIT 1
+                """,
+                (normalized_order_id,),
+            ).fetchone()
+            if row:
+                return True
+    except Exception:
+        return False
+
+    return False
+
+
 def normalize_order_row(row: sqlite3.Row, columns: List[str]) -> Optional[Dict[str, Any]]:
     order_id_col = pick_column(columns, ["order_id", "biz_order_id", "bizOrderId", "external_order_id", "id"])
     status_col = pick_column(columns, ["status", "order_status", "trade_status", "delivery_status"])
@@ -275,6 +312,8 @@ def load_paid_orders_from_db(limit: int = 50) -> List[Dict[str, Any]]:
         orders = []
         for row in rows:
             normalized = normalize_order_row(row, columns)
+            if normalized and has_local_delivery_evidence(conn, normalized.get("orderId", "")):
+                continue
             if normalized:
                 orders.append(normalized)
             if len(orders) >= max(1, min(200, int(limit or 50))):
