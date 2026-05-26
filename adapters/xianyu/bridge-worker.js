@@ -129,11 +129,43 @@ function resolveItemId(order = {}) {
 
 function resolveDeliveryContent(responseBody = {}) {
     return sanitizeText(
-        responseBody?.data?.content
+        responseBody?.content
+        || responseBody?.card
+        || responseBody?.delivery_content
+        || responseBody?.deliveryContent
+        || responseBody?.delivery?.content
+        || responseBody?.data?.content
         || responseBody?.data?.delivery_content
         || responseBody?.data?.deliveryContent
         || responseBody?.data?.delivery?.content,
         8000
+    );
+}
+
+function hasExplicitFalseUsageInstructionsFlag(source = {}) {
+    return source?.show_usage_instructions === false
+        || source?.showUsageInstructions === false
+        || source?.data?.show_usage_instructions === false
+        || source?.data?.showUsageInstructions === false
+        || source?.data?.delivery?.show_usage_instructions === false
+        || source?.data?.delivery?.showUsageInstructions === false
+        || source?.delivery?.show_usage_instructions === false
+        || source?.delivery?.showUsageInstructions === false;
+}
+
+function resolveUsageInstructions(responseBody = {}) {
+    if (hasExplicitFalseUsageInstructionsFlag(responseBody)) return '';
+
+    return sanitizeText(
+        responseBody?.usage_instructions
+        || responseBody?.usageInstructions
+        || responseBody?.delivery?.usage_instructions
+        || responseBody?.delivery?.usageInstructions
+        || responseBody?.data?.usage_instructions
+        || responseBody?.data?.usageInstructions
+        || responseBody?.data?.delivery?.usage_instructions
+        || responseBody?.data?.delivery?.usageInstructions,
+        4000
     );
 }
 
@@ -586,6 +618,7 @@ async function postXianyuOrderWithMappingRecovery({
 async function sendDeliveryToXianyuChat({
     order,
     content,
+    usageInstructions = '',
     response,
     env = process.env,
     fetchImpl = globalThis.fetch
@@ -601,6 +634,7 @@ async function sendDeliveryToXianyuChat({
         cookie_id: resolveCookieId(order),
         item_id: resolveItemId(order),
         content,
+        usage_instructions: sanitizeText(usageInstructions, 4000),
         order,
         marketplace_response: response
     };
@@ -722,6 +756,7 @@ async function runBridgeWorker({
             const body = submitted.body || {};
             const normalizedOrderId = body.normalized_order?.external_order_id || body.request?.external_order_id || orderId;
             const content = resolveDeliveryContent(body);
+            const usageInstructions = resolveUsageInstructions(body);
 
             if (body.skipped) {
                 const finishedAt = callNow(now);
@@ -788,6 +823,7 @@ async function runBridgeWorker({
             const chatResult = await sendChat({
                 order,
                 content,
+                usageInstructions,
                 response: body,
                 env,
                 fetchImpl
@@ -1044,6 +1080,7 @@ module.exports = {
     resolveDeliveryContent,
     resolveItemId,
     resolveOrderId,
+    resolveUsageInstructions,
     runBridgeLoop,
     runBridgeWorker,
     saveProcessedOrderIds,

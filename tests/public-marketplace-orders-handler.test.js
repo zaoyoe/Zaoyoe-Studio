@@ -111,6 +111,29 @@ function createMarketplaceConfig() {
 
 function createSupabaseStub(state) {
     return {
+        from(table) {
+            return {
+                select(columns = '*') {
+                    const query = {
+                        _eq: [],
+                        eq(field, value) {
+                            query._eq.push([String(field || ''), value]);
+                            return query;
+                        },
+                        maybeSingle() {
+                            state.tableReads.push({ table, columns, eq: clone(query._eq) });
+                            if (table === 'shop_products') {
+                                const productId = query._eq.find(([field]) => field === 'id')?.[1];
+                                const product = state.productsById?.[productId] || null;
+                                return Promise.resolve({ data: clone(product), error: null });
+                            }
+                            return Promise.resolve({ data: null, error: null });
+                        }
+                    };
+                    return query;
+                }
+            };
+        },
         rpc(name, params) {
             state.rpcCalls.push({ name, params: clone(params) });
             return Promise.resolve({
@@ -138,7 +161,9 @@ function createHandlers(stateOverrides = {}) {
             'marketplace__xianyu__backup-1__ingest_token': 'backup-token'
         },
         rpcCalls: [],
+        tableReads: [],
         secretReads: [],
+        productsById: {},
         ...stateOverrides
     };
     const supabase = state.supabase || createSupabaseStub(state);
@@ -407,6 +432,8 @@ test('public xianyu API-card delivery handler maps item to shared inventory and 
     assert.equal(res.statusCode, 200);
     assert.equal(payload.success, true);
     assert.equal(payload.content, 'card-secret');
+    assert.equal(payload.usage_instructions, null);
+    assert.equal(payload.show_usage_instructions, false);
     assert.equal(payload.data, undefined);
     assert.equal(payload.meta.request.product_id, productId);
     assert.equal(payload.meta.request.channel_key, 'xianyu');
@@ -463,6 +490,106 @@ test('public xianyu API-card delivery handler maps item to shared inventory and 
             p_external_buyer_name: '起个什么名字呢',
             p_sku_id: null
         }
+    });
+});
+
+test('public xianyu API-card delivery handler returns usage instructions for two-message delivery', async () => {
+    const { handlers } = createHandlers({
+        rpcResult: {
+            success: true,
+            duplicate: false,
+            message: 'marketplace order created',
+            data: {
+                order_id: 'order-usage-1',
+                delivery_status: 'delivered',
+                content: 'card-secret-with-usage',
+                usage_instructions: '先打开官网，登录后再兑换卡密。',
+                show_usage_instructions: true
+            }
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers['xianyu/deliver']({
+        method: 'POST',
+        url: '/api/marketplace/xianyu/deliver',
+        headers: {
+            authorization: 'Bearer main-token'
+        },
+        body: {
+            account: 'main',
+            order_id: 'XY-USAGE-1001',
+            item_id: '1051635270711',
+            buyer_id: 'buyer-usage-1',
+            buyerNick: '使用说明买家',
+            quantity: '1',
+            spec_value: '主机优惠'
+        }
+    }, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(payload.content, 'card-secret-with-usage');
+    assert.equal(payload.usage_instructions, '先打开官网，登录后再兑换卡密。');
+    assert.equal(payload.show_usage_instructions, true);
+    assert.equal(payload.data, undefined);
+});
+
+test('public xianyu API-card delivery handler backfills usage instructions from product guidance', async () => {
+    const productId = '22222222-2222-4222-8222-222222222222';
+    const { handlers, state } = createHandlers({
+        rpcResult: {
+            success: true,
+            duplicate: false,
+            message: 'marketplace order created',
+            data: {
+                order_id: 'order-usage-backfill-1',
+                product_id: productId,
+                delivery_status: 'delivered',
+                site: 'cn',
+                content: 'card-secret-with-product-guidance'
+            }
+        },
+        productsById: {
+            [productId]: {
+                id: productId,
+                show_usage_instructions: true,
+                usage_instructions: '旧字段说明',
+                usage_instructions_zh: '先看中文使用说明，再兑换卡密。',
+                usage_instructions_en: 'Read English instructions first.'
+            }
+        }
+    });
+    const res = createMockResponse();
+
+    await handlers['xianyu/deliver']({
+        method: 'POST',
+        url: '/api/marketplace/xianyu/deliver',
+        headers: {
+            authorization: 'Bearer main-token'
+        },
+        body: {
+            account: 'main',
+            order_id: 'XY-USAGE-BACKFILL-1001',
+            item_id: '1051635270711',
+            buyer_id: 'buyer-usage-backfill-1',
+            buyerNick: '使用说明兜底买家',
+            quantity: '1',
+            spec_value: '主机优惠'
+        }
+    }, res);
+
+    const payload = res.json();
+    assert.equal(res.statusCode, 200);
+    assert.equal(payload.success, true);
+    assert.equal(payload.content, 'card-secret-with-product-guidance');
+    assert.equal(payload.usage_instructions, '先看中文使用说明，再兑换卡密。');
+    assert.equal(payload.show_usage_instructions, true);
+    assert.deepEqual(state.tableReads[0], {
+        table: 'shop_products',
+        columns: 'id, show_usage_instructions, usage_instructions, usage_instructions_zh, usage_instructions_en',
+        eq: [['id', productId]]
     });
 });
 

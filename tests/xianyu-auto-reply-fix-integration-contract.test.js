@@ -58,6 +58,37 @@ test('xianyu-auto-reply-fix bridge hides orders that already have local delivery
     assert.match(router, /has_local_delivery_evidence\(conn, normalized\.get\("orderId", ""\)\)/);
 });
 
+test('xianyu-auto-reply-fix bridge records chat delivery state to prevent duplicate card sends', () => {
+    const router = fs.readFileSync(path.join(integrationDir, 'zaoyoe_bridge.py'), 'utf8');
+
+    assert.match(router, /def reserve_bridge_delivery_send\(data: Dict\[str, Any\]\) -> Dict\[str, Any\]/);
+    assert.match(router, /def upsert_bridge_delivery_state\(data: Dict\[str, Any\], status: str, last_error: str = ""\) -> bool/);
+    assert.match(router, /status IN \('sent', 'finalized'\)/);
+    assert.match(router, /status = 'sending'/);
+    assert.match(router, /reason": "delivery_already_recorded"/);
+    assert.match(router, /upsert_bridge_delivery_state\(data, "failed"/);
+    assert.match(router, /upsert_bridge_delivery_state\(data, "sent"\)/);
+    assert.match(router, /async def finalize_bridge_delivery_after_send\(data: Dict\[str, Any\]\) -> Dict\[str, Any\]/);
+    assert.match(router, /db_manager\.get_auto_confirm\(normalized_cookie_id\)/);
+    assert.match(router, /live_instance\._finalize_delivery_after_send\(/);
+    assert.match(router, /"bridge_finalization": finalization/);
+});
+
+test('xianyu-auto-reply-fix bridge sends usage instructions before card content in one delivery transaction', () => {
+    const router = fs.readFileSync(path.join(integrationDir, 'zaoyoe_bridge.py'), 'utf8');
+
+    assert.match(router, /usage_instructions: str = ""/);
+    assert.match(router, /def build_delivery_chat_messages\(data: Dict\[str, Any\]\) -> List\[Dict\[str, Any\]\]/);
+    assert.match(router, /"message_role": "usage_instructions"/);
+    assert.match(router, /"message_role": "delivery_content"/);
+    assert.match(router, /async def dispatch_delivery_chat_messages\(data: Dict\[str, Any\]\) -> Dict\[str, Any\]/);
+    assert.match(router, /result = await dispatch_chat_message\(message\)/);
+    assert.match(router, /raise HTTPException\(\s*status_code=502,[\s\S]*Chat message send failed/);
+    assert.match(router, /"message_count": len\(messages\)/);
+    assert.match(router, /result = await dispatch_delivery_chat_messages\(data\)/);
+    assert.match(router, /upsert_bridge_delivery_state\(data, "sent"\)[\s\S]*finalization = await finalize_bridge_delivery_after_send\(data\)/);
+});
+
 test('xianyu-auto-reply-fix sender binds bridge chat-send to live WebSocket sender', () => {
     const sender = fs.readFileSync(path.join(integrationDir, 'zaoyoe_sender_example.py'), 'utf8');
 

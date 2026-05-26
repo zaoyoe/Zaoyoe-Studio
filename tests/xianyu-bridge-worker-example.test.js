@@ -6,6 +6,7 @@ const {
     loadPaidOrdersFromXianyuBot,
     postXianyuOrder,
     resolveDeliveryContent,
+    resolveUsageInstructions,
     runBridgeLoop,
     runBridgeWorker,
     sendDeliveryToXianyuChat
@@ -80,7 +81,9 @@ test('xianyu bridge sends returned delivery content to the chat adapter', async 
                     external_order_id: 'XY-BRIDGE-1002'
                 },
                 data: {
-                    content: 'card-secret-1002'
+                    content: 'card-secret-1002',
+                    usage_instructions: '请先登录官网，再兑换卡密。',
+                    show_usage_instructions: true
                 }
             });
         }
@@ -110,10 +113,11 @@ test('xianyu bridge sends returned delivery content to the chat adapter', async 
                 }
             ];
         },
-        async sendChat({ order, content }) {
+        async sendChat({ order, content, usageInstructions }) {
             chatMessages.push({
                 order,
-                content
+                content,
+                usageInstructions
             });
         }
     });
@@ -129,7 +133,8 @@ test('xianyu bridge sends returned delivery content to the chat adapter', async 
                     itemId: 'XY-BRIDGE-ITEM-1002'
                 }
             },
-            content: 'card-secret-1002'
+            content: 'card-secret-1002',
+            usageInstructions: '请先登录官网，再兑换卡密。'
         }
     ]);
 });
@@ -447,6 +452,7 @@ test('xianyu bridge posts delivery content to a bot chat endpoint', async () => 
         cookie_id: '',
         item_id: '',
         content: 'delivery-secret-1002',
+        usage_instructions: '',
         order: {
             orderId: 'XY-BOT-1002',
             buyerId: 'buyer-1002',
@@ -458,6 +464,39 @@ test('xianyu bridge posts delivery content to a bot chat endpoint', async () => 
             }
         }
     });
+});
+
+test('xianyu bridge forwards usage instructions to the chat adapter payload', async () => {
+    const calls = [];
+    const fetchImpl = async (url, options) => {
+        calls.push({ url, options });
+        return {
+            ok: true,
+            status: 200,
+            async text() {
+                return JSON.stringify({ success: true });
+            }
+        };
+    };
+
+    await sendDeliveryToXianyuChat({
+        order: {
+            orderId: 'XY-BOT-1005',
+            buyerId: 'buyer-1005',
+            buyerNick: '说明买家'
+        },
+        content: 'delivery-secret-1005',
+        usageInstructions: '使用说明先看这里',
+        response: {},
+        env: {
+            XIANYU_BOT_SEND_MESSAGE_URL: 'http://127.0.0.1:19090/chat/send'
+        },
+        fetchImpl
+    });
+
+    const payload = JSON.parse(calls[0].options.body);
+    assert.equal(payload.usage_instructions, '使用说明先看这里');
+    assert.equal(payload.content, 'delivery-secret-1005');
 });
 
 test('xianyu bridge includes chat and account context when sending delivery content', async () => {
@@ -583,4 +622,26 @@ test('xianyu bridge resolves delivery content from supported response shapes', (
             }
         }
     }), 'nested-content');
+    assert.equal(resolveDeliveryContent({
+        content: 'top-level-content'
+    }), 'top-level-content');
+});
+
+test('xianyu bridge resolves enabled usage instructions from supported response shapes', () => {
+    assert.equal(resolveUsageInstructions({
+        data: {
+            usage_instructions: 'nested-usage',
+            show_usage_instructions: true
+        }
+    }), 'nested-usage');
+    assert.equal(resolveUsageInstructions({
+        usage_instructions: 'top-level-usage',
+        show_usage_instructions: true
+    }), 'top-level-usage');
+    assert.equal(resolveUsageInstructions({
+        data: {
+            usage_instructions: 'hidden-usage',
+            show_usage_instructions: false
+        }
+    }), '');
 });

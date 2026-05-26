@@ -84,6 +84,7 @@ class ChatSendPayload(BaseModel):
     cookie_id: str = ""
     item_id: str = ""
     content: str
+    usage_instructions: str = ""
     order: Dict[str, Any] = {}
     marketplace_response: Dict[str, Any] = {}
 
@@ -157,6 +158,19 @@ def parse_json_object(value: Any) -> Dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
+def get_nested_value(source: Dict[str, Any], path: str, fallback: Any = "") -> Any:
+    current: Any = source
+    for segment in str(path or "").split("."):
+        if not segment:
+            continue
+        if not isinstance(current, dict):
+            return fallback
+        current = current.get(segment)
+        if current is None:
+            return fallback
+    return current
+
+
 def get_value(row: sqlite3.Row, column: str, fallback: Any = "") -> Any:
     if not column:
         return fallback
@@ -213,6 +227,253 @@ def has_local_delivery_evidence(conn: sqlite3.Connection, order_id: str) -> bool
         return False
 
     return False
+
+
+def resolve_bridge_delivery_unit_index(data: Dict[str, Any]) -> int:
+    for value in (
+        data.get("delivery_unit_index"),
+        get_nested_value(data, "order.delivery_unit_index"),
+        get_nested_value(data, "marketplace_response.meta.delivery_unit_index"),
+        get_nested_value(data, "marketplace_response.data.delivery_unit_index"),
+    ):
+        try:
+            parsed = int(value or 0)
+        except Exception:
+            parsed = 0
+        if parsed > 0:
+            return min(parsed, 999)
+    return 1
+
+
+def build_bridge_delivery_meta(data: Dict[str, Any]) -> Dict[str, Any]:
+    response = data.get("marketplace_response") if isinstance(data.get("marketplace_response"), dict) else {}
+    meta = response.get("meta") if isinstance(response.get("meta"), dict) else {}
+    response_data = response.get("data") if isinstance(response.get("data"), dict) else {}
+
+    return {
+        "success": True,
+        "source": "zaoyoe_bridge",
+        "delivery_unit_index": resolve_bridge_delivery_unit_index(data),
+        "external_order_id": sanitize_text(data.get("external_order_id"), 180),
+        "marketplace_order_id": sanitize_text(meta.get("order_id") or response_data.get("order_id"), 180),
+        "marketplace_delivery_status": sanitize_text(meta.get("delivery_status") or response_data.get("delivery_status"), 120),
+        "product_id": sanitize_text(meta.get("product_id") or response_data.get("product_id"), 180),
+        "product_name": sanitize_text(meta.get("product_name") or response_data.get("product_name"), 500),
+        "quantity": meta.get("quantity") or response_data.get("quantity") or get_nested_value(data, "order.quantity", 1),
+        "channel_key": sanitize_text(meta.get("channel_key"), 80),
+        "channel_account_key": sanitize_text(meta.get("channel_account_key"), 80),
+        "duplicate": response.get("duplicate") is True,
+    }
+
+
+def normalize_bridge_delivery_state(data: Dict[str, Any], status: str, last_error: str = "") -> Dict[str, Any]:
+    return {
+        "order_id": sanitize_text(
+            data.get("external_order_id")
+            or get_nested_value(data, "marketplace_response.normalized_order.external_order_id")
+            or get_nested_value(data, "marketplace_response.request.external_order_id"),
+            180,
+        ),
+        "unit_index": resolve_bridge_delivery_unit_index(data),
+        "cookie_id": sanitize_text(data.get("cookie_id") or get_nested_value(data, "order.cookie_id"), 180),
+        "item_id": sanitize_text(data.get("item_id") or get_nested_value(data, "order.item.itemId") or get_nested_value(data, "order.item_id"), 180),
+        "buyer_id": sanitize_text(data.get("buyer_id") or get_nested_value(data, "order.buyerId") or get_nested_value(data, "order.buyer_id"), 180),
+        "channel": "bridge",
+        "status": sanitize_text(status, 40) or "sent",
+        "delivery_meta": build_bridge_delivery_meta(data),
+        "last_error": sanitize_text(last_error, 1000) or None,
+    }
+
+
+def bridge_delivery_state_payload(row: sqlite3.Row) -> Dict[str, Any]:
+    return {
+        "order_id": row["order_id"],
+        "unit_index": row["unit_index"],
+        "cookie_id": row["cookie_id"],
+        "item_id": row["item_id"],
+        "buyer_id": row["buyer_id"],
+        "channel": row["channel"],
+        "status": row["status"],
+        "delivery_meta": parse_json_object(row["delivery_meta"]),
+        "last_error": row["last_error"],
+        "sent_at": row["sent_at"],
+        "finalized_at": row["finalized_at"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+    }
+
+
+def get_bridge_delivery_state(conn: sqlite3.Connection, order_id: str, unit_index: int = 1) -> Optional[Dict[str, Any]]:
+    if not order_id or not table_exists(conn, "delivery_finalization_states"):
+        return None
+
+    row = conn.execute(
+        """
+        SELECT order_id, unit_index, cookie_id, item_id, buyer_id, channel, status,
+               delivery_meta, last_error, sent_at, finalized_at, created_at, updated_at
+        FROM delivery_finalization_states
+        WHERE order_id = ? AND unit_index = ?
+        """,
+        (order_id, unit_index),
+    ).fetchone()
+    return bridge_delivery_state_payload(row) if row else None
+
+
+def upsert_bridge_delivery_state(data: Dict[str, Any], status: str, last_error: str = "") -> bool:
+    state = normalize_bridge_delivery_state(data, status, last_error)
+    if not state["order_id"]:
+        return False
+
+    try:
+        with connect_db() as conn:
+            if not table_exists(conn, "delivery_finalization_states"):
+                return False
+
+            sent_at_value = "CURRENT_TIMESTAMP" if state["status"] in ("sent", "finalized") else "NULL"
+            finalized_at_value = "CURRENT_TIMESTAMP" if state["status"] == "finalized" else "NULL"
+            conn.execute(
+                f"""
+                INSERT INTO delivery_finalization_states (
+                    order_id, unit_index, cookie_id, item_id, buyer_id, channel,
+                    status, delivery_meta, last_error, sent_at, finalized_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, {sent_at_value}, {finalized_at_value})
+                ON CONFLICT(order_id, unit_index) DO UPDATE SET
+                    cookie_id = excluded.cookie_id,
+                    item_id = excluded.item_id,
+                    buyer_id = excluded.buyer_id,
+                    channel = excluded.channel,
+                    status = CASE
+                        WHEN delivery_finalization_states.status IN ('sent', 'finalized')
+                             AND excluded.status NOT IN ('finalized')
+                            THEN delivery_finalization_states.status
+                        ELSE excluded.status
+                    END,
+                    delivery_meta = CASE
+                        WHEN delivery_finalization_states.status IN ('sent', 'finalized')
+                             AND excluded.status NOT IN ('finalized')
+                            THEN delivery_finalization_states.delivery_meta
+                        ELSE excluded.delivery_meta
+                    END,
+                    last_error = CASE
+                        WHEN delivery_finalization_states.status IN ('sent', 'finalized')
+                             AND excluded.status NOT IN ('finalized')
+                            THEN delivery_finalization_states.last_error
+                        ELSE excluded.last_error
+                    END,
+                    sent_at = CASE
+                        WHEN delivery_finalization_states.status IN ('sent', 'finalized')
+                             AND excluded.status NOT IN ('finalized')
+                            THEN delivery_finalization_states.sent_at
+                        WHEN excluded.status = 'sent'
+                            THEN COALESCE(delivery_finalization_states.sent_at, CURRENT_TIMESTAMP)
+                        ELSE delivery_finalization_states.sent_at
+                    END,
+                    finalized_at = CASE
+                        WHEN delivery_finalization_states.status IN ('sent', 'finalized')
+                             AND excluded.status NOT IN ('finalized')
+                            THEN delivery_finalization_states.finalized_at
+                        WHEN excluded.status = 'finalized'
+                            THEN COALESCE(delivery_finalization_states.finalized_at, CURRENT_TIMESTAMP)
+                        ELSE delivery_finalization_states.finalized_at
+                    END,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    state["order_id"],
+                    state["unit_index"],
+                    state["cookie_id"],
+                    state["item_id"],
+                    state["buyer_id"],
+                    state["channel"],
+                    state["status"],
+                    json.dumps(state["delivery_meta"], ensure_ascii=False),
+                    state["last_error"],
+                ),
+            )
+            conn.commit()
+            return True
+    except Exception:
+        return False
+
+
+def reserve_bridge_delivery_send(data: Dict[str, Any]) -> Dict[str, Any]:
+    state = normalize_bridge_delivery_state(data, "sending")
+    if not state["order_id"]:
+        return {"reserved": True, "status": "no_order_id"}
+
+    try:
+        with connect_db() as conn:
+            if not table_exists(conn, "delivery_finalization_states"):
+                return {"reserved": True, "status": "state_table_missing"}
+
+            existing = get_bridge_delivery_state(conn, state["order_id"], state["unit_index"])
+            if existing and existing.get("status") in {"sent", "finalized"}:
+                return {
+                    "reserved": False,
+                    "status": existing.get("status"),
+                    "state": existing,
+                }
+            if existing and existing.get("status") == "sending":
+                fresh = conn.execute(
+                    """
+                    SELECT datetime(COALESCE(updated_at, created_at)) >= datetime('now', '-10 minutes')
+                    FROM delivery_finalization_states
+                    WHERE order_id = ? AND unit_index = ?
+                    """,
+                    (state["order_id"], state["unit_index"]),
+                ).fetchone()
+                if bool((fresh or [0])[0]):
+                    return {
+                        "reserved": False,
+                        "status": "sending",
+                        "state": existing,
+                    }
+
+            delivery_meta_json = json.dumps(state["delivery_meta"], ensure_ascii=False)
+            if existing:
+                conn.execute(
+                    """
+                    UPDATE delivery_finalization_states
+                    SET cookie_id = ?, item_id = ?, buyer_id = ?, channel = ?, status = 'sending',
+                        delivery_meta = ?, last_error = NULL, updated_at = CURRENT_TIMESTAMP
+                    WHERE order_id = ? AND unit_index = ?
+                    """,
+                    (
+                        state["cookie_id"],
+                        state["item_id"],
+                        state["buyer_id"],
+                        state["channel"],
+                        delivery_meta_json,
+                        state["order_id"],
+                        state["unit_index"],
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO delivery_finalization_states (
+                        order_id, unit_index, cookie_id, item_id, buyer_id, channel,
+                        status, delivery_meta, last_error
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'sending', ?, NULL)
+                    """,
+                    (
+                        state["order_id"],
+                        state["unit_index"],
+                        state["cookie_id"],
+                        state["item_id"],
+                        state["buyer_id"],
+                        state["channel"],
+                        delivery_meta_json,
+                    ),
+                )
+            conn.commit()
+            return {"reserved": True, "status": "sending"}
+    except Exception as exc:
+        return {
+            "reserved": True,
+            "status": "state_reservation_failed",
+            "warning": sanitize_text(exc, 500),
+        }
 
 
 def normalize_order_row(row: sqlite3.Row, columns: List[str]) -> Optional[Dict[str, Any]]:
@@ -477,6 +738,220 @@ async def dispatch_chat_message(payload: Dict[str, Any]) -> Dict[str, Any]:
     )
 
 
+def build_delivery_chat_messages(data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    content = sanitize_text(data.get("content"), 20_000)
+    usage_instructions = sanitize_text(data.get("usage_instructions"), 4000)
+    messages: List[Dict[str, Any]] = []
+
+    if usage_instructions:
+        instruction_payload = {
+            **data,
+            "content": usage_instructions,
+            "message_role": "usage_instructions",
+            "message_sequence": 1,
+        }
+        messages.append(instruction_payload)
+
+    if content:
+        delivery_payload = {
+            **data,
+            "content": content,
+            "message_role": "delivery_content",
+            "message_sequence": len(messages) + 1,
+        }
+        messages.append(delivery_payload)
+
+    return messages
+
+
+async def dispatch_delivery_chat_messages(data: Dict[str, Any]) -> Dict[str, Any]:
+    messages = build_delivery_chat_messages(data)
+    if not messages:
+        raise HTTPException(status_code=400, detail="content is required")
+
+    results: List[Dict[str, Any]] = []
+    for message in messages:
+        result = await dispatch_chat_message(message)
+        if isinstance(result, dict) and result.get("success") is False:
+            raise HTTPException(
+                status_code=502,
+                detail=sanitize_text(result.get("message") or result.get("error"), 1000) or "Chat message send failed",
+            )
+        results.append(result)
+
+    first_result = results[0] if results else {}
+    return {
+        "success": all(result.get("success", True) for result in results),
+        "mode": first_result.get("mode", "multi_message"),
+        "message_count": len(messages),
+        "messages": results,
+    }
+
+
+def is_bridge_auto_confirm_enabled(cookie_id: str) -> bool:
+    normalized_cookie_id = sanitize_text(cookie_id, 180)
+    if not normalized_cookie_id:
+        return False
+
+    try:
+        from db_manager import db_manager
+        return bool(db_manager.get_auto_confirm(normalized_cookie_id))
+    except Exception:
+        return False
+
+
+def resolve_bridge_live_instance(cookie_id: str = ""):
+    try:
+        from XianyuAutoAsync import XianyuLive
+    except Exception:
+        return None
+
+    normalized_cookie_id = sanitize_text(cookie_id, 180)
+    if normalized_cookie_id:
+        try:
+            live_instance = XianyuLive.get_instance(normalized_cookie_id)
+            if live_instance:
+                return live_instance
+        except Exception:
+            pass
+
+        try:
+            import cookie_manager
+
+            manager = getattr(cookie_manager, "manager", None)
+            live_instance = getattr(manager, "live_instances", {}).get(normalized_cookie_id) if manager else None
+            if live_instance:
+                return live_instance
+        except Exception:
+            pass
+
+    try:
+        instances = XianyuLive.get_all_instances()
+    except Exception:
+        instances = {}
+
+    connected = [
+        instance
+        for instance in instances.values()
+        if str(getattr(getattr(instance, "connection_state", None), "value", "")) == "connected"
+        and getattr(instance, "ws", None)
+    ]
+    return connected[0] if len(connected) == 1 else None
+
+
+async def run_on_xianyu_manager_loop(live_instance, coroutine):
+    try:
+        import cookie_manager
+
+        manager = getattr(cookie_manager, "manager", None)
+        target_loop = getattr(manager, "loop", None)
+    except Exception:
+        target_loop = None
+
+    if not target_loop:
+        return await coroutine()
+    if hasattr(target_loop, "is_closed") and target_loop.is_closed():
+        raise RuntimeError("Xianyu account event loop is closed")
+
+    try:
+        current_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        current_loop = None
+
+    if current_loop is target_loop:
+        return await coroutine()
+    if not target_loop.is_running():
+        cookie_id = sanitize_text(getattr(live_instance, "cookie_id", ""), 180)
+        raise RuntimeError(f"Xianyu account event loop is not running: {cookie_id or 'unknown'}")
+
+    thread_future = asyncio.run_coroutine_threadsafe(coroutine(), target_loop)
+    return await asyncio.wait_for(asyncio.wrap_future(thread_future), timeout=45)
+
+
+async def finalize_bridge_delivery_after_send(data: Dict[str, Any]) -> Dict[str, Any]:
+    state = normalize_bridge_delivery_state(data, "sent")
+    order_id = state.get("order_id")
+    item_id = state.get("item_id")
+    cookie_id = state.get("cookie_id")
+
+    if not order_id:
+        return {
+            "success": True,
+            "status": "skipped",
+            "reason": "order_id_missing",
+        }
+
+    live_instance = resolve_bridge_live_instance(cookie_id)
+    if not live_instance:
+        return {
+            "success": False,
+            "status": "confirm_skipped",
+            "reason": "xianyu_account_not_running",
+        }
+
+    resolved_cookie_id = sanitize_text(getattr(live_instance, "cookie_id", cookie_id), 180) or cookie_id
+    if not is_bridge_auto_confirm_enabled(resolved_cookie_id):
+        return {
+            "success": True,
+            "status": "auto_confirm_disabled",
+            "cookie_id": resolved_cookie_id,
+        }
+
+    delivery_meta = {
+        **(state.get("delivery_meta") or {}),
+        "success": True,
+        "source": "zaoyoe_bridge",
+    }
+
+    async def do_finalize():
+        if hasattr(live_instance, "_finalize_delivery_after_send"):
+            return await live_instance._finalize_delivery_after_send(
+                delivery_meta=delivery_meta,
+                order_id=order_id,
+                item_id=item_id,
+            )
+
+        if hasattr(live_instance, "auto_confirm"):
+            return await live_instance.auto_confirm(order_id, item_id)
+
+        return {
+            "success": False,
+            "error": "Xianyu live instance does not support auto_confirm",
+        }
+
+    try:
+        result = await run_on_xianyu_manager_loop(live_instance, do_finalize)
+    except Exception as exc:
+        error_message = sanitize_text(exc, 1000) or "自动确认发货异常"
+        upsert_bridge_delivery_state(data, "sent", error_message)
+        return {
+            "success": False,
+            "status": "confirm_failed",
+            "cookie_id": resolved_cookie_id,
+            "error": error_message,
+        }
+
+    if isinstance(result, dict) and result.get("success"):
+        upsert_bridge_delivery_state(data, "finalized")
+        return {
+            "success": True,
+            "status": "finalized",
+            "cookie_id": resolved_cookie_id,
+        }
+
+    error_message = sanitize_text(
+        result.get("error") if isinstance(result, dict) else result,
+        1000,
+    ) or "自动确认发货失败"
+    upsert_bridge_delivery_state(data, "sent", error_message)
+    return {
+        "success": False,
+        "status": "confirm_failed",
+        "cookie_id": resolved_cookie_id,
+        "error": error_message,
+    }
+
+
 @router.get("/orders/paid")
 async def list_paid_orders(
     limit: int = 50,
@@ -501,10 +976,29 @@ async def send_chat_message(
     _authorized: None = Depends(verify_bridge_token),
 ):
     data = payload.dict()
-    result = await dispatch_chat_message(data)
+    reservation = reserve_bridge_delivery_send(data)
+    if not reservation.get("reserved"):
+        if reservation.get("status") in {"sent", "finalized"}:
+            return {
+                "success": True,
+                "skipped": True,
+                "reason": "delivery_already_recorded",
+                "bridge_delivery_state": reservation,
+            }
+        raise HTTPException(status_code=409, detail="Bridge delivery send is already in progress")
+
+    try:
+        result = await dispatch_delivery_chat_messages(data)
+    except Exception as exc:
+        upsert_bridge_delivery_state(data, "failed", sanitize_text(exc, 1000))
+        raise
+
+    upsert_bridge_delivery_state(data, "sent")
+    finalization = await finalize_bridge_delivery_after_send(data)
     return {
         "success": True,
         **result,
+        "bridge_finalization": finalization,
     }
 
 

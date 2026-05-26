@@ -5,9 +5,12 @@ Enable it with:
 """
 
 import asyncio
+import logging
 from typing import Any, Awaitable, Callable, Dict, Optional
 
 from fastapi import HTTPException
+
+logger = logging.getLogger("zaoyoe_sender_example")
 
 
 async def send_message(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -38,6 +41,8 @@ async def send_message(payload: Dict[str, Any]) -> Dict[str, Any]:
         or order.get("account_id")
         or ""
     ).strip()
+    message_role = str(payload.get("message_role") or "delivery_content").strip()
+    message_sequence = payload.get("message_sequence") or ""
 
     if not content:
         return {
@@ -52,6 +57,17 @@ async def send_message(payload: Dict[str, Any]) -> Dict[str, Any]:
     live_instance = resolve_live_instance(cookie_id)
     if not live_instance:
         raise HTTPException(status_code=400, detail=f"Xianyu account is not running: {cookie_id or 'auto'}")
+
+    logger.info(
+        "xianyu_bridge_send_start order_id=%s role=%s sequence=%s buyer_id=%s chat_id=%s item_id=%s content_length=%s",
+        order_id,
+        message_role,
+        message_sequence,
+        buyer_id,
+        chat_id,
+        item_id,
+        len(content),
+    )
 
     if chat_id and is_live_websocket_ready(live_instance):
         await run_on_manager_loop(
@@ -68,6 +84,17 @@ async def send_message(payload: Dict[str, Any]) -> Dict[str, Any]:
         )
         send_mode = "temporary_chat"
 
+    logger.info(
+        "xianyu_bridge_send_done order_id=%s role=%s sequence=%s buyer_id=%s chat_id=%s item_id=%s send_mode=%s",
+        order_id,
+        message_role,
+        message_sequence,
+        buyer_id,
+        chat_id,
+        item_id,
+        send_mode,
+    )
+
     return {
         "success": True,
         "order_id": order_id,
@@ -76,6 +103,9 @@ async def send_message(payload: Dict[str, Any]) -> Dict[str, Any]:
         "buyer_id": buyer_id,
         "item_id": item_id,
         "send_mode": send_mode,
+        "message_role": message_role,
+        "message_sequence": message_sequence,
+        "content_length": len(content),
     }
 
 

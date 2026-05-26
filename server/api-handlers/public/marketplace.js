@@ -684,6 +684,10 @@ function createMarketplaceHandlers({
             });
             const success = result?.success === true;
             const deliveryContent = sanitizeText(result?.data?.content, 20_000);
+            const showUsageInstructions = result?.data?.show_usage_instructions === true;
+            const usageInstructions = showUsageInstructions
+                ? sanitizeText(result?.data?.usage_instructions, 4000)
+                : '';
 
             if (!success) {
                 return writeJson(res, 400, {
@@ -716,6 +720,8 @@ function createMarketplaceHandlers({
                 duplicate: result?.duplicate === true,
                 content: deliveryContent,
                 card: deliveryContent,
+                usage_instructions: usageInstructions || null,
+                show_usage_instructions: Boolean(usageInstructions),
                 message: result?.message || 'Xianyu delivery content created',
                 meta: {
                     request,

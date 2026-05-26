@@ -40,7 +40,7 @@ function createSupabaseStub(state) {
     return {
         from(table) {
             return {
-                select() {
+                select(columns = '*') {
                     const query = {
                         _eq: [],
                         eq(field, value) {
@@ -48,13 +48,20 @@ function createSupabaseStub(state) {
                             return query;
                         },
                         maybeSingle() {
-                            state.tableReads.push({ table, eq: clone(query._eq) });
+                            state.tableReads.push({ table, columns, eq: clone(query._eq) });
                             if (table === 'system_config') {
                                 return Promise.resolve({
                                     data: {
                                         config_key: 'marketplace_channels',
                                         config_value: state.marketplaceConfig
                                     },
+                                    error: null
+                                });
+                            }
+                            if (table === 'shop_products') {
+                                const productId = query._eq.find(([field]) => field === 'id')?.[1];
+                                return Promise.resolve({
+                                    data: clone(state.productsById?.[productId] || null),
                                     error: null
                                 });
                             }
@@ -91,6 +98,7 @@ async function withMarketplaceOrdersHandler(stateOverrides, callback) {
         auditLogs: [],
         tableReads: [],
         rpcCalls: [],
+        productsById: {},
         marketplaceConfig: {
             enabled: true,
             default_channel_key: 'website',
@@ -340,6 +348,73 @@ test('admin marketplace orders handler creates a marketplace order through the s
         assert.equal(state.rpcCalls[0].params.p_external_order_id, 'XY-ORDER-1003');
         assert.equal(state.auditLogs.length, 1);
         assert.equal(state.auditLogs[0].actionType, 'shop.marketplace_order.create');
+    });
+});
+
+test('marketplace order helper backfills product usage instructions when RPC omits guidance fields', async () => {
+    const {
+        createMarketplaceShopOrder
+    } = require('../api/_lib/marketplace-orders');
+    const productId = '11111111-1111-4111-8111-111111111111';
+    const state = {
+        tableReads: [],
+        rpcCalls: [],
+        productsById: {
+            [productId]: {
+                id: productId,
+                show_usage_instructions: true,
+                usage_instructions: '旧字段说明',
+                usage_instructions_zh: '中文使用说明优先',
+                usage_instructions_en: 'English instructions'
+            }
+        },
+        rpcResult: {
+            success: true,
+            duplicate: false,
+            message: 'marketplace order created',
+            data: {
+                order_id: 'order-guidance-backfill',
+                product_id: productId,
+                delivery_status: 'delivered',
+                site: 'cn',
+                content: 'card-secret'
+            }
+        }
+    };
+    const supabase = createSupabaseStub(state);
+
+    const { result } = await createMarketplaceShopOrder({
+        supabase,
+        payload: {
+            product_id: productId,
+            channel: 'xianyu',
+            account: 'main',
+            external_order_id: 'XY-ORDER-GUIDANCE-1001'
+        },
+        config: state.marketplaceConfig || {
+            enabled: true,
+            channels: [
+                {
+                    key: 'xianyu',
+                    type: 'xianyu',
+                    enabled: true,
+                    inventory_mode: 'shared',
+                    source_channel: 'xianyu',
+                    default_account_key: 'main',
+                    accounts: [{ key: 'main', enabled: true }]
+                }
+            ]
+        }
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.data.content, 'card-secret');
+    assert.equal(result.data.show_usage_instructions, true);
+    assert.equal(result.data.usage_instructions, '中文使用说明优先');
+    assert.deepEqual(state.tableReads[0], {
+        table: 'shop_products',
+        columns: 'id, show_usage_instructions, usage_instructions, usage_instructions_zh, usage_instructions_en',
+        eq: [['id', productId]]
     });
 });
 
