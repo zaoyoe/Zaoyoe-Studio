@@ -3,8 +3,10 @@ const assert = require('node:assert/strict');
 
 const {
     buildBridgeMarketplaceConfigFromEnv,
+    bridgeSummaryHasActivity,
     loadPaidOrdersFromXianyuBot,
     postXianyuOrder,
+    resolveSmartPollingOptions,
     resolveDeliveryContent,
     resolveUsageInstructions,
     runBridgeLoop,
@@ -204,7 +206,22 @@ test('xianyu bridge reports per-order delivery timing diagnostics', async () => 
         async sendChat() {
             return {
                 status: 'sent',
-                attempts: 2
+                attempts: 2,
+                response: {
+                    message_count: 2,
+                    messages: [
+                        {
+                            message_role: 'usage_instructions'
+                        },
+                        {
+                            message_role: 'delivery_content'
+                        }
+                    ],
+                    bridge_finalization: {
+                        success: true,
+                        status: 'finalized'
+                    }
+                }
             };
         }
     });
@@ -223,10 +240,16 @@ test('xianyu bridge reports per-order delivery timing diagnostics', async () => 
         total_ms: 410
     });
     assert.equal(summary.results[0].chat_attempts, 2);
+    assert.equal(summary.results[0].message_count, 2);
+    assert.deepEqual(summary.results[0].message_roles, ['usage_instructions', 'delivery_content']);
+    assert.equal(summary.results[0].bridge_finalization_status, 'finalized');
+    assert.equal(summary.results[0].bridge_finalization_success, true);
     assert.equal(diagnostics.length, 1);
     assert.equal(diagnostics[0].event, 'order_delivered');
     assert.equal(diagnostics[0].external_order_id, 'XY-BRIDGE-1005');
     assert.deepEqual(diagnostics[0].timing_ms, summary.results[0].timing_ms);
+    assert.equal(diagnostics[0].message_count, 2);
+    assert.deepEqual(diagnostics[0].message_roles, ['usage_instructions', 'delivery_content']);
 });
 
 test('xianyu bridge refreshes admin mappings after a local mapping miss', async () => {
@@ -398,6 +421,83 @@ test('xianyu bridge loop keeps running after a single worker failure', async () 
     assert.equal(summaries[0].error.message, 'fetch failed');
     assert.equal(summaries[1].failed, 0);
     assert.equal(summary.failed, 0);
+});
+
+test('xianyu bridge loop uses active polling briefly after order activity', async () => {
+    const summaries = [];
+    const sleepDurations = [];
+    const urls = [];
+    let runCount = 0;
+
+    const summary = await runBridgeLoop({
+        env: {
+            XIANYU_BOT_ORDERS_URL: 'http://127.0.0.1:19090/orders/paid',
+            XIANYU_BRIDGE_IDLE_INTERVAL_MS: '5000',
+            XIANYU_BRIDGE_ACTIVE_INTERVAL_MS: '2000',
+            XIANYU_BRIDGE_ACTIVE_WINDOW_MS: '60000'
+        },
+        intervalMs: 30_000,
+        stopAfterRuns: 3,
+        onSummary(entry) {
+            summaries.push(entry);
+        },
+        sleepFn: async (ms) => {
+            sleepDurations.push(ms);
+        },
+        async fetchImpl(url) {
+            urls.push(url);
+            runCount += 1;
+            return {
+                ok: true,
+                status: 200,
+                async text() {
+                    return JSON.stringify({
+                        success: true,
+                        orders: runCount === 1
+                            ? [{ orderId: 'XY-ACTIVE-1', status: '买家已付款' }]
+                            : []
+                    });
+                }
+            };
+        }
+    });
+
+    assert.equal(summary.failed, 0);
+    assert.equal(summaries.length, 3);
+    assert.equal(summaries[0].polling.mode, 'active');
+    assert.equal(summaries[0].polling.next_interval_ms, 2000);
+    assert.equal(summaries[1].polling.mode, 'active');
+    assert.equal(sleepDurations[0], 2000);
+    assert.equal(sleepDurations[1], 2000);
+    assert.match(urls[0], /bridge_poll_mode=idle/);
+    assert.match(urls[1], /bridge_poll_mode=active/);
+});
+
+test('xianyu bridge smart polling helpers normalize env and activity', () => {
+    assert.deepEqual(resolveSmartPollingOptions({
+        XIANYU_BRIDGE_IDLE_INTERVAL_MS: '5000',
+        XIANYU_BRIDGE_ACTIVE_INTERVAL_MS: '2000',
+        XIANYU_BRIDGE_ACTIVE_WINDOW_MS: '300000'
+    }), {
+        idleMs: 5000,
+        activeMs: 2000,
+        activeWindowMs: 300000
+    });
+
+    assert.equal(bridgeSummaryHasActivity({
+        total: 1,
+        delivered: 1,
+        skipped: 0,
+        failed: 0,
+        results: [{ status: 'delivered', external_order_id: 'XY-ACTIVE-2' }]
+    }), true);
+    assert.equal(bridgeSummaryHasActivity({
+        total: 1,
+        delivered: 0,
+        skipped: 1,
+        failed: 0,
+        results: [{ status: 'skipped', reason: 'already_processed', external_order_id: 'XY-ACTIVE-2' }]
+    }), false);
 });
 
 test('xianyu bridge posts delivery content to a bot chat endpoint', async () => {
