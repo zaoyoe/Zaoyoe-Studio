@@ -125,6 +125,20 @@ npm run marketplace:xianyu:bridge -- \
 
 如果 Docker 运行端口映射成 `9000` 或 `8000`，把上面的 `8090` 换成实际端口。
 
+建议生产环境使用智能轮询，降低长时间高频请求导致 cookie 被收回的概率：
+
+```bash
+XIANYU_BRIDGE_IDLE_INTERVAL_MS=5000
+XIANYU_BRIDGE_ACTIVE_INTERVAL_MS=2000
+XIANYU_BRIDGE_ACTIVE_WINDOW_MS=300000
+ZAOYOE_ORDER_SYNC_INTERVAL_SECONDS=5
+ZAOYOE_ORDER_SYNC_IDLE_INTERVAL_SECONDS=5
+ZAOYOE_ORDER_SYNC_ACTIVE_INTERVAL_SECONDS=2
+ZAOYOE_ORDER_SYNC_ACTIVE_WINDOW_SECONDS=300
+```
+
+含义是：空闲时约 5 秒检查一次；发现待处理订单后，接下来 5 分钟临时切到 2 秒检查一次，然后自动回到 5 秒。
+
 ## 最终链路
 
 ```text

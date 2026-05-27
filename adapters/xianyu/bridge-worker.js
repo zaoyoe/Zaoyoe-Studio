@@ -169,6 +169,36 @@ function resolveUsageInstructions(responseBody = {}) {
     );
 }
 
+function summarizeChatDeliveryResult(chatResult = {}) {
+    const response = chatResult?.response && typeof chatResult.response === 'object'
+        ? chatResult.response
+        : {};
+    const responseMessages = Array.isArray(response.messages) ? response.messages : [];
+    const payload = chatResult?.payload && typeof chatResult.payload === 'object'
+        ? chatResult.payload
+        : {};
+    const roles = responseMessages
+        .map((entry) => sanitizeText(entry?.message_role || entry?.role, 80))
+        .filter(Boolean);
+
+    if (!roles.length) {
+        if (sanitizeText(payload.usage_instructions, 4000)) roles.push('usage_instructions');
+        if (sanitizeText(payload.content, 20_000)) roles.push('delivery_content');
+    }
+
+    const responseMessageCount = Number(response.message_count);
+    return {
+        message_count: Number.isFinite(responseMessageCount) && responseMessageCount > 0
+            ? responseMessageCount
+            : roles.length,
+        message_roles: roles,
+        bridge_finalization_status: sanitizeText(response.bridge_finalization?.status, 120),
+        bridge_finalization_success: typeof response.bridge_finalization?.success === 'boolean'
+            ? response.bridge_finalization.success
+            : undefined
+    };
+}
+
 function parseTimestampMs(value) {
     if (value === null || value === undefined || value === '') return null;
     if (value instanceof Date) {
@@ -292,6 +322,46 @@ function normalizeInteger(value, fallback, {
     const parsed = Number.parseInt(String(value ?? ''), 10);
     if (!Number.isFinite(parsed)) return fallback;
     return Math.min(max, Math.max(min, parsed));
+}
+
+function resolveSmartPollingOptions(env = process.env, fallbackIntervalMs = 30_000) {
+    const idleMs = normalizeInteger(
+        env.XIANYU_BRIDGE_IDLE_INTERVAL_MS
+        || env.XIANYU_BRIDGE_POLL_IDLE_MS
+        || env.XIANYU_BRIDGE_POLL_INTERVAL_MS,
+        fallbackIntervalMs,
+        { min: 1000, max: 300_000 }
+    );
+    const activeMs = normalizeInteger(
+        env.XIANYU_BRIDGE_ACTIVE_INTERVAL_MS
+        || env.XIANYU_BRIDGE_POLL_ACTIVE_MS,
+        Math.min(idleMs, 2000),
+        { min: 1000, max: idleMs }
+    );
+    const activeWindowMs = normalizeInteger(
+        env.XIANYU_BRIDGE_ACTIVE_WINDOW_MS
+        || env.XIANYU_BRIDGE_POLL_ACTIVE_WINDOW_MS,
+        5 * 60 * 1000,
+        { min: 0, max: 60 * 60 * 1000 }
+    );
+
+    return {
+        idleMs,
+        activeMs,
+        activeWindowMs
+    };
+}
+
+function bridgeSummaryHasActivity(summary = {}) {
+    if (!summary || typeof summary !== 'object') return false;
+    if (Number(summary.delivered || 0) > 0) return true;
+    if (Number(summary.failed || 0) > 0 && Number(summary.total || 0) > 0) return true;
+    return Array.isArray(summary.results) && summary.results.some((entry) => {
+        if (!entry || typeof entry !== 'object') return false;
+        return entry.status === 'delivered'
+            || (entry.status === 'failed' && entry.external_order_id)
+            || (entry.status === 'skipped' && !['already_processed', 'duplicate_order'].includes(entry.reason));
+    });
 }
 
 function parseProductMappings(value) {
@@ -492,7 +562,18 @@ async function loadPaidOrdersFromXianyuBot(env = process.env, {
     }
 
     const method = sanitizeText(env.XIANYU_BOT_ORDERS_METHOD || 'GET', 20).toUpperCase() === 'POST' ? 'POST' : 'GET';
-    const submitted = await fetchJson(ordersUrl, {
+    let requestUrl = ordersUrl;
+    const pollMode = sanitizeText(env.XIANYU_BRIDGE_POLL_MODE, 20).toLowerCase();
+    if (['active', 'idle'].includes(pollMode)) {
+        try {
+            const parsedUrl = new URL(ordersUrl);
+            parsedUrl.searchParams.set('bridge_poll_mode', pollMode);
+            requestUrl = parsedUrl.toString();
+        } catch (_) {
+            requestUrl = ordersUrl;
+        }
+    }
+    const submitted = await fetchJson(requestUrl, {
         method,
         headers: buildBotHeaders(env, 'XIANYU_BOT'),
         body: method === 'POST'
@@ -838,6 +919,7 @@ async function runBridgeWorker({
                 total_ms: elapsedMs(orderStartedAt, finishedAt)
             });
             const chatAttempts = Number(chatResult?.attempts);
+            const chatDelivery = summarizeChatDeliveryResult(chatResult);
             const deliveredEntry = {
                 status: 'delivered',
                 external_order_id: normalizedOrderId,
@@ -849,6 +931,22 @@ async function runBridgeWorker({
                 chat_status: chatResult?.status || 'sent',
                 timing_ms
             };
+            if (chatDelivery.message_count > 0) {
+                deliveredEntry.message_count = chatDelivery.message_count;
+                deliveredDiagnostic.message_count = chatDelivery.message_count;
+            }
+            if (chatDelivery.message_roles.length) {
+                deliveredEntry.message_roles = chatDelivery.message_roles;
+                deliveredDiagnostic.message_roles = chatDelivery.message_roles;
+            }
+            if (chatDelivery.bridge_finalization_status) {
+                deliveredEntry.bridge_finalization_status = chatDelivery.bridge_finalization_status;
+                deliveredDiagnostic.bridge_finalization_status = chatDelivery.bridge_finalization_status;
+            }
+            if (typeof chatDelivery.bridge_finalization_success === 'boolean') {
+                deliveredEntry.bridge_finalization_success = chatDelivery.bridge_finalization_success;
+                deliveredDiagnostic.bridge_finalization_success = chatDelivery.bridge_finalization_success;
+            }
             if (Number.isFinite(chatAttempts)) {
                 deliveredEntry.chat_attempts = chatAttempts;
                 deliveredDiagnostic.chat_attempts = chatAttempts;
@@ -913,15 +1011,26 @@ async function runBridgeLoop({
     intervalMs = 30_000,
     onSummary = (summary) => process.stdout.write(`${JSON.stringify(summary)}\n`),
     stopAfterRuns = 0,
-    fetchImpl = globalThis.fetch
+    fetchImpl = globalThis.fetch,
+    sleepFn = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 } = {}) {
     let runs = 0;
+    let activeUntil = 0;
+    const polling = resolveSmartPollingOptions(env, intervalMs);
 
     while (true) {
         runs += 1;
+        const runStartedAt = Date.now();
+        const runMode = runStartedAt < activeUntil ? 'active' : 'idle';
         let summary;
         try {
-            summary = await runBridgeWorker({ env, fetchImpl });
+            summary = await runBridgeWorker({
+                env: {
+                    ...env,
+                    XIANYU_BRIDGE_POLL_MODE: runMode
+                },
+                fetchImpl
+            });
         } catch (error) {
             summary = {
                 total: 0,
@@ -935,13 +1044,25 @@ async function runBridgeLoop({
                 results: []
             };
         }
+        if (bridgeSummaryHasActivity(summary)) {
+            activeUntil = Math.max(activeUntil, runStartedAt + polling.activeWindowMs);
+        }
+        summary.polling = {
+            mode: Date.now() < activeUntil ? 'active' : 'idle',
+            active_until: activeUntil ? new Date(activeUntil).toISOString() : '',
+            next_interval_ms: Date.now() < activeUntil ? polling.activeMs : polling.idleMs,
+            active_interval_ms: polling.activeMs,
+            idle_interval_ms: polling.idleMs,
+            active_window_ms: polling.activeWindowMs
+        };
         onSummary(summary);
 
         if (stopAfterRuns > 0 && runs >= stopAfterRuns) {
             return summary;
         }
 
-        await new Promise((resolve) => setTimeout(resolve, intervalMs));
+        const nextIntervalMs = Date.now() < activeUntil ? polling.activeMs : polling.idleMs;
+        await sleepFn(nextIntervalMs);
     }
 }
 
@@ -1073,6 +1194,7 @@ module.exports = {
     parseArgs,
     postXianyuOrder,
     postXianyuOrderWithMappingRecovery,
+    resolveSmartPollingOptions,
     resolveBuyerId,
     resolveBuyerName,
     resolveChatId,
@@ -1081,6 +1203,7 @@ module.exports = {
     resolveItemId,
     resolveOrderId,
     resolveUsageInstructions,
+    bridgeSummaryHasActivity,
     runBridgeLoop,
     runBridgeWorker,
     saveProcessedOrderIds,

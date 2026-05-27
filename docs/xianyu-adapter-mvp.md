@@ -133,6 +133,23 @@ npm run marketplace:xianyu:bridge -- \
   --interval-ms 5000
 ```
 
+生产环境建议使用智能轮询：空闲时低频，发现待处理订单后短时间高频，兼顾 cookie 稳定性和发货速度。例如：
+
+```bash
+XIANYU_BRIDGE_IDLE_INTERVAL_MS=5000
+XIANYU_BRIDGE_ACTIVE_INTERVAL_MS=2000
+XIANYU_BRIDGE_ACTIVE_WINDOW_MS=300000
+```
+
+如果闲鱼自动化项目内部还有订单历史同步节流，也建议使用同样策略：
+
+```bash
+ZAOYOE_ORDER_SYNC_INTERVAL_SECONDS=5
+ZAOYOE_ORDER_SYNC_IDLE_INTERVAL_SECONDS=5
+ZAOYOE_ORDER_SYNC_ACTIVE_INTERVAL_SECONDS=2
+ZAOYOE_ORDER_SYNC_ACTIVE_WINDOW_SECONDS=300
+```
+
 环境变量写法：
 
 ```bash
