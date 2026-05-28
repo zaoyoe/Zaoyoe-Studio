@@ -75,11 +75,11 @@ test('site config keeps shared image records canonical while exposing intl CDN d
     assert.match(framerHomeSource, /getZaoyoeAssetCdnOrigin\(\)/);
     assert.match(chatWidgetSource, /window\.SiteConfig\?\.normalizeAssetUrlForCurrentSite\?\.\(parsed\.href\)/);
     assert.ok(
-        adminStudioHtml.indexOf('./js/site-config.js?v=20260528_GONGYI_SITE_AWARE_1') < adminStudioHtml.indexOf('admin-studio.js?v='),
+        adminStudioHtml.indexOf('./js/site-config.js?v=20260528_AVATAR_CANONICAL_CDN_1') < adminStudioHtml.indexOf('admin-studio.js?v='),
         'admin studio should load site config before admin gallery image rendering'
     );
     assert.ok(
-        adminStudioHtml.indexOf('./js/site-config.js?v=20260528_GONGYI_SITE_AWARE_1') < adminStudioHtml.indexOf('js/admin-shop.js?v='),
+        adminStudioHtml.indexOf('./js/site-config.js?v=20260528_AVATAR_CANONICAL_CDN_1') < adminStudioHtml.indexOf('js/admin-shop.js?v='),
         'admin studio should load site config before admin shop image rendering'
     );
 });
@@ -109,7 +109,7 @@ test('site config retires legacy service worker caches before they can pin stale
         'SiteConfig should delete stale Cache Storage entries'
     );
     assert.ok(
-        indexSource.includes('./js/site-config.js?v=20260528_GONGYI_SITE_AWARE_1'),
+        indexSource.includes('./js/site-config.js?v=20260528_AVATAR_CANONICAL_CDN_1'),
         'homepage should cache-bust the service worker retirement runtime'
     );
 });
@@ -127,7 +127,11 @@ test('site config rewrites canonical image CDN records to intl display origins a
     );
     assert.equal(
         intlConfig.normalizeAssetUrlForCurrentSite('https://cdn.fatherkey.com/avatars/user_1775982177111.webp'),
-        'https://cdn.zaoyoe.xyz/avatars/user_1775982177111.webp'
+        'https://cdn.fatherkey.com/avatars/user_1775982177111.webp'
+    );
+    assert.equal(
+        intlConfig.normalizeAssetUrlForCurrentSite('https://cdn.zaoyoe.com/avatars/user_1775982177111.webp'),
+        'https://cdn.fatherkey.com/avatars/user_1775982177111.webp'
     );
     assert.equal(
         intlConfig.normalizeAssetUrlForCurrentSite('https://legacy-public.r2.dev/prompts/example.webp?size=card'),

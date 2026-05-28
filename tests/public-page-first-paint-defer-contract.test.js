@@ -58,7 +58,7 @@ test('subpage Supabase and shared runtime chains are deferred in dependency orde
             '/api/runtime/supabase-config',
             './js/runtime-supabase-config.js?v=20260510_REALTIME_GRACEFUL_FALLBACK_1',
             './supabase-client.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1',
-            './js/site-config.js?v=20260528_GONGYI_SITE_AWARE_1',
+            './js/site-config.js?v=20260528_AVATAR_CANONICAL_CDN_1',
             './js/site-layout-runtime.js?v=20260528_GONGYI_SITE_AWARE_1',
             './js/section-visibility.js?v=20260528_GONGYI_SITE_AWARE_1'
         ].forEach((src) => {

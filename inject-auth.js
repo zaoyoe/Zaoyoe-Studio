@@ -253,7 +253,9 @@
             const hostname = parsed.hostname.toLowerCase();
             const isKnownAssetHost = INJECTED_AUTH_ASSET_CDN_HOSTS.has(hostname) || hostname.endsWith('.r2.dev');
             if (isKnownAssetHost && INJECTED_AUTH_ASSET_CDN_PATH_PREFIXES.has(parts[0])) {
-                const targetOrigin = new URL(getInjectedAuthAssetCdnOrigin());
+                const targetOrigin = new URL(parts[0] === 'avatars'
+                    ? 'https://cdn.fatherkey.com'
+                    : getInjectedAuthAssetCdnOrigin());
                 parsed.protocol = targetOrigin.protocol;
                 parsed.host = targetOrigin.host;
             }

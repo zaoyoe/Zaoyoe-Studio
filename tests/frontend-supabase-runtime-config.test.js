@@ -2602,6 +2602,11 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
     );
     assert.match(
         injectSource,
+        /parts\[0\] === 'avatars'[\s\S]*'https:\/\/cdn\.fatherkey\.com'/,
+        'inject-auth.js should keep shared user avatars on the canonical CDN'
+    );
+    assert.match(
+        injectSource,
         /window\.SiteConfig\?\.normalizeAssetUrlForCurrentSite\?\.\(parsed\.href\)/,
         'inject-auth.js should reuse SiteConfig CDN normalization when available'
     );
@@ -2633,7 +2638,7 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
         );
         assert.match(
             source,
-            /inject-auth\.js\?v=20260528_XYZ_AVATAR_CDN_1/,
+            /inject-auth\.js\?v=20260528_AVATAR_CANONICAL_CDN_1/,
             'auth entry pages should load the latest injected auth runtime version'
         );
     }
@@ -3114,7 +3119,7 @@ test('theme bootstraps default first visits to light instead of system dark', ()
     for (const relativePath of injectedAuthEntryPages) {
         const source = readRepoFile(relativePath);
         assert.equal(
-            source.includes('inject-auth.js?v=20260528_XYZ_AVATAR_CDN_1'),
+            source.includes('inject-auth.js?v=20260528_AVATAR_CANONICAL_CDN_1'),
             true,
             `${relativePath} should cache-bust the injected auth light-default runtime`
         );

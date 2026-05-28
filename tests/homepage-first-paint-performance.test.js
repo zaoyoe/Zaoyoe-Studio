@@ -51,12 +51,12 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should keep cache-busting the full static hero stability styles'
     );
     assert.equal(
-        indexSource.includes('./js/nav-auth-fast-paint.js?v=20260528_XYZ_AVATAR_CDN_1'),
+        indexSource.includes('./js/nav-auth-fast-paint.js?v=20260528_AVATAR_CANONICAL_CDN_1'),
         true,
         'homepage should load the cached nav auth fast-paint helper before the lower auth runtime'
     );
     assert.ok(
-        indexSource.indexOf('./js/nav-auth-fast-paint.js?v=20260528_XYZ_AVATAR_CDN_1') < indexSource.indexOf('./supabase-auth-functions.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1'),
+        indexSource.indexOf('./js/nav-auth-fast-paint.js?v=20260528_AVATAR_CANONICAL_CDN_1') < indexSource.indexOf('./supabase-auth-functions.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1'),
         'homepage nav auth fast-paint helper should run before Supabase auth hydration'
     );
     assert.match(
@@ -78,6 +78,11 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         navAuthFastPaintSource,
         /FAST_PAINT_ASSET_CDN_PATH_PREFIXES[\s\S]*'avatars'/,
         'nav auth fast-paint helper should rewrite cached avatar assets for the current site'
+    );
+    assert.match(
+        navAuthFastPaintSource,
+        /parts\[0\] === 'avatars'[\s\S]*'https:\/\/cdn\.fatherkey\.com'/,
+        'nav auth fast-paint helper should keep shared user avatars on the canonical CDN'
     );
     assert.match(
         navAuthFastPaintSource,
@@ -720,7 +725,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
         '/api/runtime/supabase-config',
         './js/runtime-supabase-config.js?v=20260510_REALTIME_GRACEFUL_FALLBACK_1',
         './supabase-client.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1',
-        './js/site-config.js?v=20260528_GONGYI_SITE_AWARE_1',
+        './js/site-config.js?v=20260528_AVATAR_CANONICAL_CDN_1',
         './js/homepage-contract.js?v=20260512_HOMEPAGE_CONTRACT_VERIFY_I18N_1',
         './js/section-visibility.js?v=20260528_GONGYI_SITE_AWARE_1',
         './js/i18n.js?v=20260521_HOME_SHOP_TITLE_1',
