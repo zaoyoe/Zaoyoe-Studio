@@ -37,6 +37,21 @@ test('admin product editor keeps product-level tier pricing out of the modal and
         /payload\[marketingFields\.flashSalePrice\] = parseInt\(flashPriceRaw\);[\s\S]*payload\[marketingFields\.flashSaleEnd\] = new Date\(flashEndRaw\)\.toISOString\(\);/,
         'saving flash pricing should still write through the site-scoped field map'
     );
+    assert.match(
+        source,
+        /if \(nameLabel\) nameLabel\.textContent = isCN \? '商品名称' : '商品名称（英文）';[\s\S]*if \(descLabel\) descLabel\.textContent = isCN \? '商品描述' : '商品描述（英文）';/,
+        'intl product fields should stay localized for Chinese admin operators'
+    );
+    assert.match(
+        source,
+        /if \(editSite === 'intl' && !id && !payload\.name\) \{[\s\S]*payload\.name = name;/,
+        'creating an intl product should still backfill the base required name field'
+    );
+    assert.doesNotMatch(
+        source,
+        /editSite === 'intl'[\s\S]{0,160}payload\.price_points = normalizedPrice/,
+        'creating an intl product should not mirror the intl price into the CN price field'
+    );
 });
 
 test('public shop catalog normalizes marketing pricing for the requested site', () => {

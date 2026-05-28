@@ -580,15 +580,15 @@ const ShopAdmin = {
         const descLabel = document.getElementById('prodDescLabel');
         const hint = document.getElementById('productSiteHint');
 
-        if (nameLabel) nameLabel.textContent = isCN ? '商品名称' : 'Product Name (EN)';
-        if (priceLabel) priceLabel.textContent = isCN ? '价格 (积分)' : 'Price (Points)';
-        if (descLabel) descLabel.textContent = isCN ? '商品描述' : 'Description (EN)';
+        if (nameLabel) nameLabel.textContent = isCN ? '商品名称' : '商品名称（英文）';
+        if (priceLabel) priceLabel.textContent = isCN ? '价格（积分）' : '国际价格（积分）';
+        if (descLabel) descLabel.textContent = isCN ? '商品描述' : '商品描述（英文）';
 
         // Update placeholder
         const nameInput = document.getElementById('prodName');
         const descInput = document.getElementById('prodDesc');
-        if (nameInput) nameInput.placeholder = isCN ? '输入商品名称' : 'Enter product name in English';
-        if (descInput) descInput.placeholder = isCN ? '商品简介...' : 'Product description in English...';
+        if (nameInput) nameInput.placeholder = isCN ? '输入商品名称' : '输入英文商品名称';
+        if (descInput) descInput.placeholder = isCN ? '商品简介...' : '输入英文商品描述...';
 
         // Show site hint
         if (hint) {
@@ -597,7 +597,7 @@ const ShopAdmin = {
                 ? '⚠️ 当前为“全部”模式，默认编辑 <strong>CN</strong> 商品信息。切换站点可编辑对应站点的名称/价格/描述。'
                 : (isCN
                     ? '🇨🇳 正在编辑 <strong>CN</strong> 商品信息'
-                    : '🌍 Editing <strong>EN</strong> product info');
+                    : '🌍 正在编辑 <strong>国际站</strong> 商品信息（英文名称 / 描述、国际价格）');
         }
     },
 
@@ -7684,6 +7684,10 @@ Example output format:
                 [marketingFields.flashSalePrice]: null,
                 [marketingFields.flashSaleEnd]: null
             };
+
+            if (editSite === 'intl' && !id && !payload.name) {
+                payload.name = name;
+            }
 
             if (shouldPersistProductDescriptionVisibility) {
                 payload.show_product_description = showProductDescription;

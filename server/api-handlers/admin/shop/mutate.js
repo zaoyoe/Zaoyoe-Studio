@@ -919,6 +919,22 @@ async function writeProductRowWithSchemaFallback(supabase, {
     };
 }
 
+function prepareProductPayloadForWritableSite(payload = {}, { productId = '', site = 'cn' } = {}) {
+    const nextPayload = { ...(payload && typeof payload === 'object' ? payload : {}) };
+    const writableSite = site === 'intl' ? 'intl' : 'cn';
+    const normalizedProductId = normalizeText(productId, 160);
+
+    if (writableSite === 'intl' && !normalizedProductId) {
+        const baseName = normalizeText(nextPayload.name, 160);
+        const englishName = normalizeText(nextPayload.name_en, 160);
+        if (!baseName && englishName) {
+            nextPayload.name = englishName;
+        }
+    }
+
+    return nextPayload;
+}
+
 function isMissingRpcFunctionError(error, functionName = '') {
     const message = normalizeText(error?.message, 400).toLowerCase();
     const hint = normalizeText(error?.hint, 400).toLowerCase();
@@ -933,8 +949,8 @@ function isMissingRpcFunctionError(error, functionName = '') {
         || hint.includes(normalizedFunctionName);
 }
 
-async function validateProductPayload(supabase, { productId = '', payload = {}, pendingCategory = null } = {}) {
-    const safePayload = payload && typeof payload === 'object' ? payload : {};
+async function validateProductPayload(supabase, { productId = '', payload = {}, pendingCategory = null, site = 'cn' } = {}) {
+    const safePayload = prepareProductPayloadForWritableSite(payload, { productId, site });
     const safePendingCategory = pendingCategory && typeof pendingCategory === 'object' ? pendingCategory : null;
     const blockingIssues = [];
     const warnings = [];
@@ -1188,7 +1204,8 @@ module.exports = async (req, res) => {
             const validation = await validateProductPayload(supabase, {
                 productId,
                 payload,
-                pendingCategory
+                pendingCategory,
+                site: writableSite
             });
 
             if (validation.blockingIssues.length) {
@@ -1213,7 +1230,7 @@ module.exports = async (req, res) => {
 
             const writeResult = await writeProductRowWithSchemaFallback(supabase, {
                 productId,
-                payload,
+                payload: prepareProductPayloadForWritableSite(payload, { productId, site: writableSite }),
                 site: writableSite
             });
             const result = writeResult.result;
@@ -1284,7 +1301,8 @@ module.exports = async (req, res) => {
             const validation = await validateProductPayload(supabase, {
                 productId,
                 payload,
-                pendingCategory
+                pendingCategory,
+                site: writableSite
             });
 
             return sendJson(res, 200, {
