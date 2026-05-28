@@ -126,6 +126,10 @@ test('site config rewrites canonical image CDN records to intl display origins a
         'https://cdn.zaoyoe.xyz/products/product_1775982177111.jpg'
     );
     assert.equal(
+        intlConfig.normalizeAssetUrlForCurrentSite('https://cdn.fatherkey.com/avatars/user_1775982177111.webp'),
+        'https://cdn.zaoyoe.xyz/avatars/user_1775982177111.webp'
+    );
+    assert.equal(
         intlConfig.normalizeAssetUrlForCurrentSite('https://legacy-public.r2.dev/prompts/example.webp?size=card'),
         'https://cdn.zaoyoe.xyz/prompts/example.webp?size=card'
     );
@@ -148,6 +152,10 @@ test('site config rewrites canonical image CDN records to intl display origins a
     assert.equal(
         cnConfig.normalizeAssetUrlForCurrentSite('https://cdn.zaoyoe.xyz/prompts/example.webp'),
         'https://cdn.fatherkey.com/prompts/example.webp'
+    );
+    assert.equal(
+        cnConfig.normalizeAssetUrlForCurrentSite('https://cdn.zaoyoe.xyz/avatars/user_1775982177111.webp'),
+        'https://cdn.fatherkey.com/avatars/user_1775982177111.webp'
     );
     assert.equal(
         cnConfig.normalizeGongyiUrlForCurrentSite('https://sub2api.zaoyoe.xyz/dashboard'),

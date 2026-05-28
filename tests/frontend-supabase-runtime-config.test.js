@@ -2565,7 +2565,10 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
         'id="defaultAuthIcon" class="default-auth-icon',
         '<svg viewBox="0 0 24 24" focusable="false" aria-hidden="true">',
         'function getInstantFallbackAvatarUrl(seed)',
+        'function normalizeInjectedAuthAvatarUrl(url)',
+        'const cachedAvatarUrl = normalizeInjectedAuthAvatarUrl(profile?.avatarUrl);',
         `class="nav-user-avatar\${hasAvatar ? ' show' : ' auth-display-none'}"`,
+        'bindInjectedAuthAvatarFallback(cachedProfile);',
         'window.__ZAOYOE_PENDING_AUTH_USER__',
         'class="avatar-dropdown auth-dropdown-layer ${',
         "setInjectedAuthStyleState(indicator, {",
@@ -2586,6 +2589,22 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
     for (const marker of runtimeMarkers) {
         assert.equal(injectSource.includes(marker), true, `inject-auth.js should contain ${marker}`);
     }
+
+    assert.match(
+        injectSource,
+        /INJECTED_AUTH_ASSET_CDN_HOSTS[\s\S]*'cdn\.fatherkey\.com'[\s\S]*'cdn\.zaoyoe\.xyz'/,
+        'inject-auth.js should recognize canonical and intl CDN hosts before auth hydration'
+    );
+    assert.match(
+        injectSource,
+        /INJECTED_AUTH_ASSET_CDN_PATH_PREFIXES[\s\S]*'avatars'/,
+        'inject-auth.js should treat avatars as site CDN assets'
+    );
+    assert.match(
+        injectSource,
+        /window\.SiteConfig\?\.normalizeAssetUrlForCurrentSite\?\.\(parsed\.href\)/,
+        'inject-auth.js should reuse SiteConfig CDN normalization when available'
+    );
 
     const styleMarkers = [
         '.auth-display-none',
@@ -2614,7 +2633,7 @@ test('injected auth runtime centralizes dropdown, drag, and badge style state', 
         );
         assert.match(
             source,
-            /inject-auth\.js\?v=20260512_NAV_AUTH_SESSION_MATCH_1/,
+            /inject-auth\.js\?v=20260528_XYZ_AVATAR_CDN_1/,
             'auth entry pages should load the latest injected auth runtime version'
         );
     }
@@ -3095,7 +3114,7 @@ test('theme bootstraps default first visits to light instead of system dark', ()
     for (const relativePath of injectedAuthEntryPages) {
         const source = readRepoFile(relativePath);
         assert.equal(
-            source.includes('inject-auth.js?v=20260512_NAV_AUTH_SESSION_MATCH_1'),
+            source.includes('inject-auth.js?v=20260528_XYZ_AVATAR_CDN_1'),
             true,
             `${relativePath} should cache-bust the injected auth light-default runtime`
         );
