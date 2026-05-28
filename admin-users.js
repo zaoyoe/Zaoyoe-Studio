@@ -5080,8 +5080,8 @@ function formatAdminPointValue(value) {
     if (!Number.isFinite(numericValue)) return '0';
     const hasDecimal = Math.abs(numericValue % 1) > 0.001;
     return new Intl.NumberFormat('zh-CN', {
-        minimumFractionDigits: hasDecimal ? 1 : 0,
-        maximumFractionDigits: 1
+        minimumFractionDigits: 0,
+        maximumFractionDigits: hasDecimal ? 2 : 0
     }).format(numericValue);
 }
 
@@ -8246,7 +8246,7 @@ async function restoreUserDiscountAsset(assetId) {
 
 function normalizeAdminLedgerValue(value, fallback = 0) {
     const numericValue = Number(value);
-    return Number.isFinite(numericValue) ? Math.round(numericValue * 10) / 10 : fallback;
+    return Number.isFinite(numericValue) ? Math.round(numericValue * 100) / 100 : fallback;
 }
 
 function truncateAdminLedgerText(value, head = 10, tail = 4) {
