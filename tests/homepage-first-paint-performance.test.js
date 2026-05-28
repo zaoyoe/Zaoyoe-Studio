@@ -51,12 +51,12 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should keep cache-busting the full static hero stability styles'
     );
     assert.equal(
-        indexSource.includes('./js/nav-auth-fast-paint.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1'),
+        indexSource.includes('./js/nav-auth-fast-paint.js?v=20260528_XYZ_AVATAR_CDN_1'),
         true,
         'homepage should load the cached nav auth fast-paint helper before the lower auth runtime'
     );
     assert.ok(
-        indexSource.indexOf('./js/nav-auth-fast-paint.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1') < indexSource.indexOf('./supabase-auth-functions.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1'),
+        indexSource.indexOf('./js/nav-auth-fast-paint.js?v=20260528_XYZ_AVATAR_CDN_1') < indexSource.indexOf('./supabase-auth-functions.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1'),
         'homepage nav auth fast-paint helper should run before Supabase auth hydration'
     );
     assert.match(
@@ -68,6 +68,21 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         navAuthFastPaintSource,
         /avatar\.loading = 'eager';[\s\S]*avatar\.decoding = 'sync';[\s\S]*avatar\.fetchPriority = 'high';/,
         'nav auth fast-paint helper should prioritize the cached nav avatar image'
+    );
+    assert.match(
+        navAuthFastPaintSource,
+        /FAST_PAINT_ASSET_CDN_HOSTS[\s\S]*'cdn\.fatherkey\.com'[\s\S]*'cdn\.zaoyoe\.xyz'/,
+        'nav auth fast-paint helper should recognize canonical and intl CDN hosts'
+    );
+    assert.match(
+        navAuthFastPaintSource,
+        /FAST_PAINT_ASSET_CDN_PATH_PREFIXES[\s\S]*'avatars'/,
+        'nav auth fast-paint helper should rewrite cached avatar assets for the current site'
+    );
+    assert.match(
+        navAuthFastPaintSource,
+        /window\.SiteConfig\?\.normalizeAssetUrlForCurrentSite\?\.\(parsed\.href\)/,
+        'nav auth fast-paint helper should reuse SiteConfig CDN normalization when available'
     );
     assert.match(
         navAuthFastPaintSource,

@@ -192,6 +192,78 @@
         return /googleusercontent\.com|lh3\.googleusercontent\.com/i.test(String(url || ''));
     }
 
+    const INJECTED_AUTH_ASSET_CDN_HOSTS = new Set([
+        'cdn.fatherkey.com',
+        'cdn.zaoyoe.com',
+        'cdn.zaoyoe.xyz'
+    ]);
+    const INJECTED_AUTH_ASSET_CDN_PATH_PREFIXES = new Set([
+        'affiliate-posters',
+        'avatars',
+        'chat',
+        'comments',
+        'guestbook',
+        'homepage',
+        'products',
+        'prompts'
+    ]);
+
+    function getInjectedAuthAssetCdnOrigin() {
+        try {
+            const siteOrigin = window.SiteConfig?.getAssetCdnOrigin?.();
+            if (siteOrigin) {
+                return new URL(siteOrigin, window.location.origin).origin;
+            }
+        } catch (_) {
+            // Fall through to hostname detection for early injected auth paint.
+        }
+
+        const hostname = String(window.location?.hostname || '').toLowerCase();
+        return hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz')
+            ? 'https://cdn.zaoyoe.xyz'
+            : 'https://cdn.fatherkey.com';
+    }
+
+    function normalizeInjectedAuthAvatarUrl(url) {
+        const value = String(url || '').trim();
+        if (!value || /^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(value)) {
+            return '';
+        }
+
+        if (value.startsWith('data:image/') && value.length > 100) {
+            return value;
+        }
+
+        try {
+            const parsed = new URL(value, window.location.origin);
+            if (!['http:', 'https:', 'blob:'].includes(parsed.protocol)) {
+                return '';
+            }
+
+            const siteNormalized = window.SiteConfig?.normalizeAssetUrlForCurrentSite?.(parsed.href);
+            if (siteNormalized) {
+                return siteNormalized;
+            }
+
+            if (parsed.protocol === 'blob:') {
+                return parsed.href;
+            }
+
+            const parts = String(parsed.pathname || '').split('/').filter(Boolean);
+            const hostname = parsed.hostname.toLowerCase();
+            const isKnownAssetHost = INJECTED_AUTH_ASSET_CDN_HOSTS.has(hostname) || hostname.endsWith('.r2.dev');
+            if (isKnownAssetHost && INJECTED_AUTH_ASSET_CDN_PATH_PREFIXES.has(parts[0])) {
+                const targetOrigin = new URL(getInjectedAuthAssetCdnOrigin());
+                parsed.protocol = targetOrigin.protocol;
+                parsed.host = targetOrigin.host;
+            }
+
+            return parsed.href;
+        } catch (_) {
+            return '';
+        }
+    }
+
     function escapeSvgText(value) {
         return String(value || '').replace(/[&<>"']/g, (char) => ({
             '&': '&amp;',
@@ -224,6 +296,15 @@
             if (profile.avatarUrl && (isGeneratedAvatarUrl(profile.avatarUrl) || isTransientAvatarUrl(profile.avatarUrl))) {
                 delete profile.avatarUrl;
                 localStorage.setItem('cached_user_profile', JSON.stringify(profile));
+            } else if (profile.avatarUrl) {
+                const normalizedAvatarUrl = normalizeInjectedAuthAvatarUrl(profile.avatarUrl);
+                if (normalizedAvatarUrl && normalizedAvatarUrl !== profile.avatarUrl) {
+                    profile.avatarUrl = normalizedAvatarUrl;
+                    localStorage.setItem('cached_user_profile', JSON.stringify(profile));
+                } else if (!normalizedAvatarUrl) {
+                    delete profile.avatarUrl;
+                    localStorage.setItem('cached_user_profile', JSON.stringify(profile));
+                }
             }
 
             return profile;
@@ -306,7 +387,8 @@
     function buildAuthButtonHTML(profile) {
         const isLoggedIn = !!profile;
         const avatarSeed = profile?.email || profile?.username || profile?.nickname || 'User';
-        const avatarUrl = profile?.avatarUrl || (isLoggedIn ? getInstantFallbackAvatarUrl(avatarSeed) : '');
+        const cachedAvatarUrl = normalizeInjectedAuthAvatarUrl(profile?.avatarUrl);
+        const avatarUrl = cachedAvatarUrl || (isLoggedIn ? getInstantFallbackAvatarUrl(avatarSeed) : '');
         const hasAvatar = !!(isLoggedIn && avatarUrl);
         const label = 'Open account menu';
 
@@ -322,6 +404,48 @@
                 <span id="avatarUnreadBadge" class="avatar-unread-badge"></span>
             </button>
         `;
+    }
+
+    function bindInjectedAuthAvatarFallback(profile) {
+        const avatar = document.getElementById('navUserAvatar');
+        if (!avatar || avatar.dataset.injectedAuthAvatarFallbackBound === '1') return;
+
+        avatar.dataset.injectedAuthAvatarFallbackBound = '1';
+        const defaultIcon = document.getElementById('defaultAuthIcon');
+        const avatarSeed = profile?.email || profile?.username || profile?.nickname || 'User';
+
+        const showAvatar = () => {
+            avatar.classList.add('show');
+            avatar.classList.remove('auth-display-none');
+            defaultIcon?.classList.add('auth-display-none');
+        };
+        const showFallbackIcon = () => {
+            avatar.classList.remove('show');
+            avatar.classList.add('auth-display-none');
+            defaultIcon?.classList.remove('auth-display-none');
+        };
+
+        avatar.addEventListener('load', showAvatar);
+        avatar.addEventListener('error', () => {
+            if (profile && avatar.dataset.injectedAuthAvatarFallbackApplied !== '1') {
+                const fallbackAvatarUrl = getInstantFallbackAvatarUrl(avatarSeed);
+                if (avatar.getAttribute('src') !== fallbackAvatarUrl) {
+                    avatar.dataset.injectedAuthAvatarFallbackApplied = '1';
+                    avatar.src = fallbackAvatarUrl;
+                    return;
+                }
+            }
+
+            showFallbackIcon();
+        });
+
+        if (avatar.complete) {
+            if (avatar.naturalWidth > 0) {
+                showAvatar();
+            } else if (profile) {
+                avatar.dispatchEvent(new Event('error'));
+            }
+        }
     }
 
     function syncDropdownAuthMode(dropdown, isAuthenticated) {
@@ -744,6 +868,8 @@
         if (!document.getElementById('userDropdown')) {
             document.body.insertAdjacentHTML('beforeend', buildDropdownHTML(cachedProfile));
         }
+
+        bindInjectedAuthAvatarFallback(cachedProfile);
 
         const userDropdown = document.getElementById('userDropdown');
         if (userDropdown) {

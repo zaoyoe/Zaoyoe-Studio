@@ -2,6 +2,21 @@
     'use strict';
 
     const CACHE_KEY = 'cached_user_profile';
+    const FAST_PAINT_ASSET_CDN_HOSTS = new Set([
+        'cdn.fatherkey.com',
+        'cdn.zaoyoe.com',
+        'cdn.zaoyoe.xyz'
+    ]);
+    const FAST_PAINT_ASSET_CDN_PATH_PREFIXES = new Set([
+        'affiliate-posters',
+        'avatars',
+        'chat',
+        'comments',
+        'guestbook',
+        'homepage',
+        'products',
+        'prompts'
+    ]);
 
     function isGeneratedAvatarUrl(url) {
         return /ui-avatars\.com|dicebear\.com/i.test(String(url || ''));
@@ -9,6 +24,22 @@
 
     function isTransientAvatarUrl(url) {
         return /googleusercontent\.com|lh3\.googleusercontent\.com/i.test(String(url || ''));
+    }
+
+    function getFastPaintAssetCdnOrigin() {
+        try {
+            const siteOrigin = window.SiteConfig?.getAssetCdnOrigin?.();
+            if (siteOrigin) {
+                return new URL(siteOrigin, window.location.origin).origin;
+            }
+        } catch (_) {
+            // Early paint can run before SiteConfig on some pages.
+        }
+
+        const hostname = String(window.location?.hostname || '').toLowerCase();
+        return hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz')
+            ? 'https://cdn.zaoyoe.xyz'
+            : 'https://cdn.fatherkey.com';
     }
 
     function normalizeFastPaintAvatarUrl(url) {
@@ -23,19 +54,24 @@
 
         try {
             const parsed = new URL(value, window.location.origin);
-            if (!['http:', 'https:'].includes(parsed.protocol)) {
+            if (!['http:', 'https:', 'blob:'].includes(parsed.protocol)) {
                 return '';
             }
 
+            const siteNormalized = window.SiteConfig?.normalizeAssetUrlForCurrentSite?.(parsed.href);
+            if (siteNormalized) {
+                return siteNormalized;
+            }
+
+            if (parsed.protocol === 'blob:') {
+                return parsed.href;
+            }
+
             const parts = String(parsed.pathname || '').split('/').filter(Boolean);
-            const isR2Asset = parsed.hostname.endsWith('.r2.dev')
-                && ['affiliate-posters', 'avatars', 'chat', 'comments', 'guestbook', 'products', 'prompts'].includes(parts[0]);
-            if (isR2Asset) {
-                const hostname = String(window.location?.hostname || '').toLowerCase();
-                const cdnOrigin = hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz')
-                    ? 'https://cdn.zaoyoe.xyz'
-                    : 'https://cdn.fatherkey.com';
-                const targetOrigin = new URL(cdnOrigin);
+            const hostname = parsed.hostname.toLowerCase();
+            const isKnownAssetHost = FAST_PAINT_ASSET_CDN_HOSTS.has(hostname) || hostname.endsWith('.r2.dev');
+            if (isKnownAssetHost && FAST_PAINT_ASSET_CDN_PATH_PREFIXES.has(parts[0])) {
+                const targetOrigin = new URL(getFastPaintAssetCdnOrigin());
                 parsed.protocol = targetOrigin.protocol;
                 parsed.host = targetOrigin.host;
             }
