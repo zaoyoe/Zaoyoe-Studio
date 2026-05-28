@@ -14,7 +14,9 @@ const REQUIRED_REDIRECT_URLS = Object.freeze([
     'https://www.fatherkey.com/auth-callback.html',
     'https://www.fatherkey.com/reset-password.html',
     'https://zaoyoe.xyz/auth-callback.html',
-    'https://zaoyoe.xyz/reset-password.html'
+    'https://zaoyoe.xyz/reset-password.html',
+    'https://www.zaoyoe.xyz/auth-callback.html',
+    'https://www.zaoyoe.xyz/reset-password.html'
 ]);
 
 function parseArgs(argv = []) {
@@ -161,13 +163,14 @@ function runReadiness() {
     const authRuntime = readRepoFile('supabase-auth-functions.js');
     checks.push(buildCheck(
         'auth:reset-current-origin',
-        authRuntime.includes("redirectTo: window.location.origin + '/reset-password.html'"),
-        'password reset redirect uses the current site origin'
+        authRuntime.includes("redirectTo: buildAuthRedirectUrl('/reset-password.html')")
+            && authRuntime.includes("hostname === 'zaoyoe.xyz' || hostname === 'www.zaoyoe.xyz'"),
+        'password reset redirect uses the current site family'
     ));
     checks.push(buildCheck(
         'auth:oauth-current-origin',
-        authRuntime.includes('const redirectTo = `${window.location.origin}/auth-callback.html`;'),
-        'Google OAuth redirect uses the current site origin'
+        authRuntime.includes("const redirectTo = buildAuthRedirectUrl('/auth-callback.html');"),
+        'Google OAuth redirect uses the current site family'
     ));
 
     const checklist = readRepoFile('docs/auth-branding-supabase-checklist.md');

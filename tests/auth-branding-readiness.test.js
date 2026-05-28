@@ -54,8 +54,8 @@ test('auth branding readiness keeps custom smtp and custom domain optional', () 
     assert.match(checklist, /Supabase default delivery remains the fallback/);
     assert.match(checklist, /not a frontend runtime dependency/);
     assert.match(checklist, /supabase\/auth-email-templates\/dashboard-config\.json/);
-    assert.match(checklist, /https:\/\/www\.zaoyoe\.com\/reset-password\.html/);
     assert.match(checklist, /https:\/\/zaoyoe\.xyz\/reset-password\.html/);
+    assert.match(checklist, /https:\/\/www\.zaoyoe\.xyz\/reset-password\.html/);
     assert.deepEqual(dashboardConfig.additionalRedirectUrls, REQUIRED_REDIRECT_URLS);
     assert.equal(dashboardConfig.customSmtp.optional, true);
     assert.equal(dashboardConfig.customDomain.optional, true);

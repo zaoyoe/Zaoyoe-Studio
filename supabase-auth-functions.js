@@ -30,6 +30,33 @@ function getInviteCodeForCurrentSite() {
     }
 }
 
+function getAuthRedirectOrigin() {
+    const origin = String(window.location?.origin || '').replace(/\/+$/, '');
+    const hostname = String(window.location?.hostname || '').trim().toLowerCase();
+
+    if (hostname === 'zaoyoe.xyz' || hostname === 'www.zaoyoe.xyz') {
+        return 'https://zaoyoe.xyz';
+    }
+
+    if (
+        hostname === 'fatherkey.com'
+        || hostname === 'www.fatherkey.com'
+        || hostname === 'zaoyoe.com'
+        || hostname === 'www.zaoyoe.com'
+    ) {
+        return 'https://www.fatherkey.com';
+    }
+
+    return origin || 'https://www.fatherkey.com';
+}
+
+function buildAuthRedirectUrl(pathname = '/') {
+    const path = String(pathname || '/').startsWith('/')
+        ? String(pathname || '/')
+        : `/${String(pathname || '/')}`;
+    return `${getAuthRedirectOrigin()}${path}`;
+}
+
 // Handle affiliate referrals
 document.addEventListener('DOMContentLoaded', () => {
     const urlParams = new URLSearchParams(window.location.search);
@@ -2509,7 +2536,7 @@ async function handlePasswordReset(event) {
 
     try {
         const { error } = await window.supabaseClient.auth.resetPasswordForEmail(email, {
-            redirectTo: window.location.origin + '/reset-password.html'
+            redirectTo: buildAuthRedirectUrl('/reset-password.html')
         });
 
         if (error) throw error;
@@ -3462,7 +3489,7 @@ async function triggerGoogleOAuthRedirectFallback() {
     const currentPage = getCurrentPageRedirectUrl();
     storePendingPostLoginRedirectTarget(currentPage);
     localStorage.setItem('oauth_post_login_redirect', currentPage);
-    const redirectTo = `${window.location.origin}/auth-callback.html`;
+    const redirectTo = buildAuthRedirectUrl('/auth-callback.html');
     const { data, error } = await window.supabaseClient.auth.signInWithOAuth({
         provider: 'google',
         options: {
