@@ -285,6 +285,36 @@ test('shop mutate validation blocks API products without webhook target', async 
     });
 });
 
+test('shop mutate validation accepts intl create payloads that only carry the English product name', async () => {
+    await withShopMutateHandler({}, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'validate_product',
+                site: 'intl',
+                payload: {
+                    name_en: 'Intl Card',
+                    category: 'keys',
+                    price_points_intl: 1,
+                    delivery_type: 'KEY',
+                    is_active: true
+                }
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(
+            payload.validation.blockingIssues.some((issue) => issue.code === 'name_required'),
+            false
+        );
+    });
+});
+
 test('shop mutate validation warns when active KEY product has no available inventory', async () => {
     await withShopMutateHandler({
         inventoryRows: []
@@ -320,6 +350,36 @@ test('shop mutate validation warns when active KEY product has no available inve
             true,
             'validation should inspect inventory health for existing KEY products'
         );
+    });
+});
+
+test('shop mutate upsert backfills base name from name_en for intl product creation only', async () => {
+    await withShopMutateHandler({}, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'intl',
+                payload: {
+                    name_en: 'Intl Card',
+                    category: 'keys',
+                    price_points_intl: 1,
+                    delivery_type: 'KEY',
+                    is_active: true
+                }
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(state.insertPayload.name, 'Intl Card');
+        assert.equal(state.insertPayload.name_en, 'Intl Card');
+        assert.equal(state.insertPayload.price_points, undefined);
+        assert.equal(state.insertPayload.price_points_intl, 1);
     });
 });
 
