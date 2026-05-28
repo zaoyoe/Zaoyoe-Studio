@@ -26,6 +26,7 @@
         cn: 'https://cdn.fatherkey.com',
         intl: 'https://cdn.zaoyoe.xyz'
     };
+    const CANONICAL_AVATAR_CDN_ORIGIN = 'https://cdn.fatherkey.com';
     const GONGYI_ORIGINS = {
         cn: 'https://sub2api.fatherkey.com',
         intl: 'https://sub2api.zaoyoe.xyz'
@@ -159,7 +160,9 @@
                 return source;
             }
 
-            const targetOrigin = new URL(getAssetCdnOriginForSite(siteValue));
+            const targetOrigin = new URL(parts[0] === 'avatars'
+                ? CANONICAL_AVATAR_CDN_ORIGIN
+                : getAssetCdnOriginForSite(siteValue));
             parsed.protocol = targetOrigin.protocol;
             parsed.host = targetOrigin.host;
             return parsed.toString();

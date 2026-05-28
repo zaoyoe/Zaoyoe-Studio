@@ -59,7 +59,7 @@ test('shop realtime catalog refresh bypasses stale HTTP and worker caches', () =
     );
     assert.match(
         shopHtml,
-        /js\/site-config\.js\?v=20260528_GONGYI_SITE_AWARE_1/,
+        /js\/site-config\.js\?v=20260528_AVATAR_CANONICAL_CDN_1/,
         'shop.html should load the cache cleanup runtime with a fresh version key'
     );
     assert.equal(

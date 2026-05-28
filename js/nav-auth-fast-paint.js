@@ -71,7 +71,9 @@
             const hostname = parsed.hostname.toLowerCase();
             const isKnownAssetHost = FAST_PAINT_ASSET_CDN_HOSTS.has(hostname) || hostname.endsWith('.r2.dev');
             if (isKnownAssetHost && FAST_PAINT_ASSET_CDN_PATH_PREFIXES.has(parts[0])) {
-                const targetOrigin = new URL(getFastPaintAssetCdnOrigin());
+                const targetOrigin = new URL(parts[0] === 'avatars'
+                    ? 'https://cdn.fatherkey.com'
+                    : getFastPaintAssetCdnOrigin());
                 parsed.protocol = targetOrigin.protocol;
                 parsed.host = targetOrigin.host;
             }
