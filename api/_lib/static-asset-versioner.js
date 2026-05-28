@@ -5,7 +5,7 @@ const { execFileSync } = require('node:child_process');
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const DEPLOY_TEXT_EXTENSIONS = new Set(['.html', '.js', '.css']);
 const PUBLIC_SOURCE_DIRS = ['js', 'css'];
-const SAME_SITE_HOSTS = new Set(['www.zaoyoe.com', 'zaoyoe.com']);
+const SAME_SITE_HOSTS = new Set(['www.fatherkey.com', 'fatherkey.com', 'www.zaoyoe.com', 'zaoyoe.com']);
 const ROOT_TOOL_SCRIPTS = new Set([
     'analyze-images-ai.js',
     'browser-sync-ai-tags.js',
@@ -124,7 +124,7 @@ function shouldRewriteStaticAssetUrl(urlPrefix) {
     }
 
     try {
-        const url = new URL(`${urlPrefix}x`, 'https://www.zaoyoe.com/');
+        const url = new URL(`${urlPrefix}x`, 'https://www.fatherkey.com/');
         return /\.(?:js|css)$/i.test(url.pathname) && !url.pathname.startsWith('/api/');
     } catch {
         return false;

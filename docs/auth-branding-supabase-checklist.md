@@ -7,15 +7,17 @@ This step improves trust and brand feel for login and account recovery. It must 
 Use `supabase/auth-email-templates/dashboard-config.json` as the source of truth for the values below.
 
 1. Supabase Dashboard > Authentication > URL Configuration
-   - Site URL: `https://www.zaoyoe.com`
+   - Site URL: `https://www.fatherkey.com`
    - Additional Redirect URLs:
+     - `https://www.fatherkey.com/auth-callback.html`
+     - `https://www.fatherkey.com/reset-password.html`
      - `https://www.zaoyoe.com/auth-callback.html`
      - `https://www.zaoyoe.com/reset-password.html`
      - `https://zaoyoe.xyz/auth-callback.html`
      - `https://zaoyoe.xyz/reset-password.html`
 2. Supabase Dashboard > Authentication > SMTP Settings
    - Enable Custom SMTP when the sending domain is ready.
-   - Use a branded sender such as `Zaoyoe <no-reply@zaoyoe.com>`.
+   - Use a branded sender such as `Zaoyoe <no-reply@fatherkey.com>`.
    - If SMTP is not ready, leave it disabled; Supabase default delivery remains the fallback.
 3. Supabase Dashboard > Authentication > Email Templates
    - Copy templates from `supabase/auth-email-templates/`.

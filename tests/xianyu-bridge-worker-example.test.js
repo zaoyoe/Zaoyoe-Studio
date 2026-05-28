@@ -39,7 +39,7 @@ test('xianyu bridge posts raw orders to the recommended marketplace endpoint', a
     };
 
     const submitted = await postXianyuOrder({
-        baseUrl: 'https://www.zaoyoe.com/',
+        baseUrl: 'https://www.fatherkey.com/',
         accountKey: 'main',
         ingestToken: 'test-token',
         marketplaceConfig: {
@@ -62,7 +62,7 @@ test('xianyu bridge posts raw orders to the recommended marketplace endpoint', a
 
     assert.equal(submitted.body.success, true);
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].url, 'https://www.zaoyoe.com/api/marketplace/orders');
+    assert.equal(calls[0].url, 'https://www.fatherkey.com/api/marketplace/orders');
     assert.equal(calls[0].options.method, 'POST');
     assert.equal(calls[0].options.headers.Authorization, 'Bearer test-token');
     assert.equal(JSON.parse(calls[0].options.body).product_id, '11111111-1111-4111-8111-111111111111');
@@ -93,7 +93,7 @@ test('xianyu bridge sends returned delivery content to the chat adapter', async 
 
     const summary = await runBridgeWorker({
         env: {
-            XIANYU_BRIDGE_BASE_URL: 'https://www.zaoyoe.com',
+            XIANYU_BRIDGE_BASE_URL: 'https://www.fatherkey.com',
             XIANYU_BRIDGE_ACCOUNT: 'main',
             XIANYU_BRIDGE_INGEST_TOKEN: 'test-token',
             XIANYU_BRIDGE_PRODUCT_MAPPINGS: JSON.stringify([
@@ -159,7 +159,7 @@ test('xianyu bridge reports per-order delivery timing diagnostics', async () => 
 
     const summary = await runBridgeWorker({
         env: {
-            XIANYU_BRIDGE_BASE_URL: 'https://www.zaoyoe.com',
+            XIANYU_BRIDGE_BASE_URL: 'https://www.fatherkey.com',
             XIANYU_BRIDGE_ACCOUNT: 'main',
             XIANYU_BRIDGE_INGEST_TOKEN: 'test-token',
             XIANYU_BRIDGE_PRODUCT_MAPPINGS: JSON.stringify([
@@ -258,13 +258,13 @@ test('xianyu bridge refreshes admin mappings after a local mapping miss', async 
     let configReads = 0;
     const configs = [
         {
-            website_base_url: 'https://www.zaoyoe.com',
+            website_base_url: 'https://www.fatherkey.com',
             account: 'main',
             ingest_token: 'old-token',
             product_mappings: []
         },
         {
-            website_base_url: 'https://www.zaoyoe.com',
+            website_base_url: 'https://www.fatherkey.com',
             account: 'main',
             ingest_token: 'fresh-token',
             product_mappings: [
@@ -278,7 +278,7 @@ test('xianyu bridge refreshes admin mappings after a local mapping miss', async 
 
     const summary = await runBridgeWorker({
         env: {
-            XIANYU_BRIDGE_BASE_URL: 'https://www.zaoyoe.com',
+            XIANYU_BRIDGE_BASE_URL: 'https://www.fatherkey.com',
             XIANYU_BRIDGE_ACCOUNT: 'main',
             XIANYU_BRIDGE_FROM_ADMIN: 'true',
             XIANYU_BRIDGE_MAPPING_MISS_RETRY_DELAY_MS: '0',
@@ -648,7 +648,7 @@ test('xianyu bridge treats duplicate website orders as already handled', async (
     let chatSendCount = 0;
     const summary = await runBridgeWorker({
         env: {
-            XIANYU_BRIDGE_BASE_URL: 'https://www.zaoyoe.com',
+            XIANYU_BRIDGE_BASE_URL: 'https://www.fatherkey.com',
             XIANYU_BRIDGE_ACCOUNT: 'main',
             XIANYU_BRIDGE_INGEST_TOKEN: 'test-token',
             XIANYU_BRIDGE_PRODUCT_MAPPINGS: JSON.stringify([
@@ -699,7 +699,7 @@ test('xianyu bridge treats duplicate website orders as already handled', async (
 
 test('xianyu bridge can read product mappings from env JSON', () => {
     const config = buildBridgeMarketplaceConfigFromEnv({
-        XIANYU_BRIDGE_BASE_URL: 'https://www.zaoyoe.com',
+        XIANYU_BRIDGE_BASE_URL: 'https://www.fatherkey.com',
         XIANYU_BRIDGE_ACCOUNT: 'main',
         XIANYU_BRIDGE_INGEST_TOKEN: 'test-token',
         XIANYU_BRIDGE_PRODUCT_MAPPINGS: JSON.stringify([

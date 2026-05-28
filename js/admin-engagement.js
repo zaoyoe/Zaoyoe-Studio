@@ -8516,10 +8516,10 @@
             enabled: source.enabled !== false,
             allowed_origins: Array.isArray(source.allowed_origins) && source.allowed_origins.length
                 ? source.allowed_origins
-                : ['https://sub2api.zaoyoe.com', 'https://www.sub2api.zaoyoe.com'],
+                : ['https://sub2api.fatherkey.com'],
             allow_local_preview: source.allow_local_preview !== false,
-            api_origin: source.api_origin || 'https://www.zaoyoe.com',
-            asset_base: source.asset_base || 'https://www.zaoyoe.com/',
+            api_origin: source.api_origin || 'https://www.fatherkey.com',
+            asset_base: source.asset_base || 'https://www.fatherkey.com/',
             default_page_id: source.default_page_id || 'gongyi',
             default_site: source.default_site || 'cn',
             embed_snippet: source.embed_snippet || '',
@@ -8564,7 +8564,7 @@
         const deploymentSteps = Array.isArray(diagnostics.deployment_steps) ? diagnostics.deployment_steps : [];
         const snippet = external.embed_snippet || [
             '<script',
-            '  src="https://www.zaoyoe.com/js/engagement-external-embed.js?v=20260505_GONGYI_EXTERNAL_ENGAGEMENT_1"',
+            '  src="https://www.fatherkey.com/js/engagement-external-embed.js?v=20260505_GONGYI_EXTERNAL_ENGAGEMENT_1"',
             `  data-page-id="${external.default_page_id}"`,
             `  data-site="${external.default_site}"`,
             `  data-api-origin="${external.api_origin}"`,
@@ -8612,15 +8612,15 @@
                             </label>
                             <label class="engagement-field">
                                 <span>API Origin</span>
-                                <input type="url" name="api_origin" value="${escapeHtml(external.api_origin)}" placeholder="https://www.zaoyoe.com">
+                                <input type="url" name="api_origin" value="${escapeHtml(external.api_origin)}" placeholder="https://www.fatherkey.com">
                             </label>
                             <label class="engagement-field">
                                 <span>素材 Base URL</span>
-                                <input type="url" name="asset_base" value="${escapeHtml(external.asset_base)}" placeholder="https://www.zaoyoe.com/">
+                                <input type="url" name="asset_base" value="${escapeHtml(external.asset_base)}" placeholder="https://www.fatherkey.com/">
                             </label>
                             <label class="engagement-field engagement-field--full">
                                 <span>CORS 白名单域名（一行一个）</span>
-                                <textarea name="allowed_origins" rows="4" placeholder="https://sub2api.zaoyoe.com">${escapeHtml(external.allowed_origins.join('\n'))}</textarea>
+                                <textarea name="allowed_origins" rows="4" placeholder="https://sub2api.fatherkey.com">${escapeHtml(external.allowed_origins.join('\n'))}</textarea>
                             </label>
                         </div>
                         <div class="engagement-form-actions">

@@ -1,6 +1,8 @@
 {
-  "siteUrl": "https://www.zaoyoe.com",
+  "siteUrl": "https://www.fatherkey.com",
   "additionalRedirectUrls": [
+    "https://www.fatherkey.com/auth-callback.html",
+    "https://www.fatherkey.com/reset-password.html",
     "https://www.zaoyoe.com/auth-callback.html",
     "https://www.zaoyoe.com/reset-password.html",
     "https://zaoyoe.xyz/auth-callback.html",
@@ -39,7 +41,7 @@
   "customSmtp": {
     "optional": true,
     "senderName": "Zaoyoe",
-    "senderEmail": "no-reply@zaoyoe.com",
+    "senderEmail": "no-reply@fatherkey.com",
     "fallback": "Supabase default email delivery"
   },
   "customDomain": {

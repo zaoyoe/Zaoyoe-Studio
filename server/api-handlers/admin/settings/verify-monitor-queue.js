@@ -10,7 +10,7 @@ const {
     buildLocalVerifyQueueSnapshot
 } = require('../../_verify-provider-runtime');
 
-const DEFAULT_VERIFY_SERVER_URL = 'https://verify-api.zaoyoe.com';
+const DEFAULT_VERIFY_SERVER_URL = 'https://verify-api.fatherkey.com';
 const VERIFY_MONITOR_PROXY_TIMEOUT_MS = 5000;
 
 function getVerifyServerUrl() {

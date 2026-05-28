@@ -387,7 +387,7 @@ function buildBridgeMarketplaceConfigFromEnv(env = process.env, {
         || env.XIANYU_BRIDGE_BASE_URL
         || env.MARKETPLACE_WEBSITE_BASE_URL
         || env.XIANYU_WEBSITE_BASE_URL
-        || 'https://www.zaoyoe.com'
+        || 'https://www.fatherkey.com'
     );
     const resolvedAccountKey = sanitizeText(accountKey || env.XIANYU_BRIDGE_ACCOUNT || 'main', 80) || 'main';
 
@@ -768,7 +768,7 @@ async function runBridgeWorker({
 } = {}) {
     const workerStartedAt = callNow(now);
     const emitDiagnostic = createBridgeDiagnosticEmitter(env, diagnosticLogger);
-    const baseUrl = env.XIANYU_BRIDGE_BASE_URL || env.MARKETPLACE_WEBSITE_BASE_URL || 'https://www.zaoyoe.com';
+    const baseUrl = env.XIANYU_BRIDGE_BASE_URL || env.MARKETPLACE_WEBSITE_BASE_URL || 'https://www.fatherkey.com';
     const accountKey = env.XIANYU_BRIDGE_ACCOUNT || 'main';
     let marketplaceConfig = await loadMarketplaceConfig(env, {
         baseUrl,

@@ -483,7 +483,7 @@ test('admin router normalizes absolute query routes from upstream proxies', asyn
 
         await handler({
             method: 'GET',
-            url: '/api/admin?route=https%3A%2F%2Fwww.zaoyoe.com%2Fapi%2Fadmin%2Fshop%2Finventory%3Fpage%3D1',
+            url: '/api/admin?route=https%3A%2F%2Fwww.fatherkey.com%2Fapi%2Fadmin%2Fshop%2Finventory%3Fpage%3D1',
             headers: {}
         }, res);
 

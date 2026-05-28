@@ -120,9 +120,9 @@ test('site config rewrites canonical image CDN records to intl display origins a
 
     assert.equal(intlConfig.site, 'intl');
     assert.equal(intlConfig.getAssetCdnOrigin(), 'https://cdn.zaoyoe.xyz');
-    assert.equal(intlConfig.getCanonicalAssetCdnOrigin(), 'https://cdn.zaoyoe.com');
+    assert.equal(intlConfig.getCanonicalAssetCdnOrigin(), 'https://cdn.fatherkey.com');
     assert.equal(
-        intlConfig.normalizeAssetUrlForCurrentSite('https://cdn.zaoyoe.com/products/product_1775982177111.jpg'),
+        intlConfig.normalizeAssetUrlForCurrentSite('https://cdn.fatherkey.com/products/product_1775982177111.jpg'),
         'https://cdn.zaoyoe.xyz/products/product_1775982177111.jpg'
     );
     assert.equal(
@@ -131,7 +131,7 @@ test('site config rewrites canonical image CDN records to intl display origins a
     );
     assert.equal(
         intlConfig.normalizeAssetUrlForCanonicalSite('https://cdn.zaoyoe.xyz/chat/thread/image.webp'),
-        'https://cdn.zaoyoe.com/chat/thread/image.webp'
+        'https://cdn.fatherkey.com/chat/thread/image.webp'
     );
     assert.equal(
         intlConfig.normalizeAssetUrlForCurrentSite('https://example.com/products/product_1775982177111.jpg'),
@@ -141,7 +141,7 @@ test('site config rewrites canonical image CDN records to intl display origins a
     assert.equal(cnConfig.site, 'cn');
     assert.equal(
         cnConfig.normalizeAssetUrlForCurrentSite('https://cdn.zaoyoe.xyz/prompts/example.webp'),
-        'https://cdn.zaoyoe.com/prompts/example.webp'
+        'https://cdn.fatherkey.com/prompts/example.webp'
     );
 });
 

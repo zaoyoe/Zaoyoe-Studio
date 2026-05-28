@@ -46,7 +46,7 @@
     function sanitizeAdminStudioTarget(rawTarget = 'admin-studio.html') {
         try {
             const fallback = 'admin-studio.html';
-            const baseUrl = new URL(globalScope?.location?.href || 'https://www.zaoyoe.com/');
+            const baseUrl = new URL(globalScope?.location?.href || 'https://www.fatherkey.com/');
             const candidate = new URL(String(rawTarget || fallback), baseUrl);
 
             if (candidate.origin !== baseUrl.origin) {
@@ -829,7 +829,7 @@
             return true;
         }
 
-        const entryUrl = new URL('admin-entry.html', globalScope.location?.href || 'https://www.zaoyoe.com/');
+        const entryUrl = new URL('admin-entry.html', globalScope.location?.href || 'https://www.fatherkey.com/');
         entryUrl.searchParams.set('next', safeTarget);
         globalScope.location.href = `${entryUrl.pathname}${entryUrl.search}${entryUrl.hash}`;
         return true;

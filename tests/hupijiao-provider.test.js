@@ -19,13 +19,13 @@ test('normalizeHupijiaoConfig derives official endpoint urls and reports missing
         channelConfig: {
             merchant_id: 'appid-123',
             gateway_url: 'https://api.dpweixin.com/payment/do.html',
-            notify_url: 'https://www.zaoyoe.com/api/payments/hupijiao/webhook',
-            return_url: 'https://www.zaoyoe.com/wallet'
+            notify_url: 'https://www.fatherkey.com/api/payments/hupijiao/webhook',
+            return_url: 'https://www.fatherkey.com/wallet'
         },
         secretValues: {
             hupijiao_secret_key: 'secret-123'
         },
-        requestOrigin: 'https://www.zaoyoe.com'
+        requestOrigin: 'https://www.fatherkey.com'
     });
 
     assert.equal(config.appId, 'appid-123');
@@ -41,9 +41,9 @@ test('normalizeHupijiaoConfig rewrites managed urls onto the intl site origin', 
         channelConfig: {
             merchant_id: 'appid-123',
             gateway_url: 'https://api.dpweixin.com/payment/do.html',
-            notify_url: 'https://www.zaoyoe.com/api/payments/hupijiao/webhook',
-            return_url: 'https://www.zaoyoe.com/wallet',
-            callback_url: 'https://www.zaoyoe.com/wallet'
+            notify_url: 'https://www.fatherkey.com/api/payments/hupijiao/webhook',
+            return_url: 'https://www.fatherkey.com/wallet',
+            callback_url: 'https://www.fatherkey.com/wallet'
         },
         secretValues: {
             hupijiao_secret_key: 'secret-123'
@@ -108,8 +108,8 @@ test('buildHupijiaoPaymentPayload matches the official request fields', () => {
         channelConfig: {
             merchant_id: 'appid-123',
             gateway_url: 'https://api.xunhupay.com/payment/do.html',
-            notify_url: 'https://www.zaoyoe.com/api/payments/hupijiao/webhook',
-            return_url: 'https://www.zaoyoe.com/wallet'
+            notify_url: 'https://www.fatherkey.com/api/payments/hupijiao/webhook',
+            return_url: 'https://www.fatherkey.com/wallet'
         },
         secretValues: {
             hupijiao_secret_key: 'secret-123'
@@ -131,8 +131,8 @@ test('buildHupijiaoPaymentPayload matches the official request fields', () => {
     assert.equal(payload.appid, 'appid-123');
     assert.equal(payload.trade_order_id, 'HJ_ORDER_1');
     assert.equal(payload.total_fee, '9.90');
-    assert.equal(payload.notify_url, 'https://www.zaoyoe.com/api/payments/hupijiao/webhook');
-    assert.equal(payload.return_url, 'https://www.zaoyoe.com/wallet');
+    assert.equal(payload.notify_url, 'https://www.fatherkey.com/api/payments/hupijiao/webhook');
+    assert.equal(payload.return_url, 'https://www.fatherkey.com/wallet');
     assert.match(payload.attach, /checkout_session_key/);
     assert.equal(payload.hash, buildHupijiaoHash(payload, 'secret-123'));
 });
@@ -141,7 +141,7 @@ test('buildHupijiaoQueryPayload and refund payload follow the documented field n
     const config = normalizeHupijiaoConfig({
         channelConfig: {
             merchant_id: 'appid-123',
-            notify_url: 'https://www.zaoyoe.com/api/payments/hupijiao/webhook'
+            notify_url: 'https://www.fatherkey.com/api/payments/hupijiao/webhook'
         },
         secretValues: {
             hupijiao_secret_key: 'secret-123'
@@ -171,8 +171,8 @@ test('createHupijiaoPayment verifies the response hash from the gateway', async 
         channelConfig: {
             merchant_id: 'appid-123',
             gateway_url: 'https://api.xunhupay.com/payment/do.html',
-            notify_url: 'https://www.zaoyoe.com/api/payments/hupijiao/webhook',
-            return_url: 'https://www.zaoyoe.com/wallet'
+            notify_url: 'https://www.fatherkey.com/api/payments/hupijiao/webhook',
+            return_url: 'https://www.fatherkey.com/wallet'
         },
         secretValues: {
             hupijiao_secret_key: 'secret-123'

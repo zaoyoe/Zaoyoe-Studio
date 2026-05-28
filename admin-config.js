@@ -4347,9 +4347,9 @@ function getDefaultPaymentChannelsConfig() {
     const rechargeOptions = normalizeRechargeOptionsConfig(systemConfigCache['recharge_options']);
     const currentOrigin = (() => {
         try {
-            return window.location?.origin || 'https://www.zaoyoe.com';
+            return window.location?.origin || 'https://www.fatherkey.com';
         } catch (_) {
-            return 'https://www.zaoyoe.com';
+            return 'https://www.fatherkey.com';
         }
     })();
     const buildDefaultPaymentWebhookUrl = (providerKey = '') => {

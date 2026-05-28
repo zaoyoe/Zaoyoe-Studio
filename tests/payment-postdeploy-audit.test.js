@@ -13,7 +13,7 @@ const {
 test('parseArgs collects postdeploy audit flags', () => {
     const options = parseArgs([
         '--env-file', 'server/.env.staging',
-        '--base-url', 'https://www.zaoyoe.com',
+        '--base-url', 'https://www.fatherkey.com',
         '--smoke-email', 'smoke@example.com',
         '--order-prefix', 'TEST_',
         '--sample-limit', '7',
@@ -21,7 +21,7 @@ test('parseArgs collects postdeploy audit flags', () => {
     ]);
 
     assert.match(options.envFile, /server\/\.env\.staging$/);
-    assert.equal(options.baseUrl, 'https://www.zaoyoe.com');
+    assert.equal(options.baseUrl, 'https://www.fatherkey.com');
     assert.equal(options.smokeEmail, 'smoke@example.com');
     assert.equal(options.orderPrefix, 'TEST_');
     assert.equal(options.sampleLimit, 7);
@@ -29,7 +29,7 @@ test('parseArgs collects postdeploy audit flags', () => {
 });
 
 test('normalizeBaseUrl normalizes staging and production hosts', () => {
-    assert.equal(normalizeBaseUrl('www.zaoyoe.com/'), 'https://www.zaoyoe.com');
+    assert.equal(normalizeBaseUrl('www.fatherkey.com/'), 'https://www.fatherkey.com');
     assert.equal(normalizeBaseUrl('https://preview.zaoyoe.com/'), 'https://preview.zaoyoe.com');
 });
 
@@ -80,7 +80,7 @@ test('buildFindings highlights remote mock risk and leftover smoke artifacts', (
 test('formatHumanReport renders a readable audit summary', () => {
     const report = formatHumanReport({
         projectHost: 'mmkugdibsaeoevliebzk.supabase.co',
-        baseUrl: 'https://www.zaoyoe.com',
+        baseUrl: 'https://www.fatherkey.com',
         smokeEmail: 'smoke-payment-20260323@zaoyoe.invalid',
         orderPrefix: DEFAULT_ORDER_PREFIX,
         runtime: {

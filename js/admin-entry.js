@@ -52,7 +52,7 @@
         }
 
         try {
-            const baseUrl = new URL(globalScope.location?.href || 'https://www.zaoyoe.com/');
+            const baseUrl = new URL(globalScope.location?.href || 'https://www.fatherkey.com/');
             const targetUrl = new URL(raw, baseUrl);
             if (targetUrl.origin !== baseUrl.origin || /\/auth-callback\.html$/i.test(targetUrl.pathname)) {
                 return '';
@@ -66,7 +66,7 @@
 
     function buildPostLoginRedirectTarget(target = 'admin-studio.html') {
         const safeTarget = globalScope.AdminAccess?.sanitizeAdminStudioTarget?.(target) || 'admin-studio.html';
-        const entryUrl = new URL('admin-entry.html', globalScope.location?.href || 'https://www.zaoyoe.com/');
+        const entryUrl = new URL('admin-entry.html', globalScope.location?.href || 'https://www.fatherkey.com/');
         entryUrl.searchParams.set('next', safeTarget);
         return normalizePostLoginRedirectTarget(`${entryUrl.pathname}${entryUrl.search}${entryUrl.hash}`);
     }

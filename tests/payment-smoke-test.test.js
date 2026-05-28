@@ -232,7 +232,7 @@ test('buildOtpVerificationAttempts includes both email OTP and token-hash fallba
 
 test('runOptionalAuthCheck tolerates older deployments where the endpoint is not deployed yet', async () => {
     const result = await runOptionalAuthCheck(
-        'https://www.zaoyoe.com',
+        'https://www.fatherkey.com',
         'token',
         5000,
         async () => ({

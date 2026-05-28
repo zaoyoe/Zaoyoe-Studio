@@ -54,9 +54,9 @@
         },
         gongyi: {
             sections: ['#gongyi-section'],
-            navDesktop: ['a[href="https://sub2api.zaoyoe.com"]'],
-            navMobile: ['a.mobile-menu-link[href="https://sub2api.zaoyoe.com"]'],
-            footer: ['a[href="https://sub2api.zaoyoe.com"]']
+            navDesktop: ['a[href="https://sub2api.fatherkey.com"]'],
+            navMobile: ['a.mobile-menu-link[href="https://sub2api.fatherkey.com"]'],
+            footer: ['a[href="https://sub2api.fatherkey.com"]']
         },
         verify: {
             sections: ['#verify-section'],

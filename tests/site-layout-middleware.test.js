@@ -69,7 +69,7 @@ test('site layout middleware respects query-driven intl previews on local roots'
 test('site layout middleware lets cn root requests pass through when the homepage remains the root entry', async () => {
     await withClearedSiteLayoutEnv(async () => {
         const middlewareModule = await loadFreshMiddlewareModule();
-        const response = await middlewareModule.default(new Request('https://www.zaoyoe.com/'));
+        const response = await middlewareModule.default(new Request('https://www.fatherkey.com/'));
 
         assert.equal(response.status, 200);
         assert.equal(response.headers.get('x-middleware-next'), '1');
@@ -79,11 +79,11 @@ test('site layout middleware lets cn root requests pass through when the homepag
 
 test('site layout middleware still guards admin studio with the admin-entry redirect', async () => {
     const middlewareModule = await loadFreshMiddlewareModule();
-    const response = await middlewareModule.default(new Request('https://www.zaoyoe.com/admin-studio?tab=homepage'));
+    const response = await middlewareModule.default(new Request('https://www.fatherkey.com/admin-studio?tab=homepage'));
 
     assert.equal(response.status, 307);
     assert.equal(
         response.headers.get('location'),
-        'https://www.zaoyoe.com/admin-entry?next=%2Fadmin-studio%3Ftab%3Dhomepage'
+        'https://www.fatherkey.com/admin-entry?next=%2Fadmin-studio%3Ftab%3Dhomepage'
     );
 });

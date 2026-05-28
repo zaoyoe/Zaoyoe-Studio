@@ -110,7 +110,7 @@ async function uploadAllImages() {
 
         if (successCount > 0) {
             console.log('\n🌐 访问您的图片:');
-            console.log(`   https://cdn.zaoyoe.com/prompts/[文件名]`);
+            console.log(`   https://cdn.fatherkey.com/prompts/[文件名]`);
             console.log('\n💡 提示: 第一次上传后可能需要几分钟才能通过公共URL访问');
             console.log('💡 下一步: 配置自定义域名以获得更好的性能和稳定性');
         }

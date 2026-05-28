@@ -15,8 +15,8 @@ const {
 } = require('../api/_lib/request-security');
 
 const DEFAULT_ENV_FILE = path.resolve(__dirname, '../server/.env.production');
-const DEFAULT_BASE_URL = 'https://www.zaoyoe.com';
-const DEFAULT_VERIFY_SERVER_URL = 'https://verify-api.zaoyoe.com';
+const DEFAULT_BASE_URL = 'https://www.fatherkey.com';
+const DEFAULT_VERIFY_SERVER_URL = 'https://verify-api.fatherkey.com';
 const DEFAULT_SAMPLE_COUNT = 5;
 const DEFAULT_TIMEOUT_MS = 15000;
 function parseArgs(argv = []) {

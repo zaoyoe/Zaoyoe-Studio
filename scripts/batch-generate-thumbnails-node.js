@@ -45,7 +45,7 @@ const R2_ENDPOINT = process.env.R2_ENDPOINT;
 const R2_ACCESS_KEY = process.env.R2_ACCESS_KEY_ID;
 const R2_SECRET_KEY = process.env.R2_SECRET_ACCESS_KEY;
 const R2_BUCKET = process.env.R2_BUCKET_NAME || 'zaoyoeimages';
-const R2_PUBLIC_URL = readFirstEnv(['R2_PUBLIC_URL'], 'https://cdn.zaoyoe.com');
+const R2_PUBLIC_URL = readFirstEnv(['R2_PUBLIC_URL'], 'https://cdn.fatherkey.com');
 
 const THUMB_WIDTH = 800;
 const THUMB_QUALITY = 85;
@@ -175,7 +175,7 @@ async function main() {
         if (!prompt.images || !Array.isArray(prompt.images)) continue;
 
         for (const url of prompt.images) {
-            if (url && url.includes('cdn.zaoyoe.com/prompts/') && !url.includes('/thumb/')) {
+            if (url && url.includes('cdn.fatherkey.com/prompts/') && !url.includes('/thumb/')) {
                 imagesToProcess.push({
                     promptId: prompt.id,
                     promptTitle: prompt.title,

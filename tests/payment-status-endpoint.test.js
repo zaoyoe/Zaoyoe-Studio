@@ -105,7 +105,7 @@ test('public payments status handler returns current checkout session state for 
     const req = {
         method: 'POST',
         headers: {
-            host: 'www.zaoyoe.com'
+            host: 'www.fatherkey.com'
         }
     };
     const res = createMockResponse();
@@ -199,7 +199,7 @@ test('public payments create handler exposes a stable code for gateway amount-to
     const req = {
         method: 'POST',
         headers: {
-            host: 'www.zaoyoe.com'
+            host: 'www.fatherkey.com'
         }
     };
     const res = createMockResponse();

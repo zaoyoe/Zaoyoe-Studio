@@ -228,7 +228,7 @@ const currentSite = computed<'cn' | 'intl'>(() => {
   return hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz') ? 'intl' : 'cn'
 })
 const brandHomeUrl = computed(() => (
-  currentSite.value === 'intl' ? 'https://www.zaoyoe.xyz/' : 'https://www.zaoyoe.com/'
+  currentSite.value === 'intl' ? 'https://www.zaoyoe.xyz/' : 'https://www.fatherkey.com/'
 ))
 const brandHomeTitle = computed(() => (
   currentSite.value === 'intl' ? t('home.brand.openInternationalHome') : t('home.brand.openDomesticHome')

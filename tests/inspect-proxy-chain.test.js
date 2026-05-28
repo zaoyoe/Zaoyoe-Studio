@@ -13,8 +13,8 @@ const {
 test('inspect-proxy-chain parseArgs collects operational flags', () => {
     const options = parseArgs([
         '--env-file', 'server/.env.staging',
-        '--base-url', 'https://www.zaoyoe.com',
-        '--verify-server-url', 'https://verify-api.zaoyoe.com',
+        '--base-url', 'https://www.fatherkey.com',
+        '--verify-server-url', 'https://verify-api.fatherkey.com',
         '--admin-email', 'zaoyoe@gmail.com',
         '--access-token', 'token-123',
         '--samples', '7',
@@ -23,8 +23,8 @@ test('inspect-proxy-chain parseArgs collects operational flags', () => {
     ]);
 
     assert.match(options.envFile, /server\/\.env\.staging$/);
-    assert.equal(options.baseUrl, 'https://www.zaoyoe.com');
-    assert.equal(options.verifyServerUrl, 'https://verify-api.zaoyoe.com');
+    assert.equal(options.baseUrl, 'https://www.fatherkey.com');
+    assert.equal(options.verifyServerUrl, 'https://verify-api.fatherkey.com');
     assert.equal(options.adminEmail, 'zaoyoe@gmail.com');
     assert.equal(options.accessToken, 'token-123');
     assert.equal(options.sampleCount, 7);
@@ -33,8 +33,8 @@ test('inspect-proxy-chain parseArgs collects operational flags', () => {
 });
 
 test('normalizeBaseUrl normalizes verify-server hosts', () => {
-    assert.equal(normalizeBaseUrl('verify-api.zaoyoe.com/'), 'https://verify-api.zaoyoe.com');
-    assert.equal(normalizeBaseUrl('https://www.zaoyoe.com/'), 'https://www.zaoyoe.com');
+    assert.equal(normalizeBaseUrl('verify-api.fatherkey.com/'), 'https://verify-api.fatherkey.com');
+    assert.equal(normalizeBaseUrl('https://www.fatherkey.com/'), 'https://www.fatherkey.com');
 });
 
 test('chooseAdminEmail prefers real admins over example.com or invalid placeholders', () => {
@@ -83,8 +83,8 @@ test('summarizeSamples recommends /32 proxy rules and a fail-closed webhook plac
 
 test('formatHumanReport explains the temporary fail-closed webhook strategy', () => {
     const report = formatHumanReport({
-        verifyServerUrl: 'https://verify-api.zaoyoe.com',
-        baseUrl: 'https://www.zaoyoe.com',
+        verifyServerUrl: 'https://verify-api.fatherkey.com',
+        baseUrl: 'https://www.fatherkey.com',
         adminEmail: 'zaoyoe@gmail.com',
         authMode: 'admin_magiclink_email_otp',
         summary: {

@@ -80,6 +80,9 @@ const {
     SUPPORTED_SITES
 } = require('../api/_lib/site');
 const {
+    classifyManagedSite
+} = require('../api/_lib/payments/site-origins');
+const {
     normalizePaymentGatewayMonitorConfig,
     runPaymentGatewayDegradationSweep
 } = require('../api/_lib/payment-gateway-alerts');
@@ -276,6 +279,8 @@ function normalizeAllowedOrigins(rawOrigins = [], { productionLike = false } = {
 const productionLikeRuntime = isProductionLikeRuntime();
 const defaultOrigins = productionLikeRuntime
     ? [
+        'https://fatherkey.com',
+        'https://www.fatherkey.com',
         'https://zaoyoe.com',
         'https://www.zaoyoe.com',
         'https://zaoyoe.xyz',
@@ -284,6 +289,8 @@ const defaultOrigins = productionLikeRuntime
     : [
         'http://localhost:8000',
         'http://127.0.0.1:8000',
+        'https://fatherkey.com',
+        'https://www.fatherkey.com',
         'https://zaoyoe.com',
         'https://www.zaoyoe.com',
         'https://zaoyoe.xyz',
@@ -466,8 +473,8 @@ function getCurrentSite(req, explicitSite) {
     for (const hint of requestHints) {
         const normalizedHint = String(hint || '').trim().toLowerCase();
         if (!normalizedHint) continue;
-        if (normalizedHint.includes('zaoyoe.xyz')) return 'intl';
-        if (normalizedHint.includes('zaoyoe.com')) return 'cn';
+        const managedSite = classifyManagedSite(normalizedHint);
+        if (managedSite) return managedSite;
     }
 
     return 'cn';
@@ -1032,7 +1039,7 @@ function resolveSecureRequestSite(req, explicitSite = '') {
     const normalizedExplicitSite = String(explicitSite || '').trim().toLowerCase();
     const origin = String(req.headers.origin || req.headers.Origin || '').trim().toLowerCase();
     const host = String(req.headers.host || req.headers.Host || '').trim().toLowerCase();
-    const derivedSite = origin.includes('zaoyoe.xyz') || host.includes('zaoyoe.xyz') ? 'intl' : 'cn';
+    const derivedSite = classifyManagedSite(origin) || classifyManagedSite(host) || 'cn';
 
     if (isLocalRequestOrigin(req) && ['cn', 'intl'].includes(normalizedExplicitSite)) {
         return normalizedExplicitSite;

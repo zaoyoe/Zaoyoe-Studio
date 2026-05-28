@@ -23,7 +23,7 @@ const {
 
 const PROVIDER_KEYS = Object.freeze(['mock', 'afdian', 'hupijiao', 'zpay', 'nowpayments']);
 const NON_MOCK_PROVIDER_PRIORITY = Object.freeze(['nowpayments', 'zpay', 'hupijiao', 'afdian']);
-const DEFAULT_SITE_ORIGIN = 'https://www.zaoyoe.com';
+const DEFAULT_SITE_ORIGIN = 'https://www.fatherkey.com';
 const DEFAULT_AFDIAN_CHECKOUT_URL = 'https://afdian.com/a/zaoyoe';
 const DEFAULT_CUSTOM_RECHARGE_MIN_POINTS = 0.01;
 const DEFAULT_CUSTOM_RECHARGE_MAX_POINTS = 50000;

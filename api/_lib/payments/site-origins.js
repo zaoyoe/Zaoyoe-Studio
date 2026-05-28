@@ -1,6 +1,11 @@
 const SITE_CANONICAL_ORIGINS = Object.freeze({
-    cn: 'https://www.zaoyoe.com',
+    cn: 'https://www.fatherkey.com',
     intl: 'https://www.zaoyoe.xyz'
+});
+
+const MANAGED_SITE_HOSTS = Object.freeze({
+    cn: Object.freeze(['fatherkey.com', 'zaoyoe.com']),
+    intl: Object.freeze(['zaoyoe.xyz'])
 });
 
 function normalizeUrl(value = '') {
@@ -49,8 +54,8 @@ function isLocalHostname(value = '') {
 function classifyManagedSite(value = '') {
     const hostname = extractHostname(value);
     if (!hostname) return '';
-    if (hostname === 'zaoyoe.com' || hostname.endsWith('.zaoyoe.com')) return 'cn';
-    if (hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz')) return 'intl';
+    if (MANAGED_SITE_HOSTS.cn.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`))) return 'cn';
+    if (MANAGED_SITE_HOSTS.intl.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`))) return 'intl';
     return '';
 }
 
@@ -131,6 +136,7 @@ function rewriteManagedUrlForOrigin(
 }
 
 module.exports = {
+    MANAGED_SITE_HOSTS,
     SITE_CANONICAL_ORIGINS,
     buildOriginFromHost,
     classifyManagedSite,

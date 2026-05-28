@@ -220,12 +220,12 @@ test('createPaymentRequest returns a signed afdian payment claim token for redir
             package_id: 'pkg-1'
         },
         env: {
-            APP_BASE_URL: 'https://www.zaoyoe.com',
+            APP_BASE_URL: 'https://www.fatherkey.com',
             PAYMENT_AFDIAN_URL: 'https://afdian.com/a/zaoyoe',
             SUPABASE_SERVICE_ROLE_KEY: 'service-role-secret',
             PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: 'quote-secret'
         },
-        requestHost: 'www.zaoyoe.com'
+        requestHost: 'www.fatherkey.com'
     });
 
     assert.equal(result.success, true);

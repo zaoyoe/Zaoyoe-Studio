@@ -23,7 +23,7 @@ test('static asset versioner rewrites only same-site versioned CSS and JS URLs',
         '<script src="./js/app.js?v=OLD_1&siteAssetCdn=KEEP"></script>',
         '<script src="../js/app.js?v=OLD_8"></script>',
         '<link rel="stylesheet" href="/css/app.css?v=OLD_2">',
-        '<script src="https://www.zaoyoe.com/js/site.js?v=OLD_3"></script>',
+        '<script src="https://www.fatherkey.com/js/site.js?v=OLD_3"></script>',
         '<script src="https://cdn.jsdelivr.net/npm/pkg/app.js?v=OLD_4"></script>',
         '<script src="https://unpkg.com/pkg/app.js?v=OLD_5"></script>',
         '<script src="/api/public.js?v=OLD_6"></script>',
@@ -36,7 +36,7 @@ test('static asset versioner rewrites only same-site versioned CSS and JS URLs',
     assert.equal(result.text.includes('./js/app.js?v=sha-123&siteAssetCdn=KEEP'), true);
     assert.equal(result.text.includes('../js/app.js?v=sha-123'), true);
     assert.equal(result.text.includes('/css/app.css?v=sha-123'), true);
-    assert.equal(result.text.includes('https://www.zaoyoe.com/js/site.js?v=sha-123'), true);
+    assert.equal(result.text.includes('https://www.fatherkey.com/js/site.js?v=sha-123'), true);
     assert.equal(result.text.includes('https://cdn.jsdelivr.net/npm/pkg/app.js?v=OLD_4'), true);
     assert.equal(result.text.includes('https://unpkg.com/pkg/app.js?v=OLD_5'), true);
     assert.equal(result.text.includes('/api/public.js?v=OLD_6'), true);

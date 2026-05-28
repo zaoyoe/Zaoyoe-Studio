@@ -12,7 +12,7 @@
         prompts: '/prompts.html',
         verify: '/verify.html',
         guestbook: '/guestbook.html',
-        gongyi: 'https://sub2api.zaoyoe.com'
+        gongyi: 'https://sub2api.fatherkey.com'
     });
     const DEFAULT_LAYOUTS = Object.freeze({
         cn: Object.freeze({ root_page_key: 'home' }),

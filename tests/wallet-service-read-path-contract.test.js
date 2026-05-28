@@ -60,7 +60,7 @@ function loadPointsServiceContext({ session = null, persistedSession = null, ref
         },
         window: {
             SiteConfig: { site: 'cn' },
-            location: { hostname: 'www.zaoyoe.com' },
+            location: { hostname: 'www.fatherkey.com' },
             setTimeout,
             clearTimeout,
             atob(value) {

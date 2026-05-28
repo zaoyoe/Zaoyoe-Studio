@@ -538,7 +538,7 @@ test('public verify settings handler inherits mode visibility from default confi
         method: 'GET',
         url: '/api/public?scope=config&route=verify-settings&site=cn',
         headers: {
-            host: 'www.zaoyoe.com'
+            host: 'www.fatherkey.com'
         }
     }, res);
     const payload = JSON.parse(String(res.body || '{}'));

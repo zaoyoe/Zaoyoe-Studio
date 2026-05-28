@@ -2,7 +2,7 @@
  * Batch Thumbnail Generation Script
  * 
  * 运行方法：
- * 1. 打开 Admin Studio (https://zaoyoe.com/admin-studio.html)
+ * 1. 打开 Admin Studio (https://www.fatherkey.com/admin-studio.html)
  * 2. 登录管理员账户
  * 3. 打开浏览器开发者工具 (F12 或 Cmd+Option+I)
  * 4. 复制此脚本到 Console 运行
@@ -70,7 +70,7 @@
 
         for (const url of prompt.images) {
             // Only process R2 CDN images
-            if (url && url.includes('cdn.zaoyoe.com/prompts/') && !url.includes('/thumb/')) {
+            if (url && url.includes('cdn.fatherkey.com/prompts/') && !url.includes('/thumb/')) {
                 imagesToProcess.push({
                     promptId: prompt.id,
                     promptTitle: prompt.title,

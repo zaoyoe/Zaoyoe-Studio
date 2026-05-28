@@ -114,7 +114,7 @@ function loadAdminAccess(overrides = {}) {
 
 test('openAdminStudio immediately redirects through the admin entry trampoline when no warm admin session is available', async () => {
     const location = {
-        href: 'https://www.zaoyoe.com/prompts.html'
+        href: 'https://www.fatherkey.com/prompts.html'
     };
 
     const { api, restore } = loadAdminAccess({
@@ -133,7 +133,7 @@ test('openAdminStudio immediately redirects through the admin entry trampoline w
 
     try {
         const result = await api.openAdminStudio('admin-studio.html');
-        const redirectedUrl = new URL(location.href, 'https://www.zaoyoe.com');
+        const redirectedUrl = new URL(location.href, 'https://www.fatherkey.com');
 
         assert.equal(result, true);
         assert.equal(redirectedUrl.pathname, '/admin-entry.html');
@@ -145,7 +145,7 @@ test('openAdminStudio immediately redirects through the admin entry trampoline w
 
 test('openAdminStudio goes straight to admin-studio when access and admin session are already warm', async () => {
     const location = {
-        href: 'https://www.zaoyoe.com/prompts.html'
+        href: 'https://www.fatherkey.com/prompts.html'
     };
     const sessionStorage = createStorage({
         zaoyoe_admin_access_cache_v1: JSON.stringify({
@@ -195,7 +195,7 @@ test('openAdminStudio goes straight to admin-studio when access and admin sessio
 
     try {
         const result = await api.openAdminStudio('admin-studio.html');
-        const redirectedUrl = new URL(location.href, 'https://www.zaoyoe.com');
+        const redirectedUrl = new URL(location.href, 'https://www.fatherkey.com');
 
         assert.equal(result, true);
         assert.equal(redirectedUrl.pathname, '/admin-studio.html');

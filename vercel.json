@@ -23,23 +23,34 @@
     "redirects": [
         {
             "source": "/gongyi",
-            "destination": "https://sub2api.zaoyoe.com",
+            "destination": "https://sub2api.fatherkey.com",
             "permanent": false
         },
         {
             "source": "/gongyi.html",
-            "destination": "https://sub2api.zaoyoe.com",
+            "destination": "https://sub2api.fatherkey.com",
             "permanent": false
         },
         {
             "source": "/status",
-            "destination": "https://status.zaoyoe.com",
+            "destination": "https://status.fatherkey.com",
             "permanent": false
         },
         {
             "source": "/status.html",
-            "destination": "https://status.zaoyoe.com",
+            "destination": "https://status.fatherkey.com",
             "permanent": false
+        },
+        {
+            "source": "/:path*",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "fatherkey.com"
+                }
+            ],
+            "destination": "https://www.fatherkey.com/:path*",
+            "permanent": true
         },
         {
             "source": "/:path*",
@@ -56,31 +67,31 @@
     "rewrites": [
         {
             "source": "/api/admin",
-            "destination": "https://verify-api.zaoyoe.com/api/admin"
+            "destination": "https://verify-api.fatherkey.com/api/admin"
         },
         {
             "source": "/api/admin/:path*",
-            "destination": "https://verify-api.zaoyoe.com/api/admin/:path*"
+            "destination": "https://verify-api.fatherkey.com/api/admin/:path*"
         },
         {
             "source": "/api/payments/:path*",
-            "destination": "https://verify-api.zaoyoe.com/api/payments/:path*"
+            "destination": "https://verify-api.fatherkey.com/api/payments/:path*"
         },
         {
             "source": "/api/shop/:path*",
-            "destination": "https://verify-api.zaoyoe.com/api/shop/:path*"
+            "destination": "https://verify-api.fatherkey.com/api/shop/:path*"
         },
         {
             "source": "/api/wallet/:path*",
-            "destination": "https://verify-api.zaoyoe.com/api/wallet/:path*"
+            "destination": "https://verify-api.fatherkey.com/api/wallet/:path*"
         },
         {
             "source": "/api/ops/:path*",
-            "destination": "https://verify-api.zaoyoe.com/api/ops/:path*"
+            "destination": "https://verify-api.fatherkey.com/api/ops/:path*"
         },
         {
             "source": "/api/marketplace/:path*",
-            "destination": "https://verify-api.zaoyoe.com/api/marketplace/:path*"
+            "destination": "https://verify-api.fatherkey.com/api/marketplace/:path*"
         },
         {
             "source": "/favicon.ico",
@@ -394,7 +405,7 @@
                 },
                 {
                     "key": "Content-Security-Policy",
-                    "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; script-src 'self' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.sheetjs.com https://accounts.google.com https://www.gstatic.com; script-src-elem 'self' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.sheetjs.com https://accounts.google.com https://www.gstatic.com; script-src-attr 'none'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://verify-api.zaoyoe.com https://iqless.icu https://*.localto.net https://ipinfo.io https://ipwho.is https://ipapi.co https://api.ipify.org https://api.qrserver.com https://accounts.google.com https://api.emailjs.com; frame-src https://accounts.google.com;"
+                    "value": "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; img-src 'self' data: blob: https:; font-src 'self' data: https://fonts.gstatic.com https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; script-src 'self' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.sheetjs.com https://accounts.google.com https://www.gstatic.com; script-src-elem 'self' https://unpkg.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://cdn.sheetjs.com https://accounts.google.com https://www.gstatic.com; script-src-attr 'none'; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://verify-api.fatherkey.com https://verify-api.zaoyoe.com https://iqless.icu https://*.localto.net https://ipinfo.io https://ipwho.is https://ipapi.co https://api.ipify.org https://api.qrserver.com https://accounts.google.com https://api.emailjs.com; frame-src https://accounts.google.com;"
                 }
             ]
         }

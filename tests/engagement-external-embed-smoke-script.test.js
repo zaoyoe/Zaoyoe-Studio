@@ -14,8 +14,8 @@ function readRepoFile(relativePath) {
 test('external embed smoke parses deployment probe options', () => {
     const options = smoke.parseArgs([
         '--base-url', 'http://127.0.0.1:3000',
-        '--asset-base', 'https://www.zaoyoe.com/',
-        '--api-origin', 'https://www.zaoyoe.com',
+        '--asset-base', 'https://www.fatherkey.com/',
+        '--api-origin', 'https://www.fatherkey.com',
         '--page-id', 'gongyi',
         '--site', 'intl',
         '--timeout-ms', '12345',
@@ -23,8 +23,8 @@ test('external embed smoke parses deployment probe options', () => {
     ]);
 
     assert.equal(options.baseUrl, 'http://127.0.0.1:3000');
-    assert.equal(options.assetBase, 'https://www.zaoyoe.com/');
-    assert.equal(options.apiOrigin, 'https://www.zaoyoe.com');
+    assert.equal(options.assetBase, 'https://www.fatherkey.com/');
+    assert.equal(options.apiOrigin, 'https://www.fatherkey.com');
     assert.equal(options.pageId, 'gongyi');
     assert.equal(options.site, 'intl');
     assert.equal(options.timeoutMs, 12345);
@@ -33,16 +33,16 @@ test('external embed smoke parses deployment probe options', () => {
 
 test('external embed smoke probe page loads the production embed contract', () => {
     const html = smoke.buildExternalProbeHtml({
-        assetBase: 'https://www.zaoyoe.com/',
-        apiOrigin: 'https://www.zaoyoe.com',
+        assetBase: 'https://www.fatherkey.com/',
+        apiOrigin: 'https://www.fatherkey.com',
         pageId: 'gongyi',
         site: 'cn'
     });
 
     assert.match(html, /engagement-external-embed\.js\?v=20260505_GONGYI_EXTERNAL_ENGAGEMENT_1/);
     assert.match(html, /data-page-id="gongyi"/);
-    assert.match(html, /data-api-origin="https:\/\/www\.zaoyoe\.com"/);
-    assert.match(html, /data-asset-base="https:\/\/www\.zaoyoe\.com\/"/);
+    assert.match(html, /data-api-origin="https:\/\/www\.fatherkey\.com"/);
+    assert.match(html, /data-asset-base="https:\/\/www\.fatherkey\.com\/"/);
     assert.match(html, /__externalEmbedSmoke/);
     assert.match(html, /credentials/);
     assert.match(html, /external_embed_smoke/);

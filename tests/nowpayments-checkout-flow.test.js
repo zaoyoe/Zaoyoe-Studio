@@ -53,7 +53,7 @@ test('NOWPayments adapter returns a direct crypto checkout summary for the Chine
                     pay_currency: 'usdtbsc',
                     price_currency: 'usd',
                     cny_to_usd_rate: 0.14,
-                    ipn_callback_url: 'https://www.zaoyoe.com/api/payments/nowpayments/webhook',
+                    ipn_callback_url: 'https://www.fatherkey.com/api/payments/nowpayments/webhook',
                     is_fixed_rate: true,
                     is_fee_paid_by_user: true,
                     network_name: 'BNB Smart Chain'
@@ -62,7 +62,7 @@ test('NOWPayments adapter returns a direct crypto checkout summary for the Chine
                     nowpayments_api_key: 'np-api-key',
                     nowpayments_ipn_secret: 'np-ipn-secret'
                 },
-                requestOrigin: 'https://www.zaoyoe.com'
+                requestOrigin: 'https://www.fatherkey.com'
             },
             checkoutSession: {
                 id: 'checkout-session-1',

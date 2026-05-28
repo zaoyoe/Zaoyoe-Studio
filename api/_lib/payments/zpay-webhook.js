@@ -12,6 +12,9 @@ const {
     parseZpayParam
 } = require('./zpay');
 const {
+    classifyManagedSite
+} = require('./site-origins');
+const {
     deriveZpayPointBreakdown
 } = require('./zpay-points');
 const {
@@ -71,8 +74,8 @@ function getCurrentSite(req, explicitSite) {
     for (const hint of requestHints) {
         const normalizedHint = String(hint || '').trim().toLowerCase();
         if (!normalizedHint) continue;
-        if (normalizedHint.includes('zaoyoe.xyz')) return 'intl';
-        if (normalizedHint.includes('zaoyoe.com')) return 'cn';
+        const managedSite = classifyManagedSite(normalizedHint);
+        if (managedSite) return managedSite;
     }
 
     return 'cn';

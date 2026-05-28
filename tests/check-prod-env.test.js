@@ -36,7 +36,7 @@ test('check-prod-env parseArgs collects app runtime flags', () => {
         '--validate-payment-schema',
         '--check-app-runtime',
         '--runtime-only',
-        '--base-url', 'https://www.zaoyoe.com',
+        '--base-url', 'https://www.fatherkey.com',
         '--expected-asset-version', 'd87130bd22f8',
         '--expect-current-git-version',
         '--timeout-ms', '4321',
@@ -48,7 +48,7 @@ test('check-prod-env parseArgs collects app runtime flags', () => {
     assert.equal(options.validatePaymentSchema, true);
     assert.equal(options.checkAppRuntime, true);
     assert.equal(options.runtimeOnly, true);
-    assert.equal(options.baseUrl, 'https://www.zaoyoe.com');
+    assert.equal(options.baseUrl, 'https://www.fatherkey.com');
     assert.equal(options.expectedAssetVersion, 'd87130bd22f8');
     assert.equal(options.expectCurrentGitVersion, true);
     assert.equal(options.timeoutMs, 4321);
@@ -331,7 +331,7 @@ test('buildPlatformEnvChecklist renders the expected Vercel and Railway variable
         PAYMENT_CUSTOM_RECHARGE_QUOTE_SECRET: 'quote_demo',
         ADMIN_STUDIO_ACCESS_SECRET: 'studio_demo',
         DEPLOYMENT_TIER: 'production',
-        APP_BASE_URL: 'https://www.zaoyoe.com',
+        APP_BASE_URL: 'https://www.fatherkey.com',
         PAYMENT_SMOKE_BASE_URL: 'https://preview.zaoyoe.com',
         TRUSTED_PROXY_IPS: '10.0.0.0/8',
         TRUST_ALL_PROXIES: 'false',
@@ -384,14 +384,14 @@ test('runAppRuntimeValidation checks runtime config and payment config endpoint 
     const calls = [];
     const checks = await runAppRuntimeValidation({
         env: {
-            APP_BASE_URL: 'https://www.zaoyoe.com',
+            APP_BASE_URL: 'https://www.fatherkey.com',
             SUPABASE_URL: 'https://demo.supabase.co',
             SUPABASE_PUBLISHABLE_KEY: 'publishable-key'
         },
         expectedAssetVersion: 'd87130bd22f8',
         fetchImpl: async (url) => {
             calls.push(url);
-            if (String(url) === 'https://www.zaoyoe.com/') {
+            if (String(url) === 'https://www.fatherkey.com/') {
                 return createFetchResponse({
                     status: 200,
                     body: [
@@ -402,7 +402,7 @@ test('runAppRuntimeValidation checks runtime config and payment config endpoint 
                 });
             }
 
-            if (String(url) === 'https://www.zaoyoe.com/js/wallet-modal-loader.js?v=d87130bd22f8&iosChromeKeyboard=keep') {
+            if (String(url) === 'https://www.fatherkey.com/js/wallet-modal-loader.js?v=d87130bd22f8&iosChromeKeyboard=keep') {
                 return createFetchResponse({
                     status: 200,
                     body: [
@@ -412,14 +412,14 @@ test('runAppRuntimeValidation checks runtime config and payment config endpoint 
                 });
             }
 
-            if (String(url) === 'https://www.zaoyoe.com/js/services/PointsService.js?v=d87130bd22f8') {
+            if (String(url) === 'https://www.fatherkey.com/js/services/PointsService.js?v=d87130bd22f8') {
                 return createFetchResponse({
                     status: 200,
                     body: 'function refreshSupabaseSession() {}\nwindow.PointsService = PointsService;'
                 });
             }
 
-            if (String(url) === 'https://www.zaoyoe.com/js/components/WalletModal.js?v=d87130bd22f8') {
+            if (String(url) === 'https://www.fatherkey.com/js/components/WalletModal.js?v=d87130bd22f8') {
                 return createFetchResponse({
                     status: 200,
                     body: 'window.WalletModal = WalletModal;'
@@ -475,14 +475,14 @@ test('runAppRuntimeValidation checks runtime config and payment config endpoint 
     });
 
     assert.deepEqual(calls, [
-        'https://www.zaoyoe.com/',
-        'https://www.zaoyoe.com/js/wallet-modal-loader.js?v=d87130bd22f8&iosChromeKeyboard=keep',
-        'https://www.zaoyoe.com/js/services/PointsService.js?v=d87130bd22f8',
-        'https://www.zaoyoe.com/js/components/WalletModal.js?v=d87130bd22f8',
-        'https://www.zaoyoe.com/api/runtime/supabase-config',
-        'https://www.zaoyoe.com/api/shop/catalog?site=cn',
-        'https://www.zaoyoe.com/api/payments/config',
-        'https://www.zaoyoe.com/api/payments/auth-check'
+        'https://www.fatherkey.com/',
+        'https://www.fatherkey.com/js/wallet-modal-loader.js?v=d87130bd22f8&iosChromeKeyboard=keep',
+        'https://www.fatherkey.com/js/services/PointsService.js?v=d87130bd22f8',
+        'https://www.fatherkey.com/js/components/WalletModal.js?v=d87130bd22f8',
+        'https://www.fatherkey.com/api/runtime/supabase-config',
+        'https://www.fatherkey.com/api/shop/catalog?site=cn',
+        'https://www.fatherkey.com/api/payments/config',
+        'https://www.fatherkey.com/api/payments/auth-check'
     ]);
     assert.equal(checks[0].label, 'app runtime base url');
     assert.equal(checks[1].label, 'app static asset version');
@@ -506,13 +506,13 @@ test('runAppRuntimeValidation checks runtime config and payment config endpoint 
 test('runAppRuntimeValidation reports remote runtime loader failures clearly', async () => {
     const checks = await runAppRuntimeValidation({
         env: {
-            APP_BASE_URL: 'https://www.zaoyoe.com',
+            APP_BASE_URL: 'https://www.fatherkey.com',
             SUPABASE_URL: 'https://demo.supabase.co',
             SUPABASE_PUBLISHABLE_KEY: 'publishable-key'
         },
         expectedAssetVersion: 'd87130bd22f8',
         fetchImpl: async (url) => {
-            if (String(url) === 'https://www.zaoyoe.com/') {
+            if (String(url) === 'https://www.fatherkey.com/') {
                 return createFetchResponse({
                     status: 200,
                     body: '<script src="./js/site-config.js?v=21257c39264f"></script>'
@@ -588,14 +588,14 @@ test('runAppRuntimeValidation reports remote runtime loader failures clearly', a
 test('runAppRuntimeValidation catches wallet dynamic scripts that resolve to HTML', async () => {
     const checks = await runAppRuntimeValidation({
         env: {
-            APP_BASE_URL: 'https://www.zaoyoe.com',
+            APP_BASE_URL: 'https://www.fatherkey.com',
             SUPABASE_URL: 'https://demo.supabase.co',
             SUPABASE_PUBLISHABLE_KEY: 'publishable-key'
         },
         expectedAssetVersion: 'd87130bd22f8',
         fetchImpl: async (url) => {
             const normalizedUrl = String(url);
-            if (normalizedUrl === 'https://www.zaoyoe.com/') {
+            if (normalizedUrl === 'https://www.fatherkey.com/') {
                 return createFetchResponse({
                     status: 200,
                     body: [
@@ -605,7 +605,7 @@ test('runAppRuntimeValidation catches wallet dynamic scripts that resolve to HTM
                 });
             }
 
-            if (normalizedUrl === 'https://www.zaoyoe.com/js/wallet-modal-loader.js?v=d87130bd22f8') {
+            if (normalizedUrl === 'https://www.fatherkey.com/js/wallet-modal-loader.js?v=d87130bd22f8') {
                 return createFetchResponse({
                     status: 200,
                     body: [
@@ -615,14 +615,14 @@ test('runAppRuntimeValidation catches wallet dynamic scripts that resolve to HTM
                 });
             }
 
-            if (normalizedUrl === 'https://www.zaoyoe.com/js/services/PointsService.js?v=d87130bd22f8') {
+            if (normalizedUrl === 'https://www.fatherkey.com/js/services/PointsService.js?v=d87130bd22f8') {
                 return createFetchResponse({
                     status: 200,
                     body: '<!DOCTYPE html><html><body>homepage fallback</body></html>'
                 });
             }
 
-            if (normalizedUrl === 'https://www.zaoyoe.com/js/components/WalletModal.js?v=d87130bd22f8') {
+            if (normalizedUrl === 'https://www.fatherkey.com/js/components/WalletModal.js?v=d87130bd22f8') {
                 return createFetchResponse({
                     status: 200,
                     body: 'window.WalletModal = WalletModal;'

@@ -127,7 +127,7 @@ function parseArgs(argv = []) {
 }
 
 function normalizePublicUrlBase(value = '') {
-    return String(value || 'https://cdn.zaoyoe.com').trim().replace(/\/+$/, '');
+    return String(value || 'https://cdn.fatherkey.com').trim().replace(/\/+$/, '');
 }
 
 function sanitizeFilename(value = '', fallback = 'prompt-image.webp') {
@@ -150,7 +150,7 @@ function getFilenameFromUrl(url = '', fallback = 'prompt-image.webp') {
     }
 }
 
-function isPromptCdnOriginalUrl(url = '', publicUrlBase = 'https://cdn.zaoyoe.com') {
+function isPromptCdnOriginalUrl(url = '', publicUrlBase = 'https://cdn.fatherkey.com') {
     try {
         const parsed = new URL(String(url || '').trim());
         const publicParsed = new URL(publicUrlBase);
@@ -586,7 +586,7 @@ async function main() {
     const r2AccessKey = readFirstEnv(envSources, ['R2_ACCESS_KEY_ID', 'R2_ACCESS_KEY']);
     const r2SecretKey = readFirstEnv(envSources, ['R2_SECRET_ACCESS_KEY', 'R2_SECRET_KEY']);
     const r2Bucket = readFirstEnv(envSources, ['R2_BUCKET_NAME'], 'zaoyoeimages');
-    const r2PublicUrl = normalizePublicUrlBase(readFirstEnv(envSources, ['R2_PUBLIC_URL'], 'https://cdn.zaoyoe.com'));
+    const r2PublicUrl = normalizePublicUrlBase(readFirstEnv(envSources, ['R2_PUBLIC_URL'], 'https://cdn.fatherkey.com'));
 
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
         auth: {

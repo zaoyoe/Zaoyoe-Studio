@@ -68,7 +68,7 @@ const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated
 const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260518_HOME_GONGYI_SUB2API_1';
 const HOMEPAGE_CONFIG_CACHE_KEY = 'homepage_config_sub2api_1';
 const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';
-const HOMEPAGE_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.zaoyoe.com';
+const HOMEPAGE_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';
 const HOMEPAGE_PROMPT_LIVE_SELECT = [
   'id',
   'title',
@@ -428,7 +428,7 @@ function normalizeHomepageGongyiUrl(value) {
     const hostname = parsed.hostname.toLowerCase();
     if (hostname === 'gongyi.zaoyoe.com' || hostname === 'www.gongyi.zaoyoe.com') {
       const path = parsed.pathname === '/' ? '' : parsed.pathname;
-      return `https://sub2api.zaoyoe.com${path}${parsed.search}${parsed.hash}`;
+      return `https://sub2api.fatherkey.com${path}${parsed.search}${parsed.hash}`;
     }
   } catch (error) {
     // Keep non-absolute URLs unchanged.
@@ -664,7 +664,7 @@ function pathnameBasename(pathname = '') {
 
 function getZaoyoeAssetCdnOrigin({ canonical = false } = {}) {
   if (canonical) {
-    return String(window.SiteConfig?.getCanonicalAssetCdnOrigin?.() || 'https://cdn.zaoyoe.com').replace(/\/+$/, '');
+    return String(window.SiteConfig?.getCanonicalAssetCdnOrigin?.() || 'https://cdn.fatherkey.com').replace(/\/+$/, '');
   }
 
   const configuredOrigin = String(window.SiteConfig?.getAssetCdnOrigin?.() || '').trim();
@@ -675,7 +675,7 @@ function getZaoyoeAssetCdnOrigin({ canonical = false } = {}) {
   const hostname = String(window.location?.hostname || '').toLowerCase();
   return hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz')
     ? 'https://cdn.zaoyoe.xyz'
-    : 'https://cdn.zaoyoe.com';
+    : 'https://cdn.fatherkey.com';
 }
 
 function normalizeZaoyoeAssetCdnUrl(url, expectedPrefix = '', options = {}) {
@@ -702,7 +702,7 @@ function normalizeZaoyoeAssetCdnUrl(url, expectedPrefix = '', options = {}) {
   try {
     const parsed = new URL(source, window.location.origin);
     const parts = String(parsed.pathname || '').split('/').filter(Boolean);
-    const isKnownCdnHost = ['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname) || parsed.hostname.endsWith('.r2.dev');
+    const isKnownCdnHost = ['cdn.fatherkey.com', 'cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname) || parsed.hostname.endsWith('.r2.dev');
     if (!isKnownCdnHost || (expectedPrefix && parts[0] !== expectedPrefix)) return '';
 
     const targetOrigin = new URL(getZaoyoeAssetCdnOrigin(options));
@@ -721,7 +721,7 @@ function getPromptR2VariantUrl(url, variant = '') {
   try {
     const normalizedUrl = normalizeZaoyoeAssetCdnUrl(url, 'prompts') || String(url || '').trim();
     const parsed = new URL(normalizedUrl, window.location.origin);
-    if (!['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)) return '';
+    if (!['cdn.fatherkey.com', 'cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)) return '';
 
     const parts = String(parsed.pathname || '').split('/').filter(Boolean);
     if (parts.length !== 2 || parts[0] !== 'prompts') return '';
@@ -802,7 +802,7 @@ function getShopR2CardVariantUrl(url, variant = '') {
   try {
     const normalizedUrl = normalizeShopProductCdnUrl(url) || String(url || '').trim();
     const parsed = new URL(normalizedUrl, window.location.origin);
-    if (!['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)) {
+    if (!['cdn.fatherkey.com', 'cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)) {
       return '';
     }
 
@@ -2736,7 +2736,7 @@ const FramerHome = {
   buildDefaultHeroEntries() {
     return [
       { id: 'prompts', icon: 'fa-wand-magic-sparkles', text: window.i18n?.t('home.entries.prompts') || '提示词', link: '/prompts.html', color: '#f472b6', section: 'prompts' },
-      { id: 'gongyi', icon: 'home-entry-card-icon--gongyi', text: window.i18n?.t('home.entries.gongyi') || 'API中转', link: 'https://sub2api.zaoyoe.com', color: '#5ed8f8', section: 'gongyi' },
+      { id: 'gongyi', icon: 'home-entry-card-icon--gongyi', text: window.i18n?.t('home.entries.gongyi') || 'API中转', link: 'https://sub2api.fatherkey.com', color: '#5ed8f8', section: 'gongyi' },
       { id: 'shop', icon: 'fa-store', text: window.i18n?.t('home.entries.shop') || '商城', link: '/shop.html', color: '#4ade80', section: 'shop' },
       { id: 'verify', icon: 'fa-robot', text: window.i18n?.t('home.entries.verify') || 'Gemini Pro', link: '/verify.html', color: '#667eea', section: 'verify' },
       { id: 'guestbook', icon: 'fa-comment-dots', text: window.i18n?.t('home.entries.guestbook') || '留言板', link: '/guestbook.html', color: '#f59e0b', section: 'guestbook' }
@@ -2747,7 +2747,7 @@ const FramerHome = {
     const normalizedId = String(item?.id || '').trim().toLowerCase();
     const normalizedSection = String(item?.section || '').trim().toLowerCase();
     const normalizedLink = String(item?.link || '').trim().toLowerCase();
-    return normalizedId === 'gongyi' || normalizedSection === 'gongyi' || normalizedLink.includes('sub2api.zaoyoe.com') || normalizedLink.includes('gongyi.zaoyoe.com');
+    return normalizedId === 'gongyi' || normalizedSection === 'gongyi' || normalizedLink.includes('sub2api.fatherkey.com') || normalizedLink.includes('sub2api.zaoyoe.com') || normalizedLink.includes('gongyi.zaoyoe.com');
   },
 
   isGuestbookHeroEntry(item) {
@@ -3155,7 +3155,7 @@ const FramerHome = {
         zh: '进入控制台',
         en: 'Open Console'
       }),
-      ctaLink: normalizeHomepageGongyiUrl(String(config.cta_link || '').trim() || 'https://sub2api.zaoyoe.com'),
+      ctaLink: normalizeHomepageGongyiUrl(String(config.cta_link || '').trim() || 'https://sub2api.fatherkey.com'),
       highlights: resolveHomepageLocalizedTextList(config.highlight_items, defaultHighlights),
       featureCards: defaultCards.map((card, index) => {
         const baseKey = `feature_${index + 1}`;
@@ -3634,7 +3634,7 @@ const FramerHome = {
       hero: { enable_auto: true },
       prompts: { enable_auto: true, max_items: 24, sort: 'popular', section_title: '提示词', section_subtitle: '让创作更高效，让灵感更自由' },
       shop: { enable_auto: true, max_items: 8, section_title: '资源商城', section_subtitle: '优质资源，助力成长' },
-      gongyi: { enable_auto: false, section_tag: 'API中转', brand_name: 'Zaoyoe', brand_subtitle: 'Subscription to API Conversion Platform', cta_text: '进入控制台', cta_link: 'https://sub2api.zaoyoe.com' },
+      gongyi: { enable_auto: false, section_tag: 'API中转', brand_name: 'Zaoyoe', brand_subtitle: 'Subscription to API Conversion Platform', cta_text: '进入控制台', cta_link: 'https://sub2api.fatherkey.com' },
       verify: { enable_auto: true, section_title: 'Gemini Pro', section_subtitle: '快速验证您的 API 密钥' },
       guestbook: { enable_auto: true, max_items: 6, section_title: '留言板', section_subtitle: '用户的声音' },
       ticker: { enable_auto: true, speed: 30 }
@@ -4885,7 +4885,7 @@ const FramerHome = {
             <h2 class="gongyi-brand">${escapeHomeHtml(data.brandName || 'Zaoyoe')}</h2>
             <p class="gongyi-brand-subtitle">${escapeHomeHtml(data.brandSubtitle || fallbackBrandSubtitle)}</p>
             <div class="gongyi-actions">
-              <a href="${escapeHomeHtml(data.ctaLink || 'https://sub2api.zaoyoe.com')}" class="btn btn-primary gongyi-cta" data-home-gongyi-cta="1" target="_blank" rel="noopener noreferrer">
+              <a href="${escapeHomeHtml(data.ctaLink || 'https://sub2api.fatherkey.com')}" class="btn btn-primary gongyi-cta" data-home-gongyi-cta="1" target="_blank" rel="noopener noreferrer">
                 ${escapeHomeHtml(data.ctaText || fallbackCtaText)}
               </a>
             </div>

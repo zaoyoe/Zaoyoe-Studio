@@ -52,7 +52,7 @@
         const configuredBaseUrl = String(
             window.ZAOYOE_PUBLIC_API_BASE_URL
             || window.VERIFY_SERVER_URL
-            || 'https://verify-api.zaoyoe.com'
+            || 'https://verify-api.fatherkey.com'
         ).trim().replace(/\/+$/, '');
 
         try {
@@ -287,7 +287,7 @@
             const hostname = parsed.hostname.toLowerCase();
             if (hostname === 'gongyi.zaoyoe.com' || hostname === 'www.gongyi.zaoyoe.com') {
                 const path = parsed.pathname === '/' ? '' : parsed.pathname;
-                return `https://sub2api.zaoyoe.com${path}${parsed.search}${parsed.hash}`;
+                return `https://sub2api.fatherkey.com${path}${parsed.search}${parsed.hash}`;
             }
         } catch (error) {
             // Keep non-absolute URLs unchanged.
@@ -932,7 +932,7 @@
             ? config.entries
             : [
                 { id: 'prompts', icon: 'fa-wand-magic-sparkles', text: window.i18n?.t('home.entries.prompts') || '提示词', link: '/prompts.html', color: '#f472b6', section: 'prompts' },
-                { id: 'gongyi', icon: 'home-entry-card-icon--gongyi', text: window.i18n?.t('home.entries.gongyi') || 'API中转', link: 'https://sub2api.zaoyoe.com', color: '#5ed8f8', section: 'gongyi' },
+                { id: 'gongyi', icon: 'home-entry-card-icon--gongyi', text: window.i18n?.t('home.entries.gongyi') || 'API中转', link: 'https://sub2api.fatherkey.com', color: '#5ed8f8', section: 'gongyi' },
                 { id: 'shop', icon: 'fa-store', text: window.i18n?.t('home.entries.shop') || '商城', link: '/shop.html', color: '#4ade80', section: 'shop' },
                 { id: 'verify', icon: 'fa-robot', text: window.i18n?.t('home.entries.verify') || 'Gemini Pro', link: '/verify.html', color: '#667eea', section: 'verify' },
                 { id: 'guestbook', icon: 'fa-comment-dots', text: window.i18n?.t('home.entries.guestbook') || '留言板', link: '#', color: '#f59e0b', action: 'openGuestbookModal', section: 'guestbook' }
@@ -1032,7 +1032,7 @@
                 zh: '进入控制台',
                 en: 'Open Console'
             }),
-            ctaLink: normalizeGongyiUrl(String(config.cta_link || '').trim() || 'https://sub2api.zaoyoe.com'),
+            ctaLink: normalizeGongyiUrl(String(config.cta_link || '').trim() || 'https://sub2api.fatherkey.com'),
             highlights: resolveLocalizedTextList(
                 config.highlight_items,
                 isEnglish ? ['Subscription to API', 'Session continuity', 'Usage billing'] : ['订阅转 API', '会话保持', '按量计费']

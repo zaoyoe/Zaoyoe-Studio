@@ -134,7 +134,7 @@ test('section visibility runtime site detection respects local preview referer o
     assert.equal(detectRequestSite({
         url: '/api/runtime/section-visibility-preload',
         headers: {
-            host: 'www.zaoyoe.com'
+            host: 'www.fatherkey.com'
         }
     }), 'cn');
     assert.equal(detectRequestSite({

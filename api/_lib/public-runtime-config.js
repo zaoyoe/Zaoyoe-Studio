@@ -89,7 +89,7 @@ function inferPublicRuntimeSite(options = {}) {
     try {
         const requestUrl = String(req?.url || '').trim();
         if (requestUrl) {
-            const host = String(headers.host || headers.Host || 'www.zaoyoe.com').trim();
+            const host = String(headers.host || headers.Host || 'www.fatherkey.com').trim();
             const url = new URL(requestUrl, `https://${host}`);
             const querySite = normalizeSiteValue(url.searchParams.get('site'), { fallback: '', allowEmpty: true });
             if (querySite) {

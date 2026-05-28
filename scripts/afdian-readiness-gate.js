@@ -14,7 +14,7 @@ const {
 } = require('./inspect-proxy-chain');
 
 const DEFAULT_ENV_FILE = path.resolve(__dirname, '../server/.env.production');
-const DEFAULT_BASE_URL = 'https://www.zaoyoe.com';
+const DEFAULT_BASE_URL = 'https://www.fatherkey.com';
 const DEFAULT_SAMPLE_COUNT = 5;
 const DEFAULT_TIMEOUT_MS = 15000;
 const PENDING_CLOSEOUT_KEYS = new Set([

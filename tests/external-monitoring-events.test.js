@@ -237,7 +237,7 @@ test('client monitoring endpoint accepts diagnostics when no external provider i
                 kind: 'window_error',
                 message: 'ReferenceError: boom',
                 stack: 'ReferenceError: boom\n    at home.js:1:1',
-                href: 'https://www.zaoyoe.com/',
+                href: 'https://www.fatherkey.com/',
                 metadata: {
                     access_token: 'eyJ.secret.value'
                 }

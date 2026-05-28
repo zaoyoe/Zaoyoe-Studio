@@ -44,7 +44,7 @@ function isSupabaseStorageImageUrl(url) {
 
 function getPromptAssetCdnOrigin({ canonical = false } = {}) {
     if (canonical) {
-        return String(window.SiteConfig?.getCanonicalAssetCdnOrigin?.() || 'https://cdn.zaoyoe.com').replace(/\/+$/, '');
+        return String(window.SiteConfig?.getCanonicalAssetCdnOrigin?.() || 'https://cdn.fatherkey.com').replace(/\/+$/, '');
     }
 
     const configuredOrigin = String(window.SiteConfig?.getAssetCdnOrigin?.() || '').trim();
@@ -55,7 +55,7 @@ function getPromptAssetCdnOrigin({ canonical = false } = {}) {
     const hostname = String(window.location?.hostname || '').toLowerCase();
     return hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz')
         ? 'https://cdn.zaoyoe.xyz'
-        : 'https://cdn.zaoyoe.com';
+        : 'https://cdn.fatherkey.com';
 }
 
 function normalizePromptCdnUrlForCurrentSite(url, options = {}) {
@@ -75,7 +75,7 @@ function normalizePromptCdnUrlForCurrentSite(url, options = {}) {
     try {
         const parsed = new URL(source, window.location.origin);
         const parts = String(parsed.pathname || '').split('/').filter(Boolean);
-        const isKnownCdnHost = ['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname) || parsed.hostname.endsWith('.r2.dev');
+        const isKnownCdnHost = ['cdn.fatherkey.com', 'cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname) || parsed.hostname.endsWith('.r2.dev');
         if (!isKnownCdnHost || parts[0] !== 'prompts') return '';
 
         const targetOrigin = new URL(getPromptAssetCdnOrigin(options));
@@ -125,7 +125,7 @@ function getPromptResponsiveR2VariantUrl(url, variant = '') {
     try {
         const normalizedUrl = normalizePromptCdnUrlForCurrentSite(url) || String(url || '').trim();
         const parsed = new URL(normalizedUrl, window.location.origin);
-        if (!['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)) return '';
+        if (!['cdn.fatherkey.com', 'cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)) return '';
 
         const parts = String(parsed.pathname || '').split('/').filter(Boolean);
         if (parts.length !== 2 || parts[0] !== 'prompts') return '';
@@ -247,7 +247,7 @@ function getPromptModalImageUrl(url) {
         const parsed = new URL(displayUrl, window.location.origin);
         const parts = String(parsed.pathname || '').split('/').filter(Boolean);
 
-        const isPromptCdnHost = ['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname) || parsed.hostname.endsWith('.r2.dev');
+        const isPromptCdnHost = ['cdn.fatherkey.com', 'cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname) || parsed.hostname.endsWith('.r2.dev');
         if (isPromptCdnHost && parts.length === 3 && parts[0] === 'prompts' && ['thumb', 'featured', 'card', 'home'].includes(parts[1])) {
             parsed.pathname = `/prompts/${parts[2]}`;
             parsed.search = '';

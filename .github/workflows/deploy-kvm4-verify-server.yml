@@ -74,10 +74,10 @@ jobs:
         run: |
           set -Eeuo pipefail
 
-          curl -fsS --retry 5 --retry-delay 3 https://verify-api.zaoyoe.com/healthz
+          curl -fsS --retry 5 --retry-delay 3 https://verify-api.fatherkey.com/healthz
 
-          curl -fsS --retry 5 --retry-delay 3 'https://www.zaoyoe.com/api/payments/config?site=cn' > /tmp/kvm4-payments-config.json
+          curl -fsS --retry 5 --retry-delay 3 'https://www.fatherkey.com/api/payments/config?site=cn' > /tmp/kvm4-payments-config.json
           node -e "const fs=require('fs'); const payload=JSON.parse(fs.readFileSync('/tmp/kvm4-payments-config.json','utf8')); if (!payload.success) throw new Error('payments config failed'); console.log(JSON.stringify({payments_config:true, active_provider:payload.config?.active_provider || null}));"
 
-          curl -fsS --retry 5 --retry-delay 3 'https://www.zaoyoe.com/api/shop/catalog?site=cn' > /tmp/kvm4-shop-catalog.json
+          curl -fsS --retry 5 --retry-delay 3 'https://www.fatherkey.com/api/shop/catalog?site=cn' > /tmp/kvm4-shop-catalog.json
           node -e "const fs=require('fs'); const payload=JSON.parse(fs.readFileSync('/tmp/kvm4-shop-catalog.json','utf8')); if (!payload.success) throw new Error('shop catalog failed'); console.log(JSON.stringify({shop_catalog:true, categories:Array.isArray(payload.categories)?payload.categories.length:null, products:Array.isArray(payload.products)?payload.products.length:null}));"

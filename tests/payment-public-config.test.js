@@ -27,7 +27,7 @@ test('public payment config hides mock when runtime blocks remote mock payments'
                     gateway_url: '',
                     merchant_id: '',
                     notify_url: 'https://verify.example.com/webhook',
-                    return_url: 'https://www.zaoyoe.com/wallet'
+                    return_url: 'https://www.fatherkey.com/wallet'
                 }
             }
         },
@@ -77,7 +77,7 @@ test('public payment config preserves mock when runtime explicitly allows it', (
                     gateway_url: 'https://api.xunhupay.com/payment/do.html',
                     merchant_id: 'appid-demo',
                     notify_url: 'https://verify.example.com/webhook',
-                    return_url: 'https://www.zaoyoe.com/wallet'
+                    return_url: 'https://www.fatherkey.com/wallet'
                 }
             }
         },
@@ -298,7 +298,7 @@ test('public payment config exposes zpay safely without leaking operational fiel
                     checkout_url: 'https://zpayz.cn',
                     pid: 'pid-123',
                     notify_url: 'https://verify.example.com/api/payments/zpay/webhook',
-                    return_url: 'https://www.zaoyoe.com/wallet',
+                    return_url: 'https://www.fatherkey.com/wallet',
                     package_hint: '创建订单后直接支付',
                     custom_amount_hint: '创建自定义金额订单后直接支付'
                 }

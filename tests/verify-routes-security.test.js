@@ -859,7 +859,7 @@ test('quota endpoint requires admin privileges for authenticated external users'
             url: '/api/quota',
             headers: {
                 Authorization: 'Bearer member-token',
-                Host: 'verify-api.zaoyoe.com'
+                Host: 'verify-api.fatherkey.com'
             }
         });
         const payload = response.json();
@@ -905,7 +905,7 @@ test('quota endpoint allows admins and proxies upstream data', async () => {
                 url: '/api/quota',
                 headers: {
                     Authorization: 'Bearer admin-token',
-                    Host: 'verify-api.zaoyoe.com'
+                    Host: 'verify-api.fatherkey.com'
                 }
             });
             const payload = response.json();
@@ -1178,7 +1178,7 @@ test('network request-context endpoint returns proxy diagnostics for admins', as
             url: '/api/admin/network/request-context',
             headers: {
                 Authorization: 'Bearer admin-token',
-                Host: 'verify-api.zaoyoe.com',
+                Host: 'verify-api.fatherkey.com',
                 'x-forwarded-for': '198.51.100.23, 10.0.0.2',
                 forwarded: 'for=198.51.100.23;proto=https'
             },
@@ -1217,7 +1217,7 @@ test('network request-context endpoint flags mismatched trusted proxy rules', as
             url: '/api/admin/network/request-context',
             headers: {
                 Authorization: 'Bearer admin-token',
-                Host: 'verify-api.zaoyoe.com',
+                Host: 'verify-api.fatherkey.com',
                 'x-forwarded-for': '198.51.100.23',
                 'x-real-ip': '198.51.100.23'
             },
@@ -1800,7 +1800,7 @@ test('afdian webhook resolves site from the linked pending checkout session when
             method: 'POST',
             url: '/api/afdian/webhook',
             headers: {
-                host: 'verify-api.zaoyoe.com'
+                host: 'verify-api.fatherkey.com'
             },
             body: {
                 ec: 200,
@@ -2189,8 +2189,8 @@ test('afdian query does not return redeem codes for unowned orders even when a c
             url: '/api/afdian/query',
             headers: {
                 Authorization: 'Bearer member-token',
-                Host: 'www.zaoyoe.com',
-                Origin: 'https://www.zaoyoe.com'
+                Host: 'www.fatherkey.com',
+                Origin: 'https://www.fatherkey.com'
             },
             body: {
                 order_no: 'AFD-CODE-LEAK-1'
@@ -2319,8 +2319,8 @@ test('afdian query can safely claim an unowned order with a valid payment claim 
                 url: '/api/afdian/query',
                 headers: {
                     Authorization: 'Bearer member-token',
-                    Host: 'www.zaoyoe.com',
-                    Origin: 'https://www.zaoyoe.com'
+                    Host: 'www.fatherkey.com',
+                    Origin: 'https://www.fatherkey.com'
                 },
                 body: {
                     order_no: 'AFD-CLAIM-1',

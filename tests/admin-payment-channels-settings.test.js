@@ -219,7 +219,7 @@ test('payment channel settings allow switching zpay to primary without webhook a
             const req = {
                 method: 'POST',
                 headers: {
-                    host: 'www.zaoyoe.com'
+                    host: 'www.fatherkey.com'
                 },
                 body: {
                     site: 'cn',
@@ -232,7 +232,7 @@ test('payment channel settings allow switching zpay to primary without webhook a
                                 checkout_url: 'https://zpayz.cn',
                                 pid: '2026041807323142',
                                 payment_type: 'alipay',
-                                return_url: 'https://www.zaoyoe.com/wallet'
+                                return_url: 'https://www.fatherkey.com/wallet'
                             }
                         }
                     },
@@ -306,7 +306,7 @@ test('payment channel settings allow switching zpay to primary after incoming pk
             const req = {
                 method: 'POST',
                 headers: {
-                    host: 'www.zaoyoe.com'
+                    host: 'www.fatherkey.com'
                 },
                 body: {
                     site: 'intl',
@@ -319,7 +319,7 @@ test('payment channel settings allow switching zpay to primary after incoming pk
                                 checkout_url: 'https://zpayz.cn',
                                 pid: '2026041807323142',
                                 payment_type: 'alipay',
-                                return_url: 'https://www.zaoyoe.com/wallet'
+                                return_url: 'https://www.fatherkey.com/wallet'
                             }
                         }
                     },

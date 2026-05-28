@@ -75,7 +75,7 @@ test('public payments handlers expose zpay webhook via shared handler and admin 
         },
         env: {
             APP_ENV: 'production',
-            APP_BASE_URL: 'https://www.zaoyoe.com'
+            APP_BASE_URL: 'https://www.fatherkey.com'
         }
     });
 
@@ -84,7 +84,7 @@ test('public payments handlers expose zpay webhook via shared handler and admin 
     const req = {
         method: 'GET',
         headers: {
-            host: 'www.zaoyoe.com'
+            host: 'www.fatherkey.com'
         }
     };
     const res = createMockResponse();

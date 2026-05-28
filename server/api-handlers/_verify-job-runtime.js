@@ -13,6 +13,9 @@ const {
     loadVerifyRuntimeConfig,
     selectVerifyCredentialForTask
 } = require('./_verify-provider-runtime');
+const {
+    classifyManagedSite
+} = require('../../api/_lib/payments/site-origins');
 
 const DEFAULT_VERIFY_TASK_TYPE = 'extract';
 const VERIFY_TASK_UNIT_COSTS = Object.freeze({
@@ -214,7 +217,7 @@ function resolveVerifyRequestSite(req, explicitSite = '') {
     const normalizedExplicitSite = String(explicitSite || '').trim().toLowerCase();
     const origin = String(req?.headers?.origin || req?.headers?.Origin || '').trim().toLowerCase();
     const host = String(req?.headers?.host || req?.headers?.Host || '').trim().toLowerCase();
-    const derivedSite = origin.includes('zaoyoe.xyz') || host.includes('zaoyoe.xyz') ? 'intl' : 'cn';
+    const derivedSite = classifyManagedSite(origin) || classifyManagedSite(host) || 'cn';
 
     if (isLocalRequestOrigin(req) && ['cn', 'intl'].includes(normalizedExplicitSite)) {
         return normalizedExplicitSite;

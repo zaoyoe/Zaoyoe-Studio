@@ -318,19 +318,19 @@ test('vercel public redirects send gongyi and status entry paths to dedicated su
     const statusRedirectIndex = redirects.findIndex((entry) => entry?.source === '/status');
 
     assert.ok(gongyiRedirect, 'vercel.json should redirect /gongyi to the dedicated community subdomain');
-    assert.equal(gongyiRedirect.destination, 'https://sub2api.zaoyoe.com');
+    assert.equal(gongyiRedirect.destination, 'https://sub2api.fatherkey.com');
     assert.equal(gongyiRedirect.permanent, false);
 
     assert.ok(gongyiHtmlRedirect, 'vercel.json should redirect /gongyi.html to the dedicated community subdomain');
-    assert.equal(gongyiHtmlRedirect.destination, 'https://sub2api.zaoyoe.com');
+    assert.equal(gongyiHtmlRedirect.destination, 'https://sub2api.fatherkey.com');
     assert.equal(gongyiHtmlRedirect.permanent, false);
 
     assert.ok(statusRedirect, 'vercel.json should redirect /status to the dedicated status subdomain');
-    assert.equal(statusRedirect.destination, 'https://status.zaoyoe.com');
+    assert.equal(statusRedirect.destination, 'https://status.fatherkey.com');
     assert.equal(statusRedirect.permanent, false);
 
     assert.ok(statusHtmlRedirect, 'vercel.json should redirect /status.html to the dedicated status subdomain');
-    assert.equal(statusHtmlRedirect.destination, 'https://status.zaoyoe.com');
+    assert.equal(statusHtmlRedirect.destination, 'https://status.fatherkey.com');
     assert.equal(statusHtmlRedirect.permanent, false);
 
     assert.ok(hostCanonicalRedirectIndex >= 0, 'vercel.json should keep the apex to www canonical redirect');
@@ -344,7 +344,7 @@ test('vercel admin rewrite supports nested admin settings routes', () => {
     const adminRewrite = rewrites.find((entry) => entry?.source === '/api/admin/:path*');
 
     assert.ok(adminRewrite, 'vercel.json should include a catch-all /api/admin rewrite');
-    assert.equal(adminRewrite.destination, 'https://verify-api.zaoyoe.com/api/admin/:path*');
+    assert.equal(adminRewrite.destination, 'https://verify-api.fatherkey.com/api/admin/:path*');
 });
 
 test('vercel hobby deployment routes public endpoints through the shared handler with headroom', () => {
@@ -363,7 +363,7 @@ test('vercel hobby deployment routes public endpoints through the shared handler
     assert.ok(authRewrite, 'vercel.json should rewrite auth endpoints through the shared public handler');
     assert.equal(authRewrite.destination, '/api/public?scope=auth&route=:path*');
     assert.ok(paymentsRewrite, 'vercel.json should proxy payment endpoints to the KVM4 API origin');
-    assert.equal(paymentsRewrite.destination, 'https://verify-api.zaoyoe.com/api/payments/:path*');
+    assert.equal(paymentsRewrite.destination, 'https://verify-api.fatherkey.com/api/payments/:path*');
     assert.ok(runtimeRewrite, 'vercel.json should rewrite runtime endpoints through the shared public handler');
     assert.equal(runtimeRewrite.destination, '/api/public?scope=runtime&route=:path*');
     assert.ok(monitoringRewrite, 'vercel.json should rewrite monitoring endpoints through the shared public handler');
@@ -371,9 +371,9 @@ test('vercel hobby deployment routes public endpoints through the shared handler
     assert.ok(engagementRewrite, 'vercel.json should rewrite engagement endpoints through the shared public handler');
     assert.equal(engagementRewrite.destination, '/api/public?scope=engagement&route=:path*');
     assert.ok(shopRewrite, 'vercel.json should proxy shop endpoints to the KVM4 API origin');
-    assert.equal(shopRewrite.destination, 'https://verify-api.zaoyoe.com/api/shop/:path*');
+    assert.equal(shopRewrite.destination, 'https://verify-api.fatherkey.com/api/shop/:path*');
     assert.ok(walletRewrite, 'vercel.json should proxy wallet endpoints to the KVM4 API origin');
-    assert.equal(walletRewrite.destination, 'https://verify-api.zaoyoe.com/api/wallet/:path*');
+    assert.equal(walletRewrite.destination, 'https://verify-api.fatherkey.com/api/wallet/:path*');
     for (const relativePath of SHARED_PUBLIC_FUNCTION_WRAPPERS) {
         assert.equal(
             ignoredEntries.has(relativePath),
@@ -14623,7 +14623,9 @@ test('prompt image delivery optimizes admin previews and keeps uploads on R2', (
         "{ id: 'card', maxWidth: 560, quality: 0.76 },",
         "{ id: 'home', maxWidth: 420, quality: 0.74 }",
         'function getOptimizedPromptCardImageUrl(url) {',
-        "trimmed.includes('cdn.zaoyoe.com/prompts/') && !trimmed.includes('/thumb/')",
+        "trimmed.includes('cdn.fatherkey.com/prompts/')",
+        "trimmed.includes('cdn.zaoyoe.com/prompts/')",
+        "&& !trimmed.includes('/thumb/')",
         'function isSupabaseStorageImageUrl(url) {',
         'if (isSupabaseStorageImageUrl(trimmed)) {',
         'function sanitizePromptImageUrl(url) {',

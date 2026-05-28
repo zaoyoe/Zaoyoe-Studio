@@ -48,7 +48,7 @@
     const publicApiBaseUrl = () => String(
         window.ZAOYOE_PUBLIC_API_BASE_URL
         || window.VERIFY_SERVER_URL
-        || 'https://verify-api.zaoyoe.com'
+        || 'https://verify-api.fatherkey.com'
     ).trim().replace(/\/+$/, '');
 
     function buildPublicApiUrl(pathname, params = {}) {

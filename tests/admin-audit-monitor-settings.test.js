@@ -218,7 +218,7 @@ test('admin audit monitor handler returns recent access rows, anomaly signals, a
                 details: {
                     client_ip: '203.0.113.8',
                     user_agent: 'Chrome / baseline',
-                    origin: 'https://www.zaoyoe.com'
+                    origin: 'https://www.fatherkey.com'
                 }
             }),
             buildAuditRow('admin.access.session.issue', {
@@ -227,8 +227,8 @@ test('admin audit monitor handler returns recent access rows, anomaly signals, a
                 details: {
                     client_ip: '198.51.100.20',
                     user_agent: 'Chrome / desktop',
-                    origin: 'https://www.zaoyoe.com',
-                    referer: 'https://www.zaoyoe.com/admin-entry.html',
+                    origin: 'https://www.fatherkey.com',
+                    referer: 'https://www.fatherkey.com/admin-entry.html',
                     granted: true
                 }
             }),
@@ -238,7 +238,7 @@ test('admin audit monitor handler returns recent access rows, anomaly signals, a
                 details: {
                     client_ip: '198.51.100.21',
                     user_agent: 'Safari / laptop',
-                    origin: 'https://www.zaoyoe.com',
+                    origin: 'https://www.fatherkey.com',
                     granted: true
                 }
             }),
@@ -502,7 +502,7 @@ test('admin audit monitor handler paginates access, anomaly, and config lists fr
                 details: {
                     client_ip: '198.51.100.11',
                     user_agent: 'Chrome / 1',
-                    origin: 'https://www.zaoyoe.com'
+                    origin: 'https://www.fatherkey.com'
                 }
             }),
             buildAuditRow('admin.access.session.issue', {
@@ -511,7 +511,7 @@ test('admin audit monitor handler paginates access, anomaly, and config lists fr
                 details: {
                     client_ip: '203.0.113.12',
                     user_agent: 'Safari / 2',
-                    origin: 'https://www.zaoyoe.com'
+                    origin: 'https://www.fatherkey.com'
                 }
             }),
             buildAuditRow('admin.access.session.issue', {
@@ -520,7 +520,7 @@ test('admin audit monitor handler paginates access, anomaly, and config lists fr
                 details: {
                     client_ip: '192.0.2.13',
                     user_agent: 'Firefox / 3',
-                    origin: 'https://www.zaoyoe.com'
+                    origin: 'https://www.fatherkey.com'
                 }
             }),
             buildAuditRow('admin.access.session.issue', {
@@ -529,7 +529,7 @@ test('admin audit monitor handler paginates access, anomaly, and config lists fr
                 details: {
                     client_ip: '198.51.101.14',
                     user_agent: 'Edge / 4',
-                    origin: 'https://www.zaoyoe.com'
+                    origin: 'https://www.fatherkey.com'
                 }
             }),
             buildAuditRow('admin.access.session.issue', {
@@ -538,7 +538,7 @@ test('admin audit monitor handler paginates access, anomaly, and config lists fr
                 details: {
                     client_ip: '203.0.114.15',
                     user_agent: 'Chrome / 5',
-                    origin: 'https://www.zaoyoe.com'
+                    origin: 'https://www.fatherkey.com'
                 }
             }),
             buildAuditRow('admin.payment_channels.upsert', {

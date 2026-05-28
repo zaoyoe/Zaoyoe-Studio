@@ -339,7 +339,7 @@ serve(async (req) => {
         const R2_ENDPOINT = Deno.env.get('R2_ENDPOINT');
         const R2_ACCESS_KEY = Deno.env.get('R2_ACCESS_KEY');
         const R2_SECRET_KEY = Deno.env.get('R2_SECRET_KEY');
-        const R2_PUBLIC_URL = 'https://cdn.zaoyoe.com';
+        const R2_PUBLIC_URL = 'https://cdn.fatherkey.com';
 
         if (!R2_ENDPOINT || !R2_ACCESS_KEY || !R2_SECRET_KEY) {
             console.error('R2 credentials not configured');

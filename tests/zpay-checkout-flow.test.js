@@ -145,8 +145,8 @@ test('createPaymentRequest launches ZPAY checkout and precreates the payment ord
                             pid: 'pid-123',
                             payment_type: 'alipay',
                             channel_ids: '',
-                            notify_url: 'https://verify-api.zaoyoe.com/api/payments/zpay/webhook',
-                            return_url: 'https://www.zaoyoe.com/wallet',
+                            notify_url: 'https://verify-api.fatherkey.com/api/payments/zpay/webhook',
+                            return_url: 'https://www.fatherkey.com/wallet',
                             package_hint: '请完成易支付支付',
                             custom_amount_hint: ''
                         }
@@ -264,10 +264,10 @@ test('createPaymentRequest launches ZPAY checkout and precreates the payment ord
                 package_id: 'pkg-1'
             },
             env: {
-                APP_BASE_URL: 'https://www.zaoyoe.com',
+                APP_BASE_URL: 'https://www.fatherkey.com',
                 ZPAY_PKEY: 'pkey-123'
             },
-            requestHost: 'www.zaoyoe.com',
+            requestHost: 'www.fatherkey.com',
             clientIp: '203.0.113.8',
             userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)'
         });
@@ -344,8 +344,8 @@ test('createPaymentRequest rewrites managed ZPAY callback urls for intl site che
                             pid: 'pid-123',
                             payment_type: 'alipay',
                             channel_ids: '',
-                            notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook',
-                            return_url: 'https://www.zaoyoe.com/wallet',
+                            notify_url: 'https://www.fatherkey.com/api/payments/zpay/webhook',
+                            return_url: 'https://www.fatherkey.com/wallet',
                             package_hint: '请完成易支付支付',
                             custom_amount_hint: ''
                         }
@@ -462,7 +462,7 @@ test('createPaymentRequest rewrites managed ZPAY callback urls for intl site che
                 package_id: 'pkg-1'
             },
             env: {
-                APP_BASE_URL: 'https://www.zaoyoe.com',
+                APP_BASE_URL: 'https://www.fatherkey.com',
                 ZPAY_PKEY: 'pkey-123'
             },
             requestHost: 'www.zaoyoe.xyz',

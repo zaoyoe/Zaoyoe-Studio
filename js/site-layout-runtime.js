@@ -30,7 +30,7 @@
         gongyi: Object.freeze({
             key: 'gongyi',
             label: 'API中转',
-            href: 'https://sub2api.zaoyoe.com'
+            href: 'https://sub2api.fatherkey.com'
         })
     });
     const DEFAULT_LAYOUTS = Object.freeze({

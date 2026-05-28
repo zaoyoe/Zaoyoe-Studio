@@ -12,10 +12,11 @@
     const DEFAULT_PAGE_ID = 'gongyi';
     const DEFAULT_SITE = 'cn';
     const ASSET_CDN_ORIGINS = Object.freeze({
-        cn: 'https://cdn.zaoyoe.com',
+        cn: 'https://cdn.fatherkey.com',
         intl: 'https://cdn.zaoyoe.xyz'
     });
     const ASSET_CDN_HOSTS = new Set([
+        'cdn.fatherkey.com',
         'cdn.zaoyoe.com',
         'cdn.zaoyoe.xyz'
     ]);

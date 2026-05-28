@@ -597,7 +597,13 @@ function getOptimizedPromptCardImageUrl(url) {
     if (typeof rawUrl !== 'string' || !rawUrl.trim()) return '';
     const trimmed = rawUrl.trim();
 
-    if (trimmed.includes('cdn.zaoyoe.com/prompts/') && !trimmed.includes('/thumb/')) {
+    if (
+        (
+            trimmed.includes('cdn.fatherkey.com/prompts/')
+            || trimmed.includes('cdn.zaoyoe.com/prompts/')
+        )
+        && !trimmed.includes('/thumb/')
+    ) {
         return trimmed.replace('/prompts/', '/prompts/thumb/');
     }
 
