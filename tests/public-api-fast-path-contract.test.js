@@ -19,9 +19,9 @@ test('public pages preconnect to the KVM public API host', () => {
     ].forEach((relativePath) => {
         const source = readRepoFile(relativePath);
         assert.equal(
-            source.includes('<link rel="preconnect" href="https://verify-api.zaoyoe.com" crossorigin>'),
+            source.includes('<link rel="preconnect" href="https://verify-api.fatherkey.com" crossorigin>'),
             true,
-            `${relativePath} should preconnect to verify-api.zaoyoe.com`
+            `${relativePath} should preconnect to verify-api.fatherkey.com`
         );
     });
 });
@@ -30,7 +30,7 @@ test('wallet payment config uses direct public API, short browser cache, and sam
     const walletSource = readRepoFile('js/components/WalletModal.js');
 
     [
-        "const WALLET_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.zaoyoe.com';",
+        "const WALLET_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';",
         'const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_TTL_MS = 30000;',
         'getWalletPublicApiBaseUrl()',
         'buildWalletPublicApiUrl(\'/api/payments/config\'',
@@ -51,7 +51,7 @@ test('shop catalog and homepage prefetches use the KVM public API fast path with
     const framerHomeSource = readRepoFile('js/framer_home.js');
 
     [
-        "const SHOP_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.zaoyoe.com';",
+        "const SHOP_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';",
         'const SHOP_CATALOG_BROWSER_CACHE_TTL_MS = 30000;',
         'buildShopPublicApiUrl(\'/api/shop/catalog\'',
         'readShopCatalogBrowserCache({',

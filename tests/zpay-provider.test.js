@@ -21,14 +21,14 @@ test('normalizeZpayConfig derives official endpoint urls and reports missing fie
         channelConfig: {
             pid: 'pid-123',
             checkout_url: 'https://zpayz.cn/',
-            notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook',
-            return_url: 'https://www.zaoyoe.com/wallet',
+            notify_url: 'https://www.fatherkey.com/api/payments/zpay/webhook',
+            return_url: 'https://www.fatherkey.com/wallet',
             payment_type: 'wxpay'
         },
         secretValues: {
             zpay_pkey: 'pkey-123'
         },
-        requestOrigin: 'https://www.zaoyoe.com'
+        requestOrigin: 'https://www.fatherkey.com'
     });
 
     assert.equal(config.pid, 'pid-123');
@@ -45,8 +45,8 @@ test('normalizeZpayConfig rewrites managed notify and return urls onto the intl 
         channelConfig: {
             pid: 'pid-123',
             checkout_url: 'https://zpayz.cn/',
-            notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook',
-            return_url: 'https://www.zaoyoe.com/wallet'
+            notify_url: 'https://www.fatherkey.com/api/payments/zpay/webhook',
+            return_url: 'https://www.fatherkey.com/wallet'
         },
         secretValues: {
             zpay_pkey: 'pkey-123'
@@ -108,8 +108,8 @@ test('buildZpayMapiPayload and follow-up payloads match the documented field nam
         channelConfig: {
             pid: 'pid-123',
             checkout_url: 'https://zpayz.cn',
-            notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook',
-            return_url: 'https://www.zaoyoe.com/wallet',
+            notify_url: 'https://www.fatherkey.com/api/payments/zpay/webhook',
+            return_url: 'https://www.fatherkey.com/wallet',
             payment_type: 'alipay',
             channel_ids: '123,456'
         },
@@ -162,7 +162,7 @@ test('buildZpay query and refund payloads prefer out_trade_no when both order id
         channelConfig: {
             pid: 'pid-123',
             checkout_url: 'https://zpayz.cn',
-            notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook'
+            notify_url: 'https://www.fatherkey.com/api/payments/zpay/webhook'
         },
         secretValues: {
             zpay_pkey: 'pkey-123'
@@ -197,8 +197,8 @@ test('createZpayPayment posts form data to the mapi endpoint', async () => {
         channelConfig: {
             pid: 'pid-123',
             checkout_url: 'https://zpayz.cn',
-            notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook',
-            return_url: 'https://www.zaoyoe.com/wallet',
+            notify_url: 'https://www.fatherkey.com/api/payments/zpay/webhook',
+            return_url: 'https://www.fatherkey.com/wallet',
             payment_type: 'alipay'
         },
         secretValues: {
@@ -241,7 +241,7 @@ test('refundZpayPayment posts refund fields to the documented act=refund endpoin
         channelConfig: {
             pid: 'pid-123',
             checkout_url: 'https://zpayz.cn',
-            notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook'
+            notify_url: 'https://www.fatherkey.com/api/payments/zpay/webhook'
         },
         secretValues: {
             zpay_pkey: 'pkey-123'
@@ -295,7 +295,7 @@ test('refundZpayPayment surfaces empty-body responses as a safe manual-check pro
             channelConfig: {
                 pid: 'pid-123',
                 checkout_url: 'https://zpayz.cn',
-                notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook'
+                notify_url: 'https://www.fatherkey.com/api/payments/zpay/webhook'
             },
             secretValues: {
                 zpay_pkey: 'pkey-123'

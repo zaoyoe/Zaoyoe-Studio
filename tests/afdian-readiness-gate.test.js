@@ -10,8 +10,8 @@ const {
 test('afdian-readiness-gate parseArgs collects handoff flags', () => {
     const options = parseArgs([
         '--env-file', 'server/.env.staging',
-        '--base-url', 'https://www.zaoyoe.com',
-        '--verify-server-url', 'https://verify-api.zaoyoe.com',
+        '--base-url', 'https://www.fatherkey.com',
+        '--verify-server-url', 'https://verify-api.fatherkey.com',
         '--admin-email', 'zaoyoe@gmail.com',
         '--access-token', 'token-123',
         '--samples', '7',
@@ -21,8 +21,8 @@ test('afdian-readiness-gate parseArgs collects handoff flags', () => {
     ]);
 
     assert.match(options.envFile, /server\/\.env\.staging$/);
-    assert.equal(options.baseUrl, 'https://www.zaoyoe.com');
-    assert.equal(options.verifyServerUrl, 'https://verify-api.zaoyoe.com');
+    assert.equal(options.baseUrl, 'https://www.fatherkey.com');
+    assert.equal(options.verifyServerUrl, 'https://verify-api.fatherkey.com');
     assert.equal(options.adminEmail, 'zaoyoe@gmail.com');
     assert.equal(options.accessToken, 'token-123');
     assert.equal(options.sampleCount, 7);

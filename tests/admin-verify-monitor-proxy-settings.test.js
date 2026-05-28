@@ -98,7 +98,7 @@ async function withEnv(patch, callback) {
 test('verify monitor quota proxy forwards upstream quota data with internal auth header', async () => {
     const originalFetch = global.fetch;
     global.fetch = async (input, init = {}) => {
-        assert.equal(String(input), 'https://verify-api.zaoyoe.com/api/quota');
+        assert.equal(String(input), 'https://verify-api.fatherkey.com/api/quota');
         assert.equal(init.headers.Authorization, undefined);
         assert.equal(init.headers[VERIFY_MONITOR_INTERNAL_HEADER_NAME], 'verify-internal-secret');
 
@@ -181,7 +181,7 @@ test('verify monitor quota proxy uses a 15 second timeout budget', () => {
 test('verify monitor quota proxy falls back to forwarding admin authorization when internal auth key is missing', async () => {
     const originalFetch = global.fetch;
     global.fetch = async (input, init = {}) => {
-        assert.equal(String(input), 'https://verify-api.zaoyoe.com/api/quota');
+        assert.equal(String(input), 'https://verify-api.fatherkey.com/api/quota');
         assert.equal(init.headers.Authorization, 'Bearer admin-token');
         assert.equal(init.headers[VERIFY_MONITOR_INTERNAL_HEADER_NAME], undefined);
 
@@ -244,7 +244,7 @@ test('verify monitor quota proxy falls back to forwarding admin authorization wh
 test('verify monitor queue proxy falls back to forwarding admin authorization when internal auth key is missing', async () => {
     const originalFetch = global.fetch;
     global.fetch = async (input, init = {}) => {
-        assert.equal(String(input), 'https://verify-api.zaoyoe.com/api/queue');
+        assert.equal(String(input), 'https://verify-api.fatherkey.com/api/queue');
         assert.equal(init.headers.Authorization, 'Bearer admin-token');
         assert.equal(init.headers[VERIFY_MONITOR_INTERNAL_HEADER_NAME], undefined);
 
@@ -290,7 +290,7 @@ test('verify monitor queue proxy falls back to forwarding admin authorization wh
 test('verify monitor queue proxy forwards upstream queue data with internal auth header', async () => {
     const originalFetch = global.fetch;
     global.fetch = async (input, init = {}) => {
-        assert.equal(String(input), 'https://verify-api.zaoyoe.com/api/queue');
+        assert.equal(String(input), 'https://verify-api.fatherkey.com/api/queue');
         assert.equal(init.headers.Authorization, undefined);
         assert.equal(init.headers[VERIFY_MONITOR_INTERNAL_HEADER_NAME], 'verify-internal-secret');
 

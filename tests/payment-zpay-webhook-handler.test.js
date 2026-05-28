@@ -356,7 +356,7 @@ test('zpay webhook uses strict verification mode when production source allowlis
             supabase: createSupabaseMock(state),
             env: {
                 VERCEL_ENV: 'production',
-                APP_BASE_URL: 'https://www.zaoyoe.com',
+                APP_BASE_URL: 'https://www.fatherkey.com',
                 TRUSTED_PROXY_IPS: '10.0.0.0/8'
             }
         });
@@ -364,7 +364,7 @@ test('zpay webhook uses strict verification mode when production source allowlis
             method: 'GET',
             url: '/api/payments/zpay/webhook?out_trade_no=ZP123&trade_no=TRADE-1&trade_status=TRADE_SUCCESS&money=12.34&pid=2026041807323142&type=alipay&param=%7B%22user_id%22%3A%22user-1%22%7D',
             headers: {
-                host: 'www.zaoyoe.com',
+                host: 'www.fatherkey.com',
                 'x-forwarded-for': '203.0.113.10'
             }
         };
@@ -420,7 +420,7 @@ test('zpay webhook without source allowlist still rejects invalid signatures bef
             supabase: createSupabaseMock(state),
             env: {
                 DEPLOYMENT_TIER: 'production',
-                APP_BASE_URL: 'https://www.zaoyoe.com',
+                APP_BASE_URL: 'https://www.fatherkey.com',
                 TRUSTED_PROXY_IPS: '10.0.0.0/8'
             }
         });
@@ -435,7 +435,7 @@ test('zpay webhook without source allowlist still rejects invalid signatures bef
             method: 'GET',
             url: `/api/payments/zpay/webhook?out_trade_no=ZP-BAD-SIGN&trade_no=TRADE-BAD-SIGN&trade_status=TRADE_SUCCESS&money=12.34&pid=2026041807323142&type=alipay&param=${encodeURIComponent(attachData)}`,
             headers: {
-                host: 'www.zaoyoe.com',
+                host: 'www.fatherkey.com',
                 'x-forwarded-for': '198.51.100.22'
             }
         };
@@ -465,7 +465,7 @@ test('zpay webhook rejects requests outside the configured source IP allowlist',
             supabase: createSupabaseMock(state),
             env: {
                 APP_ENV: 'production',
-                APP_BASE_URL: 'https://www.zaoyoe.com',
+                APP_BASE_URL: 'https://www.fatherkey.com',
                 TRUSTED_PROXY_IPS: '10.0.0.0/8',
                 ZPAY_WEBHOOK_ALLOWED_IPS: '203.0.113.10'
             }
@@ -474,7 +474,7 @@ test('zpay webhook rejects requests outside the configured source IP allowlist',
             method: 'GET',
             url: '/api/payments/zpay/webhook?out_trade_no=ZP-IP-BLOCKED&trade_no=TRADE-IP-BLOCKED&trade_status=TRADE_SUCCESS&money=12.34&pid=2026041807323142&type=alipay&param=%7B%22user_id%22%3A%22user-1%22%7D',
             headers: {
-                host: 'www.zaoyoe.com',
+                host: 'www.fatherkey.com',
                 'x-forwarded-for': '198.51.100.22'
             }
         };
@@ -524,7 +524,7 @@ test('zpay webhook accepts signed GET callbacks through the shared handler', asy
             supabase: createSupabaseMock(state),
             env: {
                 APP_ENV: 'production',
-                APP_BASE_URL: 'https://www.zaoyoe.com',
+                APP_BASE_URL: 'https://www.fatherkey.com',
                 TRUSTED_PROXY_IPS: '10.0.0.0/8',
                 ZPAY_WEBHOOK_ALLOWED_IPS: '203.0.113.10'
             }
@@ -540,7 +540,7 @@ test('zpay webhook accepts signed GET callbacks through the shared handler', asy
             method: 'GET',
             url: `/api/payments/zpay/webhook?out_trade_no=ZP123&trade_no=TRADE-1&trade_status=TRADE_SUCCESS&money=12.34&pid=2026041807323142&type=alipay&param=${encodeURIComponent(attachData)}`,
             headers: {
-                host: 'www.zaoyoe.com',
+                host: 'www.fatherkey.com',
                 'x-forwarded-for': '203.0.113.10'
             }
         };
@@ -620,7 +620,7 @@ test('zpay webhook ignores internal public-route query params before signature v
             supabase: createSupabaseMock(state),
             env: {
                 APP_ENV: 'production',
-                APP_BASE_URL: 'https://www.zaoyoe.com',
+                APP_BASE_URL: 'https://www.fatherkey.com',
                 TRUSTED_PROXY_IPS: '10.0.0.0/8',
                 ZPAY_WEBHOOK_ALLOWED_IPS: '203.0.113.10'
             }
@@ -636,7 +636,7 @@ test('zpay webhook ignores internal public-route query params before signature v
             method: 'GET',
             url: `/api/public?scope=payments&route=zpay/webhook&path=zpay/webhook&out_trade_no=ZP789&trade_no=TRADE-789&trade_status=TRADE_SUCCESS&money=0.01&pid=2026041807323142&type=alipay&param=${encodeURIComponent(attachData)}`,
             headers: {
-                host: 'www.zaoyoe.com',
+                host: 'www.fatherkey.com',
                 'x-forwarded-for': '203.0.113.10'
             },
             query: {
@@ -704,7 +704,7 @@ test('zpay webhook does not credit points when active query reports a non-paid o
             supabase: createSupabaseMock(state),
             env: {
                 APP_ENV: 'production',
-                APP_BASE_URL: 'https://www.zaoyoe.com',
+                APP_BASE_URL: 'https://www.fatherkey.com',
                 TRUSTED_PROXY_IPS: '10.0.0.0/8',
                 ZPAY_WEBHOOK_ALLOWED_IPS: '203.0.113.10'
             }
@@ -720,7 +720,7 @@ test('zpay webhook does not credit points when active query reports a non-paid o
             method: 'GET',
             url: `/api/payments/zpay/webhook?out_trade_no=ZP456&trade_no=TRADE-456&trade_status=TRADE_SUCCESS&money=23.45&pid=2026041807323142&type=alipay&param=${encodeURIComponent(attachData)}`,
             headers: {
-                host: 'www.zaoyoe.com',
+                host: 'www.fatherkey.com',
                 'x-forwarded-for': '203.0.113.10'
             }
         };

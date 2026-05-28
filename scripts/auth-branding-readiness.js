@@ -11,6 +11,8 @@ const REQUIRED_TEMPLATES = Object.freeze([
     'change-email.html.tpl'
 ]);
 const REQUIRED_REDIRECT_URLS = Object.freeze([
+    'https://www.fatherkey.com/auth-callback.html',
+    'https://www.fatherkey.com/reset-password.html',
     'https://www.zaoyoe.com/auth-callback.html',
     'https://www.zaoyoe.com/reset-password.html',
     'https://zaoyoe.xyz/auth-callback.html',
@@ -100,7 +102,7 @@ function inspectDashboardConfig() {
     const checks = [
         buildCheck(
             'dashboard-config:site-url',
-            config.siteUrl === 'https://www.zaoyoe.com',
+            config.siteUrl === 'https://www.fatherkey.com',
             'dashboard config pins the canonical CN Site URL'
         )
     ];

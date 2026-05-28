@@ -103,12 +103,12 @@ test('homepage normalizers rewrite legacy API relay links to sub2api', () => {
         cta_link: 'https://www.gongyi.zaoyoe.com/dashboard'
     });
 
-    assert.equal(browserHero.entries[0].link, 'https://sub2api.zaoyoe.com');
-    assert.equal(browserHero.cta.primary.link, 'https://sub2api.zaoyoe.com');
-    assert.equal(browserHero.cta.secondary.link, 'https://sub2api.zaoyoe.com/dashboard?tab=keys#top');
-    assert.equal(browserGongyi.cta_link, 'https://sub2api.zaoyoe.com');
-    assert.equal(sharedHero.entries[0].link, 'https://sub2api.zaoyoe.com');
-    assert.equal(sharedGongyi.cta_link, 'https://sub2api.zaoyoe.com/dashboard');
+    assert.equal(browserHero.entries[0].link, 'https://sub2api.fatherkey.com');
+    assert.equal(browserHero.cta.primary.link, 'https://sub2api.fatherkey.com');
+    assert.equal(browserHero.cta.secondary.link, 'https://sub2api.fatherkey.com/dashboard?tab=keys#top');
+    assert.equal(browserGongyi.cta_link, 'https://sub2api.fatherkey.com');
+    assert.equal(sharedHero.entries[0].link, 'https://sub2api.fatherkey.com');
+    assert.equal(sharedGongyi.cta_link, 'https://sub2api.fatherkey.com/dashboard');
 });
 
 test('homepage admin save path seeds the current site localized fallback', () => {

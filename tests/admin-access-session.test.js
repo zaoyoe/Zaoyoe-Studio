@@ -99,8 +99,8 @@ test('admin access session POST issues a short-lived cookie for admins', async (
             method: 'POST',
             headers: {
                 'user-agent': 'Mozilla/5.0 test',
-                origin: 'https://www.zaoyoe.com',
-                referer: 'https://www.zaoyoe.com/admin-entry.html'
+                origin: 'https://www.fatherkey.com',
+                referer: 'https://www.fatherkey.com/admin-entry.html'
             },
             socket: { remoteAddress: '127.0.0.1' }
         };

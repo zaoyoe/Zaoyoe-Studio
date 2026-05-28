@@ -63,12 +63,12 @@ test('xianyu admin runtime builds adapter config from Admin Studio registry', ()
     const config = buildXianyuAdapterConfigFromAdmin({
         marketplaceConfig: createMarketplaceConfig(),
         accountKey: 'backup-1',
-        websiteBaseUrl: 'https://www.zaoyoe.com/',
+        websiteBaseUrl: 'https://www.fatherkey.com/',
         site: 'intl',
         dryRun: true
     });
 
-    assert.equal(config.website_base_url, 'https://www.zaoyoe.com');
+    assert.equal(config.website_base_url, 'https://www.fatherkey.com');
     assert.equal(config.channel, 'xianyu');
     assert.equal(config.account, 'backup-1');
     assert.equal(config.account_label, '备用号');
@@ -82,7 +82,7 @@ test('xianyu admin runtime loads ingest token only when submit mode needs it', a
     const secretReads = [];
     const config = await loadXianyuAdminAdapterConfig({
         accountKey: 'main',
-        websiteBaseUrl: 'https://www.zaoyoe.com',
+        websiteBaseUrl: 'https://www.fatherkey.com',
         includeSecret: true,
         supabase: {},
         async loadMarketplaceConfig() {
@@ -115,7 +115,7 @@ test('xianyu admin runtime fails clearly when selected account is disabled', () 
                 }
             }),
             accountKey: 'main',
-            websiteBaseUrl: 'https://www.zaoyoe.com'
+            websiteBaseUrl: 'https://www.fatherkey.com'
         }),
         /闲鱼账号已停用/
     );
@@ -124,8 +124,8 @@ test('xianyu admin runtime fails clearly when selected account is disabled', () 
 test('xianyu admin runtime can infer website base URL from environment', () => {
     assert.equal(
         resolveWebsiteBaseUrl({}, {
-            APP_BASE_URL: 'https://www.zaoyoe.com/'
+            APP_BASE_URL: 'https://www.fatherkey.com/'
         }),
-        'https://www.zaoyoe.com'
+        'https://www.fatherkey.com'
     );
 });

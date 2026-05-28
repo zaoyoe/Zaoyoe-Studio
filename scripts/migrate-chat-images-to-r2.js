@@ -9,7 +9,7 @@ const { createClient } = require('@supabase/supabase-js');
 const ROOT_DIR = path.resolve(__dirname, '..');
 const LOCAL_ENV_PATH = path.join(ROOT_DIR, '.env.local');
 const SERVER_ENV_PATH = path.join(ROOT_DIR, 'server/.env');
-const DEFAULT_RUNTIME_CONFIG_URL = 'https://www.zaoyoe.com/api/runtime/supabase-config';
+const DEFAULT_RUNTIME_CONFIG_URL = 'https://www.fatherkey.com/api/runtime/supabase-config';
 const LEGACY_STORAGE_PATTERN = /^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i;
 
 function readEnvFile(filePath) {

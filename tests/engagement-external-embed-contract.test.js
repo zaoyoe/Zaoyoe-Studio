@@ -87,23 +87,23 @@ test('public engagement API allows controlled CORS for external gongyi host', ()
 
 test('external engagement policy builds deployable snippets and diagnostics', () => {
     const policy = externalPolicy.normalizeExternalEmbedPolicy({
-        allowed_origins: 'https://sub2api.zaoyoe.com\nhttps://custom.example.com',
-        api_origin: 'https://www.zaoyoe.com/api/../',
-        asset_base: 'https://cdn.zaoyoe.com/assets',
+        allowed_origins: 'https://sub2api.fatherkey.com\nhttps://custom.example.com',
+        api_origin: 'https://www.fatherkey.com/api/../',
+        asset_base: 'https://cdn.fatherkey.com/assets',
         default_page_id: 'gongyi',
         default_site: 'cn'
     });
 
     assert.equal(policy.enabled, true);
-    assert.deepEqual(policy.allowed_origins, ['https://sub2api.zaoyoe.com', 'https://custom.example.com']);
-    assert.equal(policy.api_origin, 'https://www.zaoyoe.com');
-    assert.equal(policy.asset_base, 'https://cdn.zaoyoe.com/assets/');
+    assert.deepEqual(policy.allowed_origins, ['https://sub2api.fatherkey.com', 'https://custom.example.com']);
+    assert.equal(policy.api_origin, 'https://www.fatherkey.com');
+    assert.equal(policy.asset_base, 'https://cdn.fatherkey.com/assets/');
 
     const snippet = externalPolicy.buildExternalEmbedSnippet(policy);
     assert.match(snippet, /engagement-external-embed\.js\?v=20260505_GONGYI_EXTERNAL_ENGAGEMENT_1/);
     assert.match(snippet, /data-page-id="gongyi"/);
-    assert.match(snippet, /data-api-origin="https:\/\/www\.zaoyoe\.com"/);
-    assert.match(snippet, /data-asset-base="https:\/\/cdn\.zaoyoe\.com\/assets\/"/);
+    assert.match(snippet, /data-api-origin="https:\/\/www\.fatherkey\.com"/);
+    assert.match(snippet, /data-asset-base="https:\/\/cdn\.fatherkey\.com\/assets\/"/);
 
     const diagnostics = externalPolicy.buildExternalEmbedDiagnostics(policy);
     assert.equal(diagnostics.status, 'ready');

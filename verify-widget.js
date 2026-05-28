@@ -12,7 +12,7 @@
         pricePerVerifyFull: 20,
         modeVisibility: 'both',
         enabled: true,
-        nodeServerUrl: window.VERIFY_SERVER_URL || 'https://verify-api.zaoyoe.com',
+        nodeServerUrl: window.VERIFY_SERVER_URL || 'https://verify-api.fatherkey.com',
         containerId: 'verify-widget-container',
         pollInterval: 3000,
         pollTimeout: 300000,
@@ -467,7 +467,7 @@
     function getShopUrl() {
         const hostname = String(window.location.hostname || '').toLowerCase().replace(/^www\./, '');
         if (hostname === 'zaoyoe.xyz') return 'https://www.zaoyoe.xyz/shop';
-        if (hostname === 'zaoyoe.com') return 'https://www.zaoyoe.com/shop';
+        if (hostname === 'zaoyoe.com') return 'https://www.fatherkey.com/shop.html';
         return `${window.location.origin.replace(/\/$/, '')}/shop.html`;
     }
 

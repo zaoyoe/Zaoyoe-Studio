@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://zaoyoe.com/sitemap.xml
+Sitemap: https://www.fatherkey.com/sitemap.xml

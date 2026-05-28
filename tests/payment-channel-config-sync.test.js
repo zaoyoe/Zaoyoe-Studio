@@ -31,7 +31,7 @@ test('resolveTargetProvider prefers explicit provider and does not auto-switch t
     assert.equal(resolveTargetProvider({}, 'nowpayments'), 'nowpayments');
     assert.equal(resolveTargetProvider({
         providers: {
-            zpay: { enabled: true, checkout_url: 'https://zpayz.cn', pid: '2026041807323142', notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook' },
+            zpay: { enabled: true, checkout_url: 'https://zpayz.cn', pid: '2026041807323142', notify_url: 'https://www.fatherkey.com/api/payments/zpay/webhook' },
             afdian: { checkout_url: 'https://afdian.com/a/zaoyoe' }
         }
     }), 'afdian');
@@ -46,13 +46,13 @@ test('resolveTargetProvider prefers explicit provider and does not auto-switch t
             nowpayments: {
                 enabled: true,
                 pay_currency: 'usdtbsc',
-                ipn_callback_url: 'https://www.zaoyoe.com/api/payments/nowpayments/webhook'
+                ipn_callback_url: 'https://www.fatherkey.com/api/payments/nowpayments/webhook'
             },
             zpay: {
                 enabled: true,
                 checkout_url: 'https://zpayz.cn',
                 pid: '2026041807323142',
-                notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook'
+                notify_url: 'https://www.fatherkey.com/api/payments/zpay/webhook'
             },
             afdian: { enabled: true, checkout_url: 'https://afdian.com/a/zaoyoe' }
         }
@@ -69,7 +69,7 @@ test('resolveTargetProvider prefers explicit provider and does not auto-switch t
                 enabled: true,
                 checkout_url: 'https://zpayz.cn',
                 pid: '2026041807323142',
-                notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook'
+                notify_url: 'https://www.fatherkey.com/api/payments/zpay/webhook'
             },
             afdian: { enabled: true, checkout_url: 'https://afdian.com/a/zaoyoe' }
         }
@@ -142,7 +142,7 @@ test('buildSyncPlan supports explicitly switching the stored config to zpay', ()
                     checkout_url: 'https://zpayz.cn',
                     display_name: '易支付',
                     pid: '2026041807323142',
-                    notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook'
+                    notify_url: 'https://www.fatherkey.com/api/payments/zpay/webhook'
                 }
             }
         },
@@ -183,8 +183,8 @@ test('buildSyncPlan supports explicitly switching the stored config to nowpaymen
                     pay_currency: 'usdtbsc',
                     price_currency: 'usd',
                     cny_to_usd_rate: 0.14,
-                    return_url: 'https://www.zaoyoe.com',
-                    ipn_callback_url: 'https://www.zaoyoe.com/api/payments/nowpayments/webhook'
+                    return_url: 'https://www.fatherkey.com',
+                    ipn_callback_url: 'https://www.fatherkey.com/api/payments/nowpayments/webhook'
                 }
             }
         },
@@ -216,7 +216,7 @@ test('getMockRuntimeForEnv keeps production mock disabled despite temporary over
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     const runtime = getMockRuntimeForEnv({
         DEPLOYMENT_TIER: 'production',
-        APP_BASE_URL: 'https://www.zaoyoe.com',
+        APP_BASE_URL: 'https://www.fatherkey.com',
         ALLOW_REMOTE_MOCK_PAYMENTS_UNTIL: tomorrow
     });
 
@@ -245,7 +245,7 @@ test('assertExecuteAllowed blocks switching to mock when runtime override is mis
 
     assert.throws(() => assertExecuteAllowed(plan, {
         DEPLOYMENT_TIER: 'production',
-        APP_BASE_URL: 'https://www.zaoyoe.com'
+        APP_BASE_URL: 'https://www.fatherkey.com'
     }, {
         execute: true,
         provider: 'mock'
@@ -264,7 +264,7 @@ test('assertExecuteAllowed allows switching to zpay without webhook allowlist wh
                     checkout_url: 'https://zpayz.cn',
                     display_name: '易支付',
                     pid: '2026041807323142',
-                    notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook'
+                    notify_url: 'https://www.fatherkey.com/api/payments/zpay/webhook'
                 }
             }
         },

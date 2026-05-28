@@ -97,14 +97,17 @@ function hostLooksPublic(value) {
     try {
         const parsed = new URL(raw.includes('://') ? raw : `https://${raw}`);
         const hostname = parsed.hostname;
-        return hostname === 'zaoyoe.com'
+        return hostname === 'fatherkey.com'
+            || hostname === 'www.fatherkey.com'
+            || hostname === 'zaoyoe.com'
             || hostname === 'www.zaoyoe.com'
             || hostname === 'zaoyoe.xyz'
             || hostname === 'www.zaoyoe.xyz'
             || hostname.endsWith('.vercel.app')
             || hostname.endsWith('.up.railway.app');
     } catch (_) {
-        return raw.includes('zaoyoe.com')
+        return raw.includes('fatherkey.com')
+            || raw.includes('zaoyoe.com')
             || raw.includes('zaoyoe.xyz')
             || raw.includes('vercel.app')
             || raw.includes('up.railway.app');

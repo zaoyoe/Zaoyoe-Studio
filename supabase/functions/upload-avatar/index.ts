@@ -246,17 +246,17 @@ function randomR2KeySegment(): string {
 function getR2PublicUrlBase(): string {
     const configured = String(Deno.env.get('R2_PUBLIC_URL') || '').trim().replace(/\/+$/, '')
     if (!configured) {
-        return 'https://cdn.zaoyoe.com'
+        return 'https://cdn.fatherkey.com'
     }
 
     try {
         const parsed = new URL(configured)
         if (parsed.hostname.endsWith('.r2.dev')) {
-            return 'https://cdn.zaoyoe.com'
+            return 'https://cdn.fatherkey.com'
         }
         return parsed.toString().replace(/\/+$/, '')
     } catch (_) {
-        return 'https://cdn.zaoyoe.com'
+        return 'https://cdn.fatherkey.com'
     }
 }
 

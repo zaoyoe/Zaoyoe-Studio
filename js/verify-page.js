@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    window.VERIFY_SERVER_URL = window.VERIFY_SERVER_URL || 'https://verify-api.zaoyoe.com';
+    window.VERIFY_SERVER_URL = window.VERIFY_SERVER_URL || 'https://verify-api.fatherkey.com';
 
     const CACHE_KEY = 'cached_user_profile';
 

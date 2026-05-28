@@ -70,7 +70,7 @@ function isSupabaseStorageImageUrl(url) {
 
 function getZaoyoeAssetCdnOrigin({ canonical = false } = {}) {
     if (canonical) {
-        return String(window.SiteConfig?.getCanonicalAssetCdnOrigin?.() || 'https://cdn.zaoyoe.com').replace(/\/+$/, '');
+        return String(window.SiteConfig?.getCanonicalAssetCdnOrigin?.() || 'https://cdn.fatherkey.com').replace(/\/+$/, '');
     }
 
     const configuredOrigin = String(window.SiteConfig?.getAssetCdnOrigin?.() || '').trim();
@@ -81,7 +81,7 @@ function getZaoyoeAssetCdnOrigin({ canonical = false } = {}) {
     const hostname = String(window.location?.hostname || '').toLowerCase();
     return hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz')
         ? 'https://cdn.zaoyoe.xyz'
-        : 'https://cdn.zaoyoe.com';
+        : 'https://cdn.fatherkey.com';
 }
 
 function normalizeZaoyoeAssetCdnUrl(url, expectedPrefix = '', options = {}) {
@@ -108,7 +108,7 @@ function normalizeZaoyoeAssetCdnUrl(url, expectedPrefix = '', options = {}) {
     try {
         const parsed = new URL(source, window.location.origin);
         const parts = String(parsed.pathname || '').split('/').filter(Boolean);
-        const isKnownCdnHost = ['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname) || parsed.hostname.endsWith('.r2.dev');
+        const isKnownCdnHost = ['cdn.fatherkey.com', 'cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname) || parsed.hostname.endsWith('.r2.dev');
         if (!isKnownCdnHost || (expectedPrefix && parts[0] !== expectedPrefix)) return '';
 
         const targetOrigin = new URL(getZaoyoeAssetCdnOrigin(options));
@@ -146,7 +146,7 @@ function getShopProductR2CardVariantUrl(url) {
 
     try {
         const parsed = new URL(normalizedUrl, window.location.origin);
-        if (!['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)) {
+        if (!['cdn.fatherkey.com', 'cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)) {
             return '';
         }
 

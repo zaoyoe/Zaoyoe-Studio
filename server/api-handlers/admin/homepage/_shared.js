@@ -3,7 +3,7 @@ const HOMEPAGE_SECTION_ORDER = Object.freeze(['hero', 'prompts', 'shop', 'gongyi
 const HOMEPAGE_SECTION_SET = new Set(HOMEPAGE_SECTION_ORDER);
 const HOMEPAGE_EDITOR_SCHEMA_VERSION = 'p2_v1';
 const HOMEPAGE_SORT_VALUES = new Set(['popular', 'latest', 'random']);
-const HOMEPAGE_GONGYI_TARGET_URL = 'https://sub2api.zaoyoe.com';
+const HOMEPAGE_GONGYI_TARGET_URL = 'https://sub2api.fatherkey.com';
 const HOMEPAGE_LEGACY_GONGYI_HOSTS = new Set(['gongyi.zaoyoe.com', 'www.gongyi.zaoyoe.com']);
 const HOMEPAGE_EXPERIMENT_FIELD_RULES = Object.freeze({
     hero: Object.freeze({

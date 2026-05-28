@@ -9,7 +9,7 @@ When the user asks Codex to deploy:
 3. Create or update a pull request with `gh pr create` or `gh pr view`.
 4. Merge the pull request with `gh pr merge` after checks are acceptable.
 5. Let the Vercel Git integration deploy `main`.
-6. Verify the production alias with `npx vercel inspect https://www.zaoyoe.com`.
+6. Verify the production alias with `npx vercel inspect https://www.fatherkey.com`.
 
 Emergency rollback is allowed with `npx vercel rollback <deployment-url-or-id> --yes`.
 
@@ -23,7 +23,7 @@ workflow recovery.
 
 KVM4 Sub2API deploys are automated from `main` by the GitHub Actions workflow
 `Deploy KVM4 Sub2API`. After a PR merges into `main`, the workflow runs
-`npm run deploy:kvm4:sub2api` and verifies `https://sub2api.zaoyoe.com/health`.
+`npm run deploy:kvm4:sub2api` and verifies `https://sub2api.fatherkey.com/health`.
 Use manual Sub2API KVM4 deploys only from latest clean `main` for emergency
 follow-up or workflow recovery. The deploy updates only the Sub2API app
 container and must preserve the existing PostgreSQL and Redis data directories.

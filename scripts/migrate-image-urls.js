@@ -3,14 +3,14 @@
 /**
  * 迁移 prompts-data.js 中的图片URL
  * 从本地路径 assets/prompts/*.png
- * 更新为 R2 CDN URL https://cdn.zaoyoe.com/prompts/*.webp
+ * 更新为 R2 CDN URL https://cdn.fatherkey.com/prompts/*.webp
  */
 
 const fs = require('fs');
 const path = require('path');
 
 const PROMPTS_DATA_FILE = path.join(__dirname, '../prompts-data.js');
-const R2_CDN_BASE = 'https://cdn.zaoyoe.com/prompts/';
+const R2_CDN_BASE = 'https://cdn.fatherkey.com/prompts/';
 
 console.log('🔄 开始迁移图片URL到R2 CDN...\n');
 

@@ -11,7 +11,7 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 const SERVER_ENV_PATH = path.join(ROOT_DIR, 'server/.env');
 const DEFAULT_RUNTIME_CONFIG_URL = 'http://127.0.0.1:8000/api/runtime/supabase-config';
 const PROMPT_IMAGE_PREFIX = 'supabase.co/storage/v1/object/public/prompt-images/';
-const R2_CDN_PREFIX = 'https://cdn.zaoyoe.com/prompts/';
+const R2_CDN_PREFIX = 'https://cdn.fatherkey.com/prompts/';
 
 function readEnvFile(filePath) {
     if (!fs.existsSync(filePath)) {

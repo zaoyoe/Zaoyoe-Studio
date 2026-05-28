@@ -27,7 +27,7 @@ const supabaseKey = readFirstEnv([
     'SUPABASE_SERVICE_KEY'
 ]);
 
-const R2_CDN_BASE = 'https://cdn.zaoyoe.com/prompts/';
+const R2_CDN_BASE = 'https://cdn.fatherkey.com/prompts/';
 
 if (!supabaseUrl || !supabaseKey) {
     throw new Error('Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment');

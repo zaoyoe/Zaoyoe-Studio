@@ -11,7 +11,7 @@ services:
       NODE_ENV: production
       DEPLOYMENT_TIER: production
       PORT: "3001"
-      ALLOWED_ORIGINS: "https://zaoyoe.com,https://www.zaoyoe.com,https://zaoyoe.xyz,https://www.zaoyoe.xyz"
+      ALLOWED_ORIGINS: "https://fatherkey.com,https://www.fatherkey.com,https://zaoyoe.com,https://www.zaoyoe.com,https://zaoyoe.xyz,https://www.zaoyoe.xyz"
       TRUSTED_PROXY_IPS: "127.0.0.1,::1,172.19.0.1"
       VERIFY_SERVER_WORKERS_ENABLED: "true"
     ports:

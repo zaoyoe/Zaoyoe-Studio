@@ -95,7 +95,7 @@ test('site-scoped request site prefers explicit query site and falls back to hos
     const explicitUrl = new URL('https://example.com/api/public?scope=config&route=site-system-config&site=intl');
     const explicitSite = resolveSiteScopedSystemConfigRequestSite({
         headers: {
-            host: 'www.zaoyoe.com'
+            host: 'www.fatherkey.com'
         }
     }, explicitUrl, { fallback: 'cn' });
     assert.equal(explicitSite, 'intl');

@@ -821,8 +821,8 @@ function buildAdminLoginAnomalySampleJob(user) {
                 '最近窗口内出现 3 个登录 IP',
                 '最近窗口内出现 2 个登录设备指纹'
             ],
-            origin: 'https://www.zaoyoe.com',
-            referer: 'https://www.zaoyoe.com/admin-entry.html',
+            origin: 'https://www.fatherkey.com',
+            referer: 'https://www.fatherkey.com/admin-entry.html',
             entry_path: '后台设置 -> 管理员访问 / Admin Audit Logs -> 异常登录信号（示例）'
         }
     };

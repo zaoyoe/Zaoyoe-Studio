@@ -138,8 +138,8 @@ test('createPaymentRequest launches Hupijiao checkout and precreates the payment
                             checkout_url: '',
                             gateway_url: 'https://api.xunhupay.com/payment/do.html',
                             merchant_id: 'appid-123',
-                            notify_url: 'https://verify-api.zaoyoe.com/api/payments/hupijiao/webhook',
-                            return_url: 'https://www.zaoyoe.com/wallet',
+                            notify_url: 'https://verify-api.fatherkey.com/api/payments/hupijiao/webhook',
+                            return_url: 'https://www.fatherkey.com/wallet',
                             package_hint: '请完成虎皮椒支付',
                             custom_amount_hint: ''
                         }
@@ -258,10 +258,10 @@ test('createPaymentRequest launches Hupijiao checkout and precreates the payment
                 package_id: 'pkg-1'
             },
             env: {
-                APP_BASE_URL: 'https://www.zaoyoe.com',
+                APP_BASE_URL: 'https://www.fatherkey.com',
                 HUPIJIAO_SECRET_KEY: 'secret-123'
             },
-            requestHost: 'www.zaoyoe.com'
+            requestHost: 'www.fatherkey.com'
         });
 
         assert.equal(result.success, true);

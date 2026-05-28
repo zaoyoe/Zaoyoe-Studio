@@ -8,7 +8,7 @@ const { createClient } = require('@supabase/supabase-js');
 const ROOT_DIR = path.resolve(__dirname, '..');
 const LOCAL_ENV_PATH = path.join(ROOT_DIR, '.env.local');
 const SERVER_ENV_PATH = path.join(ROOT_DIR, 'server/.env');
-const CDN_ORIGIN = 'https://cdn.zaoyoe.com';
+const CDN_ORIGIN = 'https://cdn.fatherkey.com';
 const R2_ASSET_PREFIXES = new Set([
     'affiliate-posters',
     'avatars',

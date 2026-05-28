@@ -30,7 +30,7 @@ const R2_ENDPOINT = requireEnv('R2 endpoint', ['R2_ENDPOINT']);
 const R2_ACCESS_KEY = requireEnv('R2 access key', ['R2_ACCESS_KEY_ID', 'R2_ACCESS_KEY']);
 const R2_SECRET_KEY = requireEnv('R2 secret key', ['R2_SECRET_ACCESS_KEY', 'R2_SECRET_KEY']);
 const R2_BUCKET = requireEnv('R2 bucket', ['R2_BUCKET_NAME']);
-const R2_PUBLIC_URL = readFirstEnv(['R2_PUBLIC_URL'], 'https://cdn.zaoyoe.com');
+const R2_PUBLIC_URL = readFirstEnv(['R2_PUBLIC_URL'], 'https://cdn.fatherkey.com');
 
 const s3Client = new S3Client({
     region: 'auto',

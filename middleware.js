@@ -104,7 +104,7 @@ function isRootEntryPath(pathname = '') {
 function detectRequestSite(requestUrl) {
     const url = requestUrl instanceof URL
         ? requestUrl
-        : new URL(String(requestUrl || '/'), 'https://www.zaoyoe.com');
+        : new URL(String(requestUrl || '/'), 'https://www.fatherkey.com');
 
     const forcedSite = String(url.searchParams.get('site') || '').trim().toLowerCase();
     if (forcedSite === 'intl' || forcedSite === 'cn') {
@@ -134,7 +134,7 @@ function buildPagePathMap(pageOptions = []) {
 export function buildSiteLayoutRedirectUrl(requestUrl, layouts = {}, pageOptions = []) {
     const url = requestUrl instanceof URL
         ? requestUrl
-        : new URL(String(requestUrl || '/'), 'https://www.zaoyoe.com');
+        : new URL(String(requestUrl || '/'), 'https://www.fatherkey.com');
 
     if (!isRootEntryPath(url.pathname)) {
         return null;

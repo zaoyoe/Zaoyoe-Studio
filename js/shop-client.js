@@ -87,7 +87,7 @@ function isSupabaseStorageImageUrl(url) {
 
 function getZaoyoeAssetCdnOrigin({ canonical = false } = {}) {
     if (canonical) {
-        return String(window.SiteConfig?.getCanonicalAssetCdnOrigin?.() || 'https://cdn.zaoyoe.com').replace(/\/+$/, '');
+        return String(window.SiteConfig?.getCanonicalAssetCdnOrigin?.() || 'https://cdn.fatherkey.com').replace(/\/+$/, '');
     }
 
     const configuredOrigin = String(window.SiteConfig?.getAssetCdnOrigin?.() || '').trim();
@@ -98,7 +98,7 @@ function getZaoyoeAssetCdnOrigin({ canonical = false } = {}) {
     const hostname = String(window.location?.hostname || '').toLowerCase();
     return hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz')
         ? 'https://cdn.zaoyoe.xyz'
-        : 'https://cdn.zaoyoe.com';
+        : 'https://cdn.fatherkey.com';
 }
 
 function normalizeZaoyoeAssetCdnUrl(url, expectedPrefix = '', options = {}) {
@@ -125,7 +125,7 @@ function normalizeZaoyoeAssetCdnUrl(url, expectedPrefix = '', options = {}) {
     try {
         const parsed = new URL(String(url || '').trim(), window.location.origin);
         const parts = String(parsed.pathname || '').split('/').filter(Boolean);
-        const isKnownCdnHost = ['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname) || parsed.hostname.endsWith('.r2.dev');
+        const isKnownCdnHost = ['cdn.fatherkey.com', 'cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname) || parsed.hostname.endsWith('.r2.dev');
         if (!isKnownCdnHost || (expectedPrefix && parts[0] !== expectedPrefix)) return '';
 
         const targetOrigin = new URL(getZaoyoeAssetCdnOrigin(options));
@@ -182,7 +182,7 @@ function getShopResponsiveR2CardVariantUrl(url, variant = '') {
     try {
         const normalizedUrl = normalizeShopProductCdnUrl(url) || String(url || '').trim();
         const parsed = new URL(normalizedUrl, window.location.origin);
-        if (!['cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)) {
+        if (!['cdn.fatherkey.com', 'cdn.zaoyoe.com', 'cdn.zaoyoe.xyz'].includes(parsed.hostname)) {
             return '';
         }
 
@@ -410,7 +410,7 @@ const SHOP_REALTIME_SUBSCRIBE_TIMEOUT_MS = 2600;
 const SHOP_REALTIME_REFRESH_DEBOUNCE_MS = 650;
 const SHOP_REALTIME_RETRY_MS = 30000;
 const SHOP_REALTIME_FALLBACK_REFRESH_MS = 30000;
-const SHOP_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.zaoyoe.com';
+const SHOP_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';
 const SHOP_CATALOG_BROWSER_CACHE_TTL_MS = 30000;
 const SHOP_CATALOG_BROWSER_CACHE_PREFIX = 'zaoyoe_shop_catalog_v2';
 

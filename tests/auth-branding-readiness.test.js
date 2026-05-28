@@ -66,7 +66,7 @@ test('auth dashboard config is complete and machine-checkable', () => {
     const dashboardConfig = JSON.parse(readRepoFile('supabase/auth-email-templates/dashboard-config.json'));
 
     assert.equal(checks.every((check) => check.ok), true);
-    assert.equal(dashboardConfig.siteUrl, 'https://www.zaoyoe.com');
+    assert.equal(dashboardConfig.siteUrl, 'https://www.fatherkey.com');
     assert.deepEqual(dashboardConfig.emailTemplates.map((template) => template.file), REQUIRED_TEMPLATES);
     for (const template of dashboardConfig.emailTemplates) {
         assert.match(template.subject, /Zaoyoe/);

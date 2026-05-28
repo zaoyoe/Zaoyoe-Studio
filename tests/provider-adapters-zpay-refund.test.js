@@ -111,13 +111,13 @@ test('zpay refundOrder treats empty refund responses as success when follow-up q
                 channelConfig: {
                     pid: 'pid-123',
                     checkout_url: 'https://zpayz.cn',
-                    notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook',
+                    notify_url: 'https://www.fatherkey.com/api/payments/zpay/webhook',
                     refund_confirmation_delays_ms: [0]
                 },
                 secretValues: {
                     zpay_pkey: 'pkey-123'
                 },
-                requestOrigin: 'https://www.zaoyoe.com'
+                requestOrigin: 'https://www.fatherkey.com'
             },
             providerOrderNo: 'ZPORDER001',
             tradeNo: 'TRADE001',
@@ -197,13 +197,13 @@ test('zpay refundOrder keeps the request fail-closed when follow-up polling stil
                     channelConfig: {
                         pid: 'pid-123',
                         checkout_url: 'https://zpayz.cn',
-                        notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook',
+                        notify_url: 'https://www.fatherkey.com/api/payments/zpay/webhook',
                         refund_confirmation_delays_ms: [0, 0]
                     },
                     secretValues: {
                         zpay_pkey: 'pkey-123'
                     },
-                    requestOrigin: 'https://www.zaoyoe.com'
+                    requestOrigin: 'https://www.fatherkey.com'
                 },
                 providerOrderNo: 'ZPORDER002',
                 tradeNo: 'TRADE002',

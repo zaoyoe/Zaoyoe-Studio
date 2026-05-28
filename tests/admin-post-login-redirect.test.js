@@ -124,7 +124,7 @@ test('admin entry stores a fresh post-login return target when the browser is un
             gateStates.push({ state, payload });
         },
         location: {
-            href: 'https://www.zaoyoe.com/admin-entry.html?next=/admin-studio.html'
+            href: 'https://www.fatherkey.com/admin-entry.html?next=/admin-studio.html'
         },
         localStorage,
         AdminAccess: {
@@ -156,7 +156,7 @@ test('admin entry stores a fresh post-login return target when the browser is un
     await context.bootAdminEntry();
 
     const storedTarget = JSON.parse(localStorage.getItem('zaoyoe_post_login_redirect_v1'));
-    const parsedTarget = new URL(storedTarget.target, 'https://www.zaoyoe.com');
+    const parsedTarget = new URL(storedTarget.target, 'https://www.fatherkey.com');
 
     assert.equal(parsedTarget.pathname, '/admin-entry.html');
     assert.equal(parsedTarget.searchParams.get('next'), '/admin-studio.html');
@@ -182,8 +182,8 @@ test('auth callback prefers the pending admin redirect target over the legacy oa
         localStorage,
         window: {
             location: {
-                href: 'https://www.zaoyoe.com/auth-callback.html',
-                origin: 'https://www.zaoyoe.com',
+                href: 'https://www.fatherkey.com/auth-callback.html',
+                origin: 'https://www.fatherkey.com',
                 replace(target) {
                     replacedTarget = target;
                 }
@@ -204,7 +204,7 @@ test('auth callback prefers the pending admin redirect target over the legacy oa
 
     context.redirectBack();
 
-    const parsedTarget = new URL(replacedTarget, 'https://www.zaoyoe.com');
+    const parsedTarget = new URL(replacedTarget, 'https://www.fatherkey.com');
     assert.equal(parsedTarget.pathname, '/admin-entry.html');
     assert.equal(parsedTarget.searchParams.get('next'), '/admin-studio.html');
     assert.equal(localStorage.getItem('zaoyoe_post_login_redirect_v1'), null);
@@ -231,8 +231,8 @@ test('auth runtime consumes a fresh pending admin redirect target and navigates 
         },
         window: {
             location: {
-                href: 'https://www.zaoyoe.com/',
-                origin: 'https://www.zaoyoe.com',
+                href: 'https://www.fatherkey.com/',
+                origin: 'https://www.fatherkey.com',
                 replace(target) {
                     replacedTarget = target;
                 }
@@ -252,7 +252,7 @@ test('auth runtime consumes a fresh pending admin redirect target and navigates 
     `, context);
 
     const redirected = context.redirectToPendingPostLoginTarget();
-    const parsedTarget = new URL(replacedTarget, 'https://www.zaoyoe.com');
+    const parsedTarget = new URL(replacedTarget, 'https://www.fatherkey.com');
 
     assert.equal(redirected, true);
     assert.equal(parsedTarget.pathname, '/admin-entry.html');

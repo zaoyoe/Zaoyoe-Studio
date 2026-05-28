@@ -34,7 +34,7 @@
                 const hostname = String(window.location?.hostname || '').toLowerCase();
                 const cdnOrigin = hostname === 'zaoyoe.xyz' || hostname.endsWith('.zaoyoe.xyz')
                     ? 'https://cdn.zaoyoe.xyz'
-                    : 'https://cdn.zaoyoe.com';
+                    : 'https://cdn.fatherkey.com';
                 const targetOrigin = new URL(cdnOrigin);
                 parsed.protocol = targetOrigin.protocol;
                 parsed.host = targetOrigin.host;

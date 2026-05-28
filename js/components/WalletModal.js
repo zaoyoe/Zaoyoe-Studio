@@ -15,7 +15,7 @@
 
     // Inject CSS if not already present
     const walletCssHref = 'css/wallet.css?v=20260525_WALLET_DISCOUNT_SKU_SCOPE_1';
-    const WALLET_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.zaoyoe.com';
+    const WALLET_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_TTL_MS = 30000;
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_PREFIX = 'zaoyoe_payment_config_v2';
     let walletCssReady = false;
@@ -6821,7 +6821,7 @@
 
         getDefaultPaymentChannelsConfig() {
             const rechargeOptions = this.normalizeRechargeOptionsConfig(this.rechargeOptionsConfig);
-            const currentOrigin = window.location?.origin || 'https://www.zaoyoe.com';
+            const currentOrigin = window.location?.origin || 'https://www.fatherkey.com';
             const normalizeSurchargeRate = (value, fallback = 0) => {
                 const parsed = Number(value);
                 const fallbackParsed = Number(fallback);
@@ -11003,7 +11003,7 @@
                     .filter(Boolean);
 
                 // Get server URL from verify config or default
-                const serverUrl = window.VERIFY_SERVER_URL || 'https://verify-api.zaoyoe.com';
+                const serverUrl = window.VERIFY_SERVER_URL || 'https://verify-api.fatherkey.com';
                 const response = await fetch(`${serverUrl}/api/afdian/query`, {
                     method: 'POST',
                     headers: {

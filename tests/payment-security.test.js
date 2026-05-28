@@ -440,7 +440,7 @@ test('explicit enabled real payment providers can be selected independently from
         rechargeOptions: {
             mock_payment_enabled: false
         },
-        requestHost: 'www.zaoyoe.com',
+        requestHost: 'www.fatherkey.com',
         env: {
             VERCEL_ENV: 'production'
         }
@@ -458,7 +458,7 @@ test('explicit enabled real payment providers can be selected independently from
         rechargeOptions: {
             mock_payment_enabled: false
         },
-        requestHost: 'www.zaoyoe.com',
+        requestHost: 'www.fatherkey.com',
         env: {
             VERCEL_ENV: 'production'
         }
@@ -582,7 +582,7 @@ test('nowpayments direct payment creation uses payment endpoint for hosted Chine
             api_base_url: 'https://api.nowpayments.io',
             pay_currency: 'usdtbsc',
             price_currency: 'usd',
-            ipn_callback_url: 'https://www.zaoyoe.com/api/payments/nowpayments/webhook',
+            ipn_callback_url: 'https://www.fatherkey.com/api/payments/nowpayments/webhook',
             is_fixed_rate: true,
             is_fee_paid_by_user: true
         },
@@ -590,7 +590,7 @@ test('nowpayments direct payment creation uses payment endpoint for hosted Chine
             nowpayments_api_key: 'np-api-key',
             nowpayments_ipn_secret: 'np-ipn-secret'
         },
-        requestOrigin: 'https://www.zaoyoe.com',
+        requestOrigin: 'https://www.fatherkey.com',
         orderId: 'NP_DIRECT_1',
         priceAmount: '8.40',
         orderDescription: 'Zaoyoe credits 60'

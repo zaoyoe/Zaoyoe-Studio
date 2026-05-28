@@ -142,7 +142,7 @@ test('payment config endpoint strips provider operational fields and runtime ove
                                             gateway_url: 'https://api.xunhupay.com/payment/do.html',
                                             merchant_id: 'appid-demo',
                                             notify_url: 'https://verify.example.com/webhook',
-                                            return_url: 'https://www.zaoyoe.com/wallet',
+                                            return_url: 'https://www.fatherkey.com/wallet',
                                             package_hint: '正式支付',
                                             custom_amount_hint: '支持自定义金额'
                                         }
@@ -213,7 +213,7 @@ test('payment config endpoint strips provider operational fields and runtime ove
             const req = {
                 method: 'GET',
                 headers: {
-                    host: 'www.zaoyoe.com'
+                    host: 'www.fatherkey.com'
                 }
             };
             const res = createMockResponse();
@@ -418,13 +418,13 @@ test('payment config endpoint hides real providers that are enabled but missing 
                                             display_name: '易支付',
                                             checkout_url: 'https://zpayz.cn',
                                             pid: '2026041807323142',
-                                            notify_url: 'https://www.zaoyoe.com/api/payments/zpay/webhook'
+                                            notify_url: 'https://www.fatherkey.com/api/payments/zpay/webhook'
                                         },
                                         nowpayments: {
                                             enabled: true,
                                             display_name: 'USDT-BEP20',
                                             pay_currency: 'usdtbsc',
-                                            ipn_callback_url: 'https://www.zaoyoe.com/api/payments/nowpayments/webhook'
+                                            ipn_callback_url: 'https://www.fatherkey.com/api/payments/nowpayments/webhook'
                                         }
                                     }
                                 }
@@ -494,7 +494,7 @@ test('payment config endpoint hides real providers that are enabled but missing 
                 method: 'GET',
                 url: '/api/payments/config?site=cn',
                 headers: {
-                    host: 'www.zaoyoe.com'
+                    host: 'www.fatherkey.com'
                 }
             };
             const res = createMockResponse();
@@ -616,7 +616,7 @@ test('payment config endpoint reuses the hot cache for repeated public config re
                 method: 'GET',
                 url: '/api/payments/config?site=cn',
                 headers: {
-                    host: 'www.zaoyoe.com'
+                    host: 'www.fatherkey.com'
                 }
             };
             const firstRes = createMockResponse();
@@ -720,7 +720,7 @@ test('payment config endpoint keeps public read rate limiting in memory', async 
         method: 'GET',
         url: '/api/payments/config?site=cn',
         headers: {
-            host: 'www.zaoyoe.com'
+            host: 'www.fatherkey.com'
         },
         socket: {
             remoteAddress: '203.0.113.55'
@@ -729,7 +729,7 @@ test('payment config endpoint keeps public read rate limiting in memory', async 
     const secondReq = {
         ...firstReq,
         headers: {
-            host: 'www.zaoyoe.com'
+            host: 'www.fatherkey.com'
         },
         socket: {
             remoteAddress: '203.0.113.55'

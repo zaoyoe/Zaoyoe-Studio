@@ -170,7 +170,7 @@ test('xianyu adapter CLI accepts Admin Studio runtime mode and env file', () => 
         '--account',
         'main',
         '--base-url',
-        'https://www.zaoyoe.com',
+        'https://www.fatherkey.com',
         '--submit'
     ]);
 
@@ -178,7 +178,7 @@ test('xianyu adapter CLI accepts Admin Studio runtime mode and env file', () => 
     assert.equal(options.envFile.endsWith('server/.env.production'), true);
     assert.equal(options.ordersPath.endsWith('orders.json'), true);
     assert.equal(options.overrides.account, 'main');
-    assert.equal(options.overrides.website_base_url, 'https://www.zaoyoe.com');
+    assert.equal(options.overrides.website_base_url, 'https://www.fatherkey.com');
     assert.equal(options.dryRunOverride, false);
 });
 
