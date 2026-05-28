@@ -23,6 +23,50 @@
     "redirects": [
         {
             "source": "/gongyi",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "zaoyoe.xyz"
+                }
+            ],
+            "destination": "https://sub2api.zaoyoe.xyz",
+            "permanent": false
+        },
+        {
+            "source": "/gongyi.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "zaoyoe.xyz"
+                }
+            ],
+            "destination": "https://sub2api.zaoyoe.xyz",
+            "permanent": false
+        },
+        {
+            "source": "/gongyi",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "www.zaoyoe.xyz"
+                }
+            ],
+            "destination": "https://sub2api.zaoyoe.xyz",
+            "permanent": false
+        },
+        {
+            "source": "/gongyi.html",
+            "has": [
+                {
+                    "type": "host",
+                    "value": "www.zaoyoe.xyz"
+                }
+            ],
+            "destination": "https://sub2api.zaoyoe.xyz",
+            "permanent": false
+        },
+        {
+            "source": "/gongyi",
             "destination": "https://sub2api.fatherkey.com",
             "permanent": false
         },

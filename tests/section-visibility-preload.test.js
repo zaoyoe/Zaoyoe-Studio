@@ -127,6 +127,7 @@ test('section visibility preload injects hidden nav rules from cached intl visib
     assert.equal(windowObject.SectionVisibilityPreload.detectSite(), 'intl');
     assert.match(styleElement.textContent, /\/prompts\.html/);
     assert.match(styleElement.textContent, /sub2api\.fatherkey\.com/);
+    assert.match(styleElement.textContent, /sub2api\.zaoyoe\.xyz/);
     assert.match(styleElement.textContent, /\/guestbook\.html/);
     assert.match(styleElement.textContent, /data-submenu="prompts-mobile"/);
     assert.doesNotMatch(styleElement.textContent, /\.nav-menu a\[href="\/verify\.html"\]/);
@@ -168,7 +169,7 @@ test('shared-nav public pages include the section visibility preload before firs
         const source = fs.readFileSync(path.resolve(__dirname, '..', fileName), 'utf8');
         assert.match(
             source,
-            /<script src="\.\/js\/section-visibility-preload\.js\?v=20260508_NAV_VIS_PRELOAD_1"><\/script>/
+            /<script src="\.\/js\/section-visibility-preload\.js\?v=20260528_GONGYI_SITE_AWARE_1"><\/script>/
         );
         assert.match(
             source,

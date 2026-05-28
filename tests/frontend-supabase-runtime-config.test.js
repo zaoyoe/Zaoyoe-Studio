@@ -309,8 +309,17 @@ test('vercel config deploys main automatically while keeping codex preview branc
 test('vercel public redirects send gongyi and status entry paths to dedicated subdomains before the apex www redirect', () => {
     const vercelConfig = readVercelConfig();
     const redirects = Array.isArray(vercelConfig.redirects) ? vercelConfig.redirects : [];
-    const gongyiRedirect = redirects.find((entry) => entry?.source === '/gongyi');
-    const gongyiHtmlRedirect = redirects.find((entry) => entry?.source === '/gongyi.html');
+    const findRedirect = (source, host = '') => redirects.find((entry) => {
+        if (entry?.source !== source) return false;
+        const hostRule = Array.isArray(entry?.has)
+            ? entry.has.find((rule) => rule?.type === 'host')
+            : null;
+        return String(hostRule?.value || '') === host;
+    });
+    const gongyiRedirect = findRedirect('/gongyi');
+    const gongyiHtmlRedirect = findRedirect('/gongyi.html');
+    const intlGongyiRedirect = findRedirect('/gongyi', 'www.zaoyoe.xyz');
+    const intlGongyiHtmlRedirect = findRedirect('/gongyi.html', 'www.zaoyoe.xyz');
     const statusRedirect = redirects.find((entry) => entry?.source === '/status');
     const statusHtmlRedirect = redirects.find((entry) => entry?.source === '/status.html');
     const hostCanonicalRedirectIndex = redirects.findIndex((entry) => entry?.source === '/:path*');
@@ -324,6 +333,14 @@ test('vercel public redirects send gongyi and status entry paths to dedicated su
     assert.ok(gongyiHtmlRedirect, 'vercel.json should redirect /gongyi.html to the dedicated community subdomain');
     assert.equal(gongyiHtmlRedirect.destination, 'https://sub2api.fatherkey.com');
     assert.equal(gongyiHtmlRedirect.permanent, false);
+
+    assert.ok(intlGongyiRedirect, 'vercel.json should keep the intl /gongyi route on the intl relay subdomain');
+    assert.equal(intlGongyiRedirect.destination, 'https://sub2api.zaoyoe.xyz');
+    assert.equal(intlGongyiRedirect.permanent, false);
+
+    assert.ok(intlGongyiHtmlRedirect, 'vercel.json should keep the intl /gongyi.html route on the intl relay subdomain');
+    assert.equal(intlGongyiHtmlRedirect.destination, 'https://sub2api.zaoyoe.xyz');
+    assert.equal(intlGongyiHtmlRedirect.permanent, false);
 
     assert.ok(statusRedirect, 'vercel.json should redirect /status to the dedicated status subdomain');
     assert.equal(statusRedirect.destination, 'https://status.fatherkey.com');
@@ -15293,7 +15310,7 @@ test('section visibility runtime externalizes element hiding and blocked overlay
 
     const sharedMarkers = [
         'css/section-visibility.css?v=20260324_SECTION_VISIBILITY_RUNTIME_STYLE_1',
-        'js/section-visibility.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'
+        'js/section-visibility.js?v=20260528_GONGYI_SITE_AWARE_1'
     ];
 
     for (const pageSource of pageSources) {

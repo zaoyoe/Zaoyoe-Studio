@@ -12,7 +12,11 @@
         prompts: '/prompts.html',
         verify: '/verify.html',
         guestbook: '/guestbook.html',
-        gongyi: 'https://sub2api.fatherkey.com'
+        gongyi: 'gongyi'
+    });
+    const GONGYI_ORIGINS = Object.freeze({
+        cn: 'https://sub2api.fatherkey.com',
+        intl: 'https://sub2api.zaoyoe.xyz'
     });
     const DEFAULT_LAYOUTS = Object.freeze({
         cn: Object.freeze({ root_page_key: 'home' }),
@@ -50,13 +54,21 @@
         }
     }
 
+    function getPageHref(pageKey, site) {
+        const key = normalizePageKey(pageKey);
+        if (key === 'gongyi') {
+            return GONGYI_ORIGINS[site === 'intl' ? 'intl' : 'cn'];
+        }
+        return PAGE_REGISTRY[key] || '/';
+    }
+
     function resolveRootHref(site, layouts) {
         const defaults = DEFAULT_LAYOUTS[site] || DEFAULT_LAYOUTS.cn;
         const siteLayouts = layouts && typeof layouts === 'object' && !Array.isArray(layouts)
             ? layouts[site]
             : null;
         const rootPageKey = normalizePageKey(siteLayouts?.root_page_key, defaults.root_page_key);
-        return PAGE_REGISTRY[rootPageKey] || '/';
+        return getPageHref(rootPageKey, site);
     }
 
     const pathname = global.location?.pathname || '/';
