@@ -16,8 +16,8 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/3D_chibi_style______1_1.webp",
-            "https://cdn.zaoyoe.com/prompts/3D_chibi_style______1_2.webp"
+            "https://cdn.fatherkey.com/prompts/3D_chibi_style______1_1.webp",
+            "https://cdn.fatherkey.com/prompts/3D_chibi_style______1_2.webp"
         ],
         "dominantColors": [
             "gray",
@@ -129,12 +129,12 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/9_____3D_2_1.webp",
-            "https://cdn.zaoyoe.com/prompts/9_____3D_2_2.webp",
-            "https://cdn.zaoyoe.com/prompts/9_____3D_2_3.webp",
-            "https://cdn.zaoyoe.com/prompts/9_____3D_2_4.webp",
-            "https://cdn.zaoyoe.com/prompts/9_____3D_2_5.webp",
-            "https://cdn.zaoyoe.com/prompts/9_____3D_2_6.webp"
+            "https://cdn.fatherkey.com/prompts/9_____3D_2_1.webp",
+            "https://cdn.fatherkey.com/prompts/9_____3D_2_2.webp",
+            "https://cdn.fatherkey.com/prompts/9_____3D_2_3.webp",
+            "https://cdn.fatherkey.com/prompts/9_____3D_2_4.webp",
+            "https://cdn.fatherkey.com/prompts/9_____3D_2_5.webp",
+            "https://cdn.fatherkey.com/prompts/9_____3D_2_6.webp"
         ],
         "dominantColors": [
             "gray",
@@ -234,10 +234,10 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/Ai_______3_1.webp",
-            "https://cdn.zaoyoe.com/prompts/Ai_______3_2.webp",
-            "https://cdn.zaoyoe.com/prompts/Ai_______3_3.webp",
-            "https://cdn.zaoyoe.com/prompts/Ai_______3_4.webp"
+            "https://cdn.fatherkey.com/prompts/Ai_______3_1.webp",
+            "https://cdn.fatherkey.com/prompts/Ai_______3_2.webp",
+            "https://cdn.fatherkey.com/prompts/Ai_______3_3.webp",
+            "https://cdn.fatherkey.com/prompts/Ai_______3_4.webp"
         ],
         "dominantColors": [
             "black",
@@ -349,9 +349,9 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/Capture_the_romance_4_1.webp",
-            "https://cdn.zaoyoe.com/prompts/Capture_the_romance_4_2.webp",
-            "https://cdn.zaoyoe.com/prompts/Capture_the_romance_4_3.webp"
+            "https://cdn.fatherkey.com/prompts/Capture_the_romance_4_1.webp",
+            "https://cdn.fatherkey.com/prompts/Capture_the_romance_4_2.webp",
+            "https://cdn.fatherkey.com/prompts/Capture_the_romance_4_3.webp"
         ],
         "dominantColors": [
             "orange",
@@ -475,7 +475,7 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/KDA___5_1.webp"
+            "https://cdn.fatherkey.com/prompts/KDA___5_1.webp"
         ],
         "dominantColors": [
             "blue",
@@ -605,8 +605,8 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/Q_______6_1.webp",
-            "https://cdn.zaoyoe.com/prompts/Q_______6_2.webp"
+            "https://cdn.fatherkey.com/prompts/Q_______6_1.webp",
+            "https://cdn.fatherkey.com/prompts/Q_______6_2.webp"
         ],
         "dominantColors": [
             "yellow",
@@ -736,7 +736,7 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/Small_body__Lion_heart_7_1.webp"
+            "https://cdn.fatherkey.com/prompts/Small_body__Lion_heart_7_1.webp"
         ],
         "dominantColors": [
             "brown",
@@ -850,7 +850,7 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/children_s_book_8_1.webp"
+            "https://cdn.fatherkey.com/prompts/children_s_book_8_1.webp"
         ],
         "dominantColors": [
             "white",
@@ -960,9 +960,9 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/______9_1.webp",
-            "https://cdn.zaoyoe.com/prompts/______9_2.webp",
-            "https://cdn.zaoyoe.com/prompts/______9_3.webp"
+            "https://cdn.fatherkey.com/prompts/______9_1.webp",
+            "https://cdn.fatherkey.com/prompts/______9_2.webp",
+            "https://cdn.fatherkey.com/prompts/______9_3.webp"
         ],
         "dominantColors": [
             "orange",
@@ -1077,7 +1077,7 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/______10_1.webp"
+            "https://cdn.fatherkey.com/prompts/______10_1.webp"
         ],
         "dominantColors": [
             "gray",
@@ -1201,10 +1201,10 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/________11_1.webp",
-            "https://cdn.zaoyoe.com/prompts/________11_2.webp",
-            "https://cdn.zaoyoe.com/prompts/________11_3.webp",
-            "https://cdn.zaoyoe.com/prompts/________11_4.webp"
+            "https://cdn.fatherkey.com/prompts/________11_1.webp",
+            "https://cdn.fatherkey.com/prompts/________11_2.webp",
+            "https://cdn.fatherkey.com/prompts/________11_3.webp",
+            "https://cdn.fatherkey.com/prompts/________11_4.webp"
         ],
         "dominantColors": [
             "gray"
@@ -1314,8 +1314,8 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/_____12_1.webp",
-            "https://cdn.zaoyoe.com/prompts/_____12_2.webp"
+            "https://cdn.fatherkey.com/prompts/_____12_1.webp",
+            "https://cdn.fatherkey.com/prompts/_____12_2.webp"
         ],
         "dominantColors": [
             "brown",
@@ -1445,8 +1445,8 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/_____13_1.webp",
-            "https://cdn.zaoyoe.com/prompts/_____13_2.webp"
+            "https://cdn.fatherkey.com/prompts/_____13_1.webp",
+            "https://cdn.fatherkey.com/prompts/_____13_2.webp"
         ],
         "dominantColors": [
             "gray",
@@ -1575,10 +1575,10 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/_____14_1.webp",
-            "https://cdn.zaoyoe.com/prompts/_____14_2.webp",
-            "https://cdn.zaoyoe.com/prompts/_____14_3.webp",
-            "https://cdn.zaoyoe.com/prompts/_____14_4.webp"
+            "https://cdn.fatherkey.com/prompts/_____14_1.webp",
+            "https://cdn.fatherkey.com/prompts/_____14_2.webp",
+            "https://cdn.fatherkey.com/prompts/_____14_3.webp",
+            "https://cdn.fatherkey.com/prompts/_____14_4.webp"
         ],
         "dominantColors": [
             "red",
@@ -1682,12 +1682,12 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/_____15_1.webp",
-            "https://cdn.zaoyoe.com/prompts/_____15_2.webp",
-            "https://cdn.zaoyoe.com/prompts/_____15_3.webp",
-            "https://cdn.zaoyoe.com/prompts/_____15_4.webp",
-            "https://cdn.zaoyoe.com/prompts/_____15_5.webp",
-            "https://cdn.zaoyoe.com/prompts/_____15_6.webp"
+            "https://cdn.fatherkey.com/prompts/_____15_1.webp",
+            "https://cdn.fatherkey.com/prompts/_____15_2.webp",
+            "https://cdn.fatherkey.com/prompts/_____15_3.webp",
+            "https://cdn.fatherkey.com/prompts/_____15_4.webp",
+            "https://cdn.fatherkey.com/prompts/_____15_5.webp",
+            "https://cdn.fatherkey.com/prompts/_____15_6.webp"
         ],
         "dominantColors": [
             "gray",
@@ -1816,7 +1816,7 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/_____16_1.webp"
+            "https://cdn.fatherkey.com/prompts/_____16_1.webp"
         ],
         "dominantColors": [
             "gray",
@@ -1931,10 +1931,10 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/_____17_1.webp",
-            "https://cdn.zaoyoe.com/prompts/_____17_2.webp",
-            "https://cdn.zaoyoe.com/prompts/_____17_3.webp",
-            "https://cdn.zaoyoe.com/prompts/_____17_4.webp"
+            "https://cdn.fatherkey.com/prompts/_____17_1.webp",
+            "https://cdn.fatherkey.com/prompts/_____17_2.webp",
+            "https://cdn.fatherkey.com/prompts/_____17_3.webp",
+            "https://cdn.fatherkey.com/prompts/_____17_4.webp"
         ],
         "dominantColors": [
             "gray",
@@ -2064,12 +2064,12 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/_____18_1.webp",
-            "https://cdn.zaoyoe.com/prompts/_____18_2.webp",
-            "https://cdn.zaoyoe.com/prompts/_____18_3.webp",
-            "https://cdn.zaoyoe.com/prompts/_____18_4.webp",
-            "https://cdn.zaoyoe.com/prompts/_____18_5.webp",
-            "https://cdn.zaoyoe.com/prompts/_____18_6.webp"
+            "https://cdn.fatherkey.com/prompts/_____18_1.webp",
+            "https://cdn.fatherkey.com/prompts/_____18_2.webp",
+            "https://cdn.fatherkey.com/prompts/_____18_3.webp",
+            "https://cdn.fatherkey.com/prompts/_____18_4.webp",
+            "https://cdn.fatherkey.com/prompts/_____18_5.webp",
+            "https://cdn.fatherkey.com/prompts/_____18_6.webp"
         ],
         "dominantColors": [
             "gray",
@@ -2199,7 +2199,7 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/__________19_1.webp"
+            "https://cdn.fatherkey.com/prompts/__________19_1.webp"
         ],
         "dominantColors": [
             "gray"
@@ -2317,10 +2317,10 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/____20_1.webp",
-            "https://cdn.zaoyoe.com/prompts/____20_2.webp",
-            "https://cdn.zaoyoe.com/prompts/____20_3.webp",
-            "https://cdn.zaoyoe.com/prompts/____20_4.webp"
+            "https://cdn.fatherkey.com/prompts/____20_1.webp",
+            "https://cdn.fatherkey.com/prompts/____20_2.webp",
+            "https://cdn.fatherkey.com/prompts/____20_3.webp",
+            "https://cdn.fatherkey.com/prompts/____20_4.webp"
         ],
         "dominantColors": [
             "gray"
@@ -2448,10 +2448,10 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/_____21_1.webp",
-            "https://cdn.zaoyoe.com/prompts/_____21_2.webp",
-            "https://cdn.zaoyoe.com/prompts/_____21_3.webp",
-            "https://cdn.zaoyoe.com/prompts/_____21_4.webp"
+            "https://cdn.fatherkey.com/prompts/_____21_1.webp",
+            "https://cdn.fatherkey.com/prompts/_____21_2.webp",
+            "https://cdn.fatherkey.com/prompts/_____21_3.webp",
+            "https://cdn.fatherkey.com/prompts/_____21_4.webp"
         ],
         "dominantColors": [
             "white",
@@ -2557,7 +2557,7 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/_____22_1.webp"
+            "https://cdn.fatherkey.com/prompts/_____22_1.webp"
         ],
         "dominantColors": [
             "gray",
@@ -2635,7 +2635,7 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/___23_1.webp"
+            "https://cdn.fatherkey.com/prompts/___23_1.webp"
         ],
         "dominantColors": [
             "gray",
@@ -2710,10 +2710,10 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/____24_1.webp",
-            "https://cdn.zaoyoe.com/prompts/____24_2.webp",
-            "https://cdn.zaoyoe.com/prompts/____24_3.webp",
-            "https://cdn.zaoyoe.com/prompts/____24_4.webp"
+            "https://cdn.fatherkey.com/prompts/____24_1.webp",
+            "https://cdn.fatherkey.com/prompts/____24_2.webp",
+            "https://cdn.fatherkey.com/prompts/____24_3.webp",
+            "https://cdn.fatherkey.com/prompts/____24_4.webp"
         ],
         "dominantColors": [
             "gray",
@@ -2788,7 +2788,7 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/______25_1.webp"
+            "https://cdn.fatherkey.com/prompts/______25_1.webp"
         ],
         "dominantColors": [
             "gray",
@@ -2863,7 +2863,7 @@
         "description_en": "",
         "description_zh": "",
         "images": [
-            "https://cdn.zaoyoe.com/prompts/snow_globe_portrait_26_1.webp"
+            "https://cdn.fatherkey.com/prompts/snow_globe_portrait_26_1.webp"
         ],
         "dominantColors": [
             "black",

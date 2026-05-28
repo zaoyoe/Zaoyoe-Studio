@@ -98,7 +98,7 @@ const presets = {
             posterTitle: '邀请函',
             posterSubtitle: '扫码注册 · 即享专属奖励',
             qrLabel: '扫码注册领取新人福利',
-            posterLink: 'https://www.zaoyoe.com/?ref=ZAOYOE88',
+            posterLink: 'https://www.fatherkey.com/?ref=ZAOYOE88',
             legalText: '活动最终解释权归平台所有',
             registrationReward: 5,
             pointsUnit: '分',
@@ -431,7 +431,7 @@ const presets = {
             const isFilePreview = window.location.protocol === 'file:';
             setAvatarStatus(
                 isFilePreview
-                    ? '未读取到真实头像：当前是 file:// 独立预览，浏览器无法访问 www.zaoyoe.com 的登录态。请把头像 URL 填到上方，或上传头像文件。'
+                    ? '未读取到真实头像：当前是 file:// 独立预览，浏览器无法访问 www.fatherkey.com 的登录态。请把头像 URL 填到上方，或上传头像文件。'
                     : '未读取到真实头像：当前账号可能未设置头像，或此预览页未运行在已登录的站点域名下。',
                 'warning'
             );

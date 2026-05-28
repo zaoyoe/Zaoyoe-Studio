@@ -9,10 +9,10 @@
     },
     "variants": {
         "card": {
-            "https://cdn.zaoyoe.com/products/46839a81-52b6-4c1d-9f7d-41a9fcfc136c.jpg": "/assets/products-card/46839a81-52b6-4c1d-9f7d-41a9fcfc136c.webp",
-            "https://cdn.zaoyoe.com/products/50c27963-82cc-4ced-90a8-39abfce7f155.jpg": "/assets/products-card/50c27963-82cc-4ced-90a8-39abfce7f155.webp",
-            "https://cdn.zaoyoe.com/products/product_1775982177111.jpg": "/assets/products-card/875cdf10-cb5b-4f7f-baae-b747e318a8c3.webp",
-            "https://cdn.zaoyoe.com/products/product_1775986763396.jpg": "/assets/products-card/faf47fcd-0ae6-46cb-817a-0971ca9678f8.webp"
+            "https://cdn.fatherkey.com/products/46839a81-52b6-4c1d-9f7d-41a9fcfc136c.jpg": "/assets/products-card/46839a81-52b6-4c1d-9f7d-41a9fcfc136c.webp",
+            "https://cdn.fatherkey.com/products/50c27963-82cc-4ced-90a8-39abfce7f155.jpg": "/assets/products-card/50c27963-82cc-4ced-90a8-39abfce7f155.webp",
+            "https://cdn.fatherkey.com/products/product_1775982177111.jpg": "/assets/products-card/875cdf10-cb5b-4f7f-baae-b747e318a8c3.webp",
+            "https://cdn.fatherkey.com/products/product_1775986763396.jpg": "/assets/products-card/faf47fcd-0ae6-46cb-817a-0971ca9678f8.webp"
         }
     }
 });
