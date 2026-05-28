@@ -96,6 +96,17 @@ test('password reset handler finds the auth-sheet submit button outside the form
     assert.equal(authSource.includes("document.querySelector('#resetForm button[type=\"submit\"]')"), false);
 });
 
+test('auth redirects stay on the current site family for reset and OAuth callbacks', () => {
+    assert.match(authSource, /function getAuthRedirectOrigin\(\)/);
+    assert.match(authSource, /hostname === 'zaoyoe\.xyz' \|\| hostname === 'www\.zaoyoe\.xyz'/);
+    assert.match(authSource, /return 'https:\/\/zaoyoe\.xyz';/);
+    assert.match(authSource, /return 'https:\/\/www\.fatherkey\.com';/);
+    assert.match(authSource, /redirectTo: buildAuthRedirectUrl\('\/reset-password\.html'\)/);
+    assert.match(authSource, /const redirectTo = buildAuthRedirectUrl\('\/auth-callback\.html'\);/);
+    assert.doesNotMatch(authSource, /redirectTo: window\.location\.origin \+ '\/reset-password\.html'/);
+    assert.doesNotMatch(authSource, /`\$\{window\.location\.origin\}\/auth-callback\.html`/);
+});
+
 test('password reset invalid email feedback follows the active locale', () => {
     assert.match(authSource, /function isValidAuthEmailFormat\(email\)/);
     assert.match(authSource, /showAuthFeedback\(getInvalidResetEmailMessage\(\), 'error', 'reset'\)/);

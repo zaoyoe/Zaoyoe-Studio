@@ -75,11 +75,11 @@ test('site config keeps shared image records canonical while exposing intl CDN d
     assert.match(framerHomeSource, /getZaoyoeAssetCdnOrigin\(\)/);
     assert.match(chatWidgetSource, /window\.SiteConfig\?\.normalizeAssetUrlForCurrentSite\?\.\(parsed\.href\)/);
     assert.ok(
-        adminStudioHtml.indexOf('./js/site-config.js?v=20260516_SERVICE_WORKER_RETIRE_1') < adminStudioHtml.indexOf('admin-studio.js?v='),
+        adminStudioHtml.indexOf('./js/site-config.js?v=20260528_GONGYI_SITE_AWARE_1') < adminStudioHtml.indexOf('admin-studio.js?v='),
         'admin studio should load site config before admin gallery image rendering'
     );
     assert.ok(
-        adminStudioHtml.indexOf('./js/site-config.js?v=20260516_SERVICE_WORKER_RETIRE_1') < adminStudioHtml.indexOf('js/admin-shop.js?v='),
+        adminStudioHtml.indexOf('./js/site-config.js?v=20260528_GONGYI_SITE_AWARE_1') < adminStudioHtml.indexOf('js/admin-shop.js?v='),
         'admin studio should load site config before admin shop image rendering'
     );
 });
@@ -109,7 +109,7 @@ test('site config retires legacy service worker caches before they can pin stale
         'SiteConfig should delete stale Cache Storage entries'
     );
     assert.ok(
-        indexSource.includes('./js/site-config.js?v=20260516_SERVICE_WORKER_RETIRE_1'),
+        indexSource.includes('./js/site-config.js?v=20260528_GONGYI_SITE_AWARE_1'),
         'homepage should cache-bust the service worker retirement runtime'
     );
 });
@@ -137,11 +137,21 @@ test('site config rewrites canonical image CDN records to intl display origins a
         intlConfig.normalizeAssetUrlForCurrentSite('https://example.com/products/product_1775982177111.jpg'),
         'https://example.com/products/product_1775982177111.jpg'
     );
+    assert.equal(intlConfig.getGongyiOrigin(), 'https://sub2api.zaoyoe.xyz');
+    assert.equal(
+        intlConfig.normalizeGongyiUrlForCurrentSite('https://sub2api.fatherkey.com/dashboard?tab=keys#top'),
+        'https://sub2api.zaoyoe.xyz/dashboard?tab=keys#top'
+    );
 
     assert.equal(cnConfig.site, 'cn');
+    assert.equal(cnConfig.getGongyiOrigin(), 'https://sub2api.fatherkey.com');
     assert.equal(
         cnConfig.normalizeAssetUrlForCurrentSite('https://cdn.zaoyoe.xyz/prompts/example.webp'),
         'https://cdn.fatherkey.com/prompts/example.webp'
+    );
+    assert.equal(
+        cnConfig.normalizeGongyiUrlForCurrentSite('https://sub2api.zaoyoe.xyz/dashboard'),
+        'https://sub2api.fatherkey.com/dashboard'
     );
 });
 

@@ -30,8 +30,12 @@
         gongyi: Object.freeze({
             key: 'gongyi',
             label: 'API中转',
-            href: 'https://sub2api.fatherkey.com'
+            href: 'gongyi'
         })
+    });
+    const GONGYI_ORIGINS = Object.freeze({
+        cn: 'https://sub2api.fatherkey.com',
+        intl: 'https://sub2api.zaoyoe.xyz'
     });
     const DEFAULT_LAYOUTS = Object.freeze({
         cn: Object.freeze({
@@ -106,8 +110,12 @@
         return normalizeSite(global.SiteConfig?.site);
     }
 
-    function getPageHref(pageKey) {
-        return PAGE_REGISTRY[normalizePageKey(pageKey)]?.href || '/';
+    function getPageHref(pageKey, site = getCurrentSite()) {
+        const key = normalizePageKey(pageKey);
+        if (key === 'gongyi') {
+            return GONGYI_ORIGINS[normalizeSite(site)];
+        }
+        return PAGE_REGISTRY[key]?.href || '/';
     }
 
     function getRootHref(layout) {

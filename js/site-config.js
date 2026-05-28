@@ -26,6 +26,17 @@
         cn: 'https://cdn.fatherkey.com',
         intl: 'https://cdn.zaoyoe.xyz'
     };
+    const GONGYI_ORIGINS = {
+        cn: 'https://sub2api.fatherkey.com',
+        intl: 'https://sub2api.zaoyoe.xyz'
+    };
+    const GONGYI_HOSTS = new Set([
+        'sub2api.fatherkey.com',
+        'sub2api.zaoyoe.com',
+        'sub2api.zaoyoe.xyz',
+        'gongyi.zaoyoe.com',
+        'www.gongyi.zaoyoe.com'
+    ]);
     const ASSET_CDN_HOSTS = new Set([
         'cdn.fatherkey.com',
         'cdn.zaoyoe.com',
@@ -132,6 +143,10 @@
         return ASSET_CDN_ORIGINS[siteValue === 'intl' ? 'intl' : 'cn'];
     }
 
+    function getGongyiOriginForSite(siteValue) {
+        return GONGYI_ORIGINS[siteValue === 'intl' ? 'intl' : 'cn'];
+    }
+
     function normalizeAssetUrlForSite(url, siteValue) {
         const source = String(url || '').trim();
         if (!source) return '';
@@ -151,6 +166,72 @@
         } catch (error) {
             return source;
         }
+    }
+
+    function normalizeGongyiUrlForSite(url, siteValue) {
+        const source = String(url || '').trim();
+        if (!source) return '';
+
+        try {
+            const parsed = new URL(source, window.location.origin);
+            if (!GONGYI_HOSTS.has(parsed.hostname.toLowerCase())) {
+                return source;
+            }
+
+            const origin = getGongyiOriginForSite(siteValue);
+            const pathname = parsed.pathname === '/' ? '' : parsed.pathname;
+            return `${origin}${pathname}${parsed.search}${parsed.hash}`;
+        } catch (error) {
+            return source;
+        }
+    }
+
+    function rewriteGongyiLinksForCurrentSite(root = document) {
+        if (!root || typeof root.querySelectorAll !== 'function') {
+            return;
+        }
+
+        root.querySelectorAll('a[href], area[href]').forEach(element => {
+            const currentHref = element.getAttribute('href');
+            const nextHref = normalizeGongyiUrlForSite(currentHref, site);
+            if (nextHref && nextHref !== currentHref) {
+                element.setAttribute('href', nextHref);
+            }
+        });
+    }
+
+    function startGongyiLinkRewriter() {
+        rewriteGongyiLinksForCurrentSite(document);
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => rewriteGongyiLinksForCurrentSite(document), { once: true });
+        }
+
+        if (typeof MutationObserver !== 'function' || !document.documentElement) {
+            return;
+        }
+
+        const observer = new MutationObserver(mutations => {
+            mutations.forEach(mutation => {
+                mutation.addedNodes.forEach(node => {
+                    if (node?.nodeType !== 1) {
+                        return;
+                    }
+
+                    if (typeof node.matches === 'function' && node.matches('a[href], area[href]')) {
+                        const currentHref = node.getAttribute('href');
+                        const nextHref = normalizeGongyiUrlForSite(currentHref, site);
+                        if (nextHref && nextHref !== currentHref) {
+                            node.setAttribute('href', nextHref);
+                        }
+                    }
+
+                    rewriteGongyiLinksForCurrentSite(node);
+                });
+            });
+        });
+
+        observer.observe(document.documentElement, { childList: true, subtree: true });
     }
 
     const SiteConfig = {
@@ -236,6 +317,16 @@
             return normalizeAssetUrlForSite(url, 'cn');
         },
 
+        /** 获取当前站点的 API 中转入口。 */
+        getGongyiOrigin: function () {
+            return getGongyiOriginForSite(this.site);
+        },
+
+        /** 将 API 中转 URL 改写到当前站点对应入口，避免跨站露出不同商城价格。 */
+        normalizeGongyiUrlForCurrentSite: function (url) {
+            return normalizeGongyiUrlForSite(url, this.site);
+        },
+
         /** 是否为国内站 */
         isCN: function () {
             return this.site === 'cn';
@@ -263,6 +354,7 @@
 
     // 暴露到全局
     window.SiteConfig = SiteConfig;
+    startGongyiLinkRewriter();
     retireLegacyServiceWorkers();
 
     console.log(`🌐 [SiteConfig] Initialized: site=${SiteConfig.site}, currency=${SiteConfig.currency}`);

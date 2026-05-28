@@ -4,7 +4,9 @@
     "https://www.fatherkey.com/auth-callback.html",
     "https://www.fatherkey.com/reset-password.html",
     "https://zaoyoe.xyz/auth-callback.html",
-    "https://zaoyoe.xyz/reset-password.html"
+    "https://zaoyoe.xyz/reset-password.html",
+    "https://www.zaoyoe.xyz/auth-callback.html",
+    "https://www.zaoyoe.xyz/reset-password.html"
   ],
   "emailTemplates": [
     {

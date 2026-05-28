@@ -11,10 +11,10 @@ Use `supabase/auth-email-templates/dashboard-config.json` as the source of truth
    - Additional Redirect URLs:
      - `https://www.fatherkey.com/auth-callback.html`
      - `https://www.fatherkey.com/reset-password.html`
-     - `https://www.zaoyoe.com/auth-callback.html`
-     - `https://www.zaoyoe.com/reset-password.html`
      - `https://zaoyoe.xyz/auth-callback.html`
      - `https://zaoyoe.xyz/reset-password.html`
+     - `https://www.zaoyoe.xyz/auth-callback.html`
+     - `https://www.zaoyoe.xyz/reset-password.html`
 2. Supabase Dashboard > Authentication > SMTP Settings
    - Enable Custom SMTP when the sending domain is ready.
    - Use a branded sender such as `Zaoyoe <no-reply@fatherkey.com>`.
@@ -41,15 +41,16 @@ npm run readiness:auth-branding
 
 Manual smoke:
 
-1. Request password reset from `https://www.zaoyoe.com`.
+1. Request password reset from `https://www.fatherkey.com`.
 2. Request password reset from `https://zaoyoe.xyz`.
-3. Confirm each email opens the matching site's `/reset-password.html`.
-4. Test Google login on both sites and confirm it returns through `/auth-callback.html`.
-5. Confirm Supabase Dashboard still lists all four Additional Redirect URLs after saving.
-6. If Custom SMTP is enabled, send one reset email and check that the visible sender is `Zaoyoe`.
+3. Request password reset from `https://www.zaoyoe.xyz`.
+4. Confirm each email opens the matching site's `/reset-password.html`.
+5. Test Google login on both sites and confirm it returns through `/auth-callback.html`.
+6. Confirm Supabase Dashboard still lists all six Additional Redirect URLs after saving.
+7. If Custom SMTP is enabled, send one reset email and check that the visible sender is `Zaoyoe`.
 
 ## Fallback Rule
 
-Do not hard-code the Supabase project auth domain in frontend redirects. Frontend auth redirects should use the current site origin so `www.zaoyoe.com` and `zaoyoe.xyz` keep working whether or not the Supabase Custom Domain add-on is active.
+Do not hard-code the Supabase project auth domain in frontend redirects. Frontend auth redirects should use the current site family so `fatherkey.com`, `zaoyoe.xyz`, and `www.zaoyoe.xyz` keep working whether or not the Supabase Custom Domain add-on is active.
 
 Custom SMTP and Supabase Custom Domain are optional. Missing SMTP should only affect sender branding, not password reset or Google login availability.
