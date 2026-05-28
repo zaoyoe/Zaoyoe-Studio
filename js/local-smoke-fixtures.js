@@ -322,9 +322,9 @@
                     dead_letter_count: 0,
                     last_job_at: '2026-03-31T09:16:00+08:00',
                     config: {
-                        sender_email: 'ops@zaoyoe.com',
+                        sender_email: 'ops@fatherkey.com',
                         subject_prefix: '[Zaoyoe告警]',
-                        recipient_preview: 'ops@zaoyoe.com'
+                        recipient_preview: 'ops@fatherkey.com'
                     }
                 },
                 {

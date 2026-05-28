@@ -13,8 +13,6 @@ const REQUIRED_TEMPLATES = Object.freeze([
 const REQUIRED_REDIRECT_URLS = Object.freeze([
     'https://www.fatherkey.com/auth-callback.html',
     'https://www.fatherkey.com/reset-password.html',
-    'https://www.zaoyoe.com/auth-callback.html',
-    'https://www.zaoyoe.com/reset-password.html',
     'https://zaoyoe.xyz/auth-callback.html',
     'https://zaoyoe.xyz/reset-password.html'
 ]);
