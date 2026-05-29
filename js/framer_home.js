@@ -1127,9 +1127,19 @@ function bindHomepagePromptCardAspectRatioRelease(section) {
       return;
     }
 
-    const release = () => {
-      card.style.removeProperty('--home-prompt-card-ratio');
+    const markImageReady = () => {
+      if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+        card.style.setProperty('--home-prompt-card-ratio', `${image.naturalWidth} / ${image.naturalHeight}`);
+      }
       card.dataset.homePromptImageLoaded = '1';
+    };
+
+    const release = () => {
+      if (typeof image.decode === 'function') {
+        image.decode().then(markImageReady).catch(markImageReady);
+      } else {
+        markImageReady();
+      }
     };
 
     if (image.complete && image.naturalWidth > 0) {
