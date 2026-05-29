@@ -4173,6 +4173,9 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         "const HOMEPAGE_CONFIG_CACHE_KEY = 'homepage_config_sub2api_1';",
         "const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';",
         "const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';",
+        'function getHomepageConfigCacheStorageKey(site = getHomepageRuntimeSite()) {',
+        'function invalidateStaleHomepageConfigCache() {',
+        'invalidateStaleHomepageConfigCache();',
         'async fetchVisiblePromptPool(options = {}) {',
         "this.promptPool = await this.fetchVisiblePromptPool({ preferStaticFirst: true });",
         'schedulePromptPoolLiveSync(options = {}) {',
@@ -4262,7 +4265,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'index.html should load the latest framer_home stylesheet version'
     );
     assert.equal(
-        homepageSource.includes('./js/framer_home.js?v=20260521_HOME_SHOP_TITLE_1'),
+        homepageSource.includes('./js/framer_home.js?v=20260529_HOME_CONFIG_CACHE_1'),
         true,
         'index.html should load the latest framer_home script version'
     );
@@ -9754,6 +9757,8 @@ test('homepage admin runtime renderers externalize retry, visibility, tab indica
         "placeholder.hidden = !!hasPreview;",
         "const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';",
         "const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';",
+        "const HOMEPAGE_RUNTIME_CACHE_VERSIONS = Object.freeze(['v1', 'v2', 'v3']);",
+        "const HOMEPAGE_RUNTIME_CONFIG_CACHE_KEYS = Object.freeze(['homepage_config', 'homepage_config_sub2api_1']);",
         'function getHomepagePrefetchCacheKey(site = getHomepageReadSite()) {',
         'function getHomepageConfigLastUpdatedKey(site = getHomepageReadSite()) {',
         'sessionStorage.removeItem(getHomepagePrefetchCacheKey(safeSite));',
@@ -9851,7 +9856,7 @@ test('homepage admin runtime renderers externalize retry, visibility, tab indica
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-homepage.js?v=20260529_FOOTER_CONTACTS_1'),
+        adminStudioSource.includes('admin-homepage.js?v=20260529_HOME_RUNTIME_CACHE_1'),
         true,
         'admin-studio.html should load the latest homepage admin script version'
     );
@@ -14904,7 +14909,7 @@ test('analytics user drill-down carries commerce context into the user detail mo
     }
 
     assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
-    assert.equal(adminStudioHtml.includes('admin-homepage.js?v=20260529_FOOTER_CONTACTS_1'), true, 'admin-studio.html should reference the latest homepage admin runtime version');
+    assert.equal(adminStudioHtml.includes('admin-homepage.js?v=20260529_HOME_RUNTIME_CACHE_1'), true, 'admin-studio.html should reference the latest homepage admin runtime version');
     assert.equal(adminStudioHtml.includes('admin-users.js?v=20260505_USER_ACTIVITY_HEARTBEAT_1'), true, 'admin-studio.html should reference the latest admin users runtime version');
     assert.equal(adminStudioHtml.includes('admin-points.js?v=20260427_ADMIN_POINTS_BATCH_DETAIL_CUSTOM_STATUS_2'), true, 'admin-studio.html should reference the latest admin points runtime version');
     assert.equal(adminStudioHtml.includes('js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3&workflowRails=20260430_ADMIN_STUDIO_WORKFLOW_CARD_RAIL_VISIBILITY_1'), true, 'admin-studio.html should reference the latest growth center runtime version');
@@ -16534,7 +16539,7 @@ test('admin studio modules emit unified command feedback for recent processing r
         'admin-discounts.js?v=20260427_DISCOUNTS_BATCH_RESTORE_HINT_1',
         'js/admin-shell.js?v=20260513_ADMIN_SHELL_SITE_CHANGE_ASYNC_1',
         'admin-users.js?v=20260505_USER_ACTIVITY_HEARTBEAT_1',
-        'admin-homepage.js?v=20260529_FOOTER_CONTACTS_1',
+        'admin-homepage.js?v=20260529_HOME_RUNTIME_CACHE_1',
         'admin-points.js?v=20260427_ADMIN_POINTS_BATCH_DETAIL_CUSTOM_STATUS_2',
         'js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3&workflowRails=20260430_ADMIN_STUDIO_WORKFLOW_CARD_RAIL_VISIBILITY_1',
         'admin-comments.js?v=20260421_COMMENTS_MODULE_BRIDGE_HELPERS_P3',

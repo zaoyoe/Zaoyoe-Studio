@@ -43,6 +43,8 @@ const HomepageAdmin = (() => {
     const HOMEPAGE_ADMIN_PREVIEW_HIDDEN_CLASS = 'admin-studio-inline-style-attr-149';
     const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
     const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
+    const HOMEPAGE_RUNTIME_CACHE_VERSIONS = Object.freeze(['v1', 'v2', 'v3']);
+    const HOMEPAGE_RUNTIME_CONFIG_CACHE_KEYS = Object.freeze(['homepage_config', 'homepage_config_sub2api_1']);
     const HOMEPAGE_MANAGED_SECTIONS = Array.isArray(HomepageContract?.MANAGED_SECTION_ORDER)
         ? [...HomepageContract.MANAGED_SECTION_ORDER]
         : ['hero', 'prompts', 'shop', 'gongyi', 'verify', 'guestbook', 'ticker'];
@@ -1428,9 +1430,11 @@ const HomepageAdmin = (() => {
     function invalidateHomepageRuntimeCaches(site = getHomepageReadSite()) {
         const safeSite = normalizeHomepageSite(site);
         try {
-            ['v1', 'v2'].forEach((cacheVersion) => {
-                localStorage.removeItem(`zaoyoe_${safeSite}_cache_${cacheVersion}_homepage_config`);
-                localStorage.removeItem(`zaoyoe_cache_${cacheVersion}_homepage_config`);
+            HOMEPAGE_RUNTIME_CACHE_VERSIONS.forEach((cacheVersion) => {
+                HOMEPAGE_RUNTIME_CONFIG_CACHE_KEYS.forEach((cacheKey) => {
+                    localStorage.removeItem(`zaoyoe_${safeSite}_cache_${cacheVersion}_${cacheKey}`);
+                    localStorage.removeItem(`zaoyoe_cache_${cacheVersion}_${cacheKey}`);
+                });
             });
             localStorage.setItem(getHomepageConfigLastUpdatedKey(safeSite), String(Date.now()));
             localStorage.removeItem(HOMEPAGE_CONFIG_LAST_UPDATED_KEY);
