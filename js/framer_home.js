@@ -1669,6 +1669,33 @@ function getHomepageConfigLastUpdatedAt() {
   }
 }
 
+function getHomepageConfigCacheStorageKey(site = getHomepageRuntimeSite()) {
+  return `zaoyoe_${HomepageContract?.normalizeSite?.(site) || site || 'cn'}_cache_v3_${HOMEPAGE_CONFIG_CACHE_KEY}`;
+}
+
+function invalidateStaleHomepageConfigCache() {
+  const configUpdatedAt = getHomepageConfigLastUpdatedAt();
+  if (!configUpdatedAt) return;
+
+  try {
+    const cacheKey = getHomepageConfigCacheStorageKey();
+    const raw = localStorage.getItem(cacheKey);
+    if (!raw) return;
+
+    const cached = JSON.parse(raw);
+    const cacheTimestamp = Number.parseInt(cached?.timestamp || '0', 10);
+    if (!Number.isFinite(cacheTimestamp) || cacheTimestamp < configUpdatedAt) {
+      localStorage.removeItem(cacheKey);
+    }
+  } catch (e) {
+    try {
+      localStorage.removeItem(getHomepageConfigCacheStorageKey());
+    } catch (_error) {
+      // Ignore cache cleanup failures.
+    }
+  }
+}
+
 function getHomeTrackGap(track) {
   if (!track) return 0;
   const computedStyle = window.getComputedStyle(track);
@@ -2873,6 +2900,7 @@ const FramerHome = {
    * Fetch homepage configuration from Supabase (with cache)
    */
   async fetchHomepageConfig() {
+    invalidateStaleHomepageConfigCache();
     // Use cache with 30 minute TTL
     return await Cache.loadWithCache(HOMEPAGE_CONFIG_CACHE_KEY, async () => {
       const data = await loadHomepageConfigRows(getHomepageRuntimeSite());
