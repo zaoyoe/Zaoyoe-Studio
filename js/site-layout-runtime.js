@@ -59,6 +59,9 @@
     });
     const LOGO_TARGET_MODES = new Set(['follow_root', 'custom']);
     const CACHE_KEY = 'zaoyoe_site_layouts_v1';
+    let activeLayouts = null;
+    let dynamicDomObserver = null;
+    let dynamicDomApplyScheduled = false;
 
     function normalizeSite(site) {
         return site === 'intl' ? 'intl' : 'cn';
@@ -202,15 +205,23 @@
     function applyLogoTargets(layout) {
         const href = getLogoHref(layout);
         document.querySelectorAll('a.nav-logo').forEach((anchor) => {
-            anchor.setAttribute('href', href);
-            anchor.dataset.siteLayoutResolvedHref = href;
+            if (anchor.getAttribute('href') !== href) {
+                anchor.setAttribute('href', href);
+            }
+            if (anchor.dataset.siteLayoutResolvedHref !== href) {
+                anchor.dataset.siteLayoutResolvedHref = href;
+            }
         });
     }
 
     function setContactHref(element, href) {
         if (!element || element.tagName !== 'A' || !href) return;
-        element.setAttribute('href', href);
-        element.dataset.siteLayoutResolvedHref = href;
+        if (element.getAttribute('href') !== href) {
+            element.setAttribute('href', href);
+        }
+        if (element.dataset.siteLayoutResolvedHref !== href) {
+            element.dataset.siteLayoutResolvedHref = href;
+        }
     }
 
     function applyFooterContacts(layout) {
@@ -230,6 +241,79 @@
                 }
                 element.dataset.siteLayoutResolvedEmail = contacts.contact_email;
             }
+        });
+        document.querySelectorAll('a[href]').forEach((anchor) => {
+            const href = String(anchor.getAttribute('href') || '').trim();
+            if (href === DEFAULT_FOOTER_CONTACTS.support_url) {
+                setContactHref(anchor, contacts.support_url);
+            } else if (href === DEFAULT_FOOTER_CONTACTS.telegram_url) {
+                setContactHref(anchor, contacts.telegram_url);
+            } else if (href === DEFAULT_FOOTER_CONTACTS.telegram_group_url) {
+                setContactHref(anchor, contacts.telegram_group_url);
+            } else if (href === `mailto:${DEFAULT_FOOTER_CONTACTS.contact_email}`) {
+                anchor.textContent = contacts.contact_email;
+                setContactHref(anchor, `mailto:${contacts.contact_email}`);
+                anchor.dataset.siteLayoutResolvedEmail = contacts.contact_email;
+            }
+        });
+    }
+
+    function hasFallbackContactHref(node) {
+        if (!node || node.nodeType !== 1) return false;
+        const anchors = node.matches?.('a[href]')
+            ? [node]
+            : Array.from(node.querySelectorAll?.('a[href]') || []);
+        return anchors.some((anchor) => {
+            const href = String(anchor.getAttribute('href') || '').trim();
+            return href === DEFAULT_FOOTER_CONTACTS.support_url
+                || href === DEFAULT_FOOTER_CONTACTS.telegram_url
+                || href === DEFAULT_FOOTER_CONTACTS.telegram_group_url
+                || href === `mailto:${DEFAULT_FOOTER_CONTACTS.contact_email}`;
+        });
+    }
+
+    function hasLayoutManagedNode(node) {
+        if (!node || node.nodeType !== 1) return false;
+        if (node.matches?.('a.nav-logo, [data-site-layout-contact]')) {
+            return true;
+        }
+        return Boolean(node.querySelector?.('a.nav-logo, [data-site-layout-contact]'))
+            || hasFallbackContactHref(node);
+    }
+
+    function scheduleDynamicDomApply() {
+        if (!activeLayouts || dynamicDomApplyScheduled) return;
+        dynamicDomApplyScheduled = true;
+        const apply = () => {
+            dynamicDomApplyScheduled = false;
+            applyLayout(activeLayouts);
+        };
+        if (typeof global.requestAnimationFrame === 'function') {
+            global.requestAnimationFrame(apply);
+        } else {
+            global.setTimeout(apply, 0);
+        }
+    }
+
+    function ensureDynamicDomObserver() {
+        if (dynamicDomObserver || typeof MutationObserver !== 'function') {
+            return;
+        }
+        if (!document.body) {
+            document.addEventListener('DOMContentLoaded', ensureDynamicDomObserver, { once: true });
+            return;
+        }
+        dynamicDomObserver = new MutationObserver((mutations) => {
+            const hasManagedAddition = mutations.some((mutation) => (
+                Array.from(mutation.addedNodes || []).some(hasLayoutManagedNode)
+            ));
+            if (hasManagedAddition) {
+                scheduleDynamicDomApply();
+            }
+        });
+        dynamicDomObserver.observe(document.body, {
+            childList: true,
+            subtree: true
         });
     }
 
@@ -289,6 +373,7 @@
     function applyLayout(layouts) {
         const site = getCurrentSite();
         const layout = layouts[site] || buildDefaultLayout(site);
+        activeLayouts = layouts;
         global.__ZAOYOE_SITE_LAYOUTS__ = layouts;
         global.__ZAOYOE_SITE_LAYOUT__ = layout;
 
@@ -300,6 +385,7 @@
         applyLogoTargets(layout);
         applyFooterContacts(layout);
         applySeoMeta();
+        ensureDynamicDomObserver();
     }
 
     function ensureAppliedWithCurrentDom(layouts) {

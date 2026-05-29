@@ -15,6 +15,15 @@ const migrationPath = path.resolve(__dirname, '../supabase/migrations/20260331_h
 const homepageP1MigrationPath = path.resolve(__dirname, '../supabase/migrations/20260411_homepage_p1_schedule_templates_and_runtime_rpc.sql');
 const homepageContextHandlerPath = path.resolve(__dirname, '../server/api-handlers/admin/homepage/context.js');
 const adminApiPath = path.resolve(__dirname, '../api/admin.js');
+const siteLayoutPublicPages = [
+    'index.html',
+    'shop.html',
+    'verify.html',
+    'prompts.html',
+    'guestbook.html',
+    'privacy.html',
+    'reset-password.html'
+];
 
 test('homepage admin runtime prefers site rows and invalidates site-specific caches', () => {
     const source = fs.readFileSync(adminHomepagePath, 'utf8');
@@ -215,9 +224,33 @@ test('homepage footer exposes site layout contact hooks and removes resource sta
     assert.doesNotMatch(source, /https:\/\/status\.fatherkey\.com/);
 });
 
+test('public contact links opt into site layout replacement across routed pages', () => {
+    siteLayoutPublicPages.forEach((relativePath) => {
+        const source = fs.readFileSync(path.resolve(__dirname, '..', relativePath), 'utf8');
+        const anchors = Array.from(source.matchAll(/<a\b[\s\S]*?>/gi)).map((match) => match[0]);
+
+        anchors.forEach((anchor) => {
+            if (anchor.includes('https://t.me/zaoyoe')) {
+                assert.match(anchor, /data-site-layout-contact="telegram"/, `${relativePath} TG link should be site-managed`);
+            }
+            if (anchor.includes('https://t.me/+I86eX5sPF1c0OTc1')) {
+                assert.match(anchor, /data-site-layout-contact="telegram_group"/, `${relativePath} TG group link should be site-managed`);
+            }
+            if (anchor.includes('https://afdian.com/a/zaoyoe')) {
+                assert.match(anchor, /data-site-layout-contact="support"/, `${relativePath} support link should be site-managed`);
+            }
+            if (anchor.includes('mailto:zaoyoe@gmail.com')) {
+                assert.match(anchor, /data-site-layout-contact="email"/, `${relativePath} email link should be site-managed`);
+            }
+        });
+    });
+});
+
 test('site layout admin editor and runtime wire footer contacts without stale cache lock-in', () => {
     const adminSource = fs.readFileSync(adminHomepagePath, 'utf8');
     const runtimeSource = fs.readFileSync(siteLayoutRuntimePath, 'utf8');
+    const framerHomeSource = fs.readFileSync(framerHomePath, 'utf8');
+    const framerNavSource = fs.readFileSync(path.resolve(__dirname, '../js/framer-nav-runtime.js'), 'utf8');
 
     [
         'id="hp-site-layout-support-url"',
@@ -231,8 +264,14 @@ test('site layout admin editor and runtime wire footer contacts without stale ca
 
     assert.match(runtimeSource, /function applyFooterContacts\(layout\)/);
     assert.match(runtimeSource, /document\.querySelectorAll\('\[data-site-layout-contact\]'\)/);
+    assert.match(runtimeSource, /document\.querySelectorAll\('a\[href\]'\)\.forEach\(\(anchor\) =>/);
+    assert.match(runtimeSource, /href === DEFAULT_FOOTER_CONTACTS\.telegram_group_url/);
+    assert.match(runtimeSource, /new MutationObserver\(\(mutations\) =>/);
+    assert.match(runtimeSource, /Array\.from\(mutation\.addedNodes \|\| \[\]\)\.some\(hasLayoutManagedNode\)/);
     assert.match(runtimeSource, /if \(cachedLayouts\) \{[\s\S]*ensureAppliedWithCurrentDom\(cachedLayouts\);[\s\S]*\}[\s\S]*fetchLayoutsFromPublicApi\(\)/);
     assert.match(runtimeSource, /saveLayoutsToCache\(layouts\);[\s\S]*ensureAppliedWithCurrentDom\(layouts\);/);
+    assert.match(framerHomeSource, /data-site-layout-contact="telegram_group"/);
+    assert.match(framerNavSource, /data-site-layout-contact="telegram_group"/);
 });
 
 test('homepage P1 context handler and migration wire templates, schedules, analytics, and runtime overlay', () => {
