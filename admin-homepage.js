@@ -111,6 +111,13 @@ const HomepageAdmin = (() => {
         return normalizeHomepageSite(site) === 'intl' ? 'en' : 'zh';
     }
 
+    const HOMEPAGE_SITE_LAYOUT_DEFAULT_FOOTER_CONTACTS = Object.freeze({
+        support_url: 'https://afdian.com/a/zaoyoe',
+        telegram_url: 'https://t.me/zaoyoe',
+        telegram_group_url: 'https://t.me/+I86eX5sPF1c0OTc1',
+        contact_email: 'zaoyoe@gmail.com'
+    });
+
     function normalizeHomepageSiteLayoutPageKey(value, fallback = 'home') {
         const normalized = String(value || '').trim().toLowerCase();
         if (HOMEPAGE_SITE_LAYOUT_PAGE_KEYS.has(normalized)) {
@@ -119,19 +126,61 @@ const HomepageAdmin = (() => {
         return HOMEPAGE_SITE_LAYOUT_PAGE_KEYS.has(fallback) ? fallback : 'home';
     }
 
+    function normalizeHomepageSiteLayoutUrl(value, fallback) {
+        const source = String(value || '').trim();
+        const fallbackValue = String(fallback || '').trim();
+        if (!source) return fallbackValue;
+
+        try {
+            const parsed = new URL(source);
+            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                return parsed.toString();
+            }
+        } catch (_) {
+            return fallbackValue;
+        }
+
+        return fallbackValue;
+    }
+
+    function normalizeHomepageSiteLayoutEmail(value, fallback) {
+        const source = String(value || '').trim().slice(0, 320);
+        const fallbackValue = String(fallback || '').trim().slice(0, 320);
+        if (!source) return fallbackValue;
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(source) ? source : fallbackValue;
+    }
+
+    function normalizeHomepageSiteLayoutFooterContacts(value, fallback = HOMEPAGE_SITE_LAYOUT_DEFAULT_FOOTER_CONTACTS) {
+        const source = value && typeof value === 'object' && !Array.isArray(value)
+            ? value
+            : {};
+        const defaults = fallback && typeof fallback === 'object' && !Array.isArray(fallback)
+            ? fallback
+            : HOMEPAGE_SITE_LAYOUT_DEFAULT_FOOTER_CONTACTS;
+
+        return {
+            support_url: normalizeHomepageSiteLayoutUrl(source.support_url, defaults.support_url),
+            telegram_url: normalizeHomepageSiteLayoutUrl(source.telegram_url, defaults.telegram_url),
+            telegram_group_url: normalizeHomepageSiteLayoutUrl(source.telegram_group_url, defaults.telegram_group_url),
+            contact_email: normalizeHomepageSiteLayoutEmail(source.contact_email, defaults.contact_email)
+        };
+    }
+
     function buildDefaultHomepageSiteLayout(site = 'cn') {
         const normalizedSite = normalizeHomepageSite(site);
         if (normalizedSite === 'intl') {
             return {
                 root_page_key: 'shop',
                 logo_target_mode: 'follow_root',
-                logo_page_key: 'shop'
+                logo_page_key: 'shop',
+                footer_contacts: normalizeHomepageSiteLayoutFooterContacts()
             };
         }
         return {
             root_page_key: 'home',
             logo_target_mode: 'follow_root',
-            logo_page_key: 'home'
+            logo_page_key: 'home',
+            footer_contacts: normalizeHomepageSiteLayoutFooterContacts()
         };
     }
 
@@ -152,7 +201,8 @@ const HomepageAdmin = (() => {
         return {
             root_page_key: rootPageKey,
             logo_target_mode: logoTargetMode,
-            logo_page_key: logoTargetMode === 'custom' ? logoPageKey : rootPageKey
+            logo_page_key: logoTargetMode === 'custom' ? logoPageKey : rootPageKey,
+            footer_contacts: normalizeHomepageSiteLayoutFooterContacts(source.footer_contacts, defaults.footer_contacts)
         };
     }
 
@@ -2106,6 +2156,7 @@ const HomepageAdmin = (() => {
             const logoSummary = layout?.logo_target_mode === 'custom'
                 ? `${logoOption.label} · ${logoOption.path}`
                 : `跟随根路径 · ${rootOption.path}`;
+            const footerContacts = normalizeHomepageSiteLayoutFooterContacts(layout?.footer_contacts);
 
             return `
                 <div class="hp-aggregate-site-card">
@@ -2122,6 +2173,14 @@ const HomepageAdmin = (() => {
                             <span class="hp-aggregate-site-card__label">Logo</span>
                             <span class="hp-aggregate-site-card__value">${escapeHomepageHtml(logoSummary)}</span>
                         </div>
+                        <div class="hp-aggregate-site-card__line">
+                            <span class="hp-aggregate-site-card__label">支持</span>
+                            <span class="hp-aggregate-site-card__value">${escapeHomepageHtml(footerContacts.support_url)}</span>
+                        </div>
+                        <div class="hp-aggregate-site-card__line">
+                            <span class="hp-aggregate-site-card__label">邮箱</span>
+                            <span class="hp-aggregate-site-card__value">${escapeHomepageHtml(footerContacts.contact_email)}</span>
+                        </div>
                     </div>
                 </div>
             `;
@@ -2133,6 +2192,7 @@ const HomepageAdmin = (() => {
         const layout = getHomepageSiteLayout(site);
         const rootOption = resolveHomepageSiteLayoutPageOption(layout?.root_page_key || 'home');
         const logoOption = resolveHomepageSiteLayoutPageOption(layout?.logo_page_key || rootOption.key);
+        const footerContacts = normalizeHomepageSiteLayoutFooterContacts(layout?.footer_contacts);
         const pageOptions = buildHomepageSiteLayoutSelectOptions();
 
         if (aggregateMode) {
@@ -2169,6 +2229,10 @@ const HomepageAdmin = (() => {
             '        <i class="fas fa-compass"></i>',
             '        <span>这里控制站点根路径 `/` 默认打开谁，以及用户点击 Logo 后回到哪里。下方 Hero / 商城 / Gemini Pro 等标签页继续负责首页内容本身。</span>',
             '    </div>',
+            '    <div class="hp-inline-note hp-inline-note--muted">',
+            '        <i class="fas fa-address-card"></i>',
+            '        <span>Footer 联系方式按站点独立生效，可分别配置 TG、TG 群组、赞助支持和邮箱，不会串到另一站。</span>',
+            '    </div>',
             '    <div class="hp-ops-form-grid hp-ops-form-grid--compact">',
             '        <div class="hp-field">',
             '            <label>根路径 `/` 打开时</label>',
@@ -2198,6 +2262,24 @@ const HomepageAdmin = (() => {
             }),
             '        </div>',
             '    </div>',
+            '    <div class="hp-ops-form-grid hp-ops-form-grid--compact">',
+            '        <div class="hp-field">',
+            '            <label>赞助支持链接</label>',
+            `            <input type="url" class="config-input" id="hp-site-layout-support-url" value="${escapeHomepageHtml(footerContacts.support_url)}" placeholder="https://afdian.com/a/zaoyoe">`,
+            '        </div>',
+            '        <div class="hp-field">',
+            '            <label>Footer TG 图标链接</label>',
+            `            <input type="url" class="config-input" id="hp-site-layout-telegram-url" value="${escapeHomepageHtml(footerContacts.telegram_url)}" placeholder="https://t.me/zaoyoe">`,
+            '        </div>',
+            '        <div class="hp-field">',
+            '            <label>TG 群组链接</label>',
+            `            <input type="url" class="config-input" id="hp-site-layout-telegram-group-url" value="${escapeHomepageHtml(footerContacts.telegram_group_url)}" placeholder="https://t.me/+I86eX5sPF1c0OTc1">`,
+            '        </div>',
+            '        <div class="hp-field">',
+            '            <label>联系邮箱</label>',
+            `            <input type="email" class="config-input" id="hp-site-layout-contact-email" value="${escapeHomepageHtml(footerContacts.contact_email)}" placeholder="support@example.com">`,
+            '        </div>',
+            '    </div>',
             '    <div class="hp-ops-metrics">',
             '        <div class="hp-ops-metric">',
             '            <span>当前根入口</span>',
@@ -2210,6 +2292,10 @@ const HomepageAdmin = (() => {
             '        <div class="hp-ops-metric">',
             '            <span>首页资产</span>',
             `            <strong>${layout?.root_page_key === 'home' ? '承担主入口' : '保留但不承接 /'}</strong>`,
+            '        </div>',
+            '        <div class="hp-ops-metric">',
+            '            <span>联系邮箱</span>',
+            `            <strong>${escapeHomepageHtml(footerContacts.contact_email)}</strong>`,
             '        </div>',
             '    </div>',
             '    <div class="hp-ops-actions">',
@@ -2248,11 +2334,19 @@ const HomepageAdmin = (() => {
             shell?.querySelector('#hp-site-layout-logo-page')?.value,
             logoTargetMode === 'custom' ? (getHomepageSiteLayout(site)?.logo_page_key || rootPageKey) : rootPageKey
         );
+        const previousFooterContacts = getHomepageSiteLayout(site)?.footer_contacts;
+        const footerContacts = normalizeHomepageSiteLayoutFooterContacts({
+            support_url: shell?.querySelector('#hp-site-layout-support-url')?.value,
+            telegram_url: shell?.querySelector('#hp-site-layout-telegram-url')?.value,
+            telegram_group_url: shell?.querySelector('#hp-site-layout-telegram-group-url')?.value,
+            contact_email: shell?.querySelector('#hp-site-layout-contact-email')?.value
+        }, previousFooterContacts);
 
         const result = await saveHomepageSiteLayout(site, {
             root_page_key: rootPageKey,
             logo_target_mode: logoTargetMode,
-            logo_page_key: logoTargetMode === 'custom' ? logoPageKey : rootPageKey
+            logo_page_key: logoTargetMode === 'custom' ? logoPageKey : rootPageKey,
+            footer_contacts: footerContacts
         });
         applyHomepageSiteLayoutPayload(result);
         renderAllSections();

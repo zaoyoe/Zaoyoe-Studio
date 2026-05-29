@@ -58,7 +58,7 @@
 
     <!-- Site Config (dual-site detection) -->
     <script src="./js/site-config.js?v=20260528_AVATAR_CANONICAL_CDN_1" defer></script>
-    <script src="./js/site-layout-runtime.js?v=20260528_GONGYI_SITE_AWARE_1" defer></script>
+    <script src="./js/site-layout-runtime.js?v=20260529_FOOTER_CONTACTS_1" defer></script>
     <script src="./js/homepage-contract.js?v=20260512_HOMEPAGE_CONTRACT_VERIFY_I18N_1" defer></script>
 
     <!-- Section Visibility (per-site section toggle control) -->
@@ -178,8 +178,10 @@
                 </button>
                 <div class="mobile-submenu" id="support-mobile">
                     <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer"
+                        data-site-layout-contact="telegram"
                         class="mobile-menu-link">TG</a>
                     <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer"
+                        data-site-layout-contact="telegram_group"
                         class="mobile-menu-link"><span data-i18n="nav.tgGroup">TG群组</span></a>
                 </div>
             </div>
@@ -359,7 +361,8 @@
                         AI 驱动的创意资源平台
                     </p>
                     <div class="footer-social">
-                        <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer" title="Telegram">
+                        <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer" title="Telegram"
+                            data-site-layout-contact="telegram">
                             <i class="fab fa-telegram"></i>
                         </a>
 
@@ -380,8 +383,8 @@
                 <div class="footer-col">
                     <h4 data-i18n="footer.resources.title">资源</h4>
                     <a href="https://afdian.com/a/zaoyoe" target="_blank" rel="noopener noreferrer"
+                        data-site-layout-contact="support"
                         data-i18n="footer.resources.sponsor">赞助支持</a>
-                    <a href="https://status.fatherkey.com" data-i18n="footer.resources.status">状态页</a>
                     <a href="/privacy.html" data-i18n="footer.resources.privacy">隐私政策</a>
                 </div>
 
@@ -389,8 +392,9 @@
                 <div class="footer-col">
                     <h4 data-i18n="footer.about.title">关于</h4>
                     <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer"
+                        data-site-layout-contact="telegram_group"
                         data-i18n="footer.about.tgGroup">TG群组</a>
-                    <span class="index-footer-email">zaoyoe@gmail.com</span>
+                    <span class="index-footer-email" data-site-layout-contact="email">zaoyoe@gmail.com</span>
 
                 </div>
             </div>
@@ -400,6 +404,7 @@
                 <div>
                     <a href="/privacy.html" data-i18n="footer.bottom.privacy">隐私政策</a>
                     <a href="https://afdian.com/a/zaoyoe" target="_blank" rel="noopener noreferrer"
+                        data-site-layout-contact="support"
                         data-i18n="footer.bottom.support">支持我们</a>
                 </div>
             </div>
