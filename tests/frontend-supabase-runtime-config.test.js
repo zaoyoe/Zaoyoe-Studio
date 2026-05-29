@@ -9851,7 +9851,7 @@ test('homepage admin runtime renderers externalize retry, visibility, tab indica
     }
 
     assert.equal(
-        adminStudioSource.includes('admin-homepage.js?v=20260510_HOME_SCREENSHOT_R2_1'),
+        adminStudioSource.includes('admin-homepage.js?v=20260529_FOOTER_CONTACTS_1'),
         true,
         'admin-studio.html should load the latest homepage admin script version'
     );
@@ -14904,7 +14904,7 @@ test('analytics user drill-down carries commerce context into the user detail mo
     }
 
     assert.equal(adminStudioHtml.includes('admin-studio.css?v=20260427_ADMIN_RICH_TEXT_VISIBLE_YELLOW_1'), true, 'admin-studio.html should reference the latest analytics product stylesheet version');
-    assert.equal(adminStudioHtml.includes('admin-homepage.js?v=20260510_HOME_SCREENSHOT_R2_1'), true, 'admin-studio.html should reference the latest homepage admin runtime version');
+    assert.equal(adminStudioHtml.includes('admin-homepage.js?v=20260529_FOOTER_CONTACTS_1'), true, 'admin-studio.html should reference the latest homepage admin runtime version');
     assert.equal(adminStudioHtml.includes('admin-users.js?v=20260505_USER_ACTIVITY_HEARTBEAT_1'), true, 'admin-studio.html should reference the latest admin users runtime version');
     assert.equal(adminStudioHtml.includes('admin-points.js?v=20260427_ADMIN_POINTS_BATCH_DETAIL_CUSTOM_STATUS_2'), true, 'admin-studio.html should reference the latest admin points runtime version');
     assert.equal(adminStudioHtml.includes('js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3&workflowRails=20260430_ADMIN_STUDIO_WORKFLOW_CARD_RAIL_VISIBILITY_1'), true, 'admin-studio.html should reference the latest growth center runtime version');
@@ -16534,7 +16534,7 @@ test('admin studio modules emit unified command feedback for recent processing r
         'admin-discounts.js?v=20260427_DISCOUNTS_BATCH_RESTORE_HINT_1',
         'js/admin-shell.js?v=20260513_ADMIN_SHELL_SITE_CHANGE_ASYNC_1',
         'admin-users.js?v=20260505_USER_ACTIVITY_HEARTBEAT_1',
-        'admin-homepage.js?v=20260510_HOME_SCREENSHOT_R2_1',
+        'admin-homepage.js?v=20260529_FOOTER_CONTACTS_1',
         'admin-points.js?v=20260427_ADMIN_POINTS_BATCH_DETAIL_CUSTOM_STATUS_2',
         'js/admin-growth-center.js?v=20260421_GROWTH_CENTER_CONTEXT_ROUTING_P3&workflowRails=20260430_ADMIN_STUDIO_WORKFLOW_CARD_RAIL_VISIBILITY_1',
         'admin-comments.js?v=20260421_COMMENTS_MODULE_BRIDGE_HELPERS_P3',

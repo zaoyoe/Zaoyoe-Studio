@@ -37,16 +37,24 @@
         cn: 'https://sub2api.fatherkey.com',
         intl: 'https://sub2api.zaoyoe.xyz'
     });
+    const DEFAULT_FOOTER_CONTACTS = Object.freeze({
+        support_url: 'https://afdian.com/a/zaoyoe',
+        telegram_url: 'https://t.me/zaoyoe',
+        telegram_group_url: 'https://t.me/+I86eX5sPF1c0OTc1',
+        contact_email: 'zaoyoe@gmail.com'
+    });
     const DEFAULT_LAYOUTS = Object.freeze({
         cn: Object.freeze({
             root_page_key: 'home',
             logo_target_mode: 'follow_root',
-            logo_page_key: 'home'
+            logo_page_key: 'home',
+            footer_contacts: DEFAULT_FOOTER_CONTACTS
         }),
         intl: Object.freeze({
             root_page_key: 'shop',
             logo_target_mode: 'follow_root',
-            logo_page_key: 'shop'
+            logo_page_key: 'shop',
+            footer_contacts: DEFAULT_FOOTER_CONTACTS
         })
     });
     const LOGO_TARGET_MODES = new Set(['follow_root', 'custom']);
@@ -64,13 +72,54 @@
         return Object.prototype.hasOwnProperty.call(PAGE_REGISTRY, fallback) ? fallback : 'home';
     }
 
+    function normalizeContactUrl(value, fallback) {
+        const source = String(value || '').trim();
+        const fallbackValue = String(fallback || '').trim();
+        if (!source) return fallbackValue;
+
+        try {
+            const parsed = new URL(source);
+            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                return parsed.toString();
+            }
+        } catch (_error) {
+            return fallbackValue;
+        }
+
+        return fallbackValue;
+    }
+
+    function normalizeContactEmail(value, fallback) {
+        const source = String(value || '').trim().slice(0, 320);
+        const fallbackValue = String(fallback || '').trim().slice(0, 320);
+        if (!source) return fallbackValue;
+        return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(source) ? source : fallbackValue;
+    }
+
+    function normalizeFooterContacts(value, fallback = DEFAULT_FOOTER_CONTACTS) {
+        const source = value && typeof value === 'object' && !Array.isArray(value)
+            ? value
+            : {};
+        const defaults = fallback && typeof fallback === 'object' && !Array.isArray(fallback)
+            ? fallback
+            : DEFAULT_FOOTER_CONTACTS;
+
+        return {
+            support_url: normalizeContactUrl(source.support_url, defaults.support_url),
+            telegram_url: normalizeContactUrl(source.telegram_url, defaults.telegram_url),
+            telegram_group_url: normalizeContactUrl(source.telegram_group_url, defaults.telegram_group_url),
+            contact_email: normalizeContactEmail(source.contact_email, defaults.contact_email)
+        };
+    }
+
     function buildDefaultLayout(site) {
         const normalizedSite = normalizeSite(site);
         const defaults = DEFAULT_LAYOUTS[normalizedSite] || DEFAULT_LAYOUTS.cn;
         return {
             root_page_key: defaults.root_page_key,
             logo_target_mode: defaults.logo_target_mode,
-            logo_page_key: defaults.logo_page_key
+            logo_page_key: defaults.logo_page_key,
+            footer_contacts: normalizeFooterContacts(defaults.footer_contacts)
         };
     }
 
@@ -91,7 +140,8 @@
         return {
             root_page_key: rootPageKey,
             logo_target_mode: logoTargetMode,
-            logo_page_key: logoTargetMode === 'custom' ? logoPageKey : rootPageKey
+            logo_page_key: logoTargetMode === 'custom' ? logoPageKey : rootPageKey,
+            footer_contacts: normalizeFooterContacts(source.footer_contacts, defaults.footer_contacts)
         };
     }
 
@@ -154,6 +204,32 @@
         document.querySelectorAll('a.nav-logo').forEach((anchor) => {
             anchor.setAttribute('href', href);
             anchor.dataset.siteLayoutResolvedHref = href;
+        });
+    }
+
+    function setContactHref(element, href) {
+        if (!element || element.tagName !== 'A' || !href) return;
+        element.setAttribute('href', href);
+        element.dataset.siteLayoutResolvedHref = href;
+    }
+
+    function applyFooterContacts(layout) {
+        const contacts = normalizeFooterContacts(layout?.footer_contacts);
+        document.querySelectorAll('[data-site-layout-contact]').forEach((element) => {
+            const contactKey = String(element.dataset.siteLayoutContact || '').trim();
+            if (contactKey === 'support') {
+                setContactHref(element, contacts.support_url);
+            } else if (contactKey === 'telegram') {
+                setContactHref(element, contacts.telegram_url);
+            } else if (contactKey === 'telegram_group') {
+                setContactHref(element, contacts.telegram_group_url);
+            } else if (contactKey === 'email') {
+                element.textContent = contacts.contact_email;
+                if (element.tagName === 'A') {
+                    setContactHref(element, `mailto:${contacts.contact_email}`);
+                }
+                element.dataset.siteLayoutResolvedEmail = contacts.contact_email;
+            }
         });
     }
 
@@ -222,6 +298,7 @@
         }
 
         applyLogoTargets(layout);
+        applyFooterContacts(layout);
         applySeoMeta();
     }
 
@@ -236,18 +313,18 @@
     const cachedLayouts = loadLayoutsFromCache();
     if (cachedLayouts) {
         ensureAppliedWithCurrentDom(cachedLayouts);
-        // Cache hit — skip network fetch to save bandwidth.
-        // Layout config rarely changes; next full page reload will refresh.
-    } else {
-        fetchLayoutsFromPublicApi()
-            .then((layouts) => {
-                saveLayoutsToCache(layouts);
-                ensureAppliedWithCurrentDom(layouts);
-            })
-            .catch((error) => {
-                console.warn('[SiteLayoutRuntime] Failed to load public site layout config:', error?.message || error);
-            });
     }
+
+    fetchLayoutsFromPublicApi()
+        .then((layouts) => {
+            saveLayoutsToCache(layouts);
+            ensureAppliedWithCurrentDom(layouts);
+        })
+        .catch((error) => {
+            if (!cachedLayouts) {
+                console.warn('[SiteLayoutRuntime] Failed to load public site layout config:', error?.message || error);
+            }
+        });
 
     global.SiteLayoutRuntime = Object.freeze({
         defaults: DEFAULT_LAYOUTS,

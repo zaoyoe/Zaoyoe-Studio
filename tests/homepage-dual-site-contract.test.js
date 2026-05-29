@@ -4,6 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const adminHomepagePath = path.resolve(__dirname, '../admin-homepage.js');
+const indexPath = path.resolve(__dirname, '../index.html');
+const siteLayoutRuntimePath = path.resolve(__dirname, '../js/site-layout-runtime.js');
+const sharedSiteLayoutPath = path.resolve(__dirname, '../server/api-handlers/_site-layout.js');
 const framerHomePath = path.resolve(__dirname, '../js/framer_home.js');
 const prefetchHomePath = path.resolve(__dirname, '../js/prefetch-home.js');
 const homepageContractPath = path.resolve(__dirname, '../js/homepage-contract.js');
@@ -154,6 +157,82 @@ test('homepage public rpc migration supports hidden sections for visibility cons
     assert.match(rpcMigration, /p_include_hidden BOOLEAN DEFAULT false/);
     assert.match(rpcMigration, /AND \(p_include_hidden OR hc\.is_visible = true\)/);
     assert.match(rpcMigration, /CREATE OR REPLACE FUNCTION public\.fn_get_homepage_config/);
+});
+
+test('site layout footer contacts stay scoped per site and sanitize unsafe values', () => {
+    const {
+        DEFAULT_FOOTER_CONTACTS,
+        normalizeSiteLayouts
+    } = require(sharedSiteLayoutPath);
+
+    const layouts = normalizeSiteLayouts({
+        cn: {
+            root_page_key: 'home',
+            logo_target_mode: 'follow_root',
+            footer_contacts: {
+                support_url: 'https://cn.example/support',
+                telegram_url: 'javascript:alert(1)',
+                telegram_group_url: 'https://t.me/+cn_support',
+                contact_email: 'cn@example.com'
+            }
+        },
+        intl: {
+            root_page_key: 'shop',
+            logo_target_mode: 'follow_root',
+            footer_contacts: {
+                support_url: 'https://intl.example/support',
+                telegram_url: 'https://t.me/intl_support',
+                telegram_group_url: 'not-a-url',
+                contact_email: 'bad-email'
+            }
+        }
+    });
+
+    assert.equal(layouts.cn.footer_contacts.support_url, 'https://cn.example/support');
+    assert.equal(layouts.cn.footer_contacts.telegram_url, DEFAULT_FOOTER_CONTACTS.telegram_url);
+    assert.equal(layouts.cn.footer_contacts.telegram_group_url, 'https://t.me/+cn_support');
+    assert.equal(layouts.cn.footer_contacts.contact_email, 'cn@example.com');
+    assert.equal(layouts.intl.footer_contacts.support_url, 'https://intl.example/support');
+    assert.equal(layouts.intl.footer_contacts.telegram_url, 'https://t.me/intl_support');
+    assert.equal(layouts.intl.footer_contacts.telegram_group_url, DEFAULT_FOOTER_CONTACTS.telegram_group_url);
+    assert.equal(layouts.intl.footer_contacts.contact_email, DEFAULT_FOOTER_CONTACTS.contact_email);
+    assert.notEqual(layouts.cn.footer_contacts.support_url, layouts.intl.footer_contacts.support_url);
+});
+
+test('homepage footer exposes site layout contact hooks and removes resource status link', () => {
+    const source = fs.readFileSync(indexPath, 'utf8');
+
+    [
+        'data-site-layout-contact="support"',
+        'data-site-layout-contact="telegram"',
+        'data-site-layout-contact="telegram_group"',
+        'data-site-layout-contact="email"'
+    ].forEach((marker) => {
+        assert.match(source, new RegExp(marker), `index.html should expose ${marker}`);
+    });
+
+    assert.doesNotMatch(source, /data-i18n="footer\.resources\.status"/);
+    assert.doesNotMatch(source, /https:\/\/status\.fatherkey\.com/);
+});
+
+test('site layout admin editor and runtime wire footer contacts without stale cache lock-in', () => {
+    const adminSource = fs.readFileSync(adminHomepagePath, 'utf8');
+    const runtimeSource = fs.readFileSync(siteLayoutRuntimePath, 'utf8');
+
+    [
+        'id="hp-site-layout-support-url"',
+        'id="hp-site-layout-telegram-url"',
+        'id="hp-site-layout-telegram-group-url"',
+        'id="hp-site-layout-contact-email"',
+        'footer_contacts: footerContacts'
+    ].forEach((marker) => {
+        assert.equal(adminSource.includes(marker), true, `admin-homepage.js should contain ${marker}`);
+    });
+
+    assert.match(runtimeSource, /function applyFooterContacts\(layout\)/);
+    assert.match(runtimeSource, /document\.querySelectorAll\('\[data-site-layout-contact\]'\)/);
+    assert.match(runtimeSource, /if \(cachedLayouts\) \{[\s\S]*ensureAppliedWithCurrentDom\(cachedLayouts\);[\s\S]*\}[\s\S]*fetchLayoutsFromPublicApi\(\)/);
+    assert.match(runtimeSource, /saveLayoutsToCache\(layouts\);[\s\S]*ensureAppliedWithCurrentDom\(layouts\);/);
 });
 
 test('homepage P1 context handler and migration wire templates, schedules, analytics, and runtime overlay', () => {
