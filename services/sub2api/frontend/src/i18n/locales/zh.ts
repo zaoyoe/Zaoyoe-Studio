@@ -14,7 +14,8 @@ export default {
       domesticSite: '国内站首页',
       internationalSite: '国际站首页',
       openDomesticHome: '打开早鸟国内站首页',
-      openInternationalHome: '打开 Zaoyoe 国际站首页'
+      openInternationalHome: '打开 Zaoyoe 国际站首页',
+      returnToRecharge: '返回主站充值'
     },
     // 新增：面向用户的价值主张
     heroSubtitle: '一个密钥，畅用多个 AI 模型',

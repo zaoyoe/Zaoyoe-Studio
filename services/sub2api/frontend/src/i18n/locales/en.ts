@@ -14,7 +14,8 @@ export default {
       domesticSite: 'China Site Home',
       internationalSite: 'International Site Home',
       openDomesticHome: 'Open Zaoyoe China site home',
-      openInternationalHome: 'Open Zaoyoe international site home'
+      openInternationalHome: 'Open Zaoyoe international site home',
+      returnToRecharge: 'Recharge on main site'
     },
     // User-focused value proposition
     heroSubtitle: 'One Key, All AI Models',

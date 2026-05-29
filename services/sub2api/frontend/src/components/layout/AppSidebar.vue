@@ -10,7 +10,10 @@
     <a
       :href="brandHomeUrl"
       class="sidebar-header sidebar-header-link"
-      :class="{ 'sidebar-header-collapsed': sidebarCollapsed }"
+      :class="{
+        'sidebar-header-collapsed': sidebarCollapsed,
+        'sidebar-header-with-hint': showBrandRechargeHint && !sidebarCollapsed
+      }"
       :title="brandHomeTitle"
       :aria-label="brandHomeTitle"
     >
@@ -21,6 +24,12 @@
       <div class="sidebar-brand" :class="{ 'sidebar-brand-collapsed': sidebarCollapsed }" :aria-hidden="sidebarCollapsed ? 'true' : 'false'">
         <span class="sidebar-brand-title text-lg font-bold text-gray-900 dark:text-white">
           {{ siteName }}
+        </span>
+        <span
+          v-if="showBrandRechargeHint"
+          class="sidebar-brand-hint text-xs font-medium text-primary-600 dark:text-primary-400"
+        >
+          {{ t('home.brand.returnToRecharge') }}
         </span>
         <!-- Version Badge -->
         <VersionBadge :version="siteVersion" />
@@ -233,6 +242,7 @@ const brandHomeUrl = computed(() => (
 const brandHomeTitle = computed(() => (
   currentSite.value === 'intl' ? t('home.brand.openInternationalHome') : t('home.brand.openDomesticHome')
 ))
+const showBrandRechargeHint = computed(() => !isAdmin.value && !appStore.backendModeEnabled)
 
 // SVG Icon Components
 const DashboardIcon = {
@@ -834,6 +844,11 @@ onMounted(() => {
   padding-right: 1.125rem;
 }
 
+.sidebar-header-with-hint {
+  height: auto;
+  min-height: 4.75rem;
+}
+
 .sidebar-brand {
   min-width: 0;
   flex: 1 1 auto;
@@ -855,6 +870,14 @@ onMounted(() => {
 
 .sidebar-brand-title {
   display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-brand-hint {
+  display: block;
+  margin-top: 0.125rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
