@@ -61,18 +61,23 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 </tr>
 
 <tr>
-<td width="180"><a href="https://poixe.com/i/sub2api"><img src="assets/partners/logos/poixe.png" alt="PoixeAI" width="150"></a></td>
-<td>感谢 Poixe AI 赞助了本项目！Poixe AI 提供可靠的 AI 模型接口服务，您可以使用平台提供的 LLM API 接口轻松构建 AI 产品，同时也可以成为供应商，为平台提供大模型资源以赚取收益。通过 <a href="https://poixe.com/i/sub2api">此链接</a> 专属链接注册，充值额外赠送 $5 美金</td>
-</tr>
-
-<tr>
 <td width="180"><a href="https://ctok.ai"><img src="assets/partners/logos/ctok.png" alt="CTok" width="150"></a></td>
 <td>感谢 CTok.ai 赞助了本项目！CTok.ai 致力于打造一站式 AI 编程工具服务平台。我们提供 Claude Code 专业套餐及技术社群服务，同时支持 Google Gemini 和 OpenAI Codex。通过精心设计的套餐方案和专业的技术社群，为开发者提供稳定的服务保障和持续的技术支持，让 AI 辅助编程真正成为开发者的生产力工具。点击<a href="https://ctok.ai">这里</a>注册！</td>
 </tr>
 
 <tr>
-<td width="180"><a href="https://code.silkapi.com/"><img src="assets/partners/logos/silkapi.png" alt="silkapi" width="150"></a></td>
-<td>感谢 丝绸API 赞助了本项目！ <a href="https://code.silkapi.com/">丝绸API</a> 是基于 Sub2API 搭建的中转服务，专注于提供 Codex 高速稳定API中转。</td>
+<td width="180"><a href="https://aigocode.com/invite/SUB2API"><img src="assets/partners/logos/aigocode.png" alt="AIGoCode" width="150"></a></td>
+<td>感谢 AIGoCode 赞助了本项目！AIGoCode 是一站式集成 Claude Code、Codex 以及最新 Gemini 模型的综合平台，为您提供稳定、高效、高性价比的 AI 编程服务。平台提供灵活的订阅方案，零封号风险，免 VPN 直连，响应极速。AIGoCode 为 sub2api 用户准备了专属福利：通过<a href="https://aigocode.com/invite/SUB2API">此链接</a>注册，首次充值可额外获得 10% 赠送额度！</td>
+</tr>
+
+<tr>
+<td width="180"><a href="https://apikey.fun/register?aff=SUB2API"><img src="assets/partners/logos/apikey-fun.png" alt="APIKEY.FUN" width="150"></a></td>
+<td>感谢 APIKEY.FUN 赞助了本项目！<a href="https://apikey.fun/register?aff=SUB2API">APIKEY.FUN</a> 是 sub2api 开源项目的核心贡献者之一，致力于提供开放、稳定、高性价比的 AI API 接入服务。平台支持 Claude、OpenAI、Gemini 等热门模型的 API 中转服务，价格低至官方原价的 7%。通过专属链接 <a href="https://apikey.fun/register?aff=SUB2API">APIKEY</a> 注册，可享受所有充值永久 95 折优惠。</td>
+</tr>
+
+<tr>
+<td width="180"><a href="https://code.silkapi.com/register?aff=SUB2API"><img src="assets/partners/logos/silkapi.png" alt="silkapi" width="150"></a></td>
+<td>感谢 丝绸API 赞助了本项目！ <a href="https://code.silkapi.com/register?aff=SUB2API">丝绸API</a> 是基于 Sub2API 搭建的中转服务，专注于提供 Codex 高速稳定API中转。</td>
 </tr>
 
 <tr>
@@ -86,13 +91,44 @@ Sub2API 是一个 AI API 网关平台，用于分发和管理 AI 产品订阅的
 </tr>
 
 <tr>
-<td width="180"><a href="https://aigocode.com/invite/SUB2API"><img src="assets/partners/logos/aigocode.png" alt="AIGoCode" width="150"></a></td>
-<td>感谢 AIGoCode 赞助了本项目！AIGoCode 是一站式集成 Claude Code、Codex 以及最新 Gemini 模型的综合平台，为您提供稳定、高效、高性价比的 AI 编程服务。平台提供灵活的订阅方案，零封号风险，免 VPN 直连，响应极速。AIGoCode 为 sub2api 用户准备了专属福利：通过<a href="https://aigocode.com/invite/SUB2API">此链接</a>注册，首次充值可额外获得 10% 赠送额度！</td>
+<td width="180"><a href="https://shop.bmoplus.com/?utm_source=github"><img src="assets/partners/logos/bmoplus.jpg" alt="bmoplus" width="150"></a></td>
+<td>感谢 BmoPlus 赞助了本项目！BmoPlus 是一家专为AI订阅重度用户打造的可靠 AI 账号代充服务商，提供稳定的 ChatGPT Plus / ChatGPT Pro(全程质保) / Claude Pro / Super Grok / Gemini Pro 的官方代充&成品账号。 通过<a href="https://shop.bmoplus.com/?utm_source=github">BmoPlus AI成品号专卖/代充</a>注册下单的用户，可享GPT 官网订阅一折 的震撼价格！</td>
 </tr>
 
 <tr>
-<td width="180"><a href="https://shop.bmoplus.com/?utm_source=github"><img src="assets/partners/logos/bmoplus.jpg" alt="bmoplus" width="150"></a></td>
-<td>感谢 BmoPlus 赞助了本项目！BmoPlus 是一家专为AI订阅重度用户打造的可靠 AI 账号代充服务商，提供稳定的 ChatGPT Plus / ChatGPT Pro(全程质保) / Claude Pro / Super Grok / Gemini Pro 的官方代充&成品账号。 通过<a href="https://shop.bmoplus.com/?utm_source=github">BmoPlus AI成品号专卖/代充</a>注册下单的用户，可享GPT 官网订阅一折 的震撼价格！</td>
+<td width="180"><a href="https://bestproxy.com/?keyword=a2e8iuol"><img src="assets/partners/logos/bestproxy.png" alt="bestproxy" width="150"></a></td>
+<td>感谢 Bestproxy 赞助了本项目！<a href="https://bestproxy.com/?keyword=a2e8iuol">Bestproxy</a> 是一家提供高纯度住宅IP，支持一号一IP独享，结合真实家庭网络与指纹隔离，可实现链路环境隔离，降低关联风控概率。</td>
+</tr>
+
+<tr>
+<td width="180"><a href="https://pateway.ai/?ch=1tsfr51"><img src="assets/partners/logos/pateway.png" alt="pateway" width="150"></a></td>
+<td>感谢 PatewayAI 赞助了本项目！PatewayAI 是一家面向重度 AI 开发者、专注官方直连的高品质模型 API 中转服务商。提供 Claude 全系列与 Codex 系列模型，100% 官方源直供，不掺假不注水，欢迎检验。计费透明，Token 级账单可逐笔核验。
+同时支持企业级高并发，并为企业客户提供了专业的管理平台，企业客户可签订正式合同并开具发票，更多详情进入官网获取联系方式。
+现在通过 <a href="https://pateway.ai/?ch=1tsfr51">此链接</a> 注册即送 $3 试用额度，用户充值低至 6 折，邀请好友双向赠送，邀请奖励可达 $150。</td>
+</tr>
+
+<tr>
+<td width="180"><a href="https://api.pptoken.org/register?promo=SUB2API"><img src="assets/partners/logos/pptoken.png" alt="pptoken" width="150"></a></td>
+<td>感谢 PPToken.org 赞助本项目！ <a href="https://api.pptoken.org/register?promo=SUB2API">PPToken.org</a> 主打 GPT 系列模型 API 中转服务，支持 Codex、Claude Code、OpenAI 兼容客户端及 Gemini CLI 等工具接入。充值 1:1，1 元=1 美元额度；GPT 模型最低 0.16 倍倍率，综合成本约为官方价格的 0.22 折，最快首字 Token 约 1 秒，适合开发者低成本、高响应速度接入 GPT 模型能力。技术支持： 7×24 小时真人响应（不是机器人），群内@技术，10 分钟内有回复 。赞助商福利：前 200 名用户通过 <a href="https://api.pptoken.org/register?promo=SUB2API">[专属注册链接]</a> 注册，输入优惠码 `SUB2API`，可领取 Codex / Claude Code 免费试用额度，无门槛、不绑卡。
+</td>
+</tr>
+
+<tr>
+<td width="180"><a href="https://runapi.co/register?aff=fu2E"><img src="assets/partners/logos/runapi.png" alt="RunAPI" width="150"></a></td>
+<td>感谢 RunAPI 赞助本项目！ <a href="https://runapi.co/register?aff=fu2E">RunAPI</a> 是高效稳定的API OpenRouter平替平台，一个 API Key 即可访问 OpenAI、Claude、Gemini、DeepSeek、Grok 等 150+ 主流模型，低至 1 折，极其稳定，可以无缝兼容 Claude Code、OpenClaw 等工具。
+</td>
+</tr>
+
+<tr>
+<td width="180"><a href="https://unity2.ai/register?source=sub2api"><img src="assets/partners/logos/unity2.png" alt="unity2" width="150"></a></td>
+<td>感谢 Unity2 赞助本项目！ <a href="https://unity2.ai/register?source=sub2api">Unity2</a> 是面向个人开发者、团队、企业的高性能 AI 模型 API 中转平台，长期服务国内头部企业，日均承载超 300 亿 token 调用，支持 5000 RPM 级高并发。一个 API Key 即可适配 Claude Code、Codex、OpenAI 模型、IDE 插件和 Agent 工作流等场景。具备企业级稳定供应能力，在高并发、持续调用和团队集中采购场景下依然保持低延迟、高可用。同时支持余额计费、组合订阅、首充优惠、企业开票、专属 1v1 对接，适合个人高频使用和企业长期接入。现在注册 Unity2.ai 可领取 $2 余额，加入官方群再送 $10 余额，合计最高可领 $12 免费额度，适合先体验后长期使用。<a href="https://unity2.ai/register?source=sub2api">注册链接</a>
+</td>
+</tr>
+
+<tr>
+<td width="180"><a href="https://veilx.io/#/hello/SJRBRVDV"><img src="assets/partners/logos/veilx.png" alt="veilx" width="150"></a></td>
+<td>感谢 Veilx 赞助本项目！ <a href="https://veilx.io/#/hello/SJRBRVDV">Veilx</a> CDN 专为超大规模 API 请求场景打造，针对 AI 中转站业务与 AI API 调用链路进行了深度优化，轻松应对高并发、高频请求与大流量传输，为开发者与企业提供更快、更稳、更低延迟的加速体验。无论是 OpenAI、Claude、Gemini 等 AI 接口中转，还是聊天、绘图、Embedding、流式输出等复杂场景，Veilx 都能显著提升响应速度与连接稳定性，有效降低网络波动带来的超时与失败问题。同时，Veilx 提供中国三网优化回国极速线路，大幅提升中国大陆地区访问海外 AI 服务的速度与稳定性，特别适合全球 AI 中转平台、海外 AI SaaS、跨境业务与高并发 API 系统部署。专为 AI API 而生，让你的 AI 中转服务更快、更稳、更省心。<a href="https://veilx.io/#/hello/SJRBRVDV">购买地址</a>
+</td>
 </tr>
 
 </table>
@@ -621,426 +657,6 @@ Antigravity 账户支持可选的**混合调度**功能。开启后，通用端�
 
 > **⚠️ 注意**：Anthropic Claude 和 Antigravity Claude **不能在同一上下文中混合使用**，请通过分组功能做好隔离。
 
-### 从本地 CLI 缓存批量导出账号
-
-如果您在本地机器上已经通过 `cli-proxy-api` 或类似工具维护了多个 Antigravity 账号缓存，可以先导出为 `sub2api-data` JSON，再到后台的“账号管理 -> 导入”中一次性导入。
-
-默认导出命令：
-
-```bash
-python3 tools/export_antigravity_accounts.py \
-  --out ./antigravity-sub2api-export.json
-```
-
-脚本默认读取：
-
-```text
-~/.cli-proxy-api/antigravity-*.json
-```
-
-并自动生成可直接导入的账号数据：
-- 平台固定为 `antigravity`
-- 类型固定为 `oauth`
-- 默认写入 `extra.mixed_scheduling=true`，导入后可直接参与 Gemini / Anthropic 分组调度
-- 默认 `concurrency=10`、`priority=1`、`rate_multiplier=1`
-- 默认跳过缺少 `refresh_token` 的文件
-- 默认跳过 `disabled=true` 的账号，可加 `--include-disabled` 覆盖
-
-常用参数示例：
-
-```bash
-# 先看会导出多少账号，不落盘
-python3 tools/export_antigravity_accounts.py --dry-run
-
-# 自定义账号名前缀
-python3 tools/export_antigravity_accounts.py \
-  --name-prefix "公益站 AG" \
-  --out ./ag-public-pool.json
-
-# 指定其他缓存目录或文件模式
-python3 tools/export_antigravity_accounts.py \
-  --input-glob "~/my-cache/antigravity-*.json" \
-  --out ./custom-antigravity-export.json
-
-# 导入后直接绑定到指定 Gemini 分组
-python3 tools/export_antigravity_accounts.py \
-  --group-id 123 \
-  --out ./antigravity-gemini-group.json
-
-# 如果明确不想导入后启用混合调度
-python3 tools/export_antigravity_accounts.py \
-  --no-mixed-scheduling \
-  --out ./antigravity-no-mixed.json
-```
-
-导入步骤：
-1. 在目标 `sub2api` 后台进入“账号管理”。
-2. 点击“导入”，选择上一步导出的 JSON 文件。
-3. 导入完成后，按需要手动绑定分组。
-
-> **提示**：不要直接上传 `~/.cli-proxy-api/antigravity-*.json` 原始文件；后台导入需要的是 `sub2api-data` 格式，请先通过脚本转换。
->
-> 默认导出的 Antigravity 账号会带上 `mixed_scheduling=true`。如果您不希望这些账号参与 Gemini / Anthropic 分组调度，请显式加 `--no-mixed-scheduling`。
-
-### 从本地 Antigravity 缓存直接一键同步到后台
-
-如果您不想先导出 JSON 再手动去后台上传，也可以直接使用一键同步脚本，把本地 Antigravity 缓存账号直接导入指定的 `sub2api` 后台。
-
-最常用的方式有两种认证：
-- 管理员 JWT：适合临时使用，直接复用后台登录态
-- Admin API Key：适合长期批量同步或自动化
-
-示例：
-
-```bash
-# 方式一：直接传管理员 JWT
-python3 tools/sync_antigravity_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-token YOUR_ADMIN_JWT
-
-# 方式二：用 Admin API Key（更适合长期同步）
-python3 tools/sync_antigravity_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-api-key YOUR_ADMIN_API_KEY
-```
-
-也可以先把这些参数放进环境变量，后面就可以只打一条短命令：
-
-```bash
-export SUB2API_ADMIN_BASE_URL="https://your-sub2api.example.com"
-export SUB2API_ADMIN_API_KEY="YOUR_ADMIN_API_KEY"
-
-python3 tools/sync_antigravity_accounts.py
-```
-
-常用变体：
-
-```bash
-# 指定其他缓存目录或文件模式
-python3 tools/sync_antigravity_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-api-key YOUR_ADMIN_API_KEY \
-  --input-glob "~/my-cache/antigravity-*.json"
-
-# 把 disabled=true 的账号也一起同步
-python3 tools/sync_antigravity_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-api-key YOUR_ADMIN_API_KEY \
-  --include-disabled
-
-# 先看本次会同步多少账号，不真正上传
-python3 tools/sync_antigravity_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-api-key YOUR_ADMIN_API_KEY \
-  --dry-run
-
-# 同步前顺手保留一份导出快照
-python3 tools/sync_antigravity_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-api-key YOUR_ADMIN_API_KEY \
-  --save-export ./antigravity-sub2api-export.json
-
-# 同步后直接绑定到指定 Gemini 分组
-python3 tools/sync_antigravity_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-api-key YOUR_ADMIN_API_KEY \
-  --group-id 123
-
-# 如果明确不想同步后启用混合调度
-python3 tools/sync_antigravity_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-api-key YOUR_ADMIN_API_KEY \
-  --no-mixed-scheduling
-```
-
-> **提示**：脚本默认会带上 `skip_default_group_bind=true`，和后台导入弹窗行为保持一致。如果您确实想让后台重新绑定默认分组，可以显式加 `--bind-default-group`。
->
-> 默认同步的 Antigravity 账号会带上 `mixed_scheduling=true`，以便导入后直接参与 Gemini / Anthropic 分组调度。
-
-### 桌面助手一键扫描本机 CLI 登录态
-
-如果您希望在后台里直接点击按钮，让页面自动扫描当前机器上的 CLI 登录态并生成可导入 JSON，可以先在本机启动桌面助手：
-
-```bash
-cd /path/to/sub2api
-python3 tools/desktop_cli_bridge.py
-```
-
-默认会监听：
-
-```text
-http://127.0.0.1:32191
-```
-
-启动后，在后台“账号管理 -> 导入”里可以直接使用新的“桌面助手一键扫描”卡片：
-- 扫描并下载 JSON
-- 扫描并直接导入
-
-桌面助手当前支持两类来源：
-- `Antigravity`：自动读取 `~/.cli-proxy-api/antigravity-*.json`
-- `Claude Code OAuth`：自动读取本机 Keychain 或 `~/.claude/.credentials.json`
-- `Gemini CLI OAuth`：自动读取本机 Keychain 或 `~/.gemini/gemini-credentials.json`
-
-如果当前来源是 `Antigravity`，桌面助手还会沿用导入弹窗里的这两个设置：
-- `导入后启用 Gemini 混合调度`
-- `导入后绑定 Gemini 分组（可选）`
-
-如果当前来源是 `Gemini CLI OAuth`，桌面助手会沿用导入弹窗里的：
-- `导入后绑定 Gemini 分组（可选）`
-
-> **提示**：如果 Gemini CLI 当前使用的是 `API Key` 认证，而不是 `Sign in with Google` 这类 OAuth 登录，桌面助手将不会找到可导出的 Gemini OAuth 账号。
-
-> **说明**：这里之所以需要本机桌面助手，是因为普通网页后台无法直接读取您电脑上的 `~/.cli-proxy-api`、`~/.claude` 或 Keychain 凭据。桌面助手只监听本机 `127.0.0.1`，供当前浏览器页面一键调用。
-
-如果您希望把这个桌面助手直接打包成可双击启动的 macOS `.app`，可以执行：
-
-```bash
-python3 tools/build_desktop_cli_bridge_app.py
-```
-
-默认会在仓库下生成：
-
-```text
-dist/sub2api Desktop Helper.app
-```
-
-也可以指定输出位置，例如：
-
-```bash
-python3 tools/build_desktop_cli_bridge_app.py \
-  --out "/tmp/sub2api Desktop Helper.app"
-```
-
-生成后的 `.app` 内部会自带：
-- `desktop_cli_bridge.py`
-- `export_antigravity_accounts.py`
-- `export_claude_accounts.py`
-- `export_gemini_accounts.py`
-
-双击后会在后台启动本地桥接服务，并默认把日志写到：
-
-```text
-~/Library/Logs/sub2api-desktop-helper/helper.log
-```
-
-### 从 Claude Code OAuth 存储批量导出账号
-
-如果您在本地通过 `Claude Code` 登录了 Anthropic OAuth 账号，也可以先导出为 `sub2api-data` JSON，再到后台的“账号管理 -> 导入”中批量导入。
-
-> **说明**：这里导出的是 `Claude Code` 的 OAuth 凭据，不是浏览器里的 `sessionKey` Cookie。
-
-默认导出命令：
-
-```bash
-python3 tools/export_claude_accounts.py \
-  --out ./claude-sub2api-export.json
-```
-
-脚本默认会：
-- 优先从 macOS Keychain 读取 Claude Code OAuth 凭据
-- 如果 Keychain 中没有，再回退到 `~/.claude/.credentials.json`
-- 自动补充 `~/.claude.json` 或各个配置目录中的 OAuth 账号元信息
-- 导出平台固定为 `anthropic`
-- 导出类型固定为 `oauth`
-- 默认 `concurrency=10`、`priority=1`、`rate_multiplier=1`
-- 默认按 `refresh_token` 去重，避免同一个账号重复导出
-
-常用参数示例：
-
-```bash
-# 先看当前默认 Claude 配置目录里有多少可导出账号，不落盘
-python3 tools/export_claude_accounts.py --dry-run
-
-# 指定多个 Claude 配置目录（适合多账号场景）
-python3 tools/export_claude_accounts.py \
-  --config-dir ~/.claude-main \
-  --config-dir ~/.claude-alt \
-  --out ./claude-multi-export.json
-
-# 用 glob 一次扫描整批配置目录
-python3 tools/export_claude_accounts.py \
-  --config-dir-glob "~/.claude-profiles/*" \
-  --out ./claude-profiles-export.json
-
-# 仅测试明文 fallback 文件，不读 Keychain
-python3 tools/export_claude_accounts.py \
-  --disable-keychain \
-  --out ./claude-plaintext-export.json
-```
-
-如果您使用的是自定义 OAuth Client，Claude Code 可能会把凭据存到带后缀的文件和 Keychain 项里。此时可以显式带上 `--oauth-suffix`：
-
-```bash
-python3 tools/export_claude_accounts.py \
-  --oauth-suffix -custom-oauth \
-  --out ./claude-custom-oauth-export.json
-```
-
-导入步骤：
-1. 在目标 `sub2api` 后台进入“账号管理”。
-2. 点击“导入”，选择上一步导出的 JSON 文件。
-3. 导入完成后，按需要手动绑定分组。
-
-> **提示**：Claude Code 通常是“一个配置目录对应一个活跃 OAuth 账号”。如果您要维护很多 Claude 数据源，建议给不同账号分配不同的 `CLAUDE_CONFIG_DIR`，再用 `--config-dir` 或 `--config-dir-glob` 一次性导出。
-
-### 从本地 Claude Code 直接一键同步到后台
-
-如果您不想先导出 JSON 再手动去后台上传，还可以直接使用一键同步脚本，把本地 `Claude Code` OAuth 账号直接导入指定的 `sub2api` 后台。
-
-最常用的方式有两种认证：
-- 管理员 JWT：适合临时使用，直接复用后台登录态
-- Admin API Key：适合长期批量同步或自动化
-
-示例：
-
-```bash
-# 方式一：直接传管理员 JWT
-python3 tools/sync_claude_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-token YOUR_ADMIN_JWT
-
-# 方式二：用 Admin API Key（更适合长期同步）
-python3 tools/sync_claude_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-api-key YOUR_ADMIN_API_KEY
-```
-
-也可以先把这些参数放进环境变量，后面就可以只打一条短命令：
-
-```bash
-export SUB2API_ADMIN_BASE_URL="https://your-sub2api.example.com"
-export SUB2API_ADMIN_API_KEY="YOUR_ADMIN_API_KEY"
-
-python3 tools/sync_claude_accounts.py
-```
-
-常用变体：
-
-```bash
-# 多个 Claude 配置目录一起同步
-python3 tools/sync_claude_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-api-key YOUR_ADMIN_API_KEY \
-  --config-dir ~/.claude-main \
-  --config-dir ~/.claude-alt
-
-# 先看本次会同步多少账号，不真正上传
-python3 tools/sync_claude_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-api-key YOUR_ADMIN_API_KEY \
-  --dry-run
-
-# 同步前顺手保留一份导出快照
-python3 tools/sync_claude_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-api-key YOUR_ADMIN_API_KEY \
-  --save-export ./claude-sub2api-export.json
-```
-
-> **提示**：脚本默认会带上 `skip_default_group_bind=true`，和后台导入弹窗行为保持一致。如果您确实想让后台重新绑定默认分组，可以显式加 `--bind-default-group`。
-
-### 从 Gemini CLI OAuth 存储批量导出账号
-
-如果您在本地通过 `Gemini CLI` 的 Google OAuth 登录了账号，也可以先导出为 `sub2api-data` JSON，再到后台的“账号管理 -> 导入”中批量导入。
-
-> **说明**：这里导出的是 `Gemini CLI` 的 OAuth 凭据，不是 `GEMINI_API_KEY`。如果您当前 CLI 使用的是 API Key 认证，导出脚本不会找到可用的 OAuth 账号。
-
-默认导出命令：
-
-```bash
-python3 tools/export_gemini_accounts.py \
-  --out ./gemini-sub2api-export.json
-```
-
-脚本默认会：
-- 优先从 macOS Keychain 读取 Gemini CLI OAuth 凭据
-- 如果 Keychain 中没有，再回退到 `~/.gemini/gemini-credentials.json`
-- 自动导出平台为 `gemini`
-- 自动导出类型为 `oauth`
-- 默认 `oauth_type=auto`
-- 默认 `concurrency=10`、`priority=1`、`rate_multiplier=1`
-- 默认按 `refresh_token` 去重，避免同一个账号重复导出
-
-常用参数示例：
-
-```bash
-# 先看当前默认 Gemini 配置目录里有多少可导出账号，不落盘
-python3 tools/export_gemini_accounts.py --dry-run
-
-# 指定多个 Gemini 配置目录（适合多账号场景）
-python3 tools/export_gemini_accounts.py \
-  --config-dir ~/.gemini-main \
-  --config-dir ~/.gemini-alt \
-  --out ./gemini-multi-export.json
-
-# 指定导入后要附带绑定的 Gemini 分组
-python3 tools/export_gemini_accounts.py \
-  --group-id 123 \
-  --out ./gemini-grouped-export.json
-
-# 如果您明确知道这是 Code Assist / Google Cloud 项目型账号，也可以顺手带上 project_id
-python3 tools/export_gemini_accounts.py \
-  --project-id my-gcp-project \
-  --out ./gemini-code-assist-export.json
-```
-
-### 从本地 Gemini CLI 直接一键同步到后台
-
-如果您不想先导出 JSON 再手动去后台上传，还可以直接使用一键同步脚本，把本地 `Gemini CLI` OAuth 账号直接导入指定的 `sub2api` 后台。
-
-示例：
-
-```bash
-# 方式一：直接传管理员 JWT
-python3 tools/sync_gemini_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-token YOUR_ADMIN_JWT
-
-# 方式二：用 Admin API Key（更适合长期同步）
-python3 tools/sync_gemini_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-api-key YOUR_ADMIN_API_KEY
-```
-
-也可以先把这些参数放进环境变量，后面就可以只打一条短命令：
-
-```bash
-export SUB2API_ADMIN_BASE_URL="https://your-sub2api.example.com"
-export SUB2API_ADMIN_API_KEY="YOUR_ADMIN_API_KEY"
-
-python3 tools/sync_gemini_accounts.py
-```
-
-常用变体：
-
-```bash
-# 多个 Gemini 配置目录一起同步
-python3 tools/sync_gemini_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-api-key YOUR_ADMIN_API_KEY \
-  --config-dir ~/.gemini-main \
-  --config-dir ~/.gemini-alt
-
-# 先看本次会同步多少账号，不真正上传
-python3 tools/sync_gemini_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-api-key YOUR_ADMIN_API_KEY \
-  --dry-run
-
-# 同步前顺手保留一份导出快照
-python3 tools/sync_gemini_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-api-key YOUR_ADMIN_API_KEY \
-  --save-export ./gemini-sub2api-export.json
-
-# 同步时直接把账号绑定到指定 Gemini 分组
-python3 tools/sync_gemini_accounts.py \
-  --admin-base-url https://your-sub2api.example.com \
-  --admin-api-key YOUR_ADMIN_API_KEY \
-  --group-id 123
-```
-
-> **提示**：脚本默认会带上 `skip_default_group_bind=true`，和后台导入弹窗行为保持一致。如果您确实想让后台重新绑定默认分组，可以显式加 `--bind-default-group`。
 
 ### 已知问题
 在 Claude Code 中，无法自动退出Plan Mode。（正常使用原生Claude Api时，Plan 完成后，Claude Code会弹出弹出选项让用户同意或拒绝Plan。） 
@@ -1099,7 +715,9 @@ sub2api/
 
 ## 许可证
 
-MIT License
+本项目基于 [GNU 宽通用公共许可证 v3.0](LICENSE)（或更高版本）授权。
+
+Copyright (c) 2026 Wesley Liddick
 
 ---
 

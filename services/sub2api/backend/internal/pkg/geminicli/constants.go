@@ -51,18 +51,52 @@ const (
 	GeminiCLIUserAgent = "GeminiCLI/0.1.5 (Windows; AMD64)"
 )
 
+const (
+	geminiCLIOAuthClientIDPlaceholder     = "SET_GEMINI_CLI_OAUTH_CLIENT_ID_VIA_ENV"
+	geminiCLIOAuthClientSecretPlaceholder = "SET_GEMINI_CLI_OAUTH_CLIENT_SECRET_VIA_ENV"
+)
+
 var (
 	// GeminiCLIOAuthClientID/Secret are intentionally kept free of real credentials in source control.
 	// Provide real values via environment variables when you want to use the built-in Gemini CLI client.
 	GeminiCLIOAuthClientID = firstNonEmpty(
 		strings.TrimSpace(os.Getenv(GeminiCLIOAuthClientIDEnv)),
-		"SET_GEMINI_CLI_OAUTH_CLIENT_ID_VIA_ENV",
+		geminiCLIOAuthClientIDPlaceholder,
 	)
 	GeminiCLIOAuthClientSecret = firstNonEmpty(
 		strings.TrimSpace(os.Getenv(GeminiCLIOAuthClientSecretEnv)),
-		"SET_GEMINI_CLI_OAUTH_CLIENT_SECRET_VIA_ENV",
+		geminiCLIOAuthClientSecretPlaceholder,
 	)
 )
+
+// GeminiCLIOAuthBuiltinCredentials resolves the built-in Gemini CLI OAuth client from env.
+func GeminiCLIOAuthBuiltinCredentials() (string, string) {
+	return configuredSecretValue(GeminiCLIOAuthClientID, geminiCLIOAuthClientIDPlaceholder, GeminiCLIOAuthClientIDEnv),
+		configuredSecretValue(GeminiCLIOAuthClientSecret, geminiCLIOAuthClientSecretPlaceholder, GeminiCLIOAuthClientSecretEnv)
+}
+
+// IsGeminiCLIOAuthBuiltinClient reports whether clientID matches the configured built-in client.
+func IsGeminiCLIOAuthBuiltinClient(clientID string) bool {
+	clientID = strings.TrimSpace(clientID)
+	if clientID == "" {
+		return false
+	}
+	configuredID, _ := GeminiCLIOAuthBuiltinCredentials()
+	return (configuredID != "" && clientID == configuredID) ||
+		clientID == strings.TrimSpace(GeminiCLIOAuthClientID) ||
+		clientID == geminiCLIOAuthClientIDPlaceholder
+}
+
+func configuredSecretValue(value, placeholder, envName string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || value == placeholder {
+		value = strings.TrimSpace(os.Getenv(envName))
+	}
+	if value == placeholder {
+		return ""
+	}
+	return value
+}
 
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {

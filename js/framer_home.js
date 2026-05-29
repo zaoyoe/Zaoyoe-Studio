@@ -108,6 +108,22 @@ const HOMEPAGE_SECTION_SHELL_CARD_COUNTS = {
   guestbook: 6,
   ticker: 2
 };
+const HOMEPAGE_PROMPT_SHELL_COLUMNS = [
+  ['2 / 3', '1 / 1', '16 / 9'],
+  ['4 / 5', '9 / 16', '3 / 2'],
+  ['9 / 16', '16 / 9', '2 / 3'],
+  ['3 / 4', '16 / 9', '1 / 1'],
+  ['9 / 16', '3 / 2', '4 / 5']
+];
+const HOMEPAGE_PROMPT_SHELL_RATIO_CLASSES = {
+  '2 / 3': 'home-prompts-skeleton__card--ratio-2-3',
+  '1 / 1': 'home-prompts-skeleton__card--ratio-1-1',
+  '16 / 9': 'home-prompts-skeleton__card--ratio-16-9',
+  '4 / 5': 'home-prompts-skeleton__card--ratio-4-5',
+  '9 / 16': 'home-prompts-skeleton__card--ratio-9-16',
+  '3 / 2': 'home-prompts-skeleton__card--ratio-3-2',
+  '3 / 4': 'home-prompts-skeleton__card--ratio-3-4'
+};
 const HOMEPAGE_SECTION_SHELL_COPY = {
   prompts: {
     titleKey: 'home.prompts.title',
@@ -924,6 +940,18 @@ function normalizePromptImageAsset(value) {
     asset.original = fallbackOriginal;
   }
 
+  const width = Number.parseFloat(value.width || value.naturalWidth || value.metadata?.width || value.meta?.width || '');
+  const height = Number.parseFloat(value.height || value.naturalHeight || value.metadata?.height || value.meta?.height || '');
+  if (Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0) {
+    asset.width = width;
+    asset.height = height;
+  }
+
+  const aspectRatio = String(value.aspectRatio || value.aspect_ratio || value.ratio || value.metadata?.aspectRatio || value.meta?.aspectRatio || '').trim();
+  if (aspectRatio) {
+    asset.aspectRatio = aspectRatio;
+  }
+
   return asset.original || asset.thumb || asset.featured || asset.card || asset.home ? asset : null;
 }
 
@@ -1023,6 +1051,94 @@ function buildHomepagePromptRenderSignature(prompts = []) {
     const titleEn = String(normalizedPrompt?.title_en || normalizedPrompt?.title || '').trim();
     return [normalizedId, primaryImage, titleZh, titleEn].join('::');
   }).join('||');
+}
+
+function normalizeHomepageAspectRatioValue(width, height) {
+  const numericWidth = Number.parseFloat(width);
+  const numericHeight = Number.parseFloat(height);
+  if (!Number.isFinite(numericWidth) || !Number.isFinite(numericHeight) || numericWidth <= 0 || numericHeight <= 0) {
+    return '';
+  }
+
+  const ratio = numericWidth / numericHeight;
+  if (ratio < 0.35 || ratio > 2.4) {
+    return '';
+  }
+
+  return `${Number(numericWidth.toFixed(3))} / ${Number(numericHeight.toFixed(3))}`;
+}
+
+function extractHomepageAspectRatioFromText(value = '') {
+  const text = String(value || '').trim();
+  if (!text) {
+    return '';
+  }
+
+  const patterns = [
+    /(?:--ar|aspect\s*ratio|aspect_ratio|画幅|比例|ar)\s*[:：=]?\s*(\d{1,3}(?:\.\d+)?)\s*(?:[:/：x×])\s*(\d{1,3}(?:\.\d+)?)/i,
+    /(?:^|[^\d])(\d{1,2}(?:\.\d+)?)\s*(?:[:/：x×])\s*(\d{1,2}(?:\.\d+)?)(?=$|[^\d])/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const ratio = match ? normalizeHomepageAspectRatioValue(match[1], match[2]) : '';
+    if (ratio) {
+      return ratio;
+    }
+  }
+
+  return '';
+}
+
+function resolveHomepagePromptCardAspectRatio(promptImage, prompt = {}, fallbackRatio = '') {
+  const imageAsset = normalizePromptImageAsset(promptImage);
+  const assetRatio = imageAsset?.width && imageAsset?.height
+    ? normalizeHomepageAspectRatioValue(imageAsset.width, imageAsset.height)
+    : extractHomepageAspectRatioFromText(imageAsset?.aspectRatio || '');
+  if (assetRatio) {
+    return assetRatio;
+  }
+
+  const promptText = [
+    prompt?.aspectRatio,
+    prompt?.aspect_ratio,
+    prompt?.image_aspect_ratio,
+    prompt?.prompt_text,
+    prompt?.prompt,
+    prompt?.description,
+    prompt?.description_zh,
+    prompt?.description_en,
+    prompt?.title,
+    prompt?.title_zh,
+    prompt?.title_en
+  ].filter(Boolean).join('\n');
+  const textRatio = extractHomepageAspectRatioFromText(promptText);
+  if (textRatio) {
+    return textRatio;
+  }
+
+  return extractHomepageAspectRatioFromText(fallbackRatio) || '2 / 3';
+}
+
+function bindHomepagePromptCardAspectRatioRelease(section) {
+  section?.querySelectorAll('.masonry-card-preview img').forEach((image) => {
+    const card = image.closest('.masonry-card-preview');
+    if (!(card instanceof HTMLElement)) {
+      return;
+    }
+
+    const release = () => {
+      card.style.removeProperty('--home-prompt-card-ratio');
+      card.dataset.homePromptImageLoaded = '1';
+    };
+
+    if (image.complete && image.naturalWidth > 0) {
+      release();
+      return;
+    }
+
+    image.addEventListener('load', release, { once: true });
+  });
 }
 
 function getHomePromptAdminVisibilityStatus(prompt = {}) {
@@ -1730,11 +1846,55 @@ function renderHomepageSectionShellHeader(sectionKey) {
       </div>`;
 }
 
+function renderHomepagePromptShellBody() {
+  const columns = HOMEPAGE_PROMPT_SHELL_COLUMNS.map((ratios, columnIndex) => `
+        <div class="masonry-column home-prompts-skeleton__column" data-column="${columnIndex}">
+          ${ratios.map((ratio) => (
+            `<span class="masonry-card home-prompts-skeleton__card ${HOMEPAGE_PROMPT_SHELL_RATIO_CLASSES[ratio] || HOMEPAGE_PROMPT_SHELL_RATIO_CLASSES['2 / 3']}"></span>`
+          )).join('')}
+        </div>`
+  ).join('');
+
+  return `
+      <div class="home-section-shell__body home-section-shell__body--prompts" aria-hidden="true">
+        <div class="home-prompts-skeleton prompts-masonry-wrapper">
+          <div class="masonry-container home-prompts-skeleton__grid" data-columns="${HOMEPAGE_PROMPT_SHELL_COLUMNS.length}">
+            ${columns}
+          </div>
+          <div class="prompts-gradient-mask home-prompts-skeleton__mask">
+            <div class="home-prompts-skeleton__labels" aria-hidden="true">
+              <div class="home-prompts-skeleton__label-row">
+                <span class="home-prompts-skeleton__tag"></span>
+                <span class="home-prompts-skeleton__tag home-prompts-skeleton__tag--short"></span>
+                <span class="home-prompts-skeleton__tag"></span>
+                <span class="home-prompts-skeleton__tag home-prompts-skeleton__tag--wide"></span>
+              </div>
+              <span class="home-prompts-skeleton__cta"></span>
+              <div class="home-prompts-skeleton__label-row">
+                <span class="home-prompts-skeleton__tag home-prompts-skeleton__tag--wide"></span>
+                <span class="home-prompts-skeleton__tag"></span>
+                <span class="home-prompts-skeleton__tag home-prompts-skeleton__tag--short"></span>
+                <span class="home-prompts-skeleton__tag"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>`;
+}
+
 function renderHomepageSectionShell(sectionKey, section) {
   if (!section) return;
   const normalizedSectionKey = String(sectionKey || '').trim().toLowerCase();
   const baseClass = getHomepageSectionShellBaseClass(normalizedSectionKey);
   const cardCount = HOMEPAGE_SECTION_SHELL_CARD_COUNTS[normalizedSectionKey] || 3;
+  const shellBody = normalizedSectionKey === 'prompts'
+    ? renderHomepagePromptShellBody()
+    : `
+      <div class="home-section-shell__body home-section-shell__body--${normalizedSectionKey}" aria-hidden="true">
+        ${Array.from({ length: cardCount }, (_, index) => (
+          `<span class="home-section-shell__tile home-section-shell__tile--${(index % 3) + 1}"></span>`
+        )).join('')}
+      </div>`;
 
   if (
     section.dataset.homepageShell === '1'
@@ -1754,11 +1914,7 @@ function renderHomepageSectionShell(sectionKey, section) {
   section.innerHTML = `
     <div class="home-section-shell">
       ${renderHomepageSectionShellHeader(normalizedSectionKey)}
-      <div class="home-section-shell__body home-section-shell__body--${normalizedSectionKey}" aria-hidden="true">
-        ${Array.from({ length: cardCount }, (_, index) => (
-          `<span class="home-section-shell__tile home-section-shell__tile--${(index % 3) + 1}"></span>`
-        )).join('')}
-      </div>
+      ${shellBody}
     </div>
   `;
 }
@@ -4555,6 +4711,11 @@ const FramerHome = {
         en: 'Prompt'
       });
       const isPriorityPromptImage = columnIndex < visiblePromptColumnCount && rowIndex < HOMEPAGE_PROMPT_EAGER_IMAGE_ROWS;
+      const promptCardRatio = resolveHomepagePromptCardAspectRatio(
+        promptImage,
+        prompt,
+        HOMEPAGE_PROMPT_SHELL_COLUMNS[columnIndex]?.[rowIndex % HOMEPAGE_PROMPT_SHELL_COLUMNS[columnIndex].length] || '2 / 3'
+      );
       const cardMedia = getPromptImageAssetUrl(promptImage)
         ? `<img src="${promptImageSrc}"
                          alt="${escapeHomeHtml(promptTitle)}" 
@@ -4568,6 +4729,7 @@ const FramerHome = {
       return `
                   <div
                     class="masonry-card masonry-card-preview"
+                    style="--home-prompt-card-ratio: ${promptCardRatio}"
                     data-home-prompt-preview="1"
                     aria-label="${escapeHomeHtml(promptTitle)}">
                     ${cardMedia}
@@ -4636,6 +4798,7 @@ const FramerHome = {
       image.dataset.homeFallbackApplied = '1';
       image.src = decodeURIComponent(fallbackSrc);
     });
+    bindHomepagePromptCardAspectRatioRelease(section);
 
     // Parallax is a visual enhancement; let first paint win and attach it slightly later.
     this.schedulePromptMasonryImageWarmup(section);
