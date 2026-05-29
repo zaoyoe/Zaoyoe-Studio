@@ -254,8 +254,8 @@
             support: {
                 type: 'custom',
                 render: () => `
-                    <a href="https://t.me/zaoyoe" target="_blank">TG</a>
-                    <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank"><span data-i18n="nav.tgGroup">TG群组</span></a>
+                    <a href="https://t.me/zaoyoe" target="_blank" data-site-layout-contact="telegram">TG</a>
+                    <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" data-site-layout-contact="telegram_group"><span data-i18n="nav.tgGroup">TG群组</span></a>
                 `
             }
         };

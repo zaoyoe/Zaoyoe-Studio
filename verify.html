@@ -46,7 +46,7 @@
     <script src="./js/runtime-supabase-config.js?v=20260510_REALTIME_GRACEFUL_FALLBACK_1" defer></script>
     <script src="./supabase-client.js?v=20260504_NOTIFICATION_LOADING_VERTICAL_ONLY_1" defer></script>
     <script src="./js/site-config.js?v=20260528_AVATAR_CANONICAL_CDN_1" defer></script>
-    <script src="./js/site-layout-runtime.js?v=20260529_FOOTER_CONTACTS_1" defer></script>
+    <script src="./js/site-layout-runtime.js?v=20260529_FOOTER_CONTACT_HOOKS_1" defer></script>
     <script src="./js/homepage-contract.js?v=20260512_HOMEPAGE_CONTRACT_VERIFY_I18N_1" defer></script>
     <script src="./js/prefetch-home.js?v=20260518_HOME_GONGYI_SUB2API_1" defer></script>
     <script src="./js/section-visibility.js?v=20260528_GONGYI_SITE_AWARE_1" defer></script>
@@ -145,8 +145,10 @@
                 </button>
                 <div class="mobile-submenu" id="support-mobile">
                     <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer"
+                        data-site-layout-contact="telegram"
                         class="mobile-menu-link">TG</a>
                     <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer"
+                        data-site-layout-contact="telegram_group"
                         class="mobile-menu-link"><span data-i18n="nav.tgGroup">TG群组</span></a>
                 </div>
             </div>
@@ -178,10 +180,12 @@
             <span class="verify-footer-meta"><span
                     data-i18n="verify.supportUs">支持我们</span>:
                 <a href="https://afdian.com/a/zaoyoe" target="_blank" rel="noopener noreferrer"
+                    data-site-layout-contact="support"
                     class="verify-footer-link">afdian.com/a/zaoyoe</a>
                 <span class="verify-footer-divider">|</span>
                 <span data-i18n="verify.chatGroup">交流群</span>: <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank"
                     rel="noopener noreferrer"
+                    data-site-layout-contact="telegram_group"
                     class="verify-footer-link"
                     data-i18n="verify.clickToJoin">点击加入</a>
             </span>
