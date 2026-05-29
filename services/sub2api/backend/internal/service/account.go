@@ -121,6 +121,9 @@ func (a *Account) IsSchedulable() bool {
 	if a.TempUnschedulableUntil != nil && now.Before(*a.TempUnschedulableUntil) {
 		return false
 	}
+	if a.IsAPIKeyOrBedrock() && a.IsQuotaExceeded() {
+		return false
+	}
 	return true
 }
 
@@ -390,6 +393,56 @@ func parseTempUnschedInt(value any) int {
 	return 0
 }
 
+const (
+	// OpenAICompactModeAuto follows compact-probe results when deciding compact eligibility.
+	OpenAICompactModeAuto = "auto"
+	// OpenAICompactModeForceOn always treats the account as compact-supported.
+	OpenAICompactModeForceOn = "force_on"
+	// OpenAICompactModeForceOff always treats the account as compact-unsupported.
+	OpenAICompactModeForceOff = "force_off"
+)
+
+func normalizeOpenAICompactMode(mode string) string {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case OpenAICompactModeForceOn:
+		return OpenAICompactModeForceOn
+	case OpenAICompactModeForceOff:
+		return OpenAICompactModeForceOff
+	default:
+		return OpenAICompactModeAuto
+	}
+}
+
+func stringMappingFromRaw(raw any) map[string]string {
+	switch mapping := raw.(type) {
+	case map[string]any:
+		if len(mapping) == 0 {
+			return nil
+		}
+		result := make(map[string]string, len(mapping))
+		for key, value := range mapping {
+			if str, ok := value.(string); ok {
+				result[key] = str
+			}
+		}
+		if len(result) == 0 {
+			return nil
+		}
+		return result
+	case map[string]string:
+		if len(mapping) == 0 {
+			return nil
+		}
+		result := make(map[string]string, len(mapping))
+		for key, value := range mapping {
+			result[key] = value
+		}
+		return result
+	default:
+		return nil
+	}
+}
+
 func (a *Account) GetModelMapping() map[string]string {
 	credentialsPtr := mapPtr(a.Credentials)
 	rawMapping, _ := a.Credentials["model_mapping"].(map[string]any)
@@ -595,6 +648,77 @@ func (a *Account) ResolveMappedModel(requestedModel string) (mappedModel string,
 	return requestedModel, false
 }
 
+// GetOpenAICompactMode returns the compact routing mode for an OpenAI account.
+// Missing or invalid values fall back to "auto".
+func (a *Account) GetOpenAICompactMode() string {
+	if a == nil || !a.IsOpenAI() || a.Extra == nil {
+		return OpenAICompactModeAuto
+	}
+	mode, _ := a.Extra["openai_compact_mode"].(string)
+	return normalizeOpenAICompactMode(mode)
+}
+
+// OpenAICompactSupportKnown reports whether compact capability is known for this
+// account and, when known, whether it is supported.
+func (a *Account) OpenAICompactSupportKnown() (supported bool, known bool) {
+	if a == nil || !a.IsOpenAI() {
+		return false, false
+	}
+
+	switch a.GetOpenAICompactMode() {
+	case OpenAICompactModeForceOn:
+		return true, true
+	case OpenAICompactModeForceOff:
+		return false, true
+	}
+
+	if a.Extra == nil {
+		return false, false
+	}
+	supported, ok := a.Extra["openai_compact_supported"].(bool)
+	if !ok {
+		return false, false
+	}
+	return supported, true
+}
+
+// AllowsOpenAICompact reports whether the account may be considered for compact
+// requests. Unknown capability remains allowed to avoid breaking older accounts
+// before an explicit probe has been run.
+func (a *Account) AllowsOpenAICompact() bool {
+	if a == nil || !a.IsOpenAI() {
+		return false
+	}
+	supported, known := a.OpenAICompactSupportKnown()
+	if !known {
+		return true
+	}
+	return supported
+}
+
+// GetCompactModelMapping returns compact-only model remapping configuration.
+// This mapping is intended for /responses/compact only and does not affect
+// normal /responses traffic.
+func (a *Account) GetCompactModelMapping() map[string]string {
+	if a == nil || a.Credentials == nil {
+		return nil
+	}
+	return stringMappingFromRaw(a.Credentials["compact_model_mapping"])
+}
+
+// ResolveCompactMappedModel resolves compact-only model remapping and reports
+// whether a compact-specific mapping rule matched.
+func (a *Account) ResolveCompactMappedModel(requestedModel string) (mappedModel string, matched bool) {
+	mapping := a.GetCompactModelMapping()
+	if len(mapping) == 0 {
+		return requestedModel, false
+	}
+	if mappedModel, matched := resolveRequestedModelInMapping(mapping, requestedModel); matched {
+		return mappedModel, true
+	}
+	return requestedModel, false
+}
+
 func (a *Account) GetBaseURL() string {
 	if a.Type != AccountTypeAPIKey {
 		return ""
@@ -766,14 +890,90 @@ func parsePoolModeRetryCount(value any) int {
 	return defaultPoolModeRetryCount
 }
 
-// isPoolModeRetryableStatus 池模式下应触发同账号重试的状态码
+// defaultPoolModeRetryableStatusCodes 池模式下默认触发同账号重试的状态码。
+// 未在 Account.Credentials 中显式配置 pool_mode_retry_status_codes 时使用。
+var defaultPoolModeRetryableStatusCodes = []int{401, 403, 429}
+
+// isPoolModeRetryableStatus 池模式下应触发同账号重试的状态码（默认列表）。
 func isPoolModeRetryableStatus(statusCode int) bool {
-	switch statusCode {
-	case 401, 403, 429:
-		return true
-	default:
-		return false
+	for _, c := range defaultPoolModeRetryableStatusCodes {
+		if c == statusCode {
+			return true
+		}
 	}
+	return false
+}
+
+// GetPoolModeRetryStatusCodes 返回账号自定义的池模式同账号重试状态码列表。
+//
+// 返回值语义：
+//   - nil：未配置 → 调用方应回退到默认值 [401, 403, 429]
+//   - 长度为 0 的切片：管理员显式置空 → 关闭按状态码触发的同账号重试
+//   - 非空切片：去重、过滤为合法 HTTP 状态码（100-599）后的覆盖列表
+func (a *Account) GetPoolModeRetryStatusCodes() []int {
+	if a == nil || a.Credentials == nil {
+		return nil
+	}
+	raw, ok := a.Credentials["pool_mode_retry_status_codes"]
+	if !ok || raw == nil {
+		return nil
+	}
+	arr, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	seen := make(map[int]struct{}, len(arr))
+	codes := make([]int, 0, len(arr))
+	for _, v := range arr {
+		var code int
+		switch n := v.(type) {
+		case float64:
+			code = int(n)
+		case int:
+			code = n
+		case int64:
+			code = int(n)
+		case json.Number:
+			i, err := n.Int64()
+			if err != nil {
+				continue
+			}
+			code = int(i)
+		case string:
+			i, err := strconv.Atoi(strings.TrimSpace(n))
+			if err != nil {
+				continue
+			}
+			code = i
+		default:
+			continue
+		}
+		if code < 100 || code > 599 {
+			continue
+		}
+		if _, exists := seen[code]; exists {
+			continue
+		}
+		seen[code] = struct{}{}
+		codes = append(codes, code)
+	}
+	sort.Ints(codes)
+	return codes
+}
+
+// IsPoolModeRetryableStatus 在账号上下文中判断给定状态码是否应触发同账号重试。
+// 若账号未配置 pool_mode_retry_status_codes，则回退到默认列表。
+func (a *Account) IsPoolModeRetryableStatus(statusCode int) bool {
+	codes := a.GetPoolModeRetryStatusCodes()
+	if codes == nil {
+		return isPoolModeRetryableStatus(statusCode)
+	}
+	for _, c := range codes {
+		if c == statusCode {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *Account) GetCustomErrorCodes() []int {
@@ -906,6 +1106,32 @@ func (a *Account) GetChatGPTAccountID() string {
 		return ""
 	}
 	return a.GetCredential("chatgpt_account_id")
+}
+
+func (a *Account) GetOpenAIDeviceID() string {
+	if !a.IsOpenAIOAuth() {
+		return ""
+	}
+	return strings.TrimSpace(a.GetExtraString("openai_device_id"))
+}
+
+func (a *Account) GetOpenAISessionID() string {
+	if !a.IsOpenAIOAuth() {
+		return ""
+	}
+	return strings.TrimSpace(a.GetExtraString("openai_session_id"))
+}
+
+func (a *Account) SupportsOpenAIImageCapability(capability OpenAIImagesCapability) bool {
+	if !a.IsOpenAI() {
+		return false
+	}
+	switch capability {
+	case OpenAIImagesCapabilityBasic, OpenAIImagesCapabilityNative:
+		return a.Type == AccountTypeOAuth || a.Type == AccountTypeAPIKey
+	default:
+		return true
+	}
 }
 
 func (a *Account) GetChatGPTUserID() string {

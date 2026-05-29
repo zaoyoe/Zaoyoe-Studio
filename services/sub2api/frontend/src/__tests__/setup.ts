@@ -5,6 +5,81 @@
 import { config } from '@vue/test-utils'
 import { vi } from 'vitest'
 
+function createMemoryStorage(): Storage {
+  const values = new Map<string, string>()
+
+  return {
+    get length() {
+      return values.size
+    },
+    clear() {
+      values.clear()
+    },
+    getItem(key: string) {
+      return values.has(key) ? values.get(key)! : null
+    },
+    key(index: number) {
+      return Array.from(values.keys())[index] ?? null
+    },
+    removeItem(key: string) {
+      values.delete(key)
+    },
+    setItem(key: string, value: string) {
+      values.set(key, String(value))
+    }
+  }
+}
+
+function hasUsableStorage(value: unknown): value is Storage {
+  const storage = value as Partial<Storage> | null | undefined
+  return !!storage
+    && typeof storage.clear === 'function'
+    && typeof storage.getItem === 'function'
+    && typeof storage.setItem === 'function'
+    && typeof storage.removeItem === 'function'
+}
+
+function installStorage(name: 'localStorage' | 'sessionStorage') {
+  if (hasUsableStorage(globalThis[name])) {
+    return
+  }
+
+  const storage = createMemoryStorage()
+  Object.defineProperty(globalThis, name, {
+    configurable: true,
+    writable: true,
+    value: storage
+  })
+
+  if (typeof window !== 'undefined') {
+    Object.defineProperty(window, name, {
+      configurable: true,
+      writable: true,
+      value: storage
+    })
+  }
+}
+
+installStorage('localStorage')
+installStorage('sessionStorage')
+
+if (typeof window !== 'undefined' && typeof window.matchMedia !== 'function') {
+  Object.defineProperty(window, 'matchMedia', {
+    value: (query: string): MediaQueryList => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+      addListener: () => undefined,
+      removeListener: () => undefined,
+      dispatchEvent: () => false
+    }),
+    configurable: true,
+    writable: true
+  })
+}
+
 // Mock requestIdleCallback (Safari < 15 不支持)
 if (typeof globalThis.requestIdleCallback === 'undefined') {
   globalThis.requestIdleCallback = ((callback: IdleRequestCallback) => {

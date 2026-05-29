@@ -677,20 +677,20 @@ func TestConstants_值正确(t *testing.T) {
 	if UserInfoURL != "https://www.googleapis.com/oauth2/v2/userinfo" {
 		t.Errorf("UserInfoURL 不匹配: got %s", UserInfoURL)
 	}
-	if ClientID == "" {
+	if ClientID != "SET_ANTIGRAVITY_OAUTH_CLIENT_ID_VIA_ENV" {
 		t.Errorf("ClientID 不匹配: got %s", ClientID)
 	}
 	secret, err := getClientSecret()
 	if err != nil {
 		t.Fatalf("getClientSecret 应返回默认值，但报错: %v", err)
 	}
-	if secret == "" {
+	if secret != "SET_ANTIGRAVITY_OAUTH_CLIENT_SECRET_VIA_ENV" {
 		t.Errorf("默认 client_secret 不匹配: got %s", secret)
 	}
 	if RedirectURI != "http://localhost:8085/callback" {
 		t.Errorf("RedirectURI 不匹配: got %s", RedirectURI)
 	}
-	if GetUserAgent() != "antigravity/1.21.9 windows/amd64" {
+	if GetUserAgent() != "antigravity/1.23.2 windows/amd64" {
 		t.Errorf("UserAgent 不匹配: got %s", GetUserAgent())
 	}
 	if SessionTTL != 30*time.Minute {

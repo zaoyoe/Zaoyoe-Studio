@@ -255,7 +255,6 @@ func TestImportDataReusesProxyAndSkipsDefaultGroup(t *testing.T) {
 					"platform":    service.PlatformOpenAI,
 					"type":        service.AccountTypeOAuth,
 					"credentials": map[string]any{"token": "x"},
-					"group_ids":   []int64{27},
 					"proxy_key":   "socks5|1.2.3.4|1080|u|p",
 					"concurrency": 3,
 					"priority":    50,
@@ -275,5 +274,4 @@ func TestImportDataReusesProxyAndSkipsDefaultGroup(t *testing.T) {
 	require.Len(t, adminSvc.createdProxies, 0)
 	require.Len(t, adminSvc.createdAccounts, 1)
 	require.True(t, adminSvc.createdAccounts[0].SkipDefaultGroupBind)
-	require.Equal(t, []int64{27}, adminSvc.createdAccounts[0].GroupIDs)
 }
