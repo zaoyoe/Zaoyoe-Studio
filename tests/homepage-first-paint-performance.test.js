@@ -13,6 +13,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
     const framerSource = readRepoFile('js/framer_home.js');
     const framerStyles = readRepoFile('css/framer_home.css');
     const criticalStyles = readRepoFile('css/framer_home_critical.css');
+    const promptCriticalStyles = readRepoFile('css/home-prompts-skeleton-critical.css');
     const navAuthFastPaintSource = readRepoFile('js/nav-auth-fast-paint.js');
 
     assert.equal(
@@ -39,6 +40,15 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         indexSource.includes('./css/framer_home_critical.css?v=20260521_HOME_PROMPTS_SHELL_STABLE_2'),
         true,
         'index.html should load a small blocking homepage critical stylesheet'
+    );
+    assert.equal(
+        indexSource.includes('./css/home-prompts-skeleton-critical.css?v=20260529_HOME_PROMPTS_CRITICAL_SKELETON_1'),
+        true,
+        'index.html should load the prompt skeleton geometry before the deferred homepage stylesheet'
+    );
+    assert.ok(
+        indexSource.indexOf('./css/home-prompts-skeleton-critical.css?v=20260529_HOME_PROMPTS_CRITICAL_SKELETON_1') < indexSource.indexOf('./css/framer_home.css?v=20260521_HOME_PROMPTS_SHELL_STABLE_2'),
+        'prompt skeleton critical CSS should load before the deferred full homepage stylesheet'
     );
     assert.match(
         indexSource,
@@ -101,6 +111,14 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
     assert.ok(
         zlib.gzipSync(criticalStyles).length < 8000,
         'homepage critical stylesheet gzip budget should stay under 8KB'
+    );
+    assert.ok(
+        promptCriticalStyles.length < 8500,
+        'homepage prompt skeleton critical stylesheet should stay small enough for first paint'
+    );
+    assert.ok(
+        zlib.gzipSync(promptCriticalStyles).length < 2300,
+        'homepage prompt skeleton critical stylesheet gzip budget should stay compact'
     );
     assert.match(
         criticalStyles,
@@ -392,6 +410,7 @@ test('homepage ships static progressive shells below the hero before runtime hyd
     const framerSource = readRepoFile('js/framer_home.js');
     const framerStyles = readRepoFile('css/framer_home.css');
     const criticalStyles = readRepoFile('css/framer_home_critical.css');
+    const promptCriticalStyles = readRepoFile('css/home-prompts-skeleton-critical.css');
     const zhMessages = JSON.parse(readRepoFile('lang/zh.json'));
     const enMessages = JSON.parse(readRepoFile('lang/en.json'));
     const sectionExpectations = [
@@ -450,10 +469,65 @@ test('homepage ships static progressive shells below the hero before runtime hyd
         true,
         'critical CSS should keep runtime section subtitles aligned before deferred CSS loads'
     );
+    assert.equal(
+        promptCriticalStyles.includes('20260529_HOME_PROMPTS_CRITICAL_SKELETON_1'),
+        true,
+        'critical CSS should include prompt skeleton first-paint layout rules'
+    );
+    assert.equal(
+        promptCriticalStyles.includes('body.home-page #main-content>.home-section-shell-section--prompts{max-width:none;padding:var(--spacing-xl) 0;overflow:hidden;display:block}'),
+        true,
+        'critical CSS should keep the prompt shell full-bleed before deferred CSS loads'
+    );
+    assert.equal(
+        promptCriticalStyles.includes('.home-prompts-skeleton__grid{display:flex;align-items:flex-start;gap:12px;width:100%;padding:0 12px}'),
+        true,
+        'critical CSS should preserve the prompt skeleton masonry columns on first paint'
+    );
+    assert.equal(
+        promptCriticalStyles.includes('.home-prompts-skeleton__card{display:block;width:100%;min-height:0;aspect-ratio:2/3;'),
+        true,
+        'critical CSS should reserve prompt image-card aspect ratios on first paint'
+    );
+    assert.match(
+        promptCriticalStyles,
+        /@media \(max-width:768px\)\{[\s\S]*body\.home-page #main-content>\.home-section-shell-section--prompts[\s\S]*padding-top:var\(--spacing-lg\)[\s\S]*\.home-prompts-skeleton__grid[\s\S]*width:140%;margin-left:-20%/,
+        'critical CSS should keep mobile prompt skeleton geometry stable before deferred CSS loads'
+    );
+    assert.equal(
+        promptCriticalStyles.includes('html[data-theme="light"] body.home-page .home-prompts-skeleton__card{border-color:rgba(15,23,42,.07);'),
+        true,
+        'critical CSS should keep light-theme prompt skeleton colors aligned before deferred CSS loads'
+    );
+    assert.equal(
+        promptCriticalStyles.includes('body.home-page #prompts-section.prompts-masonry-section .masonry-container{display:flex;align-items:flex-start;gap:12px;width:100%;padding:0 12px;position:relative}'),
+        true,
+        'critical CSS should preserve runtime prompt masonry columns before deferred CSS loads'
+    );
+    assert.equal(
+        promptCriticalStyles.includes('body.home-page #prompts-section.prompts-masonry-section .masonry-card-preview{width:100%;min-height:0;aspect-ratio:var(--home-prompt-card-ratio,2/3);'),
+        true,
+        'critical CSS should reserve runtime prompt image-card aspect ratios before deferred CSS loads'
+    );
+    assert.equal(
+        promptCriticalStyles.includes('body.home-page #prompts-section.prompts-masonry-section .masonry-card img{width:100%;height:auto;display:block;object-fit:cover;pointer-events:none;user-select:none;-webkit-user-drag:none;opacity:0;transition:opacity .18s ease}'),
+        true,
+        'critical CSS should hide runtime prompt images until decode finishes so native image placeholders do not flash in the card corner'
+    );
+    assert.equal(
+        promptCriticalStyles.includes('body.home-page #prompts-section.prompts-masonry-section .masonry-card-preview[data-home-prompt-image-loaded="1"] img{opacity:1}'),
+        true,
+        'critical CSS should reveal runtime prompt images only after the card marks them loaded'
+    );
     assert.match(
         framerStyles,
         /\.home-section-shell__header \.section-title[\s\S]*letter-spacing:\s*0;[\s\S]*\.home-section-shell__tile[\s\S]*animation:\s*home-section-shell-shimmer/,
         'full CSS should keep static and runtime section shells visually aligned'
+    );
+    assert.match(
+        framerStyles,
+        /\.masonry-card-preview\s*\{[\s\S]*position:\s*relative;[\s\S]*aspect-ratio:\s*var\(--home-prompt-card-ratio, auto\);[\s\S]*\.masonry-card img\s*\{[\s\S]*opacity:\s*0;[\s\S]*\.masonry-card-preview\[data-home-prompt-image-loaded="1"\] img\s*\{[\s\S]*opacity:\s*1;/,
+        'full CSS should keep prompt images hidden until their skeleton can swap to decoded media'
     );
     assert.match(
         framerSource,
@@ -661,6 +735,26 @@ test('homepage prompts title paints immediately when prompt cards mount', () => 
         renderPromptsSegment,
         /<div class="section-header fade-in-up visible" data-home-prompts-header="ready">/,
         'prompts heading should be visible immediately when prompt cards mount'
+    );
+    assert.match(
+        renderPromptsSegment,
+        /section\.className = 'prompts-masonry-section';/,
+        'runtime prompt cards should use the masonry section class covered by critical prompt CSS'
+    );
+    assert.match(
+        renderPromptsSegment,
+        /class="masonry-card masonry-card-preview"[\s\S]*style="--home-prompt-card-ratio: \$\{promptCardRatio\}"/,
+        'runtime prompt image skeletons should reserve a card ratio before images load'
+    );
+    assert.match(
+        framerSource,
+        /function bindHomepagePromptCardAspectRatioRelease\(section\)[\s\S]*card\.style\.setProperty\('--home-prompt-card-ratio', `\$\{image\.naturalWidth\} \/ \$\{image\.naturalHeight\}`\);[\s\S]*card\.dataset\.homePromptImageLoaded = '1';/,
+        'prompt cards should keep a decoded natural image ratio before revealing the image over the skeleton'
+    );
+    assert.doesNotMatch(
+        framerSource,
+        /removeProperty\('--home-prompt-card-ratio'\)/,
+        'prompt cards should not drop the reserved ratio at the same moment the image loads'
     );
 });
 

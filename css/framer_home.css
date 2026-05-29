@@ -1656,6 +1656,7 @@ html[data-theme="dark"] body.home-page .hero-carousel .entry-card-ui {
 }
 
 .masonry-card-preview {
+    position: relative;
     aspect-ratio: var(--home-prompt-card-ratio, auto);
     background:
         radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.1), transparent 58%),
@@ -1671,6 +1672,12 @@ html[data-theme="dark"] body.home-page .hero-carousel .entry-card-ui {
     pointer-events: none;
     user-select: none;
     -webkit-user-drag: none;
+    opacity: 0;
+    transition: opacity 0.18s ease;
+}
+
+.masonry-card-preview[data-home-prompt-image-loaded="1"] img {
+    opacity: 1;
 }
 
 .masonry-container[data-columns="1"] .masonry-card img {
