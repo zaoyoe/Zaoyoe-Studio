@@ -38,8 +38,53 @@ function getOptimizedImageUrl(url, options = {}) {
     return normalizePromptCdnUrlForCurrentSite(rawUrl) || rawUrl;
 }
 
+const PROMPTS_NON_SELECTABLE_UI_SELECTOR = [
+    '.framer-nav',
+    '.mobile-menu',
+    '.nav-dropdown',
+    '.nav-dropdown-portal',
+    '.search-dropdown',
+    '.hot-tag',
+    '.inline-hot-tag',
+    '.suggestion-item',
+    '.sort-trigger',
+    '.sort-dropdown',
+    '.sort-option'
+].join(', ');
+
 function isSupabaseStorageImageUrl(url) {
     return /^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(String(url || '').trim());
+}
+
+function disablePromptImageDrag(image) {
+    if (!image || typeof image.setAttribute !== 'function') return;
+    image.setAttribute('draggable', 'false');
+    image.draggable = false;
+}
+
+function preventPromptImageDrag(event) {
+    const target = event?.target instanceof Element
+        ? event.target.closest('img')
+        : null;
+    if (target) {
+        event.preventDefault();
+    }
+}
+
+function preventPromptCardTextSelection(event) {
+    if (!(event?.target instanceof Element)) return;
+
+    const cardTarget = event.target.closest('.prompt-card');
+    const uiTarget = event.target.closest(PROMPTS_NON_SELECTABLE_UI_SELECTOR);
+    if (cardTarget || uiTarget) {
+        event.preventDefault();
+    }
+}
+
+function bindPromptImageDragLock() {
+    document.addEventListener('dragstart', preventPromptImageDrag);
+    document.addEventListener('selectstart', preventPromptCardTextSelection);
+    document.querySelectorAll('img').forEach(disablePromptImageDrag);
 }
 
 function getPromptAssetCdnOrigin({ canonical = false } = {}) {
@@ -1292,6 +1337,7 @@ async function checkAuthState() {
                 // Create image with proper error handling
                 const img = document.createElement('img');
                 img.alt = 'Avatar';
+                disablePromptImageDrag(img);
                 img.onerror = function () {
                     console.warn('⚠️ Avatar load failed, using fallback');
                     this.onerror = null;
@@ -2445,6 +2491,7 @@ function schedulePromptsDeferredEnhancements() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+    bindPromptImageDragLock();
     initializePromptStaticControls();
     syncPromptNavOffset();
     renderPromptNavSkeletons();
@@ -3858,7 +3905,7 @@ function renderCurrentPage() {
             <button class="card-fav-btn ${isSaved ? 'saved' : ''}" type="button">
                 <i class="fas fa-heart"></i>
             </button>
-            <img class="card-image" loading="${shouldLoadImageEagerly ? 'eager' : 'lazy'}" decoding="async" alt="${getLocalizedField(item, 'title')}">
+            <img class="card-image" loading="${shouldLoadImageEagerly ? 'eager' : 'lazy'}" decoding="async" alt="${getLocalizedField(item, 'title')}" draggable="false">
             <div class="card-overlay">
                 <div class="card-title">${getLocalizedField(item, 'title')}</div>
                 ${indicators}
@@ -3872,6 +3919,7 @@ function renderCurrentPage() {
 
         const cardImage = card.querySelector('.card-image');
         if (cardImage) {
+            disablePromptImageDrag(cardImage);
             cardImage.loading = shouldLoadImageEagerly ? 'eager' : 'lazy';
             cardImage.decoding = 'async';
             cardImage.setAttribute('fetchpriority', shouldLoadImageEagerly ? 'high' : 'auto');
@@ -6141,6 +6189,7 @@ function openPromptModal(id) {
     const newImg = document.createElement('img');
     newImg.id = 'modalImg';
     newImg.className = 'active';
+    disablePromptImageDrag(newImg);
     newImg.src = currentModalImages[0] || '';
     newImg.alt = getLocalizedField(item, 'title');
 
@@ -8001,7 +8050,7 @@ function openImageLightbox(imageUrl) {
         lightbox.className = 'image-lightbox';
         lightbox.innerHTML = `
             <button class="lightbox-close" type="button">×</button>
-            <img src="" alt="Full size" />
+            <img src="" alt="Full size" draggable="false" />
         `;
         document.body.appendChild(lightbox);
         lightbox.querySelector('.lightbox-close')?.addEventListener('click', () => {
@@ -8011,6 +8060,7 @@ function openImageLightbox(imageUrl) {
 
     // Set image and show
     const img = lightbox.querySelector('img');
+    disablePromptImageDrag(img);
     img.src = safeImageUrl;
 
     requestAnimationFrame(() => {
@@ -8774,7 +8824,7 @@ function renderComment(comment, overrideAvatar = null, replyToProfile = null, ha
     div.dataset.commentId = comment.id;
     div.innerHTML = `
         ${isReply ? '<div class="thread-line"></div>' : ''}
-        <img src="${avatarUrl}" class="comment-avatar" alt="${name}">
+        <img src="${avatarUrl}" class="comment-avatar" alt="${name}" draggable="false">
         <div class="comment-body">
             ${replyingToHtml}
             <div class="comment-header">
@@ -9491,6 +9541,7 @@ function updateModalImage(index) {
 
     // 1. Create new image (hidden)
     const newImg = document.createElement('img');
+    disablePromptImageDrag(newImg);
     newImg.src = currentModalImages[index];
     newImg.className = 'modal-next-image'; // Position absolute, opacity 0
 

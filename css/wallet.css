@@ -161,6 +161,29 @@ body.wallet-modal-lock {
     box-sizing: border-box;
 }
 
+/* 20260530_PUBLIC_COMPONENT_SELECT_GUARD_1 */
+.wallet-overlay,
+.wallet-overlay *,
+.wallet-order-modal-overlay,
+.wallet-order-modal-overlay * {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.wallet-overlay img,
+.wallet-order-modal-overlay img {
+    -webkit-user-drag: none;
+    user-drag: none;
+}
+
+.wallet-overlay :where(input, textarea, select, [contenteditable="true"], [contenteditable="true"] *),
+.wallet-order-modal-overlay :where(input, textarea, select, [contenteditable="true"], [contenteditable="true"] *),
+.wallet-order-modal-overlay :where(.detail-val.copyable, .detail-val.copyable *, .wallet-copy-card, .wallet-copy-card *, .wallet-order-guidance-content, .wallet-order-guidance-content *, .wallet-crypto-primary-amount, .wallet-crypto-address-text, .item-content, .item-content *, .item-text, .item-text *),
+.wallet-overlay :where(.wallet-affiliate-link-input) {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
 .wallet-modal {
     background: var(--wallet-sheet-panel);
     border-radius: 26px;

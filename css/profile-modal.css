@@ -141,6 +141,24 @@
     overscroll-behavior: contain;
 }
 
+/* 20260530_PUBLIC_COMPONENT_SELECT_GUARD_1 */
+#profileModal,
+#profileModal * {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+#profileModal img {
+    -webkit-user-drag: none;
+    user-drag: none;
+}
+
+#profileModal :where(input, textarea, select, [contenteditable="true"], [contenteditable="true"] *),
+#profileModal :where(#profileMobileHeroEmail, #profileMobileHeroId, #profileMobileEmailValue, .profile-mobile-info-value, .profile-mobile-info-value *) {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
 .profile-modal-file-input {
     display: none;
 }

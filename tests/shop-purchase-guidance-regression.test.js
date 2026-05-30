@@ -17,6 +17,8 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     const walletModalSource = readRepoFile(path.join('js', 'components', 'WalletModal.js'));
     const shopHtmlSource = readRepoFile('shop.html');
     const shopCssSource = readRepoFile(path.join('css', 'shop-page.css'));
+    const chatWidgetCssSource = readRepoFile(path.join('css', 'chat-widget.css'));
+    const chatWidgetLoaderSource = readRepoFile(path.join('js', 'chat-widget-loader.js'));
     const zhLang = JSON.parse(readRepoFile(path.join('lang', 'zh.json')));
     const enLang = JSON.parse(readRepoFile(path.join('lang', 'en.json')));
     const publicScrollbarSource = readRepoFile(path.join('js', 'public-scrollbar-auto-hide.js'));
@@ -307,12 +309,33 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopCssSource,
-        /@media \(max-width: 1180px\) \{[\s\S]*body\.shop-page \.chat-widget-fab \{[\s\S]*top: auto !important;[\s\S]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ 8px\) !important;[\s\S]*body\.shop-page \.shop-cart-anchor \{[\s\S]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ 76px\);[\s\S]*body\.shop-page \.shop-cart-anchor__copy,[\s\S]*body\.shop-page \.shop-cart-anchor__hint \{[\s\S]*display: none !important;/s,
+        /@media \(max-width: 1180px\) \{[\s\S]*body\.shop-page \.chat-widget-fab \{[\s\S]*top: auto !important;[\s\S]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ 40px\) !important;[\s\S]*body\.shop-page \.shop-cart-anchor \{[\s\S]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ 108px\);[\s\S]*body\.shop-page \.shop-cart-anchor__copy,[\s\S]*body\.shop-page \.shop-cart-anchor__hint \{[\s\S]*display: none !important;/s,
         'narrow desktop shop windows should use the same stacked floating icon placement as mobile'
+    );
+    const narrowDesktopChatStackPattern = /@media \(max-width: 1180px\) and \(hover: hover\) and \(pointer: fine\) \{[\s\S]*body\.shop-page \.chat-widget-fab \{[\s\S]*top: auto !important;[\s\S]*right: 16px !important;[\s\S]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ 40px\) !important;[\s\S]*transform: none !important;[\s\S]*body\.shop-page \.chat-widget-fab\.chat-widget-fab--peek \.chat-widget-fab__robot,[\s\S]*width: 56px !important;[\s\S]*transform: none !important;/s;
+    assert.match(
+        chatWidgetCssSource,
+        narrowDesktopChatStackPattern,
+        'full chat widget CSS should not restore the desktop side-peek robot on narrow shop windows'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        narrowDesktopChatStackPattern,
+        'chat widget critical loader CSS should keep the shop robot in the lower mobile slot before full styles load'
     );
     assert.match(
         shopCssSource,
-        /@media \(max-width: 720px\) \{[\s\S]*body\.shop-page \.chat-widget-fab \{\s+bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ 8px\);[\s\S]*\.shop-cart-anchor \{[\s\S]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ 76px\);/s,
+        narrowDesktopChatStackPattern,
+        'shop stylesheet should keep its final narrow-desktop robot override aligned with the mobile stack'
+    );
+    assert.doesNotMatch(
+        `${shopCssSource}\n${chatWidgetCssSource}\n${chatWidgetLoaderSource}`,
+        /@media \(max-width: 1180px\) and \(hover: hover\) and \(pointer: fine\) \{[\s\S]*body\.shop-page \.chat-widget-fab \{[\s\S]*top: 85% !important;[\s\S]*right: 0 !important;[\s\S]*bottom: auto !important;/s,
+        'narrow shop desktop should not use the old edge-peeking robot placement'
+    );
+    assert.match(
+        shopCssSource,
+        /@media \(max-width: 720px\) \{[\s\S]*body\.shop-page \.chat-widget-fab \{\s+bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ 40px\);[\s\S]*\.shop-cart-anchor \{[\s\S]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ 108px\);/s,
         'mobile customer-service robot should sit in the lower floating slot, with the cart icon above it'
     );
     assert.match(
@@ -337,7 +360,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopCssSource,
-        /\.shop-cart-anchor__icon i \{[\s\S]*font-size: 24px;[\s\S]*@supports \(-webkit-touch-callout: none\) \{[\s\S]*body\.shop-page \{[\s\S]*--shop-mobile-browser-chrome-bottom-gap: 64px;[\s\S]*body\.shop-page \.shop-cart-anchor \{[\s\S]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ var\(--shop-mobile-browser-chrome-bottom-gap, 64px\) \+ 76px\);[\s\S]*backdrop-filter: var\(--shop-mobile-floating-glass-filter\) !important;[\s\S]*body\.shop-page \.chat-widget-fab \{[\s\S]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ var\(--shop-mobile-browser-chrome-bottom-gap, 64px\) \+ 8px\) !important;[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-cart-anchor,[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page \.chat-widget-fab \{[\s\S]*background: var\(--shop-mobile-floating-glass-bg\) !important;[\s\S]*box-shadow: var\(--shop-mobile-floating-glass-shadow\) !important;/s,
+        /\.shop-cart-anchor__icon i \{[\s\S]*font-size: 24px;[\s\S]*@supports \(-webkit-touch-callout: none\) \{[\s\S]*body\.shop-page \{[\s\S]*--shop-mobile-browser-chrome-bottom-gap: 64px;[\s\S]*body\.shop-page \.shop-cart-anchor \{[\s\S]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ var\(--shop-mobile-browser-chrome-bottom-gap, 64px\) \+ 108px\);[\s\S]*backdrop-filter: var\(--shop-mobile-floating-glass-filter\) !important;[\s\S]*body\.shop-page \.chat-widget-fab \{[\s\S]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ var\(--shop-mobile-browser-chrome-bottom-gap, 64px\) \+ 40px\) !important;[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-cart-anchor,[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page \.chat-widget-fab \{[\s\S]*background: var\(--shop-mobile-floating-glass-bg\) !important;[\s\S]*box-shadow: var\(--shop-mobile-floating-glass-shadow\) !important;/s,
         'iOS mobile floating layers should keep the glass containers above the Safari 26 bottom chrome sampling band'
     );
     assert.match(

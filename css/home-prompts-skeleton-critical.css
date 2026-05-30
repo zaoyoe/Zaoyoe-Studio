@@ -1,8 +1,9 @@
-/* 20260529_HOME_PROMPTS_CRITICAL_SKELETON_1 */
+/* 20260530_HOME_PROMPTS_SKELETON_GRID_1 */
 body.home-page #main-content>.home-section-shell-section--prompts{max-width:none;padding:var(--spacing-xl) 0;overflow:hidden;display:block}
 .home-section-shell-section--prompts .home-section-shell{width:100%;opacity:1}
 .home-section-shell-section--prompts .home-section-shell__header{position:relative;z-index:1}
-.home-section-shell__body--prompts{display:block}
+.home-section-shell-section--prompts .home-section-shell__body--prompts{display:block;width:100%}
+.home-section-shell-section--prompts .home-section-shell__body--prompts>.home-prompts-skeleton{grid-column:1/-1}
 .home-prompts-skeleton{position:relative;width:100%;max-height:1000px;overflow:hidden}
 .home-prompts-skeleton__grid{display:flex;align-items:flex-start;gap:12px;width:100%;padding:0 12px}
 .home-prompts-skeleton__column{flex:1;display:flex;flex-direction:column;gap:12px;min-width:0}

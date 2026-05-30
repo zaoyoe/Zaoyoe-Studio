@@ -1358,7 +1358,7 @@ let walletWarmPrefetchHandle = null;
 let walletRuntimeWarmHandle = null;
 let profileModalWarmHandle = null;
 let profileModalBootstrapScriptPromise = null;
-const PROFILE_MODAL_BOOTSTRAP_SRC = 'js/profile-modal-loader.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1';
+const PROFILE_MODAL_BOOTSTRAP_SRC = 'js/profile-modal-loader.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';
 
 function warmSupabaseAuthWalletRuntime(reason = 'auth-ready') {
     const loader = window.ZaoyoeWalletModalBootstrap;

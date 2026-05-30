@@ -58,6 +58,18 @@ body.notif-scroll-locked .chat-widget-fab {
     pointer-events: none;
 }
 
+/* 20260530_PUBLIC_COMPONENT_SELECT_GUARD_1 */
+.notif-drawer,
+.notif-drawer * {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.notif-drawer img {
+    -webkit-user-drag: none;
+    user-drag: none;
+}
+
 .notif-drawer-header,
 .notif-drawer-list,
 .notif-drawer-footer {
