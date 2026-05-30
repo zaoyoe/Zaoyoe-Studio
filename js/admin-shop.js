@@ -6630,7 +6630,7 @@ Example output format:
 
             uploadText.textContent = '✅ 上传成功';
             setTimeout(() => {
-                uploadText.textContent = '点击更换图片 (支持 JPG, PNG, WebP)';
+                uploadText.textContent = '点击更换图片 (建议 3:2 / 1200 x 800，支持 JPG, PNG, WebP)';
                 iconBox.classList.remove('upload-box--busy');
             }, 2000);
 

@@ -204,7 +204,8 @@
         /* Inner Elements */
         .shop-card-image {
             width: 100%;
-            height: 160px;
+            aspect-ratio: 3 / 2;
+            height: auto;
             background: var(--shop-media-shell-bg);
             display: flex;
             align-items: center;
@@ -4451,12 +4452,12 @@
             }
 
             .shop-card-image {
-                aspect-ratio: 21 / 9;
+                aspect-ratio: 3 / 2;
                 height: auto;
             }
 
             .skeleton-card .skeleton-image-shell {
-                aspect-ratio: 21 / 9;
+                aspect-ratio: 3 / 2;
                 height: auto;
             }
 
@@ -4502,6 +4503,23 @@
             .shop-grid.is-empty {
                 min-height: clamp(180px, 26vh, 260px);
                 padding: 6px 0 2px;
+            }
+        }
+
+        @media (max-width: 559px) {
+            .shop-card-image {
+                aspect-ratio: 16 / 9;
+            }
+
+            .skeleton-card .skeleton-image-shell {
+                aspect-ratio: 16 / 9;
+            }
+        }
+
+        @media (min-width: 560px) and (max-width: 768px) {
+            .shop-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: clamp(14px, 2vw, 22px);
             }
         }
 
@@ -5906,7 +5924,8 @@
 
         .skeleton-image-shell {
             position: relative;
-            height: 160px;
+            aspect-ratio: 3 / 2;
+            height: auto;
             overflow: hidden;
             border-bottom: 1px solid rgba(148, 163, 184, 0.12);
             background: var(--shop-skeleton-shell-bg);
