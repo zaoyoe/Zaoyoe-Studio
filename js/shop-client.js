@@ -12139,15 +12139,13 @@ const ShopClient = {
                 site: window.SiteConfig?.site || 'cn'
             });
         }
-        const cachedDiscountAssetsPayload = manualDelivery
-            ? null
-            : this.readDiscountAssetsCache(this.buildDiscountAssetsCacheKey({
-                productId,
-                productSkuId: selectedSkuId,
-                quantity: initialQuantity,
-                agentId: this.currentAgentId,
-                site: window.SiteConfig?.site || 'cn'
-            }));
+        const cachedDiscountAssetsPayload = this.readDiscountAssetsCache(this.buildDiscountAssetsCacheKey({
+            productId,
+            productSkuId: selectedSkuId,
+            quantity: initialQuantity,
+            agentId: this.currentAgentId,
+            site: window.SiteConfig?.site || 'cn'
+        }));
         const runtimeCartDiscount = this.normalizeCartDiscountSnapshot(options?.appliedDiscount || null, {
             quantity: initialQuantity,
             subtotal: Number(effectivePrice || 0) * initialQuantity
@@ -12185,8 +12183,7 @@ const ShopClient = {
                 String(candidate?.code || '').trim().toUpperCase()
             ].join('::') === currentKey) === index;
         });
-        const hasImmediateVisibleDiscountData = manualDelivery
-            || Boolean(cachedDiscountAssetsPayload)
+        const hasImmediateVisibleDiscountData = Boolean(cachedDiscountAssetsPayload)
             || prefilledOwnedDiscounts.some((item) => item?.available !== false)
             || prefilledClaimableDiscounts.length > 0;
         const normalizedPurchaseNotes = typeof purchaseNotes === 'string' ? purchaseNotes.trim() : '';
