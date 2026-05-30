@@ -3622,19 +3622,44 @@ test('shop category filters keep live pills mounted during refresh revalidation'
     );
 });
 
-test('shop storefront uses a 21:9 media ratio for mobile product cards', () => {
+test('shop storefront keeps product card media at the generated 3:2 ratio', () => {
     const shopCssSource = readRepoFile('css/shop-page.css');
     const shopHtmlSource = readRepoFile('shop.html');
 
     assert.match(
         shopCssSource,
-        /@media \(max-width: 768px\)[\s\S]*?\.shop-card-image\s*\{\s*aspect-ratio:\s*21 \/ 9;\s*height:\s*auto;\s*\}[\s\S]*?\.skeleton-card \.skeleton-image-shell\s*\{\s*aspect-ratio:\s*21 \/ 9;\s*height:\s*auto;\s*\}/,
-        'mobile shop product cards and loading skeletons should keep the top media area at 21:9'
+        /\.shop-card-image\s*\{\s*width:\s*100%;\s*aspect-ratio:\s*3 \/ 2;\s*height:\s*auto;/,
+        'shop product cards should match the 480 x 320 generated card image ratio'
+    );
+    assert.match(
+        shopCssSource,
+        /\.skeleton-image-shell\s*\{\s*position:\s*relative;\s*aspect-ratio:\s*3 \/ 2;\s*height:\s*auto;/,
+        'shop loading skeletons should match the product card image ratio'
+    );
+    assert.match(
+        shopCssSource,
+        /@media \(max-width: 559px\)\s*\{\s*\.shop-card-image\s*\{\s*aspect-ratio:\s*16 \/ 9;\s*\}[\s\S]*?\.skeleton-card \.skeleton-image-shell\s*\{\s*aspect-ratio:\s*16 \/ 9;\s*\}/,
+        'single-column phone storefront cards should use a shallower 16:9 media window to keep one product from dominating the viewport'
+    );
+    assert.match(
+        shopCssSource,
+        /@media \(min-width: 560px\) and \(max-width: 768px\)\s*\{\s*\.shop-grid\s*\{\s*grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\);/,
+        'wide mobile and narrow tablet storefront windows should show two product columns instead of one oversized card'
     );
     assert.equal(
-        shopHtmlSource.includes('css/shop-page.css?v=20260520_SHOP_CARD_PROMPT_BREATHE_3'),
+        shopHtmlSource.includes('shopCardImageRatio=20260530_SHOP_CARD_IMAGE_RATIO_1'),
         true,
-        'shop.html should bust the shop stylesheet cache for the latest shop card sizing'
+        'shop.html should bust the shop stylesheet cache for the fixed shop card image ratio'
+    );
+    assert.equal(
+        shopHtmlSource.includes('shopGridTabletColumns=20260530_SHOP_GRID_TABLET_COLUMNS_2'),
+        true,
+        'shop.html should bust the shop stylesheet cache for the tablet two-column grid threshold'
+    );
+    assert.equal(
+        shopHtmlSource.includes('shopMobileMediaRatio=20260530_SHOP_MOBILE_MEDIA_RATIO_1'),
+        true,
+        'shop.html should bust the shop stylesheet cache for the compact single-column mobile media ratio'
     );
 });
 
