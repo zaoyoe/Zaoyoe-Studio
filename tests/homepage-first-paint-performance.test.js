@@ -27,7 +27,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'static hero title should render immediately and still be localized by i18n'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260529_HOME_CONFIG_CACHE_1'),
+        indexSource.includes('./js/framer_home.js?v=20260530_HOME_GONGYI_FATHER_KEY_1'),
         true,
         'index.html should cache-bust the first-paint homepage runtime'
     );
@@ -416,7 +416,7 @@ test('homepage ships static progressive shells below the hero before runtime hyd
     const sectionExpectations = [
         ['prompts', 'content-section', 'home.prompts.title', '提示词'],
         ['shop', 'content-section', 'home.shop.title', '资源商城'],
-        ['gongyi', 'content-section', 'home.gongyi.title', 'API中转'],
+        ['gongyi', 'content-section', 'home.gongyi.title', '核心秘钥'],
         ['verify', 'content-section', 'home.verify.title', 'Gemini Pro'],
         ['guestbook', 'content-section', 'home.guestbook.title', '留言板'],
         ['ticker', 'ticker-section', '', '']
@@ -447,8 +447,8 @@ test('homepage ships static progressive shells below the hero before runtime hyd
         }
     }
 
-    assert.equal(zhMessages.home.gongyi.title, 'API中转');
-    assert.equal(enMessages.home.gongyi.title, 'API Relay');
+    assert.equal(zhMessages.home.gongyi.title, '核心秘钥');
+    assert.equal(enMessages.home.gongyi.title, 'Father Key');
     assert.equal(
         criticalStyles.includes('.home-section-shell-section{--home-shell-min-height:520px;min-height:var(--home-shell-min-height);display:flex;align-items:center;justify-content:center}'),
         true,
@@ -807,7 +807,7 @@ test('homepage shop title paints before delayed product cards', () => {
         'critical CSS should hide pending shop cards before deferred styles finish loading'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260529_HOME_CONFIG_CACHE_1'),
+        indexSource.includes('./js/framer_home.js?v=20260530_HOME_GONGYI_FATHER_KEY_1'),
         true,
         'index.html should cache-bust the shop title-first homepage runtime'
     );
@@ -832,7 +832,7 @@ test('homepage defers noncritical data boot scripts so HTML can reach the first-
         './js/site-config.js?v=20260528_AVATAR_CANONICAL_CDN_1',
         './js/homepage-contract.js?v=20260512_HOMEPAGE_CONTRACT_VERIFY_I18N_1',
         './js/section-visibility.js?v=20260528_GONGYI_SITE_AWARE_1',
-        './js/i18n.js?v=20260521_HOME_SHOP_TITLE_1',
+        './js/i18n.js?v=20260530_HOME_GONGYI_FATHER_KEY_1',
         './js/cache.js?v=20260512_HOME_CACHE_REFRESH_1',
         './js/homepage-prompts-data.js?v=20260501_HOME_PROMPTS_SUMMARY_1'
     ];

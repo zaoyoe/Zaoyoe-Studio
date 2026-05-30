@@ -4169,7 +4169,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'function setHomeSectionVisibility(section, visible)',
         'function getHomeLoopPixelsPerSecond(speedValue)',
         'function getHomeLoopDurationSeconds(cycleWidth, speedValue)',
-        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260530_HOME_SHOP_CATEGORY_PUBLIC_1';",
+        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260530_HOME_GONGYI_FATHER_KEY_1';",
         "const HOMEPAGE_CONFIG_CACHE_KEY = 'homepage_config_sub2api_1';",
         "const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';",
         "const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';",
@@ -4265,7 +4265,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'index.html should load the latest framer_home stylesheet version'
     );
     assert.equal(
-        homepageSource.includes('./js/framer_home.js?v=20260529_HOME_CONFIG_CACHE_1'),
+        homepageSource.includes('./js/framer_home.js?v=20260530_HOME_GONGYI_FATHER_KEY_1'),
         true,
         'index.html should load the latest framer_home script version'
     );
@@ -4331,14 +4331,14 @@ test('homepage subpages load the latest prefetch-home runtime script version', (
 
     for (const source of subpageSources) {
         assert.equal(
-            source.includes('./js/prefetch-home.js?v=20260518_HOME_GONGYI_SUB2API_1&categoryPublic=20260530_SHOP_CATEGORY_PUBLIC_VISIBILITY_1'),
+            source.includes('./js/prefetch-home.js?v=20260530_HOME_GONGYI_FATHER_KEY_1&categoryPublic=20260530_SHOP_CATEGORY_PUBLIC_VISIBILITY_1'),
             true,
             'subpages should load the latest prefetch-home script version'
         );
     }
 
     assert.equal(
-        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260530_HOME_SHOP_CATEGORY_PUBLIC_1';"),
+        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260530_HOME_GONGYI_FATHER_KEY_1';"),
         true,
         'js/prefetch-home.js should version homepage prefetch payloads after the homepage P2 runtime changes'
     );
@@ -9591,6 +9591,39 @@ test('verify widget runtime renderers route wallet/login/form/history actions th
     }
 });
 
+test('verify guide requirements include payment profile close link', () => {
+    const verifyWidgetSource = readRepoFile('verify-widget.js');
+    const zhLocale = JSON.parse(readRepoFile('lang/zh.json'));
+    const enLocale = JSON.parse(readRepoFile('lang/en.json'));
+
+    assert.equal(
+        verifyWidgetSource.includes("t('verify.guidePaymentProfileTitle', '付款资料')"),
+        true,
+        'verify guide should render the payment profile requirement title'
+    );
+    assert.equal(
+        verifyWidgetSource.includes('https://payments.google.com/gp/w/u/0/home/settings'),
+        true,
+        'verify guide should link directly to Google Payments settings'
+    );
+    assert.equal(
+        verifyWidgetSource.includes("t('verify.guidePaymentProfileBodyPrefix', '提交任务前必须点击')"),
+        true,
+        'verify guide should tell users to close payment profile before submitting'
+    );
+    assert.equal(
+        verifyWidgetSource.includes("t('verify.guideClosePaymentProfile', '关闭付款资料')"),
+        true,
+        'verify guide should render a localized close-payment-profile link label'
+    );
+    assert.equal(zhLocale.verify.guidePaymentProfileTitle, '付款资料');
+    assert.equal(zhLocale.verify.guidePaymentProfileBodyPrefix, '提交任务前必须点击');
+    assert.equal(zhLocale.verify.guideClosePaymentProfile, '关闭付款资料');
+    assert.equal(enLocale.verify.guidePaymentProfileTitle, 'Payment Profile');
+    assert.equal(enLocale.verify.guidePaymentProfileBodyPrefix, 'Before submitting, you must click');
+    assert.equal(enLocale.verify.guideClosePaymentProfile, 'Close payment profile');
+});
+
 test('verify widget runtime renderers externalize progress, visibility, history tone, and maintenance styling', () => {
     const verifyWidgetSource = readRepoFile('verify-widget.js');
     const verifyWidgetCss = readRepoFile('verify-widget.css');
@@ -9693,9 +9726,14 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'verify.html should load the shared user event tracker before the verify widget runtime'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260520_VERIFY_MODE_VISIBILITY_2'),
+        verifyPageSource.includes('./verify-widget.js?v=20260530_VERIFY_PAYMENT_PROFILE_BODY_1'),
         true,
         'verify.html should load the latest verify-widget script version'
+    );
+    assert.equal(
+        verifyPageSource.includes('js/i18n.js?v=20260530_VERIFY_PAYMENT_PROFILE_BODY_1'),
+        true,
+        'verify.html should cache-bust locale loading for the latest payment profile copy'
     );
     assert.equal(
         archivedIndexSource.includes('verify-widget.css?v=20260324_VERIFY_WIDGET_RUNTIME_STYLE_1'),

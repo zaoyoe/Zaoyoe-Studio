@@ -65,7 +65,7 @@ const HOMEPAGE_DEFERRED_OVERLAY_STYLE_GROUP = 'homepage-overlays';
 const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
 const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
 const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260530_HOME_SHOP_CATEGORY_PUBLIC_1';
+const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260530_HOME_GONGYI_FATHER_KEY_1';
 const HOMEPAGE_CONFIG_CACHE_KEY = 'homepage_config_sub2api_1';
 const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';
 const HOMEPAGE_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';
@@ -140,7 +140,7 @@ const HOMEPAGE_SECTION_SHELL_COPY = {
   gongyi: {
     titleKey: 'home.gongyi.title',
     subtitleKey: 'home.gongyi.subtitle',
-    title: { zh: 'API中转', en: 'API Relay' },
+    title: { zh: '核心秘钥', en: 'Father Key' },
     subtitle: { zh: '订阅转 API 转换平台', en: 'Subscription to API conversion platform' }
   },
   verify: {
@@ -398,7 +398,7 @@ function getHomepageEntryFallback(item = {}, index = 0) {
   const key = String(item?.section || item?.id || '').trim().toLowerCase();
   const fallbackByKey = {
     prompts: { i18nKey: 'home.entries.prompts', zh: '提示词', en: 'Prompts' },
-    gongyi: { i18nKey: 'home.entries.gongyi', zh: 'API中转', en: 'API Relay' },
+    gongyi: { i18nKey: 'home.entries.gongyi', zh: '核心秘钥', en: 'Father Key' },
     shop: { i18nKey: 'home.entries.shop', zh: '商城', en: 'Shop' },
     verify: { i18nKey: 'home.entries.verify', zh: 'Gemini Pro', en: 'Gemini Pro' },
     guestbook: { i18nKey: 'home.entries.guestbook', zh: '留言板', en: 'Guestbook' }
@@ -456,12 +456,16 @@ function normalizeHomepageGongyiUrl(value) {
 function resolveHomepageGongyiBrandName(value) {
   const text = String(value || '').trim();
   const fallback = getHomepageLanguageFallback('home.entries.gongyi', {
-    zh: 'API中转',
-    en: 'API Relay'
+    zh: '核心秘钥',
+    en: 'Father Key'
   });
   const legacyLabels = new Set(['公益站', '公益站点', 'Community Access', 'API中转', 'API 中转', 'API Relay']);
 
-  if (!text || legacyLabels.has(text) || containsHomeCjkText(text)) {
+  if (!text || legacyLabels.has(text)) {
+    return fallback;
+  }
+
+  if (getHomepageRuntimeLanguage() === 'en' && containsHomeCjkText(text)) {
     return fallback;
   }
 
@@ -2932,7 +2936,7 @@ const FramerHome = {
   buildDefaultHeroEntries() {
     return [
       { id: 'prompts', icon: 'fa-wand-magic-sparkles', text: window.i18n?.t('home.entries.prompts') || '提示词', link: '/prompts.html', color: '#f472b6', section: 'prompts' },
-      { id: 'gongyi', icon: 'home-entry-card-icon--gongyi', text: window.i18n?.t('home.entries.gongyi') || 'API中转', link: 'https://sub2api.fatherkey.com', color: '#5ed8f8', section: 'gongyi' },
+      { id: 'gongyi', icon: 'home-entry-card-icon--gongyi', text: window.i18n?.t('home.entries.gongyi') || '核心秘钥', link: 'https://sub2api.fatherkey.com', color: '#5ed8f8', section: 'gongyi' },
       { id: 'shop', icon: 'fa-store', text: window.i18n?.t('home.entries.shop') || '商城', link: '/shop.html', color: '#4ade80', section: 'shop' },
       { id: 'verify', icon: 'fa-robot', text: window.i18n?.t('home.entries.verify') || 'Gemini Pro', link: '/verify.html', color: '#667eea', section: 'verify' },
       { id: 'guestbook', icon: 'fa-comment-dots', text: window.i18n?.t('home.entries.guestbook') || '留言板', link: '/guestbook.html', color: '#f59e0b', section: 'guestbook' }
@@ -3840,7 +3844,7 @@ const FramerHome = {
       hero: { enable_auto: true },
       prompts: { enable_auto: true, max_items: 24, sort: 'popular', section_title: '提示词', section_subtitle: '让创作更高效，让灵感更自由' },
       shop: { enable_auto: true, max_items: 8, section_title: '资源商城', section_subtitle: '优质资源，助力成长' },
-      gongyi: { enable_auto: false, section_tag: 'API中转', brand_name: 'Zaoyoe', brand_subtitle: 'Subscription to API Conversion Platform', cta_text: '进入控制台', cta_link: 'https://sub2api.fatherkey.com' },
+      gongyi: { enable_auto: false, section_tag: 'API中转', brand_name: '核心秘钥', brand_name_en: 'Father Key', brand_subtitle: 'Subscription to API Conversion Platform', cta_text: '进入控制台', cta_link: 'https://sub2api.fatherkey.com' },
       verify: { enable_auto: true, section_title: 'Gemini Pro', section_subtitle: '快速验证您的 API 密钥' },
       guestbook: { enable_auto: true, max_items: 6, section_title: '留言板', section_subtitle: '用户的声音' },
       ticker: { enable_auto: true, speed: 30 }

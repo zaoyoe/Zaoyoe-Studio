@@ -133,6 +133,7 @@ test('homepage hero runtime avoids Chinese title fallback in English language mo
     assert.match(framerSource, /currentLang === 'zh'[\s\S]*normalized\.every\(\(item\) => !containsHomeCjkText\(item\)\)[\s\S]*fallbackList\.some\(\(item\) => containsHomeCjkText\(item\)\)/);
     assert.match(framerSource, /text: resolveHomepageLocalizedText\(entryText, entryFallback\.i18nKey/);
     assert.match(framerSource, /brandName: resolveHomepageGongyiBrandName\(this\.getLocalizedField\(config, 'brand_name'\) \|\| config\.brand_name\)/);
+    assert.match(framerSource, /if \(!text \|\| legacyLabels\.has\(text\)\) \{[\s\S]*return fallback;[\s\S]*if \(getHomepageRuntimeLanguage\(\) === 'en' && containsHomeCjkText\(text\)\) \{[\s\S]*return fallback;/);
     assert.match(framerSource, /resolveHomepageLocalizedText\(normalizeHomepageVerifyProductLabel\(this\.getLocalizedField\(config, 'section_title'\)\), 'home\.verify\.title'/);
     assert.match(framerSource, /this\.cachedData\.gongyi = this\.buildGongyiData\(this\.config\.gongyi \|\| \{\}\);/);
     assert.match(framerSource, /features: resolveHomepageLocalizedTextList\(config\.features, defaultFeatures\)/);
@@ -154,6 +155,7 @@ test('homepage hero runtime avoids Chinese title fallback in English language mo
     assert.match(prefetchSource, /currentLang === 'zh'[\s\S]*normalized\.every\(\(item\) => !containsCjkText\(item\)\)[\s\S]*fallbackList\.some\(\(item\) => containsCjkText\(item\)\)/);
     assert.match(prefetchSource, /text: resolveLocalizedText\(entryText, entryFallback\.i18nKey/);
     assert.match(prefetchSource, /brandName: resolveGongyiBrandName\(getLocalizedField\(config, 'brand_name'\) \|\| config\.brand_name\)/);
+    assert.match(prefetchSource, /if \(!text \|\| legacyLabels\.has\(text\)\) \{[\s\S]*return fallback;[\s\S]*if \(getCurrentLanguage\(\) === 'en' && containsCjkText\(text\)\) \{[\s\S]*return fallback;/);
     assert.match(prefetchSource, /resolveLocalizedText\(normalizeVerifyProductLabel\(getLocalizedField\(config, 'section_title'\)\), 'home\.verify\.title'/);
     assert.match(prefetchSource, /features: resolveLocalizedTextList\(config\.features, defaultFeatures\)/);
     assert.match(prefetchSource, /ctaText: resolveLocalizedText\(experimentCtaText \|\| config\.cta_text, 'home\.verify\.cta'/);

@@ -1119,7 +1119,7 @@ const HomepageAdmin = (() => {
     function getHomepageDefaultHeroEntries() {
         return [
             { id: 'prompts', text: '提示词', text_en: 'Prompts', icon: 'fa-wand-magic-sparkles', color: '#f472b6', link: '/prompts.html', section: 'prompts' },
-            { id: 'gongyi', text: 'API中转', text_en: 'API Relay', icon: 'home-entry-card-icon--gongyi', color: '#5ed8f8', link: 'https://sub2api.fatherkey.com', section: 'gongyi' },
+            { id: 'gongyi', text: '核心秘钥', text_en: 'Father Key', icon: 'home-entry-card-icon--gongyi', color: '#5ed8f8', link: 'https://sub2api.fatherkey.com', section: 'gongyi' },
             { id: 'shop', text: '商城', text_en: 'Shop', icon: 'fa-store', color: '#4ade80', link: '/shop.html', section: 'shop' },
             { id: 'verify', text: 'Gemini Pro', text_en: 'Gemini Pro', icon: 'fa-shield-check', color: '#60a5fa', link: '/verify.html?source=homepage_verify', section: 'verify' },
             { id: 'guestbook', text: '留言板', text_en: 'Guestbook', icon: 'fa-comment-dots', color: '#f59e0b', link: '#', action: 'openGuestbookModal', section: 'guestbook' }
