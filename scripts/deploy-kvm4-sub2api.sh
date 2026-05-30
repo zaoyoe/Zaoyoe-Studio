@@ -123,7 +123,7 @@ scp "${scp_opts[@]}" deploy/kvm4/docker-compose.sub2api.yml "$remote:$remote_tmp
 
 echo "Activating Sub2API release on KVM4"
 ssh "${ssh_opts[@]}" "$remote" \
-  "KVM4_SUB2API_ROOT='$KVM4_SUB2API_ROOT' RELEASE_ID='$release_id' KEEP_RELEASES='$KEEP_RELEASES' REMOTE_TMP='$remote_tmp' bash -s" <<'REMOTE'
+  "KVM4_SUB2API_ROOT='$KVM4_SUB2API_ROOT' RELEASE_ID='$release_id' RELEASE_COMMIT='$head_sha' KEEP_RELEASES='$KEEP_RELEASES' REMOTE_TMP='$remote_tmp' bash -s" <<'REMOTE'
 set -Eeuo pipefail
 
 die() {
@@ -161,6 +161,7 @@ ensure_dependency_healthy() {
 
 [[ -n "${KVM4_SUB2API_ROOT:-}" ]] || die "KVM4_SUB2API_ROOT missing"
 [[ -n "${RELEASE_ID:-}" ]] || die "RELEASE_ID missing"
+[[ -n "${RELEASE_COMMIT:-}" ]] || die "RELEASE_COMMIT missing"
 [[ -n "${REMOTE_TMP:-}" ]] || die "REMOTE_TMP missing"
 [[ -f "$KVM4_SUB2API_ROOT/.env" ]] || die "$KVM4_SUB2API_ROOT/.env missing"
 [[ -f "$REMOTE_TMP/app.tar.gz" ]] || die "release archive missing"
@@ -205,6 +206,7 @@ mkdir -p "$release_root"
 tar -xzf "$REMOTE_TMP/app.tar.gz" -C "$release_root"
 [[ -f "$release_src/Dockerfile" ]] || die "release Dockerfile missing"
 install -o root -g root -m 0644 "$REMOTE_TMP/docker-compose.local.yml" "$release_root/docker-compose.local.yml"
+printf '%s\n' "$RELEASE_COMMIT" > "$release_root/.commit"
 
 cp -a "$KVM4_SUB2API_ROOT/.env" "$KVM4_SUB2API_ROOT/backups/env.$RELEASE_ID.bak"
 cp -a "$KVM4_SUB2API_ROOT/docker-compose.local.yml" "$KVM4_SUB2API_ROOT/backups/docker-compose.local.$RELEASE_ID.bak"
@@ -252,7 +254,7 @@ ensure_dependency_healthy sub2api-postgres postgres
 ensure_dependency_healthy sub2api-redis redis
 
 echo "Building Sub2API image from $release_src"
-export SUB2API_COMMIT="$RELEASE_ID"
+export SUB2API_COMMIT="$RELEASE_COMMIT"
 docker compose --env-file .env -f docker-compose.local.yml config >/dev/null
 if ! docker compose --env-file .env -f docker-compose.local.yml build sub2api; then
   rollback
@@ -275,7 +277,7 @@ fi
 if [[ -n "$previous_src" ]]; then
   printf '%s\n' "$previous_src" > "$KVM4_SUB2API_ROOT/.previous-src"
 fi
-printf '%s\n' "$RELEASE_ID" > "$KVM4_SUB2API_ROOT/.current-release"
+printf '%s\n' "$RELEASE_COMMIT" > "$KVM4_SUB2API_ROOT/.current-release"
 
 find "$KVM4_SUB2API_ROOT/releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ %p\n' |
   sort -rn |

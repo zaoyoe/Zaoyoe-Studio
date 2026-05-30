@@ -85,7 +85,11 @@ cd "$KVM4_ROOT"
 docker compose up -d --build --force-recreate verify-server
 healthcheck || die "healthcheck failed after rollback"
 
-basename "$target_root" > "$KVM4_ROOT/.current-release"
+if [[ -f "$target_root/.commit" ]]; then
+  install -o root -g root -m 0644 "$target_root/.commit" "$KVM4_ROOT/.current-release"
+else
+  basename "$target_root" > "$KVM4_ROOT/.current-release"
+fi
 docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'NAMES|zaoyoe-verify-server'
 curl -fsS http://127.0.0.1:3001/healthz
 REMOTE

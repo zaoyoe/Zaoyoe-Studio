@@ -129,7 +129,7 @@ scp "${scp_opts[@]}" deploy/kvm4/docker-compose.verify-server.yml "$remote:$remo
 
 echo "Activating release on KVM4"
 ssh "${ssh_opts[@]}" "$remote" \
-  "KVM4_ROOT='$KVM4_ROOT' RELEASE_ID='$release_id' KEEP_RELEASES='$KEEP_RELEASES' REMOTE_TMP='$remote_tmp' bash -s" <<'REMOTE'
+  "KVM4_ROOT='$KVM4_ROOT' RELEASE_ID='$release_id' RELEASE_COMMIT='$head_sha' KEEP_RELEASES='$KEEP_RELEASES' REMOTE_TMP='$remote_tmp' bash -s" <<'REMOTE'
 set -Eeuo pipefail
 
 die() {
@@ -149,6 +149,7 @@ healthcheck() {
 
 [[ -n "${KVM4_ROOT:-}" ]] || die "KVM4_ROOT missing"
 [[ -n "${RELEASE_ID:-}" ]] || die "RELEASE_ID missing"
+[[ -n "${RELEASE_COMMIT:-}" ]] || die "RELEASE_COMMIT missing"
 [[ -n "${REMOTE_TMP:-}" ]] || die "REMOTE_TMP missing"
 [[ -f "$KVM4_ROOT/.env" ]] || die "$KVM4_ROOT/.env missing"
 [[ -f "$REMOTE_TMP/app.tar.gz" ]] || die "release archive missing"
@@ -187,6 +188,7 @@ mkdir -p "$release_app"
 tar -xzf "$REMOTE_TMP/app.tar.gz" -C "$release_app"
 install -o root -g root -m 0644 "$REMOTE_TMP/Dockerfile" "$release_root/Dockerfile"
 install -o root -g root -m 0644 "$REMOTE_TMP/docker-compose.yml" "$release_root/docker-compose.yml"
+printf '%s\n' "$RELEASE_COMMIT" > "$release_root/.commit"
 cp -a "$KVM4_ROOT/.env" "$KVM4_ROOT/backups/env.$RELEASE_ID.bak"
 
 previous_app=""
@@ -222,7 +224,7 @@ if ! healthcheck; then
   exit 1
 fi
 
-printf '%s\n' "$RELEASE_ID" > "$KVM4_ROOT/.current-release"
+printf '%s\n' "$RELEASE_COMMIT" > "$KVM4_ROOT/.current-release"
 if [[ -n "$previous_app" ]]; then
   printf '%s\n' "$previous_app" > "$KVM4_ROOT/.previous-app"
 fi
