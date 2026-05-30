@@ -461,7 +461,7 @@ const SHOP_CARD_PROMPT_ENTER_DURATION_MS = 800;
 const SHOP_CARD_ENTER_SETTLE_FALLBACK_BUFFER_MS = 180;
 const SHOP_STARRY_SKY_RUNTIME_SRC = 'starry-sky.js?v=20260520_SHOP_IDLE_STARRY_1';
 const SHOP_STARRY_SKY_IDLE_DELAY_MS = 1200;
-const SHOP_PREFETCH_SCHEMA_VERSION = '20260523_SHOP_PRODUCT_SKUS_1';
+const SHOP_PREFETCH_SCHEMA_VERSION = '20260530_SHOP_MANUAL_DELIVERY_1';
 const SHOP_PURCHASE_PREFILL_SCHEMA_VERSION = '20260415_SHOP_PURCHASE_PREFILL_1';
 const SHOP_PURCHASE_PREFILL_STORAGE_KEY = 'shop_purchase_prefill';
 const SHOP_DISCOUNT_ASSETS_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -1163,9 +1163,58 @@ const ShopClient = {
         return normalizeVisibleProducts(products);
     },
 
+    hasShopCategoryPublicFlag: function (category = {}) {
+        return category
+            && typeof category === 'object'
+            && Object.prototype.hasOwnProperty.call(category, 'is_public');
+    },
+
+    isPublicShopCategory: function (category = {}) {
+        if (!this.hasShopCategoryPublicFlag(category)) {
+            return true;
+        }
+        if (typeof category.is_public === 'boolean') {
+            return category.is_public;
+        }
+        const normalized = String(category.is_public ?? '').trim().toLowerCase();
+        return !['0', 'false', 'no', 'off', 'hidden', 'private'].includes(normalized);
+    },
+
+    filterPublicShopCategories: function (categories = []) {
+        return (Array.isArray(categories) ? categories : [])
+            .filter((category) => this.isPublicShopCategory(category));
+    },
+
+    getHiddenShopCategoryNames: function (categories = []) {
+        return new Set(
+            (Array.isArray(categories) ? categories : [])
+                .filter((category) => !this.isPublicShopCategory(category))
+                .map((category) => String(category?.name || '').trim())
+                .filter(Boolean)
+        );
+    },
+
+    filterProductsForPublicShopCategories: function (products = [], categories = this.availableCategories) {
+        const hiddenCategoryNames = this.getHiddenShopCategoryNames(categories);
+        if (!hiddenCategoryNames.size) {
+            return Array.isArray(products) ? products : [];
+        }
+
+        return (Array.isArray(products) ? products : [])
+            .filter((product) => !hiddenCategoryNames.has(String(product?.category || '').trim()));
+    },
+
+    normalizePublicShopCatalog: function ({ categories = [], products = [] } = {}) {
+        return {
+            categories: this.filterPublicShopCategories(categories),
+            products: this.filterProductsForPublicShopCategories(products, categories)
+        };
+    },
+
     filterProductsForCategory: function (products, category = 'all') {
         const normalizedCategory = String(category || 'all').trim();
-        const visibleProducts = this.filterProductsForCurrentSite(products);
+        const publicProducts = this.filterProductsForPublicShopCategories(products, this.availableCategories);
+        const visibleProducts = this.filterProductsForCurrentSite(publicProducts);
         if (!normalizedCategory || normalizedCategory === 'all') {
             return visibleProducts;
         }
@@ -3057,10 +3106,12 @@ const ShopClient = {
         }
 
         const quantityCap = this.getPurchaseQuantityCapForProduct(liveProduct, liveProduct.max_purchase_quantity);
+        this.currentPurchase.manualDelivery = this.isShopProductManualDelivery(liveProduct);
         this.currentPurchase.configuredMaxQuantity = quantityCap;
         this.setCurrentPurchaseQuantityCap(quantityCap, {
             unlimited: this.currentPurchase.unlimitedPurchases === true
         });
+        this.setPurchaseStage(this.currentPurchase.stage || 'configure');
     },
 
     maybeShowShopDiscountEngagement: function () {
@@ -3312,6 +3363,8 @@ const ShopClient = {
         const defaultSku = this.getDefaultPurchaseSku(product);
         const selectionRules = this.resolveQuantityPricingRulesForSku(product, defaultSku);
         const qtyRulesStr = selectionRules.length ? encodeURIComponent(JSON.stringify(selectionRules)) : '';
+        const manualDelivery = this.isShopProductManualDelivery(product);
+        const soldOut = this.isShopProductSoldOut(product);
 
         return {
             productId,
@@ -3324,7 +3377,8 @@ const ShopClient = {
             qtyRules: qtyRulesStr,
             maxPurchaseQuantity: String(maxPurchaseQuantity),
             stockCount: normalizedStockCount,
-            stockState: normalizedStockCount <= 0 ? 'sold-out' : 'available',
+            stockState: soldOut ? 'sold-out' : 'available',
+            manualDelivery,
             showPurchaseNotes: product?.show_purchase_notes === true,
             purchaseNotes: this.getLocalizedProductGuidanceText(product, 'purchase_notes'),
             showUsageInstructions: product?.show_usage_instructions === true,
@@ -3469,6 +3523,32 @@ const ShopClient = {
 
         const purchaseDataset = this.buildProductCardPurchaseDataset(product, pricingState.currentPrice);
         const maxPurchaseQuantity = String(purchaseDataset.maxPurchaseQuantity || '');
+        const manualDelivery = this.isShopProductManualDelivery(product);
+        const noStock = this.isShopProductSoldOut(product);
+        const rawStockCount = Number(product.stock_count ?? product.stockCount ?? 0);
+        const stockCount = Number.isFinite(rawStockCount) ? Math.max(0, Math.trunc(rawStockCount)) : 0;
+        const stockLabel = manualDelivery
+            ? (window.i18n?.t('shop.manualDelivery') || '人工发货')
+            : (noStock
+                ? (window.i18n?.t('shop.outOfStock') || '售罄')
+                : `${window.i18n?.t('shop.stock') || '库存'}: ${stockCount}`);
+        const stockBadge = card.querySelector('.shop-stock-badge--floating');
+        if (stockBadge instanceof HTMLElement) {
+            stockBadge.textContent = stockLabel;
+            stockBadge.classList.toggle('manual-delivery', manualDelivery);
+            stockBadge.classList.toggle('out-of-stock', !manualDelivery && noStock);
+            stockBadge.classList.toggle('in-stock', !manualDelivery && !noStock);
+        }
+        card.classList.toggle('shop-card--manual-delivery', manualDelivery);
+        card.classList.toggle('shop-card--sold-out', !manualDelivery && noStock);
+        card.classList.toggle('shop-card--interactive', manualDelivery || !noStock);
+        card.dataset.shopAction = (!manualDelivery && noStock) ? 'sold-out-product' : 'buy-product';
+        if (!manualDelivery && noStock) {
+            card.setAttribute('aria-disabled', 'true');
+        } else {
+            card.removeAttribute('aria-disabled');
+        }
+
         if (card.dataset.shopAction === 'buy-product' || card.dataset.shopAction === 'sold-out-product') {
             this.applyShopPurchaseDataset(card, purchaseDataset);
             card.dataset.maxPurchaseQuantity = maxPurchaseQuantity;
@@ -3478,6 +3558,12 @@ const ShopClient = {
         if (cartTriggerButton instanceof HTMLElement) {
             this.applyShopPurchaseDataset(cartTriggerButton, purchaseDataset);
             cartTriggerButton.dataset.maxPurchaseQuantity = maxPurchaseQuantity;
+            const cartDisabled = manualDelivery || noStock;
+            cartTriggerButton.classList.toggle('is-disabled', cartDisabled);
+            cartTriggerButton.setAttribute('aria-disabled', cartDisabled ? 'true' : 'false');
+            cartTriggerButton.setAttribute('aria-label', manualDelivery
+                ? (window.i18n?.t('shop.manualDelivery') || '人工发货')
+                : (noStock ? (window.i18n?.t('shop.outOfStock') || '售罄') : this.getCartCopy().addLabel));
         }
 
         const productId = String(product.id || '').trim();
@@ -3669,6 +3755,7 @@ const ShopClient = {
             image_assets: normalizeShopProductImageAsset(product.image_assets || product.imageAssets) || {},
             category: product.category || '',
             stock_count: Number(product.stock_count || 0) || 0,
+            manual_delivery: this.isShopProductManualDelivery(product),
             skus: this.getProductSkusForPurchase(product),
             max_purchase_quantity: this.normalizePurchaseQuantityCap(product.max_purchase_quantity),
             quantity_rules: this.normalizeQuantityPricingRules(product.quantity_rules),
@@ -4063,6 +4150,7 @@ const ShopClient = {
         element.dataset.purchaseNotes = encodeURIComponent(payload.purchaseNotes || '');
         element.dataset.showUsageInstructions = payload.showUsageInstructions ? 'true' : 'false';
         element.dataset.usageInstructions = encodeURIComponent(payload.usageInstructions || '');
+        element.dataset.manualDelivery = payload.manualDelivery ? 'true' : 'false';
     },
 
     getShopPurchasePayloadFromDataset: function (dataset = {}) {
@@ -4081,8 +4169,37 @@ const ShopClient = {
             purchaseNotes: dataset.purchaseNotes || '',
             showUsageInstructions: dataset.showUsageInstructions === 'true',
             usageInstructions: dataset.usageInstructions || '',
+            manualDelivery: dataset.manualDelivery === 'true',
             productCategory: dataset.productCategory || ''
         };
+    },
+
+    normalizeShopManualDeliveryFlag: function (value) {
+        if (typeof value === 'boolean') {
+            return value;
+        }
+        const normalized = String(value ?? '').trim().toLowerCase();
+        return ['1', 'true', 'yes', 'on', 'enabled', 'manual'].includes(normalized);
+    },
+
+    isShopProductManualDelivery: function (product) {
+        return this.normalizeShopManualDeliveryFlag(product?.manual_delivery ?? product?.manualDelivery);
+    },
+
+    isShopPurchasePayloadManualDelivery: function (payload = {}) {
+        const liveProduct = this.getCachedProductById(payload.productId);
+        if (this.isShopProductManualDelivery(liveProduct)) {
+            return true;
+        }
+        return this.normalizeShopManualDeliveryFlag(payload.manualDelivery);
+    },
+
+    isShopCurrentPurchaseManualDelivery: function () {
+        if (this.currentPurchase?.manualDelivery === true) {
+            return true;
+        }
+        const liveProduct = this.getCachedProductById(this.currentPurchase?.productId);
+        return this.isShopProductManualDelivery(liveProduct);
     },
 
     isShopProductSoldOut: function (product) {
@@ -4119,11 +4236,82 @@ const ShopClient = {
         );
     },
 
+    showManualDeliveryProductToast: function (payload = {}) {
+        this.showShopToast(
+            this.trShop('manualDeliveryUnavailableHint', this.isEnglishShopLocale()
+                ? 'Manual delivery products require support consultation and cannot be redeemed or added to cart by self-service.'
+                : '人工发货商品请联系客服咨询，暂不支持自助兑换或加入购物车。'),
+            'manual-delivery'
+        );
+    },
+
+    getManualDeliverySupportLabel: function () {
+        return this.trShop(
+            'manualDeliveryContactSupport',
+            this.isEnglishShopLocale() ? 'Contact support' : '联系我/客服咨询'
+        );
+    },
+
+    openManualDeliverySupport: function (options = {}) {
+        const productId = String(options.productId || this.currentPurchase?.productId || '').trim();
+        const source = String(options.source || 'manual_delivery_product').trim() || 'manual_delivery_product';
+
+        trackShopAnalyticsEvent('manual_delivery_support_click', {
+            entityId: productId || null,
+            metadata: buildShopTrackingMetadata({
+                product_id: productId || null,
+                product_name: this.currentPurchase?.productName || null,
+                product_name_en: this.currentPurchase?.productNameEn || null,
+                category: this.currentPurchase?.productCategory || null,
+                source
+            }, {
+                sourcePage: this.currentPurchase?.sourcePage || null,
+                sourceChannel: this.currentPurchase?.sourceChannel || null,
+                sourcePromptId: this.currentPurchase?.sourcePromptId || null
+            })
+        }, {
+            eventType: 'engagement'
+        });
+
+        this.closePurchaseModal();
+
+        window.setTimeout(() => {
+            try {
+                if (typeof window.ZaoyoeChatWidgetBootstrap?.open === 'function') {
+                    void Promise.resolve(window.ZaoyoeChatWidgetBootstrap.open()).catch(() => {
+                        this.showShopToast(this.trShop('manualDeliverySupportUnavailable', this.isEnglishShopLocale()
+                            ? 'Support is temporarily unavailable. Please try again later.'
+                            : '客服入口暂时不可用，请稍后再试。'), 'error');
+                    });
+                    return;
+                }
+
+                if (typeof window.chatWidget?.openChat === 'function') {
+                    void Promise.resolve(window.chatWidget.openChat()).catch(() => {
+                        this.showShopToast(this.trShop('manualDeliverySupportUnavailable', this.isEnglishShopLocale()
+                            ? 'Support is temporarily unavailable. Please try again later.'
+                            : '客服入口暂时不可用，请稍后再试。'), 'error');
+                    });
+                    return;
+                }
+
+                window.dispatchEvent(new CustomEvent('zaoyoe:chat-widget-runtime-pending-open', {
+                    detail: { source: 'shop_manual_delivery' }
+                }));
+            } catch (error) {
+                console.warn('[Shop] Failed to open support for manual delivery product:', error);
+                this.showShopToast(this.trShop('manualDeliverySupportUnavailable', this.isEnglishShopLocale()
+                    ? 'Support is temporarily unavailable. Please try again later.'
+                    : '客服入口暂时不可用，请稍后再试。'), 'error');
+            }
+        }, 180);
+    },
+
     openProductPurchaseFromDataset: function (dataset = {}, sourceContext = resolveShopSourceContext(), options = {}) {
         const payload = this.getShopPurchasePayloadFromDataset(dataset);
         if (!payload.productId) return;
 
-        if (this.isShopPurchasePayloadSoldOut(payload)) {
+        if (!this.isShopPurchasePayloadManualDelivery(payload) && this.isShopPurchasePayloadSoldOut(payload)) {
             this.showSoldOutProductToast(payload);
             return;
         }
@@ -4159,7 +4347,8 @@ const ShopClient = {
             sourceContext,
             {
                 initialQuantity: options.initialQuantity,
-                productSkuId: payload.defaultSkuId || ''
+                productSkuId: payload.defaultSkuId || '',
+                manualDelivery: this.isShopPurchasePayloadManualDelivery(payload)
             }
         );
     },
@@ -4937,6 +5126,10 @@ const ShopClient = {
         const liveProduct = this.getCachedProductById(normalizedId);
         const product = liveProduct || this.cartSnapshots?.[entryKey] || this.cartSnapshots?.[normalizedId];
         if (!product) return 0;
+        if (this.isShopProductManualDelivery(product)) {
+            this.showManualDeliveryProductToast({ productId: normalizedId });
+            return 0;
+        }
         const productForQuantity = selectedSkuId ? { ...product, selected_sku_id: selectedSkuId } : product;
 
         const quantityCap = this.getCartQuantityCap(productForQuantity);
@@ -5137,6 +5330,10 @@ const ShopClient = {
 
     openPurchaseModalFromCartEntry: function (entry) {
         if (!entry) return;
+        if (this.isShopProductManualDelivery(entry.product)) {
+            this.showManualDeliveryProductToast({ productId: entry.productId });
+            return;
+        }
         const sourceContext = {
             ...resolveShopSourceContext(),
             sourceChannel: 'shop_cart'
@@ -5409,13 +5606,16 @@ const ShopClient = {
         const addToCartBtn = document.getElementById('purchaseAddToCartBtn');
         const nextBtn = document.getElementById('nextPurchaseStepBtn');
         const confirmBtn = document.getElementById('confirmPurchaseBtn');
+        const quantityInput = document.getElementById('purchaseQuantity');
         const copy = this.getPurchaseStageCopy(nextStage);
         const isPurchaseProcessing = this.purchaseProcessing === true;
+        const isManualDelivery = this.isShopCurrentPurchaseManualDelivery();
 
         this.currentPurchase.stage = nextStage;
 
         if (modal) {
             modal.dataset.purchaseStep = nextStage;
+            modal.classList.toggle('shop-purchase-modal--manual-delivery', isManualDelivery);
         }
 
         document.querySelectorAll('#shopPurchaseModal [data-purchase-step]').forEach((element) => {
@@ -5444,17 +5644,28 @@ const ShopClient = {
         }
 
         if (addToCartBtn) {
-            addToCartBtn.innerHTML = `<i class="fas fa-basket-shopping"></i> <span>${this.escapeHtml(this.getCartCopy().addLabel)}</span>`;
-            this.setElementHidden(addToCartBtn, nextStage !== 'configure' || Boolean(this.currentPurchase?.cartOrigin?.productId));
+            const addToCartLabel = isManualDelivery
+                ? this.getManualDeliverySupportLabel()
+                : this.getCartCopy().addLabel;
+            addToCartBtn.innerHTML = isManualDelivery
+                ? `<i class="fas fa-headset"></i> <span>${this.escapeHtml(addToCartLabel)}</span>`
+                : `<i class="fas fa-basket-shopping"></i> <span>${this.escapeHtml(addToCartLabel)}</span>`;
+            addToCartBtn.classList.toggle('shop-manual-delivery-contact-btn', isManualDelivery);
+            addToCartBtn.setAttribute('aria-label', addToCartLabel);
+            this.setElementHidden(addToCartBtn, nextStage !== 'configure' || (!isManualDelivery && Boolean(this.currentPurchase?.cartOrigin?.productId)));
             addToCartBtn.disabled = isPurchaseProcessing;
+            addToCartBtn.setAttribute('aria-disabled', addToCartBtn.disabled ? 'true' : 'false');
         }
 
         if (nextBtn) {
             nextBtn.innerHTML = isPurchaseProcessing
                 ? `<i class="fas fa-spinner fa-spin"></i> <span>${this.escapeHtml(window.i18n?.t('shop.processing') || '处理中...')}</span>`
-                : `<span>${this.escapeHtml(copy.nextLabel)}</span>`;
+                : (isManualDelivery
+                    ? `<i class="fas fa-hand-holding-heart"></i> <span>${this.escapeHtml(window.i18n?.t('shop.manualDelivery') || '人工发货')}</span>`
+                    : `<span>${this.escapeHtml(copy.nextLabel)}</span>`);
             this.setElementHidden(nextBtn, nextStage !== 'configure');
-            nextBtn.disabled = isPurchaseProcessing;
+            nextBtn.disabled = isPurchaseProcessing || isManualDelivery;
+            nextBtn.setAttribute('aria-disabled', isManualDelivery ? 'true' : 'false');
         }
 
         if (confirmBtn) {
@@ -5463,6 +5674,10 @@ const ShopClient = {
                 : `<i class="fas fa-shopping-cart"></i> <span>${this.escapeHtml(copy.confirmLabel)}</span>`;
             this.setElementHidden(confirmBtn, nextStage !== 'confirm');
             confirmBtn.disabled = isPurchaseProcessing;
+        }
+
+        if (quantityInput) {
+            quantityInput.disabled = isPurchaseProcessing || isManualDelivery;
         }
 
     },
@@ -7093,6 +7308,10 @@ const ShopClient = {
     },
 
     purchaseWithServer: async function (token = '') {
+        if (this.isShopCurrentPurchaseManualDelivery()) {
+            throw new Error(this.trShop('manualDeliveryUnavailableHint', '人工发货商品请联系客服咨询，暂不支持自助兑换或加入购物车。'));
+        }
+
         const accessToken = String(token || '').trim() || await this.getAccessToken();
         if (!accessToken) {
             throw new Error(window.i18n?.t('shop.loginRequired') || '请先登录');
@@ -7253,8 +7472,8 @@ const ShopClient = {
                         ) {
                             sessionStorage.removeItem('shop_prefetch');
                             // Inject prefetched data into Cache for loadCategoryFilters / loadProducts to use
-                            this._prefetchedCategories = prefetch.categories;
-                            this.availableCategories = Array.isArray(prefetch.categories) ? prefetch.categories : [];
+                            this._prefetchedCategories = this.filterPublicShopCategories(prefetch.categories);
+                            this.availableCategories = Array.isArray(this._prefetchedCategories) ? this._prefetchedCategories : [];
                             this.hydrateProductCaches(this.filterProductsForCurrentSite(prefetch.products));
                             usedPrefetch = true;
                             console.log(`⚡ Using prefetched shop data (${Math.round(age / 1000)}s old)`);
@@ -7738,6 +7957,10 @@ const ShopClient = {
             this.setPurchaseStage('configure');
         });
         this.bindShopMobileTapFallback(document.getElementById('purchaseAddToCartBtn'), 'purchase-add-cart', () => {
+            if (this.isShopCurrentPurchaseManualDelivery()) {
+                this.openManualDeliverySupport({ source: 'purchase_modal_mobile_tap' });
+                return;
+            }
             this.addCurrentPurchaseToCart();
         });
         this.bindPurchaseSkuOptionsTapFallback();
@@ -7783,6 +8006,10 @@ const ShopClient = {
 
             if (action === 'add-product-to-cart') {
                 const payload = this.getShopPurchasePayloadFromDataset(target.dataset);
+                if (this.isShopPurchasePayloadManualDelivery(payload)) {
+                    this.showManualDeliveryProductToast(payload);
+                    return;
+                }
                 if (this.isShopPurchasePayloadSoldOut(payload)) {
                     this.showSoldOutProductToast(payload);
                     return;
@@ -8050,6 +8277,10 @@ const ShopClient = {
 
             if (event.target instanceof Element && event.target.closest('#purchaseAddToCartBtn')) {
                 event.preventDefault?.();
+                if (this.isShopCurrentPurchaseManualDelivery()) {
+                    this.openManualDeliverySupport({ source: 'purchase_modal_button' });
+                    return;
+                }
                 this.addCurrentPurchaseToCart();
                 return;
             }
@@ -9211,8 +9442,9 @@ const ShopClient = {
     },
 
     hydrateProductCaches: function (products) {
-        const safeProducts = Array.isArray(products)
-            ? [...products].sort((a, b) => (b.display_order || 0) - (a.display_order || 0))
+        const publicProducts = this.filterProductsForPublicShopCategories(products, this.availableCategories);
+        const safeProducts = Array.isArray(publicProducts)
+            ? [...publicProducts].sort((a, b) => (b.display_order || 0) - (a.display_order || 0))
             : [];
         const grouped = {};
 
@@ -9327,6 +9559,7 @@ const ShopClient = {
         }];
 
         (Array.isArray(categories) ? categories : []).forEach((category) => {
+            if (!this.isPublicShopCategory(category)) return;
             const name = String(category?.name || '').trim();
             if (!name) return;
 
@@ -9361,6 +9594,9 @@ const ShopClient = {
         if (!container) return;
 
         const entries = this.getCategoryFilterEntries(categories);
+        if (!entries.some((entry) => entry.name === String(this.currentCategory || 'all'))) {
+            this.currentCategory = 'all';
+        }
         const existingTabs = Array.from(container.querySelectorAll('.filter-tab[data-shop-category]'));
         const canPatchInPlace = existingTabs.length === entries.length
             && existingTabs.every((tab, index) => String(tab.dataset.shopCategory || '') === entries[index].name);
@@ -9986,13 +10222,20 @@ const ShopClient = {
 
         const rawStockCount = Number(product.stock_count ?? product.stockCount ?? 0);
         const stockCount = Number.isFinite(rawStockCount) ? Math.max(0, Math.trunc(rawStockCount)) : 0;
+        const manualDelivery = this.isShopProductManualDelivery(product);
         const noStock = this.isShopProductSoldOut(product);
-        const stockLabel = noStock
+        const stockLabel = manualDelivery
+            ? (window.i18n?.t('shop.manualDelivery') || '人工发货')
+            : (noStock
             ? (window.i18n?.t('shop.outOfStock') || '售罄')
-            : `${window.i18n?.t('shop.stock') || '库存'}: ${stockCount}`;
-        const cartTriggerAriaLabel = noStock
-            ? (window.i18n?.t('shop.outOfStock') || '售罄')
-            : this.getCartCopy().addLabel;
+            : `${window.i18n?.t('shop.stock') || '库存'}: ${stockCount}`);
+        const cartDisabled = manualDelivery || noStock;
+        const stockBadgeClass = manualDelivery ? 'manual-delivery' : (noStock ? 'out-of-stock' : 'in-stock');
+        const cartTriggerAriaLabel = manualDelivery
+            ? (window.i18n?.t('shop.manualDelivery') || '人工发货')
+            : (noStock
+                ? (window.i18n?.t('shop.outOfStock') || '售罄')
+                : this.getCartCopy().addLabel);
         const maxPurchaseQuantity = this.getPurchaseQuantityCapForProduct(product, product.max_purchase_quantity);
         const purchaseDataset = this.buildProductCardPurchaseDataset(product, currentPrice);
 
@@ -10016,8 +10259,9 @@ const ShopClient = {
             ? ` style="--breathe-delay: ${breatheDelay}; animation-delay: ${negativeBreatheDelay};"`
             : '';
         el.className = `shop-card user-product-card ${breathingEnabled ? 'breathing ' : ''}${pricingState.flashShadowClass} ${cartQuantity > 0 ? 'shop-card--in-cart' : ''}`.trim();
-        if (!noStock) {
+        if (!noStock || manualDelivery) {
             el.classList.add('shop-card--interactive');
+            el.classList.toggle('shop-card--manual-delivery', manualDelivery);
             el.dataset.shopAction = 'buy-product';
             el.setAttribute('role', 'button');
             el.setAttribute('tabindex', '0');
@@ -10036,7 +10280,7 @@ const ShopClient = {
                         ${pricingState.tieredPricingBadgeHtml}
                         ${displayHtml}
                         ${pricingState.agentBadgeHtml}
-                        <div class="shop-stock-badge shop-stock-badge--floating ${noStock ? 'out-of-stock' : 'in-stock'}">
+                        <div class="shop-stock-badge shop-stock-badge--floating ${stockBadgeClass}">
                             ${stockLabel}
                         </div>
                     </div>
@@ -10050,8 +10294,8 @@ const ShopClient = {
                             <div class="shop-card-actions">
                                 <button
                                     type="button"
-                                    ${noStock ? 'aria-disabled="true"' : ''}
-                                    class="shop-card-cart-trigger${noStock ? ' is-disabled' : ''}"
+                                    ${cartDisabled ? 'aria-disabled="true"' : ''}
+                                    class="shop-card-cart-trigger${cartDisabled ? ' is-disabled' : ''}"
                                     data-shop-action="add-product-to-cart"
                                     aria-label="${this.escapeAttribute(cartTriggerAriaLabel)}"
                                 >
@@ -10098,7 +10342,7 @@ const ShopClient = {
             cartTriggerButton.dataset.maxPurchaseQuantity = String(maxPurchaseQuantity);
         }
 
-        if (!noStock) {
+        if (!noStock && !manualDelivery) {
             const prefetchProductDiscounts = () => {
                 void this.prefetchDiscountAssetsForProduct({
                     productId,
@@ -10678,9 +10922,14 @@ const ShopClient = {
             throw productResult.error;
         }
 
-        return {
+        const catalog = this.normalizePublicShopCatalog({
             categories: Array.isArray(categoryResult.data) ? categoryResult.data : [],
-            products: this.filterProductsForCurrentSite(productResult.data || [])
+            products: productResult.data || []
+        });
+
+        return {
+            categories: catalog.categories,
+            products: this.filterProductsForCurrentSite(catalog.products)
         };
     },
 
@@ -10795,9 +11044,10 @@ const ShopClient = {
                     void this.fetchShopCatalogFromApi({ forceRefresh: true }).catch((error) => {
                         console.debug('Shop catalog background refresh skipped:', error?.message || error);
                     });
+                    const normalizedCatalog = this.normalizePublicShopCatalog(cachedCatalog);
                     return {
-                        categories: cachedCatalog.categories,
-                        products: this.filterProductsForCurrentSite(cachedCatalog.products)
+                        categories: normalizedCatalog.categories,
+                        products: this.filterProductsForCurrentSite(normalizedCatalog.products)
                     };
                 }
             }
@@ -10815,17 +11065,21 @@ const ShopClient = {
                 const products = Array.isArray(payload?.products)
                     ? payload.products
                     : (Array.isArray(payload?.data?.products) ? payload.data.products : []);
-
-                this.writeShopCatalogBrowserCache({
-                    site: currentSite,
-                    category,
+                const normalizedCatalog = this.normalizePublicShopCatalog({
                     categories,
                     products
                 });
 
+                this.writeShopCatalogBrowserCache({
+                    site: currentSite,
+                    category,
+                    categories: normalizedCatalog.categories,
+                    products: normalizedCatalog.products
+                });
+
                 return {
-                    categories,
-                    products: this.filterProductsForCurrentSite(products)
+                    categories: normalizedCatalog.categories,
+                    products: this.filterProductsForCurrentSite(normalizedCatalog.products)
                 };
             } catch (error) {
                 console.warn('Shop catalog API unavailable, falling back to direct query:', error?.message || error);
@@ -10846,7 +11100,7 @@ const ShopClient = {
     fetchProductsFromServer: async function (category = 'all') {
         const catalog = await this.fetchShopCatalogFromApi();
         if (Array.isArray(catalog?.categories)) {
-            this.availableCategories = catalog.categories;
+            this.availableCategories = this.filterPublicShopCategories(catalog.categories);
         }
         return this.filterProductsForCategory(catalog?.products || [], category);
     },
@@ -11090,7 +11344,7 @@ const ShopClient = {
 
         try {
             if (!forceRefresh && Array.isArray(this._prefetchedCategories) && this._prefetchedCategories.length > 0) {
-                const prefetchedCategories = [...this._prefetchedCategories].sort((a, b) => (
+                const prefetchedCategories = this.filterPublicShopCategories(this._prefetchedCategories).sort((a, b) => (
                     Number(a?.sort_order || 0) - Number(b?.sort_order || 0)
                 ));
                 this.availableCategories = prefetchedCategories;
@@ -11106,9 +11360,9 @@ const ShopClient = {
                 this.hydrateProductCaches(catalog.products);
             }
             if (Array.isArray(catalog?.categories) && catalog.categories.length > 0) {
-                categories = catalog.categories;
+                categories = this.filterPublicShopCategories(catalog.categories);
             } else if (!forceRefresh && Array.isArray(this._prefetchedCategories) && this._prefetchedCategories.length > 0) {
-                categories = [...this._prefetchedCategories].sort((a, b) => (
+                categories = this.filterPublicShopCategories(this._prefetchedCategories).sort((a, b) => (
                     Number(a?.sort_order || 0) - Number(b?.sort_order || 0)
                 ));
                 console.log('⚡ Falling back to prefetched categories');
@@ -11827,21 +12081,25 @@ const ShopClient = {
         let purchaseNotes = showPurchaseNotes ? decodeURIComponent(purchaseNotesEncoded || '') : '';
         let usageInstructions = showUsageInstructions ? decodeURIComponent(usageInstructionsEncoded || '') : '';
         const liveProduct = this.getCachedProductById(productId);
+        const manualDelivery = options?.manualDelivery === true || this.isShopProductManualDelivery(liveProduct);
         const quantityCap = this.getPurchaseQuantityCapForProduct(liveProduct, maxPurchaseQuantity);
         const initialQuantity = Math.max(1, Math.min(quantityCap, Math.trunc(Number(options?.initialQuantity || 1) || 1)));
 
-        void this.prefetchDiscountAssetsForProduct({
-            productId,
-            productSkuId: options?.productSkuId || options?.skuId || '',
-            quantity: initialQuantity,
-            agentId: this.currentAgentId,
-            site: window.SiteConfig?.site || 'cn'
-        });
+        if (!manualDelivery) {
+            void this.prefetchDiscountAssetsForProduct({
+                productId,
+                productSkuId: options?.productSkuId || options?.skuId || '',
+                quantity: initialQuantity,
+                agentId: this.currentAgentId,
+                site: window.SiteConfig?.site || 'cn'
+            });
+        }
         this.openPurchaseModal(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, {
             category: productCategory,
             sourceContext,
             initialQuantity,
-            productSkuId: options?.productSkuId || options?.skuId || ''
+            productSkuId: options?.productSkuId || options?.skuId || '',
+            manualDelivery
         });
         void this.refreshCurrentPurchaseGuidance(productId);
         void this.syncPurchaseAccessAfterOpen(productId, quantityCap);
@@ -11850,6 +12108,7 @@ const ShopClient = {
     openPurchaseModal: function (productId, productName, productNameEn, price, rules, maxPurchaseQuantity = 99, purchaseNotes = '', usageInstructions = '', options = {}) {
         const unlimitedPurchases = options?.unlimitedPurchases === true;
         const liveProductForPricing = this.getCachedProductById(productId);
+        const manualDelivery = options?.manualDelivery === true || this.isShopProductManualDelivery(liveProductForPricing);
         const purchaseSkus = this.getProductSkusForPurchase(liveProductForPricing);
         const storedPurchasePrefill = this.consumePurchasePrefillForProduct(productId);
         const requestedSkuId = String(options?.productSkuId || options?.skuId || storedPurchasePrefill?.productSkuId || '').trim();
@@ -11871,13 +12130,15 @@ const ShopClient = {
         const selectionRules = selectedSku
             ? this.resolveQuantityPricingRulesForSku(liveProductForPricing, selectedSku)
             : this.normalizeQuantityPricingRules(rules);
-        void this.prefetchDiscountAssetsForProduct({
-            productId,
-            productSkuId: selectedSkuId,
-            quantity: initialQuantity,
-            agentId: this.currentAgentId,
-            site: window.SiteConfig?.site || 'cn'
-        });
+        if (!manualDelivery) {
+            void this.prefetchDiscountAssetsForProduct({
+                productId,
+                productSkuId: selectedSkuId,
+                quantity: initialQuantity,
+                agentId: this.currentAgentId,
+                site: window.SiteConfig?.site || 'cn'
+            });
+        }
         const cachedDiscountAssetsPayload = this.readDiscountAssetsCache(this.buildDiscountAssetsCacheKey({
             productId,
             productSkuId: selectedSkuId,
@@ -11974,6 +12235,7 @@ const ShopClient = {
             purchaseNotesExpanded: defaultPurchaseNotesExpanded,
             usageInstructions: normalizedUsageInstructions,
             usageInstructionsExpanded: defaultUsageInstructionsExpanded,
+            manualDelivery,
             purchaseGuidanceDisclosureTouched: false,
             purchaseGuidanceDefaultApplied: shouldDefaultGuidanceOpen
                 && (normalizedPurchaseNotes.length > 0 || normalizedUsageInstructions.length > 0),
@@ -12084,7 +12346,9 @@ const ShopClient = {
         this.attachPurchaseModalKeyboardDock();
         this.schedulePurchaseModalOpenViewportStabilization();
         this.beginPurchaseModalStageSettledState(modal);
-        void this.refreshPurchaseDiscountAssets({ silent: true });
+        if (!manualDelivery) {
+            void this.refreshPurchaseDiscountAssets({ silent: true });
+        }
         if (runtimeCartDiscount) {
             void this.refreshAppliedDiscountPreview({ silent: true });
         }
@@ -12200,7 +12464,7 @@ const ShopClient = {
             this.syncPricingWaterfall();
         }
 
-        if (refreshDiscountAssets) {
+        if (refreshDiscountAssets && !this.isShopCurrentPurchaseManualDelivery()) {
             void this.refreshPurchaseDiscountAssets({ silent: true });
         }
 
@@ -12545,6 +12809,13 @@ const ShopClient = {
 
     confirmPurchase: async function ({ triggerButton = null } = {}) {
         if (this.purchaseProcessing) return;
+        if (this.isShopCurrentPurchaseManualDelivery()) {
+            this.showManualDeliveryProductToast({
+                productId: this.currentPurchase?.productId || ''
+            });
+            this.setPurchaseStage('configure');
+            return;
+        }
 
         // Disable button
         const btn = this.resolvePurchaseActionButton(triggerButton);

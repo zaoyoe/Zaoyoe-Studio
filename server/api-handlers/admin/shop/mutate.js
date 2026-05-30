@@ -600,7 +600,8 @@ async function ensureFallbackCategory(supabase, categoryName = 'other') {
         .insert({
             name: fallbackName,
             color: '#9aa0a6',
-            sort_order: sortOrder
+            sort_order: sortOrder,
+            is_public: true
         })
         .select('*')
         .limit(1);
@@ -693,6 +694,7 @@ const PRODUCT_SCHEMA_COMPATIBILITY_FIELDS = [
     'per_account_purchase_limit',
     'delivery_type',
     'webhook_target',
+    'manual_delivery',
     'quantity_rules',
     'quantity_rules_intl',
     'flash_sale_price',
@@ -809,6 +811,10 @@ function buildSchemaCompatibleProductPayload(payload = {}, { site = 'cn', missin
 
     if (hasMissing('delivery_type', 'webhook_target')) {
         removeFields(['delivery_type', 'webhook_target']);
+    }
+
+    if (hasMissing('manual_delivery')) {
+        removeFields(['manual_delivery']);
     }
 
     if (hasMissing(
@@ -958,6 +964,7 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
     const name = normalizeText(safePayload.name, 160);
     const category = normalizeText(safePayload.category || safePendingCategory?.name, 120);
     const deliveryType = normalizeText(safePayload.delivery_type, 20).toUpperCase() === 'API' ? 'API' : 'KEY';
+    const manualDelivery = normalizeBoolean(safePayload.manual_delivery, false);
     const webhookTarget = normalizeText(safePayload.webhook_target, 2000);
     const isActive = normalizeBoolean(safePayload.is_active, true);
     const maxPurchaseQuantity = normalizePositiveInteger(safePayload.max_purchase_quantity);
@@ -1032,7 +1039,7 @@ async function validateProductPayload(supabase, { productId = '', payload = {}, 
         availableStockCount = await countAvailableInventory(supabase, productId);
     }
 
-    if (deliveryType === 'KEY' && productId && isActive && Number(availableStockCount || 0) <= 0) {
+    if (deliveryType === 'KEY' && !manualDelivery && productId && isActive && Number(availableStockCount || 0) <= 0) {
         appendProductValidationIssue(
             warnings,
             'warning',
@@ -1270,6 +1277,7 @@ module.exports = async (req, res) => {
                     name: savedProduct.name,
                     category: savedProduct.category,
                     is_active: savedProduct.is_active,
+                    manual_delivery: savedProduct.manual_delivery === true,
                     sku_count: savedSkus.length
                 }
             });
@@ -1411,7 +1419,8 @@ module.exports = async (req, res) => {
                 .insert({
                     name,
                     color,
-                    sort_order: sortOrder
+                    sort_order: sortOrder,
+                    is_public: true
                 })
                 .select('*')
                 .limit(1);
@@ -1567,6 +1576,62 @@ module.exports = async (req, res) => {
                     name: categoryRow.name,
                     previous_color: categoryRow.color,
                     next_color: nextColor
+                }
+            });
+
+            return sendJson(res, 200, {
+                success: true,
+                category: updatedCategory
+            });
+        }
+
+        if (action === 'set_category_public') {
+            const categoryId = normalizeText(body.categoryId, 160);
+            const nextPublic = normalizeBoolean(body.isPublic ?? body.is_public, true);
+
+            if (!categoryId) {
+                return sendJson(res, 400, {
+                    success: false,
+                    message: 'categoryId is required'
+                });
+            }
+
+            const { data: categoryRow, error: categoryError } = await supabase
+                .from('shop_categories')
+                .select('id, name, color, sort_order, is_public')
+                .eq('id', categoryId)
+                .single();
+
+            if (categoryError || !categoryRow) {
+                return sendJson(res, 404, { success: false, message: '分类不存在' });
+            }
+
+            const previousIsPublic = categoryRow.is_public !== false;
+            const { error: updateError } = await supabase
+                .from('shop_categories')
+                .update({ is_public: nextPublic })
+                .eq('id', categoryId);
+
+            if (updateError) {
+                return sendJson(res, 400, { success: false, message: updateError.message });
+            }
+
+            const updatedCategory = {
+                ...categoryRow,
+                is_public: nextPublic
+            };
+
+            await writeAdminAuditLog({
+                supabase,
+                adminId: user.id,
+                module: 'shop',
+                site: writableSite,
+                actionType: 'shop.category.public_visibility',
+                details: {
+                    category_id: categoryId,
+                    name: categoryRow.name,
+                    previous_is_public: previousIsPublic,
+                    next_is_public: nextPublic
                 }
             });
 

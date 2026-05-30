@@ -265,6 +265,98 @@ test('shop purchase uses the request-scoped client and normalized payload', asyn
     });
 });
 
+test('shop purchase rejects manual-delivery products before purchase RPC', async () => {
+    let rpcCalled = false;
+    const rateLimitKeys = [];
+    const availabilityClient = {
+        from(table) {
+            assert.equal(table, 'shop_products');
+            return {
+                select(selectClause) {
+                    assert.match(selectClause, /manual_delivery/);
+                    return this;
+                },
+                eq(field, value) {
+                    assert.equal(field, 'id');
+                    assert.equal(value, 'product-manual');
+                    return this;
+                },
+                maybeSingle() {
+                    return Promise.resolve({
+                        data: {
+                            id: 'product-manual',
+                            is_active: true,
+                            manual_delivery: true
+                        },
+                        error: null
+                    });
+                }
+            };
+        }
+    };
+
+    await withShopPurchaseHandler({
+        async requireAuthenticatedUser() {
+            return {
+                user: {
+                    id: 'user-manual',
+                    email: 'manual@example.com'
+                },
+                requestSupabase: {
+                    rpc() {
+                        rpcCalled = true;
+                        throw new Error('manual products should not reach RPC');
+                    }
+                },
+                adminSupabase: availabilityClient,
+                supabase: null
+            };
+        },
+        sendJson(res, status, payload) {
+            res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify(payload));
+        }
+    }, async (handler) => {
+        const req = {
+            method: 'POST',
+            headers: {
+                'x-forwarded-for': '203.0.113.44'
+            },
+            body: {
+                productId: 'product-manual',
+                quantity: 1,
+                site: 'cn',
+                idempotencyKey: 'manual-click'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 409);
+        assert.equal(payload.success, false);
+        assert.equal(payload.code, 'manual_delivery_unavailable');
+        assert.equal(rpcCalled, false);
+        assert.deepEqual(rateLimitKeys, ['shop-purchase:ip:203.0.113.44']);
+    }, {
+        resolveClientIp() {
+            return '203.0.113.44';
+        },
+        takeRateLimitToken(options = {}) {
+            rateLimitKeys.push(options.key);
+            return {
+                allowed: true,
+                limit: 10,
+                remaining: 9,
+                resetAt: Date.now() + 60_000,
+                retryAfterSeconds: 60
+            };
+        },
+        applyRateLimitHeaders() {}
+    });
+});
+
 test('shop purchase responds before slow post-purchase follow-ups finish', async () => {
     const rpcCalls = [];
     let releaseFollowups = () => {};

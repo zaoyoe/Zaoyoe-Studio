@@ -4169,7 +4169,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'function setHomeSectionVisibility(section, visible)',
         'function getHomeLoopPixelsPerSecond(speedValue)',
         'function getHomeLoopDurationSeconds(cycleWidth, speedValue)',
-        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260518_HOME_GONGYI_SUB2API_1';",
+        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260530_HOME_SHOP_CATEGORY_PUBLIC_1';",
         "const HOMEPAGE_CONFIG_CACHE_KEY = 'homepage_config_sub2api_1';",
         "const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';",
         "const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';",
@@ -4331,14 +4331,14 @@ test('homepage subpages load the latest prefetch-home runtime script version', (
 
     for (const source of subpageSources) {
         assert.equal(
-            source.includes('./js/prefetch-home.js?v=20260518_HOME_GONGYI_SUB2API_1'),
+            source.includes('./js/prefetch-home.js?v=20260518_HOME_GONGYI_SUB2API_1&categoryPublic=20260530_SHOP_CATEGORY_PUBLIC_VISIBILITY_1'),
             true,
             'subpages should load the latest prefetch-home script version'
         );
     }
 
     assert.equal(
-        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260518_HOME_GONGYI_SUB2API_1';"),
+        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260530_HOME_SHOP_CATEGORY_PUBLIC_1';"),
         true,
         'js/prefetch-home.js should version homepage prefetch payloads after the homepage P2 runtime changes'
     );
@@ -4346,6 +4346,16 @@ test('homepage subpages load the latest prefetch-home runtime script version', (
         prefetchSource.includes('schemaVersion: HOMEPAGE_PREFETCH_SCHEMA_VERSION'),
         true,
         'js/prefetch-home.js should write the homepage prefetch schema version'
+    );
+    assert.equal(
+        prefetchSource.includes('function filterPublicShopCatalog(categories = [], products = [])'),
+        true,
+        'js/prefetch-home.js should filter private shop categories from prefetched homepage shop data'
+    );
+    assert.equal(
+        prefetchSource.includes("window.supabaseClient.from('shop_categories').select('*').order('sort_order')"),
+        true,
+        'js/prefetch-home.js should load shop categories before direct shop product fallback'
     );
     assert.equal(
         prefetchSource.includes("getSectionExperimentValue('prompts', config, 'featured_items', null)"),
@@ -8429,8 +8439,13 @@ test('admin studio centralizes module permissions and gates sidebar modules thro
     );
     assert.match(
         shopSource,
-        /document\.addEventListener\('DOMContentLoaded', \(\) => \{[\s\S]*activateVisibleShopModuleOnAccess\(\);/,
-        'js/admin-shop.js should lazily activate the visible shop module after access resolves'
+        /function bootstrapShopModuleActivation\(\) \{[\s\S]*scheduleVisibleShopModuleActivation\(\);[\s\S]*window\.addEventListener\('adminStudioAccessGranted', scheduleVisibleShopModuleActivation, \{ once: true \}\);[\s\S]*window\.addEventListener\('permissionsLoaded', scheduleVisibleShopModuleActivation, \{ once: true \}\);[\s\S]*if \(document\.readyState === 'loading'\) \{/,
+        'js/admin-shop.js should retry activation after access and permission resolution, even if the script runs after DOMContentLoaded'
+    );
+    assert.match(
+        shopSource,
+        /function handleShopTabActivationFallback\(event = \{\}\) \{[\s\S]*data-shop-action="shop-switch-tab"[\s\S]*window\.ShopAdmin\?\.activate\?\.\(\{\}, \{ tab: actionEl\.dataset\.shopTab \}\);[\s\S]*document\.addEventListener\('click', handleShopTabActivationFallback, true\);/,
+        'js/admin-shop.js should let top shop tabs recover module activation when lifecycle activation was missed'
     );
     assert.match(
         bootstrapSource,
@@ -10820,6 +10835,7 @@ test('shop admin pagination and inventory/product workflows no longer emit targe
         'data-shop-action="product-toggle-sku-tier-editor"',
         'data-shop-action="product-export-sku-inventory"',
         'data-shop-action="product-toggle-delivery-type-dropdown"',
+        'data-shop-action="product-select-manual-delivery"',
         'data-shop-change="product-selection-count"',
         'data-shop-change="product-handle-icon-upload"',
         'data-shop-change="inventory-toggle-select-all"',
@@ -11344,6 +11360,7 @@ test('admin studio create form and shop import/orders/fulfillment controls route
         'data-shop-action="import-create-category"',
         'data-shop-action="import-category-rename"',
         'data-shop-action="import-category-color"',
+        'data-shop-action="import-category-public-toggle"',
         'data-shop-action="import-category-delete"',
         'data-shop-input="import-view-line-count"',
         'data-shop-action="inventory-import-from-view"',
@@ -11374,6 +11391,7 @@ test('admin studio create form and shop import/orders/fulfillment controls route
         "case 'import-create-category':",
         "case 'import-category-rename':",
         "case 'import-category-color':",
+        "case 'import-category-public-toggle':",
         "case 'import-category-delete':",
         "case 'inventory-import-from-view':",
         "case 'orders-search':",
@@ -13468,7 +13486,8 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
         'metadata.source_page = normalizedSourcePage;',
         'metadata.source_channel = normalizedSourceChannel;',
         'metadata.source_prompt_id = normalizedSourcePromptId;',
-        'element.dataset.productCategory = String(payload.productCategory || \'\');'
+        'element.dataset.productCategory = String(payload.productCategory || \'\');',
+        "element.dataset.manualDelivery = payload.manualDelivery ? 'true' : 'false';"
     ];
 
     for (const marker of shopMarkers) {

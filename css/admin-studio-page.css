@@ -1231,6 +1231,11 @@ body.admin-access-pending,
                             border-color: rgba(248, 113, 113, 0.24);
                         }
 
+                        .shop-admin-product-stock--manual {
+                            color: #fbbf24;
+                            border-color: rgba(245, 158, 11, 0.3);
+                        }
+
                         .shop-admin-product-actions {
                             display: flex;
                             gap: 8px;
@@ -3663,6 +3668,26 @@ body.admin-access-pending,
                             -webkit-touch-callout: none;
                         }
 
+                        .tree-category-visibility {
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 4px;
+                            flex-shrink: 0;
+                            margin-right: 8px;
+                            padding: 3px 8px;
+                            border-radius: 999px;
+                            border: 1px solid rgba(244, 114, 182, 0.28);
+                            background: rgba(244, 114, 182, 0.12);
+                            color: #f9a8d4;
+                            font-size: 12px;
+                            font-weight: 700;
+                            line-height: 1.2;
+                        }
+
+                        .tree-category-visibility i {
+                            font-size: 11px;
+                        }
+
                         .tree-category-count--danger {
                             background: rgba(239, 68, 68, 0.2);
                             color: #ef4444;
@@ -3959,6 +3984,10 @@ body.admin-access-pending,
 
                         .context-menu-item:hover {
                             background: rgba(255, 255, 255, 0.08);
+                        }
+
+                        .context-menu-item--muted {
+                            color: rgba(255, 255, 255, 0.62);
                         }
 
                         .context-menu-item i {
@@ -9390,6 +9419,11 @@ body.admin-access-pending,
                 border-color: rgba(248, 113, 113, 0.24);
             }
 
+            #productModal .preview-stock--manual {
+                color: #fbbf24;
+                border-color: rgba(245, 158, 11, 0.28);
+            }
+
             #productModal .preview-stock--unknown {
                 color: rgba(226, 232, 240, 0.9);
                 border-color: rgba(255, 255, 255, 0.08);
@@ -10010,6 +10044,56 @@ body.admin-access-pending,
                                         z-index: 99999;
                                         /* Ensure it stays above webhook toggles and other inputs */
                                     }
+
+.shop-product-delivery-availability {
+    margin-top: -4px;
+}
+
+#productModal .shop-delivery-mode-toggle {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+}
+
+#productModal .shop-delivery-mode-toggle__option {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 42px;
+    border: 1px solid transparent;
+    border-radius: 9px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.72);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+}
+
+#productModal .shop-delivery-mode-toggle__option:is(:hover, :focus-visible) {
+    color: rgba(255, 255, 255, 0.92);
+    border-color: rgba(107, 158, 206, 0.35);
+    outline: none;
+}
+
+#productModal .shop-delivery-mode-toggle__option.active,
+#productModal .shop-delivery-mode-toggle__option[aria-pressed="true"] {
+    background: rgba(107, 158, 206, 0.2);
+    border-color: rgba(107, 158, 206, 0.55);
+    color: #ffffff;
+    box-shadow: 0 8px 20px rgba(30, 64, 112, 0.18);
+}
+
+#productModal .shop-delivery-mode-toggle__option[data-manual-delivery="true"].active,
+#productModal .shop-delivery-mode-toggle__option[data-manual-delivery="true"][aria-pressed="true"] {
+    background: rgba(245, 158, 11, 0.17);
+    border-color: rgba(245, 158, 11, 0.52);
+}
 
 
 /* admin-studio.html inline style block 14 (from line 9425) */
@@ -17168,6 +17252,11 @@ html[data-theme="light"] .shop-admin-product-stock--empty {
     border-color: rgba(248, 113, 113, 0.24) !important;
 }
 
+html[data-theme="light"] .shop-admin-product-stock--manual {
+    color: #fbbf24 !important;
+    border-color: rgba(245, 158, 11, 0.3) !important;
+}
+
 html[data-theme="light"] :is(.shop-admin-product-action-btn, .toolbar-btn, .action-btn, .view-btn) {
     background: rgba(255, 255, 255, 0.72) !important;
     color: rgba(118, 157, 202, 0.92) !important;
@@ -24046,6 +24135,13 @@ html:not([data-theme="dark"]) #module-shop #shop-view-import .tree-category-coun
     border: 1px solid rgba(var(--admin-studio-ui-blue-rgb), 0.18) !important;
 }
 
+html[data-theme="light"] #module-shop #shop-view-import .tree-category-visibility,
+html:not([data-theme="dark"]) #module-shop #shop-view-import .tree-category-visibility {
+    background: rgba(219, 39, 119, 0.08) !important;
+    border-color: rgba(219, 39, 119, 0.18) !important;
+    color: #be185d !important;
+}
+
 /* 20260428_ADMIN_STUDIO_IMPORT_TEXTAREA_FLAT_SHADOW_1 */
 html[data-theme="light"] #module-shop #shop-view-import .import-textarea.glass-input,
 html:not([data-theme="dark"]) #module-shop #shop-view-import .import-textarea.glass-input {
@@ -24406,6 +24502,13 @@ html:not([data-theme="dark"]) #productModal .preview-stock--empty {
     border-color: rgba(248, 113, 113, 0.24) !important;
 }
 
+html[data-theme="light"] #productModal .preview-stock--manual,
+html:not([data-theme="dark"]) #productModal .preview-stock--manual {
+    color: #fbbf24 !important;
+    -webkit-text-fill-color: #fbbf24 !important;
+    border-color: rgba(245, 158, 11, 0.28) !important;
+}
+
 html[data-theme="light"] #productModal .preview-status--inactive,
 html:not([data-theme="dark"]) #productModal .preview-status--inactive {
     color: #cbd5e1 !important;
@@ -24451,6 +24554,41 @@ html:not([data-theme="dark"]) #productModal :is(.modern-input, .custom-category-
     text-shadow: none !important;
     backdrop-filter: none !important;
     -webkit-backdrop-filter: none !important;
+}
+
+html[data-theme="light"] #productModal .shop-delivery-mode-toggle,
+html:not([data-theme="dark"]) #productModal .shop-delivery-mode-toggle {
+    background: rgba(248, 250, 252, 0.86) !important;
+    border-color: var(--admin-studio-product-modal-border) !important;
+}
+
+html[data-theme="light"] #productModal .shop-delivery-mode-toggle__option,
+html:not([data-theme="dark"]) #productModal .shop-delivery-mode-toggle__option {
+    color: rgba(71, 85, 105, 0.82) !important;
+}
+
+html[data-theme="light"] #productModal .shop-delivery-mode-toggle__option:is(:hover, :focus-visible),
+html:not([data-theme="dark"]) #productModal .shop-delivery-mode-toggle__option:is(:hover, :focus-visible) {
+    color: var(--admin-studio-product-modal-text) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.28) !important;
+}
+
+html[data-theme="light"] #productModal .shop-delivery-mode-toggle__option.active,
+html[data-theme="light"] #productModal .shop-delivery-mode-toggle__option[aria-pressed="true"],
+html:not([data-theme="dark"]) #productModal .shop-delivery-mode-toggle__option.active,
+html:not([data-theme="dark"]) #productModal .shop-delivery-mode-toggle__option[aria-pressed="true"] {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.11) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.28) !important;
+    color: var(--admin-studio-product-modal-text) !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] #productModal .shop-delivery-mode-toggle__option[data-manual-delivery="true"].active,
+html[data-theme="light"] #productModal .shop-delivery-mode-toggle__option[data-manual-delivery="true"][aria-pressed="true"],
+html:not([data-theme="dark"]) #productModal .shop-delivery-mode-toggle__option[data-manual-delivery="true"].active,
+html:not([data-theme="dark"]) #productModal .shop-delivery-mode-toggle__option[data-manual-delivery="true"][aria-pressed="true"] {
+    background: rgba(245, 158, 11, 0.11) !important;
+    border-color: rgba(245, 158, 11, 0.32) !important;
 }
 
 html[data-theme="light"] #productModal :is(.modern-input, .custom-category-selected, .custom-category-create-panel__input):is(:hover, :focus, :focus-visible),

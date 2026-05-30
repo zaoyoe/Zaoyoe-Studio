@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const SHOP_PREFETCH_SCHEMA_VERSION = '20260523_SHOP_PRODUCT_SKUS_1';
+    const SHOP_PREFETCH_SCHEMA_VERSION = '20260530_SHOP_MANUAL_DELIVERY_1';
     const HOMEPAGE_DEFERRED_STYLE_GROUP = 'homepage-overlays';
 
     function activateHomepageDeferredOverlays() {
@@ -94,6 +94,32 @@
         throw lastError || new Error('shop catalog api failed');
     }
 
+    function isPublicShopCategory(category = {}) {
+        if (!category || typeof category !== 'object' || !Object.prototype.hasOwnProperty.call(category, 'is_public')) {
+            return true;
+        }
+        if (typeof category.is_public === 'boolean') {
+            return category.is_public;
+        }
+        return !['0', 'false', 'no', 'off', 'hidden', 'private'].includes(String(category.is_public ?? '').trim().toLowerCase());
+    }
+
+    function filterPublicShopCatalog(categories = [], products = []) {
+        const hiddenCategoryNames = new Set(
+            (Array.isArray(categories) ? categories : [])
+                .filter((category) => !isPublicShopCategory(category))
+                .map((category) => String(category?.name || '').trim())
+                .filter(Boolean)
+        );
+
+        return {
+            categories: (Array.isArray(categories) ? categories : []).filter(isPublicShopCategory),
+            products: (Array.isArray(products) ? products : []).filter((product) => (
+                !hiddenCategoryNames.has(String(product?.category || '').trim())
+            ))
+        };
+    }
+
     async function prefetchGuestbook() {
         try {
             const sessionResult = await window.supabaseClient.auth.getSession();
@@ -143,6 +169,10 @@
                 categories = categoryResult.data || [];
                 products = productResult.data || [];
             }
+
+            const publicCatalog = filterPublicShopCatalog(categories, products);
+            categories = publicCatalog.categories;
+            products = publicCatalog.products;
 
             const filteredProducts = window.SiteConfig?.filterProductsForCurrentSite
                 ? window.SiteConfig.filterProductsForCurrentSite(products)

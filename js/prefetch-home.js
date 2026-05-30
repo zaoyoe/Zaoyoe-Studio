@@ -12,7 +12,7 @@
     const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
     const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
     const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260518_HOME_GONGYI_SUB2API_1';
+    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260530_HOME_SHOP_CATEGORY_PUBLIC_1';
     const HOMEPAGE_GUESTBOOK_CARD_LIMIT = 6;
     const HOMEPAGE_PROMPT_LIVE_SELECT = [
         'id',
@@ -95,6 +95,32 @@
         }
 
         throw lastError || new Error('shop catalog api failed');
+    }
+
+    function isPublicShopCategory(category = {}) {
+        if (!category || typeof category !== 'object' || !Object.prototype.hasOwnProperty.call(category, 'is_public')) {
+            return true;
+        }
+        if (typeof category.is_public === 'boolean') {
+            return category.is_public;
+        }
+        return !['0', 'false', 'no', 'off', 'hidden', 'private'].includes(String(category.is_public ?? '').trim().toLowerCase());
+    }
+
+    function filterPublicShopCatalog(categories = [], products = []) {
+        const hiddenCategoryNames = new Set(
+            (Array.isArray(categories) ? categories : [])
+                .filter((category) => !isPublicShopCategory(category))
+                .map((category) => String(category?.name || '').trim())
+                .filter(Boolean)
+        );
+
+        return {
+            categories: (Array.isArray(categories) ? categories : []).filter(isPublicShopCategory),
+            products: (Array.isArray(products) ? products : []).filter((product) => (
+                !hiddenCategoryNames.has(String(product?.category || '').trim())
+            ))
+        };
     }
 
     function getHomepagePrefetchCacheKey(site = getCurrentSite()) {
@@ -1205,22 +1231,30 @@
             const [shopCatalog, guestbookMessages] = await Promise.all([
                 fetchPublicShopCatalogPayload(getCurrentSite()).catch(async (apiError) => {
                     console.warn('Homepage shop catalog API prefetch failed, using direct fetch:', apiError?.message || apiError);
-                    const result = await window.supabaseClient
-                        .from('shop_products')
-                        .select('id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, category, display_order')
-                        .eq('is_active', true)
-                        .order('display_order', { ascending: false });
-                    if (result.error) throw result.error;
-                    return {
-                        products: Array.isArray(result.data) ? result.data : []
-                    };
+                    const [categoryResult, productResult] = await Promise.all([
+                        window.supabaseClient.from('shop_categories').select('*').order('sort_order'),
+                        window.supabaseClient
+                            .from('shop_products')
+                            .select('id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, manual_delivery, category, display_order')
+                            .eq('is_active', true)
+                            .order('display_order', { ascending: false })
+                    ]);
+                    if (categoryResult.error) throw categoryResult.error;
+                    if (productResult.error) throw productResult.error;
+                    return filterPublicShopCatalog(categoryResult.data || [], productResult.data || []);
                 }),
                 fetchHomepageGuestbookMessages(HOMEPAGE_GUESTBOOK_CARD_LIMIT)
             ]);
 
-            const allProducts = Array.isArray(shopCatalog?.products)
-                ? shopCatalog.products
-                : (Array.isArray(shopCatalog?.data?.products) ? shopCatalog.data.products : []);
+            const publicShopCatalog = filterPublicShopCatalog(
+                Array.isArray(shopCatalog?.categories)
+                    ? shopCatalog.categories
+                    : (Array.isArray(shopCatalog?.data?.categories) ? shopCatalog.data.categories : []),
+                Array.isArray(shopCatalog?.products)
+                    ? shopCatalog.products
+                    : (Array.isArray(shopCatalog?.data?.products) ? shopCatalog.data.products : [])
+            );
+            const allProducts = publicShopCatalog.products;
             const prompts = aggregatePrompts(config.prompts || {}, promptPool);
             const shop = aggregateShop(config.shop || {}, allProducts);
             const guestbook = aggregateGuestbook(config.guestbook || {}, guestbookMessages);
