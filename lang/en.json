@@ -31,7 +31,7 @@
         "shop": "Shop",
         "verify": "Gemini Pro",
         "guestbook": "Guestbook",
-        "gongyi": "API Relay",
+        "gongyi": "Father Key",
         "status": "Status",
         "gallery": "Gallery",
         "settings": "Settings",
@@ -78,7 +78,7 @@
         "entries": {
             "prompts": "Prompts",
             "shop": "Shop",
-            "gongyi": "API Relay",
+            "gongyi": "Father Key",
             "verify": "Gemini Pro",
             "guestbook": "Guestbook"
         },
@@ -92,7 +92,7 @@
             "subtitle": "Quality resources for growth"
         },
         "gongyi": {
-            "title": "API Relay",
+            "title": "Father Key",
             "subtitle": "Subscription to API conversion platform"
         },
         "verify": {
@@ -1026,6 +1026,9 @@
         "guideRegionTitle": "Region",
         "guideRegionBodyPrefix": "The account must be in a supported region. You can",
         "guideViewRegions": "view supported regions",
+        "guidePaymentProfileTitle": "Payment Profile",
+        "guidePaymentProfileBodyPrefix": "Before submitting, you must click",
+        "guideClosePaymentProfile": "Close payment profile",
         "guideFamilyTitle": "Leave Family Group",
         "guideFamilyBody": "Ensure the account does not already have any other active Pro subscription.",
         "guideAccountTitle": "Account Advice",
@@ -1126,7 +1129,7 @@
             "shop": "Resource Store",
             "verify": "Gemini Pro",
             "guestbook": "Guestbook",
-            "gongyi": "API Relay"
+            "gongyi": "Father Key"
         },
         "resources": {
             "title": "Resources",

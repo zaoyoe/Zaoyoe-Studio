@@ -1478,6 +1478,13 @@ ${fullModeMarkup}
                                             </div>
                                         </div>
                                         <div class="verify-guide-item">
+                                            <div class="verify-guide-item-title">${t('verify.guidePaymentProfileTitle', '付款资料')}</div>
+                                            <div class="verify-guide-item-body">
+                                                ${t('verify.guidePaymentProfileBodyPrefix', '提交任务前必须点击')}
+                                                <a class="verify-guide-link" href="https://payments.google.com/gp/w/u/0/home/settings" target="_blank" rel="noopener noreferrer">${t('verify.guideClosePaymentProfile', '关闭付款资料')}</a>
+                                            </div>
+                                        </div>
+                                        <div class="verify-guide-item">
                                             <div class="verify-guide-item-title">${t('verify.guideFamilyTitle', '家庭组必须退出')}</div>
                                             <div class="verify-guide-item-body">${t('verify.guideFamilyBody', '确保该账号不存在其它可用的 pro 权限订阅')}</div>
                                         </div>

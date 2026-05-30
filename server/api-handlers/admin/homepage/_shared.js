@@ -541,7 +541,8 @@ function buildEmptyHomepageSectionContent(section) {
             return {
                 enable_auto: false,
                 section_tag: 'API中转',
-                brand_name: 'Zaoyoe',
+                brand_name: '核心秘钥',
+                brand_name_en: 'Father Key',
                 brand_subtitle: 'Subscription to API Conversion Platform',
                 cta_text: '进入控制台',
                 cta_link: HOMEPAGE_GONGYI_TARGET_URL,

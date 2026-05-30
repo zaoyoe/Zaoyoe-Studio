@@ -31,7 +31,7 @@
         "shop": "商城",
         "verify": "Gemini Pro",
         "guestbook": "留言板",
-        "gongyi": "API中转",
+        "gongyi": "核心秘钥",
         "status": "状态页",
         "gallery": "图库",
         "settings": "设置",
@@ -78,7 +78,7 @@
         "entries": {
             "prompts": "提示词",
             "shop": "商城",
-            "gongyi": "API中转",
+            "gongyi": "核心秘钥",
             "verify": "Gemini Pro",
             "guestbook": "留言板"
         },
@@ -92,7 +92,7 @@
             "subtitle": "优质资源，助力成长"
         },
         "gongyi": {
-            "title": "API中转",
+            "title": "核心秘钥",
             "subtitle": "订阅转 API 转换平台"
         },
         "verify": {
@@ -1002,6 +1002,9 @@
         "guideRegionTitle": "地区",
         "guideRegionBodyPrefix": "需在支持区域内，可",
         "guideViewRegions": "点击查看支持地区",
+        "guidePaymentProfileTitle": "付款资料",
+        "guidePaymentProfileBodyPrefix": "提交任务前必须点击",
+        "guideClosePaymentProfile": "关闭付款资料",
         "guideFamilyTitle": "家庭组必须退出",
         "guideFamilyBody": "确保该账号不存在其它可用的 pro 权限订阅。",
         "guideAccountTitle": "账号建议",
@@ -1102,7 +1105,7 @@
             "shop": "资源商城",
             "verify": "Gemini Pro",
             "guestbook": "留言板",
-            "gongyi": "API中转"
+            "gongyi": "核心秘钥"
         },
         "resources": {
             "title": "资源",

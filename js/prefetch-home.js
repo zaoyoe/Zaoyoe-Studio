@@ -12,7 +12,7 @@
     const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
     const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
     const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260530_HOME_SHOP_CATEGORY_PUBLIC_1';
+    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260530_HOME_GONGYI_FATHER_KEY_1';
     const HOMEPAGE_GUESTBOOK_CARD_LIMIT = 6;
     const HOMEPAGE_PROMPT_LIVE_SELECT = [
         'id',
@@ -277,7 +277,7 @@
         const key = String(item?.section || item?.id || '').trim().toLowerCase();
         const fallbackByKey = {
             prompts: { i18nKey: 'home.entries.prompts', zh: '提示词', en: 'Prompts' },
-            gongyi: { i18nKey: 'home.entries.gongyi', zh: 'API中转', en: 'API Relay' },
+            gongyi: { i18nKey: 'home.entries.gongyi', zh: '核心秘钥', en: 'Father Key' },
             shop: { i18nKey: 'home.entries.shop', zh: '商城', en: 'Shop' },
             verify: { i18nKey: 'home.entries.verify', zh: 'Gemini Pro', en: 'Gemini Pro' },
             guestbook: { i18nKey: 'home.entries.guestbook', zh: '留言板', en: 'Guestbook' }
@@ -325,12 +325,16 @@
     function resolveGongyiBrandName(value) {
         const text = String(value || '').trim();
         const fallback = getLanguageFallback('home.entries.gongyi', {
-            zh: 'API中转',
-            en: 'API Relay'
+            zh: '核心秘钥',
+            en: 'Father Key'
         });
         const legacyLabels = new Set(['公益站', '公益站点', 'Community Access', 'API中转', 'API 中转', 'API Relay']);
 
-        if (!text || legacyLabels.has(text) || containsCjkText(text)) {
+        if (!text || legacyLabels.has(text)) {
+            return fallback;
+        }
+
+        if (getCurrentLanguage() === 'en' && containsCjkText(text)) {
             return fallback;
         }
 
@@ -958,7 +962,7 @@
             ? config.entries
             : [
                 { id: 'prompts', icon: 'fa-wand-magic-sparkles', text: window.i18n?.t('home.entries.prompts') || '提示词', link: '/prompts.html', color: '#f472b6', section: 'prompts' },
-                { id: 'gongyi', icon: 'home-entry-card-icon--gongyi', text: window.i18n?.t('home.entries.gongyi') || 'API中转', link: 'https://sub2api.fatherkey.com', color: '#5ed8f8', section: 'gongyi' },
+                { id: 'gongyi', icon: 'home-entry-card-icon--gongyi', text: window.i18n?.t('home.entries.gongyi') || '核心秘钥', link: 'https://sub2api.fatherkey.com', color: '#5ed8f8', section: 'gongyi' },
                 { id: 'shop', icon: 'fa-store', text: window.i18n?.t('home.entries.shop') || '商城', link: '/shop.html', color: '#4ade80', section: 'shop' },
                 { id: 'verify', icon: 'fa-robot', text: window.i18n?.t('home.entries.verify') || 'Gemini Pro', link: '/verify.html', color: '#667eea', section: 'verify' },
                 { id: 'guestbook', icon: 'fa-comment-dots', text: window.i18n?.t('home.entries.guestbook') || '留言板', link: '#', color: '#f59e0b', action: 'openGuestbookModal', section: 'guestbook' }

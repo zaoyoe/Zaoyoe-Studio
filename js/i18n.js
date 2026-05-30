@@ -9,7 +9,7 @@
     const I18N_STORAGE_KEY = 'zaoyoe_language';
     const DEFAULT_LANG = 'zh';
     const SUPPORTED_LANGS = ['zh', 'en'];
-    const I18N_ASSET_VERSION_FALLBACK = '20260521_HOME_SHOP_TITLE_1';
+    const I18N_ASSET_VERSION_FALLBACK = '20260530_HOME_GONGYI_FATHER_KEY_1';
     const I18N_ASSET_VERSION = (() => {
         try {
             const scriptUrl = new URL(document.currentScript?.src || '', window.location.href);
@@ -21,15 +21,15 @@
     const LEGACY_TRANSLATION_FIXUPS = Object.freeze({
         zh: Object.freeze({
             'nav.verify': Object.freeze({ value: 'Gemini Pro', legacy: ['验证'] }),
-            'nav.gongyi': Object.freeze({ value: 'API中转', legacy: ['公益站', '公益站点'] }),
+            'nav.gongyi': Object.freeze({ value: '核心秘钥', legacy: ['公益站', '公益站点', 'API中转', 'API 中转'] }),
             'home.entries.verify': Object.freeze({ value: 'Gemini Pro', legacy: ['验证'] }),
-            'home.entries.gongyi': Object.freeze({ value: 'API中转', legacy: ['公益站', '公益站点', 'API 中转'] })
+            'home.entries.gongyi': Object.freeze({ value: '核心秘钥', legacy: ['公益站', '公益站点', 'API中转', 'API 中转'] })
         }),
         en: Object.freeze({
             'nav.verify': Object.freeze({ value: 'Gemini Pro', legacy: ['Verify'] }),
-            'nav.gongyi': Object.freeze({ value: 'API Relay', legacy: ['Community Access', 'Gongyi'] }),
+            'nav.gongyi': Object.freeze({ value: 'Father Key', legacy: ['Community Access', 'Gongyi', 'API Relay'] }),
             'home.entries.verify': Object.freeze({ value: 'Gemini Pro', legacy: ['Verify'] }),
-            'home.entries.gongyi': Object.freeze({ value: 'API Relay', legacy: ['Community Access', 'Gongyi'] })
+            'home.entries.gongyi': Object.freeze({ value: 'Father Key', legacy: ['Community Access', 'Gongyi', 'API Relay'] })
         })
     });
 
