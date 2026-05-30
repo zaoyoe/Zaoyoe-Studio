@@ -261,6 +261,55 @@ body,
     transition: background-color 0.5s ease, border-color 0.5s ease, color 0.5s ease;
 }
 
+body.prompts-page img {
+    -webkit-user-drag: none;
+    user-drag: none;
+    user-select: none;
+}
+
+body.prompts-page .prompt-card,
+body.prompts-page .prompt-card * {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+body.prompts-page .framer-nav,
+body.prompts-page .framer-nav *,
+body.prompts-page .mobile-menu,
+body.prompts-page .mobile-menu *,
+body.prompts-page .nav-dropdown,
+body.prompts-page .nav-dropdown *,
+body.prompts-page .nav-dropdown-portal,
+body.prompts-page .nav-dropdown-portal *,
+body.prompts-page .search-dropdown,
+body.prompts-page .search-dropdown *,
+body.prompts-page .hot-tag,
+body.prompts-page .hot-tag *,
+body.prompts-page .inline-hot-tag,
+body.prompts-page .inline-hot-tag *,
+body.prompts-page .suggestion-item,
+body.prompts-page .suggestion-item *,
+body.prompts-page .sort-trigger,
+body.prompts-page .sort-trigger *,
+body.prompts-page .sort-dropdown,
+body.prompts-page .sort-dropdown *,
+body.prompts-page .sort-option,
+body.prompts-page .sort-option * {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+body.prompts-page input,
+body.prompts-page textarea,
+body.prompts-page select,
+body.prompts-page [contenteditable="true"],
+body.prompts-page [contenteditable="true"] *,
+body.prompts-page #modalPromptText,
+body.prompts-page #modalPromptText * {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
 /* ========================================
    USER AVATAR MENU (Glassmorphism)
    ======================================== */

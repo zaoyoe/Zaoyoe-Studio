@@ -14,7 +14,7 @@ test('wallet loader and auth runtime prewarm the wallet shell before modal open'
     const loaderMarkers = [
         "const VERSION = '20260525_WALLET_DISCOUNT_SKU_SCOPE_1';",
         "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260518_MOBILE_PAY_FAST_CONFIRM_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260525_WALLET_DISCOUNT_SKU_SCOPE_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260525_WALLET_DISCOUNT_SKU_SCOPE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';",
         'function ensurePointsServiceReady() {',
         'function warmWalletOverview(options = {}) {',
         'function warmWalletRuntime() {',

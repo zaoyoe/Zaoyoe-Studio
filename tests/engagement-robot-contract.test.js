@@ -1241,8 +1241,8 @@ test('public robot engagement feed is routed and consumed by ChatWidget', () => 
     assert.match(chatWidgetLoader, /ChatWidget\.js\?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1/);
     assert.match(chatWidgetLoader, /scheduleEngagementRuntimeWarm/);
     assert.match(chatWidgetLoader, /ensureChatWidgetReady\(\{ open: false \}\)/);
-    assert.match(indexHtml, /chat-widget-loader\.js\?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1/);
-    assert.match(promptsHtml, /chat-widget-loader\.js\?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1/);
+    assert.match(indexHtml, /chat-widget-loader\.js\?v=20260530_SHOP_CHAT_FLOATING_STACK_3/);
+    assert.match(promptsHtml, /chat-widget-loader\.js\?v=20260530_SHOP_CHAT_FLOATING_STACK_3/);
     assert.match(chatWidget, /renderEngagementContentHtml/);
     assert.match(chatWidget, /engagement-preview__path-link/);
     assert.match(chatWidget, /ZaoyoeWalletModalBootstrap\?\.open/);

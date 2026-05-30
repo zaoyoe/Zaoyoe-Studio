@@ -15,8 +15,8 @@ test('external engagement embed can mount the robot runtime on gongyi pages', ()
 
     assert.match(embed, /20260505_GONGYI_EXTERNAL_ENGAGEMENT_1/);
     assert.match(embed, /DEFAULT_PAGE_ID\s*=\s*'gongyi'/);
-    assert.match(embed, /CHAT_WIDGET_LOADER_SRC\s*=\s*'js\/chat-widget-loader\.js\?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1'/);
-    assert.match(embed, /CHAT_WIDGET_STYLE_SRC\s*=\s*'css\/chat-widget\.css\?v=20260507_CHAT_WIDGET_ADAPTIVE_BUBBLE_1'/);
+    assert.match(embed, /CHAT_WIDGET_LOADER_SRC\s*=\s*'js\/chat-widget-loader\.js\?v=20260530_SHOP_CHAT_FLOATING_STACK_3&siteAssetCdn=20260510_SITE_ASSET_CDN_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1'/);
+    assert.match(embed, /CHAT_WIDGET_STYLE_SRC\s*=\s*'css\/chat-widget\.css\?v=20260530_SHOP_CHAT_FLOATING_STACK_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1'/);
     assert.match(embed, /data-page-id|pageId/);
     assert.match(embed, /data-api-origin|apiOrigin/);
     assert.match(embed, /data-asset-base|assetBase/);
@@ -41,7 +41,7 @@ test('chat widget loader resolves assets from external embed asset base', () => 
     assert.match(loader, /getLoaderAssetBase/);
     assert.match(loader, /resolveAssetUrl/);
     assert.match(loader, /script\?\.dataset\.assetBase/);
-    assert.match(loader, /CHAT_WIDGET_STYLE_SRC\s*=\s*'css\/chat-widget\.css\?v=20260507_CHAT_WIDGET_ADAPTIVE_BUBBLE_1'/);
+    assert.match(loader, /CHAT_WIDGET_STYLE_SRC\s*=\s*'css\/chat-widget\.css\?v=20260530_SHOP_CHAT_FLOATING_STACK_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1'/);
     assert.match(loader, /ensureFullChatWidgetStylesheet/);
     assert.match(loader, /config\.externalHost\s*===\s*true/);
     assert.match(loader, /String\(config\.pageId\s*\|\|\s*config\.page_id\s*\|\|\s*''\)\.trim\(\)\s*===\s*'gongyi'/);

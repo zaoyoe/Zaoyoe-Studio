@@ -284,6 +284,23 @@ body.auth-sheet-open {
     isolation: isolate;
 }
 
+/* 20260530_PUBLIC_COMPONENT_SELECT_GUARD_1 */
+#loginModal.auth-sheet-overlay,
+#loginModal.auth-sheet-overlay * {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+#loginModal.auth-sheet-overlay img {
+    -webkit-user-drag: none;
+    user-drag: none;
+}
+
+#loginModal.auth-sheet-overlay :where(input, textarea, select, [contenteditable="true"], [contenteditable="true"] *) {
+    -webkit-user-select: text;
+    user-select: text;
+}
+
 .auth-sheet-surface {
     position: absolute;
     inset: 0;

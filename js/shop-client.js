@@ -32,6 +32,69 @@ function trackShopAnalyticsEvent(eventName, payload = {}, options = {}) {
 }
 
 const SHOP_CART_ABANDON_ENGAGEMENT_DELAY_MS = 45000;
+const SHOP_NON_SELECTABLE_UI_SELECTOR = [
+    '.framer-nav',
+    '.mobile-menu',
+    '.nav-dropdown',
+    '.nav-dropdown-portal',
+    '#shopCategoryFilters',
+    '.category-filters',
+    '.filter-tab',
+    '.shop-cart-anchor',
+    '#shopCartDrawer',
+    '#shopPurchaseModal .shop-purchase-stage-header',
+    '#shopPurchaseModal #purchaseSkuSelector',
+    '#shopPurchaseModal .shop-quantity-wrapper',
+    '#shopPurchaseModal .shop-purchase-stage-summary',
+    '#shopPurchaseModal .shop-purchase-discount__summary',
+    '#shopPurchaseModal .shop-purchase-discount__action',
+    '#shopPurchaseModal .shop-purchase-discount__feedback',
+    '#shopPurchaseModal .shop-purchase-stage-action',
+    '#shopPurchaseModal .shop-btn',
+    '#purchaseQuantity',
+    '#purchaseDiscountCode'
+].join(', ');
+const SHOP_SELECTABLE_TEXT_SELECTOR = [
+    'textarea',
+    'input:not(#purchaseQuantity):not(#purchaseDiscountCode)',
+    '[contenteditable="true"]',
+    '#purchaseNotesContent',
+    '#purchaseUsageContent',
+    '#shopCartDrawer .shop-cart-item__panel--notice',
+    '#shopCartDrawer .shop-cart-item__panel--usage',
+    '.shop-success-content-shell',
+    '.content-card--shop-copy',
+    '.shop-inline-style-attr-31'
+].join(', ');
+
+function disableShopImageDrag(image) {
+    if (!image || typeof image.setAttribute !== 'function') return;
+    image.setAttribute('draggable', 'false');
+    image.draggable = false;
+}
+
+function preventShopImageDrag(event) {
+    const target = event?.target instanceof Element
+        ? event.target.closest('img')
+        : null;
+    if (target) {
+        event.preventDefault();
+    }
+}
+
+function preventShopCardTextSelection(event) {
+    if (!(event?.target instanceof Element)) return;
+
+    const discountInput = event.target.closest('#purchaseDiscountCode');
+    if (discountInput && discountInput.value) return;
+    if (event.target.closest(SHOP_SELECTABLE_TEXT_SELECTOR)) return;
+
+    const cardTarget = event.target.closest('.shop-card');
+    const uiTarget = event.target.closest(SHOP_NON_SELECTABLE_UI_SELECTOR);
+    if (cardTarget || uiTarget) {
+        event.preventDefault();
+    }
+}
 
 function normalizeShopTrackingText(value, maxLength = 160) {
     return String(value || '').trim().slice(0, Math.max(0, maxLength));
@@ -4435,7 +4498,7 @@ const ShopClient = {
         }
 
         if (this.isShopImageSource(imageSource)) {
-            return `<img src="${safeIconSource}" class="${imageClass}" alt="${safeAlt}" loading="lazy" decoding="async">`;
+            return `<img src="${safeIconSource}" class="${imageClass}" alt="${safeAlt}" loading="lazy" decoding="async" draggable="false">`;
         }
 
         return `<div class="${iconClass}" aria-hidden="true"><i class="fas fa-box"></i></div>`;
@@ -7693,6 +7756,9 @@ const ShopClient = {
     bindStaticUiHandlers: function () {
         if (this.staticUiBindingsBound) return;
 
+        document.addEventListener('dragstart', preventShopImageDrag);
+        document.addEventListener('selectstart', preventShopCardTextSelection);
+
         const filtersContainer = document.getElementById('shopCategoryFilters');
         filtersContainer?.addEventListener('click', (event) => {
             const target = event.target instanceof Element
@@ -9915,7 +9981,7 @@ const ShopClient = {
         const iconHtml = product.icon_url?.startsWith('fa')
             ? `<i class="${safeIconClass} shop-card-icon shop-card-icon--font" aria-hidden="true"></i>`
             : (hasCoverImage
-                ? `<img src="${safeIconUrl}" width="40" class="shop-card-thumb" alt="${safeCardImageAlt}" loading="lazy" decoding="async">`
+                ? `<img src="${safeIconUrl}" width="40" class="shop-card-thumb" alt="${safeCardImageAlt}" loading="lazy" decoding="async" draggable="false">`
                 : '<i class="fas fa-box shop-card-icon shop-card-icon--fallback" aria-hidden="true"></i>');
 
         const rawStockCount = Number(product.stock_count ?? product.stockCount ?? 0);
@@ -9934,7 +10000,7 @@ const ShopClient = {
             ? this.renderShopCoverIconMarkup(product.icon_url, safeIconClass)
             : iconHtml;
         const displayHtml = hasCoverImage
-            ? `<img class="shop-card-image-cover" alt="${safeCardImageAlt}" width="480" height="320">`
+            ? `<img class="shop-card-image-cover" alt="${safeCardImageAlt}" width="480" height="320" draggable="false">`
             : `<div class="shop-icon-wrapper">${coverIconMarkup}</div>`;
         // breathing 现在从卡片诞生就启动：把 .breathing 与 .shop-card-breathe-frame--breathing
         // 写进初始模板，并把 --breathe-delay 内联到 breathe-frame。元素第一次 paint 时浏览器
@@ -10013,6 +10079,7 @@ const ShopClient = {
 
         const productImage = hasCoverImage ? el.querySelector('.shop-card-image-cover') : null;
         if (productImage) {
+            disableShopImageDrag(productImage);
             productImage.loading = shouldLoadImageEagerly ? 'eager' : 'lazy';
             productImage.decoding = 'async';
             productImage.setAttribute('fetchpriority', shouldLoadImageEagerly ? 'high' : 'auto');
@@ -13650,7 +13717,7 @@ const ShopClient = {
                 const pointsLabel = this.getShopPointsLabel();
                 const safeIcon = this.escapeAttribute(icon);
                 const iconHtml = icon.startsWith('http')
-                    ? `<img src="${safeIcon}" class="shop-order-history-icon shop-order-history-icon--image" alt="">`
+                    ? `<img src="${safeIcon}" class="shop-order-history-icon shop-order-history-icon--image" alt="" draggable="false">`
                     : `<i class="${safeIcon} shop-order-history-icon shop-order-history-icon--font" aria-hidden="true"></i>`;
 
                 item.innerHTML = `

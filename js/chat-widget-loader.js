@@ -6,11 +6,11 @@
     }
     global.__zaoyoeChatWidgetBootstrapLoaded = true;
 
-    const VERSION = '20260516_HOME_AUTH_CHAT_CACHE_BUST_1';
+    const VERSION = '20260530_SHOP_CHAT_FLOATING_STACK_3';
     const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';
     const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';
     const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';
-    const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=20260507_CHAT_WIDGET_ADAPTIVE_BUBBLE_1';
+    const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=20260530_SHOP_CHAT_FLOATING_STACK_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';
     const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';
     const CHAT_WIDGET_SHELL_MODE_KEY = 'zaoyoe_chat_widget_last_shell_mode_v1';
     const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';
@@ -468,93 +468,79 @@ body.chat-widget-bootstrap-scroll-locked {
     }
 }
 
+/* 20260530_SHOP_CHAT_FLOATING_STACK_3 */
 @media (max-width: 1180px) and (hover: hover) and (pointer: fine) {
     body.shop-page .chat-widget-fab,
     body.shop-page .chat-widget-fab:hover,
     body.shop-page .chat-widget-fab:active,
     body.shop-page .chat-widget-fab:focus,
     body.shop-page .chat-widget-fab:focus-visible {
-        width: 92px !important;
-        height: 76px !important;
-        min-width: 0 !important;
-        border: 0 !important;
-        border-radius: 0 !important;
-        background: transparent !important;
-        background-color: transparent !important;
-        backdrop-filter: none !important;
-        -webkit-backdrop-filter: none !important;
-        box-shadow: none !important;
+        width: 56px !important;
+        height: 56px !important;
+        min-width: 56px !important;
+        border: 1px solid var(--shop-mobile-floating-glass-border, rgba(15, 23, 42, 0.065)) !important;
+        border-radius: 18px !important;
+        background: var(--shop-mobile-floating-glass-bg, rgba(255, 255, 255, 0.76)) !important;
+        background-color: var(--shop-mobile-floating-glass-bg, rgba(255, 255, 255, 0.76)) !important;
+        backdrop-filter: var(--shop-mobile-floating-glass-filter, blur(20px) saturate(150%)) !important;
+        -webkit-backdrop-filter: var(--shop-mobile-floating-glass-filter, blur(20px) saturate(150%)) !important;
+        box-shadow: var(--shop-mobile-floating-glass-shadow, 0 2px 8px rgba(15, 23, 42, 0.045), inset 0 0.5px 0 rgba(255, 255, 255, 0.34)) !important;
     }
 
     body.shop-page .chat-widget-fab {
-        top: 85% !important;
-        right: 0 !important;
-        bottom: auto !important;
-        transform: translateY(-50%) !important;
+        top: auto !important;
+        right: 16px !important;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 40px) !important;
+        transform: none !important;
+        display: block !important;
+        box-sizing: border-box;
+        overflow: visible;
+        isolation: isolate;
     }
 
     body.shop-page .chat-widget-fab:hover {
-        transform: translateY(calc(-50% - 2px)) !important;
+        transform: none !important;
     }
 
-    body.shop-page .chat-widget-fab.chat-widget-fab--peek .chat-widget-fab__robot {
-        top: 8px !important;
-        left: auto !important;
-        right: -8px !important;
-        width: 64px !important;
-        height: 48px !important;
-        transform: translateX(8px) scaleX(0.84) scaleY(1.04) rotate(-4deg) !important;
-        transition:
-            transform 420ms cubic-bezier(0.22, 1, 0.36, 1),
-            filter 240ms ease;
-        will-change: transform, filter;
-        z-index: auto;
-    }
-
+    body.shop-page .chat-widget-fab.chat-widget-fab--peek .chat-widget-fab__robot,
     body.shop-page .chat-widget-fab.chat-widget-fab--peek.chat-widget-fab--ambient-retracted .chat-widget-fab__robot {
-        transform: translateX(18px) scaleX(0.8) scaleY(1.06) rotate(-5deg) !important;
+        top: 5px !important;
+        left: 0 !important;
+        right: auto !important;
+        width: 56px !important;
+        height: 46px !important;
+        transform: none !important;
+        z-index: 1;
     }
 
     body.shop-page .chat-widget-fab.chat-widget-fab--peek:hover .chat-widget-fab__robot {
-        transform: translateX(-8px) scale(1.04) !important;
+        transform: none !important;
     }
 
     body.shop-page .chat-widget-fab.chat-widget-fab--peek:active .chat-widget-fab__robot {
-        transform: translateX(-5px) scale(0.98) !important;
+        transform: scale(0.96) !important;
     }
 
     body.shop-page .chat-widget-fab.chat-widget-fab--peek .chat-widget-fab__glow {
-        inset: 8px 10px 4px 4px;
-        opacity: 0.18;
-        transform: none;
-    }
-
-    body.shop-page .chat-widget-fab.chat-widget-fab--peek.chat-widget-fab--ambient-retracted .chat-widget-fab__glow {
-        opacity: 0.1;
-        transform: scale(0.92) translateX(4px);
+        inset: 8px 8px 5px;
+        opacity: 0.14;
     }
 
     body.shop-page .chat-widget-fab.chat-widget-fab--peek:hover .chat-widget-fab__glow {
-        opacity: 0.28;
-        transform: scale(1.08);
+        opacity: 0.14;
+        transform: none;
     }
 
     body.shop-page .chat-widget-fab.chat-widget-fab--peek .chat-widget-fab__shadow {
-        right: 18px;
-        top: 56px;
-        width: 32px;
+        right: 12px;
+        top: 42px;
         opacity: 0.1;
-        transform: scaleX(0.74) translateX(12px);
-    }
-
-    body.shop-page .chat-widget-fab.chat-widget-fab--peek.chat-widget-fab--ambient-retracted .chat-widget-fab__shadow {
-        opacity: 0.06;
-        transform: scaleX(0.6) translateX(18px);
+        transform: scaleX(0.82);
     }
 
     body.shop-page .chat-widget-fab.chat-widget-fab--peek:hover .chat-widget-fab__shadow {
-        opacity: 0.2;
-        transform: scaleX(0.98) translateX(-12px);
+        opacity: 0.1;
+        transform: scaleX(0.82);
     }
 }
 
