@@ -113,6 +113,7 @@ test('public shop catalog hot cache preserves normal hits while refresh requests
                         name: `Product ${catalogVersion}`,
                         price_points: 10,
                         stock_count: 5,
+                        manual_delivery: catalogVersion === 1,
                         category: 'tools',
                         display_order: 1,
                         is_active: true
@@ -193,10 +194,101 @@ test('public shop catalog hot cache preserves normal hits while refresh requests
     assert.equal(productReads, 2);
     assert.equal(skuReads, 2);
     assert.equal(firstRes.json().products[0].id, 'product-1');
+    assert.equal(firstRes.json().products[0].manual_delivery, true);
     assert.equal(firstRes.json().products[0].skus[0].id, 'sku-1');
     assert.deepEqual(firstRes.json().products[0].skus[0].quantity_rules, [{ qty: 3, price: 8 }]);
     assert.equal(secondRes.json().products[0].id, 'product-1');
     assert.equal(refreshRes.json().products[0].id, 'product-2');
+    assert.equal(refreshRes.json().products[0].manual_delivery, false);
     assert.equal(finalRes.json().products[0].id, 'product-2');
     assert.match(secondRes.headers['server-timing'], /shop-catalog-cache;dur=\d+;desc="hit"/);
+});
+
+test('public shop catalog hides private categories and their products', async () => {
+    const supabase = {
+        from(table) {
+            if (table === 'shop_categories') {
+                return createThenableQuery(() => ({
+                    data: [
+                        { id: 'cat_public', name: 'public-tools', sort_order: 1, is_public: true },
+                        { id: 'cat_hidden', name: 'internal-tools', sort_order: 2, is_public: false }
+                    ],
+                    error: null
+                }));
+            }
+
+            if (table === 'shop_product_skus') {
+                return createThenableQuery(() => ({
+                    data: [],
+                    error: null
+                }));
+            }
+
+            assert.equal(table, 'shop_products');
+            return createThenableQuery(() => ({
+                data: [
+                    {
+                        id: 'product_public',
+                        name: 'Visible product',
+                        price_points: 10,
+                        stock_count: 5,
+                        category: 'public-tools',
+                        display_order: 2,
+                        is_active: true
+                    },
+                    {
+                        id: 'product_hidden',
+                        name: 'Hidden product',
+                        price_points: 10,
+                        stock_count: 5,
+                        category: 'internal-tools',
+                        display_order: 1,
+                        is_active: true
+                    }
+                ],
+                error: null
+            }));
+        }
+    };
+    const handler = createShopHandlers({
+        admin: {
+            getOptionalSupabaseAdmin() {
+                return supabase;
+            },
+            sendJson(res, status, payload) {
+                res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                res.end(JSON.stringify(payload));
+            }
+        },
+        site: {
+            requireSupportedSite(value) {
+                return String(value || 'cn').trim().toLowerCase() || 'cn';
+            }
+        },
+        env: {
+            SHOP_CATALOG_HOT_CACHE_TTL_MS: '0'
+        }
+    }).catalog;
+
+    const allRes = createMockResponse();
+    await handler({
+        method: 'GET',
+        url: '/api/shop/catalog?site=cn&refresh=1',
+        headers: {}
+    }, allRes);
+
+    assert.equal(allRes.statusCode, 200);
+    assert.deepEqual(allRes.json().categories.map((category) => category.name), ['public-tools']);
+    assert.deepEqual(allRes.json().products.map((product) => product.id), ['product_public']);
+
+    const hiddenCategoryRes = createMockResponse();
+    await handler({
+        method: 'GET',
+        url: '/api/shop/catalog?site=cn&category=internal-tools&refresh=2',
+        headers: {}
+    }, hiddenCategoryRes);
+
+    assert.equal(hiddenCategoryRes.statusCode, 200);
+    assert.deepEqual(hiddenCategoryRes.json().categories.map((category) => category.name), ['public-tools']);
+    assert.deepEqual(hiddenCategoryRes.json().products, []);
 });

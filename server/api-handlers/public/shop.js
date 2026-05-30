@@ -40,6 +40,27 @@ function normalizePositiveInteger(value, fallback, minimum = 0) {
     return Math.max(minimum, Math.floor(numericValue));
 }
 
+function normalizeBoolean(value, fallback = false) {
+    if (typeof value === 'boolean') {
+        return value;
+    }
+
+    const normalized = String(value ?? '').trim().toLowerCase();
+    if (!normalized) {
+        return fallback;
+    }
+
+    if (['1', 'true', 'yes', 'on', 'enabled'].includes(normalized)) {
+        return true;
+    }
+
+    if (['0', 'false', 'no', 'off', 'disabled'].includes(normalized)) {
+        return false;
+    }
+
+    return fallback;
+}
+
 function shouldBypassShopCatalogHotCache(req, requestUrl) {
     const headers = req?.headers || {};
     const cacheControl = String(headers['cache-control'] || headers['Cache-Control'] || '').toLowerCase();
@@ -315,7 +336,8 @@ function createShopHandlers({
             'flash_sale_price',
             'flash_sale_price_intl',
             'flash_sale_end',
-            'flash_sale_end_intl'
+            'flash_sale_end_intl',
+            'manual_delivery'
         ].some((field) => isMissingColumnError(error, field));
     }
 
@@ -323,6 +345,33 @@ function createShopHandlers({
         const normalized = String(value || 'all').trim();
         if (!normalized || normalized.toLowerCase() === 'all') return 'all';
         return normalized.slice(0, 120);
+    }
+
+    function hasShopCategoryPublicFlag(category = {}) {
+        return category
+            && typeof category === 'object'
+            && Object.prototype.hasOwnProperty.call(category, 'is_public');
+    }
+
+    function isPublicShopCategory(category = {}) {
+        if (!hasShopCategoryPublicFlag(category)) {
+            return true;
+        }
+        const value = category.is_public;
+        if (typeof value === 'boolean') {
+            return value;
+        }
+        const normalized = normalizeText(value, 20).toLowerCase();
+        return !['0', 'false', 'no', 'off', 'hidden', 'private'].includes(normalized);
+    }
+
+    function getHiddenShopCategoryNames(categories = []) {
+        return new Set(
+            (Array.isArray(categories) ? categories : [])
+                .filter((category) => !isPublicShopCategory(category))
+                .map((category) => normalizeText(category?.name, 120))
+                .filter(Boolean)
+        );
     }
 
     function isShopCatalogProductAvailableForSite(product = {}, currentSite = 'cn') {
@@ -371,6 +420,7 @@ function createShopHandlers({
 
         return {
             ...product,
+            manual_delivery: normalizeBoolean(product?.manual_delivery, false),
             quantity_rules: quantityRules ?? null,
             flash_sale_price: flashSalePrice ?? null,
             flash_sale_end: flashSaleEnd || null,
@@ -418,7 +468,7 @@ function createShopHandlers({
         }
     }
 
-    async function loadPublicShopCategories(dataSupabase) {
+    async function loadShopCategoriesForCatalog(dataSupabase) {
         const { data, error } = await dataSupabase
             .from('shop_categories')
             .select('*')
@@ -435,8 +485,19 @@ function createShopHandlers({
 
     async function loadPublicShopProducts(dataSupabase, {
         category = 'all',
-        currentSite = 'cn'
+        currentSite = 'cn',
+        hiddenCategoryNames = []
     } = {}) {
+        const hiddenCategoryNameSet = hiddenCategoryNames instanceof Set
+            ? hiddenCategoryNames
+            : new Set((Array.isArray(hiddenCategoryNames) ? hiddenCategoryNames : [])
+                .map((name) => normalizeText(name, 120))
+                .filter(Boolean));
+
+        if (category !== 'all' && hiddenCategoryNameSet.has(category)) {
+            return [];
+        }
+
         const selectAttempts = [
             [
                 'id',
@@ -456,6 +517,7 @@ function createShopHandlers({
                 'quantity_rules',
                 'quantity_rules_intl',
                 'max_purchase_quantity',
+                'manual_delivery',
                 'show_product_description',
                 'show_purchase_notes',
                 'purchase_notes',
@@ -486,6 +548,7 @@ function createShopHandlers({
                 'is_active',
                 'quantity_rules',
                 'max_purchase_quantity',
+                'manual_delivery',
                 'show_product_description',
                 'show_purchase_notes',
                 'purchase_notes',
@@ -513,6 +576,7 @@ function createShopHandlers({
             if (!error) {
                 const products = await attachPublicShopProductSkus(dataSupabase, Array.isArray(data) ? data : []);
                 return products
+                    .filter((product) => !hiddenCategoryNameSet.has(normalizeText(product?.category, 120)))
                     .filter((product) => isShopCatalogProductAvailableForSite(product, currentSite))
                     .map((product) => normalizeShopCatalogProductForSite(product, currentSite));
             }
@@ -2013,6 +2077,65 @@ function createShopHandlers({
         };
     }
 
+    async function loadShopProductPurchaseAvailability(dataSupabase, productId = '') {
+        const normalizedProductId = normalizeText(productId, 160);
+        if (!normalizedProductId || !dataSupabase?.from) {
+            return {
+                manualDelivery: false,
+                product: null
+            };
+        }
+
+        const selectAttempts = [
+            'id, is_active, manual_delivery',
+            'id, is_active'
+        ];
+        let lastError = null;
+
+        for (const selectClause of selectAttempts) {
+            const tableQuery = dataSupabase.from('shop_products');
+            if (!tableQuery || typeof tableQuery.select !== 'function') {
+                return {
+                    manualDelivery: false,
+                    product: null
+                };
+            }
+            const selectQuery = tableQuery.select(selectClause);
+            const idQuery = selectQuery && typeof selectQuery.eq === 'function'
+                ? selectQuery.eq('id', normalizedProductId)
+                : null;
+            if (!idQuery || typeof idQuery.maybeSingle !== 'function') {
+                return {
+                    manualDelivery: false,
+                    product: null
+                };
+            }
+            const { data, error } = await idQuery.maybeSingle();
+
+            if (!error) {
+                return {
+                    manualDelivery: normalizeBoolean(data?.manual_delivery, false),
+                    product: data || null
+                };
+            }
+
+            lastError = error;
+            if (!isMissingColumnError(error, 'manual_delivery')) {
+                return {
+                    manualDelivery: false,
+                    product: null,
+                    error
+                };
+            }
+        }
+
+        return {
+            manualDelivery: false,
+            product: null,
+            error: lastError
+        };
+    }
+
     function normalizeGuidanceText(value) {
         return typeof value === 'string' ? value.trim() : '';
     }
@@ -2580,13 +2703,14 @@ function createShopHandlers({
                 });
                 const loadStartedAt = Date.now();
                 const cachedResult = await shopCatalogCache.getOrLoad(cacheKey, async () => {
-                    const [categories, products] = await Promise.all([
-                        loadPublicShopCategories(adminSupabase),
-                        loadPublicShopProducts(adminSupabase, {
-                            category,
-                            currentSite
-                        })
-                    ]);
+                    const allCategories = await loadShopCategoriesForCatalog(adminSupabase);
+                    const categories = allCategories.filter((category) => isPublicShopCategory(category));
+                    const hiddenCategoryNames = getHiddenShopCategoryNames(allCategories);
+                    const products = await loadPublicShopProducts(adminSupabase, {
+                        category,
+                        currentSite,
+                        hiddenCategoryNames
+                    });
 
                     return {
                         success: true,
@@ -3560,6 +3684,21 @@ function createShopHandlers({
                     return respond(400, {
                         success: false,
                         message: '购买数量必须大于0'
+                    }, {
+                        userId: user.id,
+                        productId: payload.productId
+                    });
+                }
+
+                const availabilityStartedAt = Date.now();
+                const availabilityClient = requestAdminSupabase || adminSupabase || supabase;
+                const purchaseAvailability = await loadShopProductPurchaseAvailability(availabilityClient, payload.productId);
+                recordServerTimingPhase(timingTracker, 'shop-purchase-availability', availabilityStartedAt);
+                if (purchaseAvailability.manualDelivery === true) {
+                    return respond(409, {
+                        success: false,
+                        code: 'manual_delivery_unavailable',
+                        message: '该商品为人工发货，暂不支持自助兑换'
                     }, {
                         userId: user.id,
                         productId: payload.productId

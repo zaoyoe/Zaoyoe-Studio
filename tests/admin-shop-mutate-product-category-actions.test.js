@@ -317,6 +317,7 @@ test('shop mutate handler creates categories with appended sort order', async ()
         assert.equal(res.json().success, true);
         assert.equal(res.json().category.name, 'new-cat');
         assert.equal(res.json().category.sort_order, 50);
+        assert.equal(res.json().category.is_public, true);
         assert.equal(state.categoryRows.length, 3);
         assert.equal(state.auditCalls[0]?.actionType, 'shop.category.create');
     });
@@ -427,6 +428,36 @@ test('shop mutate handler recolors categories and moves products across categori
         assert.equal(moveRes.json().success, true);
         assert.equal(state.productRows[0].category, 'other');
         assert.equal(state.auditCalls[1]?.actionType, 'shop.product.move_category');
+    });
+});
+
+test('shop mutate handler updates category public visibility', async () => {
+    await withShopMutateHandler({
+        productRows: [],
+        categoryRows: [
+            { id: 'cat_1', name: 'private-tools', color: '#6b9ece', sort_order: 10, is_public: true }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'set_category_public',
+                site: 'cn',
+                categoryId: 'cat_1',
+                isPublic: false
+            }
+        }, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(res.json().success, true);
+        assert.equal(res.json().category.is_public, false);
+        assert.equal(state.categoryRows[0].is_public, false);
+        assert.equal(state.auditCalls[0]?.actionType, 'shop.category.public_visibility');
+        assert.equal(state.auditCalls[0]?.details.previous_is_public, true);
+        assert.equal(state.auditCalls[0]?.details.next_is_public, false);
     });
 });
 

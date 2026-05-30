@@ -26,12 +26,12 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
 
     assert.match(
         shopClientSource,
-        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260523_SHOP_PRODUCT_SKUS_1';/,
+        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260530_SHOP_MANUAL_DELIVERY_1';/,
         'shop-client.js should define a dedicated schema version for prefetched shop payloads'
     );
     assert.match(
         shopClientSource,
-        /const initialQuantity = Math\.max\(1, Math\.min\(quantityCap[\s\S]*?void this\.prefetchDiscountAssetsForProduct\(\{\s+productId,\s+productSkuId: options\?\.productSkuId \|\| options\?\.skuId \|\| '',\s+quantity: initialQuantity,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);\s+this\.openPurchaseModal\(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, \{\s+category: productCategory,\s+sourceContext,\s+initialQuantity,\s+productSkuId: options\?\.productSkuId \|\| options\?\.skuId \|\| ''\s+\}\);\s+void this\.refreshCurrentPurchaseGuidance\(productId\);\s+void this\.syncPurchaseAccessAfterOpen\(productId, quantityCap\);/s,
+        /const initialQuantity = Math\.max\(1, Math\.min\(quantityCap[\s\S]*?if \(!manualDelivery\) \{\s+void this\.prefetchDiscountAssetsForProduct\(\{\s+productId,\s+productSkuId: options\?\.productSkuId \|\| options\?\.skuId \|\| '',\s+quantity: initialQuantity,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);\s+\}\s+this\.openPurchaseModal\(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, \{\s+category: productCategory,\s+sourceContext,\s+initialQuantity,\s+productSkuId: options\?\.productSkuId \|\| options\?\.skuId \|\| '',\s+manualDelivery\s+\}\);\s+void this\.refreshCurrentPurchaseGuidance\(productId\);\s+void this\.syncPurchaseAccessAfterOpen\(productId, quantityCap\);/s,
         'shop purchase clicks should prefetch discount assets, open the modal immediately, refresh the latest product guidance, and sync purchase access in the background'
     );
     assert.doesNotMatch(
@@ -122,7 +122,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         homeBootstrapSource,
-        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260523_SHOP_PRODUCT_SKUS_1';/,
+        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260530_SHOP_MANUAL_DELIVERY_1';/,
         'homepage shop prefetch should use the same guidance-aware schema version'
     );
     assert.match(
@@ -574,9 +574,49 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         'sold-out cart icon clicks should show the same sold-out toast without adding the product to the cart'
     );
     assert.match(
+        shopClientSource,
+        /isShopPurchasePayloadManualDelivery: function \(payload = \{\}\)[\s\S]*showManualDeliveryProductToast: function \(payload = \{\}\)[\s\S]*if \(action === 'add-product-to-cart'\) \{[\s\S]*this\.isShopPurchasePayloadManualDelivery\(payload\)[\s\S]*this\.showManualDeliveryProductToast\(payload\);/s,
+        'manual delivery products should keep the detail card clickable while blocking cart icon adds'
+    );
+    assert.match(
+        shopClientSource,
+        /const stockLabel = manualDelivery[\s\S]*人工发货[\s\S]*const cartDisabled = manualDelivery \|\| noStock[\s\S]*el\.classList\.toggle\('shop-card--manual-delivery', manualDelivery\)[\s\S]*el\.dataset\.shopAction = 'buy-product';/s,
+        'manual delivery cards should show their own badge and remain detail-view cards instead of sold-out cards'
+    );
+    assert.match(
+        shopClientSource,
+        /setPurchaseStage: function \(stage = 'configure'\)[\s\S]*const isManualDelivery = this\.isShopCurrentPurchaseManualDelivery\(\);[\s\S]*getManualDeliverySupportLabel\(\)[\s\S]*shop-manual-delivery-contact-btn[\s\S]*addToCartBtn\.disabled = isPurchaseProcessing;[\s\S]*nextBtn\.disabled = isPurchaseProcessing \|\| isManualDelivery;/s,
+        'manual delivery purchase modal should turn the secondary action into support while keeping redemption disabled'
+    );
+    assert.match(
+        shopClientSource,
+        /openManualDeliverySupport: function \(options = \{\}\)[\s\S]*this\.closePurchaseModal\(\);[\s\S]*ZaoyoeChatWidgetBootstrap\?\.open[\s\S]*chatWidget\?\.openChat[\s\S]*zaoyoe:chat-widget-runtime-pending-open/s,
+        'manual delivery support action should close the product modal and open the public chat widget'
+    );
+    assert.match(
+        shopClientSource,
+        /purchaseAddToCartBtn'\), 'purchase-add-cart'[\s\S]*this\.isShopCurrentPurchaseManualDelivery\(\)[\s\S]*this\.openManualDeliverySupport\(\{ source: 'purchase_modal_mobile_tap' \}\)[\s\S]*if \(event\.target instanceof Element && event\.target\.closest\('#purchaseAddToCartBtn'\)\)[\s\S]*this\.openManualDeliverySupport\(\{ source: 'purchase_modal_button' \}\)/s,
+        'manual delivery secondary action should open support from both touch fallback and modal click paths'
+    );
+    assert.equal(
+        zhLang.shop.manualDeliveryContactSupport,
+        '联系我/客服咨询',
+        'manual delivery support label should match the requested Chinese storefront copy'
+    );
+    assert.equal(
+        enLang.shop.manualDeliveryContactSupport,
+        'Contact support',
+        'manual delivery support label should have an English storefront copy'
+    );
+    assert.match(
         shopCssSource,
         /\.shop-success-toast\[data-shop-toast-global="1"\]\[data-variant="sold-out"\]\s*\{[\s\S]*border-color:\s*rgba\(239,\s*68,\s*68,\s*0\.82\);[\s\S]*color:\s*#111827;[\s\S]*\.shop-success-toast\[data-shop-toast-global="1"\]\[data-variant="sold-out"\]::before\s*\{[\s\S]*content:\s*'';[\s\S]*data:image\/svg\+xml[\s\S]*stroke-linecap='round'/s,
         'sold-out storefront toast should use black text, a red capsule border, and a custom red X icon'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-stock-badge\.manual-delivery\s*\{[\s\S]*color:\s*#fbbf24;[\s\S]*\.shop-success-toast\[data-shop-toast-global="1"\]\[data-variant="manual-delivery"\]\s*\{/s,
+        'manual delivery badge and toast should have dedicated styling'
     );
     assert.doesNotMatch(
         shopCssSource,

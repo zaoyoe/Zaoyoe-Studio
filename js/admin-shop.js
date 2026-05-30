@@ -2708,6 +2708,9 @@ Example output format:
                 case 'import-category-color':
                     this.setCategoryColor(actionEl.dataset.categoryColor);
                     break;
+                case 'import-category-public-toggle':
+                    this.setCategoryPublicFromMenu();
+                    break;
                 case 'import-category-delete':
                     this.deleteCategoryFromMenu();
                     break;
@@ -2912,6 +2915,9 @@ Example output format:
                     break;
                 case 'product-select-delivery-type':
                     this.selectDeliveryType(actionEl.dataset.deliveryType, actionEl.dataset.deliveryLabel);
+                    break;
+                case 'product-select-manual-delivery':
+                    this.setProductManualDelivery(actionEl.dataset.manualDelivery === 'true');
                     break;
                 case 'product-select-category':
                     this.selectCategory(actionEl.dataset.categoryName, actionEl.dataset.categoryColor);
@@ -6139,11 +6145,15 @@ Example output format:
                     : '<span class="shop-admin-status-badge shop-admin-status-badge--inactive">已下架</span>';
 
                 const stock = Math.max(0, Number(p.stock_count || 0) || 0);
-                const stockClassName = stock <= 0
-                    ? 'shop-admin-product-stock shop-admin-product-stock--empty'
-                    : stock < 5
-                        ? 'shop-admin-product-stock shop-admin-product-stock--low'
-                        : 'shop-admin-product-stock shop-admin-product-stock--healthy';
+                const manualDelivery = p.manual_delivery === true;
+                const stockClassName = manualDelivery
+                    ? 'shop-admin-product-stock shop-admin-product-stock--manual'
+                    : (stock <= 0
+                        ? 'shop-admin-product-stock shop-admin-product-stock--empty'
+                        : stock < 5
+                            ? 'shop-admin-product-stock shop-admin-product-stock--low'
+                            : 'shop-admin-product-stock shop-admin-product-stock--healthy');
+                const stockLabel = manualDelivery ? '人工发货' : `库存 ${stock}`;
                 const safeProductId = this.escapeForAttr(String(p.id || ''));
                 const safeProductName = this.escapeHtml(p.name || '未命名商品');
                 const safeProductDescription = this.escapeHtml(p.description || '暂无描述');
@@ -6197,7 +6207,7 @@ Example output format:
                     <div class="shop-admin-product-footer">
                         <div class="shop-admin-product-meta">
                             ${priceHtml}
-                            <div class="${stockClassName}">库存 ${stock}</div>
+                            <div class="${stockClassName}">${stockLabel}</div>
                         </div>
                         
                         <div class="shop-admin-product-actions">
@@ -6479,6 +6489,7 @@ Example output format:
         const iconInput = document.getElementById('prodIcon').value || 'fas fa-box';
         const desc = document.getElementById('prodDesc').value || '无描述...';
         const showProductDescription = document.getElementById('prodShowProductDescription')?.checked !== false;
+        const manualDelivery = document.getElementById('prodManualDelivery')?.value === 'true';
         const previewDesc = document.getElementById('previewDesc');
         const previewStatus = document.getElementById('previewStatus');
         const previewStock = document.getElementById('previewStock');
@@ -6523,7 +6534,9 @@ Example output format:
 
         if (previewStock) {
             let stockVariant = 'preview-stock--unknown';
-            if (normalizedStockCount != null) {
+            if (manualDelivery) {
+                stockVariant = 'preview-stock--manual';
+            } else if (normalizedStockCount != null) {
                 if (normalizedStockCount <= 0) {
                     stockVariant = 'preview-stock--empty';
                 } else if (normalizedStockCount < 5) {
@@ -6533,9 +6546,11 @@ Example output format:
                 }
             }
 
-            previewStock.textContent = normalizedStockCount == null
+            previewStock.textContent = manualDelivery
+                ? '人工发货'
+                : (normalizedStockCount == null
                 ? '库存 -'
-                : `库存 ${normalizedStockCount}`;
+                : `库存 ${normalizedStockCount}`);
             previewStock.className = `preview-stock ${stockVariant}`;
         }
     },
@@ -6838,6 +6853,7 @@ Example output format:
 
         document.getElementById('prodWebhookTarget').value = data.webhook_target || '';
         this.toggleWebhookField(normalizedDeliveryType);
+        this.setProductManualDelivery(data.manual_delivery === true || String(data.manual_delivery || '').toLowerCase() === 'true', { updatePreview: false });
 
         const showPurchaseNotes = !!data.show_purchase_notes;
         document.getElementById('prodShowPurchaseNotes').checked = showPurchaseNotes;
@@ -7238,6 +7254,25 @@ Example output format:
         }
     },
 
+    setProductManualDelivery: function (enabled, options = {}) {
+        const manualDelivery = Boolean(enabled);
+        const input = document.getElementById('prodManualDelivery');
+        if (input) {
+            input.value = manualDelivery ? 'true' : 'false';
+        }
+
+        document.querySelectorAll('#productModal [data-shop-action="product-select-manual-delivery"]').forEach((button) => {
+            if (!(button instanceof HTMLElement)) return;
+            const isActive = button.dataset.manualDelivery === (manualDelivery ? 'true' : 'false');
+            button.classList.toggle('active', isActive);
+            button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+        });
+
+        if (options.updatePreview !== false) {
+            this.updatePreview();
+        }
+    },
+
     // Legacy handler kept for backward compatibility — no longer used by custom dropdown
     handleDeliveryTypeChange: function (selectElement) {
         if (!selectElement || !selectElement.value) return;
@@ -7318,6 +7353,7 @@ Example output format:
             if (nameLabel) nameLabel.textContent = '卡密池发放 (KEY)';
             document.getElementById('prodWebhookTarget').value = '';
             this.toggleWebhookField('KEY');
+            this.setProductManualDelivery(false, { updatePreview: false });
 
             // Reset purchase notes
             document.getElementById('prodShowPurchaseNotes').checked = false;
@@ -7487,6 +7523,7 @@ Example output format:
             let normalizedPerAccountPurchaseLimit = null;
             const deliveryTypeValue = document.getElementById('prodDeliveryType').value;
             const normalizedDeliveryType = deliveryTypeValue === 'API' ? 'API' : 'KEY';
+            const manualDelivery = document.getElementById('prodManualDelivery')?.value === 'true';
             if (window.AdminRichTextEditor?.syncHiddenInput) {
                 window.AdminRichTextEditor.syncHiddenInput('productPurchaseNotes', false);
                 window.AdminRichTextEditor.syncHiddenInput('productUsageInstructions', false);
@@ -7678,6 +7715,7 @@ Example output format:
                 ...usageGuidancePayload,
                 delivery_type: normalizedDeliveryType,
                 webhook_target: normalizedDeliveryType === 'API' ? (webhookTargetValue || null) : null,
+                manual_delivery: manualDelivery,
 
                 // Marketing fields
                 [marketingFields.quantityRules]: null,
@@ -14731,9 +14769,9 @@ Example output format:
     // Load categories from database
     loadCategories: async function ({ force = false } = {}) {
         const fallbackCategories = [
-            { id: 'account', name: 'account', color: '#6b9ece', sort_order: 0 },
-            { id: 'gemini', name: 'Gemini', color: '#f4b400', sort_order: 1 },
-            { id: 'other', name: 'other', color: '#9aa0a6', sort_order: 99 }
+            { id: 'account', name: 'account', color: '#6b9ece', sort_order: 0, is_public: true },
+            { id: 'gemini', name: 'Gemini', color: '#f4b400', sort_order: 1, is_public: true },
+            { id: 'other', name: 'other', color: '#9aa0a6', sort_order: 99, is_public: true }
         ];
 
         if (!force && Array.isArray(this.categoryData) && this.categoryData.length > 0) {
@@ -14962,7 +15000,7 @@ Example output format:
         // Initialize ALL categories from categoryData first (including empty ones)
         const categories = {};
         this.categoryData.forEach(cat => {
-            categories[cat.name] = { name: cat.name, products: [] };
+            categories[cat.name] = { name: cat.name, products: [], is_public: cat.is_public !== false };
         });
 
         // Then group products into their categories
@@ -14970,7 +15008,7 @@ Example output format:
             const cat = p.category || 'other';
             if (!categories[cat]) {
                 // Product has a category not in categoryData, create it
-                categories[cat] = { name: this.getCategoryLabel(cat), products: [] };
+                categories[cat] = { name: this.getCategoryLabel(cat), products: [], is_public: true };
             }
             categories[cat].products.push(p);
         });
@@ -15037,7 +15075,8 @@ Example output format:
             const catDiv = document.createElement('div');
             // Restore expanded state, or default first category as expanded on initial load
             const shouldExpand = expandedCategories.size > 0 ? expandedCategories.has(catKey) : (index === 0);
-            catDiv.className = 'tree-category' + (shouldExpand ? ' expanded' : '');
+            const isCategoryPublic = this.isCategoryPublic(cat);
+            catDiv.className = 'tree-category' + (shouldExpand ? ' expanded' : '') + (!isCategoryPublic ? ' tree-category--private' : '');
             catDiv.dataset.category = catKey;
 
             // Category Header - Drop Zone
@@ -15048,6 +15087,12 @@ Example output format:
             // Get dynamic color for this category
             const folderColor = this.getCategoryColor(catKey);
             const safeCategoryName = this.escapeHtml(cat.name);
+            const visibilityBadge = isCategoryPublic
+                ? ''
+                : `<span class="tree-category-visibility tree-category-visibility--private" title="非管理员不可见">
+                    <i class="fas fa-eye-slash" aria-hidden="true"></i>
+                    <span>隐藏</span>
+                </span>`;
 
             header.innerHTML = `
                 <button type="button" class="tree-category-handle" title="拖动调整分类顺序" aria-label="拖动调整分类顺序">
@@ -15056,6 +15101,7 @@ Example output format:
                 <i class="fas fa-chevron-right tree-chevron"></i>
                 <i class="fas fa-folder tree-folder-icon ${this.buildCategoryColorClass(folderColor)}"></i>
                 <span class="tree-category-name">${safeCategoryName}</span>
+                ${visibilityBadge}
                 <span class="tree-category-count">${cat.products.length}</span>
             `;
             header.onclick = (e) => {
@@ -15493,6 +15539,16 @@ Example output format:
         return labels[key] || key;
     },
 
+    isCategoryPublic: function (categoryOrKey) {
+        const category = typeof categoryOrKey === 'string'
+            ? this.categoryData.find(c => c.name === categoryOrKey || c.id === categoryOrKey)
+            : categoryOrKey;
+        if (!category || typeof category !== 'object') {
+            return true;
+        }
+        return category.is_public !== false;
+    },
+
     getCategoryColor: function (key) {
         const cat = this.categoryData.find(c => c.name === key || c.id === key);
         if (cat) return cat.color || '#6b9ece';
@@ -15599,6 +15655,22 @@ Example output format:
         menu.querySelectorAll('.color-option').forEach(opt => {
             opt.classList.toggle('selected', String(opt.dataset.categoryColor || '').toLowerCase() === String(currentColor || '').toLowerCase());
         });
+
+        const currentCategory = this.categoryData.find(c => c.name === categoryKey || c.id === categoryKey);
+        const isPublic = this.isCategoryPublic(currentCategory || categoryKey);
+        const visibilityItem = menu.querySelector('[data-shop-action="import-category-public-toggle"]');
+        if (visibilityItem) {
+            const icon = visibilityItem.querySelector('i');
+            const label = visibilityItem.querySelector('span');
+            visibilityItem.dataset.categoryPublicNext = isPublic ? 'false' : 'true';
+            visibilityItem.classList.toggle('context-menu-item--muted', !isPublic);
+            if (icon) {
+                icon.className = isPublic ? 'fas fa-eye-slash' : 'fas fa-eye';
+            }
+            if (label) {
+                label.textContent = isPublic ? '设为对外隐藏' : '设为对外可见';
+            }
+        }
 
         // Close on click or touch outside
         const closeHandler = (evt) => {
@@ -15732,6 +15804,39 @@ Example output format:
         } catch (e) {
             console.error('Failed to set color:', e);
             alert('设置颜色失败: ' + e.message);
+        }
+    },
+
+    setCategoryPublicFromMenu: async function () {
+        const key = this.contextMenuCategory;
+        if (!key) return;
+
+        const cat = this.categoryData.find(c => c.name === key || c.id === key);
+        if (!cat?.id) return;
+
+        if (!this.requireWritableSite({ label: '设置商品分类对外可见性' })) {
+            return;
+        }
+
+        const nextPublic = !this.isCategoryPublic(cat);
+        this.closeCategoryContextMenu();
+
+        try {
+            const result = await this.callAdminMutation('set_category_public', {
+                categoryId: cat.id,
+                isPublic: nextPublic
+            });
+            const updatedCategory = result?.category || null;
+            if (!updatedCategory) {
+                throw new Error('设置分类可见性失败');
+            }
+
+            cat.is_public = updatedCategory.is_public !== false;
+            await this.renderProductCategoryFilters();
+            this.renderImportList();
+        } catch (e) {
+            console.error('Failed to set category public visibility:', e);
+            alert('设置可见性失败: ' + e.message);
         }
     },
 
@@ -16103,6 +16208,45 @@ function activateVisibleShopModuleOnAccess() {
     void window.ShopAdmin.activate();
 }
 
+function scheduleVisibleShopModuleActivation() {
+    const activate = () => activateVisibleShopModuleOnAccess();
+    if (typeof window.requestAnimationFrame === 'function') {
+        window.requestAnimationFrame(activate);
+    } else {
+        window.setTimeout(activate, 0);
+    }
+
+    window.setTimeout(activate, 120);
+    window.setTimeout(activate, 600);
+}
+
+function bootstrapShopModuleActivation() {
+    scheduleVisibleShopModuleActivation();
+    window.addEventListener('adminStudioAccessGranted', scheduleVisibleShopModuleActivation, { once: true });
+    window.addEventListener('permissionsLoaded', scheduleVisibleShopModuleActivation, { once: true });
+}
+
+function handleShopShellModuleActivated(event = {}) {
+    const moduleId = String(event?.detail?.moduleId || '').trim().toLowerCase();
+    if (moduleId !== 'shop') {
+        return;
+    }
+
+    scheduleVisibleShopModuleActivation();
+}
+
+function handleShopTabActivationFallback(event = {}) {
+    const target = event.target instanceof Element ? event.target : event.target?.parentElement;
+    const actionEl = target?.closest?.('#module-shop [data-shop-action="shop-switch-tab"][data-shop-tab]');
+    if (!actionEl || (window.ShopAdmin?._initialized && window.ShopAdmin?.delegatedHandlersBound)) {
+        return;
+    }
+
+    event.preventDefault?.();
+    event.stopPropagation?.();
+    void window.ShopAdmin?.activate?.({}, { tab: actionEl.dataset.shopTab });
+}
+
 if (window.AdminShell?.registerModule) {
     window.AdminShell.registerModule('shop', {
         activate: (context = {}, options = {}) => window.ShopAdmin?.activate?.(context, options),
@@ -16112,11 +16256,11 @@ if (window.AdminShell?.registerModule) {
     });
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-    if (window.adminStudioAccessGranted) {
-        activateVisibleShopModuleOnAccess();
-        return;
-    }
+window.addEventListener('admin-shell-module-activated', handleShopShellModuleActivated);
+document.addEventListener('click', handleShopTabActivationFallback, true);
 
-    window.addEventListener('adminStudioAccessGranted', activateVisibleShopModuleOnAccess, { once: true });
-});
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', bootstrapShopModuleActivation, { once: true });
+} else {
+    bootstrapShopModuleActivation();
+}

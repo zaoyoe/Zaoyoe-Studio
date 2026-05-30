@@ -353,6 +353,39 @@ test('shop mutate validation warns when active KEY product has no available inve
     });
 });
 
+test('shop mutate validation treats manual-delivery products as view-only instead of low-stock KEY products', async () => {
+    await withShopMutateHandler({
+        inventoryRows: []
+    }, async ({ handler }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'validate_product',
+                site: 'cn',
+                productId: 'prod_manual_1',
+                payload: {
+                    name: 'Manual Goods',
+                    category: 'service',
+                    delivery_type: 'KEY',
+                    manual_delivery: true,
+                    is_active: true
+                }
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(
+            payload.validation.warnings.some((issue) => issue.code === 'key_stock_empty'),
+            false
+        );
+    });
+});
+
 test('shop mutate upsert backfills base name from name_en for intl product creation only', async () => {
     await withShopMutateHandler({}, async ({ handler, state }) => {
         const res = createMockResponse();

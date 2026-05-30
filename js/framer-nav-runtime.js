@@ -163,11 +163,13 @@
         try {
             const { data, error } = await global.supabaseClient
                 .from('shop_categories')
-                .select('name')
+                .select('*')
                 .order('sort_order');
 
             runtimeState.cachedData.shopCategories = !error && Array.isArray(data)
-                ? data.map((category) => category.name)
+                ? data
+                    .filter((category) => category?.is_public !== false)
+                    .map((category) => category.name)
                 : [];
         } catch (error) {
             console.warn('[FramerNavRuntime] Failed to load shop categories for nav:', error?.message || error);

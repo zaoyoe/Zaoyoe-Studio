@@ -65,7 +65,7 @@ const HOMEPAGE_DEFERRED_OVERLAY_STYLE_GROUP = 'homepage-overlays';
 const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
 const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
 const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260518_HOME_GONGYI_SUB2API_1';
+const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260530_HOME_SHOP_CATEGORY_PUBLIC_1';
 const HOMEPAGE_CONFIG_CACHE_KEY = 'homepage_config_sub2api_1';
 const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';
 const HOMEPAGE_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';
@@ -2898,9 +2898,11 @@ const FramerHome = {
     try {
       const { data } = await window.supabaseClient
         .from('shop_categories')
-        .select('name')
+        .select('*')
         .order('sort_order');
-      return (data || []).map(c => c.name);
+      return (data || [])
+        .filter(c => c?.is_public !== false)
+        .map(c => c.name);
     } catch (e) {
       return [];
     }
@@ -3153,7 +3155,7 @@ const FramerHome = {
   async fetchShopProductCatalog() {
     try {
       return await Cache.loadWithCache('shop_products', async () => {
-        const baseFields = 'id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, category, is_active, display_order';
+        const baseFields = 'id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, manual_delivery, category, is_active, display_order';
         try {
           const payload = await fetchHomepageShopCatalogPayload(getHomepageRuntimeSite());
           const products = Array.isArray(payload?.products)
@@ -3171,10 +3173,10 @@ const FramerHome = {
           .limit(120);
         let { data, error } = await query;
 
-        if (error && String(error?.message || '').toLowerCase().includes('image_assets')) {
+        if (error && ['image_assets', 'manual_delivery'].some((field) => String(error?.message || '').toLowerCase().includes(field))) {
           const fallback = await window.supabaseClient
             .from('shop_products')
-            .select(baseFields)
+            .select(baseFields.replace(', manual_delivery', ''))
             .order('display_order', { ascending: false })
             .limit(120);
           data = fallback.data;
@@ -3182,7 +3184,17 @@ const FramerHome = {
         }
 
         if (error) throw error;
-        return data || [];
+        const categoryResult = await window.supabaseClient
+          .from('shop_categories')
+          .select('*')
+          .order('sort_order');
+        const hiddenCategoryNames = new Set(
+          ((categoryResult.error ? [] : categoryResult.data) || [])
+            .filter(c => c?.is_public === false)
+            .map(c => String(c?.name || '').trim())
+            .filter(Boolean)
+        );
+        return (data || []).filter(product => !hiddenCategoryNames.has(String(product?.category || '').trim()));
       }, 15);
     } catch (error) {
       console.error('Failed to fetch shop catalog:', error);
@@ -4015,11 +4027,13 @@ const FramerHome = {
         try {
           const { data, error } = await window.supabaseClient
             .from('shop_categories')
-            .select('name')
+            .select('*')
             .order('sort_order');
 
           if (!error && data && data.length > 0) {
-            this.cachedData.shopCategories = data.map(c => c.name);
+            this.cachedData.shopCategories = data
+              .filter(c => c?.is_public !== false)
+              .map(c => c.name);
           } else {
             this.cachedData.shopCategories = [];
           }
@@ -4911,9 +4925,13 @@ const FramerHome = {
       const productImageOriginalUrl = getShopProductImageAssetUrl(productImageAsset, 'original') || String(product?.icon_url || '');
       const productImageCardUrl = getShopProductImageAssetExplicitVariantUrl(productImageAsset, 'card');
       const hasProductImage = this.isShopImageSource(productImageOriginalUrl);
-      const stockText = Number(product?.stock_count || 0) > 0
+      const manualDelivery = product?.manual_delivery === true
+        || ['1', 'true', 'yes', 'on', 'manual'].includes(String(product?.manual_delivery ?? product?.manualDelivery ?? '').trim().toLowerCase());
+      const stockText = manualDelivery
+        ? getHomepageLanguageFallback('shop.manualDelivery', { zh: '人工发货', en: 'Manual delivery' })
+        : (Number(product?.stock_count || 0) > 0
         ? `${getHomepageLanguageFallback('shop.stock', { zh: '库存', en: 'Stock' })} ${Number(product.stock_count || 0)}`
-        : getHomepageLanguageFallback('shop.outOfStock', { zh: '售罄', en: 'Sold Out' });
+        : getHomepageLanguageFallback('shop.outOfStock', { zh: '售罄', en: 'Sold Out' }));
       return `
       <a
         href="/shop.html"
