@@ -82,7 +82,11 @@ docker compose --env-file .env -f docker-compose.local.yml build sub2api
 docker compose --env-file .env -f docker-compose.local.yml up -d --no-deps --force-recreate sub2api
 healthcheck || die "healthcheck failed after rollback"
 
-basename "$target_root" > "$KVM4_SUB2API_ROOT/.current-release"
+if [[ -f "$target_root/.commit" ]]; then
+  install -o root -g root -m 0644 "$target_root/.commit" "$KVM4_SUB2API_ROOT/.current-release"
+else
+  basename "$target_root" > "$KVM4_SUB2API_ROOT/.current-release"
+fi
 docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'NAMES|sub2api'
 curl -fsS http://127.0.0.1:8080/health
 REMOTE
