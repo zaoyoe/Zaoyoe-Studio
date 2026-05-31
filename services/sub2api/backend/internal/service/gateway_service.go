@@ -925,6 +925,32 @@ func (s *GatewayService) replaceModelInBody(body []byte, newModel string) []byte
 	return ReplaceModelInBody(body, newModel)
 }
 
+func resolveClaudeForwardModel(account *Account, requestedModel string) (mappedModel string, mappingSource string) {
+	if account == nil || requestedModel == "" {
+		return requestedModel, ""
+	}
+
+	if candidate, matched := account.ResolveMappedModel(requestedModel); matched {
+		return candidate, "account"
+	}
+
+	if account.Platform == PlatformAnthropic && account.Type == AccountTypeServiceAccount {
+		normalized := normalizeVertexAnthropicModelID(claude.NormalizeModelID(requestedModel))
+		if normalized != requestedModel {
+			return normalized, "vertex"
+		}
+	}
+
+	if account.Platform == PlatformAnthropic && account.Type != AccountTypeAPIKey {
+		normalized := claude.NormalizeModelID(requestedModel)
+		if normalized != requestedModel {
+			return normalized, "prefix"
+		}
+	}
+
+	return requestedModel, ""
+}
+
 type claudeOAuthNormalizeOptions struct {
 	injectMetadata          bool
 	metadataUserID          string
@@ -4484,35 +4510,9 @@ func (s *GatewayService) Forward(ctx context.Context, c *gin.Context, account *A
 	body = enforceCacheControlLimit(body)
 
 	// 应用模型映射：
-	// - APIKey 账号：使用账号级别的显式映射（如果配置），否则透传原始模型名
+	// - 显式账号映射优先：所有 Anthropic 账号类型都应遵守表单中的 model_mapping。
 	// - OAuth/SetupToken 账号：使用 Anthropic 标准映射（短ID → 长ID）
-	mappedModel := reqModel
-	mappingSource := ""
-	if account.Type == AccountTypeAPIKey {
-		mappedModel = account.GetMappedModel(reqModel)
-		if mappedModel != reqModel {
-			mappingSource = "account"
-		}
-	}
-	if mappingSource == "" && account.Platform == PlatformAnthropic && account.Type == AccountTypeServiceAccount {
-		if candidate, matched := account.ResolveMappedModel(reqModel); matched {
-			mappedModel = candidate
-			mappingSource = "account"
-		} else {
-			normalized := normalizeVertexAnthropicModelID(claude.NormalizeModelID(reqModel))
-			if normalized != reqModel {
-				mappedModel = normalized
-				mappingSource = "vertex"
-			}
-		}
-	}
-	if mappingSource == "" && account.Platform == PlatformAnthropic && account.Type != AccountTypeAPIKey {
-		normalized := claude.NormalizeModelID(reqModel)
-		if normalized != reqModel {
-			mappedModel = normalized
-			mappingSource = "prefix"
-		}
-	}
+	mappedModel, mappingSource := resolveClaudeForwardModel(account, reqModel)
 	if mappedModel != reqModel {
 		// 替换请求体中的模型名
 		body = s.replaceModelInBody(body, mappedModel)
@@ -9041,24 +9041,10 @@ func (s *GatewayService) ForwardCountTokens(ctx context.Context, c *gin.Context,
 	}
 
 	// 应用模型映射：
-	// - APIKey 账号：使用账号级别的显式映射（如果配置），否则透传原始模型名
+	// - 显式账号映射优先：所有 Anthropic 账号类型都应遵守表单中的 model_mapping。
 	// - OAuth/SetupToken 账号：使用 Anthropic 标准映射（短ID → 长ID）
 	if reqModel != "" {
-		mappedModel := reqModel
-		mappingSource := ""
-		if account.Type == AccountTypeAPIKey {
-			mappedModel = account.GetMappedModel(reqModel)
-			if mappedModel != reqModel {
-				mappingSource = "account"
-			}
-		}
-		if mappingSource == "" && account.Platform == PlatformAnthropic && account.Type != AccountTypeAPIKey {
-			normalized := claude.NormalizeModelID(reqModel)
-			if normalized != reqModel {
-				mappedModel = normalized
-				mappingSource = "prefix"
-			}
-		}
+		mappedModel, mappingSource := resolveClaudeForwardModel(account, reqModel)
 		if mappedModel != reqModel {
 			body = s.replaceModelInBody(body, mappedModel)
 			reqModel = mappedModel

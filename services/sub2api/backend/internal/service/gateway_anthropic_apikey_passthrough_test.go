@@ -190,6 +190,67 @@ func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardStreamPreservesBodyAnd
 	require.Empty(t, rec.Header().Get("Set-Cookie"), "响应头应经过安全过滤")
 }
 
+func TestGatewayService_AnthropicOAuth_ExplicitModelMappingAppliesToForward(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/v1/messages", nil)
+
+	body := []byte(`{"model":"claude-haiku-4-5-20251001","stream":false,"max_tokens":16,"messages":[{"role":"user","content":[{"type":"text","text":"hello"}]}]}`)
+	parsed := &ParsedRequest{
+		Body:   body,
+		Model:  "claude-haiku-4-5-20251001",
+		Stream: false,
+	}
+
+	upstream := &anthropicHTTPUpstreamRecorder{
+		resp: &http.Response{
+			StatusCode: http.StatusOK,
+			Header: http.Header{
+				"Content-Type": []string{"application/json"},
+				"x-request-id": []string{"rid-oauth-mapping"},
+			},
+			Body: io.NopCloser(strings.NewReader(`{"id":"msg_1","type":"message","role":"assistant","model":"claude-opus-4-8","content":[{"type":"text","text":"ok"}],"usage":{"input_tokens":1,"output_tokens":1}}`)),
+		},
+	}
+
+	cfg := &config.Config{
+		Gateway: config.GatewayConfig{
+			MaxLineSize: defaultMaxLineSize,
+		},
+	}
+	svc := &GatewayService{
+		cfg:                  cfg,
+		responseHeaderFilter: compileResponseHeaderFilter(cfg),
+		httpUpstream:         upstream,
+		rateLimitService:     &RateLimitService{},
+	}
+
+	account := &Account{
+		ID:          202,
+		Name:        "anthropic-oauth-mapped",
+		Platform:    PlatformAnthropic,
+		Type:        AccountTypeSetupToken,
+		Concurrency: 1,
+		Credentials: map[string]any{
+			"access_token":  "oauth-access-token",
+			"model_mapping": map[string]any{"claude-haiku-*": "claude-opus-4-8"},
+		},
+		Status:      StatusActive,
+		Schedulable: true,
+	}
+
+	result, err := svc.Forward(context.Background(), c, account, parsed)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+
+	require.Equal(t, "claude-opus-4-8", gjson.GetBytes(upstream.lastBody, "model").String(), "OAuth/SetupToken 账号也应应用显式模型映射")
+	require.Equal(t, "claude-haiku-4-5-20251001", result.Model)
+	require.Equal(t, "claude-opus-4-8", result.UpstreamModel)
+	require.Contains(t, rec.Body.String(), `"model":"claude-haiku-4-5-20251001"`, "响应仍应向客户端呈现原请求模型")
+}
+
 func TestGatewayService_AnthropicAPIKeyPassthrough_ForwardCountTokensPreservesBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
