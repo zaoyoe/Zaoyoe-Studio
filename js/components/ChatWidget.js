@@ -82,6 +82,7 @@ class ChatWidget {
         this._adminSessionLoadRequestId = 0;
         this._sessionLoadRequestId = 0;
         this._sessionLoadingOverlayTimer = null;
+        this._userHistoryLoadFailsafeTimer = null;
         this._adminSessionPrewarmHandle = null;
         this._adminSessionHydrationTimer = null;
         this._adminSessionHydrationRequestId = 0;
@@ -20070,6 +20071,43 @@ class ChatWidget {
         }
     }
 
+    clearUserHistoryLoadFailsafeTimer() {
+        if (this._userHistoryLoadFailsafeTimer) {
+            clearTimeout(this._userHistoryLoadFailsafeTimer);
+            this._userHistoryLoadFailsafeTimer = null;
+        }
+    }
+
+    renderUserHistoryLoadFallback() {
+        if (this.isAdmin || !this.messagesContainer) return;
+
+        const fallbackMessages = Array.isArray(this._lastRenderedUserHistoryMessages)
+            ? this._lastRenderedUserHistoryMessages
+            : [];
+        this.renderUserHistoryMessages(fallbackMessages);
+        this._setMessagesContainerMinHeight(null);
+        this.unlockScroll();
+        this.finishUserHistoryLoadHandoff();
+    }
+
+    scheduleUserHistoryLoadFailsafe(requestId = 0) {
+        this.clearUserHistoryLoadFailsafeTimer();
+        if (!requestId || this.isAdmin || !this.messagesContainer) return;
+
+        this._userHistoryLoadFailsafeTimer = setTimeout(() => {
+            this._userHistoryLoadFailsafeTimer = null;
+            if (requestId !== this._userHistoryLoadRequestId || this.isAdmin || !this.messagesContainer) {
+                return;
+            }
+
+            const blockingLoader = this.messagesContainer.querySelector('.loading-overlay, .chat-loading-state--user-handoff');
+            if (!blockingLoader) return;
+
+            console.warn('[ChatWidget] User history load is slow; showing chat fallback while history continues.');
+            this.renderUserHistoryLoadFallback();
+        }, 6500);
+    }
+
     ensureSessionLoadingOverlay() {
         if (!this.messagesContainer) return null;
 
@@ -22693,9 +22731,9 @@ class ChatWidget {
     renderUserHistoryMessages(messages = []) {
         if (!this.messagesContainer) return;
 
+        this.clearSessionLoadingOverlayTimer();
         const loadingOverlay = this.messagesContainer.querySelector('.loading-overlay');
         if (loadingOverlay) {
-            this.clearSessionLoadingOverlayTimer();
             loadingOverlay.classList.add('loading-overlay--handoff');
             Array.from(this.messagesContainer.childNodes).forEach((node) => {
                 if (node !== loadingOverlay) {
@@ -22891,18 +22929,21 @@ class ChatWidget {
         const requestId = ++this._userHistoryLoadRequestId;
         // PRELOAD STRATEGY: Lock scroll during history loading
         this.lockScroll();
+        this.scheduleUserHistoryLoadFailsafe(requestId);
 
         try {
             const sessionIds = this.getActiveUserSessionIds();
             if (!sessionIds.length) {
+                this.clearUserHistoryLoadFailsafeTimer();
                 this.unlockScroll();
-                this.finishUserHistoryLoadHandoff();
+                this.renderUserHistoryLoadFallback();
                 return;
             }
             const cacheKey = this.getSessionCacheKey(sessionIds);
             const cachedHistory = this.userHistoryCache.get(cacheKey) || this.restoreUserHistorySnapshot(sessionIds);
 
             if (Array.isArray(cachedHistory) && cachedHistory.length) {
+                this.clearUserHistoryLoadFailsafeTimer();
                 this.userHistoryCache.set(cacheKey, cachedHistory);
                 this.renderUserHistoryMessages(cachedHistory);
                 this._setMessagesContainerMinHeight(null);
@@ -22929,6 +22970,7 @@ class ChatWidget {
 
             const recentHistory = await this.fetchUserHistoryBatch(sessionIds, { fullHistory: false });
             if (requestId !== this._userHistoryLoadRequestId) return;
+            this.clearUserHistoryLoadFailsafeTimer();
 
             this.userHistoryCache.set(cacheKey, recentHistory);
             this.persistUserHistorySnapshot(sessionIds, recentHistory);
@@ -22941,11 +22983,10 @@ class ChatWidget {
 
         } catch (err) {
             console.error('Error loading history:', err);
+            if (requestId !== this._userHistoryLoadRequestId) return;
+            this.clearUserHistoryLoadFailsafeTimer();
             this.removeSessionLoadingOverlay();
-            this._setMessagesContainerMinHeight(null);
-            // Unlock scroll even on error
-            this.unlockScroll();
-            this.finishUserHistoryLoadHandoff();
+            this.renderUserHistoryLoadFallback();
         }
     }
 }

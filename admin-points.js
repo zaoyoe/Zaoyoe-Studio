@@ -3051,11 +3051,10 @@ function syncPointsModalSubmitButtonState(submitBtn, {
 }
 
 function closePointsPackageDeleteModal(event) {
-    if (!event || event.target.classList.contains('edit-modal-overlay')) {
-        const overlay = document.querySelector('.points-package-delete-modal-overlay');
-        if (!overlay) {
-            return;
-        }
+    const overlay = document.querySelector('.points-package-delete-modal-overlay');
+    const shouldClose = !event || window.AdminOverlayDismissGuard?.shouldDismiss?.(overlay, event);
+    if (shouldClose) {
+        if (!overlay) return;
 
         overlay.classList.remove('is-visible');
         window.setTimeout(() => {
@@ -3138,6 +3137,7 @@ function openPointsPackageDeleteModal(packageId = '') {
     document.body.insertAdjacentHTML('beforeend', modalHtml);
     const overlay = document.querySelector('.points-package-delete-modal-overlay');
     if (overlay) {
+        window.AdminOverlayDismissGuard?.bind?.(overlay);
         requestAnimationFrame(() => {
             overlay.classList.add('is-visible');
         });
@@ -4215,32 +4215,32 @@ function bindAdminPointsRuntimeDelegates() {
         }
 
         if (target.matches('[data-points-overlay-close="delete-options"]')) {
-            closeDeleteOptionsModal();
+            closeDeleteOptionsModal(event);
             return;
         }
 
         if (target.matches('[data-points-overlay-close="codes"]')) {
-            closeCodesModal();
+            closeCodesModal(event);
             return;
         }
 
         if (target.matches('[data-points-overlay-close="batch-edit"]')) {
-            closeBatchEditModal();
+            closeBatchEditModal(event);
             return;
         }
 
         if (target.matches('[data-points-overlay-close="package-delete"]')) {
-            closePointsPackageDeleteModal();
+            closePointsPackageDeleteModal(event);
             return;
         }
 
         if (target.matches('[data-points-overlay-close="code-action"]')) {
-            closePointsCodeActionModal();
+            closePointsCodeActionModal(event);
             return;
         }
 
         if (target.matches('[data-points-overlay-close="batch-invalidate"]')) {
-            closePointsBatchInvalidateModal();
+            closePointsBatchInvalidateModal(event);
             return;
         }
 
@@ -5157,6 +5157,7 @@ function showDeleteOptionsModal(batchIds, usedCount, totalCount) {
     document.body.insertAdjacentHTML('beforeend', modalHtml);
     const overlay = document.querySelector('.delete-options-modal-overlay');
     if (overlay) {
+        window.AdminOverlayDismissGuard?.bind?.(overlay);
         requestAnimationFrame(() => {
             overlay.classList.add('is-visible');
         });
@@ -5164,8 +5165,9 @@ function showDeleteOptionsModal(batchIds, usedCount, totalCount) {
 }
 
 function closeDeleteOptionsModal(event) {
-    if (!event || event.target.classList.contains('delete-options-modal-overlay')) {
-        const overlay = document.querySelector('.delete-options-modal-overlay');
+    const overlay = document.querySelector('.delete-options-modal-overlay');
+    const shouldClose = !event || window.AdminOverlayDismissGuard?.shouldDismiss?.(overlay, event);
+    if (shouldClose) {
         if (!overlay) return;
         overlay.classList.remove('is-visible');
         window.setTimeout(() => {
@@ -5347,6 +5349,7 @@ async function viewBatchCodes(batchId) {
     document.body.insertAdjacentHTML('beforeend', loadingHtml);
     const overlay = document.querySelector('.codes-modal-overlay');
     if (overlay) {
+        window.AdminOverlayDismissGuard?.bind?.(overlay);
         requestAnimationFrame(() => {
             overlay.classList.add('is-visible');
         });
@@ -5546,8 +5549,9 @@ async function invalidateSingleBatch(batchId) {
 
 // Close codes modal
 function closeCodesModal(event) {
-    if (!event || event.target.classList.contains('codes-modal-overlay')) {
-        const overlay = document.querySelector('.codes-modal-overlay');
+    const overlay = document.querySelector('.codes-modal-overlay');
+    const shouldClose = !event || window.AdminOverlayDismissGuard?.shouldDismiss?.(overlay, event);
+    if (shouldClose) {
         if (!overlay) return;
         overlay.classList.remove('is-visible');
         window.setTimeout(() => {
@@ -5599,11 +5603,10 @@ function syncPointsBatchInvalidateModalState() {
 }
 
 function closePointsBatchInvalidateModal(event) {
-    if (!event || event.target.classList.contains('edit-modal-overlay')) {
-        const overlay = document.querySelector('.points-batch-invalidate-modal-overlay');
-        if (!overlay) {
-            return;
-        }
+    const overlay = document.querySelector('.points-batch-invalidate-modal-overlay');
+    const shouldClose = !event || window.AdminOverlayDismissGuard?.shouldDismiss?.(overlay, event);
+    if (shouldClose) {
+        if (!overlay) return;
 
         overlay.classList.remove('is-visible');
         window.setTimeout(() => {
@@ -5687,6 +5690,7 @@ function openPointsBatchInvalidateModal(batchIds = []) {
     document.body.insertAdjacentHTML('beforeend', modalHtml);
     const overlay = document.querySelector('.points-batch-invalidate-modal-overlay');
     if (overlay) {
+        window.AdminOverlayDismissGuard?.bind?.(overlay);
         requestAnimationFrame(() => {
             overlay.classList.add('is-visible');
         });
@@ -5859,11 +5863,10 @@ function syncPointsCodeActionModalState() {
 }
 
 function closePointsCodeActionModal(event) {
-    if (!event || event.target.classList.contains('edit-modal-overlay')) {
-        const overlay = document.querySelector('.points-code-action-modal-overlay');
-        if (!overlay) {
-            return;
-        }
+    const overlay = document.querySelector('.points-code-action-modal-overlay');
+    const shouldClose = !event || window.AdminOverlayDismissGuard?.shouldDismiss?.(overlay, event);
+    if (shouldClose) {
+        if (!overlay) return;
 
         overlay.classList.remove('is-visible');
         window.setTimeout(() => {
@@ -5939,6 +5942,7 @@ async function openPointsCodeActionModal({ mode = '', code = '', currentExpiry =
     document.body.insertAdjacentHTML('beforeend', modalHtml);
     const overlay = document.querySelector('.points-code-action-modal-overlay');
     if (overlay) {
+        window.AdminOverlayDismissGuard?.bind?.(overlay);
         requestAnimationFrame(() => {
             overlay.classList.add('is-visible');
         });
@@ -6527,6 +6531,7 @@ async function openBatchEditModal(batchId, { returnToCodes = false } = {}) {
     document.body.insertAdjacentHTML('beforeend', modalHtml);
     const overlay = document.querySelector('.edit-modal-overlay');
     if (overlay) {
+        window.AdminOverlayDismissGuard?.bind?.(overlay);
         requestAnimationFrame(() => {
             overlay.classList.add('is-visible');
         });
@@ -6548,8 +6553,9 @@ async function openBatchEditModal(batchId, { returnToCodes = false } = {}) {
 }
 
 function closeBatchEditModal(event) {
-    if (!event || event.target.classList.contains('edit-modal-overlay')) {
-        const overlay = document.querySelector('.edit-modal-overlay');
+    const overlay = document.querySelector('.edit-modal-overlay');
+    const shouldClose = !event || window.AdminOverlayDismissGuard?.shouldDismiss?.(overlay, event);
+    if (shouldClose) {
         if (!overlay) return;
         overlay.classList.remove('is-visible');
         window.setTimeout(() => {

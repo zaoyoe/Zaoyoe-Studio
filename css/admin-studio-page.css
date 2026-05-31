@@ -9594,6 +9594,16 @@ body.admin-access-pending,
                 opacity: 0.7;
             }
 
+            #productModal .upload-box--uploaded {
+                border-color: rgba(34, 197, 94, 0.5);
+                background: rgba(34, 197, 94, 0.08);
+            }
+
+            #productModal .upload-box--error {
+                border-color: rgba(239, 68, 68, 0.5);
+                background: rgba(239, 68, 68, 0.08);
+            }
+
             #productModal .upload-icon-large {
                 font-size: 18px;
                 color: #6b9ece;
@@ -9605,6 +9615,46 @@ body.admin-access-pending,
             #productModal .upload-text {
                 font-size: 13px;
                 color: rgba(255, 255, 255, 0.6);
+            }
+
+            #productModal .shop-product-icon-upload-status {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                width: fit-content;
+                max-width: 100%;
+                margin-top: 8px;
+                padding: 6px 10px;
+                border: 1px solid rgba(107, 158, 206, 0.24);
+                border-radius: 8px;
+                background: rgba(107, 158, 206, 0.1);
+                color: rgba(255, 255, 255, 0.76);
+                font-size: 12px;
+                font-weight: 600;
+                line-height: 1.35;
+                overflow-wrap: anywhere;
+            }
+
+            #productModal .shop-product-icon-upload-status[hidden] {
+                display: none !important;
+            }
+
+            #productModal .shop-product-icon-upload-status--success {
+                border-color: rgba(34, 197, 94, 0.32);
+                background: rgba(34, 197, 94, 0.12);
+                color: rgba(187, 247, 208, 0.96);
+            }
+
+            #productModal .shop-product-icon-upload-status--loading {
+                border-color: rgba(107, 158, 206, 0.34);
+                background: rgba(107, 158, 206, 0.12);
+                color: rgba(219, 234, 254, 0.96);
+            }
+
+            #productModal .shop-product-icon-upload-status--error {
+                border-color: rgba(239, 68, 68, 0.35);
+                background: rgba(239, 68, 68, 0.12);
+                color: rgba(254, 202, 202, 0.96);
             }
 
             /* ====== MOBILE RESPONSIVE STYLES ====== */
@@ -24659,6 +24709,46 @@ html:not([data-theme="dark"]) #productModal .upload-box:is(:hover, :focus-visibl
     border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.32) !important;
     box-shadow: none !important;
     transform: none !important;
+}
+
+html[data-theme="light"] #productModal .upload-box--uploaded,
+html:not([data-theme="dark"]) #productModal .upload-box--uploaded {
+    background: rgba(34, 197, 94, 0.08) !important;
+    border-color: rgba(22, 163, 74, 0.34) !important;
+}
+
+html[data-theme="light"] #productModal .upload-box--error,
+html:not([data-theme="dark"]) #productModal .upload-box--error {
+    background: rgba(239, 68, 68, 0.08) !important;
+    border-color: rgba(220, 38, 38, 0.34) !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-icon-upload-status,
+html:not([data-theme="dark"]) #productModal .shop-product-icon-upload-status {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.08) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.2) !important;
+    color: rgba(51, 65, 85, 0.88) !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-icon-upload-status--success,
+html:not([data-theme="dark"]) #productModal .shop-product-icon-upload-status--success {
+    background: rgba(34, 197, 94, 0.1) !important;
+    border-color: rgba(22, 163, 74, 0.28) !important;
+    color: #166534 !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-icon-upload-status--loading,
+html:not([data-theme="dark"]) #productModal .shop-product-icon-upload-status--loading {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.09) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.24) !important;
+    color: #245986 !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-icon-upload-status--error,
+html:not([data-theme="dark"]) #productModal .shop-product-icon-upload-status--error {
+    background: rgba(239, 68, 68, 0.1) !important;
+    border-color: rgba(220, 38, 38, 0.26) !important;
+    color: #991b1b !important;
 }
 
 html[data-theme="light"] #productModal .toggle-slider,
@@ -55741,6 +55831,11 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     #productModal .upload-text {
         min-width: 0 !important;
         overflow-wrap: anywhere !important;
+    }
+
+    #productModal .shop-product-icon-upload-status {
+        width: 100% !important;
+        font-size: 0.72rem !important;
     }
 
     #productModal .action-bar {

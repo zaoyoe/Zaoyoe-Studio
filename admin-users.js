@@ -35,6 +35,14 @@ let usersActivityChannel = null;
 let usersActivityRefreshTimer = null;
 let usersActivityReloadTimer = null;
 
+function bindUsersOverlayDismissGuard(overlay) {
+    return window.AdminOverlayDismissGuard?.bind?.(overlay);
+}
+
+function shouldDismissUsersOverlay(overlay, event) {
+    return window.AdminOverlayDismissGuard?.shouldDismiss?.(overlay, event) === true;
+}
+
 function normalizeAdminUserAvatarUrl(value = '') {
     const source = String(value || '').trim();
     if (!source || /^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(source)) {
@@ -2072,8 +2080,9 @@ function getNotificationModal() {
         </div>
     `;
 
+    bindUsersOverlayDismissGuard(modal);
     modal.addEventListener('click', (event) => {
-        if (event.target === modal) {
+        if (shouldDismissUsersOverlay(modal, event)) {
             closeNotificationModal();
         }
     });
@@ -2410,6 +2419,7 @@ function showBatchAdminRenewModal({ selectedCount, eligibleCount, skippedCount }
             });
         };
 
+        bindUsersOverlayDismissGuard(modal);
         modal.addEventListener('click', (event) => {
             const actionEl = event.target instanceof Element ? event.target.closest('[data-users-renew-days]') : null;
 
@@ -2419,7 +2429,7 @@ function showBatchAdminRenewModal({ selectedCount, eligibleCount, skippedCount }
                 return;
             }
 
-            if (event.target === modal) {
+            if (shouldDismissUsersOverlay(modal, event)) {
                 closeModal(null);
             }
         });
@@ -2480,6 +2490,7 @@ function showBatchAdminExpiryModal({ selectedCount, eligibleCount, skippedCount 
             });
         };
 
+        bindUsersOverlayDismissGuard(modal);
         modal.addEventListener('click', (event) => {
             const actionEl = event.target instanceof Element
                 ? event.target.closest('[data-users-batch-expiry-preset],[data-users-batch-expiry-mode],[data-users-batch-expiry-confirm]')
@@ -2517,7 +2528,7 @@ function showBatchAdminExpiryModal({ selectedCount, eligibleCount, skippedCount 
                 return;
             }
 
-            if (event.target === modal) {
+            if (shouldDismissUsersOverlay(modal, event)) {
                 closeModal(null);
             }
         });
@@ -2751,6 +2762,7 @@ async function showBatchTagModal(count) {
             });
         };
 
+        bindUsersOverlayDismissGuard(modal);
         modal.addEventListener('click', (e) => {
             const actionEl = e.target instanceof Element ? e.target.closest('[data-batch-tag-value],[data-batch-tag-submit]') : null;
             if (actionEl) {
@@ -2765,7 +2777,7 @@ async function showBatchTagModal(count) {
                 }
             }
 
-            if (e.target === modal) {
+            if (shouldDismissUsersOverlay(modal, e)) {
                 animateUsersOverlayOut(modal, () => {
                     modal.remove();
                     resolve(null);
@@ -2843,12 +2855,13 @@ async function showEmailTagImportModal() {
             });
         };
 
+        bindUsersOverlayDismissGuard(modal);
         modal.addEventListener('click', (event) => {
             const actionEl = event.target instanceof Element
                 ? event.target.closest('[data-import-tag-value],[data-email-tag-import-submit],[data-email-tag-import-cancel]')
                 : null;
             if (!actionEl) {
-                if (event.target === modal) close(null);
+                if (shouldDismissUsersOverlay(modal, event)) close(null);
                 return;
             }
             if (actionEl.hasAttribute('data-import-tag-value')) {
@@ -3016,8 +3029,9 @@ function showBatchExportModal(count) {
         modal.querySelector('.modal-btn-confirm').addEventListener('click', confirm);
 
         // Click outside to close
+        bindUsersOverlayDismissGuard(modalOverlay);
         modalOverlay.addEventListener('click', (e) => {
-            if (e.target === modalOverlay) close();
+            if (shouldDismissUsersOverlay(modalOverlay, e)) close();
         });
 
     });
@@ -5319,8 +5333,9 @@ function bindUserModalOverlayDismiss() {
     }
 
     overlay.dataset.overlayDismissBound = '1';
+    bindUsersOverlayDismissGuard(overlay);
     overlay.addEventListener('click', (event) => {
-        if (event.target === overlay) {
+        if (shouldDismissUsersOverlay(overlay, event)) {
             void closeUserModal();
         }
     });
@@ -8058,8 +8073,9 @@ function showUserCouponConfirmModal({
 
         document.addEventListener('keydown', handleKeydown);
 
+        bindUsersOverlayDismissGuard(overlay);
         overlay.addEventListener('click', (event) => {
-            if (event.target === overlay) {
+            if (shouldDismissUsersOverlay(overlay, event)) {
                 finish(false);
                 return;
             }
@@ -9172,8 +9188,9 @@ async function openAdminLedgerDetail(ledgerId) {
     const overlay = document.createElement('div');
     overlay.id = 'adminLedgerDetailOverlay';
     overlay.className = 'admin-ledger-modal-overlay';
+    bindUsersOverlayDismissGuard(overlay);
     overlay.addEventListener('click', (event) => {
-        if (event.target === overlay) {
+        if (shouldDismissUsersOverlay(overlay, event)) {
             closeAdminLedgerDetailModal();
         }
     });
@@ -10375,8 +10392,9 @@ function bindBanUserModalInteractions(overlay) {
     }
 
     overlay.dataset.usersBanBound = '1';
+    bindUsersOverlayDismissGuard(overlay);
     overlay.addEventListener('click', (event) => {
-        if (event.target === overlay) {
+        if (shouldDismissUsersOverlay(overlay, event)) {
             closeBanUserModal();
             return;
         }
@@ -10773,8 +10791,9 @@ function bindResetPasswordModalInteractions(overlay) {
     }
 
     overlay.dataset.usersPasswordBound = '1';
+    bindUsersOverlayDismissGuard(overlay);
     overlay.addEventListener('click', (event) => {
-        if (event.target === overlay) {
+        if (shouldDismissUsersOverlay(overlay, event)) {
             closeResetPasswordModal();
             return;
         }
@@ -11058,8 +11077,9 @@ function bindPointsModalInteractions(overlay) {
     }
 
     overlay.dataset.usersPointsBound = '1';
+    bindUsersOverlayDismissGuard(overlay);
     overlay.addEventListener('click', (event) => {
-        if (event.target === overlay) {
+        if (shouldDismissUsersOverlay(overlay, event)) {
             closePointsModal();
             return;
         }
@@ -11237,8 +11257,9 @@ function bindClearContentModalInteractions(overlay) {
     }
 
     overlay.dataset.usersClearBound = '1';
+    bindUsersOverlayDismissGuard(overlay);
     overlay.addEventListener('click', (event) => {
-        if (event.target === overlay) {
+        if (shouldDismissUsersOverlay(overlay, event)) {
             closeClearContentModal();
             return;
         }

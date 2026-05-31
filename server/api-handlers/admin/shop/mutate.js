@@ -678,6 +678,7 @@ function formatValidationMessages(issues = []) {
 }
 
 const PRODUCT_SCHEMA_COMPATIBILITY_FIELDS = [
+    'updated_at',
     'purchase_notes_zh',
     'purchase_notes_en',
     'usage_instructions_zh',
@@ -847,6 +848,10 @@ function buildSchemaCompatibleProductPayload(payload = {}, { site = 'cn', missin
         removeFields(['image_assets']);
     }
 
+    if (hasMissing('updated_at')) {
+        removeFields(['updated_at']);
+    }
+
     return {
         payload: nextPayload,
         removedFields: Array.from(new Set(removedFields))
@@ -929,6 +934,10 @@ function prepareProductPayloadForWritableSite(payload = {}, { productId = '', si
     const nextPayload = { ...(payload && typeof payload === 'object' ? payload : {}) };
     const writableSite = site === 'intl' ? 'intl' : 'cn';
     const normalizedProductId = normalizeText(productId, 160);
+
+    if (!nextPayload.updated_at) {
+        nextPayload.updated_at = new Date().toISOString();
+    }
 
     if (writableSite === 'intl' && !normalizedProductId) {
         const baseName = normalizeText(nextPayload.name, 160);

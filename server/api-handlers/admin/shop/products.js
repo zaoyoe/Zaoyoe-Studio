@@ -108,6 +108,95 @@ function getSelectClause(fieldsMode) {
     return '*';
 }
 
+function getFullSelectAttempts() {
+    return [
+        '*',
+        [
+            'id',
+            'name',
+            'name_en',
+            'description',
+            'description_en',
+            'icon_url',
+            'image_assets',
+            'price_points',
+            'price_points_intl',
+            'stock_count',
+            'category',
+            'tags',
+            'display_order',
+            'sort_order',
+            'is_active',
+            'quantity_rules',
+            'quantity_rules_intl',
+            'max_purchase_quantity',
+            'purchase_limit_24h_quantity',
+            'purchase_limit_window_quantity',
+            'purchase_limit_window_minutes',
+            'per_account_purchase_limit',
+            'delivery_type',
+            'webhook_target',
+            'manual_delivery',
+            'show_product_description',
+            'show_purchase_notes',
+            'purchase_notes',
+            'purchase_notes_zh',
+            'purchase_notes_en',
+            'show_usage_instructions',
+            'usage_instructions',
+            'usage_instructions_zh',
+            'usage_instructions_en',
+            'flash_sale_price',
+            'flash_sale_price_intl',
+            'flash_sale_end',
+            'flash_sale_end_intl'
+        ].join(', ')
+    ];
+}
+
+function buildShopProductImageCacheVersion(row = {}) {
+    return normalizeText(row?.image_updated_at || row?.updated_at || row?.created_at || '', 80);
+}
+
+function attachShopProductImageCacheVersion(row = {}) {
+    if (!row || typeof row !== 'object' || Array.isArray(row)) {
+        return row;
+    }
+
+    const version = buildShopProductImageCacheVersion(row);
+    if (!version) {
+        return row;
+    }
+
+    return {
+        ...row,
+        image_cache_version: row.image_cache_version || version
+    };
+}
+
+function attachShopProductsImageCacheVersion(rows = []) {
+    return (Array.isArray(rows) ? rows : []).map((row) => attachShopProductImageCacheVersion(row));
+}
+
+async function runProductSelectWithFallback(baseQueryFactory, selectAttempts = []) {
+    let lastError = null;
+    const attempts = Array.isArray(selectAttempts) && selectAttempts.length ? selectAttempts : ['*'];
+
+    for (const selectClause of attempts) {
+        const query = baseQueryFactory(selectClause);
+        const result = await query;
+        if (!result.error) {
+            return result;
+        }
+        lastError = result.error;
+    }
+
+    return {
+        data: null,
+        error: lastError
+    };
+}
+
 function applyOrder(query, orderMode) {
     if (orderMode === 'name_asc') {
         return query.order('name', { ascending: true });
@@ -151,17 +240,20 @@ module.exports = async function adminShopProductsHandler(req, res) {
         const includeSkus = normalizeBoolean(searchParams.get('includeSkus') || searchParams.get('include_skus'), false);
 
         if (productId) {
-            const { data, error } = await supabase
-                .from('shop_products')
-                .select('*')
-                .eq('id', productId)
-                .single();
+            const { data, error } = await runProductSelectWithFallback(
+                (selectClause) => supabase
+                    .from('shop_products')
+                    .select(selectClause)
+                    .eq('id', productId)
+                    .single(),
+                getFullSelectAttempts()
+            );
 
             if (error) {
                 throw error;
             }
 
-            let product = data || null;
+            let product = attachShopProductImageCacheVersion(data || null);
             if (includeSkus && product?.id) {
                 const { data: skuRows, error: skuError } = await supabase
                     .from('shop_product_skus')
@@ -186,42 +278,46 @@ module.exports = async function adminShopProductsHandler(req, res) {
             });
         }
 
-        let query = supabase
-            .from('shop_products')
-            .select(getSelectClause(fields));
+        const buildQuery = (selectClause) => {
+            let query = supabase
+                .from('shop_products')
+                .select(selectClause);
 
-        if (ids.length) {
-            query = query.in('id', ids);
-        }
+            if (ids.length) {
+                query = query.in('id', ids);
+            }
 
-        if (status === 'active') {
-            query = query.eq('is_active', true);
-        } else if (status === 'deleted') {
-            query = query.eq('is_active', false);
-        }
+            if (status === 'active') {
+                query = query.eq('is_active', true);
+            } else if (status === 'deleted') {
+                query = query.eq('is_active', false);
+            }
 
-        if (category && category !== 'all') {
-            query = query.eq('category', category);
-        }
+            if (category && category !== 'all') {
+                query = query.eq('category', category);
+            }
 
-        if (deliveryType === 'key') {
-            query = query.eq('delivery_type', 'KEY');
-        } else if (deliveryType === 'api') {
-            query = query.eq('delivery_type', 'API');
-        }
+            if (deliveryType === 'key') {
+                query = query.eq('delivery_type', 'KEY');
+            } else if (deliveryType === 'api') {
+                query = query.eq('delivery_type', 'API');
+            }
 
-        if (searchQuery) {
-            query = query.or(buildProductSearchExpression(searchQuery));
-        }
+            if (searchQuery) {
+                query = query.or(buildProductSearchExpression(searchQuery));
+            }
 
-        query = applyOrder(query, order);
+            return applyOrder(query, order);
+        };
 
-        const { data, error } = await query;
+        const { data, error } = fields === 'full'
+            ? await runProductSelectWithFallback(buildQuery, getFullSelectAttempts())
+            : await buildQuery(getSelectClause(fields));
         if (error) {
             throw error;
         }
 
-        let rows = Array.isArray(data) ? data : [];
+        let rows = attachShopProductsImageCacheVersion(Array.isArray(data) ? data : []);
 
         if (includeSkus && rows.length) {
             const productIds = rows.map((row) => normalizeText(row?.id, 160)).filter(Boolean);

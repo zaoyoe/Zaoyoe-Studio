@@ -344,6 +344,29 @@ function getShopProductImageAssetExplicitVariantUrl(value, variant = '') {
     return String(asset?.[normalizedVariant] || '').trim();
 }
 
+function buildShopProductImageCacheVersion(product = {}) {
+    return String(product?.image_cache_version || product?.image_updated_at || product?.updated_at || product?.created_at || '').trim();
+}
+
+function appendShopImageUrlVersion(url, version = '') {
+    const rawUrl = String(url || '').trim();
+    const normalizedVersion = String(version || '').trim();
+    if (!rawUrl || !normalizedVersion || rawUrl.startsWith('data:image/')) {
+        return rawUrl;
+    }
+
+    try {
+        const parsed = new URL(rawUrl, window.location.origin);
+        parsed.searchParams.set('v', normalizedVersion);
+        if (parsed.origin === window.location.origin) {
+            return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+        }
+        return parsed.toString();
+    } catch (_error) {
+        return `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}v=${encodeURIComponent(normalizedVersion)}`;
+    }
+}
+
 function readShopPromptIdFromUrl(urlObj) {
     if (!urlObj?.searchParams) {
         return '';
@@ -461,7 +484,7 @@ const SHOP_CARD_PROMPT_ENTER_DURATION_MS = 800;
 const SHOP_CARD_ENTER_SETTLE_FALLBACK_BUFFER_MS = 180;
 const SHOP_STARRY_SKY_RUNTIME_SRC = 'starry-sky.js?v=20260520_SHOP_IDLE_STARRY_1';
 const SHOP_STARRY_SKY_IDLE_DELAY_MS = 1200;
-const SHOP_PREFETCH_SCHEMA_VERSION = '20260530_SHOP_MANUAL_DELIVERY_1';
+const SHOP_PREFETCH_SCHEMA_VERSION = '20260531_SHOP_PRODUCT_IMAGE_CACHE_1';
 const SHOP_PURCHASE_PREFILL_SCHEMA_VERSION = '20260415_SHOP_PURCHASE_PREFILL_1';
 const SHOP_PURCHASE_PREFILL_STORAGE_KEY = 'shop_purchase_prefill';
 const SHOP_DISCOUNT_ASSETS_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -4675,10 +4698,11 @@ const ShopClient = {
 
     buildCartIconMarkup: function (product, { imageClass = 'shop-cart-item__thumb', iconClass = 'shop-cart-item__icon' } = {}) {
         const imageAsset = getShopProductImageAsset(product);
-        const imageSource = getShopProductImageAssetUrl(imageAsset, 'card')
+        const rawImageSource = getShopProductImageAssetUrl(imageAsset, 'card')
             || getShopProductImageAssetUrl(imageAsset, 'thumb')
             || getShopProductImageAssetUrl(imageAsset, 'original')
             || String(product?.icon_url || '');
+        const imageSource = this.getVersionedShopImageUrl(rawImageSource, product);
         const safeIconSource = this.escapeAttribute(imageSource);
         const safeAlt = this.escapeAttribute(this.getLocalizedProductName(product) || (window.i18n?.t('shop.productImage') || '商品封面'));
 
@@ -8809,6 +8833,13 @@ const ShopClient = {
         return trimmed;
     },
 
+    getVersionedShopImageUrl: function (url, productOrVersion = {}) {
+        const version = typeof productOrVersion === 'string'
+            ? productOrVersion
+            : buildShopProductImageCacheVersion(productOrVersion);
+        return appendShopImageUrlVersion(url, version);
+    },
+
     warmShopCardLeadImages: function (products = []) {
         const leadProducts = (Array.isArray(products) ? products : [])
             .filter((product) => this.isShopImageSource(getShopProductImageAssetUrl(getShopProductImageAsset(product), 'original') || product?.icon_url))
@@ -8816,7 +8847,10 @@ const ShopClient = {
 
         leadProducts.forEach((product) => {
             const imageAsset = getShopProductImageAsset(product);
-            const optimizedUrl = this.getOptimizedShopImageUrl(imageAsset || product?.icon_url, { variant: 'card' });
+            const optimizedUrl = this.getVersionedShopImageUrl(
+                this.getOptimizedShopImageUrl(imageAsset || product?.icon_url, { variant: 'card' }),
+                product
+            );
             if (!optimizedUrl || optimizedUrl.startsWith('data:') || shopCardImageWarmCache.has(optimizedUrl)) {
                 return;
             }
@@ -8831,17 +8865,25 @@ const ShopClient = {
         });
     },
 
-    setShopCardImageSource: function (cardImage, originalUrl) {
+    setShopCardImageSource: function (cardImage, originalUrl, options = {}) {
         if (!(cardImage instanceof HTMLImageElement) || !originalUrl) return;
 
-        const primaryUrl = this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' });
+        const version = String(options.version || '').trim();
+        const primaryUrl = appendShopImageUrlVersion(
+            this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' }),
+            version
+        );
         const rawOriginalSrc = getShopProductImageAssetUrl(originalUrl, 'original');
         const originalSrc = isSupabaseStorageImageUrl(rawOriginalSrc)
             ? ''
             : (normalizeShopProductCdnUrl(rawOriginalSrc) || rawOriginalSrc);
-        const transformFallbackUrl = this.getOptimizedShopImageUrl(originalSrc, { format: '' });
+        const displayOriginalSrc = appendShopImageUrlVersion(originalSrc, version);
+        const transformFallbackUrl = appendShopImageUrlVersion(
+            this.getOptimizedShopImageUrl(originalSrc, { format: '' }),
+            version
+        );
 
-        cardImage.dataset.originalSrc = originalSrc;
+        cardImage.dataset.originalSrc = displayOriginalSrc;
         cardImage.dataset.transformFallbackSrc = transformFallbackUrl !== primaryUrl ? transformFallbackUrl : '';
         cardImage.dataset.fallbackStage = '';
         if (primaryUrl) {
@@ -8870,7 +8912,7 @@ const ShopClient = {
             && cardImage.src !== fallbackOriginalSrc
         ) {
             cardImage.dataset.fallbackStage = 'original';
-            cardImage.src = normalizeShopProductCdnUrl(fallbackOriginalSrc) || fallbackOriginalSrc;
+            cardImage.src = fallbackOriginalSrc;
         }
     },
 
@@ -10202,6 +10244,8 @@ const ShopClient = {
 
         const productImageAsset = getShopProductImageAsset(product);
         const productImageOriginalUrl = getShopProductImageAssetUrl(productImageAsset, 'original') || String(product.icon_url || '');
+        const productImageCacheVersion = buildShopProductImageCacheVersion(product);
+        const productImageDisplayOriginalUrl = this.getVersionedShopImageUrl(productImageOriginalUrl, productImageCacheVersion);
         const safeIconClass = this.escapeAttribute(product.icon_url || '');
         const displayName = this.getLocalizedProductName(product);
         const displayCategory = this.getLocalizedProductCategoryLabel(product.category);
@@ -10211,7 +10255,7 @@ const ShopClient = {
             ? `<p class="shop-card-desc">${this.escapeHtml(displayDesc)}</p>`
             : '<p class="shop-card-desc shop-card-desc--placeholder" aria-hidden="true"></p>';
         const safeCardImageAlt = this.escapeAttribute(displayName || (window.i18n?.t('shop.productImage') || '商品封面'));
-        const safeIconUrl = this.escapeAttribute(productImageOriginalUrl);
+        const safeIconUrl = this.escapeAttribute(productImageDisplayOriginalUrl);
         const hasCoverImage = this.isShopImageSource(productImageOriginalUrl);
         const shouldLoadImageEagerly = index < SHOP_GRID_EAGER_IMAGE_COUNT;
         const iconHtml = product.icon_url?.startsWith('fa')
@@ -10333,7 +10377,9 @@ const ShopClient = {
             productImage.addEventListener('error', () => {
                 this.handleShopCardImageError(productImage, productImageAsset || productImageOriginalUrl);
             });
-            this.setShopCardImageSource(productImage, productImageAsset || productImageOriginalUrl);
+            this.setShopCardImageSource(productImage, productImageAsset || productImageOriginalUrl, {
+                version: productImageCacheVersion
+            });
         }
 
         const cartTriggerButton = el.querySelector('.shop-card-cart-trigger[data-shop-action="add-product-to-cart"]');
