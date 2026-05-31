@@ -5331,6 +5331,8 @@ function bindAdminStudioDelegatedControls() {
             return;
         }
 
+        window.AdminOverlayDismissGuard?.bind?.(overlay);
+
         if (overlay.dataset.adminOverlayClose === 'ticket-reply-modal' && target.closest('.admin-ticket-reply-modal__panel')) {
             return;
         }
@@ -5368,6 +5370,10 @@ function bindAdminStudioDelegatedControls() {
             return;
         }
         if (overlay.dataset.adminOverlayClose === 'ops-alert-batch-mute-modal' && target.closest('.admin-shop-risk-case-modal__dialog')) {
+            return;
+        }
+
+        if (!window.AdminOverlayDismissGuard?.shouldDismiss?.(overlay, event)) {
             return;
         }
 
@@ -5547,6 +5553,7 @@ function ensureAdminStudioLargeModalCloseButton(panel) {
     panel.classList.add('admin-studio-large-modal-panel');
     const overlay = panel.closest('[data-admin-overlay-close], [data-shop-overlay-close], [data-points-overlay-close]');
     if (overlay instanceof HTMLElement) {
+        window.AdminOverlayDismissGuard?.bind?.(overlay);
         overlay.classList.add('admin-studio-large-modal-overlay');
         if (overlay.dataset.shopOverlayClose === 'product-modal') {
             panel.dataset.adminLargeModalKind = 'shop-product';

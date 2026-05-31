@@ -4719,13 +4719,14 @@ const AdminDiscounts = {
 
         const modal = document.getElementById('discountGenerateModal');
         if (modal) {
+            window.AdminOverlayDismissGuard?.bind?.(modal);
             modal.addEventListener('click', (event) => {
                 const target = event.target instanceof Element ? event.target : null;
                 if (!target) {
                     return;
                 }
 
-                if (target === modal) {
+                if (window.AdminOverlayDismissGuard?.shouldDismiss?.(modal, event)) {
                     event.preventDefault();
                     event.stopPropagation();
                     this.closeGenerateModal();

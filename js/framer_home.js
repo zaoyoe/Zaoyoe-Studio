@@ -65,7 +65,7 @@ const HOMEPAGE_DEFERRED_OVERLAY_STYLE_GROUP = 'homepage-overlays';
 const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
 const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
 const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260530_HOME_GONGYI_FATHER_KEY_1';
+const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260531_HOME_SHOP_IMAGE_CACHE_1';
 const HOMEPAGE_CONFIG_CACHE_KEY = 'homepage_config_sub2api_1';
 const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';
 const HOMEPAGE_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';
@@ -915,6 +915,29 @@ function getShopProductImageAssetExplicitVariantUrl(value, variant = '') {
 
   const asset = normalizeShopProductImageAsset(value);
   return String(asset?.[normalizedVariant] || '').trim();
+}
+
+function buildShopProductImageCacheVersion(product = {}) {
+  return String(product?.image_cache_version || product?.image_updated_at || product?.updated_at || product?.created_at || '').trim();
+}
+
+function appendShopImageUrlVersion(url, version = '') {
+  const rawUrl = String(url || '').trim();
+  const normalizedVersion = String(version || '').trim();
+  if (!rawUrl || !normalizedVersion || rawUrl.startsWith('data:image/')) {
+    return rawUrl;
+  }
+
+  try {
+    const parsed = new URL(rawUrl, window.location.origin);
+    parsed.searchParams.set('v', normalizedVersion);
+    if (parsed.origin === window.location.origin) {
+      return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+    }
+    return parsed.toString();
+  } catch (_error) {
+    return `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}v=${encodeURIComponent(normalizedVersion)}`;
+  }
 }
 
 function normalizePromptImageAsset(value) {
@@ -3158,8 +3181,8 @@ const FramerHome = {
    */
   async fetchShopProductCatalog() {
     try {
-      return await Cache.loadWithCache('shop_products', async () => {
-        const baseFields = 'id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, manual_delivery, category, is_active, display_order';
+      return await Cache.loadWithCache('shop_products_image_cache_1', async () => {
+        const baseFields = 'id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, manual_delivery, category, is_active, display_order, updated_at, created_at';
         try {
           const payload = await fetchHomepageShopCatalogPayload(getHomepageRuntimeSite());
           const products = Array.isArray(payload?.products)
@@ -3177,10 +3200,13 @@ const FramerHome = {
           .limit(120);
         let { data, error } = await query;
 
-        if (error && ['image_assets', 'manual_delivery'].some((field) => String(error?.message || '').toLowerCase().includes(field))) {
+        if (error && ['image_assets', 'manual_delivery', 'updated_at', 'created_at'].some((field) => String(error?.message || '').toLowerCase().includes(field))) {
+          const fallbackFields = baseFields
+            .replace(', manual_delivery', '')
+            .replace(', updated_at, created_at', '');
           const fallback = await window.supabaseClient
             .from('shop_products')
-            .select(baseFields.replace(', manual_delivery', ''))
+            .select(fallbackFields)
             .order('display_order', { ascending: false })
             .limit(120);
           data = fallback.data;
@@ -3472,14 +3498,22 @@ const FramerHome = {
   setHomeShopCardImageSource(cardImage, originalUrl) {
     if (!(cardImage instanceof HTMLImageElement) || !originalUrl) return;
 
-    const primaryUrl = this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' });
+    const version = String(cardImage.dataset.homeShopImageVersion || '').trim();
+    const primaryUrl = appendShopImageUrlVersion(
+      this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' }),
+      version
+    );
     const rawOriginalSrc = getShopProductImageAssetUrl(originalUrl, 'original');
     const originalSrc = isSupabaseStorageImageUrl(rawOriginalSrc)
       ? ''
       : (normalizeShopProductCdnUrl(rawOriginalSrc) || rawOriginalSrc);
-    const transformFallbackUrl = this.getOptimizedShopImageUrl(originalSrc, { format: '' });
+    const displayOriginalSrc = appendShopImageUrlVersion(originalSrc, version);
+    const transformFallbackUrl = appendShopImageUrlVersion(
+      this.getOptimizedShopImageUrl(originalSrc, { format: '' }),
+      version
+    );
 
-    cardImage.dataset.originalSrc = originalSrc;
+    cardImage.dataset.originalSrc = displayOriginalSrc;
     cardImage.dataset.transformFallbackSrc = transformFallbackUrl !== primaryUrl ? transformFallbackUrl : '';
     cardImage.dataset.fallbackStage = '';
     if (primaryUrl) {
@@ -3508,7 +3542,7 @@ const FramerHome = {
       && cardImage.src !== fallbackOriginalSrc
     ) {
       cardImage.dataset.fallbackStage = 'original';
-      cardImage.src = normalizeShopProductCdnUrl(fallbackOriginalSrc) || fallbackOriginalSrc;
+      cardImage.src = fallbackOriginalSrc;
       return true;
     }
 
@@ -4928,6 +4962,7 @@ const FramerHome = {
       const productImageAsset = getShopProductImageAsset(product);
       const productImageOriginalUrl = getShopProductImageAssetUrl(productImageAsset, 'original') || String(product?.icon_url || '');
       const productImageCardUrl = getShopProductImageAssetExplicitVariantUrl(productImageAsset, 'card');
+      const productImageCacheVersion = buildShopProductImageCacheVersion(product);
       const hasProductImage = this.isShopImageSource(productImageOriginalUrl);
       const manualDelivery = product?.manual_delivery === true
         || ['1', 'true', 'yes', 'on', 'manual'].includes(String(product?.manual_delivery ?? product?.manualDelivery ?? '').trim().toLowerCase());
@@ -4945,7 +4980,7 @@ const FramerHome = {
         ${product.homepage_badge ? `<span class="shop-card-badge">${escapeHomeHtml(product.homepage_badge)}</span>` : ''}
         <div class="shop-card-image">
           ${hasProductImage
-      ? `<img class="shop-card-home-image" alt="${escapeHomeHtml(productName)}" loading="lazy" decoding="async" data-home-shop-image="1" data-home-shop-original-src="${escapeHomeHtml(productImageOriginalUrl)}" data-home-shop-card-src="${escapeHomeHtml(productImageCardUrl)}">`
+      ? `<img class="shop-card-home-image" alt="${escapeHomeHtml(productName)}" loading="lazy" decoding="async" data-home-shop-image="1" data-home-shop-original-src="${escapeHomeHtml(productImageOriginalUrl)}" data-home-shop-card-src="${escapeHomeHtml(productImageCardUrl)}" data-home-shop-image-version="${escapeHomeHtml(productImageCacheVersion)}">`
       : (product.icon_url && product.icon_url.startsWith('fa-') ? `<i class="fas ${product.icon_url} shop-card-icon"></i>` : `<i class="fas fa-box-open shop-card-icon shop-card-icon--fallback"></i>`)}
         </div>
         <div class="shop-card-info">
@@ -4989,6 +5024,7 @@ const FramerHome = {
     section.querySelectorAll('img[data-home-shop-image="1"]').forEach((image) => {
       const originalSrc = String(image.dataset.homeShopOriginalSrc || '').trim();
       const cardSrc = String(image.dataset.homeShopCardSrc || '').trim();
+      image.dataset.homeShopImageVersion = String(image.dataset.homeShopImageVersion || '').trim();
       const imageAsset = cardSrc ? { original: originalSrc, card: cardSrc } : originalSrc;
       if (!originalSrc) {
         const fallbackIcon = document.createElement('i');

@@ -337,7 +337,9 @@ function createShopHandlers({
             'flash_sale_price_intl',
             'flash_sale_end',
             'flash_sale_end_intl',
-            'manual_delivery'
+            'manual_delivery',
+            'updated_at',
+            'created_at'
         ].some((field) => isMissingColumnError(error, field));
     }
 
@@ -413,6 +415,10 @@ function createShopHandlers({
         const flashSalePrice = getSiteScopedShopMarketingValue(product, 'flash_sale_price', currentSite);
         const flashSaleEnd = getSiteScopedShopMarketingValue(product, 'flash_sale_end', currentSite);
         const rawSkus = Array.isArray(product?.skus) ? product.skus : [];
+        const imageCacheVersion = normalizeText(
+            product?.image_cache_version || product?.image_updated_at || product?.updated_at || product?.created_at,
+            80
+        );
         const skus = rawSkus
             .filter((sku) => sku?.is_active !== false)
             .map((sku) => normalizePublicShopSkuForSite(sku, product, currentSite))
@@ -424,6 +430,7 @@ function createShopHandlers({
             quantity_rules: quantityRules ?? null,
             flash_sale_price: flashSalePrice ?? null,
             flash_sale_end: flashSaleEnd || null,
+            ...(imageCacheVersion ? { image_cache_version: imageCacheVersion } : {}),
             skus
         };
     }
@@ -530,7 +537,9 @@ function createShopHandlers({
                 'flash_sale_price',
                 'flash_sale_price_intl',
                 'flash_sale_end',
-                'flash_sale_end_intl'
+                'flash_sale_end_intl',
+                'updated_at',
+                'created_at'
             ].join(', '),
             [
                 'id',
@@ -555,7 +564,9 @@ function createShopHandlers({
                 'show_usage_instructions',
                 'usage_instructions',
                 'flash_sale_price',
-                'flash_sale_end'
+                'flash_sale_end',
+                'updated_at',
+                'created_at'
             ].join(', '),
             'id, name, description, icon_url, price_points, stock_count, category, tags, display_order, is_active'
         ];

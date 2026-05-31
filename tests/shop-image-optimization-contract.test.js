@@ -33,8 +33,11 @@ test('homepage shop carousel uses the storefront shop image optimization contrac
     assert.match(optimizationBlock, /if \(variantUrl\) \{\s*return variantUrl;\s*\}/);
     assert.match(optimizationBlock, /if \(isSupabaseStorageImageUrl\(trimmed\)\) \{\s*return '';\s*\}/);
     assert.doesNotMatch(optimizationBlock, /storage\/v1\/render\/image\/public/);
-    assert.match(source, /const primaryUrl = this\.getOptimizedShopImageUrl\(originalUrl, \{ variant: 'card' \}\);/);
+    assert.match(source, /function buildShopProductImageCacheVersion\(product = \{\}\) \{/);
+    assert.match(source, /function appendShopImageUrlVersion\(url, version = ''\) \{/);
+    assert.match(source, /const primaryUrl = appendShopImageUrlVersion\(\s*this\.getOptimizedShopImageUrl\(originalUrl, \{ variant: 'card' \}\),\s*version\s*\);/);
     assert.match(source, /data-home-shop-image="1"/);
+    assert.match(source, /data-home-shop-image-version="\$\{escapeHomeHtml\(productImageCacheVersion\)\}"/);
     assert.match(source, /this\.setHomeShopCardImageSource\(image, imageAsset\);/);
     assert.match(source, /this\.handleHomeShopCardImageError\(image, imageAsset\)/);
     assert.doesNotMatch(source, /data-home-replace-parent-icon="1"/);
@@ -47,7 +50,7 @@ test('admin shop product cards use the storefront shop image optimization contra
     const optimizationBlock = sliceSourceBetween(
         source,
         'getOptimizedShopImageUrl: function (url, options = {}) {',
-        'setProductCardImageSource: function (cardImage, originalUrl) {'
+        'setProductCardImageSource: function (cardImage, originalUrl, options = {}) {'
     );
 
     assert.match(optimizationBlock, /const \{ variant = '' \} = options;/);
@@ -59,9 +62,12 @@ test('admin shop product cards use the storefront shop image optimization contra
     assert.match(optimizationBlock, /const cardVariantUrl = getShopProductR2CardVariantUrl\(trimmed\);/);
     assert.match(optimizationBlock, /if \(isSupabaseStorageImageUrl\(trimmed\)\) \{\s*return '';\s*\}/);
     assert.doesNotMatch(optimizationBlock, /storage\/v1\/render\/image\/public/);
-    assert.match(source, /const primaryUrl = this\.getOptimizedShopImageUrl\(originalUrl, \{ variant: 'card' \}\);/);
+    assert.match(source, /function buildShopProductImageCacheVersion\(product = \{\}\) \{/);
+    assert.match(source, /function appendShopImageUrlVersion\(url, version = ''\) \{/);
+    assert.match(source, /const primaryUrl = appendShopImageUrlVersion\(\s*this\.getOptimizedShopImageUrl\(originalUrl, \{ variant: 'card' \}\),\s*version\s*\);/);
     assert.match(source, /data-shop-product-image="1"/);
-    assert.match(source, /this\.setProductCardImageSource\(productImage, productImageAsset \|\| productImageOriginalUrl\);/);
+    assert.match(source, /const productImageCacheVersion = buildShopProductImageCacheVersion\(p\);/);
+    assert.match(source, /this\.setProductCardImageSource\(productImage, productImageAsset \|\| productImageOriginalUrl, \{\s*version: productImageCacheVersion\s*\}\);/);
     assert.match(source, /this\.handleProductCardImageError\(productImage, productImageAsset \|\| productImageOriginalUrl\)/);
     assert.match(source, /image_assets: imageAsset,/);
     assert.match(source, /replaceProductCardImageWithFallback: function \(cardImage\) \{/);

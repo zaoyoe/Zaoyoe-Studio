@@ -262,6 +262,29 @@ function buildShopProductImageAssetForSave(iconUrl, existingAsset = null) {
     return buildShopProductImageAssetFromUrl(normalizedIconUrl) || { original: normalizedIconUrl };
 }
 
+function buildShopProductImageCacheVersion(product = {}) {
+    return String(product?.image_cache_version || product?.image_updated_at || product?.updated_at || product?.created_at || '').trim();
+}
+
+function appendShopImageUrlVersion(url, version = '') {
+    const rawUrl = String(url || '').trim();
+    const normalizedVersion = String(version || '').trim();
+    if (!rawUrl || !normalizedVersion || rawUrl.startsWith('data:image/')) {
+        return rawUrl;
+    }
+
+    try {
+        const parsed = new URL(rawUrl, window.location.origin);
+        parsed.searchParams.set('v', normalizedVersion);
+        if (parsed.origin === window.location.origin) {
+            return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+        }
+        return parsed.toString();
+    } catch (_error) {
+        return `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}v=${encodeURIComponent(normalizedVersion)}`;
+    }
+}
+
 const ShopAdmin = {
     currentTab: 'products',
     SHOP_TAB_IDS: ['products', 'import', 'inventory', 'orders', 'fulfillment'],
@@ -290,6 +313,9 @@ const ShopAdmin = {
     orderDetailRequestToken: 0,
     pendingOpenOrderDetails: false,
     currentProductImageAsset: null,
+    productIconUploadDirty: false,
+    productIconPreviewVersion: '',
+    productIconUploadStatusTimer: null,
     orderSearchRequestToken: 0,
     orderSearchContext: null,
     currentOrderRows: [],
@@ -1752,6 +1778,11 @@ Example output format:
         if (modal) {
             modal.classList.remove('active');
         }
+        this.resetProductIconUploadState();
+    },
+
+    shouldDismissOverlayClick: function (overlay, event) {
+        return window.AdminOverlayDismissGuard?.shouldDismiss?.(overlay, event) === true;
     },
 
     bindOverlayDismiss: function (overlayOrId, onDismiss) {
@@ -1763,10 +1794,15 @@ Example output format:
         }
 
         overlay.dataset.overlayDismissBound = '1';
+        window.AdminOverlayDismissGuard?.bind?.(overlay);
         overlay.addEventListener('click', (event) => {
-            if (event.target === overlay) {
-                onDismiss?.();
+            if (!this.shouldDismissOverlayClick(overlay, event)) {
+                return;
             }
+
+            event.preventDefault();
+            event.stopPropagation();
+            onDismiss?.();
         });
         return overlay;
     },
@@ -3299,7 +3335,7 @@ Example output format:
 
         document.addEventListener('click', (event) => {
             const overlay = event.target instanceof HTMLElement && event.target.matches('[data-shop-overlay-close]');
-            if (!overlay || event.target !== overlay) return;
+            if (!overlay || !this.shouldDismissOverlayClick(overlay, event)) return;
 
             if (overlay.dataset.shopOverlayClose === 'product-modal') {
                 this.hideProductModal();
@@ -5897,17 +5933,25 @@ Example output format:
         return trimmed;
     },
 
-    setProductCardImageSource: function (cardImage, originalUrl) {
+    setProductCardImageSource: function (cardImage, originalUrl, options = {}) {
         if (!(cardImage instanceof HTMLImageElement) || !originalUrl) return;
 
-        const primaryUrl = this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' });
+        const version = String(options.version || '').trim();
+        const primaryUrl = appendShopImageUrlVersion(
+            this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' }),
+            version
+        );
         const rawOriginalSrc = getShopProductImageAssetUrl(originalUrl, 'original');
         const originalSrc = isSupabaseStorageImageUrl(rawOriginalSrc)
             ? ''
             : (normalizeShopProductCdnUrl(rawOriginalSrc) || rawOriginalSrc);
-        const transformFallbackUrl = this.getOptimizedShopImageUrl(originalSrc, { format: '' });
+        const displayOriginalSrc = appendShopImageUrlVersion(originalSrc, version);
+        const transformFallbackUrl = appendShopImageUrlVersion(
+            this.getOptimizedShopImageUrl(originalSrc, { format: '' }),
+            version
+        );
 
-        cardImage.dataset.originalSrc = originalSrc;
+        cardImage.dataset.originalSrc = displayOriginalSrc;
         cardImage.dataset.transformFallbackSrc = transformFallbackUrl !== primaryUrl ? transformFallbackUrl : '';
         cardImage.dataset.fallbackStage = '';
         if (primaryUrl) {
@@ -5936,7 +5980,7 @@ Example output format:
             && cardImage.src !== fallbackOriginalSrc
         ) {
             cardImage.dataset.fallbackStage = 'original';
-            cardImage.src = normalizeShopProductCdnUrl(fallbackOriginalSrc) || fallbackOriginalSrc;
+            cardImage.src = fallbackOriginalSrc;
             return true;
         }
 
@@ -6159,7 +6203,9 @@ Example output format:
                 const safeProductDescription = this.escapeHtml(p.description || '暂无描述');
                 const productImageAsset = getShopProductImageAsset(p);
                 const productImageOriginalUrl = getShopProductImageAssetUrl(productImageAsset, 'original') || String(p.icon_url || '');
-                const safeProductIconUrl = this.escapeForAttr(productImageOriginalUrl);
+                const productImageCacheVersion = buildShopProductImageCacheVersion(p);
+                const productImageDisplayOriginalUrl = appendShopImageUrlVersion(productImageOriginalUrl, productImageCacheVersion);
+                const safeProductIconUrl = this.escapeForAttr(productImageDisplayOriginalUrl);
                 const safeProductIconClass = this.escapeForAttr(String(p.icon_url || 'fas fa-box'));
                 const safeProductNameAttr = this.escapeForAttr(p.name || '');
                 const productAltText = this.escapeForAttr(p.name || '商品封面');
@@ -6232,7 +6278,9 @@ Example output format:
                         }
                         this.replaceProductCardImageWithFallback(productImage);
                     });
-                    this.setProductCardImageSource(productImage, productImageAsset || productImageOriginalUrl);
+                    this.setProductCardImageSource(productImage, productImageAsset || productImageOriginalUrl, {
+                        version: productImageCacheVersion
+                    });
                 }
 
                 const editBtn = card.querySelector('[data-shop-action="product-edit"]');
@@ -6519,7 +6567,10 @@ Example output format:
                 || getShopProductImageAssetUrl(previewAsset, 'original')
                 || iconInput;
             if (this.isShopImageSource(previewImageUrl)) {
-                iconMedia.innerHTML = `<img src="${this.escapeForAttr(previewImageUrl)}" class="shop-admin-preview-icon-image" alt="商品封面预览">`;
+                const previewDisplayUrl = this.productIconUploadDirty
+                    ? this.appendProductImagePreviewVersion(previewImageUrl)
+                    : previewImageUrl;
+                iconMedia.innerHTML = `<img src="${this.escapeForAttr(previewDisplayUrl)}" class="shop-admin-preview-icon-image" alt="商品封面预览">`;
             } else {
                 // Assume FontAwesome class
                 iconMedia.innerHTML = `<i class="${this.escapeForAttr(iconInput)}"></i>`;
@@ -6555,15 +6606,99 @@ Example output format:
         }
     },
 
+    setProductIconUploadStatus: function (message = '', tone = 'info', options = {}) {
+        const statusEl = document.getElementById('productIconUploadStatus');
+        const iconBox = document.querySelector('#productModal .upload-box[data-shop-action="product-upload-icon"]');
+
+        if (this.productIconUploadStatusTimer) {
+            clearTimeout(this.productIconUploadStatusTimer);
+            this.productIconUploadStatusTimer = null;
+        }
+
+        if (statusEl) {
+            statusEl.classList.remove(
+                'shop-product-icon-upload-status--success',
+                'shop-product-icon-upload-status--loading',
+                'shop-product-icon-upload-status--error'
+            );
+
+            const normalizedTone = ['success', 'loading', 'error'].includes(String(tone || '').trim())
+                ? String(tone || '').trim()
+                : '';
+            if (normalizedTone) {
+                statusEl.classList.add(`shop-product-icon-upload-status--${normalizedTone}`);
+            }
+
+            statusEl.textContent = String(message || '').trim();
+            statusEl.hidden = !String(message || '').trim();
+        }
+
+        if (iconBox) {
+            iconBox.classList.toggle('upload-box--uploaded', tone === 'success');
+            iconBox.classList.toggle('upload-box--error', tone === 'error');
+        }
+
+        const durationMs = Number(options.durationMs || 0);
+        if (durationMs > 0) {
+            this.productIconUploadStatusTimer = setTimeout(() => {
+                this.clearProductIconUploadStatus();
+            }, durationMs);
+        }
+    },
+
+    clearProductIconUploadStatus: function () {
+        if (this.productIconUploadStatusTimer) {
+            clearTimeout(this.productIconUploadStatusTimer);
+            this.productIconUploadStatusTimer = null;
+        }
+
+        const statusEl = document.getElementById('productIconUploadStatus');
+        if (statusEl) {
+            statusEl.textContent = '';
+            statusEl.hidden = true;
+            statusEl.classList.remove(
+                'shop-product-icon-upload-status--success',
+                'shop-product-icon-upload-status--loading',
+                'shop-product-icon-upload-status--error'
+            );
+        }
+
+        document
+            .querySelector('#productModal .upload-box[data-shop-action="product-upload-icon"]')
+            ?.classList.remove('upload-box--busy', 'upload-box--uploaded', 'upload-box--error');
+    },
+
+    resetProductIconUploadState: function () {
+        this.productIconUploadDirty = false;
+        this.productIconPreviewVersion = '';
+        this.clearProductIconUploadStatus();
+        const uploadText = document.querySelector('#productModal .upload-text');
+        if (uploadText) {
+            uploadText.textContent = '点击上传图片 (建议 3:2 / 1200 x 800，支持 JPG, PNG, WebP)';
+        }
+        const fileInput = document.getElementById('iconUploadFile');
+        if (fileInput) {
+            fileInput.value = '';
+        }
+    },
+
+    appendProductImagePreviewVersion: function (url) {
+        return appendShopImageUrlVersion(url, this.productIconPreviewVersion);
+    },
+
     handleIconUpload: async function (input) {
         if (!input.files || input.files.length === 0) return;
         const file = input.files[0];
 
-        const uploadText = document.querySelector('.upload-text');
-        const iconBox = document.querySelector('.upload-box');
+        const uploadText = document.querySelector('#productModal .upload-text');
+        const iconBox = document.querySelector('#productModal .upload-box[data-shop-action="product-upload-icon"]');
 
-        uploadText.textContent = '⏳ 压缩上传中...';
-        iconBox.classList.add('upload-box--busy');
+        if (uploadText) {
+            uploadText.textContent = '正在压缩上传...';
+        }
+        iconBox?.classList.add('upload-box--busy');
+        iconBox?.classList.remove('upload-box--uploaded', 'upload-box--error');
+        this.setProductIconUploadStatus('正在上传商品图...', 'loading');
 
         try {
             // 1. Compress image and generate the storefront card variant.
@@ -6591,7 +6726,9 @@ Example output format:
             }
 
             // 4. Upload to R2 via Edge Function
-            uploadText.textContent = '⏳ 上传到 R2...';
+            if (uploadText) {
+                uploadText.textContent = '正在写入图片存储...';
+            }
             const productId = document.getElementById('editProductId').value || `product_${Date.now()}`;
 
             const response = await fetch(
@@ -6624,23 +6761,33 @@ Example output format:
             // 5. Set value
             document.getElementById('prodIcon').value = getShopProductImageAssetUrl(uploadedImageAsset, 'original') || imageUrl;
             this.currentProductImageAsset = uploadedImageAsset;
+            this.productIconUploadDirty = true;
+            this.productIconPreviewVersion = String(Date.now());
 
             // 6. Update Preview
             this.updatePreview();
 
-            uploadText.textContent = '✅ 上传成功';
-            setTimeout(() => {
-                uploadText.textContent = '点击更换图片 (建议 3:2 / 1200 x 800，支持 JPG, PNG, WebP)';
-                iconBox.classList.remove('upload-box--busy');
-            }, 2000);
+            if (uploadText) {
+                uploadText.textContent = '已上传新商品图，点击可再次更换';
+            }
+            iconBox?.classList.remove('upload-box--busy', 'upload-box--error');
+            iconBox?.classList.add('upload-box--uploaded');
+            this.setProductIconUploadStatus('已上传新商品图，保存商品后会替换旧图', 'success');
+            input.value = '';
 
             console.log('✅ Product image uploaded to R2:', imageUrl);
 
         } catch (err) {
             console.error('Upload failed:', err);
-            alert('上传失败: ' + err.message);
-            uploadText.textContent = '❌ 上传失败';
-            iconBox.classList.remove('upload-box--busy');
+            const failureMessage = '上传失败: ' + (err?.message || '未知错误');
+            alert(failureMessage);
+            if (uploadText) {
+                uploadText.textContent = '上传失败，点击重试';
+            }
+            iconBox?.classList.remove('upload-box--busy', 'upload-box--uploaded');
+            iconBox?.classList.add('upload-box--error');
+            this.setProductIconUploadStatus(failureMessage, 'error');
+            input.value = '';
         }
     },
 
@@ -6789,7 +6936,10 @@ Example output format:
 
         this.setProductSaveInlineError('');
         this.editingProductSnapshot = data;
-        this.currentProductImageAsset = getShopProductImageAsset(data);
+        const shouldPreservePendingProductImage = this.productIconUploadDirty === true;
+        if (!shouldPreservePendingProductImage) {
+            this.currentProductImageAsset = getShopProductImageAsset(data);
+        }
         const fields = this.getFieldMap();
         const marketingFields = this.getMarketingFieldMap();
         const sortValue = Number.parseInt(data.display_order, 10);
@@ -6811,7 +6961,9 @@ Example output format:
         } else {
             this.renderProductSkuEditor(this.buildProductSkusForEditor(data), skuEditorProduct);
         }
-        document.getElementById('prodIcon').value = getShopProductImageAssetUrl(this.currentProductImageAsset, 'original') || data.icon_url || '';
+        if (!shouldPreservePendingProductImage) {
+            document.getElementById('prodIcon').value = getShopProductImageAssetUrl(this.currentProductImageAsset, 'original') || data.icon_url || '';
+        }
         document.getElementById('prodDesc').value = data[fields.desc] || '';
         document.getElementById('prodShowProductDescription').checked = data.show_product_description !== false;
         document.getElementById('prodSort').value = Number.isFinite(sortValue) ? sortValue : 0;
@@ -7285,6 +7437,7 @@ Example output format:
         console.log('Opening Modal', isEdit); // Debug
         const modal = document.getElementById('productModal');
         if (!modal) { alert('Modal not found in DOM'); return; }
+        this.resetProductIconUploadState();
         this.ensureRichTextEditors();
         this.bindProductModalOverlayDismiss();
         this.productCategoryDropdownPromise = this.populateCategoryDropdown().finally(() => {

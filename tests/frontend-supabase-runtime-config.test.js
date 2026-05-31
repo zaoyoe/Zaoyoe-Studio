@@ -3491,8 +3491,12 @@ test('shop client runtime renderers externalize product cards, purchase feedback
         'function getShopResponsiveR2CardVariantUrl(url, variant = \'\') {',
         "return `${getZaoyoeAssetCdnOrigin({ canonical: true })}/products/card/${encodeURIComponent(basename)}.webp`;",
         'warmShopCardLeadImages: function (products = []) {',
-        'setShopCardImageSource: function (cardImage, originalUrl) {',
-        "const primaryUrl = this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' });",
+        'function buildShopProductImageCacheVersion(product = {})',
+        'function appendShopImageUrlVersion(url, version = \'\')',
+        'getVersionedShopImageUrl: function (url, productOrVersion = {})',
+        'setShopCardImageSource: function (cardImage, originalUrl, options = {}) {',
+        'const primaryUrl = appendShopImageUrlVersion(',
+        "this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' }),",
         'handleShopCardImageError: function (cardImage, originalUrl) {',
         'const SHOP_GRID_EAGER_IMAGE_COUNT = 4;',
         'const shouldLoadImageEagerly = index < SHOP_GRID_EAGER_IMAGE_COUNT;',
@@ -4194,7 +4198,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'function setHomeSectionVisibility(section, visible)',
         'function getHomeLoopPixelsPerSecond(speedValue)',
         'function getHomeLoopDurationSeconds(cycleWidth, speedValue)',
-        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260530_HOME_GONGYI_FATHER_KEY_1';",
+        "const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260531_HOME_SHOP_IMAGE_CACHE_1';",
         "const HOMEPAGE_CONFIG_CACHE_KEY = 'homepage_config_sub2api_1';",
         "const HOMEPAGE_HERO_TEXT_CACHE_VERSION = '20260508_HOME_TEXT_BILINGUAL_RUNTIME_1';",
         "const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';",
@@ -4363,7 +4367,7 @@ test('homepage subpages load the latest prefetch-home runtime script version', (
     }
 
     assert.equal(
-        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260530_HOME_GONGYI_FATHER_KEY_1';"),
+        prefetchSource.includes("const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260531_HOME_SHOP_IMAGE_CACHE_1';"),
         true,
         'js/prefetch-home.js should version homepage prefetch payloads after the homepage P2 runtime changes'
     );
@@ -10535,7 +10539,7 @@ test('discount admin runtime renderers externalize table states, copy toast, and
         'admin-discount-pagination-shell',
         'admin-discount-copy-toast',
         "modal.classList.toggle('is-visible', visible)",
-        'if (target === modal)',
+        'window.AdminOverlayDismissGuard?.shouldDismiss?.(modal, event)',
         "dropdown.classList.toggle('is-open', open)",
         'admin-discount-type-label-icon'
     ];
@@ -11039,7 +11043,10 @@ test('shop admin product grid runtime templates externalize card styling and vis
         'const SHOP_PRODUCT_IMAGE_CARD_WIDTH = 480;',
         'window.__SHOP_IMAGE_VARIANTS__?.variants?.card',
         "const cardVariantUrl = getShopProductR2CardVariantUrl(trimmed);",
-        "const primaryUrl = this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' });",
+        'function buildShopProductImageCacheVersion(product = {})',
+        'function appendShopImageUrlVersion(url, version = \'\')',
+        'const primaryUrl = appendShopImageUrlVersion(',
+        "this.getOptimizedShopImageUrl(originalUrl, { variant: 'card' }),",
         'cardImageData = await this.blobToDataUrl(cardBlob);',
         'fit: \'cover\''
     ];

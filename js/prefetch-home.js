@@ -12,7 +12,7 @@
     const HOMEPAGE_PREFETCH_CACHE_KEY = 'homepage_prefetch';
     const HOMEPAGE_CONFIG_LAST_UPDATED_KEY = 'homepage_config_last_updated_at';
     const HOMEPAGE_PROMPT_POOL_LAST_UPDATED_KEY = 'homepage_prompt_pool_last_updated_at';
-    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260530_HOME_GONGYI_FATHER_KEY_1';
+    const HOMEPAGE_PREFETCH_SCHEMA_VERSION = '20260531_HOME_SHOP_IMAGE_CACHE_1';
     const HOMEPAGE_GUESTBOOK_CARD_LIMIT = 6;
     const HOMEPAGE_PROMPT_LIVE_SELECT = [
         'id',
@@ -1236,13 +1236,13 @@
                 fetchPublicShopCatalogPayload(getCurrentSite()).catch(async (apiError) => {
                     console.warn('Homepage shop catalog API prefetch failed, using direct fetch:', apiError?.message || apiError);
                     const [categoryResult, productResult] = await Promise.all([
-                        window.supabaseClient.from('shop_categories').select('*').order('sort_order'),
-                        window.supabaseClient
-                            .from('shop_products')
-                            .select('id, name, name_en, description, description_en, icon_url, price_points, price_points_intl, stock_count, manual_delivery, category, display_order')
-                            .eq('is_active', true)
-                            .order('display_order', { ascending: false })
-                    ]);
+                    window.supabaseClient.from('shop_categories').select('*').order('sort_order'),
+                    window.supabaseClient
+                        .from('shop_products')
+                        .select('*')
+                        .eq('is_active', true)
+                        .order('display_order', { ascending: false })
+                ]);
                     if (categoryResult.error) throw categoryResult.error;
                     if (productResult.error) throw productResult.error;
                     return filterPublicShopCatalog(categoryResult.data || [], productResult.data || []);

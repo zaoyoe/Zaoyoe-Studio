@@ -2,6 +2,114 @@
     'use strict';
 
     const { url: SUPABASE_URL, publishableKey: SUPABASE_KEY } = window.requireZaoyoeSupabaseConfig();
+    const ADMIN_OVERLAY_DISMISS_GUARD_SELECTOR = [
+        '[data-admin-overlay-close]',
+        '[data-shop-overlay-close]',
+        '[data-points-overlay-close]'
+    ].join(', ');
+
+    function getAdminOverlayDismissGuardOverlay(event) {
+        const target = event?.target instanceof Element ? event.target : event?.target?.parentElement;
+        if (!target) {
+            return null;
+        }
+
+        const overlay = target.closest?.(ADMIN_OVERLAY_DISMISS_GUARD_SELECTOR);
+        return overlay instanceof HTMLElement ? overlay : null;
+    }
+
+    function resetAdminOverlayDismissPointerState(overlay) {
+        if (!(overlay instanceof HTMLElement)) {
+            return;
+        }
+
+        overlay.dataset.overlayDismissPointerDownBackdrop = '0';
+        overlay.dataset.overlayDismissPointerUpBackdrop = '0';
+    }
+
+    function recordAdminOverlayDismissPointer(overlay, event, phase) {
+        if (!(overlay instanceof HTMLElement)) {
+            return;
+        }
+
+        const isPrimaryPointer = typeof event?.button !== 'number' || event.button === 0;
+        const isBackdropPointer = isPrimaryPointer && event?.target === overlay;
+
+        if (phase === 'down') {
+            overlay.dataset.overlayDismissPointerDownBackdrop = isBackdropPointer ? '1' : '0';
+            overlay.dataset.overlayDismissPointerUpBackdrop = '0';
+            return;
+        }
+
+        if (phase === 'up') {
+            overlay.dataset.overlayDismissPointerUpBackdrop = isBackdropPointer ? '1' : '0';
+        }
+    }
+
+    const adminOverlayDismissGuard = {
+        bind(overlay) {
+            if (!(overlay instanceof HTMLElement) || overlay.dataset.overlayDismissPointerGuardBound === '1') {
+                return overlay instanceof HTMLElement ? overlay : null;
+            }
+
+            overlay.dataset.overlayDismissPointerGuardBound = '1';
+            resetAdminOverlayDismissPointerState(overlay);
+            overlay.addEventListener('pointerdown', (event) => {
+                recordAdminOverlayDismissPointer(overlay, event, 'down');
+            });
+            overlay.addEventListener('pointerup', (event) => {
+                recordAdminOverlayDismissPointer(overlay, event, 'up');
+            });
+            overlay.addEventListener('pointercancel', () => {
+                resetAdminOverlayDismissPointerState(overlay);
+            });
+            return overlay;
+        },
+        shouldDismiss(overlay, event) {
+            if (!(overlay instanceof HTMLElement) || event?.target !== overlay) {
+                return false;
+            }
+
+            if (overlay.dataset.overlayDismissPointerGuardBound !== '1') {
+                return true;
+            }
+
+            const startedOnBackdrop = overlay.dataset.overlayDismissPointerDownBackdrop === '1';
+            const endedOnBackdrop = overlay.dataset.overlayDismissPointerUpBackdrop === '1';
+            resetAdminOverlayDismissPointerState(overlay);
+            return startedOnBackdrop && endedOnBackdrop;
+        }
+    };
+
+    if (document.documentElement.dataset.adminOverlayDismissGuardBound !== '1') {
+        document.documentElement.dataset.adminOverlayDismissGuardBound = '1';
+        document.addEventListener('pointerdown', (event) => {
+            const overlay = getAdminOverlayDismissGuardOverlay(event);
+            if (!overlay) {
+                return;
+            }
+
+            adminOverlayDismissGuard.bind(overlay);
+            recordAdminOverlayDismissPointer(overlay, event, 'down');
+        }, true);
+        document.addEventListener('pointerup', (event) => {
+            const overlay = getAdminOverlayDismissGuardOverlay(event);
+            if (!overlay) {
+                return;
+            }
+
+            adminOverlayDismissGuard.bind(overlay);
+            recordAdminOverlayDismissPointer(overlay, event, 'up');
+        }, true);
+        document.addEventListener('pointercancel', (event) => {
+            const overlay = getAdminOverlayDismissGuardOverlay(event);
+            if (overlay) {
+                resetAdminOverlayDismissPointerState(overlay);
+            }
+        }, true);
+    }
+
+    window.AdminOverlayDismissGuard = Object.freeze(adminOverlayDismissGuard);
 
     function hasValidAccessToken(value) {
         if (!value) return false;
