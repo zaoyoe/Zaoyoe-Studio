@@ -57043,6 +57043,19 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
 .shop-product-sku-editor {
     gap: 10px;
     container-type: inline-size;
+    /* 20260531_ADMIN_STUDIO_PRODUCT_SKU_DARK_THEME_1 */
+    --shop-product-sku-row-bg: rgba(15, 23, 42, 0.48);
+    --shop-product-sku-row-border: rgba(148, 163, 184, 0.18);
+    --shop-product-sku-row-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.035), 0 10px 26px rgba(2, 8, 23, 0.18);
+    --shop-product-sku-control-bg: rgba(15, 23, 42, 0.44);
+    --shop-product-sku-control-bg-hover: rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.12);
+    --shop-product-sku-control-border: rgba(148, 163, 184, 0.22);
+    --shop-product-sku-control-text: rgba(203, 213, 225, 0.86);
+    --shop-product-sku-control-text-strong: rgba(241, 245, 249, 0.94);
+    --shop-product-sku-check-bg: rgba(15, 23, 42, 0.78);
+    --shop-product-sku-danger-bg: rgba(239, 68, 68, 0.12);
+    --shop-product-sku-danger-bg-hover: rgba(239, 68, 68, 0.18);
+    --shop-product-sku-danger-border: rgba(248, 113, 113, 0.26);
 }
 
 .shop-product-sku-editor__header {
@@ -57155,9 +57168,10 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     grid-template-columns: minmax(0, 1fr);
     gap: 6px;
     padding: 8px 10px;
-    border: 1px solid rgba(148, 163, 184, 0.28);
+    border: 1px solid var(--shop-product-sku-row-border);
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.72);
+    background: var(--shop-product-sku-row-bg);
+    box-shadow: var(--shop-product-sku-row-shadow);
     min-width: 0;
 }
 
@@ -57189,13 +57203,14 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     min-height: 36px;
     max-width: 100%;
     padding: 0 9px;
-    border: 1px solid rgba(148, 163, 184, 0.3);
+    border: 1px solid var(--shop-product-sku-control-border);
     border-radius: 8px;
-    color: var(--text-secondary, #64748b);
-    background: rgba(248, 250, 252, 0.86);
+    color: var(--shop-product-sku-control-text);
+    background: var(--shop-product-sku-control-bg);
     font-size: 12px;
     font-weight: 700;
     cursor: pointer;
+    transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 
 .shop-product-sku-row__tier-toggle span {
@@ -57235,22 +57250,22 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     gap: 5px;
     min-height: 36px;
     padding: 0 7px;
-    border: 1px solid rgba(148, 163, 184, 0.32);
+    border: 1px solid var(--shop-product-sku-control-border);
     border-radius: 8px;
-    color: var(--text-secondary, #64748b);
+    color: var(--shop-product-sku-control-text);
     font-size: 12px;
     font-weight: 700;
     white-space: nowrap;
-    background: rgba(248, 250, 252, 0.9);
+    background: var(--shop-product-sku-control-bg);
     flex: 0 0 auto;
     cursor: pointer;
     transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
 }
 
 .shop-product-sku-row__toggle:is(:hover, :focus-within) {
-    color: #334155;
+    color: var(--shop-product-sku-control-text-strong);
     border-color: rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.34);
-    background: rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.08);
+    background: var(--shop-product-sku-control-bg-hover);
 }
 
 .shop-product-sku-row__toggle input {
@@ -57260,8 +57275,8 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     display: inline-grid;
     place-content: center;
     flex: 0 0 16px;
-    border: 2px solid rgba(100, 116, 139, 0.46);
-    background: #ffffff;
+    border: 2px solid rgba(148, 163, 184, 0.42);
+    background: var(--shop-product-sku-check-bg);
     cursor: pointer;
     appearance: none;
     -webkit-appearance: none;
@@ -57328,11 +57343,18 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
 .shop-product-sku-row__remove {
     width: 36px;
     height: 36px;
-    border: 1px solid rgba(239, 68, 68, 0.25);
+    border: 1px solid var(--shop-product-sku-danger-border);
     border-radius: 8px;
-    color: #dc2626;
-    background: rgba(254, 226, 226, 0.5);
+    color: #f87171;
+    background: var(--shop-product-sku-danger-bg);
     cursor: pointer;
+    transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.shop-product-sku-row__remove:is(:hover, :focus-visible) {
+    border-color: rgba(248, 113, 113, 0.36);
+    background: var(--shop-product-sku-danger-bg-hover);
+    color: #fca5a5;
 }
 
 .shop-sku-delete-guard-overlay {

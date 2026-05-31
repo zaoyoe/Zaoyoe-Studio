@@ -9649,6 +9649,79 @@ test('verify guide requirements include payment profile close link', () => {
     assert.equal(enLocale.verify.guideClosePaymentProfile, 'Close payment profile');
 });
 
+test('verify history reads canonical verification log payload columns', () => {
+    const verifyWidgetSource = readRepoFile('verify-widget.js');
+    const verifyPageSource = readRepoFile('verify.html');
+
+    assert.equal(
+        verifyWidgetSource.includes("const VERIFY_HISTORY_SELECT = 'id, user_id, verification_id, status, message, points_deducted, created_at, site';"),
+        true,
+        'verify widget should select the canonical verification log payload columns'
+    );
+    assert.equal(
+        (verifyWidgetSource.match(/\.select\(VERIFY_HISTORY_SELECT\)/g) || []).length,
+        2,
+        'verify widget should reuse the canonical history select for list and export reads'
+    );
+    assert.equal(
+        verifyWidgetSource.includes(".select('id, user_id, site, email, status, points_deducted, result_data, created_at, task_type')"),
+        false,
+        'verify widget should not read legacy history columns that are not used by the current log payload'
+    );
+    assert.equal(
+        verifyWidgetSource.includes("console.warn('[VerifyHistory] Failed to load history:', error.message || error);"),
+        true,
+        'verify widget should distinguish history load errors from an empty history state'
+    );
+    assert.equal(
+        verifyPageSource.includes('./verify-widget.js?v=20260531_VERIFY_POLL_STATUS_SYNC_1'),
+        true,
+        'verify.html should cache-bust the fixed history query runtime'
+    );
+    assert.equal(
+        verifyPageSource.includes('./verify-widget.js?v=20260530_VERIFY_PAYMENT_PROFILE_BODY_1'),
+        false,
+        'verify.html should not keep loading the stale history query runtime'
+    );
+});
+
+test('verify polling treats status aliases as terminal and avoids cached status reads', () => {
+    const verifyWidgetSource = readRepoFile('verify-widget.js');
+    const verifyPageSource = readRepoFile('verify.html');
+
+    const requiredMarkers = [
+        'function buildVerifyStatusEndpoints(jobId)',
+        "`/api/public?scope=verify&route=status&taskId=${encodedJobId}&site=${encodedSite}`",
+        "`${CONFIG.nodeServerUrl}/api/verify/status/${encodedJobId}?site=${encodedSite}`",
+        'function normalizeVerifyClientStatus(data = {})',
+        "['success', 'completed', 'complete', 'done', 'ok'].includes(normalized)",
+        "['failed', 'failure', 'fail', 'error', 'timeout', 'timed_out', 'cancelled', 'canceled'].includes(normalized)",
+        "['running', 'processing', 'working', 'in_progress', 'executing'].includes(normalized)",
+        "const status = normalizeVerifyClientStatus(data);",
+        "const response = await fetch(endpoint, { headers, cache: 'no-store' });"
+    ];
+
+    for (const marker of requiredMarkers) {
+        assert.equal(verifyWidgetSource.includes(marker), true, `verify-widget.js should contain ${marker}`);
+    }
+
+    assert.equal(
+        (verifyWidgetSource.match(/fetch\(endpoint, \{ headers, cache: 'no-store' \}\)/g) || []).length >= 2,
+        true,
+        'verify status polling and repair reads should bypass cached running responses'
+    );
+    assert.equal(
+        verifyPageSource.includes('./verify-widget.js?v=20260531_VERIFY_POLL_STATUS_SYNC_1'),
+        true,
+        'verify.html should cache-bust the fixed polling runtime'
+    );
+    assert.equal(
+        verifyPageSource.includes('./verify-widget.js?v=20260531_VERIFY_HISTORY_COLUMNS_1'),
+        false,
+        'verify.html should not keep loading the stale history-only runtime'
+    );
+});
+
 test('verify widget runtime renderers externalize progress, visibility, history tone, and maintenance styling', () => {
     const verifyWidgetSource = readRepoFile('verify-widget.js');
     const verifyWidgetCss = readRepoFile('verify-widget.css');
@@ -9751,7 +9824,7 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'verify.html should load the shared user event tracker before the verify widget runtime'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260530_VERIFY_PAYMENT_PROFILE_BODY_1'),
+        verifyPageSource.includes('./verify-widget.js?v=20260531_VERIFY_POLL_STATUS_SYNC_1'),
         true,
         'verify.html should load the latest verify-widget script version'
     );

@@ -22,6 +22,7 @@
     const PENDING_TASK_STORAGE_KEY = 'verify_pending_google_one_job_v1';
     const VERIFY_QUOTA_CACHE_KEY = 'verify_api_quota_cache_v1';
     const VERIFY_STYLE_DECL_KEY = 'style';
+    const VERIFY_HISTORY_SELECT = 'id, user_id, verification_id, status, message, points_deducted, created_at, site';
 
     let currentUser = null;
     let userBalance = 0;
@@ -88,6 +89,50 @@
 
     function getQuotaCacheKey(site = getCurrentSiteValue()) {
         return `${VERIFY_QUOTA_CACHE_KEY}:${String(site || 'cn').trim().toLowerCase() || 'cn'}`;
+    }
+
+    function buildVerifyStatusEndpoints(jobId) {
+        const encodedJobId = encodeURIComponent(String(jobId || '').trim());
+        const encodedSite = encodeURIComponent(getCurrentSiteValue());
+
+        return [
+            `/api/public?scope=verify&route=status&taskId=${encodedJobId}&site=${encodedSite}`,
+            `${CONFIG.nodeServerUrl}/api/verify/status/${encodedJobId}?site=${encodedSite}`
+        ];
+    }
+
+    function normalizeVerifyClientStatus(data = {}) {
+        const rawStatus = typeof data === 'string'
+            ? data
+            : (data?.status || data?.raw_status || '');
+        const normalized = String(rawStatus || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+
+        if (['success', 'completed', 'complete', 'done', 'ok'].includes(normalized)) {
+            return 'success';
+        }
+
+        if (['failed', 'failure', 'fail', 'error', 'timeout', 'timed_out', 'cancelled', 'canceled'].includes(normalized)) {
+            return 'failed';
+        }
+
+        if (['running', 'processing', 'working', 'in_progress', 'executing'].includes(normalized)) {
+            return 'running';
+        }
+
+        if (['queued', 'queueing', 'waiting', 'pending'].includes(normalized)) {
+            return 'queued';
+        }
+
+        if (!normalized && typeof data === 'object') {
+            if (data?.success === true && (data?.url || data?.offer_url || data?.has_offer_url === true)) {
+                return 'success';
+            }
+            if (data?.success === false && (data?.error || data?.code)) {
+                return 'failed';
+            }
+        }
+
+        return normalized;
     }
 
     function readCachedApiQuota(site = getCurrentSiteValue()) {
@@ -698,7 +743,7 @@
     }
 
     function updateExecutionRing(data) {
-        const status = String(data?.status || '').toLowerCase();
+        const status = normalizeVerifyClientStatus(data);
 
         if (status === 'queued') {
             const queuePosition = Number(data?.queue_position);
@@ -893,7 +938,7 @@
     function getHistoryDetail(item) {
         const payload = parseHistoryMessage(item?.message);
         const taskType = normalizeTaskType(payload?.task_type);
-        const status = String(item?.status || payload?.raw_status || '').trim().toLowerCase();
+        const status = normalizeVerifyClientStatus(item?.status || payload?.raw_status || '');
 
         if (payload?.url) {
             return { type: 'url', text: payload.url, href: payload.url };
@@ -920,7 +965,7 @@
         const payload = parseHistoryMessage(item?.message);
         const repairKey = String(item?.id || payload?.job_id || item?.verification_id || '').trim();
         const jobId = String(payload?.job_id || item?.verification_id || '').trim();
-        const status = String(item?.status || payload?.raw_status || '').trim().toLowerCase();
+        const status = normalizeVerifyClientStatus(item?.status || payload?.raw_status || '');
         const errorCode = String(payload?.error_code || '').trim().toLowerCase();
         const errorMessage = String(payload?.error_message || payload?.message || '').trim().toLowerCase();
 
@@ -964,21 +1009,18 @@
                     attemptedHistoryRepairIds.add(repairKey);
                 }
 
-                const statusEndpoints = [
-                    `/api/public?scope=verify&route=status&taskId=${encodeURIComponent(jobId)}`,
-                    `${CONFIG.nodeServerUrl}/api/verify/status/${encodeURIComponent(jobId)}`
-                ];
+                const statusEndpoints = buildVerifyStatusEndpoints(jobId);
 
                 for (const endpoint of statusEndpoints) {
                     try {
-                        const response = await fetch(endpoint, { headers });
+                        const response = await fetch(endpoint, { headers, cache: 'no-store' });
                         const responsePayload = await response.json().catch(() => ({}));
 
                         if (!response.ok && shouldFallbackVerifyEndpoint(response, responsePayload)) {
                             continue;
                         }
 
-                        const normalizedStatus = String(responsePayload?.status || '').trim().toLowerCase();
+                        const normalizedStatus = normalizeVerifyClientStatus(responsePayload);
                         if (response.ok && normalizedStatus && normalizedStatus !== 'failed') {
                             repaired = true;
                         }
@@ -1001,7 +1043,7 @@
 
     function getResultDisplay(data) {
         const lang = getLang();
-        const status = String(data?.status || '').toLowerCase();
+        const status = normalizeVerifyClientStatus(data);
         const stageLabel = formatStageLabel(data?.stage_label);
         const taskType = normalizeTaskType(data?.task_type);
 
@@ -2441,16 +2483,13 @@ ${fullModeMarkup}
 
                 try {
                     const headers = await getVerifyRequestHeaders();
-                    const statusEndpoints = [
-                        `/api/public?scope=verify&route=status&taskId=${encodeURIComponent(jobId)}`,
-                        `${CONFIG.nodeServerUrl}/api/verify/status/${encodeURIComponent(jobId)}`
-                    ];
+                    const statusEndpoints = buildVerifyStatusEndpoints(jobId);
                     let res = null;
                     let data = {};
 
                     for (const endpoint of statusEndpoints) {
                         try {
-                            const response = await fetch(endpoint, { headers });
+                            const response = await fetch(endpoint, { headers, cache: 'no-store' });
                             const payload = await response.json().catch(() => ({}));
 
                             if (response.ok || !shouldFallbackVerifyEndpoint(response, payload)) {
@@ -2698,7 +2737,7 @@ ${fullModeMarkup}
     }
 
     function getHistoryStatusCss(status) {
-        const normalized = String(status || '').toLowerCase();
+        const normalized = normalizeVerifyClientStatus(status);
         if (normalized.includes('success') || normalized.includes('completed')) return 'success';
         if (normalized.includes('queued') || normalized.includes('running') || normalized.includes('process')) return 'processing';
         if (normalized.includes('fail') || normalized.includes('error') || normalized.includes('timeout')) return 'error';
@@ -2706,7 +2745,7 @@ ${fullModeMarkup}
     }
 
     function getHistoryStatusText(status) {
-        const normalized = String(status || '').toLowerCase();
+        const normalized = normalizeVerifyClientStatus(status);
 
         if (normalized.includes('success') || normalized.includes('completed')) {
             return `<span class="verify-history-status-badge"><i class="fas fa-check-circle"></i> ${t('verify.successText', '成功')}</span>`;
@@ -2735,13 +2774,20 @@ ${fullModeMarkup}
         try {
             const { data, error } = await window.supabaseClient
                 .from('verification_logs')
-                .select('id, user_id, site, email, status, points_deducted, result_data, created_at, task_type')
+                .select(VERIFY_HISTORY_SELECT)
                 .eq('user_id', currentUser.id)
-                .eq('site', window.SiteConfig?.site || 'cn')
+                .eq('site', getCurrentSiteValue())
                 .order('created_at', { ascending: false })
                 .limit(20);
 
-            if (error || !data || data.length === 0) {
+            if (error) {
+                console.warn('[VerifyHistory] Failed to load history:', error.message || error);
+                listEl.innerHTML = `<div class="verify-history-empty"><i class="fas fa-inbox"></i> ${t('verify.loadFailed', '加载失败')}</div>`;
+                historyData = [];
+                return;
+            }
+
+            if (!data || data.length === 0) {
                 listEl.innerHTML = `<div class="verify-history-empty"><i class="fas fa-inbox"></i> ${t('verify.historyEmpty', '暂无历史记录')}</div>`;
                 historyData = [];
                 return;
@@ -2828,12 +2874,18 @@ ${fullModeMarkup}
             try {
                 const result = await window.supabaseClient
                     .from('verification_logs')
-                    .select('id, user_id, site, email, status, points_deducted, result_data, created_at, task_type')
+                    .select(VERIFY_HISTORY_SELECT)
                     .eq('user_id', currentUser.id)
-                    .eq('site', window.SiteConfig?.site || 'cn')
+                    .eq('site', getCurrentSiteValue())
                     .order('created_at', { ascending: false });
 
-                if (result.error || !result.data || result.data.length === 0) {
+                if (result.error) {
+                    console.warn('[VerifyHistory] Failed to export history:', result.error.message || result.error);
+                    alert(t('verify.loadFailed', '加载失败'));
+                    return;
+                }
+
+                if (!result.data || result.data.length === 0) {
                     alert(t('verify.historyEmpty', '暂无历史记录'));
                     return;
                 }

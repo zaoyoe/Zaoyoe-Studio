@@ -136,6 +136,11 @@ test('SKU tier pricing is selected and persisted independently from product tier
         /productBaseTierPricingSection|默认规格阶梯价|prodQuantityRulesContainer/,
         'product-level default-SKU tier pricing should not appear as a separate modal section'
     );
+    assert.equal(
+        adminHtml.includes('skuDarkTheme=20260531_ADMIN_STUDIO_PRODUCT_SKU_DARK_THEME_1'),
+        true,
+        'admin studio should cache-bust the SKU dark-theme stylesheet fix'
+    );
     assert.doesNotMatch(
         adminSource,
         /syncProductBaseTierPricingVisibility|shop-product-sku-editor__rows--single/,
@@ -175,6 +180,16 @@ test('SKU tier pricing is selected and persisted independently from product tier
         adminStyles,
         /shop-product-sku-editor__header[\s\S]*margin-bottom: 10px;[\s\S]*shop-product-sku-editor__add[\s\S]*color: var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\)[\s\S]*shop-product-sku-row__toggle input[\s\S]*appearance: none;[\s\S]*shop-product-sku-row__toggle input:checked[\s\S]*border-color: var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\)/,
         'admin SKU add button should breathe away from rows and toggles should use custom save-blue controls'
+    );
+    assert.match(
+        adminStyles,
+        /20260531_ADMIN_STUDIO_PRODUCT_SKU_DARK_THEME_1[\s\S]*--shop-product-sku-row-bg: rgba\(15, 23, 42, 0\.48\);[\s\S]*\.shop-product-sku-row\s*\{[\s\S]*background: var\(--shop-product-sku-row-bg\);[\s\S]*\.shop-product-sku-row__toggle input\s*\{[\s\S]*background: var\(--shop-product-sku-check-bg\);/,
+        'admin SKU editor should default to dark-theme row and toggle surfaces'
+    );
+    assert.doesNotMatch(
+        adminStyles,
+        /\.shop-product-sku-row\s*\{[^}]*background:\s*rgba\(255,\s*255,\s*255,\s*0\.72\)/,
+        'admin SKU rows should not default to a light card surface in dark theme'
     );
     assert.match(
         pageStyles,
