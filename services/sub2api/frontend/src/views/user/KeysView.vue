@@ -1075,6 +1075,8 @@ import { formatDateTime } from '@/utils/format'
 import { maskApiKey } from '@/utils/maskApiKey'
 import {
   buildCcSwitchImportDeeplink,
+  resolveCcSwitchClaudeModelSlots,
+  type CcSwitchClaudeModelSlots,
   type CcSwitchClientType
 } from '@/utils/ccswitchImport'
 
@@ -1690,6 +1692,63 @@ const resetRateLimitUsage = async () => {
   }
 }
 
+const buildClaudeModelsUrl = (
+  baseUrl: string,
+  platform: GroupPlatform | undefined,
+  clientType: CcSwitchClientType
+) => {
+  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '')
+  if (platform === 'antigravity' && clientType === 'claude') {
+    return `${normalizedBaseUrl}/antigravity/v1/models`
+  }
+  return `${normalizedBaseUrl}/v1/models`
+}
+
+const fetchClaudeModelSlotsForCcs = async (
+  baseUrl: string,
+  platform: GroupPlatform | undefined,
+  clientType: CcSwitchClientType,
+  apiKey: string
+): Promise<CcSwitchClaudeModelSlots | undefined> => {
+  const normalizedPlatform = platform || 'anthropic'
+  if (
+    clientType !== 'claude' ||
+    (normalizedPlatform !== 'anthropic' && normalizedPlatform !== 'antigravity')
+  ) {
+    return undefined
+  }
+
+  const controller = new AbortController()
+  const timeoutId = window.setTimeout(() => controller.abort(), 3000)
+
+  try {
+    const response = await fetch(buildClaudeModelsUrl(baseUrl, platform, clientType), {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${apiKey}`
+      },
+      signal: controller.signal
+    })
+
+    if (!response.ok) return undefined
+
+    const payload = (await response.json()) as { data?: Array<{ id?: unknown }> }
+    const modelIds =
+      payload.data
+        ?.map((model) => (typeof model.id === 'string' ? model.id : ''))
+        .filter((modelId) => modelId.length > 0) || []
+
+    return resolveCcSwitchClaudeModelSlots(modelIds)
+  } catch (error: any) {
+    if (error?.name !== 'AbortError') {
+      console.warn('Failed to load Claude models for CC Switch import:', error)
+    }
+    return undefined
+  } finally {
+    window.clearTimeout(timeoutId)
+  }
+}
+
 const importToCcswitch = (row: ApiKey) => {
   const platform = row.group?.platform || 'anthropic'
 
@@ -1704,7 +1763,7 @@ const importToCcswitch = (row: ApiKey) => {
   executeCcsImport(row, platform === 'gemini' ? 'gemini' : 'claude')
 }
 
-const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
+const executeCcsImport = async (row: ApiKey, clientType: CcSwitchClientType) => {
   const baseUrl = publicSettings.value?.api_base_url || window.location.origin
   const platform = row.group?.platform || 'anthropic'
 
@@ -1725,13 +1784,15 @@ const executeCcsImport = (row: ApiKey, clientType: CcSwitchClientType) => {
     }
   })`
   const providerName = (publicSettings.value?.site_name || 'sub2api').trim() || 'sub2api'
+  const claudeModelSlots = await fetchClaudeModelSlotsForCcs(baseUrl, platform, clientType, row.key)
   const deeplink = buildCcSwitchImportDeeplink({
     baseUrl,
     platform,
     clientType,
     providerName,
     apiKey: row.key,
-    usageScript
+    usageScript,
+    claudeModelSlots
   })
 
   try {
