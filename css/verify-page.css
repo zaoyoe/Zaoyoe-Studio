@@ -287,8 +287,7 @@ body {
     color: rgba(23, 32, 51, 0.62);
 }
 
-.verify-login-prompt p,
-.verify-priority-pill {
+.verify-login-prompt p {
     color: rgba(23, 32, 51, 0.7);
 }
 
@@ -390,7 +389,9 @@ body {
 .verify-batch-textarea::placeholder,
 .verify-batch-textarea::-webkit-input-placeholder {
     color: rgba(23, 32, 51, 0.5) !important;
+    font-size: 0.8rem !important;
     font-weight: 400 !important;
+    line-height: 1.5 !important;
 }
 
 .verify-password-toggle {
@@ -409,7 +410,6 @@ body {
 
 .verify-mode-option__body,
 .verify-submit-mode-tabs,
-.verify-priority-pill,
 .verify-guide-item,
 .verify-guide-note,
 .verify-result-item,
@@ -421,7 +421,6 @@ body {
 
 .verify-mode-option:hover .verify-mode-option__body,
 .verify-submit-mode-btn:hover,
-.verify-priority-pill:hover,
 .verify-history-item:hover {
     background: #f0f7ff;
     border-color: rgba(76, 131, 183, 0.18);
@@ -470,11 +469,6 @@ body {
     box-shadow:
         0 12px 30px rgba(237, 143, 41, 0.14),
         0 0 0 1px rgba(237, 143, 41, 0.1) inset;
-}
-
-.verify-priority-pill input {
-    background: #ffffff;
-    border-color: rgba(31, 54, 83, 0.2);
 }
 
 .verify-guide-card,
@@ -540,6 +534,19 @@ body {
 
 .verify-price-info .per-price {
     color: rgba(23, 32, 51, 0.5);
+}
+
+.verify-price-separator {
+    color: rgba(23, 32, 51, 0.28);
+}
+
+.verify-system-remaining,
+.verify-bulk-contact {
+    color: rgba(23, 32, 51, 0.58);
+}
+
+.verify-system-remaining-count {
+    color: #2f638f;
 }
 
 .verify-result.success,
@@ -773,8 +780,7 @@ html[data-theme="dark"] .verify-history-empty {
     color: rgba(255, 255, 255, 0.62);
 }
 
-html[data-theme="dark"] .verify-login-prompt p,
-html[data-theme="dark"] .verify-priority-pill {
+html[data-theme="dark"] .verify-login-prompt p {
     color: rgba(255, 255, 255, 0.76);
 }
 
@@ -865,7 +871,9 @@ html[data-theme="dark"] .verify-input::-webkit-input-placeholder {
 html[data-theme="dark"] .verify-batch-textarea::placeholder,
 html[data-theme="dark"] .verify-batch-textarea::-webkit-input-placeholder {
     color: rgba(255, 255, 255, 0.52) !important;
+    font-size: 0.8rem !important;
     font-weight: 400 !important;
+    line-height: 1.5 !important;
 }
 
 html[data-theme="dark"] .verify-password-toggle {
@@ -884,7 +892,6 @@ html[data-theme="dark"] .verify-password-toggle:focus-visible {
 
 html[data-theme="dark"] .verify-mode-option__body,
 html[data-theme="dark"] .verify-submit-mode-tabs,
-html[data-theme="dark"] .verify-priority-pill,
 html[data-theme="dark"] .verify-guide-item,
 html[data-theme="dark"] .verify-guide-note,
 html[data-theme="dark"] .verify-result-item,
@@ -896,7 +903,6 @@ html[data-theme="dark"] .verify-history-item {
 
 html[data-theme="dark"] .verify-mode-option:hover .verify-mode-option__body,
 html[data-theme="dark"] .verify-submit-mode-btn:hover,
-html[data-theme="dark"] .verify-priority-pill:hover,
 html[data-theme="dark"] .verify-history-item:hover {
     background: rgba(107, 158, 206, 0.08);
     border-color: rgba(107, 158, 206, 0.28);
@@ -933,11 +939,6 @@ html[data-theme="dark"] .verify-mode-option--accent input:checked+.verify-mode-o
     background: linear-gradient(180deg, rgba(249, 146, 55, 0.18) 0%, rgba(36, 22, 11, 0.92) 100%);
     border-color: rgba(249, 146, 55, 0.52);
     box-shadow: 0 14px 36px rgba(24, 14, 8, 0.32), 0 0 0 1px rgba(249, 146, 55, 0.18) inset;
-}
-
-html[data-theme="dark"] .verify-priority-pill input {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.2);
 }
 
 html[data-theme="dark"] .verify-guide-card,
@@ -1004,6 +1005,19 @@ html[data-theme="dark"] .verify-reset-btn:hover {
 
 html[data-theme="dark"] .verify-price-info .per-price {
     color: rgba(255, 255, 255, 0.4);
+}
+
+html[data-theme="dark"] .verify-price-separator {
+    color: rgba(255, 255, 255, 0.28);
+}
+
+html[data-theme="dark"] .verify-system-remaining,
+html[data-theme="dark"] .verify-bulk-contact {
+    color: rgba(255, 255, 255, 0.58);
+}
+
+html[data-theme="dark"] .verify-system-remaining-count {
+    color: #9fd7e5;
 }
 
 html[data-theme="dark"] .verify-result.success,

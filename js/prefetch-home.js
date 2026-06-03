@@ -1119,7 +1119,7 @@
             }),
             subtitle: resolveLocalizedText(getLocalizedField(config, 'section_subtitle'), 'home.verify.subtitle', {
                 zh: '快速验证您的 API 密钥',
-                en: 'Submit account jobs and fetch trial links automatically'
+                en: 'Submit account jobs and unlock access automatically'
             }),
             features: resolveLocalizedTextList(config.features, defaultFeatures),
             valueProps: resolveLocalizedTextList(config.value_props, defaultValueProps),
@@ -1140,8 +1140,8 @@
             demo: {
                 title: String(config.demo_title || '').trim() || 'Google One',
                 subtitle: resolveLocalizedText(config.demo_subtitle, '', {
-                    zh: '获取 1年 pro 权限的试用链接',
-                    en: 'Get a one-year Pro trial link'
+                    zh: '获取 1年 pro 权限的使用权限',
+                    en: 'Get one-year Pro access'
                 }),
                 email: String(config.demo_email || '').trim() || 'preview.account@gmail.com',
                 totp: String(config.demo_totp || '').trim() || '3r6cu37xch4ej6d5',

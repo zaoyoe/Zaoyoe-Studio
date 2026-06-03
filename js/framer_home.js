@@ -147,7 +147,7 @@ const HOMEPAGE_SECTION_SHELL_COPY = {
     titleKey: 'home.verify.title',
     subtitleKey: 'home.verify.subtitle',
     title: { zh: 'Gemini Pro', en: 'Gemini Pro' },
-    subtitle: { zh: '提交账号任务，自动获取试用链接', en: 'Submit account jobs and fetch trial links automatically' }
+    subtitle: { zh: '提交账号任务，自动获取使用权限', en: 'Submit account jobs and unlock access automatically' }
   },
   guestbook: {
     titleKey: 'home.guestbook.title',
@@ -3619,7 +3619,7 @@ const FramerHome = {
       }),
       subtitle: resolveHomepageLocalizedText(this.getLocalizedField(config, 'section_subtitle'), 'home.verify.subtitle', {
         zh: '快速验证您的 API 密钥，实时返回结果',
-        en: 'Submit account jobs and fetch trial links automatically'
+        en: 'Submit account jobs and unlock access automatically'
       }),
       screenshot: config.screenshot_path || '/assets/verify-preview.png',
       previewMode: String(config.preview_mode || 'dynamic').trim() === 'image' ? 'image' : 'dynamic',
@@ -3638,8 +3638,8 @@ const FramerHome = {
       demo: {
         title: String(config.demo_title || '').trim() || 'Google One',
         subtitle: resolveHomepageLocalizedText(config.demo_subtitle, '', {
-          zh: '获取 1年 pro 权限的试用链接',
-          en: 'Get a one-year Pro trial link'
+          zh: '获取 1年 pro 权限的使用权限',
+          en: 'Get one-year Pro access'
         }),
         email: String(config.demo_email || '').trim() || 'preview.account@gmail.com',
         totp: String(config.demo_totp || '').trim() || '3r6cu37xch4ej6d5',
@@ -5314,7 +5314,7 @@ const FramerHome = {
       : 10;
     const copy = (i18nKey, fallbackByLanguage) => getHomepageLanguageFallback(i18nKey, fallbackByLanguage);
     const labels = {
-      subtitle: copy('', { zh: '获取 1年 pro 权限的试用链接', en: 'Get a one-year Pro trial link' }),
+      subtitle: copy('', { zh: '获取 1年 pro 权限的使用权限', en: 'Get one-year Pro access' }),
       quota: copy('', { zh: '0.5 提 / 全 1', en: '0.5 submit / 1 full' }),
       apiQuotaTitle: copy('verify.apiQuotaTitle', { zh: 'API 剩余额度', en: 'API balance' }),
       walletTitle: copy('verify.walletTitle', { zh: '我的钱包', en: 'My wallet' }),
