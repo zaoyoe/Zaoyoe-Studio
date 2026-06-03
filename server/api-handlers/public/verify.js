@@ -216,8 +216,18 @@ function createPublicVerifyHandlers({
             task_type: apiData.task_type || normalizedTaskType,
             provider: apiData.provider || config.provider,
             provider_label: config.provider_label || config.providerLabel || '',
+            provider_adapter: apiData.provider_adapter || config.adapter || config.provider_adapter || '',
             queue_position: apiData.queue_position ?? -1,
             estimated_wait_seconds: apiData.estimated_wait_seconds ?? 0,
+            stage: apiData.stage,
+            total_stages: apiData.total_stages,
+            stage_label: apiData.stage_label,
+            raw_step: apiData.raw_step,
+            step_status: apiData.step_status,
+            provider_message: apiData.provider_message || '',
+            provider_progress: apiData.provider_progress,
+            progress: apiData.progress,
+            elapsed_seconds: apiData.elapsed_seconds,
             message: apiData.message || '任务已提交',
             pricePerVerify: priceForTask
         });
@@ -322,6 +332,7 @@ function createPublicVerifyHandlers({
             task_type: normalizedApiData.task_type,
             provider: normalizedApiData.provider || config.provider,
             provider_label: config.provider_label || config.providerLabel || '',
+            provider_adapter: normalizedApiData.provider_adapter || config.adapter || config.provider_adapter || '',
             has_offer_url: normalizedApiData.has_offer_url === true,
             url: normalizedApiData.url || '',
             error: normalizedApiData.error || '',
@@ -329,6 +340,11 @@ function createPublicVerifyHandlers({
             elapsed_seconds: normalizedApiData.elapsed_seconds,
             queue_position: normalizedApiData.queue_position,
             estimated_wait_seconds: normalizedApiData.estimated_wait_seconds,
+            raw_step: normalizedApiData.raw_step,
+            step_status: normalizedApiData.step_status,
+            provider_message: normalizedApiData.provider_message || '',
+            provider_progress: normalizedApiData.provider_progress,
+            progress: normalizedApiData.progress,
             message: runtimeBuildClientStatusMessage(normalizedApiData),
             pointsDeducted: Number(syncResult?.pointsDeducted) || 0
         });

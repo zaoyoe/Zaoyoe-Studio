@@ -170,6 +170,49 @@ function normalizeOptionalNumber(value) {
     return Number.isFinite(parsed) ? parsed : null;
 }
 
+function normalizeOptionalProgress(value) {
+    const parsed = normalizeOptionalNumber(value);
+    if (parsed === null) return null;
+    const normalized = parsed > 0 && parsed <= 1 ? parsed * 100 : parsed;
+    return Math.max(0, Math.min(100, normalized));
+}
+
+const VERIFY_PROVIDER_STEP_ORDER = ['cleaning', 'proxy', 'login', 'fetch_link'];
+
+function normalizeVerifyStepKey(value) {
+    return String(value || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+}
+
+function resolveVerifyStageFromStep(source = {}, fallback = {}) {
+    const explicitStage = normalizeOptionalNumber(
+        source.stage ?? source.current_stage ?? fallback.stage ?? fallback.current_stage
+    );
+    const explicitTotal = normalizeOptionalNumber(
+        source.total_stages ?? source.stage_total ?? source.total_stage ?? fallback.total_stages ?? fallback.stage_total
+    );
+
+    if (explicitStage !== null || explicitTotal !== null) {
+        return {
+            stage: explicitStage,
+            total_stages: explicitTotal
+        };
+    }
+
+    const stepKey = normalizeVerifyStepKey(source.raw_step || source.step || fallback.raw_step || fallback.step);
+    const stepIndex = VERIFY_PROVIDER_STEP_ORDER.indexOf(stepKey);
+    if (stepIndex === -1) {
+        return {
+            stage: null,
+            total_stages: null
+        };
+    }
+
+    return {
+        stage: stepIndex + 1,
+        total_stages: VERIFY_PROVIDER_STEP_ORDER.length
+    };
+}
+
 function extractVerifyProviderPayload(payload) {
     if (payload?.data && typeof payload.data === 'object' && !Array.isArray(payload.data)) {
         return payload.data;
@@ -200,6 +243,31 @@ function normalizeVerifyJobPayload(payload = {}, fallback = {}) {
     const queuePositionValue = normalizeOptionalNumber(source.queue_position ?? fallback.queue_position);
     const waitSecondsValue = normalizeOptionalNumber(source.estimated_wait_seconds ?? fallback.estimated_wait_seconds);
     const elapsedSecondsValue = normalizeOptionalNumber(source.elapsed_seconds ?? source.duration ?? fallback.elapsed_seconds);
+    const progressValue = normalizeOptionalProgress(
+        source.provider_progress
+        ?? source.progress_percent
+        ?? source.progressPercentage
+        ?? source.progress
+        ?? source.percentage
+        ?? source.percent
+        ?? fallback.provider_progress
+        ?? fallback.progress
+    );
+    const rawStep = String(source.raw_step || source.step || fallback.raw_step || fallback.step || '').trim();
+    const stepStatus = String(source.step_status || source.stage_status || source.raw_step_status || fallback.step_status || fallback.stage_status || '').trim();
+    const providerMessage = String(
+        source.provider_message
+        || source.status_message
+        || source.current_message
+        || source.message
+        || (!resultLooksLikeUrl ? rawResult : '')
+        || fallback.provider_message
+        || ''
+    ).trim();
+    const stageInfo = resolveVerifyStageFromStep({
+        ...source,
+        raw_step: rawStep
+    }, fallback);
     const message = String(
         source.message
         || (!resultLooksLikeUrl ? rawResult : '')
@@ -222,7 +290,14 @@ function normalizeVerifyJobPayload(payload = {}, fallback = {}) {
         has_offer_url: source.has_offer_url === true || fallback.has_offer_url === true || Boolean(offerUrl),
         error: String(source.error_code || source.error || fallback.error || '').trim(),
         message,
-        stage_label: String(source.stage_label || source.step || fallback.stage_label || '').trim(),
+        provider_message: providerMessage,
+        stage: stageInfo.stage,
+        total_stages: stageInfo.total_stages,
+        stage_label: String(source.stage_label || rawStep || fallback.stage_label || '').trim(),
+        raw_step: rawStep,
+        step_status: stepStatus,
+        provider_progress: progressValue,
+        progress: progressValue,
         queue_position: queuePositionValue,
         estimated_wait_seconds: waitSecondsValue,
         elapsed_seconds: elapsedSecondsValue,
@@ -467,6 +542,18 @@ function buildClientStatusMessage(job) {
     const status = String(job?.status || '').toLowerCase();
     const taskType = normalizeVerifyTaskType(job?.task_type || job?.taskType);
     const offerUrl = String(job?.offer_url || job?.url || '').trim();
+    const providerMessage = String(job?.provider_message || '').trim();
+    const stepStatus = String(job?.step_status || '').trim().toLowerCase();
+    const stepStatusLabel = {
+        running: '进行中',
+        processing: '进行中',
+        working: '进行中',
+        done: '已完成',
+        success: '已完成',
+        error: '异常',
+        failed: '异常',
+        fail: '异常'
+    }[stepStatus] || '';
 
     if (status === 'queued') {
         const queuePosition = Number(job?.queue_position);
@@ -480,7 +567,15 @@ function buildClientStatusMessage(job) {
     }
 
     if (status === 'running') {
-        return job?.stage_label ? `当前阶段：${job.stage_label}` : '任务执行中';
+        if (providerMessage) {
+            return providerMessage;
+        }
+        if (job?.stage_label) {
+            return stepStatusLabel
+                ? `当前阶段：${job.stage_label}（${stepStatusLabel}）`
+                : `当前阶段：${job.stage_label}`;
+        }
+        return '任务执行中';
     }
 
     if (status === 'success') {
@@ -532,6 +627,9 @@ function buildTrackedJobPayload({ email, jobId, apiData = {}, status = '', point
     const queuePosition = Number(apiData?.queue_position);
     const estimatedWait = Number(apiData?.estimated_wait_seconds);
     const elapsedSeconds = Number(apiData?.elapsed_seconds);
+    const progress = Number(apiData?.provider_progress ?? apiData?.progress);
+    const stage = Number(apiData?.stage);
+    const totalStages = Number(apiData?.total_stages);
     const offerUrl = String(apiData?.offer_url || apiData?.url || '').trim();
 
     return {
@@ -548,7 +646,14 @@ function buildTrackedJobPayload({ email, jobId, apiData = {}, status = '', point
         error_code: apiData?.error || '',
         message: apiData?.message || '',
         error_message: buildClientStatusMessage(apiData),
+        provider_message: apiData?.provider_message || '',
+        raw_step: apiData?.raw_step || apiData?.step || '',
+        step_status: apiData?.step_status || '',
         stage_label: apiData?.stage_label || '',
+        stage: Number.isFinite(stage) ? stage : null,
+        total_stages: Number.isFinite(totalStages) ? totalStages : null,
+        progress: Number.isFinite(progress) ? progress : null,
+        provider_progress: Number.isFinite(progress) ? progress : null,
         raw_status: apiData?.status || status || '',
         queue_position: Number.isFinite(queuePosition) ? queuePosition : null,
         estimated_wait_seconds: Number.isFinite(estimatedWait) ? estimatedWait : null,
@@ -849,14 +954,19 @@ function normalizePixelBridgeTask(task = {}, fallback = {}) {
     const offerUrl = /https?:\/\/[^\s"']+/i.test(result)
         ? (result.match(/https?:\/\/[^\s"']+/i)?.[0] || result)
         : '';
+    const providerMessage = String(task.provider_message || task.status_message || task.message || '').trim()
+        || (offerUrl ? '' : result);
     return normalizeVerifyJobPayload({
         ...task,
         job_id: task.id || task.job_id || task.task_id,
         task_id: task.id || task.task_id || task.job_id,
         status,
         offer_url: offerUrl,
-        message: offerUrl ? '' : result,
+        message: providerMessage,
+        provider_message: providerMessage,
         stage_label: task.step || task.stage_label,
+        raw_step: task.step,
+        step_status: task.step_status,
         elapsed_seconds: task.duration,
         provider: fallback.provider,
         provider_adapter: fallback.provider_adapter,
