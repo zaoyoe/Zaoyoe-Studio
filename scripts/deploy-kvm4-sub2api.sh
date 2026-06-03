@@ -8,6 +8,8 @@ KVM4_USER="${KVM4_USER:-root}"
 KVM4_KEY="${KVM4_KEY:-$HOME/.ssh/hostinger_sub2api}"
 KVM4_SUB2API_ROOT="${KVM4_SUB2API_ROOT:-/opt/sub2api}"
 KEEP_RELEASES="${KEEP_RELEASES:-5}"
+KVM4_SSH_ATTEMPTS="${KVM4_SSH_ATTEMPTS:-4}"
+KVM4_SSH_RETRY_DELAY="${KVM4_SSH_RETRY_DELAY:-15}"
 DRY_RUN=0
 
 usage() {
@@ -29,6 +31,24 @@ EOF
 die() {
   echo "deploy-kvm4-sub2api: $*" >&2
   exit 1
+}
+
+retry_command() {
+  local attempt=1
+  local status=0
+
+  while true; do
+    "$@" && return 0
+    status=$?
+
+    if [[ "$status" != "255" ]] || (( attempt >= KVM4_SSH_ATTEMPTS )); then
+      return "$status"
+    fi
+
+    echo "SSH transport failed with status 255; retrying in ${KVM4_SSH_RETRY_DELAY}s ($attempt/$KVM4_SSH_ATTEMPTS): $*" >&2
+    sleep "$KVM4_SSH_RETRY_DELAY"
+    attempt=$((attempt + 1))
+  done
 }
 
 while [[ $# -gt 0 ]]; do
@@ -111,19 +131,18 @@ if [[ "$DRY_RUN" == "1" ]]; then
   exit 0
 fi
 
-ssh_opts=(-i "$KVM4_KEY" -p "$KVM4_PORT")
-scp_opts=(-i "$KVM4_KEY" -P "$KVM4_PORT")
+ssh_opts=(-i "$KVM4_KEY" -p "$KVM4_PORT" -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+scp_opts=(-i "$KVM4_KEY" -P "$KVM4_PORT" -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 remote="$KVM4_USER@$KVM4_HOST"
 remote_tmp="/tmp/zaoyoe-sub2api-$release_id"
 
 echo "Uploading Sub2API release to $remote:$KVM4_SUB2API_ROOT"
-ssh "${ssh_opts[@]}" "$remote" "mkdir -p '$remote_tmp'"
-scp "${scp_opts[@]}" "$archive_path" "$remote:$remote_tmp/app.tar.gz"
-scp "${scp_opts[@]}" deploy/kvm4/docker-compose.sub2api.yml "$remote:$remote_tmp/docker-compose.local.yml"
+retry_command ssh "${ssh_opts[@]}" "$remote" "mkdir -p '$remote_tmp'"
+retry_command scp "${scp_opts[@]}" "$archive_path" "$remote:$remote_tmp/app.tar.gz"
+retry_command scp "${scp_opts[@]}" deploy/kvm4/docker-compose.sub2api.yml "$remote:$remote_tmp/docker-compose.local.yml"
 
-echo "Activating Sub2API release on KVM4"
-ssh "${ssh_opts[@]}" "$remote" \
-  "KVM4_SUB2API_ROOT='$KVM4_SUB2API_ROOT' RELEASE_ID='$release_id' RELEASE_COMMIT='$head_sha' KEEP_RELEASES='$KEEP_RELEASES' REMOTE_TMP='$remote_tmp' bash -s" <<'REMOTE'
+remote_script_path="$tmp_dir/activate-sub2api.sh"
+cat > "$remote_script_path" <<'REMOTE'
 set -Eeuo pipefail
 
 die() {
@@ -287,6 +306,12 @@ find "$KVM4_SUB2API_ROOT/releases" -mindepth 1 -maxdepth 1 -type d -printf '%T@ 
 docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'NAMES|sub2api'
 curl -fsS http://127.0.0.1:8080/health
 REMOTE
+
+retry_command scp "${scp_opts[@]}" "$remote_script_path" "$remote:$remote_tmp/activate.sh"
+
+echo "Activating Sub2API release on KVM4"
+retry_command ssh "${ssh_opts[@]}" "$remote" \
+  "KVM4_SUB2API_ROOT='$KVM4_SUB2API_ROOT' RELEASE_ID='$release_id' RELEASE_COMMIT='$head_sha' KEEP_RELEASES='$KEEP_RELEASES' REMOTE_TMP='$remote_tmp' bash '$remote_tmp/activate.sh'"
 
 echo
 echo "KVM4 Sub2API release deployed: $release_id"

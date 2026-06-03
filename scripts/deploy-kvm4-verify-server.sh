@@ -8,6 +8,8 @@ KVM4_USER="${KVM4_USER:-root}"
 KVM4_KEY="${KVM4_KEY:-$HOME/.ssh/hostinger_sub2api}"
 KVM4_ROOT="${KVM4_ROOT:-/opt/zaoyoe-verify-server}"
 KEEP_RELEASES="${KEEP_RELEASES:-8}"
+KVM4_SSH_ATTEMPTS="${KVM4_SSH_ATTEMPTS:-4}"
+KVM4_SSH_RETRY_DELAY="${KVM4_SSH_RETRY_DELAY:-15}"
 DRY_RUN=0
 
 PACKAGE_PATHS=(
@@ -41,6 +43,24 @@ EOF
 die() {
   echo "deploy-kvm4-verify-server: $*" >&2
   exit 1
+}
+
+retry_command() {
+  local attempt=1
+  local status=0
+
+  while true; do
+    "$@" && return 0
+    status=$?
+
+    if [[ "$status" != "255" ]] || (( attempt >= KVM4_SSH_ATTEMPTS )); then
+      return "$status"
+    fi
+
+    echo "SSH transport failed with status 255; retrying in ${KVM4_SSH_RETRY_DELAY}s ($attempt/$KVM4_SSH_ATTEMPTS): $*" >&2
+    sleep "$KVM4_SSH_RETRY_DELAY"
+    attempt=$((attempt + 1))
+  done
 }
 
 while [[ $# -gt 0 ]]; do
@@ -116,20 +136,19 @@ if [[ "$DRY_RUN" == "1" ]]; then
   exit 0
 fi
 
-ssh_opts=(-i "$KVM4_KEY" -p "$KVM4_PORT")
-scp_opts=(-i "$KVM4_KEY" -P "$KVM4_PORT")
+ssh_opts=(-i "$KVM4_KEY" -p "$KVM4_PORT" -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
+scp_opts=(-i "$KVM4_KEY" -P "$KVM4_PORT" -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=4)
 remote="$KVM4_USER@$KVM4_HOST"
 remote_tmp="/tmp/zaoyoe-verify-$release_id"
 
 echo "Uploading release to $remote:$KVM4_ROOT"
-ssh "${ssh_opts[@]}" "$remote" "mkdir -p '$remote_tmp'"
-scp "${scp_opts[@]}" "$archive_path" "$remote:$remote_tmp/app.tar.gz"
-scp "${scp_opts[@]}" deploy/kvm4/verify-server.Dockerfile "$remote:$remote_tmp/Dockerfile"
-scp "${scp_opts[@]}" deploy/kvm4/docker-compose.verify-server.yml "$remote:$remote_tmp/docker-compose.yml"
+retry_command ssh "${ssh_opts[@]}" "$remote" "mkdir -p '$remote_tmp'"
+retry_command scp "${scp_opts[@]}" "$archive_path" "$remote:$remote_tmp/app.tar.gz"
+retry_command scp "${scp_opts[@]}" deploy/kvm4/verify-server.Dockerfile "$remote:$remote_tmp/Dockerfile"
+retry_command scp "${scp_opts[@]}" deploy/kvm4/docker-compose.verify-server.yml "$remote:$remote_tmp/docker-compose.yml"
 
-echo "Activating release on KVM4"
-ssh "${ssh_opts[@]}" "$remote" \
-  "KVM4_ROOT='$KVM4_ROOT' RELEASE_ID='$release_id' RELEASE_COMMIT='$head_sha' KEEP_RELEASES='$KEEP_RELEASES' REMOTE_TMP='$remote_tmp' bash -s" <<'REMOTE'
+remote_script_path="$tmp_dir/activate-verify.sh"
+cat > "$remote_script_path" <<'REMOTE'
 set -Eeuo pipefail
 
 die() {
@@ -232,6 +251,12 @@ fi
 docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' | grep -E 'NAMES|zaoyoe-verify-server'
 curl -fsS http://127.0.0.1:3001/healthz
 REMOTE
+
+retry_command scp "${scp_opts[@]}" "$remote_script_path" "$remote:$remote_tmp/activate.sh"
+
+echo "Activating release on KVM4"
+retry_command ssh "${ssh_opts[@]}" "$remote" \
+  "KVM4_ROOT='$KVM4_ROOT' RELEASE_ID='$release_id' RELEASE_COMMIT='$head_sha' KEEP_RELEASES='$KEEP_RELEASES' REMOTE_TMP='$remote_tmp' bash '$remote_tmp/activate.sh'"
 
 echo
 echo "KVM4 release deployed: $release_id"
