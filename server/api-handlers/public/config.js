@@ -515,6 +515,18 @@ function createPublicConfigHandlers({
 
         return {
             enabled: config.enabled !== false,
+            provider: String(config.provider || config.active_provider || '').trim(),
+            provider_label: String(config.provider_label || config.providerLabel || '').trim(),
+            adapter: String(config.adapter || config.provider_adapter || '').trim(),
+            capabilities: config.capabilities && typeof config.capabilities === 'object' && !Array.isArray(config.capabilities)
+                ? {
+                    cancelTask: config.capabilities.cancelTask === true,
+                    failedLinkPurchase: config.capabilities.failedLinkPurchase === true,
+                    serviceStatus: config.capabilities.serviceStatus === true,
+                    keyTypes: config.capabilities.keyTypes === true,
+                    batchSubmit: config.capabilities.batchSubmit === true
+                }
+                : {},
             mode_visibility: modeVisibility,
             modeVisibility,
             price_per_verify: extractPrice,

@@ -49,6 +49,18 @@ function normalizeVerifyApiBaseUrl(value) {
     return /\/openapi$/i.test(normalized) ? normalized : `${normalized}/openapi`;
 }
 
+function normalizeVerifyProviderAdapter(value = '') {
+    const normalized = normalizeText(value).toLowerCase();
+    if (['pixel_bridge_rest', 'pixel-bridge-rest', 'catcard', '1free', 'pixel'].includes(normalized)) {
+        return 'pixel_bridge_rest';
+    }
+    return 'aidone_openapi';
+}
+
+function normalizeVerifyProviderRootUrl(value = '') {
+    return normalizeText(value).replace(/\/+$/, '');
+}
+
 function buildVerifyApiEndpointCandidates(value) {
     const configured = String(value || '').trim().replace(/\/+$/, '');
     const primary = normalizeVerifyApiBaseUrl(configured);
@@ -214,6 +226,11 @@ function pickVerifyFailureAttempt(attempts = []) {
 }
 
 async function fetchVerifyQuotaSnapshot(verifyConfig = {}, options = {}) {
+    const adapter = normalizeVerifyProviderAdapter(verifyConfig.adapter || verifyConfig.provider_adapter || verifyConfig.provider);
+    if (adapter === 'pixel_bridge_rest') {
+        return fetchPixelBridgeQuotaSnapshot(verifyConfig, options);
+    }
+
     const endpointCandidates = buildVerifyApiEndpointCandidates(verifyConfig.apiBaseUrl || verifyConfig.api_base_url || '');
     const apiBaseUrl = endpointCandidates[0] || '';
     const apiKey = normalizeText(verifyConfig.apiKey || verifyConfig.api_key);
@@ -301,6 +318,69 @@ async function fetchVerifyQuotaSnapshot(verifyConfig = {}, options = {}) {
         running_jobs: runningJobs,
         queue_error: 'provider_queue_not_supported',
         checked_at: new Date(options.now || Date.now()).toISOString()
+    };
+}
+
+async function fetchPixelBridgeQuotaSnapshot(verifyConfig = {}, options = {}) {
+    const apiBaseUrl = normalizeVerifyProviderRootUrl(verifyConfig.apiBaseUrl || verifyConfig.api_base_url || 'https://1free.qzz.io');
+    const apiKey = normalizeText(verifyConfig.apiKey || verifyConfig.api_key);
+    const endpoint = `${apiBaseUrl}/api/pixel-keys/verify`;
+
+    if (!apiBaseUrl || !apiKey) {
+        return {
+            ok: false,
+            error: 'verify_api_not_configured',
+            api_base_url: apiBaseUrl || null,
+            upstream_endpoint: endpoint,
+            attempted_endpoints: apiBaseUrl ? [endpoint] : []
+        };
+    }
+
+    const result = await fetchJson(endpoint, {
+        apiKey,
+        method: 'POST',
+        body: { key: apiKey },
+        fetchImpl: options.fetchImpl,
+        timeoutMs: options.timeoutMs
+    });
+    const payload = result.data || {};
+    const data = payload.data && typeof payload.data === 'object' ? payload.data : {};
+    const ok = result.ok && Number(payload.code) === 0 && normalizeText(data.status || 'active').toLowerCase() === 'active';
+
+    if (!ok) {
+        return {
+            ok: false,
+            error: normalizeText(payload.msg || payload.message || data.status) || `balance_http_${result.status || 0}`,
+            status: result.status,
+            api_base_url: apiBaseUrl,
+            upstream_endpoint: endpoint,
+            attempted_endpoints: [endpoint],
+            balance_result: result
+        };
+    }
+
+    const balance = roundNumber(Number(data.remaining ?? data.remaining_uses ?? data.balance) || 0, 2);
+    const totalUsed = roundNumber(Number(data.used ?? data.total_used) || 0, 2);
+    const queueData = {};
+
+    return {
+        ok: true,
+        api_base_url: apiBaseUrl,
+        upstream_endpoint: endpoint,
+        attempted_endpoints: [endpoint],
+        key_name: normalizeText(data.label || data.key),
+        key_type: normalizeText(data.key_type),
+        balance,
+        credits: balance,
+        remaining_uses: balance,
+        total: Number.isFinite(Number(data.total)) ? Number(data.total) : null,
+        total_used: totalUsed,
+        cost_per_job: 1,
+        remaining_jobs: Math.max(0, Math.floor(balance)),
+        queue_size: Math.max(0, Math.round(pickNumeric(queueData, ['queue_size', 'queued_jobs', 'pending_jobs', 'pending'], 0) || 0)),
+        running_jobs: Math.max(0, Math.round(pickNumeric(queueData, ['running_jobs', 'processing_jobs', 'active_jobs', 'running'], 0) || 0)),
+        checked_at: new Date(options.now || Date.now()).toISOString(),
+        raw: payload
     };
 }
 

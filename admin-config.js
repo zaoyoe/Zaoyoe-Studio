@@ -529,6 +529,19 @@ function renderVerifyQuotaState(quotaEl, tone, iconClass, message, options = {})
     quotaEl.innerHTML = `<i class="${iconClass} verify-quota-badge__icon" aria-hidden="true"></i> <${textTag} class="verify-quota-badge__text">${safeMessage}</${textTag}>`;
 }
 
+function syncVerifyQuotaRefreshButtonState(state = 'idle') {
+    const button = document.querySelector('[data-admin-action="settings-check-verify-quota"]');
+    if (!button) return;
+    const normalizedState = String(state || '').trim().toLowerCase();
+    const isLoading = normalizedState === 'loading';
+
+    button.classList.toggle('verify-quota-refresh-btn--loading', isLoading);
+    button.disabled = isLoading;
+    button.title = isLoading ? '正在查询额度' : '刷新额度';
+    button.setAttribute('aria-label', button.title);
+    button.innerHTML = '<i class="fas fa-sync-alt" aria-hidden="true"></i>';
+}
+
 function normalizeVerifyMonitorStatus(value) {
     const normalized = String(value || '').trim().toLowerCase();
     return normalized || 'idle';
@@ -609,18 +622,57 @@ function getVerifyRemainingTaskCount(balance, unitCost) {
     return Math.max(0, Math.floor((numericBalance + 1e-9) / numericUnitCost));
 }
 
-function buildVerifyQuotaUsageSummary(balance) {
+const VERIFY_PROVIDER_AIDONE = 'aidone';
+const VERIFY_PROVIDER_CATCARD = 'catcard';
+const VERIFY_PROVIDER_LABELS = {
+    [VERIFY_PROVIDER_AIDONE]: '通道 1 · aidone',
+    [VERIFY_PROVIDER_CATCARD]: '通道 2 · 1free'
+};
+const VERIFY_PROVIDER_DROPDOWN_LABELS = {
+    [VERIFY_PROVIDER_AIDONE]: '通道 1 · aidone',
+    [VERIFY_PROVIDER_CATCARD]: '通道 2 · 1free'
+};
+
+function normalizeVerifyProvider(value, fallback = VERIFY_PROVIDER_AIDONE) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (['catcard', '1free', 'pixel', 'pixel_bridge', 'pixel_bridge_rest', 'qzz'].includes(normalized)) {
+        return VERIFY_PROVIDER_CATCARD;
+    }
+    if (['aidone', 'primary', 'legacy', 'openapi', 'aidone_openapi'].includes(normalized)) {
+        return VERIFY_PROVIDER_AIDONE;
+    }
+    return fallback === VERIFY_PROVIDER_CATCARD ? VERIFY_PROVIDER_CATCARD : VERIFY_PROVIDER_AIDONE;
+}
+
+function getVerifyProviderDropdownLabel(provider) {
+    const normalizedProvider = normalizeVerifyProvider(provider);
+    return VERIFY_PROVIDER_DROPDOWN_LABELS[normalizedProvider] || VERIFY_PROVIDER_DROPDOWN_LABELS[VERIFY_PROVIDER_AIDONE];
+}
+
+function buildVerifyQuotaUsageSummary(balance, costs = {}) {
     const numericBalance = Number(balance);
     const safeBalance = Number.isFinite(numericBalance)
         ? Math.max(0, Math.round(numericBalance * 100) / 100)
         : 0;
+    const extractBalance = Number(costs.remaining_extract_uses ?? costs.extract_remaining_uses ?? safeBalance);
+    const fullBalance = Number(costs.remaining_full_uses ?? costs.full_remaining_uses ?? safeBalance);
+    const safeExtractBalance = Number.isFinite(extractBalance)
+        ? Math.max(0, Math.round(extractBalance * 100) / 100)
+        : safeBalance;
+    const safeFullBalance = Number.isFinite(fullBalance)
+        ? Math.max(0, Math.round(fullBalance * 100) / 100)
+        : safeBalance;
+    const extractCost = Math.max(0.01, Number(costs.extract || costs.extract_cost_per_job || 0.5) || 0.5);
+    const fullCost = Math.max(0.01, Number(costs.full || costs.full_cost_per_job || 1) || 1);
 
     return {
         remainingUses: safeBalance,
-        extractCost: 0.5,
-        fullCost: 1,
-        extractJobs: getVerifyRemainingTaskCount(safeBalance, 0.5),
-        fullJobs: getVerifyRemainingTaskCount(safeBalance, 1)
+        remainingExtractUses: safeExtractBalance,
+        remainingFullUses: safeFullBalance,
+        extractCost,
+        fullCost,
+        extractJobs: getVerifyRemainingTaskCount(safeExtractBalance, extractCost),
+        fullJobs: getVerifyRemainingTaskCount(safeFullBalance, fullCost)
     };
 }
 
@@ -652,15 +704,94 @@ function renderVerifyMonitorEmptyState(target, message) {
 }
 
 function normalizeVerifyCredentialList(value) {
-    const values = Array.isArray(value)
-        ? value
-        : String(value || '').split(/[\n,;]+/);
+    const values = [];
+    const appendValue = (entry) => {
+        if (Array.isArray(entry)) {
+            entry.forEach(appendValue);
+            return;
+        }
+        String(entry || '').split(/[\n,;]+/).forEach((part) => {
+            const normalized = String(part || '').trim();
+            if (normalized) values.push(normalized);
+        });
+    };
 
-    return [...new Set(
-        values
-            .map((entry) => String(entry || '').trim())
-            .filter(Boolean)
-    )];
+    appendValue(value);
+    return [...new Set(values)];
+}
+
+function getVerifyProvidersConfig(config = {}) {
+    return config.providers && typeof config.providers === 'object' && !Array.isArray(config.providers)
+        ? config.providers
+        : {};
+}
+
+function getVerifyProviderConfig(config = {}, provider = VERIFY_PROVIDER_AIDONE) {
+    const providers = getVerifyProvidersConfig(config);
+    const normalizedProvider = normalizeVerifyProvider(provider);
+    if (normalizedProvider === VERIFY_PROVIDER_CATCARD) {
+        return providers.catcard || providers['1free'] || providers.pixel || providers.pixel_bridge || {};
+    }
+    return providers.aidone || providers.primary || providers.legacy || {};
+}
+
+function getAidoneVerifyKeys(config = {}) {
+    const providerConfig = getVerifyProviderConfig(config, VERIFY_PROVIDER_AIDONE);
+    return normalizeVerifyCredentialList([
+        providerConfig.verify_cdkeys,
+        providerConfig.cdkeys,
+        providerConfig.apiKeys,
+        providerConfig.api_keys,
+        providerConfig.keys,
+        providerConfig.verify_cdkey,
+        providerConfig.verify_api_key,
+        providerConfig.apiKey,
+        providerConfig.api_key,
+        config.verify_cdkeys,
+        config.verify_cdkey,
+        config.verify_api_key
+    ]);
+}
+
+function getCatcardSubscribeVerifyKeys(config = {}) {
+    const providerConfig = getVerifyProviderConfig(config, VERIFY_PROVIDER_CATCARD);
+    return normalizeVerifyCredentialList([
+        providerConfig.subscribe_cdkeys,
+        providerConfig.full_cdkeys,
+        providerConfig.subscribe_keys,
+        config.verify_provider_catcard_subscribe_cdkeys,
+        config.verify_provider_catcard_full_cdkeys
+    ]);
+}
+
+function getCatcardExtractVerifyKeys(config = {}) {
+    const providerConfig = getVerifyProviderConfig(config, VERIFY_PROVIDER_CATCARD);
+    return normalizeVerifyCredentialList([
+        providerConfig.extract_cdkeys,
+        providerConfig.extract_link_cdkeys,
+        providerConfig.extract_keys,
+        config.verify_provider_catcard_extract_cdkeys
+    ]);
+}
+
+function getActiveVerifyProvider(config = systemConfigCache['verify_settings'] || {}) {
+    return normalizeVerifyProvider(
+        config.active_provider
+        || config.activeProvider
+        || config.verify_active_provider
+        || getCustomDropdownSelectedValue('verifyProviderChannelDropdown', VERIFY_PROVIDER_AIDONE)
+    );
+}
+
+function getActiveVerifyProviderKeys(config = systemConfigCache['verify_settings'] || {}) {
+    const activeProvider = getActiveVerifyProvider(config);
+    if (activeProvider === VERIFY_PROVIDER_CATCARD) {
+        return normalizeVerifyCredentialList([
+            getCatcardSubscribeVerifyKeys(config),
+            getCatcardExtractVerifyKeys(config)
+        ]);
+    }
+    return getAidoneVerifyKeys(config);
 }
 
 function maskVerifyCredential(value) {
@@ -674,17 +805,26 @@ function normalizeVerifyQuotaKeyStates(value) {
     return (Array.isArray(value) ? value : [])
         .map((item) => {
             const remainingUses = Number(item?.remaining_uses ?? item?.balance ?? item?.credits);
+            const remainingExtractUses = Number(item?.remaining_extract_uses);
+            const remainingFullUses = Number(item?.remaining_full_uses);
             const totalUsed = Number(item?.total_used);
             return {
                 api_key: String(item?.api_key || '').trim(),
                 masked_key: String(item?.masked_key || '').trim(),
                 key_name: String(item?.key_name || '').trim(),
+                key_type: String(item?.key_type || item?.keyType || '').trim(),
                 ok: item?.ok === true,
                 status: Number.isFinite(Number(item?.status)) ? Number(item.status) : null,
                 code: String(item?.code || '').trim(),
                 message: String(item?.message || '').trim(),
                 remaining_uses: Number.isFinite(remainingUses)
                     ? Math.max(0, Math.round(remainingUses * 100) / 100)
+                    : null,
+                remaining_extract_uses: Number.isFinite(remainingExtractUses)
+                    ? Math.max(0, Math.round(remainingExtractUses * 100) / 100)
+                    : null,
+                remaining_full_uses: Number.isFinite(remainingFullUses)
+                    ? Math.max(0, Math.round(remainingFullUses * 100) / 100)
                     : null,
                 total_used: Number.isFinite(totalUsed)
                     ? Math.max(0, totalUsed)
@@ -720,6 +860,31 @@ function applyVerifyCredentialInputs(configuredKeys = []) {
     }
 }
 
+function applyVerifyCredentialTextarea(elementId, configuredKeys = []) {
+    const input = document.getElementById(elementId);
+    if (input) {
+        input.value = normalizeVerifyCredentialList(configuredKeys).join('\n');
+    }
+}
+
+function getVerifyProviderStatusElement(provider) {
+    const id = normalizeVerifyProvider(provider) === VERIFY_PROVIDER_CATCARD
+        ? 'cfgVerifyCatcardProviderStatus'
+        : 'cfgVerifyAidoneProviderStatus';
+    return document.getElementById(id);
+}
+
+function syncVerifyProviderStatus(config = systemConfigCache['verify_settings'] || {}) {
+    const activeProvider = getActiveVerifyProvider(config);
+    [VERIFY_PROVIDER_AIDONE, VERIFY_PROVIDER_CATCARD].forEach((provider) => {
+        const element = getVerifyProviderStatusElement(provider);
+        if (!element) return;
+        const isActive = activeProvider === provider;
+        element.classList.toggle('is-active', isActive);
+        element.textContent = isActive ? '当前生效' : '备用通道';
+    });
+}
+
 function syncVerifyKeyPoolMaintenanceState() {
     const cleanupButton = document.querySelector('[data-admin-action="settings-clean-empty-verify-keys"]');
     const cleanupHint = document.getElementById('cfgVerifyKeyPoolCleanupHint');
@@ -729,7 +894,7 @@ function syncVerifyKeyPoolMaintenanceState() {
         cleanupButton.disabled = true;
         cleanupButton.textContent = '识别中...';
         if (cleanupHint) {
-            cleanupHint.textContent = '正在刷新最新额度并识别可清理的 0 余额 key...';
+            cleanupHint.textContent = '正在刷新最新额度并识别可清理的失效或 0 余额 key...';
         }
         return;
     }
@@ -742,41 +907,43 @@ function syncVerifyKeyPoolMaintenanceState() {
 
     cleanupButton.disabled = removableCount <= 0;
     cleanupButton.textContent = removableCount > 0
-        ? `清理 0 余额 CDKey（${removableCount}）`
-        : '清理 0 余额 CDKey';
+        ? `清理失效 / 0 余额 key（${removableCount}）`
+        : '清理失效 / 0 余额 key';
 
     if (!cleanupHint) return;
     if (!keyStates.length) {
-        cleanupHint.textContent = '先刷新 API 余额，再识别可清理的 0 余额 key。';
+        cleanupHint.textContent = '先刷新 API 余额，再识别可清理的失效或 0 余额 key。';
         return;
     }
     if (removableCount > 0) {
         cleanupHint.textContent = failedCount > 0
-            ? `已识别 ${removableCount} 张 0 余额 key，可一键清理；另有 ${failedCount} 张查询失败，暂不自动处理。`
-            : `已识别 ${removableCount} 张 0 余额 key，可一键从池子移除。`;
+            ? `已识别 ${removableCount} 张失效或 0 余额 key，可一键清理；另有 ${failedCount} 张查询失败，暂不自动处理。`
+            : `已识别 ${removableCount} 张失效或 0 余额 key，可一键移除。`;
         return;
     }
     cleanupHint.textContent = failedCount > 0
-        ? `当前没有明确 0 余额 key；另有 ${failedCount} 张查询失败，暂不自动清理。`
-        : '当前没有检测到 0 余额 key。';
+        ? `当前没有明确失效或 0 余额 key；另有 ${failedCount} 张查询失败，暂不自动清理。`
+        : '当前没有检测到失效或 0 余额 key。';
 }
 
 function getVerifySettingsSnapshot() {
     const config = systemConfigCache['verify_settings'] || {};
+    const activeProvider = getActiveVerifyProvider(config);
     const apiKeyInput = document.getElementById('cfgVerifyApiKey');
-    const apiKeys = normalizeVerifyCredentialList([
-        ...(Array.isArray(config.verify_cdkeys) ? config.verify_cdkeys : []),
-        config.verify_cdkey,
-        config.verify_api_key
-    ]);
+    const apiKeys = getActiveVerifyProviderKeys(config);
     const hasKey = Boolean(apiKeys.length)
-        || String(apiKeyInput?.dataset?.hasKey || '').toLowerCase() === 'true';
+        || (
+            activeProvider === VERIFY_PROVIDER_AIDONE
+            && String(apiKeyInput?.dataset?.hasKey || '').toLowerCase() === 'true'
+        );
     const extractPrice = parseInt(config.price_per_verify_extract || config.price_per_verify, 10) || 10;
     const fullPrice = parseInt(config.price_per_verify_full, 10) || Math.max(extractPrice, Math.round(extractPrice * 2));
 
     return {
         enabled: config.enabled !== false,
         hasKey,
+        activeProvider,
+        activeProviderLabel: VERIFY_PROVIDER_LABELS[activeProvider] || VERIFY_PROVIDER_LABELS[VERIFY_PROVIDER_AIDONE],
         keyCount: apiKeys.length,
         modeVisibility: normalizeVerifyModeVisibility(config.mode_visibility),
         pricePerVerify: parseInt(config.price_per_verify, 10) || 10,
@@ -817,15 +984,18 @@ function renderVerifyMonitorOverview() {
         const balance = Number(quotaState.balance || 0);
         const tone = balance > 10 ? 'success' : balance > 0 ? 'warning' : 'danger';
         const remainingUses = Number(quotaState.remaining_uses ?? balance);
+        const remainingExtractUses = Number(quotaState.remaining_extract_uses ?? remainingUses);
+        const remainingFullUses = Number(quotaState.remaining_full_uses ?? remainingUses);
         const remainingExtractJobs = Number(quotaState.remaining_extract_jobs ?? getVerifyRemainingTaskCount(balance, 0.5));
         const remainingFullJobs = Number(quotaState.remaining_full_jobs ?? getVerifyRemainingTaskCount(balance, 1));
+        const providerLabel = String(quotaState.provider_label || verifyConfig.activeProviderLabel || '').trim();
         updateVerifyMonitorOverviewCard(
             'verifyMonitorQuotaPanel',
             'verifyMonitorQuotaValue',
             'verifyMonitorQuotaMeta',
             tone,
             `${formatVerifyMonitorDecimal(remainingUses)} 额度`,
-            `${Number(quotaState.key_count || 0) > 1 ? 'CDKey 池' : 'CDKey'}：${quotaState.key_name || '未命名'} · 提链约 ${formatVerifyMonitorInteger(remainingExtractJobs)} 次 · 全流程约 ${formatVerifyMonitorInteger(remainingFullJobs)} 次 · 已用 ${formatVerifyMonitorInteger(quotaState.total_used)} 次`
+            `${providerLabel ? `${providerLabel} · ` : ''}${Number(quotaState.key_count || 0) > 1 ? 'CDKey 池' : 'CDKey'}：${quotaState.key_name || '未命名'} · 提链 ${formatVerifyMonitorDecimal(remainingExtractUses)} 额度 / ${formatVerifyMonitorInteger(remainingExtractJobs)} 次 · 全流程 ${formatVerifyMonitorDecimal(remainingFullUses)} 额度 / ${formatVerifyMonitorInteger(remainingFullJobs)} 次 · 已用 ${formatVerifyMonitorInteger(quotaState.total_used)} 次`
         );
     } else if (quotaState.status === 'loading') {
         updateVerifyMonitorOverviewCard(
@@ -28445,10 +28615,16 @@ function renderVerifyConfig() {
         enabled: true,
         verify_api_key: '',
         verify_cdkeys: [],
-        verify_api_base_url: ''
+        verify_api_base_url: '',
+        active_provider: VERIFY_PROVIDER_AIDONE,
+        providers: {}
     };
     const extractPrice = Number(config.price_per_verify_extract || config.price_per_verify) || 10;
     const fullPrice = Number(config.price_per_verify_full) || Math.max(extractPrice, Math.round(extractPrice * 2));
+    const activeProvider = getActiveVerifyProvider(config);
+    const providersConfig = getVerifyProvidersConfig(config);
+    const aidoneProviderConfig = getVerifyProviderConfig(config, VERIFY_PROVIDER_AIDONE);
+    const catcardProviderConfig = getVerifyProviderConfig(config, VERIFY_PROVIDER_CATCARD);
 
     const priceInput = document.getElementById('cfgVerifyPrice');
     if (priceInput) priceInput.value = extractPrice;
@@ -28466,21 +28642,45 @@ function renderVerifyConfig() {
         getVerifyModeVisibilityDropdownLabel(modeVisibility)
     );
 
+    applyCustomDropdownValue(
+        'verifyProviderChannelDropdown',
+        activeProvider,
+        getVerifyProviderDropdownLabel(activeProvider)
+    );
+
     const apiKeyInput = document.getElementById('cfgVerifyApiKey');
-    const configuredKeys = normalizeVerifyCredentialList([
-        ...(Array.isArray(config.verify_cdkeys) ? config.verify_cdkeys : []),
-        config.verify_cdkey,
-        config.verify_api_key
-    ]);
+    const configuredKeys = getAidoneVerifyKeys(config);
     if (apiKeyInput) {
         applyVerifyCredentialInputs(configuredKeys);
     }
 
     const apiBaseInput = document.getElementById('cfgVerifyApiBase');
     if (apiBaseInput) {
-        apiBaseInput.value = String(config.verify_api_base_url || '').trim().replace(/\/+$/, '');
+        apiBaseInput.value = String(
+            aidoneProviderConfig.api_base_url
+            || aidoneProviderConfig.apiBaseUrl
+            || config.verify_api_base_url
+            || 'https://aidone.lol'
+        ).trim().replace(/\/+$/, '');
     }
 
+    const catcardApiBaseInput = document.getElementById('cfgVerifyCatcardApiBase');
+    if (catcardApiBaseInput) {
+        catcardApiBaseInput.value = String(
+            catcardProviderConfig.api_base_url
+            || catcardProviderConfig.apiBaseUrl
+            || config.verify_catcard_api_base_url
+            || 'https://1free.qzz.io'
+        ).trim().replace(/\/+$/, '');
+    }
+
+    applyVerifyCredentialTextarea('cfgVerifyCatcardSubscribeKeys', getCatcardSubscribeVerifyKeys(config));
+    applyVerifyCredentialTextarea('cfgVerifyCatcardExtractKeys', getCatcardExtractVerifyKeys(config));
+    config.providers = providersConfig;
+    config.active_provider = activeProvider;
+    config.verify_active_provider = activeProvider;
+    systemConfigCache['verify_settings'] = config;
+    syncVerifyProviderStatus(config);
     renderVerifyMonitorPanel();
     refreshVerifyMonitor();
 }
@@ -28603,11 +28803,20 @@ async function saveVerifyConfig(options = {}) {
     const apiKeyInput = document.getElementById('cfgVerifyApiKey');
     const apiKeysInput = document.getElementById('cfgVerifyApiKeys');
     const apiBaseInput = document.getElementById('cfgVerifyApiBase');
+    const catcardApiBaseInput = document.getElementById('cfgVerifyCatcardApiBase');
+    const catcardSubscribeInput = document.getElementById('cfgVerifyCatcardSubscribeKeys');
+    const catcardExtractInput = document.getElementById('cfgVerifyCatcardExtractKeys');
     const preserveExistingWhenEmpty = options?.preserveExistingWhenEmpty !== false;
 
     const config = systemConfigCache['verify_settings'] || {};
+    const previousProviders = getVerifyProvidersConfig(config);
+    const previousAidoneConfig = getVerifyProviderConfig(config, VERIFY_PROVIDER_AIDONE);
+    const previousCatcardConfig = getVerifyProviderConfig(config, VERIFY_PROVIDER_CATCARD);
     const extractPrice = Math.max(1, parseInt(priceInput?.value, 10) || Number(config.price_per_verify_extract || config.price_per_verify) || 10);
     const fullPrice = Math.max(extractPrice, parseInt(fullPriceInput?.value, 10) || Number(config.price_per_verify_full) || Math.round(extractPrice * 2));
+    const activeProvider = normalizeVerifyProvider(
+        getCustomDropdownSelectedValue('verifyProviderChannelDropdown', config.active_provider || config.verify_active_provider || VERIFY_PROVIDER_AIDONE)
+    );
 
     if (priceInput) {
         config.price_per_verify = extractPrice;
@@ -28641,17 +28850,82 @@ async function saveVerifyConfig(options = {}) {
         ...importedKeys,
         singleKeyInputValue,
         ...((preserveExistingWhenEmpty && !importedKeys.length && !singleKeyInputValue)
-            ? [config.verify_cdkey, config.verify_api_key]
+            ? [getAidoneVerifyKeys(config)]
             : [])
     ]);
+    const catcardSubscribeKeys = normalizeVerifyCredentialList([
+        catcardSubscribeInput?.value || '',
+        ...((preserveExistingWhenEmpty && !normalizeVerifyCredentialList(catcardSubscribeInput?.value || '').length)
+            ? [getCatcardSubscribeVerifyKeys(config)]
+            : [])
+    ]);
+    const catcardExtractKeys = normalizeVerifyCredentialList([
+        catcardExtractInput?.value || '',
+        ...((preserveExistingWhenEmpty && !normalizeVerifyCredentialList(catcardExtractInput?.value || '').length)
+            ? [getCatcardExtractVerifyKeys(config)]
+            : [])
+    ]);
+    const catcardAllKeys = normalizeVerifyCredentialList([catcardSubscribeKeys, catcardExtractKeys]);
     config.verify_cdkeys = finalKeys;
     config.verify_cdkey = finalKeys[0] || '';
     config.verify_api_key = finalKeys[0] || '';
+    config.active_provider = activeProvider;
+    config.verify_active_provider = activeProvider;
 
+    let aidoneApiBaseUrl = String(previousAidoneConfig.api_base_url || previousAidoneConfig.apiBaseUrl || config.verify_api_base_url || 'https://aidone.lol').trim().replace(/\/+$/, '');
     if (apiBaseInput) {
-        config.verify_api_base_url = String(apiBaseInput.value || '').trim().replace(/\/+$/, '');
-        apiBaseInput.value = config.verify_api_base_url;
+        aidoneApiBaseUrl = String(apiBaseInput.value || '').trim().replace(/\/+$/, '') || 'https://aidone.lol';
+        apiBaseInput.value = aidoneApiBaseUrl;
     }
+    config.verify_api_base_url = aidoneApiBaseUrl;
+
+    let catcardApiBaseUrl = String(previousCatcardConfig.api_base_url || previousCatcardConfig.apiBaseUrl || config.verify_catcard_api_base_url || 'https://1free.qzz.io').trim().replace(/\/+$/, '');
+    if (catcardApiBaseInput) {
+        catcardApiBaseUrl = String(catcardApiBaseInput.value || '').trim().replace(/\/+$/, '') || 'https://1free.qzz.io';
+        catcardApiBaseInput.value = catcardApiBaseUrl;
+    }
+    config.verify_catcard_api_base_url = catcardApiBaseUrl;
+    config.verify_provider_catcard_subscribe_cdkeys = catcardSubscribeKeys;
+    config.verify_provider_catcard_full_cdkeys = catcardSubscribeKeys;
+    config.verify_provider_catcard_extract_cdkeys = catcardExtractKeys;
+    config.providers = {
+        ...previousProviders,
+        aidone: {
+            ...previousAidoneConfig,
+            enabled: previousAidoneConfig.enabled !== false,
+            label: VERIFY_PROVIDER_LABELS[VERIFY_PROVIDER_AIDONE],
+            adapter: 'aidone_openapi',
+            api_base_url: aidoneApiBaseUrl,
+            cdkeys: finalKeys,
+            verify_cdkeys: finalKeys,
+            apiKeys: finalKeys,
+            api_key: finalKeys[0] || ''
+        },
+        catcard: {
+            ...previousCatcardConfig,
+            enabled: previousCatcardConfig.enabled !== false,
+            label: VERIFY_PROVIDER_LABELS[VERIFY_PROVIDER_CATCARD],
+            adapter: 'pixel_bridge_rest',
+            api_base_url: catcardApiBaseUrl,
+            cdkeys: catcardAllKeys,
+            apiKeys: catcardAllKeys,
+            subscribe_cdkeys: catcardSubscribeKeys,
+            full_cdkeys: catcardSubscribeKeys,
+            extract_cdkeys: catcardExtractKeys,
+            extract_link_cdkeys: catcardExtractKeys,
+            key_type_hints: {
+                ...(previousCatcardConfig.key_type_hints && typeof previousCatcardConfig.key_type_hints === 'object' ? previousCatcardConfig.key_type_hints : {}),
+                ...Object.fromEntries(catcardSubscribeKeys.map((key) => [key, 'subscribe'])),
+                ...Object.fromEntries(catcardExtractKeys.map((key) => [key, 'extract_link']))
+            }
+        }
+    };
+    applyCustomDropdownValue(
+        'verifyProviderChannelDropdown',
+        activeProvider,
+        getVerifyProviderDropdownLabel(activeProvider)
+    );
+    syncVerifyProviderStatus(config);
 
     const success = await saveConfig('verify_settings', config);
     let publicModeSynced = true;
@@ -28669,7 +28943,7 @@ async function saveVerifyConfig(options = {}) {
     }
 
     if (success && publicModeSynced) {
-        const successMessage = options?.successMessage || 'Google One / aidone 配置已保存';
+        const successMessage = options?.successMessage || `Google One / ${getVerifyProviderDropdownLabel(activeProvider)} 配置已保存`;
         if (options?.toast !== false && typeof showToast === 'function') {
             showToast(successMessage, 'success');
         }
@@ -28684,9 +28958,10 @@ async function saveVerifyConfig(options = {}) {
 
     // Update cache
     systemConfigCache['verify_settings'] = config;
+    const activeKeys = getActiveVerifyProviderKeys(config);
     verifyMonitorState.quota = {
         ...(verifyMonitorState.quota || getDefaultVerifyMonitorState().quota),
-        key_states: normalizeVerifyQuotaKeyStates(verifyMonitorState.quota?.key_states).filter((item) => finalKeys.includes(item.api_key))
+        key_states: normalizeVerifyQuotaKeyStates(verifyMonitorState.quota?.key_states).filter((item) => activeKeys.includes(item.api_key))
     };
     renderVerifyMonitorPanel();
     refreshVerifyMonitor(true).catch((error) => {
@@ -28701,13 +28976,15 @@ window.saveVerifyConfig = saveVerifyConfig;
 
 async function cleanZeroBalanceVerifyKeys() {
     const cleanupButton = document.querySelector('[data-admin-action="settings-clean-empty-verify-keys"]');
-    const previousButtonLabel = cleanupButton?.textContent || '清理 0 余额 CDKey';
+    const previousButtonLabel = cleanupButton?.textContent || '清理失效 / 0 余额 key';
     const previousConfig = systemConfigCache['verify_settings'] || {};
-    const previousKeys = normalizeVerifyCredentialList([
-        ...(Array.isArray(previousConfig.verify_cdkeys) ? previousConfig.verify_cdkeys : []),
-        previousConfig.verify_cdkey,
-        previousConfig.verify_api_key
-    ]);
+    const activeProvider = getActiveVerifyProvider(previousConfig);
+    const previousAidoneKeys = getAidoneVerifyKeys(previousConfig);
+    const previousCatcardSubscribeKeys = getCatcardSubscribeVerifyKeys(previousConfig);
+    const previousCatcardExtractKeys = getCatcardExtractVerifyKeys(previousConfig);
+    const previousKeys = activeProvider === VERIFY_PROVIDER_CATCARD
+        ? normalizeVerifyCredentialList([previousCatcardSubscribeKeys, previousCatcardExtractKeys])
+        : previousAidoneKeys;
 
     try {
         verifyKeyPoolCleanupInFlight = true;
@@ -28719,7 +28996,7 @@ async function cleanZeroBalanceVerifyKeys() {
         const quotaState = await checkVerifyQuota();
         const removableStates = getZeroBalanceVerifyQuotaKeyStates(quotaState);
         if (!removableStates.length) {
-            showToast('当前没有检测到可清理的 0 余额 CDKey', 'info');
+            showToast('当前没有检测到可清理的失效或 0 余额 key', 'info');
             return false;
         }
 
@@ -28728,25 +29005,41 @@ async function cleanZeroBalanceVerifyKeys() {
         const removedCount = previousKeys.length - nextKeys.length;
 
         if (removedCount <= 0) {
-            showToast('当前检测到的 0 余额 key 不在 CDKey 池里，无需清理', 'info');
+            showToast('当前检测到的失效或 0 余额 key 不在当前配置里，无需清理', 'info');
             return false;
         }
 
-        applyVerifyCredentialInputs(nextKeys);
+        if (activeProvider === VERIFY_PROVIDER_CATCARD) {
+            applyVerifyCredentialTextarea(
+                'cfgVerifyCatcardSubscribeKeys',
+                previousCatcardSubscribeKeys.filter((key) => !removableKeys.has(key))
+            );
+            applyVerifyCredentialTextarea(
+                'cfgVerifyCatcardExtractKeys',
+                previousCatcardExtractKeys.filter((key) => !removableKeys.has(key))
+            );
+        } else {
+            applyVerifyCredentialInputs(nextKeys);
+        }
         const success = await saveVerifyConfig({
             preserveExistingWhenEmpty: false,
             successMessage: removedCount === previousKeys.length
-                ? `已清空 ${removedCount} 张 0 余额 CDKey`
-                : `已清理 ${removedCount} 张 0 余额 CDKey`
+                ? `已清空 ${removedCount} 张失效或 0 余额 key`
+                : `已清理 ${removedCount} 张失效或 0 余额 key`
         });
 
         if (!success) {
-            throw new Error('保存 CDKey 池失败');
+            throw new Error('保存可用 key 配置失败');
         }
 
         return true;
     } catch (error) {
-        applyVerifyCredentialInputs(previousKeys);
+        if (activeProvider === VERIFY_PROVIDER_CATCARD) {
+            applyVerifyCredentialTextarea('cfgVerifyCatcardSubscribeKeys', previousCatcardSubscribeKeys);
+            applyVerifyCredentialTextarea('cfgVerifyCatcardExtractKeys', previousCatcardExtractKeys);
+        } else {
+            applyVerifyCredentialInputs(previousKeys);
+        }
         console.error('[Config] Clean zero balance verify keys failed:', error);
         showToast('清理失败: ' + (error.message || '未知错误'), 'error');
         return false;
@@ -28777,6 +29070,7 @@ async function checkVerifyQuota() {
         status: 'loading',
         message: '查询中...'
     };
+    syncVerifyQuotaRefreshButtonState('loading');
     renderVerifyQuotaState(quotaEl, 'neutral', 'fas fa-spinner fa-spin', '查询中...');
     renderVerifyMonitorPanel();
 
@@ -28800,21 +29094,33 @@ async function checkVerifyQuota() {
             const balance = Number(data.balance ?? data.credits ?? 0);
             const tone = balance > 5 ? 'success' : balance > 0 ? 'warning' : 'danger';
             const display = Number.isInteger(balance) ? balance : balance.toFixed(1);
-            const usageSummary = buildVerifyQuotaUsageSummary(balance);
+            const providerLabel = String(data.provider_label || '').trim();
+            const usageSummary = buildVerifyQuotaUsageSummary(balance, {
+                remaining_extract_uses: data.remaining_extract_uses,
+                remaining_full_uses: data.remaining_full_uses,
+                extract_cost_per_job: data.extract_cost_per_job,
+                full_cost_per_job: data.full_cost_per_job
+            });
+            const quotaLabel = providerLabel ? `${providerLabel} · 总${display}` : `总${display}`;
             renderVerifyQuotaState(
                 quotaEl,
                 tone,
                 'fas fa-gem',
-                `${display} · 提${usageSummary.extractJobs} / 全${usageSummary.fullJobs}`,
+                `${quotaLabel} · 提${usageSummary.extractJobs} / 全${usageSummary.fullJobs}`,
                 {
                     emphasized: true,
-                    title: `剩余额度 ${formatVerifyMonitorDecimal(usageSummary.remainingUses)} · 提链约 ${formatVerifyMonitorInteger(usageSummary.extractJobs)} 次 · 全流程约 ${formatVerifyMonitorInteger(usageSummary.fullJobs)} 次`
+                    title: `${providerLabel ? `${providerLabel} · ` : ''}总剩余额度 ${formatVerifyMonitorDecimal(usageSummary.remainingUses)} · 提链可用 ${formatVerifyMonitorDecimal(usageSummary.remainingExtractUses)} 额度 / ${formatVerifyMonitorInteger(usageSummary.extractJobs)} 次 · 全流程可用 ${formatVerifyMonitorDecimal(usageSummary.remainingFullUses)} 额度 / ${formatVerifyMonitorInteger(usageSummary.fullJobs)} 次`
                 }
             );
             verifyMonitorState.quota = {
                 status: 'ready',
+                provider: String(data.provider || '').trim(),
+                provider_label: providerLabel,
+                adapter: String(data.adapter || '').trim(),
                 balance,
                 remaining_uses: Number(data.remaining_uses ?? balance),
+                remaining_extract_uses: Number(data.remaining_extract_uses ?? usageSummary.remainingExtractUses),
+                remaining_full_uses: Number(data.remaining_full_uses ?? usageSummary.remainingFullUses),
                 remaining_extract_jobs: Number(data.remaining_extract_jobs ?? usageSummary.extractJobs),
                 remaining_full_jobs: Number(data.remaining_full_jobs ?? usageSummary.fullJobs),
                 total_used: Number(data.total_used || 0),
@@ -28853,6 +29159,7 @@ async function checkVerifyQuota() {
         if (timeoutId) {
             window.clearTimeout(timeoutId);
         }
+        syncVerifyQuotaRefreshButtonState('idle');
     }
 
     renderVerifyMonitorPanel();
@@ -29430,6 +29737,20 @@ window.selectDropdownOption = function (dropdownId, value, displayText) {
             getVerifyModeVisibilityDropdownLabel(config.mode_visibility)
         );
         void saveVerifyConfig();
+    } else if (dropdownId === 'verifyProviderChannelDropdown') {
+        const config = systemConfigCache['verify_settings'] || {};
+        config.active_provider = normalizeVerifyProvider(value);
+        config.verify_active_provider = config.active_provider;
+        systemConfigCache['verify_settings'] = config;
+        applyCustomDropdownValue(
+            'verifyProviderChannelDropdown',
+            config.active_provider,
+            getVerifyProviderDropdownLabel(config.active_provider)
+        );
+        syncVerifyProviderStatus(config);
+        void saveVerifyConfig({
+            successMessage: `Google One 已切换到 ${getVerifyProviderDropdownLabel(config.active_provider)}`
+        });
     }
 };
 

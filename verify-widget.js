@@ -1,6 +1,6 @@
 /**
  * Google One Job Widget
- * Submit a single Google account job and poll job status
+ * Submit Google account jobs and poll job status
  */
 
 (function () {
@@ -23,10 +23,14 @@
     const VERIFY_QUOTA_CACHE_KEY = 'verify_api_quota_cache_v1';
     const VERIFY_STYLE_DECL_KEY = 'style';
     const VERIFY_HISTORY_SELECT = 'id, user_id, verification_id, status, message, points_deducted, created_at, site';
+    const VERIFY_BATCH_MAX_ENTRIES = 50;
+    const VERIFY_BATCH_SUBMIT_CONCURRENCY = 2;
 
     let currentUser = null;
     let userBalance = 0;
     let apiCredits = -1;
+    let apiQuotaSummary = null;
+    let apiUsageCosts = { extract: 0.5, full: 1 };
     let isLoading = false;
     let batchStats = { success: 0, failed: 0, total: 0 };
     let activeTasks = new Map(); // jobId -> { index, email, timer }
@@ -38,6 +42,7 @@
     let quotaRefreshTimer = null;
     let quotaRefreshPending = false;
     let previewMode = 'success';
+    let verifySubmitMode = 'single';
     let previewTimers = [];
     let ringResetTimer = null;
     let historyRepairInFlight = false;
@@ -57,6 +62,8 @@
         api_key_missing: { zh: '服务端未配置 API Key', en: 'API key is not configured on the server' },
         redeem_not_supported: { zh: '新版 API 不支持卡密兑换', en: 'Redeem is not supported by the new API' },
         cancel_not_supported: { zh: '新版 API 不支持取消任务', en: 'Cancel is not supported by the new API' },
+        provider_action_not_supported: { zh: '当前通道不支持这个任务操作', en: 'This channel does not support this job action' },
+        job_action_failed: { zh: '任务操作失败', en: 'Job action failed' },
         INTERNAL_ERROR: { zh: '系统内部错误', en: 'Internal error' },
         DEVICE_UNAVAILABLE: { zh: '设备不可用', en: 'Device unavailable' },
         DEVICE_PREP_FAILED: { zh: '设备准备失败', en: 'Device preparation failed' },
@@ -101,6 +108,13 @@
         ];
     }
 
+    function buildVerifyActionEndpoints() {
+        return [
+            '/api/public?scope=verify&route=action',
+            `${CONFIG.nodeServerUrl}/api/verify/action`
+        ];
+    }
+
     function normalizeVerifyClientStatus(data = {}) {
         const rawStatus = typeof data === 'string'
             ? data
@@ -135,24 +149,159 @@
         return normalized;
     }
 
+    function pickFiniteNumber(...values) {
+        for (const value of values) {
+            if (value === null || value === undefined || value === '') {
+                continue;
+            }
+            const num = Number(value);
+            if (Number.isFinite(num)) {
+                return num;
+            }
+        }
+        return null;
+    }
+
+    function normalizeNonNegativeAmount(value) {
+        const num = Number(value);
+        if (!Number.isFinite(num) || num < 0) return null;
+        return Math.max(0, Math.round(num * 100) / 100);
+    }
+
+    function normalizeJobCount(value) {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return null;
+        return Math.max(0, Math.floor(num + 1e-9));
+    }
+
     function readCachedApiQuota(site = getCurrentSiteValue()) {
         try {
             const raw = localStorage.getItem(getQuotaCacheKey(site));
             if (!raw) return null;
             const parsed = JSON.parse(raw);
-            const value = Number(parsed?.balance ?? parsed?.credits ?? parsed?.remaining_uses);
-            return Number.isFinite(value) ? value : null;
+            const value = pickFiniteNumber(parsed?.balance, parsed?.credits, parsed?.remaining_uses, parsed?.remainingUses);
+            if (!Number.isFinite(value)) return null;
+            return {
+                balance: value,
+                remaining_uses: value,
+                remaining_extract_uses: pickFiniteNumber(parsed?.remaining_extract_uses, parsed?.remainingExtractUses),
+                remaining_full_uses: pickFiniteNumber(parsed?.remaining_full_uses, parsed?.remainingFullUses),
+                remaining_extract_jobs: pickFiniteNumber(parsed?.remaining_extract_jobs, parsed?.remainingExtractJobs, parsed?.extractJobs),
+                remaining_full_jobs: pickFiniteNumber(parsed?.remaining_full_jobs, parsed?.remainingFullJobs, parsed?.fullJobs),
+                extractCostPerJob: pickFiniteNumber(parsed?.extract_cost_per_job, parsed?.extractCostPerJob),
+                fullCostPerJob: pickFiniteNumber(parsed?.full_cost_per_job, parsed?.fullCostPerJob)
+            };
         } catch (_) {
             return null;
         }
     }
 
-    function persistCachedApiQuota(value, site = getCurrentSiteValue()) {
+    function normalizeApiUsageCosts(costs = {}) {
+        const extract = Number(costs.extract ?? costs.extract_cost_per_job ?? costs.extractCostPerJob);
+        const full = Number(costs.full ?? costs.full_cost_per_job ?? costs.fullCostPerJob);
+        return {
+            extract: Number.isFinite(extract) && extract > 0 ? extract : 0.5,
+            full: Number.isFinite(full) && full > 0 ? full : 1
+        };
+    }
+
+    function applyApiUsageCosts(costs = {}) {
+        apiUsageCosts = normalizeApiUsageCosts({
+            ...apiUsageCosts,
+            ...costs
+        });
+    }
+
+    function normalizeApiQuotaSummary(data = {}, fallbackBalance = null) {
+        const rawExtractJobs = pickFiniteNumber(data?.remaining_extract_jobs, data?.remainingExtractJobs, data?.extractJobs);
+        const rawFullJobs = pickFiniteNumber(data?.remaining_full_jobs, data?.remainingFullJobs, data?.fullJobs);
+        const rawExtractUses = pickFiniteNumber(data?.remaining_extract_uses, data?.remainingExtractUses);
+        const rawFullUses = pickFiniteNumber(data?.remaining_full_uses, data?.remainingFullUses);
+        const extractCost = getTaskTypeUsageCost('extract');
+        const fullCost = getTaskTypeUsageCost('full');
+        const typedExtractUses = normalizeNonNegativeAmount(rawExtractUses);
+        const typedFullUses = normalizeNonNegativeAmount(rawFullUses);
+        const typedExtractUsesFromJobs = rawExtractJobs !== null
+            ? normalizeNonNegativeAmount(normalizeJobCount(rawExtractJobs) * extractCost)
+            : null;
+        const typedFullUsesFromJobs = rawFullJobs !== null
+            ? normalizeNonNegativeAmount(normalizeJobCount(rawFullJobs) * fullCost)
+            : null;
+        const hasTypedQuota = rawExtractJobs !== null
+            || rawFullJobs !== null
+            || rawExtractUses !== null
+            || rawFullUses !== null;
+
+        let rawBalance = pickFiniteNumber(
+            data?.remaining_uses,
+            data?.remainingUses,
+            data?.balance,
+            data?.credits,
+            fallbackBalance
+        );
+        if (rawBalance === null && hasTypedQuota) {
+            rawBalance = [
+                typedExtractUses ?? typedExtractUsesFromJobs,
+                typedFullUses ?? typedFullUsesFromJobs
+            ].reduce((sum, value) => sum + (Number.isFinite(Number(value)) ? Number(value) : 0), 0);
+        }
+        const remainingUses = normalizeNonNegativeAmount(rawBalance);
+        if (remainingUses === null) {
+            return null;
+        }
+
+        const extractJobs = rawExtractJobs !== null
+            ? normalizeJobCount(rawExtractJobs)
+            : typedExtractUses !== null
+                ? getRemainingTaskCount(typedExtractUses, 'extract')
+                : hasTypedQuota
+                    ? 0
+                    : getRemainingTaskCount(remainingUses, 'extract');
+        const fullJobs = rawFullJobs !== null
+            ? normalizeJobCount(rawFullJobs)
+            : typedFullUses !== null
+                ? getRemainingTaskCount(typedFullUses, 'full')
+                : hasTypedQuota
+                    ? 0
+                    : getRemainingTaskCount(remainingUses, 'full');
+
+        return {
+            remainingUses,
+            remainingExtractUses: typedExtractUses
+                ?? typedExtractUsesFromJobs
+                ?? (hasTypedQuota ? 0 : remainingUses),
+            remainingFullUses: typedFullUses
+                ?? typedFullUsesFromJobs
+                ?? (hasTypedQuota ? 0 : remainingUses),
+            extractJobs: extractJobs ?? 0,
+            fullJobs: fullJobs ?? 0,
+            hasTypedQuota
+        };
+    }
+
+    function formatApiQuotaShortageMessage(shortage, totalRequiredUses = 0, prefix = '本次需要接口额度') {
+        const taskLabel = getTaskTypeLabel(shortage?.taskType || 'extract');
+        const neededJobs = Math.max(1, Number(shortage?.neededJobs) || 1);
+        const availableJobs = Math.max(0, Number(shortage?.availableJobs) || 0);
+        const remainingUses = formatBalanceValue(shortage?.quotaSummary?.remainingUses);
+        return `${t('verify.needApiQuota', prefix)}: ${formatBalanceValue(totalRequiredUses)} / ${t('verify.remaining', '当前余额')}: ${remainingUses} · ${taskLabel} ${availableJobs}/${neededJobs} ${t('verify.countTimes', '次')}`;
+    }
+
+    function persistCachedApiQuota(value, site = getCurrentSiteValue(), costs = apiUsageCosts, quotaSummary = null) {
         try {
             const balance = Number(value);
             if (!Number.isFinite(balance)) return;
+            const normalizedCosts = normalizeApiUsageCosts(costs);
+            const normalizedSummary = normalizeApiQuotaSummary(quotaSummary || { balance }, balance);
             localStorage.setItem(getQuotaCacheKey(site), JSON.stringify({
                 balance: Math.max(0, Math.round(balance * 100) / 100),
+                remaining_uses: normalizedSummary?.remainingUses,
+                remaining_extract_uses: normalizedSummary?.remainingExtractUses,
+                remaining_full_uses: normalizedSummary?.remainingFullUses,
+                remaining_extract_jobs: normalizedSummary?.extractJobs,
+                remaining_full_jobs: normalizedSummary?.fullJobs,
+                extract_cost_per_job: normalizedCosts.extract,
+                full_cost_per_job: normalizedCosts.full,
                 checked_at: new Date().toISOString()
             }));
         } catch (_) {
@@ -222,6 +371,10 @@
         return `<i class="fas fa-paper-plane"></i> ${label}`;
     }
 
+    function normalizeSubmitMode(value) {
+        return String(value || '').trim().toLowerCase() === 'batch' ? 'batch' : 'single';
+    }
+
     function normalizeTaskType(value, fallback = 'extract') {
         const normalized = String(value || '').trim().toLowerCase();
         if (normalized === 'full') return 'full';
@@ -256,7 +409,8 @@
     }
 
     function getTaskTypeUsageCost(taskType = 'extract') {
-        return normalizeTaskType(taskType) === 'full' ? 1 : 0.5;
+        const usageCosts = normalizeApiUsageCosts(apiUsageCosts);
+        return normalizeTaskType(taskType) === 'full' ? usageCosts.full : usageCosts.extract;
     }
 
     function getTaskPollTimeoutMs(taskType = 'extract') {
@@ -280,6 +434,15 @@
         return normalizeTaskType(taskType) === 'full'
             ? t('verify.startFullTask', '提交包绑卡任务')
             : t('verify.startExtractTask', '提交提链任务');
+    }
+
+    function getSubmitButtonLabel(taskType = getSelectedTaskType()) {
+        if (verifySubmitMode === 'batch') {
+            return normalizeTaskType(taskType) === 'full'
+                ? t('verify.startBatchFullTask', '批量提交包绑卡')
+                : t('verify.startBatchExtractTask', '批量提交提链');
+        }
+        return getTaskTypeSubmitLabel(taskType);
     }
 
     function getTaskTypeSuccessText(taskType = 'extract', hasLink = false) {
@@ -345,7 +508,7 @@
 
         if (singleCost) singleCost.textContent = modeMeta.price;
         if (submitBtn && !isLoading) {
-            submitBtn.innerHTML = buildVerifySubmitButtonMarkup(getTaskTypeSubmitLabel(taskType));
+            submitBtn.innerHTML = buildVerifySubmitButtonMarkup(getSubmitButtonLabel(taskType));
         }
         if (taskTypeNote) {
             taskTypeNote.textContent = getTaskTypeGuideText(taskType);
@@ -595,6 +758,14 @@
                     setSelectedTaskType('extract');
                     syncRingStateFromInputs();
                     break;
+                case 'switch-full-mode':
+                    setSelectedTaskType('full');
+                    syncRingStateFromInputs();
+                    break;
+                case 'set-submit-mode':
+                    setSubmitMode(actionEl.dataset.verifyMode || 'single');
+                    syncRingStateFromInputs();
+                    break;
                 case 'login-gate':
                     openLoginGate();
                     break;
@@ -615,6 +786,12 @@
                     break;
                 case 'copy-history-id':
                     copyId(actionEl);
+                    break;
+                case 'cancel-task':
+                    void handleHistoryJobAction('cancel_task', actionEl);
+                    break;
+                case 'purchase-failed-link':
+                    void handleHistoryJobAction('purchase_failed_link', actionEl);
                     break;
                 default:
                     break;
@@ -777,6 +954,32 @@
         });
     }
 
+    function updateSubmitModeUi() {
+        const mode = normalizeSubmitMode(verifySubmitMode);
+        const modeTabs = document.querySelector('.verify-submit-mode-tabs');
+        if (modeTabs) {
+            modeTabs.dataset.verifySubmitMode = mode;
+        }
+
+        document.querySelectorAll('.verify-submit-mode-btn').forEach((btn) => {
+            const active = btn.dataset.verifyMode === mode;
+            btn.classList.toggle('active', active);
+            btn.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+
+        const singleFields = document.getElementById('verifySingleFields');
+        const batchField = document.getElementById('verifyBatchField');
+        setVerifyHidden(singleFields, mode !== 'single');
+        setVerifyHidden(batchField, mode !== 'batch');
+        updateTaskTypeUi();
+        updateQuotaDisplay();
+    }
+
+    function setSubmitMode(mode = 'single') {
+        verifySubmitMode = normalizeSubmitMode(mode);
+        updateSubmitModeUi();
+    }
+
     function setPreviewMode(mode) {
         previewMode = mode === 'error' ? 'error' : 'success';
         updatePreviewModeUI();
@@ -812,38 +1015,87 @@
         return Math.max(0, Math.floor((numericBalance + 1e-9) / usageCost));
     }
 
-    function buildQuotaSummary(balance) {
-        const numericBalance = Number(balance);
-        if (!Number.isFinite(numericBalance) || numericBalance < 0) {
-            return null;
+    function buildQuotaSummary(balance, summary = apiQuotaSummary) {
+        const normalizedSummary = normalizeApiQuotaSummary(summary, balance);
+        if (normalizedSummary) {
+            return normalizedSummary;
         }
 
-        const safeBalance = Math.max(0, Math.round(numericBalance * 100) / 100);
-        return {
-            remainingUses: safeBalance,
-            extractJobs: getRemainingTaskCount(safeBalance, 'extract'),
-            fullJobs: getRemainingTaskCount(safeBalance, 'full')
-        };
+        return normalizeApiQuotaSummary({ balance });
+    }
+
+    function getQuotaAvailableJobs(quotaSummary = null, taskType = 'extract') {
+        if (!quotaSummary) return Infinity;
+        return normalizeTaskType(taskType) === 'full'
+            ? Number(quotaSummary.fullJobs)
+            : Number(quotaSummary.extractJobs);
+    }
+
+    function hasEnoughApiQuotaForTaskCount(taskType = 'extract', taskCount = 1, quotaSummary = null) {
+        if (!quotaSummary) return true;
+        const availableJobs = getQuotaAvailableJobs(quotaSummary, taskType);
+        return Number.isFinite(availableJobs)
+            ? availableJobs >= Math.max(1, Number(taskCount) || 1)
+            : true;
+    }
+
+    function getEntryCountsByTaskType(entries = []) {
+        return entries.reduce((counts, entry) => {
+            const taskType = normalizeTaskType(entry?.taskType);
+            counts[taskType] = (counts[taskType] || 0) + 1;
+            return counts;
+        }, { extract: 0, full: 0 });
+    }
+
+    function findApiQuotaShortageForEntries(entries = [], quotaSummary = buildQuotaSummary(apiCredits)) {
+        if (!quotaSummary) return null;
+        const counts = getEntryCountsByTaskType(entries);
+        for (const taskType of ['extract', 'full']) {
+            if (!counts[taskType]) continue;
+            const availableJobs = getQuotaAvailableJobs(quotaSummary, taskType);
+            if (Number.isFinite(availableJobs) && availableJobs < counts[taskType]) {
+                return {
+                    taskType,
+                    neededJobs: counts[taskType],
+                    availableJobs,
+                    quotaSummary
+                };
+            }
+        }
+        return null;
     }
 
     function getQuotaUnavailableMessage(taskType = 'extract') {
         const normalizedTaskType = normalizeTaskType(taskType);
         if (normalizedTaskType === 'full') {
-            return t('verify.fullQuotaExhausted', '当前剩余额度不足，至少需要 1.0 才能提交全流程任务。');
+            return t('verify.fullQuotaExhausted', '当前全流程接口额度不足，至少需要 1 次全流程可用额度。');
         }
 
-        return t('verify.extractQuotaExhausted', '当前剩余额度不足，至少需要 0.5 才能提交提链任务。');
+        return t('verify.extractQuotaExhausted', '当前提链接口额度不足，至少需要 1 次提链可用额度。');
     }
 
-    function buildQuotaWarningState(taskType = 'extract', quotaSummary = null) {
+    function buildQuotaWarningState(taskType = 'extract', quotaSummary = null, taskCount = 1) {
         const normalizedTaskType = normalizeTaskType(taskType);
+        const normalizedTaskCount = Math.max(1, Number(taskCount) || 1);
         if (!quotaSummary) {
             return null;
         }
 
-        const requiredUses = getTaskTypeUsageCost(normalizedTaskType);
-        if (quotaSummary.remainingUses >= requiredUses) {
+        const requiredUses = getTaskTypeUsageCost(normalizedTaskType) * normalizedTaskCount;
+        if (hasEnoughApiQuotaForTaskCount(normalizedTaskType, normalizedTaskCount, quotaSummary)) {
             return null;
+        }
+
+        if (normalizedTaskCount > 1) {
+            const availableJobs = getQuotaAvailableJobs(quotaSummary, normalizedTaskType);
+            return {
+                tone: 'danger',
+                message: t(
+                    'verify.batchQuotaExhausted',
+                    `本批共 ${normalizedTaskCount} 个任务，需要 ${formatBalanceValue(requiredUses)} 接口额度；当前${getTaskTypeLabel(normalizedTaskType)}可提交 ${Number.isFinite(availableJobs) ? Math.max(0, availableJobs) : 0} 个。`
+                ),
+                action: null
+            };
         }
 
         if (normalizedTaskType === 'full' && quotaSummary.extractJobs > 0 && isTaskTypeAvailable('extract')) {
@@ -851,11 +1103,25 @@
                 tone: 'warning',
                 message: t(
                     'verify.fullQuotaSuggestExtract',
-                    `当前已选择全流程包绑卡，至少需要 1.0；你当前还有 ${formatBalanceValue(quotaSummary.remainingUses)}，可切换到仅提链后继续提交。`
+                    `当前已选择全流程包绑卡，至少需要 1.0；你当前提链还可提交 ${quotaSummary.extractJobs} 个，可切换到仅提链后继续提交。`
                 ),
                 action: {
                     action: 'switch-extract-mode',
                     label: t('verify.switchToExtractMode', '切换到仅提链')
+                }
+            };
+        }
+
+        if (normalizedTaskType === 'extract' && quotaSummary.fullJobs > 0 && isTaskTypeAvailable('full')) {
+            return {
+                tone: 'warning',
+                message: t(
+                    'verify.extractQuotaSuggestFull',
+                    `当前已选择仅提链，但提链额度为 0；你当前全流程还可提交 ${quotaSummary.fullJobs} 个，可切换到全流程包绑卡。`
+                ),
+                action: {
+                    action: 'switch-full-mode',
+                    label: t('verify.switchToFullMode', '切换到全流程')
                 }
             };
         }
@@ -981,6 +1247,54 @@
             || errorMessage.includes('job_not_found')
             || errorMessage.includes('任务不存在')
             || errorMessage.includes('not found');
+    }
+
+    function getHistoryJobId(item = {}, payload = null) {
+        const parsedPayload = payload || parseHistoryMessage(item?.message) || {};
+        return String(parsedPayload.job_id || parsedPayload.task_id || item?.verification_id || '').trim();
+    }
+
+    function canCancelHistoryJob(item = {}, payload = null) {
+        const parsedPayload = payload || parseHistoryMessage(item?.message) || {};
+        const status = normalizeVerifyClientStatus(item?.status || parsedPayload.raw_status || parsedPayload.status || '');
+        return Boolean(getHistoryJobId(item, parsedPayload)) && ['queued', 'running'].includes(status);
+    }
+
+    function canPurchaseFailedHistoryLink(item = {}, payload = null) {
+        const parsedPayload = payload || parseHistoryMessage(item?.message) || {};
+        const status = normalizeVerifyClientStatus(item?.status || parsedPayload.raw_status || parsedPayload.status || '');
+        const hasCapturedLink = parsedPayload.has_offer_url === true || parsedPayload.has_offer_url === 'true';
+        const hasUnlockedUrl = Boolean(String(parsedPayload.url || parsedPayload.offer_url || '').trim());
+        return Boolean(getHistoryJobId(item, parsedPayload)) && status === 'failed' && hasCapturedLink && !hasUnlockedUrl;
+    }
+
+    function buildHistoryActionButtons(item = {}, payload = null) {
+        const parsedPayload = payload || parseHistoryMessage(item?.message) || {};
+        const jobId = getHistoryJobId(item, parsedPayload);
+        if (!jobId) return '';
+
+        const buttons = [];
+        if (canCancelHistoryJob(item, parsedPayload)) {
+            buttons.push(`
+                <button type="button" class="verify-history-action-btn verify-history-action-btn--danger" data-verify-action="cancel-task" data-verify-job-id="${escapeHtml(jobId)}">
+                    <i class="fas fa-ban"></i>
+                    <span>${escapeHtml(t('verify.cancelTask', '取消任务'))}</span>
+                </button>
+            `);
+        }
+
+        if (canPurchaseFailedHistoryLink(item, parsedPayload)) {
+            buttons.push(`
+                <button type="button" class="verify-history-action-btn" data-verify-action="purchase-failed-link" data-verify-job-id="${escapeHtml(jobId)}">
+                    <i class="fas fa-link"></i>
+                    <span>${escapeHtml(t('verify.purchaseFailedLink', '提取链接'))}</span>
+                </button>
+            `);
+        }
+
+        return buttons.length
+            ? `<div class="verify-history-item-actions">${buttons.join('')}</div>`
+            : '';
     }
 
     async function repairFalseFailedHistory(items = []) {
@@ -1194,6 +1508,170 @@
         return false;
     }
 
+    async function callVerifyJobAction(action, jobId) {
+        const normalizedAction = String(action || '').trim();
+        const normalizedJobId = String(jobId || '').trim();
+        if (!normalizedAction || !normalizedJobId) {
+            throw new Error(t('verify.loadFailed', '加载失败'));
+        }
+
+        const headers = await getVerifyRequestHeaders(true);
+        const requestBody = JSON.stringify({
+            action: normalizedAction,
+            taskId: normalizedJobId,
+            site: getCurrentSiteValue()
+        });
+        let lastPayload = {};
+        let lastResponse = null;
+
+        for (const endpoint of buildVerifyActionEndpoints()) {
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers,
+                    body: requestBody,
+                    cache: 'no-store'
+                });
+                const payload = await response.json().catch(() => ({}));
+
+                if (response.ok && payload.success) {
+                    return payload;
+                }
+
+                if (shouldFallbackVerifyEndpoint(response, payload)) {
+                    lastPayload = payload;
+                    lastResponse = response;
+                    continue;
+                }
+
+                lastPayload = payload;
+                lastResponse = response;
+                break;
+            } catch (error) {
+                lastPayload = {
+                    message: error?.message || t('verify.connectionLost', '连接中断，请重试')
+                };
+            }
+        }
+
+        const fallbackMessage = normalizedAction === 'purchase_failed_link'
+            ? t('verify.purchaseFailedLinkFailed', '提取链接失败')
+            : t('verify.cancelTaskFailed', '取消任务失败');
+        const errorText = getErrorLabel(lastPayload?.code, lastPayload?.message || fallbackMessage);
+        const error = new Error(errorText);
+        error.status = lastResponse?.status || 0;
+        error.payload = lastPayload;
+        throw error;
+    }
+
+    function copyTextToClipboard(value = '') {
+        const text = String(value || '').trim();
+        if (!text) return Promise.resolve(false);
+
+        if (navigator.clipboard?.writeText) {
+            return navigator.clipboard.writeText(text).then(() => true).catch(() => false);
+        }
+
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.className = 'verify-copy-fallback';
+            ta.setAttribute('aria-hidden', 'true');
+            ta.tabIndex = -1;
+            document.body.appendChild(ta);
+            ta.select();
+            const copied = document.execCommand('copy');
+            document.body.removeChild(ta);
+            return Promise.resolve(Boolean(copied));
+        } catch (_) {
+            return Promise.resolve(false);
+        }
+    }
+
+    function setHistoryActionBusy(button, busy, label = '') {
+        if (!button) return;
+        if (busy) {
+            button.dataset.verifyOriginalHtml = button.innerHTML;
+            button.disabled = true;
+            button.innerHTML = `<i class="fas fa-spinner fa-spin"></i><span>${escapeHtml(label || t('verify.loading', '加载中...'))}</span>`;
+            return;
+        }
+
+        button.disabled = false;
+        if (button.dataset.verifyOriginalHtml) {
+            button.innerHTML = button.dataset.verifyOriginalHtml;
+            delete button.dataset.verifyOriginalHtml;
+        }
+    }
+
+    async function handleHistoryJobAction(action, button) {
+        const jobId = String(button?.dataset?.verifyJobId || '').trim();
+        if (!jobId) return;
+
+        const isPurchaseAction = action === 'purchase_failed_link';
+        const confirmMessage = isPurchaseAction
+            ? t('verify.purchaseFailedLinkConfirm', '该操作会按仅提链价格扣除积分并解锁已暂存链接，确定继续吗？')
+            : t('verify.cancelTaskConfirm', '确定取消这个任务吗？取消成功后上游会退回未执行额度。');
+        if (!window.confirm(confirmMessage)) {
+            return;
+        }
+
+        setHistoryActionBusy(button, true, isPurchaseAction
+            ? t('verify.purchaseFailedLinkWorking', '提取中...')
+            : t('verify.cancelTaskWorking', '取消中...'));
+
+        try {
+            const payload = await callVerifyJobAction(action, jobId);
+
+            if (isPurchaseAction) {
+                const unlockedUrl = String(payload.url || payload.offer_url || '').trim();
+                if (Number(payload.pointsDeducted) > 0) {
+                    userBalance = Math.max(0, userBalance - Number(payload.pointsDeducted));
+                    const balEl = document.getElementById('verifyBalanceValue');
+                    if (balEl) balEl.textContent = userBalance;
+                }
+                if (unlockedUrl) {
+                    await copyTextToClipboard(unlockedUrl);
+                    showSingleResult(
+                        'success',
+                        t('verify.previewSuccessText', '链接获取成功'),
+                        t('verify.purchaseFailedLinkCopied', '链接已解锁并复制到剪贴板')
+                    );
+                } else {
+                    showSingleResult(
+                        'success',
+                        t('verify.previewSuccessText', '链接获取成功'),
+                        payload.message || t('verify.purchaseFailedLinkDone', '暂存链接已解锁')
+                    );
+                }
+            } else {
+                const taskInfo = activeTasks.get(jobId);
+                if (taskInfo?.timer) clearInterval(taskInfo.timer);
+                activeTasks.delete(jobId);
+                clearPendingTask(jobId);
+                showSingleResult(
+                    'pending',
+                    t('verify.cancelTaskDone', '任务已取消'),
+                    payload.message || t('verify.cancelTaskDoneMessage', '任务已取消，上游额度已退回')
+                );
+            }
+
+            loadUserBalance();
+            loadApiQuota();
+            loadHistory();
+        } catch (error) {
+            showSingleResult(
+                'error',
+                isPurchaseAction
+                    ? t('verify.purchaseFailedLinkFailed', '提取链接失败')
+                    : t('verify.cancelTaskFailed', '取消任务失败'),
+                error?.message || t('verify.loadFailed', '加载失败')
+            );
+        } finally {
+            setHistoryActionBusy(button, false);
+        }
+    }
+
     async function loadApiQuota() {
         try {
             const headers = await getVerifyRequestHeaders();
@@ -1204,15 +1682,31 @@
             ];
 
             const cachedQuota = readCachedApiQuota(site);
-            apiCredits = Number.isFinite(Number(cachedQuota)) ? Number(cachedQuota) : -1;
+            apiCredits = Number.isFinite(Number(cachedQuota?.balance)) ? Number(cachedQuota.balance) : -1;
+            if (cachedQuota) {
+                applyApiUsageCosts(cachedQuota);
+                apiQuotaSummary = buildQuotaSummary(apiCredits, cachedQuota);
+            } else {
+                apiQuotaSummary = null;
+            }
 
             for (const endpoint of quotaEndpoints) {
                 try {
                     const res = await fetch(endpoint, { headers, cache: 'no-store' });
                     const data = await res.json().catch(() => ({}));
                     if (res.ok && data.success) {
-                        apiCredits = Number(data.balance ?? data.credits ?? data.remaining_uses ?? 0);
-                        persistCachedApiQuota(apiCredits, site);
+                        applyApiUsageCosts({
+                            extract_cost_per_job: data.extract_cost_per_job,
+                            full_cost_per_job: data.full_cost_per_job
+                        });
+                        apiQuotaSummary = buildQuotaSummary(
+                            pickFiniteNumber(data.balance, data.credits, data.remaining_uses),
+                            data
+                        );
+                        apiCredits = Number.isFinite(Number(apiQuotaSummary?.remainingUses))
+                            ? Number(apiQuotaSummary.remainingUses)
+                            : 0;
+                        persistCachedApiQuota(apiCredits, site, apiUsageCosts, apiQuotaSummary);
                         break;
                     }
                 } catch (_) {
@@ -1221,7 +1715,13 @@
             }
         } catch (_) {
             const cachedQuota = readCachedApiQuota();
-            apiCredits = Number.isFinite(Number(cachedQuota)) ? Number(cachedQuota) : -1;
+            apiCredits = Number.isFinite(Number(cachedQuota?.balance)) ? Number(cachedQuota.balance) : -1;
+            if (cachedQuota) {
+                applyApiUsageCosts(cachedQuota);
+                apiQuotaSummary = buildQuotaSummary(apiCredits, cachedQuota);
+            } else {
+                apiQuotaSummary = null;
+            }
         }
         updateQuotaDisplay();
     }
@@ -1250,12 +1750,10 @@
         const quotaBar = document.getElementById('verifyQuotaWarning');
         const submitBtn = document.getElementById('verifySubmitBtn');
         const selectedTaskType = getSelectedTaskType();
-        const requiredUses = getTaskTypeUsageCost(selectedTaskType);
+        const taskCount = getBatchLineCount();
         const quotaSummary = buildQuotaSummary(apiCredits);
-        const hasEnoughForSelectedTask = quotaSummary
-            ? quotaSummary.remainingUses >= requiredUses
-            : true;
-        const quotaWarningState = buildQuotaWarningState(selectedTaskType, quotaSummary);
+        const hasEnoughForSelectedTask = hasEnoughApiQuotaForTaskCount(selectedTaskType, taskCount, quotaSummary);
+        const quotaWarningState = buildQuotaWarningState(selectedTaskType, quotaSummary, taskCount);
 
         if (quotaEl) {
             if (apiCredits < 0) {
@@ -1366,52 +1864,77 @@
                     <div id="verifyForm">
                         <div class="verify-form-shell">
                             <div class="verify-input-area verify-form-main">
-                                <label class="verify-form-field">
-                                    <span class="verify-field-label">${t('verify.emailLabel', 'Gmail 地址')} <em>*</em></span>
-                                    <input
-                                        class="verify-input"
-                                        id="verifyEmailInput"
-                                        type="email"
-                                        inputmode="email"
-                                        autocomplete="off"
-                                        placeholder="${t('verify.emailPlaceholder', 'your.account@gmail.com')}"
-                                    />
-                                </label>
+                                <div class="verify-submit-mode-tabs" role="group" aria-label="${t('verify.submitModeLabel', '提交方式')}" data-verify-submit-mode="single">
+                                    <button class="verify-submit-mode-btn active" type="button" data-verify-action="set-submit-mode" data-verify-mode="single" aria-pressed="true">
+                                        <i class="fas fa-user"></i>
+                                        ${t('verify.singleMode', '单个账号')}
+                                    </button>
+                                    <button class="verify-submit-mode-btn" type="button" data-verify-action="set-submit-mode" data-verify-mode="batch" aria-pressed="false">
+                                        <i class="fas fa-layer-group"></i>
+                                        ${t('verify.batchMode', '批量账号')}
+                                    </button>
+                                </div>
 
-                                <label class="verify-form-field">
-                                    <span class="verify-field-label">${t('verify.passwordLabel', '账号密码')} <em>*</em></span>
-                                    <div class="verify-password-shell">
+                                <div class="verify-single-fields" id="verifySingleFields">
+                                    <label class="verify-form-field">
+                                        <span class="verify-field-label">${t('verify.emailLabel', 'Gmail 地址')} <em>*</em></span>
                                         <input
                                             class="verify-input"
-                                            id="verifyPasswordInput"
-                                            type="password"
-                                            autocomplete="new-password"
-                                            placeholder="${t('verify.passwordPlaceholder', '密码')}"
+                                            id="verifyEmailInput"
+                                            type="email"
+                                            inputmode="email"
+                                            autocomplete="off"
+                                            placeholder="${t('verify.emailPlaceholder', 'your.account@gmail.com')}"
                                         />
-                                        <button
-                                            class="verify-password-toggle"
-                                            id="verifyPasswordToggle"
-                                            type="button"
-                                            data-verify-action="toggle-password"
-                                            aria-label="${t('verify.showPassword', '显示密码')}"
-                                            title="${t('verify.showPassword', '显示密码')}"
-                                        >
-                                            <i class="fas fa-eye"></i>
-                                        </button>
-                                    </div>
-                                </label>
+                                    </label>
 
-                                <div class="verify-form-field">
-                                    <span class="verify-field-label">${t('verify.totpLabel', '2FA 密钥（Base32）')} <em>*</em></span>
-                                    <input
-                                        class="verify-input"
-                                        id="verifyTotpInput"
-                                        type="text"
+                                    <label class="verify-form-field">
+                                        <span class="verify-field-label">${t('verify.passwordLabel', '账号密码')} <em>*</em></span>
+                                        <div class="verify-password-shell">
+                                            <input
+                                                class="verify-input"
+                                                id="verifyPasswordInput"
+                                                type="password"
+                                                autocomplete="new-password"
+                                                placeholder="${t('verify.passwordPlaceholder', '密码')}"
+                                            />
+                                            <button
+                                                class="verify-password-toggle"
+                                                id="verifyPasswordToggle"
+                                                type="button"
+                                                data-verify-action="toggle-password"
+                                                aria-label="${t('verify.showPassword', '显示密码')}"
+                                                title="${t('verify.showPassword', '显示密码')}"
+                                            >
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                        </div>
+                                    </label>
+
+                                    <div class="verify-form-field">
+                                        <span class="verify-field-label">${t('verify.totpLabel', '2FA 密钥（Base32）')} <em>*</em></span>
+                                        <input
+                                            class="verify-input"
+                                            id="verifyTotpInput"
+                                            type="text"
+                                            spellcheck="false"
+                                            autocapitalize="characters"
+                                            autocomplete="off"
+                                            placeholder="${t('verify.totpPlaceholder', '3r6cu37xch4ej6d5shgouvsknd7jmhoy')}"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div class="verify-form-field verify-batch-field" id="verifyBatchField" hidden>
+                                    <span class="verify-field-label">${t('verify.batchAccountsLabel', '批量账号')} <em>*</em></span>
+                                    <textarea
+                                        class="verify-input verify-batch-textarea"
+                                        id="verifyBatchInput"
                                         spellcheck="false"
-                                        autocapitalize="characters"
                                         autocomplete="off"
-                                        placeholder="${t('verify.totpPlaceholder', '3r6cu37xch4ej6d5shgouvsknd7jmhoy')}"
-                                    />
+                                        placeholder="${t('verify.batchPlaceholder', '每行一个账号：邮箱----密码----2FA密钥')}"
+                                    ></textarea>
+                                    <div class="verify-batch-format-note">${t('verify.batchFormatNote', '支持 email----password----2FA，也兼容 Tab / 逗号分隔。最多 50 个账号。')}</div>
                                 </div>
 
                                 <div class="verify-form-field">
@@ -1831,14 +2354,17 @@ ${fullModeMarkup}
         const emailInput = document.getElementById('verifyEmailInput');
         const passwordInput = document.getElementById('verifyPasswordInput');
         const totpInput = document.getElementById('verifyTotpInput');
+        const batchInput = document.getElementById('verifyBatchInput');
         const priorityToggle = document.getElementById('verifyPriorityToggle');
         const taskTypeInputs = document.querySelectorAll('input[name="verifyTaskType"]');
 
-        [emailInput, passwordInput, totpInput].forEach((input) => {
+        [emailInput, passwordInput, totpInput, batchInput].forEach((input) => {
             if (!input) return;
             input.addEventListener('input', () => {
                 const result = document.getElementById('verifyResult');
                 if (result) result.classList.remove('show');
+                updatePriceDisplay();
+                updateQuotaDisplay();
                 syncRingStateFromInputs();
             });
             input.addEventListener('focus', syncRingStateFromInputs);
@@ -1848,6 +2374,16 @@ ${fullModeMarkup}
         if (totpInput) {
             totpInput.addEventListener('input', () => {
                 totpInput.value = totpInput.value.toUpperCase().replace(/[^A-Z2-7]/g, '');
+            });
+        }
+
+        if (batchInput) {
+            batchInput.addEventListener('blur', () => {
+                const normalizedLines = String(batchInput.value || '')
+                    .split(/\r?\n/)
+                    .map((line) => line.trim())
+                    .filter(Boolean);
+                batchInput.value = normalizedLines.join('\n');
             });
         }
 
@@ -1862,6 +2398,8 @@ ${fullModeMarkup}
                 syncRingStateFromInputs();
             });
         });
+
+        updateSubmitModeUi();
     }
 
     function readFormEntry() {
@@ -1911,12 +2449,154 @@ ${fullModeMarkup}
         };
     }
 
+    function splitBatchCredentialLine(line = '') {
+        const raw = String(line || '').trim();
+        if (!raw) return [];
+
+        if (raw.includes('----')) {
+            return raw.split('----').map((part) => part.trim());
+        }
+
+        if (raw.includes('\t')) {
+            return raw.split('\t').map((part) => part.trim());
+        }
+
+        if (raw.includes(',')) {
+            return raw.split(',').map((part) => part.trim());
+        }
+
+        return raw.split(/\s+/).map((part) => part.trim());
+    }
+
+    function normalizeCredentialEntry(parts = [], index = 0, priority = 0, taskType = getSelectedTaskType()) {
+        const email = String(parts[0] || '').trim().toLowerCase();
+        const password = String(parts[1] || '').trim();
+        const totpSecret = String(parts.slice(2).join('').replace(/\s+/g, '') || '')
+            .trim()
+            .toUpperCase()
+            .replace(/[^A-Z2-7]/g, '');
+
+        if (!email || !password || !totpSecret) {
+            return {
+                valid: false,
+                reason: t('verify.batchLineMissing', '缺少邮箱、密码或 2FA 密钥')
+            };
+        }
+
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return {
+                valid: false,
+                reason: t('verify.invalidEmail', '邮箱格式不正确')
+            };
+        }
+
+        if (!/^[A-Z2-7]{8,64}$/.test(totpSecret)) {
+            return {
+                valid: false,
+                reason: t('verify.invalidTotp', '2FA 密钥需要是 Base32 格式，只能包含 A-Z 和 2-7')
+            };
+        }
+
+        return {
+            valid: true,
+            entry: {
+                index,
+                raw: email,
+                email,
+                password,
+                totpSecret,
+                priority,
+                taskType
+            }
+        };
+    }
+
+    function readBatchEntries() {
+        const batchInput = document.getElementById('verifyBatchInput');
+        const priorityToggle = document.getElementById('verifyPriorityToggle');
+        const taskType = getSelectedTaskType();
+        const priority = priorityToggle?.checked ? 1 : 0;
+        const rawLines = String(batchInput?.value || '')
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean);
+
+        if (!rawLines.length) {
+            return {
+                valid: false,
+                reason: t('verify.batchMissing', '请粘贴至少一行账号信息')
+            };
+        }
+
+        if (rawLines.length > VERIFY_BATCH_MAX_ENTRIES) {
+            return {
+                valid: false,
+                reason: t('verify.batchTooMany', `单次最多提交 ${VERIFY_BATCH_MAX_ENTRIES} 个账号`)
+            };
+        }
+
+        const entries = [];
+        const seenEmails = new Set();
+
+        for (const [lineIndex, line] of rawLines.entries()) {
+            const parsed = normalizeCredentialEntry(splitBatchCredentialLine(line), entries.length, priority, taskType);
+            if (!parsed.valid) {
+                return {
+                    valid: false,
+                    reason: `${t('verify.batchLinePrefix', '第')} ${lineIndex + 1} ${t('verify.batchLineSuffix', '行')}: ${parsed.reason}`
+                };
+            }
+
+            if (seenEmails.has(parsed.entry.email)) {
+                return {
+                    valid: false,
+                    reason: `${t('verify.batchLinePrefix', '第')} ${lineIndex + 1} ${t('verify.batchLineSuffix', '行')}: ${t('verify.batchDuplicateEmail', '邮箱重复')}`
+                };
+            }
+
+            seenEmails.add(parsed.entry.email);
+            parsed.entry.index = entries.length;
+            entries.push(parsed.entry);
+        }
+
+        return { valid: true, entries };
+    }
+
+    function readSubmissionEntries() {
+        if (verifySubmitMode === 'batch') {
+            return readBatchEntries();
+        }
+
+        const parsed = readFormEntry();
+        if (!parsed.valid) {
+            return parsed;
+        }
+        return {
+            valid: true,
+            entries: [parsed.entry]
+        };
+    }
+
+    function getBatchLineCount() {
+        const batchInput = document.getElementById('verifyBatchInput');
+        if (verifySubmitMode !== 'batch' || !batchInput) {
+            return 1;
+        }
+
+        return Math.max(1, String(batchInput.value || '')
+            .split(/\r?\n/)
+            .map((line) => line.trim())
+            .filter(Boolean)
+            .length);
+    }
+
     function resetForm() {
         if (isLoading) return;
 
         const emailInput = document.getElementById('verifyEmailInput');
         const passwordInput = document.getElementById('verifyPasswordInput');
         const totpInput = document.getElementById('verifyTotpInput');
+        const batchInput = document.getElementById('verifyBatchInput');
         const priorityToggle = document.getElementById('verifyPriorityToggle');
         const passwordToggle = document.getElementById('verifyPasswordToggle');
         const result = document.getElementById('verifyResult');
@@ -1928,6 +2608,7 @@ ${fullModeMarkup}
             passwordInput.type = 'password';
         }
         if (totpInput) totpInput.value = '';
+        if (batchInput) batchInput.value = '';
         if (priorityToggle) priorityToggle.checked = false;
         setSelectedTaskType(getDefaultTaskType());
         if (passwordToggle) {
@@ -1941,6 +2622,8 @@ ${fullModeMarkup}
         hideBatchSummary();
         clearPreviewTimers();
         clearRingResetTimer();
+        updatePriceDisplay();
+        updateQuotaDisplay();
         syncRingStateFromInputs();
     }
 
@@ -1973,23 +2656,45 @@ ${fullModeMarkup}
             el.textContent = `（${getTaskTypePrice(getSelectedTaskType())}${t('verify.perPrice', '积分/次')}）`;
         });
 
+        const taskCount = getBatchLineCount();
+        const unitCost = getTaskTypePrice(getSelectedTaskType());
         const singleCost = document.getElementById('verifySingleCost');
-        if (singleCost) singleCost.textContent = getTaskTypePrice(getSelectedTaskType());
+        if (singleCost) singleCost.textContent = taskCount > 1 ? `${unitCost * taskCount}` : unitCost;
     }
 
-    function prepareExecutionDisplay(label, waitingMessage) {
+    function prepareExecutionDisplay(label, waitingMessage, total = 1) {
         const batchPanel = document.getElementById('verifyBatchResults');
         const singleResult = document.getElementById('verifyResult');
+        const normalizedTotal = Math.max(1, Number(total) || 1);
 
         if (singleResult) singleResult.classList.remove('show');
         if (batchPanel) batchPanel.classList.add('show');
 
-        batchStats = { success: 0, failed: 0, total: 1 };
+        batchStats = { success: 0, failed: 0, total: normalizedTotal };
         clearActiveTaskTimers();
         clearResultsList();
         hideBatchSummary();
         addResultItem(0, label, 'processing', escapeHtml(waitingMessage));
-        updateBatchProgress(0, 1);
+        updateBatchProgress(0, normalizedTotal);
+        applyRingState('running', 10);
+    }
+
+    function prepareBatchExecutionDisplay(entries, waitingMessage) {
+        const batchPanel = document.getElementById('verifyBatchResults');
+        const singleResult = document.getElementById('verifyResult');
+        const total = Math.max(1, entries.length);
+
+        if (singleResult) singleResult.classList.remove('show');
+        if (batchPanel) batchPanel.classList.add('show');
+
+        batchStats = { success: 0, failed: 0, total };
+        clearActiveTaskTimers();
+        clearResultsList();
+        hideBatchSummary();
+        entries.forEach((entry) => {
+            addResultItem(entry.index, entry.email, 'pending', escapeHtml(waitingMessage));
+        });
+        updateBatchProgress(0, total);
         applyRingState('running', 10);
     }
 
@@ -2145,6 +2850,324 @@ ${fullModeMarkup}
         return true;
     }
 
+    async function resolveCurrentUserId() {
+        let userId = currentUser?.id || currentUser?.user_id;
+        if (userId) return userId;
+
+        const userPromise = window.supabaseClient?.auth?.getUser?.();
+        if (!userPromise || typeof userPromise.then !== 'function') {
+            throw new Error(t('verify.pleaseLogin', '请先登录'));
+        }
+
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(t('verify.pleaseLogin', '请先登录'))), 5000)
+        );
+        const { data } = await Promise.race([userPromise, timeoutPromise]);
+        userId = data?.user?.id;
+        if (!userId) {
+            throw new Error(t('verify.pleaseLogin', '请先登录'));
+        }
+        return userId;
+    }
+
+    async function submitVerifyEntry(entry, userId, options = {}) {
+        const totalCost = Number(options.pointsCost ?? getTaskTypePrice(entry.taskType)) || getTaskTypePrice(entry.taskType);
+        const batchTotal = Math.max(1, Number(options.batchTotal) || 1);
+
+        updateResultItem(entry.index, 'processing', escapeHtml(t('verify.verifying', '提交中...')));
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const headers = await getVerifyRequestHeaders(true);
+        const submitEndpoints = [
+            '/api/public?scope=verify&route=submit',
+            `${CONFIG.nodeServerUrl}/api/verify`
+        ];
+        const requestBody = JSON.stringify({
+            email: entry.email,
+            password: entry.password,
+            totpSecret: entry.totpSecret,
+            priority: entry.priority,
+            taskType: entry.taskType
+        });
+        let res = null;
+        let data = {};
+        let submitError = null;
+
+        for (const endpoint of submitEndpoints) {
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers,
+                    body: requestBody,
+                    signal: controller.signal
+                });
+                const payload = await response.json().catch(() => ({}));
+
+                if (response.ok && payload.success) {
+                    res = response;
+                    data = payload;
+                    submitError = null;
+                    break;
+                }
+
+                if (shouldFallbackVerifyEndpoint(response, payload)) {
+                    continue;
+                }
+
+                res = response;
+                data = payload;
+                submitError = null;
+                break;
+            } catch (error) {
+                submitError = error;
+            }
+        }
+        clearTimeout(timeoutId);
+
+        if (!res && submitError) {
+            throw submitError;
+        }
+
+        if (!res) {
+            throw new Error(t('verify.loadFailed', '提交失败'));
+        }
+
+        if (!res.ok || !data.success) {
+            const errorText = getErrorLabel(data.code, data.message || t('verify.loadFailed', '提交失败'));
+            updateResultItem(entry.index, 'error', escapeHtml(errorText));
+            trackVerifyAnalyticsEvent('verify_fail', {
+                metadata: {
+                    reason_code: String(data.code || 'submit_failed').trim() || 'submit_failed',
+                    stage_label: 'submit',
+                    priority: entry.priority,
+                    points_cost: totalCost,
+                    task_type: entry.taskType,
+                    batch_total: batchTotal,
+                    batch_index: entry.index + 1
+                }
+            });
+            await logToHistory(entry.email, 'failed', {
+                email: entry.email,
+                task_type: entry.taskType,
+                error_code: data.code || '',
+                error_message: errorText,
+                raw_status: 'submit_failed'
+            });
+            return { submitted: false, terminal: true, success: false };
+        }
+
+        const jobId = data.job_id || data.task_id;
+        if (!jobId) {
+            const errorText = t('verify.loadFailed', '提交失败');
+            updateResultItem(entry.index, 'error', escapeHtml(errorText));
+            trackVerifyAnalyticsEvent('verify_fail', {
+                metadata: {
+                    reason_code: 'missing_job_id',
+                    stage_label: 'submit',
+                    priority: entry.priority,
+                    points_cost: totalCost,
+                    task_type: entry.taskType,
+                    batch_total: batchTotal,
+                    batch_index: entry.index + 1
+                }
+            });
+            await logToHistory(entry.email, 'failed', {
+                email: entry.email,
+                task_type: entry.taskType,
+                error_message: errorText,
+                raw_status: 'missing_job_id'
+            });
+            return { submitted: false, terminal: true, success: false };
+        }
+
+        activeTasks.set(jobId, {
+            index: entry.index,
+            email: entry.email,
+            timer: null,
+            submittedAt: Date.now(),
+            priority: entry.priority,
+            taskType: normalizeTaskType(data.task_type || entry.taskType),
+            pointsCost: totalCost,
+            restored: false
+        });
+        trackVerifyAnalyticsEvent('verify_submit', {
+            entityId: String(jobId || '').trim(),
+            eventValue: totalCost,
+            pointsDelta: -Math.abs(Number(totalCost) || 0),
+            metadata: {
+                priority: entry.priority,
+                points_cost: totalCost,
+                task_type: entry.taskType,
+                batch_total: batchTotal,
+                batch_index: entry.index + 1
+            }
+        }, {
+            dedupeKey: `verify_submit:${String(jobId || '').trim()}`
+        });
+        triggerVerifyEngagementEvent('verify_queue', {
+            source_event_id: `verify_queue:${String(jobId || '').trim()}`,
+            source: 'verify_submit',
+            job_id: String(jobId || '').trim(),
+            queue_position: data.queue_position ?? null,
+            estimated_wait_seconds: data.estimated_wait_seconds ?? null,
+            priority: entry.priority,
+            points_cost: totalCost,
+            task_type: entry.taskType,
+            batch_total: batchTotal,
+            batch_index: entry.index + 1
+        });
+        persistPendingTask({
+            jobId,
+            email: entry.email,
+            userId,
+            site: getCurrentSiteValue(),
+            taskType: normalizeTaskType(data.task_type || entry.taskType)
+        });
+
+        const display = getResultDisplay({
+            status: data.status || 'queued',
+            queue_position: data.queue_position,
+            estimated_wait_seconds: data.estimated_wait_seconds
+        });
+        updateResultItem(entry.index, display.status, display.html);
+        updateExecutionRing(data);
+
+        return { submitted: true, jobId, data };
+    }
+
+    async function runBatchSubmit(entries, submitBtn, resetBtn) {
+        const total = entries.length;
+        const totalCost = entries.reduce((sum, entry) => sum + getTaskTypePrice(entry.taskType), 0);
+        const requiredUses = entries.reduce((sum, entry) => sum + getTaskTypeUsageCost(entry.taskType), 0);
+
+        if (userBalance < totalCost) {
+            triggerVerifyEngagementEvent('points_insufficient', {
+                source_event_id: `points_insufficient:verify_batch:${normalizeTaskType(entries[0]?.taskType)}:${Date.now()}`,
+                source: 'verify_submit_precheck',
+                current_balance: userBalance,
+                points_cost: totalCost,
+                task_type: normalizeTaskType(entries[0]?.taskType),
+                batch_total: total
+            });
+            showSingleResult(
+                'error',
+                t('verify.insufficientPoints', '积分不足'),
+                `${t('verify.needPoints', '需要积分')}: ${totalCost} / ${t('verify.remaining', '当前余额')}: ${userBalance}`
+            );
+            return;
+        }
+
+        const quotaShortage = apiCredits >= 0
+            ? findApiQuotaShortageForEntries(entries, buildQuotaSummary(apiCredits))
+            : null;
+        if (quotaShortage) {
+            showSingleResult(
+                'error',
+                t('verify.quotaExhausted', 'API 余额不足'),
+                formatApiQuotaShortageMessage(quotaShortage, requiredUses, '本批需要接口额度')
+            );
+            return;
+        }
+
+        clearPreviewTimers();
+        clearRingResetTimer();
+        prepareBatchExecutionDisplay(entries, t('verify.waiting', '等待提交...'));
+
+        isLoading = true;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = `<div class="spinner"></div> ${t('verify.batchSubmitting', '批量提交中...')}`;
+        if (resetBtn) resetBtn.disabled = true;
+        setPreviewControlsDisabled(true);
+
+        let userId = '';
+        try {
+            userId = await resolveCurrentUserId();
+        } catch (error) {
+            const errorMessage = error.message || t('verify.pleaseLogin', '请先登录');
+            entries.forEach((entry) => updateResultItem(entry.index, 'error', escapeHtml(errorMessage)));
+            batchStats.failed = total;
+            updateBatchProgress(total, total);
+            finishVerification({ outcome: 'error' });
+            return;
+        }
+
+        let cursor = 0;
+        const pollPromises = [];
+        const markTerminal = (result = {}, entry = {}, jobId = '') => {
+            if (result.terminal && result.success) {
+                batchStats.success += 1;
+                if (result.pointsDeducted) {
+                    userBalance = Math.max(0, userBalance - result.pointsDeducted);
+                    const balEl = document.getElementById('verifyBalanceValue');
+                    if (balEl) balEl.textContent = userBalance;
+                }
+            } else {
+                batchStats.failed += 1;
+            }
+
+            if (jobId) {
+                clearPendingTask(jobId);
+            }
+            updateBatchProgress(batchStats.success + batchStats.failed, batchStats.total);
+        };
+
+        const submitWorker = async () => {
+            while (cursor < entries.length) {
+                const entry = entries[cursor];
+                cursor += 1;
+
+                try {
+                    const submitted = await submitVerifyEntry(entry, userId, {
+                        pointsCost: getTaskTypePrice(entry.taskType),
+                        batchTotal: total
+                    });
+                    if (!submitted.submitted) {
+                        markTerminal({ terminal: true, success: false }, entry);
+                        continue;
+                    }
+
+                    const pollPromise = pollTask(submitted.jobId, entry)
+                        .then((result) => {
+                            markTerminal(result, entry, submitted.jobId);
+                            return result;
+                        });
+                    pollPromises.push(pollPromise);
+                } catch (error) {
+                    const errorText = error.message || t('verify.loadFailed', '提交失败');
+                    updateResultItem(entry.index, 'error', escapeHtml(errorText));
+                    trackVerifyAnalyticsEvent('verify_fail', {
+                        metadata: {
+                            reason_code: 'submit_error',
+                            stage_label: 'submit',
+                            priority: entry.priority,
+                            points_cost: getTaskTypePrice(entry.taskType),
+                            task_type: entry.taskType,
+                            batch_total: total,
+                            batch_index: entry.index + 1
+                        }
+                    });
+                    await logToHistory(entry.email, 'error', {
+                        email: entry.email,
+                        task_type: entry.taskType,
+                        error_message: errorText,
+                        raw_status: 'submit_error'
+                    });
+                    markTerminal({ terminal: true, success: false }, entry);
+                }
+            }
+        };
+
+        const workerCount = Math.min(VERIFY_BATCH_SUBMIT_CONCURRENCY, total);
+        await Promise.all(Array.from({ length: workerCount }, () => submitWorker()));
+        await Promise.all(pollPromises);
+
+        finishVerification({
+            outcome: batchStats.failed > 0 ? 'error' : 'success',
+            showSummary: true
+        });
+    }
+
     async function submit() {
         if (isLoading) return;
 
@@ -2175,7 +3198,7 @@ ${fullModeMarkup}
         if (!submitBtn) return;
         submitBtn.classList.remove('verify-submit-btn--maintenance');
 
-        const parsed = readFormEntry();
+        const parsed = readSubmissionEntries();
         if (!parsed.valid) {
             showSingleResult(
                 'error',
@@ -2185,7 +3208,22 @@ ${fullModeMarkup}
             return;
         }
 
-        const entry = parsed.entry;
+        const entries = parsed.entries || [];
+        if (!entries.length) {
+            showSingleResult(
+                'error',
+                t('verify.formatError', '信息不完整'),
+                t('verify.missingRequired', '请完整填写邮箱、密码和 2FA 密钥')
+            );
+            return;
+        }
+
+        if (entries.length > 1) {
+            await runBatchSubmit(entries, submitBtn, resetBtn);
+            return;
+        }
+
+        const entry = entries[0];
         const totalCost = getTaskTypePrice(entry.taskType);
         if (userBalance < totalCost) {
             triggerVerifyEngagementEvent('points_insufficient', {
@@ -2203,11 +3241,15 @@ ${fullModeMarkup}
             return;
         }
 
-        if (apiCredits === 0) {
+        const requiredUses = getTaskTypeUsageCost(entry.taskType);
+        const quotaShortage = apiCredits >= 0
+            ? findApiQuotaShortageForEntries([entry], buildQuotaSummary(apiCredits))
+            : null;
+        if (quotaShortage) {
             showSingleResult(
                 'error',
                 t('verify.quotaExhausted', 'API 余额不足'),
-                t('verify.quotaExhausted', 'API 余额不足，暂时无法提交任务。')
+                formatApiQuotaShortageMessage(quotaShortage, requiredUses, '本次需要接口额度')
             );
             return;
         }
@@ -2222,184 +3264,21 @@ ${fullModeMarkup}
         if (resetBtn) resetBtn.disabled = true;
         setPreviewControlsDisabled(true);
 
-        let userId = currentUser?.id || currentUser?.user_id;
-
-        if (!userId) {
-            try {
-                const userPromise = window.supabaseClient.auth.getUser();
-                const timeoutPromise = new Promise((_, reject) =>
-                    setTimeout(() => reject(new Error(t('verify.pleaseLogin', '请先登录'))), 5000)
-                );
-                const { data } = await Promise.race([userPromise, timeoutPromise]);
-                userId = data?.user?.id;
-            } catch (error) {
-                const errorMessage = error.message || t('verify.pleaseLogin', '请先登录');
-                updateResultItem(entry.index, 'error', escapeHtml(errorMessage));
-                batchStats.failed = 1;
-                finishVerification({ outcome: 'error' });
-                return;
-            }
-        }
-
         try {
-            updateResultItem(entry.index, 'processing', escapeHtml(t('verify.verifying', '提交中...')));
-
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000);
-            const headers = await getVerifyRequestHeaders(true);
-            const submitEndpoints = [
-                '/api/public?scope=verify&route=submit',
-                `${CONFIG.nodeServerUrl}/api/verify`
-            ];
-            const requestBody = JSON.stringify({
-                email: entry.email,
-                password: entry.password,
-                totpSecret: entry.totpSecret,
-                priority: entry.priority,
-                taskType: entry.taskType
-            });
-            let res = null;
-            let data = {};
-            let submitError = null;
-
-            for (const endpoint of submitEndpoints) {
-                try {
-                    const response = await fetch(endpoint, {
-                        method: 'POST',
-                        headers,
-                        body: requestBody,
-                        signal: controller.signal
-                    });
-                    const payload = await response.json().catch(() => ({}));
-
-                    if (response.ok && payload.success) {
-                        res = response;
-                        data = payload;
-                        submitError = null;
-                        break;
-                    }
-
-                    if (shouldFallbackVerifyEndpoint(response, payload)) {
-                        continue;
-                    }
-
-                    res = response;
-                    data = payload;
-                    submitError = null;
-                    break;
-                } catch (error) {
-                    submitError = error;
-                }
-            }
-            clearTimeout(timeoutId);
-
-            if (!res && submitError) {
-                throw submitError;
-            }
-
-            if (!res) {
-                throw new Error(t('verify.loadFailed', '提交失败'));
-            }
-
-            if (!res.ok || !data.success) {
-                const errorText = getErrorLabel(data.code, data.message || t('verify.loadFailed', '提交失败'));
-                updateResultItem(entry.index, 'error', escapeHtml(errorText));
-                batchStats.failed = 1;
-                updateBatchProgress(1, 1);
-                trackVerifyAnalyticsEvent('verify_fail', {
-                    metadata: {
-                        reason_code: String(data.code || 'submit_failed').trim() || 'submit_failed',
-                        stage_label: 'submit',
-                        priority: entry.priority,
-                        points_cost: totalCost,
-                        task_type: entry.taskType
-                    }
-                });
-                await logToHistory(entry.email, 'failed', {
-                    email: entry.email,
-                    task_type: entry.taskType,
-                    error_code: data.code || '',
-                    error_message: errorText,
-                    raw_status: 'submit_failed'
-                });
-                finishVerification({ outcome: 'error' });
-                return;
-            }
-
-            const jobId = data.job_id || data.task_id;
-            if (!jobId) {
-                const errorText = t('verify.loadFailed', '提交失败');
-                updateResultItem(entry.index, 'error', escapeHtml(errorText));
-                batchStats.failed = 1;
-                updateBatchProgress(1, 1);
-                trackVerifyAnalyticsEvent('verify_fail', {
-                    metadata: {
-                        reason_code: 'missing_job_id',
-                        stage_label: 'submit',
-                        priority: entry.priority,
-                        points_cost: totalCost,
-                        task_type: entry.taskType
-                    }
-                });
-                await logToHistory(entry.email, 'failed', {
-                    email: entry.email,
-                    task_type: entry.taskType,
-                    error_message: errorText,
-                    raw_status: 'missing_job_id'
-                });
-                finishVerification({ outcome: 'error' });
-                return;
-            }
-
-            activeTasks.set(jobId, {
-                index: entry.index,
-                email: entry.email,
-                timer: null,
-                submittedAt: Date.now(),
-                priority: entry.priority,
-                taskType: normalizeTaskType(data.task_type || entry.taskType),
+            const userId = await resolveCurrentUserId();
+            const submitted = await submitVerifyEntry(entry, userId, {
                 pointsCost: totalCost,
-                restored: false
-            });
-            trackVerifyAnalyticsEvent('verify_submit', {
-                entityId: String(jobId || '').trim(),
-                eventValue: totalCost,
-                pointsDelta: -Math.abs(Number(totalCost) || 0),
-                metadata: {
-                    priority: entry.priority,
-                    points_cost: totalCost,
-                    task_type: entry.taskType
-                }
-            }, {
-                dedupeKey: `verify_submit:${String(jobId || '').trim()}`
-            });
-            triggerVerifyEngagementEvent('verify_queue', {
-                source_event_id: `verify_queue:${String(jobId || '').trim()}`,
-                source: 'verify_submit',
-                job_id: String(jobId || '').trim(),
-                queue_position: data.queue_position ?? null,
-                estimated_wait_seconds: data.estimated_wait_seconds ?? null,
-                priority: entry.priority,
-                points_cost: totalCost,
-                task_type: entry.taskType
-            });
-            persistPendingTask({
-                jobId,
-                email: entry.email,
-                userId,
-                site: getCurrentSiteValue(),
-                taskType: normalizeTaskType(data.task_type || entry.taskType)
+                batchTotal: 1
             });
 
-            const display = getResultDisplay({
-                status: data.status || 'queued',
-                queue_position: data.queue_position,
-                estimated_wait_seconds: data.estimated_wait_seconds
-            });
-            updateResultItem(entry.index, display.status, display.html);
-            updateExecutionRing(data);
+            if (!submitted.submitted) {
+                batchStats.failed = 1;
+                updateBatchProgress(1, 1);
+                finishVerification({ outcome: 'error' });
+                return;
+            }
 
-            pollTask(jobId, entry).then((result) => {
+            pollTask(submitted.jobId, entry).then((result) => {
                 if (result.terminal && result.success) {
                     batchStats.success = 1;
                     if (result.pointsDeducted) {
@@ -2417,7 +3296,7 @@ ${fullModeMarkup}
 
                 finishVerification({
                     outcome: result.terminal ? (result.success ? 'success' : 'error') : '',
-                    jobId,
+                    jobId: submitted.jobId,
                     preservePending: !result.terminal,
                     showSummary: result.terminal
                 });
@@ -2626,7 +3505,7 @@ ${fullModeMarkup}
         if (submitBtn) {
             submitBtn.classList.remove('verify-submit-btn--maintenance');
             submitBtn.disabled = false;
-            submitBtn.innerHTML = buildVerifySubmitButtonMarkup(t('verify.startVerify', '提交账号'));
+            submitBtn.innerHTML = buildVerifySubmitButtonMarkup(getSubmitButtonLabel(getSelectedTaskType()));
         }
         if (resetBtn) resetBtn.disabled = false;
         setPreviewControlsDisabled(false);
@@ -2796,6 +3675,7 @@ ${fullModeMarkup}
             historyData = data;
 
             listEl.innerHTML = data.map((item) => {
+                const payload = parseHistoryMessage(item?.message) || {};
                 const time = new Date(item.created_at).toLocaleString(getLocale(), {
                     month: '2-digit',
                     day: '2-digit',
@@ -2808,6 +3688,7 @@ ${fullModeMarkup}
                 const detailHtml = detail.type === 'url'
                     ? `<a class="verify-history-link-text" href="${escapeHtml(detail.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(detail.text)}</a>`
                     : escapeHtml(detail.text || '--');
+                const actionHtml = buildHistoryActionButtons(item, payload);
                 const cost = item.points_deducted || 0;
 
                 return `
@@ -2816,6 +3697,7 @@ ${fullModeMarkup}
                         <div class="verify-history-item-main">
                             <div class="verify-history-item-id" title="${t('verify.clickToCopy', '点击复制')}: ${escapeHtml(email)}" data-copy="${escapeHtml(email)}" data-verify-action="copy-history-id">${escapeHtml(shortEmail)}</div>
                             <div class="verify-history-item-message">${detailHtml}</div>
+                            ${actionHtml}
                         </div>
                         <div class="verify-history-item-status">${getHistoryStatusText(item.status)}</div>
                         <div class="verify-history-item-cost">${cost > 0 ? '-' + cost : '--'}</div>
