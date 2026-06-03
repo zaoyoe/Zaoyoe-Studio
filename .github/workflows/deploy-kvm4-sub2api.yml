@@ -51,7 +51,18 @@ jobs:
           printf '%s\n' "$KVM4_SSH_PRIVATE_KEY" > "$KVM4_KEY"
           chmod 600 "$KVM4_KEY"
 
-          ssh-keyscan -T 10 -p "$KVM4_PORT" "$KVM4_HOST" >> "$HOME/.ssh/known_hosts"
+          for attempt in 1 2 3 4 5; do
+            if ssh-keyscan -T 20 -p "$KVM4_PORT" "$KVM4_HOST" >> "$HOME/.ssh/known_hosts"; then
+              break
+            fi
+
+            if [[ "$attempt" == "5" ]]; then
+              echo "::error title=KVM4 SSH keyscan failed::Could not fetch KVM4 host key after $attempt attempts."
+              exit 1
+            fi
+
+            sleep $((attempt * 3))
+          done
           chmod 600 "$HOME/.ssh/known_hosts"
 
       - name: Verify checkout is latest main
