@@ -9743,6 +9743,35 @@ test('verify polling treats status aliases as terminal and avoids cached status 
     );
 });
 
+test('verify widget prioritizes provider realtime progress before inferred progress', () => {
+    const verifyWidgetSource = readRepoFile('verify-widget.js');
+
+    const realtimeMarkers = [
+        'function getProviderProgress(data = {})',
+        'function getProviderStageLabel(data = {})',
+        'function getProviderMessage(data = {})',
+        'function getProviderStepStatusLabel(data = {})',
+        'const providerProgress = getProviderProgress(data);',
+        "provider_progress: data.provider_progress ?? data.progress",
+        'provider_message: data.provider_message',
+        'step_status: data.step_status'
+    ];
+
+    for (const marker of realtimeMarkers) {
+        assert.equal(verifyWidgetSource.includes(marker), true, `verify-widget.js should contain ${marker}`);
+    }
+
+    const ringFunction = verifyWidgetSource.slice(
+        verifyWidgetSource.indexOf('function updateExecutionRing(data)'),
+        verifyWidgetSource.indexOf('function updatePreviewModeUI()')
+    );
+    assert.equal(
+        /if \(providerProgress !== null\)[\s\S]*applyRingState\('running', status === 'success' \|\| status === 'failed' \? 100 : providerProgress\);[\s\S]*return;/.test(ringFunction),
+        true,
+        'verify widget should use upstream provider progress before falling back to inferred queue/elapsed progress'
+    );
+});
+
 test('verify widget runtime renderers externalize progress, visibility, history tone, and maintenance styling', () => {
     const verifyWidgetSource = readRepoFile('verify-widget.js');
     const verifyWidgetCss = readRepoFile('verify-widget.css');

@@ -820,6 +820,50 @@
         return Math.max(0, Math.min(100, num));
     }
 
+    function getProviderProgress(data = {}) {
+        const raw = data?.provider_progress
+            ?? data?.progress
+            ?? data?.progress_percent
+            ?? data?.progressPercentage
+            ?? data?.percentage
+            ?? data?.percent;
+        if (raw === null || raw === undefined || raw === '') {
+            return null;
+        }
+
+        const parsed = Number(raw);
+        if (!Number.isFinite(parsed)) {
+            return null;
+        }
+
+        return clampProgress(parsed > 0 && parsed <= 1 ? parsed * 100 : parsed);
+    }
+
+    function getProviderStageLabel(data = {}) {
+        return formatStageLabel(data?.stage_label || data?.raw_step || data?.step);
+    }
+
+    function getProviderMessage(data = {}) {
+        return String(data?.provider_message || '').trim();
+    }
+
+    function getProviderStepStatusLabel(data = {}) {
+        const status = String(data?.step_status || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
+        const lang = getLang();
+        const labelMap = {
+            running: { zh: '进行中', en: 'Running' },
+            processing: { zh: '进行中', en: 'Processing' },
+            working: { zh: '进行中', en: 'Working' },
+            done: { zh: '已完成', en: 'Done' },
+            success: { zh: '已完成', en: 'Done' },
+            failed: { zh: '异常', en: 'Failed' },
+            fail: { zh: '异常', en: 'Failed' },
+            error: { zh: '异常', en: 'Error' }
+        };
+
+        return labelMap[status]?.[lang] || labelMap[status]?.zh || '';
+    }
+
     function getWidgetElement() {
         return document.querySelector(`#${CONFIG.containerId} .verify-widget`) || document.querySelector('.verify-widget');
     }
@@ -936,6 +980,12 @@
 
     function updateExecutionRing(data) {
         const status = normalizeVerifyClientStatus(data);
+        const providerProgress = getProviderProgress(data);
+
+        if (providerProgress !== null) {
+            applyRingState('running', status === 'success' || status === 'failed' ? 100 : providerProgress);
+            return;
+        }
 
         if (status === 'queued') {
             const queuePosition = Number(data?.queue_position);
@@ -1373,13 +1423,24 @@
     function getResultDisplay(data) {
         const lang = getLang();
         const status = normalizeVerifyClientStatus(data);
-        const stageLabel = formatStageLabel(data?.stage_label);
+        const stageLabel = getProviderStageLabel(data);
+        const providerMessage = getProviderMessage(data);
+        const stepStatusLabel = getProviderStepStatusLabel(data);
+        const providerProgress = getProviderProgress(data);
         const taskType = normalizeTaskType(data?.task_type);
 
         if (status === 'queued') {
-            const segments = [lang === 'zh' ? '排队中' : 'Queued'];
+            const segments = [providerMessage || (lang === 'zh' ? '排队中' : 'Queued')];
             const queuePosition = Number(data?.queue_position);
             const waitSeconds = Number(data?.estimated_wait_seconds);
+
+            if (stageLabel) {
+                segments.push(stageLabel);
+            }
+
+            if (stepStatusLabel) {
+                segments.push(stepStatusLabel);
+            }
 
             if (Number.isFinite(queuePosition) && queuePosition >= 0) {
                 segments.push(lang === 'zh' ? `队列位置 ${queuePosition}` : `Position ${queuePosition}`);
@@ -1387,6 +1448,10 @@
 
             if (Number.isFinite(waitSeconds) && waitSeconds > 0) {
                 segments.push(lang === 'zh' ? `预计 ${formatWaitSeconds(waitSeconds)}` : `~${formatWaitSeconds(waitSeconds)}`);
+            }
+
+            if (providerProgress !== null) {
+                segments.push(`${Math.round(providerProgress)}%`);
             }
 
             return {
@@ -1398,9 +1463,17 @@
         }
 
         if (status === 'running') {
-            const segments = [lang === 'zh' ? '执行中' : 'Running'];
+            const segments = [providerMessage || (lang === 'zh' ? '执行中' : 'Running')];
             if (stageLabel) {
                 segments.push(stageLabel);
+            }
+
+            if (stepStatusLabel) {
+                segments.push(stepStatusLabel);
+            }
+
+            if (providerProgress !== null) {
+                segments.push(`${Math.round(providerProgress)}%`);
             }
 
             const elapsed = Number(data?.elapsed_seconds);
@@ -3037,7 +3110,15 @@ ${fullModeMarkup}
         const display = getResultDisplay({
             status: data.status || 'queued',
             queue_position: data.queue_position,
-            estimated_wait_seconds: data.estimated_wait_seconds
+            estimated_wait_seconds: data.estimated_wait_seconds,
+            stage_label: data.stage_label,
+            raw_step: data.raw_step,
+            step_status: data.step_status,
+            provider_message: data.provider_message,
+            provider_progress: data.provider_progress ?? data.progress,
+            progress: data.progress,
+            elapsed_seconds: data.elapsed_seconds,
+            task_type: data.task_type || entry.taskType
         });
         updateResultItem(entry.index, display.status, display.html);
         updateExecutionRing(data);

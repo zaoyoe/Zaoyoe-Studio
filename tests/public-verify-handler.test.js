@@ -59,6 +59,26 @@ test('verify status message keeps actionable failed-task guidance', () => {
     );
 });
 
+test('verify status message prefers provider realtime feedback while running', () => {
+    assert.equal(
+        buildClientStatusMessage({
+            status: 'running',
+            stage_label: 'login',
+            step_status: 'running',
+            provider_message: '正在登录 Google 账号'
+        }),
+        '正在登录 Google 账号'
+    );
+    assert.equal(
+        buildClientStatusMessage({
+            status: 'running',
+            stage_label: 'login',
+            step_status: 'running'
+        }),
+        '当前阶段：login（进行中）'
+    );
+});
+
 test('public verify submit handler returns queued task metadata for authenticated users', async () => {
     const handlers = createPublicVerifyHandlers({
         admin: {
@@ -232,9 +252,14 @@ test('public verify status handler returns normalized job progress for authentic
                     ok: true,
                     data: {
                         job_id: 'SYS-123',
-                        status: 'success',
+                        status: 'running',
                         task_type: 'extract',
-                        url: 'https://offer.example/link',
+                        stage_label: 'login',
+                        raw_step: 'login',
+                        step_status: 'running',
+                        provider_message: '正在登录 Google 账号',
+                        provider_progress: 42,
+                        progress: 42,
                         elapsed_seconds: 42
                     }
                 };
@@ -245,23 +270,29 @@ test('public verify status handler returns normalized job progress for authentic
             normalizeVerifyJobPayload(payload) {
                 return {
                     job_id: String(payload.job_id || 'SYS-123'),
-                    status: 'success',
+                    status: 'running',
                     task_type: 'extract',
-                    url: 'https://offer.example/link',
+                    stage_label: 'login',
+                    raw_step: 'login',
+                    step_status: 'running',
+                    provider_message: '正在登录 Google 账号',
+                    provider_progress: 42,
+                    progress: 42,
+                    url: '',
                     error: '',
                     elapsed_seconds: 42,
                     queue_position: 0,
                     estimated_wait_seconds: 0,
-                    has_offer_url: true
+                    has_offer_url: false
                 };
             },
             async syncTrackedJobStatus() {
                 return {
-                    pointsDeducted: 10
+                    pointsDeducted: 0
                 };
             },
-            buildClientStatusMessage() {
-                return '链接获取成功';
+            buildClientStatusMessage(job) {
+                return job.provider_message || '任务执行中';
             }
         }
     });
@@ -275,11 +306,17 @@ test('public verify status handler returns normalized job progress for authentic
     const payload = JSON.parse(String(res.body || '{}'));
 
     assert.equal(res.statusCode, 200);
-    assert.equal(payload.success, true);
+    assert.equal(payload.success, false);
     assert.equal(payload.job_id, 'SYS-123');
-    assert.equal(payload.url, 'https://offer.example/link');
-    assert.equal(payload.pointsDeducted, 10);
-    assert.equal(payload.message, '链接获取成功');
+    assert.equal(payload.status, 'running');
+    assert.equal(payload.stage_label, 'login');
+    assert.equal(payload.raw_step, 'login');
+    assert.equal(payload.step_status, 'running');
+    assert.equal(payload.provider_message, '正在登录 Google 账号');
+    assert.equal(payload.provider_progress, 42);
+    assert.equal(payload.progress, 42);
+    assert.equal(payload.pointsDeducted, 0);
+    assert.equal(payload.message, '正在登录 Google 账号');
 });
 
 test('public verify action handler unlocks failed captured links through the original aidone key', async () => {
@@ -847,15 +884,17 @@ test('verify job runtime submits and polls 1free pixel bridge tasks', async () =
             msg: 'success',
             data: {
                 tasks: [{
-                    id: 'PX-1001',
-                    email: 'member@example.com',
-                    status: 'success',
-                    step: 'done',
-                    result: 'https://offer.example/pixel',
-                    duration: 18
-                }]
-            }
-        }), {
+                        id: 'PX-1001',
+                        email: 'member@example.com',
+                        status: 'running',
+                        step: 'login',
+                        step_status: 'running',
+                        message: '正在登录 Google 账号',
+                        progress: 42,
+                        duration: 18
+                    }]
+                }
+            }), {
             status: 200,
             headers: {
                 'Content-Type': 'application/json'
@@ -899,8 +938,13 @@ test('verify job runtime submits and polls 1free pixel bridge tasks', async () =
         taskType: 'full'
     });
     assert.equal(status.ok, true);
-    assert.equal(status.data.status, 'success');
-    assert.equal(status.data.url, 'https://offer.example/pixel');
+    assert.equal(status.data.status, 'running');
+    assert.equal(status.data.stage_label, 'login');
+    assert.equal(status.data.raw_step, 'login');
+    assert.equal(status.data.step_status, 'running');
+    assert.equal(status.data.provider_message, '正在登录 Google 账号');
+    assert.equal(status.data.provider_progress, 42);
+    assert.equal(status.data.progress, 42);
     assert.equal(status.data.elapsed_seconds, 18);
     assert.equal(requests[1].method, 'GET');
 });
