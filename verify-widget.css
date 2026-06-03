@@ -987,51 +987,6 @@
     line-height: 1.55;
 }
 
-.verify-priority-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 14px;
-    border-radius: 999px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.76);
-    font-size: 0.82rem;
-    cursor: pointer;
-    transition: all 0.25s ease;
-}
-
-.verify-priority-pill:hover {
-    border-color: rgba(107, 158, 206, 0.24);
-    background: rgba(107, 158, 206, 0.1);
-}
-
-.verify-priority-pill input {
-    appearance: none;
-    width: 16px;
-    height: 16px;
-    margin: 0;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    background: rgba(255, 255, 255, 0.05);
-    position: relative;
-    transition: all 0.2s ease;
-}
-
-.verify-priority-pill input:checked {
-    background: #6b9ece;
-    border-color: rgba(107, 158, 206, 0.9);
-    box-shadow: 0 0 14px rgba(107, 158, 206, 0.4);
-}
-
-.verify-priority-pill input:checked::after {
-    content: '';
-    position: absolute;
-    inset: 4px;
-    border-radius: 999px;
-    background: #ffffff;
-}
-
 /* Submit Button */
 .verify-submit-btn {
     display: flex;
@@ -1185,8 +1140,11 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
+    row-gap: 4px;
+    flex-wrap: wrap;
     margin-top: 8px;
     font-size: 0.85rem;
+    line-height: 1.55;
     color: rgba(255, 255, 255, 0.5);
 }
 
@@ -1205,6 +1163,27 @@
     font-size: 0.75rem;
     color: rgba(255, 255, 255, 0.4);
     margin-left: 4px;
+}
+
+.verify-price-separator {
+    color: rgba(255, 255, 255, 0.28);
+}
+
+.verify-system-remaining {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: rgba(255, 255, 255, 0.58);
+}
+
+.verify-system-remaining-count {
+    color: #9fd7e5;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+}
+
+.verify-bulk-contact {
+    color: rgba(255, 255, 255, 0.56);
 }
 
 /* Result Area */
@@ -1605,11 +1584,6 @@
         padding: 16px;
     }
 
-    .verify-priority-pill {
-        width: 100%;
-        justify-content: center;
-    }
-
     .verify-form-price {
         justify-content: flex-start;
     }
@@ -1659,13 +1633,6 @@
 
 .verify-api-quota-value {
     font-variant-numeric: tabular-nums;
-}
-
-.verify-api-quota-meta {
-    font-size: 0.78rem;
-    opacity: 0.78;
-    font-weight: 600;
-    letter-spacing: 0.01em;
 }
 
 .verify-api-quota i {

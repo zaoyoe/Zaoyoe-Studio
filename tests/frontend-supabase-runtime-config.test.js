@@ -2816,7 +2816,7 @@ test('privacy page reuses the shared Supabase bootstrap instead of inlining a du
 
 test('selected runtime, preview, and tooling pages externalize page-specific style blocks into dedicated CSS files', () => {
     const expectations = new Map([
-        ['verify.html', 'css/verify-page.css?v=20260603_BATCH_PLACEHOLDER_TONE_1'],
+        ['verify.html', 'css/verify-page.css?v=20260603_VERIFY_REMAINING_INLINE_1'],
         ['prompts.html', 'css/prompts-page.css?v=20260428_PROMPTS_SKELETON_CACHE_1'],
         ['reset-password.html', 'css/reset-password-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
         ['privacy.html', 'css/privacy-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
@@ -9695,7 +9695,7 @@ test('verify history reads canonical verification log payload columns', () => {
         'verify widget should distinguish history load errors from an empty history state'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260603_BATCH_PLACEHOLDER_TONE_1'),
+        verifyPageSource.includes('./verify-widget.js?v=20260603_VERIFY_REMAINING_INLINE_1'),
         true,
         'verify.html should cache-bust the fixed history query runtime'
     );
@@ -9732,7 +9732,7 @@ test('verify polling treats status aliases as terminal and avoids cached status 
         'verify status polling and repair reads should bypass cached running responses'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260603_BATCH_PLACEHOLDER_TONE_1'),
+        verifyPageSource.includes('./verify-widget.js?v=20260603_VERIFY_REMAINING_INLINE_1'),
         true,
         'verify.html should cache-bust the fixed polling runtime'
     );
@@ -9749,6 +9749,8 @@ test('verify widget runtime renderers externalize progress, visibility, history 
     const verifyPageCss = readRepoFile('css/verify-page.css');
     const verifyPageSource = readRepoFile('verify.html');
     const archivedIndexSource = readRepoFile('index_old.html');
+    const zhLocale = JSON.parse(readRepoFile('lang/zh.json'));
+    const enLocale = JSON.parse(readRepoFile('lang/en.json'));
 
     const removedMarkers = [
         "widget.style.setProperty('--verify-progress'",
@@ -9788,6 +9790,8 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         "function syncModeSelectorFromConfig()",
         "const VERIFY_BATCH_MAX_ENTRIES = 50;",
         "const VERIFY_BATCH_SUBMIT_CONCURRENCY = 2;",
+        "function getApiQuotaModeRemainingJobs(taskType = 'extract'",
+        "function updateSystemRemainingDisplay(quotaSummary = buildQuotaSummary(apiCredits))",
         "function setSubmitMode(mode = 'single')",
         "modeTabs.dataset.verifySubmitMode = mode;",
         "function readBatchEntries()",
@@ -9807,6 +9811,11 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         "data-verify-submit-mode=\"single\"",
         "data-verify-mode=\"batch\"",
         "email----password----2FA",
+        'id="verifySystemRemainingCount"',
+        "t('verify.systemRemainingSubmitCount', '系统剩余可提交次数')",
+        "t('verify.bulkContactSupport', '大批量可联系客服')",
+        "quotaEl.removeAttribute('title');",
+        "quotaEl.setAttribute('aria-label'",
         "route=verify-settings&site=",
         "CONFIG.modeVisibility = normalizeVerifyModeVisibility(config.mode_visibility || config.modeVisibility);",
         "syncModeSelectorFromConfig();",
@@ -9830,12 +9839,96 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         assert.equal(verifyWidgetSource.includes(marker), true, `verify-widget.js should contain ${marker}`);
     }
 
+    assert.equal(
+        verifyWidgetSource.includes("escapeHtml(`提${quotaSummary?.extractJobs ?? 0} / 全${quotaSummary?.fullJobs ?? 0}`)"),
+        false,
+        'verify API quota badge should not show extract and full job counts at the same time'
+    );
+    assert.equal(
+        verifyWidgetSource.includes('class="verify-api-quota-meta"'),
+        false,
+        'verify API quota badge should not render a second mode-specific count beside the number'
+    );
+    assert.equal(
+        verifyWidgetSource.includes("const selectedRemainingJobs = getApiQuotaModeRemainingJobs(selectedTaskType, quotaSummary);"),
+        true,
+        'verify API quota badge value should be the selected mode remaining submission count'
+    );
+    assert.equal(
+        verifyWidgetSource.includes('id="verifyApiQuota" title='),
+        false,
+        'verify API quota badge should not ship a native title hover tooltip'
+    );
+    assert.equal(
+        verifyWidgetSource.includes('quotaEl.title ='),
+        false,
+        'verify API quota badge should not set a native title hover tooltip at runtime'
+    );
+    assert.equal(
+        verifyWidgetSource.includes("quotaEl.setAttribute('aria-label', `${t('verify.remainingSubmitCount', '剩余可提交次数')}: ${formatBalanceValue(selectedRemainingJobs)}`);"),
+        true,
+        'verify API quota badge should keep the selected remaining count as an accessible label'
+    );
+    assert.equal(
+        verifyWidgetSource.includes("updateSystemRemainingDisplay(quotaSummary);"),
+        true,
+        'verify price row should refresh the visible system remaining submission count with quota data'
+    );
+    assert.equal(
+        zhLocale.verify.systemRemainingSubmitCount,
+        '系统剩余可提交次数',
+        'Chinese locale should expose the visible system remaining submissions label'
+    );
+    assert.equal(
+        zhLocale.verify.bulkContactSupport,
+        '大批量可联系客服',
+        'Chinese locale should expose the large-batch support hint'
+    );
+    assert.equal(
+        enLocale.verify.systemRemainingSubmitCount,
+        'System remaining submissions',
+        'English locale should expose the visible system remaining submissions label'
+    );
+    assert.equal(
+        enLocale.verify.bulkContactSupport,
+        'Contact support for large batches',
+        'English locale should expose the large-batch support hint'
+    );
+    assert.equal(
+        verifyWidgetSource.includes('verifyPriorityToggle'),
+        false,
+        'verify form should not expose the ineffective high-priority toggle'
+    );
+    assert.equal(
+        verifyWidgetSource.includes("t('verify.startVerify', '提交任务')"),
+        true,
+        'verify submit button fallback should use the simplified task copy'
+    );
+    assert.equal(
+        verifyWidgetSource.includes("t('verify.resetForm', '清空输入')"),
+        true,
+        'verify reset button fallback should say clear input'
+    );
+    assert.equal(
+        verifyWidgetSource.includes("t('verify.subtitle', '获取 1年 pro 权限的使用权限')"),
+        true,
+        'verify widget subtitle should describe access instead of a trial link'
+    );
+    assert.equal(
+        verifyWidgetSource.includes('支持 email----password----2FA，也兼容 Tab /逗号分隔。最多 50个账号。'),
+        true,
+        'verify batch format note should use the current compact copy'
+    );
+
     const cssMarkers = [
         '.verify-submit-btn.verify-submit-btn--maintenance',
         '.verify-api-quota-value',
         '.verify-api-quota--ok',
         '.verify-api-quota--warning',
         '.verify-api-quota--danger',
+        '.verify-system-remaining',
+        '.verify-system-remaining-count',
+        '.verify-bulk-contact',
         '.verify-submit-mode-tabs',
         '.verify-submit-mode-tabs::before',
         '.verify-submit-mode-tabs[data-verify-submit-mode="batch"]::before',
@@ -9858,16 +9951,31 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         '.verify-submit-mode-tabs::before',
         '.verify-submit-mode-btn:hover',
         '.verify-batch-textarea::placeholder',
+        '.verify-system-remaining-count',
+        '.verify-bulk-contact',
         'html[data-theme="dark"] .verify-widget textarea.verify-input:focus',
         'html[data-theme="dark"] .verify-widget textarea.verify-input:focus-visible',
         'html[data-theme="dark"] .verify-submit-mode-tabs::before',
         'html[data-theme="dark"] .verify-batch-textarea::placeholder',
+        'html[data-theme="dark"] .verify-system-remaining-count',
+        'html[data-theme="dark"] .verify-bulk-contact',
         'html[data-theme="dark"] .verify-submit-mode-btn.active'
     ];
 
     for (const marker of verifyPageCssMarkers) {
         assert.equal(verifyPageCss.includes(marker), true, `css/verify-page.css should contain ${marker}`);
     }
+
+    assert.match(
+        verifyPageCss,
+        /\.verify-batch-textarea::placeholder,\s*\.verify-batch-textarea::-webkit-input-placeholder\s*\{[\s\S]*?font-size:\s*0\.8rem\s*!important;[\s\S]*?line-height:\s*1\.5\s*!important;/,
+        'batch textarea placeholder should match the batch format note size in light mode'
+    );
+    assert.match(
+        verifyPageCss,
+        /html\[data-theme="dark"\]\s+\.verify-batch-textarea::placeholder,\s*html\[data-theme="dark"\]\s+\.verify-batch-textarea::-webkit-input-placeholder\s*\{[\s\S]*?font-size:\s*0\.8rem\s*!important;[\s\S]*?line-height:\s*1\.5\s*!important;/,
+        'batch textarea placeholder should match the batch format note size in dark mode'
+    );
 
     assert.match(
         verifyWidgetCss,
@@ -9881,12 +9989,12 @@ test('verify widget runtime renderers externalize progress, visibility, history 
     );
 
     assert.equal(
-        verifyPageSource.includes('verify-widget.css?v=20260603_BATCH_PLACEHOLDER_TONE_1'),
+        verifyPageSource.includes('verify-widget.css?v=20260603_VERIFY_REMAINING_INLINE_1'),
         true,
         'verify.html should load the latest verify-widget stylesheet version'
     );
     assert.equal(
-        verifyPageSource.includes('css/verify-page.css?v=20260603_BATCH_PLACEHOLDER_TONE_1'),
+        verifyPageSource.includes('css/verify-page.css?v=20260603_VERIFY_REMAINING_INLINE_1'),
         true,
         'verify.html should load the latest verify page stylesheet version'
     );
@@ -9896,7 +10004,7 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'verify.html should load the shared user event tracker before the verify widget runtime'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260603_BATCH_PLACEHOLDER_TONE_1'),
+        verifyPageSource.includes('./verify-widget.js?v=20260603_VERIFY_REMAINING_INLINE_1'),
         true,
         'verify.html should load the latest verify-widget script version'
     );

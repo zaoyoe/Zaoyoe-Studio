@@ -577,7 +577,7 @@ function buildEmptyHomepageSectionContent(section) {
                 cta_link: '',
                 risk_notice: '',
                 demo_title: 'Google One',
-                demo_subtitle: '获取 1年 pro 权限的试用链接',
+                demo_subtitle: '获取 1年 pro 权限的使用权限',
                 demo_email: 'preview.account@gmail.com',
                 demo_totp: '3r6cu37xch4ej6d5',
                 demo_success_link: 'https://services.sheerid.com/verify/zaoyoe-demo?verificationId=GO-8K21',

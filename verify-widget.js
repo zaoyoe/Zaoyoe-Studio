@@ -430,10 +430,25 @@
             : t('verify.taskTypeExtract', '仅提取链接');
     }
 
+    function getApiQuotaModeRemainingJobs(taskType = 'extract', quotaSummary = buildQuotaSummary(apiCredits)) {
+        const normalized = normalizeTaskType(taskType);
+        return normalized === 'full'
+            ? quotaSummary?.fullJobs ?? 0
+            : quotaSummary?.extractJobs ?? 0;
+    }
+
+    function updateSystemRemainingDisplay(quotaSummary = buildQuotaSummary(apiCredits)) {
+        const remainingEl = document.getElementById('verifySystemRemainingCount');
+        if (!remainingEl) return;
+        if (apiCredits < 0) {
+            remainingEl.textContent = '--';
+            return;
+        }
+        remainingEl.textContent = formatBalanceValue(getApiQuotaModeRemainingJobs(getSelectedTaskType(), quotaSummary));
+    }
+
     function getTaskTypeSubmitLabel(taskType = 'extract') {
-        return normalizeTaskType(taskType) === 'full'
-            ? t('verify.startFullTask', '提交包绑卡任务')
-            : t('verify.startExtractTask', '提交提链任务');
+        return t('verify.startTask', '提交任务');
     }
 
     function getSubmitButtonLabel(taskType = getSelectedTaskType()) {
@@ -1756,9 +1771,10 @@
         const quotaWarningState = buildQuotaWarningState(selectedTaskType, quotaSummary, taskCount);
 
         if (quotaEl) {
+            quotaEl.removeAttribute('title');
             if (apiCredits < 0) {
                 setVerifyQuotaTone(quotaEl, 'unknown');
-                quotaEl.title = t('verify.apiQuotaTitle', 'API 剩余额度');
+                quotaEl.setAttribute('aria-label', t('verify.remainingSubmitCount', '剩余可提交次数'));
                 quotaEl.innerHTML = '<i class="fas fa-question-circle"></i> <span class="verify-api-quota-value">--</span>';
             } else {
                 const tone = !hasEnoughForSelectedTask
@@ -1769,10 +1785,12 @@
                             ? 'warning'
                             : 'danger';
                 setVerifyQuotaTone(quotaEl, tone);
-                quotaEl.title = `${t('verify.apiQuotaTitle', 'API 剩余额度')} ${formatBalanceValue(quotaSummary?.remainingUses)} · ${t('verify.taskTypeExtract', '仅提取链接')} ${quotaSummary?.extractJobs ?? 0} ${t('verify.countTimes', '次')} · ${t('verify.taskTypeFull', '全流程包绑卡')} ${quotaSummary?.fullJobs ?? 0} ${t('verify.countTimes', '次')}`;
-                quotaEl.innerHTML = `<i class="fas fa-gem"></i> <span class="verify-api-quota-value">${escapeHtml(formatBalanceValue(quotaSummary?.remainingUses))}</span><span class="verify-api-quota-meta">${escapeHtml(`提${quotaSummary?.extractJobs ?? 0} / 全${quotaSummary?.fullJobs ?? 0}`)}</span>`;
+                const selectedRemainingJobs = getApiQuotaModeRemainingJobs(selectedTaskType, quotaSummary);
+                quotaEl.setAttribute('aria-label', `${t('verify.remainingSubmitCount', '剩余可提交次数')}: ${formatBalanceValue(selectedRemainingJobs)}`);
+                quotaEl.innerHTML = `<i class="fas fa-gem"></i> <span class="verify-api-quota-value">${escapeHtml(formatBalanceValue(selectedRemainingJobs))}</span>`;
             }
         }
+        updateSystemRemainingDisplay(quotaSummary);
 
         if (quotaBar) {
             if (quotaWarningState) {
@@ -1834,11 +1852,11 @@
                     </div>
                     <div class="verify-widget-title">
                         <h3>${t('verify.title', 'Google One')}</h3>
-                        <p>${t('verify.subtitle', '获取 1年 pro 权限的试用链接')}</p>
+                        <p>${t('verify.subtitle', '获取 1年 pro 权限的使用权限')}</p>
                     </div>
                     <div class="verify-header-right">
-                        <div class="verify-api-quota" id="verifyApiQuota" title="${t('verify.apiQuotaTitle', 'API 剩余额度')}">
-                            <i class="fas fa-gem"></i> --
+                        <div class="verify-api-quota" id="verifyApiQuota" aria-label="${t('verify.remainingSubmitCount', '剩余可提交次数')}">
+                            <i class="fas fa-gem"></i> <span class="verify-api-quota-value">--</span>
                         </div>
                         <div class="verify-balance" id="verifyBalance" data-verify-action="wallet-open" title="${t('verify.walletTitle', '我的钱包')}"${isLoggedIn ? '' : ' hidden'}>
                             <i class="fas fa-coins"></i>
@@ -1934,7 +1952,7 @@
                                         autocomplete="off"
                                         placeholder="${t('verify.batchPlaceholder', '每行一个账号：邮箱----密码----2FA密钥')}"
                                     ></textarea>
-                                    <div class="verify-batch-format-note">${t('verify.batchFormatNote', '支持 email----password----2FA，也兼容 Tab / 逗号分隔。最多 50 个账号。')}</div>
+                                    <div class="verify-batch-format-note">${t('verify.batchFormatNote', '支持 email----password----2FA，也兼容 Tab /逗号分隔。最多 50个账号。')}</div>
                                 </div>
 
                                 <div class="verify-form-field">
@@ -1947,24 +1965,24 @@ ${fullModeMarkup}
                                 </div>
 
                                 <div class="verify-form-meta">
-                                    <label class="verify-priority-pill" for="verifyPriorityToggle">
-                                        <input id="verifyPriorityToggle" type="checkbox" />
-                                        <span>${t('verify.priorityLabel', '高优先级任务')}</span>
-                                    </label>
                                     <div class="verify-price-info verify-form-price">
                                         <i class="fas fa-coins"></i>
                                         ${t('verify.singleCost', '本次提交消耗')} <span class="price" id="verifySingleCost">${CONFIG.pricePerVerify}</span> ${t('verify.points', '积分')}
+                                        <span class="verify-price-separator" aria-hidden="true">·</span>
+                                        <span class="verify-system-remaining">${t('verify.systemRemainingSubmitCount', '系统剩余可提交次数')} <span class="verify-system-remaining-count" id="verifySystemRemainingCount">--</span></span>
+                                        <span class="verify-price-separator" aria-hidden="true">·</span>
+                                        <span class="verify-bulk-contact">${t('verify.bulkContactSupport', '大批量可联系客服')}</span>
                                     </div>
                                 </div>
 
                                 <div class="verify-form-actions">
                                     <button class="verify-reset-btn" id="verifyResetBtn" data-verify-action="reset-form">
                                         <i class="fas fa-rotate-left"></i>
-                                        ${t('verify.resetForm', '清空')}
+                                        ${t('verify.resetForm', '清空输入')}
                                     </button>
                                     <button class="verify-submit-btn" id="verifySubmitBtn" data-verify-action="submit">
                                         <i class="fas fa-paper-plane"></i>
-                                        ${t('verify.startVerify', '提交账号')}
+                                        ${t('verify.startVerify', '提交任务')}
                                     </button>
                                 </div>
 
@@ -2355,7 +2373,6 @@ ${fullModeMarkup}
         const passwordInput = document.getElementById('verifyPasswordInput');
         const totpInput = document.getElementById('verifyTotpInput');
         const batchInput = document.getElementById('verifyBatchInput');
-        const priorityToggle = document.getElementById('verifyPriorityToggle');
         const taskTypeInputs = document.querySelectorAll('input[name="verifyTaskType"]');
 
         [emailInput, passwordInput, totpInput, batchInput].forEach((input) => {
@@ -2387,10 +2404,6 @@ ${fullModeMarkup}
             });
         }
 
-        if (priorityToggle) {
-            priorityToggle.addEventListener('change', syncRingStateFromInputs);
-        }
-
         taskTypeInputs.forEach((input) => {
             input.addEventListener('change', () => {
                 updatePriceDisplay();
@@ -2406,13 +2419,11 @@ ${fullModeMarkup}
         const emailInput = document.getElementById('verifyEmailInput');
         const passwordInput = document.getElementById('verifyPasswordInput');
         const totpInput = document.getElementById('verifyTotpInput');
-        const priorityToggle = document.getElementById('verifyPriorityToggle');
         const taskType = getSelectedTaskType();
 
         const email = String(emailInput?.value || '').trim().toLowerCase();
         const password = String(passwordInput?.value || '').trim();
         const totpSecret = String(totpInput?.value || '').trim().toUpperCase().replace(/[^A-Z2-7]/g, '');
-        const priority = priorityToggle?.checked ? 1 : 0;
 
         if (!email || !password || !totpSecret) {
             return {
@@ -2443,7 +2454,7 @@ ${fullModeMarkup}
                 email,
                 password,
                 totpSecret,
-                priority,
+                priority: 0,
                 taskType
             }
         };
@@ -2513,9 +2524,8 @@ ${fullModeMarkup}
 
     function readBatchEntries() {
         const batchInput = document.getElementById('verifyBatchInput');
-        const priorityToggle = document.getElementById('verifyPriorityToggle');
         const taskType = getSelectedTaskType();
-        const priority = priorityToggle?.checked ? 1 : 0;
+        const priority = 0;
         const rawLines = String(batchInput?.value || '')
             .split(/\r?\n/)
             .map((line) => line.trim())
@@ -2597,7 +2607,6 @@ ${fullModeMarkup}
         const passwordInput = document.getElementById('verifyPasswordInput');
         const totpInput = document.getElementById('verifyTotpInput');
         const batchInput = document.getElementById('verifyBatchInput');
-        const priorityToggle = document.getElementById('verifyPriorityToggle');
         const passwordToggle = document.getElementById('verifyPasswordToggle');
         const result = document.getElementById('verifyResult');
         const batch = document.getElementById('verifyBatchResults');
@@ -2609,7 +2618,6 @@ ${fullModeMarkup}
         }
         if (totpInput) totpInput.value = '';
         if (batchInput) batchInput.value = '';
-        if (priorityToggle) priorityToggle.checked = false;
         setSelectedTaskType(getDefaultTaskType());
         if (passwordToggle) {
             passwordToggle.innerHTML = '<i class="fas fa-eye"></i>';
@@ -2660,6 +2668,7 @@ ${fullModeMarkup}
         const unitCost = getTaskTypePrice(getSelectedTaskType());
         const singleCost = document.getElementById('verifySingleCost');
         if (singleCost) singleCost.textContent = taskCount > 1 ? `${unitCost * taskCount}` : unitCost;
+        updateSystemRemainingDisplay();
     }
 
     function prepareExecutionDisplay(label, waitingMessage, total = 1) {
