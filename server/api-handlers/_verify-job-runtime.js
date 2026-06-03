@@ -10,7 +10,11 @@ const {
     removeUserTags
 } = require('../../api/_lib/user-tags');
 const {
+    VERIFY_ADAPTER_PIXEL_BRIDGE_REST,
+    activateVerifyProviderConfig,
     loadVerifyRuntimeConfig,
+    normalizeVerifyAdapter,
+    normalizeVerifyProvider,
     selectVerifyCredentialForTask
 } = require('./_verify-provider-runtime');
 const {
@@ -63,13 +67,42 @@ function getApiErrorCode(payload) {
 
 function getApiErrorMessage(payload, fallback) {
     const detail = getApiErrorDetail(payload);
-    return detail?.message || payload?.message || payload?.error || fallback;
+    return detail?.message || payload?.message || payload?.msg || payload?.error || fallback;
 }
 
 function normalizeVerifyApiBaseUrl(value) {
     const normalized = String(value || '').trim().replace(/\/+$/, '');
     if (!normalized) return '';
     return /\/openapi$/i.test(normalized) ? normalized : `${normalized}/openapi`;
+}
+
+function normalizeVerifyProviderRootUrl(value) {
+    return String(value || '').trim().replace(/\/+$/, '');
+}
+
+function isPixelBridgeVerifyConfig(config = {}) {
+    return normalizeVerifyAdapter(config.adapter || config.provider_adapter, config.provider) === VERIFY_ADAPTER_PIXEL_BRIDGE_REST;
+}
+
+function verifyProviderSupportsJobAction(config = {}, action = '') {
+    const normalizedAction = String(action || '').trim();
+    if (!['cancel_task', 'purchase_failed_link'].includes(normalizedAction)) {
+        return false;
+    }
+    if (isPixelBridgeVerifyConfig(config)) {
+        return false;
+    }
+
+    const capabilities = config.capabilities && typeof config.capabilities === 'object'
+        ? config.capabilities
+        : {};
+    if (normalizedAction === 'cancel_task') {
+        return capabilities.cancelTask !== false;
+    }
+    if (normalizedAction === 'purchase_failed_link') {
+        return capabilities.failedLinkPurchase !== false;
+    }
+    return false;
 }
 
 function normalizeVerifyTaskType(value, fallback = DEFAULT_VERIFY_TASK_TYPE) {
@@ -146,30 +179,54 @@ function extractVerifyProviderPayload(payload) {
 }
 
 function normalizeVerifyJobPayload(payload = {}, fallback = {}) {
-    const source = extractVerifyProviderPayload(payload);
-    const offerUrl = String(source.offer_url || source.url || fallback.offer_url || fallback.url || '').trim();
+    const extracted = extractVerifyProviderPayload(payload);
+    const source = extracted.task && typeof extracted.task === 'object' && !Array.isArray(extracted.task)
+        ? {
+            ...extracted,
+            ...extracted.task,
+            remaining_uses: extracted.remaining_uses ?? extracted.remaining
+        }
+        : extracted;
+    const rawResult = String(source.result || '').trim();
+    const resultLooksLikeUrl = /^https?:\/\//i.test(rawResult) || /https?:\/\/[^\s"']+/i.test(rawResult);
+    const offerUrl = String(
+        source.offer_url
+        || source.url
+        || (resultLooksLikeUrl ? (rawResult.match(/https?:\/\/[^\s"']+/i)?.[0] || rawResult) : '')
+        || fallback.offer_url
+        || fallback.url
+        || ''
+    ).trim();
     const queuePositionValue = normalizeOptionalNumber(source.queue_position ?? fallback.queue_position);
     const waitSecondsValue = normalizeOptionalNumber(source.estimated_wait_seconds ?? fallback.estimated_wait_seconds);
-    const elapsedSecondsValue = normalizeOptionalNumber(source.elapsed_seconds ?? fallback.elapsed_seconds);
+    const elapsedSecondsValue = normalizeOptionalNumber(source.elapsed_seconds ?? source.duration ?? fallback.elapsed_seconds);
+    const message = String(
+        source.message
+        || (!resultLooksLikeUrl ? rawResult : '')
+        || fallback.message
+        || ''
+    ).trim();
 
     return {
         ...source,
-        job_id: String(source.job_id || source.task_id || fallback.job_id || fallback.task_id || '').trim(),
-        task_id: String(source.task_id || source.job_id || fallback.task_id || fallback.job_id || '').trim(),
+        job_id: String(source.job_id || source.task_id || source.id || fallback.job_id || fallback.task_id || '').trim(),
+        task_id: String(source.task_id || source.job_id || source.id || fallback.task_id || fallback.job_id || '').trim(),
         status: normalizeVerifyUpstreamStatus(source.status || source.raw_status || fallback.status),
         task_type: normalizeVerifyTaskType(source.task_type || fallback.task_type),
         provider_key_fingerprint: String(source.provider_key_fingerprint || fallback.provider_key_fingerprint || '').trim().toLowerCase(),
         provider_key_name: String(source.provider_key_name || fallback.provider_key_name || '').trim(),
+        provider: normalizeVerifyProvider(source.provider || fallback.provider),
+        provider_adapter: String(source.provider_adapter || source.adapter || fallback.provider_adapter || fallback.adapter || '').trim(),
         url: offerUrl,
         offer_url: offerUrl,
         has_offer_url: source.has_offer_url === true || fallback.has_offer_url === true || Boolean(offerUrl),
         error: String(source.error_code || source.error || fallback.error || '').trim(),
-        message: String(source.message || fallback.message || '').trim(),
-        stage_label: String(source.stage_label || fallback.stage_label || '').trim(),
+        message,
+        stage_label: String(source.stage_label || source.step || fallback.stage_label || '').trim(),
         queue_position: queuePositionValue,
         estimated_wait_seconds: waitSecondsValue,
         elapsed_seconds: elapsedSecondsValue,
-        created_at: String(source.completed_at || source.created_at || fallback.created_at || '').trim() || null
+        created_at: String(source.completed_at || source.updated_at || source.created_at || fallback.created_at || '').trim() || null
     };
 }
 
@@ -183,8 +240,130 @@ function buildVerifyFetchOptions(timeoutMs = 0) {
     return {};
 }
 
+async function fetchVerifyJson(url, {
+    method = 'GET',
+    body = null,
+    fetchImpl = global.fetch,
+    timeoutMs = 0
+} = {}) {
+    const response = await fetchImpl(url, {
+        method,
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: body ? JSON.stringify(body) : undefined,
+        ...buildVerifyFetchOptions(timeoutMs)
+    });
+    const rawBody = await response.text().catch(() => '');
+    let payload = {};
+    if (rawBody) {
+        try {
+            payload = JSON.parse(rawBody);
+        } catch (_) {
+            payload = { raw: rawBody };
+        }
+    }
+
+    return {
+        ok: response.ok,
+        status: Number(response.status || 0),
+        payload,
+        rawBody
+    };
+}
+
+function normalizePixelBridgeResponseSuccess(result = {}) {
+    const payload = result.payload || {};
+    return result.ok && Number(payload.code) === 0;
+}
+
+function buildPixelBridgeErrorPayload(result = {}, fallback = '任务提交失败') {
+    const payload = result.payload || {};
+    return {
+        success: false,
+        code: payload.code || payload.error || '',
+        message: payload.msg || payload.message || payload.error || fallback,
+        raw: payload
+    };
+}
+
+async function postPixelBridgeProviderAction(config = {}, payload = {}, options = {}) {
+    const root = normalizeVerifyProviderRootUrl(config.apiBaseUrl || config.api_base_url || 'https://1free.qzz.io');
+    const action = String(payload.action || '').trim();
+    const providerMeta = {
+        provider: normalizeVerifyProvider(config.provider),
+        provider_adapter: VERIFY_ADAPTER_PIXEL_BRIDGE_REST
+    };
+
+    if (action !== 'submit_task') {
+        return {
+            ok: false,
+            status: 400,
+            endpoint: `${root}/api/pixel-bridge`,
+            payload: {
+                success: false,
+                code: 'unsupported_action',
+                message: '当前通道不支持该操作'
+            }
+        };
+    }
+
+    const endpoint = `${root}/api/pixel-bridge/submit-task`;
+    const result = await fetchVerifyJson(endpoint, {
+        method: 'POST',
+        body: {
+            key: payload.cdkey,
+            email: payload.email,
+            password: payload.password,
+            totp_secret: payload.twofa || payload.totp_secret || payload.totpSecret,
+            recovery: payload.recovery || '',
+            remark: payload.remark || ''
+        },
+        fetchImpl: options.fetchImpl,
+        timeoutMs: options.timeoutMs
+    });
+
+    if (!normalizePixelBridgeResponseSuccess(result)) {
+        return {
+            ok: false,
+            status: result.status || 502,
+            endpoint,
+            payload: buildPixelBridgeErrorPayload(result, '任务提交失败')
+        };
+    }
+
+    const responsePayload = result.payload || {};
+    const data = responsePayload.data && typeof responsePayload.data === 'object' ? responsePayload.data : {};
+    const task = data.task && typeof data.task === 'object' ? data.task : {};
+    return {
+        ok: true,
+        status: result.status,
+        endpoint,
+        payload: {
+            success: true,
+            message: responsePayload.msg || '任务已提交',
+            data: {
+                ...providerMeta,
+                job_id: String(task.id || task.job_id || task.task_id || '').trim(),
+                task_id: String(task.id || task.task_id || task.job_id || '').trim(),
+                email: task.email || payload.email,
+                status: task.status || 'queued',
+                task_type: payload.task_type,
+                remaining_uses: data.remaining
+            }
+        }
+    };
+}
+
 async function postVerifyProviderAction(config = {}, payload = {}, options = {}) {
     const fetchImpl = typeof options.fetchImpl === 'function' ? options.fetchImpl : global.fetch;
+    if (isPixelBridgeVerifyConfig(config)) {
+        return postPixelBridgeProviderAction(config, payload, {
+            ...options,
+            fetchImpl
+        });
+    }
+
     const endpoint = normalizeVerifyApiBaseUrl(config.apiBaseUrl || config.api_base_url);
     const response = await fetchImpl(endpoint, {
         method: 'POST',
@@ -360,6 +539,8 @@ function buildTrackedJobPayload({ email, jobId, apiData = {}, status = '', point
         job_id: jobId || '',
         provider_key_fingerprint: String(apiData?.provider_key_fingerprint || '').trim().toLowerCase(),
         provider_key_name: String(apiData?.provider_key_name || '').trim(),
+        provider: normalizeVerifyProvider(apiData?.provider),
+        provider_adapter: String(apiData?.provider_adapter || apiData?.adapter || '').trim(),
         url: offerUrl,
         offer_url: offerUrl,
         has_offer_url: apiData?.has_offer_url === true || Boolean(offerUrl),
@@ -580,7 +761,9 @@ async function syncTrackedJobStatus({
             job_id: jobId,
             task_type: existingPayload.task_type || DEFAULT_VERIFY_TASK_TYPE,
             provider_key_fingerprint: existingPayload.provider_key_fingerprint || '',
-            provider_key_name: existingPayload.provider_key_name || ''
+            provider_key_name: existingPayload.provider_key_name || '',
+            provider: existingPayload.provider || config?.provider,
+            provider_adapter: existingPayload.provider_adapter || config?.adapter || config?.provider_adapter
         });
         const upstreamStatus = String(normalizedApiData?.status || '').toLowerCase();
         const taskType = normalizeVerifyTaskType(normalizedApiData?.task_type || existingPayload.task_type);
@@ -660,7 +843,105 @@ async function syncTrackedJobStatus({
     });
 }
 
+function normalizePixelBridgeTask(task = {}, fallback = {}) {
+    const status = normalizeVerifyUpstreamStatus(task.status || fallback.status);
+    const result = String(task.result || '').trim();
+    const offerUrl = /https?:\/\/[^\s"']+/i.test(result)
+        ? (result.match(/https?:\/\/[^\s"']+/i)?.[0] || result)
+        : '';
+    return normalizeVerifyJobPayload({
+        ...task,
+        job_id: task.id || task.job_id || task.task_id,
+        task_id: task.id || task.task_id || task.job_id,
+        status,
+        offer_url: offerUrl,
+        message: offerUrl ? '' : result,
+        stage_label: task.step || task.stage_label,
+        elapsed_seconds: task.duration,
+        provider: fallback.provider,
+        provider_adapter: fallback.provider_adapter,
+        provider_key_fingerprint: fallback.provider_key_fingerprint,
+        provider_key_name: fallback.provider_key_name,
+        task_type: fallback.task_type
+    }, fallback);
+}
+
+async function fetchPixelBridgeTaskStatus(config = {}, jobId, options = {}) {
+    const candidateApiKeys = normalizeVerifyCredentialCandidates([
+        options.apiKey,
+        config.apiKeys,
+        config.apiKey
+    ]);
+    const root = normalizeVerifyProviderRootUrl(config.apiBaseUrl || config.api_base_url || 'https://1free.qzz.io');
+    let lastError = null;
+
+    for (const apiKey of candidateApiKeys) {
+        const url = new URL(`${root}/api/pixel-bridge/tasks`);
+        url.searchParams.set('key', apiKey);
+        url.searchParams.set('limit', String(options.limit || 100));
+        url.searchParams.set('page', '1');
+
+        const result = await fetchVerifyJson(url.toString(), {
+            method: 'GET',
+            fetchImpl: options.fetchImpl,
+            timeoutMs: options.timeoutMs
+        });
+        if (!normalizePixelBridgeResponseSuccess(result)) {
+            lastError = {
+                status: result.status || 502,
+                code: result.payload?.code || '',
+                message: result.payload?.msg || result.payload?.message || '查询状态失败'
+            };
+            continue;
+        }
+
+        const data = result.payload?.data && typeof result.payload.data === 'object' ? result.payload.data : {};
+        const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+        const matchedTask = tasks.find((task) => String(task?.id || task?.task_id || task?.job_id || '').trim() === String(jobId));
+        if (matchedTask) {
+            return {
+                ok: true,
+                data: normalizePixelBridgeTask(matchedTask, {
+                    job_id: jobId,
+                    task_type: options.taskType || options.task_type || DEFAULT_VERIFY_TASK_TYPE,
+                    provider: config.provider,
+                    provider_adapter: config.adapter || config.provider_adapter,
+                    provider_key_fingerprint: buildVerifyCredentialFingerprint(apiKey),
+                    provider_key_name: String(config?.provider_key_name || '').trim()
+                })
+            };
+        }
+    }
+
+    if (lastError) {
+        return {
+            ok: false,
+            status: lastError.status,
+            code: lastError.code,
+            message: lastError.message
+        };
+    }
+
+    return {
+        ok: true,
+        data: normalizeVerifyJobPayload({
+            job_id: jobId,
+            status: 'failed',
+            error: 'job_not_found',
+            message: '任务不存在'
+        }, {
+            task_type: options.taskType || options.task_type || DEFAULT_VERIFY_TASK_TYPE,
+            provider: config.provider,
+            provider_adapter: config.adapter || config.provider_adapter
+        })
+    };
+}
+
 async function fetchUpstreamJobStatus(config, jobId, options = {}) {
+    if (isPixelBridgeVerifyConfig(config)) {
+        return fetchPixelBridgeTaskStatus(config, jobId, options);
+    }
+
     const candidateApiKeys = normalizeVerifyCredentialCandidates([
         options.apiKey,
         config.apiKeys,
@@ -684,7 +965,9 @@ async function fetchUpstreamJobStatus(config, jobId, options = {}) {
                 ok: true,
                 data: normalizeVerifyJobPayload(upstream.payload, {
                     job_id: jobId,
-                    task_type: DEFAULT_VERIFY_TASK_TYPE,
+                    task_type: options.taskType || options.task_type || DEFAULT_VERIFY_TASK_TYPE,
+                    provider: config.provider,
+                    provider_adapter: config.adapter || config.provider_adapter,
                     provider_key_fingerprint: buildVerifyCredentialFingerprint(apiKey),
                     provider_key_name: String(config?.provider_key_name || '').trim()
                 })
@@ -730,8 +1013,100 @@ async function fetchUpstreamJobStatus(config, jobId, options = {}) {
             error: missingJobError.code || 'job_not_found',
             message: missingJobError.message || '任务不存在'
         }, {
-            task_type: DEFAULT_VERIFY_TASK_TYPE
+            task_type: options.taskType || options.task_type || DEFAULT_VERIFY_TASK_TYPE,
+            provider: config.provider,
+            provider_adapter: config.adapter || config.provider_adapter
         })
+    };
+}
+
+async function postVerifyJobAction(config = {}, {
+    action = '',
+    jobId = '',
+    apiKey = '',
+    taskType = DEFAULT_VERIFY_TASK_TYPE
+} = {}, options = {}) {
+    const normalizedAction = String(action || '').trim();
+    const normalizedJobId = String(jobId || '').trim();
+
+    if (!normalizedJobId) {
+        return {
+            ok: false,
+            status: 400,
+            code: 'job_not_found',
+            message: '缺少任务编号'
+        };
+    }
+
+    if (!verifyProviderSupportsJobAction(config, normalizedAction)) {
+        return {
+            ok: false,
+            status: 400,
+            code: 'provider_action_not_supported',
+            message: normalizedAction === 'purchase_failed_link'
+                ? '当前通道不支持购买失败暂存提链'
+                : '当前通道不支持取消任务'
+        };
+    }
+
+    const candidateApiKeys = normalizeVerifyCredentialCandidates([
+        apiKey,
+        options.apiKey,
+        config.apiKeys,
+        config.apiKey
+    ]);
+    let lastError = null;
+
+    for (const candidateApiKey of candidateApiKeys) {
+        const upstream = await postVerifyProviderAction(config, {
+            action: normalizedAction,
+            cdkey: candidateApiKey,
+            task_id: normalizedJobId
+        }, {
+            ...options,
+            apiKey: candidateApiKey
+        });
+
+        if (upstream.ok) {
+            const normalizedPayload = normalizeVerifyJobPayload(upstream.payload, {
+                job_id: normalizedJobId,
+                task_type: normalizedAction === 'purchase_failed_link' ? 'extract' : taskType,
+                provider: config.provider,
+                provider_adapter: config.adapter || config.provider_adapter,
+                provider_key_fingerprint: buildVerifyCredentialFingerprint(candidateApiKey),
+                provider_key_name: String(config?.provider_key_name || '').trim(),
+                status: normalizedAction === 'purchase_failed_link' ? 'success' : 'failed'
+            });
+
+            return {
+                ok: true,
+                status: upstream.status || 200,
+                data: normalizedPayload,
+                payload: upstream.payload,
+                apiKey: candidateApiKey
+            };
+        }
+
+        const errorCode = getApiErrorCode(upstream.payload);
+        const errorMessage = getApiErrorMessage(upstream.payload, '操作失败');
+        lastError = {
+            status: upstream.status || 502,
+            code: errorCode,
+            message: errorMessage
+        };
+
+        if (upstream.status === 404 || errorCode === 'job_not_found' || /任务不存在|not found/i.test(errorMessage)) {
+            continue;
+        }
+
+        break;
+    }
+
+    return {
+        ok: false,
+        status: lastError?.status || 502,
+        code: lastError?.code || 'job_action_failed',
+        message: lastError?.message || '操作失败'
     };
 }
 
@@ -748,6 +1123,7 @@ module.exports = {
     normalizeVerifyJobPayload,
     normalizeVerifyTaskType,
     parseHistoryMessage,
+    postVerifyJobAction,
     postVerifyProviderAction,
     resolveVerifyRequestSite,
     resolveVerifyApiKeyByFingerprint,

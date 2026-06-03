@@ -159,6 +159,14 @@ const VERIFY_TASK_UNIT_COSTS = Object.freeze({
     extract: 0.5,
     full: 1
 });
+const VERIFY_PROVIDER_AIDONE = 'aidone';
+const VERIFY_PROVIDER_CATCARD = 'catcard';
+const VERIFY_ADAPTER_AIDONE_OPENAPI = 'aidone_openapi';
+const VERIFY_ADAPTER_PIXEL_BRIDGE_REST = 'pixel_bridge_rest';
+const VERIFY_PROVIDER_LABELS = Object.freeze({
+    [VERIFY_PROVIDER_AIDONE]: '通道 1 · aidone',
+    [VERIFY_PROVIDER_CATCARD]: '通道 2 · 1free'
+});
 const PENDING_JOB_SWEEP_INTERVAL_MS = Math.max(2000, Number(process.env.VERIFY_PENDING_SWEEP_INTERVAL_MS || 5000));
 const PENDING_JOB_SWEEP_BATCH_SIZE = Math.max(1, Number(process.env.VERIFY_PENDING_SWEEP_BATCH_SIZE || 20));
 const SHOP_DELIVERY_STRATEGY_CACHE_TTL_MS = Math.max(2000, Number(process.env.SHOP_DELIVERY_STRATEGY_CACHE_TTL_MS || 5000));
@@ -326,7 +334,9 @@ function getLocalHealthPayload() {
 async function probeUpstreamHealth() {
     try {
         const config = await getVerifyConfig();
-        const upstreamUrl = normalizeVerifyApiBaseUrl(config.apiBaseUrl || VERIFY_API_BASE);
+        const upstreamUrl = isPixelBridgeVerifyConfig(config)
+            ? `${normalizeVerifyProviderRootUrl(config.apiBaseUrl || 'https://1free.qzz.io')}/api/pixel-keys/verify`
+            : normalizeVerifyApiBaseUrl(config.apiBaseUrl || VERIFY_API_BASE);
 
         if (!upstreamUrl || !config.apiKey) {
             return {
@@ -416,29 +426,37 @@ async function getVerifyConfig(site = 'cn') {
         ? resolvedConfig
         : {};
     const prices = getVerifyPriceMap(config);
-    const apiKeys = normalizeVerifyCredentialList([
-        ...(Array.isArray(config.verify_cdkeys) ? config.verify_cdkeys : []),
-        config.verify_cdkey,
-        config.verify_api_key,
-        process.env.VERIFY_CDKEYS,
-        process.env.VERIFY_CDKEY,
-        process.env.VERIFY_API_KEY,
-        process.env.VERIFY_API_TOKEN
-    ]);
+    const activeProvider = normalizeVerifyProvider(
+        config.active_provider
+        || config.activeProvider
+        || config.verify_active_provider
+        || process.env.VERIFY_ACTIVE_PROVIDER
+        || VERIFY_PROVIDER_AIDONE
+    );
+    const providers = {
+        [VERIFY_PROVIDER_AIDONE]: buildRuntimeVerifyProviderConfig({
+            config,
+            provider: VERIFY_PROVIDER_AIDONE,
+            prices,
+            site
+        }),
+        [VERIFY_PROVIDER_CATCARD]: buildRuntimeVerifyProviderConfig({
+            config,
+            provider: VERIFY_PROVIDER_CATCARD,
+            prices,
+            site
+        })
+    };
+    const activeConfig = providers[activeProvider] || providers[VERIFY_PROVIDER_AIDONE];
 
     return {
-        site: sanitizeSite(site || 'cn'),
+        ...activeConfig,
         pricePerVerify: prices.extract,
         pricePerVerifyExtract: prices.extract,
         pricePerVerifyFull: prices.full,
-        apiKey: apiKeys[0] || '',
-        apiKeys,
-        keyCount: apiKeys.length,
-        apiBaseUrl: normalizeVerifyApiBaseUrl(
-            config.verify_api_base_url
-            || process.env.VERIFY_API_BASE_URL
-            || VERIFY_API_BASE
-        ),
+        active_provider: activeProvider,
+        activeProvider,
+        providers,
         monitorConfig: config.verify_quota_monitor && typeof config.verify_quota_monitor === 'object'
             ? config.verify_quota_monitor
             : {},
@@ -704,13 +722,102 @@ function getApiErrorCode(payload) {
 
 function getApiErrorMessage(payload, fallback) {
     const detail = getApiErrorDetail(payload);
-    return detail?.message || payload?.message || payload?.error || fallback;
+    return detail?.message || payload?.message || payload?.msg || payload?.error || fallback;
 }
 
 function normalizeVerifyApiBaseUrl(value) {
     const normalized = String(value || '').trim().replace(/\/+$/, '');
     if (!normalized) return '';
     return /\/openapi$/i.test(normalized) ? normalized : `${normalized}/openapi`;
+}
+
+function normalizeVerifyProviderRootUrl(value) {
+    return String(value || '').trim().replace(/\/+$/, '');
+}
+
+function normalizeVerifyProvider(value, fallback = VERIFY_PROVIDER_AIDONE) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (['catcard', '1free', 'pixel', 'pixel_bridge', 'pixel_bridge_rest', 'qzz'].includes(normalized)) {
+        return VERIFY_PROVIDER_CATCARD;
+    }
+    if (['aidone', 'primary', 'legacy', 'openapi', 'aidone_openapi'].includes(normalized)) {
+        return VERIFY_PROVIDER_AIDONE;
+    }
+    return fallback === VERIFY_PROVIDER_CATCARD ? VERIFY_PROVIDER_CATCARD : VERIFY_PROVIDER_AIDONE;
+}
+
+function normalizeVerifyAdapter(value, provider = VERIFY_PROVIDER_AIDONE) {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (['pixel_bridge_rest', 'pixel-bridge-rest', 'catcard', '1free', 'pixel'].includes(normalized)) {
+        return VERIFY_ADAPTER_PIXEL_BRIDGE_REST;
+    }
+    if (['aidone_openapi', 'aidone-openapi', 'openapi', 'aidone'].includes(normalized)) {
+        return VERIFY_ADAPTER_AIDONE_OPENAPI;
+    }
+    return normalizeVerifyProvider(provider) === VERIFY_PROVIDER_CATCARD
+        ? VERIFY_ADAPTER_PIXEL_BRIDGE_REST
+        : VERIFY_ADAPTER_AIDONE_OPENAPI;
+}
+
+function isPixelBridgeVerifyConfig(config = {}) {
+    return normalizeVerifyAdapter(config.adapter || config.provider_adapter, config.provider) === VERIFY_ADAPTER_PIXEL_BRIDGE_REST;
+}
+
+function verifyProviderSupportsJobAction(config = {}, action = '') {
+    const normalizedAction = String(action || '').trim();
+    if (!['cancel_task', 'purchase_failed_link'].includes(normalizedAction)) {
+        return false;
+    }
+    if (isPixelBridgeVerifyConfig(config)) {
+        return false;
+    }
+
+    const capabilities = config.capabilities && typeof config.capabilities === 'object'
+        ? config.capabilities
+        : {};
+    if (normalizedAction === 'cancel_task') {
+        return capabilities.cancelTask !== false;
+    }
+    if (normalizedAction === 'purchase_failed_link') {
+        return capabilities.failedLinkPurchase !== false;
+    }
+    return false;
+}
+
+function getVerifyProviderUnitCosts(provider, adapter = '') {
+    if (normalizeVerifyAdapter(adapter, provider) === VERIFY_ADAPTER_PIXEL_BRIDGE_REST) {
+        return {
+            extract: 1,
+            full: 1
+        };
+    }
+    return {
+        extract: VERIFY_TASK_UNIT_COSTS.extract,
+        full: VERIFY_TASK_UNIT_COSTS.full
+    };
+}
+
+function getVerifyProviderCapabilities(provider, adapter = '') {
+    if (normalizeVerifyAdapter(adapter, provider) === VERIFY_ADAPTER_PIXEL_BRIDGE_REST) {
+        return {
+            keyBalance: true,
+            keyTypes: true,
+            serviceStatus: true,
+            batchSubmit: true,
+            remarks: true,
+            cancelTask: false,
+            failedLinkPurchase: false
+        };
+    }
+    return {
+        keyBalance: true,
+        keyTypes: false,
+        serviceStatus: false,
+        batchSubmit: true,
+        remarks: false,
+        cancelTask: true,
+        failedLinkPurchase: true
+    };
 }
 
 function normalizeVerifyTaskType(value, fallback = DEFAULT_VERIFY_TASK_TYPE) {
@@ -749,7 +856,9 @@ function getVerifyUnitCost(taskType = DEFAULT_VERIFY_TASK_TYPE) {
 
 function getVerifyRemainingTaskCount(remainingUses, taskType = DEFAULT_VERIFY_TASK_TYPE) {
     const numericRemainingUses = Number(remainingUses);
-    const unitCost = getVerifyUnitCost(taskType);
+    const unitCost = typeof taskType === 'number'
+        ? taskType
+        : getVerifyUnitCost(taskType);
     if (!Number.isFinite(numericRemainingUses) || !Number.isFinite(unitCost) || unitCost <= 0) {
         return 0;
     }
@@ -757,18 +866,49 @@ function getVerifyRemainingTaskCount(remainingUses, taskType = DEFAULT_VERIFY_TA
     return Math.max(0, Math.floor((numericRemainingUses + 1e-9) / unitCost));
 }
 
-function buildVerifyUsageSummary(remainingUses) {
+function buildVerifyUsageSummary(remainingUses, unitCosts = {}) {
     const numericRemainingUses = Number(remainingUses);
     const safeRemainingUses = Number.isFinite(numericRemainingUses)
         ? Math.max(0, Math.round(numericRemainingUses * 100) / 100)
         : 0;
+    const extractCost = Math.max(0.01, Number(unitCosts.extract || unitCosts.extract_cost_per_job || getVerifyUnitCost('extract')) || getVerifyUnitCost('extract'));
+    const fullCost = Math.max(0.01, Number(unitCosts.full || unitCosts.full_cost_per_job || getVerifyUnitCost('full')) || getVerifyUnitCost('full'));
 
     return {
         remaining_uses: safeRemainingUses,
-        extract_cost_per_job: getVerifyUnitCost('extract'),
-        full_cost_per_job: getVerifyUnitCost('full'),
-        remaining_extract_jobs: getVerifyRemainingTaskCount(safeRemainingUses, 'extract'),
-        remaining_full_jobs: getVerifyRemainingTaskCount(safeRemainingUses, 'full')
+        extract_cost_per_job: extractCost,
+        full_cost_per_job: fullCost,
+        remaining_extract_jobs: getVerifyRemainingTaskCount(safeRemainingUses, extractCost),
+        remaining_full_jobs: getVerifyRemainingTaskCount(safeRemainingUses, fullCost)
+    };
+}
+
+function getVerifySnapshotRemainingUses(snapshot = {}) {
+    const remainingUses = Number(snapshot.remaining_uses ?? snapshot.balance ?? snapshot.credits ?? snapshot.remainingUses);
+    return Number.isFinite(remainingUses)
+        ? Math.max(0, Math.round(remainingUses * 100) / 100)
+        : 0;
+}
+
+function buildVerifyTypedUsageSummary(snapshots = [], unitCosts = {}) {
+    const totalRemainingUses = (Array.isArray(snapshots) ? snapshots : [])
+        .reduce((sum, snapshot) => sum + getVerifySnapshotRemainingUses(snapshot), 0);
+    const extractRemainingUses = (Array.isArray(snapshots) ? snapshots : [])
+        .filter((snapshot) => verifySnapshotSupportsTaskType(snapshot, 'extract'))
+        .reduce((sum, snapshot) => sum + getVerifySnapshotRemainingUses(snapshot), 0);
+    const fullRemainingUses = (Array.isArray(snapshots) ? snapshots : [])
+        .filter((snapshot) => verifySnapshotSupportsTaskType(snapshot, 'full'))
+        .reduce((sum, snapshot) => sum + getVerifySnapshotRemainingUses(snapshot), 0);
+    const totalSummary = buildVerifyUsageSummary(totalRemainingUses, unitCosts);
+    const extractSummary = buildVerifyUsageSummary(extractRemainingUses, unitCosts);
+    const fullSummary = buildVerifyUsageSummary(fullRemainingUses, unitCosts);
+
+    return {
+        ...totalSummary,
+        remaining_extract_uses: extractSummary.remaining_uses,
+        remaining_full_uses: fullSummary.remaining_uses,
+        remaining_extract_jobs: extractSummary.remaining_extract_jobs,
+        remaining_full_jobs: fullSummary.remaining_full_jobs
     };
 }
 
@@ -803,6 +943,132 @@ function maskVerifyCredential(value) {
     if (!normalized) return '';
     if (normalized.length <= 8) return normalized;
     return `${normalized.slice(0, 4)}...${normalized.slice(-4)}`;
+}
+
+function getVerifyProviderConfigSource(config = {}, provider = VERIFY_PROVIDER_AIDONE) {
+    const providers = config.providers && typeof config.providers === 'object' && !Array.isArray(config.providers)
+        ? config.providers
+        : {};
+    if (normalizeVerifyProvider(provider) === VERIFY_PROVIDER_CATCARD) {
+        return providers.catcard || providers['1free'] || providers.pixel || providers.pixel_bridge || {};
+    }
+    return providers.aidone || providers.primary || providers.legacy || {};
+}
+
+function buildVerifyKeyTypeHints(entries = []) {
+    const hints = {};
+    entries.forEach(({ keys, keyType }) => {
+        normalizeVerifyCredentialList(keys).forEach((key) => {
+            hints[key] = keyType;
+        });
+    });
+    return hints;
+}
+
+function buildRuntimeVerifyProviderConfig({
+    config = {},
+    provider = VERIFY_PROVIDER_AIDONE,
+    prices = {},
+    site = 'cn'
+} = {}) {
+    const normalizedProvider = normalizeVerifyProvider(provider);
+    const source = getVerifyProviderConfigSource(config, normalizedProvider);
+    const adapter = normalizeVerifyAdapter(source.adapter || source.provider_adapter, normalizedProvider);
+    const subscribeKeys = normalizeVerifyCredentialList([
+        source.subscribe_cdkeys,
+        source.full_cdkeys,
+        source.subscribe_keys,
+        config.verify_provider_catcard_subscribe_cdkeys,
+        config.verify_provider_catcard_full_cdkeys
+    ]);
+    const extractKeys = normalizeVerifyCredentialList([
+        source.extract_cdkeys,
+        source.extract_link_cdkeys,
+        source.extract_keys,
+        config.verify_provider_catcard_extract_cdkeys
+    ]);
+    const legacyKeys = normalizedProvider === VERIFY_PROVIDER_AIDONE
+        ? [
+            config.verify_cdkeys,
+            config.verify_cdkey,
+            config.verify_api_key,
+            process.env.VERIFY_CDKEYS,
+            process.env.VERIFY_CDKEY,
+            process.env.VERIFY_API_KEY,
+            process.env.VERIFY_API_TOKEN
+        ]
+        : [
+            config.verify_catcard_api_key,
+            config.verify_provider_catcard_api_key,
+            process.env.VERIFY_CATCARD_CDKEYS,
+            process.env.VERIFY_CATCARD_CDKEY,
+            process.env.VERIFY_1FREE_CDKEY
+        ];
+    const apiKeys = normalizeVerifyCredentialList([
+        source.verify_cdkeys,
+        source.cdkeys,
+        source.apiKeys,
+        source.api_keys,
+        source.keys,
+        source.verify_cdkey,
+        source.verify_api_key,
+        source.apiKey,
+        source.api_key,
+        normalizedProvider === VERIFY_PROVIDER_CATCARD ? [subscribeKeys, extractKeys] : [],
+        legacyKeys
+    ]);
+    const apiBaseUrl = normalizeVerifyProviderRootUrl(
+        source.api_base_url
+        || source.apiBaseUrl
+        || config[`verify_provider_${normalizedProvider}_api_base_url`]
+        || (normalizedProvider === VERIFY_PROVIDER_CATCARD ? config.verify_catcard_api_base_url : config.verify_api_base_url)
+        || (normalizedProvider === VERIFY_PROVIDER_CATCARD
+            ? (process.env.VERIFY_CATCARD_API_BASE_URL || process.env.VERIFY_1FREE_API_BASE_URL || 'https://1free.qzz.io')
+            : (process.env.VERIFY_API_BASE_URL || VERIFY_API_BASE))
+    );
+    const unitCosts = getVerifyProviderUnitCosts(normalizedProvider, adapter);
+
+    return {
+        site: sanitizeSite(site || 'cn'),
+        enabled: source.enabled !== false,
+        provider: normalizedProvider,
+        provider_label: source.label || VERIFY_PROVIDER_LABELS[normalizedProvider] || VERIFY_PROVIDER_LABELS[VERIFY_PROVIDER_AIDONE],
+        providerLabel: source.label || VERIFY_PROVIDER_LABELS[normalizedProvider] || VERIFY_PROVIDER_LABELS[VERIFY_PROVIDER_AIDONE],
+        adapter,
+        provider_adapter: adapter,
+        apiKey: apiKeys[0] || '',
+        apiKeys,
+        keyCount: apiKeys.length,
+        apiBaseUrl,
+        pricePerVerify: prices.extract,
+        pricePerVerifyExtract: prices.extract,
+        pricePerVerifyFull: prices.full,
+        keyTypeHints: {
+            ...(source.key_type_hints && typeof source.key_type_hints === 'object' ? source.key_type_hints : {}),
+            ...buildVerifyKeyTypeHints([
+                { keys: subscribeKeys, keyType: 'subscribe' },
+                { keys: extractKeys, keyType: 'extract_link' }
+            ])
+        },
+        unitCosts,
+        capabilities: getVerifyProviderCapabilities(normalizedProvider, adapter)
+    };
+}
+
+function activateVerifyProviderConfig(runtimeConfig = {}, provider = '') {
+    const normalizedProvider = normalizeVerifyProvider(provider || runtimeConfig.provider);
+    const providerConfig = runtimeConfig.providers?.[normalizedProvider];
+    if (!providerConfig) return runtimeConfig;
+    return {
+        ...runtimeConfig,
+        ...providerConfig,
+        providers: runtimeConfig.providers,
+        active_provider: normalizedProvider,
+        activeProvider: normalizedProvider,
+        pricePerVerify: runtimeConfig.pricePerVerify,
+        pricePerVerifyExtract: runtimeConfig.pricePerVerifyExtract,
+        pricePerVerifyFull: runtimeConfig.pricePerVerifyFull
+    };
 }
 
 function buildVerifyCredentialFingerprint(value) {
@@ -847,30 +1113,44 @@ function extractVerifyProviderPayload(payload) {
 }
 
 function normalizeVerifyJobPayload(payload = {}, fallback = {}) {
-    const source = extractVerifyProviderPayload(payload);
-    const offerUrl = String(source.offer_url || source.url || fallback.offer_url || fallback.url || '').trim();
+    const extracted = extractVerifyProviderPayload(payload);
+    const source = extracted.task && typeof extracted.task === 'object' && !Array.isArray(extracted.task)
+        ? {
+            ...extracted,
+            ...extracted.task,
+            remaining_uses: extracted.remaining_uses ?? extracted.remaining
+        }
+        : extracted;
+    const rawResult = String(source.result || '').trim();
+    const resultUrl = /https?:\/\/[^\s"']+/i.test(rawResult)
+        ? (rawResult.match(/https?:\/\/[^\s"']+/i)?.[0] || rawResult)
+        : '';
+    const offerUrl = String(source.offer_url || source.url || resultUrl || fallback.offer_url || fallback.url || '').trim();
     const queuePositionValue = normalizeOptionalNumber(source.queue_position ?? fallback.queue_position);
     const waitSecondsValue = normalizeOptionalNumber(source.estimated_wait_seconds ?? fallback.estimated_wait_seconds);
-    const elapsedSecondsValue = normalizeOptionalNumber(source.elapsed_seconds ?? fallback.elapsed_seconds);
+    const elapsedSecondsValue = normalizeOptionalNumber(source.elapsed_seconds ?? source.duration ?? fallback.elapsed_seconds);
+    const message = String(source.message || (!resultUrl ? rawResult : '') || fallback.message || '').trim();
 
     return {
         ...source,
-        job_id: String(source.job_id || source.task_id || fallback.job_id || fallback.task_id || '').trim(),
-        task_id: String(source.task_id || source.job_id || fallback.task_id || fallback.job_id || '').trim(),
+        job_id: String(source.job_id || source.task_id || source.id || fallback.job_id || fallback.task_id || '').trim(),
+        task_id: String(source.task_id || source.job_id || source.id || fallback.task_id || fallback.job_id || '').trim(),
         status: normalizeVerifyUpstreamStatus(source.status || source.raw_status || fallback.status),
         task_type: normalizeVerifyTaskType(source.task_type || fallback.task_type),
         url: offerUrl,
         offer_url: offerUrl,
         has_offer_url: source.has_offer_url === true || fallback.has_offer_url === true || Boolean(offerUrl),
         error: String(source.error_code || source.error || fallback.error || '').trim(),
-        message: String(source.message || fallback.message || '').trim(),
-        stage_label: String(source.stage_label || fallback.stage_label || '').trim(),
+        message,
+        stage_label: String(source.stage_label || source.step || fallback.stage_label || '').trim(),
         queue_position: queuePositionValue,
         estimated_wait_seconds: waitSecondsValue,
         elapsed_seconds: elapsedSecondsValue,
-        created_at: String(source.completed_at || source.created_at || fallback.created_at || '').trim() || null,
+        created_at: String(source.completed_at || source.updated_at || source.created_at || fallback.created_at || '').trim() || null,
         provider_key_fingerprint: String(source.provider_key_fingerprint || fallback.provider_key_fingerprint || '').trim(),
-        provider_key_name: String(source.provider_key_name || fallback.provider_key_name || '').trim()
+        provider_key_name: String(source.provider_key_name || fallback.provider_key_name || '').trim(),
+        provider: normalizeVerifyProvider(source.provider || fallback.provider),
+        provider_adapter: String(source.provider_adapter || source.adapter || fallback.provider_adapter || fallback.adapter || '').trim()
     };
 }
 
@@ -885,8 +1165,16 @@ function buildVerifyFetchOptions(timeoutMs = 0) {
 }
 
 async function postVerifyProviderAction(config = {}, payload = {}, options = {}) {
+    const fetchImpl = typeof options.fetchImpl === 'function' ? options.fetchImpl : fetch;
+    if (isPixelBridgeVerifyConfig(config)) {
+        return postPixelBridgeProviderAction(config, payload, {
+            ...options,
+            fetchImpl
+        });
+    }
+
     const endpoint = normalizeVerifyApiBaseUrl(config.apiBaseUrl || config.api_base_url);
-    const response = await fetch(endpoint, {
+    const response = await fetchImpl(endpoint, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
@@ -901,6 +1189,168 @@ async function postVerifyProviderAction(config = {}, payload = {}, options = {})
         status: response.status,
         endpoint,
         payload: responsePayload
+    };
+}
+
+async function fetchVerifyJson(url, {
+    method = 'GET',
+    body = null,
+    fetchImpl = fetch,
+    timeoutMs = 0
+} = {}) {
+    const response = await fetchImpl(url, {
+        method,
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: body ? JSON.stringify(body) : undefined,
+        ...buildVerifyFetchOptions(timeoutMs)
+    });
+    const rawBody = await response.text().catch(() => '');
+    let payload = {};
+    if (rawBody) {
+        try {
+            payload = JSON.parse(rawBody);
+        } catch (_) {
+            payload = { raw: rawBody };
+        }
+    }
+    return {
+        ok: response.ok,
+        status: Number(response.status || 0),
+        payload,
+        rawBody
+    };
+}
+
+function isPixelBridgeSuccess(result = {}) {
+    return result.ok && Number(result.payload?.code) === 0;
+}
+
+function buildPixelBridgeErrorPayload(result = {}, fallback = '请求失败') {
+    const payload = result.payload || {};
+    return {
+        success: false,
+        code: payload.code || payload.error || '',
+        message: payload.msg || payload.message || payload.error || fallback,
+        raw: payload
+    };
+}
+
+async function postPixelBridgeProviderAction(config = {}, payload = {}, options = {}) {
+    const root = normalizeVerifyProviderRootUrl(config.apiBaseUrl || config.api_base_url || 'https://1free.qzz.io');
+    const action = String(payload.action || '').trim();
+    const fetchImpl = typeof options.fetchImpl === 'function' ? options.fetchImpl : fetch;
+
+    if (action === 'get_balance') {
+        const endpoint = `${root}/api/pixel-keys/verify`;
+        const result = await fetchVerifyJson(endpoint, {
+            method: 'POST',
+            body: { key: payload.cdkey },
+            fetchImpl,
+            timeoutMs: options.timeoutMs
+        });
+        if (!isPixelBridgeSuccess(result)) {
+            return {
+                ok: false,
+                status: result.status || 502,
+                endpoint,
+                payload: buildPixelBridgeErrorPayload(result, '查询额度失败')
+            };
+        }
+        const data = result.payload?.data && typeof result.payload.data === 'object' ? result.payload.data : {};
+        const keyStatus = String(data.status || 'active').trim().toLowerCase();
+        if (keyStatus && keyStatus !== 'active') {
+            return {
+                ok: false,
+                status: result.status || 200,
+                endpoint,
+                payload: {
+                    success: false,
+                    code: 'key_inactive',
+                    message: data.status || '卡密状态不可用',
+                    raw: result.payload
+                }
+            };
+        }
+        return {
+            ok: true,
+            status: result.status,
+            endpoint,
+            payload: {
+                success: true,
+                data: {
+                    provider: VERIFY_PROVIDER_CATCARD,
+                    provider_adapter: VERIFY_ADAPTER_PIXEL_BRIDGE_REST,
+                    remaining_uses: data.remaining,
+                    balance: data.remaining,
+                    credits: data.remaining,
+                    total_used: data.used,
+                    total: data.total,
+                    key_name: data.label || data.key,
+                    key_type: data.key_type,
+                    key_status: data.status
+                },
+                raw: result.payload
+            }
+        };
+    }
+
+    if (action !== 'submit_task') {
+        return {
+            ok: false,
+            status: 400,
+            endpoint: `${root}/api/pixel-bridge`,
+            payload: {
+                success: false,
+                code: 'unsupported_action',
+                message: '当前通道不支持该操作'
+            }
+        };
+    }
+
+    const endpoint = `${root}/api/pixel-bridge/submit-task`;
+    const result = await fetchVerifyJson(endpoint, {
+        method: 'POST',
+        body: {
+            key: payload.cdkey,
+            email: payload.email,
+            password: payload.password,
+            totp_secret: payload.twofa || payload.totp_secret || payload.totpSecret,
+            recovery: payload.recovery || '',
+            remark: payload.remark || ''
+        },
+        fetchImpl,
+        timeoutMs: options.timeoutMs
+    });
+    if (!isPixelBridgeSuccess(result)) {
+        return {
+            ok: false,
+            status: result.status || 502,
+            endpoint,
+            payload: buildPixelBridgeErrorPayload(result, '任务提交失败')
+        };
+    }
+    const data = result.payload?.data && typeof result.payload.data === 'object' ? result.payload.data : {};
+    const task = data.task && typeof data.task === 'object' ? data.task : {};
+    return {
+        ok: true,
+        status: result.status,
+        endpoint,
+        payload: {
+            success: true,
+            message: result.payload?.msg || '任务已提交',
+            data: {
+                provider: VERIFY_PROVIDER_CATCARD,
+                provider_adapter: VERIFY_ADAPTER_PIXEL_BRIDGE_REST,
+                job_id: String(task.id || task.job_id || task.task_id || '').trim(),
+                task_id: String(task.id || task.task_id || task.job_id || '').trim(),
+                email: task.email || payload.email,
+                status: task.status || 'queued',
+                task_type: payload.task_type,
+                remaining_uses: data.remaining
+            }
+        }
     };
 }
 
@@ -928,11 +1378,13 @@ async function fetchVerifyQuotaStates(config = {}) {
 
         const apiData = extractVerifyProviderPayload(upstream.payload);
         const remainingUses = Number(apiData.remaining_uses ?? apiData.balance ?? apiData.credits ?? 0);
-        const usageSummary = buildVerifyUsageSummary(remainingUses);
+        const unitCosts = getVerifyProviderUnitCosts(config.provider, config.adapter || config.provider_adapter);
+        const usageSummary = buildVerifyUsageSummary(remainingUses, unitCosts);
         snapshots.push({
             ok: true,
             apiKey,
             keyName: String(apiData.name || apiData.key_name || apiData.keyName || '').trim() || maskVerifyCredential(apiKey),
+            key_type: String(apiData.key_type || config.keyTypeHints?.[apiKey] || '').trim(),
             remainingUses: usageSummary.remaining_uses,
             totalUsed: Number(apiData.total_used || 0),
             usageSummary
@@ -942,9 +1394,18 @@ async function fetchVerifyQuotaStates(config = {}) {
     return snapshots;
 }
 
-async function selectVerifyCredentialForTask(config = {}, requiredUses = 0) {
+function verifySnapshotSupportsTaskType(snapshot = {}, taskType = '') {
+    const normalizedTaskType = normalizeVerifyTaskType(taskType || DEFAULT_VERIFY_TASK_TYPE);
+    const keyType = String(snapshot.key_type || snapshot.keyType || '').trim().toLowerCase();
+    if (!keyType) return true;
+    if (keyType === 'subscribe' || keyType === 'full') return normalizedTaskType === 'full';
+    if (keyType === 'extract_link' || keyType === 'extract') return normalizedTaskType === 'extract';
+    return true;
+}
+
+async function selectVerifyCredentialForTask(config = {}, requiredUses = 0, options = {}) {
     const apiKeys = normalizeVerifyCredentialList(config.apiKeys || config.apiKey);
-    if (apiKeys.length <= 1) {
+    if (apiKeys.length <= 1 && !isPixelBridgeVerifyConfig(config)) {
         const onlyKey = apiKeys[0] || '';
         return {
             selected: onlyKey
@@ -984,6 +1445,7 @@ async function selectVerifyCredentialForTask(config = {}, requiredUses = 0) {
     const snapshots = await fetchVerifyQuotaStates(config);
     const healthySnapshots = snapshots
         .filter((snapshot) => snapshot.ok)
+        .filter((snapshot) => verifySnapshotSupportsTaskType(snapshot, options.taskType || options.task_type))
         .sort((left, right) => Number(right.remainingUses || 0) - Number(left.remainingUses || 0));
     const selected = healthySnapshots.find((snapshot) => Number(snapshot.remainingUses || 0) >= Number(requiredUses || 0)) || null;
     const totalRemainingUses = healthySnapshots.reduce((sum, snapshot) => sum + Number(snapshot.remainingUses || 0), 0);
@@ -2368,6 +2830,8 @@ function buildTrackedJobPayload({ email, jobId, apiData = {}, status = '', point
         task_type: taskType,
         provider_key_fingerprint: String(apiData?.provider_key_fingerprint || '').trim(),
         provider_key_name: String(apiData?.provider_key_name || '').trim(),
+        provider: normalizeVerifyProvider(apiData?.provider),
+        provider_adapter: String(apiData?.provider_adapter || apiData?.adapter || '').trim(),
         error_code: apiData?.error || '',
         message: apiData?.message || '',
         error_message: buildClientStatusMessage(apiData),
@@ -2611,7 +3075,11 @@ async function syncTrackedJobStatus({
         const existingPayload = parseHistoryMessage(existingRecord?.message) || {};
         const normalizedApiData = normalizeVerifyJobPayload(apiData, {
             job_id: jobId,
-            task_type: existingPayload.task_type || DEFAULT_VERIFY_TASK_TYPE
+            task_type: existingPayload.task_type || DEFAULT_VERIFY_TASK_TYPE,
+            provider: existingPayload.provider || config?.provider,
+            provider_adapter: existingPayload.provider_adapter || config?.adapter || config?.provider_adapter,
+            provider_key_fingerprint: existingPayload.provider_key_fingerprint || '',
+            provider_key_name: existingPayload.provider_key_name || ''
         });
         const upstreamStatus = String(normalizedApiData?.status || '').toLowerCase();
         const taskType = normalizeVerifyTaskType(normalizedApiData?.task_type || existingPayload.task_type);
@@ -2688,6 +3156,10 @@ async function syncTrackedJobStatus({
 }
 
 async function fetchUpstreamJobStatus(config, jobId, options = {}) {
+    if (isPixelBridgeVerifyConfig(config)) {
+        return fetchPixelBridgeTaskStatus(config, jobId, options);
+    }
+
     const candidateApiKeys = normalizeVerifyCredentialList([
         options.apiKey,
         config.apiKeys,
@@ -2710,6 +3182,8 @@ async function fetchUpstreamJobStatus(config, jobId, options = {}) {
                 data: normalizeVerifyJobPayload(upstream.payload, {
                     job_id: jobId,
                     task_type: options.taskType || DEFAULT_VERIFY_TASK_TYPE,
+                    provider: config.provider,
+                    provider_adapter: config.adapter || config.provider_adapter,
                     provider_key_fingerprint: buildVerifyCredentialFingerprint(apiKey),
                     provider_key_name: maskVerifyCredential(apiKey)
                 })
@@ -2759,7 +3233,184 @@ async function fetchUpstreamJobStatus(config, jobId, options = {}) {
             error: missingJobError.code || 'job_not_found',
             message: missingJobError.message || '任务不存在'
         }, {
-            task_type: options.taskType || DEFAULT_VERIFY_TASK_TYPE
+            task_type: options.taskType || DEFAULT_VERIFY_TASK_TYPE,
+            provider: config.provider,
+            provider_adapter: config.adapter || config.provider_adapter
+        })
+    };
+}
+
+async function postVerifyJobAction(config = {}, {
+    action = '',
+    jobId = '',
+    apiKey = '',
+    taskType = DEFAULT_VERIFY_TASK_TYPE
+} = {}, options = {}) {
+    const normalizedAction = String(action || '').trim();
+    const normalizedJobId = String(jobId || '').trim();
+
+    if (!normalizedJobId) {
+        return {
+            ok: false,
+            status: 400,
+            code: 'job_not_found',
+            message: '缺少任务编号'
+        };
+    }
+
+    if (!verifyProviderSupportsJobAction(config, normalizedAction)) {
+        return {
+            ok: false,
+            status: 400,
+            code: 'provider_action_not_supported',
+            message: normalizedAction === 'purchase_failed_link'
+                ? '当前通道不支持购买失败暂存提链'
+                : '当前通道不支持取消任务'
+        };
+    }
+
+    const candidateApiKeys = normalizeVerifyCredentialList([
+        apiKey,
+        options.apiKey,
+        config.apiKeys,
+        config.apiKey
+    ]);
+    let lastError = null;
+
+    for (const candidateApiKey of candidateApiKeys) {
+        const upstream = await postVerifyProviderAction(config, {
+            action: normalizedAction,
+            cdkey: candidateApiKey,
+            task_id: normalizedJobId
+        }, {
+            ...options,
+            apiKey: candidateApiKey
+        });
+
+        if (upstream.ok) {
+            const normalizedPayload = normalizeVerifyJobPayload(upstream.payload, {
+                job_id: normalizedJobId,
+                task_type: normalizedAction === 'purchase_failed_link' ? 'extract' : taskType,
+                provider: config.provider,
+                provider_adapter: config.adapter || config.provider_adapter,
+                provider_key_fingerprint: buildVerifyCredentialFingerprint(candidateApiKey),
+                provider_key_name: maskVerifyCredential(candidateApiKey),
+                status: normalizedAction === 'purchase_failed_link' ? 'success' : 'failed'
+            });
+
+            return {
+                ok: true,
+                status: upstream.status || 200,
+                data: normalizedPayload,
+                payload: upstream.payload,
+                apiKey: candidateApiKey
+            };
+        }
+
+        const errorCode = getApiErrorCode(upstream.payload);
+        const errorMessage = getApiErrorMessage(upstream.payload, '操作失败');
+        lastError = {
+            status: upstream.status || 502,
+            code: errorCode,
+            message: errorMessage
+        };
+
+        if (upstream.status === 404 || errorCode === 'job_not_found' || /任务不存在|not found/i.test(errorMessage)) {
+            continue;
+        }
+
+        break;
+    }
+
+    return {
+        ok: false,
+        status: lastError?.status || 502,
+        code: lastError?.code || 'job_action_failed',
+        message: lastError?.message || '操作失败'
+    };
+}
+
+function normalizePixelBridgeTask(task = {}, fallback = {}) {
+    return normalizeVerifyJobPayload({
+        ...task,
+        job_id: task.id || task.job_id || task.task_id,
+        task_id: task.id || task.task_id || task.job_id,
+        provider: fallback.provider,
+        provider_adapter: fallback.provider_adapter,
+        provider_key_fingerprint: fallback.provider_key_fingerprint,
+        provider_key_name: fallback.provider_key_name,
+        task_type: fallback.task_type
+    }, fallback);
+}
+
+async function fetchPixelBridgeTaskStatus(config = {}, jobId, options = {}) {
+    const candidateApiKeys = normalizeVerifyCredentialList([
+        options.apiKey,
+        config.apiKeys,
+        config.apiKey
+    ]);
+    const root = normalizeVerifyProviderRootUrl(config.apiBaseUrl || config.api_base_url || 'https://1free.qzz.io');
+    const fetchImpl = typeof options.fetchImpl === 'function' ? options.fetchImpl : fetch;
+    let lastError = null;
+
+    for (const apiKey of candidateApiKeys) {
+        const url = new URL(`${root}/api/pixel-bridge/tasks`);
+        url.searchParams.set('key', apiKey);
+        url.searchParams.set('limit', String(options.limit || 100));
+        url.searchParams.set('page', '1');
+
+        const result = await fetchVerifyJson(url.toString(), {
+            method: 'GET',
+            fetchImpl,
+            timeoutMs: options.timeoutMs
+        });
+        if (!isPixelBridgeSuccess(result)) {
+            lastError = {
+                status: result.status || 502,
+                code: result.payload?.code || '',
+                message: result.payload?.msg || result.payload?.message || '查询状态失败'
+            };
+            continue;
+        }
+
+        const data = result.payload?.data && typeof result.payload.data === 'object' ? result.payload.data : {};
+        const tasks = Array.isArray(data.tasks) ? data.tasks : [];
+        const matchedTask = tasks.find((task) => String(task?.id || task?.task_id || task?.job_id || '').trim() === String(jobId));
+        if (matchedTask) {
+            return {
+                ok: true,
+                data: normalizePixelBridgeTask(matchedTask, {
+                    job_id: jobId,
+                    task_type: options.taskType || options.task_type || DEFAULT_VERIFY_TASK_TYPE,
+                    provider: config.provider,
+                    provider_adapter: config.adapter || config.provider_adapter,
+                    provider_key_fingerprint: buildVerifyCredentialFingerprint(apiKey),
+                    provider_key_name: maskVerifyCredential(apiKey)
+                })
+            };
+        }
+    }
+
+    if (lastError) {
+        return {
+            ok: false,
+            status: lastError.status,
+            code: lastError.code,
+            message: lastError.message
+        };
+    }
+
+    return {
+        ok: true,
+        data: normalizeVerifyJobPayload({
+            job_id: jobId,
+            status: 'failed',
+            error: 'job_not_found',
+            message: '任务不存在'
+        }, {
+            task_type: options.taskType || options.task_type || DEFAULT_VERIFY_TASK_TYPE,
+            provider: config.provider,
+            provider_adapter: config.adapter || config.provider_adapter
         })
     };
 }
@@ -2776,15 +3427,59 @@ async function buildLocalVerifyQueueSnapshot(config = {}) {
     }
 
     const rows = Array.isArray(data) ? data : [];
-    const queueSize = rows.filter((row) => ['queued', 'pending'].includes(String(row?.status || '').trim().toLowerCase())).length;
-    const runningJobs = rows.filter((row) => ['running', 'processing'].includes(String(row?.status || '').trim().toLowerCase())).length;
+    const localQueueSize = rows.filter((row) => ['queued', 'pending'].includes(String(row?.status || '').trim().toLowerCase())).length;
+    const localRunningJobs = rows.filter((row) => ['running', 'processing'].includes(String(row?.status || '').trim().toLowerCase())).length;
+    let providerStatus = null;
+    if (isPixelBridgeVerifyConfig(config)) {
+        try {
+            providerStatus = await fetchPixelBridgeServiceStatus(config);
+        } catch (error) {
+            providerStatus = {
+                ok: false,
+                message: error.message || '查询服务状态失败'
+            };
+        }
+    }
 
     return {
-        queue_size: queueSize,
-        running_jobs: runningJobs,
+        provider: config.provider,
+        provider_label: config.provider_label || config.providerLabel || '',
+        adapter: config.adapter || config.provider_adapter,
+        queue_size: Number.isFinite(Number(providerStatus?.queue_size)) ? Number(providerStatus.queue_size) : localQueueSize,
+        running_jobs: Number.isFinite(Number(providerStatus?.running_jobs)) ? Number(providerStatus.running_jobs) : localRunningJobs,
+        local_queue_size: localQueueSize,
+        local_running_jobs: localRunningJobs,
+        worker_count: Number(providerStatus?.worker_count || 0) || 0,
+        online_servers: Number(providerStatus?.online_servers || 0) || 0,
+        service_status: providerStatus?.service_status || '',
         key_name: Number(config.keyCount || 0) > 1
-            ? `CDKey 池（${Number(config.keyCount || 0)}）`
-            : maskVerifyCredential(config.apiKey)
+            ? `${config.provider_label || 'CDKey 池'}（${Number(config.keyCount || 0)}）`
+            : maskVerifyCredential(config.apiKey),
+        message: providerStatus?.message || ''
+    };
+}
+
+async function fetchPixelBridgeServiceStatus(config = {}, options = {}) {
+    const root = normalizeVerifyProviderRootUrl(config.apiBaseUrl || config.api_base_url || 'https://1free.qzz.io');
+    const endpoint = `${root}/api/pixel-bridge/status`;
+    const result = await fetchVerifyJson(endpoint, {
+        method: 'GET',
+        fetchImpl: options.fetchImpl,
+        timeoutMs: options.timeoutMs
+    });
+    const payload = result.payload || {};
+    const data = payload.data && typeof payload.data === 'object' ? payload.data : {};
+    const ok = result.ok && Number(payload.code) === 0 && data.online !== false && String(data.service_status || 'running').trim().toLowerCase() !== 'paused';
+    return {
+        ok,
+        status: result.status,
+        queue_size: Math.max(0, Number(data.global_queued || 0) || 0),
+        running_jobs: Math.max(0, Number(data.global_processing || 0) || 0),
+        worker_count: Math.max(0, Number(data.workerCount || data.worker_count || 0) || 0),
+        online_servers: Math.max(0, Number(data.online_servers || 0) || 0),
+        service_status: String(data.service_status || (ok ? 'running' : 'unavailable')).trim(),
+        announcement: String(data.announcement || '').trim(),
+        message: String(payload.msg || payload.message || '').trim()
     };
 }
 
@@ -2816,7 +3511,16 @@ async function loadPendingTrackedJobs(limit = PENDING_JOB_SWEEP_BATCH_SIZE) {
             const uniqueKey = `${site}:${userId}:${jobId}`;
             if (seen.has(uniqueKey)) continue;
             seen.add(uniqueKey);
-            jobs.push({ jobId, userId, site, email });
+            jobs.push({
+                jobId,
+                userId,
+                site,
+                email,
+                provider: payload.provider || '',
+                provider_adapter: payload.provider_adapter || '',
+                taskType: payload.task_type || DEFAULT_VERIFY_TASK_TYPE,
+                provider_key_fingerprint: payload.provider_key_fingerprint || ''
+            });
         }
 
         return jobs;
@@ -2839,12 +3543,19 @@ async function sweepPendingJobs() {
             if (!configBySite.has(jobSite)) {
                 configBySite.set(jobSite, await getVerifyConfig(jobSite));
             }
-            const config = configBySite.get(jobSite);
+            const config = activateVerifyProviderConfig(
+                configBySite.get(jobSite),
+                job.provider || configBySite.get(jobSite)?.provider
+            );
             if (!config.apiKey) {
                 continue;
             }
 
-            const upstream = await fetchUpstreamJobStatus(config, job.jobId);
+            const preferredApiKey = resolveVerifyApiKeyByFingerprint(config, job.provider_key_fingerprint);
+            const upstream = await fetchUpstreamJobStatus(config, job.jobId, {
+                apiKey: preferredApiKey,
+                taskType: job.taskType
+            });
             if (!upstream.ok) {
                 console.warn(`[VerifyWorker] Failed to poll ${job.jobId}: ${upstream.message}`);
                 continue;
@@ -4625,8 +5336,10 @@ app.post('/api/verify', async (req, res) => {
             return res.status(balanceCheck.status).json({ success: false, message: balanceCheck.error });
         }
 
-        const requiredUses = getVerifyUnitCost(normalizedTaskType);
-        const credentialSelection = await selectVerifyCredentialForTask(config, requiredUses);
+        const requiredUses = Number(config.unitCosts?.[normalizedTaskType] || getVerifyUnitCost(normalizedTaskType));
+        const credentialSelection = await selectVerifyCredentialForTask(config, requiredUses, {
+            taskType: normalizedTaskType
+        });
         const selectedCredential = credentialSelection.selected;
 
         if (!selectedCredential?.apiKey) {
@@ -4661,6 +5374,8 @@ app.post('/api/verify', async (req, res) => {
         const apiData = normalizeVerifyJobPayload(upstream.payload, {
             status: 'queued',
             task_type: normalizedTaskType,
+            provider: config.provider,
+            provider_adapter: config.adapter || config.provider_adapter,
             provider_key_fingerprint: buildVerifyCredentialFingerprint(selectedCredential.apiKey),
             provider_key_name: selectedCredential.keyName || maskVerifyCredential(selectedCredential.apiKey)
         });
@@ -4682,6 +5397,8 @@ app.post('/api/verify', async (req, res) => {
             job_id: jobId,
             status: apiData.status || 'queued',
             task_type: apiData.task_type || normalizedTaskType,
+            provider: apiData.provider || config.provider,
+            provider_label: config.provider_label || config.providerLabel || '',
             queue_position: apiData.queue_position ?? -1,
             estimated_wait_seconds: apiData.estimated_wait_seconds ?? 0,
             message: apiData.message || '任务已提交',
@@ -4719,7 +5436,11 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
         }
 
         const trackedPayload = parseHistoryMessage(trackedRecord.message) || {};
-        const config = await getVerifyConfig(currentSite);
+        const loadedConfig = await getVerifyConfig(currentSite);
+        const config = activateVerifyProviderConfig(
+            loadedConfig,
+            trackedPayload.provider || loadedConfig.provider
+        );
 
         if (!config.apiKeys?.length) {
             return res.status(500).json({ success: false, message: '验证服务未配置', code: 'api_key_missing' });
@@ -4746,6 +5467,8 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
             jobId: taskId,
             apiData: normalizeVerifyJobPayload(apiData, {
                 task_type: trackedPayload.task_type || DEFAULT_VERIFY_TASK_TYPE,
+                provider: trackedPayload.provider || config.provider,
+                provider_adapter: trackedPayload.provider_adapter || config.adapter || config.provider_adapter,
                 provider_key_fingerprint: trackedPayload.provider_key_fingerprint,
                 provider_key_name: trackedPayload.provider_key_name
             }),
@@ -4754,6 +5477,8 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
         const pointsDeducted = Number(syncResult?.pointsDeducted) || 0;
         const normalizedApiData = normalizeVerifyJobPayload(apiData, {
             task_type: trackedPayload.task_type || DEFAULT_VERIFY_TASK_TYPE,
+            provider: trackedPayload.provider || config.provider,
+            provider_adapter: trackedPayload.provider_adapter || config.adapter || config.provider_adapter,
             provider_key_fingerprint: trackedPayload.provider_key_fingerprint,
             provider_key_name: trackedPayload.provider_key_name
         });
@@ -4766,6 +5491,8 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
             total_stages: normalizedApiData.total_stages,
             stage_label: normalizedApiData.stage_label,
             task_type: normalizedApiData.task_type,
+            provider: normalizedApiData.provider || config.provider,
+            provider_label: config.provider_label || config.providerLabel || '',
             has_offer_url: normalizedApiData.has_offer_url === true,
             url: normalizedApiData.url || '',
             error: normalizedApiData.error || '',
@@ -4784,6 +5511,124 @@ app.get('/api/verify/status/:taskId', async (req, res) => {
             message: error.message || '查询状态失败'
         });
     }
+});
+
+async function handleVerifyJobActionRequest(req, res, forcedAction = '') {
+    const authenticatedUser = await requireAuthenticatedUser(req, res);
+    if (!authenticatedUser) return;
+
+    const action = String(forcedAction || req.body?.action || '').trim();
+    const taskId = String(req.body?.taskId || req.body?.task_id || req.body?.jobId || req.body?.job_id || '').trim();
+    const currentSite = resolveSecureRequestSite(req, req.body?.site || req.query?.site || '');
+
+    if (!['cancel_task', 'purchase_failed_link'].includes(action)) {
+        return res.status(400).json({
+            success: false,
+            message: '不支持的任务操作',
+            code: 'unsupported_action'
+        });
+    }
+
+    if (!taskId) {
+        return res.status(400).json({
+            success: false,
+            message: '缺少任务编号',
+            code: 'job_not_found'
+        });
+    }
+
+    try {
+        const trackedRecord = await findTrackedJobLog(authenticatedUser.id, taskId, currentSite);
+        if (!trackedRecord) {
+            return res.status(404).json({
+                success: false,
+                message: '任务不存在或无权访问',
+                code: 'job_not_found'
+            });
+        }
+
+        const trackedPayload = parseHistoryMessage(trackedRecord.message) || {};
+        const loadedConfig = await getVerifyConfig(currentSite);
+        const config = activateVerifyProviderConfig(
+            loadedConfig,
+            trackedPayload.provider || loadedConfig.provider
+        );
+
+        if (!config.apiKeys?.length) {
+            return res.status(500).json({
+                success: false,
+                message: '验证服务未配置',
+                code: 'api_key_missing'
+            });
+        }
+
+        const preferredApiKey = resolveVerifyApiKeyByFingerprint(config, trackedPayload.provider_key_fingerprint)
+            || config.apiKey;
+        const upstream = await postVerifyJobAction(config, {
+            action,
+            jobId: taskId,
+            apiKey: preferredApiKey,
+            taskType: trackedPayload.task_type || DEFAULT_VERIFY_TASK_TYPE
+        }, {
+            apiKey: preferredApiKey
+        });
+
+        if (!upstream.ok) {
+            return res.status(upstream.status || 502).json({
+                success: false,
+                message: upstream.message || '操作失败',
+                code: upstream.code || 'job_action_failed'
+            });
+        }
+
+        const normalizedApiData = normalizeVerifyJobPayload(upstream.data || upstream.payload, {
+            job_id: taskId,
+            task_type: action === 'purchase_failed_link' ? 'extract' : (trackedPayload.task_type || DEFAULT_VERIFY_TASK_TYPE),
+            status: action === 'purchase_failed_link' ? 'success' : 'failed',
+            provider: trackedPayload.provider || config.provider,
+            provider_adapter: trackedPayload.provider_adapter || config.adapter || config.provider_adapter,
+            provider_key_fingerprint: trackedPayload.provider_key_fingerprint,
+            provider_key_name: trackedPayload.provider_key_name
+        });
+        const syncResult = await syncTrackedJobStatus({
+            userId: authenticatedUser.id,
+            site: currentSite,
+            email: String(trackedPayload.email || '').trim().toLowerCase(),
+            jobId: taskId,
+            apiData: normalizedApiData,
+            config
+        });
+
+        return res.json({
+            success: true,
+            action,
+            job_id: normalizedApiData.job_id || taskId,
+            task_id: normalizedApiData.task_id || taskId,
+            status: normalizedApiData.status,
+            task_type: normalizedApiData.task_type,
+            provider: normalizedApiData.provider || config.provider,
+            provider_label: config.provider_label || config.providerLabel || '',
+            has_offer_url: normalizedApiData.has_offer_url === true,
+            url: normalizedApiData.url || '',
+            offer_url: normalizedApiData.offer_url || normalizedApiData.url || '',
+            message: buildClientStatusMessage(normalizedApiData),
+            pointsDeducted: Number(syncResult?.pointsDeducted) || 0,
+            remaining_uses: upstream.payload?.remaining_uses ?? upstream.data?.remaining_uses ?? null
+        });
+    } catch (error) {
+        console.error('[Verify] Job action error:', error);
+        return res.status(500).json({
+            success: false,
+            message: error.message || '操作失败'
+        });
+    }
+}
+
+// =============================================
+// POST /api/verify/action — Cancel aidone jobs or buy failed captured links
+// =============================================
+app.post('/api/verify/action', async (req, res) => {
+    return handleVerifyJobActionRequest(req, res);
 });
 
 // =============================================
@@ -4813,23 +5658,28 @@ app.get('/api/quota', async (req, res) => {
             });
         }
 
-        const remainingUses = healthySnapshots.reduce((sum, snapshot) => sum + Number(snapshot.remainingUses || 0), 0);
         const totalUsed = healthySnapshots.reduce((sum, snapshot) => sum + Number(snapshot.totalUsed || 0), 0);
-        const usageSummary = buildVerifyUsageSummary(remainingUses);
+        const usageSummary = buildVerifyTypedUsageSummary(healthySnapshots, config.unitCosts);
         const keyStates = snapshots.map((snapshot) => {
             const snapshotRemainingUses = Number(snapshot.remainingUses);
             const safeRemainingUses = Number.isFinite(snapshotRemainingUses)
                 ? Math.max(0, Math.round(snapshotRemainingUses * 100) / 100)
                 : null;
             const snapshotUsageSummary = safeRemainingUses != null
-                ? buildVerifyUsageSummary(safeRemainingUses)
+                ? buildVerifyUsageSummary(safeRemainingUses, config.unitCosts)
                 : null;
             const snapshotTotalUsed = Number(snapshot.totalUsed);
+            const snapshotKeyType = String(snapshot.key_type || snapshot.keyType || '').trim();
+            const supportsExtract = verifySnapshotSupportsTaskType({ key_type: snapshotKeyType }, 'extract');
+            const supportsFull = verifySnapshotSupportsTaskType({ key_type: snapshotKeyType }, 'full');
 
             return {
                 api_key: String(snapshot.apiKey || '').trim(),
                 masked_key: maskVerifyCredential(snapshot.apiKey),
                 key_name: String(snapshot.keyName || maskVerifyCredential(snapshot.apiKey)).trim(),
+                provider: config.provider,
+                adapter: config.adapter || config.provider_adapter,
+                key_type: snapshotKeyType,
                 ok: snapshot.ok === true,
                 status: Number.isFinite(Number(snapshot.status || 0)) ? Number(snapshot.status || 0) : null,
                 code: String(snapshot.code || '').trim() || null,
@@ -4837,16 +5687,24 @@ app.get('/api/quota', async (req, res) => {
                 balance: safeRemainingUses,
                 credits: safeRemainingUses,
                 remaining_uses: safeRemainingUses,
-                remaining_extract_jobs: snapshotUsageSummary?.remaining_extract_jobs ?? null,
-                remaining_full_jobs: snapshotUsageSummary?.remaining_full_jobs ?? null,
+                remaining_extract_uses: safeRemainingUses != null && supportsExtract ? safeRemainingUses : 0,
+                remaining_full_uses: safeRemainingUses != null && supportsFull ? safeRemainingUses : 0,
+                remaining_extract_jobs: supportsExtract ? (snapshotUsageSummary?.remaining_extract_jobs ?? null) : 0,
+                remaining_full_jobs: supportsFull ? (snapshotUsageSummary?.remaining_full_jobs ?? null) : 0,
                 total_used: Number.isFinite(snapshotTotalUsed) ? Math.max(0, snapshotTotalUsed) : null
             };
         });
         return res.json({
             success: true,
+            provider: config.provider,
+            provider_label: config.provider_label || config.providerLabel || '',
+            adapter: config.adapter || config.provider_adapter,
+            capabilities: config.capabilities,
             credits: usageSummary.remaining_uses,
             balance: usageSummary.remaining_uses,
             remaining_uses: usageSummary.remaining_uses,
+            remaining_extract_uses: usageSummary.remaining_extract_uses,
+            remaining_full_uses: usageSummary.remaining_full_uses,
             remaining_extract_jobs: usageSummary.remaining_extract_jobs,
             remaining_full_jobs: usageSummary.remaining_full_jobs,
             total_used: totalUsed,
@@ -4854,7 +5712,7 @@ app.get('/api/quota', async (req, res) => {
             extract_cost_per_job: usageSummary.extract_cost_per_job,
             full_cost_per_job: usageSummary.full_cost_per_job,
             key_name: Number(config.keyCount || 0) > 1
-                ? `CDKey 池（${healthySnapshots.length}/${config.keyCount}）`
+                ? `${config.provider_label || 'CDKey 池'}（${healthySnapshots.length}/${config.keyCount}）`
                 : healthySnapshots[0]?.keyName || maskVerifyCredential(config.apiKey),
             key_count: Number(config.keyCount || healthySnapshots.length || 0),
             healthy_key_count: healthySnapshots.length,
@@ -4947,11 +5805,7 @@ app.post('/api/redeem', async (req, res) => {
 // POST /api/cancel — Legacy endpoint kept for compatibility
 // =============================================
 app.post('/api/cancel', async (req, res) => {
-    return res.status(410).json({
-        success: false,
-        message: '新版 Google One API 不支持取消已提交任务，请等待任务结束。',
-        code: 'cancel_not_supported'
-    });
+    return handleVerifyJobActionRequest(req, res, 'cancel_task');
 });
 
 // POST /api/payments/hupijiao/webhook

@@ -24,7 +24,7 @@ function normalizeVerifyMonitorSite(value = '', fallback = 'cn') {
     return fallback === 'intl' ? 'intl' : 'cn';
 }
 
-function getForwardHeaders(req) {
+function buildForwardHeaders(req) {
     const headers = buildVerifyMonitorProxyHeaders(process.env);
     if (headers) {
         return headers;
@@ -36,6 +36,15 @@ function getForwardHeaders(req) {
             Accept: 'application/json',
             Authorization: authorization
         };
+    }
+
+    return null;
+}
+
+function getForwardHeaders(req) {
+    const headers = buildForwardHeaders(req);
+    if (headers) {
+        return headers;
     }
 
     const error = new Error('验证运维内部凭证未配置，且当前管理员会话不可转发');
@@ -67,17 +76,28 @@ module.exports = async (req, res) => {
             const supabase = typeof getOptionalSupabaseAdmin === 'function'
                 ? getOptionalSupabaseAdmin()
                 : null;
+            let localState = null;
             if (supabase) {
-                const localState = await buildLocalVerifyQueueSnapshot(supabase, { site });
+                localState = await buildLocalVerifyQueueSnapshot(supabase, { site });
                 if (localState?.success) {
                     return sendJson(res, 200, localState);
                 }
             }
 
+            const forwardHeaders = buildForwardHeaders(req);
+            if (!forwardHeaders && localState) {
+                return sendJson(res, Number(localState.status || 502) || 502, {
+                    ...localState,
+                    success: false,
+                    checked_at: localState.checked_at || new Date().toISOString(),
+                    message: localState.message || '查询验证队列失败'
+                });
+            }
+
             const upstreamUrl = `${getVerifyServerUrl()}/api/queue${siteHint ? `?site=${encodeURIComponent(site)}` : ''}`;
             const upstreamResponse = await fetch(upstreamUrl, {
                 method: 'GET',
-                headers: getForwardHeaders(req),
+                headers: forwardHeaders || getForwardHeaders(req),
                 signal: controller?.signal
             });
             const payload = await upstreamResponse.json().catch(() => ({}));

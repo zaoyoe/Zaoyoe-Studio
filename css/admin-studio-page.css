@@ -10711,7 +10711,7 @@ body.admin-access-pending,
 .admin-studio-inline-style-attr-19 { flex-direction: column; align-items: stretch; margin-top: 12px; }
 .admin-studio-inline-style-attr-20 { flex-direction: column; align-items: stretch; gap: 8px; }
 .admin-studio-inline-style-attr-21 { width: 100%; text-align: left; box-sizing: border-box; }
-.admin-studio-inline-style-attr-22 { display: flex; align-items: center; gap: 8px; }
+.admin-studio-inline-style-attr-22 { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
 .admin-studio-inline-style-attr-23 { font-size: 1.1em; font-weight: 600; color: var(--accent-starry, #6c5ce7); white-space: nowrap; }
 .admin-studio-inline-style-attr-24 { opacity: 0.4; }
 .admin-studio-inline-style-attr-25 { background: none; border: none; cursor: pointer; color: var(--text-secondary); padding: 4px 6px; border-radius: 4px; transition: all 0.2s; font-size: 0.85rem; }
@@ -18027,9 +18027,15 @@ html[data-theme="light"] #module-settings #settings-view-google-one :is(.verify-
 html[data-theme="light"] #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-trigger,
 html[data-theme="light"] #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-trigger:is(:hover, :focus, :focus-visible, :active),
 html[data-theme="light"] #module-settings #settings-view-google-one .verify-mode-visibility-dropdown.open .dropdown-trigger,
+html[data-theme="light"] #module-settings #settings-view-google-one .verify-provider-channel-dropdown .dropdown-trigger,
+html[data-theme="light"] #module-settings #settings-view-google-one .verify-provider-channel-dropdown .dropdown-trigger:is(:hover, :focus, :focus-visible, :active),
+html[data-theme="light"] #module-settings #settings-view-google-one .verify-provider-channel-dropdown.open .dropdown-trigger,
 html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-trigger,
 html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-trigger:is(:hover, :focus, :focus-visible, :active),
-html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown.open .dropdown-trigger {
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown.open .dropdown-trigger,
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-provider-channel-dropdown .dropdown-trigger,
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-provider-channel-dropdown .dropdown-trigger:is(:hover, :focus, :focus-visible, :active),
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-provider-channel-dropdown.open .dropdown-trigger {
     background: #ffffff !important;
     background-image: none !important;
     border-color: rgba(15, 23, 42, 0.12) !important;
@@ -18038,7 +18044,9 @@ html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify
 }
 
 html[data-theme="light"] #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-menu,
-html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-menu {
+html[data-theme="light"] #module-settings #settings-view-google-one .verify-provider-channel-dropdown .dropdown-menu,
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-menu,
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-provider-channel-dropdown .dropdown-menu {
     background: rgba(255, 255, 255, 0.98) !important;
     background-image: none !important;
     border-color: rgba(15, 23, 42, 0.1) !important;
@@ -18046,23 +18054,43 @@ html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify
 }
 
 html[data-theme="light"] #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option,
-html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option {
+html[data-theme="light"] #module-settings #settings-view-google-one .verify-provider-channel-dropdown .dropdown-option,
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option,
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-provider-channel-dropdown .dropdown-option {
     color: #0f172a !important;
     -webkit-text-fill-color: #0f172a !important;
 }
 
 html[data-theme="light"] #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option:hover,
-html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option:hover {
+html[data-theme="light"] #module-settings #settings-view-google-one .verify-provider-channel-dropdown .dropdown-option:hover,
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option:hover,
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-provider-channel-dropdown .dropdown-option:hover {
     background: rgba(118, 157, 202, 0.1) !important;
     color: #0f172a !important;
     -webkit-text-fill-color: #0f172a !important;
 }
 
 html[data-theme="light"] #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option.selected,
-html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option.selected {
+html[data-theme="light"] #module-settings #settings-view-google-one .verify-provider-channel-dropdown .dropdown-option.selected,
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-mode-visibility-dropdown .dropdown-option.selected,
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-provider-channel-dropdown .dropdown-option.selected {
     background: rgba(118, 157, 202, 0.16) !important;
     color: var(--admin-studio-ui-blue, #769dca) !important;
     -webkit-text-fill-color: var(--admin-studio-ui-blue, #769dca) !important;
+}
+
+html[data-theme="light"] #module-settings #settings-view-google-one .verify-provider-status,
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-provider-status {
+    background: rgba(248, 250, 252, 0.82) !important;
+    border-color: rgba(15, 23, 42, 0.12) !important;
+    color: rgba(71, 85, 105, 0.92) !important;
+}
+
+html[data-theme="light"] #module-settings #settings-view-google-one .verify-provider-status.is-active,
+html:not([data-theme="dark"]) #module-settings #settings-view-google-one .verify-provider-status.is-active {
+    background: rgba(16, 185, 129, 0.12) !important;
+    border-color: rgba(16, 185, 129, 0.26) !important;
+    color: rgba(4, 120, 87, 0.96) !important;
 }
 
 html[data-theme="light"] #module-settings #settings-view-google-one #verifyMonitorCasePanel .ops-alert-monitor-item__actions .btn-add-config:is([data-ops-alert-case-action="reopen"], [data-ops-alert-case-action="add_note"]),

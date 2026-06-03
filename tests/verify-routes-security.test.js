@@ -2556,6 +2556,188 @@ test('verify status polling can repair a previously misclassified failed job onc
     });
 });
 
+test('verify action endpoint cancels pending aidone tasks without deducting user points', async () => {
+    const state = {
+        tokens: {
+            'member-token': { id: 'user-1', email: 'member@example.com' }
+        },
+        balances: {
+            'user-1': 100
+        },
+        verificationLogs: [
+            {
+                id: 'verify-job-cancel-1',
+                user_id: 'user-1',
+                site: 'cn',
+                verification_id: 'job-cancel-1',
+                status: 'queued',
+                points_deducted: 0,
+                created_at: '2026-03-22T12:00:00.000Z',
+                message: JSON.stringify({
+                    kind: 'google_one_job',
+                    job_id: 'job-cancel-1',
+                    email: 'member@example.com',
+                    task_type: 'full',
+                    provider: 'aidone',
+                    raw_status: 'queued'
+                })
+            }
+        ],
+        pointsLedger: []
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const originalFetch = global.fetch;
+        global.fetch = async (input, init) => {
+            const url = String(input || '');
+            if (url === 'https://verify.test/openapi') {
+                const body = JSON.parse(init?.body || '{}');
+                assert.equal(body.action, 'cancel_task');
+                assert.equal(body.cdkey, 'verify-api-key');
+                assert.equal(body.task_id, 'job-cancel-1');
+                return new Response(JSON.stringify({
+                    success: true,
+                    message: '任务已成功取消并退还卡密余额'
+                }), {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+            }
+
+            throw new Error(`Unexpected fetch URL in test: ${url}`);
+        };
+
+        try {
+            const response = await dispatchRoute(app, {
+                method: 'POST',
+                url: '/api/verify/action',
+                headers: {
+                    Authorization: 'Bearer member-token'
+                },
+                body: {
+                    action: 'cancel_task',
+                    taskId: 'job-cancel-1'
+                }
+            });
+            const payload = response.json();
+
+            assert.equal(response.status, 200);
+            assert.equal(payload.success, true);
+            assert.equal(payload.action, 'cancel_task');
+            assert.equal(payload.status, 'failed');
+            assert.equal(payload.pointsDeducted, 0);
+            assert.equal(state.metrics.deductCalls, 0);
+            assert.equal(state.pointsLedger.length, 0);
+            assert.equal(state.verificationLogs[0].status, 'failed');
+            assert.equal(state.verificationLogs[0].points_deducted, 0);
+        } finally {
+            global.fetch = originalFetch;
+        }
+    });
+});
+
+test('verify action endpoint purchases a failed captured link at extract price', async () => {
+    const state = {
+        tokens: {
+            'member-token': { id: 'user-1', email: 'member@example.com' }
+        },
+        balances: {
+            'user-1': 100
+        },
+        verifySettings: {
+            price_per_verify: 10,
+            price_per_verify_extract: 10,
+            price_per_verify_full: 24,
+            verify_api_key: 'verify-api-key',
+            verify_api_base_url: 'https://verify.test'
+        },
+        verificationLogs: [
+            {
+                id: 'verify-job-failed-link-1',
+                user_id: 'user-1',
+                site: 'cn',
+                verification_id: 'job-failed-link-1',
+                status: 'failed',
+                points_deducted: 0,
+                created_at: '2026-03-22T12:00:00.000Z',
+                message: JSON.stringify({
+                    kind: 'google_one_job',
+                    job_id: 'job-failed-link-1',
+                    email: 'member@example.com',
+                    task_type: 'full',
+                    provider: 'aidone',
+                    has_offer_url: true,
+                    raw_status: 'failed'
+                })
+            }
+        ],
+        pointsLedger: []
+    };
+
+    await withTestServer(state, async ({ app }) => {
+        const originalFetch = global.fetch;
+        global.fetch = async (input, init) => {
+            const url = String(input || '');
+            if (url === 'https://verify.test/openapi') {
+                const body = JSON.parse(init?.body || '{}');
+                assert.equal(body.action, 'purchase_failed_link');
+                assert.equal(body.cdkey, 'verify-api-key');
+                assert.equal(body.task_id, 'job-failed-link-1');
+                return new Response(JSON.stringify({
+                    success: true,
+                    message: '提取链接购买成功！扣除额度: 0.5',
+                    offer_url: 'https://example.com/failed-link',
+                    remaining_uses: 448.5
+                }), {
+                    status: 200,
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+            }
+
+            throw new Error(`Unexpected fetch URL in test: ${url}`);
+        };
+
+        try {
+            const response = await dispatchRoute(app, {
+                method: 'POST',
+                url: '/api/verify/action',
+                headers: {
+                    Authorization: 'Bearer member-token'
+                },
+                body: {
+                    action: 'purchase_failed_link',
+                    taskId: 'job-failed-link-1'
+                }
+            });
+            const payload = response.json();
+            const updatedPayload = JSON.parse(state.verificationLogs[0].message || '{}');
+
+            assert.equal(response.status, 200);
+            assert.equal(payload.success, true);
+            assert.equal(payload.action, 'purchase_failed_link');
+            assert.equal(payload.status, 'success');
+            assert.equal(payload.task_type, 'extract');
+            assert.equal(payload.url, 'https://example.com/failed-link');
+            assert.equal(payload.remaining_uses, 448.5);
+            assert.equal(payload.pointsDeducted, 10);
+            assert.equal(state.metrics.deductCalls, 1);
+            assert.equal(state.pointsLedger.length, 1);
+            assert.equal(state.pointsLedger[0].reference_id, 'job-failed-link-1');
+            assert.equal(state.pointsLedger[0].amount, -10);
+            assert.equal(state.verificationLogs[0].status, 'success');
+            assert.equal(state.verificationLogs[0].points_deducted, 10);
+            assert.equal(updatedPayload.task_type, 'extract');
+            assert.equal(updatedPayload.url, 'https://example.com/failed-link');
+        } finally {
+            global.fetch = originalFetch;
+        }
+    });
+});
+
 test('verify full-flow success polling deducts the configured full-flow price once per job id', async () => {
     const state = {
         tokens: {

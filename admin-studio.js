@@ -1806,6 +1806,7 @@ function bindAdminStudioDelegatedControls() {
         const normalizedOptions = options && typeof options === 'object' && !Array.isArray(options) ? options : {};
         const feedback = window.AdminStudioActionFeedback;
         const canRenderButtonFeedback = actionEl.tagName === 'BUTTON'
+            && normalizedOptions.skipButtonFeedback !== true
             && typeof feedback?.setLoading === 'function'
             && typeof feedback?.finish === 'function'
             && typeof feedback?.fail === 'function';
@@ -4405,9 +4406,7 @@ function bindAdminStudioDelegatedControls() {
                     const quotaState = await window.checkVerifyQuota?.();
                     return quotaState?.status !== 'error';
                 }, {
-                    loadingText: '查询中...',
-                    successText: '已刷新',
-                    errorText: '查询失败',
+                    skipButtonFeedback: true,
                     silentErrors: true
                 });
                 break;

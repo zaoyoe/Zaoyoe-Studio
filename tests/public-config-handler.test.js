@@ -434,15 +434,32 @@ test('public verify settings handler resolves site price without exposing CDKeys
                                                 price_per_verify: 10,
                                                 price_per_verify_full: 20,
                                                 mode_visibility: 'both',
+                                                capabilities: {
+                                                    cancelTask: true,
+                                                    failedLinkPurchase: true,
+                                                    serviceStatus: false,
+                                                    keyTypes: false,
+                                                    batchSubmit: true
+                                                },
                                                 verify_api_base_url: 'https://aidone.lol'
                                             },
                                             sites: {
                                                 intl: {
                                                     enabled: true,
                                                     verify_cdkey: 'INTL-SECRET',
+                                                    active_provider: 'catcard',
+                                                    verify_provider_catcard_adapter: 'pixel_bridge_rest',
+                                                    verify_provider_catcard_api_key: 'INTL-CATCARD-SECRET',
                                                     price_per_verify: 6,
                                                     price_per_verify_full: 12,
                                                     mode_visibility: 'full_only',
+                                                    capabilities: {
+                                                        cancelTask: false,
+                                                        failedLinkPurchase: false,
+                                                        serviceStatus: true,
+                                                        keyTypes: true,
+                                                        batchSubmit: true
+                                                    },
                                                     verify_api_base_url: 'https://aidone.lol'
                                                 }
                                             }
@@ -479,6 +496,13 @@ test('public verify settings handler resolves site price without exposing CDKeys
     assert.equal(payload.config.price_per_verify_full, 12);
     assert.equal(payload.config.mode_visibility, 'full_only');
     assert.equal(payload.config.modeVisibility, 'full_only');
+    assert.deepEqual(payload.config.capabilities, {
+        cancelTask: false,
+        failedLinkPurchase: false,
+        serviceStatus: true,
+        keyTypes: true,
+        batchSubmit: true
+    });
     assert.equal('verify_cdkey' in payload.config, false);
     assert.equal('apiKey' in payload.config, false);
     assert.equal(JSON.stringify(payload).includes('INTL-SECRET'), false);

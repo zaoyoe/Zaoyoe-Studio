@@ -24,7 +24,26 @@ function normalizeVerifyMonitorSite(value = '', fallback = 'cn') {
     return fallback === 'intl' ? 'intl' : 'cn';
 }
 
-function getForwardHeaders(req) {
+function toFiniteNumber(value, fallback = 0) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function getRemainingJobCount(payload = {}, jobKey = '', remainingUses = 0, costKey = '') {
+    const explicitJobs = Number(payload?.[jobKey]);
+    if (Number.isFinite(explicitJobs)) {
+        return Math.max(0, Math.floor(explicitJobs));
+    }
+
+    const unitCost = Number(payload?.[costKey]);
+    if (!Number.isFinite(unitCost) || unitCost <= 0) {
+        return 0;
+    }
+
+    return Math.max(0, Math.floor((Number(remainingUses) + 1e-9) / unitCost));
+}
+
+function buildForwardHeaders(req) {
     const headers = buildVerifyMonitorProxyHeaders(process.env);
     if (headers) {
         return headers;
@@ -36,6 +55,15 @@ function getForwardHeaders(req) {
             Accept: 'application/json',
             Authorization: authorization
         };
+    }
+
+    return null;
+}
+
+function getForwardHeaders(req) {
+    const headers = buildForwardHeaders(req);
+    if (headers) {
+        return headers;
     }
 
     const error = new Error('验证运维内部凭证未配置，且当前管理员会话不可转发');
@@ -67,8 +95,9 @@ module.exports = async (req, res) => {
             const supabase = typeof getOptionalSupabaseAdmin === 'function'
                 ? getOptionalSupabaseAdmin()
                 : null;
+            let directState = null;
             if (supabase) {
-                const directState = await fetchDirectVerifyQuotaState(supabase, {
+                directState = await fetchDirectVerifyQuotaState(supabase, {
                     fetchImpl: global.fetch,
                     timeoutMs: VERIFY_MONITOR_PROXY_TIMEOUT_MS,
                     site
@@ -79,28 +108,50 @@ module.exports = async (req, res) => {
                 }
             }
 
+            const forwardHeaders = buildForwardHeaders(req);
+            if (!forwardHeaders && directState) {
+                return sendJson(res, Number(directState.status || 502) || 502, {
+                    ...directState,
+                    success: false,
+                    checked_at: directState.checked_at || new Date().toISOString(),
+                    message: directState.message || '查询 API 余额失败'
+                });
+            }
+
             const upstreamUrl = `${getVerifyServerUrl()}/api/quota${siteHint ? `?site=${encodeURIComponent(site)}` : ''}`;
             const upstreamResponse = await fetch(upstreamUrl, {
                 method: 'GET',
-                headers: getForwardHeaders(req),
+                headers: forwardHeaders || getForwardHeaders(req),
                 signal: controller?.signal
             });
             const payload = await upstreamResponse.json().catch(() => ({}));
+            const remainingUses = toFiniteNumber(payload?.remaining_uses ?? payload?.balance ?? payload?.credits);
+            const remainingExtractUses = toFiniteNumber(payload?.remaining_extract_uses ?? remainingUses);
+            const remainingFullUses = toFiniteNumber(payload?.remaining_full_uses ?? remainingUses);
 
             return sendJson(res, upstreamResponse.status, {
                 success: Boolean(payload?.success),
-                balance: Number(payload?.balance ?? payload?.credits ?? 0),
-                remaining_uses: Number(payload?.remaining_uses ?? payload?.balance ?? payload?.credits ?? 0),
-                remaining_extract_jobs: Number(payload?.remaining_extract_jobs ?? 0),
-                remaining_full_jobs: Number(payload?.remaining_full_jobs ?? 0),
-                total_used: Number(payload?.total_used ?? 0),
-                cost_per_job: Number(payload?.cost_per_job ?? 0),
-                extract_cost_per_job: Number(payload?.extract_cost_per_job ?? 0),
-                full_cost_per_job: Number(payload?.full_cost_per_job ?? 0),
+                provider: String(payload?.provider || '').trim(),
+                provider_label: String(payload?.provider_label || payload?.providerLabel || '').trim(),
+                adapter: String(payload?.adapter || payload?.provider_adapter || '').trim(),
+                capabilities: payload?.capabilities && typeof payload.capabilities === 'object'
+                    ? payload.capabilities
+                    : {},
+                balance: toFiniteNumber(payload?.balance ?? payload?.credits ?? remainingUses),
+                remaining_uses: remainingUses,
+                remaining_extract_uses: remainingExtractUses,
+                remaining_full_uses: remainingFullUses,
+                remaining_extract_jobs: getRemainingJobCount(payload, 'remaining_extract_jobs', remainingExtractUses, 'extract_cost_per_job'),
+                remaining_full_jobs: getRemainingJobCount(payload, 'remaining_full_jobs', remainingFullUses, 'full_cost_per_job'),
+                total_used: toFiniteNumber(payload?.total_used),
+                cost_per_job: toFiniteNumber(payload?.cost_per_job),
+                extract_cost_per_job: toFiniteNumber(payload?.extract_cost_per_job),
+                full_cost_per_job: toFiniteNumber(payload?.full_cost_per_job),
                 key_name: String(payload?.key_name || payload?.name || '').trim(),
-                key_count: Number(payload?.key_count ?? 0),
-                healthy_key_count: Number(payload?.healthy_key_count ?? 0),
+                key_count: toFiniteNumber(payload?.key_count),
+                healthy_key_count: toFiniteNumber(payload?.healthy_key_count),
                 key_states: Array.isArray(payload?.key_states) ? payload.key_states : [],
+                api_base_url: String(payload?.api_base_url || payload?.apiBaseUrl || '').trim(),
                 checked_at: new Date().toISOString(),
                 message: payload?.message || ''
             });

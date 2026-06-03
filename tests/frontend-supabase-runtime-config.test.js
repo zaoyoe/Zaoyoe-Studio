@@ -281,6 +281,10 @@ test('settings split Google One API into its own tab immediately after content s
     assert.equal(googleOneViewSource.includes('verifyModeVisibilityDropdown'), true, 'settings-view-google-one should host the Google One frontend mode visibility dropdown');
     assert.equal(googleOneViewSource.includes('id="cfgVerifyModeVisibility"'), false, 'settings-view-google-one should not use a native mode visibility select');
     assert.equal(googleOneViewSource.includes('cfgVerifyApiKey'), true, 'settings-view-google-one should host the Google One API credential controls');
+    assert.equal(googleOneViewSource.includes('verifyProviderChannelDropdown'), true, 'settings-view-google-one should host the Google One provider channel switcher');
+    assert.equal(googleOneViewSource.includes('cfgVerifyCatcardSubscribeKeys'), true, 'settings-view-google-one should host the 1free subscribe active API key input');
+    assert.equal(googleOneViewSource.includes('cfgVerifyCatcardExtractKeys'), true, 'settings-view-google-one should host the 1free extract-link active API key input');
+    assert.equal(googleOneViewSource.includes('不是一次性激活码'), true, 'settings-view-google-one should clarify that 1free active keys are retained API credentials');
     assert.equal(googleOneViewSource.includes('settings-google-one-hero'), true, 'settings-view-google-one should render the dedicated Google One API page hero');
     assert.equal(googleOneViewSource.includes('settings-google-one-top-grid'), true, 'settings-view-google-one should split Google One API configuration into a dedicated top card grid');
     assert.equal(googleOneViewSource.includes('settings-google-one-monitor-columns'), true, 'settings-view-google-one should split recent Google One API tasks and failures into dedicated monitor columns');
@@ -2812,7 +2816,7 @@ test('privacy page reuses the shared Supabase bootstrap instead of inlining a du
 
 test('selected runtime, preview, and tooling pages externalize page-specific style blocks into dedicated CSS files', () => {
     const expectations = new Map([
-        ['verify.html', 'css/verify-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
+        ['verify.html', 'css/verify-page.css?v=20260603_BATCH_PLACEHOLDER_TONE_1'],
         ['prompts.html', 'css/prompts-page.css?v=20260428_PROMPTS_SKELETON_CACHE_1'],
         ['reset-password.html', 'css/reset-password-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
         ['privacy.html', 'css/privacy-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
@@ -9600,18 +9604,31 @@ test('verify widget runtime renderers route wallet/login/form/history actions th
         "container.dataset.verifyDelegatesBound === '1'",
         "data-verify-action=\"wallet-open\"",
         "data-verify-action=\"login-gate\"",
+        "data-verify-action=\"set-submit-mode\"",
         "data-verify-action=\"toggle-password\"",
         "data-verify-action=\"reset-form\"",
         "data-verify-action=\"submit\"",
         "data-verify-action=\"export-history\"",
         "data-verify-action=\"refresh-history\"",
         "data-verify-action=\"copy-history-id\"",
+        "data-verify-action=\"cancel-task\"",
+        "data-verify-action=\"purchase-failed-link\"",
+        "data-verify-job-id=\"${escapeHtml(jobId)}\"",
         "case 'wallet-open':",
         "case 'login-gate':",
+        "case 'set-submit-mode':",
         "case 'toggle-password':",
         "case 'reset-form':",
         "case 'submit':",
         "case 'copy-history-id':",
+        "case 'cancel-task':",
+        "case 'purchase-failed-link':",
+        "function buildVerifyActionEndpoints()",
+        "'/api/public?scope=verify&route=action'",
+        "`${CONFIG.nodeServerUrl}/api/verify/action`",
+        "async function callVerifyJobAction(action, jobId)",
+        "async function handleHistoryJobAction(action, button)",
+        "function buildHistoryActionButtons(item = {}, payload = null)",
         'bindDelegatedUi(container);'
     ];
 
@@ -9678,7 +9695,7 @@ test('verify history reads canonical verification log payload columns', () => {
         'verify widget should distinguish history load errors from an empty history state'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260531_VERIFY_POLL_STATUS_SYNC_1'),
+        verifyPageSource.includes('./verify-widget.js?v=20260603_BATCH_PLACEHOLDER_TONE_1'),
         true,
         'verify.html should cache-bust the fixed history query runtime'
     );
@@ -9715,7 +9732,7 @@ test('verify polling treats status aliases as terminal and avoids cached status 
         'verify status polling and repair reads should bypass cached running responses'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260531_VERIFY_POLL_STATUS_SYNC_1'),
+        verifyPageSource.includes('./verify-widget.js?v=20260603_BATCH_PLACEHOLDER_TONE_1'),
         true,
         'verify.html should cache-bust the fixed polling runtime'
     );
@@ -9729,6 +9746,7 @@ test('verify polling treats status aliases as terminal and avoids cached status 
 test('verify widget runtime renderers externalize progress, visibility, history tone, and maintenance styling', () => {
     const verifyWidgetSource = readRepoFile('verify-widget.js');
     const verifyWidgetCss = readRepoFile('verify-widget.css');
+    const verifyPageCss = readRepoFile('css/verify-page.css');
     const verifyPageSource = readRepoFile('verify.html');
     const archivedIndexSource = readRepoFile('index_old.html');
 
@@ -9768,6 +9786,27 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         "function normalizeVerifyModeVisibility(value)",
         "function getAvailableTaskTypes()",
         "function syncModeSelectorFromConfig()",
+        "const VERIFY_BATCH_MAX_ENTRIES = 50;",
+        "const VERIFY_BATCH_SUBMIT_CONCURRENCY = 2;",
+        "function setSubmitMode(mode = 'single')",
+        "modeTabs.dataset.verifySubmitMode = mode;",
+        "function readBatchEntries()",
+        "function runBatchSubmit(entries, submitBtn, resetBtn)",
+        "let apiQuotaSummary = null;",
+        "let apiUsageCosts = { extract: 0.5, full: 1 };",
+        "function normalizeApiUsageCosts(costs = {})",
+        "function normalizeApiQuotaSummary(data = {}, fallbackBalance = null)",
+        "function findApiQuotaShortageForEntries(entries = [], quotaSummary = buildQuotaSummary(apiCredits))",
+        "remaining_extract_jobs: pickFiniteNumber",
+        "remaining_full_jobs: pickFiniteNumber",
+        "remaining_extract_uses: normalizedSummary?.remainingExtractUses",
+        "remaining_full_uses: normalizedSummary?.remainingFullUses",
+        "extract_cost_per_job: data.extract_cost_per_job",
+        "full_cost_per_job: data.full_cost_per_job",
+        "id=\"verifyBatchInput\"",
+        "data-verify-submit-mode=\"single\"",
+        "data-verify-mode=\"batch\"",
+        "email----password----2FA",
         "route=verify-settings&site=",
         "CONFIG.modeVisibility = normalizeVerifyModeVisibility(config.mode_visibility || config.modeVisibility);",
         "syncModeSelectorFromConfig();",
@@ -9797,6 +9836,13 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         '.verify-api-quota--ok',
         '.verify-api-quota--warning',
         '.verify-api-quota--danger',
+        '.verify-submit-mode-tabs',
+        '.verify-submit-mode-tabs::before',
+        '.verify-submit-mode-tabs[data-verify-submit-mode="batch"]::before',
+        '.verify-submit-mode-btn.active',
+        '.verify-widget .verify-single-fields[hidden]',
+        '.verify-widget .verify-batch-field[hidden]',
+        '.verify-batch-textarea',
         '.verify-history-item-id--copied',
         '.verify-history-status-badge',
         '.verify-copy-fallback'
@@ -9804,6 +9850,23 @@ test('verify widget runtime renderers externalize progress, visibility, history 
 
     for (const marker of cssMarkers) {
         assert.equal(verifyWidgetCss.includes(marker), true, `verify-widget.css should contain ${marker}`);
+    }
+
+    const verifyPageCssMarkers = [
+        '.verify-widget textarea.verify-input:focus',
+        '.verify-widget textarea.verify-input:focus-visible',
+        '.verify-submit-mode-tabs::before',
+        '.verify-submit-mode-btn:hover',
+        '.verify-batch-textarea::placeholder',
+        'html[data-theme="dark"] .verify-widget textarea.verify-input:focus',
+        'html[data-theme="dark"] .verify-widget textarea.verify-input:focus-visible',
+        'html[data-theme="dark"] .verify-submit-mode-tabs::before',
+        'html[data-theme="dark"] .verify-batch-textarea::placeholder',
+        'html[data-theme="dark"] .verify-submit-mode-btn.active'
+    ];
+
+    for (const marker of verifyPageCssMarkers) {
+        assert.equal(verifyPageCss.includes(marker), true, `css/verify-page.css should contain ${marker}`);
     }
 
     assert.match(
@@ -9818,9 +9881,14 @@ test('verify widget runtime renderers externalize progress, visibility, history 
     );
 
     assert.equal(
-        verifyPageSource.includes('verify-widget.css?v=20260520_VERIFY_MODE_VISIBILITY_2'),
+        verifyPageSource.includes('verify-widget.css?v=20260603_BATCH_PLACEHOLDER_TONE_1'),
         true,
         'verify.html should load the latest verify-widget stylesheet version'
+    );
+    assert.equal(
+        verifyPageSource.includes('css/verify-page.css?v=20260603_BATCH_PLACEHOLDER_TONE_1'),
+        true,
+        'verify.html should load the latest verify page stylesheet version'
     );
     assert.equal(
         verifyPageSource.includes('./js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'),
@@ -9828,7 +9896,7 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'verify.html should load the shared user event tracker before the verify widget runtime'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260531_VERIFY_POLL_STATUS_SYNC_1'),
+        verifyPageSource.includes('./verify-widget.js?v=20260603_BATCH_PLACEHOLDER_TONE_1'),
         true,
         'verify.html should load the latest verify-widget script version'
     );
@@ -10764,10 +10832,14 @@ test('admin studio security, verify, and affiliate controls route through delega
         'data-admin-action="settings-save-ip-blacklist"',
         'data-admin-change-action="settings-save-verify-config"',
         'id="verifyModeVisibilityDropdown"',
+        'id="verifyProviderChannelDropdown"',
         'class="custom-dropdown verify-mode-visibility-dropdown"',
+        'class="custom-dropdown verify-provider-channel-dropdown"',
         'data-dropdown-id="verifyModeVisibilityDropdown"',
+        'data-dropdown-id="verifyProviderChannelDropdown"',
         'data-option-value="extract_only"',
         'data-option-value="full_only"',
+        'data-option-value="catcard"',
         'data-admin-action="settings-refresh-verify-monitor"',
         'data-admin-focus-action="settings-verify-api-key-unlock"',
         'data-admin-blur-action="settings-verify-api-key-lock"',
@@ -10810,6 +10882,9 @@ test('admin studio security, verify, and affiliate controls route through delega
 
     [
         'verifyModeVisibilityDropdown',
+        'verifyProviderChannelDropdown',
+        'normalizeVerifyProvider',
+        'providers.catcard',
         'mode_visibility',
         'normalizeVerifyModeVisibility',
         'getVerifyModeVisibilityLabel',
@@ -13255,6 +13330,7 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
         'class="affiliate-poster-preview ${getAffiliatePosterPreviewClass(preset.id)}"',
         'class="color-swatch ${getAdminConfigRichTextColorClass(value)}"',
         "renderVerifyQuotaState(quotaEl, 'neutral', 'fas fa-spinner fa-spin', '查询中...');",
+        "syncVerifyQuotaRefreshButtonState('loading');",
         "new URL('/api/admin/settings/verify-monitor', window.location.origin)",
         'window.loadVerifyMonitor = loadVerifyMonitor;',
         'window.refreshVerifyMonitor = refreshVerifyMonitor;'
@@ -13267,6 +13343,7 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
     const styleMarkers = [
         '#unlockAllBtn[hidden]',
         '.verify-quota-badge--success',
+        '.verify-quota-refresh-btn--loading',
         '.verify-monitor-grid',
         '.verify-monitor-status-badge--danger',
         '.affiliate-poster-preview--midnight',
@@ -13298,6 +13375,16 @@ test('admin config runtime renderers externalize poster preview, toggle pulse, s
         adminStudioHtml.includes('id="unlockAllBtn" hidden'),
         true,
         'admin-studio.html should hide the unlock-all action until runtime data arrives'
+    );
+    assert.equal(
+        adminStudioHtml.includes('<i class="fas fa-spinner fa-spin admin-studio-inline-style-attr-24"></i> 加载中...'),
+        false,
+        'verify quota initial state should not render a second spinner next to loading dots'
+    );
+    assert.equal(
+        adminStudioHtml.includes('verify-quota-refresh-btn'),
+        true,
+        'verify quota refresh button should use its dedicated icon-only state class'
     );
 });
 
