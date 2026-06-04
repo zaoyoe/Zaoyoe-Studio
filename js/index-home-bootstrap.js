@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    const SHOP_PREFETCH_SCHEMA_VERSION = '20260531_SHOP_PRODUCT_IMAGE_CACHE_1';
+    const SHOP_PREFETCH_SCHEMA_VERSION = '20260604_SHOP_SITE_SCOPED_SKU_PRICE_1';
     const HOMEPAGE_DEFERRED_STYLE_GROUP = 'homepage-overlays';
 
     function activateHomepageDeferredOverlays() {
