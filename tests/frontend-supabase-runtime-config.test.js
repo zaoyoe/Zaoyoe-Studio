@@ -2816,7 +2816,7 @@ test('privacy page reuses the shared Supabase bootstrap instead of inlining a du
 
 test('selected runtime, preview, and tooling pages externalize page-specific style blocks into dedicated CSS files', () => {
     const expectations = new Map([
-        ['verify.html', 'css/verify-page.css?v=20260603_VERIFY_REMAINING_INLINE_1'],
+        ['verify.html', 'css/verify-page.css?v=20260604_VERIFY_CARD_SURFACE_SOFTEN_1'],
         ['prompts.html', 'css/prompts-page.css?v=20260428_PROMPTS_SKELETON_CACHE_1'],
         ['reset-password.html', 'css/reset-password-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
         ['privacy.html', 'css/privacy-page.css?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1'],
@@ -10043,7 +10043,7 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'verify.html should load the latest verify-widget stylesheet version'
     );
     assert.equal(
-        verifyPageSource.includes('css/verify-page.css?v=20260603_VERIFY_REMAINING_INLINE_1'),
+        verifyPageSource.includes('css/verify-page.css?v=20260604_VERIFY_CARD_SURFACE_SOFTEN_1'),
         true,
         'verify.html should load the latest verify page stylesheet version'
     );
