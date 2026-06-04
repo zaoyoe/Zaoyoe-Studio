@@ -474,15 +474,16 @@ body {
 .verify-guide-card,
 .verify-history-card {
     background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(247, 251, 255, 0.9) 100%);
-    border-color: rgba(31, 54, 83, 0.1);
+        linear-gradient(180deg, rgba(248, 251, 255, 0.94) 0%, rgba(243, 247, 251, 0.9) 100%);
+    border-color: rgba(31, 54, 83, 0.14);
     box-shadow:
-        0 18px 44px rgba(31, 54, 83, 0.1),
-        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+        0 4px 14px rgba(31, 54, 83, 0.045),
+        inset 0 1px 0 rgba(255, 255, 255, 0.56);
 }
 
 .verify-guide-card::before {
-    background: linear-gradient(90deg, rgba(76, 131, 183, 0.48), rgba(159, 215, 229, 0.34), rgba(52, 199, 89, 0.18));
+    background: linear-gradient(90deg, rgba(76, 131, 183, 0.28), rgba(159, 215, 229, 0.18), rgba(52, 199, 89, 0.1));
+    opacity: 0.52;
 }
 
 .verify-guide-badge {
@@ -626,10 +627,10 @@ body {
 }
 
 .verify-history-card:hover {
-    border-color: rgba(76, 131, 183, 0.18);
+    border-color: rgba(31, 54, 83, 0.16);
     box-shadow:
-        0 20px 52px rgba(31, 54, 83, 0.12),
-        inset 0 1px 0 rgba(255, 255, 255, 0.9);
+        0 5px 16px rgba(31, 54, 83, 0.055),
+        inset 0 1px 0 rgba(255, 255, 255, 0.58);
 }
 
 .verify-history-item-id:hover {
