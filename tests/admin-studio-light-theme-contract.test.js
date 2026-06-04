@@ -567,6 +567,49 @@ test('admin studio rich text yellow upgrades low-contrast legacy palette values'
     );
 });
 
+test('admin studio rich text editor strips copied external font styling before saving', () => {
+    const adminConfigSource = readRepoFile('admin-config.js');
+    const adminStudioHtml = readRepoFile('admin-studio.html');
+
+    ['font-family', 'font-size', 'line-height', 'letter-spacing'].forEach(property => {
+        assert.equal(
+            adminConfigSource.includes(`'${property}'`),
+            true,
+            `rich-text sanitizer should blacklist copied ${property} styles`
+        );
+    });
+    assert.match(
+        adminConfigSource,
+        /function sanitizeRichTextHtml\(html, options = \{\}\) \{[\s\S]*appendSanitizedRichTextChildren\(template\.content, fragment, options\)/,
+        'rich-text sanitizer should rebuild pasted/stored HTML through an allowlisted DOM fragment'
+    );
+    assert.match(
+        adminConfigSource,
+        /function serializeEditorHtml\(editor\) \{[\s\S]*sanitizeRichTextHtml\(editor\.innerHTML\)/,
+        'hidden textarea sync should save sanitized rich text instead of raw editor innerHTML'
+    );
+    assert.match(
+        adminConfigSource,
+        /instance\.editor\.addEventListener\('paste', event => handleEditorPaste\(instance, event\)\)/,
+        'rich-text editors should intercept paste before browser-inserted source font styles reach the editor'
+    );
+    assert.match(
+        adminConfigSource,
+        /clipboard\.getData\('text\/html'\)[\s\S]*clipboard\.getData\('text\/plain'\)[\s\S]*insertSanitizedRichTextHtml\(instance, pastedHtml \|\| buildPlainTextRichTextHtml\(pastedText\)\)/,
+        'paste handling should sanitize both HTML clipboard content and plain-text fallbacks'
+    );
+    assert.match(
+        adminConfigSource,
+        /wrapRichTextSelection\(instance, wrapper, \{ stripDescendantFontFormatting: true \}\)/,
+        'font-size toolbar actions should remove nested copied font-size styles so selected text can be unified'
+    );
+    assert.equal(
+        adminStudioHtml.includes('richTextPasteNormalize=20260604_SHOP_RICH_TEXT_PASTE_NORMALIZE_1'),
+        true,
+        'admin studio should cache-bust the rich-text paste normalization runtime'
+    );
+});
+
 test('admin studio shop product stock badges keep dedicated capsule states', () => {
     const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
     const shopScript = readRepoFile(path.join('js', 'admin-shop.js'));
