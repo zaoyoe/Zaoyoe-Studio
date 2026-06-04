@@ -27822,7 +27822,7 @@ function setupNotificationsEventListeners() {
 
 const AdminRichTextEditor = (() => {
     const instances = new Map();
-    const richTextTagPattern = /<\/?(?:a|b|strong|i|em|u|div|p|br|font|span|ul|ol|li)\b/i;
+    const richTextTagPattern = /<\/?(?:a|b|strong|i|em|u|div|p|br|font|span|ul|ol|li|h[1-6]|blockquote|pre)\b/i;
     const defaultEmojis = ['🎉', '📢', '⚠️', '✨', '🔥', '💡', '🎁', '❤️', '👍', '🚀', '🌟', '💯'];
     const defaultColors = [
         { value: '#ffffff', label: '白色' },
@@ -27843,11 +27843,247 @@ const AdminRichTextEditor = (() => {
         large: '1.18em'
     });
     const richTextAlignValues = new Set(['left', 'center', 'right']);
+    const richTextAllowedTags = new Set(['a', 'b', 'strong', 'i', 'em', 'u', 'br', 'div', 'p', 'span', 'ul', 'ol', 'li']);
+    const richTextBlockFallbackTags = new Set(['blockquote', 'pre', 'section', 'article', 'header', 'footer', 'main', 'aside', 'nav', 'table', 'thead', 'tbody', 'tfoot', 'tr', 'td', 'th']);
+    const richTextDroppedTags = new Set(['script', 'style', 'meta', 'link', 'iframe', 'object', 'embed', 'img', 'svg', 'canvas', 'video', 'audio', 'source']);
+    const richTextAllowedColorPattern = /^(#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})|rgba?\([^)]*\))$/i;
+    const richTextExternalFontStyleProperties = new Set([
+        'font',
+        'font-family',
+        'font-size',
+        'font-stretch',
+        'font-variant',
+        'font-variant-caps',
+        'font-variant-east-asian',
+        'font-variant-ligatures',
+        'font-variant-numeric',
+        'font-feature-settings',
+        'font-kerning',
+        'font-optical-sizing',
+        'font-size-adjust',
+        'letter-spacing',
+        'line-height',
+        'mso-line-height-rule',
+        'text-size-adjust',
+        '-webkit-text-size-adjust'
+    ]);
 
     function escapeHtml(text) {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    function buildPlainTextRichTextHtml(text = '') {
+        return escapeHtml(String(text || '').replace(/\r\n/g, '\n')).replace(/\n/g, '<br>');
+    }
+
+    function normalizeRichTextStyleValue(value = '') {
+        return String(value || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function normalizeRichTextFontSizeStyle(value = '') {
+        return normalizeRichTextStyleValue(value).toLowerCase().replace(/\s+/g, '');
+    }
+
+    function getLocalFontSizeClassFromElement(element) {
+        if (!element) return '';
+        const dataSize = element.dataset?.announcementFontSize;
+        if (dataSize && richTextFontSizeStyles[dataSize]) return dataSize;
+
+        const fontSizeAttribute = element.getAttribute?.('size');
+        const fontSizeAttributeClass = defaultSizes.find(item => item.value === String(fontSizeAttribute || '').trim())?.className || '';
+        if (fontSizeAttributeClass && richTextFontSizeStyles[fontSizeAttributeClass]) return fontSizeAttributeClass;
+
+        const styleSize = normalizeRichTextFontSizeStyle(element.style?.fontSize || '');
+        if (!styleSize) return '';
+
+        return Object.entries(richTextFontSizeStyles)
+            .find(([, value]) => normalizeRichTextFontSizeStyle(value) === styleSize)?.[0] || '';
+    }
+
+    function getSafeRichTextLinkUrl(value = '') {
+        const normalizedUrl = String(value || '').trim();
+        return /^https?:\/\//i.test(normalizedUrl) ? normalizedUrl : '';
+    }
+
+    function applySanitizedRichTextAttributes(source, target) {
+        if (!source || !target) return;
+
+        if (target.tagName === 'A') {
+            const safeUrl = getSafeRichTextLinkUrl(source.getAttribute('href'));
+            if (safeUrl) {
+                target.setAttribute('href', safeUrl);
+            }
+        }
+
+        const normalizedAlign = normalizeRichTextStyleValue(
+            source.dataset?.announcementAlign || source.style?.textAlign || ''
+        ).toLowerCase();
+        if (richTextAlignValues.has(normalizedAlign)) {
+            target.dataset.announcementAlign = normalizedAlign;
+            target.style.textAlign = normalizedAlign;
+        }
+
+        const fontSizeClass = getLocalFontSizeClassFromElement(source);
+        if (fontSizeClass) {
+            target.dataset.announcementFontSize = fontSizeClass;
+            target.style.fontSize = richTextFontSizeStyles[fontSizeClass];
+        }
+
+        const normalizedColor = normalizeAdminConfigRichTextPaletteColor(
+            normalizeRichTextStyleValue(source.getAttribute('color') || source.style?.color || '')
+        );
+        if (richTextAllowedColorPattern.test(normalizedColor)) {
+            target.style.color = normalizedColor;
+        }
+    }
+
+    function shouldPreserveBold(source, tagName) {
+        if (tagName === 'b' || tagName === 'strong') return false;
+        if (/^h[1-6]$/.test(tagName)) return true;
+
+        const fontWeight = normalizeRichTextStyleValue(source.style?.fontWeight || '').toLowerCase();
+        if (/^(bold|bolder)$/.test(fontWeight)) return true;
+
+        const numericWeight = Number.parseInt(fontWeight, 10);
+        return Number.isFinite(numericWeight) && numericWeight >= 600;
+    }
+
+    function shouldPreserveItalic(source, tagName) {
+        if (tagName === 'i' || tagName === 'em') return false;
+        const fontStyle = normalizeRichTextStyleValue(source.style?.fontStyle || '').toLowerCase();
+        return fontStyle === 'italic' || fontStyle === 'oblique';
+    }
+
+    function shouldPreserveUnderline(source, tagName) {
+        if (tagName === 'u') return false;
+        const decoration = normalizeRichTextStyleValue(
+            source.style?.textDecorationLine || source.style?.textDecoration || ''
+        ).toLowerCase();
+        return decoration.includes('underline');
+    }
+
+    function appendSanitizedRichTextChildren(source, target, options = {}) {
+        Array.from(source?.childNodes || []).forEach(child => {
+            appendSanitizedRichTextNode(child, target, options);
+        });
+    }
+
+    function appendSanitizedRichTextNode(node, parent, options = {}) {
+        if (!node || !parent) return;
+
+        if (node.nodeType === Node.TEXT_NODE) {
+            parent.appendChild(document.createTextNode(node.textContent || ''));
+            return;
+        }
+
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+        const sourceTag = String(node.tagName || '').toLowerCase();
+        if (!sourceTag || richTextDroppedTags.has(sourceTag)) return;
+
+        if (sourceTag === 'br') {
+            parent.appendChild(document.createElement('br'));
+            return;
+        }
+
+        let targetTag = '';
+        if (sourceTag === 'font') {
+            targetTag = 'span';
+        } else if (richTextAllowedTags.has(sourceTag)) {
+            targetTag = sourceTag;
+        } else if (/^h[1-6]$/.test(sourceTag) || richTextBlockFallbackTags.has(sourceTag)) {
+            targetTag = 'div';
+        }
+
+        if (!targetTag) {
+            appendSanitizedRichTextChildren(node, parent, options);
+            return;
+        }
+
+        const cleanElement = document.createElement(targetTag);
+        applySanitizedRichTextAttributes(node, cleanElement);
+
+        let childTarget = cleanElement;
+        const wrapperTags = [];
+        if (shouldPreserveBold(node, sourceTag)) wrapperTags.push('strong');
+        if (shouldPreserveItalic(node, sourceTag)) wrapperTags.push('em');
+        if (shouldPreserveUnderline(node, sourceTag)) wrapperTags.push('u');
+
+        wrapperTags.forEach(tag => {
+            const wrapper = document.createElement(tag);
+            childTarget.appendChild(wrapper);
+            childTarget = wrapper;
+        });
+
+        appendSanitizedRichTextChildren(node, childTarget, options);
+        if (cleanElement.childNodes.length) {
+            parent.appendChild(cleanElement);
+        }
+    }
+
+    function sanitizeRichTextHtml(html, options = {}) {
+        const template = document.createElement('template');
+        template.innerHTML = normalizeAdminConfigRichTextPaletteColor(String(html || ''));
+
+        const fragment = document.createDocumentFragment();
+        appendSanitizedRichTextChildren(template.content, fragment, options);
+
+        const container = document.createElement('div');
+        container.appendChild(fragment);
+        return container.innerHTML;
+    }
+
+    function removeRichTextExternalFontFormatting(element) {
+        if (!element) return;
+
+        if (element.dataset?.announcementFontSize) {
+            delete element.dataset.announcementFontSize;
+        }
+        element.removeAttribute?.('size');
+        element.removeAttribute?.('face');
+
+        richTextExternalFontStyleProperties.forEach(property => {
+            element.style?.removeProperty(property);
+        });
+
+        if (element.hasAttribute?.('style') && !element.getAttribute('style')?.trim()) {
+            element.removeAttribute('style');
+        }
+    }
+
+    function stripDescendantRichTextFontFormatting(root) {
+        if (!root?.querySelectorAll) return;
+        root.querySelectorAll('[style], font, [data-announcement-font-size]').forEach(element => {
+            if (element === root) return;
+            removeRichTextExternalFontFormatting(element);
+        });
+    }
+
+    function insertSanitizedRichTextHtml(instance, html) {
+        if (!instance?.editor) return false;
+
+        const sanitizedHtml = sanitizeRichTextHtml(html);
+        if (!sanitizedHtml) return false;
+
+        instance.editor.focus();
+        document.execCommand('insertHTML', false, sanitizedHtml);
+        saveSelection(instance);
+        syncHiddenInput(instance);
+        return true;
+    }
+
+    function handleEditorPaste(instance, event) {
+        const clipboard = event.clipboardData || window.clipboardData;
+        if (!clipboard) return;
+
+        const pastedHtml = clipboard.getData('text/html') || '';
+        const pastedText = clipboard.getData('text/plain') || '';
+        if (!pastedHtml && !pastedText) return;
+
+        event.preventDefault();
+        insertSanitizedRichTextHtml(instance, pastedHtml || buildPlainTextRichTextHtml(pastedText));
     }
 
     function getInstance(key = 'announcement') {
@@ -27861,14 +28097,16 @@ const AdminRichTextEditor = (() => {
     }
 
     function serializeEditorHtml(editor) {
-        return isEditorEmpty(editor) ? '' : editor.innerHTML;
+        return isEditorEmpty(editor) ? '' : sanitizeRichTextHtml(editor.innerHTML);
     }
 
     function normalizeStoredContent(value) {
         if (typeof value !== 'string' || !value.trim()) return '';
         const normalizedValue = normalizeAdminConfigRichTextPaletteColor(value);
-        if (richTextTagPattern.test(normalizedValue)) return normalizedValue;
-        return escapeHtml(normalizedValue).replace(/\n/g, '<br>');
+        if (richTextTagPattern.test(normalizedValue)) {
+            return sanitizeRichTextHtml(normalizedValue);
+        }
+        return sanitizeRichTextHtml(buildPlainTextRichTextHtml(normalizedValue));
     }
 
     function placeCursorAtEnd(editor) {
@@ -27939,11 +28177,14 @@ const AdminRichTextEditor = (() => {
         instance.selection = range.cloneRange();
     }
 
-    function wrapRichTextSelection(instance, wrapper) {
+    function wrapRichTextSelection(instance, wrapper, options = {}) {
         const range = getCurrentEditorRange(instance);
         if (!range || range.collapsed || !wrapper) return false;
 
         wrapper.appendChild(range.extractContents());
+        if (options.stripDescendantFontFormatting) {
+            stripDescendantRichTextFontFormatting(wrapper);
+        }
         range.insertNode(wrapper);
         selectElementContents(instance, wrapper);
         syncHiddenInput(instance);
@@ -28041,6 +28282,7 @@ const AdminRichTextEditor = (() => {
         if (existingSizeNode) {
             existingSizeNode.dataset.announcementFontSize = normalizedClass;
             existingSizeNode.style.fontSize = richTextFontSizeStyles[normalizedClass];
+            stripDescendantRichTextFontFormatting(existingSizeNode);
             saveSelection(instance);
             syncHiddenInput(instance);
             return;
@@ -28050,7 +28292,7 @@ const AdminRichTextEditor = (() => {
         wrapper.dataset.announcementFontSize = normalizedClass;
         wrapper.style.fontSize = richTextFontSizeStyles[normalizedClass];
 
-        if (!wrapRichTextSelection(instance, wrapper)) {
+        if (!wrapRichTextSelection(instance, wrapper, { stripDescendantFontFormatting: true })) {
             document.execCommand('fontSize', false, normalizedSize);
             saveSelection(instance);
             syncHiddenInput(instance);
@@ -28263,6 +28505,8 @@ const AdminRichTextEditor = (() => {
             syncHiddenInput(instance);
         });
 
+        instance.editor.addEventListener('paste', event => handleEditorPaste(instance, event));
+
         ['mouseup', 'keyup', 'focus'].forEach(eventName => {
             instance.editor.addEventListener(eventName, () => saveSelection(instance));
         });
@@ -28300,11 +28544,12 @@ const AdminRichTextEditor = (() => {
         const instance = getInstance(key);
         if (!instance?.editor) return;
 
-        instance.editor.innerHTML = normalizeStoredContent(value || '');
+        const normalizedContent = normalizeStoredContent(value || '');
+        instance.editor.innerHTML = normalizedContent;
         instance.selection = null;
 
         if (!options.syncHiddenInput && instance.hiddenInput && typeof value === 'string') {
-            instance.hiddenInput.value = value;
+            instance.hiddenInput.value = normalizedContent;
         }
 
         if (options.syncHiddenInput) {

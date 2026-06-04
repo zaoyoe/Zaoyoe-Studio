@@ -11980,7 +11980,7 @@ test('analytics calendar and config poster/editor templates route through delega
     }
 
     const richTextSelectionMarkers = [
-        'function wrapRichTextSelection(instance, wrapper)',
+        'function wrapRichTextSelection(instance, wrapper, options = {})',
         'function applyFontSizeToSelection(key, size, sizeClass)',
         'function applyTextAlignToSelection(key, align)',
         'data-announcement-font-size',
