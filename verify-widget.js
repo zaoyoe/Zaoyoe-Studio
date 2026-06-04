@@ -1261,6 +1261,26 @@
         return null;
     }
 
+    function isPixelBridgeHistoryPayload(payload = {}) {
+        const provider = String(payload?.provider || '').trim().toLowerCase();
+        const adapter = String(payload?.provider_adapter || payload?.adapter || '').trim().toLowerCase();
+        return ['catcard', '1free', 'pixel', 'pixel_bridge', 'pixel_bridge_rest', 'qzz'].includes(provider)
+            || ['pixel_bridge_rest', 'pixel-bridge-rest', 'catcard', '1free', 'pixel'].includes(adapter);
+    }
+
+    function isHistorySubmissionEcho(message = '', email = '') {
+        const rawMessage = String(message || '').trim();
+        const normalizedEmail = String(email || '').trim().toLowerCase();
+        if (!rawMessage || !normalizedEmail) return false;
+
+        const normalizedMessage = rawMessage.toLowerCase();
+        if (normalizedMessage === normalizedEmail) return true;
+        if (normalizedMessage.startsWith(`${normalizedEmail}----`)) return true;
+        if (normalizedMessage.startsWith(`${normalizedEmail}\t`)) return true;
+        if (normalizedMessage.startsWith(`${normalizedEmail},`)) return true;
+        return /^[-,\s\t]*$/.test(normalizedMessage.slice(normalizedEmail.length));
+    }
+
     function getHistoryEmail(item) {
         const payload = parseHistoryMessage(item?.message);
         return payload?.email || item?.verification_id || '--';
@@ -1270,18 +1290,33 @@
         const payload = parseHistoryMessage(item?.message);
         const taskType = normalizeTaskType(payload?.task_type);
         const status = normalizeVerifyClientStatus(item?.status || payload?.raw_status || '');
+        const email = getHistoryEmail(item);
+        const isFullTask = taskType === 'full';
+        const isPixelBridgeTask = isPixelBridgeHistoryPayload(payload);
+        const offerUrl = String(payload?.url || payload?.offer_url || '').trim();
 
-        if (payload?.url) {
-            return { type: 'url', text: payload.url, href: payload.url };
+        if (isPixelBridgeTask && status === 'success') {
+            return { type: 'empty', text: '' };
+        }
+
+        if (isFullTask && status === 'success') {
+            return { type: 'text', text: getTaskTypeSuccessText(taskType, false) };
+        }
+
+        if (offerUrl && !isFullTask && !isPixelBridgeTask) {
+            return { type: 'url', text: offerUrl, href: offerUrl };
+        }
+
+        const errorText = payload?.error_message || (payload?.error_code ? getErrorLabel(payload.error_code, '') : '');
+        if (errorText) {
+            return { type: 'text', text: errorText };
         }
 
         if (payload?.message) {
+            if (isPixelBridgeTask && isHistorySubmissionEcho(payload.message, email)) {
+                return { type: 'empty', text: '' };
+            }
             return { type: 'text', text: payload.message };
-        }
-
-        const errorText = payload?.error_message || getErrorLabel(payload?.error_code, '');
-        if (errorText) {
-            return { type: 'text', text: errorText };
         }
 
         if (status === 'success') {
@@ -1330,6 +1365,9 @@
         const status = normalizeVerifyClientStatus(item?.status || parsedPayload.raw_status || parsedPayload.status || '');
         const hasCapturedLink = parsedPayload.has_offer_url === true || parsedPayload.has_offer_url === 'true';
         const hasUnlockedUrl = Boolean(String(parsedPayload.url || parsedPayload.offer_url || '').trim());
+        if (normalizeTaskType(parsedPayload.task_type) === 'full') {
+            return false;
+        }
         return Boolean(getHistoryJobId(item, parsedPayload)) && status === 'failed' && hasCapturedLink && !hasUnlockedUrl;
     }
 
@@ -3778,6 +3816,9 @@ ${fullModeMarkup}
                 const detailHtml = detail.type === 'url'
                     ? `<a class="verify-history-link-text" href="${escapeHtml(detail.href)}" target="_blank" rel="noopener noreferrer">${escapeHtml(detail.text)}</a>`
                     : escapeHtml(detail.text || '--');
+                const detailRowHtml = detail.type === 'empty'
+                    ? ''
+                    : `<div class="verify-history-item-message">${detailHtml}</div>`;
                 const actionHtml = buildHistoryActionButtons(item, payload);
                 const cost = item.points_deducted || 0;
 
@@ -3786,7 +3827,7 @@ ${fullModeMarkup}
                         <div class="verify-history-item-time">${time}</div>
                         <div class="verify-history-item-main">
                             <div class="verify-history-item-id" title="${t('verify.clickToCopy', '点击复制')}: ${escapeHtml(email)}" data-copy="${escapeHtml(email)}" data-verify-action="copy-history-id">${escapeHtml(shortEmail)}</div>
-                            <div class="verify-history-item-message">${detailHtml}</div>
+                            ${detailRowHtml}
                             ${actionHtml}
                         </div>
                         <div class="verify-history-item-status">${getHistoryStatusText(item.status)}</div>

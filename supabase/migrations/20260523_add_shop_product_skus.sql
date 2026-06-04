@@ -732,9 +732,14 @@ BEGIN
 
     v_delivery_type := UPPER(BTRIM(COALESCE(v_product.delivery_type, 'KEY')));
     v_unit_price := CASE
-        WHEN v_site = 'intl' THEN COALESCE(v_sku.price_points_intl, v_product.price_points_intl, v_sku.price_points, v_product.price_points, 0)
-        ELSE COALESCE(v_sku.price_points, v_product.price_points, 0)
+        WHEN v_site = 'intl' THEN v_sku.price_points_intl
+        ELSE v_sku.price_points
     END;
+
+    IF v_unit_price IS NULL THEN
+        RETURN jsonb_build_object('success', false, 'message', 'product sku is not sold on current site');
+    END IF;
+
     v_price_paid := ROUND(COALESCE(p_price_paid, v_unit_price * v_quantity, 0), 2);
     v_total_price := ROUND(COALESCE(p_total_price, v_price_paid, 0), 2);
 
@@ -1250,7 +1255,7 @@ BEGIN
     END IF;
 
     IF v_site = 'intl' THEN
-        v_base_unit_price := COALESCE(v_sku.price_points_intl, v_product.price_points_intl, v_sku.price_points, v_product.price_points);
+        v_base_unit_price := v_sku.price_points_intl;
         v_effective_quantity_rules := COALESCE(
             v_sku.quantity_rules_intl,
             CASE
@@ -1261,7 +1266,7 @@ BEGIN
         v_effective_flash_sale_end := v_product.flash_sale_end_intl;
         v_effective_flash_sale_price := v_product.flash_sale_price_intl;
     ELSE
-        v_base_unit_price := COALESCE(v_sku.price_points, v_product.price_points);
+        v_base_unit_price := v_sku.price_points;
         v_effective_quantity_rules := COALESCE(
             v_sku.quantity_rules,
             CASE
@@ -1766,7 +1771,7 @@ BEGIN
     END IF;
 
     IF v_site = 'intl' THEN
-        v_base_unit_price := COALESCE(v_sku.price_points_intl, v_product.price_points_intl, v_sku.price_points, v_product.price_points);
+        v_base_unit_price := v_sku.price_points_intl;
         v_effective_quantity_rules := COALESCE(
             v_sku.quantity_rules_intl,
             CASE
@@ -1777,7 +1782,7 @@ BEGIN
         v_effective_flash_sale_end := v_product.flash_sale_end_intl;
         v_effective_flash_sale_price := v_product.flash_sale_price_intl;
     ELSE
-        v_base_unit_price := COALESCE(v_sku.price_points, v_product.price_points);
+        v_base_unit_price := v_sku.price_points;
         v_effective_quantity_rules := COALESCE(
             v_sku.quantity_rules,
             CASE

@@ -484,7 +484,7 @@ const SHOP_CARD_PROMPT_ENTER_DURATION_MS = 800;
 const SHOP_CARD_ENTER_SETTLE_FALLBACK_BUFFER_MS = 180;
 const SHOP_STARRY_SKY_RUNTIME_SRC = 'starry-sky.js?v=20260520_SHOP_IDLE_STARRY_1';
 const SHOP_STARRY_SKY_IDLE_DELAY_MS = 1200;
-const SHOP_PREFETCH_SCHEMA_VERSION = '20260531_SHOP_PRODUCT_IMAGE_CACHE_1';
+const SHOP_PREFETCH_SCHEMA_VERSION = '20260604_SHOP_SITE_SCOPED_SKU_PRICE_1';
 const SHOP_PURCHASE_PREFILL_SCHEMA_VERSION = '20260415_SHOP_PURCHASE_PREFILL_1';
 const SHOP_PURCHASE_PREFILL_STORAGE_KEY = 'shop_purchase_prefill';
 const SHOP_DISCOUNT_ASSETS_CACHE_TTL_MS = 2 * 60 * 1000;
@@ -1137,11 +1137,22 @@ const ShopClient = {
         return sku?.[baseField];
     },
 
+    getSkuPriceFieldForCurrentSite: function () {
+        return this.getCurrentShopSite() === 'intl' ? 'price_points_intl' : 'price_points';
+    },
+
+    normalizeShopSitePriceValue: function (rawValue) {
+        if (rawValue === null || rawValue === undefined || rawValue === '') {
+            return null;
+        }
+
+        const numericValue = Number(rawValue);
+        return Number.isFinite(numericValue) ? numericValue : null;
+    },
+
     normalizeProductSkuForCurrentSite: function (sku = {}, product = {}) {
         const quantityRules = this.getSkuSiteScopedMarketingValue(sku, 'quantity_rules');
-        const price = this.getCurrentShopSite() === 'intl'
-            ? (sku.price_points_intl ?? sku.price_points ?? null)
-            : (sku.price_points ?? null);
+        const price = this.getProductSkuPriceForCurrentSite(sku, product);
 
         return {
             ...sku,
@@ -1250,27 +1261,18 @@ const ShopClient = {
         }
         const field = window.SiteConfig?.getPriceField?.() || 'price_points';
         const rawValue = product?.[field];
-        return rawValue == null ? null : Number(rawValue);
+        return this.normalizeShopSitePriceValue(rawValue);
     },
 
     getProductSkuPriceForCurrentSite: function (sku = {}, product = {}) {
-        const rawValue = this.getCurrentShopSite() === 'intl'
-            ? (sku?.price_points_intl ?? sku?.price_points ?? this.getProductPriceForCurrentSite(product))
-            : (sku?.price_points ?? this.getProductPriceForCurrentSite(product));
-        if (rawValue === null || rawValue === undefined || rawValue === '') {
-            return null;
-        }
-        const numericValue = Number(rawValue);
-        return Number.isFinite(numericValue) ? numericValue : null;
+        const priceField = this.getSkuPriceFieldForCurrentSite();
+        return this.normalizeShopSitePriceValue(sku?.[priceField]);
     },
 
     getProductSkusForPurchase: function (product = {}) {
         return (Array.isArray(product?.skus) ? product.skus : [])
             .filter((sku) => sku?.is_active !== false)
-            .map((sku) => this.normalizeProductSkuForCurrentSite({
-                ...sku,
-                price_points: this.getProductSkuPriceForCurrentSite(sku, product)
-            }, product))
+            .map((sku) => this.normalizeProductSkuForCurrentSite(sku, product))
             .filter((sku) => sku.id && sku.price_points !== null && sku.price_points !== undefined);
     },
 
@@ -4225,6 +4227,29 @@ const ShopClient = {
         return this.isShopProductManualDelivery(liveProduct);
     },
 
+    hasProductSkuRows: function (product = {}) {
+        return Array.isArray(product?.skus) && product.skus.some((sku) => sku?.is_active !== false);
+    },
+
+    isShopProductUnavailableForCurrentSite: function (product = {}) {
+        if (!product) return false;
+        return this.hasProductSkuRows(product) && this.getProductSkusForPurchase(product).length === 0;
+    },
+
+    isShopPurchasePayloadUnavailableForCurrentSite: function (payload = {}) {
+        const liveProduct = this.getCachedProductById(payload.productId);
+        return this.isShopProductUnavailableForCurrentSite(liveProduct);
+    },
+
+    showUnavailableForCurrentSiteToast: function () {
+        this.showShopToast(
+            this.trShop('skuUnavailableForSite', this.isEnglishShopLocale()
+                ? 'This option is not available on the current site.'
+                : '该规格未在当前站点销售。'),
+            'error'
+        );
+    },
+
     isShopProductSoldOut: function (product) {
         if (!product) return false;
 
@@ -4333,6 +4358,11 @@ const ShopClient = {
     openProductPurchaseFromDataset: function (dataset = {}, sourceContext = resolveShopSourceContext(), options = {}) {
         const payload = this.getShopPurchasePayloadFromDataset(dataset);
         if (!payload.productId) return;
+
+        if (this.isShopPurchasePayloadUnavailableForCurrentSite(payload)) {
+            this.showUnavailableForCurrentSiteToast();
+            return;
+        }
 
         if (!this.isShopPurchasePayloadManualDelivery(payload) && this.isShopPurchasePayloadSoldOut(payload)) {
             this.showSoldOutProductToast(payload);
@@ -5154,6 +5184,10 @@ const ShopClient = {
             this.showManualDeliveryProductToast({ productId: normalizedId });
             return 0;
         }
+        if (this.isShopProductUnavailableForCurrentSite(product)) {
+            this.showUnavailableForCurrentSiteToast();
+            return 0;
+        }
         const productForQuantity = selectedSkuId ? { ...product, selected_sku_id: selectedSkuId } : product;
 
         const quantityCap = this.getCartQuantityCap(productForQuantity);
@@ -5356,6 +5390,10 @@ const ShopClient = {
         if (!entry) return;
         if (this.isShopProductManualDelivery(entry.product)) {
             this.showManualDeliveryProductToast({ productId: entry.productId });
+            return;
+        }
+        if (this.isShopProductUnavailableForCurrentSite(entry.product)) {
+            this.showUnavailableForCurrentSiteToast();
             return;
         }
         const sourceContext = {
@@ -12859,6 +12897,12 @@ const ShopClient = {
             this.showManualDeliveryProductToast({
                 productId: this.currentPurchase?.productId || ''
             });
+            this.setPurchaseStage('configure');
+            return;
+        }
+        const liveProduct = this.getCachedProductById(this.currentPurchase?.productId);
+        if (this.isShopProductUnavailableForCurrentSite(liveProduct)) {
+            this.showUnavailableForCurrentSiteToast();
             this.setPurchaseStage('configure');
             return;
         }

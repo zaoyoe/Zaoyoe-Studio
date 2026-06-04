@@ -292,3 +292,102 @@ test('public shop catalog hides private categories and their products', async ()
     assert.deepEqual(hiddenCategoryRes.json().categories.map((category) => category.name), ['public-tools']);
     assert.deepEqual(hiddenCategoryRes.json().products, []);
 });
+
+test('public shop catalog hides skus without a price for the requested site', async () => {
+    const supabase = {
+        from(table) {
+            if (table === 'shop_categories') {
+                return createThenableQuery(() => ({
+                    data: [
+                        { id: 'cat_public', name: 'memberships', sort_order: 1, is_public: true }
+                    ],
+                    error: null
+                }));
+            }
+
+            if (table === 'shop_product_skus') {
+                return createThenableQuery(() => ({
+                    data: [
+                        {
+                            id: 'sku-cn-only',
+                            product_id: 'product-intl',
+                            sku_name: 'CN only',
+                            price_points: 10,
+                            price_points_intl: null,
+                            stock_count: 5,
+                            is_default: true,
+                            is_active: true,
+                            sort_order: 0
+                        },
+                        {
+                            id: 'sku-intl',
+                            product_id: 'product-intl',
+                            sku_name: 'INTL',
+                            price_points: 12,
+                            price_points_intl: 2,
+                            stock_count: 5,
+                            is_default: false,
+                            is_active: true,
+                            sort_order: 1
+                        }
+                    ],
+                    error: null
+                }));
+            }
+
+            assert.equal(table, 'shop_products');
+            return createThenableQuery(() => ({
+                data: [
+                    {
+                        id: 'product-intl',
+                        name: 'Site scoped product',
+                        price_points: 99,
+                        price_points_intl: 9,
+                        stock_count: 10,
+                        category: 'memberships',
+                        display_order: 1,
+                        is_active: true
+                    }
+                ],
+                error: null
+            }));
+        }
+    };
+    const handler = createShopHandlers({
+        admin: {
+            getOptionalSupabaseAdmin() {
+                return supabase;
+            },
+            sendJson(res, status, payload) {
+                res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                res.end(JSON.stringify(payload));
+            }
+        },
+        site: {
+            requireSupportedSite(value) {
+                return String(value || 'cn').trim().toLowerCase() || 'cn';
+            }
+        },
+        env: {
+            SHOP_CATALOG_HOT_CACHE_TTL_MS: '0'
+        }
+    }).catalog;
+
+    const res = createMockResponse();
+    await handler({
+        method: 'GET',
+        url: '/api/shop/catalog?site=intl&refresh=1',
+        headers: {}
+    }, res);
+
+    assert.equal(res.statusCode, 200);
+    assert.deepEqual(
+        res.json().products[0].skus.map((sku) => ({
+            id: sku.id,
+            price_points: sku.price_points
+        })),
+        [
+            { id: 'sku-intl', price_points: 2 }
+        ]
+    );
+});

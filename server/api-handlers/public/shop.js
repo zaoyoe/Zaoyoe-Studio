@@ -396,10 +396,18 @@ function createShopHandlers({
         return product?.[baseField];
     }
 
+    function normalizeShopSitePriceValue(rawValue) {
+        if (rawValue === null || rawValue === undefined || rawValue === '') {
+            return null;
+        }
+
+        const numericValue = Number(rawValue);
+        return Number.isFinite(numericValue) ? numericValue : null;
+    }
+
     function normalizePublicShopSkuForSite(sku = {}, product = {}, currentSite = 'cn') {
-        const skuPrice = currentSite === 'intl'
-            ? (sku.price_points_intl ?? sku.price_points ?? null)
-            : (sku.price_points ?? null);
+        const skuPriceField = currentSite === 'intl' ? 'price_points_intl' : 'price_points';
+        const skuPrice = normalizeShopSitePriceValue(sku?.[skuPriceField]);
         const skuQuantityRules = getSiteScopedShopMarketingValue(sku, 'quantity_rules', currentSite);
 
         return {
