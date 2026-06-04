@@ -26,7 +26,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
 
     assert.match(
         shopClientSource,
-        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260531_SHOP_PRODUCT_IMAGE_CACHE_1';/,
+        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260604_SHOP_SITE_SCOPED_SKU_PRICE_1';/,
         'shop-client.js should define a dedicated schema version for prefetched shop payloads'
     );
     assert.match(
@@ -122,7 +122,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         homeBootstrapSource,
-        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260531_SHOP_PRODUCT_IMAGE_CACHE_1';/,
+        /const SHOP_PREFETCH_SCHEMA_VERSION = '20260604_SHOP_SITE_SCOPED_SKU_PRICE_1';/,
         'homepage shop prefetch should use the same guidance-aware schema version'
     );
     assert.match(

@@ -86,6 +86,44 @@ test('public shop catalog normalizes marketing pricing for the requested site', 
     );
 });
 
+test('SKU prices are site-scoped sale switches and never inherit from another site', () => {
+    const handlerSource = readRepoFile('server/api-handlers/public/shop.js');
+    const shopSource = readRepoFile('js/shop-client.js');
+    const skuMigrationSource = readRepoFile('supabase/migrations/20260523_add_shop_product_skus.sql');
+    const patchMigrationSource = readRepoFile('supabase/migrations/20260604_enforce_site_scoped_sku_prices.sql');
+
+    assert.match(
+        handlerSource,
+        /const skuPriceField = currentSite === 'intl' \? 'price_points_intl' : 'price_points';[\s\S]*normalizeShopSitePriceValue\(sku\?\.\[skuPriceField\]\)/,
+        'public catalog should read only the requested site SKU price field'
+    );
+    assert.match(
+        shopSource,
+        /getSkuPriceFieldForCurrentSite: function[\s\S]*price_points_intl[\s\S]*price_points[\s\S]*getProductSkuPriceForCurrentSite: function[\s\S]*normalizeShopSitePriceValue\(sku\?\.\[priceField\]\)/,
+        'storefront purchase UI should read only the current site SKU price field'
+    );
+    assert.doesNotMatch(
+        `${handlerSource}\n${shopSource}`,
+        /price_points_intl\s*\?\?\s*sku\.price_points|sku\?\.price_points_intl\s*\?\?\s*sku\?\.price_points/,
+        'frontend SKU pricing should not fall back to the other SKU site price or product price'
+    );
+    assert.match(
+        skuMigrationSource,
+        /WHEN v_site = 'intl' THEN v_sku\.price_points_intl[\s\S]*ELSE v_sku\.price_points/,
+        'purchase and marketplace SQL should price SKUs from the requested site field only'
+    );
+    assert.doesNotMatch(
+        skuMigrationSource,
+        /COALESCE\(v_sku\.price_points_intl,\s*v_product\.price_points_intl,\s*v_sku\.price_points,\s*v_product\.price_points\)|COALESCE\(v_sku\.price_points,\s*v_product\.price_points\)/,
+        'base SKU migration should not retain SKU price fallback chains'
+    );
+    assert.match(
+        patchMigrationSource,
+        /failed to remove intl SKU price fallback[\s\S]*failed to remove cn SKU price fallback/,
+        'incremental migration should remove deployed SKU price fallback chains'
+    );
+});
+
 test('SKU tier pricing is selected and persisted independently from product tier pricing', () => {
     const adminHtml = readRepoFile('admin-studio.html');
     const shopSource = readRepoFile('js/shop-client.js');

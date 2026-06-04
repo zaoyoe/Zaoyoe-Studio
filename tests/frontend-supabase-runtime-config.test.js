@@ -9695,7 +9695,7 @@ test('verify history reads canonical verification log payload columns', () => {
         'verify widget should distinguish history load errors from an empty history state'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260603_VERIFY_REMAINING_INLINE_1'),
+        verifyPageSource.includes('./verify-widget.js?v=20260604_VERIFY_HISTORY_DETAIL_1'),
         true,
         'verify.html should cache-bust the fixed history query runtime'
     );
@@ -9704,6 +9704,26 @@ test('verify history reads canonical verification log payload columns', () => {
         false,
         'verify.html should not keep loading the stale history query runtime'
     );
+});
+
+test('verify history hides channel-specific redundant details', () => {
+    const verifyWidgetSource = readRepoFile('verify-widget.js');
+
+    const requiredMarkers = [
+        'function isPixelBridgeHistoryPayload(payload = {})',
+        "['catcard', '1free', 'pixel', 'pixel_bridge', 'pixel_bridge_rest', 'qzz'].includes(provider)",
+        'function isHistorySubmissionEcho(message = \'\', email = \'\')',
+        'if (isFullTask && status === \'success\')',
+        'if (isPixelBridgeTask && status === \'success\')',
+        'if (offerUrl && !isFullTask && !isPixelBridgeTask)',
+        'if (isPixelBridgeTask && isHistorySubmissionEcho(payload.message, email))',
+        "const detailRowHtml = detail.type === 'empty'",
+        "if (normalizeTaskType(parsedPayload.task_type) === 'full')"
+    ];
+
+    for (const marker of requiredMarkers) {
+        assert.equal(verifyWidgetSource.includes(marker), true, `verify-widget.js should contain ${marker}`);
+    }
 });
 
 test('verify polling treats status aliases as terminal and avoids cached status reads', () => {
@@ -9732,7 +9752,7 @@ test('verify polling treats status aliases as terminal and avoids cached status 
         'verify status polling and repair reads should bypass cached running responses'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260603_VERIFY_REMAINING_INLINE_1'),
+        verifyPageSource.includes('./verify-widget.js?v=20260604_VERIFY_HISTORY_DETAIL_1'),
         true,
         'verify.html should cache-bust the fixed polling runtime'
     );
@@ -10033,7 +10053,7 @@ test('verify widget runtime renderers externalize progress, visibility, history 
         'verify.html should load the shared user event tracker before the verify widget runtime'
     );
     assert.equal(
-        verifyPageSource.includes('./verify-widget.js?v=20260603_VERIFY_REMAINING_INLINE_1'),
+        verifyPageSource.includes('./verify-widget.js?v=20260604_VERIFY_HISTORY_DETAIL_1'),
         true,
         'verify.html should load the latest verify-widget script version'
     );
