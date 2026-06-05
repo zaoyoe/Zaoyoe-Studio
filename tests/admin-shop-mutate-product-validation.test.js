@@ -719,6 +719,7 @@ test('shop mutate upsert releases removed sku code before reusing it on another 
                         sku_code: '3',
                         sku_name: '目标规格',
                         spec_values: {},
+                        inventory_sku_id: null,
                         price_points: 30,
                         price_points_intl: null,
                         quantity_rules: null,
@@ -774,6 +775,7 @@ test('shop mutate upsert releases removed sku code before reusing it on another 
                         sku_code: '3',
                         sku_name: '目标规格',
                         spec_values: {},
+                        inventory_sku_id: null,
                         price_points: 30,
                         price_points_intl: null,
                         quantity_rules: null,
@@ -786,5 +788,177 @@ test('shop mutate upsert releases removed sku code before reusing it on another 
                 }
             ]
         );
+    });
+});
+
+test('shop mutate upsert persists shared inventory source for an existing sku', async () => {
+    await withShopMutateHandler({
+        tableResults: {
+            shop_product_skus: [
+                {
+                    data: [
+                        {
+                            id: 'sku_us',
+                            product_id: 'prod_saved',
+                            sku_code: 'us',
+                            sku_name: '美区',
+                            spec_values: {},
+                            inventory_sku_id: null,
+                            price_points: 45,
+                            price_points_intl: null,
+                            quantity_rules: null,
+                            quantity_rules_intl: null,
+                            is_default: true,
+                            is_active: true,
+                            stock_count: 8,
+                            sort_order: 0
+                        },
+                        {
+                            id: 'sku_us_warranty',
+                            product_id: 'prod_saved',
+                            sku_code: 'us-warranty',
+                            sku_name: '美区带质保',
+                            spec_values: {},
+                            inventory_sku_id: null,
+                            price_points: 80,
+                            price_points_intl: null,
+                            quantity_rules: null,
+                            quantity_rules_intl: null,
+                            is_default: false,
+                            is_active: true,
+                            stock_count: 0,
+                            sort_order: 1
+                        }
+                    ],
+                    error: null
+                },
+                { data: [{ id: 'sku_us', product_id: 'prod_saved', sku_code: 'us', sku_name: '美区', inventory_sku_id: null, is_default: false, is_active: true, sort_order: 0 }], error: null },
+                { data: [{ id: 'sku_us_warranty', product_id: 'prod_saved', sku_code: 'us-warranty', sku_name: '美区带质保', inventory_sku_id: 'sku_us', is_default: false, is_active: true, sort_order: 1 }], error: null }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                productId: 'prod_saved',
+                payload: {
+                    id: 'prod_saved',
+                    name: 'Google One',
+                    category: 'cards',
+                    price_points: 45,
+                    delivery_type: 'KEY'
+                },
+                skus: [
+                    {
+                        id: 'sku_us',
+                        sku_name: '美区',
+                        sku_code: 'us',
+                        price_points: 45,
+                        is_default: true,
+                        is_active: true
+                    },
+                    {
+                        id: 'sku_us_warranty',
+                        sku_name: '美区带质保',
+                        sku_code: 'us-warranty',
+                        inventory_sku_id: 'sku_us',
+                        price_points: 80,
+                        is_default: false,
+                        is_active: true
+                    }
+                ]
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        const warrantyUpdate = state.updatePayloadsByTable.shop_product_skus.find((entry) => (
+            entry.filters.some(([column, value]) => column === 'id' && value === 'sku_us_warranty')
+        ));
+        assert.equal(warrantyUpdate?.payload?.inventory_sku_id, 'sku_us');
+        assert.equal(warrantyUpdate?.payload?.price_points, 80);
+    });
+});
+
+test('shop mutate upsert rejects chained shared inventory sources', async () => {
+    await withShopMutateHandler({
+        tableResults: {
+            shop_product_skus: [
+                {
+                    data: [
+                        {
+                            id: 'sku_us',
+                            product_id: 'prod_saved',
+                            sku_code: 'us',
+                            sku_name: '美区',
+                            inventory_sku_id: null,
+                            is_default: true,
+                            is_active: true,
+                            stock_count: 8,
+                            sort_order: 0
+                        },
+                        {
+                            id: 'sku_warranty',
+                            product_id: 'prod_saved',
+                            sku_code: 'us-warranty',
+                            sku_name: '美区带质保',
+                            inventory_sku_id: 'sku_us',
+                            is_default: false,
+                            is_active: true,
+                            stock_count: 8,
+                            sort_order: 1
+                        },
+                        {
+                            id: 'sku_second_alias',
+                            product_id: 'prod_saved',
+                            sku_code: 'us-second',
+                            sku_name: '二级别名',
+                            inventory_sku_id: null,
+                            is_default: false,
+                            is_active: true,
+                            stock_count: 0,
+                            sort_order: 2
+                        }
+                    ],
+                    error: null
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'upsert_product',
+                site: 'cn',
+                productId: 'prod_saved',
+                payload: {
+                    id: 'prod_saved',
+                    name: 'Google One',
+                    category: 'cards',
+                    price_points: 45,
+                    delivery_type: 'KEY'
+                },
+                skus: [
+                    { id: 'sku_us', sku_name: '美区', sku_code: 'us', price_points: 45, is_default: true, is_active: true },
+                    { id: 'sku_warranty', sku_name: '美区带质保', sku_code: 'us-warranty', inventory_sku_id: 'sku_us', price_points: 80, is_default: false, is_active: true },
+                    { id: 'sku_second_alias', sku_name: '二级别名', sku_code: 'us-second', inventory_sku_id: 'sku_warranty', price_points: 90, is_default: false, is_active: true }
+                ]
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 400);
+        assert.equal(payload.success, false);
+        assert.equal(payload.code, 'shop_product_sku_inventory_source_invalid');
+        assert.equal(state.updatePayloadsByTable.shop_product_skus, undefined);
     });
 });

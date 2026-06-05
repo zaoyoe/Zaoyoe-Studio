@@ -10956,7 +10956,7 @@ function renderDiscountTriggerRechargeRuleCard(rule, index) {
                     <strong>规则 ${index + 1}</strong>
                     <span>${escapeConfigHtml(titleText)}</span>
                 </div>
-                <button type="button" class="btn-add-config btn-add-config--compact discount-trigger-remove-btn" data-discount-trigger-action="remove-rule">
+                <button type="button" class="btn-add-config btn-add-config--compact discount-trigger-remove-btn" data-admin-action="settings-remove-discount-trigger-rule" data-discount-trigger-section="recharge" data-discount-trigger-action="remove-rule">
                     删除
                 </button>
             </div>
@@ -11021,7 +11021,7 @@ function renderDiscountTriggerCheckinRuleCard(rule, index) {
                     <strong>规则 ${index + 1}</strong>
                     <span>${escapeConfigHtml(titleText)}</span>
                 </div>
-                <button type="button" class="btn-add-config btn-add-config--compact discount-trigger-remove-btn" data-discount-trigger-action="remove-rule">
+                <button type="button" class="btn-add-config btn-add-config--compact discount-trigger-remove-btn" data-admin-action="settings-remove-discount-trigger-rule" data-discount-trigger-section="checkin" data-discount-trigger-action="remove-rule">
                     删除
                 </button>
             </div>
@@ -11082,7 +11082,7 @@ function renderDiscountTriggerAffiliateRuleCard(rule, index) {
                     <strong>规则 ${index + 1}</strong>
                     <span>${escapeConfigHtml(titleText)}</span>
                 </div>
-                <button type="button" class="btn-add-config btn-add-config--compact discount-trigger-remove-btn" data-discount-trigger-action="remove-rule">
+                <button type="button" class="btn-add-config btn-add-config--compact discount-trigger-remove-btn" data-admin-action="settings-remove-discount-trigger-rule" data-discount-trigger-section="affiliate" data-discount-trigger-action="remove-rule">
                     删除
                 </button>
             </div>
@@ -11460,6 +11460,165 @@ function markDiscountTriggerSettingsDirty() {
     return nextConfig;
 }
 
+function handleDiscountTriggerSectionToggle(sectionKey = '', sourceEl = null) {
+    const meta = getDiscountTriggerSectionMeta(sectionKey);
+    const toggleEl = sourceEl instanceof HTMLElement
+        ? sourceEl
+        : document.getElementById(meta.toggleId);
+
+    if (!(toggleEl instanceof HTMLElement) || discountTriggerSettingsState.saving) {
+        return null;
+    }
+
+    const nextActive = !toggleEl.classList.contains('active');
+    toggleEl.classList.toggle('active', nextActive);
+    toggleEl.setAttribute('aria-checked', nextActive ? 'true' : 'false');
+    pulseAdminConfigToggle(toggleEl);
+    return markDiscountTriggerSettingsDirty();
+}
+
+function resolveDiscountTriggerSectionKeyFromElement(sourceEl = null, fallbackKey = 'recharge') {
+    const normalizedFallback = getDiscountTriggerSectionKeys().includes(fallbackKey) ? fallbackKey : 'recharge';
+    const explicitKey = String(sourceEl?.dataset?.discountTriggerSection || '').trim();
+    if (getDiscountTriggerSectionKeys().includes(explicitKey)) {
+        return explicitKey;
+    }
+
+    const sectionRoot = sourceEl instanceof Element
+        ? sourceEl.closest('.discount-trigger-section[data-trigger-section]')
+        : null;
+    const rootKey = String(sectionRoot?.getAttribute('data-trigger-section') || '').trim();
+    if (getDiscountTriggerSectionKeys().includes(rootKey)) {
+        return rootKey;
+    }
+
+    const ruleList = sourceEl instanceof Element
+        ? sourceEl.closest('.discount-trigger-rule-list')
+        : null;
+    if (ruleList instanceof HTMLElement) {
+        const matchedKey = getDiscountTriggerSectionKeys().find((sectionKey) => (
+            getDiscountTriggerSectionMeta(sectionKey).listId === ruleList.id
+        ));
+        if (matchedKey) {
+            return matchedKey;
+        }
+    }
+
+    return normalizedFallback;
+}
+
+function handleDiscountTriggerAddRule(sectionKey = '', sourceEl = null) {
+    const meta = getDiscountTriggerSectionMeta(sectionKey);
+    const buttonEl = sourceEl instanceof HTMLElement
+        ? sourceEl
+        : document.getElementById(meta.addButtonId);
+
+    if (discountTriggerSettingsState.saving || (buttonEl instanceof HTMLButtonElement && buttonEl.disabled)) {
+        return null;
+    }
+
+    if (buttonEl instanceof HTMLElement) {
+        pulseAdminConfigButton(buttonEl);
+    }
+
+    const nextConfig = collectDiscountTriggerSettingsFromForm({
+        allowEmptyRules: true,
+        syncState: true
+    });
+    const sectionConfig = nextConfig[meta.key] || getDefaultDiscountTriggerRulesConfig()[meta.key];
+    sectionConfig.rules.push(meta.createDraft());
+    nextConfig[meta.key] = sectionConfig;
+    discountTriggerSettingsState.draft = normalizeDiscountTriggerRulesConfig(nextConfig, { allowEmptyDiscounts: true });
+    renderDiscountTriggerSettings();
+    showDiscountTriggerFeedback(`已新增${meta.label}规则草稿，选择到账型卡券后保存生效。`, 'info');
+    return discountTriggerSettingsState.draft;
+}
+
+function handleDiscountTriggerApplyPreset(sectionKey = '', presetId = '', sourceEl = null) {
+    const meta = getDiscountTriggerSectionMeta(sectionKey);
+    const buttonEl = sourceEl instanceof HTMLElement ? sourceEl : null;
+    const normalizedPresetId = String(presetId || buttonEl?.dataset?.discountTriggerPreset || '').trim();
+
+    if (discountTriggerSettingsState.saving || !normalizedPresetId || (buttonEl instanceof HTMLButtonElement && buttonEl.disabled)) {
+        return null;
+    }
+
+    if (buttonEl instanceof HTMLElement) {
+        pulseAdminConfigButton(buttonEl);
+    }
+
+    const presetTitle = buttonEl?.querySelector('.discount-trigger-preset-btn__title')?.textContent?.trim() || '推荐模板';
+    const presetRule = applyDiscountTriggerPresetAutoSelection(
+        createDiscountTriggerPresetRule(meta.key, normalizedPresetId),
+        meta.key,
+        normalizedPresetId
+    );
+    if (!presetRule) {
+        showDiscountTriggerFeedback('当前模板暂时无法生成规则，请稍后再试。', 'warning');
+        return null;
+    }
+
+    const nextConfig = collectDiscountTriggerSettingsFromForm({
+        allowEmptyRules: true,
+        syncState: true
+    });
+    const sectionConfig = nextConfig[meta.key] || getDefaultDiscountTriggerRulesConfig()[meta.key];
+    sectionConfig.enabled = true;
+    sectionConfig.rules.push(presetRule);
+    nextConfig[meta.key] = sectionConfig;
+    discountTriggerSettingsState.draft = normalizeDiscountTriggerRulesConfig(nextConfig, { allowEmptyDiscounts: true });
+    renderDiscountTriggerSettings();
+    showDiscountTriggerFeedback(`已套用“${presetTitle}”模板，保存后生效。`, 'success');
+    return discountTriggerSettingsState.draft;
+}
+
+function handleDiscountTriggerRemoveRule(sourceEl = null) {
+    const actionEl = sourceEl instanceof HTMLElement ? sourceEl : null;
+    if (discountTriggerSettingsState.saving || (actionEl instanceof HTMLButtonElement && actionEl.disabled)) {
+        return null;
+    }
+
+    const ruleCard = actionEl?.closest?.('[data-rule-key]');
+    const ruleKey = ruleCard?.getAttribute('data-rule-key') || '';
+    if (!ruleKey) {
+        return null;
+    }
+
+    if (actionEl instanceof HTMLElement) {
+        pulseAdminConfigButton(actionEl);
+    }
+
+    const sectionKey = resolveDiscountTriggerSectionKeyFromElement(actionEl);
+    const meta = getDiscountTriggerSectionMeta(sectionKey);
+    const nextConfig = collectDiscountTriggerSettingsFromForm({
+        allowEmptyRules: true,
+        syncState: true
+    });
+    const sectionConfig = nextConfig[meta.key] || getDefaultDiscountTriggerRulesConfig()[meta.key];
+    sectionConfig.rules = sectionConfig.rules.filter((rule) => rule.rule_key !== ruleKey);
+    nextConfig[meta.key] = sectionConfig;
+    discountTriggerSettingsState.draft = normalizeDiscountTriggerRulesConfig(nextConfig, { allowEmptyDiscounts: true });
+    renderDiscountTriggerSettings();
+    showDiscountTriggerFeedback(`已删除${meta.label}规则草稿，保存后生效。`, 'info');
+    return discountTriggerSettingsState.draft;
+}
+
+async function handleDiscountTriggerSave(sourceEl = null) {
+    const saveButton = sourceEl instanceof HTMLElement
+        ? sourceEl
+        : document.getElementById('discountTriggerRechargeSaveBtn');
+
+    if (discountTriggerSettingsState.saving || (saveButton instanceof HTMLButtonElement && saveButton.disabled)) {
+        return false;
+    }
+
+    if (saveButton instanceof HTMLElement) {
+        pulseAdminConfigButton(saveButton);
+    }
+
+    return saveDiscountTriggerSettings();
+}
+
 async function loadDiscountTriggerDiscountOptions(force = false) {
     const site = getAdminSettingsSiteFilterValue();
     if (discountTriggerOptionsLoadedSite !== site) {
@@ -11578,27 +11737,32 @@ function setupDiscountTriggerSettingsEventListeners() {
         const toggleEl = document.getElementById(meta.toggleId);
         if (toggleEl && toggleEl.dataset.configBound !== '1') {
             toggleEl.dataset.configBound = '1';
-            toggleEl.addEventListener('click', () => {
-                toggleEl.classList.toggle('active');
-                pulseAdminConfigToggle(toggleEl);
-                markDiscountTriggerSettingsDirty();
-            });
+            toggleEl.setAttribute('role', 'switch');
+            toggleEl.setAttribute('tabindex', '0');
+            toggleEl.setAttribute('aria-checked', toggleEl.classList.contains('active') ? 'true' : 'false');
+
+            if (!toggleEl.getAttribute('data-admin-action')) {
+                toggleEl.addEventListener('click', () => {
+                    handleDiscountTriggerSectionToggle(sectionKey, toggleEl);
+                });
+                toggleEl.addEventListener('keydown', (event) => {
+                    if (event.key !== 'Enter' && event.key !== ' ') {
+                        return;
+                    }
+                    event.preventDefault();
+                    handleDiscountTriggerSectionToggle(sectionKey, toggleEl);
+                });
+            }
         }
 
         const addButton = document.getElementById(meta.addButtonId);
         if (addButton && addButton.dataset.configBound !== '1') {
             addButton.dataset.configBound = '1';
-            addButton.addEventListener('click', () => {
-                pulseAdminConfigButton(addButton);
-                const nextConfig = collectDiscountTriggerSettingsFromForm({
-                    allowEmptyRules: true,
-                    syncState: true
+            if (!addButton.getAttribute('data-admin-action')) {
+                addButton.addEventListener('click', () => {
+                    handleDiscountTriggerAddRule(sectionKey, addButton);
                 });
-                nextConfig[sectionKey].rules.push(meta.createDraft());
-                discountTriggerSettingsState.draft = normalizeDiscountTriggerRulesConfig(nextConfig, { allowEmptyDiscounts: true });
-                renderDiscountTriggerSettings();
-                showDiscountTriggerFeedback(`已新增${meta.label}规则草稿，选择到账型卡券后保存生效。`, 'info');
-            });
+            }
         }
 
         const sectionRoot = document.querySelector(`.discount-trigger-section[data-trigger-section="${sectionKey}"]`);
@@ -11609,30 +11773,15 @@ function setupDiscountTriggerSettingsEventListeners() {
                     return;
                 }
                 buttonEl.dataset.configBound = '1';
-                buttonEl.addEventListener('click', () => {
-                    pulseAdminConfigButton(buttonEl);
-                    const presetId = buttonEl.getAttribute('data-discount-trigger-preset') || '';
-                    const presetTitle = buttonEl.querySelector('.discount-trigger-preset-btn__title')?.textContent?.trim() || '推荐模板';
-                    const presetRule = applyDiscountTriggerPresetAutoSelection(
-                        createDiscountTriggerPresetRule(sectionKey, presetId),
-                        sectionKey,
-                        presetId
-                    );
-                    if (!presetRule) {
-                        showDiscountTriggerFeedback('当前模板暂时无法生成规则，请稍后再试。', 'warning');
-                        return;
-                    }
-
-                    const nextConfig = collectDiscountTriggerSettingsFromForm({
-                        allowEmptyRules: true,
-                        syncState: true
+                if (!buttonEl.getAttribute('data-admin-action')) {
+                    buttonEl.addEventListener('click', () => {
+                        handleDiscountTriggerApplyPreset(
+                            sectionKey,
+                            buttonEl.getAttribute('data-discount-trigger-preset') || '',
+                            buttonEl
+                        );
                     });
-                    nextConfig[sectionKey].enabled = true;
-                    nextConfig[sectionKey].rules.push(presetRule);
-                    discountTriggerSettingsState.draft = normalizeDiscountTriggerRulesConfig(nextConfig, { allowEmptyDiscounts: true });
-                    renderDiscountTriggerSettings();
-                    showDiscountTriggerFeedback(`已套用“${presetTitle}”模板，保存后生效。`, 'success');
-                });
+                }
             });
         }
 
@@ -11667,25 +11816,15 @@ function setupDiscountTriggerSettingsEventListeners() {
                 if (!actionEl) {
                     return;
                 }
+                if (actionEl.getAttribute('data-admin-action')) {
+                    return;
+                }
 
                 const action = actionEl.getAttribute('data-discount-trigger-action');
                 if (action !== 'remove-rule') {
                     return;
                 }
-                if (actionEl instanceof HTMLButtonElement) {
-                    pulseAdminConfigButton(actionEl);
-                }
-
-                const ruleCard = actionEl.closest('[data-rule-key]');
-                const ruleKey = ruleCard?.getAttribute('data-rule-key') || '';
-                const nextConfig = collectDiscountTriggerSettingsFromForm({
-                    allowEmptyRules: true,
-                    syncState: true
-                });
-                nextConfig[sectionKey].rules = nextConfig[sectionKey].rules.filter((rule) => rule.rule_key !== ruleKey);
-                discountTriggerSettingsState.draft = normalizeDiscountTriggerRulesConfig(nextConfig, { allowEmptyDiscounts: true });
-                renderDiscountTriggerSettings();
-                showDiscountTriggerFeedback(`已删除${meta.label}规则草稿，保存后生效。`, 'info');
+                handleDiscountTriggerRemoveRule(actionEl);
             });
         }
     });
@@ -11693,10 +11832,11 @@ function setupDiscountTriggerSettingsEventListeners() {
     const saveButton = document.getElementById('discountTriggerRechargeSaveBtn');
     if (saveButton && saveButton.dataset.configBound !== '1') {
         saveButton.dataset.configBound = '1';
-        saveButton.addEventListener('click', async () => {
-            pulseAdminConfigButton(saveButton);
-            await saveDiscountTriggerSettings();
-        });
+        if (!saveButton.getAttribute('data-admin-action')) {
+            saveButton.addEventListener('click', async () => {
+                await handleDiscountTriggerSave(saveButton);
+            });
+        }
     }
 }
 
@@ -30164,6 +30304,11 @@ window.initSystemConfig = initSystemConfig;
 window.warmSettingsDomainsInBackground = warmSettingsDomainsInBackground;
 window.warmSettingsViewConfigInBackground = warmSettingsViewConfigInBackground;
 window.normalizeSettingsViewName = normalizeSettingsViewName;
+window.handleDiscountTriggerSectionToggle = handleDiscountTriggerSectionToggle;
+window.handleDiscountTriggerAddRule = handleDiscountTriggerAddRule;
+window.handleDiscountTriggerApplyPreset = handleDiscountTriggerApplyPreset;
+window.handleDiscountTriggerRemoveRule = handleDiscountTriggerRemoveRule;
+window.handleDiscountTriggerSave = handleDiscountTriggerSave;
 window.applyAdminAIServicePreference = applyAdminAIServicePreference;
 window.toggleConfigCard = toggleConfigCard;
 window.toggleCustomRechargeEntryStatus = toggleCustomRechargeEntryStatus;

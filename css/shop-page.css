@@ -4822,13 +4822,16 @@
         }
 
         #shopPurchaseModal .shop-success-usage-card {
-            max-height: min(32vh, 220px);
+            box-sizing: border-box;
+            max-height: var(--shop-purchase-guidance-card-max, min(32vh, 220px));
             overflow-y: auto;
             overflow-x: hidden;
             overscroll-behavior: contain;
             overscroll-behavior-x: none;
             -webkit-overflow-scrolling: touch;
             touch-action: pan-y;
+            padding-bottom: var(--shop-purchase-guidance-card-bottom-inset, 30px) !important;
+            scroll-padding-bottom: var(--shop-purchase-guidance-card-bottom-inset, 30px);
         }
 
         #shopPurchaseModal .shop-success-usage-card::-webkit-scrollbar {
@@ -7081,14 +7084,19 @@ html:not([data-theme="dark"]) body.shop-page .shop-cart-item__panel--usage {
     -webkit-text-fill-color: #064e3b !important;
 }
 
-html:not([data-theme="dark"]) body.shop-page .shop-cart-item__panel--notice *,
-html:not([data-theme="dark"]) body.shop-page .shop-cart-item__panel--usage * {
+html:not([data-theme="dark"]) body.shop-page .shop-cart-item__panel--notice :not(:where(.shop-rich-color, .shop-rich-color *, [style*="color"], [style*="color"] *, [color], [color] *)),
+html:not([data-theme="dark"]) body.shop-page .shop-cart-item__panel--usage :not(:where(.shop-rich-color, .shop-rich-color *, [style*="color"], [style*="color"] *, [color], [color] *)) {
     color: inherit !important;
     -webkit-text-fill-color: currentColor !important;
 }
 
-html:not([data-theme="dark"]) body.shop-page .shop-cart-item__panel--notice a,
-html:not([data-theme="dark"]) body.shop-page .shop-cart-item__panel--usage a {
+html:not([data-theme="dark"]) body.shop-page .shop-cart-item__panel--notice :where(.shop-rich-color, .shop-rich-color *, [style*="color"], [style*="color"] *, [color], [color] *),
+html:not([data-theme="dark"]) body.shop-page .shop-cart-item__panel--usage :where(.shop-rich-color, .shop-rich-color *, [style*="color"], [style*="color"] *, [color], [color] *) {
+    -webkit-text-fill-color: currentColor !important;
+}
+
+html:not([data-theme="dark"]) body.shop-page .shop-cart-item__panel--notice a:not(:where(.shop-rich-color, [style*="color"], [color])),
+html:not([data-theme="dark"]) body.shop-page .shop-cart-item__panel--usage a:not(:where(.shop-rich-color, [style*="color"], [color])) {
     color: #2563eb !important;
     -webkit-text-fill-color: #2563eb !important;
     font-weight: 650;
@@ -7465,15 +7473,20 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseUsageCa
 }
 
 html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseNotesContent,
-html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseNotesContent :not([style*="color"]):not([color]),
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseNotesContent :not(:where(.shop-rich-color, .shop-rich-color *, [style*="color"], [style*="color"] *, [color], [color] *)),
 html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseUsageContent,
-html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseUsageContent :not([style*="color"]):not([color]) {
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseUsageContent :not(:where(.shop-rich-color, .shop-rich-color *, [style*="color"], [style*="color"] *, [color], [color] *)) {
     color: rgba(23, 32, 51, 0.74) !important;
     -webkit-text-fill-color: rgba(23, 32, 51, 0.74) !important;
 }
 
-html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseNotesContent a,
-html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseUsageContent a {
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseNotesContent :where(.shop-rich-color, .shop-rich-color *, [style*="color"], [style*="color"] *, [color], [color] *),
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseUsageContent :where(.shop-rich-color, .shop-rich-color *, [style*="color"], [style*="color"] *, [color], [color] *) {
+    -webkit-text-fill-color: currentColor !important;
+}
+
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseNotesContent a:not(:where(.shop-rich-color, [style*="color"], [color])),
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseUsageContent a:not(:where(.shop-rich-color, [style*="color"], [color])) {
     color: #31506f !important;
     -webkit-text-fill-color: #31506f !important;
 }
@@ -8663,6 +8676,43 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-purchase-d
 }
 
 @media (min-width: 901px) {
+    #shopPurchaseModal {
+        --shop-purchase-guidance-card-max: min(48vh, 360px);
+        --shop-purchase-guidance-card-bottom-inset: 30px;
+    }
+
+    #shopPurchaseModal.has-purchase-notes.has-purchase-usage #purchaseNotesBox,
+    #shopPurchaseModal.has-purchase-notes.has-purchase-usage #purchaseUsageBox {
+        display: contents;
+    }
+
+    #shopPurchaseModal.has-purchase-notes.has-purchase-usage #purchaseNotesBox > .shop-inline-style-attr-22,
+    #shopPurchaseModal.has-purchase-notes.has-purchase-usage #purchaseUsageBox > .shop-inline-style-attr-22 {
+        width: 100%;
+        min-height: 40px;
+        margin-bottom: 0;
+    }
+
+    #shopPurchaseModal.has-purchase-notes.has-purchase-usage #purchaseNotesBox > .shop-inline-style-attr-22 {
+        order: 10;
+    }
+
+    #shopPurchaseModal.has-purchase-notes.has-purchase-usage #purchaseUsageBox > .shop-inline-style-attr-22 {
+        order: 20;
+    }
+
+    #shopPurchaseModal #purchaseNotesBox:not(.is-expanded) > .shop-inline-style-attr-22,
+    #shopPurchaseModal #purchaseUsageBox:not(.is-expanded) > .shop-inline-style-attr-22 {
+        min-height: 40px;
+        margin-bottom: 0;
+    }
+
+    #shopPurchaseModal.has-purchase-notes.has-purchase-usage #purchaseNotesCard.shop-success-usage-card,
+    #shopPurchaseModal.has-purchase-notes.has-purchase-usage #purchaseUsageCard.shop-success-usage-card {
+        order: 30;
+        width: 100%;
+    }
+
     #shopPurchaseModal .modal-content {
         width: min(calc(100% - 64px), 1040px) !important;
         max-width: 1040px !important;
@@ -8693,7 +8743,7 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-purchase-d
         min-height: 0;
         max-height: min(500px, calc(100dvh - 210px));
         margin: 0;
-        padding: 6px 2px 6px 0;
+        padding: 6px 2px 0 0;
         border: 0;
     }
 
@@ -8709,7 +8759,8 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-purchase-d
         position: sticky;
         top: 0;
         align-self: start;
-        min-height: 100%;
+        min-height: 0;
+        height: fit-content;
         display: flex;
         flex-direction: column;
         justify-content: flex-start;
@@ -8831,7 +8882,7 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-purchase-d
         --shop-purchase-guidance-bottom-reserve: clamp(124px, 18dvh, 158px);
         --shop-purchase-guidance-dock-gap: 16px;
         --shop-purchase-guidance-card-max: clamp(132px, 18dvh, 168px);
-        --shop-purchase-guidance-card-bottom-inset: 20px;
+        --shop-purchase-guidance-card-bottom-inset: 32px;
     }
 
     #shopPurchaseModal .modal-content {

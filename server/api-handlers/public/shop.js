@@ -451,14 +451,25 @@ function createShopHandlers({
         }
 
         try {
-            const { data, error } = await dataSupabase
+            let response = await dataSupabase
                 .from('shop_product_skus')
-                .select('id, product_id, sku_code, sku_name, spec_values, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order')
+                .select('id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order')
                 .in('product_id', productIds)
                 .eq('is_active', true)
                 .order('sort_order', { ascending: true })
                 .order('created_at', { ascending: true });
 
+            if (response.error && isMissingColumnError(response.error, 'inventory_sku_id')) {
+                response = await dataSupabase
+                    .from('shop_product_skus')
+                    .select('id, product_id, sku_code, sku_name, spec_values, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order')
+                    .in('product_id', productIds)
+                    .eq('is_active', true)
+                    .order('sort_order', { ascending: true })
+                    .order('created_at', { ascending: true });
+            }
+
+            const { data, error } = response;
             if (error) throw error;
 
             const skusByProductId = new Map();

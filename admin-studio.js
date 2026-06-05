@@ -3054,6 +3054,31 @@ function bindAdminStudioDelegatedControls() {
                     actionEl.dataset.optionLabel
                 );
                 break;
+            case 'settings-toggle-discount-trigger-section':
+                window.handleDiscountTriggerSectionToggle?.(
+                    actionEl.dataset.discountTriggerSection,
+                    actionEl
+                );
+                break;
+            case 'settings-add-discount-trigger-rule':
+                window.handleDiscountTriggerAddRule?.(
+                    actionEl.dataset.discountTriggerSection,
+                    actionEl
+                );
+                break;
+            case 'settings-apply-discount-trigger-preset':
+                window.handleDiscountTriggerApplyPreset?.(
+                    actionEl.dataset.discountTriggerSection,
+                    actionEl.dataset.discountTriggerPreset,
+                    actionEl
+                );
+                break;
+            case 'settings-remove-discount-trigger-rule':
+                window.handleDiscountTriggerRemoveRule?.(actionEl);
+                break;
+            case 'settings-save-discount-trigger-rules':
+                void window.handleDiscountTriggerSave?.(actionEl);
+                break;
             case 'settings-add-api-key':
                 window.addNewApiKey?.();
                 break;

@@ -412,6 +412,87 @@ test('shop mutate handler imports inventory into the requested product sku', asy
     });
 });
 
+test('shop mutate handler rejects shared-sku alias inventory import and accepts the source sku', async () => {
+    await withShopMutateHandler({
+        productRows: [{ id: 'prod_1', stock_count: 0 }],
+        skuRows: [
+            {
+                id: 'sku_us',
+                product_id: 'prod_1',
+                sku_name: '美区',
+                is_default: true,
+                is_active: true,
+                stock_count: 0
+            },
+            {
+                id: 'sku_us_warranty',
+                product_id: 'prod_1',
+                sku_name: '美区带质保',
+                inventory_sku_id: 'sku_us',
+                is_default: false,
+                is_active: true,
+                stock_count: 0
+            }
+        ],
+        inventoryRows: []
+    }, async ({ handler, state }) => {
+        const aliasRes = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'import_inventory',
+                site: 'cn',
+                productId: 'prod_1',
+                skuId: 'sku_us_warranty',
+                lines: ['us-card-1'],
+                importStatus: 'available',
+                batchId: 'batch_us'
+            }
+        }, aliasRes);
+
+        const aliasPayload = aliasRes.json();
+        assert.equal(aliasRes.statusCode, 400);
+        assert.equal(aliasPayload.success, false);
+        assert.equal(aliasPayload.code, 'shop_product_sku_inventory_alias_not_importable');
+        assert.match(aliasPayload.message, /请上传到被关联的规格/);
+        assert.deepEqual(state.inventoryRows, []);
+
+        const sourceRes = createMockResponse();
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'import_inventory',
+                site: 'cn',
+                productId: 'prod_1',
+                skuId: 'sku_us',
+                lines: ['us-card-1'],
+                importStatus: 'available',
+                batchId: 'batch_us'
+            }
+        }, sourceRes);
+
+        const sourcePayload = sourceRes.json();
+        assert.equal(sourceRes.statusCode, 200);
+        assert.equal(sourcePayload.success, true);
+        assert.equal(sourcePayload.skuId, 'sku_us');
+        assert.equal(sourcePayload.inventorySkuId, 'sku_us');
+        assert.equal(sourcePayload.skuStockCount, 1);
+        assert.deepEqual(
+            state.inventoryRows.map((row) => ({
+                product_id: row.product_id,
+                sku_id: row.sku_id,
+                content: row.content
+            })),
+            [{ product_id: 'prod_1', sku_id: 'sku_us', content: 'us-card-1' }]
+        );
+        assert.equal(state.auditCalls[0]?.details?.sku_id, 'sku_us');
+        assert.equal(state.auditCalls[0]?.details?.inventory_sku_id, 'sku_us');
+    });
+});
+
 test('shop mutate handler rejects inventory import for a sku from another product', async () => {
     await withShopMutateHandler({
         productRows: [{ id: 'prod_1', stock_count: 0 }],

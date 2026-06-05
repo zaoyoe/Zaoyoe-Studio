@@ -45115,9 +45115,28 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     min-height: 132px !important;
     height: auto !important;
     padding: 18px 20px !important;
+    border-color: transparent !important;
+    border-style: none !important;
     border-radius: 18px !important;
+    outline: none !important;
+    outline-offset: 0 !important;
     justify-content: flex-start;
     white-space: normal;
+    box-shadow: none !important;
+    transform: none !important;
+    filter: none !important;
+    will-change: auto !important;
+}
+
+.discount-trigger-preset-btn.btn-add-config--compact:is(:hover, :focus, :focus-visible, :focus-within, :active, .active, .is-active, .is-focused, .selected, .is-pressed) {
+    border-color: transparent !important;
+    border-style: none !important;
+    outline: none !important;
+    outline-offset: 0 !important;
+    box-shadow: none !important;
+    transform: none !important;
+    filter: none !important;
+    will-change: auto !important;
 }
 
 .discount-trigger-preset-btn > * {
@@ -51282,8 +51301,13 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__empty {
 }
 
 .status-toggle {
+    appearance: none;
+    -webkit-appearance: none;
     width: 40px;
     height: 22px;
+    margin: 0;
+    padding: 0;
+    border: 0;
     background: rgba(100, 116, 139, 0.4);
     border-radius: 11px;
     position: relative;
@@ -51291,6 +51315,7 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__empty {
     transition: background 0.3s, transform 0.15s;
     flex: 0 0 auto;
     display: inline-block;
+    pointer-events: auto;
 }
 
 .status-toggle.status-toggle--pulse {
@@ -51311,6 +51336,7 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-exception-inbox__empty {
     top: 2px;
     left: 2px;
     transition: transform 0.3s;
+    pointer-events: none;
 }
 
 .status-toggle.active::after {
@@ -57289,13 +57315,98 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     min-width: 0;
 }
 
+:is([data-sku-inventory-pool-tone="0"], [data-shop-sku-inventory-tone="0"]) {
+    --shop-sku-inventory-pool-color: #6b9ece;
+}
+
+:is([data-sku-inventory-pool-tone="1"], [data-shop-sku-inventory-tone="1"]) {
+    --shop-sku-inventory-pool-color: #7c9a5f;
+}
+
+:is([data-sku-inventory-pool-tone="2"], [data-shop-sku-inventory-tone="2"]) {
+    --shop-sku-inventory-pool-color: #c08a5b;
+}
+
+:is([data-sku-inventory-pool-tone="3"], [data-shop-sku-inventory-tone="3"]) {
+    --shop-sku-inventory-pool-color: #9a7bd0;
+}
+
+:is([data-sku-inventory-pool-tone="4"], [data-shop-sku-inventory-tone="4"]) {
+    --shop-sku-inventory-pool-color: #d06f85;
+}
+
+:is([data-sku-inventory-pool-tone="5"], [data-shop-sku-inventory-tone="5"]) {
+    --shop-sku-inventory-pool-color: #4f9a8b;
+}
+
+:is([data-sku-inventory-pool-tone="6"], [data-shop-sku-inventory-tone="6"]) {
+    --shop-sku-inventory-pool-color: #b6924a;
+}
+
+:is([data-sku-inventory-pool-tone="7"], [data-shop-sku-inventory-tone="7"]) {
+    --shop-sku-inventory-pool-color: #6f8fd0;
+}
+
+.shop-product-sku-row--shared-inventory {
+    border-color: color-mix(in srgb, var(--shop-sku-inventory-pool-color, #769dca) 48%, rgba(148, 163, 184, 0.18));
+    background:
+        linear-gradient(90deg, color-mix(in srgb, var(--shop-sku-inventory-pool-color, #769dca) 16%, transparent), transparent 38%),
+        var(--shop-product-sku-row-bg);
+    box-shadow:
+        inset 3px 0 0 var(--shop-sku-inventory-pool-color, #769dca),
+        var(--shop-product-sku-row-shadow);
+}
+
+.shop-product-sku-row--inventory-alias {
+    border-style: dashed;
+}
+
+.shop-sku-inventory-link {
+    display: inline-flex;
+    align-items: center;
+    justify-self: start;
+    gap: 7px;
+    max-width: 100%;
+    min-height: 24px;
+    padding: 3px 8px;
+    border: 1px solid color-mix(in srgb, var(--shop-sku-inventory-pool-color, #769dca) 32%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--shop-sku-inventory-pool-color, #769dca) 13%, transparent);
+    color: rgba(226, 232, 240, 0.9);
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.2;
+}
+
+.shop-sku-inventory-link[hidden] {
+    display: none !important;
+}
+
+.shop-sku-inventory-link__swatch {
+    flex: 0 0 auto;
+    width: 10px;
+    height: 10px;
+    border: 2px solid rgba(255, 255, 255, 0.64);
+    border-radius: 999px;
+    background: var(--shop-sku-inventory-pool-color, var(--admin-studio-save-btn-bg, #769dca));
+    box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.22);
+}
+
+.shop-sku-inventory-link__copy {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .shop-product-sku-row__main {
     display: grid;
     grid-template-columns:
-        minmax(160px, 1.35fr)
-        minmax(90px, 0.78fr)
-        minmax(78px, 0.5fr)
-        minmax(112px, 0.65fr)
+        minmax(150px, 1.25fr)
+        minmax(82px, 0.62fr)
+        minmax(72px, 0.45fr)
+        minmax(112px, 0.58fr)
+        minmax(132px, 0.72fr)
         max-content;
     gap: 6px;
     align-items: center;
@@ -57344,9 +57455,86 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
 }
 
 .shop-product-sku-row__input,
-.shop-product-sku-row__tier {
+.shop-product-sku-row__tier,
+.shop-product-sku-row__inventory-source {
     width: 100%;
     min-width: 0;
+}
+
+.shop-product-sku-row__inventory-source {
+    min-height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--shop-product-sku-control-border);
+    border-radius: 8px;
+    color: var(--shop-product-sku-control-text);
+    background: var(--shop-product-sku-control-bg);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease;
+}
+
+.shop-product-sku-row__inventory-source:is(:hover, :focus-visible),
+.shop-product-sku-row__inventory-source.shop-custom-select:is(:hover, .is-open) .shop-custom-select__trigger,
+.shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__trigger:is(:hover, :focus-visible) {
+    color: var(--shop-product-sku-control-text-strong);
+    border-color: rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.34);
+    background: var(--shop-product-sku-control-bg-hover);
+}
+
+.shop-product-sku-row__inventory-source.shop-custom-select {
+    width: 100%;
+    min-width: 0;
+    min-height: 36px;
+    overflow: visible;
+}
+
+.shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__trigger {
+    min-height: 36px;
+    padding: 0 10px;
+    border-radius: 8px;
+    border-color: var(--shop-product-sku-control-border);
+    color: var(--shop-product-sku-control-text);
+    background: var(--shop-product-sku-control-bg);
+    font-size: 12px;
+    font-weight: 700;
+    box-shadow: none;
+}
+
+.shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__label {
+    line-height: 1.2;
+}
+
+.shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__icon {
+    color: currentColor;
+    opacity: 0.78;
+    font-size: 11px;
+}
+
+.shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__menu {
+    z-index: 80;
+    top: calc(100% + 6px);
+    width: max(100%, min(280px, calc(100vw - 48px)));
+    right: 0;
+    left: auto;
+    gap: 4px;
+    max-height: min(260px, calc(100vh - 180px));
+    padding: 6px;
+    border-radius: 10px;
+}
+
+.shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__option {
+    min-height: 34px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__option-copy {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .shop-product-sku-row__actions {
@@ -57639,6 +57827,7 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     }
 
     .shop-product-sku-row__tier-toggle,
+    .shop-product-sku-row__inventory-source,
     .shop-product-sku-row__actions {
         grid-column: 1 / -1;
     }
@@ -57670,6 +57859,7 @@ html:not([data-theme="dark"]) body .admin-main-content .module-container:is(#mod
     }
 
     .shop-product-sku-row__tier-toggle,
+    .shop-product-sku-row__inventory-source,
     .shop-product-sku-row__actions {
         grid-column: 1 / -1;
     }

@@ -569,6 +569,7 @@ const ShopClient = {
     currentAgentId: null,
     currentAgentName: null,
     purchaseUsageWheelCleanup: null,
+    purchaseGuidanceLayoutRafId: null,
     purchaseNotesHeightAnimationTimer: null,
     purchaseModalStageSettledTimer: null,
     purchaseModalOpeningStabilityTimer: null,
@@ -8609,6 +8610,7 @@ const ShopClient = {
             this.purchaseModalViewportSyncRafId = null;
             this.syncPurchaseModalOverlayViewport(force);
             this.syncPurchaseDiscountDetailsForLayout();
+            this.schedulePurchaseGuidanceLayoutSync();
         });
     },
 
@@ -8696,6 +8698,7 @@ const ShopClient = {
 
                 this.syncPurchaseModalOverlayViewport(true);
                 this.syncPurchaseModalKeyboardDock();
+                this.syncPurchaseGuidanceLayout();
             }, delayMs);
             this.purchaseModalOpenViewportSyncTimers.push(timerId);
         });
@@ -12489,6 +12492,7 @@ const ShopClient = {
         this.setPurchaseModalLayerOpen(false);
         this.clearPurchaseNotesWheelIsolation();
         this.clearPurchaseUsageWheelIsolation();
+        this.clearPurchaseGuidanceLayoutSync();
         this.clearPurchaseNotesHeightAnimation();
         this.clearPurchaseModalOpeningStability();
         this.clearPurchaseModalStageSettledState(modal);
@@ -13328,18 +13332,155 @@ const ShopClient = {
         };
     },
 
+    getExpandedPurchaseGuidanceCard: function () {
+        const notesCard = document.getElementById('purchaseNotesCard');
+        const usageCard = document.getElementById('purchaseUsageCard');
+
+        if (this.currentPurchase?.purchaseNotesExpanded === true && notesCard && !notesCard.hidden) {
+            return notesCard;
+        }
+        if (this.currentPurchase?.usageInstructionsExpanded === true && usageCard && !usageCard.hidden) {
+            return usageCard;
+        }
+
+        return null;
+    },
+
+    updatePurchaseGuidanceScrollState: function (scrollCard) {
+        if (!scrollCard) return;
+        const maxScrollTop = Math.max(0, scrollCard.scrollHeight - scrollCard.clientHeight);
+        const isScrollable = maxScrollTop > 2;
+        const isAtBottom = !isScrollable || scrollCard.scrollTop >= maxScrollTop - 3;
+        scrollCard.classList.toggle('is-scrollable', isScrollable);
+        scrollCard.classList.toggle('is-scroll-at-bottom', isAtBottom);
+        scrollCard.classList.toggle('is-scroll-away-from-bottom', isScrollable && !isAtBottom);
+    },
+
+    getPurchaseGuidanceTrailingReserve: function (expandedCard) {
+        const expandedStage = expandedCard?.closest?.('.shop-purchase-stage');
+        const panel = expandedStage?.parentElement;
+        if (!expandedStage || !panel) return 0;
+
+        const expandedCardRect = expandedCard?.getBoundingClientRect?.();
+        const stages = Array.from(panel.children);
+        const expandedIndex = stages.indexOf(expandedStage);
+        if (expandedIndex < 0) return 0;
+
+        const panelStyle = window.getComputedStyle(panel);
+        const rowGap = Number.parseFloat(panelStyle.rowGap || panelStyle.gap || '0') || 0;
+        let visibleTrailingCount = 0;
+        const reserve = stages.slice(expandedIndex + 1).reduce((total, stage) => {
+            if (!(stage instanceof HTMLElement) || stage.hidden) return total;
+            const stageStyle = window.getComputedStyle(stage);
+            if (stageStyle.display === 'none' || stageStyle.visibility === 'hidden') return total;
+
+            const rect = stage.getBoundingClientRect();
+            if (expandedCardRect && rect.top < expandedCardRect.top - 1) return total;
+            const height = Math.max(0, rect.height || stage.offsetHeight || 0);
+            if (height <= 0) return total;
+
+            const marginTop = Math.max(0, Number.parseFloat(stageStyle.marginTop || '0') || 0);
+            const marginBottom = Math.max(0, Number.parseFloat(stageStyle.marginBottom || '0') || 0);
+            visibleTrailingCount += 1;
+            return total + height + marginTop + marginBottom;
+        }, 0);
+
+        if (!visibleTrailingCount) return 0;
+        return Math.ceil(reserve + (rowGap * visibleTrailingCount));
+    },
+
+    schedulePurchaseGuidanceLayoutSync: function () {
+        const { overlay } = this.getPurchaseModalElements();
+        if (!overlay || this.purchaseGuidanceLayoutRafId) return;
+
+        this.purchaseGuidanceLayoutRafId = window.requestAnimationFrame(() => {
+            this.purchaseGuidanceLayoutRafId = null;
+            this.syncPurchaseGuidanceLayout();
+        });
+    },
+
+    clearPurchaseGuidanceLayoutSync: function () {
+        if (this.purchaseGuidanceLayoutRafId) {
+            window.cancelAnimationFrame(this.purchaseGuidanceLayoutRafId);
+            this.purchaseGuidanceLayoutRafId = null;
+        }
+
+        const { overlay } = this.getPurchaseModalElements();
+        this.setCssVariables(overlay, {
+            '--shop-purchase-guidance-card-max': '',
+            '--shop-purchase-guidance-card-bottom-inset': ''
+        });
+    },
+
+    syncPurchaseGuidanceLayout: function () {
+        if (this.purchaseGuidanceLayoutRafId) {
+            window.cancelAnimationFrame(this.purchaseGuidanceLayoutRafId);
+            this.purchaseGuidanceLayoutRafId = null;
+        }
+
+        const { overlay, card: modalCard } = this.getPurchaseModalElements();
+        if (!overlay) return;
+
+        const isWideLayout = this.isWidePurchaseModalLayout();
+        const bottomInset = isWideLayout ? '30px' : '32px';
+        const expandedCard = this.getExpandedPurchaseGuidanceCard();
+
+        if (!overlay.classList.contains('active') || !expandedCard) {
+            this.setCssVariables(overlay, {
+                '--shop-purchase-guidance-card-max': '',
+                '--shop-purchase-guidance-card-bottom-inset': bottomInset
+            });
+            return;
+        }
+
+        if (!isWideLayout) {
+            this.setCssVariables(overlay, {
+                '--shop-purchase-guidance-card-max': '',
+                '--shop-purchase-guidance-card-bottom-inset': bottomInset
+            });
+            this.updatePurchaseGuidanceScrollState(expandedCard);
+            this.ensurePurchaseGuidanceVisible(expandedCard);
+            return;
+        }
+
+        const dock = overlay.querySelector('.shop-purchase-dock');
+        const cardRect = expandedCard.getBoundingClientRect();
+        const dockRect = dock?.getBoundingClientRect?.();
+        const modalRect = modalCard?.getBoundingClientRect?.();
+        const fallbackHeight = Math.min(
+            420,
+            Math.max(220, Math.round((window.innerHeight || document.documentElement?.clientHeight || 720) * 0.48))
+        );
+        const candidateBottoms = [];
+
+        if (dockRect && dockRect.bottom > cardRect.top + 96) {
+            candidateBottoms.push(dockRect.bottom);
+        }
+        if (modalRect && modalRect.bottom > cardRect.top + 96) {
+            candidateBottoms.push(modalRect.bottom - 4);
+        }
+
+        const targetBottom = candidateBottoms.length
+            ? Math.min(...candidateBottoms)
+            : cardRect.top + fallbackHeight;
+        const trailingReserve = this.getPurchaseGuidanceTrailingReserve(expandedCard);
+        const nextMaxHeight = Math.max(160, Math.min(520, Math.floor(targetBottom - cardRect.top - trailingReserve)));
+
+        this.setCssVariables(overlay, {
+            '--shop-purchase-guidance-card-max': `${nextMaxHeight}px`,
+            '--shop-purchase-guidance-card-bottom-inset': bottomInset
+        });
+        this.updatePurchaseGuidanceScrollState(expandedCard);
+        this.schedulePurchaseModalKeyboardContentSync();
+    },
+
     bindPurchaseGuidanceScrollState: function (scrollCard) {
         if (!scrollCard) return null;
 
         let rafId = 0;
         const updateState = () => {
             rafId = 0;
-            const maxScrollTop = Math.max(0, scrollCard.scrollHeight - scrollCard.clientHeight);
-            const isScrollable = maxScrollTop > 2;
-            const isAtBottom = !isScrollable || scrollCard.scrollTop >= maxScrollTop - 3;
-            scrollCard.classList.toggle('is-scrollable', isScrollable);
-            scrollCard.classList.toggle('is-scroll-at-bottom', isAtBottom);
-            scrollCard.classList.toggle('is-scroll-away-from-bottom', isScrollable && !isAtBottom);
+            this.updatePurchaseGuidanceScrollState(scrollCard);
         };
         const scheduleUpdate = () => {
             if (rafId) return;
@@ -13385,11 +13526,19 @@ const ShopClient = {
         });
     },
 
+    getPurchaseGuidanceWheelChainTarget: function () {
+        if (this.isWidePurchaseModalLayout()) {
+            return null;
+        }
+        return document.querySelector('#shopPurchaseModal .shop-purchase-scroll');
+    },
+
     bindPurchaseNotesWheelIsolation: function () {
         this.clearPurchaseNotesWheelIsolation();
         const notesCard = document.getElementById('purchaseNotesCard');
-        const purchaseScroll = document.querySelector('#shopPurchaseModal .shop-purchase-scroll');
-        const wheelCleanup = this.bindContainedWheelIsolation(notesCard, { chainScrollTarget: purchaseScroll });
+        const wheelCleanup = this.bindContainedWheelIsolation(notesCard, {
+            chainScrollTarget: this.getPurchaseGuidanceWheelChainTarget()
+        });
         const scrollStateCleanup = this.bindPurchaseGuidanceScrollState(notesCard);
         const cleanup = () => {
             wheelCleanup?.();
@@ -13403,8 +13552,9 @@ const ShopClient = {
     bindPurchaseUsageWheelIsolation: function () {
         this.clearPurchaseUsageWheelIsolation();
         const usageCard = document.getElementById('purchaseUsageCard');
-        const purchaseScroll = document.querySelector('#shopPurchaseModal .shop-purchase-scroll');
-        const wheelCleanup = this.bindContainedWheelIsolation(usageCard, { chainScrollTarget: purchaseScroll });
+        const wheelCleanup = this.bindContainedWheelIsolation(usageCard, {
+            chainScrollTarget: this.getPurchaseGuidanceWheelChainTarget()
+        });
         const scrollStateCleanup = this.bindPurchaseGuidanceScrollState(usageCard);
         const cleanup = () => {
             wheelCleanup?.();
@@ -13514,7 +13664,12 @@ const ShopClient = {
         this.currentPurchase.purchaseGuidanceDisclosureTouched = true;
         this.animatePurchaseModalHeightChange(() => {
             this.currentPurchase.purchaseNotesExpanded = nextExpanded;
+            if (nextExpanded) {
+                this.currentPurchase.usageInstructionsExpanded = false;
+            }
             this.renderPurchaseNotes();
+            this.renderPurchaseUsageInstructions();
+            this.syncPurchaseGuidanceLayout();
         });
     },
 
@@ -13576,6 +13731,7 @@ const ShopClient = {
             this.setElementHidden(notesCard, true);
             notesContent.innerHTML = '';
         }
+        this.schedulePurchaseGuidanceLayoutSync();
     },
 
     togglePurchaseUsageVisibility: function () {
@@ -13587,7 +13743,12 @@ const ShopClient = {
         this.currentPurchase.purchaseGuidanceDisclosureTouched = true;
         this.animatePurchaseModalHeightChange(() => {
             this.currentPurchase.usageInstructionsExpanded = nextExpanded;
+            if (nextExpanded) {
+                this.currentPurchase.purchaseNotesExpanded = false;
+            }
+            this.renderPurchaseNotes();
             this.renderPurchaseUsageInstructions();
+            this.syncPurchaseGuidanceLayout();
         });
     },
 
@@ -13649,6 +13810,7 @@ const ShopClient = {
             this.setElementHidden(usageCard, true);
             usageContent.innerHTML = '';
         }
+        this.schedulePurchaseGuidanceLayoutSync();
     },
 
     closeSuccessModal: function () {
@@ -13893,12 +14055,15 @@ const ShopClient = {
         template.innerHTML = this.normalizeRichTextPaletteColors(html);
 
         const allowedTags = new Set(['A', 'B', 'STRONG', 'I', 'EM', 'U', 'BR', 'DIV', 'P', 'SPAN', 'FONT', 'UL', 'OL', 'LI']);
+        const styledTags = new Set(['A', 'B', 'STRONG', 'I', 'EM', 'U', 'DIV', 'P', 'SPAN', 'FONT', 'UL', 'OL', 'LI']);
         const allowedTextAlign = /^(left|center|right|justify)$/i;
         const allowedColor = /^(#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})|rgba?\([^)]*\))$/i;
         const allowedFontSize = /^([1-7]|\d+(\.\d+)?(px|em|rem|%)|xx-small|x-small|small|medium|large|x-large|xx-large)$/i;
+        const richColorClassName = 'shop-rich-color';
 
         const sanitizeStyle = (styleText = '') => {
             const safeRules = [];
+            let hasColor = false;
             styleText.split(';').forEach((rule) => {
                 const [rawProp, rawValue] = rule.split(':');
                 if (!rawProp || !rawValue) return;
@@ -13911,13 +14076,17 @@ const ShopClient = {
                 }
                 if (prop === 'color' && allowedColor.test(value)) {
                     safeRules.push(`color: ${this.normalizeRichTextPaletteColors(value)}`);
+                    hasColor = true;
                 }
                 if (prop === 'font-size' && allowedFontSize.test(value)) {
                     safeRules.push(`font-size: ${value}`);
                 }
             });
 
-            return safeRules.join('; ');
+            return {
+                cssText: safeRules.join('; '),
+                hasColor
+            };
         };
 
         const sanitizeHref = (href = '') => {
@@ -13951,10 +14120,13 @@ const ShopClient = {
                 });
                 Array.from(child.attributes).forEach((attr) => child.removeAttribute(attr.name));
 
-                if (['DIV', 'P', 'SPAN'].includes(child.tagName)) {
+                if (styledTags.has(child.tagName)) {
                     const safeStyle = sanitizeStyle(attrs.style || '');
-                    if (safeStyle) {
-                        child.setAttribute('style', safeStyle);
+                    if (safeStyle.cssText) {
+                        child.setAttribute('style', safeStyle.cssText);
+                    }
+                    if (safeStyle.hasColor) {
+                        child.classList.add(richColorClassName);
                     }
                 }
 
@@ -13963,6 +14135,7 @@ const ShopClient = {
                     const size = (attrs.size || '').trim();
                     if (allowedColor.test(color)) {
                         child.setAttribute('color', color);
+                        child.classList.add(richColorClassName);
                     }
                     if (allowedFontSize.test(size)) {
                         child.setAttribute('size', size);

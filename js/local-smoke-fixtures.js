@@ -8298,6 +8298,61 @@
             }
         }
 
+        let addRulePass = true;
+        let removeRulePass = true;
+        for (const section of renderedSections) {
+            const addButton = document.getElementById(section.addButtonId);
+            const beforeCount = getRuleCardCount(section.listId);
+            if (!(addButton instanceof HTMLButtonElement) || addButton.disabled) {
+                addRulePass = false;
+                removeRulePass = false;
+                continue;
+            }
+
+            addButton.click();
+            await waitFor(
+                () => getRuleCardCount(section.listId) === beforeCount + 1
+                    ? true
+                    : null,
+                { message: `${section.label} 添加规则按钮未能新增草稿` }
+            );
+
+            const removeButtons = Array.from(document.querySelectorAll(`#${section.listId} [data-admin-action="settings-remove-discount-trigger-rule"]`));
+            const removeButton = removeButtons[removeButtons.length - 1];
+            if (!(removeButton instanceof HTMLButtonElement) || removeButton.disabled) {
+                removeRulePass = false;
+                continue;
+            }
+
+            removeButton.click();
+            await waitFor(
+                () => getRuleCardCount(section.listId) === beforeCount
+                    ? true
+                    : null,
+                { message: `${section.label} 删除规则按钮未能移除草稿` }
+            );
+        }
+
+        renderedSections.forEach((section) => {
+            baselineCounts[section.key] = getRuleCardCount(section.listId);
+        });
+
+        recordResult(
+            '卡券联动添加规则按钮会按段落新增草稿',
+            addRulePass,
+            renderedSections
+                .map((section) => `${section.label} ${baselineCounts[section.key]} 条`)
+                .join(' / ')
+        );
+
+        recordResult(
+            '卡券联动删除规则按钮会按段落移除草稿',
+            removeRulePass,
+            renderedSections
+                .map((section) => `${section.label} ${baselineCounts[section.key]} 条`)
+                .join(' / ')
+        );
+
         let isolatedPresetPass = true;
         let autoSelectionPass = true;
         for (const section of renderedSections) {
