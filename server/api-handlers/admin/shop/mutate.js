@@ -128,6 +128,7 @@ const SHOP_PRODUCT_SKU_SELECT = [
     'sku_code',
     'sku_name',
     'spec_values',
+    'inventory_sku_id',
     'price_points',
     'price_points_intl',
     'quantity_rules',
@@ -148,7 +149,7 @@ async function resolveProductSkuForInventoryImport(supabase, productId, requeste
 
     let query = supabase
         .from('shop_product_skus')
-        .select('id, product_id, sku_name, sku_code, is_default, is_active, stock_count')
+        .select('id, product_id, sku_name, sku_code, inventory_sku_id, is_default, is_active, stock_count')
         .eq('product_id', normalizedProductId);
 
     query = normalizedSkuId
@@ -174,6 +175,32 @@ async function resolveProductSkuForInventoryImport(supabase, productId, requeste
         });
     }
 
+    const inventorySourceSkuId = normalizeText(data.inventory_sku_id, 160);
+    if (inventorySourceSkuId) {
+        let sourceLabel = '被关联的规格';
+        try {
+            const { data: sourceSku } = await supabase
+                .from('shop_product_skus')
+                .select('id, sku_name, sku_code')
+                .eq('product_id', normalizedProductId)
+                .eq('id', inventorySourceSkuId)
+                .single();
+
+            const sourceName = normalizeText(sourceSku?.sku_name, 120);
+            const sourceCode = normalizeText(sourceSku?.sku_code, 80);
+            if (sourceName || sourceCode) {
+                sourceLabel = `${sourceName || '被关联的规格'}${sourceCode ? ` / ${sourceCode}` : ''}`;
+            }
+        } catch (_error) {
+            sourceLabel = '被关联的规格';
+        }
+
+        throw Object.assign(new Error(`该规格共用其他规格库存，请上传到被关联的规格：${sourceLabel}`), {
+            statusCode: 400,
+            code: 'shop_product_sku_inventory_alias_not_importable'
+        });
+    }
+
     return data;
 }
 
@@ -185,8 +212,17 @@ function normalizeProductSkuDrafts(value = []) {
             const skuName = normalizeText(source.sku_name || source.skuName || source.name, 120);
             const skuCode = normalizeText(source.sku_code || source.skuCode || source.code, 80);
             const id = normalizeText(source.id || source.sku_id || source.skuId, 160);
+            const inventorySkuId = normalizeText(
+                source.inventory_sku_id
+                || source.inventorySkuId
+                || source.inventory_source_sku_id
+                || source.inventorySourceSkuId
+                || source.stock_sku_id
+                || source.stockSkuId,
+                160
+            );
 
-            if (!skuName && !skuCode && !id) {
+            if (!skuName && !skuCode && !id && !inventorySkuId) {
                 return null;
             }
 
@@ -197,6 +233,7 @@ function normalizeProductSkuDrafts(value = []) {
                 spec_values: source.spec_values && typeof source.spec_values === 'object' && !Array.isArray(source.spec_values)
                     ? source.spec_values
                     : {},
+                inventory_sku_id: inventorySkuId || null,
                 price_points: normalizeNullableNumber(source.price_points ?? source.pricePoints),
                 price_points_intl: normalizeNullableNumber(source.price_points_intl ?? source.pricePointsIntl),
                 quantity_rules: normalizeSkuQuantityPricingRules(source.quantity_rules ?? source.quantityRules),
@@ -280,6 +317,18 @@ function createDuplicateProductSkuCodeError(skuCode = '', sourceError = null) {
         }
     );
     return error;
+}
+
+function createInvalidProductSkuInventorySourceError(sourceSkuId = '') {
+    const normalizedSourceSkuId = normalizeText(sourceSkuId, 160);
+    const sourceLabel = normalizedSourceSkuId ? `「${normalizedSourceSkuId}」` : '当前库存来源';
+    return Object.assign(
+        new Error(`商品规格库存来源无效：${sourceLabel} 必须是本商品本次保留的规格，且不能指向另一个共享库存规格。`),
+        {
+            statusCode: 400,
+            code: 'shop_product_sku_inventory_source_invalid'
+        }
+    );
 }
 
 async function ensureDefaultProductSku(supabase, product = {}) {
@@ -383,11 +432,15 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
         .map((row) => normalizeText(row?.id, 160))
         .filter(Boolean));
     const existingRowsByCode = new Map();
+    const existingInventorySourceById = new Map();
     existingRowList.forEach((row) => {
         const rowId = normalizeText(row?.id, 160);
         const codeKey = normalizeProductSkuCodeKey(row?.sku_code);
         if (rowId && codeKey && !existingRowsByCode.has(codeKey)) {
             existingRowsByCode.set(codeKey, row);
+        }
+        if (rowId) {
+            existingInventorySourceById.set(rowId, normalizeText(row?.inventory_sku_id, 160) || null);
         }
     });
     const matchedDrafts = normalizedDrafts.map((draft) => {
@@ -404,6 +457,45 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
             resolvedExistingId
         };
     });
+    const retainedResolvedIds = new Set(matchedDrafts
+        .map((entry) => normalizeText(entry.resolvedExistingId, 160))
+        .filter(Boolean));
+    const desiredInventorySourceById = new Map();
+    matchedDrafts.forEach((entry) => {
+        const resolvedExistingId = normalizeText(entry.resolvedExistingId, 160);
+        if (!resolvedExistingId) return;
+
+        const sourceId = normalizeText(entry.draft.inventory_sku_id, 160);
+        desiredInventorySourceById.set(
+            resolvedExistingId,
+            sourceId && sourceId !== resolvedExistingId ? sourceId : null
+        );
+    });
+
+    for (const entry of matchedDrafts) {
+        const sourceId = normalizeText(entry.draft.inventory_sku_id, 160);
+        if (!sourceId) {
+            continue;
+        }
+
+        const resolvedExistingId = normalizeText(entry.resolvedExistingId, 160);
+        if (sourceId === resolvedExistingId) {
+            entry.draft.inventory_sku_id = null;
+            continue;
+        }
+
+        if (!retainedResolvedIds.has(sourceId)) {
+            throw createInvalidProductSkuInventorySourceError(sourceId);
+        }
+
+        const targetDesiredSource = desiredInventorySourceById.has(sourceId)
+            ? desiredInventorySourceById.get(sourceId)
+            : existingInventorySourceById.get(sourceId);
+        if (targetDesiredSource) {
+            throw createInvalidProductSkuInventorySourceError(sourceId);
+        }
+    }
+
     const desiredCodeTargets = new Map();
     for (const entry of matchedDrafts) {
         if (!entry.draftCodeKey) continue;
@@ -444,6 +536,7 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
             sku_code: draft.sku_code,
             sku_name: draft.sku_name,
             spec_values: draft.spec_values,
+            inventory_sku_id: draft.inventory_sku_id || null,
             price_points: draft.price_points,
             price_points_intl: draft.price_points_intl,
             quantity_rules: draft.quantity_rules,
@@ -2029,12 +2122,13 @@ module.exports = async (req, res) => {
                 });
             }
 
+            const inventorySkuId = normalizeText(sku?.id, 160) || null;
             const inserts = lines
                 .map((line) => String(line || '').trim())
                 .filter(Boolean)
                 .map((content) => ({
                     product_id: productId,
-                    sku_id: sku?.id || null,
+                    sku_id: inventorySkuId,
                     content,
                     status: importStatus,
                     batch_id: batchId
@@ -2050,7 +2144,7 @@ module.exports = async (req, res) => {
             }
 
             const stockCount = await countAvailableInventory(supabase, productId);
-            const skuStockCount = sku?.id ? await countAvailableInventory(supabase, productId, sku.id) : null;
+            const skuStockCount = inventorySkuId ? await countAvailableInventory(supabase, productId, inventorySkuId) : null;
             await supabase.from('shop_products').update({ stock_count: stockCount }).eq('id', productId);
 
             await writeAdminAuditLog({
@@ -2062,6 +2156,7 @@ module.exports = async (req, res) => {
                 details: {
                     product_id: productId,
                     sku_id: sku?.id || null,
+                    inventory_sku_id: inventorySkuId,
                     sku_name: sku?.sku_name || null,
                     batch_id: batchId,
                     count: inserts.length,
@@ -2074,6 +2169,7 @@ module.exports = async (req, res) => {
                 imported: inserts.length,
                 stockCount,
                 skuId: sku?.id || null,
+                inventorySkuId,
                 skuStockCount
             });
         }
@@ -2302,6 +2398,7 @@ module.exports = async (req, res) => {
     } catch (error) {
         return sendJson(res, error.statusCode || 500, {
             success: false,
+            code: error.code || undefined,
             message: error.message || 'Shop mutation failed'
         });
     }

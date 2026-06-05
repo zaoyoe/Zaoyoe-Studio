@@ -63,6 +63,7 @@ const SHOP_PRODUCT_SKU_SELECT = [
     'sku_code',
     'sku_name',
     'spec_values',
+    'inventory_sku_id',
     'price_points',
     'price_points_intl',
     'quantity_rules',
@@ -72,6 +73,24 @@ const SHOP_PRODUCT_SKU_SELECT = [
     'stock_count',
     'sort_order'
 ].join(', ');
+const SHOP_PRODUCT_SKU_SELECT_LEGACY = SHOP_PRODUCT_SKU_SELECT
+    .replace('spec_values, inventory_sku_id, price_points', 'spec_values, price_points');
+
+function isMissingColumnError(error, columnName = '') {
+    const normalizedMessage = String(error?.message || '').trim().toLowerCase();
+    const normalizedColumn = String(columnName || '').trim().toLowerCase();
+    if (!normalizedMessage || !normalizedColumn) {
+        return false;
+    }
+
+    return normalizedMessage.includes(normalizedColumn)
+        && (
+            normalizedMessage.includes('does not exist')
+            || normalizedMessage.includes('not exist')
+            || normalizedMessage.includes('undefined column')
+            || normalizedMessage.includes('schema cache')
+        );
+}
 
 function buildProductSearchExpression(searchQuery) {
     const normalizedQuery = normalizeText(searchQuery, 160);
@@ -197,6 +216,27 @@ async function runProductSelectWithFallback(baseQueryFactory, selectAttempts = [
     };
 }
 
+async function loadProductSkusWithSharedInventoryFallback(supabase, applyFilter) {
+    const buildQuery = (selectClause) => {
+        let query = supabase
+            .from('shop_product_skus')
+            .select(selectClause);
+
+        query = applyFilter(query);
+
+        return query
+            .order('sort_order', { ascending: true })
+            .order('created_at', { ascending: true });
+    };
+
+    let response = await buildQuery(SHOP_PRODUCT_SKU_SELECT);
+    if (response.error && isMissingColumnError(response.error, 'inventory_sku_id')) {
+        response = await buildQuery(SHOP_PRODUCT_SKU_SELECT_LEGACY);
+    }
+
+    return response;
+}
+
 function applyOrder(query, orderMode) {
     if (orderMode === 'name_asc') {
         return query.order('name', { ascending: true });
@@ -255,12 +295,10 @@ module.exports = async function adminShopProductsHandler(req, res) {
 
             let product = attachShopProductImageCacheVersion(data || null);
             if (includeSkus && product?.id) {
-                const { data: skuRows, error: skuError } = await supabase
-                    .from('shop_product_skus')
-                    .select(SHOP_PRODUCT_SKU_SELECT)
-                    .eq('product_id', product.id)
-                    .order('sort_order', { ascending: true })
-                    .order('created_at', { ascending: true });
+                const { data: skuRows, error: skuError } = await loadProductSkusWithSharedInventoryFallback(
+                    supabase,
+                    (query) => query.eq('product_id', product.id)
+                );
 
                 if (skuError) {
                     throw skuError;
@@ -321,12 +359,10 @@ module.exports = async function adminShopProductsHandler(req, res) {
 
         if (includeSkus && rows.length) {
             const productIds = rows.map((row) => normalizeText(row?.id, 160)).filter(Boolean);
-            const { data: skuRows, error: skuError } = await supabase
-                .from('shop_product_skus')
-                .select(SHOP_PRODUCT_SKU_SELECT)
-                .in('product_id', productIds)
-                .order('sort_order', { ascending: true })
-                .order('created_at', { ascending: true });
+            const { data: skuRows, error: skuError } = await loadProductSkusWithSharedInventoryFallback(
+                supabase,
+                (query) => query.in('product_id', productIds)
+            );
 
             if (skuError) {
                 throw skuError;

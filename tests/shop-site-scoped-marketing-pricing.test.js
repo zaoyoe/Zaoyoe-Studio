@@ -133,6 +133,7 @@ test('SKU tier pricing is selected and persisted independently from product tier
     const publicHandlerSource = readRepoFile('server/api-handlers/public/shop.js');
     const mutateSource = readRepoFile('server/api-handlers/admin/shop/mutate.js');
     const migrationSource = readRepoFile('supabase/migrations/20260523_add_shop_sku_quantity_rules.sql');
+    const sharedInventoryMigrationSource = readRepoFile('supabase/migrations/20260604_add_shop_sku_shared_inventory_source.sql');
 
     assert.match(
         shopSource,
@@ -179,6 +180,11 @@ test('SKU tier pricing is selected and persisted independently from product tier
         true,
         'admin studio should cache-bust the SKU dark-theme stylesheet fix'
     );
+    assert.equal(
+        adminHtml.includes('sharedSkuInventory=20260604_SHARED_SKU_INVENTORY_POOL_LINK_1'),
+        true,
+        'admin studio should cache-bust shared SKU inventory editor custom-select assets'
+    );
     assert.doesNotMatch(
         adminSource,
         /syncProductBaseTierPricingVisibility|shop-product-sku-editor__rows--single/,
@@ -188,6 +194,34 @@ test('SKU tier pricing is selected and persisted independently from product tier
         adminSource,
         /data-shop-action="product-toggle-sku-tier-editor"[\s\S]*data-product-sku-tier-summary[\s\S]*data-shop-input="product-sku-tier-input"/,
         'SKU tier pricing should default to a compact summary with explicit edit expansion'
+    );
+    assert.match(
+        adminSource,
+        /buildProductSkuInventorySourceOptions: function[\s\S]*data-product-sku-field="inventory_sku_id"[\s\S]*collectProductSkuEditorRows: function[\s\S]*inventory_sku_id:/,
+        'admin SKU editor should expose and persist shared inventory source choices'
+    );
+    for (const marker of [
+        'shop-sku-inventory-link',
+        'shop-sku-inventory-link__swatch',
+        'data-sku-inventory-pool-tone',
+        'data-shop-custom-select-pool-tone',
+        'data-shop-sku-inventory-tone',
+        'shop-product-sku-row--shared-inventory',
+        'shop-product-sku-row--inventory-source',
+        'shop-product-sku-row--inventory-alias',
+        'data-sku-inventory-pool'
+    ]) {
+        assert.equal(adminSource.includes(marker), true, `admin SKU editor should render shared inventory marker ${marker}`);
+    }
+    assert.match(
+        adminSource,
+        /getSkuInventoryPoolMeta: function[\s\S]*color: this\.getSkuInventoryPoolColor[\s\S]*tone: this\.getSkuInventoryPoolTone[\s\S]*isSharedAlias[\s\S]*isPoolSource[\s\S]*isLinked: isSharedAlias \|\| isPoolSource/,
+        'admin SKU editor should derive one shared inventory pool tone for source and alias rows'
+    );
+    assert.match(
+        adminSource,
+        /refreshProductSkuInventorySourceOptions: function[\s\S]*this\.syncShopCustomSelect\(select\)[\s\S]*renderProductSkuEditor: function[\s\S]*this\.enhanceShopCustomSelects\(container\)[\s\S]*data-product-sku-field="inventory_sku_id"[^>]*data-shop-custom-select="true"[\s\S]*addProductSkuEditorRow: function[\s\S]*this\.enhanceShopCustomSelects\(row\)/,
+        'admin SKU inventory source should render through the local custom-select menu instead of a native browser popup'
     );
     assert.match(
         adminSource,
@@ -211,9 +245,22 @@ test('SKU tier pricing is selected and persisted independently from product tier
     );
     assert.match(
         adminStyles,
-        /shop-product-sku-editor[\s\S]*container-type: inline-size;[\s\S]*shop-product-sku-row__main[\s\S]*minmax\(160px, 1\.35fr\)[\s\S]*shop-product-sku-row__tier-toggle\[aria-expanded="true"\][\s\S]*var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\)[\s\S]*shop-product-sku-row__tier-panel\[hidden\][\s\S]*shop-sku-delete-guard-modal/,
-        'admin SKU editor should use a compact one-line grid and the shared save-button color for active SKU controls'
+        /shop-product-sku-editor[\s\S]*container-type: inline-size;[\s\S]*shop-product-sku-row__main[\s\S]*minmax\(150px, 1\.25fr\)[\s\S]*shop-product-sku-row__tier-toggle\[aria-expanded="true"\][\s\S]*var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\)[\s\S]*shop-product-sku-row__tier-panel\[hidden\][\s\S]*shop-product-sku-row__inventory-source[\s\S]*shop-sku-delete-guard-modal/,
+        'admin SKU editor should use a compact grid with shared inventory source and save-blue active controls'
     );
+    assert.match(
+        adminStyles,
+        /\.shop-product-sku-row__inventory-source\.shop-custom-select \.shop-custom-select__trigger[\s\S]*min-height: 36px;[\s\S]*\.shop-product-sku-row__inventory-source\.shop-custom-select \.shop-custom-select__menu[\s\S]*width: max\(100%, min\(280px, calc\(100vw - 48px\)\)\);[\s\S]*\.shop-product-sku-row__inventory-source\.shop-custom-select \.shop-custom-select__option[\s\S]*min-height: 34px;/,
+        'admin SKU inventory source custom-select should use compact local trigger/menu/option styling'
+    );
+    for (const marker of [
+        '.shop-product-sku-row--shared-inventory',
+        '.shop-sku-inventory-link',
+        '.shop-sku-inventory-link__swatch',
+        '.shop-sku-inventory-link__copy'
+    ]) {
+        assert.equal(adminStyles.includes(marker), true, `admin SKU editor styles should include shared inventory marker ${marker}`);
+    }
     assert.match(
         adminStyles,
         /shop-product-sku-editor__header[\s\S]*margin-bottom: 10px;[\s\S]*shop-product-sku-editor__add[\s\S]*color: var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\)[\s\S]*shop-product-sku-row__toggle input[\s\S]*appearance: none;[\s\S]*shop-product-sku-row__toggle input:checked[\s\S]*border-color: var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\)/,
@@ -231,9 +278,16 @@ test('SKU tier pricing is selected and persisted independently from product tier
     );
     assert.match(
         pageStyles,
-        /#productModal \.shop-product-sku-row__tier-toggle\[aria-expanded="true"\][\s\S]*color: var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\) !important;[\s\S]*#productModal \.shop-product-sku-row__toggle input:checked[\s\S]*border-color: var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\) !important;/,
+        /#productModal \.shop-product-sku-row__inventory-source[\s\S]*#productModal \.shop-product-sku-row__tier-toggle\[aria-expanded="true"\][\s\S]*color: var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\) !important;[\s\S]*#productModal \.shop-product-sku-row__toggle input:checked[\s\S]*border-color: var\(--admin-studio-save-btn-bg, var\(--admin-studio-ui-blue, #769dca\)\) !important;/,
         'product modal light-theme overrides should keep SKU blue controls aligned with save-button color'
     );
+    for (const marker of [
+        '#productModal .shop-product-sku-row--shared-inventory',
+        '#productModal .shop-sku-inventory-link',
+        '#productModal .shop-sku-inventory-link__swatch'
+    ]) {
+        assert.equal(pageStyles.includes(marker), true, `product modal light theme should include shared inventory marker ${marker}`);
+    }
     assert.doesNotMatch(
         adminStyles,
         /shop-product-sku-editor__rows--single|shop-product-sku-row__tiers/,
@@ -241,18 +295,23 @@ test('SKU tier pricing is selected and persisted independently from product tier
     );
     assert.match(
         mutateSource,
-        /quantity_rules: normalizeSkuQuantityPricingRules\(source\.quantity_rules \?\? source\.quantityRules\)[\s\S]*quantity_rules_intl: normalizeSkuQuantityPricingRules/,
-        'admin mutation should persist SKU tier rules'
+        /inventory_sku_id: inventorySkuId \|\| null[\s\S]*quantity_rules: normalizeSkuQuantityPricingRules\(source\.quantity_rules \?\? source\.quantityRules\)[\s\S]*quantity_rules_intl: normalizeSkuQuantityPricingRules/,
+        'admin mutation should persist SKU inventory source and tier rules'
     );
     assert.match(
         publicHandlerSource,
-        /select\('id, product_id, sku_code, sku_name, spec_values, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order'\)/,
-        'public catalog should include SKU tier pricing columns'
+        /select\('id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order'\)/,
+        'public catalog should include SKU shared inventory and tier pricing columns'
     );
     assert.match(
         migrationSource,
         /ADD COLUMN IF NOT EXISTS quantity_rules JSONB[\s\S]*fn_purchase_shop_item_core[\s\S]*v_sku\.quantity_rules[\s\S]*WHEN v_sku_is_default THEN v_product\.quantity_rules/,
         'incremental migration should add SKU tier fields and update purchase pricing fallback'
+    );
+    assert.match(
+        sharedInventoryMigrationSource,
+        /ADD COLUMN IF NOT EXISTS inventory_sku_id UUID[\s\S]*fn_sync_shop_product_sku_stock_counts[\s\S]*COALESCE\(s\.inventory_sku_id, s\.id\)[\s\S]*v_inventory_sku_id UUID := NULL[\s\S]*sku_id = v_inventory_sku_id[\s\S]*sku_id = COALESCE\(sku_id, v_inventory_sku_id\)/,
+        'shared inventory migration should add the SKU source field and patch stock sync plus purchase inventory locking'
     );
 });
 

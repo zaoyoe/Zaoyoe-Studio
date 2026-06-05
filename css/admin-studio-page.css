@@ -12232,6 +12232,16 @@ body {
     border-radius: 0 !important;
     text-align: left !important;
     white-space: normal !important;
+    transform: none !important;
+    filter: none !important;
+    will-change: auto !important;
+}
+
+.discount-trigger-preset-btn.btn-add-config--compact:is(:hover, :focus-visible, :active, .is-pressed) {
+    transform: none !important;
+    filter: none !important;
+    box-shadow: none !important;
+    will-change: auto !important;
 }
 
 .discount-trigger-preset-btn__surface {
@@ -12249,7 +12259,8 @@ body {
     border: 1px dashed rgba(123, 188, 255, 0.78) !important;
     background: linear-gradient(180deg, rgba(31, 43, 60, 0.96), rgba(27, 38, 54, 0.92)) !important;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02) !important;
-    transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease !important;
+    transform: none !important;
+    transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease !important;
 }
 
 .discount-trigger-preset-btn.btn-add-config--compact:hover .discount-trigger-preset-btn__surface {
@@ -12259,7 +12270,7 @@ body {
 
 .discount-trigger-preset-btn.btn-add-config--compact:active .discount-trigger-preset-btn__surface,
 .discount-trigger-preset-btn.btn-add-config--compact.is-pressed .discount-trigger-preset-btn__surface {
-    transform: translateY(1px) scale(0.992) !important;
+    transform: none !important;
     border-color: rgba(147, 197, 253, 0.98) !important;
 }
 
@@ -16316,6 +16327,9 @@ select[data-shop-custom-select="true"].shop-native-select--hidden {
 .shop-custom-select__label {
     flex: 1;
     min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -16378,6 +16392,66 @@ select[data-shop-custom-select="true"].shop-native-select--hidden {
     transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s ease;
 }
 
+.shop-custom-select__option-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: grid;
+    gap: 2px;
+}
+
+:is([data-sku-inventory-pool-tone="0"], [data-shop-sku-inventory-tone="0"]) {
+    --shop-sku-inventory-pool-color: #6b9ece;
+}
+
+:is([data-sku-inventory-pool-tone="1"], [data-shop-sku-inventory-tone="1"]) {
+    --shop-sku-inventory-pool-color: #7c9a5f;
+}
+
+:is([data-sku-inventory-pool-tone="2"], [data-shop-sku-inventory-tone="2"]) {
+    --shop-sku-inventory-pool-color: #c08a5b;
+}
+
+:is([data-sku-inventory-pool-tone="3"], [data-shop-sku-inventory-tone="3"]) {
+    --shop-sku-inventory-pool-color: #9a7bd0;
+}
+
+:is([data-sku-inventory-pool-tone="4"], [data-shop-sku-inventory-tone="4"]) {
+    --shop-sku-inventory-pool-color: #d06f85;
+}
+
+:is([data-sku-inventory-pool-tone="5"], [data-shop-sku-inventory-tone="5"]) {
+    --shop-sku-inventory-pool-color: #4f9a8b;
+}
+
+:is([data-sku-inventory-pool-tone="6"], [data-shop-sku-inventory-tone="6"]) {
+    --shop-sku-inventory-pool-color: #b6924a;
+}
+
+:is([data-sku-inventory-pool-tone="7"], [data-shop-sku-inventory-tone="7"]) {
+    --shop-sku-inventory-pool-color: #6f8fd0;
+}
+
+.shop-custom-select__option-swatch {
+    flex: 0 0 auto;
+    width: 11px;
+    height: 11px;
+    border: 2px solid rgba(255, 255, 255, 0.68);
+    border-radius: 999px;
+    background: var(--shop-sku-inventory-pool-color, var(--admin-studio-save-btn-bg, #769dca));
+    box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.22);
+}
+
+.shop-custom-select__option-note {
+    min-width: 0;
+    overflow: hidden;
+    color: rgba(203, 213, 225, 0.72);
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1.28;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .shop-custom-select__option:hover {
     background: rgba(125, 211, 252, 0.1);
     border-color: rgba(125, 211, 252, 0.2);
@@ -16391,14 +16465,22 @@ select[data-shop-custom-select="true"].shop-native-select--hidden {
 }
 
 .shop-custom-select__option[aria-disabled="true"] {
-    opacity: 0.46;
+    opacity: 0.62;
     cursor: not-allowed;
     transform: none;
+}
+
+.shop-custom-select__option[data-shop-custom-select-tone="alias"] {
+    border-color: rgba(248, 113, 113, 0.2);
+    background: rgba(127, 29, 29, 0.12);
 }
 
 .shop-custom-select__option-copy {
     flex: 1;
     min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .shop-custom-select__option-check {
@@ -16865,6 +16947,24 @@ html:not([data-theme="dark"]) .shop-custom-select__option.is-selected {
     background: rgba(118, 157, 202, 0.08) !important;
     border-color: rgba(118, 157, 202, 0.14) !important;
     color: #0f172a !important;
+}
+
+html[data-theme="light"] .shop-custom-select__option-note,
+html:not([data-theme="dark"]) .shop-custom-select__option-note {
+    color: rgba(71, 85, 105, 0.68) !important;
+}
+
+html[data-theme="light"] .shop-custom-select__option-swatch,
+html:not([data-theme="dark"]) .shop-custom-select__option-swatch {
+    border-color: rgba(255, 255, 255, 0.94) !important;
+    box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.12) !important;
+}
+
+html[data-theme="light"] .shop-custom-select__option[data-shop-custom-select-tone="alias"],
+html:not([data-theme="dark"]) .shop-custom-select__option[data-shop-custom-select-tone="alias"] {
+    background: rgba(254, 242, 242, 0.72) !important;
+    border-color: rgba(248, 113, 113, 0.24) !important;
+    color: rgba(127, 29, 29, 0.88) !important;
 }
 
 html[data-theme="light"] .admin-command-center,
@@ -19012,6 +19112,22 @@ html[data-theme="light"] #settings-view-pricing .discount-trigger-preset-btn__su
     transform: none !important;
 }
 
+html[data-theme="light"] #settings-view-pricing .discount-trigger-preset-btn.btn-add-config--compact:is(:hover, :focus-visible, :active, .is-pressed),
+html:not([data-theme="dark"]) #settings-view-pricing .discount-trigger-preset-btn.btn-add-config--compact:is(:hover, :focus-visible, :active, .is-pressed) {
+    background: transparent !important;
+    background-image: none !important;
+    border: 0 !important;
+    border-color: transparent !important;
+    border-style: none !important;
+    box-shadow: none !important;
+    outline: none !important;
+    outline-offset: 0 !important;
+    transform: none !important;
+    filter: none !important;
+    transition: none !important;
+    will-change: auto !important;
+}
+
 html[data-theme="light"] #settings-view-pricing .discount-trigger-preset-btn.btn-add-config--compact:is(:hover, :focus-visible, :active, .is-pressed) .discount-trigger-preset-btn__surface {
     background: rgba(118, 157, 202, 0.84) !important;
     border-color: rgba(118, 157, 202, 0.28) !important;
@@ -19028,6 +19144,7 @@ html[data-theme="light"] #settings-view-pricing :is(
     .discount-trigger-dropdown__option-title
 ) {
     color: #0f172a !important;
+    -webkit-text-fill-color: #0f172a !important;
 }
 
 html[data-theme="light"] #settings-view-pricing :is(
@@ -19045,10 +19162,67 @@ html[data-theme="light"] #settings-view-pricing :is(
     .discount-trigger-dropdown__option-meta
 ) {
     color: rgba(71, 85, 105, 0.84) !important;
+    -webkit-text-fill-color: rgba(71, 85, 105, 0.84) !important;
 }
 
 html[data-theme="light"] #settings-view-pricing .discount-trigger-preset-btn__recommendation {
     color: #15803d !important;
+    -webkit-text-fill-color: #15803d !important;
+}
+
+html[data-theme="light"] #settings-view-pricing .discount-trigger-rule-card :is(
+    .discount-trigger-rule-field > span,
+    .discount-trigger-check,
+    .discount-trigger-check span
+),
+html:not([data-theme="dark"]) #settings-view-pricing .discount-trigger-rule-card :is(
+    .discount-trigger-rule-field > span,
+    .discount-trigger-check,
+    .discount-trigger-check span
+) {
+    color: rgba(51, 65, 85, 0.9) !important;
+    -webkit-text-fill-color: rgba(51, 65, 85, 0.9) !important;
+    text-shadow: none !important;
+}
+
+html[data-theme="light"] #settings-view-pricing .discount-trigger-rule-card :is(
+    .config-input,
+    .discount-trigger-native-select,
+    .discount-trigger-dropdown .dropdown-trigger,
+    .discount-trigger-dropdown .dropdown-value,
+    .discount-trigger-dropdown__trigger-copy,
+    .discount-trigger-dropdown__option-title
+),
+html:not([data-theme="dark"]) #settings-view-pricing .discount-trigger-rule-card :is(
+    .config-input,
+    .discount-trigger-native-select,
+    .discount-trigger-dropdown .dropdown-trigger,
+    .discount-trigger-dropdown .dropdown-value,
+    .discount-trigger-dropdown__trigger-copy,
+    .discount-trigger-dropdown__option-title
+) {
+    color: #0f172a !important;
+    -webkit-text-fill-color: #0f172a !important;
+    text-shadow: none !important;
+}
+
+html[data-theme="light"] #settings-view-pricing .discount-trigger-rule-card :is(
+    .discount-trigger-dropdown__trigger-meta,
+    .discount-trigger-dropdown__option-meta
+),
+html:not([data-theme="dark"]) #settings-view-pricing .discount-trigger-rule-card :is(
+    .discount-trigger-dropdown__trigger-meta,
+    .discount-trigger-dropdown__option-meta
+) {
+    color: rgba(71, 85, 105, 0.78) !important;
+    -webkit-text-fill-color: rgba(71, 85, 105, 0.78) !important;
+    text-shadow: none !important;
+}
+
+html[data-theme="light"] #settings-view-pricing .discount-trigger-rule-card__warning,
+html:not([data-theme="dark"]) #settings-view-pricing .discount-trigger-rule-card__warning {
+    color: #b45309 !important;
+    -webkit-text-fill-color: #b45309 !important;
 }
 
 html[data-theme="light"] #settings-view-pricing .discount-trigger-presets__label {
@@ -24853,6 +25027,30 @@ html:not([data-theme="dark"]) #productModal .shop-product-sku-row {
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82) !important;
 }
 
+html[data-theme="light"] #productModal .shop-product-sku-row--shared-inventory,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row--shared-inventory {
+    background:
+        linear-gradient(90deg, color-mix(in srgb, var(--shop-sku-inventory-pool-color, #769dca) 14%, transparent), transparent 40%),
+        rgba(248, 250, 252, 0.92) !important;
+    border-color: color-mix(in srgb, var(--shop-sku-inventory-pool-color, #769dca) 42%, rgba(15, 23, 42, 0.08)) !important;
+    box-shadow:
+        inset 3px 0 0 var(--shop-sku-inventory-pool-color, #769dca),
+        inset 0 1px 0 rgba(255, 255, 255, 0.82) !important;
+}
+
+html[data-theme="light"] #productModal .shop-sku-inventory-link,
+html:not([data-theme="dark"]) #productModal .shop-sku-inventory-link {
+    background: color-mix(in srgb, var(--shop-sku-inventory-pool-color, #769dca) 12%, #ffffff) !important;
+    border-color: color-mix(in srgb, var(--shop-sku-inventory-pool-color, #769dca) 36%, rgba(148, 163, 184, 0.24)) !important;
+    color: rgba(51, 65, 85, 0.9) !important;
+}
+
+html[data-theme="light"] #productModal .shop-sku-inventory-link__swatch,
+html:not([data-theme="dark"]) #productModal .shop-sku-inventory-link__swatch {
+    border-color: rgba(255, 255, 255, 0.94) !important;
+    box-shadow: 0 0 0 2px rgba(15, 23, 42, 0.12) !important;
+}
+
 html[data-theme="light"] #productModal .shop-product-sku-editor__loading,
 html:not([data-theme="dark"]) #productModal .shop-product-sku-editor__loading {
     background: rgba(248, 250, 252, 0.92) !important;
@@ -24863,12 +25061,54 @@ html:not([data-theme="dark"]) #productModal .shop-product-sku-editor__loading {
 
 html[data-theme="light"] #productModal .shop-product-sku-row__tier-toggle,
 html:not([data-theme="dark"]) #productModal .shop-product-sku-row__tier-toggle,
+html[data-theme="light"] #productModal .shop-product-sku-row__inventory-source,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-source,
 html[data-theme="light"] #productModal .shop-product-sku-row__toggle,
 html:not([data-theme="dark"]) #productModal .shop-product-sku-row__toggle {
     background: rgba(248, 250, 252, 0.96) !important;
     border-color: rgba(148, 163, 184, 0.32) !important;
     color: rgba(71, 85, 105, 0.9) !important;
     box-shadow: none !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__trigger,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__trigger {
+    min-height: 36px !important;
+    padding: 0 10px !important;
+    border-radius: 8px !important;
+    background: rgba(248, 250, 252, 0.96) !important;
+    border-color: rgba(148, 163, 184, 0.32) !important;
+    color: rgba(71, 85, 105, 0.9) !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-sku-row__inventory-source.shop-custom-select:is(:hover, .is-open) .shop-custom-select__trigger,
+html[data-theme="light"] #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__trigger:is(:hover, :focus-visible),
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-source.shop-custom-select:is(:hover, .is-open) .shop-custom-select__trigger,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__trigger:is(:hover, :focus-visible) {
+    background: #ffffff !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb, 118, 157, 202), 0.34) !important;
+    color: var(--admin-studio-product-modal-text, #0f172a) !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__menu,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__menu {
+    padding: 6px !important;
+    border-radius: 10px !important;
+    background: rgba(255, 255, 255, 0.98) !important;
+    border-color: rgba(148, 163, 184, 0.28) !important;
+    box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16) !important;
+}
+
+html[data-theme="light"] #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__option,
+html:not([data-theme="dark"]) #productModal .shop-product-sku-row__inventory-source.shop-custom-select .shop-custom-select__option {
+    min-height: 34px !important;
+    padding: 8px 10px !important;
+    border-radius: 8px !important;
+    font-size: 12px !important;
+    font-weight: 700 !important;
 }
 
 html[data-theme="light"] #productModal .shop-product-sku-row__tier-toggle[aria-expanded="true"],
@@ -40632,6 +40872,106 @@ html:not([data-theme="dark"]) #module-settings :is(
 ):not(:disabled):is(:hover, :focus-visible, :active) {
     filter: none !important;
     transform: none !important;
+}
+
+/* 20260605_DISCOUNT_TRIGGER_ACTION_BUTTON_CLICKABLE_1 */
+#module-settings #settings-view-pricing :is(
+    .discount-trigger-toolbar,
+    .discount-trigger-rule-card__head,
+    .discount-trigger-save-row
+) .btn-add-config:is(
+    [data-admin-action="settings-add-discount-trigger-rule"],
+    [data-admin-action="settings-remove-discount-trigger-rule"],
+    [data-admin-action="settings-save-discount-trigger-rules"]
+) {
+    pointer-events: auto !important;
+    cursor: pointer !important;
+    opacity: 1 !important;
+    color: rgba(226, 238, 249, 0.94) !important;
+    -webkit-text-fill-color: rgba(226, 238, 249, 0.94) !important;
+    transform: none !important;
+    filter: none !important;
+    will-change: auto !important;
+}
+
+html[data-theme="light"] #module-settings #settings-view-pricing :is(
+    .discount-trigger-toolbar,
+    .discount-trigger-rule-card__head,
+    .discount-trigger-save-row
+) .btn-add-config:is(
+    [data-admin-action="settings-add-discount-trigger-rule"],
+    [data-admin-action="settings-remove-discount-trigger-rule"],
+    [data-admin-action="settings-save-discount-trigger-rules"]
+),
+html:not([data-theme="dark"]) #module-settings #settings-view-pricing :is(
+    .discount-trigger-toolbar,
+    .discount-trigger-rule-card__head,
+    .discount-trigger-save-row
+) .btn-add-config:is(
+    [data-admin-action="settings-add-discount-trigger-rule"],
+    [data-admin-action="settings-remove-discount-trigger-rule"],
+    [data-admin-action="settings-save-discount-trigger-rules"]
+) {
+    background: rgba(255, 255, 255, 0.96) !important;
+    border-color: rgba(70, 116, 169, 0.42) !important;
+    color: #245f9d !important;
+    -webkit-text-fill-color: #245f9d !important;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06) !important;
+}
+
+#module-settings #settings-view-pricing :is(
+    .discount-trigger-toolbar,
+    .discount-trigger-rule-card__head,
+    .discount-trigger-save-row
+) .btn-add-config:is(
+    [data-admin-action="settings-add-discount-trigger-rule"],
+    [data-admin-action="settings-remove-discount-trigger-rule"],
+    [data-admin-action="settings-save-discount-trigger-rules"]
+):disabled {
+    cursor: not-allowed !important;
+    opacity: 0.58 !important;
+    pointer-events: none !important;
+}
+
+/* 20260605_DISCOUNT_TRIGGER_PRESET_SHELL_LOCK_2 */
+#module-settings #settings-view-pricing .discount-trigger-preset-btn.btn-add-config--compact,
+#module-settings #settings-view-pricing .discount-trigger-preset-btn.btn-add-config--compact:is(:hover, :focus, :focus-visible, :focus-within, :active, .active, .is-active, .is-focused, .selected, .is-pressed) {
+    -webkit-appearance: none !important;
+    appearance: none !important;
+    display: block !important;
+    width: 100% !important;
+    min-height: 0 !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-color: transparent !important;
+    border-style: none !important;
+    border-radius: 0 !important;
+    outline: none !important;
+    outline-offset: 0 !important;
+    background: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    -webkit-box-shadow: none !important;
+    filter: none !important;
+    transform: none !important;
+    transition: none !important;
+    will-change: auto !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+#module-settings #settings-view-pricing .discount-trigger-preset-btn.btn-add-config--compact::before,
+#module-settings #settings-view-pricing .discount-trigger-preset-btn.btn-add-config--compact::after {
+    content: none !important;
+    display: none !important;
+}
+
+#module-settings #settings-view-pricing .discount-trigger-preset-btn.btn-add-config--compact:is(:hover, :focus-visible, :active, .is-pressed) .discount-trigger-preset-btn__surface {
+    transform: none !important;
+    box-shadow: none !important;
+    -webkit-box-shadow: none !important;
 }
 
 /* 20260428_SETTINGS_ADMIN_AUDIT_MONITOR_FLAT_1 */

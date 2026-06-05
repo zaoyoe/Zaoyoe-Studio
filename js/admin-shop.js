@@ -289,6 +289,16 @@ const ShopAdmin = {
     currentTab: 'products',
     SHOP_TAB_IDS: ['products', 'import', 'inventory', 'orders', 'fulfillment'],
     SHOP_TAB_PREFETCH_ALLOWLIST: [],
+    SHOP_SKU_INVENTORY_POOL_COLORS: [
+        '#6b9ece',
+        '#7c9a5f',
+        '#c08a5b',
+        '#9a7bd0',
+        '#d06f85',
+        '#4f9a8b',
+        '#b6924a',
+        '#6f8fd0'
+    ],
     shopTabLoadState: Object.create(null),
     shopTabLoadPromiseMap: Object.create(null),
     shopTabLoadGeneration: Object.create(null),
@@ -1023,6 +1033,15 @@ Example output format:
                 product_id: String(sku.product_id || sku.productId || '').trim(),
                 sku_name: String(sku.sku_name || sku.skuName || sku.name || '默认规格').trim() || '默认规格',
                 sku_code: String(sku.sku_code || sku.skuCode || '').trim(),
+                inventory_sku_id: String(
+                    sku.inventory_sku_id
+                    || sku.inventorySkuId
+                    || sku.inventory_source_sku_id
+                    || sku.inventorySourceSkuId
+                    || sku.stock_sku_id
+                    || sku.stockSkuId
+                    || ''
+                ).trim(),
                 is_default: sku.is_default === true,
                 is_active: sku.is_active !== false,
                 stock_count: Number(sku.stock_count || 0) || 0,
@@ -1033,6 +1052,103 @@ Example output format:
                 if (left.is_default !== right.is_default) return left.is_default ? -1 : 1;
                 return left.sort_order - right.sort_order || left.sku_name.localeCompare(right.sku_name, 'zh-CN');
             });
+    },
+
+    getSkuInventoryPoolColor: function (poolId = '') {
+        const palette = Array.isArray(this.SHOP_SKU_INVENTORY_POOL_COLORS)
+            ? this.SHOP_SKU_INVENTORY_POOL_COLORS
+            : [];
+        if (!palette.length) return '#6b9ece';
+
+        return palette[this.getSkuInventoryPoolTone(poolId)] || palette[0];
+    },
+
+    getSkuInventoryPoolTone: function (poolId = '') {
+        const palette = Array.isArray(this.SHOP_SKU_INVENTORY_POOL_COLORS)
+            ? this.SHOP_SKU_INVENTORY_POOL_COLORS
+            : [];
+        if (!palette.length) return 0;
+
+        const rawValue = String(poolId || '').trim();
+        let hash = 0;
+        for (let index = 0; index < rawValue.length; index += 1) {
+            hash = ((hash << 5) - hash) + rawValue.charCodeAt(index);
+            hash |= 0;
+        }
+        return Math.abs(hash) % palette.length;
+    },
+
+    getSkuInventoryPoolMeta: function (sku = {}, allSkus = []) {
+        const safeSkus = this.normalizeProductSkus(allSkus);
+        const currentId = String(sku?.id || '').trim();
+        const sourceId = String(sku?.inventory_sku_id || '').trim() || currentId;
+        const sourceSku = sourceId
+            ? (safeSkus.find((entry) => entry.id === sourceId) || (sourceId === currentId ? sku : null))
+            : null;
+        const members = sourceId
+            ? safeSkus.filter((entry) => (String(entry.inventory_sku_id || '').trim() || entry.id) === sourceId)
+            : [];
+        const memberCount = Math.max(members.length, sourceId ? 1 : 0);
+        const isSharedAlias = Boolean(currentId && String(sku?.inventory_sku_id || '').trim());
+        const isPoolSource = Boolean(currentId && sourceId === currentId && memberCount > 1);
+        const sourceLabel = sourceSku
+            ? this.getSkuDisplayName(sourceSku)
+            : '被关联规格';
+
+        return {
+            poolId: sourceId,
+            color: this.getSkuInventoryPoolColor(sourceId || currentId || sourceLabel),
+            tone: this.getSkuInventoryPoolTone(sourceId || currentId || sourceLabel),
+            sourceId,
+            sourceSku,
+            sourceLabel,
+            memberCount,
+            isSharedAlias,
+            isPoolSource,
+            isLinked: isSharedAlias || isPoolSource
+        };
+    },
+
+    getSkuInventoryRelationText: function (meta = {}, context = 'editor') {
+        if (meta.isSharedAlias) {
+            return context === 'import'
+                ? `共用 ${meta.sourceLabel}，请上传到被关联的规格`
+                : `共用库存：${meta.sourceLabel}`;
+        }
+        if (meta.isPoolSource) {
+            return `库存源 · ${meta.memberCount} 个规格共用`;
+        }
+        return '本规格库存';
+    },
+
+    buildSkuInventoryRelationBadge: function (meta = {}, context = 'editor') {
+        if (!meta.isLinked) return '';
+        return `
+            <span class="shop-sku-inventory-link__swatch" aria-hidden="true"></span>
+            <span class="shop-sku-inventory-link__copy">${this.escapeHtml(this.getSkuInventoryRelationText(meta, context))}</span>
+        `;
+    },
+
+    getSkuImportBlocker: function (productId = '', skuId = '') {
+        const normalizedProductId = String(productId || '').trim();
+        const normalizedSkuId = String(skuId || '').trim();
+        if (!normalizedProductId || !normalizedSkuId) {
+            return null;
+        }
+
+        const skus = this.getCachedProductSkus(normalizedProductId);
+        const sku = skus.find((entry) => entry.id === normalizedSkuId);
+        if (!sku || !String(sku.inventory_sku_id || '').trim()) {
+            return null;
+        }
+
+        const meta = this.getSkuInventoryPoolMeta(sku, skus);
+        return {
+            sku,
+            sourceSku: meta.sourceSku,
+            sourceLabel: meta.sourceLabel || '被关联的规格',
+            message: `该规格共用其他规格库存，请上传到被关联的规格：${meta.sourceLabel || '库存源规格'}`
+        };
     },
 
     formatSkuTierRulesInputValue: function (rules = []) {
@@ -1192,10 +1308,131 @@ Example output format:
             quantity_rules_intl: product?.quantity_rules_intl ?? null,
             [skuFields.price]: product?.[skuFields.price] ?? '',
             [skuFields.quantityRules]: product?.[skuFields.quantityRules] ?? null,
+            inventory_sku_id: '',
             is_default: true,
             is_active: true,
             sort_order: 0
         };
+    },
+
+    buildProductSkuInventorySourceOptions: function (sku = {}, allSkus = []) {
+        const currentSkuId = String(sku?.id || '').trim();
+        const selectedSourceId = String(sku?.inventory_sku_id || '').trim();
+        const safeSkus = this.normalizeProductSkus(allSkus)
+            .filter((entry) => entry.id && entry.id !== currentSkuId)
+            .filter((entry) => entry.is_active !== false)
+            .filter((entry) => !String(entry.inventory_sku_id || '').trim());
+        const hasSelectedSource = selectedSourceId && safeSkus.some((entry) => entry.id === selectedSourceId);
+
+        if (selectedSourceId && !hasSelectedSource && selectedSourceId !== currentSkuId) {
+            const selectedSku = this.normalizeProductSkus(allSkus).find((entry) => entry.id === selectedSourceId);
+            if (selectedSku?.id) {
+                safeSkus.unshift(selectedSku);
+            }
+        }
+
+        return [
+            `<option value="">本规格库存</option>`,
+            ...safeSkus.map((entry) => {
+                const poolMeta = this.getSkuInventoryPoolMeta(entry, allSkus);
+                const note = this.getSkuInventoryRelationText(poolMeta);
+                return `
+                <option value="${this.escapeForAttr(entry.id)}"${entry.id === selectedSourceId ? ' selected' : ''}
+                    data-shop-custom-select-pool-tone="${this.escapeForAttr(String(poolMeta.tone || 0))}"
+                    data-shop-custom-select-note="${this.escapeForAttr(note)}"
+                    data-shop-custom-select-tone="${poolMeta.isPoolSource ? 'source' : 'standalone'}">
+                    ${this.escapeHtml(this.buildSkuOptionLabel(entry))}
+                </option>
+            `;
+            })
+        ].join('');
+    },
+
+    collectProductSkuInventorySourceRows: function () {
+        const rows = [...document.querySelectorAll('#productSkuEditorRows [data-product-sku-row]')];
+        return rows.map((row, index) => {
+            const read = (field) => row.querySelector(`[data-product-sku-field="${field}"]`);
+            return {
+                id: String(read('id')?.value || '').trim(),
+                sku_name: String(read('sku_name')?.value || '').trim() || '未命名规格',
+                sku_code: String(read('sku_code')?.value || '').trim(),
+                inventory_sku_id: String(read('inventory_sku_id')?.value || '').trim(),
+                is_active: read('is_active')?.checked !== false,
+                stock_count: 0,
+                sort_order: index
+            };
+        }).filter((sku) => sku.id);
+    },
+
+    refreshProductSkuInventorySourceOptions: function () {
+        const container = document.getElementById('productSkuEditorRows');
+        if (!container) return;
+
+        const allSkus = this.collectProductSkuInventorySourceRows();
+        [...container.querySelectorAll('[data-product-sku-row]')].forEach((row, index) => {
+            const read = (field) => row.querySelector(`[data-product-sku-field="${field}"]`);
+            const select = read('inventory_sku_id');
+            if (!(select instanceof HTMLSelectElement)) return;
+
+            const previousValue = String(select.value || '').trim();
+            const validSourceIds = new Set(allSkus
+                .filter((entry) => entry.id && entry.id !== String(read('id')?.value || '').trim())
+                .filter((entry) => entry.is_active !== false)
+                .filter((entry) => !String(entry.inventory_sku_id || '').trim())
+                .map((entry) => entry.id));
+            const nextValue = previousValue && validSourceIds.has(previousValue) ? previousValue : '';
+            const sku = {
+                id: String(read('id')?.value || '').trim(),
+                sku_name: String(read('sku_name')?.value || '').trim() || '未命名规格',
+                sku_code: String(read('sku_code')?.value || '').trim(),
+                inventory_sku_id: nextValue,
+                is_active: read('is_active')?.checked !== false,
+                stock_count: 0,
+                sort_order: index
+            };
+
+            select.innerHTML = this.buildProductSkuInventorySourceOptions(sku, allSkus);
+            select.value = nextValue;
+            this.syncShopCustomSelect(select);
+        });
+        this.syncProductSkuInventoryRelationBadges();
+    },
+
+    syncProductSkuInventoryRelationBadges: function () {
+        const container = document.getElementById('productSkuEditorRows');
+        if (!container) return;
+
+        const allSkus = this.collectProductSkuInventorySourceRows();
+        [...container.querySelectorAll('[data-product-sku-row]')].forEach((row, index) => {
+            const read = (field) => row.querySelector(`[data-product-sku-field="${field}"]`);
+            const sku = {
+                id: String(read('id')?.value || '').trim(),
+                sku_name: String(read('sku_name')?.value || '').trim() || '未命名规格',
+                sku_code: String(read('sku_code')?.value || '').trim(),
+                inventory_sku_id: String(read('inventory_sku_id')?.value || '').trim(),
+                is_active: read('is_active')?.checked !== false,
+                stock_count: 0,
+                sort_order: index
+            };
+            const meta = this.getSkuInventoryPoolMeta(sku, allSkus);
+            const relation = row.querySelector('[data-product-sku-inventory-link]');
+
+            row.classList.toggle('shop-product-sku-row--shared-inventory', meta.isLinked);
+            row.classList.toggle('shop-product-sku-row--inventory-source', meta.isPoolSource);
+            row.classList.toggle('shop-product-sku-row--inventory-alias', meta.isSharedAlias);
+            if (meta.isLinked) {
+                row.dataset.skuInventoryPool = meta.poolId || '';
+                row.dataset.skuInventoryPoolTone = String(meta.tone || 0);
+            } else {
+                delete row.dataset.skuInventoryPool;
+                delete row.dataset.skuInventoryPoolTone;
+            }
+
+            if (relation instanceof HTMLElement) {
+                relation.hidden = !meta.isLinked;
+                relation.innerHTML = this.buildSkuInventoryRelationBadge(meta);
+            }
+        });
     },
 
     renderProductSkuEditor: function (skus = [], product = {}) {
@@ -1213,7 +1450,9 @@ Example output format:
             ? normalizedSkus
             : [this.createDefaultProductSkuDraft(product)];
 
-        container.innerHTML = safeSkus.map((sku, index) => this.buildProductSkuEditorRow(sku, index)).join('');
+        container.innerHTML = safeSkus.map((sku, index) => this.buildProductSkuEditorRow(sku, index, safeSkus)).join('');
+        this.enhanceShopCustomSelects(container);
+        this.syncProductSkuInventoryRelationBadges();
     },
 
     setProductSkuEditorAddDisabled: function (disabled = false) {
@@ -1271,15 +1510,27 @@ Example output format:
         `;
     },
 
-    buildProductSkuEditorRow: function (sku = {}, index = 0) {
+    buildProductSkuEditorRow: function (sku = {}, index = 0, allSkus = []) {
         const isDefault = sku.is_default === true || index === 0;
         const isActive = sku.is_active !== false;
         const skuFields = this.getSkuSiteFieldMap();
         const sitePriceValue = sku?.[skuFields.price] ?? '';
         const siteTierRulesValue = this.formatSkuTierRulesInputValue(sku?.[skuFields.quantityRules]);
         const siteTierRulesSummary = this.formatSkuTierRulesSummary(siteTierRulesValue);
+        const inventorySourceOptions = this.buildProductSkuInventorySourceOptions(sku, allSkus);
+        const poolMeta = this.getSkuInventoryPoolMeta(sku, allSkus);
+        const relationMarkup = this.buildSkuInventoryRelationBadge(poolMeta);
+        const rowClasses = [
+            'shop-product-sku-row',
+            poolMeta.isLinked ? 'shop-product-sku-row--shared-inventory' : '',
+            poolMeta.isPoolSource ? 'shop-product-sku-row--inventory-source' : '',
+            poolMeta.isSharedAlias ? 'shop-product-sku-row--inventory-alias' : ''
+        ].filter(Boolean).join(' ');
+        const poolAttr = poolMeta.isLinked
+            ? ` data-sku-inventory-pool="${this.escapeForAttr(poolMeta.poolId || '')}" data-sku-inventory-pool-tone="${this.escapeForAttr(String(poolMeta.tone || 0))}"`
+            : '';
         return `
-            <div class="shop-product-sku-row" data-product-sku-row>
+            <div class="${rowClasses}" data-product-sku-row${poolAttr}>
                 <input type="hidden" data-product-sku-field="id" value="${this.escapeForAttr(String(sku.id || ''))}">
                 <input type="hidden" data-product-sku-field="price_points" value="${this.escapeForAttr(String(sku.price_points ?? ''))}">
                 <input type="hidden" data-product-sku-field="price_points_intl" value="${this.escapeForAttr(String(sku.price_points_intl ?? ''))}">
@@ -1293,19 +1544,25 @@ Example output format:
                         <i class="fas fa-layer-group" aria-hidden="true"></i>
                         <span data-product-sku-tier-summary>${this.escapeHtml(siteTierRulesSummary)}</span>
                     </button>
+                    <select class="modern-input shop-product-sku-row__inventory-source" data-product-sku-field="inventory_sku_id" data-shop-change="product-sku-inventory-source" data-shop-custom-select="true" aria-label="库存来源" title="库存来源">
+                        ${inventorySourceOptions}
+                    </select>
                     <div class="shop-product-sku-row__actions">
                         <label class="shop-product-sku-row__toggle">
                             <input type="radio" name="productDefaultSku" data-product-sku-field="is_default" ${isDefault ? 'checked' : ''}>
                             默认
                         </label>
                         <label class="shop-product-sku-row__toggle">
-                            <input type="checkbox" data-product-sku-field="is_active" ${isActive ? 'checked' : ''}>
+                            <input type="checkbox" data-product-sku-field="is_active" data-shop-change="product-sku-active" ${isActive ? 'checked' : ''}>
                             启用
                         </label>
                         <button type="button" class="shop-product-sku-row__remove" data-shop-action="product-remove-sku-row" title="删除规格">
                             <i class="fas fa-trash"></i>
                         </button>
                     </div>
+                </div>
+                <div class="shop-sku-inventory-link" data-product-sku-inventory-link ${poolMeta.isLinked ? '' : 'hidden'}>
+                    ${relationMarkup}
                 </div>
                 <div class="shop-product-sku-row__tier-panel" data-product-sku-tier-panel hidden>
                     <input type="text" class="modern-input shop-product-sku-row__tier" data-product-sku-site-field="quantity_rules" data-shop-input="product-sku-tier-input" value="${this.escapeForAttr(siteTierRulesValue)}" placeholder="${this.escapeForAttr(skuFields.quantityRulesPlaceholder)}">
@@ -1323,18 +1580,21 @@ Example output format:
         const container = document.getElementById('productSkuEditorRows');
         if (!container) return;
         const index = container.querySelectorAll('[data-product-sku-row]').length;
+        const currentSkus = this.collectProductSkuInventorySourceRows();
         const wrapper = document.createElement('div');
         wrapper.innerHTML = this.buildProductSkuEditorRow({
             id: '',
             sku_name: '',
             sku_code: '',
+            inventory_sku_id: '',
             is_default: index === 0,
             is_active: true,
             sort_order: index
-        }, index);
+        }, index, currentSkus);
         const row = wrapper.firstElementChild;
         if (row) {
             container.appendChild(row);
+            this.enhanceShopCustomSelects(row);
             row.querySelector('[data-product-sku-field="sku_name"]')?.focus();
         }
     },
@@ -1361,6 +1621,7 @@ Example output format:
             const firstDefault = container.querySelector('[data-product-sku-field="is_default"]');
             if (firstDefault) firstDefault.checked = true;
         }
+        this.refreshProductSkuInventorySourceOptions();
     },
 
     openProductSkuDeleteGuardModal: function (row, sku = null) {
@@ -1466,6 +1727,7 @@ Example output format:
                 id: String(read('id')?.value || '').trim(),
                 sku_name: name,
                 sku_code: code,
+                inventory_sku_id: String(read('inventory_sku_id')?.value || '').trim() || null,
                 price_points: skuFields.price === 'price_points' ? sitePrice : pricePoints,
                 price_points_intl: skuFields.price === 'price_points_intl' ? sitePrice : pricePointsIntl,
                 quantity_rules: skuFields.quantityRules === 'quantity_rules' ? siteQuantityRules : quantityRules,
@@ -1497,16 +1759,25 @@ Example output format:
     renderSkuSelectOptions: function (select, skus = [], selectedSkuId = '') {
         if (!(select instanceof HTMLSelectElement)) return '';
         const safeSkus = this.normalizeProductSkus(skus).filter((sku) => sku.is_active !== false);
-        const fallbackSkuId = selectedSkuId && safeSkus.some((sku) => sku.id === selectedSkuId)
+        const uploadableSkus = safeSkus.filter((sku) => !String(sku.inventory_sku_id || '').trim());
+        const fallbackSkuId = selectedSkuId && uploadableSkus.some((sku) => sku.id === selectedSkuId)
             ? selectedSkuId
-            : (safeSkus.find((sku) => sku.is_default)?.id || safeSkus[0]?.id || '');
+            : (uploadableSkus.find((sku) => sku.is_default)?.id || uploadableSkus[0]?.id || '');
 
         select.innerHTML = safeSkus.length
-            ? safeSkus.map((sku) => `
-                <option value="${this.escapeForAttr(sku.id)}"${sku.id === fallbackSkuId ? ' selected' : ''}>
+            ? safeSkus.map((sku) => {
+                const meta = this.getSkuInventoryPoolMeta(sku, safeSkus);
+                const disabled = meta.isSharedAlias;
+                const note = this.getSkuInventoryRelationText(meta, 'import');
+                return `
+                <option value="${this.escapeForAttr(sku.id)}"${sku.id === fallbackSkuId ? ' selected' : ''}${disabled ? ' disabled' : ''}
+                    data-shop-custom-select-pool-tone="${this.escapeForAttr(String(meta.tone || 0))}"
+                    data-shop-custom-select-note="${this.escapeForAttr(note)}"
+                    data-shop-custom-select-tone="${meta.isSharedAlias ? 'alias' : (meta.isPoolSource ? 'source' : 'standalone')}">
                     ${this.escapeHtml(this.buildSkuOptionLabel(sku))}
                 </option>
-            `).join('')
+            `;
+            }).join('')
             : '<option value="">默认规格</option>';
         select.disabled = safeSkus.length <= 1;
         this.syncShopCustomSelect(select);
@@ -1959,6 +2230,10 @@ Example output format:
                     event.preventDefault();
                     const optionValue = option.dataset.value ?? '';
                     if (select.disabled || option.getAttribute('aria-disabled') === 'true') {
+                        const note = String(option.querySelector('.shop-custom-select__option-note')?.textContent || '').trim();
+                        if (note) {
+                            this.showActionToast(note, 'warning', { durationMs: 3600 });
+                        }
                         return;
                     }
                     select.value = optionValue;
@@ -2028,7 +2303,18 @@ Example output format:
 
         const options = Array.from(select.options || []);
         const selectedOption = options.find((option) => option.selected) || options[select.selectedIndex] || options[0] || null;
-        label.textContent = selectedOption?.textContent?.trim() || '请选择';
+        const selectedLabel = selectedOption?.textContent?.trim() || '请选择';
+        const selectedPoolTone = String(selectedOption?.dataset?.shopCustomSelectPoolTone || '').trim();
+        const selectedNote = String(selectedOption?.dataset?.shopCustomSelectNote || '').trim();
+        const selectedTone = String(selectedOption?.dataset?.shopCustomSelectTone || '').trim();
+        label.innerHTML = `
+            ${selectedPoolTone ? `<span class="shop-custom-select__option-swatch" data-shop-sku-inventory-tone="${this.escapeForAttr(selectedPoolTone)}" aria-hidden="true"></span>` : ''}
+            <span class="shop-custom-select__option-main">
+                <span class="shop-custom-select__option-copy">${this.escapeHtml(selectedLabel)}</span>
+                ${selectedNote ? `<small class="shop-custom-select__option-note">${this.escapeHtml(selectedNote)}</small>` : ''}
+            </span>
+        `;
+        label.dataset.shopCustomSelectTone = selectedTone || '';
         wrapper.classList.toggle('is-disabled', !!select.disabled);
         trigger.disabled = !!select.disabled;
         trigger.setAttribute('aria-expanded', wrapper.classList.contains('is-open') ? 'true' : 'false');
@@ -2040,6 +2326,9 @@ Example output format:
                 const optionValue = String(option.value ?? '');
                 const selected = optionValue === String(select.value ?? '');
                 const disabled = option.disabled;
+                const poolTone = String(option.dataset.shopCustomSelectPoolTone || '').trim();
+                const note = String(option.dataset.shopCustomSelectNote || '').trim();
+                const tone = String(option.dataset.shopCustomSelectTone || '').trim();
                 return `
                     <button
                         type="button"
@@ -2049,8 +2338,14 @@ Example output format:
                         aria-disabled="${disabled ? 'true' : 'false'}"
                         data-shop-custom-select-option="true"
                         data-value="${this.escapeForAttr(optionValue)}"
+                        ${tone ? `data-shop-custom-select-tone="${this.escapeForAttr(tone)}"` : ''}
+                        ${poolTone ? `data-shop-sku-inventory-tone="${this.escapeForAttr(poolTone)}"` : ''}
                     >
-                        <span class="shop-custom-select__option-copy">${this.escapeHtml(option.textContent?.trim() || '')}</span>
+                        ${poolTone ? `<span class="shop-custom-select__option-swatch" data-shop-sku-inventory-tone="${this.escapeForAttr(poolTone)}" aria-hidden="true"></span>` : ''}
+                        <span class="shop-custom-select__option-main">
+                            <span class="shop-custom-select__option-copy">${this.escapeHtml(option.textContent?.trim() || '')}</span>
+                            ${note ? `<small class="shop-custom-select__option-note">${this.escapeHtml(note)}</small>` : ''}
+                        </span>
                         ${selected ? '<i class="fas fa-check shop-custom-select__option-check" aria-hidden="true"></i>' : ''}
                     </button>
                 `;
@@ -3185,6 +3480,10 @@ Example output format:
                     break;
                 case 'inventory-selection-count':
                     this.updateSelectionCount();
+                    break;
+                case 'product-sku-inventory-source':
+                case 'product-sku-active':
+                    this.refreshProductSkuInventorySourceOptions();
                     break;
                 case 'delivery-task-status-filter':
                     this.setDeliveryTaskStatusFilter(actionEl.value);
@@ -8679,6 +8978,15 @@ Example output format:
 
         if (lines.length === 0) { alert('没有检测到有效数据'); return; }
 
+        const importStatus = document.querySelector('input[name="importStatus"]:checked')?.value || 'available';
+        const skuId = document.getElementById('inventorySkuSelect')?.value || this.selectedProductSkuId || '';
+        const blocker = this.getSkuImportBlocker(this.selectedProductId, skuId);
+        if (blocker) {
+            this.showActionToast(blocker.message, 'warning', { durationMs: 5000 });
+            this.emitCommandFeedback(blocker.message, 'failed', { source: 'shop-inventory' });
+            return;
+        }
+
         if (!confirm(`即将为商品导入 ${lines.length} 条库存数据，确定吗？`)) return;
 
         this.setActionButtonLoading(btnElement, '导入中...');
@@ -8688,8 +8996,6 @@ Example output format:
         });
 
         const batchId = 'batch_' + Date.now();
-        const importStatus = document.querySelector('input[name="importStatus"]:checked')?.value || 'available';
-        const skuId = document.getElementById('inventorySkuSelect')?.value || this.selectedProductSkuId || '';
 
         try {
             console.log(`[ShopAdmin] Importing ${lines.length} items...`);
@@ -8750,6 +9056,11 @@ Example output format:
 
         if (!resolvedProductId) {
             throw new Error('请选择商品');
+        }
+
+        const blocker = this.getSkuImportBlocker(resolvedProductId, skuId);
+        if (blocker) {
+            throw new Error(blocker.message);
         }
 
         if (!lines.length) {

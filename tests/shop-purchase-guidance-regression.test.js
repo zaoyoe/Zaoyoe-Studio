@@ -241,14 +241,34 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         'shop.html should load the purchase-guidance rich-text runtime with the visible yellow normalization fix'
     );
     assert.match(
+        shopHtmlSource,
+        /richTextGuidanceColor=20260604_SHOP_RICH_TEXT_GUIDANCE_COLOR_1/,
+        'shop.html should cache-bust storefront rich-text guidance color preservation assets'
+    );
+    assert.match(
         shopClientSource,
         /normalizeRichTextPaletteColors: function \(value\) \{[\s\S]*#f4b400/s,
         'shop-client.js should normalize legacy pale yellow rich-text colors into a visible gold on light surfaces'
     );
     assert.match(
         shopCssSource,
-        /#shopPurchaseModal #purchaseNotesContent,\s+html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseNotesContent :not\(\[style\*="color"\]\):not\(\[color\]\),\s+html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseUsageContent,\s+html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseUsageContent :not\(\[style\*="color"\]\):not\(\[color\]\) \{/s,
-        'light-theme purchase guidance should only force the default copy color onto nodes that do not already declare a rich-text color'
+        /#shopPurchaseModal #purchaseNotesContent,\s+html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseNotesContent :not\(:where\(\.shop-rich-color, \.shop-rich-color \*, \[style\*="color"\], \[style\*="color"\] \*, \[color\], \[color\] \*\)\),\s+html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseUsageContent,\s+html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseUsageContent :not\(:where\(\.shop-rich-color, \.shop-rich-color \*, \[style\*="color"\], \[style\*="color"\] \*, \[color\], \[color\] \*\)\) \{/s,
+        'light-theme purchase guidance should only force the default copy color onto nodes outside rich-text color runs'
+    );
+    assert.match(
+        shopClientSource,
+        /const richColorClassName = 'shop-rich-color';[\s\S]*child\.classList\.add\(richColorClassName\);[\s\S]*child\.setAttribute\('color', color\);[\s\S]*child\.classList\.add\(richColorClassName\);/s,
+        'storefront rich-text sanitizer should mark safe CSS and font-tag colors so light-theme CSS can preserve them'
+    );
+    assert.match(
+        shopClientSource,
+        /const styledTags = new Set\(\['A', 'B', 'STRONG', 'I', 'EM', 'U', 'DIV', 'P', 'SPAN', 'FONT', 'UL', 'OL', 'LI'\]\);/s,
+        'storefront rich-text sanitizer should allow safe color styles on common inline guidance tags'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-cart-item__panel--notice :where\(\.shop-rich-color, \.shop-rich-color \*, \[style\*="color"\], \[style\*="color"\] \*, \[color\], \[color\] \*\),[\s\S]*#shopPurchaseModal #purchaseUsageContent :where\(\.shop-rich-color, \.shop-rich-color \*, \[style\*="color"\], \[style\*="color"\] \*, \[color\], \[color\] \*\) \{[\s\S]*-webkit-text-fill-color: currentColor !important;/s,
+        'storefront light-theme CSS should let rich-text color runs keep their visible text fill in cart and product guidance panels'
     );
     assert.match(
         shopClientSource,
@@ -269,6 +289,66 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         shopClientSource,
         /purchaseUsageToggle[\s\S]*togglePurchaseUsageVisibility[\s\S]*renderPurchaseUsageInstructions: function \(\)/s,
         'purchase usage instructions should have their own compact disclosure control'
+    );
+    assert.match(
+        shopClientSource,
+        /togglePurchaseNotesVisibility: function \(\) \{[\s\S]*this\.currentPurchase\.purchaseNotesExpanded = nextExpanded;[\s\S]*if \(nextExpanded\) \{[\s\S]*this\.currentPurchase\.usageInstructionsExpanded = false;[\s\S]*this\.renderPurchaseNotes\(\);[\s\S]*this\.renderPurchaseUsageInstructions\(\);[\s\S]*this\.syncPurchaseGuidanceLayout\(\);/s,
+        'opening purchase notes should collapse usage instructions and refresh both guidance disclosures'
+    );
+    assert.match(
+        shopClientSource,
+        /togglePurchaseUsageVisibility: function \(\) \{[\s\S]*this\.currentPurchase\.usageInstructionsExpanded = nextExpanded;[\s\S]*if \(nextExpanded\) \{[\s\S]*this\.currentPurchase\.purchaseNotesExpanded = false;[\s\S]*this\.renderPurchaseNotes\(\);[\s\S]*this\.renderPurchaseUsageInstructions\(\);[\s\S]*this\.syncPurchaseGuidanceLayout\(\);/s,
+        'opening usage instructions should collapse purchase notes and refresh both guidance disclosures'
+    );
+    assert.match(
+        shopClientSource,
+        /getPurchaseGuidanceTrailingReserve: function \(expandedCard\) \{[\s\S]*const expandedStage = expandedCard\?\.closest\?\.\('\.shop-purchase-stage'\);[\s\S]*const expandedCardRect = expandedCard\?\.getBoundingClientRect\?\.\(\);[\s\S]*const rowGap = Number\.parseFloat\(panelStyle\.rowGap \|\| panelStyle\.gap \|\| '0'\) \|\| 0;[\s\S]*if \(expandedCardRect && rect\.top < expandedCardRect\.top - 1\) return total;[\s\S]*return Math\.ceil\(reserve \+ \(rowGap \* visibleTrailingCount\)\);/s,
+        'purchase guidance layout should reserve room for any visible folded guidance rows after the expanded card'
+    );
+    assert.match(
+        shopClientSource,
+        /syncPurchaseGuidanceLayout: function \(\) \{[\s\S]*const dock = overlay\.querySelector\('\.shop-purchase-dock'\);[\s\S]*dockRect\.bottom[\s\S]*const trailingReserve = this\.getPurchaseGuidanceTrailingReserve\(expandedCard\);[\s\S]*const nextMaxHeight = Math\.max\(160, Math\.min\(520,[\s\S]*targetBottom - cardRect\.top - trailingReserve[\s\S]*'--shop-purchase-guidance-card-max': `\$\{nextMaxHeight\}px`,[\s\S]*'--shop-purchase-guidance-card-bottom-inset': bottomInset/s,
+        'wide purchase guidance should derive its max height from the checkout dock bottom while keeping the next folded row below the card'
+    );
+    assert.match(
+        shopClientSource,
+        /getPurchaseGuidanceWheelChainTarget: function \(\) \{[\s\S]*if \(this\.isWidePurchaseModalLayout\(\)\) \{[\s\S]*return null;[\s\S]*return document\.querySelector\('#shopPurchaseModal \.shop-purchase-scroll'\);/s,
+        'wide purchase guidance should stop wheel scrolling at the guidance card instead of scrolling the whole left panel'
+    );
+    assert.match(
+        shopCssSource,
+        /#shopPurchaseModal \.shop-success-usage-card\s*\{[\s\S]*max-height:\s*var\(--shop-purchase-guidance-card-max, min\(32vh, 220px\)\);[\s\S]*padding-bottom:\s*var\(--shop-purchase-guidance-card-bottom-inset, 30px\) !important;[\s\S]*scroll-padding-bottom:\s*var\(--shop-purchase-guidance-card-bottom-inset, 30px\);/s,
+        'purchase guidance cards should use a dynamic max height and enough bottom scroll padding for long dark-mode content'
+    );
+    assert.match(
+        shopCssSource,
+        /@media \(min-width: 901px\) \{[\s\S]*#shopPurchaseModal\s*\{[\s\S]*--shop-purchase-guidance-card-max:\s*min\(48vh, 360px\);[\s\S]*--shop-purchase-guidance-card-bottom-inset:\s*30px;/s,
+        'wide purchase modal should define guidance sizing variables before JS refines them'
+    );
+    assert.match(
+        shopCssSource,
+        /@media \(min-width: 901px\) \{[\s\S]*#shopPurchaseModal \.shop-purchase-dock\s*\{[\s\S]*align-self:\s*start;[\s\S]*min-height:\s*0;[\s\S]*height:\s*fit-content;[\s\S]*display:\s*flex;/s,
+        'wide checkout dock should keep its intrinsic height so guidance expansion does not resize the modal shell'
+    );
+    assert.match(
+        shopCssSource,
+        /@media \(min-width: 901px\) \{[\s\S]*#shopPurchaseModal \.shop-purchase-scroll\s*\{[\s\S]*padding:\s*6px 2px 0 0;[\s\S]*border:\s*0;/s,
+        'wide purchase guidance scroll column should not add bottom padding that changes the modal height when expanded'
+    );
+    assert.match(
+        shopCssSource,
+        /@media \(min-width: 901px\) \{[\s\S]*#shopPurchaseModal\.has-purchase-notes\.has-purchase-usage #purchaseNotesBox,[\s\S]*#shopPurchaseModal\.has-purchase-notes\.has-purchase-usage #purchaseUsageBox\s*\{[\s\S]*display:\s*contents;[\s\S]*#shopPurchaseModal\.has-purchase-notes\.has-purchase-usage #purchaseNotesBox > \.shop-inline-style-attr-22,[\s\S]*#shopPurchaseModal\.has-purchase-notes\.has-purchase-usage #purchaseUsageBox > \.shop-inline-style-attr-22\s*\{[\s\S]*width:\s*100%;[\s\S]*min-height:\s*40px;[\s\S]*margin-bottom:\s*0;[\s\S]*#shopPurchaseModal\.has-purchase-notes\.has-purchase-usage #purchaseNotesBox > \.shop-inline-style-attr-22\s*\{[\s\S]*order:\s*10;[\s\S]*#shopPurchaseModal\.has-purchase-notes\.has-purchase-usage #purchaseUsageBox > \.shop-inline-style-attr-22\s*\{[\s\S]*order:\s*20;[\s\S]*#shopPurchaseModal\.has-purchase-notes\.has-purchase-usage #purchaseNotesCard\.shop-success-usage-card,[\s\S]*#shopPurchaseModal\.has-purchase-notes\.has-purchase-usage #purchaseUsageCard\.shop-success-usage-card\s*\{[\s\S]*order:\s*30;[\s\S]*width:\s*100%;/s,
+        'wide purchase modal should keep both guidance switch rows fixed above the expanded guidance card'
+    );
+    assert.match(
+        shopCssSource,
+        /#shopPurchaseModal #purchaseNotesBox:not\(\.is-expanded\) > \.shop-inline-style-attr-22,[\s\S]*#shopPurchaseModal #purchaseUsageBox:not\(\.is-expanded\) > \.shop-inline-style-attr-22\s*\{[\s\S]*min-height:\s*40px;[\s\S]*margin-bottom:\s*0;/s,
+        'folded purchase guidance title rows should use the same row height and spacing regardless of which switch is active'
+    );
+    assert.equal(
+        shopHtmlSource.includes('purchaseGuidanceMutexAlign=20260605_SHOP_PURCHASE_GUIDANCE_MUTEX_ALIGN_7'),
+        true,
+        'shop.html should cache-bust the mutual guidance accordion and alignment fix'
     );
     assert.match(
         shopCssSource,
