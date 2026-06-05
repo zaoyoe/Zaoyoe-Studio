@@ -953,10 +953,22 @@ const ShopClient = {
             [groupName]: value
         };
         const resolvedSku = this.resolveSkuForSpecSelection(nextSpecMap);
-        return Boolean(resolvedSku && Number(resolvedSku.stock_count || 0) > 0);
+        const product = this.getCachedProductById(this.currentPurchase?.productId);
+        return Boolean(resolvedSku && (this.isShopSkuManualDelivery(product, resolvedSku) || Number(resolvedSku.stock_count || 0) > 0));
     },
 
     renderPurchaseSkuSelectedSummary: function (sku = {}) {
+        const product = this.getCachedProductById(this.currentPurchase?.productId);
+        const manualDelivery = this.isShopSkuManualDelivery(product, sku);
+        if (manualDelivery) {
+            const manualLabel = window.i18n?.t('shop.manualDelivery') || '人工发货';
+            return `
+                <div class="shop-sku-selector__current is-normal-stock" aria-label="${this.escapeAttribute(manualLabel)}">
+                    <span class="shop-sku-selector__current-label">${this.escapeHtml(manualLabel)}</span>
+                </div>
+            `;
+        }
+
         const stock = Math.max(0, Number(sku.stock_count || 0) || 0);
         const stockLabel = window.i18n?.t('shop.stock') || '库存';
         const stockToneClass = stock < 5 ? 'is-low-stock' : 'is-normal-stock';
@@ -969,13 +981,17 @@ const ShopClient = {
     },
 
     renderPurchaseSkuPills: function (skus = [], selectedSkuId = '') {
+        const product = this.getCachedProductById(this.currentPurchase?.productId);
         const buttons = (Array.isArray(skus) ? skus : []).map((sku) => {
             const skuId = String(sku.id || '').trim();
             const stock = Math.max(0, Number(sku.stock_count || 0) || 0);
-            const disabled = stock <= 0;
+            const manualDelivery = this.isShopSkuManualDelivery(product, sku);
+            const disabled = stock <= 0 && !manualDelivery;
             const selected = skuId === selectedSkuId;
             const name = this.resolveSkuDisplayName(sku);
-            const stockLabel = `${window.i18n?.t('shop.stock') || '库存'} ${stock}`;
+            const stockLabel = manualDelivery
+                ? (window.i18n?.t('shop.manualDelivery') || '人工发货')
+                : `${window.i18n?.t('shop.stock') || '库存'} ${stock}`;
             return `
                 <button
                     type="button"
@@ -996,6 +1012,7 @@ const ShopClient = {
 
     renderPurchaseSkuSpecGroups: function (groups = [], selectedSkuId = '') {
         const currentSpecMap = this.getSelectedPurchaseSkuSpecMap(selectedSkuId);
+        const product = this.getCachedProductById(this.currentPurchase?.productId);
         const groupHtml = (Array.isArray(groups) ? groups : []).map((group) => {
             const selectedValue = currentSpecMap[group.name] || '';
             const options = group.values.map((value) => {
@@ -1005,7 +1022,8 @@ const ShopClient = {
                 };
                 const resolvedSku = this.resolveSkuForSpecSelection(nextSpecMap);
                 const skuId = String(resolvedSku?.id || '').trim();
-                const disabled = !skuId || Number(resolvedSku?.stock_count || 0) <= 0;
+                const manualDelivery = this.isShopSkuManualDelivery(product, resolvedSku);
+                const disabled = !skuId || (Number(resolvedSku?.stock_count || 0) <= 0 && !manualDelivery);
                 const selected = value === selectedValue;
                 return `
                     <button
@@ -1043,6 +1061,7 @@ const ShopClient = {
         const productForPricing = { ...(product || {}), selected_sku_id: normalizedSkuId };
         const pricing = this.resolveProductPricing(productForPricing, this.agentPricesCache || {});
         const basePrice = Math.max(0, Number(pricing.currentPrice ?? this.getProductSkuPriceForCurrentSite(sku, product) ?? this.currentPurchase.basePrice) || 0);
+        const manualDelivery = this.isShopSkuManualDelivery(product, sku);
 
         this.currentPurchase.productSkuId = normalizedSkuId;
         this.currentPurchase.productSkuName = this.resolveSkuDisplayName(sku);
@@ -1052,6 +1071,7 @@ const ShopClient = {
         this.currentPurchase.hasFlashSale = pricing.hasFlashSale === true;
         this.currentPurchase.flashSalePrice = pricing.hasFlashSale ? pricing.currentPrice : null;
         this.currentPurchase.flashSaleOriginalPrice = pricing.hasFlashSale ? pricing.originalPrice : null;
+        this.currentPurchase.manualDelivery = manualDelivery;
 
         const quantityCap = this.getPurchaseQuantityCapForProduct(product, this.currentPurchase.configuredMaxQuantity, {
             skuId: normalizedSkuId
@@ -1077,6 +1097,14 @@ const ShopClient = {
             refreshDiscountAssets: false
         });
         this.renderPurchaseSkuSelector();
+        this.setPurchaseStage('configure');
+        if (manualDelivery) {
+            this.currentPurchase.availableDiscountAssets = [];
+            this.currentPurchase.claimableDiscounts = [];
+            this.currentPurchase.discountAssetsLoading = false;
+            this.renderPurchaseDiscountAssets();
+            return;
+        }
         if (cachedDiscountAssetsPayload) {
             this.maybeShowShopDiscountEngagement();
             return;
@@ -1159,6 +1187,7 @@ const ShopClient = {
             ...sku,
             price_points: price,
             quantity_rules: quantityRules ?? null,
+            manual_delivery: this.isShopSkuManualDelivery(product, sku),
             stock_count: Math.max(0, Number(sku.stock_count || 0) || 0)
         };
     },
@@ -3132,7 +3161,7 @@ const ShopClient = {
         }
 
         const quantityCap = this.getPurchaseQuantityCapForProduct(liveProduct, liveProduct.max_purchase_quantity);
-        this.currentPurchase.manualDelivery = this.isShopProductManualDelivery(liveProduct);
+        this.currentPurchase.manualDelivery = this.resolveShopProductSelectionManualDelivery(liveProduct, this.currentPurchase.productSkuId || '');
         this.currentPurchase.configuredMaxQuantity = quantityCap;
         this.setCurrentPurchaseQuantityCap(quantityCap, {
             unlimited: this.currentPurchase.unlimitedPurchases === true
@@ -3389,7 +3418,7 @@ const ShopClient = {
         const defaultSku = this.getDefaultPurchaseSku(product);
         const selectionRules = this.resolveQuantityPricingRulesForSku(product, defaultSku);
         const qtyRulesStr = selectionRules.length ? encodeURIComponent(JSON.stringify(selectionRules)) : '';
-        const manualDelivery = this.isShopProductManualDelivery(product);
+        const manualDelivery = this.resolveShopProductSelectionManualDelivery(product, defaultSku?.id || '');
         const soldOut = this.isShopProductSoldOut(product);
 
         return {
@@ -3549,7 +3578,7 @@ const ShopClient = {
 
         const purchaseDataset = this.buildProductCardPurchaseDataset(product, pricingState.currentPrice);
         const maxPurchaseQuantity = String(purchaseDataset.maxPurchaseQuantity || '');
-        const manualDelivery = this.isShopProductManualDelivery(product);
+        const manualDelivery = this.resolveShopProductSelectionManualDelivery(product, purchaseDataset.defaultSkuId || '');
         const noStock = this.isShopProductSoldOut(product);
         const rawStockCount = Number(product.stock_count ?? product.stockCount ?? 0);
         const stockCount = Number.isFinite(rawStockCount) ? Math.max(0, Math.trunc(rawStockCount)) : 0;
@@ -4021,6 +4050,7 @@ const ShopClient = {
                 : null;
             const hasPurchaseNotes = product.show_purchase_notes === true && this.getLocalizedProductGuidanceText(product, 'purchase_notes').length > 0;
             const hasUsageInstructions = product.show_usage_instructions === true && this.getLocalizedProductGuidanceText(product, 'usage_instructions').length > 0;
+            const manualDelivery = this.resolveShopProductSelectionManualDelivery(product, skuId);
 
             entries.push({
                 entryKey,
@@ -4028,6 +4058,7 @@ const ShopClient = {
                 productSkuId: skuId || '',
                 selectedSku,
                 product,
+                manualDelivery,
                 quantity,
                 unitPrice,
                 subtotal,
@@ -4212,20 +4243,52 @@ const ShopClient = {
         return this.normalizeShopManualDeliveryFlag(product?.manual_delivery ?? product?.manualDelivery);
     },
 
+    hasShopSkuManualDeliveryField: function (sku = {}) {
+        return Boolean(sku && typeof sku === 'object' && (
+            Object.prototype.hasOwnProperty.call(sku, 'manual_delivery')
+            || Object.prototype.hasOwnProperty.call(sku, 'manualDelivery')
+        ));
+    },
+
+    isShopSkuManualDelivery: function (product = {}, sku = null) {
+        if (sku && this.hasShopSkuManualDeliveryField(sku)) {
+            return this.normalizeShopManualDeliveryFlag(sku.manual_delivery ?? sku.manualDelivery);
+        }
+        return this.isShopProductManualDelivery(product);
+    },
+
+    resolveShopProductSelectionManualDelivery: function (product = {}, skuId = '') {
+        const skus = this.getProductSkusForPurchase(product);
+        const normalizedSkuId = String(skuId || product?.selected_sku_id || product?.selectedSkuId || '').trim();
+        const selectedSku = normalizedSkuId
+            ? skus.find((sku) => String(sku.id || '').trim() === normalizedSkuId)
+            : (this.getDefaultPurchaseSku(product) || null);
+
+        if (selectedSku) {
+            return this.isShopSkuManualDelivery(product, selectedSku);
+        }
+
+        return this.isShopProductManualDelivery(product);
+    },
+
     isShopPurchasePayloadManualDelivery: function (payload = {}) {
         const liveProduct = this.getCachedProductById(payload.productId);
-        if (this.isShopProductManualDelivery(liveProduct)) {
-            return true;
+        if (liveProduct) {
+            return this.resolveShopProductSelectionManualDelivery(liveProduct, payload.productSkuId || payload.defaultSkuId || '');
         }
         return this.normalizeShopManualDeliveryFlag(payload.manualDelivery);
     },
 
     isShopCurrentPurchaseManualDelivery: function () {
-        if (this.currentPurchase?.manualDelivery === true) {
-            return true;
-        }
         const liveProduct = this.getCachedProductById(this.currentPurchase?.productId);
-        return this.isShopProductManualDelivery(liveProduct);
+        const selectedSku = this.getCurrentPurchaseSelectedSku();
+        if (selectedSku) {
+            return this.isShopSkuManualDelivery(liveProduct, selectedSku);
+        }
+        if (liveProduct) {
+            return this.resolveShopProductSelectionManualDelivery(liveProduct, this.currentPurchase?.productSkuId || '');
+        }
+        return this.normalizeShopManualDeliveryFlag(this.currentPurchase?.manualDelivery);
     },
 
     hasProductSkuRows: function (product = {}) {
@@ -4256,7 +4319,7 @@ const ShopClient = {
 
         const skus = this.getProductSkusForPurchase(product);
         if (skus.length) {
-            return !skus.some((sku) => Number(sku.stock_count || 0) > 0);
+            return !skus.some((sku) => this.isShopSkuManualDelivery(product, sku) || Number(sku.stock_count || 0) > 0);
         }
 
         const stockCount = Number(product.stock_count ?? product.stockCount);
@@ -5181,7 +5244,7 @@ const ShopClient = {
         const liveProduct = this.getCachedProductById(normalizedId);
         const product = liveProduct || this.cartSnapshots?.[entryKey] || this.cartSnapshots?.[normalizedId];
         if (!product) return 0;
-        if (this.isShopProductManualDelivery(product)) {
+        if (this.resolveShopProductSelectionManualDelivery(product, selectedSkuId)) {
             this.showManualDeliveryProductToast({ productId: normalizedId });
             return 0;
         }
@@ -12168,7 +12231,8 @@ const ShopClient = {
         let purchaseNotes = showPurchaseNotes ? decodeURIComponent(purchaseNotesEncoded || '') : '';
         let usageInstructions = showUsageInstructions ? decodeURIComponent(usageInstructionsEncoded || '') : '';
         const liveProduct = this.getCachedProductById(productId);
-        const manualDelivery = options?.manualDelivery === true || this.isShopProductManualDelivery(liveProduct);
+        const requestedSkuId = String(options?.productSkuId || options?.skuId || '').trim();
+        const manualDelivery = options?.manualDelivery === true || this.resolveShopProductSelectionManualDelivery(liveProduct, requestedSkuId);
         const quantityCap = this.getPurchaseQuantityCapForProduct(liveProduct, maxPurchaseQuantity);
         const initialQuantity = Math.max(1, Math.min(quantityCap, Math.trunc(Number(options?.initialQuantity || 1) || 1)));
 
@@ -12195,7 +12259,6 @@ const ShopClient = {
     openPurchaseModal: function (productId, productName, productNameEn, price, rules, maxPurchaseQuantity = 99, purchaseNotes = '', usageInstructions = '', options = {}) {
         const unlimitedPurchases = options?.unlimitedPurchases === true;
         const liveProductForPricing = this.getCachedProductById(productId);
-        const manualDelivery = options?.manualDelivery === true || this.isShopProductManualDelivery(liveProductForPricing);
         const purchaseSkus = this.getProductSkusForPurchase(liveProductForPricing);
         const storedPurchasePrefill = this.consumePurchasePrefillForProduct(productId);
         const requestedSkuId = String(options?.productSkuId || options?.skuId || storedPurchasePrefill?.productSkuId || '').trim();
@@ -12203,6 +12266,9 @@ const ShopClient = {
             ? purchaseSkus.find((sku) => String(sku.id || '').trim() === requestedSkuId)
             : this.getDefaultPurchaseSku(liveProductForPricing);
         const selectedSkuId = selectedSku?.id || '';
+        const manualDelivery = selectedSku
+            ? this.isShopSkuManualDelivery(liveProductForPricing, selectedSku)
+            : (options?.manualDelivery === true || this.isShopProductManualDelivery(liveProductForPricing));
         const quantityCap = this.normalizePurchaseQuantityCap(this.getPurchaseQuantityCapForProduct(liveProductForPricing, maxPurchaseQuantity, {
             skuId: selectedSkuId
         }));
@@ -12725,6 +12791,11 @@ const ShopClient = {
         if (!entries.length) {
             this.showShopToast(this.getCartCopy().cartEmptyToast, 'error');
             this.closeCartCheckoutModal();
+            return;
+        }
+        const manualDeliveryEntry = entries.find((entry) => entry.manualDelivery === true);
+        if (manualDeliveryEntry) {
+            this.showManualDeliveryProductToast({ productId: manualDeliveryEntry.productId });
             return;
         }
 

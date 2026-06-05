@@ -161,7 +161,7 @@ function createPublicVerifyHandlers({
         if (!selectedCredential?.apiKey) {
             return sendJson(res, 400, {
                 success: false,
-                message: '当前所有已激活 CDKey 余额都不足，请先补充卡密额度',
+                message: '当前剩余可提交任务的次数不足，请联系管理员补足后方可继续提交。',
                 code: 'insufficient_balance'
             });
         }

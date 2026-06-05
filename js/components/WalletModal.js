@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260525_WALLET_DISCOUNT_SKU_SCOPE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';
+    const walletCssHref = 'css/wallet.css?v=20260605_AFFILIATE_POSTER_AVATAR_PRIORITY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';
     const WALLET_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_TTL_MS = 30000;
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_PREFIX = 'zaoyoe_payment_config_v2';
@@ -8237,9 +8237,68 @@
             return matched ? matched.trim() : 'U';
         },
 
-        normalizeWalletAvatarUrl(value = '') {
+        isSupabaseStorageWalletAvatarUrl(value = '') {
+            return /^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(String(value || '').trim());
+        },
+
+        isGeneratedWalletAvatarUrl(value = '') {
+            const source = String(value || '');
+            return /ui-avatars\.com|dicebear\.com/i.test(source)
+                || /^data:image\/svg\+xml/i.test(source);
+        },
+
+        isGoogleWalletAvatarUrl(value = '') {
+            return /googleusercontent\.com/i.test(String(value || ''));
+        },
+
+        isTransientWalletAvatarUrl(value = '') {
             const source = String(value || '').trim();
-            if (!source || /^https?:\/\/[^/]*supabase\.co\/storage\/v1\//i.test(source)) {
+            return this.isSupabaseStorageWalletAvatarUrl(source) || this.isGoogleWalletAvatarUrl(source);
+        },
+
+        getCurrentWalletAvatarCandidates() {
+            const domCandidates = [
+                document.getElementById('navUserAvatar')?.getAttribute('src'),
+                document.getElementById('navUserAvatar')?.src,
+                document.getElementById('profileModalAvatarMobile')?.getAttribute('src'),
+                document.getElementById('profileModalAvatarMobile')?.src
+            ];
+            const runtimeCandidates = [
+                window.__ZAOYOE_LAST_AUTH_USER__?.avatarUrl,
+                window.__ZAOYOE_PENDING_AUTH_USER__?.avatarUrl
+            ];
+            const cachedProfile = this.getCachedUserProfile();
+            return [
+                ...domCandidates,
+                ...runtimeCandidates,
+                cachedProfile.avatarUrl
+            ].map(value => String(value || '').trim()).filter(Boolean);
+        },
+
+        getProfileAvatarCandidates(profile = {}, user = {}) {
+            const identityCandidates = Array.isArray(user.identities)
+                ? user.identities.flatMap(identity => [
+                    identity?.identity_data?.avatar_url,
+                    identity?.identity_data?.avatarUrl,
+                    identity?.identity_data?.picture
+                ])
+                : [];
+
+            return [
+                profile.avatar_url,
+                profile.avatarUrl,
+                user.user_metadata?.avatar_url,
+                user.user_metadata?.avatarUrl,
+                user.user_metadata?.picture,
+                ...identityCandidates,
+                ...this.getCurrentWalletAvatarCandidates()
+            ].map(value => String(value || '').trim()).filter(Boolean);
+        },
+
+        normalizeWalletAvatarUrl(value = '', options = {}) {
+            const source = String(value || '').trim();
+            const allowSupabaseStorage = Boolean(options.allowSupabaseStorage);
+            if (!source || (!allowSupabaseStorage && this.isSupabaseStorageWalletAvatarUrl(source))) {
                 return '';
             }
             if (source.startsWith('data:image/') && source.length > 100) {
@@ -8258,15 +8317,201 @@
         },
 
         getProfileAvatarUrl(profile = {}, user = {}) {
+            return this.getProfileAvatarCandidates(profile, user)
+                .map(value => this.normalizeWalletAvatarUrl(value))
+                .find(Boolean) || '';
+        },
+
+        isCanvasReadyWalletAvatarUrl(value = '') {
+            const source = this.normalizeWalletAvatarUrl(value);
+            if (!source || this.isGeneratedWalletAvatarUrl(source)) {
+                return '';
+            }
+
+            if (source.startsWith('data:image/') || source.startsWith('blob:')) {
+                return source;
+            }
+
+            try {
+                const parsed = new URL(source, window.location.href);
+                if (parsed.origin === window.location.origin) {
+                    return source;
+                }
+
+                const host = parsed.hostname.toLowerCase();
+                const pathRoot = String(parsed.pathname || '').split('/').filter(Boolean)[0];
+                const isKnownAvatarCdn = (
+                    host === 'cdn.fatherkey.com'
+                    || host === 'cdn.zaoyoe.com'
+                    || host === 'cdn.zaoyoe.xyz'
+                    || host.endsWith('.r2.dev')
+                ) && pathRoot === 'avatars';
+
+                return isKnownAvatarCdn ? source : '';
+            } catch (error) {
+                return '';
+            }
+        },
+
+        async uploadAffiliatePosterAvatarToR2(source = '', userId = '') {
+            if (!source || !userId || this.isGeneratedWalletAvatarUrl(source)) {
+                return '';
+            }
+
+            const directUploadedUrl = await this.uploadAffiliatePosterAvatarViaFunction(source, userId);
+            if (directUploadedUrl) {
+                return directUploadedUrl;
+            }
+
+            if (typeof window.uploadAvatarToR2 !== 'function') {
+                return '';
+            }
+
+            try {
+                const uploadedUrl = await window.uploadAvatarToR2({
+                    userId,
+                    imageUrl: source
+                });
+                const normalizedUrl = this.normalizeWalletAvatarUrl(uploadedUrl);
+                if (!normalizedUrl || this.isGeneratedWalletAvatarUrl(normalizedUrl)) {
+                    return '';
+                }
+                return normalizedUrl;
+            } catch (error) {
+                console.warn('[WalletModal] Failed to upload affiliate poster avatar to R2:', error);
+                return '';
+            }
+        },
+
+        async uploadAffiliatePosterAvatarViaFunction(source = '', userId = '') {
+            if (!source || !userId || !window.supabaseClient?.auth?.getSession || typeof window.getZaoyoeSupabaseFunctionUrl !== 'function') {
+                return '';
+            }
+
+            try {
+                const { data: { session } = {} } = await window.supabaseClient.auth.getSession();
+                const accessToken = session?.access_token;
+                if (!accessToken) {
+                    return '';
+                }
+
+                const response = await fetch(window.getZaoyoeSupabaseFunctionUrl('upload-avatar'), {
+                    method: 'POST',
+                    headers: {
+                        Authorization: `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        userId,
+                        type: 'avatar',
+                        imageUrl: source,
+                        returnDataUrl: true
+                    })
+                });
+                const payload = await response.json().catch(() => ({}));
+                if (!response.ok || payload?.success === false) {
+                    throw new Error(payload?.error || payload?.message || 'Avatar upload failed');
+                }
+
+                const dataUrl = String(payload?.dataUrl || payload?.imageDataUrl || '').trim();
+                if (dataUrl.startsWith('data:image/') && dataUrl.length > 100) {
+                    return dataUrl;
+                }
+
+                const uploadedUrl = this.normalizeWalletAvatarUrl(payload?.avatarUrl || payload?.imageUrl);
+                if (!uploadedUrl || this.isGeneratedWalletAvatarUrl(uploadedUrl)) {
+                    return '';
+                }
+                return uploadedUrl;
+            } catch (error) {
+                console.warn('[WalletModal] Direct affiliate poster avatar upload failed:', error);
+                return '';
+            }
+        },
+
+        getAffiliatePosterAvatarCandidateGroups(profile = this.affiliateProfile || {}) {
+            const seen = new Set();
             const candidates = [
-                profile.avatar_url,
+                ...(Array.isArray(profile.avatarCandidates) ? profile.avatarCandidates : []),
                 profile.avatarUrl,
-                user.user_metadata?.avatar_url,
-                user.user_metadata?.avatarUrl,
-                user.user_metadata?.picture
+                ...this.getCurrentWalletAvatarCandidates()
+            ].map(value => String(value || '').trim()).filter(Boolean);
+            const custom = [];
+            const google = [];
+
+            for (const candidate of candidates) {
+                const normalized = this.normalizeWalletAvatarUrl(candidate, { allowSupabaseStorage: true });
+                if (!normalized || this.isGeneratedWalletAvatarUrl(normalized) || seen.has(normalized)) {
+                    continue;
+                }
+                seen.add(normalized);
+
+                if (this.isGoogleWalletAvatarUrl(normalized)) {
+                    google.push(normalized);
+                } else {
+                    custom.push(normalized);
+                }
+            }
+
+            return { custom, google };
+        },
+
+        async getAffiliatePosterAvatarUrls(profile = this.affiliateProfile || {}) {
+            const { custom, google } = this.getAffiliatePosterAvatarCandidateGroups(profile);
+            const userId = String(profile.userId || '').trim();
+            const orderedUrls = [
+                ...custom.filter(value => this.isCanvasReadyWalletAvatarUrl(value)),
+                ...custom.filter(value => !this.isCanvasReadyWalletAvatarUrl(value))
             ];
 
-            return candidates.map(value => this.normalizeWalletAvatarUrl(value)).find(Boolean) || '';
+            for (const googleUrl of google) {
+                if (userId) {
+                    const uploadedUrl = await this.uploadAffiliatePosterAvatarToR2(googleUrl, userId);
+                    if (uploadedUrl) {
+                        orderedUrls.push(uploadedUrl);
+                    }
+                }
+                orderedUrls.push(googleUrl);
+            }
+
+            const result = [];
+            const seen = new Set();
+            for (const url of orderedUrls) {
+                const normalized = this.normalizeWalletAvatarUrl(url, { allowSupabaseStorage: true });
+                if (!normalized || this.isGeneratedWalletAvatarUrl(normalized) || seen.has(normalized)) {
+                    continue;
+                }
+                seen.add(normalized);
+                result.push(normalized);
+            }
+            return result;
+        },
+
+        async loadAffiliatePosterAvatarImage(profile = this.affiliateProfile || {}) {
+            const urls = await this.getAffiliatePosterAvatarUrls(profile);
+            const userId = String(profile.userId || '').trim();
+            for (const url of urls) {
+                try {
+                    const image = await this.loadCanvasImage(url);
+                    if (this.affiliateProfile && this.normalizeWalletAvatarUrl(url)) {
+                        this.affiliateProfile.avatarUrl = this.normalizeWalletAvatarUrl(url);
+                    }
+                    return image;
+                } catch (avatarError) {
+                    console.warn('[WalletModal] Failed to draw affiliate avatar:', avatarError);
+                    if (userId && !url.startsWith('data:') && !url.startsWith('blob:')) {
+                        const dataUrl = await this.uploadAffiliatePosterAvatarToR2(url, userId);
+                        if (dataUrl && dataUrl !== url && dataUrl.startsWith('data:image/')) {
+                            try {
+                                return await this.loadCanvasImage(dataUrl);
+                            } catch (dataUrlError) {
+                                console.warn('[WalletModal] Failed to draw affiliate avatar data URL:', dataUrlError);
+                            }
+                        }
+                    }
+                }
+            }
+            return null;
         },
 
         getPosterInitial(name = '') {
@@ -8761,8 +9006,10 @@
                         : cachedProfile;
 
                     this.affiliateProfile = {
+                        userId: user.id,
                         displayName: this.getProfileDisplayName(profileSource, user),
-                        avatarUrl: this.getProfileAvatarUrl(profileSource, user)
+                        avatarUrl: this.getProfileAvatarUrl(profileSource, user),
+                        avatarCandidates: this.getProfileAvatarCandidates(profileSource, user)
                     };
 
                     this.renderAffiliateDescription(stats);
@@ -8931,14 +9178,7 @@
                 ctx.fillStyle = preset.qrCardBg;
                 ctx.fill();
 
-                let avatarImage = null;
-                if (this.affiliateProfile?.avatarUrl) {
-                    try {
-                        avatarImage = await this.loadCanvasImage(this.affiliateProfile.avatarUrl);
-                    } catch (avatarError) {
-                        console.warn('[WalletModal] Failed to draw affiliate avatar:', avatarError);
-                    }
-                }
+                const avatarImage = await this.loadAffiliatePosterAvatarImage();
 
                 this.drawPosterAvatar(ctx, {
                     image: avatarImage,

@@ -12,6 +12,7 @@ interface UploadRequest {
     type?: 'avatar' | 'product' | 'poster' | 'comment' | 'guestbook' | 'chat' | 'homepage'  // Upload type
     imageUrl?: string      // External URL (e.g., Google OAuth)
     imageData?: string     // Base64 data (manual upload)
+    returnDataUrl?: boolean // Return a canvas-safe data URL for small avatar/poster clients
     cardImageData?: string // Product card WebP variant data
     productId?: string     // Product ID for naming (optional)
     posterId?: string      // Poster template ID for naming (optional)
@@ -60,7 +61,10 @@ const DEFAULT_REMOTE_IMAGE_HOSTS = [
     'lh4.googleusercontent.com',
     'lh5.googleusercontent.com',
     'lh6.googleusercontent.com',
-    'avatars.githubusercontent.com'
+    'avatars.githubusercontent.com',
+    'cdn.fatherkey.com',
+    'cdn.zaoyoe.com',
+    'cdn.zaoyoe.xyz'
 ]
 const REMOTE_IMAGE_FETCH_TIMEOUT_MS = Math.max(
     1000,
@@ -219,6 +223,15 @@ function decodeImageData(imageData: string): Uint8Array {
         bytes[i] = binaryString.charCodeAt(i)
     }
     return bytes
+}
+
+function encodeBase64Bytes(bytes: Uint8Array): string {
+    let binary = ''
+    const chunkSize = 0x8000
+    for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+        binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize))
+    }
+    return btoa(binary)
 }
 
 function getImageDataContentType(imageData: string): string {
@@ -486,7 +499,7 @@ serve(async (req) => {
 
         // Parse request
         const payload: UploadRequest = await req.json()
-        const { userId, imageUrl, imageData, cardImageData, productId, posterId, sessionId, homepageSection, site } = payload
+        const { userId, imageUrl, imageData, returnDataUrl, cardImageData, productId, posterId, sessionId, homepageSection, site } = payload
         const type = normalizeUploadType(payload.type)
 
         if (!userId) {
@@ -634,6 +647,10 @@ serve(async (req) => {
 
         // Generate public URL
         const uploadedImageUrl = `${publicUrl}/${filename}`
+        const includeDataUrl = returnDataUrl === true && !!imageBuffer && imageBuffer.length <= UPLOAD_SIZE_LIMITS.avatar
+        const imageDataUrl = includeDataUrl
+            ? `data:${imageContentType};base64,${encodeBase64Bytes(imageBuffer)}`
+            : null
         const imageAsset = type === 'product'
             ? {
                 original: uploadedImageUrl,
@@ -664,6 +681,8 @@ serve(async (req) => {
                 success: true,
                 imageUrl: uploadedImageUrl,
                 avatarUrl: uploadedImageUrl,
+                imageDataUrl,
+                dataUrl: imageDataUrl,
                 cardImageUrl: productCardImageUrl || null,
                 imageAsset
             }),

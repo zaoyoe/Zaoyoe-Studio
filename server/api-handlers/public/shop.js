@@ -405,6 +405,18 @@ function createShopHandlers({
         return Number.isFinite(numericValue) ? numericValue : null;
     }
 
+    function resolvePublicShopSkuManualDelivery(sku = {}, product = {}) {
+        const hasSkuManualDelivery = sku
+            && typeof sku === 'object'
+            && (
+                Object.prototype.hasOwnProperty.call(sku, 'manual_delivery')
+                || Object.prototype.hasOwnProperty.call(sku, 'manualDelivery')
+            );
+        return hasSkuManualDelivery
+            ? normalizeBoolean(sku?.manual_delivery ?? sku?.manualDelivery, false)
+            : normalizeBoolean(product?.manual_delivery ?? product?.manualDelivery, false);
+    }
+
     function normalizePublicShopSkuForSite(sku = {}, product = {}, currentSite = 'cn') {
         const skuPriceField = currentSite === 'intl' ? 'price_points_intl' : 'price_points';
         const skuPrice = normalizeShopSitePriceValue(sku?.[skuPriceField]);
@@ -414,6 +426,7 @@ function createShopHandlers({
             ...sku,
             price_points: skuPrice,
             quantity_rules: skuQuantityRules ?? null,
+            manual_delivery: resolvePublicShopSkuManualDelivery(sku, product),
             stock_count: Math.max(0, Number(sku.stock_count || 0) || 0)
         };
     }
@@ -451,22 +464,30 @@ function createShopHandlers({
         }
 
         try {
-            let response = await dataSupabase
-                .from('shop_product_skus')
-                .select('id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order')
-                .in('product_id', productIds)
-                .eq('is_active', true)
-                .order('sort_order', { ascending: true })
-                .order('created_at', { ascending: true });
-
-            if (response.error && isMissingColumnError(response.error, 'inventory_sku_id')) {
+            const selectAttempts = [
+                'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
+                'id, product_id, sku_code, sku_name, spec_values, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
+                'id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order',
+                'id, product_id, sku_code, sku_name, spec_values, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order'
+            ];
+            let response = { data: null, error: null };
+            for (const selectClause of selectAttempts) {
                 response = await dataSupabase
                     .from('shop_product_skus')
-                    .select('id, product_id, sku_code, sku_name, spec_values, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order')
+                    .select(selectClause)
                     .in('product_id', productIds)
                     .eq('is_active', true)
                     .order('sort_order', { ascending: true })
                     .order('created_at', { ascending: true });
+                if (!response.error) {
+                    break;
+                }
+                if (
+                    !isMissingColumnError(response.error, 'inventory_sku_id')
+                    && !isMissingColumnError(response.error, 'manual_delivery')
+                ) {
+                    break;
+                }
             }
 
             const { data, error } = response;
@@ -2107,8 +2128,9 @@ function createShopHandlers({
         };
     }
 
-    async function loadShopProductPurchaseAvailability(dataSupabase, productId = '') {
+    async function loadShopProductPurchaseAvailability(dataSupabase, productId = '', productSkuId = '') {
         const normalizedProductId = normalizeText(productId, 160);
+        const normalizedProductSkuId = normalizeText(productSkuId, 160);
         if (!normalizedProductId || !dataSupabase?.from) {
             return {
                 manualDelivery: false,
@@ -2143,8 +2165,67 @@ function createShopHandlers({
             const { data, error } = await idQuery.maybeSingle();
 
             if (!error) {
+                const productManualDelivery = normalizeBoolean(data?.manual_delivery, false);
+                if (normalizedProductSkuId || data?.id) {
+                    const skuSelectAttempts = [
+                        'id, product_id, is_active, is_default, manual_delivery',
+                        'id, product_id, is_active, is_default'
+                    ];
+                    let skuLastError = null;
+
+                    try {
+                        for (const skuSelectClause of skuSelectAttempts) {
+                            const skuTableQuery = dataSupabase.from('shop_product_skus');
+                            if (!skuTableQuery || typeof skuTableQuery.select !== 'function') {
+                                break;
+                            }
+
+                            let skuQuery = skuTableQuery.select(skuSelectClause).eq('product_id', normalizedProductId);
+                            skuQuery = normalizedProductSkuId
+                                ? skuQuery.eq('id', normalizedProductSkuId)
+                                : skuQuery.eq('is_default', true);
+
+                            if (typeof skuQuery.maybeSingle !== 'function') {
+                                break;
+                            }
+
+                            const { data: skuData, error: skuError } = await skuQuery.maybeSingle();
+                            if (!skuError) {
+                                const hasSkuManualDelivery = skuData
+                                    && typeof skuData === 'object'
+                                    && Object.prototype.hasOwnProperty.call(skuData, 'manual_delivery');
+                                return {
+                                    manualDelivery: hasSkuManualDelivery
+                                        ? normalizeBoolean(skuData?.manual_delivery, false)
+                                        : productManualDelivery,
+                                    product: data || null,
+                                    sku: skuData || null
+                                };
+                            }
+
+                            skuLastError = skuError;
+                            if (isMissingRelationError(skuError, 'shop_product_skus')) {
+                                break;
+                            }
+                            if (!isMissingColumnError(skuError, 'manual_delivery')) {
+                                break;
+                            }
+                        }
+                    } catch (skuError) {
+                        skuLastError = skuError;
+                    }
+
+                    if (skuLastError && !isMissingColumnError(skuLastError, 'manual_delivery')) {
+                        return {
+                            manualDelivery: productManualDelivery,
+                            product: data || null,
+                            error: skuLastError
+                        };
+                    }
+                }
+
                 return {
-                    manualDelivery: normalizeBoolean(data?.manual_delivery, false),
+                    manualDelivery: productManualDelivery,
                     product: data || null
                 };
             }
@@ -3722,7 +3803,7 @@ function createShopHandlers({
 
                 const availabilityStartedAt = Date.now();
                 const availabilityClient = requestAdminSupabase || adminSupabase || supabase;
-                const purchaseAvailability = await loadShopProductPurchaseAvailability(availabilityClient, payload.productId);
+                const purchaseAvailability = await loadShopProductPurchaseAvailability(availabilityClient, payload.productId, payload.productSkuId);
                 recordServerTimingPhase(timingTracker, 'shop-purchase-availability', availabilityStartedAt);
                 if (purchaseAvailability.manualDelivery === true) {
                     return respond(409, {
