@@ -1042,6 +1042,7 @@ Example output format:
                     || sku.stockSkuId
                     || ''
                 ).trim(),
+                manual_delivery: this.normalizeSkuManualDeliveryFlag(sku.manual_delivery ?? sku.manualDelivery, false),
                 is_default: sku.is_default === true,
                 is_active: sku.is_active !== false,
                 stock_count: Number(sku.stock_count || 0) || 0,
@@ -1052,6 +1053,23 @@ Example output format:
                 if (left.is_default !== right.is_default) return left.is_default ? -1 : 1;
                 return left.sort_order - right.sort_order || left.sku_name.localeCompare(right.sku_name, 'zh-CN');
             });
+    },
+
+    normalizeSkuManualDeliveryFlag: function (value, fallback = false) {
+        if (typeof value === 'boolean') {
+            return value;
+        }
+        const normalized = String(value ?? '').trim().toLowerCase();
+        if (!normalized) {
+            return Boolean(fallback);
+        }
+        if (['1', 'true', 'yes', 'on', 'enabled', 'manual'].includes(normalized)) {
+            return true;
+        }
+        if (['0', 'false', 'no', 'off', 'disabled', 'auto'].includes(normalized)) {
+            return false;
+        }
+        return Boolean(fallback);
     },
 
     getSkuInventoryPoolColor: function (poolId = '') {
@@ -1309,6 +1327,7 @@ Example output format:
             [skuFields.price]: product?.[skuFields.price] ?? '',
             [skuFields.quantityRules]: product?.[skuFields.quantityRules] ?? null,
             inventory_sku_id: '',
+            manual_delivery: this.normalizeSkuManualDeliveryFlag(product?.manual_delivery ?? product?.manualDelivery, false),
             is_default: true,
             is_active: true,
             sort_order: 0
@@ -1357,6 +1376,7 @@ Example output format:
                 sku_name: String(read('sku_name')?.value || '').trim() || '未命名规格',
                 sku_code: String(read('sku_code')?.value || '').trim(),
                 inventory_sku_id: String(read('inventory_sku_id')?.value || '').trim(),
+                manual_delivery: read('manual_delivery')?.checked === true,
                 is_active: read('is_active')?.checked !== false,
                 stock_count: 0,
                 sort_order: index
@@ -1386,6 +1406,7 @@ Example output format:
                 sku_name: String(read('sku_name')?.value || '').trim() || '未命名规格',
                 sku_code: String(read('sku_code')?.value || '').trim(),
                 inventory_sku_id: nextValue,
+                manual_delivery: read('manual_delivery')?.checked === true,
                 is_active: read('is_active')?.checked !== false,
                 stock_count: 0,
                 sort_order: index
@@ -1410,6 +1431,7 @@ Example output format:
                 sku_name: String(read('sku_name')?.value || '').trim() || '未命名规格',
                 sku_code: String(read('sku_code')?.value || '').trim(),
                 inventory_sku_id: String(read('inventory_sku_id')?.value || '').trim(),
+                manual_delivery: read('manual_delivery')?.checked === true,
                 is_active: read('is_active')?.checked !== false,
                 stock_count: 0,
                 sort_order: index
@@ -1520,6 +1542,7 @@ Example output format:
         const inventorySourceOptions = this.buildProductSkuInventorySourceOptions(sku, allSkus);
         const poolMeta = this.getSkuInventoryPoolMeta(sku, allSkus);
         const relationMarkup = this.buildSkuInventoryRelationBadge(poolMeta);
+        const isManualDelivery = this.normalizeSkuManualDeliveryFlag(sku.manual_delivery ?? sku.manualDelivery, false);
         const rowClasses = [
             'shop-product-sku-row',
             poolMeta.isLinked ? 'shop-product-sku-row--shared-inventory' : '',
@@ -1556,6 +1579,10 @@ Example output format:
                             <input type="checkbox" data-product-sku-field="is_active" data-shop-change="product-sku-active" ${isActive ? 'checked' : ''}>
                             启用
                         </label>
+                        <label class="shop-product-sku-row__toggle" title="该规格改为人工发货">
+                            <input type="checkbox" data-product-sku-field="manual_delivery" ${isManualDelivery ? 'checked' : ''}>
+                            人工
+                        </label>
                         <button type="button" class="shop-product-sku-row__remove" data-shop-action="product-remove-sku-row" title="删除规格">
                             <i class="fas fa-trash"></i>
                         </button>
@@ -1587,6 +1614,7 @@ Example output format:
             sku_name: '',
             sku_code: '',
             inventory_sku_id: '',
+            manual_delivery: document.getElementById('prodManualDelivery')?.value === 'true',
             is_default: index === 0,
             is_active: true,
             sort_order: index
@@ -1732,6 +1760,7 @@ Example output format:
                 price_points_intl: skuFields.price === 'price_points_intl' ? sitePrice : pricePointsIntl,
                 quantity_rules: skuFields.quantityRules === 'quantity_rules' ? siteQuantityRules : quantityRules,
                 quantity_rules_intl: skuFields.quantityRules === 'quantity_rules_intl' ? siteQuantityRules : quantityRulesIntl,
+                manual_delivery: read('manual_delivery')?.checked === true,
                 is_default: read('is_default')?.checked === true,
                 is_active: read('is_active')?.checked !== false,
                 sort_order: index
@@ -6351,7 +6380,17 @@ Example output format:
     buildProductSkusForEditor: function (data = {}) {
         const fields = this.getFieldMap();
         const skuFields = this.getSkuSiteFieldMap();
-        const skus = this.normalizeProductSkus(data.skus || []);
+        const productManualDelivery = this.normalizeSkuManualDeliveryFlag(data.manual_delivery ?? data.manualDelivery, false);
+        const rawSkus = (Array.isArray(data.skus) ? data.skus : []).map((sku) => {
+            const hasSkuManualDelivery = sku
+                && typeof sku === 'object'
+                && (
+                    Object.prototype.hasOwnProperty.call(sku, 'manual_delivery')
+                    || Object.prototype.hasOwnProperty.call(sku, 'manualDelivery')
+                );
+            return hasSkuManualDelivery ? sku : { ...sku, manual_delivery: productManualDelivery };
+        });
+        const skus = this.normalizeProductSkus(rawSkus);
         const productTierRules = {
             quantity_rules: this.normalizeAdminQuantityPricingRules(data.quantity_rules),
             quantity_rules_intl: this.normalizeAdminQuantityPricingRules(data.quantity_rules_intl)
@@ -6363,7 +6402,8 @@ Example output format:
                 price_points: data.price_points,
                 price_points_intl: data.price_points_intl,
                 quantity_rules: productTierRules.quantity_rules,
-                quantity_rules_intl: productTierRules.quantity_rules_intl
+                quantity_rules_intl: productTierRules.quantity_rules_intl,
+                manual_delivery: productManualDelivery
             })];
         }
 
@@ -7252,7 +7292,8 @@ Example output format:
             price_points: data.price_points,
             price_points_intl: data.price_points_intl,
             quantity_rules: data.quantity_rules,
-            quantity_rules_intl: data.quantity_rules_intl
+            quantity_rules_intl: data.quantity_rules_intl,
+            manual_delivery: data.manual_delivery
         };
 
         if (options.skuLoading === true) {

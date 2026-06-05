@@ -300,8 +300,8 @@ test('SKU tier pricing is selected and persisted independently from product tier
     );
     assert.match(
         publicHandlerSource,
-        /select\('id, product_id, sku_code, sku_name, spec_values, inventory_sku_id, price_points, price_points_intl, quantity_rules, quantity_rules_intl, is_default, is_active, stock_count, sort_order'\)/,
-        'public catalog should include SKU shared inventory and tier pricing columns'
+        /selectAttempts = \[[\s\S]*inventory_sku_id, manual_delivery, price_points, price_points_intl, quantity_rules, quantity_rules_intl[\s\S]*spec_values, manual_delivery, price_points/,
+        'public catalog should include SKU shared inventory, manual delivery, and tier pricing columns'
     );
     assert.match(
         migrationSource,

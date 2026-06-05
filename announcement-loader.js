@@ -959,10 +959,89 @@
             }
 
             [data-theme="dark"] .zaoyoe-announcement-text {
+                --announcement-dark-muted-rich-text: rgba(226, 232, 240, 0.86);
                 background: rgba(30, 41, 59, 0.35);
                 border-color: rgba(255, 255, 255, 0.025);
                 color: rgba(255, 255, 255, 0.9);
                 box-shadow: 0 1px 4px rgba(0, 0, 0, 0.03);
+            }
+
+            :is(
+                [data-theme="dark"] .zaoyoe-announcement-text,
+                .zaoyoe-announcement-overlay[data-announcement-theme="dark"] .zaoyoe-announcement-text,
+                .zaoyoe-announcement-banner[data-announcement-theme="dark"] .zaoyoe-announcement-text,
+                .zaoyoe-announcement-toast[data-announcement-theme="dark"] .zaoyoe-announcement-text
+            ) :where(
+                [style^="color:" i],
+                [style*="; color:" i],
+                [style*=";color:" i]
+            ):where(
+                [style*="#334155" i],
+                [style*="#475569" i],
+                [style*="#4b5563" i],
+                [style*="#555555" i],
+                [style*="#555" i],
+                [style*="#64748b" i],
+                [style*="#666666" i],
+                [style*="#666" i],
+                [style*="#6b7280" i],
+                [style*="#777777" i],
+                [style*="#777" i],
+                [style*="#7f7f7f" i],
+                [style*="#808080" i],
+                [style*="#999999" i],
+                [style*="#999" i],
+                [style*="rgb(51, 65, 85" i],
+                [style*="rgb(51,65,85" i],
+                [style*="rgb(71, 85, 105" i],
+                [style*="rgb(71,85,105" i],
+                [style*="rgb(75, 85, 99" i],
+                [style*="rgb(75,85,99" i],
+                [style*="rgb(85, 85, 85" i],
+                [style*="rgb(85,85,85" i],
+                [style*="rgb(100, 116, 139" i],
+                [style*="rgb(100,116,139" i],
+                [style*="rgb(102, 102, 102" i],
+                [style*="rgb(102,102,102" i],
+                [style*="rgb(107, 114, 128" i],
+                [style*="rgb(107,114,128" i],
+                [style*="rgb(117, 117, 117" i],
+                [style*="rgb(117,117,117" i],
+                [style*="rgb(127, 127, 127" i],
+                [style*="rgb(127,127,127" i],
+                [style*="rgb(128, 128, 128" i],
+                [style*="rgb(128,128,128" i],
+                [style*="rgb(153, 153, 153" i],
+                [style*="rgb(153,153,153" i],
+                [style*="gray" i],
+                [style*="grey" i]
+            ),
+            :is(
+                [data-theme="dark"] .zaoyoe-announcement-text,
+                .zaoyoe-announcement-overlay[data-announcement-theme="dark"] .zaoyoe-announcement-text,
+                .zaoyoe-announcement-banner[data-announcement-theme="dark"] .zaoyoe-announcement-text,
+                .zaoyoe-announcement-toast[data-announcement-theme="dark"] .zaoyoe-announcement-text
+            ) :where(
+                [color="#334155" i],
+                [color="#475569" i],
+                [color="#4b5563" i],
+                [color="#555555" i],
+                [color="#555" i],
+                [color="#64748b" i],
+                [color="#666666" i],
+                [color="#666" i],
+                [color="#6b7280" i],
+                [color="#777777" i],
+                [color="#777" i],
+                [color="#7f7f7f" i],
+                [color="#808080" i],
+                [color="#999999" i],
+                [color="#999" i],
+                [color="gray" i],
+                [color="grey" i]
+            ) {
+                color: var(--announcement-dark-muted-rich-text, rgba(226, 232, 240, 0.86)) !important;
+                -webkit-text-fill-color: var(--announcement-dark-muted-rich-text, rgba(226, 232, 240, 0.86)) !important;
             }
 
             [data-theme="dark"] .zaoyoe-announcement-ack-btn {

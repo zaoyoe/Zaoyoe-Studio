@@ -129,6 +129,7 @@ const SHOP_PRODUCT_SKU_SELECT = [
     'sku_name',
     'spec_values',
     'inventory_sku_id',
+    'manual_delivery',
     'price_points',
     'price_points_intl',
     'quantity_rules',
@@ -238,6 +239,7 @@ function normalizeProductSkuDrafts(value = []) {
                 price_points_intl: normalizeNullableNumber(source.price_points_intl ?? source.pricePointsIntl),
                 quantity_rules: normalizeSkuQuantityPricingRules(source.quantity_rules ?? source.quantityRules),
                 quantity_rules_intl: normalizeSkuQuantityPricingRules(source.quantity_rules_intl ?? source.quantityRulesIntl),
+                manual_delivery: normalizeBoolean(source.manual_delivery ?? source.manualDelivery, false),
                 is_default: normalizeBoolean(source.is_default ?? source.isDefault, false),
                 is_active: normalizeBoolean(source.is_active ?? source.isActive, true),
                 sort_order: normalizeNonNegativeInteger(source.sort_order ?? source.sortOrder) ?? index
@@ -392,6 +394,7 @@ async function ensureDefaultProductSku(supabase, product = {}) {
             price_points_intl: normalizeNullableNumber(product?.price_points_intl),
             quantity_rules: normalizeSkuQuantityPricingRules(product?.quantity_rules),
             quantity_rules_intl: normalizeSkuQuantityPricingRules(product?.quantity_rules_intl),
+            manual_delivery: normalizeBoolean(product?.manual_delivery, false),
             is_default: true,
             is_active: true,
             sort_order: 0
@@ -537,6 +540,7 @@ async function syncProductSkus(supabase, product = {}, skuDrafts = []) {
             sku_name: draft.sku_name,
             spec_values: draft.spec_values,
             inventory_sku_id: draft.inventory_sku_id || null,
+            manual_delivery: draft.manual_delivery === true,
             price_points: draft.price_points,
             price_points_intl: draft.price_points_intl,
             quantity_rules: draft.quantity_rules,

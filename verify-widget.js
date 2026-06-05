@@ -25,6 +25,8 @@
     const VERIFY_HISTORY_SELECT = 'id, user_id, verification_id, status, message, points_deducted, created_at, site';
     const VERIFY_BATCH_MAX_ENTRIES = 50;
     const VERIFY_BATCH_SUBMIT_CONCURRENCY = 2;
+    const SUBMISSION_COUNT_SHORTAGE_MESSAGE_ZH = '当前剩余可提交任务的次数不足，请联系管理员补足后方可继续提交。';
+    const SUBMISSION_COUNT_SHORTAGE_MESSAGE_EN = 'The remaining task submission count is insufficient. Please contact the admin to add more before continuing.';
 
     let currentUser = null;
     let userBalance = 0;
@@ -50,7 +52,10 @@
 
     const ERROR_CODE_MAP = {
         invalid_api_key: { zh: 'API Key 无效或缺失', en: 'Invalid or missing API key' },
-        insufficient_balance: { zh: 'API Key 余额不足', en: 'Insufficient API key balance' },
+        insufficient_balance: {
+            zh: SUBMISSION_COUNT_SHORTAGE_MESSAGE_ZH,
+            en: SUBMISSION_COUNT_SHORTAGE_MESSAGE_EN
+        },
         already_queued: { zh: '该邮箱已在队列中', en: 'This email is already queued' },
         already_processed: { zh: '该邮箱已经成功处理过', en: 'This email was already processed' },
         service_paused: { zh: 'API 服务已暂停', en: 'API service is paused' },
@@ -279,12 +284,8 @@
         };
     }
 
-    function formatApiQuotaShortageMessage(shortage, totalRequiredUses = 0, prefix = '本次需要接口额度') {
-        const taskLabel = getTaskTypeLabel(shortage?.taskType || 'extract');
-        const neededJobs = Math.max(1, Number(shortage?.neededJobs) || 1);
-        const availableJobs = Math.max(0, Number(shortage?.availableJobs) || 0);
-        const remainingUses = formatBalanceValue(shortage?.quotaSummary?.remainingUses);
-        return `${t('verify.needApiQuota', prefix)}: ${formatBalanceValue(totalRequiredUses)} / ${t('verify.remaining', '当前余额')}: ${remainingUses} · ${taskLabel} ${availableJobs}/${neededJobs} ${t('verify.countTimes', '次')}`;
+    function formatApiQuotaShortageMessage() {
+        return getSubmissionCountShortageMessage();
     }
 
     function persistCachedApiQuota(value, site = getCurrentSiteValue(), costs = apiUsageCosts, quotaSummary = null) {
@@ -1133,10 +1134,16 @@
     function getQuotaUnavailableMessage(taskType = 'extract') {
         const normalizedTaskType = normalizeTaskType(taskType);
         if (normalizedTaskType === 'full') {
-            return t('verify.fullQuotaExhausted', '当前全流程接口额度不足，至少需要 1 次全流程可用额度。');
+            return t('verify.fullQuotaExhausted', getSubmissionCountShortageMessage());
         }
 
-        return t('verify.extractQuotaExhausted', '当前提链接口额度不足，至少需要 1 次提链可用额度。');
+        return t('verify.extractQuotaExhausted', getSubmissionCountShortageMessage());
+    }
+
+    function getSubmissionCountShortageMessage() {
+        return getLang() === 'en'
+            ? SUBMISSION_COUNT_SHORTAGE_MESSAGE_EN
+            : SUBMISSION_COUNT_SHORTAGE_MESSAGE_ZH;
     }
 
     function buildQuotaWarningState(taskType = 'extract', quotaSummary = null, taskCount = 1) {
@@ -1146,48 +1153,18 @@
             return null;
         }
 
-        const requiredUses = getTaskTypeUsageCost(normalizedTaskType) * normalizedTaskCount;
         if (hasEnoughApiQuotaForTaskCount(normalizedTaskType, normalizedTaskCount, quotaSummary)) {
             return null;
         }
 
         if (normalizedTaskCount > 1) {
-            const availableJobs = getQuotaAvailableJobs(quotaSummary, normalizedTaskType);
             return {
                 tone: 'danger',
                 message: t(
                     'verify.batchQuotaExhausted',
-                    `本批共 ${normalizedTaskCount} 个任务，需要 ${formatBalanceValue(requiredUses)} 接口额度；当前${getTaskTypeLabel(normalizedTaskType)}可提交 ${Number.isFinite(availableJobs) ? Math.max(0, availableJobs) : 0} 个。`
+                    getSubmissionCountShortageMessage()
                 ),
                 action: null
-            };
-        }
-
-        if (normalizedTaskType === 'full' && quotaSummary.extractJobs > 0 && isTaskTypeAvailable('extract')) {
-            return {
-                tone: 'warning',
-                message: t(
-                    'verify.fullQuotaSuggestExtract',
-                    `当前已选择全流程包绑卡，至少需要 1.0；你当前提链还可提交 ${quotaSummary.extractJobs} 个，可切换到仅提链后继续提交。`
-                ),
-                action: {
-                    action: 'switch-extract-mode',
-                    label: t('verify.switchToExtractMode', '切换到仅提链')
-                }
-            };
-        }
-
-        if (normalizedTaskType === 'extract' && quotaSummary.fullJobs > 0 && isTaskTypeAvailable('full')) {
-            return {
-                tone: 'warning',
-                message: t(
-                    'verify.extractQuotaSuggestFull',
-                    `当前已选择仅提链，但提链额度为 0；你当前全流程还可提交 ${quotaSummary.fullJobs} 个，可切换到全流程包绑卡。`
-                ),
-                action: {
-                    action: 'switch-full-mode',
-                    label: t('verify.switchToFullMode', '切换到全流程')
-                }
             };
         }
 

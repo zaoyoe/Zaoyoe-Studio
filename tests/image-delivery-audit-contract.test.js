@@ -89,6 +89,12 @@ test('image upload edge function enforces server-side type size and rate guardra
     assert.match(source, /adminClient\.rpc\('take_rate_limit_token'/);
     assert.match(source, /Product card image must be WebP/);
     assert.match(source, /Remote image must use HTTPS/);
+    assert.match(source, /returnDataUrl\?: boolean/);
+    assert.match(source, /function encodeBase64Bytes\(bytes: Uint8Array\): string/);
+    assert.match(source, /'cdn\.fatherkey\.com'/);
+    assert.match(source, /const includeDataUrl = returnDataUrl === true/);
+    assert.match(source, /imageDataUrl/);
+    assert.match(source, /dataUrl: imageDataUrl/);
     assert.match(source, /function getR2PublicUrlBase\(\): string/);
     assert.match(source, /parsed\.hostname\.endsWith\('\.r2\.dev'\)/);
     assert.match(source, /homepage\/\$\{safeHomepageSite\}\/\$\{safeHomepageSection\}/);

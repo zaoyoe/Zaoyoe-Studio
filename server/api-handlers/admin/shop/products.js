@@ -64,6 +64,7 @@ const SHOP_PRODUCT_SKU_SELECT = [
     'sku_name',
     'spec_values',
     'inventory_sku_id',
+    'manual_delivery',
     'price_points',
     'price_points_intl',
     'quantity_rules',
@@ -73,8 +74,12 @@ const SHOP_PRODUCT_SKU_SELECT = [
     'stock_count',
     'sort_order'
 ].join(', ');
-const SHOP_PRODUCT_SKU_SELECT_LEGACY = SHOP_PRODUCT_SKU_SELECT
-    .replace('spec_values, inventory_sku_id, price_points', 'spec_values, price_points');
+const SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY = SHOP_PRODUCT_SKU_SELECT
+    .replace('spec_values, inventory_sku_id, manual_delivery, price_points', 'spec_values, manual_delivery, price_points');
+const SHOP_PRODUCT_SKU_SELECT_WITHOUT_MANUAL_DELIVERY = SHOP_PRODUCT_SKU_SELECT
+    .replace('manual_delivery, ', '');
+const SHOP_PRODUCT_SKU_SELECT_LEGACY = SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY
+    .replace('manual_delivery, ', '');
 
 function isMissingColumnError(error, columnName = '') {
     const normalizedMessage = String(error?.message || '').trim().toLowerCase();
@@ -229,9 +234,25 @@ async function loadProductSkusWithSharedInventoryFallback(supabase, applyFilter)
             .order('created_at', { ascending: true });
     };
 
-    let response = await buildQuery(SHOP_PRODUCT_SKU_SELECT);
-    if (response.error && isMissingColumnError(response.error, 'inventory_sku_id')) {
-        response = await buildQuery(SHOP_PRODUCT_SKU_SELECT_LEGACY);
+    let response = { data: null, error: null };
+    const selectAttempts = [
+        SHOP_PRODUCT_SKU_SELECT,
+        SHOP_PRODUCT_SKU_SELECT_WITHOUT_INVENTORY,
+        SHOP_PRODUCT_SKU_SELECT_WITHOUT_MANUAL_DELIVERY,
+        SHOP_PRODUCT_SKU_SELECT_LEGACY
+    ];
+
+    for (const selectClause of selectAttempts) {
+        response = await buildQuery(selectClause);
+        if (!response.error) {
+            break;
+        }
+        if (
+            !isMissingColumnError(response.error, 'inventory_sku_id')
+            && !isMissingColumnError(response.error, 'manual_delivery')
+        ) {
+            break;
+        }
     }
 
     return response;
