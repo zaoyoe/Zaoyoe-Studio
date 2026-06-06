@@ -375,7 +375,7 @@
     window.supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
         auth: {
             persistSession: true,
-            autoRefreshToken: false,
+            autoRefreshToken: true,
             detectSessionInUrl: false,
             flowType: 'implicit',
             storage: guardStorage

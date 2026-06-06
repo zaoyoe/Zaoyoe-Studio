@@ -6,6 +6,10 @@
     const ADMIN_STUDIO_SESSION_ENDPOINT = '/api/admin/access/session';
     const DEFAULT_ADMIN_ACCESS_REST_TIMEOUT_MS = 6000;
     const DEFAULT_ADMIN_STUDIO_SESSION_TIMEOUT_MS = 6000;
+    const ADMIN_STUDIO_SESSION_RENEW_MIN_LEAD_MS = 15 * 1000;
+    const ADMIN_STUDIO_SESSION_RENEW_MAX_LEAD_MS = 5 * 60 * 1000;
+    const ADMIN_STUDIO_SESSION_RENEW_RETRY_MS = 60 * 1000;
+    const ADMIN_STUDIO_SESSION_ACTIVITY_THROTTLE_MS = 30 * 1000;
     const ADMIN_PRESENCE_CHANNEL = 'zaoyoe-admin-presence';
     const ADMIN_PRESENCE_HEARTBEAT_MS = 120000;
     const ADMIN_PRESENCE_TAB_KEY = 'zaoyoe_admin_presence_tab_v1';
@@ -14,6 +18,9 @@
     const USER_PRESENCE_TAB_KEY = 'zaoyoe_user_presence_tab_v1';
     let pendingAdminStudioSessionPromise = null;
     let pendingAdminStudioSessionUserId = '';
+    let pendingAdminStudioSessionRenewPromise = null;
+    let adminStudioSessionRenewTimer = null;
+    let adminStudioSessionActivityRenewLastAt = 0;
     let pendingWarmAdminStudioPromise = null;
     let pendingWarmAdminStudioUserId = '';
     let adminPresenceChannel = null;
@@ -280,17 +287,170 @@
                 issuedAt,
                 expiresAt: issuedAt + (expiresInSeconds * 1000)
             }));
+            scheduleAdminStudioSessionRenewal(normalizedUserId);
         } catch (_) {
             // ignore cache write failures
         }
     }
 
     function clearCachedAdminStudioSession() {
+        clearAdminStudioSessionRenewTimer();
         try {
             globalScope?.sessionStorage?.removeItem(ADMIN_STUDIO_SESSION_CACHE_KEY);
         } catch (_) {
             // ignore cache clear failures
         }
+    }
+
+    function clearAdminStudioSessionRenewTimer() {
+        if (!adminStudioSessionRenewTimer || typeof globalScope.clearTimeout !== 'function') {
+            adminStudioSessionRenewTimer = null;
+            return;
+        }
+
+        try {
+            globalScope.clearTimeout(adminStudioSessionRenewTimer);
+        } catch (_) {
+            // ignore timer cleanup failures
+        }
+        adminStudioSessionRenewTimer = null;
+    }
+
+    function getAdminStudioSessionRenewLeadMs(cached = null) {
+        const issuedAt = Number(cached?.issuedAt || 0);
+        const expiresAt = Number(cached?.expiresAt || 0);
+        const ttlMs = issuedAt > 0 && expiresAt > issuedAt
+            ? expiresAt - issuedAt
+            : 10 * 60 * 1000;
+
+        return Math.min(
+            ADMIN_STUDIO_SESSION_RENEW_MAX_LEAD_MS,
+            Math.max(ADMIN_STUDIO_SESSION_RENEW_MIN_LEAD_MS, Math.floor(ttlMs * 0.25))
+        );
+    }
+
+    function shouldRenewAdminStudioSession(cached = null) {
+        const expiresAt = Number(cached?.expiresAt || 0);
+        if (!expiresAt) return false;
+        return (expiresAt - Date.now()) <= getAdminStudioSessionRenewLeadMs(cached);
+    }
+
+    function scheduleAdminStudioSessionRenewal(userId = '') {
+        clearAdminStudioSessionRenewTimer();
+        const cached = readAdminStudioSessionCache();
+        const normalizedUserId = String(userId || cached?.userId || '').trim();
+        if (!cached || (normalizedUserId && cached.userId !== normalizedUserId)) {
+            return false;
+        }
+
+        if (typeof globalScope.setTimeout !== 'function') {
+            return false;
+        }
+
+        const delayMs = Math.max(
+            0,
+            Number(cached.expiresAt || 0) - Date.now() - getAdminStudioSessionRenewLeadMs(cached)
+        );
+        adminStudioSessionRenewTimer = globalScope.setTimeout(() => {
+            adminStudioSessionRenewTimer = null;
+            void renewAdminStudioSession({
+                userId: cached.userId,
+                reason: 'timer'
+            });
+        }, delayMs);
+
+        if (typeof adminStudioSessionRenewTimer?.unref === 'function') {
+            adminStudioSessionRenewTimer.unref();
+        }
+
+        return true;
+    }
+
+    function scheduleAdminStudioSessionRenewRetry(userId = '') {
+        clearAdminStudioSessionRenewTimer();
+        if (typeof globalScope.setTimeout !== 'function') {
+            return false;
+        }
+
+        adminStudioSessionRenewTimer = globalScope.setTimeout(() => {
+            adminStudioSessionRenewTimer = null;
+            void renewAdminStudioSession({
+                userId,
+                reason: 'retry'
+            });
+        }, ADMIN_STUDIO_SESSION_RENEW_RETRY_MS);
+
+        if (typeof adminStudioSessionRenewTimer?.unref === 'function') {
+            adminStudioSessionRenewTimer.unref();
+        }
+
+        return true;
+    }
+
+    async function renewAdminStudioSession(options = {}) {
+        const cached = readAdminStudioSessionCache();
+        const normalizedUserId = String(options.userId || cached?.userId || '').trim();
+        if (!cached || !normalizedUserId || cached.userId !== normalizedUserId) {
+            return {
+                ok: false,
+                reason: 'missing_cached_session'
+            };
+        }
+
+        if (options.force !== true && !shouldRenewAdminStudioSession(cached)) {
+            scheduleAdminStudioSessionRenewal(normalizedUserId);
+            return {
+                ok: true,
+                cached: true,
+                skipped: true,
+                payload: {
+                    success: true,
+                    granted: true,
+                    expiresInSeconds: Math.max(1, Math.floor((Number(cached.expiresAt || 0) - Date.now()) / 1000))
+                }
+            };
+        }
+
+        if (pendingAdminStudioSessionRenewPromise) {
+            return pendingAdminStudioSessionRenewPromise;
+        }
+
+        pendingAdminStudioSessionRenewPromise = createAdminStudioSession({
+            userId: normalizedUserId,
+            forceRefresh: true,
+            preserveCacheOnFailure: true
+        }).then((result) => {
+            if (!result?.ok && readAdminStudioSessionCache()) {
+                scheduleAdminStudioSessionRenewRetry(normalizedUserId);
+            }
+            return result;
+        }).finally(() => {
+            pendingAdminStudioSessionRenewPromise = null;
+        });
+
+        return pendingAdminStudioSessionRenewPromise;
+    }
+
+    function maybeRenewAdminStudioSessionFromActivity() {
+        const cached = readAdminStudioSessionCache();
+        if (!cached) return false;
+
+        scheduleAdminStudioSessionRenewal(cached.userId);
+        if (!shouldRenewAdminStudioSession(cached)) {
+            return false;
+        }
+
+        const now = Date.now();
+        if ((now - adminStudioSessionActivityRenewLastAt) < ADMIN_STUDIO_SESSION_ACTIVITY_THROTTLE_MS) {
+            return false;
+        }
+
+        adminStudioSessionActivityRenewLastAt = now;
+        void renewAdminStudioSession({
+            userId: cached.userId,
+            reason: 'activity'
+        });
+        return true;
     }
 
     function getCachedAdminStudioSessionResult(userId = '') {
@@ -708,6 +868,7 @@
         if (!forceRefresh) {
             const cachedSession = getCachedAdminStudioSessionResult(explicitUserId);
             if (cachedSession) {
+                scheduleAdminStudioSessionRenewal(explicitUserId);
                 return cachedSession;
             }
 
@@ -732,7 +893,9 @@
         const error = sessionResult?.error || null;
         const accessToken = String(session?.access_token || persistedSession?.access_token || '').trim();
         if (error || !accessToken) {
-            clearCachedAdminStudioSession();
+            if (options.preserveCacheOnFailure !== true) {
+                clearCachedAdminStudioSession();
+            }
             return {
                 ok: false,
                 status: 401,
@@ -758,7 +921,9 @@
                 );
 
                 if (!response) {
-                    clearCachedAdminStudioSession();
+                    if (options.preserveCacheOnFailure !== true) {
+                        clearCachedAdminStudioSession();
+                    }
                     return {
                         ok: false,
                         status: 0,
@@ -776,12 +941,16 @@
                 if (result.ok) {
                     writeAdminStudioSessionCache(resolvedUserId, payload);
                 } else {
-                    clearCachedAdminStudioSession();
+                    if (options.preserveCacheOnFailure !== true) {
+                        clearCachedAdminStudioSession();
+                    }
                 }
 
                 return result;
             } catch (requestError) {
-                clearCachedAdminStudioSession();
+                if (options.preserveCacheOnFailure !== true) {
+                    clearCachedAdminStudioSession();
+                }
                 return {
                     ok: false,
                     status: 0,
@@ -999,9 +1168,12 @@
         createAdminStudioSession,
         getCurrentAdminAccess,
         hasActiveAdminStudioSession,
+        maybeRenewAdminStudioSessionFromActivity,
         normalizeAccessPayload,
         openAdminStudio,
+        renewAdminStudioSession,
         sanitizeAdminStudioTarget,
+        scheduleAdminStudioSessionRenewal,
         startAdminPresence,
         markAdminPresenceActive,
         stopAdminPresence,
@@ -1038,7 +1210,17 @@
             if (globalScope.document?.visibilityState === 'visible') {
                 void markAdminPresenceActive();
                 void markUserPresenceActive();
+                maybeRenewAdminStudioSessionFromActivity();
             }
+        });
+        globalScope.addEventListener('focus', () => {
+            maybeRenewAdminStudioSessionFromActivity();
+        });
+        globalScope.addEventListener('pointerdown', () => {
+            maybeRenewAdminStudioSessionFromActivity();
+        }, { passive: true });
+        globalScope.addEventListener('keydown', () => {
+            maybeRenewAdminStudioSessionFromActivity();
         });
     }
 

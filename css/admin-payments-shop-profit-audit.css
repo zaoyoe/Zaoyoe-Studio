@@ -1,4 +1,4 @@
-/* 20260606_ADMIN_PAYMENTS_SHOP_PROFIT_AUDIT_5 */
+/* 20260606_ADMIN_PAYMENTS_SHOP_PROFIT_AUDIT_7 */
 #module-payments .payments-shop-profit-audit {
     display: grid;
     gap: 14px;
@@ -636,6 +636,223 @@
     color: rgba(248, 250, 252, 0.9);
     font-size: 0.74rem;
     font-weight: 820;
+}
+
+#module-payments .payments-shop-profit-audit__resolution {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-left: 3px solid rgba(56, 189, 248, 0.55);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.2);
+}
+
+#module-payments .payments-shop-profit-audit__resolution.is-warning {
+    border-left-color: #f59e0b;
+    background: rgba(120, 53, 15, 0.13);
+}
+
+#module-payments .payments-shop-profit-audit__resolution.is-critical {
+    border-left-color: #fb7185;
+    background: rgba(127, 29, 29, 0.16);
+}
+
+#module-payments .payments-shop-profit-audit__resolution-head,
+#module-payments .payments-shop-profit-audit__resolution-options,
+#module-payments .payments-shop-profit-audit__history-head {
+    display: flex;
+}
+
+#module-payments .payments-shop-profit-audit__resolution-head {
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+#module-payments .payments-shop-profit-audit__resolution-head span {
+    color: rgba(203, 213, 225, 0.68);
+    font-size: 0.7rem;
+    font-weight: 760;
+    line-height: 1.35;
+}
+
+#module-payments .payments-shop-profit-audit__resolution-head strong {
+    color: rgba(248, 250, 252, 0.94);
+    font-size: 0.78rem;
+    font-weight: 850;
+    line-height: 1.35;
+    text-align: right;
+}
+
+#module-payments .payments-shop-profit-audit__resolution-copy {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+#module-payments .payments-shop-profit-audit__resolution-copy span,
+#module-payments .payments-shop-profit-audit__resolution-copy strong,
+#module-payments .payments-shop-profit-audit__resolution-copy em {
+    display: block;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    line-height: 1.42;
+}
+
+#module-payments .payments-shop-profit-audit__resolution-copy span,
+#module-payments .payments-shop-profit-audit__resolution-copy em {
+    color: rgba(203, 213, 225, 0.72);
+    font-size: 0.72rem;
+    font-style: normal;
+}
+
+#module-payments .payments-shop-profit-audit__resolution-copy strong {
+    color: rgba(248, 250, 252, 0.9);
+    font-size: 0.74rem;
+    font-weight: 820;
+}
+
+#module-payments .payments-shop-profit-audit__resolution-options {
+    flex-wrap: wrap;
+    gap: 7px;
+}
+
+#module-payments .payments-shop-profit-audit__resolution-options span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 24px;
+    max-width: 100%;
+    padding: 5px 8px;
+    border-radius: 7px;
+    color: rgba(226, 232, 240, 0.84);
+    background: rgba(15, 23, 42, 0.28);
+    font-size: 0.7rem;
+    line-height: 1.3;
+}
+
+#module-payments .payments-shop-profit-audit__resolution-options strong,
+#module-payments .payments-shop-profit-audit__resolution-options em {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+#module-payments .payments-shop-profit-audit__resolution-options strong {
+    font-weight: 820;
+}
+
+#module-payments .payments-shop-profit-audit__resolution-options em {
+    color: rgba(203, 213, 225, 0.7);
+    font-style: normal;
+    font-weight: 720;
+}
+
+#module-payments .payments-shop-profit-audit__history-disposition {
+    display: grid;
+    gap: 10px;
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.24);
+}
+
+#module-payments .payments-shop-profit-audit__history-head {
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+#module-payments .payments-shop-profit-audit__history-head > div {
+    min-width: 0;
+}
+
+#module-payments .payments-shop-profit-audit__history-head strong {
+    display: block;
+    color: rgba(248, 250, 252, 0.94);
+    font-size: 0.9rem;
+    font-weight: 850;
+    line-height: 1.3;
+}
+
+#module-payments .payments-shop-profit-audit__history-head span {
+    display: block;
+    margin-top: 3px;
+    color: rgba(203, 213, 225, 0.7);
+    font-size: 0.74rem;
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+}
+
+#module-payments .payments-shop-profit-audit__history-head em {
+    flex: 0 0 auto;
+    padding: 6px 9px;
+    border-radius: 999px;
+    color: #fde68a;
+    background: rgba(245, 158, 11, 0.14);
+    font-size: 0.74rem;
+    font-style: normal;
+    font-weight: 850;
+    line-height: 1.25;
+    white-space: nowrap;
+}
+
+#module-payments .payments-shop-profit-audit__history-lanes {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+}
+
+#module-payments .payments-shop-profit-audit__history-lane {
+    display: grid;
+    gap: 7px;
+    min-width: 0;
+    padding: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-left: 3px solid rgba(56, 189, 248, 0.52);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.22);
+}
+
+#module-payments .payments-shop-profit-audit__history-lane.is-warning {
+    border-left-color: #f59e0b;
+    background: rgba(120, 53, 15, 0.13);
+}
+
+#module-payments .payments-shop-profit-audit__history-lane.is-critical {
+    border-left-color: #fb7185;
+    background: rgba(127, 29, 29, 0.16);
+}
+
+#module-payments .payments-shop-profit-audit__history-lane strong,
+#module-payments .payments-shop-profit-audit__history-lane span,
+#module-payments .payments-shop-profit-audit__history-lane small {
+    display: block;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    line-height: 1.38;
+}
+
+#module-payments .payments-shop-profit-audit__history-lane strong {
+    color: rgba(248, 250, 252, 0.94);
+    font-size: 0.78rem;
+    font-weight: 840;
+}
+
+#module-payments .payments-shop-profit-audit__history-lane span,
+#module-payments .payments-shop-profit-audit__history-lane small {
+    color: rgba(203, 213, 225, 0.7);
+    font-size: 0.7rem;
+}
+
+#module-payments .payments-shop-profit-audit__history-lane em {
+    color: rgba(248, 250, 252, 0.94);
+    font-size: 1.12rem;
+    font-style: normal;
+    font-weight: 880;
+    line-height: 1;
 }
 
 #module-payments .payments-shop-profit-audit__ledger {
@@ -1308,6 +1525,197 @@ html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__dime
     background: rgba(255, 255, 255, 0.68);
 }
 
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__readiness,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__readiness {
+    border-color: rgba(22, 163, 74, 0.2);
+    background: #f0fdf4;
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__readiness.is-warning,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__readiness.is-warning {
+    border-color: rgba(217, 119, 6, 0.24);
+    background: #fffbeb;
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__readiness.is-critical,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__readiness.is-critical {
+    border-color: rgba(225, 29, 72, 0.22);
+    background: #fff1f2;
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__readiness-score strong,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__readiness-score strong,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__readiness-item strong,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__readiness-item strong {
+    color: #0f172a;
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__readiness-score span,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__readiness-score em,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__readiness-score span,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__readiness-score em,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__readiness-item span,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__readiness-item span {
+    color: #64748b;
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__readiness-item,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__readiness-item {
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    background: #ffffff;
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__procurement-head strong,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__procurement-head strong,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__procurement-main strong,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__procurement-main strong,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__procurement-main em,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__procurement-main em,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__procurement-action,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__procurement-action,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__adjustment-breakdown-row strong,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__adjustment-breakdown-row strong {
+    color: #0f172a;
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__procurement-head span,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__procurement-head span,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__procurement-main span,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__procurement-main span,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__adjustment-breakdown-row span,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__adjustment-breakdown-row span,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__adjustment-breakdown-row em,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__adjustment-breakdown-row em {
+    color: #64748b;
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__procurement-head em,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__procurement-head em {
+    color: #166534;
+    background: rgba(220, 252, 231, 0.72);
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__procurement-head em.is-warning,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__procurement-head em.is-warning {
+    color: #92400e;
+    background: rgba(254, 243, 199, 0.74);
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__procurement-head em.is-critical,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__procurement-head em.is-critical {
+    color: #9f1239;
+    background: rgba(255, 228, 230, 0.76);
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__procurement-item,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__procurement-item,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__adjustment-breakdown-row,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__adjustment-breakdown-row {
+    border-color: rgba(148, 163, 184, 0.22);
+    border-left-color: #0284c7;
+    background: #f8fafc;
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__adjustment-breakdown-row.is-info,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__adjustment-breakdown-row.is-review,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__adjustment-breakdown-row.is-info,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__adjustment-breakdown-row.is-review {
+    border-left-color: #0284c7;
+    background: #eff6ff;
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__procurement-item.is-warning,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__procurement-item.is-warning,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__adjustment-breakdown-row.is-warning,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__adjustment-breakdown-row.is-warning {
+    border-left-color: #d97706;
+    background: #fffbeb;
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__procurement-item.is-critical,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__procurement-item.is-critical,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__adjustment-breakdown-row.is-critical,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__adjustment-breakdown-row.is-critical {
+    border-left-color: #e11d48;
+    background: #fff1f2;
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__procurement-meta span,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__procurement-meta span {
+    color: #334155;
+    background: rgba(255, 255, 255, 0.68);
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__resolution,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__resolution,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__history-disposition,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__history-disposition,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__history-lane,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__history-lane {
+    border-color: rgba(83, 110, 145, 0.14);
+    background: rgba(255, 255, 255, 0.62);
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__resolution.is-warning,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__resolution.is-warning,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__history-lane.is-warning,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__history-lane.is-warning {
+    border-left-color: #d97706;
+    background: rgba(254, 243, 199, 0.56);
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__resolution.is-critical,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__resolution.is-critical,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__history-lane.is-critical,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__history-lane.is-critical {
+    border-left-color: #e11d48;
+    background: rgba(255, 228, 230, 0.62);
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__resolution-head strong,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__resolution-head strong,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__resolution-copy strong,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__resolution-copy strong,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__resolution-options strong,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__resolution-options strong,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__history-head strong,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__history-head strong,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__history-lane strong,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__history-lane strong,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__history-lane em,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__history-lane em {
+    color: #0f172a;
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__resolution-head span,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__resolution-head span,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__resolution-copy span,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__resolution-copy em,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__resolution-copy span,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__resolution-copy em,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__resolution-options em,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__resolution-options em,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__history-head span,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__history-head span,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__history-lane span,
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__history-lane small,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__history-lane span,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__history-lane small {
+    color: #64748b;
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__resolution-options span,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__resolution-options span {
+    color: #334155;
+    background: rgba(255, 255, 255, 0.7);
+}
+
+html[data-theme="light"] #module-payments .payments-shop-profit-audit__history-head em,
+html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__history-head em {
+    color: #92400e;
+    background: rgba(254, 243, 199, 0.74);
+}
+
 @media (max-width: 1100px) {
     #module-payments .payments-shop-profit-audit__metrics {
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1322,7 +1730,8 @@ html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__dime
     }
 
     #module-payments .payments-shop-profit-audit__ledger-metrics,
-    #module-payments .payments-shop-profit-audit__ledger-list {
+    #module-payments .payments-shop-profit-audit__ledger-list,
+    #module-payments .payments-shop-profit-audit__history-lanes {
         grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 }
@@ -1359,6 +1768,8 @@ html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__dime
     #module-payments .payments-shop-profit-audit__ledger-head,
     #module-payments .payments-shop-profit-audit__ledger-row,
     #module-payments .payments-shop-profit-audit__dimension-main,
+    #module-payments .payments-shop-profit-audit__resolution-head,
+    #module-payments .payments-shop-profit-audit__history-head,
     #module-payments .payments-shop-profit-audit__issue-main,
     #module-payments .payments-shop-profit-audit__alert-main,
     #module-payments .payments-shop-profit-audit__adjustment-main {
@@ -1375,6 +1786,8 @@ html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__dime
     #module-payments .payments-shop-profit-audit__ledger-head em,
     #module-payments .payments-shop-profit-audit__ledger-row em,
     #module-payments .payments-shop-profit-audit__dimension-main em,
+    #module-payments .payments-shop-profit-audit__resolution-head strong,
+    #module-payments .payments-shop-profit-audit__history-head em,
     #module-payments .payments-shop-profit-audit__issue-main em,
     #module-payments .payments-shop-profit-audit__alert-main em,
     #module-payments .payments-shop-profit-audit__adjustment-main em {
@@ -1383,7 +1796,8 @@ html:not([data-theme="dark"]) #module-payments .payments-shop-profit-audit__dime
     }
 
     #module-payments .payments-shop-profit-audit__ledger-metrics,
-    #module-payments .payments-shop-profit-audit__ledger-list {
+    #module-payments .payments-shop-profit-audit__ledger-list,
+    #module-payments .payments-shop-profit-audit__history-lanes {
         grid-template-columns: minmax(0, 1fr);
     }
 }

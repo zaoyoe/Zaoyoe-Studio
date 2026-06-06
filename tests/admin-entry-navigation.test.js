@@ -50,6 +50,8 @@ function loadAdminAccess(overrides = {}) {
     const originalAbortController = global.AbortController;
     const originalRequireConfig = global.requireZaoyoeSupabaseConfig;
     const originalAccessTimeouts = global.__adminAccessTimeouts;
+    const originalSetTimeout = global.setTimeout;
+    const originalClearTimeout = global.clearTimeout;
 
     if (Object.prototype.hasOwnProperty.call(overrides, 'location')) {
         global.location = overrides.location;
@@ -91,6 +93,14 @@ function loadAdminAccess(overrides = {}) {
         global.__adminAccessTimeouts = overrides.accessTimeouts;
     }
 
+    if (Object.prototype.hasOwnProperty.call(overrides, 'setTimeout')) {
+        global.setTimeout = overrides.setTimeout;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(overrides, 'clearTimeout')) {
+        global.clearTimeout = overrides.clearTimeout;
+    }
+
     delete require.cache[adminAccessPath];
     const api = require(adminAccessPath);
 
@@ -108,6 +118,8 @@ function loadAdminAccess(overrides = {}) {
             restoreGlobalProperty('AbortController', originalAbortController);
             restoreGlobalProperty('requireZaoyoeSupabaseConfig', originalRequireConfig);
             restoreGlobalProperty('__adminAccessTimeouts', originalAccessTimeouts);
+            restoreGlobalProperty('setTimeout', originalSetTimeout);
+            restoreGlobalProperty('clearTimeout', originalClearTimeout);
         }
     };
 }
@@ -237,6 +249,104 @@ test('createAdminStudioSession reuses the cached short-lived admin session for t
         assert.equal(fetchCount, 0);
         assert.equal(result.payload.granted, true);
         assert.equal(result.payload.expiresInSeconds > 0, true);
+    } finally {
+        restore();
+    }
+});
+
+test('createAdminStudioSession schedules renewal for a cached admin studio session', async () => {
+    const now = Date.now();
+    const sessionStorage = createStorage({
+        zaoyoe_admin_studio_session_cache_v1: JSON.stringify({
+            userId: 'admin-user-1',
+            issuedAt: now,
+            expiresAt: now + (8 * 60 * 1000)
+        })
+    });
+    const scheduled = [];
+
+    const { api, restore } = loadAdminAccess({
+        sessionStorage,
+        setTimeout(callback, delayMs) {
+            scheduled.push({ callback, delayMs });
+            return { unref() {} };
+        },
+        clearTimeout() {},
+        fetch() {
+            throw new Error('cached admin studio session should schedule renewal without fetching');
+        },
+        supabaseClient: {
+            auth: {
+                getSession() {
+                    throw new Error('cached admin studio session should not read Supabase while scheduling renewal');
+                }
+            }
+        }
+    });
+
+    try {
+        const result = await api.createAdminStudioSession({ userId: 'admin-user-1' });
+
+        assert.equal(result.ok, true);
+        assert.equal(result.cached, true);
+        assert.equal(scheduled.length, 1);
+        assert.equal(scheduled[0].delayMs > 0, true);
+        assert.equal(scheduled[0].delayMs <= 8 * 60 * 1000, true);
+    } finally {
+        restore();
+    }
+});
+
+test('renewAdminStudioSession preserves an active cache when renewal fails transiently', async () => {
+    const now = Date.now();
+    const sessionStorage = createStorage({
+        zaoyoe_admin_studio_session_cache_v1: JSON.stringify({
+            userId: 'admin-user-1',
+            issuedAt: now - (7 * 60 * 1000),
+            expiresAt: now + (45 * 1000)
+        })
+    });
+    let fetchCount = 0;
+
+    const { api, restore } = loadAdminAccess({
+        sessionStorage,
+        setTimeout() {
+            return { unref() {} };
+        },
+        clearTimeout() {},
+        fetch() {
+            fetchCount += 1;
+            return Promise.resolve({
+                ok: false,
+                status: 503,
+                async json() {
+                    return { success: false, message: 'temporary outage' };
+                }
+            });
+        },
+        supabaseClient: {
+            auth: {
+                async getSession() {
+                    return {
+                        data: {
+                            session: {
+                                access_token: 'live-admin-token',
+                                user: { id: 'admin-user-1' }
+                            }
+                        }
+                    };
+                }
+            }
+        }
+    });
+
+    try {
+        const result = await api.renewAdminStudioSession({ userId: 'admin-user-1', force: true });
+
+        assert.equal(result.ok, false);
+        assert.equal(result.status, 503);
+        assert.equal(fetchCount, 1);
+        assert.notEqual(sessionStorage.getItem('zaoyoe_admin_studio_session_cache_v1'), null);
     } finally {
         restore();
     }

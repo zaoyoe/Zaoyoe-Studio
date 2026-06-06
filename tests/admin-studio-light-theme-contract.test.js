@@ -3725,6 +3725,56 @@ test('admin studio shop module reserves mobile dock safe space and stacks narrow
         /#module-shop \.inventory-layout,\s*\n\s*#module-shop \.import-layout \{[\s\S]*grid-template-columns: minmax\(0, 1fr\) !important;[\s\S]*height: auto !important;/,
         'shop import and inventory layouts should collapse to one mobile column without fixed viewport height'
     );
+    assert.equal(
+        stylesSource.includes('20260606_ADMIN_STUDIO_IMPORT_LAYOUT_WIDTH_1'),
+        true,
+        'shop import layout should include the full-width desktop layout marker'
+    );
+    assert.equal(
+        stylesSource.includes('20260606_ADMIN_STUDIO_IMPORT_CATEGORY_WIDTH_2'),
+        true,
+        'shop import layout should include the wider category column marker'
+    );
+    assert.equal(
+        stylesSource.includes('20260606_ADMIN_STUDIO_IMPORT_SKU_SELECT_BREATHING_1'),
+        true,
+        'shop import layout should include the SKU select breathing marker'
+    );
+    assert.match(
+        stylesSource,
+        /\.import-layout \{[\s\S]*grid-template-columns: 400px minmax\(0, 1fr\);/,
+        'shop import layout should give the category column more desktop width'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop :is\(#shop-view-import, #shop-view-inventory\) \.shop-inventory-sku-select\.shop-custom-select \.shop-custom-select__trigger \{[\s\S]*min-height: 66px;[\s\S]*padding: 10px 16px;/,
+        'shop SKU custom select trigger should have enough vertical breathing room for two-line labels'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop :is\(#shop-view-import, #shop-view-inventory\) \.shop-inventory-sku-select\.shop-custom-select \.shop-custom-select__option-copy,[\s\S]*#module-shop :is\(#shop-view-import, #shop-view-inventory\) \.shop-inventory-sku-select\.shop-custom-select \.shop-custom-select__option-note \{[\s\S]*line-height: 1\.3;/,
+        'shop SKU custom select copy and note should use stable line-height inside selected labels'
+    );
+    assert.match(
+        stylesSource,
+        /\.import-layout \{[\s\S]*width: 100%;[\s\S]*max-width: none;[\s\S]*margin: 20px 0;[\s\S]*padding: 0;/,
+        'shop import layout should fill the shared shop stage instead of keeping the old narrow centered width'
+    );
+    assert.equal(
+        adminStudioSource.includes('importLayoutWidth=20260606_ADMIN_STUDIO_IMPORT_LAYOUT_WIDTH_1'),
+        true,
+        'admin studio should cache-bust the shop import full-width layout stylesheet update'
+    );
+    assert.equal(
+        adminStudioSource.includes('importCategoryWidth=20260606_ADMIN_STUDIO_IMPORT_CATEGORY_WIDTH_2'),
+        true,
+        'admin studio should cache-bust the shop import category column width update'
+    );
+    assert.equal(
+        adminStudioSource.includes('importSkuSelectBreathing=20260606_ADMIN_STUDIO_IMPORT_SKU_SELECT_BREATHING_1'),
+        true,
+        'admin studio should cache-bust the shop import SKU select breathing update'
+    );
     assert.match(
         stylesSource,
         /#module-shop #shop-view-inventory \.inventory-stats-row \{[\s\S]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\) !important;[\s\S]*gap: 8px !important;[\s\S]*margin-bottom: 14px !important;/,

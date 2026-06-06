@@ -554,6 +554,52 @@
         return `data-admin-action="analytics-open-destination" data-analytics-destination="analytics-content" data-analytics-context="${escapeHtml(serializedContext)}"`;
     }
 
+    function buildPaymentsWorkbenchContextFallbackState(context = {}) {
+        if (!hasWorkbenchContext(context)) {
+            return null;
+        }
+
+        const normalizedContext = normalizePaymentsContextObject(context);
+        const contextPayload = normalizePaymentsContextObject(normalizedContext.payload);
+        const contextRaw = normalizePaymentsContextObject(normalizedContext.raw);
+        const referenceValue = String(
+            normalizedContext.referenceValue
+            || contextPayload.referenceValue
+            || contextRaw.referenceValue
+            || normalizedContext.queryLabel
+            || contextPayload.queryLabel
+            || contextRaw.queryLabel
+            || normalizedContext.query
+            || contextPayload.query
+            || contextRaw.query
+            || normalizedContext.productName
+            || contextPayload.productName
+            || contextRaw.productName
+            || normalizedContext.providerOrderNo
+            || contextPayload.providerOrderNo
+            || contextRaw.providerOrderNo
+            || ''
+        ).trim();
+        const sourceLabel = String(
+            normalizedContext.sourceLabel
+            || contextPayload.sourceLabel
+            || contextRaw.sourceLabel
+            || '分析联动'
+        ).trim() || '分析联动';
+
+        return {
+            eyebrow: 'Payments Focus',
+            title: '当前来自支付联动上下文',
+            summary: referenceValue
+                ? `当前支付页已围绕“${referenceValue}”展示问题摘要、优先处理项和站外告警。`
+                : '当前支付页已接收外部联动上下文，可继续查看问题摘要、优先处理项和站外告警。',
+            chips: [
+                { label: '来源', value: sourceLabel },
+                referenceValue ? { label: '目标', value: referenceValue } : null
+            ].filter(Boolean)
+        };
+    }
+
     function buildAnalyticsIssueSummaryState(data = {}, context = state.workbenchContext) {
         if (!hasWorkbenchContext(context)) {
             return null;
@@ -1172,7 +1218,7 @@
         const contextState = window.buildOpsAlertWorkspaceAnalyticsSignalContextState?.(state.workbenchContext || {}, {
             title: '当前来自分析信号联动',
             eyebrow: 'Payments Focus'
-        }) || null;
+        }) || buildPaymentsWorkbenchContextFallbackState(state.workbenchContext || {});
 
         if (!contextState) {
             target.hidden = true;
@@ -4800,6 +4846,48 @@
         `;
     }
 
+    function renderShopProfitResolutionPlan(plan = {}) {
+        const normalizedPlan = normalizePaymentsContextObject(plan);
+        const label = String(normalizedPlan.label || '').trim();
+        const primaryAction = String(normalizedPlan.primary_action || '').trim();
+        const description = String(normalizedPlan.description || '').trim();
+        const treatment = String(normalizedPlan.settlement_treatment || '').trim();
+        const options = Array.isArray(normalizedPlan.options)
+            ? normalizedPlan.options.filter(Boolean).slice(0, 4)
+            : [];
+        const tone = normalizeShopProfitIssueTone(normalizedPlan.tone || normalizedPlan.status);
+
+        if (!label && !primaryAction && !description && !options.length) {
+            return '';
+        }
+
+        return `
+            <div class="payments-shop-profit-audit__resolution is-${escapeHtml(tone)}">
+                <div class="payments-shop-profit-audit__resolution-head">
+                    <span>处置路径</span>
+                    <strong>${escapeHtml(label || '待复核')}</strong>
+                </div>
+                ${description || primaryAction || treatment ? `
+                    <div class="payments-shop-profit-audit__resolution-copy">
+                        ${description ? `<span>${escapeHtml(description)}</span>` : ''}
+                        ${primaryAction ? `<strong>${escapeHtml(primaryAction)}</strong>` : ''}
+                        ${treatment ? `<em>${escapeHtml(treatment)}</em>` : ''}
+                    </div>
+                ` : ''}
+                ${options.length ? `
+                    <div class="payments-shop-profit-audit__resolution-options">
+                        ${options.map((option) => `
+                            <span title="${escapeHtml(option.description || '')}">
+                                <strong>${escapeHtml(option.label || option.key || '处理')}</strong>
+                                ${option.next_state ? `<em>${escapeHtml(option.next_state)}</em>` : ''}
+                            </span>
+                        `).join('')}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
     function renderShopProfitReadiness(summary = {}) {
         const readiness = normalizePaymentsContextObject(summary.profit_readiness);
         const items = Array.isArray(readiness.items) ? readiness.items.filter(Boolean).slice(0, 4) : [];
@@ -4924,6 +5012,41 @@
                                 <div class="payments-shop-profit-audit__alert-meta">
                                     ${metaParts.map((part) => `<span>${escapeHtml(part)}</span>`).join('')}
                                 </div>
+                                ${renderShopProfitResolutionPlan(alert.resolution_plan)}
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    function renderShopProfitHistoricalDisposition(summary = {}) {
+        const disposition = normalizePaymentsContextObject(summary.historical_order_disposition);
+        const lanes = Array.isArray(disposition.lanes) ? disposition.lanes.filter(Boolean).slice(0, 5) : [];
+        if (!lanes.length) return '';
+
+        const tone = normalizeShopProfitIssueTone(disposition.status);
+        return `
+            <div class="payments-shop-profit-audit__history-disposition is-${escapeHtml(tone)}" aria-label="历史风险订单收口路径">
+                <div class="payments-shop-profit-audit__history-head">
+                    <div>
+                        <strong>历史风险收口</strong>
+                        <span>旧订单按“可补齐 / 历史估算 / 不可追溯归档”分层处理，避免永久堆在新风险里</span>
+                    </div>
+                    <em>${escapeHtml(disposition.label || '待收口')} · ${escapeHtml(formatNumber(disposition.action_required_count || 0))} 项</em>
+                </div>
+                <div class="payments-shop-profit-audit__history-lanes">
+                    ${lanes.map((lane) => {
+                        const laneTone = normalizeShopProfitIssueTone(lane.tone || disposition.status);
+                        return `
+                            <div class="payments-shop-profit-audit__history-lane is-${escapeHtml(laneTone)}">
+                                <div>
+                                    <strong>${escapeHtml(lane.label || '处置项')}</strong>
+                                    <span>${escapeHtml(lane.description || '按该路径收口历史订单。')}</span>
+                                </div>
+                                <em>${escapeHtml(formatNumber(lane.count || 0))}</em>
+                                <small>${escapeHtml(lane.action_label || '继续复核')}</small>
                             </div>
                         `;
                     }).join('')}
@@ -5084,6 +5207,7 @@
                                     <span>${escapeHtml(detailParts.join(' · '))}</span>
                                     <strong>${escapeHtml(item.action_label || '复核订单利润归因')}</strong>
                                 </div>
+                                ${renderShopProfitResolutionPlan(item.resolution_plan)}
                             </div>
                         `;
                     }).join('')}
@@ -5535,6 +5659,7 @@
                 ${renderShopProfitDimensionBreakdown(summary)}
                 ${renderShopSourceProcurementRecommendations(summary)}
                 ${renderShopProfitReconciliationClosure(summary)}
+                ${renderShopProfitHistoricalDisposition(summary)}
                 ${renderShopProfitOrderRiskList(summary)}
                 ${renderShopProfitAuditAlerts(summary)}
                 ${renderShopProfitReconciliationIssues(reconciliationIssues)}

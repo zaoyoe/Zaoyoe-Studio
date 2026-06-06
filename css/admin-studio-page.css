@@ -3656,15 +3656,34 @@ body.admin-access-pending,
                         }
 
                         /* Import 2-Column Layout */
+                        /* 20260606_ADMIN_STUDIO_IMPORT_LAYOUT_WIDTH_1 */
+                        /* 20260606_ADMIN_STUDIO_IMPORT_CATEGORY_WIDTH_2 */
+                        /* 20260606_ADMIN_STUDIO_IMPORT_SKU_SELECT_BREATHING_1 */
                         .import-layout {
                             display: grid;
-                            grid-template-columns: 280px 1fr;
+                            grid-template-columns: 400px minmax(0, 1fr);
                             gap: 20px;
-                            max-width: 1200px;
-                            margin: 20px auto;
+                            width: 100%;
+                            max-width: none;
+                            margin: 20px 0;
                             height: 750px;
-                            padding: 0 20px;
+                            padding: 0;
                             box-sizing: border-box;
+                        }
+
+                        #module-shop :is(#shop-view-import, #shop-view-inventory) .shop-inventory-sku-select.shop-custom-select .shop-custom-select__trigger {
+                            min-height: 66px;
+                            padding: 10px 16px;
+                            align-items: center;
+                        }
+
+                        #module-shop :is(#shop-view-import, #shop-view-inventory) .shop-inventory-sku-select.shop-custom-select .shop-custom-select__option-main {
+                            gap: 4px;
+                        }
+
+                        #module-shop :is(#shop-view-import, #shop-view-inventory) .shop-inventory-sku-select.shop-custom-select .shop-custom-select__option-copy,
+                        #module-shop :is(#shop-view-import, #shop-view-inventory) .shop-inventory-sku-select.shop-custom-select .shop-custom-select__option-note {
+                            line-height: 1.3;
                         }
 
                         /* Mobile Import Layout */
