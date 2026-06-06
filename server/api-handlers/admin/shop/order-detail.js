@@ -11,6 +11,17 @@ const {
     buildResolvedItems,
     resolveOrderLinkageSource
 } = require('./_order-linkage');
+const {
+    buildOrderProfitAttribution
+} = require('./_profit');
+const {
+    attachProfitLedgerSyncResult,
+    syncOrderProfitLedger
+} = require('./_profit-ledger');
+const {
+    loadPointLotConsumptionsByOrderIds,
+    summarizePointLotConsumptions
+} = require('./_point-lots');
 
 function getSearchParams(req) {
     const url = new URL(req.url || '', 'http://localhost');
@@ -365,7 +376,7 @@ module.exports = async function adminShopOrderDetailHandler(req, res) {
     }
 
     try {
-        const { supabase } = await requireAdmin(req, { permission: 'shop.manage' });
+        const { supabase, user } = await requireAdmin(req, { permission: 'shop.manage' });
         const searchParams = getSearchParams(req);
         const orderId = normalizeText(searchParams.get('id') || searchParams.get('orderId'), 160);
 
@@ -387,9 +398,10 @@ module.exports = async function adminShopOrderDetailHandler(req, res) {
         const orderItemsByOrderId = await loadOrderItemsByOrderIds(supabase, [orderId]);
         const orderItems = orderItemsByOrderId.get(orderId) || [];
         const linkedInventoryIds = collectLinkedInventoryIds(order, orderItems);
-        const [profile, inventoryRecordsById, deliveryTask, ticketContext, fulfillmentCase, riskContext] = await Promise.all([
+        const [profile, inventoryRecordsById, pointLotConsumptionsByOrderId, deliveryTask, ticketContext, fulfillmentCase, riskContext] = await Promise.all([
             loadOrderProfile(supabase, normalizeText(order?.user_id, 160)),
             loadInventoryRecordsByIds(supabase, linkedInventoryIds),
+            loadPointLotConsumptionsByOrderIds(supabase, [orderId]),
             loadDeliveryTask(supabase, order),
             loadTicketContext(supabase, orderId),
             loadOpsCaseByTarget(supabase, 'fulfillment', orderId, order?.site),
@@ -398,6 +410,17 @@ module.exports = async function adminShopOrderDetailHandler(req, res) {
         const deliveryAttempts = await loadDeliveryAttempts(supabase, normalizeText(deliveryTask?.id, 160));
         const linkedInventoryItems = buildLinkedInventoryItems(order, orderItems, inventoryRecordsById);
         const resolvedItems = buildResolvedItems(order, orderItems, inventoryRecordsById);
+        const pointLotSummary = summarizePointLotConsumptions(
+            pointLotConsumptionsByOrderId.get(orderId) || [],
+            Number(order?.price_paid || order?.total_price || 0) || 0
+        );
+        const profitAttribution = buildOrderProfitAttribution(order, linkedInventoryItems, {
+            pointLotSummary
+        });
+        const profitLedgerSync = await syncOrderProfitLedger(supabase, order, profitAttribution, {
+            userId: user?.id
+        });
+        const resolvedProfitAttribution = attachProfitLedgerSyncResult(profitAttribution, profitLedgerSync);
 
         return sendJson(res, 200, {
             success: true,
@@ -408,13 +431,16 @@ module.exports = async function adminShopOrderDetailHandler(req, res) {
                 linked_inventory_ids: linkedInventoryIds,
                 linked_inventory_items: linkedInventoryItems,
                 order_item_count: orderItems.length,
-                resolved_items: resolvedItems
+                resolved_items: resolvedItems,
+                profit_attribution: resolvedProfitAttribution
             },
             payment: {
                 site: normalizeText(order?.site, 40) || 'cn',
                 item_count: Math.max(1, Number(order?.item_count || orderItems.length || 1) || 1),
                 price_paid: Number(order?.price_paid || 0) || 0,
                 total_price: Number(order?.total_price || 0) || 0,
+                discount_amount: Number(order?.discount_amount || 0) || 0,
+                discount_refund_amount: Number(order?.discount_refund_amount || 0) || 0,
                 discount_code: normalizeText(order?.discount_code, 160) || null,
                 created_at: order?.created_at || null,
                 refund_status: normalizeText(order?.refund_status, 40).toLowerCase() || 'none'
@@ -429,7 +455,8 @@ module.exports = async function adminShopOrderDetailHandler(req, res) {
                 delivery_updated_at: order?.delivery_updated_at || null
             },
             tickets: ticketContext,
-            risk: riskContext
+            risk: riskContext,
+            profit_attribution: resolvedProfitAttribution
         });
     } catch (error) {
         return sendJson(res, Number(error?.statusCode) || 500, {

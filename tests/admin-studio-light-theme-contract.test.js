@@ -2316,6 +2316,11 @@ test('admin studio has a light-theme bridge for legacy dark admin surfaces', () 
         'admin studio should cache-bust the inventory detail light modal update'
     );
     assert.equal(
+        adminStudioHtml.includes('inventoryDetailWideNotes=20260606_ADMIN_STUDIO_INVENTORY_DETAIL_WIDE_NOTES_1'),
+        true,
+        'admin studio should cache-bust the wider inventory detail notes layout'
+    );
+    assert.equal(
         stylesSource.includes('html[data-theme="light"] #module-shop #shop-view-import .tree-category-header'),
         true,
         'shop import category tree rows should get explicit light-mode surfaces and borders'
@@ -3613,6 +3618,7 @@ test('admin studio growth breakdown uses the same compact item structure in ligh
 test('admin studio shop module reserves mobile dock safe space and stacks narrow controls', () => {
     const stylesSource = readRepoFile(path.join('css', 'admin-studio-page.css'));
     const adminStudioSource = readRepoFile('admin-studio.html');
+    const adminShopSource = readRepoFile(path.join('js', 'admin-shop.js'));
 
     assert.equal(
         stylesSource.includes('20260428_ADMIN_STUDIO_SHOP_MOBILE_DOCK_SAFE_SPACE_10'),
@@ -3781,17 +3787,17 @@ test('admin studio shop module reserves mobile dock safe space and stacks narrow
     );
     assert.match(
         stylesSource,
-        /#module-shop #shop-view-inventory \.shop-table--inventory \{[\s\S]*min-width: 920px;/,
+        /#module-shop #shop-view-inventory \.shop-table--inventory \{[\s\S]*min-width: 1070px;[\s\S]*table-layout: fixed;/,
         'inventory tables should keep a deliberate horizontal scroll width on mobile'
     );
     assert.equal(
-        stylesSource.includes('#module-shop #shop-view-inventory.shop-inventory-selection-mode .shop-table--inventory {\n        min-width: 984px;'),
+        stylesSource.includes('#module-shop #shop-view-inventory.shop-inventory-selection-mode .shop-table--inventory {\n        min-width: 1134px;'),
         true,
         'inventory selection mode should reserve enough mobile table width for checkbox and buyer/order columns'
     );
     assert.match(
         stylesSource,
-        /#module-shop #shop-view-inventory \.shop-table--inventory \{[\s\S]*--shop-inventory-mobile-row-divider: rgba\(15, 23, 42, 0\.08\);[\s\S]*min-width: 920px;/,
+        /#module-shop #shop-view-inventory \.shop-table--inventory \{[\s\S]*--shop-inventory-mobile-row-divider: rgba\(15, 23, 42, 0\.08\);[\s\S]*min-width: 1070px;/,
         'inventory mobile table should define a single row divider token'
     );
     assert.match(
@@ -3813,6 +3819,26 @@ test('admin studio shop module reserves mobile dock safe space and stacks narrow
         stylesSource,
         /#module-shop #shop-view-inventory \.shop-inventory-content-chip,[\s\S]*#module-shop #shop-view-inventory \.shop-inventory-created-at,[\s\S]*#module-shop #shop-view-inventory \.shop-inventory-buyer-email,[\s\S]*#module-shop #shop-view-inventory \.shop-inventory-buyer-order \{[\s\S]*max-width: 100%;[\s\S]*overflow: hidden;[\s\S]*text-overflow: ellipsis;[\s\S]*white-space: nowrap;/,
         'inventory date and buyer/order text should stay clipped inside their mobile table cells'
+    );
+    assert.match(
+        stylesSource,
+        /#module-shop #shop-view-inventory \.shop-inventory-product-name,[\s\S]*#module-shop #shop-view-inventory \.shop-inventory-content-chip,[\s\S]*max-width: 100%;[\s\S]*min-width: 0;[\s\S]*overflow: hidden;[\s\S]*text-overflow: ellipsis;[\s\S]*white-space: nowrap;/,
+        'inventory product names should stay clipped inside their own table column'
+    );
+    assert.equal(
+        adminShopSource.includes('class="shop-inventory-product-name"'),
+        true,
+        'inventory rows should render product names in a dedicated clipping span'
+    );
+    assert.match(
+        stylesSource,
+        /#shop-view-inventory \.shop-table--inventory th:nth-child\(2\),[\s\S]*#shop-view-inventory \.shop-table--inventory td:nth-child\(2\) \{[\s\S]*width: calc\(\(100% - var\(--shop-inventory-selection-col-width\)\) \* 0\.18\);[\s\S]*overflow: hidden;[\s\S]*white-space: nowrap;/,
+        'inventory desktop product column should clip long product names before the account column'
+    );
+    assert.equal(
+        adminStudioSource.includes('inventoryProductClip=20260606_ADMIN_SHOP_INVENTORY_PRODUCT_CLIP_1'),
+        true,
+        'admin studio should cache-bust the shop inventory product clipping runtime'
     );
     assert.match(
         stylesSource,

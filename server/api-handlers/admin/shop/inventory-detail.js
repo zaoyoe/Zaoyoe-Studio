@@ -35,6 +35,42 @@ async function loadInventoryRecord(supabase, inventoryId) {
     return data || null;
 }
 
+async function loadProcurementContext(supabase, sourceBatchId) {
+    const normalizedBatchId = normalizeText(sourceBatchId, 160);
+    if (!normalizedBatchId) {
+        return {
+            procurementBatch: null,
+            inventorySource: null
+        };
+    }
+
+    const procurementBatch = await selectSingleRow(
+        supabase
+            .from('shop_procurement_batches')
+            .select('*')
+            .eq('id', normalizedBatchId)
+    );
+
+    if (!procurementBatch?.source_id) {
+        return {
+            procurementBatch,
+            inventorySource: null
+        };
+    }
+
+    const inventorySource = await selectSingleRow(
+        supabase
+            .from('shop_inventory_sources')
+            .select('*')
+            .eq('id', procurementBatch.source_id)
+    );
+
+    return {
+        procurementBatch,
+        inventorySource
+    };
+}
+
 async function loadOrderForInventory(supabase, inventoryRecord) {
     const status = normalizeText(inventoryRecord?.status, 40).toLowerCase();
     const inventoryId = normalizeText(inventoryRecord?.id, 160);
@@ -188,11 +224,14 @@ module.exports = async function adminShopInventoryDetailHandler(req, res) {
             loadHistoryItems(supabase, inventory, inventoryId, buyerId),
             loadSameOrderItems(supabase, normalizeText(order?.id, 160), inventoryId)
         ]);
+        const procurementContext = await loadProcurementContext(supabase, inventory?.source_batch_id);
 
         return sendJson(res, 200, {
             success: true,
             inventory,
             order,
+            procurementBatch: procurementContext.procurementBatch,
+            inventorySource: procurementContext.inventorySource,
             historyItems,
             sameOrderItems
         });

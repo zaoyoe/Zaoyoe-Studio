@@ -8931,12 +8931,12 @@
 
         recordResult(
             'Analytics 离开模块会 teardown realtime 订阅',
-            smokeState.analyticsRealtimeChannelsRemoved - removedBeforeLeave === 2,
+            smokeState.analyticsRealtimeChannelsRemoved - removedBeforeLeave === 3,
             `removed=${smokeState.analyticsRealtimeChannelsRemoved - removedBeforeLeave}`
         );
         recordResult(
-            'Analytics 返回模块会重新建立单份订阅',
-            smokeState.analyticsRealtimeChannelsCreated - createdBeforeReturn === 2,
+            'Analytics 返回模块会重新建立单组订阅',
+            smokeState.analyticsRealtimeChannelsCreated - createdBeforeReturn === 3,
             `created=${smokeState.analyticsRealtimeChannelsCreated - createdBeforeReturn}`
         );
 

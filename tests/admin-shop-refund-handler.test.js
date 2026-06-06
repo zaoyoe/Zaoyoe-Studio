@@ -52,6 +52,7 @@ function createShopOrdersQueryMock(state) {
 
 async function withShopRefundHandler(options, callback) {
     const handlerPath = path.resolve(__dirname, '../server/api-handlers/admin/payments/shop-refund.js');
+    const refundLibPath = path.resolve(__dirname, '../api/_lib/shop/admin-refunds.js');
     const originalLoad = Module._load;
     const state = {
         order: options.order || null,
@@ -61,10 +62,12 @@ async function withShopRefundHandler(options, callback) {
         fromCalls: [],
         rpcCalls: [],
         auditCalls: [],
-        notifications: []
+        notifications: [],
+        profitLedgerSyncCalls: []
     };
 
     delete require.cache[handlerPath];
+    delete require.cache[refundLibPath];
     Module._load = function patchedLoad(request, parent, isMain) {
         if (request === '../../../../api/_lib/admin') {
             return {
@@ -109,6 +112,22 @@ async function withShopRefundHandler(options, callback) {
             };
         }
 
+        if (request === '../../../server/api-handlers/admin/shop/_profit-ledger') {
+            return {
+                async safeSyncOrderProfitLedgerByOrderId(supabase, orderId, options = {}) {
+                    state.profitLedgerSyncCalls.push({
+                        orderId,
+                        options
+                    });
+                    return {
+                        source: 'persisted',
+                        synced: true,
+                        status: 'settled'
+                    };
+                }
+            };
+        }
+
         return originalLoad.call(this, request, parent, isMain);
     };
 
@@ -123,6 +142,7 @@ async function withShopRefundHandler(options, callback) {
         return await callback({ handler, state });
     } finally {
         delete require.cache[handlerPath];
+        delete require.cache[refundLibPath];
     }
 }
 
@@ -222,6 +242,14 @@ test('shop refund handler proxies rpc refund through admin api and writes audit 
         assert.equal(state.notifications[0].category, 'refund_status');
         assert.equal(state.notifications[0].metadata.event_type, 'refund_status');
         assert.equal(state.notifications[0].source_event_id, 'refund_status:order_2:refunded');
+        assert.equal(state.profitLedgerSyncCalls.length, 1);
+        assert.deepEqual(state.profitLedgerSyncCalls[0], {
+            orderId: 'order_2',
+            options: {
+                userId: 'admin_1',
+                reason: 'shop_refund_success'
+            }
+        });
     });
 });
 
@@ -257,5 +285,6 @@ test('shop refund handler short-circuits duplicate refunds before rpc and audit 
         assert.equal(res.json().duplicate, true);
         assert.equal(state.rpcCalls.length, 0);
         assert.equal(state.auditCalls.length, 0);
+        assert.equal(state.profitLedgerSyncCalls.length, 0);
     });
 });

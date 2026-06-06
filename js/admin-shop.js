@@ -317,6 +317,11 @@ const ShopAdmin = {
     importSkuInventoryRequestToken: 0,
     productSkuCache: new Map(),
     inventoryPage: 1,
+    procurementOverviewData: null,
+    procurementOverviewSite: '',
+    procurementOverviewFilters: {},
+    procurementOverviewCacheKey: '',
+    procurementOverviewRequestToken: 0,
     ordersPage: 1,
     focusedOrderId: '',
     currentOrderDetailId: '',
@@ -1005,6 +1010,31 @@ Example output format:
 
         if (!response.ok || !payload.success) {
             throw new Error(payload.message || '库存列表加载失败');
+        }
+
+        return payload;
+    },
+
+    loadProcurementOverviewViaAdminApi: async function (params = {}) {
+        const site = params.site || window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+        const filters = this.normalizeProcurementOverviewFilters(params.filters || {});
+        const response = await (window.AdminApi?.fetch || fetch)(
+            this.buildAdminShopUrl('shop/procurement', {
+                site,
+                limit: params.limit || 1000,
+                ...filters
+            }),
+            { credentials: 'include' }
+        );
+        const payload = await response.json().catch(() => ({}));
+
+        if (!response.ok || !payload.success) {
+            const error = new Error(payload.message || '采购概览加载失败');
+            error.status = response.status;
+            error.code = payload.code || '';
+            error.details = payload.details || '';
+            error.hint = payload.hint || '';
+            throw error;
         }
 
         return payload;
@@ -3038,6 +3068,113 @@ Example output format:
         }
     },
 
+    toggleInventorySourcePanel: function (trigger) {
+        if (!trigger) {
+            return;
+        }
+
+        const panel = trigger.closest?.('.shop-import-source-panel');
+        const bodyId = String(trigger.getAttribute?.('aria-controls') || '').trim();
+        const body = bodyId
+            ? document.getElementById(bodyId)
+            : panel?.querySelector?.('.shop-import-source-panel__body');
+
+        if (!panel || !body) {
+            return;
+        }
+
+        const expanded = trigger.getAttribute('aria-expanded') === 'true';
+        const nextExpanded = !expanded;
+        trigger.setAttribute('aria-expanded', nextExpanded ? 'true' : 'false');
+        body.hidden = !nextExpanded;
+        panel.classList.toggle('is-open', nextExpanded);
+        if (nextExpanded) {
+            this.enhanceInventorySourceDateTimeControls(panel);
+        }
+    },
+
+    parseInventorySourceDateTimeValue: function (rawValue = '') {
+        const value = String(rawValue || '').trim();
+        if (!value) {
+            return null;
+        }
+
+        const normalizedValue = value.replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})(?::\d{2})?$/, '$1T$2');
+        const parsedTime = Date.parse(normalizedValue);
+        if (!Number.isFinite(parsedTime)) {
+            return null;
+        }
+        return new Date(parsedTime);
+    },
+
+    initInventorySourceDateTimePickers: async function (root = document) {
+        const scope = root instanceof Element || root === document ? root : document;
+        if (!window.flatpickr && typeof window.ensureAdminFlatpickr === 'function') {
+            try {
+                await window.ensureAdminFlatpickr();
+            } catch (error) {
+                console.error('[ShopAdmin] Failed to load import source datetime picker:', error);
+                return;
+            }
+        }
+
+        if (!window.flatpickr) {
+            return;
+        }
+
+        const inputs = Array.from(scope.querySelectorAll?.('[data-shop-source-datetime-picker]') || []);
+        const config = {
+            locale: window.flatpickr?.l10ns?.zh || 'zh',
+            enableTime: true,
+            time_24hr: true,
+            minuteIncrement: 1,
+            dateFormat: 'Y-m-d H:i',
+            monthSelectorType: 'static',
+            allowInput: false,
+            clickOpens: true,
+            disableMobile: true,
+            onReady: (_selectedDates, _dateStr, instance) => {
+                instance.calendarContainer?.classList.add('shop-import-source-datetime-calendar');
+            },
+            onOpen: (_selectedDates, _dateStr, instance) => {
+                instance.calendarContainer?.classList.add('shop-import-source-datetime-calendar');
+            }
+        };
+
+        inputs.forEach((input) => {
+            if (!(input instanceof HTMLInputElement)) {
+                return;
+            }
+            const currentValue = input.value || '';
+            const currentDate = this.parseInventorySourceDateTimeValue(currentValue);
+            if (input._flatpickr) {
+                if (currentDate) {
+                    input._flatpickr.setDate(currentDate, false);
+                }
+                return;
+            }
+            const picker = window.flatpickr(input, config);
+            if (currentDate) {
+                picker.setDate(currentDate, false);
+            }
+        });
+    },
+
+    openInventorySourceDateTimePicker: async function (inputId) {
+        const input = document.getElementById(String(inputId || '').trim());
+        if (!(input instanceof HTMLInputElement)) {
+            return;
+        }
+
+        await this.initInventorySourceDateTimePickers(input.closest('[data-shop-source-panel]') || document);
+        input._flatpickr?.open();
+    },
+
+    enhanceInventorySourceDateTimeControls: function (root = document) {
+        const scope = root instanceof Element || root === document ? root : document;
+        void this.initInventorySourceDateTimePickers(scope);
+    },
+
     bindDelegatedHandlers: function () {
         if (this.delegatedHandlersBound) {
             return;
@@ -3159,6 +3296,50 @@ Example output format:
                     break;
                 case 'inventory-import-from-view':
                     this.doImportFromView(actionEl);
+                    break;
+                case 'inventory-source-toggle':
+                    event.preventDefault();
+                    this.toggleInventorySourcePanel(actionEl);
+                    break;
+                case 'inventory-source-datetime-open':
+                    event.preventDefault();
+                    void this.openInventorySourceDateTimePicker(actionEl.dataset.dateInputId);
+                    break;
+                case 'procurement-refresh':
+                    event.preventDefault();
+                    this.loadProcurementOverview({ force: true });
+                    break;
+                case 'procurement-filter-apply':
+                    event.preventDefault();
+                    this.applyProcurementOverviewFilters();
+                    break;
+                case 'procurement-filter-reset':
+                    event.preventDefault();
+                    this.resetProcurementOverviewFilters();
+                    break;
+                case 'procurement-date-open':
+                    event.preventDefault();
+                    void this.openProcurementDatePicker(actionEl.dataset.dateInputId);
+                    break;
+                case 'procurement-quality-open':
+                    event.preventDefault();
+                    this.openProcurementQualityModal(actionEl.dataset.procurementBatchId);
+                    break;
+                case 'procurement-quality-close':
+                    event.preventDefault();
+                    this.closeDynamicModal(actionEl.dataset.modalId || 'procurementQualityModal');
+                    break;
+                case 'procurement-quality-option':
+                    event.preventDefault();
+                    this.selectProcurementQualityStatus(actionEl);
+                    break;
+                case 'procurement-quality-adopt-auto':
+                    event.preventDefault();
+                    this.applyProcurementAutoQualitySuggestion(actionEl);
+                    break;
+                case 'procurement-quality-submit':
+                    event.preventDefault();
+                    this.submitProcurementQuality(actionEl);
                     break;
                 case 'import-view-open-inventory':
                     this.openInventoryFromImportView(actionEl);
@@ -8728,10 +8909,11 @@ Example output format:
                     const statusMeta = this.getInventoryStatusMeta(item.status);
                     const content = this.truncateText(String(item.content || ''), 48);
                     const createdAt = item.created_at ? new Date(item.created_at).toLocaleString('zh-CN') : '-';
+                    const procurementMeta = this.getInventoryProcurementMetaText(item);
                     return `
                         <div class="shop-import-inventory-overview__item">
                             <span class="shop-import-inventory-overview__item-content">${this.escapeHtml(content || '无内容')}</span>
-                            <span class="shop-import-inventory-overview__item-meta">${this.escapeHtml(statusMeta.label || item.status || '-')} · ${this.escapeHtml(createdAt)}</span>
+                            <span class="shop-import-inventory-overview__item-meta">${this.escapeHtml(statusMeta.label || item.status || '-')} · ${this.escapeHtml(createdAt)} · ${this.escapeHtml(procurementMeta)}</span>
                         </div>
                     `;
                 }).join('')
@@ -9085,10 +9267,67 @@ Example output format:
             (date.getMonth() + 1).toString().padStart(2, '0') +
             date.getDate().toString().padStart(2, '0') +
             date.getHours().toString().padStart(2, '0') +
-            date.getMinutes().toString().padStart(2, '0');
+            date.getMinutes().toString().padStart(2, '0') +
+            date.getSeconds().toString().padStart(2, '0') +
+            date.getMilliseconds().toString().padStart(3, '0');
     },
 
-    performInventoryImport: async function ({ productId, skuId = '', contentLines, status = 'available', batchId = '' } = {}) {
+    getInventoryProcurementFieldPrefix: function (scope = 'importView') {
+        return scope === 'modal' || scope === 'importModal' ? 'importModal' : 'importView';
+    },
+
+    readInventoryProcurementInput: function (prefix, suffix) {
+        return String(document.getElementById(`${prefix}${suffix}`)?.value || '').trim();
+    },
+
+    buildInventoryProcurementPayload: function (scope = 'importView') {
+        const prefix = this.getInventoryProcurementFieldPrefix(scope);
+        const sourceName = this.readInventoryProcurementInput(prefix, 'SourceName');
+        const sourceUrl = this.readInventoryProcurementInput(prefix, 'SourceUrl');
+        const unitCost = this.readInventoryProcurementInput(prefix, 'SourceUnitCost');
+        const currency = this.readInventoryProcurementInput(prefix, 'SourceCurrency') || 'CNY';
+        const exchangeRate = this.readInventoryProcurementInput(prefix, 'SourceExchangeRate');
+        const purchasedAtRaw = this.readInventoryProcurementInput(prefix, 'SourcePurchasedAt');
+        const sourceTags = this.readInventoryProcurementInput(prefix, 'SourceTags');
+        const proofUrl = this.readInventoryProcurementInput(prefix, 'SourceProofUrl');
+        const notes = this.readInventoryProcurementInput(prefix, 'SourceNotes');
+        const hasMeaningfulPayload = Boolean(
+            sourceName
+            || sourceUrl
+            || unitCost
+            || sourceTags
+            || proofUrl
+            || notes
+            || purchasedAtRaw
+        );
+
+        if (!hasMeaningfulPayload) {
+            return null;
+        }
+
+        let purchasedAt = '';
+        if (purchasedAtRaw) {
+            const parsedDate = this.parseInventorySourceDateTimeValue(purchasedAtRaw);
+            if (!parsedDate) {
+                throw new Error('采购时间格式无效');
+            }
+            purchasedAt = parsedDate.toISOString();
+        }
+
+        return {
+            sourceName,
+            sourceUrl,
+            unitCost,
+            currency,
+            exchangeRateToCny: exchangeRate || '1',
+            purchasedAt,
+            sourceTags,
+            proofUrl,
+            notes
+        };
+    },
+
+    performInventoryImport: async function ({ productId, skuId = '', contentLines, status = 'available', batchId = '', procurement = null } = {}) {
         const lines = Array.isArray(contentLines)
             ? contentLines.map((line) => String(line || '').trim()).filter(Boolean)
             : [];
@@ -9108,19 +9347,52 @@ Example output format:
             throw new Error('请输入有效的账号内容');
         }
 
-        const result = await this.callAdminMutation('import_inventory', {
+        const mutationPayload = {
             productId: resolvedProductId,
             skuId: String(skuId || '').trim(),
             lines,
             importStatus: String(status || 'available').trim() || 'available',
             batchId: resolvedBatchId
-        });
+        };
+
+        if (procurement && typeof procurement === 'object') {
+            mutationPayload.procurement = procurement;
+        }
+
+        const result = await this.callAdminMutation('import_inventory', mutationPayload);
 
         return {
             batchId: resolvedBatchId,
             imported: this.normalizeInventoryStockCount(result?.imported) || lines.length,
-            stockCount: this.normalizeInventoryStockCount(result?.stockCount)
+            stockCount: this.normalizeInventoryStockCount(result?.stockCount),
+            sourceBatchId: result?.sourceBatchId || result?.procurementBatch?.id || null,
+            procurementBatch: result?.procurementBatch || null,
+            inventorySource: result?.inventorySource || null,
+            procurementWarning: result?.procurementWarning || result?.sourceWarning || null
         };
+    },
+
+    getProcurementImportWarningMessage: function (warning = {}) {
+        const message = String(warning?.message || '').trim();
+        if (message) {
+            return message;
+        }
+        if (warning?.type === 'source_previously_disabled') {
+            return '该货源曾被标记为“停用”，本次导入已继续保存，请管理员复核后再继续采购。';
+        }
+        return '';
+    },
+
+    notifyProcurementImportWarning: function (warning = {}) {
+        const message = this.getProcurementImportWarningMessage(warning);
+        if (!message) {
+            return;
+        }
+        this.showActionToast(message, 'warning', { durationMs: 8000 });
+        this.emitCommandFeedback(message, 'saved', {
+            source: 'shop-inventory',
+            tone: 'warning'
+        });
     },
 
     // ==================== Orders (Fix FK Issue) ====================
@@ -13450,7 +13722,7 @@ Example output format:
                     : (this.orderDeliveryStatusFilter !== 'all'
                         ? `当前筛选下暂无匹配的履约问题订单`
                         : '无数据 - 请检查订单号是否正确');
-                tbody.innerHTML = `<tr><td colspan="6" class="text-center">${this.escapeHtml(issueFocusLabel)}</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="7" class="text-center">${this.escapeHtml(issueFocusLabel)}</td></tr>`;
                 this.renderOrderIssueSummary([], { totalCount: 0 });
                 this.renderOrderUserFlowSummary([], { totalCount: 0, loading: false });
                 this.renderPagination('ordersPagination', page, count || 0, this.pageSize, 'searchOrders');
@@ -13466,15 +13738,16 @@ Example output format:
                 const date = new Date(order.created_at).toLocaleString();
                 // Get user info from map
                 const user = order.profiles || {};
+                const orderUserId = String(order.user_id || '').trim();
                 const userName = user.username || 'Unknown';
-                const userEmail = user.email || order.user_id.substring(0, 8) + '...';
+                const userEmail = user.email || (orderUserId ? `${orderUserId.slice(0, 8)}...` : 'Unknown');
                 const userAvatar = user.avatar_url
                     ? user.avatar_url
                     : `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(userName)}&backgroundColor=6b9ece`;
                 const safeUserName = this.escapeHtml(userName);
                 const safeUserEmail = this.escapeHtml(userEmail);
                 const safeUserAvatar = this.escapeHtml(userAvatar);
-                const safeOrderUserId = this.escapeHtml(order.user_id || '');
+                const safeOrderUserId = this.escapeHtml(orderUserId);
                 const safeDate = this.escapeHtml(date);
 
                 // Two-line layout like user management page
@@ -13517,7 +13790,8 @@ Example output format:
                     <td data-label="用户" title="${safeOrderUserId}">${userDisplay}</td>
                     <td data-label="订单时间">${safeDate}</td>
                     <td data-label="商品">${this.escapeHtml(productName)}</td>
-                    <td data-label="支付积分">${order.total_price || order.price_paid}</td>
+                    <td data-label="支付积分">${this.escapeHtml(this.formatShopPointAmount(order.price_paid ?? order.total_price ?? 0, '0'))}</td>
+                    <td data-label="净利润">${this.renderOrderProfitCell(order.profit_attribution)}</td>
                     <td data-label="发货状态">${status}</td>
                     <td data-label="操作" data-shop-action="order-actions-stop">
                         ${(order.refund_status !== 'refunded' && order.refund_status !== 'full_refund') ?
@@ -13570,7 +13844,7 @@ Example output format:
             }
             this.renderOrderIssueSummary([], { totalCount: 0 });
             this.renderOrderUserFlowSummary([], { totalCount: 0, loading: false });
-            tbody.innerHTML = `<tr><td colspan="6" class="text-danger">Error: ${this.escapeHtml(err.message)}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="7" class="text-danger">Error: ${this.escapeHtml(err.message)}</td></tr>`;
             return { opened: false, matched: false, error: err };
         }
     },
@@ -13608,6 +13882,181 @@ Example output format:
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) return '—';
         return date.toLocaleString('zh-CN');
+    },
+
+    formatShopPointAmount: function (value, emptyText = '—') {
+        const amount = Number(value);
+        if (!Number.isFinite(amount)) return emptyText;
+        return amount.toLocaleString('zh-CN', {
+            minimumFractionDigits: amount > 0 && amount < 1 ? 2 : 0,
+            maximumFractionDigits: 2
+        });
+    },
+
+    formatShopProfitCny: function (value, emptyText = '—') {
+        if (typeof this.formatProcurementCny === 'function') {
+            return this.formatProcurementCny(value, emptyText);
+        }
+        const amount = Number(value);
+        if (!Number.isFinite(amount)) return emptyText;
+        return `¥${amount.toLocaleString('zh-CN', {
+            minimumFractionDigits: amount > 0 && amount < 1 ? 4 : 2,
+            maximumFractionDigits: 4
+        })}`;
+    },
+
+    formatShopProfitPercent: function (value) {
+        const rate = Number(value);
+        if (!Number.isFinite(rate)) return '—';
+        return `${(rate * 100).toLocaleString('zh-CN', {
+            minimumFractionDigits: 1,
+            maximumFractionDigits: 1
+        })}%`;
+    },
+
+    getShopProfitCoverageLabel: function (coverage) {
+        const normalized = String(coverage || '').trim().toLowerCase();
+        const labels = {
+            complete: '成本完整',
+            partial: '部分缺成本',
+            no_cost: '缺少成本',
+            no_inventory: '未关联库存'
+        };
+        return labels[normalized] || '待核对';
+    },
+
+    getShopProfitTone: function (profit = {}) {
+        const tone = String(profit?.tone || '').trim().toLowerCase();
+        if (tone === 'refunded') return 'refunded';
+        if (tone === 'loss') return 'loss';
+        if (tone === 'profit') return 'profit';
+        return 'neutral';
+    },
+
+    getPointSourceTraceabilityLabel: function (traceability = {}) {
+        const status = String(traceability?.status || '').trim().toLowerCase();
+        if (traceability?.label) return String(traceability.label);
+        const labels = {
+            source_lot_exact: '来源批次完整',
+            partial_lot_gap: '部分缺来源批次',
+            balance_split_only: '仅余额拆分',
+            balance_split_gap: '余额拆分不完整',
+            legacy_untracked: '历史未拆分',
+            empty: '无需追踪'
+        };
+        return labels[status] || '来源待核对';
+    },
+
+    getPointSourceTraceabilityTone: function (traceability = {}) {
+        const tone = String(traceability?.tone || '').trim().toLowerCase();
+        if (['ready', 'warning', 'info', 'neutral'].includes(tone)) return tone;
+        const status = String(traceability?.status || '').trim().toLowerCase();
+        if (status === 'source_lot_exact') return 'ready';
+        if (status === 'partial_lot_gap' || status === 'balance_split_gap' || status === 'legacy_untracked') return 'warning';
+        if (status === 'balance_split_only') return 'info';
+        return 'neutral';
+    },
+
+    renderOrderProfitCell: function (profit = {}) {
+        if (!profit || typeof profit !== 'object') {
+            return '<span class="shop-order-profit-cell shop-order-profit-cell--neutral">—</span>';
+        }
+
+        const tone = this.getShopProfitTone(profit);
+        const coverage = this.getShopProfitCoverageLabel(profit.cost_coverage);
+        const traceability = profit.point_source_traceability || {};
+        const traceabilityLabel = this.getPointSourceTraceabilityLabel(traceability);
+        const traceabilityTone = this.getPointSourceTraceabilityTone(traceability);
+        const netProfit = this.escapeHtml(this.formatShopProfitCny(profit.net_profit_cny));
+        const cost = this.escapeHtml(this.formatShopProfitCny(profit.recognized_cost_cny ?? profit.purchase_cost_cny));
+        const badge = profit.refunded
+            ? '已退款'
+            : coverage;
+
+        return `
+            <div class="shop-order-profit-cell shop-order-profit-cell--${tone}">
+                <strong>${netProfit}</strong>
+                <span>成本 ${cost}</span>
+                <em>${this.escapeHtml(badge)}</em>
+                <em class="shop-order-profit-cell__trace shop-order-profit-cell__trace--${traceabilityTone}">${this.escapeHtml(traceabilityLabel)}</em>
+            </div>
+        `;
+    },
+
+    renderOrderProfitDetailSection: function (profit = {}, payment = {}, order = {}) {
+        const safeProfit = profit && typeof profit === 'object' ? profit : {};
+        const tone = this.getShopProfitTone(safeProfit);
+        const notes = Array.isArray(safeProfit.notes) ? safeProfit.notes.filter(Boolean) : [];
+        const itemCosts = Array.isArray(safeProfit.item_costs) ? safeProfit.item_costs.filter(Boolean) : [];
+        const coverageLabel = this.getShopProfitCoverageLabel(safeProfit.cost_coverage);
+        const netProfit = this.formatShopProfitCny(safeProfit.net_profit_cny);
+        const recognizedRevenue = this.formatShopProfitCny(safeProfit.recognized_revenue_cny);
+        const recognizedCost = this.formatShopProfitCny(safeProfit.recognized_cost_cny);
+        const purchaseCost = this.formatShopProfitCny(safeProfit.purchase_cost_cny);
+        const discountPoints = this.formatShopPointAmount(safeProfit.discount_points || payment?.discount_amount || 0, '0');
+        const revenuePoints = this.formatShopPointAmount(safeProfit.revenue_points ?? payment?.price_paid ?? order?.price_paid ?? 0, '0');
+        const grossPoints = this.formatShopPointAmount(safeProfit.gross_points ?? payment?.total_price ?? order?.total_price ?? 0, '0');
+        const refundedPoints = this.formatShopPointAmount(safeProfit.refunded_points || 0, '0');
+        const hasSpendBreakdown = safeProfit.paid_points_spent !== null
+            && safeProfit.paid_points_spent !== undefined
+            && safeProfit.bonus_points_spent !== null
+            && safeProfit.bonus_points_spent !== undefined;
+        const paidSpendPoints = hasSpendBreakdown
+            ? this.formatShopPointAmount(safeProfit.paid_points_spent, '0')
+            : '未追踪';
+        const bonusSpendPoints = hasSpendBreakdown
+            ? this.formatShopPointAmount(safeProfit.bonus_points_spent, '0')
+            : '未追踪';
+        const untrackedSpendPoints = this.formatShopPointAmount(safeProfit.untracked_revenue_points || 0, '0');
+        const recognitionLabel = String(safeProfit.revenue_recognition_status || '').trim() === 'exact'
+            ? '精确拆分'
+            : (hasSpendBreakdown ? '部分拆分' : '历史估算');
+        const traceability = safeProfit.point_source_traceability || {};
+        const traceabilityLabel = this.getPointSourceTraceabilityLabel(traceability);
+        const traceabilityTone = this.getPointSourceTraceabilityTone(traceability);
+        const sourceLotPoints = this.formatShopPointAmount(traceability.source_lot_points || 0, '0');
+        const traceabilityDetail = traceability.description
+            ? String(traceability.description)
+            : (traceability.action_label || '当前订单暂无额外来源追踪提示。');
+        const itemCostMarkup = itemCosts.length
+            ? itemCosts.map((item) => `
+                <div class="shop-order-profit-cost-row shop-order-profit-cost-row--${item.cost_status === 'costed' ? 'costed' : 'missing'}">
+                    <span>${this.escapeHtml(item.product_name || this.shortenDeliveryToken(item.inventory_id || '', 8, 4) || '库存')}</span>
+                    <strong>${this.escapeHtml(item.cost_status === 'costed' ? this.formatShopProfitCny(item.purchase_unit_cost_cny) : '缺成本')}</strong>
+                    <em>${this.escapeHtml(item.source_batch_id ? `批次 ${this.shortenDeliveryToken(item.source_batch_id, 8, 4)}` : '未记录批次')}</em>
+                </div>
+            `).join('')
+            : '<div class="shop-order-detail-empty-inline">当前订单没有可用于成本归因的库存记录。</div>';
+        const notesMarkup = notes.length
+            ? notes.map((note) => `<div class="shop-order-profit-note">${this.escapeHtml(note)}</div>`).join('')
+            : '<div class="shop-order-profit-note">当前订单暂无额外对账提示。</div>';
+
+        return `
+            <div class="shop-order-detail-section shop-order-detail-section--profit shop-order-detail-section--profit-${tone}">
+                <div class="shop-order-detail-section__header">
+                    <div class="shop-order-detail-section__title"><i class="fas fa-scale-balanced"></i> 利润与对账</div>
+                    <div class="shop-order-detail-hero__pills">
+                        ${this.renderDeliveryMetaBadge('运营估算', 'neutral')}
+                        ${this.renderDeliveryMetaBadge(coverageLabel, safeProfit.cost_coverage === 'complete' ? 'success' : 'warn')}
+                    </div>
+                </div>
+                <div class="shop-order-profit-summary">
+                    <div class="shop-order-profit-summary__primary shop-order-profit-summary__primary--${tone}">
+                        <span>净利润</span>
+                        <strong>${this.escapeHtml(netProfit)}</strong>
+                        <em>毛利率 ${this.escapeHtml(this.formatShopProfitPercent(safeProfit.margin_rate))}</em>
+                    </div>
+                    <div><span>确认收入</span><strong>${this.escapeHtml(recognizedRevenue)}</strong><em>${this.escapeHtml(revenuePoints)} 积分</em></div>
+                    <div><span>确认成本</span><strong>${this.escapeHtml(recognizedCost)}</strong><em>采购成本 ${this.escapeHtml(purchaseCost)}</em></div>
+                    <div><span>积分来源</span><strong>付费 ${this.escapeHtml(paidSpendPoints)} / 奖励 ${this.escapeHtml(bonusSpendPoints)}</strong><em>${this.escapeHtml(recognitionLabel)} · 未拆分 ${this.escapeHtml(untrackedSpendPoints)}</em></div>
+                    <div class="shop-order-profit-summary__trace shop-order-profit-summary__trace--${traceabilityTone}"><span>追踪状态</span><strong>${this.escapeHtml(traceabilityLabel)}</strong><em>批次 ${this.escapeHtml(sourceLotPoints)} 积分 · ${this.escapeHtml(traceabilityDetail)}</em></div>
+                    <div><span>优惠影响</span><strong>${this.escapeHtml(discountPoints)} 积分</strong><em>原价 ${this.escapeHtml(grossPoints)} 积分</em></div>
+                    <div><span>退款影响</span><strong>${this.escapeHtml(refundedPoints)} 积分</strong><em>${safeProfit.refunded ? '收入与成本已冲回' : '未退款'}</em></div>
+                </div>
+                <div class="shop-order-profit-cost-list">${itemCostMarkup}</div>
+                <div class="shop-order-profit-notes">${notesMarkup}</div>
+            </div>
+        `;
     },
 
     getOrderRefundStatusBadge: function (order = {}) {
@@ -13869,6 +14318,7 @@ Example output format:
         const fulfillment = payload?.fulfillment || {};
         const tickets = payload?.tickets || {};
         const risk = payload?.risk || {};
+        const profitAttribution = payload?.profit_attribution || order?.profit_attribution || {};
         const user = order?.profiles || {};
         const orderId = String(order?.id || '').trim();
         const deliveryTask = fulfillment?.task || null;
@@ -13971,6 +14421,7 @@ Example output format:
             taskForActions ? this.getDeliveryLockBadge(taskForActions) : '',
             fulfillment?.case ? this.getOrderCaseStatusBadge(fulfillment.case.status) : ''
         ].filter(Boolean).join('');
+        const profitMarkup = this.renderOrderProfitDetailSection(profitAttribution, payment, order);
 
         return `
             <div class="shop-order-content-modal shop-order-detail-modal custom-scrollbar">
@@ -14004,7 +14455,7 @@ Example output format:
                             <div class="shop-order-detail-hero__pills">${heroPills}</div>
                             <div class="shop-order-detail-hero__stats">
                                 <div class="shop-order-detail-stat"><span>下单时间</span><strong>${this.escapeHtml(this.formatOrderDetailTime(order?.created_at))}</strong></div>
-                                <div class="shop-order-detail-stat"><span>支付积分</span><strong>${this.escapeHtml(String(payment?.total_price || order?.total_price || order?.price_paid || 0))}</strong></div>
+                                <div class="shop-order-detail-stat"><span>支付积分</span><strong>${this.escapeHtml(this.formatShopPointAmount(payment?.price_paid ?? order?.price_paid ?? order?.total_price ?? 0, '0'))}</strong></div>
                                 <div class="shop-order-detail-stat"><span>退款状态</span><strong>${refundBadge}</strong></div>
                                 <div class="shop-order-detail-stat"><span>履约状态</span><strong>${deliveryBadge}</strong></div>
                             </div>
@@ -14049,6 +14500,8 @@ Example output format:
                             </div>
                         </div>
                     </div>
+
+                    ${profitMarkup}
 
                     <div class="shop-order-detail-grid shop-order-detail-grid--secondary">
                         <div class="shop-order-detail-section">
@@ -14620,6 +15073,1016 @@ Example output format:
     },
 
 
+    getProcurementQualityMeta: function (status) {
+        const normalized = String(status || '').trim().toLowerCase() || 'unverified';
+        const metas = {
+            accepted: { label: '稳定', tone: 'accepted', icon: 'fa-check-circle' },
+            watch: { label: '观察', tone: 'watch', icon: 'fa-eye' },
+            rejected: { label: '停用', tone: 'rejected', icon: 'fa-ban' },
+            unverified: { label: '待验证', tone: 'unverified', icon: 'fa-clock' }
+        };
+
+        return metas[normalized] || {
+            label: status || '未知',
+            tone: 'unknown',
+            icon: 'fa-circle'
+        };
+    },
+
+    formatProcurementCount: function (value) {
+        const count = Number(value);
+        if (!Number.isFinite(count)) {
+            return '0';
+        }
+        return Math.round(count).toLocaleString('zh-CN');
+    },
+
+    formatProcurementCny: function (value, emptyText = '-') {
+        const amount = Number(value);
+        if (!Number.isFinite(amount)) {
+            return emptyText;
+        }
+        return `¥${amount.toLocaleString('zh-CN', {
+            minimumFractionDigits: amount > 0 && amount < 1 ? 4 : 2,
+            maximumFractionDigits: 4
+        })}`;
+    },
+
+    formatProcurementDate: function (value) {
+        if (!value) {
+            return '-';
+        }
+
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) {
+            return '-';
+        }
+
+        return date.toLocaleString('zh-CN');
+    },
+
+    getProcurementSafeHref: function (value) {
+        const rawUrl = String(value || '').trim();
+        if (!rawUrl) {
+            return '';
+        }
+
+        try {
+            const parsed = new URL(rawUrl, window.location.origin);
+            if (!['http:', 'https:'].includes(parsed.protocol)) {
+                return '';
+            }
+            return parsed.toString();
+        } catch (_error) {
+            return '';
+        }
+    },
+
+    renderProcurementOverviewLoading: function (container = document.getElementById('shopProcurementOverview')) {
+        if (!container) {
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="shop-procurement-overview__header">
+                <div class="shop-procurement-overview__title">
+                    <i class="fas fa-chart-line"></i>
+                    <span>采购记录与成本质量</span>
+                </div>
+                <button type="button" class="shop-procurement-overview__refresh" data-shop-action="procurement-refresh" title="刷新采购概览">
+                    <i class="fas fa-sync-alt fa-spin"></i>
+                </button>
+            </div>
+            <div class="shop-procurement-overview__metrics">
+                ${Array.from({ length: 4 }).map(() => `
+                    <div class="shop-procurement-overview__metric shop-procurement-overview__metric--skeleton">
+                        <span></span>
+                        <strong></strong>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    },
+
+    renderProcurementQualityChips: function (qualityBreakdown = []) {
+        const entries = Array.isArray(qualityBreakdown) ? qualityBreakdown : [];
+        if (!entries.length) {
+            return '<div class="shop-procurement-overview__empty">暂无质量记录</div>';
+        }
+
+        return entries.map((entry) => {
+            const meta = this.getProcurementQualityMeta(entry.status || entry.quality_status);
+            const tone = String(entry.tone || meta.tone || 'unknown').replace(/[^a-z0-9_-]/gi, '') || 'unknown';
+            const label = this.escapeHtml(entry.label || meta.label);
+            const batchCount = this.escapeHtml(this.formatProcurementCount(entry.batchCount));
+            const importedCount = this.escapeHtml(this.formatProcurementCount(entry.importedCount));
+            const percentage = Number(entry.percentage);
+            const safePercentage = Number.isFinite(percentage) ? `${percentage}%` : '0%';
+            const costText = this.escapeHtml(this.formatProcurementCny(entry.totalCostCny, '¥0.00'));
+            return `
+                <div class="shop-procurement-quality-chip shop-procurement-quality-chip--${tone}">
+                    <span class="shop-procurement-quality-chip__label"><i class="fas ${meta.icon}"></i> ${label}</span>
+                    <strong>${batchCount} 批</strong>
+                    <span>${importedCount} 件 · ${costText} · ${this.escapeHtml(safePercentage)}</span>
+                </div>
+            `;
+        }).join('');
+    },
+
+    formatProcurementPercent: function (value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) {
+            return '0%';
+        }
+        return `${Math.round(numeric * 1000) / 10}%`;
+    },
+
+    formatProcurementHours: function (value) {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) {
+            return '-';
+        }
+        if (numeric < 1) {
+            return `${Math.round(numeric * 60)} 分钟`;
+        }
+        return `${Math.round(numeric * 10) / 10} 小时`;
+    },
+
+    normalizeProcurementOverviewFilters: function (filters = {}) {
+        const source = filters && typeof filters === 'object' ? filters : {};
+        return {
+            sourceId: String(source.sourceId || source.source_id || '').trim(),
+            productId: String(source.productId || source.product_id || '').trim(),
+            skuId: String(source.skuId || source.sku_id || '').trim(),
+            qualityStatus: String(source.qualityStatus || source.quality_status || '').trim().toLowerCase(),
+            costStatus: String(source.costStatus || source.cost_status || '').trim().toLowerCase(),
+            search: String(source.search || '').trim(),
+            dateFrom: String(source.dateFrom || source.date_from || '').trim().slice(0, 10),
+            dateTo: String(source.dateTo || source.date_to || '').trim().slice(0, 10)
+        };
+    },
+
+    getProcurementOverviewCacheKey: function (site = 'all', filters = {}) {
+        const normalizedFilters = this.normalizeProcurementOverviewFilters(filters);
+        return JSON.stringify({ site: String(site || 'all'), filters: normalizedFilters });
+    },
+
+    getProcurementOverviewFiltersFromDom: function () {
+        return this.normalizeProcurementOverviewFilters({
+            sourceId: document.getElementById('procurementFilterSource')?.value || '',
+            qualityStatus: document.getElementById('procurementFilterQuality')?.value || '',
+            costStatus: document.getElementById('procurementFilterCost')?.value || '',
+            search: document.getElementById('procurementFilterSearch')?.value || '',
+            dateFrom: document.getElementById('procurementFilterDateFrom')?.value || '',
+            dateTo: document.getElementById('procurementFilterDateTo')?.value || ''
+        });
+    },
+
+    hasProcurementOverviewFilters: function (filters = {}) {
+        const normalized = this.normalizeProcurementOverviewFilters(filters);
+        return Object.values(normalized).some((value) => String(value || '').trim());
+    },
+
+    renderProcurementFilterBar: function (payload = {}) {
+        const filters = this.getProcurementOverviewFiltersForRender(payload);
+        const sources = Array.isArray(payload.costBySource) ? payload.costBySource : [];
+        const sourceOptions = sources
+            .filter((source) => source && source.source_id)
+            .map((source) => {
+                const selected = String(source.source_id) === filters.sourceId ? ' selected' : '';
+                const label = `${source.source_name || '未归因货源'} · ${this.formatProcurementCount(source.batchCount)} 批`;
+                return `<option value="${this.escapeForAttr(String(source.source_id))}"${selected}>${this.escapeHtml(label)}</option>`;
+            })
+            .join('');
+        const hasFilters = this.hasProcurementOverviewFilters(filters);
+        const filteredCount = Number(payload.filteredCount ?? payload.summary?.totalBatches ?? 0);
+        const totalCount = Number(payload.totalCount ?? filteredCount);
+        const resultText = hasFilters
+            ? `筛选 ${this.formatProcurementCount(filteredCount)} / ${this.formatProcurementCount(totalCount)} 批`
+            : `共 ${this.formatProcurementCount(filteredCount)} 批`;
+
+        return `
+            <div class="shop-procurement-filter" data-shop-procurement-filter>
+                <label class="shop-procurement-filter__field shop-procurement-filter__field--search">
+                    <span>关键词</span>
+                    <input id="procurementFilterSearch" type="search" value="${this.escapeForAttr(filters.search)}" placeholder="批次号 / 货源 / 商品 / 规格">
+                </label>
+                <label class="shop-procurement-filter__field">
+                    <span>货源</span>
+                    <select id="procurementFilterSource" class="shop-procurement-filter-select" data-shop-custom-select="true" aria-label="筛选货源">
+                        <option value="">全部货源</option>
+                        ${sourceOptions}
+                    </select>
+                </label>
+                <label class="shop-procurement-filter__field">
+                    <span>质量</span>
+                    <select id="procurementFilterQuality" class="shop-procurement-filter-select" data-shop-custom-select="true" aria-label="筛选质量">
+                        <option value="">全部质量</option>
+                        <option value="unverified"${filters.qualityStatus === 'unverified' ? ' selected' : ''}>待验证</option>
+                        <option value="accepted"${filters.qualityStatus === 'accepted' ? ' selected' : ''}>稳定</option>
+                        <option value="watch"${filters.qualityStatus === 'watch' ? ' selected' : ''}>观察</option>
+                        <option value="rejected"${filters.qualityStatus === 'rejected' ? ' selected' : ''}>停用</option>
+                    </select>
+                </label>
+                <label class="shop-procurement-filter__field">
+                    <span>成本</span>
+                    <select id="procurementFilterCost" class="shop-procurement-filter-select" data-shop-custom-select="true" aria-label="筛选成本">
+                        <option value="">全部成本</option>
+                        <option value="actual"${filters.costStatus === 'actual' ? ' selected' : ''}>实际成本</option>
+                        <option value="estimated"${filters.costStatus === 'estimated' ? ' selected' : ''}>预估成本</option>
+                        <option value="missing"${filters.costStatus === 'missing' ? ' selected' : ''}>缺少成本</option>
+                    </select>
+                </label>
+                <label class="shop-procurement-filter__field">
+                    <span>开始</span>
+                    <div class="shop-procurement-date-control">
+                        <input id="procurementFilterDateFrom" class="shop-procurement-date-input" type="text" value="${this.escapeForAttr(filters.dateFrom)}" placeholder="年 / 月 / 日" autocomplete="off" readonly data-procurement-date-picker="from">
+                        <button type="button" class="shop-procurement-date-control__button" data-shop-action="procurement-date-open" data-date-input-id="procurementFilterDateFrom" aria-label="选择开始日期">
+                            <i class="fas fa-calendar-alt" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </label>
+                <label class="shop-procurement-filter__field">
+                    <span>结束</span>
+                    <div class="shop-procurement-date-control">
+                        <input id="procurementFilterDateTo" class="shop-procurement-date-input" type="text" value="${this.escapeForAttr(filters.dateTo)}" placeholder="年 / 月 / 日" autocomplete="off" readonly data-procurement-date-picker="to">
+                        <button type="button" class="shop-procurement-date-control__button" data-shop-action="procurement-date-open" data-date-input-id="procurementFilterDateTo" aria-label="选择结束日期">
+                            <i class="fas fa-calendar-alt" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                </label>
+                <div class="shop-procurement-filter__actions">
+                    <span>${this.escapeHtml(resultText)}</span>
+                    <button type="button" class="shop-procurement-filter__btn shop-procurement-filter__btn--primary" data-shop-action="procurement-filter-apply">
+                        <i class="fas fa-filter"></i> 筛选
+                    </button>
+                    <button type="button" class="shop-procurement-filter__btn" data-shop-action="procurement-filter-reset"${hasFilters ? '' : ' disabled'}>
+                        重置
+                    </button>
+                </div>
+            </div>
+        `;
+    },
+
+    applyProcurementOverviewFilters: function () {
+        this.procurementOverviewFilters = this.getProcurementOverviewFiltersFromDom();
+        void this.loadProcurementOverview({ force: true });
+    },
+
+    resetProcurementOverviewFilters: function () {
+        this.procurementOverviewFilters = {};
+        ['procurementFilterSearch', 'procurementFilterSource', 'procurementFilterQuality', 'procurementFilterCost', 'procurementFilterDateFrom', 'procurementFilterDateTo']
+            .forEach((id) => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.value = '';
+                    if (element._flatpickr) {
+                        element._flatpickr.clear();
+                    }
+                    if (element instanceof HTMLSelectElement) {
+                        this.syncShopCustomSelect(element);
+                    }
+                }
+            });
+        void this.loadProcurementOverview({ force: true });
+    },
+
+    initProcurementDatePickers: async function (root = document) {
+        const scope = root instanceof Element || root === document ? root : document;
+        if (!window.flatpickr && typeof window.ensureAdminFlatpickr === 'function') {
+            try {
+                await window.ensureAdminFlatpickr();
+            } catch (error) {
+                console.error('[ShopAdmin] Failed to load procurement date picker:', error);
+                return;
+            }
+        }
+
+        if (!window.flatpickr) {
+            return;
+        }
+
+        const inputs = Array.from(scope.querySelectorAll?.('[data-procurement-date-picker]') || []);
+        const config = {
+            locale: window.flatpickr?.l10ns?.zh || 'zh',
+            dateFormat: 'Y-m-d',
+            monthSelectorType: 'static',
+            allowInput: false,
+            clickOpens: true,
+            disableMobile: true,
+            onReady: (_selectedDates, _dateStr, instance) => {
+                instance.calendarContainer?.classList.add('shop-procurement-date-calendar');
+            },
+            onOpen: (_selectedDates, _dateStr, instance) => {
+                instance.calendarContainer?.classList.add('shop-procurement-date-calendar');
+            }
+        };
+
+        inputs.forEach((input) => {
+            if (!(input instanceof HTMLInputElement)) {
+                return;
+            }
+            if (input._flatpickr) {
+                input._flatpickr.setDate(input.value || null, false);
+                return;
+            }
+            window.flatpickr(input, config);
+        });
+    },
+
+    openProcurementDatePicker: async function (inputId) {
+        const input = document.getElementById(String(inputId || '').trim());
+        if (!(input instanceof HTMLInputElement)) {
+            return;
+        }
+
+        await this.initProcurementDatePickers(input.closest('[data-shop-procurement-filter]') || document);
+        input._flatpickr?.open();
+    },
+
+    enhanceProcurementFilterControls: function (root = document) {
+        const scope = root instanceof Element || root === document ? root : document;
+        this.enhanceShopCustomSelects(scope);
+        void this.initProcurementDatePickers(scope);
+    },
+
+    renderProcurementAutoQualityPill: function (batch = {}) {
+        const suggestion = batch?.auto_quality || null;
+        if (!suggestion || !suggestion.status) {
+            return '';
+        }
+
+        const meta = this.getProcurementQualityMeta(suggestion.status);
+        const tone = String(suggestion.tone || meta.tone || 'unknown').replace(/[^a-z0-9_-]/gi, '') || 'unknown';
+        const score = Number(suggestion.score);
+        const scoreText = Number.isFinite(score) ? `${Math.round(score)}分` : '-';
+        const sampleText = this.formatProcurementCount(suggestion.sample_count);
+        const evidenceText = this.formatProcurementCount(suggestion.evidence_count);
+        const reasonTitle = Array.isArray(suggestion.reasons) && suggestion.reasons.length
+            ? ` title="${this.escapeForAttr(suggestion.reasons.join('；'))}"`
+            : '';
+
+        return `
+            <span class="shop-procurement-auto-quality shop-procurement-auto-quality--${tone}"${reasonTitle}>
+                <i class="fas fa-robot"></i>
+                建议 ${this.escapeHtml(suggestion.label || meta.label)} · ${this.escapeHtml(scoreText)}
+                <small>样本 ${this.escapeHtml(sampleText)} / 反馈 ${this.escapeHtml(evidenceText)}</small>
+            </span>
+        `;
+    },
+
+    renderProcurementAutoQualityPanel: function (batch = {}) {
+        const suggestion = batch?.auto_quality || null;
+        if (!suggestion || !suggestion.status) {
+            return '';
+        }
+
+        const meta = this.getProcurementQualityMeta(suggestion.status);
+        const tone = String(suggestion.tone || meta.tone || 'unknown').replace(/[^a-z0-9_-]/gi, '') || 'unknown';
+        const score = Number(suggestion.score);
+        const scoreText = Number.isFinite(score) ? `${Math.round(score)}分` : '-';
+        const sampleText = this.escapeHtml(this.formatProcurementCount(suggestion.sample_count));
+        const soldText = this.escapeHtml(this.formatProcurementCount(suggestion.sold_count));
+        const faultText = this.escapeHtml(this.formatProcurementCount(suggestion.fault_count));
+        const faultRateText = this.escapeHtml(this.formatProcurementPercent(suggestion.fault_rate));
+        const confidenceText = this.escapeHtml(suggestion.confidence_label || '-');
+        const reasons = Array.isArray(suggestion.reasons) ? suggestion.reasons.filter(Boolean) : [];
+        const reasonsHtml = reasons.length
+            ? reasons.map((reason) => `<span>${this.escapeHtml(reason)}</span>`).join('')
+            : '<span>暂无自动依据</span>';
+        return `
+            <div class="shop-procurement-quality-auto shop-procurement-quality-auto--${tone}">
+                <div class="shop-procurement-quality-auto__main">
+                    <span><i class="fas fa-robot"></i> 自动评分</span>
+                    <strong>${this.escapeHtml(suggestion.label || meta.label)} · ${this.escapeHtml(scoreText)}</strong>
+                    <small>样本 ${sampleText} · 售出 ${soldText} · 故障 ${faultText} · 故障率 ${faultRateText} · 置信度 ${confidenceText}</small>
+                </div>
+                <div class="shop-procurement-quality-auto__reasons">
+                    ${reasonsHtml}
+                </div>
+            </div>
+        `;
+    },
+
+    normalizeProcurementSourceTags: function (...values) {
+        const rawTags = values.flatMap((value) => {
+            if (Array.isArray(value)) {
+                return value;
+            }
+            return String(value || '').split(/[,，;；\n\r\t]+/);
+        });
+        const seen = new Set();
+        const normalizedTags = [];
+
+        rawTags.forEach((tag) => {
+            const normalized = String(tag || '').trim();
+            const key = normalized.toLowerCase();
+            if (!normalized || seen.has(key)) {
+                return;
+            }
+            seen.add(key);
+            normalizedTags.push(normalized);
+        });
+
+        return normalizedTags.slice(0, 8);
+    },
+
+    renderProcurementSourceTags: function (tags = []) {
+        const normalizedTags = this.normalizeProcurementSourceTags(tags);
+        if (!normalizedTags.length) {
+            return '';
+        }
+
+        return `
+            <div class="shop-procurement-source-tags">
+                ${normalizedTags.map((tag) => `<span>${this.escapeHtml(tag)}</span>`).join('')}
+            </div>
+        `;
+    },
+
+    renderProcurementSourceRows: function (sources = []) {
+        const rows = Array.isArray(sources) ? sources : [];
+        if (!rows.length) {
+            return '<div class="shop-procurement-overview__empty">暂无货源成本记录</div>';
+        }
+
+        return rows.map((source) => {
+            const sourceName = this.escapeHtml(source.source_name || '未归因货源');
+            const sourceUrl = String(source.source_url || '').trim();
+            const href = this.getProcurementSafeHref(sourceUrl);
+            const sourceLabel = href
+                ? `<a href="${this.escapeForAttr(href)}" target="_blank" rel="noopener noreferrer">${sourceName}</a>`
+                : `<span>${sourceName}</span>`;
+            const riskTier = this.escapeHtml(source.risk_tier || '-');
+            const totalCost = this.escapeHtml(this.formatProcurementCny(source.totalCostCny, '¥0.00'));
+            const avgCost = this.escapeHtml(this.formatProcurementCny(source.avgUnitCostCny, '-'));
+            const netProfit = this.escapeHtml(this.formatProcurementCny(source.netProfitCny, '-'));
+            const margin = source.marginRate === null || source.marginRate === undefined ? '-' : this.formatProcurementPercent(source.marginRate);
+            const importedCount = this.escapeHtml(this.formatProcurementCount(source.importedCount));
+            const tagsHtml = this.renderProcurementSourceTags(source.source_tags);
+            const watchCount = Number(source.watchCount || 0);
+            const rejectedCount = Number(source.rejectedCount || 0);
+            const attention = watchCount + rejectedCount;
+            const attentionText = attention > 0
+                ? `<span class="shop-procurement-source-row__attention">${this.escapeHtml(this.formatProcurementCount(attention))} 批需关注</span>`
+                : '<span class="shop-procurement-source-row__stable">稳定</span>';
+            return `
+                <div class="shop-procurement-source-row">
+                    <div class="shop-procurement-source-row__main">
+                        ${sourceLabel}
+                        <span>${importedCount} 件 · 风险 ${riskTier}</span>
+                        ${tagsHtml}
+                    </div>
+                    <div class="shop-procurement-source-row__cost">
+                        <strong>${totalCost}</strong>
+                        <span>均 ${avgCost} · 净利 ${netProfit} · ${this.escapeHtml(margin)}</span>
+                    </div>
+                    ${attentionText}
+                </div>
+            `;
+        }).join('');
+    },
+
+    renderProcurementBatchRows: function (batches = []) {
+        const rows = Array.isArray(batches) ? batches : [];
+        if (!rows.length) {
+            return '<div class="shop-procurement-overview__empty">暂无采购批次</div>';
+        }
+
+        return rows.map((batch) => {
+            const meta = this.getProcurementQualityMeta(batch.quality_status);
+            const tone = String(batch.quality_tone || meta.tone || 'unknown').replace(/[^a-z0-9_-]/gi, '') || 'unknown';
+            const productName = this.escapeHtml(batch.product_name || '未关联商品');
+            const skuText = [batch.sku_name, batch.sku_code].filter(Boolean).join(' / ');
+            const sourceName = this.escapeHtml(batch.source_name || '未归因货源');
+            const batchCode = this.escapeHtml(batch.batch_code || batch.id || '-');
+            const unitCost = this.escapeHtml(this.formatProcurementCny(batch.unit_cost_cny, '-'));
+            const totalCost = this.escapeHtml(this.formatProcurementCny(batch.total_cost_cny, '¥0.00'));
+            const netProfit = this.escapeHtml(this.formatProcurementCny(batch.net_profit_cny, '-'));
+            const revenue = this.escapeHtml(this.formatProcurementCny(batch.recognized_revenue_cny, '-'));
+            const margin = batch.margin_rate === null || batch.margin_rate === undefined ? '-' : this.formatProcurementPercent(batch.margin_rate);
+            const importedCount = this.escapeHtml(this.formatProcurementCount(batch.imported_count));
+            const soldRate = this.escapeHtml(this.formatProcurementPercent(batch.inventory_sold_rate));
+            const faultRate = this.escapeHtml(this.formatProcurementPercent(batch.inventory_fault_rate));
+            const refundCount = this.escapeHtml(this.formatProcurementCount(batch.refund_order_count));
+            const negativeProfitCount = this.escapeHtml(this.formatProcurementCount(batch.negative_profit_order_count));
+            const missingCostCount = this.escapeHtml(this.formatProcurementCount(batch.missing_cost_item_count));
+            const fulfillment = this.escapeHtml(this.formatProcurementHours(batch.avg_fulfillment_hours));
+            const purchasedAt = this.escapeHtml(this.formatProcurementDate(batch.purchased_at || batch.created_at));
+            const notes = String(batch.notes || '').trim();
+            const proofHref = this.getProcurementSafeHref(batch.proof_url);
+            const noteTitle = notes ? ` title="${this.escapeForAttr(notes)}"` : '';
+            const safeBatchId = this.escapeForAttr(String(batch.id || ''));
+            const qualityActionLabel = batch.quality_status === 'unverified' ? '验证' : '调整';
+            const autoQualityPill = this.renderProcurementAutoQualityPill(batch);
+            const tagsHtml = this.renderProcurementSourceTags(batch.source_tags);
+            const proofLink = proofHref
+                ? `<a href="${this.escapeForAttr(proofHref)}" target="_blank" rel="noopener noreferrer" class="shop-procurement-batch-row__proof" title="采购凭证"><i class="fas fa-receipt"></i></a>`
+                : '';
+            const qualityAction = safeBatchId
+                ? `<button type="button" class="shop-procurement-batch-row__quality-action" data-shop-action="procurement-quality-open" data-procurement-batch-id="${safeBatchId}" title="验证采购质量">${this.escapeHtml(qualityActionLabel)}</button>`
+                : '';
+            return `
+                <div class="shop-procurement-batch-row">
+                    <div class="shop-procurement-batch-row__main">
+                        <strong>${batchCode}</strong>
+                        <span>${sourceName}</span>
+                        ${tagsHtml}
+                    </div>
+                    <div class="shop-procurement-batch-row__product">
+                        <span>${productName}</span>
+                        <small>${this.escapeHtml(skuText || '默认规格')}</small>
+                    </div>
+                    <div class="shop-procurement-batch-row__cost">
+                        <strong>${totalCost}</strong>
+                        <span>${importedCount} 件 · 单件 ${unitCost}</span>
+                    </div>
+                    <div class="shop-procurement-batch-row__performance">
+                        <strong>${netProfit}</strong>
+                        <span>收入 ${revenue} · 毛利率 ${this.escapeHtml(margin)}</span>
+                        <small>售出 ${soldRate} · 故障 ${faultRate} · 退款 ${refundCount} · 负利润 ${negativeProfitCount} · 缺成本 ${missingCostCount} · 履约 ${fulfillment}</small>
+                    </div>
+                    <div class="shop-procurement-batch-row__meta">
+                        <span class="shop-procurement-quality-badge shop-procurement-quality-badge--${tone}">
+                            <i class="fas ${meta.icon}"></i> ${this.escapeHtml(batch.quality_label || meta.label)}
+                        </span>
+                        ${autoQualityPill}
+                        ${qualityAction}
+                        <span>${purchasedAt}</span>
+                        ${notes ? `<span class="shop-procurement-batch-row__note"${noteTitle}><i class="fas fa-sticky-note"></i></span>` : ''}
+                        ${proofLink}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    },
+
+    getProcurementOverviewBatchById: function (batchId) {
+        const normalizedId = String(batchId || '').trim();
+        if (!normalizedId) {
+            return null;
+        }
+
+        const allBatches = [
+            ...(Array.isArray(this.procurementOverviewData?.batchRecords)
+                ? this.procurementOverviewData.batchRecords
+                : []),
+            ...(Array.isArray(this.procurementOverviewData?.recentBatches)
+                ? this.procurementOverviewData.recentBatches
+                : [])
+        ];
+        return allBatches.find((batch) => String(batch?.id || '').trim() === normalizedId) || null;
+    },
+
+    getProcurementOverviewBatchRecords: function (payload = {}) {
+        return Array.isArray(payload.batchRecords)
+            ? payload.batchRecords
+            : (Array.isArray(payload.recentBatches)
+                ? payload.recentBatches
+                : []);
+    },
+
+    getProcurementOverviewFiltersForRender: function (payload = {}) {
+        const stateFilters = this.normalizeProcurementOverviewFilters(this.procurementOverviewFilters || {});
+        if (this.hasProcurementOverviewFilters(stateFilters)) {
+            return stateFilters;
+        }
+
+        return this.normalizeProcurementOverviewFilters(payload.filters || {});
+    },
+
+    syncProcurementOverviewFilterState: function (payload = {}) {
+        const filters = this.getProcurementOverviewFiltersForRender(payload);
+        this.procurementOverviewFilters = filters;
+        return filters;
+    },
+
+    buildProcurementOverviewSummaryMetrics: function (summary = {}) {
+        const totalBatches = this.escapeHtml(this.formatProcurementCount(summary.totalBatches));
+        const totalImported = this.escapeHtml(this.formatProcurementCount(summary.totalImported));
+        const totalCost = this.escapeHtml(this.formatProcurementCny(summary.totalCostCny, '¥0.00'));
+        const avgUnitCost = this.escapeHtml(this.formatProcurementCny(summary.avgUnitCostCny, '-'));
+        const netProfit = this.escapeHtml(this.formatProcurementCny(summary.netProfitCny, '-'));
+        const margin = summary.marginRate === null || summary.marginRate === undefined
+            ? '-'
+            : this.formatProcurementPercent(summary.marginRate);
+        const sourceCount = this.escapeHtml(this.formatProcurementCount(summary.sourceCount));
+        const orderCount = this.escapeHtml(this.formatProcurementCount(summary.orderCount));
+        const pendingQualityCount = Number(summary.unverifiedCount || 0)
+            + Number(summary.watchCount || 0)
+            + Number(summary.rejectedCount || 0);
+        const pendingText = this.escapeHtml(this.formatProcurementCount(pendingQualityCount));
+        const refundCount = this.escapeHtml(this.formatProcurementCount(summary.refundOrderCount));
+        const negativeCount = this.escapeHtml(this.formatProcurementCount(summary.negativeProfitOrderCount));
+        const missingCostCount = this.escapeHtml(this.formatProcurementCount(summary.missingCostItemCount));
+
+        return `
+            <div class="shop-procurement-overview__metric">
+                <span>采购批次</span>
+                <strong>${totalBatches}</strong>
+                <small>${totalImported} 件入库</small>
+            </div>
+            <div class="shop-procurement-overview__metric">
+                <span>采购成本</span>
+                <strong>${totalCost}</strong>
+                <small>均价 ${avgUnitCost}</small>
+            </div>
+            <div class="shop-procurement-overview__metric">
+                <span>批次净利</span>
+                <strong>${netProfit}</strong>
+                <small>${orderCount} 单 · 毛利率 ${this.escapeHtml(margin)}</small>
+            </div>
+            <div class="shop-procurement-overview__metric shop-procurement-overview__metric--attention">
+                <span>风险信号</span>
+                <strong>${pendingText}</strong>
+                <small>${sourceCount} 货源 · 退款 ${refundCount} · 负利 ${negativeCount} · 缺成本 ${missingCostCount}</small>
+            </div>
+        `;
+    },
+
+    getProcurementOverviewCacheFilters: function (options = {}) {
+        return this.normalizeProcurementOverviewFilters(options.filters || this.procurementOverviewFilters || {});
+    },
+
+    getProcurementOverviewCachePayload: function (site = 'all', options = {}) {
+        const filters = this.getProcurementOverviewCacheFilters(options);
+        return {
+            filters,
+            cacheKey: this.getProcurementOverviewCacheKey(site, filters)
+        };
+    },
+
+    shouldUseProcurementOverviewCache: function ({ force = false, cacheKey = '' } = {}) {
+        return !force
+            && Boolean(this.procurementOverviewData)
+            && this.procurementOverviewCacheKey === cacheKey;
+    },
+
+    applyProcurementOverviewPayload: function (payload = {}, { site = 'all', cacheKey = '', filters = {} } = {}) {
+        this.procurementOverviewData = payload;
+        this.procurementOverviewSite = site;
+        this.procurementOverviewCacheKey = cacheKey;
+        this.procurementOverviewFilters = this.normalizeProcurementOverviewFilters(filters);
+    },
+
+    resetProcurementOverviewCache: function () {
+        this.procurementOverviewData = null;
+        this.procurementOverviewSite = '';
+        this.procurementOverviewCacheKey = '';
+    },
+
+    getProcurementOverviewCachedPayload: function () {
+        return this.procurementOverviewData || null;
+    },
+
+    renderProcurementOverviewCachedPayload: function () {
+        const payload = this.getProcurementOverviewCachedPayload();
+        if (!payload) {
+            return null;
+        }
+
+        this.renderProcurementOverview(payload);
+        return payload;
+    },
+
+    getProcurementOverviewRequestParams: function ({ site = 'all', filters = {} } = {}) {
+        return {
+            site,
+            limit: 1000,
+            filters
+        };
+    },
+
+    finishProcurementOverviewLoad: function (payload = {}, context = {}) {
+        this.applyProcurementOverviewPayload(payload, context);
+        this.renderProcurementOverview(payload);
+        return payload;
+    },
+
+    getProcurementOverviewBatchRecordCount: function (payload = {}) {
+        return this.getProcurementOverviewBatchRecords(payload).length;
+    },
+
+    getProcurementOverviewTitle: function (payload = {}) {
+        const count = this.getProcurementOverviewBatchRecordCount(payload);
+        return count > 0 ? `采购批次记录 · ${this.formatProcurementCount(count)} 批` : '采购批次记录';
+    },
+
+    getProcurementOverviewRenderContext: function (payload = {}) {
+        const filters = this.syncProcurementOverviewFilterState(payload);
+        const batchRecords = this.getProcurementOverviewBatchRecords(payload);
+        return {
+            filters,
+            batchRecords,
+            batchTitle: batchRecords.length > 0
+                ? `采购批次记录 · ${this.formatProcurementCount(batchRecords.length)} 批`
+                : '采购批次记录'
+        };
+    },
+
+    openProcurementQualityModal: function (batchId) {
+        const normalizedBatchId = String(batchId || '').trim();
+        if (!normalizedBatchId) {
+            this.showActionToast?.('采购批次 ID 缺失，无法验证', 'warning');
+            return;
+        }
+
+        const batch = this.getProcurementOverviewBatchById(normalizedBatchId) || {};
+        const currentStatus = String(batch.quality_status || 'unverified').trim() || 'unverified';
+        const currentMeta = this.getProcurementQualityMeta(currentStatus);
+        const batchCode = batch.batch_code || normalizedBatchId;
+        const sourceName = batch.source_name || '未归因货源';
+        const productText = [batch.product_name || '未关联商品', batch.sku_name || batch.sku_code || '默认规格']
+            .filter(Boolean)
+            .join(' / ');
+        const scoreValue = batch.quality_score === null || batch.quality_score === undefined
+            ? '100'
+            : String(batch.quality_score);
+        const notesValue = String(batch.notes || '').trim();
+        const tagsValue = Array.isArray(batch.source_tags) ? batch.source_tags.join('，') : '';
+        const autoQualityPanel = this.renderProcurementAutoQualityPanel(batch);
+        const modalId = 'procurementQualityModal';
+        const statusOptions = [
+            ['accepted', '稳定', '账号可用、交付顺畅，后续可继续采购。'],
+            ['watch', '观察', '能用但有波动、投诉或售后风险，需要继续跟踪。'],
+            ['rejected', '停用', '曾标记停用的货源，复导时会提醒复核。'],
+            ['unverified', '待验证', '暂时保留待验证状态，等待更多样本或售后反馈。']
+        ];
+
+        this.closeDynamicModal(modalId);
+        const modalHtml = `
+            <div id="${modalId}" data-shop-overlay-close="dynamic-modal" data-modal-id="${modalId}" class="shop-procurement-quality-overlay">
+                <div class="shop-procurement-quality-modal" data-selected-quality-status="${this.escapeForAttr(currentStatus)}" data-quality-review-mode="auto">
+                    <div class="shop-procurement-quality-modal__header">
+                        <div>
+                            <h3><i class="fas ${currentMeta.icon}"></i> 货源状态与标签</h3>
+                            <p>${this.escapeHtml(batchCode)} · ${this.escapeHtml(sourceName)}</p>
+                        </div>
+                        <button type="button" class="shop-procurement-quality-modal__close" data-shop-action="procurement-quality-close" data-modal-id="${modalId}" aria-label="关闭">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <div class="shop-procurement-quality-modal__product">${this.escapeHtml(productText)}</div>
+                    ${autoQualityPanel}
+                    <div class="shop-procurement-quality-modal__options" role="radiogroup" aria-label="采购质量状态">
+                        ${statusOptions.map(([value, label, description]) => {
+                            const meta = this.getProcurementQualityMeta(value);
+                            const selected = value === currentStatus;
+                            return `
+                                <button type="button"
+                                    class="shop-procurement-quality-option shop-procurement-quality-option--${meta.tone}${selected ? ' is-selected' : ''}"
+                                    data-shop-action="procurement-quality-option"
+                                    data-quality-status="${this.escapeForAttr(value)}"
+                                    role="radio"
+                                    aria-checked="${selected ? 'true' : 'false'}">
+                                    <span><i class="fas ${meta.icon}"></i> ${this.escapeHtml(label)}</span>
+                                    <small>${this.escapeHtml(description)}</small>
+                                </button>
+                            `;
+                        }).join('')}
+                    </div>
+                    <div class="shop-procurement-quality-modal__grid">
+                        <label class="shop-procurement-quality-field">
+                            <span>自动评分</span>
+                            <input id="procurementQualityScoreInput" type="text" value="${this.escapeForAttr(`${scoreValue}分`)}" readonly>
+                        </label>
+                        <label class="shop-procurement-quality-field">
+                            <span>货源标签</span>
+                            <input id="procurementSourceTagsInput" type="text" value="${this.escapeForAttr(tagsValue)}" placeholder="低价、备用、高风险">
+                        </label>
+                        <label class="shop-procurement-quality-field shop-procurement-quality-field--wide">
+                            <span>备注</span>
+                            <textarea id="procurementQualityNotesInput" rows="4" placeholder="例如：抽测 3 个账号均可登录；或记录投诉、退款、不可用原因。">${this.escapeHtml(notesValue)}</textarea>
+                        </label>
+                    </div>
+                    <div class="shop-procurement-quality-modal__actions">
+                        <button type="button" class="shop-procurement-quality-btn shop-procurement-quality-btn--ghost" data-shop-action="procurement-quality-close" data-modal-id="${modalId}">取消</button>
+                        <button type="button" class="shop-procurement-quality-btn shop-procurement-quality-btn--primary" data-shop-action="procurement-quality-submit" data-procurement-batch-id="${this.escapeForAttr(normalizedBatchId)}">
+                            <i class="fas fa-check"></i> 保存验证
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        this.bindOverlayDismiss(modalId, () => {
+            this.closeDynamicModal(modalId);
+        });
+        requestAnimationFrame(() => {
+            document.getElementById(modalId)?.classList.add('is-visible');
+        });
+    },
+
+    selectProcurementQualityStatus: function (button, options = {}) {
+        const modal = button?.closest?.('.shop-procurement-quality-modal');
+        const nextStatus = String(button?.dataset?.qualityStatus || '').trim();
+        if (!modal || !nextStatus) {
+            return;
+        }
+
+        modal.dataset.selectedQualityStatus = nextStatus;
+        modal.dataset.qualityReviewMode = 'auto';
+        modal.querySelectorAll('.shop-procurement-quality-option').forEach((option) => {
+            const selected = option === button;
+            option.classList.toggle('is-selected', selected);
+            option.setAttribute('aria-checked', selected ? 'true' : 'false');
+        });
+    },
+
+    applyProcurementAutoQualitySuggestion: function (button) {
+        const procurementBatchId = String(button?.dataset?.procurementBatchId || '').trim();
+        const modal = button?.closest?.('.shop-procurement-quality-modal');
+        const batch = this.getProcurementOverviewBatchById(procurementBatchId) || {};
+        const suggestion = batch.auto_quality || null;
+        if (!modal || !suggestion || !suggestion.status) {
+            this.showActionToast?.('暂无可采用的自动建议', 'warning');
+            return;
+        }
+
+        const option = Array.from(modal.querySelectorAll('.shop-procurement-quality-option'))
+            .find((candidate) => String(candidate.dataset?.qualityStatus || '') === String(suggestion.status));
+        if (option) {
+            this.selectProcurementQualityStatus(option, { reviewMode: 'auto' });
+        } else {
+            modal.dataset.selectedQualityStatus = suggestion.status;
+            modal.dataset.qualityReviewMode = 'auto';
+        }
+
+        const scoreInput = document.getElementById('procurementQualityScoreInput');
+        const notesInput = document.getElementById('procurementQualityNotesInput');
+        if (scoreInput && Number.isFinite(Number(suggestion.score))) {
+            scoreInput.value = String(Math.round(Number(suggestion.score)));
+        }
+
+        if (notesInput) {
+            const meta = this.getProcurementQualityMeta(suggestion.status);
+            const reasons = Array.isArray(suggestion.reasons) ? suggestion.reasons.filter(Boolean) : [];
+            const autoNote = `自动建议：${suggestion.label || meta.label} ${Math.round(Number(suggestion.score) || 0)}分；依据：${reasons.join('；') || '暂无自动依据'}`;
+            const currentNotes = String(notesInput.value || '').trim();
+            if (!currentNotes.includes('自动建议：')) {
+                notesInput.value = [currentNotes, autoNote].filter(Boolean).join('\n');
+            }
+        }
+
+        this.showActionToast?.('已填入自动建议，确认后保存即可生效', 'success');
+    },
+
+    submitProcurementQuality: async function (button) {
+        if (!this.requireWritableSite({ label: '验证采购质量' })) {
+            return;
+        }
+
+        const procurementBatchId = String(button?.dataset?.procurementBatchId || '').trim();
+        const modal = button?.closest?.('.shop-procurement-quality-modal');
+        const qualityStatus = String(modal?.dataset?.selectedQualityStatus || 'unverified').trim() || 'unverified';
+        const notesInput = document.getElementById('procurementQualityNotesInput');
+        const tagsInput = document.getElementById('procurementSourceTagsInput');
+        const notes = String(notesInput?.value || '').trim();
+        const sourceTags = String(tagsInput?.value || '').trim();
+
+        if (!procurementBatchId) {
+            this.showActionToast?.('采购批次 ID 缺失，无法保存验证', 'warning');
+            return;
+        }
+
+        this.setActionButtonLoading(button, '保存中...');
+        try {
+            await this.callAdminMutation('update_procurement_quality', {
+                procurementBatchId,
+                qualityStatus,
+                sourceTags,
+                notes
+            });
+            this.finishActionButton(button, '已保存');
+            this.closeDynamicModal('procurementQualityModal');
+            this.showActionToast?.('采购质量已更新', 'success');
+            await this.loadProcurementOverview({ force: true });
+        } catch (error) {
+            console.error('[ShopAdmin] Update procurement quality failed:', error);
+            this.failActionButton(button, '保存失败');
+            this.showActionToast?.(error?.message || '采购质量更新失败', 'error', { durationMs: 5000 });
+        }
+    },
+
+    renderProcurementOverviewError: function (error = {}) {
+        const container = document.getElementById('shopProcurementOverview');
+        if (!container) {
+            return;
+        }
+
+        const isSchemaMissing = error?.code === 'shop_procurement_schema_missing';
+        const message = this.escapeHtml(error?.message || '采购概览加载失败');
+        container.innerHTML = `
+            <div class="shop-procurement-overview__header">
+                <div class="shop-procurement-overview__title">
+                    <i class="fas fa-chart-line"></i>
+                    <span>采购记录与成本质量</span>
+                </div>
+                <button type="button" class="shop-procurement-overview__refresh" data-shop-action="procurement-refresh" title="刷新采购概览">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+            <div class="shop-procurement-overview__error ${isSchemaMissing ? 'shop-procurement-overview__error--schema' : ''}">
+                <i class="fas fa-exclamation-circle"></i>
+                <span>${message}</span>
+            </div>
+        `;
+    },
+
+    renderProcurementOverview: function (payload = {}) {
+        const container = document.getElementById('shopProcurementOverview');
+        if (!container) {
+            return;
+        }
+
+        const summary = payload.summary || {};
+        const renderContext = this.getProcurementOverviewRenderContext(payload);
+        const siteLabel = payload.inventoryScope === 'shared' && payload.site === 'intl'
+            ? '国际站 · 共享库存'
+            : (payload.site === 'intl' ? '国际站' : (payload.site === 'cn' ? '中文站' : '全部站点'));
+        const truncatedNotice = payload.isTruncated
+            ? `<span class="shop-procurement-overview__scope shop-procurement-overview__scope--warning">最近 ${this.escapeHtml(this.formatProcurementCount(payload.limit))} / ${this.escapeHtml(this.formatProcurementCount(payload.totalCount))} 批</span>`
+            : '';
+
+        container.innerHTML = `
+            <div class="shop-procurement-overview__header">
+                <div class="shop-procurement-overview__title">
+                    <i class="fas fa-chart-line"></i>
+                    <span>采购记录与成本质量</span>
+                </div>
+                <div class="shop-procurement-overview__header-actions">
+                    <span class="shop-procurement-overview__scope">${this.escapeHtml(siteLabel)}</span>
+                    ${truncatedNotice}
+                    <button type="button" class="shop-procurement-overview__refresh" data-shop-action="procurement-refresh" title="刷新采购概览">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                </div>
+            </div>
+            ${this.renderProcurementFilterBar(payload)}
+            <div class="shop-procurement-overview__metrics">
+                ${this.buildProcurementOverviewSummaryMetrics(summary)}
+            </div>
+            <div class="shop-procurement-overview__body">
+                <div class="shop-procurement-overview__panel">
+                    <div class="shop-procurement-overview__panel-title">质量分布</div>
+                    <div class="shop-procurement-overview__quality">
+                        ${this.renderProcurementQualityChips(payload.qualityBreakdown)}
+                    </div>
+                </div>
+                <div class="shop-procurement-overview__panel">
+                    <div class="shop-procurement-overview__panel-title">货源成本排行</div>
+                    <div class="shop-procurement-overview__source-list">
+                        ${this.renderProcurementSourceRows(payload.costBySource)}
+                    </div>
+                </div>
+            </div>
+            <div class="shop-procurement-overview__recent">
+                <div class="shop-procurement-overview__panel-title">${this.escapeHtml(renderContext.batchTitle)}</div>
+                <div class="shop-procurement-batch-list">
+                    ${this.renderProcurementBatchRows(renderContext.batchRecords)}
+                </div>
+            </div>
+        `;
+        this.enhanceProcurementFilterControls(container);
+    },
+
+    loadProcurementOverview: async function (options = {}) {
+        const container = document.getElementById('shopProcurementOverview');
+        if (!container) {
+            return null;
+        }
+
+        const site = window.AdminSiteFilter?.getSiteFilter?.() || 'all';
+        const force = options.force === true;
+        const { filters, cacheKey } = this.getProcurementOverviewCachePayload(site, options);
+        if (this.shouldUseProcurementOverviewCache({ force, cacheKey })) {
+            return this.renderProcurementOverviewCachedPayload();
+        }
+
+        const requestToken = this.procurementOverviewRequestToken + 1;
+        this.procurementOverviewRequestToken = requestToken;
+        this.renderProcurementOverviewLoading(container);
+
+        try {
+            const payload = await this.loadProcurementOverviewViaAdminApi(
+                this.getProcurementOverviewRequestParams({ site, filters })
+            );
+            if (requestToken !== this.procurementOverviewRequestToken) {
+                return null;
+            }
+
+            return this.finishProcurementOverviewLoad(payload, { site, cacheKey, filters });
+        } catch (error) {
+            if (requestToken !== this.procurementOverviewRequestToken) {
+                return null;
+            }
+            console.error('[ShopAdmin] Load procurement overview error:', error);
+            this.renderProcurementOverviewError(error);
+            return null;
+        }
+    },
+
     loadInventoryList: async function (page = 1) {
         this.inventoryPage = page;
         const tbody = document.getElementById('inventoryTableBody');
@@ -14644,6 +16107,7 @@ Example output format:
             document.getElementById('statFrozen').textContent = stats.frozen || 0;
             if (stats.fault !== undefined) document.getElementById('statFault').textContent = stats.fault; // Update fault stats
             document.getElementById('statFault').textContent = stats.fault || 0; // Fault stat
+            void this.loadProcurementOverview();
 
             // Render table
             if (this.inventoryData.length === 0) {
@@ -14659,6 +16123,8 @@ Example output format:
                 const createdAt = new Date(item.created_at).toLocaleString('zh-CN');
                 const safeCreatedAt = this.escapeHtml(createdAt);
                 const safeProductName = this.escapeHtml(item.product_name || '-');
+                const procurementMeta = this.getInventoryProcurementMetaText(item);
+                const safeProcurementMeta = this.escapeHtml(procurementMeta);
                 const safeItemId = this.escapeForAttr(String(item.id || ''));
                 const safeFullContent = this.escapeForAttr(item.content || '');
                 const safeBuyerEmail = this.escapeHtml(item.buyer_email || '-');
@@ -14677,10 +16143,13 @@ Example output format:
                         <td class="${checkboxCellClass}">
                             <input type="checkbox" class="inv-checkbox" data-id="${safeItemId}" data-shop-change="inventory-selection-count">
                         </td>
-                        <td>${safeProductName}</td>
+                        <td class="shop-inventory-product-cell">
+                            <span class="shop-inventory-product-name" title="${this.escapeForAttr(item.product_name || '-')}">${safeProductName}</span>
+                            <span class="shop-inventory-product-meta" title="${this.escapeForAttr(procurementMeta)}"><i class="fas fa-truck-ramp-box"></i> ${safeProcurementMeta}</span>
+                        </td>
                         <td class="shop-inventory-selection-toggle-cell" data-shop-action="inventory-toggle-selection-cell">
-                            <div class="content-cell shop-inventory-content-chip" 
-                                 data-content="${safeFullContent}" 
+                            <div class="content-cell shop-inventory-content-chip"
+                                 data-content="${safeFullContent}"
                                  data-shop-action="inventory-copy-content"
                                  title="点击复制全部内容&#10;───────────&#10;${this.escapeForAttr(item.content)}"
                                  >
@@ -14749,6 +16218,36 @@ Example output format:
         return `<span class="shop-inventory-status-badge shop-inventory-status-badge--${meta.modifier}"><i class="fas ${meta.icon}"></i> ${this.escapeHtml(meta.label)}</span>`;
     },
 
+    formatInventoryCostText: function (item = {}) {
+        const rawCost = item.purchase_unit_cost_cny ?? item.procurement_unit_cost_cny;
+        const cost = Number(rawCost);
+        if (!Number.isFinite(cost) || cost < 0) {
+            return '成本未归因';
+        }
+
+        const formatted = cost.toLocaleString('zh-CN', {
+            minimumFractionDigits: cost > 0 && cost < 1 ? 4 : 2,
+            maximumFractionDigits: 4
+        });
+        return `成本 ¥${formatted}`;
+    },
+
+    getInventorySourceLabel: function (item = {}) {
+        return String(
+            item.source_name
+            || item.inventory_source?.source_name
+            || item.procurementBatch?.source_name
+            || item.procurement_batch_code
+            || item.batch_id
+            || ''
+        ).trim();
+    },
+
+    getInventoryProcurementMetaText: function (item = {}) {
+        const sourceLabel = this.getInventorySourceLabel(item) || '未归因货源';
+        return `${sourceLabel} · ${this.formatInventoryCostText(item)}`;
+    },
+
     buildInventoryExcelRows: function (items = []) {
         return (Array.isArray(items) ? items : []).map((item) => {
             const statusMeta = this.getInventoryStatusMeta(item.status);
@@ -14770,7 +16269,12 @@ Example output format:
                 '售出时间': item.sold_at ? new Date(item.sold_at).toLocaleString() : '-',
                 '买家邮箱': item.buyer_email || item.profiles?.email || '-',
                 '订单号': item.order_id || '-',
-                '批次': item.batch_id || '-'
+                '导入批次': item.batch_id || '-',
+                '采购批次': item.procurement_batch_code || '-',
+                '货源': item.source_name || '-',
+                '货源网址': item.source_url || '-',
+                '进价(CNY)': item.purchase_unit_cost_cny ?? item.procurement_unit_cost_cny ?? '',
+                '采购质量': item.procurement_quality_status || item.source_quality_grade || '-'
             };
         });
     },
@@ -14964,7 +16468,6 @@ Example output format:
                 <div class="shop-inventory-detail-modal custom-scrollbar">
                     <div class="shop-inventory-detail-header">
                         <h3 class="shop-inventory-detail-title"><i class="fas fa-info-circle"></i> 库存详情</h3>
-                        <button type="button" data-shop-action="inventory-detail-close" data-modal-id="inventoryDetailModal" class="shop-inventory-detail-close" aria-label="关闭">&times;</button>
                     </div>
                     <div id="detailContent" class="shop-inventory-detail-content">
                         ${this.buildInventoryDetailLoadingSkeleton()}
@@ -14984,6 +16487,8 @@ Example output format:
             const detailPayload = await this.loadInventoryDetailViaAdminApi(inventoryId);
             const invData = detailPayload?.inventory || null;
             const orderData = detailPayload?.order || null;
+            const procurementBatch = detailPayload?.procurementBatch || null;
+            const inventorySource = detailPayload?.inventorySource || null;
             const historyItems = Array.isArray(detailPayload?.historyItems) ? detailPayload.historyItems : [];
             const sameOrderItems = Array.isArray(detailPayload?.sameOrderItems) ? detailPayload.sameOrderItems : [];
 
@@ -14999,6 +16504,66 @@ Example output format:
             const safeCreatedAt = this.escapeHtml(new Date(invData.created_at).toLocaleString('zh-CN'));
             const safeBatchId = this.escapeHtml(invData.batch_id || '-');
             const safeRemark = this.escapeHtml(invData.remark || '');
+            const procurementItem = {
+                ...invData,
+                procurement_unit_cost_cny: procurementBatch?.unit_cost_cny
+            };
+            const sourceName = inventorySource?.source_name || this.getInventorySourceLabel({
+                ...invData,
+                procurement_batch_code: procurementBatch?.batch_code
+            });
+            const sourceUrl = inventorySource?.source_url || '';
+            const sourceRiskTier = inventorySource?.risk_tier || '-';
+            const originalUnitCost = procurementBatch?.unit_cost ?? invData.purchase_unit_cost ?? null;
+            const originalCurrency = procurementBatch?.currency || invData.purchase_currency || 'CNY';
+            const exchangeRate = procurementBatch?.exchange_rate_to_cny ?? invData.purchase_exchange_rate_to_cny ?? null;
+            const purchasedAt = procurementBatch?.purchased_at || null;
+            const qualityStatus = procurementBatch?.quality_status || '-';
+            const qualityScore = procurementBatch?.quality_score;
+            const sourceMetadata = inventorySource?.metadata && typeof inventorySource.metadata === 'object' && !Array.isArray(inventorySource.metadata)
+                ? inventorySource.metadata
+                : {};
+            const procurementMetadata = procurementBatch?.metadata && typeof procurementBatch.metadata === 'object' && !Array.isArray(procurementBatch.metadata)
+                ? procurementBatch.metadata
+                : {};
+            const sourceTags = this.normalizeProcurementSourceTags(
+                inventorySource?.source_tags,
+                sourceMetadata.source_tags,
+                sourceMetadata.sourceTags,
+                sourceMetadata.tags,
+                procurementBatch?.source_tags,
+                procurementMetadata.source_tags,
+                procurementMetadata.sourceTags,
+                procurementMetadata.tags
+            );
+            const procurementNotes = String(procurementBatch?.notes || inventorySource?.notes || '').trim();
+            const procurementProofUrl = String(procurementBatch?.proof_url || '').trim();
+            const safeProcurementBatchCode = this.escapeHtml(procurementBatch?.batch_code || invData.batch_id || '-');
+            const safeSourceName = this.escapeHtml(sourceName || '未归因货源');
+            const safeSourceRiskTier = this.escapeHtml(sourceRiskTier);
+            const safeProcurementNotes = this.escapeHtml(procurementNotes);
+            const safeOriginalCost = originalUnitCost === null || originalUnitCost === undefined || originalUnitCost === ''
+                ? '未填写'
+                : this.escapeHtml(`${originalCurrency} ${Number(originalUnitCost).toLocaleString('zh-CN', { maximumFractionDigits: 4 })}`);
+            const safeExchangeRate = exchangeRate === null || exchangeRate === undefined || exchangeRate === ''
+                ? '-'
+                : this.escapeHtml(String(exchangeRate));
+            const safeCostCny = this.escapeHtml(this.formatInventoryCostText(procurementItem).replace(/^成本\s*/, ''));
+            const safePurchasedAt = this.escapeHtml(purchasedAt ? new Date(purchasedAt).toLocaleString('zh-CN') : '-');
+            const safeQualityStatus = this.escapeHtml(`${qualityStatus}${qualityScore !== null && qualityScore !== undefined ? ` / ${qualityScore}` : ''}`);
+            const sourceTagsMarkup = sourceTags.length
+                ? `<div class="shop-inventory-detail-source-tags">${sourceTags.map((tag) => `<span>${this.escapeHtml(tag)}</span>`).join('')}</div>`
+                : '';
+            const safeSourceUrl = this.escapeHtml(sourceUrl || '-');
+            const sourceUrlHref = /^https?:\/\//i.test(sourceUrl) ? sourceUrl : '';
+            const sourceUrlMarkup = sourceUrlHref
+                ? `<a href="${this.escapeForAttr(sourceUrlHref)}" target="_blank" rel="noopener noreferrer" class="shop-inventory-detail-source-link">${safeSourceUrl}</a>`
+                : safeSourceUrl;
+            const safeProcurementProofUrl = this.escapeHtml(procurementProofUrl || '-');
+            const procurementProofHref = /^https?:\/\//i.test(procurementProofUrl) ? procurementProofUrl : '';
+            const procurementProofMarkup = procurementProofHref
+                ? `<a href="${this.escapeForAttr(procurementProofHref)}" target="_blank" rel="noopener noreferrer" class="shop-inventory-detail-source-link">${safeProcurementProofUrl}</a>`
+                : safeProcurementProofUrl;
 
             const renderInventoryDetailListActions = (items, toneClass, filename) => {
                 const joined = items.map((entry) => entry.shop_inventory?.content || '').join('\n');
@@ -15059,6 +16624,70 @@ Example output format:
                     </div>
                 </div>
             `;
+
+            if (invData.source_batch_id || procurementBatch || inventorySource || invData.purchase_unit_cost_cny !== null && invData.purchase_unit_cost_cny !== undefined) {
+                detailHtml += `
+                    <div class="shop-inventory-detail-procurement">
+                        <div class="shop-inventory-detail-section-heading"><i class="fas fa-truck-ramp-box"></i> 采购来源</div>
+                        <div class="shop-inventory-detail-grid">
+                            <div class="shop-inventory-detail-card">
+                                <div class="shop-inventory-detail-card-label">货源</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small shop-inventory-detail-card-value--break">${safeSourceName}</div>
+                            </div>
+                            <div class="shop-inventory-detail-card">
+                                <div class="shop-inventory-detail-card-label">采购批次</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small">${safeProcurementBatchCode}</div>
+                            </div>
+                            <div class="shop-inventory-detail-card">
+                                <div class="shop-inventory-detail-card-label">原币进价</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small">${safeOriginalCost}</div>
+                            </div>
+                            <div class="shop-inventory-detail-card">
+                                <div class="shop-inventory-detail-card-label">CNY 成本</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small shop-inventory-detail-card-value--strong">${safeCostCny}</div>
+                            </div>
+                            <div class="shop-inventory-detail-card">
+                                <div class="shop-inventory-detail-card-label">汇率</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small">${safeExchangeRate}</div>
+                            </div>
+                            <div class="shop-inventory-detail-card">
+                                <div class="shop-inventory-detail-card-label">采购时间</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small">${safePurchasedAt}</div>
+                            </div>
+                            <div class="shop-inventory-detail-card">
+                                <div class="shop-inventory-detail-card-label">质量状态</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small">${safeQualityStatus}</div>
+                            </div>
+                            <div class="shop-inventory-detail-card">
+                                <div class="shop-inventory-detail-card-label">风险等级</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small">${safeSourceRiskTier}</div>
+                            </div>
+                            ${sourceTags.length ? `
+                            <div class="shop-inventory-detail-card shop-inventory-detail-card--wide">
+                                <div class="shop-inventory-detail-card-label">货源标签</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small">${sourceTagsMarkup}</div>
+                            </div>
+                            ` : ''}
+                            <div class="shop-inventory-detail-card shop-inventory-detail-card--wide">
+                                <div class="shop-inventory-detail-card-label">来源网址</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small shop-inventory-detail-card-value--break">${sourceUrlMarkup}</div>
+                            </div>
+                            ${procurementProofUrl ? `
+                            <div class="shop-inventory-detail-card shop-inventory-detail-card--wide">
+                                <div class="shop-inventory-detail-card-label">凭证链接</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small shop-inventory-detail-card-value--break">${procurementProofMarkup}</div>
+                            </div>
+                            ` : ''}
+                            ${procurementNotes ? `
+                            <div class="shop-inventory-detail-card shop-inventory-detail-card--wide shop-inventory-detail-card--note">
+                                <div class="shop-inventory-detail-card-label">采购备注</div>
+                                <div class="shop-inventory-detail-card-value shop-inventory-detail-card-value--small shop-inventory-detail-card-value--note">${safeProcurementNotes}</div>
+                            </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }
 
             if (invData.remark) {
                 detailHtml += `
@@ -15200,6 +16829,14 @@ Example output format:
         const contentLines = content.split('\n').map((line) => line.trim()).filter(Boolean);
         if (contentLines.length === 0) { alert('请输入有效的账号内容'); return; }
 
+        let procurement = null;
+        try {
+            procurement = this.buildInventoryProcurementPayload('importModal');
+        } catch (err) {
+            alert(err.message || '货源信息无效');
+            return;
+        }
+
         this.setActionButtonLoading(importButton, '导入中...');
         this.emitCommandFeedback(`正在导入 ${contentLines.length} 个账号...`, 'loading', {
             source: 'shop-inventory',
@@ -15207,11 +16844,12 @@ Example output format:
         });
 
         try {
-            const { batchId, imported, stockCount } = await this.performInventoryImport({
+            const { batchId, imported, stockCount, procurementWarning } = await this.performInventoryImport({
                 productId,
                 skuId,
                 contentLines,
-                status
+                status,
+                procurement
             });
             this.syncProductStockAfterInventoryMutation({
                 productId,
@@ -15223,6 +16861,7 @@ Example output format:
             const successMessage = `成功导入 ${imported} 个账号，批次号: ${batchId}`;
             this.showActionToast(successMessage, 'success');
             this.emitCommandFeedback(successMessage, 'saved', { source: 'shop-inventory' });
+            this.notifyProcurementImportWarning(procurementWarning);
             contentInput.value = '';
             this.updateLegacyImportLineCount();
             this.closeImportModal();
@@ -16462,6 +18101,14 @@ Example output format:
         const contentLines = content.split('\n').map(l => l.trim()).filter(l => l);
         if (contentLines.length === 0) return;
 
+        let procurement = null;
+        try {
+            procurement = this.buildInventoryProcurementPayload('importView');
+        } catch (err) {
+            alert(err.message || '货源信息无效');
+            return;
+        }
+
         this.setActionButtonLoading(actionButton, '导入中...');
         this.emitCommandFeedback(`正在导入 ${contentLines.length} 个账号...`, 'loading', {
             source: 'shop-inventory',
@@ -16469,11 +18116,12 @@ Example output format:
         });
 
         try {
-            const { batchId, imported, stockCount } = await this.performInventoryImport({
+            const { batchId, imported, stockCount, procurementWarning } = await this.performInventoryImport({
                 productId,
                 skuId,
                 contentLines,
-                status
+                status,
+                procurement
             });
             this.syncProductStockAfterInventoryMutation({
                 productId,
@@ -16485,6 +18133,7 @@ Example output format:
             const successMessage = `成功导入 ${imported} 个账号，批次号: ${batchId}`;
             this.showActionToast(successMessage, 'success');
             this.emitCommandFeedback(successMessage, 'saved', { source: 'shop-inventory' });
+            this.notifyProcurementImportWarning(procurementWarning);
 
             // Clear input
             document.getElementById('importViewContentInput').value = '';

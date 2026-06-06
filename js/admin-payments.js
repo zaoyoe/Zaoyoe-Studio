@@ -15,6 +15,7 @@
         summary: null,
         cleanupPreview: null,
         requestToken: 0,
+        initPromise: null,
         viewCache: {},
         overviewStage: 'idle',
         overviewSecondaryLoaded: false,
@@ -94,6 +95,12 @@
             color: '#45e6a8',
             fill: 'rgba(69, 230, 168, 0.17)',
             glow: 'rgba(69, 230, 168, 0.22)'
+        },
+        profit: {
+            icon: 'fas fa-scale-balanced',
+            color: '#f59e0b',
+            fill: 'rgba(245, 158, 11, 0.17)',
+            glow: 'rgba(245, 158, 11, 0.24)'
         },
         mock: {
             icon: 'fas fa-flask',
@@ -221,6 +228,23 @@
         return Number.isFinite(num)
             ? num.toLocaleString('zh-CN', { minimumFractionDigits: num % 1 ? 1 : 0, maximumFractionDigits: 1 })
             : '0';
+    }
+
+    function formatPrecisePoints(value) {
+        const num = Number(value || 0);
+        return Number.isFinite(num)
+            ? num.toLocaleString('zh-CN', { minimumFractionDigits: num % 1 ? 2 : 0, maximumFractionDigits: 2 })
+            : '0';
+    }
+
+    function formatRatioPercent(value) {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return '—';
+        const percent = num * 100;
+        return `${percent.toLocaleString('zh-CN', {
+            minimumFractionDigits: Math.abs(percent % 1) > 0.001 ? 2 : 0,
+            maximumFractionDigits: 2
+        })}%`;
     }
 
     function normalizePaymentsContextObject(value) {
@@ -1342,7 +1366,8 @@
     function getOpsAlertChannelLabel(channel) {
         const map = {
             telegram: 'Telegram',
-            feishu: '飞书'
+            feishu: '飞书',
+            shop_profit_audit: '净利润审计'
         };
         return map[String(channel || '').trim().toLowerCase()] || String(channel || '未知通道');
     }
@@ -1961,6 +1986,12 @@
         if (type === 'ops_alert_job') {
             return '处理建议：先检查 Telegram / 飞书密钥、目标通道配置和网络连通性，再决定是立即重试还是人工处理。';
         }
+        if (type === 'shop_profit_audit') {
+            const actionLabel = String(item?.action_label || '').trim();
+            return actionLabel
+                ? `处理建议：进入商城净利润审计，${actionLabel}，再回到运营入口确认告警是否收口。`
+                : '处理建议：进入商城净利润审计，核对订单收入、采购成本和积分来源后再确认净利润口径。';
+        }
         if (title.includes('退款积分回滚失败')) {
             return '处理建议：立即核对 payment_orders、payment_events 与 points_ledger，确认是否需要人工补回积分并暂停继续退款。';
         }
@@ -2002,6 +2033,7 @@
 
     function getAnomalyTypeLabel(item) {
         if (item?.type === 'ops_alert_job') return '站外告警';
+        if (item?.type === 'shop_profit_audit') return '商城利润审计';
         if (item?.type === 'session') return '支付意图';
         if (item?.type === 'event') return '回调事件';
         if (item?.type === 'query') return '查码记录';
@@ -2009,11 +2041,15 @@
     }
 
     function getAnomalyReferenceLabel(item) {
+        if (item?.type === 'shop_profit_audit') return '审计项';
         if (item?.type === 'ops_alert_job') return '投递单';
         return item?.type === 'session' ? '会话' : '订单号';
     }
 
     function getAnomalyReferenceValue(item) {
+        if (item?.type === 'shop_profit_audit') {
+            return getShopProfitAuditTargetLabel(item?.audit_alert_type || item?.provider_order_no || item?.id);
+        }
         if (item?.type === 'ops_alert_job') {
             return item?.provider_order_no || item?.id || '无投递单号';
         }
@@ -2119,6 +2155,40 @@
         `;
     }
 
+    function renderOpsAlertQueueItemMeta(item) {
+        if (String(item?.type || '').trim().toLowerCase() === 'shop_profit_audit') {
+            const actionLabel = String(item?.action_label || '').trim() || '复核净利润口径';
+            return `
+                <div class="payments-anomaly-meta">
+                    <span><small>类型</small><strong>商城利润审计</strong></span>
+                    <span><small>指标</small><strong>${escapeHtml(item.audit_metric || '待复核')}</strong></span>
+                    <span><small>影响订单</small><strong>${escapeHtml(formatNumber(item.affected_order_count || 0))}</strong></span>
+                    <span><small>处理项</small><strong>${escapeHtml(actionLabel)}</strong></span>
+                    <span><small>${escapeHtml(getAnomalyReferenceLabel(item))}</small><strong>${escapeHtml(getAnomalyReferenceValue(item))}</strong></span>
+                    <span><small>时间</small><strong>${escapeHtml(formatDateTime(item.created_at))}</strong></span>
+                </div>
+            `;
+        }
+
+        return `
+            <div class="payments-anomaly-meta">
+                <span><small>渠道</small><strong>${escapeHtml((Array.isArray(item.channels) ? item.channels : []).map(getOpsAlertChannelLabel).join(' / ') || '未配置')}</strong></span>
+                <span><small>剩余</small><strong>${escapeHtml((Array.isArray(item.remaining_channels) ? item.remaining_channels : []).map(getOpsAlertChannelLabel).join(' / ') || '无')}</strong></span>
+                <span><small>尝试</small><strong>${escapeHtml(`${formatNumber(item.attempt_count || 0)} / ${formatNumber(item.max_attempts || 0)}`)}</strong></span>
+                <span><small>${escapeHtml(getAnomalyReferenceLabel(item))}</small><strong>${escapeHtml(getAnomalyReferenceValue(item))}</strong></span>
+                <span><small>下次重试</small><strong>${escapeHtml(formatDateTime(item.next_retry_at))}</strong></span>
+                <span><small>时间</small><strong>${escapeHtml(formatDateTime(item.created_at))}</strong></span>
+            </div>
+        `;
+    }
+
+    function getOpsAlertQueueItemBadgeLabel(item) {
+        if (String(item?.type || '').trim().toLowerCase() === 'shop_profit_audit') {
+            return getSeverityLabel(item.severity || 'warning');
+        }
+        return getAnomalyOpsStatusLabel(item.queue_status);
+    }
+
     function renderOpsAlertQueueItemsHtml(items) {
         return (items || []).map((item) => `
             <div class="payments-anomaly-item severity-${escapeHtml(item.severity || 'warning')}">
@@ -2127,21 +2197,14 @@
                         <div class="payments-anomaly-title">${escapeHtml(item.title || '站外告警')}</div>
                         <div class="payments-anomaly-message">${escapeHtml(item.message || '')}</div>
                     </div>
-                    <span class="payments-anomaly-severity">${escapeHtml(getAnomalyOpsStatusLabel(item.queue_status))}</span>
+                    <span class="payments-anomaly-severity">${escapeHtml(getOpsAlertQueueItemBadgeLabel(item))}</span>
                 </div>
                 ${renderAnomalyOpsState(item)}
                 <div class="payments-anomaly-suggestion">
                     <i class="fas fa-lightbulb"></i>
                     <span>${escapeHtml(getHandlingSuggestion(item))}</span>
                 </div>
-                <div class="payments-anomaly-meta">
-                    <span><small>渠道</small><strong>${escapeHtml((Array.isArray(item.channels) ? item.channels : []).map(getOpsAlertChannelLabel).join(' / ') || '未配置')}</strong></span>
-                    <span><small>剩余</small><strong>${escapeHtml((Array.isArray(item.remaining_channels) ? item.remaining_channels : []).map(getOpsAlertChannelLabel).join(' / ') || '无')}</strong></span>
-                    <span><small>尝试</small><strong>${escapeHtml(`${formatNumber(item.attempt_count || 0)} / ${formatNumber(item.max_attempts || 0)}`)}</strong></span>
-                    <span><small>${escapeHtml(getAnomalyReferenceLabel(item))}</small><strong>${escapeHtml(getAnomalyReferenceValue(item))}</strong></span>
-                    <span><small>下次重试</small><strong>${escapeHtml(formatDateTime(item.next_retry_at))}</strong></span>
-                    <span><small>时间</small><strong>${escapeHtml(formatDateTime(item.created_at))}</strong></span>
-                </div>
+                ${renderOpsAlertQueueItemMeta(item)}
                 ${renderAnomalyActions(item)}
             </div>
         `).join('');
@@ -4079,8 +4142,14 @@
     }
 
     function getBusinessBreakdownTone(item) {
+        const explicitTone = String(item?.tone || '').trim().toLowerCase();
+        if (Object.prototype.hasOwnProperty.call(BUSINESS_BREAKDOWN_TONE_META, explicitTone)) {
+            return explicitTone;
+        }
+
         const key = getBusinessBreakdownKey(item);
         if (key === 'shop') return 'shop';
+        if (key === 'shop_profit') return 'profit';
         if (key === 'mock') return 'mock';
         if (key === 'balance') return 'balance';
         return 'recharge';
@@ -4646,6 +4715,833 @@
         `;
     }
 
+    function getShopProfitSummary(data) {
+        const sitewideSummary = normalizePaymentsContextObject(data?.sitewide_summary);
+        return normalizePaymentsContextObject(sitewideSummary.shop_profit_summary);
+    }
+
+    function hasShopProfitAuditSummary(summary = {}) {
+        return [
+            'order_count',
+            'recognized_revenue_cny',
+            'recognized_cost_cny',
+            'net_profit_cny',
+            'paid_points_spent',
+            'bonus_points_spent',
+            'untracked_revenue_points',
+            'inventory_item_count'
+        ].some((key) => Number.isFinite(Number(summary?.[key])) && Number(summary[key]) !== 0);
+    }
+
+    function normalizeShopProfitIssueTone(tone) {
+        const normalized = String(tone || '').trim().toLowerCase();
+        return ['critical', 'warning', 'info', 'review', 'ready'].includes(normalized) ? normalized : 'info';
+    }
+
+    function formatShopProfitIssueMetric(issue = {}) {
+        const type = String(issue.type || '').trim().toLowerCase();
+        const amount = Number(issue.amount_cny || 0);
+        const points = Number(issue.points || 0);
+
+        if (type === 'negative_profit') {
+            return `亏损 ${formatCurrency(amount)}`;
+        }
+        if (type === 'missing_cost' || type === 'no_inventory') {
+            return `影响收入 ${formatCurrency(amount)}`;
+        }
+        if (type === 'untracked_points') {
+            return `未拆分 ${formatPrecisePoints(points)} 积分`;
+        }
+        if (type === 'bonus_points') {
+            return `非现金 ${formatPrecisePoints(points)} 积分`;
+        }
+        if (type === 'refunded') {
+            return `退款 ${formatPrecisePoints(points)} 积分`;
+        }
+
+        if (points > 0) {
+            return `${formatPrecisePoints(points)} 积分`;
+        }
+        if (amount > 0) {
+            return formatCurrency(amount);
+        }
+        return `${formatNumber(issue.count || issue.order_count || 0)} 项`;
+    }
+
+    function renderShopProfitIssueSamples(issue = {}) {
+        const samples = Array.isArray(issue.sample_orders)
+            ? issue.sample_orders.filter(Boolean).slice(0, 4)
+            : [];
+
+        if (!samples.length) return '';
+
+        return `
+            <div class="payments-shop-profit-audit__issue-samples">
+                ${samples.map((sample) => {
+                    const detailParts = [
+                        sample.created_at ? formatDateTime(sample.created_at) : '',
+                        `净利 ${formatCurrency(sample.net_profit_cny)}`,
+                        Number(sample.missing_cost_item_count || 0) > 0 ? `缺成本 ${formatNumber(sample.missing_cost_item_count)} 件` : '',
+                        Number(sample.untracked_revenue_points || 0) > 0 ? `未拆分 ${formatPrecisePoints(sample.untracked_revenue_points)} 积分` : '',
+                        Number(sample.bonus_points_spent || 0) > 0 ? `非现金 ${formatPrecisePoints(sample.bonus_points_spent)} 积分` : '',
+                        sample.point_source_traceability_label ? `来源 ${sample.point_source_traceability_label}` : '',
+                        sample.refunded ? '已退款' : ''
+                    ].filter(Boolean);
+
+                    return `
+                        <span>
+                            <strong>${escapeHtml(sample.order_no || sample.order_id || '未知订单')}</strong>
+                            <em>${escapeHtml(sample.product_name || '未命名商品')}</em>
+                            <small>${escapeHtml(detailParts.join(' · '))}</small>
+                        </span>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    function renderShopProfitReadiness(summary = {}) {
+        const readiness = normalizePaymentsContextObject(summary.profit_readiness);
+        const items = Array.isArray(readiness.items) ? readiness.items.filter(Boolean).slice(0, 4) : [];
+        if (!readiness.status && !items.length) return '';
+
+        const tone = normalizeShopProfitIssueTone(readiness.status);
+        const label = String(readiness.label || '').trim() || (tone === 'ready' ? '可结算' : '待复核');
+
+        return `
+            <div class="payments-shop-profit-audit__readiness is-${escapeHtml(tone)}" aria-label="商城利润结算就绪度">
+                <div class="payments-shop-profit-audit__readiness-score">
+                    <span>结算就绪度</span>
+                    <strong>${escapeHtml(formatNumber(readiness.score ?? 0))}</strong>
+                    <em>${escapeHtml(label)}</em>
+                </div>
+                <div class="payments-shop-profit-audit__readiness-list">
+                    ${items.map((item) => {
+                        const itemTone = normalizeShopProfitIssueTone(item.severity || item.status);
+                        return `
+                            <div class="payments-shop-profit-audit__readiness-item is-${escapeHtml(itemTone)}">
+                                <strong>${escapeHtml(item.label || '审计项')}</strong>
+                                <span>${escapeHtml([item.value_label || '', item.action_label || item.description || ''].filter(Boolean).join(' · '))}</span>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    function renderShopProfitReconciliationIssues(issues = []) {
+        const safeIssues = Array.isArray(issues) ? issues.filter(Boolean).slice(0, 6) : [];
+        if (!safeIssues.length) return '';
+
+        return `
+            <div class="payments-shop-profit-audit__issues" aria-label="商城利润闭环异常">
+                <div class="payments-shop-profit-audit__issues-head">
+                    <strong>闭环异常</strong>
+                    <span>按订单利润归因自动汇总，优先处理红/黄项</span>
+                </div>
+                <div class="payments-shop-profit-audit__issue-list">
+                    ${safeIssues.map((issue) => {
+                        const tone = normalizeShopProfitIssueTone(issue.tone);
+                        return `
+                            <div class="payments-shop-profit-audit__issue is-${escapeHtml(tone)}">
+                                <div class="payments-shop-profit-audit__issue-main">
+                                    <div>
+                                        <strong>${escapeHtml(issue.title || '闭环项')}</strong>
+                                        <span>${escapeHtml(issue.description || '需要进一步核对。')}</span>
+                                    </div>
+                                    <em>${escapeHtml(formatShopProfitIssueMetric(issue))}</em>
+                                </div>
+                                <div class="payments-shop-profit-audit__issue-meta">
+                                    <span>${escapeHtml(formatNumber(issue.order_count || 0))} 笔订单</span>
+                                    <span>${escapeHtml(formatNumber(issue.count || 0))} 个对象</span>
+                                </div>
+                                ${renderShopProfitIssueSamples(issue)}
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    function formatShopProfitAuditAlertMetric(alert = {}) {
+        const metricLabel = String(alert.metric_label || '').trim();
+        if (metricLabel) return metricLabel;
+
+        const amount = Number(alert.amount_cny || 0);
+        const points = Number(alert.points || 0);
+        if (points > 0) return `${formatPrecisePoints(points)} 积分`;
+        if (amount > 0) return formatCurrency(amount);
+        return `${formatNumber(alert.order_count || alert.affected_order_count || 0)} 笔`;
+    }
+
+    function getShopProfitAuditTargetLabel(value = '') {
+        const normalized = String(value || '').trim().toLowerCase();
+        const map = {
+            negative_profit: '负利润订单',
+            missing_cost: '采购成本未闭环',
+            no_inventory: '订单未关联库存',
+            point_source_coverage: '积分批次覆盖不足',
+            untracked_points: '积分来源未拆分',
+            profit_ledger_incomplete: '利润分录待补齐',
+            profit_adjustments_review: '利润调整项需复核',
+            bonus_points: '非现金积分消耗',
+            refunded: '退款订单冲销'
+        };
+        return map[normalized] || String(value || '商城利润审计').trim() || '商城利润审计';
+    }
+
+    function renderShopProfitAuditAlerts(summary = {}) {
+        const alerts = normalizePaymentsContextObject(summary.shop_profit_audit_alerts);
+        const items = Array.isArray(alerts.items) ? alerts.items.filter(Boolean).slice(0, 8) : [];
+        if (!items.length) return '';
+
+        return `
+            <div class="payments-shop-profit-audit__alerts" aria-label="商城利润审计告警">
+                <div class="payments-shop-profit-audit__alerts-head">
+                    <strong>审计告警</strong>
+                    <span>优先处理 ${escapeHtml(formatNumber(alerts.action_required_count || 0))} 项 · 红色 ${escapeHtml(formatNumber(alerts.critical_count || 0))} / 黄色 ${escapeHtml(formatNumber(alerts.warning_count || 0))}</span>
+                </div>
+                <div class="payments-shop-profit-audit__alert-list">
+                    ${items.map((alert) => {
+                        const tone = normalizeShopProfitIssueTone(alert.severity || alert.tone);
+                        const metaParts = [
+                            `${formatNumber(alert.order_count || alert.affected_order_count || 0)} 笔订单`,
+                            alert.action_label || '',
+                            alert.case_target_id ? `审计项：${getShopProfitAuditTargetLabel(alert.case_target_id)}` : ''
+                        ].filter(Boolean);
+
+                        return `
+                            <div class="payments-shop-profit-audit__alert is-${escapeHtml(tone)}">
+                                <div class="payments-shop-profit-audit__alert-main">
+                                    <div>
+                                        <strong>${escapeHtml(alert.title || '审计告警')}</strong>
+                                        <span>${escapeHtml(alert.description || '需要进一步核对。')}</span>
+                                    </div>
+                                    <em>${escapeHtml(formatShopProfitAuditAlertMetric(alert))}</em>
+                                </div>
+                                <div class="payments-shop-profit-audit__alert-meta">
+                                    ${metaParts.map((part) => `<span>${escapeHtml(part)}</span>`).join('')}
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    function getShopProfitClosureStatusLabel(status = '') {
+        const normalized = String(status || '').trim().toLowerCase();
+        if (normalized === 'critical') return '需立即处理';
+        if (normalized === 'warning') return '待补齐';
+        return '已闭环';
+    }
+
+    function getShopProfitClosureCategoryLabel(category = '') {
+        const normalized = String(category || '').trim().toLowerCase();
+        const map = {
+            payment: '支付链路',
+            points: '积分链路',
+            revenue: '收入链路',
+            shop_order: '订单链路',
+            procurement: '采购链路',
+            adjustment: '调整链路',
+            ledger: '分录链路',
+            audit: '审计链路',
+            reconciliation: '对账链路'
+        };
+        return map[normalized] || '对账链路';
+    }
+
+    function renderShopProfitReconciliationClosure(summary = {}) {
+        const closure = normalizePaymentsContextObject(summary.profit_reconciliation_closure);
+        const items = Array.isArray(closure.items) ? closure.items.filter(Boolean) : [];
+        if (!items.length) return '';
+
+        const status = String(closure.status || '').trim().toLowerCase();
+        const tone = normalizeShopProfitIssueTone(status === 'ready' ? 'ready' : status);
+        const statusLabel = getShopProfitClosureStatusLabel(status);
+
+        return `
+            <div class="payments-shop-profit-audit__closure" aria-label="商城利润对账闭环">
+                <div class="payments-shop-profit-audit__closure-head">
+                    <div>
+                        <strong>对账闭环</strong>
+                        <span>支付到账、积分来源、采购成本、调整项、分录与告警逐项校验</span>
+                    </div>
+                    <em class="is-${escapeHtml(tone)}">${escapeHtml(statusLabel)} · ${escapeHtml(formatNumber(closure.action_required_count || 0))} 项待处理</em>
+                </div>
+                <div class="payments-shop-profit-audit__closure-grid">
+                    ${items.map((item) => {
+                        const itemTone = normalizeShopProfitIssueTone(item.tone || item.status);
+                        const metaParts = [
+                            getShopProfitClosureCategoryLabel(item.category),
+                            item.order_count ? `${formatNumber(item.order_count)} 笔订单` : '',
+                            Number(item.amount_cny || 0) ? formatCurrency(Math.abs(Number(item.amount_cny || 0))) : '',
+                            Number(item.points || 0) ? `${formatPrecisePoints(item.points)} 积分` : '',
+                            item.action_label || ''
+                        ].filter(Boolean);
+
+                        return `
+                            <div class="payments-shop-profit-audit__closure-item is-${escapeHtml(itemTone)}">
+                                <div class="payments-shop-profit-audit__closure-main">
+                                    <div>
+                                        <strong>${escapeHtml(item.label || '对账项')}</strong>
+                                        <span>${escapeHtml(item.description || '已纳入商城净利润对账闭环。')}</span>
+                                    </div>
+                                    <em>${escapeHtml(item.value_label || getShopProfitClosureStatusLabel(item.status))}</em>
+                                </div>
+                                <div class="payments-shop-profit-audit__closure-meta">
+                                    <span>${escapeHtml(getShopProfitClosureStatusLabel(item.status))}</span>
+                                    ${metaParts.map((part) => `<span>${escapeHtml(part)}</span>`).join('')}
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    function getShopProfitOrderRiskStatusLabel(risk = '') {
+        if (risk && typeof risk === 'object') {
+            const explicitLabel = String(risk.status_label || risk.statusLabel || '').trim();
+            if (explicitLabel) {
+                return explicitLabel;
+            }
+            const reasons = Array.isArray(risk.reasons) ? risk.reasons : [];
+            if (Number(risk.missing_cost_item_count || 0) > 0 || reasons.some((reason) => reason?.type === 'missing_cost')) {
+                return '采购成本待补齐';
+            }
+            if (String(risk.cost_coverage || '').trim().toLowerCase() === 'no_inventory' || reasons.some((reason) => reason?.type === 'no_inventory')) {
+                return '库存关联待补齐';
+            }
+            if (Number(risk.untracked_revenue_points || 0) > 0 || reasons.some((reason) => reason?.type === 'point_source_gap')) {
+                return '积分来源待补齐';
+            }
+            risk = risk.severity || risk.tone || '';
+        }
+
+        const normalized = String(risk || '').trim().toLowerCase();
+        if (normalized === 'critical') return '高风险';
+        if (normalized === 'warning') return '归因信息待补齐';
+        if (normalized === 'review') return '需复核';
+        return '正常';
+    }
+
+    function renderShopProfitOrderRiskList(summary = {}) {
+        const riskList = normalizePaymentsContextObject(summary.order_risk_list);
+        const items = Array.isArray(riskList.items) ? riskList.items.filter(Boolean).slice(0, 8) : [];
+        if (!items.length) return '';
+
+        return `
+            <div class="payments-shop-profit-audit__orders" aria-label="商城利润风险订单">
+                <div class="payments-shop-profit-audit__orders-head">
+                    <strong>风险订单</strong>
+                    <span>负利润、缺成本、未关联库存和积分来源缺口按优先级展示</span>
+                </div>
+                <div class="payments-shop-profit-audit__order-list">
+                    ${items.map((item) => {
+                        const tone = normalizeShopProfitIssueTone(item.tone || item.severity);
+                        const reasons = Array.isArray(item.reasons) ? item.reasons.filter(Boolean).slice(0, 4) : [];
+                        const orderId = String(item.order_id || '').trim();
+                        const orderLabel = String(item.order_no || item.order_id || '未知订单').trim() || '未知订单';
+                        const productLabel = String(item.product_name || '未命名商品').trim() || '未命名商品';
+                        const detailParts = [
+                            item.created_at ? formatDateTime(item.created_at) : '',
+                            `收入 ${formatCurrency(item.recognized_revenue_cny)}`,
+                            `成本 ${formatCurrency(item.recognized_cost_cny)}`,
+                            Number(item.untracked_revenue_points || 0) > 0 ? `未追踪 ${formatPrecisePoints(item.untracked_revenue_points)} 积分` : '',
+                            Number(item.bonus_points_spent || 0) > 0 ? `非现金 ${formatPrecisePoints(item.bonus_points_spent)} 积分` : '',
+                            item.point_source_traceability_label ? `来源 ${item.point_source_traceability_label}` : ''
+                        ].filter(Boolean);
+
+                        return `
+                            <div class="payments-shop-profit-audit__order is-${escapeHtml(tone)}">
+                                <div class="payments-shop-profit-audit__order-main">
+                                    <div>
+                                        ${orderId ? `
+                                            <button
+                                                type="button"
+                                                class="payments-shop-profit-audit__order-link"
+                                                data-admin-action="payments-open-shop-order"
+                                                data-shop-order-id="${escapeHtml(encodeURIComponent(orderId))}"
+                                                title="点击查看商城订单详情"
+                                                aria-label="查看商城订单 ${escapeHtml(orderLabel)}"
+                                            >${escapeHtml(orderLabel)}</button>
+                                        ` : `<strong>${escapeHtml(orderLabel)}</strong>`}
+                                        <span>${escapeHtml(`${productLabel} · 点击订单号查看订单详情`)}</span>
+                                    </div>
+                                    <em>${escapeHtml(formatCurrency(item.net_profit_cny))}</em>
+                                </div>
+                                <div class="payments-shop-profit-audit__order-meta">
+                                    <span>${escapeHtml(getShopProfitOrderRiskStatusLabel(item))}</span>
+                                    ${reasons.map((reason) => `<span>${escapeHtml(reason.label || reason.type || '风险项')}</span>`).join('')}
+                                </div>
+                                <div class="payments-shop-profit-audit__order-detail">
+                                    <span>${escapeHtml(detailParts.join(' · '))}</span>
+                                    <strong>${escapeHtml(item.action_label || '复核订单利润归因')}</strong>
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    function renderShopProfitDimensionRows(rows = [], options = {}) {
+        const safeRows = Array.isArray(rows) ? rows.filter(Boolean).slice(0, 4) : [];
+        const emptyText = options.emptyText || '暂无可归因数据';
+        if (!safeRows.length) {
+            return `<div class="payments-shop-profit-audit__dimension-empty">${escapeHtml(emptyText)}</div>`;
+        }
+
+        return safeRows.map((row) => {
+            const tone = normalizeShopProfitIssueTone(row.risk_tone);
+            const marginRate = row.margin_rate === null || row.margin_rate === undefined
+                ? '—'
+                : formatRatioPercent(row.margin_rate);
+            const coverageRate = formatRatioPercent(row.cost_coverage_rate || 0);
+            const metaParts = [
+                `${formatNumber(row.order_count || 0)} 笔`,
+                `收入 ${formatCurrency(row.recognized_revenue_cny)}`,
+                `成本 ${formatCurrency(row.recognized_cost_cny)}`
+            ];
+            const riskParts = [
+                Number(row.negative_profit_order_count || 0) > 0 ? `负利 ${formatNumber(row.negative_profit_order_count)} 笔` : '',
+                Number(row.missing_cost_item_count || 0) > 0 ? `缺成本 ${formatNumber(row.missing_cost_item_count)} 件` : '',
+                Number(row.no_inventory_order_count || 0) > 0 ? `未关联 ${formatNumber(row.no_inventory_order_count)} 笔` : '',
+                Number(row.refunded_order_count || 0) > 0 ? `退款 ${formatNumber(row.refunded_order_count)} 笔` : ''
+            ].filter(Boolean);
+
+            return `
+                <div class="payments-shop-profit-audit__dimension-row is-${escapeHtml(tone)}">
+                    <div class="payments-shop-profit-audit__dimension-main">
+                        <div>
+                            <strong>${escapeHtml(row.label || '未命名')}</strong>
+                            <span>${escapeHtml(metaParts.join(' · '))}</span>
+                        </div>
+                        <em>${escapeHtml(formatCurrency(row.net_profit_cny))}</em>
+                    </div>
+                    <div class="payments-shop-profit-audit__dimension-meta">
+                        <span>毛利 ${escapeHtml(marginRate)}</span>
+                        <span>覆盖 ${escapeHtml(coverageRate)}</span>
+                        ${riskParts.map((part) => `<span>${escapeHtml(part)}</span>`).join('')}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function renderShopProfitDimensionBreakdown(summary = {}) {
+        const breakdown = normalizePaymentsContextObject(summary.dimension_breakdown);
+        const products = Array.isArray(breakdown.products) ? breakdown.products : [];
+        const skus = Array.isArray(breakdown.skus) ? breakdown.skus : [];
+        const sourceBatches = Array.isArray(breakdown.source_batches) ? breakdown.source_batches : [];
+        const sources = Array.isArray(breakdown.sources) ? breakdown.sources : [];
+        if (!products.length && !skus.length && !sourceBatches.length && !sources.length) return '';
+
+        return `
+            <div class="payments-shop-profit-audit__dimensions" aria-label="商城利润维度分析">
+                <div class="payments-shop-profit-audit__dimensions-head">
+                    <strong>利润维度</strong>
+                    <span>按风险优先展示商品、规格、货源与采购批次</span>
+                </div>
+                <div class="payments-shop-profit-audit__dimension-grid">
+                    <section class="payments-shop-profit-audit__dimension-panel">
+                        <div class="payments-shop-profit-audit__dimension-title">商品利润</div>
+                        ${renderShopProfitDimensionRows(products, { emptyText: '暂无商品利润归因' })}
+                    </section>
+                    <section class="payments-shop-profit-audit__dimension-panel">
+                        <div class="payments-shop-profit-audit__dimension-title">规格利润</div>
+                        ${renderShopProfitDimensionRows(skus, { emptyText: '暂无规格利润归因' })}
+                    </section>
+                    <section class="payments-shop-profit-audit__dimension-panel">
+                        <div class="payments-shop-profit-audit__dimension-title">批次利润</div>
+                        ${renderShopProfitDimensionRows(sourceBatches, { emptyText: '暂无批次利润归因' })}
+                    </section>
+                    <section class="payments-shop-profit-audit__dimension-panel">
+                        <div class="payments-shop-profit-audit__dimension-title">货源利润</div>
+                        ${renderShopProfitSourceRows(sources)}
+                    </section>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderShopProfitSourceRows(rows = []) {
+        const safeRows = Array.isArray(rows) ? rows.filter(Boolean).slice(0, 4) : [];
+        if (!safeRows.length) {
+            return '<div class="payments-shop-profit-audit__dimension-empty">暂无货源利润归因</div>';
+        }
+
+        return safeRows.map((row) => {
+            const tone = normalizeShopProfitIssueTone(row.risk_tone);
+            const metaParts = [
+                `${formatNumber(row.order_count || 0)} 笔`,
+                row.source_platform ? `平台 ${row.source_platform}` : '',
+                row.source_risk_tier ? `风险 ${row.source_risk_tier}` : '',
+                row.source_quality_grade ? `质量 ${row.source_quality_grade}` : ''
+            ].filter(Boolean);
+            const riskParts = [
+                Number(row.negative_profit_order_count || 0) > 0 ? `负利 ${formatNumber(row.negative_profit_order_count)} 笔` : '',
+                Number(row.missing_cost_order_count || 0) > 0 ? `缺成本 ${formatNumber(row.missing_cost_order_count)} 笔` : '',
+                row.procurement_suggestion || ''
+            ].filter(Boolean);
+
+            return `
+                <div class="payments-shop-profit-audit__dimension-row is-${escapeHtml(tone)}">
+                    <div class="payments-shop-profit-audit__dimension-main">
+                        <div>
+                            <strong>${escapeHtml(row.source_name || row.label || '未归因货源')}</strong>
+                            <span>${escapeHtml(metaParts.join(' · '))}</span>
+                        </div>
+                        <em>${escapeHtml(formatCurrency(row.net_profit_cny))}</em>
+                    </div>
+                    <div class="payments-shop-profit-audit__dimension-meta">
+                        <span>覆盖 ${escapeHtml(formatRatioPercent(row.cost_coverage_rate || 0))}</span>
+                        ${riskParts.map((part) => `<span>${escapeHtml(part)}</span>`).join('')}
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function getShopProcurementRecommendationActionLabel(actionType = '') {
+        const normalized = String(actionType || '').trim().toLowerCase();
+        if (normalized === 'pause_reorder') return '暂停复采';
+        if (normalized === 'complete_cost') return '补齐成本';
+        if (normalized === 'reorder_candidate') return '优先复采';
+        return '继续观察';
+    }
+
+    function renderShopSourceProcurementRecommendations(summary = {}) {
+        const recommendations = normalizePaymentsContextObject(summary.source_procurement_recommendations);
+        const items = Array.isArray(recommendations.items) ? recommendations.items.filter(Boolean).slice(0, 8) : [];
+        if (!items.length) return '';
+
+        const status = String(recommendations.status || '').trim().toLowerCase();
+        const tone = normalizeShopProfitIssueTone(status === 'ready' ? 'ready' : status);
+        const statusLabel = status === 'critical'
+            ? '存在暂停复采项'
+            : (status === 'warning' ? '存在待补齐项' : '采购建议已生成');
+
+        return `
+            <div class="payments-shop-profit-audit__procurement" aria-label="商城货源采购建议">
+                <div class="payments-shop-profit-audit__procurement-head">
+                    <div>
+                        <strong>采购建议</strong>
+                        <span>按货源净利润、成本覆盖、退款和负利润表现生成复采动作</span>
+                    </div>
+                    <em class="is-${escapeHtml(tone)}">${escapeHtml(statusLabel)} · ${escapeHtml(formatNumber(recommendations.action_required_count || 0))} 项待处理</em>
+                </div>
+                <div class="payments-shop-profit-audit__procurement-list">
+                    ${items.map((item) => {
+                        const itemTone = normalizeShopProfitIssueTone(item.severity);
+                        const metaParts = [
+                            `${formatNumber(item.order_count || 0)} 笔订单`,
+                            item.source_platform ? `平台 ${item.source_platform}` : '',
+                            item.source_risk_tier ? `风险 ${item.source_risk_tier}` : '',
+                            item.source_quality_grade ? `质量 ${item.source_quality_grade}` : ''
+                        ].filter(Boolean);
+                        const metricParts = [
+                            `净利 ${formatCurrency(item.net_profit_cny)}`,
+                            `毛利 ${item.margin_rate === null || item.margin_rate === undefined ? '—' : formatRatioPercent(item.margin_rate)}`,
+                            `覆盖 ${formatRatioPercent(item.cost_coverage_rate || 0)}`,
+                            Number(item.refunded_order_count || 0) > 0 ? `退款 ${formatNumber(item.refunded_order_count)} 笔` : '',
+                            Number(item.negative_profit_order_count || 0) > 0 ? `负利 ${formatNumber(item.negative_profit_order_count)} 笔` : '',
+                            Number(item.missing_cost_order_count || 0) > 0 ? `缺成本 ${formatNumber(item.missing_cost_order_count)} 笔` : ''
+                        ].filter(Boolean);
+
+                        return `
+                            <div class="payments-shop-profit-audit__procurement-item is-${escapeHtml(itemTone)}">
+                                <div class="payments-shop-profit-audit__procurement-main">
+                                    <div>
+                                        <strong>${escapeHtml(item.source_name || '未归因货源')}</strong>
+                                        <span>${escapeHtml(metaParts.join(' · '))}</span>
+                                    </div>
+                                    <em>${escapeHtml(getShopProcurementRecommendationActionLabel(item.action_type))}</em>
+                                </div>
+                                <div class="payments-shop-profit-audit__procurement-meta">
+                                    <span>${escapeHtml(item.reason_label || '表现待观察')}</span>
+                                    ${metricParts.map((part) => `<span>${escapeHtml(part)}</span>`).join('')}
+                                </div>
+                                <div class="payments-shop-profit-audit__procurement-action">${escapeHtml(item.action_label || '继续观察货源表现')}</div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    function getShopProfitAdjustmentStatusLabel(status) {
+        const normalized = String(status || '').trim().toLowerCase();
+        if (normalized === 'review_required' || normalized === 'review') return '需复核';
+        if (normalized === 'tracked_income_deduction') return '收入端扣减';
+        if (normalized === 'tracked_revenue_exclusion') return '已剔除';
+        if (normalized === 'tracked_reversal') return '已冲销';
+        if (normalized === 'tracked') return '已追踪';
+        return '待接入';
+    }
+
+    function getShopProfitAdjustmentClosureLabel(status = '') {
+        const normalized = String(status || '').trim().toLowerCase();
+        if (normalized === 'review') return '需复核';
+        if (normalized === 'excluded') return '已剔除';
+        if (normalized === 'extension') return '预留扩展';
+        return '已纳入';
+    }
+
+    function renderShopProfitAdjustments(summary = {}) {
+        const adjustments = normalizePaymentsContextObject(summary.profit_adjustments);
+        const items = Array.isArray(adjustments.items) ? adjustments.items.filter(Boolean).slice(0, 5) : [];
+        const breakdown = normalizePaymentsContextObject(summary.profit_adjustment_breakdown);
+        const breakdownItems = Array.isArray(breakdown.items) ? breakdown.items.filter(Boolean).slice(0, 8) : [];
+        if (!items.length && !breakdownItems.length) return '';
+
+        return `
+            <div class="payments-shop-profit-audit__adjustments" aria-label="商城利润调整项">
+                <div class="payments-shop-profit-audit__adjustments-head">
+                    <strong>利润调整项</strong>
+                    <span>优惠、赠送积分和退款影响先独立展示，分录化后可进入完整净利润口径</span>
+                </div>
+                ${items.length ? `<div class="payments-shop-profit-audit__adjustment-list">
+                    ${items.map((item) => {
+                        const tone = normalizeShopProfitIssueTone(item.tone);
+                        const statusLabel = getShopProfitAdjustmentStatusLabel(item.status);
+                        const detailParts = [
+                            `${formatNumber(item.order_count || 0)} 笔订单`,
+                            Number(item.points || 0) > 0 ? `${formatPrecisePoints(item.points)} 积分` : '',
+                            statusLabel
+                        ].filter(Boolean);
+
+                        return `
+                            <div class="payments-shop-profit-audit__adjustment is-${escapeHtml(tone)}">
+                                <div class="payments-shop-profit-audit__adjustment-main">
+                                    <div>
+                                        <strong>${escapeHtml(item.title || '利润影响项')}</strong>
+                                        <span>${escapeHtml(item.treatment || item.description || '等待后续分录化归因。')}</span>
+                                    </div>
+                                    <em>${escapeHtml(formatCurrency(item.amount_cny))}</em>
+                                </div>
+                                <div class="payments-shop-profit-audit__adjustment-meta">
+                                    ${detailParts.map((part) => `<span>${escapeHtml(part)}</span>`).join('')}
+                                </div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>` : ''}
+                ${breakdownItems.length ? `
+                    <div class="payments-shop-profit-audit__adjustment-breakdown">
+                        ${breakdownItems.map((item) => {
+                            const tone = normalizeShopProfitIssueTone(item.tone);
+                            const metaParts = [
+                                getShopProfitAdjustmentClosureLabel(item.closure_status),
+                                Number(item.order_count || 0) > 0 ? `${formatNumber(item.order_count)} 笔订单` : '',
+                                Number(item.points || 0) > 0 ? `${formatPrecisePoints(item.points)} 积分` : '',
+                                Number(item.amount_cny || 0) > 0 ? formatCurrency(item.amount_cny) : ''
+                            ].filter(Boolean);
+
+                            return `
+                                <div class="payments-shop-profit-audit__adjustment-breakdown-row is-${escapeHtml(tone)}">
+                                    <div>
+                                        <strong>${escapeHtml(item.label || item.title || '利润影响项')}</strong>
+                                        <span>${escapeHtml(item.net_profit_treatment || '已纳入利润影响项观察。')}</span>
+                                    </div>
+                                    <em>${escapeHtml(metaParts.join(' · '))}</em>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    function formatShopProfitLedgerAmount(entry = {}) {
+        const type = String(entry.type || entry.entry_type || '').trim().toLowerCase();
+        const status = String(entry.status || '').trim().toLowerCase();
+        const amount = Number(entry.amount_cny || 0);
+
+        if (type === 'inventory_cost_missing' || status === 'incomplete') {
+            return '待补成本';
+        }
+        return formatCurrency(amount);
+    }
+
+    function getShopProfitLedgerStatusLabel(status) {
+        const normalized = String(status || '').trim().toLowerCase();
+        if (normalized === 'balanced') return '已平衡';
+        if (normalized === 'estimated') return '含估算';
+        if (normalized === 'incomplete') return '待补齐';
+        if (normalized === 'settled') return '已结算';
+        if (normalized === 'reversed' || normalized === 'reversed_estimated') return '已冲销';
+        if (normalized === 'excluded') return '已剔除';
+        if (normalized === 'tracked_income_deduction') return '收入端扣减';
+        return '未生成';
+    }
+
+    function renderShopProfitLedgerPreview(summary = {}) {
+        const preview = normalizePaymentsContextObject(summary.profit_ledger_preview);
+        const entries = Array.isArray(preview.entries_by_type) ? preview.entries_by_type.filter(Boolean).slice(0, 6) : [];
+        if (!entries.length) return '';
+
+        const status = String(preview.status || '').trim().toLowerCase();
+        const tone = status === 'incomplete' || status === 'estimated' ? 'warning' : 'ready';
+        const statusLabel = getShopProfitLedgerStatusLabel(status);
+
+        return `
+            <div class="payments-shop-profit-audit__ledger" aria-label="商城利润分录预览">
+                <div class="payments-shop-profit-audit__ledger-head">
+                    <div>
+                        <strong>分录预览</strong>
+                        <span>按当前订单归因生成，可迁移到 shop_order_profit_ledger 持久化</span>
+                    </div>
+                    <em class="is-${escapeHtml(tone)}">${escapeHtml(statusLabel)}</em>
+                </div>
+                <div class="payments-shop-profit-audit__ledger-metrics">
+                    <div><span>分录合计</span><strong>${escapeHtml(formatCurrency(preview.net_amount_cny))}</strong></div>
+                    <div><span>收入分录</span><strong>${escapeHtml(formatCurrency(preview.revenue_amount_cny))}</strong></div>
+                    <div><span>成本分录</span><strong>${escapeHtml(formatCurrency(preview.cost_amount_cny))}</strong></div>
+                    <div><span>分录数量</span><strong>${escapeHtml(formatNumber(preview.entry_count || 0))}</strong></div>
+                </div>
+                <div class="payments-shop-profit-audit__ledger-list">
+                    ${entries.map((entry) => {
+                        const entryTone = normalizeShopProfitIssueTone(entry.tone);
+                        const detailParts = [
+                            `${formatNumber(entry.entry_count || 0)} 条`,
+                            `${formatNumber(entry.order_count || 0)} 笔订单`,
+                            Number(entry.points_amount || 0) > 0 ? `${formatPrecisePoints(entry.points_amount)} 积分` : ''
+                        ].filter(Boolean);
+
+                        return `
+                            <div class="payments-shop-profit-audit__ledger-row is-${escapeHtml(entryTone)}">
+                                <div>
+                                    <strong>${escapeHtml(entry.title || entry.type || '分录')}</strong>
+                                    <span>${escapeHtml(detailParts.join(' · '))}</span>
+                                </div>
+                                <em>${escapeHtml(formatShopProfitLedgerAmount(entry))}</em>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    function renderShopProfitAudit(data) {
+        const summary = getShopProfitSummary(data);
+        if (!hasShopProfitAuditSummary(summary)) {
+            return '';
+        }
+
+        const costBreakdown = normalizePaymentsContextObject(summary.cost_coverage_breakdown);
+        const reconciliationIssues = Array.isArray(summary.reconciliation_issues)
+            ? summary.reconciliation_issues.filter(Boolean)
+            : [];
+        const pointSourceCoverage = normalizePaymentsContextObject(summary.point_source_coverage);
+        const notes = Array.isArray(summary.notes) ? summary.notes.filter(Boolean).slice(0, 4) : [];
+        const marginRate = summary.margin_rate === null || summary.margin_rate === undefined
+            ? '—'
+            : formatRatioPercent(summary.margin_rate);
+        const coverageRate = formatRatioPercent(summary.cost_coverage_rate || 0);
+        const pointLotCoverageRate = formatRatioPercent(pointSourceCoverage.coverage_rate || 0);
+        const missingCostCount = Number(summary.missing_cost_item_count || 0);
+        const untrackedPoints = Number(summary.untracked_revenue_points || 0);
+        const bonusPoints = Number(summary.bonus_points_spent || 0);
+        const pointSourceLabel = String(pointSourceCoverage.label || '').trim() || '未追踪';
+        const sourceBreakdownMain = Number(pointSourceCoverage.order_count || 0) > 0
+            ? `${pointSourceLabel} ${pointLotCoverageRate}`
+            : (untrackedPoints > 0
+                ? `未拆分 ${formatPrecisePoints(untrackedPoints)}`
+                : (bonusPoints > 0 ? `奖励 ${formatPrecisePoints(bonusPoints)}` : '已拆分'));
+        const sourceBreakdownHint = Number(pointSourceCoverage.action_required_order_count || 0) > 0
+            ? `待复核 ${formatNumber(pointSourceCoverage.action_required_order_count)} 笔 / 未追踪 ${formatPrecisePoints(pointSourceCoverage.untracked_points)} 积分`
+            : (Number(pointSourceCoverage.migration_points || 0) > 0
+                ? `迁移期余额 ${formatPrecisePoints(pointSourceCoverage.migration_points)} 积分已纳入批次追踪`
+                : (untrackedPoints > 0
+                    ? `奖励 ${formatPrecisePoints(bonusPoints)} / 未拆分积分暂按旧口径估算收入`
+                    : (bonusPoints > 0 ? '奖励/赠送积分不确认为现金收入' : '付费/奖励积分来源完整')));
+        const reconciliationStatus = String(summary.reconciliation_status || '').trim().toLowerCase();
+        const statusTone = reconciliationStatus === 'critical'
+            ? 'critical'
+            : (reconciliationIssues.length || missingCostCount > 0 || untrackedPoints > 0 ? 'warning' : 'ready');
+        const statusLabel = reconciliationIssues.length
+            ? `闭环项 ${formatNumber(summary.reconciliation_issue_count || reconciliationIssues.length)} 类`
+            : (missingCostCount > 0
+                ? `缺成本 ${formatNumber(missingCostCount)} 件`
+                : (untrackedPoints > 0 ? `历史未拆分 ${formatPrecisePoints(untrackedPoints)} 积分` : '口径完整'));
+
+        return `
+            <section class="payments-shop-profit-audit" aria-label="商城净利润审计">
+                <div class="payments-shop-profit-audit__head">
+                    <div class="payments-shop-profit-audit__title">
+                        <span class="payments-shop-profit-audit__icon"><i class="fas fa-scale-balanced"></i></span>
+                        <div>
+                            <strong>商城净利润审计</strong>
+                            <span>现金收入、采购成本与积分来源拆分</span>
+                        </div>
+                    </div>
+                    <span class="payments-shop-profit-audit__status is-${escapeHtml(statusTone)}">${escapeHtml(statusLabel)}</span>
+                </div>
+                <div class="payments-shop-profit-audit__metrics">
+                    <div>
+                        <span>现金确认收入</span>
+                        <strong>${escapeHtml(formatCurrency(summary.recognized_revenue_cny))}</strong>
+                        <em>付费积分 ${escapeHtml(formatPrecisePoints(summary.paid_points_spent))}</em>
+                    </div>
+                    <div>
+                        <span>确认采购成本</span>
+                        <strong>${escapeHtml(formatCurrency(summary.recognized_cost_cny))}</strong>
+                        <em>覆盖率 ${escapeHtml(coverageRate)}</em>
+                    </div>
+                    <div>
+                        <span>净利润</span>
+                        <strong>${escapeHtml(formatCurrency(summary.net_profit_cny))}</strong>
+                        <em>毛利率 ${escapeHtml(marginRate)}</em>
+                    </div>
+                    <div>
+                        <span>积分来源拆分</span>
+                        <strong>${escapeHtml(sourceBreakdownMain)}</strong>
+                        <em>${escapeHtml(sourceBreakdownHint)}</em>
+                    </div>
+                </div>
+                <div class="payments-shop-profit-audit__split">
+                    <span>订单 ${escapeHtml(formatNumber(summary.order_count))} 笔</span>
+                    <span>退款 ${escapeHtml(formatNumber(summary.refunded_order_count))} 笔</span>
+                    <span>库存 ${escapeHtml(formatNumber(summary.inventory_item_count))} 件</span>
+                    <span>已成本化 ${escapeHtml(formatNumber(summary.costed_item_count))} 件</span>
+                    <span>成本完整订单 ${escapeHtml(formatNumber(costBreakdown.complete || 0))}</span>
+                    <span>部分缺成本订单 ${escapeHtml(formatNumber(costBreakdown.partial || 0))}</span>
+                    <span>无成本订单 ${escapeHtml(formatNumber(costBreakdown.no_cost || 0))}</span>
+                    <span>未关联库存订单 ${escapeHtml(formatNumber(costBreakdown.no_inventory || 0))}</span>
+                    <span>积分批次覆盖 ${escapeHtml(pointLotCoverageRate)}</span>
+                    <span>批次完整订单 ${escapeHtml(formatNumber(pointSourceCoverage.exact_order_count || 0))}</span>
+                    <span>迁移期余额 ${escapeHtml(formatPrecisePoints(pointSourceCoverage.migration_points || 0))}</span>
+                    <span>待追踪积分 ${escapeHtml(formatPrecisePoints(pointSourceCoverage.untracked_points || 0))}</span>
+                </div>
+                ${notes.length ? `
+                    <div class="payments-shop-profit-audit__notes">
+                        ${notes.map((note) => `<span>${escapeHtml(note)}</span>`).join('')}
+                    </div>
+                ` : ''}
+                ${renderShopProfitReadiness(summary)}
+                ${renderShopProfitAdjustments(summary)}
+                ${renderShopProfitLedgerPreview(summary)}
+                ${renderShopProfitDimensionBreakdown(summary)}
+                ${renderShopSourceProcurementRecommendations(summary)}
+                ${renderShopProfitReconciliationClosure(summary)}
+                ${renderShopProfitOrderRiskList(summary)}
+                ${renderShopProfitAuditAlerts(summary)}
+                ${renderShopProfitReconciliationIssues(reconciliationIssues)}
+            </section>
+        `;
+    }
+
     function syncBusinessBreakdownInteractiveState(target, model, items) {
         if (!target || !model?.labels?.length) return;
 
@@ -4758,6 +5654,7 @@
         const model = buildBusinessBreakdownChartModel(items);
         target.innerHTML = `
             <div class="payments-business-board">
+                ${renderShopProfitAudit(data)}
                 ${renderBusinessBreakdownChartPanel(model, items)}
                 ${renderBusinessBreakdownTable(items)}
             </div>
@@ -6359,9 +7256,11 @@
     }
 
     async function init() {
-        if (state.initializing) return;
+        if (state.initializing && state.initPromise) {
+            return state.initPromise;
+        }
         state.initializing = true;
-        try {
+        state.initPromise = (async () => {
             showWorkbenchContext({});
             ensureRangeDefaults();
             state.autoRefreshEnabled = localStorage.getItem('paymentsAutoRefreshEnabled') !== '0';
@@ -6409,8 +7308,14 @@
             startAutoRefresh();
             switchTab(state.activeTab, { reload: false });
             await reload();
+            return true;
+        })();
+
+        try {
+            return await state.initPromise;
         } finally {
             state.initializing = false;
+            state.initPromise = null;
         }
     }
 
@@ -6799,6 +7704,280 @@
         };
     }
 
+    function getShopProfitSummaryFromExportBundle(bundle = {}) {
+        const sitewideSummary = normalizePaymentsContextObject(bundle.sitewide_summary);
+        return normalizePaymentsContextObject(sitewideSummary.shop_profit_summary);
+    }
+
+    function buildShopProfitAuditExportRows(summary = {}) {
+        if (!hasShopProfitAuditSummary(summary)) {
+            return [];
+        }
+
+        const costBreakdown = normalizePaymentsContextObject(summary.cost_coverage_breakdown);
+        const pointSourceCoverage = normalizePaymentsContextObject(summary.point_source_coverage);
+        const adjustments = normalizePaymentsContextObject(summary.profit_adjustments);
+        const alerts = normalizePaymentsContextObject(summary.shop_profit_audit_alerts);
+        const adjustmentRows = (Array.isArray(adjustments.items) ? adjustments.items : [])
+            .filter(Boolean)
+            .map((item) => ({
+                指标: `利润调整项：${item.title || item.type || '未命名'}`,
+                数值: Number(item.amount_cny || 0),
+                说明: [
+                    item.treatment || item.description || '',
+                    `${Number(item.order_count || 0)} 笔订单`,
+                    Number(item.points || 0) > 0 ? `${Number(item.points || 0)} 积分` : ''
+                ].filter(Boolean).join('；')
+            }));
+
+        return [
+            { 指标: '订单数', 数值: Number(summary.order_count || 0), 说明: '进入净利润归因的商城订单数' },
+            { 指标: '退款订单数', 数值: Number(summary.refunded_order_count || 0), 说明: '已退款订单不确认本单收入与成本' },
+            { 指标: '现金确认收入 CNY', 数值: Number(summary.recognized_revenue_cny || 0), 说明: '优先按付费积分确认现金收入' },
+            { 指标: '确认采购成本 CNY', 数值: Number(summary.recognized_cost_cny || 0), 说明: '按关联库存采购成本快照归因' },
+            { 指标: '净利润 CNY', 数值: Number(summary.net_profit_cny || 0), 说明: '现金确认收入减确认采购成本' },
+            ...adjustmentRows,
+            { 指标: '毛利率', 数值: formatRatioPercent(summary.margin_rate), 说明: '净利润 / 现金确认收入' },
+            { 指标: '付费积分消耗', 数值: Number(summary.paid_points_spent || 0), 说明: '订单实际扣除的付费余额' },
+            { 指标: '奖励积分消耗', 数值: Number(summary.bonus_points_spent || 0), 说明: '奖励/赠送积分不直接确认为现金收入' },
+            { 指标: '历史未拆分积分', 数值: Number(summary.untracked_revenue_points || 0), 说明: '历史订单缺少付费/奖励拆分，暂按旧口径估算' },
+            { 指标: '积分来源需复核', 数值: Number(summary.bonus_points_spent || 0) + Number(summary.untracked_revenue_points || 0), 说明: '奖励/赠送积分和历史未拆分积分需要从现金收入口径中单独复核' },
+            { 指标: '积分批次覆盖率', 数值: formatRatioPercent(pointSourceCoverage.coverage_rate || 0), 说明: '已匹配来源批次积分 / 订单实际消耗积分' },
+            { 指标: '来源批次完整订单', 数值: Number(pointSourceCoverage.exact_order_count || 0), 说明: '积分来源批次完整、可直接用于现金/非现金归因的订单数' },
+            { 指标: '迁移期余额积分', 数值: Number(pointSourceCoverage.migration_points || 0), 说明: '由存量余额回填产生并已参与订单消耗归因的积分' },
+            { 指标: '待追踪积分', 数值: Number(pointSourceCoverage.untracked_points || 0), 说明: '尚未匹配到具体来源批次的订单消耗积分' },
+            { 指标: '审计告警总数', 数值: Number(alerts.alert_count || 0), 说明: '商城利润审计产生的可处理告警数量' },
+            { 指标: '审计告警待处理', 数值: Number(alerts.action_required_count || 0), 说明: '需要管理员复核或补齐数据的告警数量' },
+            { 指标: '审计告警红色', 数值: Number(alerts.critical_count || 0), 说明: '负利润等高优先级告警数量' },
+            { 指标: '审计告警黄色', 数值: Number(alerts.warning_count || 0), 说明: '缺成本、来源未闭环、分录未完整等告警数量' },
+            { 指标: '库存件数', 数值: Number(summary.inventory_item_count || 0), 说明: '订单关联库存总件数' },
+            { 指标: '已成本化库存', 数值: Number(summary.costed_item_count || 0), 说明: '有采购成本快照的库存件数' },
+            { 指标: '缺成本库存', 数值: Number(summary.missing_cost_item_count || 0), 说明: '缺少采购成本会高估净利润' },
+            { 指标: '成本覆盖率', 数值: formatRatioPercent(summary.cost_coverage_rate || 0), 说明: '已成本化库存 / 订单关联库存' },
+            { 指标: '完整成本订单', 数值: Number(costBreakdown.complete || 0), 说明: '关联库存都有采购成本' },
+            { 指标: '部分成本订单', 数值: Number(costBreakdown.partial || 0), 说明: '部分关联库存缺少采购成本' },
+            { 指标: '无成本订单', 数值: Number(costBreakdown.no_cost || 0), 说明: '关联库存均缺采购成本' },
+            { 指标: '未关联库存订单', 数值: Number(costBreakdown.no_inventory || 0), 说明: '无法归因库存成本' }
+        ];
+    }
+
+    function buildShopProfitReadinessExportRows(summary = {}) {
+        if (!hasShopProfitAuditSummary(summary)) {
+            return [];
+        }
+
+        const readiness = normalizePaymentsContextObject(summary.profit_readiness);
+        const rows = [{
+            项目: '结算就绪度',
+            状态: readiness.label || '',
+            分数: Number(readiness.score || 0),
+            待处理: Number(readiness.action_required_count || 0),
+            阻断项: Number(readiness.blocker_count || 0),
+            警告项: Number(readiness.warning_count || 0),
+            是否可结算: readiness.settlement_ready ? '是' : '否',
+            处理建议: readiness.settlement_ready ? '可进入结算口径' : '先处理待处理项'
+        }];
+
+        return rows.concat((Array.isArray(readiness.items) ? readiness.items : [])
+            .filter(Boolean)
+            .map((item) => ({
+                项目: item.label || '',
+                状态: getSeverityLabel(item.severity || item.status || 'info'),
+                分数: '',
+                待处理: item.action_required ? 1 : 0,
+                阻断项: String(item.severity || '').toLowerCase() === 'critical' ? 1 : 0,
+                警告项: String(item.severity || '').toLowerCase() === 'warning' ? 1 : 0,
+                是否可结算: item.action_required ? '否' : '是',
+                处理建议: item.action_label || item.description || ''
+            })));
+    }
+
+    function buildShopProfitDimensionExportRows(summary = {}) {
+        if (!hasShopProfitAuditSummary(summary)) {
+            return [];
+        }
+
+        const breakdown = normalizePaymentsContextObject(summary.dimension_breakdown);
+        const groups = [
+            { label: '商品', rows: Array.isArray(breakdown.products) ? breakdown.products : [] },
+            { label: '规格', rows: Array.isArray(breakdown.skus) ? breakdown.skus : [] },
+            { label: '货源批次', rows: Array.isArray(breakdown.source_batches) ? breakdown.source_batches : [] }
+        ];
+
+        return groups.flatMap((group) => group.rows.map((row) => ({
+            维度: group.label,
+            名称: row.label || '',
+            风险: row.risk_label || '',
+            订单数: Number(row.order_count || 0),
+            退款订单: Number(row.refunded_order_count || 0),
+            负利润订单: Number(row.negative_profit_order_count || 0),
+            缺成本订单: Number(row.missing_cost_order_count || 0),
+            未关联库存订单: Number(row.no_inventory_order_count || 0),
+            库存件数: Number(row.inventory_item_count || 0),
+            缺成本库存: Number(row.missing_cost_item_count || 0),
+            现金收入CNY: Number(row.recognized_revenue_cny || 0),
+            采购成本CNY: Number(row.recognized_cost_cny || 0),
+            净利润CNY: Number(row.net_profit_cny || 0),
+            毛利率: formatRatioPercent(row.margin_rate),
+            成本覆盖率: formatRatioPercent(row.cost_coverage_rate || 0),
+            积分来源需复核: Number(row.bonus_points_spent || 0) + Number(row.untracked_revenue_points || 0)
+        })));
+    }
+
+    function buildShopProfitSourceExportRows(summary = {}) {
+        if (!hasShopProfitAuditSummary(summary)) {
+            return [];
+        }
+
+        const breakdown = normalizePaymentsContextObject(summary.dimension_breakdown);
+        return (Array.isArray(breakdown.sources) ? breakdown.sources : [])
+            .filter(Boolean)
+            .map((row) => ({
+                货源: row.source_name || row.label || '',
+                平台: row.source_platform || '',
+                风险等级: row.source_risk_tier || '',
+                质量等级: row.source_quality_grade || '',
+                建议: row.procurement_suggestion || '',
+                风险: row.risk_label || '',
+                订单数: Number(row.order_count || 0),
+                退款订单: Number(row.refunded_order_count || 0),
+                负利润订单: Number(row.negative_profit_order_count || 0),
+                缺成本订单: Number(row.missing_cost_order_count || 0),
+                库存件数: Number(row.inventory_item_count || 0),
+                缺成本库存: Number(row.missing_cost_item_count || 0),
+                现金收入CNY: Number(row.recognized_revenue_cny || 0),
+                采购成本CNY: Number(row.recognized_cost_cny || 0),
+                净利润CNY: Number(row.net_profit_cny || 0),
+                毛利率: formatRatioPercent(row.margin_rate),
+                成本覆盖率: formatRatioPercent(row.cost_coverage_rate || 0)
+            }));
+    }
+
+    function buildShopProcurementRecommendationExportRows(summary = {}) {
+        if (!hasShopProfitAuditSummary(summary)) {
+            return [];
+        }
+
+        const recommendations = normalizePaymentsContextObject(summary.source_procurement_recommendations);
+        return (Array.isArray(recommendations.items) ? recommendations.items : [])
+            .filter(Boolean)
+            .map((item) => ({
+                货源: item.source_name || '',
+                平台: item.source_platform || '',
+                风险等级: item.source_risk_tier || '',
+                质量等级: item.source_quality_grade || '',
+                动作: getShopProcurementRecommendationActionLabel(item.action_type),
+                原因: item.reason_label || '',
+                处理建议: item.action_label || '',
+                风险级别: getSeverityLabel(item.severity || 'review'),
+                订单数: Number(item.order_count || 0),
+                退款订单: Number(item.refunded_order_count || 0),
+                负利润订单: Number(item.negative_profit_order_count || 0),
+                缺成本订单: Number(item.missing_cost_order_count || 0),
+                未关联库存订单: Number(item.no_inventory_order_count || 0),
+                库存件数: Number(item.inventory_item_count || 0),
+                缺成本库存: Number(item.missing_cost_item_count || 0),
+                现金收入CNY: Number(item.recognized_revenue_cny || 0),
+                采购成本CNY: Number(item.recognized_cost_cny || 0),
+                净利润CNY: Number(item.net_profit_cny || 0),
+                毛利率: formatRatioPercent(item.margin_rate),
+                成本覆盖率: formatRatioPercent(item.cost_coverage_rate || 0),
+                退款率: formatRatioPercent(item.refund_rate || 0)
+            }));
+    }
+
+    function buildShopProfitLedgerPreviewExportRows(summary = {}) {
+        if (!hasShopProfitAuditSummary(summary)) {
+            return [];
+        }
+
+        const preview = normalizePaymentsContextObject(summary.profit_ledger_preview);
+        return (Array.isArray(preview.entries_by_type) ? preview.entries_by_type : [])
+            .filter(Boolean)
+            .map((entry) => ({
+                分录类型: entry.title || entry.type || '',
+                分组: entry.group || '',
+                状态: getShopProfitLedgerStatusLabel(entry.status),
+                分录数: Number(entry.entry_count || 0),
+                订单数: Number(entry.order_count || 0),
+                金额CNY: Number(entry.amount_cny || 0),
+                积分数: Number(entry.points_amount || 0)
+            }));
+    }
+
+    function buildShopProfitClosureExportRows(summary = {}) {
+        if (!hasShopProfitAuditSummary(summary)) {
+            return [];
+        }
+
+        const closure = normalizePaymentsContextObject(summary.profit_reconciliation_closure);
+        return (Array.isArray(closure.items) ? closure.items : [])
+            .filter(Boolean)
+            .map((item) => ({
+                链路: getShopProfitClosureCategoryLabel(item.category),
+                对账项: item.label || '',
+                状态: getShopProfitClosureStatusLabel(item.status),
+                指标: item.value_label || '',
+                待处理: item.action_required ? '是' : '否',
+                订单数: Number(item.order_count || 0),
+                金额CNY: Number(item.amount_cny || 0),
+                积分数: Number(item.points || 0),
+                处理建议: item.action_label || '',
+                说明: item.description || ''
+            }));
+    }
+
+    function buildShopProfitAdjustmentBreakdownExportRows(summary = {}) {
+        if (!hasShopProfitAuditSummary(summary)) {
+            return [];
+        }
+
+        const breakdown = normalizePaymentsContextObject(summary.profit_adjustment_breakdown);
+        return (Array.isArray(breakdown.items) ? breakdown.items : [])
+            .filter(Boolean)
+            .map((item) => ({
+                影响项: item.label || item.title || '',
+                类型: item.type || '',
+                分类: item.category || '',
+                状态: getShopProfitAdjustmentClosureLabel(item.closure_status),
+                是否待处理: item.action_required ? '是' : '否',
+                订单数: Number(item.order_count || 0),
+                金额CNY: Number(item.amount_cny || 0),
+                积分数: Number(item.points || 0),
+                是否影响净利润: item.affects_net_profit ? '是' : '否',
+                处理口径: item.net_profit_treatment || ''
+            }));
+    }
+
+    function buildShopProfitOrderRiskExportRows(summary = {}) {
+        if (!hasShopProfitAuditSummary(summary)) {
+            return [];
+        }
+
+        const riskList = normalizePaymentsContextObject(summary.order_risk_list);
+        return (Array.isArray(riskList.items) ? riskList.items : [])
+            .filter(Boolean)
+            .map((item) => ({
+                订单号: item.order_no || item.order_id || '',
+                商品: item.product_name || '',
+                风险级别: getShopProfitOrderRiskStatusLabel(item),
+                风险原因: (Array.isArray(item.reasons) ? item.reasons : [])
+                    .map((reason) => reason.label || reason.type || '')
+                    .filter(Boolean)
+                    .join('；'),
+                现金收入CNY: Number(item.recognized_revenue_cny || 0),
+                采购成本CNY: Number(item.recognized_cost_cny || 0),
+                净利润CNY: Number(item.net_profit_cny || 0),
+                缺成本件数: Number(item.missing_cost_item_count || 0),
+                付费积分: Number(item.paid_points_spent || 0),
+                非现金积分: Number(item.bonus_points_spent || 0),
+                待追踪积分: Number(item.untracked_revenue_points || 0),
+                积分来源状态: item.point_source_traceability_label || '',
+                处理建议: item.action_label || '',
+                创建时间: item.created_at || ''
+            }));
+    }
+
     function exportAsCSV(bundle) {
         let csv = '';
         csv += '=== 支付对账概览 ===\n';
@@ -6820,6 +7999,197 @@
         (bundle.business_breakdown || []).forEach((item) => {
             csv += `${(item.title || '').replace(/,/g, '，')},${(item.metric || '').replace(/,/g, '，')},${(item.meta || '').replace(/,/g, '，')}\n`;
         });
+        const shopProfitAuditRows = buildShopProfitAuditExportRows(getShopProfitSummaryFromExportBundle(bundle));
+        if (shopProfitAuditRows.length) {
+            csv += '\n=== 商城净利润审计 ===\n';
+            csv += '指标,数值,说明\n';
+            shopProfitAuditRows.forEach((row) => {
+                csv += `${String(row.指标 || '').replace(/,/g, '，')},${String(row.数值 ?? '').replace(/,/g, '，')},${String(row.说明 || '').replace(/,/g, '，')}\n`;
+            });
+        }
+        const shopProfitReadinessRows = buildShopProfitReadinessExportRows(getShopProfitSummaryFromExportBundle(bundle));
+        if (shopProfitReadinessRows.length) {
+            csv += '\n=== 商城结算就绪度 ===\n';
+            csv += '项目,状态,分数,待处理,阻断项,警告项,是否可结算,处理建议\n';
+            shopProfitReadinessRows.forEach((row) => {
+                csv += [
+                    row.项目,
+                    row.状态,
+                    row.分数,
+                    row.待处理,
+                    row.阻断项,
+                    row.警告项,
+                    row.是否可结算,
+                    row.处理建议
+                ].map((value) => String(value ?? '').replace(/,/g, '，')).join(',');
+                csv += '\n';
+            });
+        }
+        const shopProfitLedgerRows = buildShopProfitLedgerPreviewExportRows(getShopProfitSummaryFromExportBundle(bundle));
+        if (shopProfitLedgerRows.length) {
+            csv += '\n=== 商城利润分录预览 ===\n';
+            csv += '分录类型,分组,状态,分录数,订单数,金额CNY,积分数\n';
+            shopProfitLedgerRows.forEach((row) => {
+                csv += [
+                    row.分录类型,
+                    row.分组,
+                    row.状态,
+                    row.分录数,
+                    row.订单数,
+                    row.金额CNY,
+                    row.积分数
+                ].map((value) => String(value ?? '').replace(/,/g, '，')).join(',');
+                csv += '\n';
+            });
+        }
+        const shopProfitClosureRows = buildShopProfitClosureExportRows(getShopProfitSummaryFromExportBundle(bundle));
+        if (shopProfitClosureRows.length) {
+            csv += '\n=== 商城对账闭环 ===\n';
+            csv += '链路,对账项,状态,指标,待处理,订单数,金额CNY,积分数,处理建议,说明\n';
+            shopProfitClosureRows.forEach((row) => {
+                csv += [
+                    row.链路,
+                    row.对账项,
+                    row.状态,
+                    row.指标,
+                    row.待处理,
+                    row.订单数,
+                    row.金额CNY,
+                    row.积分数,
+                    row.处理建议,
+                    row.说明
+                ].map((value) => String(value ?? '').replace(/,/g, '，')).join(',');
+                csv += '\n';
+            });
+        }
+        const shopProfitAdjustmentBreakdownRows = buildShopProfitAdjustmentBreakdownExportRows(getShopProfitSummaryFromExportBundle(bundle));
+        if (shopProfitAdjustmentBreakdownRows.length) {
+            csv += '\n=== 商城利润影响构成 ===\n';
+            csv += '影响项,类型,分类,状态,是否待处理,订单数,金额CNY,积分数,是否影响净利润,处理口径\n';
+            shopProfitAdjustmentBreakdownRows.forEach((row) => {
+                csv += [
+                    row.影响项,
+                    row.类型,
+                    row.分类,
+                    row.状态,
+                    row.是否待处理,
+                    row.订单数,
+                    row.金额CNY,
+                    row.积分数,
+                    row.是否影响净利润,
+                    row.处理口径
+                ].map((value) => String(value ?? '').replace(/,/g, '，')).join(',');
+                csv += '\n';
+            });
+        }
+        const shopProfitOrderRiskRows = buildShopProfitOrderRiskExportRows(getShopProfitSummaryFromExportBundle(bundle));
+        if (shopProfitOrderRiskRows.length) {
+            csv += '\n=== 商城风险订单 ===\n';
+            csv += '订单号,商品,风险级别,风险原因,现金收入CNY,采购成本CNY,净利润CNY,缺成本件数,付费积分,非现金积分,待追踪积分,积分来源状态,处理建议,创建时间\n';
+            shopProfitOrderRiskRows.forEach((row) => {
+                csv += [
+                    row.订单号,
+                    row.商品,
+                    row.风险级别,
+                    row.风险原因,
+                    row.现金收入CNY,
+                    row.采购成本CNY,
+                    row.净利润CNY,
+                    row.缺成本件数,
+                    row.付费积分,
+                    row.非现金积分,
+                    row.待追踪积分,
+                    row.积分来源状态,
+                    row.处理建议,
+                    row.创建时间
+                ].map((value) => String(value ?? '').replace(/,/g, '，')).join(',');
+                csv += '\n';
+            });
+        }
+        const shopProfitSourceRows = buildShopProfitSourceExportRows(getShopProfitSummaryFromExportBundle(bundle));
+        const shopProcurementRecommendationRows = buildShopProcurementRecommendationExportRows(getShopProfitSummaryFromExportBundle(bundle));
+        if (shopProcurementRecommendationRows.length) {
+            csv += '\n=== 商城采购建议 ===\n';
+            csv += '货源,平台,风险等级,质量等级,动作,原因,处理建议,风险级别,订单数,退款订单,负利润订单,缺成本订单,未关联库存订单,库存件数,缺成本库存,现金收入CNY,采购成本CNY,净利润CNY,毛利率,成本覆盖率,退款率\n';
+            shopProcurementRecommendationRows.forEach((row) => {
+                csv += [
+                    row.货源,
+                    row.平台,
+                    row.风险等级,
+                    row.质量等级,
+                    row.动作,
+                    row.原因,
+                    row.处理建议,
+                    row.风险级别,
+                    row.订单数,
+                    row.退款订单,
+                    row.负利润订单,
+                    row.缺成本订单,
+                    row.未关联库存订单,
+                    row.库存件数,
+                    row.缺成本库存,
+                    row.现金收入CNY,
+                    row.采购成本CNY,
+                    row.净利润CNY,
+                    row.毛利率,
+                    row.成本覆盖率,
+                    row.退款率
+                ].map((value) => String(value ?? '').replace(/,/g, '，')).join(',');
+                csv += '\n';
+            });
+        }
+        if (shopProfitSourceRows.length) {
+            csv += '\n=== 商城货源利润 ===\n';
+            csv += '货源,平台,风险等级,质量等级,建议,风险,订单数,退款订单,负利润订单,缺成本订单,库存件数,缺成本库存,现金收入CNY,采购成本CNY,净利润CNY,毛利率,成本覆盖率\n';
+            shopProfitSourceRows.forEach((row) => {
+                csv += [
+                    row.货源,
+                    row.平台,
+                    row.风险等级,
+                    row.质量等级,
+                    row.建议,
+                    row.风险,
+                    row.订单数,
+                    row.退款订单,
+                    row.负利润订单,
+                    row.缺成本订单,
+                    row.库存件数,
+                    row.缺成本库存,
+                    row.现金收入CNY,
+                    row.采购成本CNY,
+                    row.净利润CNY,
+                    row.毛利率,
+                    row.成本覆盖率
+                ].map((value) => String(value ?? '').replace(/,/g, '，')).join(',');
+                csv += '\n';
+            });
+        }
+        const shopProfitDimensionRows = buildShopProfitDimensionExportRows(getShopProfitSummaryFromExportBundle(bundle));
+        if (shopProfitDimensionRows.length) {
+            csv += '\n=== 商城利润维度 ===\n';
+            csv += '维度,名称,风险,订单数,退款订单,负利润订单,缺成本订单,未关联库存订单,库存件数,缺成本库存,现金收入CNY,采购成本CNY,净利润CNY,毛利率,成本覆盖率,积分来源需复核\n';
+            shopProfitDimensionRows.forEach((row) => {
+                csv += [
+                    row.维度,
+                    row.名称,
+                    row.风险,
+                    row.订单数,
+                    row.退款订单,
+                    row.负利润订单,
+                    row.缺成本订单,
+                    row.未关联库存订单,
+                    row.库存件数,
+                    row.缺成本库存,
+                    row.现金收入CNY,
+                    row.采购成本CNY,
+                    row.净利润CNY,
+                    row.毛利率,
+                    row.成本覆盖率,
+                    row.积分来源需复核
+                ].map((value) => String(value ?? '').replace(/,/g, '，')).join(',');
+                csv += '\n';
+            });
+        }
         csv += '\n=== 积分流水分类 ===\n';
         csv += '分类,流入,流出,净值\n';
         (bundle.points_breakdown || []).forEach((item) => {
@@ -6887,6 +8257,43 @@
                 说明: item.description,
                 补充: item.meta
             }))), '全站收支');
+        }
+
+        const shopProfitAuditRows = buildShopProfitAuditExportRows(getShopProfitSummaryFromExportBundle(bundle));
+        if (shopProfitAuditRows.length) {
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shopProfitAuditRows), '商城净利润审计');
+        }
+        const shopProfitReadinessRows = buildShopProfitReadinessExportRows(getShopProfitSummaryFromExportBundle(bundle));
+        if (shopProfitReadinessRows.length) {
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shopProfitReadinessRows), '商城结算就绪度');
+        }
+        const shopProfitLedgerRows = buildShopProfitLedgerPreviewExportRows(getShopProfitSummaryFromExportBundle(bundle));
+        if (shopProfitLedgerRows.length) {
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shopProfitLedgerRows), '商城利润分录');
+        }
+        const shopProfitClosureRows = buildShopProfitClosureExportRows(getShopProfitSummaryFromExportBundle(bundle));
+        if (shopProfitClosureRows.length) {
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shopProfitClosureRows), '商城对账闭环');
+        }
+        const shopProfitAdjustmentBreakdownRows = buildShopProfitAdjustmentBreakdownExportRows(getShopProfitSummaryFromExportBundle(bundle));
+        if (shopProfitAdjustmentBreakdownRows.length) {
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shopProfitAdjustmentBreakdownRows), '商城利润影响构成');
+        }
+        const shopProfitOrderRiskRows = buildShopProfitOrderRiskExportRows(getShopProfitSummaryFromExportBundle(bundle));
+        if (shopProfitOrderRiskRows.length) {
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shopProfitOrderRiskRows), '商城风险订单');
+        }
+        const shopProfitSourceRows = buildShopProfitSourceExportRows(getShopProfitSummaryFromExportBundle(bundle));
+        const shopProcurementRecommendationRows = buildShopProcurementRecommendationExportRows(getShopProfitSummaryFromExportBundle(bundle));
+        if (shopProcurementRecommendationRows.length) {
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shopProcurementRecommendationRows), '商城采购建议');
+        }
+        if (shopProfitSourceRows.length) {
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shopProfitSourceRows), '商城货源利润');
+        }
+        const shopProfitDimensionRows = buildShopProfitDimensionExportRows(getShopProfitSummaryFromExportBundle(bundle));
+        if (shopProfitDimensionRows.length) {
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(shopProfitDimensionRows), '商城利润维度');
         }
 
         if ((bundle.points_breakdown || []).length) {
@@ -7066,10 +8473,34 @@
         return true;
     }
 
+    async function ensureVisiblePaymentsContent(reason = '') {
+        if (!isPaymentsModuleActive() || !state.initialized) {
+            return false;
+        }
+
+        const activeTab = String(state.activeTab || 'overview').trim().toLowerCase() || 'overview';
+        if (hasRenderedContentForTab(activeTab)) {
+            return true;
+        }
+
+        if (state.loading) {
+            renderLoadingSkeletonForTab(activeTab);
+            return false;
+        }
+
+        setToolbarMeta('正在载入支付数据…', 'info');
+        window.AdminStudioTiming?.mark?.('payments:activation-empty-shell-reload', {
+            tab: activeTab,
+            reason: String(reason || 'activate')
+        });
+        return reload();
+    }
+
     async function activatePaymentsModule(context = {}, options = {}) {
         const nextTab = resolvePaymentsActivationTab(context, options);
         switchTab(nextTab, { reload: false });
         await init();
+        await ensureVisiblePaymentsContent(options?.reason || context?.reason || 'activate');
         return true;
     }
 
@@ -7217,6 +8648,32 @@
         void activatePaymentsModule();
     }
 
+    function scheduleVisiblePaymentsModuleActivation() {
+        const activate = () => activateVisiblePaymentsModuleOnAccess();
+        if (typeof window.requestAnimationFrame === 'function') {
+            window.requestAnimationFrame(activate);
+        } else {
+            window.setTimeout(activate, 0);
+        }
+
+        window.setTimeout(activate, 120);
+        window.setTimeout(activate, 600);
+    }
+
+    function bootstrapPaymentsModuleActivation() {
+        scheduleVisiblePaymentsModuleActivation();
+        window.addEventListener('adminStudioAccessGranted', scheduleVisiblePaymentsModuleActivation, { once: true });
+    }
+
+    function handlePaymentsShellModuleActivated(event = {}) {
+        const moduleId = String(event?.detail?.moduleId || '').trim().toLowerCase();
+        if (moduleId !== 'payments') {
+            return;
+        }
+
+        scheduleVisiblePaymentsModuleActivation();
+    }
+
     window.handleAdminPaymentsSiteChange = handlePaymentsSiteChange;
     window.openAdminPaymentsShellContext = openAdminPaymentsShellContext;
 
@@ -7231,14 +8688,12 @@
         window.addEventListener('admin-site-changed', window.handleAdminPaymentsSiteChange);
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
-        if (window.adminStudioAccessGranted) {
-            activateVisiblePaymentsModuleOnAccess();
-            return;
-        }
-
-        window.addEventListener('adminStudioAccessGranted', activateVisiblePaymentsModuleOnAccess, { once: true });
-    });
+    window.addEventListener('admin-shell-module-activated', handlePaymentsShellModuleActivated);
+    if (document.readyState && document.readyState !== 'loading') {
+        bootstrapPaymentsModuleActivation();
+    } else {
+        document.addEventListener('DOMContentLoaded', bootstrapPaymentsModuleActivation);
+    }
 
     window.AdminPayments = {
         init,

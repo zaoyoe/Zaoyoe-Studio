@@ -207,17 +207,24 @@ const PRODUCT_TEST_TABLES = {
     },
     shop_orders: {
         rows: [
-            { id: 'order-1', user_id: 'user-1', product_id: 'product-1', site: 'cn', item_count: 2, total_price: 200, price_paid: 100, snapshot_product_name: 'Season Pass', refund_status: '', delivery_status: 'delivered', created_at: '2026-04-04T08:00:00.000Z' },
-            { id: 'order-2', user_id: 'user-2', product_id: 'product-2', site: 'intl', item_count: 1, total_price: 80, price_paid: 80, snapshot_product_name: 'Mood Pack', refund_status: '', delivery_status: 'processing', created_at: '2026-04-05T08:00:00.000Z' },
-            { id: 'order-3', user_id: 'user-3', product_id: 'product-2', site: 'cn', item_count: 1, total_price: 80, price_paid: 80, snapshot_product_name: 'Mood Pack', refund_status: 'refunded', delivery_status: 'delivered', created_at: '2026-04-05T10:00:00.000Z' }
+            { id: 'order-1', user_id: 'user-1', product_id: 'product-1', inventory_id: null, site: 'cn', item_count: 2, total_price: 200, price_paid: 100, paid_points_spent: 70, bonus_points_spent: 30, points_spend_breakdown: { paid_points: 70, bonus_points: 30 }, discount_amount: 100, snapshot_product_name: 'Season Pass', refund_status: '', delivery_status: 'delivered', created_at: '2026-04-04T08:00:00.000Z' },
+            { id: 'order-2', user_id: 'user-2', product_id: 'product-2', inventory_id: 'inventory-3', site: 'intl', item_count: 1, total_price: 80, price_paid: 80, paid_points_spent: 80, bonus_points_spent: 0, points_spend_breakdown: { paid_points: 80, bonus_points: 0 }, discount_amount: 0, snapshot_product_name: 'Mood Pack', refund_status: '', delivery_status: 'processing', created_at: '2026-04-05T08:00:00.000Z' },
+            { id: 'order-3', user_id: 'user-3', product_id: 'product-2', inventory_id: null, site: 'cn', item_count: 1, total_price: 80, price_paid: 80, paid_points_spent: 80, bonus_points_spent: 0, points_spend_breakdown: { paid_points: 80, bonus_points: 0 }, discount_amount: 0, snapshot_product_name: 'Mood Pack', refund_status: 'refunded', delivery_status: 'delivered', created_at: '2026-04-05T10:00:00.000Z' }
+        ]
+    },
+    shop_order_items: {
+        rows: [
+            { id: 'order-item-1', order_id: 'order-1', inventory_id: 'inventory-2', snapshot_product_name: 'Season Pass', price_paid: 50, created_at: '2026-04-04T08:00:00.000Z' },
+            { id: 'order-item-2', order_id: 'order-1', inventory_id: 'inventory-5', snapshot_product_name: 'Season Pass', price_paid: 50, created_at: '2026-04-04T08:00:01.000Z' }
         ]
     },
     shop_inventory: {
         rows: [
-            { id: 'inventory-1', product_id: 'product-1', status: 'available', buyer_id: null, sold_at: null, created_at: '2026-04-01T00:00:00.000Z', order_id: null },
-            { id: 'inventory-2', product_id: 'product-1', status: 'sold', buyer_id: 'user-1', sold_at: '2026-04-04T08:00:00.000Z', created_at: '2026-04-02T00:00:00.000Z', order_id: 'order-1' },
-            { id: 'inventory-3', product_id: 'product-2', status: 'sold', buyer_id: 'user-2', sold_at: '2026-04-05T08:00:00.000Z', created_at: '2026-04-03T00:00:00.000Z', order_id: 'order-2' },
-            { id: 'inventory-4', product_id: 'product-3', status: 'available', buyer_id: null, sold_at: null, created_at: '2026-04-03T00:00:00.000Z', order_id: null }
+            { id: 'inventory-1', product_id: 'product-1', status: 'available', buyer_id: null, sold_at: null, created_at: '2026-04-01T00:00:00.000Z', order_id: null, purchase_unit_cost_cny: 20 },
+            { id: 'inventory-2', product_id: 'product-1', status: 'sold', buyer_id: 'user-1', sold_at: '2026-04-04T08:00:00.000Z', created_at: '2026-04-02T00:00:00.000Z', order_id: 'order-1', purchase_unit_cost_cny: 20 },
+            { id: 'inventory-5', product_id: 'product-1', status: 'sold', buyer_id: 'user-1', sold_at: '2026-04-04T08:00:01.000Z', created_at: '2026-04-02T00:00:01.000Z', order_id: 'order-1', purchase_unit_cost_cny: 22 },
+            { id: 'inventory-3', product_id: 'product-2', status: 'sold', buyer_id: 'user-2', sold_at: '2026-04-05T08:00:00.000Z', created_at: '2026-04-03T00:00:00.000Z', order_id: 'order-2', purchase_unit_cost_cny: 30 },
+            { id: 'inventory-4', product_id: 'product-3', status: 'available', buyer_id: null, sold_at: null, created_at: '2026-04-03T00:00:00.000Z', order_id: null, purchase_unit_cost_cny: 5 }
         ]
     },
     user_events: {
@@ -272,6 +279,14 @@ test('product summary bundle returns summary, trend, site comparison, category b
         assert.equal(payload.segments.summary.payload.refunded_order_count, 1);
         assert.equal(payload.segments.summary.payload.units_sold, 3);
         assert.equal(payload.segments.summary.payload.gmv_points, 280);
+        assert.equal(payload.segments.summary.payload.recognized_revenue_cny, 150);
+        assert.equal(payload.segments.summary.payload.recognized_cost_cny, 72);
+        assert.equal(payload.segments.summary.payload.net_profit_cny, 78);
+        assert.equal(payload.segments.summary.payload.cost_coverage_rate, 1);
+        assert.equal(payload.segments.summary.payload.cost_coverage_breakdown.complete, 2);
+        assert.equal(payload.segments.summary.payload.cost_coverage_breakdown.no_inventory, 1);
+        assert.equal(payload.segments.summary.payload.paid_points_spent, 230);
+        assert.equal(payload.segments.summary.payload.bonus_points_spent, 30);
         assert.equal(payload.segments.summary.payload.view_user_count, 7);
         assert.equal(payload.segments.summary.payload.card_click_user_count, 1);
         assert.equal(payload.segments.summary.payload.detail_view_user_count, 1);
@@ -299,16 +314,23 @@ test('product summary bundle returns summary, trend, site comparison, category b
         assert.equal(payload.segments.trend.ok, true);
         assert.equal(Array.isArray(payload.segments.trend.payload), true);
         assert.equal(payload.segments.trend.payload.length, 2);
+        assert.equal(payload.segments.trend.payload[0].net_profit_cny, 28);
+        assert.equal(payload.segments.trend.payload[1].net_profit_cny, 50);
         assert.equal(payload.segments.siteComparison.ok, true);
         assert.equal(payload.segments.siteComparison.payload.snapshots.length, 2);
+        assert.equal(payload.segments.siteComparison.payload.snapshots[0].summary.net_profit_cny, 28);
+        assert.equal(payload.segments.siteComparison.payload.snapshots[1].summary.net_profit_cny, 50);
         assert.equal(payload.segments.categoryBreakdown.ok, true);
         assert.equal(Array.isArray(payload.segments.categoryBreakdown.payload.rows), true);
         assert.equal(payload.segments.categoryBreakdown.payload.rows[0].category, 'membership');
         assert.equal(payload.segments.categoryBreakdown.payload.rows[0].gmv_points, 200);
+        assert.equal(payload.segments.categoryBreakdown.payload.rows[0].net_profit_cny, 28);
         assert.equal(payload.segments.productMatrix.ok, true);
         assert.equal(Array.isArray(payload.segments.productMatrix.payload.items), true);
         assert.equal(payload.segments.productMatrix.payload.items.length > 0, true);
         assert.equal(payload.segments.productMatrix.payload.items[0].product_id, 'product-1');
+        assert.equal(payload.segments.productMatrix.payload.items[0].net_profit_cny, 28);
+        assert.equal(payload.segments.productMatrix.payload.items[0].cost_coverage_rate, 1);
     });
 });
 
@@ -331,6 +353,7 @@ test('product dashboard bundle returns shared summary, rank, and health payloads
 
         assert.equal(payload.segments.summary.ok, true);
         assert.equal(payload.segments.summary.payload.order_count, 2);
+        assert.equal(payload.segments.summary.payload.net_profit_cny, 78);
         assert.equal(payload.segments.productMatrix.ok, true);
         assert.equal(Array.isArray(payload.segments.productMatrix.payload.items), true);
         assert.equal(payload.segments.productMatrix.payload.items.length > 0, true);
@@ -474,7 +497,16 @@ test('product detail bundle returns summary, trend, funnel, and recent orders fo
         assert.equal(payload.segments.summary.payload.order_count, 1);
         assert.equal(payload.segments.summary.payload.refunded_order_count, 1);
         assert.equal(payload.segments.summary.payload.delivery_risk_count, 1);
+        assert.equal(payload.segments.summary.payload.recognized_revenue_cny, 80);
+        assert.equal(payload.segments.summary.payload.recognized_cost_cny, 30);
+        assert.equal(payload.segments.summary.payload.net_profit_cny, 50);
+        assert.equal(payload.segments.summary.payload.cost_coverage_rate, 1);
+        assert.equal(payload.segments.summary.payload.cost_coverage_breakdown.complete, 1);
+        assert.equal(payload.segments.summary.payload.cost_coverage_breakdown.no_inventory, 1);
+        assert.equal(payload.segments.summary.payload.revenue_recognition_breakdown.exact, 2);
         assert.equal(payload.segments.summary.payload.site_snapshots.length, 2);
+        assert.equal(payload.segments.summary.payload.site_snapshots[0].summary.net_profit_cny, 0);
+        assert.equal(payload.segments.summary.payload.site_snapshots[1].summary.net_profit_cny, 50);
         assert.equal(payload.segments.summary.payload.buyer_snapshot.length, 1);
         assert.equal(payload.segments.summary.payload.card_click_count, 1);
         assert.equal(payload.segments.summary.payload.detail_view_count, 1);
@@ -519,6 +551,7 @@ test('product detail bundle returns summary, trend, funnel, and recent orders fo
         assert.equal(payload.segments.summary.payload.event_stage_summary[0].key, 'product_card_click');
         assert.equal(payload.segments.trend.ok, true);
         assert.equal(payload.segments.trend.payload.length, 1);
+        assert.equal(payload.segments.trend.payload[0].net_profit_cny, 50);
         assert.equal(payload.segments.funnel.ok, true);
         assert.equal(payload.segments.funnel.payload.summary.product_id, 'product-2');
         assert.equal(payload.segments.funnel.payload.summary.stages[0].value, 1);
@@ -531,5 +564,8 @@ test('product detail bundle returns summary, trend, funnel, and recent orders fo
         assert.equal(payload.segments.recentOrders.ok, true);
         assert.equal(payload.segments.recentOrders.payload.length, 2);
         assert.equal(payload.segments.recentOrders.payload[0].order_id, 'order-3');
+        assert.equal(payload.segments.recentOrders.payload[0].net_profit_cny, 0);
+        assert.equal(payload.segments.recentOrders.payload[1].order_id, 'order-2');
+        assert.equal(payload.segments.recentOrders.payload[1].net_profit_cny, 50);
     });
 });

@@ -12,6 +12,17 @@ const {
     buildResolvedItems,
     resolveOrderLinkageSource
 } = require('./_order-linkage');
+const {
+    buildOrderProfitAttribution
+} = require('./_profit');
+const {
+    attachProfitLedgerSyncResult,
+    syncOrderProfitLedger
+} = require('./_profit-ledger');
+const {
+    loadPointLotConsumptionsByOrderIds,
+    summarizePointLotConsumptions
+} = require('./_point-lots');
 
 function getSearchParams(req) {
     const url = new URL(req.url || '', 'http://localhost');
@@ -328,7 +339,7 @@ module.exports = async function adminShopOrdersHandler(req, res) {
     }
 
     try {
-        const { supabase, adminSupabase } = await requireAdmin(req, { permission: 'shop.manage' });
+        const { supabase, adminSupabase, user } = await requireAdmin(req, { permission: 'shop.manage' });
         const searchParams = getSearchParams(req);
         const site = normalizeSite(searchParams.get('site') || req.adminSite);
         const query = normalizeText(searchParams.get('query'));
@@ -351,18 +362,31 @@ module.exports = async function adminShopOrdersHandler(req, res) {
         const linkedInventoryIds = rows.flatMap((row) => (
             collectLinkedInventoryIds(row, orderItemsByOrderId.get(normalizeText(row?.id, 160)) || [])
         ));
-        const [profileMap, authEmailMap, inventoryRecordsById] = await Promise.all([
+        const orderIds = rows.map((row) => row?.id);
+        const [profileMap, authEmailMap, inventoryRecordsById, pointLotConsumptionsByOrderId] = await Promise.all([
             loadProfilesByIds(supabase, userIds),
             loadAuthEmailsByIds(adminSupabase, userIds),
-            loadInventoryRecordsByIds(supabase, linkedInventoryIds)
+            loadInventoryRecordsByIds(supabase, linkedInventoryIds),
+            loadPointLotConsumptionsByOrderIds(supabase, orderIds)
         ]);
 
-        const enrichedRows = rows.map((row) => {
+        const enrichedRows = await Promise.all(rows.map(async (row) => {
             const userId = normalizeText(row?.user_id);
             const profile = profileMap.get(userId) || {};
             const orderId = normalizeText(row?.id, 160);
             const orderItems = orderItemsByOrderId.get(orderId) || [];
             const linkedItems = buildLinkedInventoryItems(row, orderItems, inventoryRecordsById);
+            const pointLotSummary = summarizePointLotConsumptions(
+                pointLotConsumptionsByOrderId.get(orderId) || [],
+                Number(row?.price_paid || row?.total_price || 0) || 0
+            );
+            const profitAttribution = buildOrderProfitAttribution(row, linkedItems, {
+                pointLotSummary
+            });
+            const profitLedgerSync = await syncOrderProfitLedger(supabase, row, profitAttribution, {
+                userId: user?.id
+            });
+            const resolvedProfitAttribution = attachProfitLedgerSyncResult(profitAttribution, profitLedgerSync);
             return {
                 ...row,
                 profiles: {
@@ -375,9 +399,10 @@ module.exports = async function adminShopOrdersHandler(req, res) {
                 linked_inventory_ids: collectLinkedInventoryIds(row, orderItems),
                 linked_inventory_items: linkedItems,
                 order_item_count: orderItems.length,
-                resolved_items: buildResolvedItems(row, orderItems, inventoryRecordsById)
+                resolved_items: buildResolvedItems(row, orderItems, inventoryRecordsById),
+                profit_attribution: resolvedProfitAttribution
             };
-        });
+        }));
 
         return sendJson(res, 200, {
             success: true,

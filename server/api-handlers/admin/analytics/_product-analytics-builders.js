@@ -3,9 +3,19 @@ const summaryRowsBundleHandler = require('./summary-rows-bundle');
 const {
     buildRangeWindow
 } = summaryRowsBundleHandler.__testUtils;
+const {
+    buildOrderProfitAttribution
+} = require('../shop/_profit');
+const {
+    loadOrderItemsByOrderIds,
+    loadInventoryRecordsByIds,
+    collectLinkedInventoryIds,
+    buildLinkedInventoryItems
+} = require('../shop/_order-linkage');
 
 const PRODUCT_ROW_PAGE_SIZE = 500;
 const PRODUCT_ROW_MAX_PAGES = 12;
+const PRODUCT_ANALYTICS_LINKAGE_CHUNK_SIZE = 300;
 const DEFAULT_PRODUCT_RANK_LIMIT = 10;
 const DEFAULT_LOW_STOCK_THRESHOLD = 3;
 const PRODUCT_ANALYTICS_EVENT_NAMES = [
@@ -657,6 +667,255 @@ async function fetchPagedRows(buildQuery, pageSize = PRODUCT_ROW_PAGE_SIZE, maxP
     return rows;
 }
 
+function uniqueTextValues(values = [], maxLength = 160) {
+    return [...new Set(
+        (Array.isArray(values) ? values : [])
+            .map((value) => normalizeText(value, maxLength))
+            .filter(Boolean)
+    )];
+}
+
+function chunkValues(values = [], size = PRODUCT_ANALYTICS_LINKAGE_CHUNK_SIZE) {
+    const safeValues = Array.isArray(values) ? values : [];
+    const safeSize = Math.max(1, normalizeInteger(size, PRODUCT_ANALYTICS_LINKAGE_CHUNK_SIZE));
+    const chunks = [];
+    for (let index = 0; index < safeValues.length; index += safeSize) {
+        chunks.push(safeValues.slice(index, index + safeSize));
+    }
+    return chunks;
+}
+
+async function loadOrderItemsByOrderIdsChunked(supabase, orderIds = []) {
+    const grouped = new Map();
+    const ids = uniqueTextValues(orderIds, 160);
+    for (const chunk of chunkValues(ids)) {
+        const chunkMap = await loadOrderItemsByOrderIds(supabase, chunk);
+        chunkMap.forEach((rows, orderId) => {
+            grouped.set(orderId, [
+                ...(grouped.get(orderId) || []),
+                ...(Array.isArray(rows) ? rows : [])
+            ]);
+        });
+    }
+    return grouped;
+}
+
+async function loadInventoryRecordsByIdsChunked(supabase, inventoryIds = []) {
+    const records = new Map();
+    const ids = uniqueTextValues(inventoryIds, 160);
+    for (const chunk of chunkValues(ids)) {
+        const chunkMap = await loadInventoryRecordsByIds(supabase, chunk);
+        chunkMap.forEach((row, inventoryId) => {
+            records.set(inventoryId, row);
+        });
+    }
+    return records;
+}
+
+function buildOrderProfitAttributionRows(orders = [], orderItemsByOrderId = new Map(), inventoryRecordsById = new Map()) {
+    return (Array.isArray(orders) ? orders : []).filter(Boolean).map((order) => {
+        const orderId = normalizeText(order?.id, 160);
+        const orderItems = orderItemsByOrderId instanceof Map ? orderItemsByOrderId.get(orderId) || [] : [];
+        const linkedItems = buildLinkedInventoryItems(order, orderItems, inventoryRecordsById);
+        return {
+            order,
+            attribution: buildOrderProfitAttribution(order, linkedItems)
+        };
+    });
+}
+
+function buildOrderProfitAttributionMap(rows = []) {
+    return new Map(
+        (Array.isArray(rows) ? rows : [])
+            .map((row) => [normalizeText(row?.order?.id, 160), row?.attribution || null])
+            .filter(([orderId, attribution]) => orderId && attribution)
+    );
+}
+
+async function loadProductOrderProfitAttributions(supabase, orders = []) {
+    const safeOrders = Array.isArray(orders) ? orders.filter(Boolean) : [];
+    if (!supabase || safeOrders.length === 0) {
+        return {
+            orderItemsByOrderId: new Map(),
+            inventoryRecordsById: new Map(),
+            profitAttributionRows: [],
+            profitByOrderId: new Map()
+        };
+    }
+
+    const orderIds = safeOrders.map((order) => normalizeText(order?.id, 160)).filter(Boolean);
+    const orderItemsByOrderId = await loadOrderItemsByOrderIdsChunked(supabase, orderIds);
+    const linkedInventoryIds = safeOrders.flatMap((order) => (
+        collectLinkedInventoryIds(order, orderItemsByOrderId.get(normalizeText(order?.id, 160)) || [])
+    ));
+    const inventoryRecordsById = await loadInventoryRecordsByIdsChunked(supabase, linkedInventoryIds);
+    const profitAttributionRows = buildOrderProfitAttributionRows(safeOrders, orderItemsByOrderId, inventoryRecordsById);
+
+    return {
+        orderItemsByOrderId,
+        inventoryRecordsById,
+        profitAttributionRows,
+        profitByOrderId: buildOrderProfitAttributionMap(profitAttributionRows)
+    };
+}
+
+function createProductProfitAccumulator() {
+    return {
+        profit_attribution_order_count: 0,
+        profit_refunded_order_count: 0,
+        gross_points: 0,
+        revenue_points: 0,
+        paid_points_spent: 0,
+        bonus_points_spent: 0,
+        untracked_revenue_points: 0,
+        non_cash_points: 0,
+        discount_points: 0,
+        refunded_points: 0,
+        recognized_revenue_cny: 0,
+        purchase_cost_cny: 0,
+        recognized_cost_cny: 0,
+        net_profit_cny: 0,
+        inventory_item_count: 0,
+        costed_item_count: 0,
+        missing_cost_item_count: 0,
+        cost_coverage_breakdown: {
+            complete: 0,
+            partial: 0,
+            no_cost: 0,
+            no_inventory: 0
+        },
+        revenue_recognition_breakdown: {
+            exact: 0,
+            partial: 0,
+            estimated_legacy: 0
+        }
+    };
+}
+
+function resolveAggregateCostCoverage(inventoryItemCount = 0, costedItemCount = 0) {
+    const inventoryCount = Math.max(0, normalizeInteger(inventoryItemCount, 0));
+    const costedCount = Math.max(0, normalizeInteger(costedItemCount, 0));
+    if (inventoryCount <= 0) {
+        return 'no_inventory';
+    }
+    if (costedCount <= 0) {
+        return 'no_cost';
+    }
+    if (costedCount < inventoryCount) {
+        return 'partial';
+    }
+    return 'complete';
+}
+
+function buildProductProfitNotes(summary = {}) {
+    const notes = [
+        '净利润按订单实际消耗的付费积分确认现金收入；奖励/赠送积分不直接确认为现金收入。'
+    ];
+    if (normalizeNumber(summary?.missing_cost_item_count, 0) > 0) {
+        notes.push(`有 ${normalizeInteger(summary.missing_cost_item_count, 0)} 个关联库存缺少采购成本，净利润可能被高估。`);
+    }
+    if (normalizeNumber(summary?.untracked_revenue_points, 0) > 0) {
+        notes.push(`有 ${roundNumber(summary.untracked_revenue_points, 2).toLocaleString('zh-CN')} 积分来自未拆分历史订单，收入仍按旧口径估算。`);
+    }
+    if (normalizeNumber(summary?.bonus_points_spent, 0) > 0) {
+        notes.push(`已剔除 ${roundNumber(summary.bonus_points_spent, 2).toLocaleString('zh-CN')} 奖励/赠送积分对现金收入的直接确认。`);
+    }
+    if (normalizeNumber(summary?.cost_coverage_breakdown?.no_inventory, 0) > 0) {
+        notes.push(`有 ${normalizeInteger(summary.cost_coverage_breakdown.no_inventory, 0)} 笔订单没有精确关联库存，无法归因采购成本。`);
+    }
+    return notes;
+}
+
+function applyProductProfitAttribution(accumulator = {}, attribution = null) {
+    if (!attribution || typeof attribution !== 'object') {
+        return accumulator;
+    }
+
+    accumulator.profit_attribution_order_count += 1;
+    accumulator.profit_refunded_order_count += attribution.refunded ? 1 : 0;
+    accumulator.gross_points += normalizeNumber(attribution.gross_points, 0);
+    accumulator.revenue_points += normalizeNumber(attribution.revenue_points, 0);
+    accumulator.paid_points_spent += normalizeNumber(attribution.paid_points_spent, 0);
+    accumulator.bonus_points_spent += normalizeNumber(attribution.bonus_points_spent, 0);
+    accumulator.untracked_revenue_points += normalizeNumber(attribution.untracked_revenue_points, 0);
+    accumulator.non_cash_points += normalizeNumber(attribution.non_cash_points, 0);
+    accumulator.discount_points += normalizeNumber(attribution.discount_points, 0);
+    accumulator.refunded_points += normalizeNumber(attribution.refunded_points, 0);
+    accumulator.recognized_revenue_cny += normalizeNumber(attribution.recognized_revenue_cny, 0);
+    accumulator.purchase_cost_cny += normalizeNumber(attribution.purchase_cost_cny, 0);
+    accumulator.recognized_cost_cny += normalizeNumber(attribution.recognized_cost_cny, 0);
+    accumulator.net_profit_cny += normalizeNumber(attribution.net_profit_cny, 0);
+    accumulator.inventory_item_count += normalizeInteger(attribution.inventory_item_count, 0);
+    accumulator.costed_item_count += normalizeInteger(attribution.costed_item_count, 0);
+    accumulator.missing_cost_item_count += normalizeInteger(attribution.missing_cost_item_count, 0);
+
+    const coverage = normalizeText(attribution.cost_coverage, 40).toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(accumulator.cost_coverage_breakdown, coverage)) {
+        accumulator.cost_coverage_breakdown[coverage] += 1;
+    }
+
+    const recognitionStatus = normalizeText(attribution.revenue_recognition_status, 40).toLowerCase();
+    if (Object.prototype.hasOwnProperty.call(accumulator.revenue_recognition_breakdown, recognitionStatus)) {
+        accumulator.revenue_recognition_breakdown[recognitionStatus] += 1;
+    }
+
+    return accumulator;
+}
+
+function finalizeProductProfitAccumulator(accumulator = {}) {
+    const summary = {
+        profit_basis: 'paid_balance_cash_revenue',
+        currency: 'CNY',
+        profit_attribution_order_count: normalizeInteger(accumulator.profit_attribution_order_count, 0),
+        profit_refunded_order_count: normalizeInteger(accumulator.profit_refunded_order_count, 0),
+        gross_points: roundNumber(accumulator.gross_points, 2),
+        revenue_points: roundNumber(accumulator.revenue_points, 2),
+        paid_points_spent: roundNumber(accumulator.paid_points_spent, 2),
+        bonus_points_spent: roundNumber(accumulator.bonus_points_spent, 2),
+        untracked_revenue_points: roundNumber(accumulator.untracked_revenue_points, 2),
+        non_cash_points: roundNumber(accumulator.non_cash_points, 2),
+        discount_points: roundNumber(accumulator.discount_points, 2),
+        refunded_points: roundNumber(accumulator.refunded_points, 2),
+        recognized_revenue_cny: roundNumber(accumulator.recognized_revenue_cny, 4),
+        purchase_cost_cny: roundNumber(accumulator.purchase_cost_cny, 4),
+        recognized_cost_cny: roundNumber(accumulator.recognized_cost_cny, 4),
+        net_profit_cny: roundNumber(accumulator.net_profit_cny, 4),
+        inventory_item_count: normalizeInteger(accumulator.inventory_item_count, 0),
+        costed_item_count: normalizeInteger(accumulator.costed_item_count, 0),
+        missing_cost_item_count: normalizeInteger(accumulator.missing_cost_item_count, 0),
+        cost_coverage_breakdown: {
+            complete: normalizeInteger(accumulator.cost_coverage_breakdown?.complete, 0),
+            partial: normalizeInteger(accumulator.cost_coverage_breakdown?.partial, 0),
+            no_cost: normalizeInteger(accumulator.cost_coverage_breakdown?.no_cost, 0),
+            no_inventory: normalizeInteger(accumulator.cost_coverage_breakdown?.no_inventory, 0)
+        },
+        revenue_recognition_breakdown: {
+            exact: normalizeInteger(accumulator.revenue_recognition_breakdown?.exact, 0),
+            partial: normalizeInteger(accumulator.revenue_recognition_breakdown?.partial, 0),
+            estimated_legacy: normalizeInteger(accumulator.revenue_recognition_breakdown?.estimated_legacy, 0)
+        }
+    };
+
+    summary.margin_rate = summary.recognized_revenue_cny > 0
+        ? roundNumber(summary.net_profit_cny / summary.recognized_revenue_cny, 4)
+        : null;
+    summary.cost_coverage_rate = summary.inventory_item_count > 0
+        ? roundNumber(summary.costed_item_count / summary.inventory_item_count, 4)
+        : 0;
+    summary.cost_coverage = resolveAggregateCostCoverage(summary.inventory_item_count, summary.costed_item_count);
+    summary.profit_notes = buildProductProfitNotes(summary);
+
+    return summary;
+}
+
+function getOrderProfitAttribution(order = {}, profitByOrderId = new Map()) {
+    const orderId = normalizeText(order?.id, 160);
+    if (orderId && profitByOrderId instanceof Map && profitByOrderId.has(orderId)) {
+        return profitByOrderId.get(orderId);
+    }
+    return buildOrderProfitAttribution(order, []);
+}
+
 async function fetchShopProducts(supabase) {
     return fetchPagedRows(() => supabase
         .from('shop_products')
@@ -667,7 +926,7 @@ async function fetchShopProducts(supabase) {
 async function fetchShopInventory(supabase) {
     return fetchPagedRows(() => supabase
         .from('shop_inventory')
-        .select('id, product_id, status, buyer_id, sold_at, created_at')
+        .select('id, product_id, status, buyer_id, sold_at, created_at, source_batch_id, purchase_unit_cost, purchase_currency, purchase_exchange_rate_to_cny, purchase_unit_cost_cny')
         .order('created_at', { ascending: false }));
 }
 
@@ -675,7 +934,7 @@ async function fetchShopOrders(supabase, { site = 'all', startIso = '', endIso =
     return fetchPagedRows(() => {
         let query = supabase
             .from('shop_orders')
-            .select('id, user_id, product_id, site, item_count, price_paid, total_price, snapshot_product_name, refund_status, delivery_status, created_at')
+            .select('id, user_id, product_id, inventory_id, site, item_count, price_paid, paid_points_spent, bonus_points_spent, points_spend_breakdown, total_price, discount_amount, discount_refund_amount, snapshot_product_name, refund_status, delivery_status, created_at')
             .order('created_at', { ascending: false });
 
         if (site && site !== 'all') {
@@ -716,7 +975,7 @@ function filterProductsForSite(products = [], site = 'all') {
     return (Array.isArray(products) ? products : []).filter((product) => isProductAvailableForSite(product, site));
 }
 
-function buildProductMetricEntries({ products = [], orders = [], events = [], inventory = [], site = 'all' } = {}) {
+function buildProductMetricEntries({ products = [], orders = [], events = [], inventory = [], site = 'all', profitByOrderId = new Map() } = {}) {
     const filteredProducts = filterProductsForSite(products, site);
     const productMap = new Map(filteredProducts.map((product) => [normalizeText(product?.id, 160), product]));
     const inventoryByProduct = new Map();
@@ -772,7 +1031,8 @@ function buildProductMetricEntries({ products = [], orders = [], events = [], in
             recent_prompt_ids: new Set(),
             source_page_buckets: new Map(),
             source_channel_buckets: new Map(),
-            prompt_source_buckets: new Map()
+            prompt_source_buckets: new Map(),
+            ...createProductProfitAccumulator()
         };
         metricsByProduct.set(normalizedId, entry);
         return entry;
@@ -800,6 +1060,9 @@ function buildProductMetricEntries({ products = [], orders = [], events = [], in
         const userId = normalizeText(order?.user_id, 160);
         const refunded = isRefundedOrder(order);
         const deliveryStatus = normalizeDeliveryStatus(order?.delivery_status);
+        const attribution = getOrderProfitAttribution(order, profitByOrderId);
+
+        applyProductProfitAttribution(entry, attribution);
 
         if (refunded) {
             entry.refunded_order_count += 1;
@@ -904,6 +1167,7 @@ function buildProductMetricEntries({ products = [], orders = [], events = [], in
             promptSources.reduce((sum, row) => sum + normalizeNumber(row?.gmv_points, 0), 0),
             2
         );
+        const profitSummary = finalizeProductProfitAccumulator(entry);
 
         return {
             product_id: entry.product_id,
@@ -943,6 +1207,7 @@ function buildProductMetricEntries({ products = [], orders = [], events = [], in
             content_assisted_purchase_click_count: contentAssistedPurchaseClickCount,
             content_assisted_purchase_success_count: contentAssistedPurchaseSuccessCount,
             content_assisted_gmv_points: contentAssistedGmvPoints,
+            ...profitSummary,
             top_prompt_id: topPromptSource?.prompt_id || '',
             top_prompt_gmv_points: roundNumber(normalizeNumber(topPromptSource?.gmv_points, 0), 2),
             top_prompt_purchase_success_count: normalizeInteger(topPromptSource?.purchase_success_count, 0),
@@ -958,10 +1223,10 @@ function buildProductMetricEntries({ products = [], orders = [], events = [], in
     });
 }
 
-function resolveProductMetricEntries({ entries, products = [], orders = [], events = [], inventory = [], site = 'all' } = {}) {
+function resolveProductMetricEntries({ entries, products = [], orders = [], events = [], inventory = [], site = 'all', profitByOrderId = new Map() } = {}) {
     return Array.isArray(entries)
         ? entries
-        : buildProductMetricEntries({ products, orders, events, inventory, site });
+        : buildProductMetricEntries({ products, orders, events, inventory, site, profitByOrderId });
 }
 
 function buildProductUserValueSummary({ products = [], orders = [] } = {}) {
@@ -1211,8 +1476,8 @@ function buildProductUserValueSummary({ products = [], orders = [] } = {}) {
     };
 }
 
-function buildProductSummaryPayload({ products = [], orders = [], events = [], inventory = [], site = 'all', entries } = {}) {
-    const metricEntries = resolveProductMetricEntries({ entries, products, orders, events, inventory, site });
+function buildProductSummaryPayload({ products = [], orders = [], events = [], inventory = [], site = 'all', entries, profitByOrderId = new Map() } = {}) {
+    const metricEntries = resolveProductMetricEntries({ entries, products, orders, events, inventory, site, profitByOrderId });
     const activeProducts = metricEntries.filter((entry) => entry.is_active);
     const sellingProducts = activeProducts.filter((entry) => entry.stock_count > 0);
     const lowStockProducts = activeProducts.filter((entry) => isInventoryManagedProduct(entry) && entry.stock_count > 0 && entry.stock_count <= DEFAULT_LOW_STOCK_THRESHOLD);
@@ -1233,6 +1498,41 @@ function buildProductSummaryPayload({ products = [], orders = [], events = [], i
     const totalGmv = metricEntries.reduce((sum, entry) => sum + entry.gmv_points, 0);
     const totalDeliverySuccess = metricEntries.reduce((sum, entry) => sum + entry.delivery_success_count, 0);
     const totalDeliveryRisk = metricEntries.reduce((sum, entry) => sum + entry.delivery_risk_count, 0);
+    const profitAccumulator = createProductProfitAccumulator();
+    metricEntries.forEach((entry) => applyProductProfitAttribution(profitAccumulator, {
+        refunded: false,
+        gross_points: entry.gross_points,
+        revenue_points: entry.revenue_points,
+        paid_points_spent: entry.paid_points_spent,
+        bonus_points_spent: entry.bonus_points_spent,
+        untracked_revenue_points: entry.untracked_revenue_points,
+        non_cash_points: entry.non_cash_points,
+        discount_points: entry.discount_points,
+        refunded_points: entry.refunded_points,
+        recognized_revenue_cny: entry.recognized_revenue_cny,
+        purchase_cost_cny: entry.purchase_cost_cny,
+        recognized_cost_cny: entry.recognized_cost_cny,
+        net_profit_cny: entry.net_profit_cny,
+        inventory_item_count: entry.inventory_item_count,
+        costed_item_count: entry.costed_item_count,
+        missing_cost_item_count: entry.missing_cost_item_count
+    }));
+    profitAccumulator.profit_attribution_order_count = metricEntries.reduce((sum, entry) => sum + normalizeInteger(entry.profit_attribution_order_count, 0), 0);
+    profitAccumulator.profit_refunded_order_count = metricEntries.reduce((sum, entry) => sum + normalizeInteger(entry.profit_refunded_order_count, 0), 0);
+    profitAccumulator.cost_coverage_breakdown = metricEntries.reduce((aggregate, entry) => {
+        aggregate.complete += normalizeInteger(entry.cost_coverage_breakdown?.complete, 0);
+        aggregate.partial += normalizeInteger(entry.cost_coverage_breakdown?.partial, 0);
+        aggregate.no_cost += normalizeInteger(entry.cost_coverage_breakdown?.no_cost, 0);
+        aggregate.no_inventory += normalizeInteger(entry.cost_coverage_breakdown?.no_inventory, 0);
+        return aggregate;
+    }, { complete: 0, partial: 0, no_cost: 0, no_inventory: 0 });
+    profitAccumulator.revenue_recognition_breakdown = metricEntries.reduce((aggregate, entry) => {
+        aggregate.exact += normalizeInteger(entry.revenue_recognition_breakdown?.exact, 0);
+        aggregate.partial += normalizeInteger(entry.revenue_recognition_breakdown?.partial, 0);
+        aggregate.estimated_legacy += normalizeInteger(entry.revenue_recognition_breakdown?.estimated_legacy, 0);
+        return aggregate;
+    }, { exact: 0, partial: 0, estimated_legacy: 0 });
+    const profitSummary = finalizeProductProfitAccumulator(profitAccumulator);
     const topRevenueEntry = [...metricEntries]
         .filter((entry) => normalizeNumber(entry?.gmv_points, 0) > 0)
         .sort((left, right) => normalizeNumber(right?.gmv_points, 0) - normalizeNumber(left?.gmv_points, 0))[0] || null;
@@ -1308,6 +1608,7 @@ function buildProductSummaryPayload({ products = [], orders = [], events = [], i
         refunded_order_count: totalRefundedOrders,
         units_sold: totalUnits,
         gmv_points: roundNumber(totalGmv, 2),
+        ...profitSummary,
         avg_order_value: totalOrders > 0 ? roundNumber(totalGmv / totalOrders, 2) : 0,
         purchase_conversion_rate: totalViewUsers > 0 ? roundNumber((totalBuyers / totalViewUsers) * 100, 2) : 0,
         delivery_success_rate: totalOrders > 0 ? roundNumber((totalDeliverySuccess / totalOrders) * 100, 2) : 0,
@@ -1327,7 +1628,7 @@ function buildProductSummaryPayload({ products = [], orders = [], events = [], i
     };
 }
 
-function buildProductTrendPayload({ orders = [], events = [], startIso = '', endIso = '' } = {}) {
+function buildProductTrendPayload({ orders = [], events = [], startIso = '', endIso = '', profitByOrderId = new Map() } = {}) {
     const startKey = toDayKey(startIso);
     const endKey = toDayKey(endIso);
     const buckets = new Map();
@@ -1342,6 +1643,9 @@ function buildProductTrendPayload({ orders = [], events = [], startIso = '', end
                 order_count: 0,
                 units_sold: 0,
                 gmv_points: 0,
+                recognized_revenue_cny: 0,
+                recognized_cost_cny: 0,
+                net_profit_cny: 0,
                 refund_count: 0,
                 delivery_success_count: 0,
                 view_count: 0
@@ -1365,6 +1669,10 @@ function buildProductTrendPayload({ orders = [], events = [], startIso = '', end
         bucket.order_count += 1;
         bucket.units_sold += getOrderQuantity(order);
         bucket.gmv_points += getOrderRevenue(order);
+        const attribution = getOrderProfitAttribution(order, profitByOrderId);
+        bucket.recognized_revenue_cny += normalizeNumber(attribution?.recognized_revenue_cny, 0);
+        bucket.recognized_cost_cny += normalizeNumber(attribution?.recognized_cost_cny, 0);
+        bucket.net_profit_cny += normalizeNumber(attribution?.net_profit_cny, 0);
         if (isDeliverySuccessStatus(order?.delivery_status)) {
             bucket.delivery_success_count += 1;
         }
@@ -1396,6 +1704,9 @@ function buildProductTrendPayload({ orders = [], events = [], startIso = '', end
             order_count: row.order_count,
             units_sold: row.units_sold,
             gmv_points: roundNumber(row.gmv_points, 2),
+            recognized_revenue_cny: roundNumber(row.recognized_revenue_cny, 4),
+            recognized_cost_cny: roundNumber(row.recognized_cost_cny, 4),
+            net_profit_cny: roundNumber(row.net_profit_cny, 4),
             refund_count: row.refund_count,
             delivery_success_count: row.delivery_success_count,
             view_count: row.view_count,
@@ -1404,7 +1715,7 @@ function buildProductTrendPayload({ orders = [], events = [], startIso = '', end
         }));
 }
 
-function buildProductSiteComparisonPayload({ products = [], orders = [], events = [], inventory = [], activeSite = 'all', entriesBySite } = {}) {
+function buildProductSiteComparisonPayload({ products = [], orders = [], events = [], inventory = [], activeSite = 'all', entriesBySite, profitByOrderId = new Map() } = {}) {
     const snapshots = ['cn', 'intl'].map((site) => ({
         site,
         label: site === 'intl' ? 'INTL' : 'CN',
@@ -1414,7 +1725,8 @@ function buildProductSiteComparisonPayload({ products = [], orders = [], events 
             events: events.filter((row) => normalizeSite(row?.site) === site),
             inventory,
             site,
-            entries: entriesBySite?.[site]
+            entries: entriesBySite?.[site],
+            profitByOrderId
         })
     }));
 
@@ -1425,11 +1737,12 @@ function buildProductSiteComparisonPayload({ products = [], orders = [], events 
     };
 }
 
-function buildProductCategoryBreakdownPayload({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = 6, entries } = {}) {
-    const metricEntries = resolveProductMetricEntries({ entries, products, orders, events, inventory, site });
+function buildProductCategoryBreakdownPayload({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = 6, entries, profitByOrderId = new Map() } = {}) {
+    const metricEntries = resolveProductMetricEntries({ entries, products, orders, events, inventory, site, profitByOrderId });
     const safeLimit = Math.max(1, normalizeInteger(limit, 6));
     const bucketMap = new Map();
     const totalGmv = metricEntries.reduce((sum, entry) => sum + normalizeNumber(entry?.gmv_points, 0), 0);
+    const totalNetProfitCny = metricEntries.reduce((sum, entry) => sum + normalizeNumber(entry?.net_profit_cny, 0), 0);
 
     metricEntries.forEach((entry) => {
         const category = normalizeText(entry?.category, 120) || '未分类';
@@ -1443,6 +1756,12 @@ function buildProductCategoryBreakdownPayload({ products = [], orders = [], even
             buyer_count: 0,
             view_user_count: 0,
             gmv_points: 0,
+            recognized_revenue_cny: 0,
+            recognized_cost_cny: 0,
+            net_profit_cny: 0,
+            inventory_item_count: 0,
+            costed_item_count: 0,
+            missing_cost_item_count: 0,
             delivery_risk_count: 0
         };
 
@@ -1456,6 +1775,12 @@ function buildProductCategoryBreakdownPayload({ products = [], orders = [], even
         bucket.buyer_count += normalizeInteger(entry?.buyer_count, 0);
         bucket.view_user_count += normalizeInteger(entry?.view_user_count, 0);
         bucket.gmv_points += normalizeNumber(entry?.gmv_points, 0);
+        bucket.recognized_revenue_cny += normalizeNumber(entry?.recognized_revenue_cny, 0);
+        bucket.recognized_cost_cny += normalizeNumber(entry?.recognized_cost_cny, 0);
+        bucket.net_profit_cny += normalizeNumber(entry?.net_profit_cny, 0);
+        bucket.inventory_item_count += normalizeInteger(entry?.inventory_item_count, 0);
+        bucket.costed_item_count += normalizeInteger(entry?.costed_item_count, 0);
+        bucket.missing_cost_item_count += normalizeInteger(entry?.missing_cost_item_count, 0);
         bucket.delivery_risk_count += normalizeInteger(entry?.delivery_risk_count, 0);
         bucketMap.set(category, bucket);
     });
@@ -1471,6 +1796,16 @@ function buildProductCategoryBreakdownPayload({ products = [], orders = [], even
             buyer_count: bucket.buyer_count,
             view_user_count: bucket.view_user_count,
             gmv_points: roundNumber(bucket.gmv_points, 2),
+            recognized_revenue_cny: roundNumber(bucket.recognized_revenue_cny, 4),
+            recognized_cost_cny: roundNumber(bucket.recognized_cost_cny, 4),
+            net_profit_cny: roundNumber(bucket.net_profit_cny, 4),
+            margin_rate: bucket.recognized_revenue_cny > 0 ? roundNumber(bucket.net_profit_cny / bucket.recognized_revenue_cny, 4) : null,
+            profit_share_rate: totalNetProfitCny > 0 ? roundNumber((bucket.net_profit_cny / totalNetProfitCny) * 100, 2) : 0,
+            inventory_item_count: bucket.inventory_item_count,
+            costed_item_count: bucket.costed_item_count,
+            missing_cost_item_count: bucket.missing_cost_item_count,
+            cost_coverage_rate: bucket.inventory_item_count > 0 ? roundNumber(bucket.costed_item_count / bucket.inventory_item_count, 4) : 0,
+            cost_coverage: resolveAggregateCostCoverage(bucket.inventory_item_count, bucket.costed_item_count),
             gmv_share_rate: totalGmv > 0 ? roundNumber((bucket.gmv_points / totalGmv) * 100, 2) : 0,
             conversion_rate: bucket.view_user_count > 0 ? roundNumber((bucket.buyer_count / bucket.view_user_count) * 100, 2) : 0,
             refund_rate: bucket.order_count + bucket.refunded_order_count > 0
@@ -1498,7 +1833,14 @@ function buildProductCategoryBreakdownPayload({ products = [], orders = [], even
             buyer_count: aggregate.buyer_count + normalizeInteger(row?.buyer_count, 0),
             view_user_count: aggregate.view_user_count + normalizeInteger(row?.view_user_count, 0),
             gmv_points: aggregate.gmv_points + normalizeNumber(row?.gmv_points, 0),
+            recognized_revenue_cny: aggregate.recognized_revenue_cny + normalizeNumber(row?.recognized_revenue_cny, 0),
+            recognized_cost_cny: aggregate.recognized_cost_cny + normalizeNumber(row?.recognized_cost_cny, 0),
+            net_profit_cny: aggregate.net_profit_cny + normalizeNumber(row?.net_profit_cny, 0),
+            inventory_item_count: aggregate.inventory_item_count + normalizeInteger(row?.inventory_item_count, 0),
+            costed_item_count: aggregate.costed_item_count + normalizeInteger(row?.costed_item_count, 0),
+            missing_cost_item_count: aggregate.missing_cost_item_count + normalizeInteger(row?.missing_cost_item_count, 0),
             gmv_share_rate: aggregate.gmv_share_rate + normalizeNumber(row?.gmv_share_rate, 0),
+            profit_share_rate: aggregate.profit_share_rate + normalizeNumber(row?.profit_share_rate, 0),
             conversion_rate: 0,
             refund_rate: 0,
             delivery_risk_rate: 0
@@ -1512,14 +1854,28 @@ function buildProductCategoryBreakdownPayload({ products = [], orders = [], even
             buyer_count: 0,
             view_user_count: 0,
             gmv_points: 0,
+            recognized_revenue_cny: 0,
+            recognized_cost_cny: 0,
+            net_profit_cny: 0,
+            inventory_item_count: 0,
+            costed_item_count: 0,
+            missing_cost_item_count: 0,
             gmv_share_rate: 0,
+            profit_share_rate: 0,
             conversion_rate: 0,
             refund_rate: 0,
             delivery_risk_rate: 0
         });
 
         otherRow.gmv_points = roundNumber(otherRow.gmv_points, 2);
+        otherRow.recognized_revenue_cny = roundNumber(otherRow.recognized_revenue_cny, 4);
+        otherRow.recognized_cost_cny = roundNumber(otherRow.recognized_cost_cny, 4);
+        otherRow.net_profit_cny = roundNumber(otherRow.net_profit_cny, 4);
+        otherRow.margin_rate = otherRow.recognized_revenue_cny > 0 ? roundNumber(otherRow.net_profit_cny / otherRow.recognized_revenue_cny, 4) : null;
         otherRow.gmv_share_rate = roundNumber(otherRow.gmv_share_rate, 2);
+        otherRow.profit_share_rate = roundNumber(otherRow.profit_share_rate, 2);
+        otherRow.cost_coverage_rate = otherRow.inventory_item_count > 0 ? roundNumber(otherRow.costed_item_count / otherRow.inventory_item_count, 4) : 0;
+        otherRow.cost_coverage = resolveAggregateCostCoverage(otherRow.inventory_item_count, otherRow.costed_item_count);
         otherRow.conversion_rate = otherRow.view_user_count > 0 ? roundNumber((otherRow.buyer_count / otherRow.view_user_count) * 100, 2) : 0;
         otherRow.refund_rate = otherRow.order_count + otherRow.refunded_order_count > 0
             ? roundNumber((otherRow.refunded_order_count / (otherRow.order_count + otherRow.refunded_order_count)) * 100, 2)
@@ -1533,6 +1889,7 @@ function buildProductCategoryBreakdownPayload({ products = [], orders = [], even
     return {
         total_category_count: rows.length,
         total_gmv_points: roundNumber(totalGmv, 2),
+        total_net_profit_cny: roundNumber(totalNetProfitCny, 4),
         rows: visibleRows,
         metric_basis: 'shop_products + shop_orders + shop_inventory + user_events'
     };
@@ -1575,8 +1932,8 @@ function getProductOperatingQuadrant(entry = {}, benchmarks = {}) {
     return { key: 'observe', label: '低动销观察', tone: 'neutral' };
 }
 
-function buildProductOperatingMatrixPayload({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = 12, entries } = {}) {
-    const metricEntries = resolveProductMetricEntries({ entries, products, orders, events, inventory, site })
+function buildProductOperatingMatrixPayload({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = 12, entries, profitByOrderId = new Map() } = {}) {
+    const metricEntries = resolveProductMetricEntries({ entries, products, orders, events, inventory, site, profitByOrderId })
         .filter((entry) => (
             normalizeInteger(entry?.view_user_count, 0) > 0
             || normalizeInteger(entry?.buyer_count, 0) > 0
@@ -1607,6 +1964,19 @@ function buildProductOperatingMatrixPayload({ products = [], orders = [], events
                 refund_rate: normalizeNumber(entry?.refund_rate, 0),
                 delivery_risk_rate: normalizeNumber(entry?.delivery_risk_rate, 0),
                 gmv_points: roundNumber(gmvPoints, 2),
+                recognized_revenue_cny: roundNumber(entry?.recognized_revenue_cny, 4),
+                recognized_cost_cny: roundNumber(entry?.recognized_cost_cny, 4),
+                net_profit_cny: roundNumber(entry?.net_profit_cny, 4),
+                margin_rate: entry?.margin_rate === null ? null : roundNumber(entry?.margin_rate, 4),
+                paid_points_spent: roundNumber(entry?.paid_points_spent, 2),
+                bonus_points_spent: roundNumber(entry?.bonus_points_spent, 2),
+                untracked_revenue_points: roundNumber(entry?.untracked_revenue_points, 2),
+                non_cash_points: roundNumber(entry?.non_cash_points, 2),
+                inventory_item_count: normalizeInteger(entry?.inventory_item_count, 0),
+                costed_item_count: normalizeInteger(entry?.costed_item_count, 0),
+                missing_cost_item_count: normalizeInteger(entry?.missing_cost_item_count, 0),
+                cost_coverage_rate: roundNumber(entry?.cost_coverage_rate, 4),
+                cost_coverage: normalizeText(entry?.cost_coverage, 40) || 'no_inventory',
                 quadrant_key: quadrant.key,
                 quadrant_label: quadrant.label,
                 tone: quadrant.tone,
@@ -1653,8 +2023,8 @@ function sortByNumeric(rows = [], key = '', direction = 'desc') {
     return safeRows;
 }
 
-function buildProductRankPayloads({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = DEFAULT_PRODUCT_RANK_LIMIT, entries } = {}) {
-    const metricEntries = resolveProductMetricEntries({ entries, products, orders, events, inventory, site });
+function buildProductRankPayloads({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = DEFAULT_PRODUCT_RANK_LIMIT, entries, profitByOrderId = new Map() } = {}) {
+    const metricEntries = resolveProductMetricEntries({ entries, products, orders, events, inventory, site, profitByOrderId });
     const safeLimit = Math.max(1, normalizeInteger(limit, DEFAULT_PRODUCT_RANK_LIMIT));
 
     return {
@@ -1729,11 +2099,24 @@ function buildInventoryTurnoverHints(entries = []) {
         });
     }
 
+    const missingCost = sortByNumeric(
+        entries.filter((entry) => normalizeInteger(entry.missing_cost_item_count, 0) > 0),
+        'missing_cost_item_count'
+    )[0];
+    if (missingCost) {
+        hints.push({
+            tone: 'warning',
+            title: `${missingCost.product_name} 成本覆盖不足`,
+            summary: `有 ${missingCost.missing_cost_item_count} 个关联库存缺少采购成本，当前净利润 ${roundNumber(missingCost.net_profit_cny, 2).toLocaleString('zh-CN')} 元可能被高估。`,
+            product_id: missingCost.product_id
+        });
+    }
+
     return hints;
 }
 
-function buildProductHealthPayloads({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = DEFAULT_PRODUCT_RANK_LIMIT, entries } = {}) {
-    const metricEntries = resolveProductMetricEntries({ entries, products, orders, events, inventory, site });
+function buildProductHealthPayloads({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = DEFAULT_PRODUCT_RANK_LIMIT, entries, profitByOrderId = new Map() } = {}) {
+    const metricEntries = resolveProductMetricEntries({ entries, products, orders, events, inventory, site, profitByOrderId });
     const safeLimit = Math.max(1, normalizeInteger(limit, DEFAULT_PRODUCT_RANK_LIMIT));
 
     return {
@@ -1997,10 +2380,10 @@ function buildProductFunnelProductRows(entries = [], limit = 6) {
     ).slice(0, safeLimit);
 }
 
-function buildProductFunnelPayload({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = 6, productId = '', entries } = {}) {
+function buildProductFunnelPayload({ products = [], orders = [], events = [], inventory = [], site = 'all', limit = 6, productId = '', entries, profitByOrderId = new Map() } = {}) {
     const normalizedSite = normalizeSite(site);
     const normalizedProductId = normalizeText(productId, 160);
-    const metricEntries = resolveProductMetricEntries({ entries, products, orders, events, inventory, site: normalizedSite });
+    const metricEntries = resolveProductMetricEntries({ entries, products, orders, events, inventory, site: normalizedSite, profitByOrderId });
     const filteredEntries = normalizedProductId
         ? metricEntries.filter((entry) => entry.product_id === normalizedProductId)
         : metricEntries;
@@ -2042,13 +2425,13 @@ function buildProductFunnelPayload({ products = [], orders = [], events = [], in
     };
 }
 
-function buildProductDetailPayload({ products = [], orders = [], events = [], inventory = [], site = 'all', productId = '', startIso = '', endIso = '', recentOrderLimit = 6 } = {}) {
+function buildProductDetailPayload({ products = [], orders = [], events = [], inventory = [], site = 'all', productId = '', startIso = '', endIso = '', recentOrderLimit = 6, profitByOrderId = new Map() } = {}) {
     const normalizedProductId = normalizeText(productId, 160);
     if (!normalizedProductId) {
         return null;
     }
 
-    const entries = buildProductMetricEntries({ products, orders, events, inventory, site });
+    const entries = buildProductMetricEntries({ products, orders, events, inventory, site, profitByOrderId });
     const entry = entries.find((item) => item.product_id === normalizedProductId) || null;
     if (!entry) {
         return null;
@@ -2384,11 +2767,22 @@ function buildProductDetailPayload({ products = [], orders = [], events = [], in
         }));
 
     const recentOrders = productOrders.slice(0, Math.max(1, normalizeInteger(recentOrderLimit, 6))).map((order) => ({
+        order,
+        attribution: getOrderProfitAttribution(order, profitByOrderId)
+    })).map(({ order, attribution }) => ({
         order_id: normalizeText(order?.id, 160),
         user_id: normalizeText(order?.user_id, 160),
         site: normalizeSite(order?.site),
         quantity: getOrderQuantity(order),
         total_points: roundNumber(getOrderRevenue(order), 2),
+        recognized_revenue_cny: roundNumber(attribution?.recognized_revenue_cny, 4),
+        recognized_cost_cny: roundNumber(attribution?.recognized_cost_cny, 4),
+        net_profit_cny: roundNumber(attribution?.net_profit_cny, 4),
+        revenue_recognition_status: normalizeText(attribution?.revenue_recognition_status, 40),
+        cost_coverage: normalizeText(attribution?.cost_coverage, 40),
+        cost_coverage_rate: normalizeInteger(attribution?.inventory_item_count, 0) > 0
+            ? roundNumber(normalizeInteger(attribution?.costed_item_count, 0) / normalizeInteger(attribution?.inventory_item_count, 0), 4)
+            : 0,
         refund_status: normalizeRefundStatus(order?.refund_status),
         delivery_status: normalizeDeliveryStatus(order?.delivery_status),
         created_at: order?.created_at || ''
@@ -2400,7 +2794,8 @@ function buildProductDetailPayload({ products = [], orders = [], events = [], in
             orders: productOrders.filter((row) => normalizeSite(row?.site) === siteKey),
             events: productEvents.filter((row) => normalizeSite(row?.site) === siteKey),
             inventory,
-            site: siteKey
+            site: siteKey,
+            profitByOrderId
         }).find((row) => row.product_id === normalizedProductId) || null;
 
         return {
@@ -2410,6 +2805,11 @@ function buildProductDetailPayload({ products = [], orders = [], events = [], in
                 order_count: siteEntry.order_count,
                 buyer_count: siteEntry.buyer_count,
                 gmv_points: siteEntry.gmv_points,
+                recognized_revenue_cny: siteEntry.recognized_revenue_cny,
+                recognized_cost_cny: siteEntry.recognized_cost_cny,
+                net_profit_cny: siteEntry.net_profit_cny,
+                margin_rate: siteEntry.margin_rate,
+                cost_coverage_rate: siteEntry.cost_coverage_rate,
                 purchase_conversion_rate: siteEntry.conversion_rate,
                 delivery_success_rate: siteEntry.delivery_success_rate,
                 refunded_order_count: siteEntry.refunded_order_count
@@ -2417,6 +2817,11 @@ function buildProductDetailPayload({ products = [], orders = [], events = [], in
                 order_count: 0,
                 buyer_count: 0,
                 gmv_points: 0,
+                recognized_revenue_cny: 0,
+                recognized_cost_cny: 0,
+                net_profit_cny: 0,
+                margin_rate: null,
+                cost_coverage_rate: 0,
                 purchase_conversion_rate: 0,
                 delivery_success_rate: 0,
                 refunded_order_count: 0
@@ -2445,6 +2850,29 @@ function buildProductDetailPayload({ products = [], orders = [], events = [], in
             order_count: entry.order_count,
             refunded_order_count: entry.refunded_order_count,
             gmv_points: entry.gmv_points,
+            profit_basis: entry.profit_basis,
+            currency: entry.currency,
+            gross_points: entry.gross_points,
+            revenue_points: entry.revenue_points,
+            paid_points_spent: entry.paid_points_spent,
+            bonus_points_spent: entry.bonus_points_spent,
+            untracked_revenue_points: entry.untracked_revenue_points,
+            non_cash_points: entry.non_cash_points,
+            discount_points: entry.discount_points,
+            refunded_points: entry.refunded_points,
+            recognized_revenue_cny: entry.recognized_revenue_cny,
+            recognized_cost_cny: entry.recognized_cost_cny,
+            purchase_cost_cny: entry.purchase_cost_cny,
+            net_profit_cny: entry.net_profit_cny,
+            margin_rate: entry.margin_rate,
+            inventory_item_count: entry.inventory_item_count,
+            costed_item_count: entry.costed_item_count,
+            missing_cost_item_count: entry.missing_cost_item_count,
+            cost_coverage_rate: entry.cost_coverage_rate,
+            cost_coverage: entry.cost_coverage,
+            cost_coverage_breakdown: entry.cost_coverage_breakdown,
+            revenue_recognition_breakdown: entry.revenue_recognition_breakdown,
+            profit_notes: entry.profit_notes,
             buyer_count: entry.buyer_count,
             view_count: entry.view_count,
             view_user_count: entry.view_user_count,
@@ -2492,7 +2920,8 @@ function buildProductDetailPayload({ products = [], orders = [], events = [], in
             orders: productOrders,
             events: productEvents,
             startIso,
-            endIso
+            endIso,
+            profitByOrderId
         }),
         funnel: buildProductFunnelPayload({
             products,
@@ -2500,7 +2929,8 @@ function buildProductDetailPayload({ products = [], orders = [], events = [], in
             events,
             inventory,
             site,
-            productId: normalizedProductId
+            productId: normalizedProductId,
+            profitByOrderId
         }),
         recentOrders
     };
@@ -2526,19 +2956,28 @@ function buildProductBundleFailure(error, fallbackMessage = 'Failed to load prod
     };
 }
 
-async function loadProductAnalyticsDataset(supabase, { site = 'all', startIso = '', endIso = '', includeInventory = true, includeEvents = true } = {}) {
+async function loadProductAnalyticsDataset(supabase, { site = 'all', startIso = '', endIso = '', includeInventory = true, includeEvents = true, includeProfitAttribution = true } = {}) {
     const [products, orders, inventory, events] = await Promise.all([
         fetchShopProducts(supabase),
         fetchShopOrders(supabase, { site, startIso, endIso }),
         includeInventory ? fetchShopInventory(supabase) : Promise.resolve([]),
         includeEvents ? fetchProductEvents(supabase, { site, startIso, endIso }) : Promise.resolve([])
     ]);
+    const profitLinkage = includeProfitAttribution
+        ? await loadProductOrderProfitAttributions(supabase, orders)
+        : {
+            orderItemsByOrderId: new Map(),
+            inventoryRecordsById: new Map(),
+            profitAttributionRows: [],
+            profitByOrderId: new Map()
+        };
 
     return {
         products,
         orders,
         inventory,
-        events
+        events,
+        ...profitLinkage
     };
 }
 

@@ -121,6 +121,13 @@ function createSupabaseStub(state = {}) {
     const opsAlertJobs = state.opsAlertJobs || [];
     const profiles = state.profiles || [];
     const shopOrders = state.shopOrders || [];
+    const shopOrderItems = state.shopOrderItems || [];
+    const shopInventory = state.shopInventory || [];
+    const shopProductSkus = state.shopProductSkus || [];
+    const shopOrderProfitLedger = state.shopOrderProfitLedger || [];
+    const shopProcurementBatches = state.shopProcurementBatches || [];
+    const shopInventorySources = state.shopInventorySources || [];
+    const walletPointLotConsumptions = state.walletPointLotConsumptions || [];
     const pointsLedger = state.pointsLedger || [];
     const pointsBalance = state.pointsBalance || [];
     state.rpcCalls = state.rpcCalls || [];
@@ -271,6 +278,132 @@ function createSupabaseStub(state = {}) {
 
                 if (table === 'shop_orders' && query.mode === 'select') {
                     let rows = applyFilters(shopOrders, query.filters);
+                    if (query.order) {
+                        const { column, ascending } = query.order;
+                        rows = rows.slice().sort((left, right) => (
+                            ascending
+                                ? compareValue(left[column], right[column])
+                                : compareValue(right[column], left[column])
+                        ));
+                    }
+                    const from = query.range?.from ?? 0;
+                    const to = query.range?.to ?? (rows.length ? rows.length - 1 : -1);
+                    return {
+                        data: rows.slice(from, to + 1),
+                        error: null
+                    };
+                }
+
+                if (table === 'shop_order_items' && query.mode === 'select') {
+                    let rows = applyFilters(shopOrderItems, query.filters);
+                    if (query.order) {
+                        const { column, ascending } = query.order;
+                        rows = rows.slice().sort((left, right) => (
+                            ascending
+                                ? compareValue(left[column], right[column])
+                                : compareValue(right[column], left[column])
+                        ));
+                    }
+                    const from = query.range?.from ?? 0;
+                    const to = query.range?.to ?? (rows.length ? rows.length - 1 : -1);
+                    return {
+                        data: rows.slice(from, to + 1),
+                        error: null
+                    };
+                }
+
+                if (table === 'shop_inventory' && query.mode === 'select') {
+                    let rows = applyFilters(shopInventory, query.filters);
+                    if (query.order) {
+                        const { column, ascending } = query.order;
+                        rows = rows.slice().sort((left, right) => (
+                            ascending
+                                ? compareValue(left[column], right[column])
+                                : compareValue(right[column], left[column])
+                        ));
+                    }
+                    const from = query.range?.from ?? 0;
+                    const to = query.range?.to ?? (rows.length ? rows.length - 1 : -1);
+                    return {
+                        data: rows.slice(from, to + 1),
+                        error: null
+                    };
+                }
+
+                if (table === 'shop_product_skus' && query.mode === 'select') {
+                    let rows = applyFilters(shopProductSkus, query.filters);
+                    if (query.order) {
+                        const { column, ascending } = query.order;
+                        rows = rows.slice().sort((left, right) => (
+                            ascending
+                                ? compareValue(left[column], right[column])
+                                : compareValue(right[column], left[column])
+                        ));
+                    }
+                    const from = query.range?.from ?? 0;
+                    const to = query.range?.to ?? (rows.length ? rows.length - 1 : -1);
+                    return {
+                        data: rows.slice(from, to + 1),
+                        error: null
+                    };
+                }
+
+                if (table === 'shop_order_profit_ledger' && query.mode === 'select') {
+                    let rows = applyFilters(shopOrderProfitLedger, query.filters);
+                    if (query.order) {
+                        const { column, ascending } = query.order;
+                        rows = rows.slice().sort((left, right) => (
+                            ascending
+                                ? compareValue(left[column], right[column])
+                                : compareValue(right[column], left[column])
+                        ));
+                    }
+                    const from = query.range?.from ?? 0;
+                    const to = query.range?.to ?? (rows.length ? rows.length - 1 : -1);
+                    return {
+                        data: rows.slice(from, to + 1),
+                        error: null
+                    };
+                }
+
+                if (table === 'shop_procurement_batches' && query.mode === 'select') {
+                    let rows = applyFilters(shopProcurementBatches, query.filters);
+                    if (query.order) {
+                        const { column, ascending } = query.order;
+                        rows = rows.slice().sort((left, right) => (
+                            ascending
+                                ? compareValue(left[column], right[column])
+                                : compareValue(right[column], left[column])
+                        ));
+                    }
+                    const from = query.range?.from ?? 0;
+                    const to = query.range?.to ?? (rows.length ? rows.length - 1 : -1);
+                    return {
+                        data: rows.slice(from, to + 1),
+                        error: null
+                    };
+                }
+
+                if (table === 'shop_inventory_sources' && query.mode === 'select') {
+                    let rows = applyFilters(shopInventorySources, query.filters);
+                    if (query.order) {
+                        const { column, ascending } = query.order;
+                        rows = rows.slice().sort((left, right) => (
+                            ascending
+                                ? compareValue(left[column], right[column])
+                                : compareValue(right[column], left[column])
+                        ));
+                    }
+                    const from = query.range?.from ?? 0;
+                    const to = query.range?.to ?? (rows.length ? rows.length - 1 : -1);
+                    return {
+                        data: rows.slice(from, to + 1),
+                        error: null
+                    };
+                }
+
+                if (table === 'wallet_point_lot_consumptions' && query.mode === 'select') {
+                    let rows = applyFilters(walletPointLotConsumptions, query.filters);
                     if (query.order) {
                         const { column, ascending } = query.order;
                         rows = rows.slice().sort((left, right) => (
@@ -1221,7 +1354,267 @@ test('payments finance view can use aggregated rpc payload instead of scanning f
                     ]
                 }
             ]
-        }
+        },
+        shopOrders: [
+            {
+                id: 'shop-profit-1',
+                user_id: 'user-profit-1',
+                product_id: 'product-profit-1',
+                inventory_id: null,
+                sku_id: 'sku-profit-month',
+                snapshot_product_name: '权益卡',
+                price_paid: 50,
+                paid_points_spent: 40,
+                bonus_points_spent: 10,
+                points_spend_breakdown: {
+                    status: 'exact',
+                    basis: 'points_balance_deduction',
+                    paid_points: 40,
+                    bonus_points: 10,
+                    untracked_points: 0
+                },
+                total_price: 60,
+                discount_amount: 10,
+                discount_refund_amount: 0,
+                refund_status: 'none',
+                created_at: '2026-03-23T10:00:00.000Z',
+                site: 'cn'
+            },
+            {
+                id: 'shop-profit-refunded',
+                user_id: 'user-profit-2',
+                product_id: 'product-profit-1',
+                inventory_id: null,
+                sku_id: 'sku-profit-refund',
+                snapshot_product_name: '权益卡退款',
+                price_paid: 10,
+                paid_points_spent: 6,
+                bonus_points_spent: 4,
+                points_spend_breakdown: {
+                    status: 'exact',
+                    basis: 'points_balance_deduction',
+                    paid_points: 6,
+                    bonus_points: 4,
+                    untracked_points: 0
+                },
+                total_price: 10,
+                discount_amount: 0,
+                discount_refund_amount: 0,
+                refund_status: 'refunded',
+                created_at: '2026-03-24T10:00:00.000Z',
+                site: 'cn'
+            }
+        ],
+        shopOrderItems: [
+            {
+                id: 'shop-profit-item-1',
+                order_id: 'shop-profit-1',
+                inventory_id: 'inventory-profit-1',
+                snapshot_product_name: '权益卡',
+                price_paid: 50,
+                created_at: '2026-03-23T10:00:01.000Z'
+            },
+            {
+                id: 'shop-profit-refunded-item-1',
+                order_id: 'shop-profit-refunded',
+                inventory_id: 'inventory-profit-refunded',
+                snapshot_product_name: '权益卡退款',
+                price_paid: 10,
+                created_at: '2026-03-24T10:00:01.000Z'
+            }
+        ],
+        shopInventory: [
+            {
+                id: 'inventory-profit-1',
+                product_id: 'product-profit-1',
+                content: 'account-1',
+                status: 'sold',
+                buyer_id: 'user-profit-1',
+                sold_at: '2026-03-23T10:02:00.000Z',
+                sku_id: 'sku-profit-month',
+                source_batch_id: 'batch-profit-1',
+                purchase_unit_cost: 18.5,
+                purchase_currency: 'CNY',
+                purchase_exchange_rate_to_cny: 1,
+                purchase_unit_cost_cny: 18.5
+            },
+            {
+                id: 'inventory-profit-refunded',
+                product_id: 'product-profit-1',
+                content: 'account-refunded',
+                status: 'sold',
+                buyer_id: 'user-profit-2',
+                sold_at: '2026-03-24T10:02:00.000Z',
+                sku_id: 'sku-profit-refund',
+                source_batch_id: 'batch-profit-1',
+                purchase_unit_cost: 4,
+                purchase_currency: 'CNY',
+                purchase_exchange_rate_to_cny: 1,
+                purchase_unit_cost_cny: 4
+            }
+        ],
+        shopProductSkus: [
+            {
+                id: 'sku-profit-month',
+                product_id: 'product-profit-1',
+                sku_name: '月卡',
+                sku_code: 'month',
+                inventory_sku_id: null
+            },
+            {
+                id: 'sku-profit-refund',
+                product_id: 'product-profit-1',
+                sku_name: '退款规格',
+                sku_code: 'refund',
+                inventory_sku_id: null
+            }
+        ],
+        shopProcurementBatches: [
+            {
+                id: 'batch-profit-1',
+                batch_code: 'BATCH-PROFIT-1',
+                source_id: 'source-profit-main',
+                unit_cost_cny: 18.5,
+                total_cost_cny: 22.5,
+                quality_status: '可售',
+                quality_score: 96,
+                cost_status: 'costed'
+            }
+        ],
+        shopInventorySources: [
+            {
+                id: 'source-profit-main',
+                source_name: '稳定货源',
+                source_url: 'https://supplier.example.com/profit',
+                platform: 'Google',
+                risk_tier: 'standard',
+                quality_grade: 'A'
+            }
+        ],
+        walletPointLotConsumptions: [
+            {
+                id: 'point-lot-consumption-recharge-1',
+                point_lot_id: 'point-lot-recharge-1',
+                user_id: 'user-profit-1',
+                site: 'cn',
+                order_id: 'shop-profit-1',
+                order_item_id: 'shop-profit-item-1',
+                ledger_id: 'points-ledger-shop-profit-1',
+                consumption_reference_id: 'SHOP_ORDER_shop-profit-1',
+                points_amount: 30,
+                cash_value_cny: 30,
+                source_type: 'recharge',
+                source_label: '充值积分',
+                consumed_at: '2026-03-23T10:00:02.000Z',
+                metadata: {}
+            },
+            {
+                id: 'point-lot-consumption-migration-1',
+                point_lot_id: 'point-lot-migration-1',
+                user_id: 'user-profit-1',
+                site: 'cn',
+                order_id: 'shop-profit-1',
+                order_item_id: 'shop-profit-item-1',
+                ledger_id: 'points-ledger-shop-profit-1',
+                consumption_reference_id: 'SHOP_ORDER_shop-profit-1',
+                points_amount: 10,
+                cash_value_cny: 10,
+                source_type: 'migration',
+                source_label: '迁移期付费余额',
+                consumed_at: '2026-03-23T10:00:03.000Z',
+                metadata: { component: 'paid' }
+            },
+            {
+                id: 'point-lot-consumption-bonus-1',
+                point_lot_id: 'point-lot-bonus-1',
+                user_id: 'user-profit-1',
+                site: 'cn',
+                order_id: 'shop-profit-1',
+                order_item_id: 'shop-profit-item-1',
+                ledger_id: 'points-ledger-shop-profit-1',
+                consumption_reference_id: 'SHOP_ORDER_shop-profit-1',
+                points_amount: 10,
+                cash_value_cny: 0,
+                source_type: 'activity_bonus',
+                source_label: '活动赠送',
+                consumed_at: '2026-03-23T10:00:04.000Z',
+                metadata: { component: 'bonus' }
+            },
+            {
+                id: 'point-lot-consumption-refund-recharge',
+                point_lot_id: 'point-lot-recharge-2',
+                user_id: 'user-profit-2',
+                site: 'cn',
+                order_id: 'shop-profit-refunded',
+                order_item_id: 'shop-profit-refunded-item-1',
+                ledger_id: 'points-ledger-shop-profit-refunded',
+                consumption_reference_id: 'SHOP_ORDER_shop-profit-refunded',
+                points_amount: 6,
+                cash_value_cny: 6,
+                source_type: 'recharge',
+                source_label: '充值积分',
+                consumed_at: '2026-03-24T10:00:02.000Z',
+                metadata: {}
+            },
+            {
+                id: 'point-lot-consumption-refund-bonus',
+                point_lot_id: 'point-lot-bonus-2',
+                user_id: 'user-profit-2',
+                site: 'cn',
+                order_id: 'shop-profit-refunded',
+                order_item_id: 'shop-profit-refunded-item-1',
+                ledger_id: 'points-ledger-shop-profit-refunded',
+                consumption_reference_id: 'SHOP_ORDER_shop-profit-refunded',
+                points_amount: 4,
+                cash_value_cny: 0,
+                source_type: 'activity_bonus',
+                source_label: '活动赠送',
+                consumed_at: '2026-03-24T10:00:03.000Z',
+                metadata: { component: 'bonus' }
+            }
+        ],
+        shopOrderProfitLedger: [
+            {
+                id: 'ledger-profit-revenue',
+                site: 'cn',
+                order_id: 'shop-profit-1',
+                dedupe_key: 'shop-profit-1:revenue_points_paid',
+                entry_type: 'revenue_points_paid',
+                entry_group: 'revenue',
+                amount: 40,
+                currency: 'CNY',
+                cash_value_cny: 40,
+                points_amount: 40,
+                status: 'settled',
+                confidence: 'exact',
+                occurred_at: '2026-03-23T10:00:00.000Z',
+                snapshot: {
+                    title: '付费积分收入',
+                    tone: 'ready'
+                }
+            },
+            {
+                id: 'ledger-profit-cost',
+                site: 'cn',
+                order_id: 'shop-profit-1',
+                inventory_id: 'inventory-profit-1',
+                source_batch_id: 'batch-profit-1',
+                dedupe_key: 'shop-profit-1:inventory-profit-1:inventory_cost',
+                entry_type: 'inventory_cost',
+                entry_group: 'cost',
+                amount: -18.5,
+                currency: 'CNY',
+                cash_value_cny: -18.5,
+                points_amount: null,
+                status: 'settled',
+                confidence: 'exact',
+                occurred_at: '2026-03-23T10:00:00.000Z',
+                snapshot: {
+                    title: '采购成本',
+                    tone: 'ready'
+                }
+            }
+        ]
     };
 
     await withPaymentsSummaryHandler(state, async (handler) => {
@@ -1245,15 +1638,522 @@ test('payments finance view can use aggregated rpc payload instead of scanning f
         assert.equal(payload.provider_stats[0].provider, 'hupijiao');
         assert.equal(payload.points_breakdown[0].trend.length, 3);
         assert.equal(payload.points_breakdown[1].trend[2].value, -900);
-        assert.equal(payload.business_breakdown[2].metric, '2 笔');
-        assert.equal(payload.business_breakdown[0].trend.length, 3);
-        assert.equal(payload.business_breakdown[3].trend[2].value, 32000);
+        const businessBreakdownByKey = new Map(payload.business_breakdown.map((item) => [item.key, item]));
+        assert.equal(businessBreakdownByKey.get('mock').metric, '2 笔');
+        assert.equal(businessBreakdownByKey.get('recharge').trend.length, 3);
+        assert.equal(businessBreakdownByKey.get('balance').trend[2].value, 32000);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.net_profit_cny, 21.5);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.recognized_revenue_cny, 40);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.recognized_cost_cny, 18.5);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.paid_points_spent, 46);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.bonus_points_spent, 14);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.non_cash_points, 14);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.point_source_coverage.status, 'ready');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.point_source_coverage.order_count, 2);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.point_source_coverage.source_lot_order_count, 2);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.point_source_coverage.exact_order_count, 2);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.point_source_coverage.coverage_rate, 1);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.point_source_coverage.cash_backed_points, 46);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.point_source_coverage.non_cash_points, 14);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.point_source_coverage.migration_points, 10);
+        assert.equal(
+            payload.sitewide_summary.shop_profit_summary.point_source_coverage.source_types.some((item) => item.source_type === 'migration' && item.points === 10),
+            true
+        );
+        assert.equal(payload.sitewide_summary.shop_profit_summary.shop_profit_audit_alerts.status, 'info');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.shop_profit_audit_alerts.info_count, 2);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.shop_profit_audit_alerts.action_required_count, 0);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_readiness.status, 'ready');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_readiness.label, '可结算');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_readiness.score, 100);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_readiness.settlement_ready, true);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_reconciliation_closure.status, 'ready');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_reconciliation_closure.item_count, 11);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_reconciliation_closure.action_required_count, 0);
+        assert.equal(
+            payload.sitewide_summary.shop_profit_summary.profit_reconciliation_closure.items.some((item) => item.key === 'point_sources' && item.status === 'ready'),
+            true
+        );
+        assert.equal(
+            payload.sitewide_summary.shop_profit_summary.profit_reconciliation_closure.items.some((item) => item.key === 'payment_settlement' && item.category === 'payment'),
+            true
+        );
+        assert.equal(
+            payload.sitewide_summary.shop_profit_summary.profit_reconciliation_closure.items.some((item) => item.key === 'point_issuance' && item.category === 'points'),
+            true
+        );
+        assert.equal(
+            payload.sitewide_summary.shop_profit_summary.profit_reconciliation_closure.items.some((item) => item.key === 'point_consumption' && item.category === 'points'),
+            true
+        );
+        assert.equal(
+            payload.sitewide_summary.shop_profit_summary.profit_reconciliation_closure.items.some((item) => item.key === 'shop_order_linkage' && item.category === 'shop_order'),
+            true
+        );
+        assert.equal(
+            payload.sitewide_summary.shop_profit_summary.profit_reconciliation_closure.items.some((item) => item.key === 'procurement_recommendations' && item.category === 'procurement'),
+            true
+        );
+        assert.equal(
+            payload.sitewide_summary.shop_profit_summary.shop_profit_audit_alerts.items.some((item) => item.type === 'bonus_points' && item.severity === 'info'),
+            true
+        );
+        assert.equal(payload.sitewide_summary.shop_profit_summary.refunded_order_count, 1);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_adjustments.status, 'tracked');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_adjustments.coupon_discount_cny, 10);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_adjustments.bonus_points_excluded_cny, 14);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_adjustments.refunded_revenue_reversal_cny, 10);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_adjustments.items.length, 3);
+        assert.equal(
+            payload.sitewide_summary.shop_profit_summary.profit_adjustments.items.some((item) => item.type === 'coupon_discount' && item.order_count === 1),
+            true
+        );
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_adjustment_breakdown.status, 'ready');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_adjustment_breakdown.item_count, 5);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_adjustment_breakdown.extension_count, 2);
+        assert.equal(
+            payload.sitewide_summary.shop_profit_summary.profit_adjustment_breakdown.items.some((item) => item.type === 'coupon_discount' && item.closure_status === 'tracked'),
+            true
+        );
+        assert.equal(
+            payload.sitewide_summary.shop_profit_summary.profit_adjustment_breakdown.items.some((item) => item.type === 'bonus_points_excluded' && item.closure_status === 'excluded'),
+            true
+        );
+        assert.equal(
+            payload.sitewide_summary.shop_profit_summary.profit_adjustment_breakdown.items.some((item) => item.type === 'refund_reversal' && item.closure_status === 'tracked'),
+            true
+        );
+        assert.equal(
+            payload.sitewide_summary.shop_profit_summary.profit_adjustment_breakdown.items.some((item) => item.type === 'affiliate_commission' && item.closure_status === 'extension'),
+            true
+        );
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_ledger_preview.status, 'balanced');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_ledger_preview.net_amount_cny, 21.5);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_ledger_preview.source, 'persisted');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_ledger_preview.entry_count, 2);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.profit_ledger_preview.order_count, 1);
+        assert.equal(
+            payload.sitewide_summary.shop_profit_summary.profit_ledger_preview.entries_by_type.some((entry) => entry.type === 'inventory_cost' && entry.amount_cny === -18.5),
+            true
+        );
+        assert.equal(payload.sitewide_summary.shop_profit_summary.dimension_breakdown.products.length, 2);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.order_risk_list.status, 'review');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.order_risk_list.order_count, 2);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.order_risk_list.review_count, 2);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.order_risk_list.items.some((item) => item.reasons.some((reason) => reason.type === 'non_cash_points')), true);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.dimension_breakdown.products[0].label, '权益卡');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.dimension_breakdown.products[0].net_profit_cny, 21.5);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.dimension_breakdown.skus.length, 2);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.dimension_breakdown.skus[0].label, '月卡 (month)');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.dimension_breakdown.skus[0].net_profit_cny, 21.5);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.dimension_breakdown.source_batches[0].label, '批次 batch-profit-1');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.dimension_breakdown.source_batches[0].refunded_order_count, 1);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.dimension_breakdown.sources.length, 1);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.dimension_breakdown.sources[0].source_name, '稳定货源');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.dimension_breakdown.sources[0].source_platform, 'Google');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.dimension_breakdown.sources[0].source_risk_tier, 'standard');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.dimension_breakdown.sources[0].source_quality_grade, 'A');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.dimension_breakdown.sources[0].net_profit_cny, 21.5);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.dimension_breakdown.sources[0].refunded_order_count, 1);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.dimension_breakdown.sources[0].procurement_suggestion, '继续观察');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.source_procurement_recommendations.status, 'ready');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.source_procurement_recommendations.source_count, 1);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.source_procurement_recommendations.action_required_count, 0);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.source_procurement_recommendations.observe_count, 1);
+        assert.equal(payload.sitewide_summary.shop_profit_summary.source_procurement_recommendations.items[0].source_name, '稳定货源');
+        assert.equal(payload.sitewide_summary.shop_profit_summary.source_procurement_recommendations.items[0].action_type, 'observe');
+        assert.equal(businessBreakdownByKey.get('shop_profit').metric, '¥21.50');
+        assert.equal(businessBreakdownByKey.get('shop_profit').metric_kind, 'currency');
+        assert.equal(
+            businessBreakdownByKey.get('shop_profit').trend.some((point) => point.label === '03-23' && point.value === 21.5),
+            true
+        );
         assert.equal(state.rpcCalls.some((call) => call.name === 'fn_admin_get_payment_finance_summary'), true);
         assert.equal(
-            state.tableAccesses.some((entry) => ['payment_orders', 'shop_orders', 'points_ledger', 'points_balance'].includes(entry.table)),
+            state.tableAccesses.some((entry) => ['payment_orders', 'points_ledger', 'points_balance'].includes(entry.table)),
             false,
             JSON.stringify(state.tableAccesses)
         );
+        assert.equal(state.tableAccesses.some((entry) => entry.table === 'shop_orders'), true);
+        assert.equal(state.tableAccesses.some((entry) => entry.table === 'shop_order_items'), true);
+        assert.equal(state.tableAccesses.some((entry) => entry.table === 'shop_inventory'), true);
+        assert.equal(state.tableAccesses.some((entry) => entry.table === 'shop_product_skus'), true);
+        assert.equal(state.tableAccesses.some((entry) => entry.table === 'shop_order_profit_ledger'), true);
+        assert.equal(state.tableAccesses.some((entry) => entry.table === 'shop_procurement_batches'), true);
+        assert.equal(state.tableAccesses.some((entry) => entry.table === 'shop_inventory_sources'), true);
+    });
+});
+
+test('payments finance view exposes shop profit reconciliation issue list', async () => {
+    const state = {
+        financeSummaryRpc: {
+            overview: {
+                total_orders: 0,
+                paid_orders: 0,
+                redeemed_orders: 0,
+                claimed_orders: 0,
+                review_orders: 0,
+                failed_orders: 0,
+                total_amount: 0,
+                total_points: 0,
+                paid_rate: 0,
+                claim_rate: 0
+            },
+            anomaly_summary: {},
+            provider_stats: [],
+            sitewide_summary: {
+                recharge_amount: 0,
+                recharge_points: 0,
+                recharge_order_count: 0,
+                shop_points_spent: 60,
+                shop_order_count: 3,
+                refunded_shop_points: 0,
+                refunded_shop_order_count: 0,
+                points_inflow: 0,
+                points_outflow: 60,
+                net_points_flow: -60,
+                circulating_points: 0,
+                paid_balance: 0,
+                bonus_balance: 0,
+                balance_account_count: 0,
+                mock_recharge_order_count: 0,
+                mock_recharge_points: 0
+            },
+            points_breakdown: [],
+            points_breakdown_trend: [],
+            business_breakdown_trend: []
+        },
+        shopOrders: [
+            {
+                id: 'shop-profit-loss',
+                user_id: 'user-loss',
+                product_id: 'product-profit-1',
+                inventory_id: null,
+                sku_id: 'sku-profit-loss',
+                snapshot_product_name: '亏损规格',
+                price_paid: 10,
+                paid_points_spent: 10,
+                bonus_points_spent: 0,
+                points_spend_breakdown: {
+                    status: 'exact',
+                    paid_points: 10,
+                    bonus_points: 0,
+                    untracked_points: 0
+                },
+                total_price: 10,
+                discount_amount: 0,
+                refund_status: 'none',
+                created_at: '2026-03-23T09:00:00.000Z',
+                site: 'cn'
+            },
+            {
+                id: 'shop-profit-missing-cost',
+                user_id: 'user-missing-cost',
+                product_id: 'product-profit-1',
+                inventory_id: null,
+                sku_id: 'sku-profit-missing-cost',
+                snapshot_product_name: '缺成本规格',
+                price_paid: 20,
+                paid_points_spent: 20,
+                bonus_points_spent: 0,
+                points_spend_breakdown: {
+                    status: 'exact',
+                    paid_points: 20,
+                    bonus_points: 0,
+                    untracked_points: 0
+                },
+                total_price: 20,
+                discount_amount: 0,
+                refund_status: 'none',
+                created_at: '2026-03-23T10:00:00.000Z',
+                site: 'cn'
+            },
+            {
+                id: 'shop-profit-untracked',
+                user_id: 'user-untracked',
+                product_id: 'product-profit-1',
+                inventory_id: null,
+                sku_id: 'sku-profit-untracked',
+                snapshot_product_name: '历史未拆分规格',
+                price_paid: 30,
+                total_price: 30,
+                discount_amount: 0,
+                refund_status: 'none',
+                created_at: '2026-03-23T11:00:00.000Z',
+                site: 'cn'
+            }
+        ],
+        shopOrderItems: [
+            {
+                id: 'shop-profit-loss-item',
+                order_id: 'shop-profit-loss',
+                inventory_id: 'inventory-profit-loss',
+                snapshot_product_name: '亏损规格',
+                price_paid: 10,
+                created_at: '2026-03-23T09:00:01.000Z'
+            },
+            {
+                id: 'shop-profit-missing-cost-item',
+                order_id: 'shop-profit-missing-cost',
+                inventory_id: 'inventory-profit-missing-cost',
+                snapshot_product_name: '缺成本规格',
+                price_paid: 20,
+                created_at: '2026-03-23T10:00:01.000Z'
+            },
+            {
+                id: 'shop-profit-untracked-item',
+                order_id: 'shop-profit-untracked',
+                inventory_id: 'inventory-profit-untracked',
+                snapshot_product_name: '历史未拆分规格',
+                price_paid: 30,
+                created_at: '2026-03-23T11:00:01.000Z'
+            }
+        ],
+        shopInventory: [
+            {
+                id: 'inventory-profit-loss',
+                product_id: 'product-profit-1',
+                content: 'loss-account',
+                status: 'sold',
+                buyer_id: 'user-loss',
+                sold_at: '2026-03-23T09:02:00.000Z',
+                sku_id: 'sku-profit-loss',
+                source_batch_id: 'batch-profit-loss',
+                purchase_unit_cost: 12,
+                purchase_currency: 'CNY',
+                purchase_exchange_rate_to_cny: 1,
+                purchase_unit_cost_cny: 12
+            },
+            {
+                id: 'inventory-profit-missing-cost',
+                product_id: 'product-profit-1',
+                content: 'missing-cost-account',
+                status: 'sold',
+                buyer_id: 'user-missing-cost',
+                sold_at: '2026-03-23T10:02:00.000Z',
+                sku_id: 'sku-profit-missing-cost',
+                source_batch_id: 'batch-profit-missing-cost',
+                purchase_unit_cost: null,
+                purchase_currency: 'CNY',
+                purchase_exchange_rate_to_cny: 1,
+                purchase_unit_cost_cny: null
+            },
+            {
+                id: 'inventory-profit-untracked',
+                product_id: 'product-profit-1',
+                content: 'untracked-account',
+                status: 'sold',
+                buyer_id: 'user-untracked',
+                sold_at: '2026-03-23T11:02:00.000Z',
+                sku_id: 'sku-profit-untracked',
+                source_batch_id: 'batch-profit-untracked',
+                purchase_unit_cost: 5,
+                purchase_currency: 'CNY',
+                purchase_exchange_rate_to_cny: 1,
+                purchase_unit_cost_cny: 5
+            }
+        ],
+        shopProductSkus: [
+            {
+                id: 'sku-profit-loss',
+                product_id: 'product-profit-1',
+                sku_name: '亏损月卡',
+                sku_code: 'loss-month',
+                inventory_sku_id: null
+            },
+            {
+                id: 'sku-profit-missing-cost',
+                product_id: 'product-profit-1',
+                sku_name: '缺成本年卡',
+                sku_code: 'missing-year',
+                inventory_sku_id: null
+            },
+            {
+                id: 'sku-profit-untracked',
+                product_id: 'product-profit-1',
+                sku_name: '历史规格',
+                sku_code: 'legacy',
+                inventory_sku_id: null
+            }
+        ],
+        shopProcurementBatches: [
+            {
+                id: 'batch-profit-loss',
+                batch_code: 'BATCH-LOSS-1',
+                source_id: 'source-risk-loss',
+                unit_cost_cny: 12,
+                total_cost_cny: 12,
+                quality_status: '观察中',
+                quality_score: 62,
+                cost_status: 'costed'
+            },
+            {
+                id: 'batch-profit-missing-cost',
+                batch_code: 'BATCH-MISSING-1',
+                source_id: 'source-risk-missing',
+                unit_cost_cny: null,
+                total_cost_cny: null,
+                quality_status: '待补成本',
+                quality_score: 80,
+                cost_status: 'missing'
+            },
+            {
+                id: 'batch-profit-untracked',
+                batch_code: 'BATCH-STABLE-1',
+                source_id: 'source-risk-stable',
+                unit_cost_cny: 5,
+                total_cost_cny: 5,
+                quality_status: '可售',
+                quality_score: 92,
+                cost_status: 'costed'
+            }
+        ],
+        shopInventorySources: [
+            {
+                id: 'source-risk-loss',
+                source_name: '亏损货源',
+                source_url: 'https://supplier.example.com/loss',
+                platform: '独立站',
+                risk_tier: 'watch',
+                quality_grade: 'C'
+            },
+            {
+                id: 'source-risk-missing',
+                source_name: '缺成本货源',
+                source_url: 'https://supplier.example.com/missing',
+                platform: '手工采购',
+                risk_tier: 'review',
+                quality_grade: 'B'
+            },
+            {
+                id: 'source-risk-stable',
+                source_name: '历史货源',
+                source_url: 'https://supplier.example.com/stable',
+                platform: 'Google',
+                risk_tier: 'standard',
+                quality_grade: 'A'
+            }
+        ]
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'finance',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const summary = payload.sitewide_summary.shop_profit_summary;
+        const issuesByType = new Map(summary.reconciliation_issues.map((issue) => [issue.type, issue]));
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(summary.net_profit_cny, 43);
+        assert.equal(summary.recognized_revenue_cny, 60);
+        assert.equal(summary.recognized_cost_cny, 17);
+        assert.equal(summary.missing_cost_item_count, 1);
+        assert.equal(summary.reconciliation_status, 'critical');
+        assert.equal(summary.reconciliation_issue_count, 3);
+        assert.equal(summary.reconciliation_affected_order_count, 3);
+        assert.equal(summary.shop_profit_audit_alerts.status, 'critical');
+        assert.equal(summary.shop_profit_audit_alerts.critical_count, 1);
+        assert.equal(summary.shop_profit_audit_alerts.warning_count, 5);
+        assert.equal(summary.shop_profit_audit_alerts.action_required_count, 6);
+        assert.equal(summary.shop_profit_audit_alerts.items[0].type, 'negative_profit');
+        assert.equal(summary.shop_profit_audit_alerts.items.some((item) => item.type === 'point_source_coverage'), true);
+        assert.equal(summary.shop_profit_audit_alerts.items.some((item) => item.type === 'profit_ledger_incomplete'), true);
+        assert.equal(summary.shop_profit_audit_alerts.items.some((item) => item.type === 'profit_adjustments_review'), true);
+        assert.equal(summary.profit_readiness.status, 'critical');
+        assert.equal(summary.profit_readiness.label, '暂不可结算');
+        assert.equal(summary.profit_readiness.settlement_ready, false);
+        assert.equal(summary.profit_readiness.blocker_count > 0, true);
+        assert.equal(summary.profit_readiness.items.some((item) => item.key === 'critical_alerts'), true);
+        assert.equal(summary.profit_reconciliation_closure.status, 'critical');
+        assert.equal(summary.profit_reconciliation_closure.action_required_count, 6);
+        assert.equal(summary.profit_reconciliation_closure.items.some((item) => item.key === 'audit_alerts' && item.status === 'critical'), true);
+        assert.equal(summary.profit_reconciliation_closure.items.some((item) => item.key === 'profit_ledger' && item.status === 'warning'), true);
+        assert.equal(summary.profit_reconciliation_closure.items.some((item) => item.key === 'procurement_recommendations' && item.status === 'critical'), true);
+        assert.equal(summary.order_risk_list.status, 'critical');
+        assert.equal(summary.order_risk_list.order_count, 3);
+        assert.equal(summary.order_risk_list.critical_count, 1);
+        assert.equal(summary.order_risk_list.warning_count, 2);
+        assert.equal(summary.order_risk_list.items[0].order_id, 'shop-profit-loss');
+        assert.equal(summary.order_risk_list.items[0].reasons.some((reason) => reason.type === 'negative_profit'), true);
+        assert.equal(summary.order_risk_list.items[0].status_label, '负利润待复核');
+        assert.equal(summary.order_risk_list.items.some((item) => item.order_id === 'shop-profit-missing-cost' && item.reasons.some((reason) => reason.type === 'missing_cost')), true);
+        assert.equal(summary.order_risk_list.items.some((item) => item.order_id === 'shop-profit-missing-cost' && item.status_label === '采购成本待补齐'), true);
+        assert.equal(summary.order_risk_list.items.some((item) => item.order_id === 'shop-profit-untracked' && item.reasons.some((reason) => reason.type === 'point_source_gap')), true);
+        assert.equal(summary.order_risk_list.items.some((item) => item.order_id === 'shop-profit-untracked' && item.status_label === '积分来源待补齐'), true);
+        assert.equal(summary.profit_adjustments.status, 'review');
+        assert.equal(summary.profit_adjustments.untracked_points_estimated_cny, 30);
+        assert.equal(summary.profit_adjustments.items.length, 1);
+        assert.equal(summary.profit_adjustments.items[0].type, 'untracked_points_estimated');
+        assert.equal(summary.profit_adjustment_breakdown.status, 'warning');
+        assert.equal(summary.profit_adjustment_breakdown.review_count, 1);
+        assert.equal(summary.profit_adjustment_breakdown.extension_count, 2);
+        assert.equal(summary.profit_adjustment_breakdown.items.some((item) => item.type === 'untracked_points_estimated' && item.action_required === true), true);
+        assert.equal(summary.profit_ledger_preview.status, 'incomplete');
+        assert.equal(summary.profit_ledger_preview.net_amount_cny, 43);
+        assert.equal(summary.profit_ledger_preview.incomplete_entry_count, 1);
+        assert.equal(summary.profit_ledger_preview.estimated_entry_count, 1);
+        assert.equal(
+            summary.profit_ledger_preview.entries_by_type.some((entry) => entry.type === 'inventory_cost_missing' && entry.status === 'incomplete'),
+            true
+        );
+        assert.equal(issuesByType.get('negative_profit').amount_cny, 2);
+        assert.equal(issuesByType.get('negative_profit').sample_orders[0].order_id, 'shop-profit-loss');
+        assert.equal(issuesByType.get('missing_cost').count, 1);
+        assert.equal(issuesByType.get('missing_cost').amount_cny, 20);
+        assert.equal(issuesByType.get('untracked_points').points, 30);
+        assert.equal(issuesByType.get('untracked_points').sample_orders[0].point_source_traceability_status, 'legacy_untracked');
+        assert.equal(issuesByType.get('untracked_points').sample_orders[0].point_source_traceability_label, '历史未拆分');
+        assert.equal(issuesByType.get('untracked_points').sample_orders[0].point_source_traceability_action_required, true);
+        assert.equal(issuesByType.has('no_inventory'), false);
+        assert.equal(summary.dimension_breakdown.products.length, 3);
+        assert.equal(summary.dimension_breakdown.products[0].label, '亏损规格');
+        assert.equal(summary.dimension_breakdown.products[0].risk_tone, 'critical');
+        assert.equal(summary.dimension_breakdown.products[0].net_profit_cny, -2);
+        assert.equal(summary.dimension_breakdown.products[1].label, '缺成本规格');
+        assert.equal(summary.dimension_breakdown.products[1].missing_cost_item_count, 1);
+        assert.equal(summary.dimension_breakdown.skus.length, 3);
+        assert.equal(summary.dimension_breakdown.skus[0].label, '亏损月卡 (loss-month)');
+        assert.equal(summary.dimension_breakdown.skus[0].risk_tone, 'critical');
+        assert.equal(summary.dimension_breakdown.skus[1].label, '缺成本年卡 (missing-year)');
+        assert.equal(summary.dimension_breakdown.skus[1].missing_cost_item_count, 1);
+        assert.equal(summary.dimension_breakdown.source_batches[0].label, '批次 batch-profit-loss');
+        assert.equal(summary.dimension_breakdown.source_batches[0].negative_profit_order_count, 1);
+        assert.equal(summary.dimension_breakdown.source_batches[1].label, '批次 batch-profit-missing-cost');
+        assert.equal(summary.dimension_breakdown.source_batches[1].missing_cost_order_count, 1);
+        assert.equal(summary.dimension_breakdown.sources.length, 3);
+        assert.equal(summary.dimension_breakdown.sources[0].source_name, '亏损货源');
+        assert.equal(summary.dimension_breakdown.sources[0].negative_profit_order_count, 1);
+        assert.equal(summary.dimension_breakdown.sources[0].source_platform, '独立站');
+        assert.equal(summary.dimension_breakdown.sources[0].source_risk_tier, 'watch');
+        assert.equal(summary.dimension_breakdown.sources[0].source_quality_grade, 'C');
+        assert.equal(summary.dimension_breakdown.sources[0].procurement_suggestion, '暂停复采并核对售价、质量和成本');
+        assert.equal(summary.dimension_breakdown.sources[1].source_name, '缺成本货源');
+        assert.equal(summary.dimension_breakdown.sources[1].missing_cost_order_count, 1);
+        assert.equal(summary.dimension_breakdown.sources[1].procurement_suggestion, '补齐成本和订单关联后再评估复采');
+        assert.equal(summary.dimension_breakdown.sources[2].source_name, '历史货源');
+        assert.equal(summary.dimension_breakdown.sources[2].procurement_suggestion, '继续观察');
+        assert.equal(summary.source_procurement_recommendations.status, 'critical');
+        assert.equal(summary.source_procurement_recommendations.source_count, 3);
+        assert.equal(summary.source_procurement_recommendations.pause_count, 1);
+        assert.equal(summary.source_procurement_recommendations.complete_cost_count, 1);
+        assert.equal(summary.source_procurement_recommendations.observe_count, 1);
+        assert.equal(summary.source_procurement_recommendations.action_required_count, 2);
+        assert.equal(summary.source_procurement_recommendations.items[0].source_name, '亏损货源');
+        assert.equal(summary.source_procurement_recommendations.items[0].action_type, 'pause_reorder');
+        assert.equal(summary.source_procurement_recommendations.items[0].reason_label, '存在负利润订单');
+        assert.equal(summary.source_procurement_recommendations.items[1].source_name, '缺成本货源');
+        assert.equal(summary.source_procurement_recommendations.items[1].action_type, 'complete_cost');
+        assert.equal(summary.source_procurement_recommendations.items[2].source_name, '历史货源');
+        assert.equal(summary.source_procurement_recommendations.items[2].action_type, 'observe');
     });
 });
 
@@ -1455,18 +2355,23 @@ test('payments finance view falls back to finance tables for business trends whe
 
         assert.equal(res.statusCode, 200);
         assert.equal(payload.success, true);
+        const businessTrendByKey = new Map(payload.business_breakdown.map((item) => [
+            item.key,
+            item.trend.map((point) => point.value)
+        ]));
         assert.deepEqual(
-            payload.business_breakdown[0].trend.map((point) => point.value),
+            businessTrendByKey.get('recharge'),
             [20, 10, 0]
         );
         assert.deepEqual(
-            payload.business_breakdown[2].trend.map((point) => point.value),
+            businessTrendByKey.get('mock'),
             [0, 1, 0]
         );
         assert.deepEqual(
-            payload.business_breakdown[3].trend.map((point) => point.value),
+            businessTrendByKey.get('balance'),
             [900, 870, 920]
         );
+        assert.deepEqual(businessTrendByKey.get('shop_profit'), [0, 30, 0]);
         const pointsTrendByKey = new Map(payload.points_breakdown.map((item) => [item.key, item.trend.map((point) => point.value)]));
         assert.deepEqual(pointsTrendByKey.get('recharge'), [100, 0, 0]);
         assert.deepEqual(pointsTrendByKey.get('shop_purchase'), [0, -30, 0]);
@@ -1988,6 +2893,126 @@ test('payments summary exposes outbound ops alert queue health and actionable de
         assert.equal(payload.ops_alert_items.some((item) => item.type === 'ops_alert_job' && item.queue_status === 'dead_letter'), true);
         assert.equal(payload.ops_alert_items.some((item) => item.type === 'ops_alert_job' && item.queue_status === 'handled'), true);
         assert.equal(payload.ops_alert_items.some((item) => item.type === 'ops_alert_job' && Array.isArray(item.ops_available_actions) && item.ops_available_actions.includes('request_retry')), true);
+    });
+});
+
+test('payments ops alert queue includes shop profit audit risks', async () => {
+    const state = {
+        shopOrders: [
+            {
+                id: 'shop-ops-profit-loss',
+                user_id: 'user-ops-loss',
+                product_id: 'product-ops-profit',
+                inventory_id: null,
+                sku_id: 'sku-ops-loss',
+                snapshot_product_name: '运维亏损规格',
+                price_paid: 10,
+                paid_points_spent: 10,
+                bonus_points_spent: 0,
+                points_spend_breakdown: {
+                    status: 'exact',
+                    paid_points: 10,
+                    bonus_points: 0,
+                    untracked_points: 0
+                },
+                total_price: 10,
+                discount_amount: 0,
+                refund_status: 'none',
+                created_at: '2026-03-24T10:00:00.000Z',
+                site: 'cn'
+            }
+        ],
+        shopOrderItems: [
+            {
+                id: 'shop-ops-profit-loss-item',
+                order_id: 'shop-ops-profit-loss',
+                inventory_id: 'inventory-ops-profit-loss',
+                snapshot_product_name: '运维亏损规格',
+                price_paid: 10,
+                created_at: '2026-03-24T10:00:01.000Z'
+            }
+        ],
+        shopInventory: [
+            {
+                id: 'inventory-ops-profit-loss',
+                product_id: 'product-ops-profit',
+                content: 'loss-account',
+                status: 'sold',
+                buyer_id: 'user-ops-loss',
+                sold_at: '2026-03-24T10:02:00.000Z',
+                sku_id: 'sku-ops-loss',
+                source_batch_id: 'batch-ops-loss',
+                purchase_unit_cost: 15,
+                purchase_currency: 'CNY',
+                purchase_exchange_rate_to_cny: 1,
+                purchase_unit_cost_cny: 15
+            }
+        ],
+        shopProductSkus: [
+            {
+                id: 'sku-ops-loss',
+                product_id: 'product-ops-profit',
+                sku_name: '运维亏损月卡',
+                sku_code: 'ops-loss-month',
+                inventory_sku_id: null
+            }
+        ],
+        shopOrderProfitLedger: [
+            {
+                id: 'ops-ledger-profit-loss',
+                site: 'cn',
+                order_id: 'shop-ops-profit-loss',
+                inventory_id: 'inventory-ops-profit-loss',
+                source_batch_id: 'batch-ops-loss',
+                dedupe_key: 'shop-ops-profit-loss:inventory-ops-profit-loss:inventory_cost',
+                entry_type: 'inventory_cost',
+                entry_group: 'cost',
+                amount: -15,
+                currency: 'CNY',
+                cash_value_cny: -15,
+                points_amount: null,
+                status: 'settled',
+                confidence: 'exact',
+                occurred_at: '2026-03-24T10:00:00.000Z',
+                snapshot: {
+                    title: '采购成本',
+                    tone: 'ready'
+                }
+            }
+        ]
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'overview',
+                days: '30',
+                scope: 'ops'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const shopProfitAlert = (payload.ops_alert_items || [])
+            .find((item) => item.type === 'shop_profit_audit' && item.audit_alert_type === 'negative_profit');
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.overview_scope, 'ops');
+        assert.equal(payload.ops_alert_summary.shop_profit_audit, 1);
+        assert.equal(payload.ops_alert_summary.shop_profit_audit_critical, 1);
+        assert.equal(payload.ops_alert_summary.actionable_count, 1);
+        assert.ok(shopProfitAlert);
+        assert.equal(shopProfitAlert.severity, 'critical');
+        assert.equal(shopProfitAlert.queue_status, 'pending');
+        assert.equal(shopProfitAlert.ops_status, 'open');
+        assert.equal(shopProfitAlert.action_label, '核对售价、采购成本、优惠和补发记录');
+        assert.equal(shopProfitAlert.affected_order_count, 1);
+        assert.equal(state.tableAccesses.some((entry) => entry.table === 'shop_orders'), true);
+        assert.equal(state.tableAccesses.some((entry) => entry.table === 'shop_order_profit_ledger'), true);
+        assert.equal(state.tableAccesses.some((entry) => entry.table === 'payment_orders'), false);
     });
 });
 
@@ -2560,9 +3585,12 @@ test('payments summary exposes unmatched checkout session traces for ops visibil
 test('payments runtime summary UI keeps refund anomaly indicators wired in source', () => {
     const source = fs.readFileSync(path.join(__dirname, '..', 'js', 'admin-payments.js'), 'utf8');
     const summarySource = fs.readFileSync(path.join(__dirname, '..', 'server', 'api-handlers', 'admin', 'payments', 'summary.js'), 'utf8');
+    const profitLedgerSource = fs.readFileSync(path.join(__dirname, '..', 'server', 'api-handlers', 'admin', 'shop', '_profit-ledger.js'), 'utf8');
     const adminStudioSource = fs.readFileSync(path.join(__dirname, '..', 'admin-studio.js'), 'utf8');
     const adminStudioHtml = fs.readFileSync(path.join(__dirname, '..', 'admin-studio.html'), 'utf8');
+    const shopProfitAuditCss = fs.readFileSync(path.join(__dirname, '..', 'css', 'admin-payments-shop-profit-audit.css'), 'utf8');
     const activeOverviewMigration = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20260419_fix_payment_overview_summary_active_anomalies.sql'), 'utf8');
+    const shopProfitLedgerMigration = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20260606_add_shop_order_profit_ledger.sql'), 'utf8');
 
     assert.match(source, /refund_failures/);
     assert.match(source, /refund_reclaim_failures/);
@@ -2573,12 +3601,161 @@ test('payments runtime summary UI keeps refund anomaly indicators wired in sourc
     assert.match(source, /payments-focus-exception-topic/);
     assert.match(source, /paymentsRefundAlertsPanel/);
     assert.match(source, /paymentsOpsAlertQueuePanel/);
+    assert.match(source, /ensureVisiblePaymentsContent/);
+    assert.match(source, /payments:activation-empty-shell-reload/);
+    assert.match(source, /admin-shell-module-activated/);
     assert.match(source, /ops_alert_summary/);
     assert.match(source, /ops_alert_items/);
+    assert.match(source, /shop_profit_audit/);
+    assert.match(source, /renderOpsAlertQueueItemMeta/);
     assert.match(source, /renderOverviewSecondarySkeletons/);
     assert.match(source, /overview_scope/);
     assert.match(source, /scope: 'secondary'/);
     assert.match(source, /scope: 'ops'/);
+    assert.match(source, /profit:\s*\{/);
+    assert.match(source, /key === 'shop_profit'/);
+    assert.match(source, /renderShopProfitAudit/);
+    assert.match(source, /renderShopProfitReadiness/);
+    assert.match(source, /renderShopProfitReconciliationIssues/);
+    assert.match(source, /renderShopProfitAuditAlerts/);
+    assert.match(source, /renderShopProfitReconciliationClosure/);
+    assert.match(source, /getShopProfitClosureCategoryLabel/);
+    assert.match(source, /renderShopProfitOrderRiskList/);
+    assert.match(source, /payments-open-shop-order/);
+    assert.match(source, /data-shop-order-id/);
+    assert.match(source, /点击订单号查看订单详情/);
+    assert.match(source, /采购成本待补齐/);
+    assert.match(source, /积分来源待补齐/);
+    assert.match(source, /renderShopProfitSourceRows/);
+    assert.match(source, /renderShopSourceProcurementRecommendations/);
+    assert.match(source, /buildShopProfitClosureExportRows/);
+    assert.match(source, /buildShopProfitOrderRiskExportRows/);
+    assert.match(source, /getShopProfitAuditTargetLabel/);
+    assert.match(source, /审计项：/);
+    assert.match(source, /采购成本未闭环/);
+    assert.match(source, /renderShopProfitDimensionBreakdown/);
+    assert.match(source, /renderShopProfitAdjustments/);
+    assert.match(source, /getShopProfitAdjustmentClosureLabel/);
+    assert.match(source, /renderShopProfitLedgerPreview/);
+    assert.match(source, /formatShopProfitLedgerAmount/);
+    assert.match(source, /payments-shop-profit-audit/);
+    assert.match(source, /闭环异常/);
+    assert.match(source, /审计告警/);
+    assert.match(source, /审计告警待处理/);
+    assert.match(source, /利润维度/);
+    assert.match(source, /利润调整项/);
+    assert.match(source, /分录预览/);
+    assert.match(source, /待补成本/);
+    assert.match(source, /无成本订单/);
+    assert.match(source, /未关联库存订单/);
+    assert.match(source, /规格利润/);
+    assert.match(source, /现金确认收入/);
+    assert.match(source, /积分来源拆分/);
+    assert.match(source, /积分批次覆盖/);
+    assert.match(source, /来源批次完整订单/);
+    assert.match(source, /迁移期余额积分/);
+    assert.match(source, /待追踪积分/);
+    assert.match(source, /积分来源需复核/);
+    assert.match(source, /历史未拆分积分/);
+    assert.match(source, /buildShopProfitAuditExportRows/);
+    assert.match(source, /buildShopProfitReadinessExportRows/);
+    assert.match(source, /buildShopProfitDimensionExportRows/);
+    assert.match(source, /buildShopProfitSourceExportRows/);
+    assert.match(source, /buildShopProcurementRecommendationExportRows/);
+    assert.match(source, /buildShopProfitAdjustmentBreakdownExportRows/);
+    assert.match(source, /buildShopProfitLedgerPreviewExportRows/);
+    assert.match(source, /商城净利润审计/);
+    assert.match(source, /商城结算就绪度/);
+    assert.match(source, /商城利润维度/);
+    assert.match(source, /商城货源利润/);
+    assert.match(source, /商城采购建议/);
+    assert.match(source, /商城利润影响构成/);
+    assert.match(source, /商城利润分录预览/);
+    assert.match(source, /商城对账闭环/);
+    assert.match(source, /支付链路/);
+    assert.match(source, /采购链路/);
+    assert.match(source, /商城风险订单/);
+    assert.match(summarySource, /shop_profit_summary/);
+    assert.match(summarySource, /profit_readiness/);
+    assert.match(summarySource, /buildShopProfitReadinessSummary/);
+    assert.match(summarySource, /reconciliation_issues/);
+    assert.match(summarySource, /dimension_breakdown/);
+    assert.match(summarySource, /sources:\s*\[\]/);
+    assert.match(summarySource, /profit_adjustments/);
+    assert.match(summarySource, /profit_adjustment_breakdown/);
+    assert.match(summarySource, /buildShopProfitAdjustmentBreakdown/);
+    assert.match(summarySource, /affiliate_commission/);
+    assert.match(summarySource, /manual_adjustment/);
+    assert.match(summarySource, /source_procurement_recommendations/);
+    assert.match(summarySource, /buildShopSourceProcurementRecommendations/);
+    assert.match(summarySource, /profit_ledger_preview/);
+    assert.match(summarySource, /point_source_coverage/);
+    assert.match(summarySource, /shop_profit_audit_alerts/);
+    assert.match(summarySource, /profit_reconciliation_closure/);
+    assert.match(summarySource, /buildShopProfitReconciliationClosure/);
+    assert.match(summarySource, /payment_settlement/);
+    assert.match(summarySource, /point_issuance/);
+    assert.match(summarySource, /point_consumption/);
+    assert.match(summarySource, /shop_order_linkage/);
+    assert.match(summarySource, /procurement_recommendations/);
+    assert.match(summarySource, /order_risk_list/);
+    assert.match(summarySource, /buildShopProfitOrderRiskList/);
+    assert.match(summarySource, /getShopProfitOrderRiskStatusLabel/);
+    assert.match(summarySource, /status_label/);
+    assert.match(summarySource, /库存关联待补齐/);
+    assert.match(summarySource, /mergeOpsAlertQueueWithShopProfit/);
+    assert.match(summarySource, /buildShopProfitOpsAlertItems/);
+    assert.match(summarySource, /buildShopProfitPointSourceCoverage/);
+    assert.match(summarySource, /buildShopProfitAuditAlerts/);
+    assert.match(summarySource, /loadPointLotConsumptionsByOrderIds/);
+    assert.match(summarySource, /fetchShopProfitLedgerRows/);
+    assert.match(summarySource, /skus/);
+    assert.match(summarySource, /buildShopProfitReconciliationIssues/);
+    assert.match(summarySource, /buildShopProfitDimensionBreakdown/);
+    assert.match(summarySource, /buildShopProfitAdjustmentSummary/);
+    assert.match(summarySource, /buildShopProfitLedgerPreview/);
+    assert.match(summarySource, /buildPersistedShopProfitLedgerPreview/);
+    assert.match(summarySource, /buildShopProfitAttributionRows/);
+    assert.match(summarySource, /shop_procurement_batches/);
+    assert.match(summarySource, /shop_inventory_sources/);
+    assert.match(summarySource, /enrichShopProfitRowsWithProcurementSources/);
+    assert.match(summarySource, /商城净利润估算/);
+    assert.match(profitLedgerSource, /syncOrderProfitLedger/);
+    assert.match(profitLedgerSource, /shop_order_profit_ledger/);
+    assert.match(profitLedgerSource, /onConflict: 'order_id,dedupe_key'/);
+    assert.match(adminStudioHtml, /shopProfitSummary=20260606_ADMIN_PAYMENTS_SHOP_PROFIT_SUMMARY_1/);
+    assert.match(adminStudioHtml, /shopProfitAudit=20260606_ADMIN_PAYMENTS_SHOP_PROFIT_AUDIT_5/);
+    assert.match(adminStudioHtml, /activationRecovery=20260606_ADMIN_PAYMENTS_ACTIVATION_RECOVERY_1/);
+    assert.match(adminStudioHtml, /admin-payments-shop-profit-audit\.css\?v=20260606_ADMIN_PAYMENTS_SHOP_PROFIT_AUDIT_5/);
+    assert.match(adminStudioSource, /openAdminStudioShopOrderContext/);
+    assert.match(adminStudioSource, /runAdminStudioShopOrderOpenAction/);
+    assert.match(adminStudioSource, /打开订单中\.\.\./);
+    assert.match(adminStudioSource, /订单已打开/);
+    assert.match(adminStudioSource, /payments-open-shop-order/);
+    assert.match(adminStudioSource, /stopImmediatePropagation\?\.\(\)/);
+    assert.match(adminStudioSource, /openAdminShopShellContext/);
+    assert.match(adminStudioHtml, /shopProfitOrderLink=20260606_ADMIN_STUDIO_SHOP_PROFIT_ORDER_LINK_2/);
+    assert.match(shopProfitAuditCss, /payments-shop-profit-audit__metrics/);
+    assert.match(shopProfitAuditCss, /payments-shop-profit-audit__readiness/);
+    assert.match(shopProfitAuditCss, /payments-shop-profit-audit__issues/);
+    assert.match(shopProfitAuditCss, /payments-shop-profit-audit__alerts/);
+    assert.match(shopProfitAuditCss, /payments-shop-profit-audit__closure/);
+    assert.match(shopProfitAuditCss, /payments-shop-profit-audit__orders/);
+    assert.match(shopProfitAuditCss, /payments-shop-profit-audit__order-link/);
+    assert.match(shopProfitAuditCss, /payments-shop-profit-audit__order-link\[data-action-feedback-state="loading"\]/);
+    assert.match(shopProfitAuditCss, /payments-shop-profit-audit__order-link\[data-action-feedback-state="saved"\]/);
+    assert.match(shopProfitAuditCss, /payments-shop-profit-audit__procurement/);
+    assert.match(shopProfitAuditCss, /payments-shop-profit-audit__dimensions/);
+    assert.match(shopProfitAuditCss, /payments-shop-profit-audit__adjustments/);
+    assert.match(shopProfitAuditCss, /payments-shop-profit-audit__adjustment-breakdown/);
+    assert.match(shopProfitAuditCss, /payments-shop-profit-audit__ledger/);
+    assert.match(shopProfitAuditCss, /html\[data-theme="light"\] #module-payments \.payments-shop-profit-audit/);
+    assert.match(shopProfitLedgerMigration, /CREATE TABLE IF NOT EXISTS public\.shop_order_profit_ledger/);
+    assert.match(shopProfitLedgerMigration, /dedupe_key TEXT NOT NULL/);
+    assert.match(shopProfitLedgerMigration, /entry_type VARCHAR\(64\) NOT NULL/);
+    assert.match(shopProfitLedgerMigration, /cash_value_cny NUMERIC\(14,4\) NOT NULL DEFAULT 0/);
+    assert.match(shopProfitLedgerMigration, /idx_shop_order_profit_ledger_order_dedupe/);
+    assert.match(shopProfitLedgerMigration, /ALTER TABLE public\.shop_order_profit_ledger ENABLE ROW LEVEL SECURITY/);
     assert.match(source, /Promise\.allSettled/);
     assert.match(source, /首屏摘要已加载，正在并行补充趋势与专题/);
     assert.match(source, /buildPaymentsRefundAlertItemSkeleton/);

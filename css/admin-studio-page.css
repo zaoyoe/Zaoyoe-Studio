@@ -1286,6 +1286,74 @@ body.admin-access-pending,
                             box-shadow: inset 3px 0 0 rgba(133, 186, 255, 0.92);
                         }
 
+                        .shop-order-profit-cell {
+                            min-width: 132px;
+                            display: inline-flex;
+                            flex-direction: column;
+                            align-items: flex-start;
+                            gap: 3px;
+                            line-height: 1.25;
+                        }
+
+                        .shop-order-profit-cell strong {
+                            font-size: 13px;
+                            color: #e2e8f0;
+                        }
+
+                        .shop-order-profit-cell span,
+                        .shop-order-profit-cell em {
+                            color: rgba(203, 213, 225, 0.72);
+                            font-size: 11px;
+                            font-style: normal;
+                            white-space: nowrap;
+                        }
+
+                        .shop-order-profit-cell em {
+                            display: inline-flex;
+                            align-items: center;
+                            min-height: 19px;
+                            padding: 0 7px;
+                            border-radius: 999px;
+                            background: rgba(148, 163, 184, 0.12);
+                            border: 1px solid rgba(148, 163, 184, 0.16);
+                        }
+
+                        .shop-order-profit-cell__trace {
+                            max-width: 148px;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                        }
+
+                        .shop-order-profit-cell__trace--ready {
+                            color: #bbf7d0 !important;
+                            background: rgba(34, 197, 94, 0.14) !important;
+                            border-color: rgba(74, 222, 128, 0.24) !important;
+                        }
+
+                        .shop-order-profit-cell__trace--warning {
+                            color: #fde68a !important;
+                            background: rgba(245, 158, 11, 0.14) !important;
+                            border-color: rgba(251, 191, 36, 0.24) !important;
+                        }
+
+                        .shop-order-profit-cell__trace--info {
+                            color: #bae6fd !important;
+                            background: rgba(14, 165, 233, 0.14) !important;
+                            border-color: rgba(56, 189, 248, 0.24) !important;
+                        }
+
+                        .shop-order-profit-cell--profit strong {
+                            color: #86efac;
+                        }
+
+                        .shop-order-profit-cell--loss strong {
+                            color: #fca5a5;
+                        }
+
+                        .shop-order-profit-cell--refunded strong {
+                            color: #cbd5e1;
+                        }
+
                         .shop-order-user-avatar {
                             width: 36px;
                             height: 36px;
@@ -1478,6 +1546,41 @@ body.admin-access-pending,
                             overflow: hidden;
                             text-overflow: ellipsis;
                             white-space: nowrap;
+                        }
+
+                        .shop-inventory-product-cell {
+                            min-width: 0;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            white-space: nowrap;
+                        }
+
+                        .shop-inventory-product-name {
+                            display: block;
+                            max-width: 100%;
+                            min-width: 0;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            white-space: nowrap;
+                        }
+
+                        .shop-inventory-product-meta {
+                            display: block;
+                            max-width: 100%;
+                            min-width: 0;
+                            margin-top: 3px;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            white-space: nowrap;
+                            color: rgba(148, 163, 184, 0.86);
+                            font-size: 11px;
+                            font-weight: 500;
+                            line-height: 1.3;
+                        }
+
+                        .shop-inventory-product-meta i {
+                            margin-right: 4px;
+                            color: rgba(56, 189, 248, 0.82);
                         }
 
                         .shop-inventory-content-chip:hover {
@@ -1776,9 +1879,10 @@ body.admin-access-pending,
                         }
 
                         .shop-inventory-detail-modal {
-                            width: min(500px, 100%);
-                            max-height: 80vh;
+                            width: min(960px, calc(100vw - 48px));
+                            max-height: min(86vh, 920px);
                             overflow-y: auto;
+                            padding: 30px;
                         }
 
                         .shop-inventory-detail-header {
@@ -1927,6 +2031,15 @@ body.admin-access-pending,
                             padding: 12px;
                         }
 
+                        .shop-inventory-detail-card--wide {
+                            grid-column: 1 / -1;
+                        }
+
+                        .shop-inventory-detail-card--note {
+                            background: rgba(56, 189, 248, 0.06);
+                            border: 1px solid rgba(56, 189, 248, 0.16);
+                        }
+
                         .shop-inventory-detail-card--sold {
                             background: rgba(239, 68, 68, 0.1);
                         }
@@ -1981,8 +2094,80 @@ body.admin-access-pending,
                             font-weight: 700;
                         }
 
+                        .shop-inventory-detail-card-value--note {
+                            line-height: 1.7;
+                            white-space: pre-wrap;
+                        }
+
+                        .shop-inventory-detail-source-tags {
+                            display: flex;
+                            flex-wrap: wrap;
+                            gap: 6px;
+                            min-width: 0;
+                        }
+
+                        .shop-inventory-detail-source-tags span {
+                            display: inline-flex;
+                            align-items: center;
+                            min-height: 24px;
+                            max-width: 100%;
+                            padding: 0 8px;
+                            border-radius: 999px;
+                            background: rgba(148, 163, 184, 0.14);
+                            color: rgba(226, 232, 240, 0.86);
+                            font-size: 12px;
+                            font-weight: 800;
+                        }
+
                         .shop-inventory-detail-muted {
                             opacity: 0.7;
+                        }
+
+                        .shop-inventory-detail-procurement {
+                            margin-bottom: 15px;
+                        }
+
+                        @media (min-width: 900px) {
+                            .shop-inventory-detail-modal {
+                                width: min(1040px, calc(100vw - 72px));
+                                min-height: min(640px, calc(100vh - 72px));
+                            }
+
+                            .shop-inventory-detail-content {
+                                display: grid;
+                                grid-template-columns: minmax(0, 1.05fr) minmax(0, 1.55fr);
+                                gap: 18px 20px;
+                                align-items: start;
+                            }
+
+                            .shop-inventory-detail-section--primary {
+                                grid-column: 1 / -1;
+                            }
+
+                            .shop-inventory-detail-content > .shop-inventory-detail-grid {
+                                grid-column: 1 / -1;
+                            }
+
+                            .shop-inventory-detail-grid {
+                                grid-template-columns: repeat(4, minmax(0, 1fr));
+                                gap: 12px;
+                            }
+
+                            .shop-inventory-detail-procurement,
+                            .shop-inventory-detail-sold-section,
+                            .shop-inventory-detail-related-section,
+                            .shop-inventory-detail-alert {
+                                grid-column: 1 / -1;
+                            }
+                        }
+
+                        .shop-inventory-detail-source-link {
+                            color: #38bdf8;
+                            text-decoration: none;
+                        }
+
+                        .shop-inventory-detail-source-link:hover {
+                            text-decoration: underline;
                         }
 
                         .shop-inventory-detail-alert {
@@ -2499,6 +2684,133 @@ body.admin-access-pending,
                             word-break: break-word;
                         }
 
+                        .shop-order-detail-section--profit {
+                            margin: 18px 0;
+                        }
+
+                        .shop-order-profit-summary {
+                            display: grid;
+                            grid-template-columns: repeat(5, minmax(0, 1fr));
+                            gap: 12px;
+                        }
+
+                        .shop-order-profit-summary > div,
+                        .shop-order-profit-note,
+                        .shop-order-profit-cost-row {
+                            background: rgba(3, 7, 18, 0.24);
+                            border: 1px solid rgba(255, 255, 255, 0.06);
+                            border-radius: 12px;
+                        }
+
+                        .shop-order-profit-summary > div {
+                            min-width: 0;
+                            display: flex;
+                            flex-direction: column;
+                            gap: 8px;
+                            padding: 13px 14px;
+                        }
+
+                        .shop-order-profit-summary span,
+                        .shop-order-profit-summary em,
+                        .shop-order-profit-cost-row em,
+                        .shop-order-profit-note {
+                            color: rgba(226, 232, 240, 0.68);
+                            font-size: 12px;
+                            font-style: normal;
+                        }
+
+                        .shop-order-profit-summary strong {
+                            color: #f8fafc;
+                            font-size: 14px;
+                            line-height: 1.35;
+                            word-break: break-word;
+                        }
+
+                        .shop-order-profit-summary__primary strong {
+                            font-size: 22px;
+                        }
+
+                        .shop-order-profit-summary__primary--profit strong {
+                            color: #86efac;
+                        }
+
+                        .shop-order-profit-summary__primary--loss strong {
+                            color: #fca5a5;
+                        }
+
+                        .shop-order-profit-summary__primary--refunded strong {
+                            color: #cbd5e1;
+                        }
+
+                        .shop-order-profit-summary__trace {
+                            grid-column: span 2;
+                        }
+
+                        .shop-order-profit-summary__trace--ready {
+                            border-color: rgba(74, 222, 128, 0.26) !important;
+                            background: rgba(20, 83, 45, 0.22) !important;
+                        }
+
+                        .shop-order-profit-summary__trace--warning {
+                            border-color: rgba(251, 191, 36, 0.28) !important;
+                            background: rgba(113, 63, 18, 0.2) !important;
+                        }
+
+                        .shop-order-profit-summary__trace--info {
+                            border-color: rgba(56, 189, 248, 0.24) !important;
+                            background: rgba(12, 74, 110, 0.2) !important;
+                        }
+
+                        .shop-order-profit-cost-list {
+                            display: grid;
+                            grid-template-columns: repeat(2, minmax(0, 1fr));
+                            gap: 10px;
+                            margin-top: 12px;
+                        }
+
+                        .shop-order-profit-cost-row {
+                            min-width: 0;
+                            display: grid;
+                            grid-template-columns: minmax(0, 1fr) auto;
+                            gap: 6px 10px;
+                            align-items: center;
+                            padding: 11px 12px;
+                        }
+
+                        .shop-order-profit-cost-row span {
+                            min-width: 0;
+                            color: #e2e8f0;
+                            font-size: 13px;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            white-space: nowrap;
+                        }
+
+                        .shop-order-profit-cost-row strong {
+                            color: #f8fafc;
+                            font-size: 13px;
+                        }
+
+                        .shop-order-profit-cost-row em {
+                            grid-column: 1 / -1;
+                        }
+
+                        .shop-order-profit-cost-row--missing strong {
+                            color: #fbbf24;
+                        }
+
+                        .shop-order-profit-notes {
+                            display: grid;
+                            grid-template-columns: repeat(2, minmax(0, 1fr));
+                            gap: 10px;
+                            margin-top: 12px;
+                        }
+
+                        .shop-order-profit-note {
+                            padding: 10px 12px;
+                            line-height: 1.6;
+                        }
+
                         .shop-order-detail-empty {
                             display: flex;
                             flex-direction: column;
@@ -2662,6 +2974,9 @@ body.admin-access-pending,
                             .shop-order-detail-grid--secondary,
                             .shop-order-detail-hero__stats,
                             .shop-order-detail-kv,
+                            .shop-order-profit-summary,
+                            .shop-order-profit-cost-list,
+                            .shop-order-profit-notes,
                             .shop-order-detail-loading__grid {
                                 grid-template-columns: 1fr;
                             }
@@ -4670,12 +4985,20 @@ body.admin-access-pending,
 
                         #shop-view-inventory .shop-table--inventory th:nth-child(2),
                         #shop-view-inventory .shop-table--inventory td:nth-child(2) {
-                            width: calc((100% - var(--shop-inventory-selection-col-width)) * 0.15);
+                            width: calc((100% - var(--shop-inventory-selection-col-width)) * 0.18);
+                            max-width: calc((100% - var(--shop-inventory-selection-col-width)) * 0.18);
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            white-space: nowrap;
                         }
 
                         #shop-view-inventory .shop-table--inventory th:nth-child(3),
                         #shop-view-inventory .shop-table--inventory td:nth-child(3) {
-                            width: calc((100% - var(--shop-inventory-selection-col-width)) * 0.25);
+                            width: calc((100% - var(--shop-inventory-selection-col-width)) * 0.22);
+                            max-width: calc((100% - var(--shop-inventory-selection-col-width)) * 0.22);
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            white-space: nowrap;
                         }
 
                         #shop-view-inventory .shop-table--inventory th:nth-child(4),
@@ -23175,6 +23498,46 @@ html[data-theme="light"] #module-shop #shop-view-orders .shop-order-user-email {
     opacity: 1 !important;
 }
 
+html[data-theme="light"] #module-shop #shop-view-orders .shop-order-profit-cell strong {
+    color: #0f172a !important;
+}
+
+html[data-theme="light"] #module-shop #shop-view-orders .shop-order-profit-cell span,
+html[data-theme="light"] #module-shop #shop-view-orders .shop-order-profit-cell em {
+    color: rgba(71, 85, 105, 0.9) !important;
+}
+
+html[data-theme="light"] #module-shop #shop-view-orders .shop-order-profit-cell em {
+    background: rgba(15, 23, 42, 0.05) !important;
+    border-color: rgba(15, 23, 42, 0.1) !important;
+}
+
+html[data-theme="light"] #module-shop #shop-view-orders .shop-order-profit-cell__trace--ready {
+    color: #166534 !important;
+    background: rgba(34, 197, 94, 0.1) !important;
+    border-color: rgba(22, 163, 74, 0.2) !important;
+}
+
+html[data-theme="light"] #module-shop #shop-view-orders .shop-order-profit-cell__trace--warning {
+    color: #92400e !important;
+    background: rgba(245, 158, 11, 0.12) !important;
+    border-color: rgba(217, 119, 6, 0.22) !important;
+}
+
+html[data-theme="light"] #module-shop #shop-view-orders .shop-order-profit-cell__trace--info {
+    color: #075985 !important;
+    background: rgba(14, 165, 233, 0.1) !important;
+    border-color: rgba(2, 132, 199, 0.18) !important;
+}
+
+html[data-theme="light"] #module-shop #shop-view-orders .shop-order-profit-cell--profit strong {
+    color: #15803d !important;
+}
+
+html[data-theme="light"] #module-shop #shop-view-orders .shop-order-profit-cell--loss strong {
+    color: #b91c1c !important;
+}
+
 html[data-theme="light"] #module-shop #shop-view-orders .shop-order-row--focused td,
 html[data-theme="light"] #module-shop #shop-view-orders .shop-order-row--focused:hover td {
     background: rgba(var(--admin-studio-ui-blue-rgb), 0.08) !important;
@@ -23244,6 +23607,9 @@ html[data-theme="light"] .shop-order-detail-modal :is(
     .shop-order-detail-stat,
     .shop-order-detail-list-row,
     .shop-order-detail-kv > div,
+    .shop-order-profit-summary > div,
+    .shop-order-profit-cost-row,
+    .shop-order-profit-note,
     .shop-order-content-box,
     .shop-order-content-item,
     .shop-order-detail-empty,
@@ -23267,6 +23633,9 @@ html[data-theme="light"] :is(
     .shop-order-content-item-title,
     .shop-order-detail-stat strong,
     .shop-order-detail-kv strong,
+    .shop-order-profit-summary strong,
+    .shop-order-profit-cost-row strong,
+    .shop-order-profit-cost-row span,
     .shop-order-detail-empty__title
 ) {
     color: #0f172a !important;
@@ -23287,12 +23656,31 @@ html[data-theme="light"] :is(
     .shop-order-detail-empty__summary,
     .shop-order-detail-stat span,
     .shop-order-detail-kv span,
+    .shop-order-profit-summary span,
+    .shop-order-profit-summary em,
+    .shop-order-profit-cost-row em,
+    .shop-order-profit-note,
     .shop-order-detail-modal .shop-delivery-attempt-line,
     .shop-order-detail-modal .shop-delivery-placeholder
 ) {
     color: rgba(71, 85, 105, 0.92) !important;
     text-shadow: none !important;
     opacity: 1 !important;
+}
+
+html[data-theme="light"] .shop-order-profit-summary__trace--ready {
+    background: rgba(34, 197, 94, 0.08) !important;
+    border-color: rgba(22, 163, 74, 0.18) !important;
+}
+
+html[data-theme="light"] .shop-order-profit-summary__trace--warning {
+    background: rgba(245, 158, 11, 0.1) !important;
+    border-color: rgba(217, 119, 6, 0.2) !important;
+}
+
+html[data-theme="light"] .shop-order-profit-summary__trace--info {
+    background: rgba(14, 165, 233, 0.08) !important;
+    border-color: rgba(2, 132, 199, 0.18) !important;
 }
 
 html[data-theme="light"] .shop-order-content-order-id,
@@ -23491,6 +23879,19 @@ html:not([data-theme="dark"]) :is(
     border: 1px solid rgba(15, 23, 42, 0.09) !important;
     box-shadow: none !important;
     text-shadow: none !important;
+}
+
+html[data-theme="light"] .shop-inventory-detail-card--note,
+html:not([data-theme="dark"]) .shop-inventory-detail-card--note {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.06) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.16) !important;
+}
+
+html[data-theme="light"] .shop-inventory-detail-source-tags span,
+html:not([data-theme="dark"]) .shop-inventory-detail-source-tags span {
+    background: rgba(15, 23, 42, 0.06) !important;
+    color: #334155 !important;
+    -webkit-text-fill-color: #334155 !important;
 }
 
 html[data-theme="light"] .shop-inventory-detail-code,
@@ -24138,6 +24539,2080 @@ html:not([data-theme="dark"]) #module-shop #shop-view-import .import-main-header
     color: var(--admin-studio-ui-blue) !important;
     padding: 0 !important;
     text-shadow: none !important;
+}
+
+#module-shop .shop-import-source-panel {
+    margin: 0 0 14px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.28);
+    overflow: visible;
+    position: relative;
+}
+
+#module-shop .shop-import-source-panel--modal {
+    margin: 12px 0;
+}
+
+#module-shop .shop-import-source-panel__summary {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 100%;
+    border: 0;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    color: rgba(226, 232, 240, 0.94);
+    cursor: pointer;
+    font: inherit;
+    list-style: none;
+    text-align: left;
+    user-select: none;
+}
+
+#module-shop .shop-import-source-panel__summary:is(:hover, :focus-visible) {
+    background: rgba(148, 163, 184, 0.08);
+    outline: none;
+}
+
+#module-shop .shop-import-source-panel__summary:focus-visible {
+    box-shadow: 0 0 0 3px rgba(var(--admin-studio-ui-blue-rgb), 0.18);
+}
+
+#module-shop .shop-import-source-panel__summary span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+#module-shop .shop-import-source-panel__chevron {
+    color: rgba(148, 163, 184, 0.88);
+    transition: transform 0.18s ease;
+}
+
+#module-shop .shop-import-source-panel.is-open .shop-import-source-panel__chevron,
+#module-shop .shop-import-source-panel__summary[aria-expanded="true"] .shop-import-source-panel__chevron {
+    transform: rotate(180deg);
+}
+
+#module-shop .shop-import-source-panel__body[hidden] {
+    display: none !important;
+}
+
+#module-shop .shop-import-source-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    padding: 0 12px 12px;
+}
+
+#module-shop .shop-import-source-field {
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+}
+
+#module-shop .shop-import-source-field--wide {
+    grid-column: 1 / -1;
+}
+
+#module-shop .shop-import-source-field span {
+    color: rgba(203, 213, 225, 0.82);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+#module-shop .shop-import-source-field :is(input, select, textarea) {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+#module-shop .shop-import-source-datetime-control {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 46px;
+    min-width: 0;
+    min-height: 52px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 13px;
+    background: rgba(15, 23, 42, 0.42);
+    overflow: hidden;
+}
+
+#module-shop .shop-import-source-datetime-control:focus-within {
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.46);
+    box-shadow: 0 0 0 4px rgba(var(--admin-studio-ui-blue-rgb), 0.14);
+}
+
+#module-shop .shop-import-source-field .shop-import-source-datetime-input.glass-input {
+    min-height: 50px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: rgba(248, 250, 252, 0.96);
+    font-size: 14px;
+    font-weight: 800;
+    box-shadow: none;
+    cursor: pointer;
+}
+
+#module-shop .shop-import-source-field .shop-import-source-datetime-input.glass-input:focus {
+    border-color: transparent;
+    box-shadow: none;
+}
+
+#module-shop .shop-import-source-field .shop-import-source-datetime-input.glass-input::placeholder {
+    color: rgba(203, 213, 225, 0.48);
+}
+
+#module-shop .shop-import-source-datetime-control__button {
+    display: inline-grid;
+    place-items: center;
+    width: 46px;
+    min-height: 50px;
+    border: 0;
+    border-left: 1px solid rgba(148, 163, 184, 0.18);
+    background: rgba(15, 23, 42, 0.2);
+    color: rgba(203, 213, 225, 0.88);
+    cursor: pointer;
+}
+
+#module-shop .shop-import-source-datetime-control__button:is(:hover, :focus-visible) {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.16);
+    color: #dbeafe;
+    outline: none;
+}
+
+.shop-import-source-datetime-calendar.flatpickr-calendar {
+    z-index: 10090;
+    width: 326px;
+    padding: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 13px;
+    background: rgba(15, 23, 42, 0.98);
+    color: rgba(226, 232, 240, 0.94);
+    box-shadow: 0 24px 56px rgba(2, 6, 23, 0.38);
+    backdrop-filter: blur(16px);
+}
+
+.shop-import-source-datetime-calendar.flatpickr-calendar::before,
+.shop-import-source-datetime-calendar.flatpickr-calendar::after {
+    border-bottom-color: rgba(15, 23, 42, 0.98);
+}
+
+.shop-import-source-datetime-calendar .flatpickr-months {
+    align-items: center;
+    min-height: 36px;
+}
+
+.shop-import-source-datetime-calendar .flatpickr-months :is(.flatpickr-prev-month, .flatpickr-next-month) {
+    top: 10px;
+    width: 32px;
+    height: 32px;
+    padding: 8px;
+    border-radius: 8px;
+    color: rgba(203, 213, 225, 0.88);
+}
+
+.shop-import-source-datetime-calendar .flatpickr-months :is(.flatpickr-prev-month, .flatpickr-next-month):hover {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.16);
+    color: #dbeafe;
+}
+
+.shop-import-source-datetime-calendar .flatpickr-months :is(.flatpickr-prev-month, .flatpickr-next-month) svg {
+    fill: currentColor;
+}
+
+.shop-import-source-datetime-calendar .flatpickr-current-month {
+    top: 8px;
+    height: 34px;
+    padding-top: 2px;
+    color: rgba(248, 250, 252, 0.96);
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.shop-import-source-datetime-calendar .flatpickr-current-month .flatpickr-monthDropdown-months,
+.shop-import-source-datetime-calendar .flatpickr-current-month input.cur-year {
+    appearance: none;
+    -moz-appearance: textfield;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.42);
+    color: rgba(248, 250, 252, 0.96);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.shop-import-source-datetime-calendar .flatpickr-current-month input.cur-year::-webkit-outer-spin-button,
+.shop-import-source-datetime-calendar .flatpickr-current-month input.cur-year::-webkit-inner-spin-button,
+.shop-import-source-datetime-calendar .flatpickr-time input::-webkit-outer-spin-button,
+.shop-import-source-datetime-calendar .flatpickr-time input::-webkit-inner-spin-button {
+    margin: 0;
+    appearance: none;
+}
+
+.shop-import-source-datetime-calendar .flatpickr-weekday {
+    color: rgba(203, 213, 225, 0.7);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.shop-import-source-datetime-calendar .flatpickr-day {
+    height: 34px;
+    max-width: 34px;
+    margin: 1px;
+    border-radius: 8px;
+    border-color: transparent;
+    color: rgba(226, 232, 240, 0.9);
+    line-height: 34px;
+}
+
+.shop-import-source-datetime-calendar .flatpickr-day.prevMonthDay,
+.shop-import-source-datetime-calendar .flatpickr-day.nextMonthDay {
+    color: rgba(148, 163, 184, 0.42);
+}
+
+.shop-import-source-datetime-calendar .flatpickr-day:hover,
+.shop-import-source-datetime-calendar .flatpickr-day.today {
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.28);
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.14);
+    color: #dbeafe;
+}
+
+.shop-import-source-datetime-calendar .flatpickr-day.selected {
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.58);
+    background: rgb(var(--admin-studio-ui-blue-rgb));
+    color: #ffffff;
+}
+
+.shop-import-source-datetime-calendar .flatpickr-time {
+    height: 44px;
+    margin: 8px 2px 0;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 10px;
+    background: rgba(15, 23, 42, 0.38);
+}
+
+.shop-import-source-datetime-calendar .flatpickr-time :is(input, .flatpickr-time-separator, .flatpickr-am-pm) {
+    color: rgba(248, 250, 252, 0.95);
+    font-size: 13px;
+    font-weight: 900;
+}
+
+.shop-import-source-datetime-calendar .flatpickr-time input {
+    appearance: none;
+    -moz-appearance: textfield;
+    border-radius: 8px;
+}
+
+.shop-import-source-datetime-calendar .flatpickr-time input:is(:hover, :focus) {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.14);
+    box-shadow: none;
+}
+
+.shop-import-source-datetime-calendar .numInputWrapper span {
+    border-color: rgba(148, 163, 184, 0.18);
+}
+
+.shop-import-source-datetime-calendar .numInputWrapper span.arrowUp::after {
+    border-bottom-color: rgba(203, 213, 225, 0.8);
+}
+
+.shop-import-source-datetime-calendar .numInputWrapper span.arrowDown::after {
+    border-top-color: rgba(203, 213, 225, 0.8);
+}
+
+#module-shop .shop-import-source-auto-score[readonly] {
+    border-color: rgba(34, 197, 94, 0.24);
+    background: rgba(34, 197, 94, 0.1);
+    color: #bbf7d0;
+    font-weight: 900;
+}
+
+#module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select {
+    z-index: 4;
+}
+
+#module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select.is-open {
+    z-index: 80;
+}
+
+#module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__trigger {
+    min-height: 44px;
+    padding: 0 14px;
+    border-radius: 13px;
+    border-color: rgba(148, 163, 184, 0.22);
+    background: rgba(15, 23, 42, 0.42);
+    box-shadow: none;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+#module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__label::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    flex: 0 0 auto;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.95);
+    box-shadow: 0 0 0 3px rgba(148, 163, 184, 0.12);
+}
+
+#module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__label[data-shop-custom-select-tone="accepted"]::before,
+#module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__option[data-shop-custom-select-tone="accepted"] {
+    --shop-import-source-quality-color: #22c55e;
+}
+
+#module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__label[data-shop-custom-select-tone="watch"]::before,
+#module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__option[data-shop-custom-select-tone="watch"] {
+    --shop-import-source-quality-color: #f59e0b;
+}
+
+#module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__label[data-shop-custom-select-tone="rejected"]::before,
+#module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__option[data-shop-custom-select-tone="rejected"] {
+    --shop-import-source-quality-color: #ef4444;
+}
+
+#module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__label[data-shop-custom-select-tone="unverified"]::before,
+#module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__option[data-shop-custom-select-tone="unverified"] {
+    --shop-import-source-quality-color: #94a3b8;
+}
+
+#module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__label[data-shop-custom-select-tone]::before {
+    background: var(--shop-import-source-quality-color, #94a3b8);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--shop-import-source-quality-color, #94a3b8) 16%, transparent);
+}
+
+#module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__menu {
+    width: max(100%, 180px);
+    right: auto;
+    gap: 5px;
+    padding: 7px;
+    border-radius: 14px;
+    z-index: 180;
+}
+
+#module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__option {
+    min-height: 36px;
+    padding: 9px 10px;
+    border-radius: 10px;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+#module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__option[data-shop-custom-select-tone] {
+    border-color: color-mix(in srgb, var(--shop-import-source-quality-color, #94a3b8) 24%, transparent);
+    background: color-mix(in srgb, var(--shop-import-source-quality-color, #94a3b8) 10%, transparent);
+}
+
+#module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__option[data-shop-custom-select-tone]:is(:hover, .is-selected) {
+    border-color: color-mix(in srgb, var(--shop-import-source-quality-color, #94a3b8) 38%, transparent);
+    background: color-mix(in srgb, var(--shop-import-source-quality-color, #94a3b8) 17%, transparent);
+}
+
+html[data-theme="light"] #module-shop .shop-import-source-panel,
+html:not([data-theme="dark"]) #module-shop .shop-import-source-panel {
+    background: rgba(255, 255, 255, 0.88) !important;
+    border-color: rgba(15, 23, 42, 0.08) !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-source-panel__summary,
+html:not([data-theme="dark"]) #module-shop .shop-import-source-panel__summary {
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-source-field span,
+html:not([data-theme="dark"]) #module-shop .shop-import-source-field span {
+    color: var(--admin-studio-shop-muted) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-source-auto-score[readonly],
+html:not([data-theme="dark"]) #module-shop .shop-import-source-auto-score[readonly] {
+    background: rgba(34, 197, 94, 0.09) !important;
+    border-color: rgba(22, 163, 74, 0.2) !important;
+    color: #166534 !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-source-datetime-control,
+html:not([data-theme="dark"]) #module-shop .shop-import-source-datetime-control {
+    background: rgba(255, 255, 255, 0.96) !important;
+    border-color: rgba(15, 23, 42, 0.11) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-source-datetime-control:focus-within,
+html:not([data-theme="dark"]) #module-shop .shop-import-source-datetime-control:focus-within {
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.32) !important;
+    box-shadow: 0 0 0 4px rgba(var(--admin-studio-ui-blue-rgb), 0.1) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-source-field .shop-import-source-datetime-input.glass-input,
+html:not([data-theme="dark"]) #module-shop .shop-import-source-field .shop-import-source-datetime-input.glass-input {
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-source-field .shop-import-source-datetime-input.glass-input::placeholder,
+html:not([data-theme="dark"]) #module-shop .shop-import-source-field .shop-import-source-datetime-input.glass-input::placeholder {
+    color: rgba(100, 116, 139, 0.48) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-source-datetime-control__button,
+html:not([data-theme="dark"]) #module-shop .shop-import-source-datetime-control__button {
+    background: rgba(248, 250, 252, 0.9) !important;
+    border-left-color: rgba(15, 23, 42, 0.08) !important;
+    color: var(--admin-studio-shop-muted) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-source-datetime-control__button:is(:hover, :focus-visible),
+html:not([data-theme="dark"]) #module-shop .shop-import-source-datetime-control__button:is(:hover, :focus-visible) {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.08) !important;
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] .shop-import-source-datetime-calendar.flatpickr-calendar,
+html:not([data-theme="dark"]) .shop-import-source-datetime-calendar.flatpickr-calendar {
+    background: rgba(255, 255, 255, 0.99) !important;
+    border-color: rgba(15, 23, 42, 0.1) !important;
+    color: var(--admin-studio-shop-text) !important;
+    box-shadow: 0 22px 48px rgba(15, 23, 42, 0.15) !important;
+}
+
+html[data-theme="light"] .shop-import-source-datetime-calendar.flatpickr-calendar::before,
+html[data-theme="light"] .shop-import-source-datetime-calendar.flatpickr-calendar::after,
+html:not([data-theme="dark"]) .shop-import-source-datetime-calendar.flatpickr-calendar::before,
+html:not([data-theme="dark"]) .shop-import-source-datetime-calendar.flatpickr-calendar::after {
+    border-bottom-color: rgba(255, 255, 255, 0.99) !important;
+}
+
+html[data-theme="light"] .shop-import-source-datetime-calendar .flatpickr-current-month,
+html:not([data-theme="dark"]) .shop-import-source-datetime-calendar .flatpickr-current-month {
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] .shop-import-source-datetime-calendar .flatpickr-months :is(.flatpickr-prev-month, .flatpickr-next-month),
+html:not([data-theme="dark"]) .shop-import-source-datetime-calendar .flatpickr-months :is(.flatpickr-prev-month, .flatpickr-next-month) {
+    color: var(--admin-studio-shop-muted) !important;
+}
+
+html[data-theme="light"] .shop-import-source-datetime-calendar .flatpickr-current-month .flatpickr-monthDropdown-months,
+html[data-theme="light"] .shop-import-source-datetime-calendar .flatpickr-current-month input.cur-year,
+html:not([data-theme="dark"]) .shop-import-source-datetime-calendar .flatpickr-current-month .flatpickr-monthDropdown-months,
+html:not([data-theme="dark"]) .shop-import-source-datetime-calendar .flatpickr-current-month input.cur-year {
+    background: rgba(248, 250, 252, 0.94) !important;
+    border-color: rgba(15, 23, 42, 0.1) !important;
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] .shop-import-source-datetime-calendar .flatpickr-weekday,
+html:not([data-theme="dark"]) .shop-import-source-datetime-calendar .flatpickr-weekday {
+    color: var(--admin-studio-shop-muted) !important;
+}
+
+html[data-theme="light"] .shop-import-source-datetime-calendar .flatpickr-day,
+html:not([data-theme="dark"]) .shop-import-source-datetime-calendar .flatpickr-day {
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] .shop-import-source-datetime-calendar .flatpickr-day.prevMonthDay,
+html[data-theme="light"] .shop-import-source-datetime-calendar .flatpickr-day.nextMonthDay,
+html:not([data-theme="dark"]) .shop-import-source-datetime-calendar .flatpickr-day.prevMonthDay,
+html:not([data-theme="dark"]) .shop-import-source-datetime-calendar .flatpickr-day.nextMonthDay {
+    color: rgba(100, 116, 139, 0.48) !important;
+}
+
+html[data-theme="light"] .shop-import-source-datetime-calendar .flatpickr-day:is(:hover, .today),
+html:not([data-theme="dark"]) .shop-import-source-datetime-calendar .flatpickr-day:is(:hover, .today) {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.1) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.24) !important;
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] .shop-import-source-datetime-calendar .flatpickr-day.selected,
+html:not([data-theme="dark"]) .shop-import-source-datetime-calendar .flatpickr-day.selected {
+    background: rgb(var(--admin-studio-ui-blue-rgb)) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.72) !important;
+    color: #ffffff !important;
+}
+
+html[data-theme="light"] .shop-import-source-datetime-calendar .flatpickr-time,
+html:not([data-theme="dark"]) .shop-import-source-datetime-calendar .flatpickr-time {
+    background: rgba(248, 250, 252, 0.94) !important;
+    border-color: rgba(15, 23, 42, 0.1) !important;
+}
+
+html[data-theme="light"] .shop-import-source-datetime-calendar .flatpickr-time :is(input, .flatpickr-time-separator, .flatpickr-am-pm),
+html:not([data-theme="dark"]) .shop-import-source-datetime-calendar .flatpickr-time :is(input, .flatpickr-time-separator, .flatpickr-am-pm) {
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] .shop-import-source-datetime-calendar .flatpickr-time input:is(:hover, :focus),
+html:not([data-theme="dark"]) .shop-import-source-datetime-calendar .flatpickr-time input:is(:hover, :focus) {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.08) !important;
+}
+
+html[data-theme="light"] .shop-import-source-datetime-calendar .numInputWrapper span.arrowUp::after,
+html:not([data-theme="dark"]) .shop-import-source-datetime-calendar .numInputWrapper span.arrowUp::after {
+    border-bottom-color: rgba(71, 85, 105, 0.76) !important;
+}
+
+html[data-theme="light"] .shop-import-source-datetime-calendar .numInputWrapper span.arrowDown::after,
+html:not([data-theme="dark"]) .shop-import-source-datetime-calendar .numInputWrapper span.arrowDown::after {
+    border-top-color: rgba(71, 85, 105, 0.76) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__trigger,
+html:not([data-theme="dark"]) #module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__trigger {
+    background: rgba(255, 255, 255, 0.96) !important;
+    border-color: rgba(15, 23, 42, 0.11) !important;
+    color: var(--admin-studio-shop-text) !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__menu,
+html:not([data-theme="dark"]) #module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__menu {
+    background: rgba(255, 255, 255, 0.99) !important;
+    border-color: rgba(15, 23, 42, 0.11) !important;
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__option[data-shop-custom-select-tone],
+html:not([data-theme="dark"]) #module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__option[data-shop-custom-select-tone] {
+    background: color-mix(in srgb, var(--shop-import-source-quality-color, #94a3b8) 8%, transparent) !important;
+    border-color: color-mix(in srgb, var(--shop-import-source-quality-color, #94a3b8) 22%, transparent) !important;
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__option[data-shop-custom-select-tone]:is(:hover, .is-selected),
+html:not([data-theme="dark"]) #module-shop .shop-import-source-field .shop-import-source-quality-select.shop-custom-select .shop-custom-select__option[data-shop-custom-select-tone]:is(:hover, .is-selected) {
+    background: color-mix(in srgb, var(--shop-import-source-quality-color, #94a3b8) 15%, transparent) !important;
+    border-color: color-mix(in srgb, var(--shop-import-source-quality-color, #94a3b8) 34%, transparent) !important;
+}
+
+#module-shop .shop-procurement-overview {
+    margin: 0 0 16px;
+    padding: 16px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.32);
+    color: rgba(226, 232, 240, 0.94);
+    overflow: visible;
+}
+
+#module-shop .shop-procurement-overview__header,
+#module-shop .shop-procurement-overview__header-actions,
+#module-shop .shop-procurement-overview__title {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+}
+
+#module-shop .shop-procurement-overview__header {
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+#module-shop .shop-procurement-overview__title {
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 800;
+    color: rgba(248, 250, 252, 0.96);
+}
+
+#module-shop .shop-procurement-overview__title span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#module-shop .shop-procurement-overview__header-actions {
+    gap: 8px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+}
+
+#module-shop .shop-procurement-overview__scope {
+    display: inline-flex;
+    align-items: center;
+    min-height: 28px;
+    padding: 0 10px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.26);
+    color: rgba(203, 213, 225, 0.92);
+    font-size: 12px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+#module-shop .shop-procurement-overview__scope--warning {
+    border-color: rgba(245, 158, 11, 0.28);
+    color: #fbbf24;
+}
+
+#module-shop .shop-procurement-overview__refresh {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.3);
+    color: rgba(226, 232, 240, 0.92);
+    display: inline-grid;
+    place-items: center;
+    cursor: pointer;
+}
+
+#module-shop .shop-procurement-overview__refresh:is(:hover, :focus-visible) {
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.42);
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.14);
+    outline: none;
+}
+
+#module-shop .shop-procurement-filter {
+    position: relative;
+    z-index: 3;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+    align-items: end;
+    margin: 0 0 12px;
+    padding: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.2);
+    overflow: visible;
+}
+
+#module-shop .shop-procurement-filter__field--search,
+#module-shop .shop-procurement-filter__actions {
+    grid-column: span 2;
+}
+
+#module-shop .shop-procurement-filter__field {
+    position: relative;
+    display: grid;
+    gap: 6px;
+    min-width: 0;
+    overflow: visible;
+}
+
+#module-shop .shop-procurement-filter__field span,
+#module-shop .shop-procurement-filter__actions > span {
+    min-width: 0;
+    color: rgba(203, 213, 225, 0.78);
+    font-size: 12px;
+    font-weight: 800;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#module-shop .shop-procurement-filter__field :is(input, select) {
+    width: 100%;
+    min-width: 0;
+    height: 34px;
+    padding: 0 10px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.28);
+    color: rgba(248, 250, 252, 0.94);
+    font-size: 12px;
+    font-weight: 700;
+    outline: none;
+}
+
+#module-shop .shop-procurement-filter__field :is(input, select):focus {
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.42);
+    box-shadow: 0 0 0 3px rgba(var(--admin-studio-ui-blue-rgb), 0.14);
+}
+
+#module-shop .shop-procurement-filter-select.shop-custom-select {
+    min-width: 0;
+    max-width: none;
+    width: 100%;
+    flex: 1 1 auto;
+    z-index: 4;
+}
+
+#module-shop .shop-procurement-filter-select.shop-custom-select.is-open {
+    z-index: 10070;
+}
+
+#module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__trigger {
+    min-height: 34px;
+    height: 34px;
+    padding: 0 10px;
+    border-radius: 8px;
+    border-color: rgba(148, 163, 184, 0.18);
+    background: rgba(15, 23, 42, 0.28);
+    color: rgba(248, 250, 252, 0.94);
+    font-size: 12px;
+    font-weight: 800;
+    box-shadow: none;
+}
+
+#module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__trigger:is(:hover, :focus-visible),
+#module-shop .shop-procurement-filter-select.shop-custom-select.is-open .shop-custom-select__trigger {
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.42);
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.14);
+    box-shadow: 0 0 0 3px rgba(var(--admin-studio-ui-blue-rgb), 0.12);
+}
+
+#module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__label {
+    gap: 6px;
+}
+
+#module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__icon {
+    font-size: 11px;
+    color: rgba(203, 213, 225, 0.76);
+}
+
+#module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__menu {
+    top: calc(100% + 6px);
+    right: auto;
+    z-index: 10070;
+    min-width: max(100%, 180px);
+    max-height: 240px;
+    padding: 6px;
+    gap: 4px;
+    border-radius: 10px;
+    border-color: rgba(148, 163, 184, 0.2);
+    background: rgba(15, 23, 42, 0.98);
+    box-shadow: 0 20px 44px rgba(2, 6, 23, 0.36);
+    backdrop-filter: blur(14px);
+}
+
+#module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__option {
+    min-height: 30px;
+    padding: 7px 9px;
+    border-radius: 8px;
+    color: rgba(226, 232, 240, 0.92);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+#module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__option:is(:hover, .is-selected) {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.16);
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.24);
+    color: #f8fafc;
+    transform: none;
+}
+
+#module-shop .shop-procurement-date-control {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 34px;
+    width: 100%;
+    min-width: 0;
+    height: 34px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.28);
+    overflow: hidden;
+}
+
+#module-shop .shop-procurement-date-control:focus-within {
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.42);
+    box-shadow: 0 0 0 3px rgba(var(--admin-studio-ui-blue-rgb), 0.14);
+}
+
+#module-shop .shop-procurement-filter__field .shop-procurement-date-input {
+    height: 32px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: rgba(248, 250, 252, 0.94);
+    box-shadow: none;
+    cursor: pointer;
+}
+
+#module-shop .shop-procurement-filter__field .shop-procurement-date-input:focus {
+    border-color: transparent;
+    box-shadow: none;
+}
+
+#module-shop .shop-procurement-date-control__button {
+    display: inline-grid;
+    place-items: center;
+    width: 34px;
+    height: 32px;
+    border: 0;
+    border-left: 1px solid rgba(148, 163, 184, 0.16);
+    background: rgba(15, 23, 42, 0.18);
+    color: rgba(203, 213, 225, 0.86);
+    cursor: pointer;
+}
+
+#module-shop .shop-procurement-date-control__button:is(:hover, :focus-visible) {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.16);
+    color: #dbeafe;
+    outline: none;
+}
+
+.shop-procurement-date-calendar.flatpickr-calendar {
+    z-index: 10090;
+    width: 318px;
+    padding: 10px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.98);
+    color: rgba(226, 232, 240, 0.94);
+    box-shadow: 0 24px 56px rgba(2, 6, 23, 0.38);
+    backdrop-filter: blur(16px);
+}
+
+.shop-procurement-date-calendar.flatpickr-calendar::before,
+.shop-procurement-date-calendar.flatpickr-calendar::after {
+    border-bottom-color: rgba(15, 23, 42, 0.98);
+}
+
+.shop-procurement-date-calendar .flatpickr-months {
+    align-items: center;
+    min-height: 36px;
+}
+
+.shop-procurement-date-calendar .flatpickr-months .flatpickr-prev-month,
+.shop-procurement-date-calendar .flatpickr-months .flatpickr-next-month {
+    top: 10px;
+    width: 32px;
+    height: 32px;
+    padding: 8px;
+    border-radius: 8px;
+    color: rgba(203, 213, 225, 0.88);
+}
+
+.shop-procurement-date-calendar .flatpickr-months .flatpickr-prev-month:hover,
+.shop-procurement-date-calendar .flatpickr-months .flatpickr-next-month:hover {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.16);
+    color: #dbeafe;
+}
+
+.shop-procurement-date-calendar .flatpickr-months .flatpickr-prev-month svg,
+.shop-procurement-date-calendar .flatpickr-months .flatpickr-next-month svg {
+    fill: currentColor;
+}
+
+.shop-procurement-date-calendar .flatpickr-current-month {
+    top: 8px;
+    height: 34px;
+    padding-top: 2px;
+    color: rgba(248, 250, 252, 0.96);
+    font-size: 13px;
+    font-weight: 800;
+}
+
+.shop-procurement-date-calendar .flatpickr-current-month .flatpickr-monthDropdown-months,
+.shop-procurement-date-calendar .flatpickr-current-month input.cur-year {
+    appearance: none;
+    -moz-appearance: textfield;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.42);
+    color: rgba(248, 250, 252, 0.96);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.shop-procurement-date-calendar .flatpickr-current-month input.cur-year::-webkit-outer-spin-button,
+.shop-procurement-date-calendar .flatpickr-current-month input.cur-year::-webkit-inner-spin-button {
+    margin: 0;
+    appearance: none;
+}
+
+.shop-procurement-date-calendar .flatpickr-weekday {
+    color: rgba(203, 213, 225, 0.7);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.shop-procurement-date-calendar .flatpickr-day {
+    height: 34px;
+    max-width: 34px;
+    margin: 1px;
+    border-radius: 8px;
+    border-color: transparent;
+    color: rgba(226, 232, 240, 0.9);
+    line-height: 34px;
+}
+
+.shop-procurement-date-calendar .flatpickr-day.prevMonthDay,
+.shop-procurement-date-calendar .flatpickr-day.nextMonthDay {
+    color: rgba(148, 163, 184, 0.42);
+}
+
+.shop-procurement-date-calendar .flatpickr-day:hover,
+.shop-procurement-date-calendar .flatpickr-day.today {
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.28);
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.14);
+    color: #dbeafe;
+}
+
+.shop-procurement-date-calendar .flatpickr-day.selected,
+.shop-procurement-date-calendar .flatpickr-day.startRange,
+.shop-procurement-date-calendar .flatpickr-day.endRange {
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.58);
+    background: rgb(var(--admin-studio-ui-blue-rgb));
+    color: #ffffff;
+}
+
+#module-shop .shop-procurement-filter__actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    min-width: 0;
+    flex-wrap: wrap;
+}
+
+#module-shop .shop-procurement-filter__btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 34px;
+    padding: 0 11px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.28);
+    color: rgba(226, 232, 240, 0.92);
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+#module-shop .shop-procurement-filter__btn--primary {
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.36);
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.18);
+    color: #dbeafe;
+}
+
+#module-shop .shop-procurement-filter__btn:is(:hover, :focus-visible) {
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.46);
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.2);
+    outline: none;
+}
+
+#module-shop .shop-procurement-filter__btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.48;
+}
+
+#module-shop .shop-procurement-overview__metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+}
+
+#module-shop .shop-procurement-overview__metric {
+    min-width: 0;
+    min-height: 96px;
+    padding: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.24);
+    display: grid;
+    gap: 6px;
+    align-content: center;
+}
+
+#module-shop .shop-procurement-overview__metric span,
+#module-shop .shop-procurement-overview__metric small {
+    color: rgba(203, 213, 225, 0.78);
+    font-size: 12px;
+    font-weight: 700;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#module-shop .shop-procurement-overview__metric strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: rgba(248, 250, 252, 0.98);
+    font-size: 24px;
+    line-height: 1.05;
+}
+
+#module-shop .shop-procurement-overview__metric--attention strong {
+    color: #fbbf24;
+}
+
+#module-shop .shop-procurement-overview__metric--skeleton span,
+#module-shop .shop-procurement-overview__metric--skeleton strong {
+    display: block;
+    width: 72%;
+    height: 12px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.18);
+}
+
+#module-shop .shop-procurement-overview__metric--skeleton strong {
+    width: 46%;
+    height: 24px;
+}
+
+#module-shop .shop-procurement-overview__body {
+    display: grid;
+    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.25fr);
+    gap: 12px;
+    margin-top: 12px;
+}
+
+#module-shop .shop-procurement-overview__panel,
+#module-shop .shop-procurement-overview__recent {
+    min-width: 0;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.2);
+    padding: 12px;
+}
+
+#module-shop .shop-procurement-overview__recent {
+    margin-top: 12px;
+}
+
+#module-shop .shop-procurement-overview__panel-title {
+    color: rgba(226, 232, 240, 0.9);
+    font-size: 13px;
+    font-weight: 800;
+    margin-bottom: 10px;
+}
+
+#module-shop .shop-procurement-overview__quality,
+#module-shop .shop-procurement-overview__source-list,
+#module-shop .shop-procurement-batch-list {
+    display: grid;
+    gap: 8px;
+    min-width: 0;
+}
+
+#module-shop .shop-procurement-quality-chip,
+#module-shop .shop-procurement-source-row,
+#module-shop .shop-procurement-batch-row {
+    min-width: 0;
+    border: 1px solid rgba(148, 163, 184, 0.14);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.22);
+}
+
+#module-shop .shop-procurement-quality-chip {
+    --shop-procurement-quality-color: #94a3b8;
+    padding: 10px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 5px 10px;
+}
+
+#module-shop .shop-procurement-quality-chip--accepted,
+#module-shop .shop-procurement-quality-badge--accepted {
+    --shop-procurement-quality-color: #22c55e;
+}
+
+#module-shop .shop-procurement-quality-chip--watch,
+#module-shop .shop-procurement-quality-badge--watch {
+    --shop-procurement-quality-color: #f59e0b;
+}
+
+#module-shop .shop-procurement-quality-chip--rejected,
+#module-shop .shop-procurement-quality-badge--rejected {
+    --shop-procurement-quality-color: #ef4444;
+}
+
+#module-shop .shop-procurement-quality-chip--unverified,
+#module-shop .shop-procurement-quality-badge--unverified {
+    --shop-procurement-quality-color: #94a3b8;
+}
+
+#module-shop .shop-procurement-quality-chip__label,
+#module-shop .shop-procurement-quality-chip strong,
+#module-shop .shop-procurement-quality-chip span:last-child {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#module-shop .shop-procurement-quality-chip__label {
+    color: var(--shop-procurement-quality-color);
+    font-weight: 800;
+}
+
+#module-shop .shop-procurement-quality-chip strong {
+    color: rgba(248, 250, 252, 0.96);
+}
+
+#module-shop .shop-procurement-quality-chip span:last-child {
+    grid-column: 1 / -1;
+    color: rgba(203, 213, 225, 0.76);
+    font-size: 12px;
+}
+
+#module-shop .shop-procurement-source-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(110px, auto) auto;
+    gap: 10px;
+    align-items: center;
+    padding: 10px;
+}
+
+#module-shop .shop-procurement-source-row__main,
+#module-shop .shop-procurement-source-row__cost {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+
+#module-shop .shop-procurement-source-row__main :is(a, span),
+#module-shop .shop-procurement-source-row__cost :is(strong, span) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#module-shop .shop-procurement-source-row__main a,
+#module-shop .shop-procurement-source-row__main > span:first-child {
+    color: rgba(248, 250, 252, 0.96);
+    font-size: 13px;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+#module-shop .shop-procurement-source-row__main > span:last-child,
+#module-shop .shop-procurement-source-row__cost span {
+    color: rgba(203, 213, 225, 0.72);
+    font-size: 12px;
+}
+
+#module-shop .shop-procurement-source-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    min-width: 0;
+}
+
+#module-shop .shop-procurement-source-tags span {
+    display: inline-flex;
+    align-items: center;
+    min-height: 22px;
+    max-width: 100%;
+    padding: 0 7px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.12);
+    color: rgba(226, 232, 240, 0.82) !important;
+    font-size: 11px !important;
+    font-weight: 800;
+}
+
+#module-shop .shop-procurement-source-row__cost {
+    text-align: right;
+}
+
+#module-shop .shop-procurement-source-row__cost strong {
+    color: rgba(248, 250, 252, 0.96);
+    font-size: 13px;
+}
+
+#module-shop .shop-procurement-source-row__attention,
+#module-shop .shop-procurement-source-row__stable {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 26px;
+    padding: 0 9px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 800;
+    white-space: nowrap;
+}
+
+#module-shop .shop-procurement-source-row__attention {
+    background: rgba(245, 158, 11, 0.12);
+    color: #fbbf24;
+}
+
+#module-shop .shop-procurement-source-row__stable {
+    background: rgba(34, 197, 94, 0.12);
+    color: #86efac;
+}
+
+#module-shop .shop-procurement-batch-row {
+    display: grid;
+    grid-template-columns: minmax(132px, 0.85fr) minmax(150px, 1fr) minmax(126px, 0.75fr) minmax(230px, 1.4fr) minmax(180px, 1fr);
+    gap: 10px;
+    align-items: center;
+    padding: 10px;
+}
+
+#module-shop .shop-procurement-batch-row__main,
+#module-shop .shop-procurement-batch-row__product,
+#module-shop .shop-procurement-batch-row__cost,
+#module-shop .shop-procurement-batch-row__performance,
+#module-shop .shop-procurement-batch-row__meta {
+    min-width: 0;
+}
+
+#module-shop .shop-procurement-batch-row__main,
+#module-shop .shop-procurement-batch-row__product,
+#module-shop .shop-procurement-batch-row__cost,
+#module-shop .shop-procurement-batch-row__performance {
+    display: grid;
+    gap: 4px;
+}
+
+#module-shop .shop-procurement-batch-row__performance strong {
+    color: #dbeafe;
+}
+
+#module-shop .shop-procurement-batch-row__meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 7px;
+    flex-wrap: wrap;
+}
+
+#module-shop .shop-procurement-batch-row :is(strong, span, small) {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+#module-shop .shop-procurement-batch-row strong {
+    color: rgba(248, 250, 252, 0.96);
+    font-size: 13px;
+}
+
+#module-shop .shop-procurement-batch-row :is(span, small) {
+    color: rgba(203, 213, 225, 0.72);
+    font-size: 12px;
+}
+
+#module-shop .shop-procurement-quality-badge,
+#module-shop .shop-procurement-batch-row__note,
+#module-shop .shop-procurement-batch-row__proof {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 26px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--shop-procurement-quality-color, #94a3b8) 13%, transparent);
+    color: var(--shop-procurement-quality-color, #94a3b8) !important;
+    font-size: 12px;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+#module-shop .shop-procurement-batch-row__quality-action {
+    min-height: 26px;
+    padding: 0 9px;
+    border: 1px solid rgba(var(--admin-studio-ui-blue-rgb), 0.28);
+    border-radius: 999px;
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.14);
+    color: #bfdbfe;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+#module-shop .shop-procurement-batch-row__quality-action:is(:hover, :focus-visible) {
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.46);
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.22);
+    outline: none;
+}
+
+#module-shop .shop-procurement-auto-quality {
+    --shop-procurement-quality-color: #94a3b8;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 26px;
+    max-width: 100%;
+    padding: 0 9px;
+    border-radius: 999px;
+    background: rgba(148, 163, 184, 0.11);
+    color: #dbeafe;
+    font-size: 12px;
+    font-weight: 800;
+}
+
+#module-shop .shop-procurement-auto-quality--accepted,
+.shop-procurement-quality-auto--accepted {
+    --shop-procurement-quality-color: #22c55e;
+}
+
+#module-shop .shop-procurement-auto-quality--watch,
+.shop-procurement-quality-auto--watch {
+    --shop-procurement-quality-color: #f59e0b;
+}
+
+#module-shop .shop-procurement-auto-quality--rejected,
+.shop-procurement-quality-auto--rejected {
+    --shop-procurement-quality-color: #ef4444;
+}
+
+#module-shop .shop-procurement-auto-quality--unverified,
+.shop-procurement-quality-auto--unverified {
+    --shop-procurement-quality-color: #94a3b8;
+}
+
+#module-shop .shop-procurement-auto-quality i {
+    color: var(--shop-procurement-quality-color);
+}
+
+#module-shop .shop-procurement-auto-quality small {
+    color: rgba(191, 219, 254, 0.72);
+    font-size: 11px;
+    font-weight: 800;
+}
+
+#module-shop .shop-procurement-batch-row__note,
+#module-shop .shop-procurement-batch-row__proof {
+    --shop-procurement-quality-color: #6b9ece;
+    width: 26px;
+    justify-content: center;
+    padding: 0;
+}
+
+#module-shop .shop-procurement-overview__empty,
+#module-shop .shop-procurement-overview__error {
+    min-height: 76px;
+    border: 1px dashed rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: rgba(203, 213, 225, 0.78);
+    font-size: 13px;
+    font-weight: 700;
+    text-align: center;
+    padding: 12px;
+}
+
+#module-shop .shop-procurement-overview__error {
+    border-color: rgba(248, 113, 113, 0.28);
+    background: rgba(127, 29, 29, 0.14);
+    color: #fecaca;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-overview,
+html:not([data-theme="dark"]) #module-shop .shop-procurement-overview {
+    background: rgba(255, 255, 255, 0.9) !important;
+    border-color: rgba(15, 23, 42, 0.08) !important;
+    color: var(--admin-studio-shop-text) !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] #module-shop :is(
+    .shop-procurement-filter,
+    .shop-procurement-overview__metric,
+    .shop-procurement-overview__panel,
+    .shop-procurement-overview__recent,
+    .shop-procurement-quality-chip,
+    .shop-procurement-source-row,
+    .shop-procurement-batch-row
+),
+html:not([data-theme="dark"]) #module-shop :is(
+    .shop-procurement-filter,
+    .shop-procurement-overview__metric,
+    .shop-procurement-overview__panel,
+    .shop-procurement-overview__recent,
+    .shop-procurement-quality-chip,
+    .shop-procurement-source-row,
+    .shop-procurement-batch-row
+) {
+    background: rgba(255, 255, 255, 0.82) !important;
+    border-color: rgba(15, 23, 42, 0.08) !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] #module-shop :is(
+    .shop-procurement-overview__title,
+    .shop-procurement-overview__metric strong,
+    .shop-procurement-overview__panel-title,
+    .shop-procurement-source-row__main a,
+    .shop-procurement-source-row__main > span:first-child,
+    .shop-procurement-source-row__cost strong,
+    .shop-procurement-batch-row strong
+),
+html:not([data-theme="dark"]) #module-shop :is(
+    .shop-procurement-overview__title,
+    .shop-procurement-overview__metric strong,
+    .shop-procurement-overview__panel-title,
+    .shop-procurement-source-row__main a,
+    .shop-procurement-source-row__main > span:first-child,
+    .shop-procurement-source-row__cost strong,
+    .shop-procurement-batch-row strong
+) {
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-quality-chip strong,
+html:not([data-theme="dark"]) #module-shop .shop-procurement-quality-chip strong {
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] #module-shop :is(
+    .shop-procurement-filter__field span,
+    .shop-procurement-filter__actions > span,
+    .shop-procurement-overview__metric span,
+    .shop-procurement-overview__metric small,
+    .shop-procurement-source-row__main > span:last-child,
+    .shop-procurement-source-row__cost span,
+    .shop-procurement-quality-chip span:last-child,
+    .shop-procurement-batch-row span,
+    .shop-procurement-batch-row small,
+    .shop-procurement-overview__empty
+),
+html:not([data-theme="dark"]) #module-shop :is(
+    .shop-procurement-filter__field span,
+    .shop-procurement-filter__actions > span,
+    .shop-procurement-overview__metric span,
+    .shop-procurement-overview__metric small,
+    .shop-procurement-source-row__main > span:last-child,
+    .shop-procurement-source-row__cost span,
+    .shop-procurement-quality-chip span:last-child,
+    .shop-procurement-batch-row span,
+    .shop-procurement-batch-row small,
+    .shop-procurement-overview__empty
+) {
+    color: var(--admin-studio-shop-muted) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-filter__field :is(input, select),
+html:not([data-theme="dark"]) #module-shop .shop-procurement-filter__field :is(input, select) {
+    background: rgba(255, 255, 255, 0.96) !important;
+    border-color: rgba(15, 23, 42, 0.11) !important;
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-filter__field :is(input, select)::placeholder,
+html:not([data-theme="dark"]) #module-shop .shop-procurement-filter__field :is(input, select)::placeholder {
+    color: var(--admin-studio-shop-muted) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__trigger,
+html:not([data-theme="dark"]) #module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__trigger {
+    background: rgba(255, 255, 255, 0.98) !important;
+    border-color: rgba(15, 23, 42, 0.11) !important;
+    color: var(--admin-studio-shop-text) !important;
+    box-shadow: none !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__trigger:is(:hover, :focus-visible),
+html[data-theme="light"] #module-shop .shop-procurement-filter-select.shop-custom-select.is-open .shop-custom-select__trigger,
+html:not([data-theme="dark"]) #module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__trigger:is(:hover, :focus-visible),
+html:not([data-theme="dark"]) #module-shop .shop-procurement-filter-select.shop-custom-select.is-open .shop-custom-select__trigger {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.08) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.3) !important;
+    box-shadow: 0 0 0 3px rgba(var(--admin-studio-ui-blue-rgb), 0.1) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__icon,
+html:not([data-theme="dark"]) #module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__icon {
+    color: var(--admin-studio-shop-muted) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__menu,
+html:not([data-theme="dark"]) #module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__menu {
+    background: rgba(255, 255, 255, 0.99) !important;
+    border-color: rgba(15, 23, 42, 0.1) !important;
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__option,
+html:not([data-theme="dark"]) #module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__option {
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__option:is(:hover, .is-selected),
+html:not([data-theme="dark"]) #module-shop .shop-procurement-filter-select.shop-custom-select .shop-custom-select__option:is(:hover, .is-selected) {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.08) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.18) !important;
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-date-control,
+html:not([data-theme="dark"]) #module-shop .shop-procurement-date-control {
+    background: rgba(255, 255, 255, 0.98) !important;
+    border-color: rgba(15, 23, 42, 0.11) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-date-control:focus-within,
+html:not([data-theme="dark"]) #module-shop .shop-procurement-date-control:focus-within {
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.3) !important;
+    box-shadow: 0 0 0 3px rgba(var(--admin-studio-ui-blue-rgb), 0.1) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-filter__field .shop-procurement-date-input,
+html:not([data-theme="dark"]) #module-shop .shop-procurement-filter__field .shop-procurement-date-input {
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-date-control__button,
+html:not([data-theme="dark"]) #module-shop .shop-procurement-date-control__button {
+    background: rgba(248, 250, 252, 0.9) !important;
+    border-left-color: rgba(15, 23, 42, 0.08) !important;
+    color: var(--admin-studio-shop-muted) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-date-control__button:is(:hover, :focus-visible),
+html:not([data-theme="dark"]) #module-shop .shop-procurement-date-control__button:is(:hover, :focus-visible) {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.08) !important;
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] .shop-procurement-date-calendar.flatpickr-calendar,
+html:not([data-theme="dark"]) .shop-procurement-date-calendar.flatpickr-calendar {
+    background: rgba(255, 255, 255, 0.99) !important;
+    border-color: rgba(15, 23, 42, 0.1) !important;
+    color: var(--admin-studio-shop-text) !important;
+    box-shadow: 0 22px 48px rgba(15, 23, 42, 0.15) !important;
+}
+
+html[data-theme="light"] .shop-procurement-date-calendar.flatpickr-calendar::before,
+html[data-theme="light"] .shop-procurement-date-calendar.flatpickr-calendar::after,
+html:not([data-theme="dark"]) .shop-procurement-date-calendar.flatpickr-calendar::before,
+html:not([data-theme="dark"]) .shop-procurement-date-calendar.flatpickr-calendar::after {
+    border-bottom-color: rgba(255, 255, 255, 0.99) !important;
+}
+
+html[data-theme="light"] .shop-procurement-date-calendar .flatpickr-current-month,
+html:not([data-theme="dark"]) .shop-procurement-date-calendar .flatpickr-current-month {
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] .shop-procurement-date-calendar .flatpickr-months :is(.flatpickr-prev-month, .flatpickr-next-month),
+html:not([data-theme="dark"]) .shop-procurement-date-calendar .flatpickr-months :is(.flatpickr-prev-month, .flatpickr-next-month) {
+    color: var(--admin-studio-shop-muted) !important;
+}
+
+html[data-theme="light"] .shop-procurement-date-calendar .flatpickr-current-month .flatpickr-monthDropdown-months,
+html[data-theme="light"] .shop-procurement-date-calendar .flatpickr-current-month input.cur-year,
+html:not([data-theme="dark"]) .shop-procurement-date-calendar .flatpickr-current-month .flatpickr-monthDropdown-months,
+html:not([data-theme="dark"]) .shop-procurement-date-calendar .flatpickr-current-month input.cur-year {
+    background: rgba(248, 250, 252, 0.94) !important;
+    border-color: rgba(15, 23, 42, 0.1) !important;
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] .shop-procurement-date-calendar .flatpickr-weekday,
+html:not([data-theme="dark"]) .shop-procurement-date-calendar .flatpickr-weekday {
+    color: var(--admin-studio-shop-muted) !important;
+}
+
+html[data-theme="light"] .shop-procurement-date-calendar .flatpickr-day,
+html:not([data-theme="dark"]) .shop-procurement-date-calendar .flatpickr-day {
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] .shop-procurement-date-calendar .flatpickr-day.prevMonthDay,
+html[data-theme="light"] .shop-procurement-date-calendar .flatpickr-day.nextMonthDay,
+html:not([data-theme="dark"]) .shop-procurement-date-calendar .flatpickr-day.prevMonthDay,
+html:not([data-theme="dark"]) .shop-procurement-date-calendar .flatpickr-day.nextMonthDay {
+    color: rgba(100, 116, 139, 0.48) !important;
+}
+
+html[data-theme="light"] .shop-procurement-date-calendar .flatpickr-day:is(:hover, .today),
+html:not([data-theme="dark"]) .shop-procurement-date-calendar .flatpickr-day:is(:hover, .today) {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.1) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.24) !important;
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] .shop-procurement-date-calendar .flatpickr-day:is(.selected, .startRange, .endRange),
+html:not([data-theme="dark"]) .shop-procurement-date-calendar .flatpickr-day:is(.selected, .startRange, .endRange) {
+    background: rgb(var(--admin-studio-ui-blue-rgb)) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.72) !important;
+    color: #ffffff !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-filter__btn,
+html:not([data-theme="dark"]) #module-shop .shop-procurement-filter__btn {
+    background: rgba(255, 255, 255, 0.95) !important;
+    border-color: rgba(15, 23, 42, 0.1) !important;
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-filter__btn--primary,
+html:not([data-theme="dark"]) #module-shop .shop-procurement-filter__btn--primary {
+    background: rgba(var(--admin-studio-ui-blue-rgb), 0.1) !important;
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.3) !important;
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-source-tags span,
+html:not([data-theme="dark"]) #module-shop .shop-procurement-source-tags span {
+    background: rgba(15, 23, 42, 0.05) !important;
+    color: var(--admin-studio-shop-muted) !important;
+}
+
+html[data-theme="light"] #module-shop :is(.shop-procurement-overview__scope, .shop-procurement-overview__refresh, .shop-procurement-batch-row__quality-action),
+html:not([data-theme="dark"]) #module-shop :is(.shop-procurement-overview__scope, .shop-procurement-overview__refresh, .shop-procurement-batch-row__quality-action) {
+    background: rgba(255, 255, 255, 0.95) !important;
+    border-color: rgba(15, 23, 42, 0.1) !important;
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-auto-quality,
+html:not([data-theme="dark"]) #module-shop .shop-procurement-auto-quality {
+    background: color-mix(in srgb, var(--shop-procurement-quality-color) 10%, #ffffff) !important;
+    border: 1px solid color-mix(in srgb, var(--shop-procurement-quality-color) 26%, rgba(15, 23, 42, 0.1)) !important;
+    color: var(--admin-studio-shop-text) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-auto-quality i,
+html:not([data-theme="dark"]) #module-shop .shop-procurement-auto-quality i {
+    color: var(--shop-procurement-quality-color) !important;
+}
+
+html[data-theme="light"] #module-shop .shop-procurement-auto-quality small,
+html:not([data-theme="dark"]) #module-shop .shop-procurement-auto-quality small {
+    color: var(--admin-studio-shop-muted) !important;
+}
+
+.shop-procurement-quality-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10080;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(15, 23, 42, 0.62);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.22s ease;
+}
+
+.shop-procurement-quality-overlay.is-visible {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.shop-procurement-quality-modal {
+    width: min(680px, calc(100vw - 48px));
+    max-height: min(760px, calc(100vh - 48px));
+    overflow: auto;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 8px;
+    background: #0f172a;
+    color: rgba(226, 232, 240, 0.96);
+    box-shadow: 0 28px 70px rgba(15, 23, 42, 0.42);
+    padding: 18px;
+    transform: translateY(10px) scale(0.98);
+    transition: transform 0.22s ease;
+}
+
+.shop-procurement-quality-overlay.is-visible .shop-procurement-quality-modal {
+    transform: translateY(0) scale(1);
+}
+
+.shop-procurement-quality-modal__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 12px;
+}
+
+.shop-procurement-quality-modal__header h3 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    color: rgba(248, 250, 252, 0.98);
+    font-size: 18px;
+}
+
+.shop-procurement-quality-modal__header p,
+.shop-procurement-quality-modal__product {
+    margin: 5px 0 0;
+    color: rgba(203, 213, 225, 0.78);
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.shop-procurement-quality-modal__product {
+    margin-bottom: 12px;
+}
+
+.shop-procurement-quality-auto {
+    --shop-procurement-quality-color: #94a3b8;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    margin-bottom: 14px;
+    padding: 12px;
+    border: 1px solid color-mix(in srgb, var(--shop-procurement-quality-color) 28%, rgba(148, 163, 184, 0.18));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--shop-procurement-quality-color) 10%, rgba(15, 23, 42, 0.32));
+}
+
+.shop-procurement-quality-auto__main {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+}
+
+.shop-procurement-quality-auto__main span {
+    color: var(--shop-procurement-quality-color);
+    font-size: 12px;
+    font-weight: 900;
+}
+
+.shop-procurement-quality-auto__main strong {
+    color: rgba(248, 250, 252, 0.96);
+    font-size: 18px;
+}
+
+.shop-procurement-quality-auto__main small {
+    color: rgba(203, 213, 225, 0.76);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.shop-procurement-quality-auto__adopt {
+    align-self: start;
+    min-height: 34px;
+    border: 1px solid color-mix(in srgb, var(--shop-procurement-quality-color) 46%, transparent);
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--shop-procurement-quality-color) 18%, rgba(15, 23, 42, 0.38));
+    color: rgba(248, 250, 252, 0.96);
+    font-weight: 900;
+    cursor: pointer;
+    padding: 0 12px;
+    white-space: nowrap;
+}
+
+.shop-procurement-quality-auto__reasons {
+    grid-column: 1 / -1;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.shop-procurement-quality-auto__reasons span {
+    min-height: 24px;
+    display: inline-flex;
+    align-items: center;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: rgba(15, 23, 42, 0.28);
+    color: rgba(226, 232, 240, 0.82);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.shop-procurement-quality-modal__close {
+    width: 34px;
+    height: 34px;
+    min-width: 34px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.34);
+    color: rgba(226, 232, 240, 0.92);
+    display: inline-grid;
+    place-items: center;
+    cursor: pointer;
+}
+
+.shop-procurement-quality-modal__options {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 14px;
+}
+
+.shop-procurement-quality-option {
+    --shop-procurement-quality-color: #94a3b8;
+    min-width: 0;
+    min-height: 82px;
+    padding: 12px;
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.34);
+    color: rgba(226, 232, 240, 0.9);
+    text-align: left;
+    cursor: pointer;
+    display: grid;
+    gap: 7px;
+}
+
+.shop-procurement-quality-option--accepted {
+    --shop-procurement-quality-color: #22c55e;
+}
+
+.shop-procurement-quality-option--watch {
+    --shop-procurement-quality-color: #f59e0b;
+}
+
+.shop-procurement-quality-option--rejected {
+    --shop-procurement-quality-color: #ef4444;
+}
+
+.shop-procurement-quality-option--unverified {
+    --shop-procurement-quality-color: #94a3b8;
+}
+
+.shop-procurement-quality-option span {
+    color: var(--shop-procurement-quality-color);
+    font-size: 14px;
+    font-weight: 800;
+}
+
+.shop-procurement-quality-option small {
+    color: rgba(203, 213, 225, 0.75);
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.shop-procurement-quality-option.is-selected,
+.shop-procurement-quality-option:is(:hover, :focus-visible) {
+    border-color: color-mix(in srgb, var(--shop-procurement-quality-color) 42%, transparent);
+    background: color-mix(in srgb, var(--shop-procurement-quality-color) 13%, rgba(15, 23, 42, 0.34));
+    outline: none;
+}
+
+.shop-procurement-quality-modal__grid {
+    display: grid;
+    grid-template-columns: minmax(140px, 0.38fr) minmax(0, 1fr);
+    gap: 12px;
+}
+
+.shop-procurement-quality-field {
+    display: grid;
+    gap: 7px;
+    min-width: 0;
+}
+
+.shop-procurement-quality-field--wide {
+    grid-column: 1 / -1;
+}
+
+.shop-procurement-quality-field span {
+    color: rgba(203, 213, 225, 0.82);
+    font-size: 12px;
+    font-weight: 800;
+}
+
+.shop-procurement-quality-field :is(input, textarea) {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 8px;
+    background: rgba(15, 23, 42, 0.38);
+    color: rgba(248, 250, 252, 0.96);
+    font: inherit;
+    padding: 10px 12px;
+    outline: none;
+}
+
+.shop-procurement-quality-field textarea {
+    resize: vertical;
+    min-height: 104px;
+}
+
+.shop-procurement-quality-field :is(input, textarea):focus {
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.55);
+    box-shadow: 0 0 0 3px rgba(var(--admin-studio-ui-blue-rgb), 0.14);
+}
+
+.shop-procurement-quality-field input[readonly] {
+    border-color: color-mix(in srgb, #22c55e 28%, rgba(148, 163, 184, 0.22));
+    background: rgba(34, 197, 94, 0.1);
+    color: #bbf7d0;
+    font-weight: 900;
+}
+
+.shop-procurement-quality-modal__actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.shop-procurement-quality-btn {
+    min-height: 38px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 8px;
+    padding: 0 14px;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.shop-procurement-quality-btn--ghost {
+    background: rgba(15, 23, 42, 0.28);
+    color: rgba(226, 232, 240, 0.9);
+}
+
+.shop-procurement-quality-btn--primary {
+    border-color: rgba(var(--admin-studio-ui-blue-rgb), 0.42);
+    background: var(--admin-studio-save-btn-bg, var(--admin-studio-ui-blue, #6b9ece));
+    color: #ffffff;
+}
+
+html[data-theme="light"] .shop-procurement-quality-modal,
+html:not([data-theme="dark"]) .shop-procurement-quality-modal {
+    background: #ffffff;
+    color: var(--admin-studio-shop-text);
+    border-color: rgba(15, 23, 42, 0.1);
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.16);
+}
+
+html[data-theme="light"] .shop-procurement-quality-modal__header h3,
+html:not([data-theme="dark"]) .shop-procurement-quality-modal__header h3 {
+    color: var(--admin-studio-shop-text);
+}
+
+html[data-theme="light"] :is(.shop-procurement-quality-modal__header p, .shop-procurement-quality-modal__product, .shop-procurement-quality-field span, .shop-procurement-quality-option small),
+html:not([data-theme="dark"]) :is(.shop-procurement-quality-modal__header p, .shop-procurement-quality-modal__product, .shop-procurement-quality-field span, .shop-procurement-quality-option small) {
+    color: var(--admin-studio-shop-muted);
+}
+
+html[data-theme="light"] :is(.shop-procurement-quality-modal__close, .shop-procurement-quality-option, .shop-procurement-quality-btn--ghost, .shop-procurement-quality-field input, .shop-procurement-quality-field textarea),
+html:not([data-theme="dark"]) :is(.shop-procurement-quality-modal__close, .shop-procurement-quality-option, .shop-procurement-quality-btn--ghost, .shop-procurement-quality-field input, .shop-procurement-quality-field textarea) {
+    background: rgba(255, 255, 255, 0.96);
+    border-color: rgba(15, 23, 42, 0.11);
+    color: var(--admin-studio-shop-text);
+}
+
+html[data-theme="light"] .shop-procurement-quality-field input[readonly],
+html:not([data-theme="dark"]) .shop-procurement-quality-field input[readonly] {
+    background: rgba(34, 197, 94, 0.09);
+    border-color: rgba(22, 163, 74, 0.2);
+    color: #166534;
+}
+
+html[data-theme="light"] .shop-procurement-quality-option.is-selected,
+html[data-theme="light"] .shop-procurement-quality-option:is(:hover, :focus-visible),
+html:not([data-theme="dark"]) .shop-procurement-quality-option.is-selected,
+html:not([data-theme="dark"]) .shop-procurement-quality-option:is(:hover, :focus-visible) {
+    background: color-mix(in srgb, var(--shop-procurement-quality-color) 10%, #ffffff);
+    border-color: color-mix(in srgb, var(--shop-procurement-quality-color) 36%, rgba(15, 23, 42, 0.11));
+}
+
+html[data-theme="light"] .shop-procurement-quality-auto,
+html:not([data-theme="dark"]) .shop-procurement-quality-auto {
+    background: color-mix(in srgb, var(--shop-procurement-quality-color) 8%, #ffffff);
+    border-color: color-mix(in srgb, var(--shop-procurement-quality-color) 28%, rgba(15, 23, 42, 0.1));
+}
+
+html[data-theme="light"] .shop-procurement-quality-auto__main strong,
+html:not([data-theme="dark"]) .shop-procurement-quality-auto__main strong {
+    color: var(--admin-studio-shop-text);
+}
+
+html[data-theme="light"] .shop-procurement-quality-auto__main small,
+html:not([data-theme="dark"]) .shop-procurement-quality-auto__main small {
+    color: var(--admin-studio-shop-muted);
+}
+
+html[data-theme="light"] .shop-procurement-quality-auto__adopt,
+html:not([data-theme="dark"]) .shop-procurement-quality-auto__adopt {
+    background: color-mix(in srgb, var(--shop-procurement-quality-color) 13%, #ffffff);
+    color: var(--admin-studio-shop-text);
+}
+
+html[data-theme="light"] .shop-procurement-quality-auto__reasons span,
+html:not([data-theme="dark"]) .shop-procurement-quality-auto__reasons span {
+    background: rgba(15, 23, 42, 0.05);
+    color: var(--admin-studio-shop-text);
+}
+
+@media (max-width: 1040px) {
+    #module-shop .shop-procurement-overview__metrics {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #module-shop .shop-procurement-overview__body,
+    #module-shop .shop-procurement-batch-row {
+        grid-template-columns: 1fr;
+    }
+
+    #module-shop .shop-procurement-filter {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    #module-shop .shop-procurement-batch-row__meta {
+        justify-content: flex-start;
+    }
+
+    .shop-procurement-quality-modal__grid,
+    .shop-procurement-quality-auto,
+    .shop-procurement-quality-field--wide {
+        grid-template-columns: 1fr;
+        grid-column: 1;
+    }
+}
+
+@media (max-width: 640px) {
+    #module-shop .shop-procurement-overview {
+        padding: 12px;
+    }
+
+    #module-shop .shop-procurement-overview__header {
+        align-items: flex-start;
+    }
+
+    #module-shop .shop-procurement-overview__metrics,
+    #module-shop .shop-procurement-filter,
+    #module-shop .shop-procurement-source-row {
+        grid-template-columns: 1fr;
+    }
+
+    #module-shop .shop-procurement-filter__field--search,
+    #module-shop .shop-procurement-filter__actions {
+        grid-column: 1;
+    }
+
+    #module-shop .shop-procurement-filter__actions {
+        justify-content: flex-start;
+    }
+
+    #module-shop .shop-procurement-source-row__cost {
+        text-align: left;
+    }
+
+    .shop-procurement-quality-overlay {
+        padding: 14px;
+        align-items: flex-end;
+    }
+
+    .shop-procurement-quality-modal {
+        width: 100%;
+        max-height: calc(100vh - 28px);
+    }
+
+    .shop-procurement-quality-modal__options {
+        grid-template-columns: 1fr;
+    }
+
+    .shop-procurement-quality-modal__actions {
+        flex-direction: column-reverse;
+    }
+
+    .shop-procurement-quality-btn {
+        width: 100%;
+    }
 }
 
 html[data-theme="light"] #module-shop :is(.shop-import-inventory-overview, .shop-import-inventory-overview__stat, .shop-import-inventory-overview__item),
@@ -44733,6 +47208,10 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-alert-health-card__errors.
         gap: 2px;
     }
 
+    #module-shop .shop-import-source-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
     #module-shop :is(.import-status, #importButtonContainer, .admin-studio-inline-style-attr-130) {
         width: 100%;
         flex-direction: column;
@@ -44826,7 +47305,8 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-alert-health-card__errors.
 
     #module-shop #shop-view-inventory .shop-table--inventory {
         --shop-inventory-mobile-row-divider: rgba(15, 23, 42, 0.08);
-        min-width: 920px;
+        min-width: 1070px;
+        table-layout: fixed;
     }
 
     #module-shop #shop-view-inventory.shop-inventory-selection-mode {
@@ -44834,7 +47314,7 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-alert-health-card__errors.
     }
 
     #module-shop #shop-view-inventory.shop-inventory-selection-mode .shop-table--inventory {
-        min-width: 984px;
+        min-width: 1134px;
     }
 
     #module-shop #shop-view-inventory .shop-table--inventory :is(th, td) {
@@ -44842,6 +47322,7 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-alert-health-card__errors.
         border-bottom: 0 !important;
         overflow: hidden;
         text-overflow: ellipsis;
+        min-width: 0;
     }
 
     #module-shop #shop-view-inventory .shop-table--inventory thead tr,
@@ -44854,11 +47335,13 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-alert-health-card__errors.
     }
 
     #module-shop #shop-view-inventory .shop-table--inventory :is(th:nth-child(2), td:nth-child(2)) {
-        width: 130px;
+        width: 220px;
+        max-width: 220px;
     }
 
     #module-shop #shop-view-inventory .shop-table--inventory :is(th:nth-child(3), td:nth-child(3)) {
-        width: 180px;
+        width: 240px;
+        max-width: 240px;
     }
 
     #module-shop #shop-view-inventory .shop-table--inventory :is(th:nth-child(4), td:nth-child(4)) {
@@ -44957,15 +47440,21 @@ html:not([data-theme="dark"]) #module-ops-alerts .ops-alert-health-card__errors.
         transform: translate(-50%, -50%) scale(1);
     }
 
+    #module-shop #shop-view-inventory .shop-inventory-product-name,
     #module-shop #shop-view-inventory .shop-inventory-content-chip,
     #module-shop #shop-view-inventory .shop-inventory-created-at,
     #module-shop #shop-view-inventory .shop-inventory-buyer-email,
     #module-shop #shop-view-inventory .shop-inventory-buyer-order {
         display: block;
         max-width: 100%;
+        min-width: 0;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
+    }
+
+    #module-shop #shop-view-inventory .shop-inventory-product-cell {
+        max-width: 220px;
     }
 
     #module-shop #shop-view-inventory .shop-inventory-content-chip {

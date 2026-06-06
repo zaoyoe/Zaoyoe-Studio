@@ -45,7 +45,9 @@ function createQueryBuilder(executor) {
 
     const builder = {
         select(_fields, options = {}) {
-            state.mode = 'select';
+            if (!['insert', 'update'].includes(state.mode)) {
+                state.mode = 'select';
+            }
             state.selectOptions = options;
             return builder;
         },
@@ -151,7 +153,11 @@ function createSupabaseStub(state) {
     state.inventoryRows = Array.isArray(state.inventoryRows) ? state.inventoryRows : [];
     state.productRows = Array.isArray(state.productRows) ? state.productRows : [];
     state.skuRows = Array.isArray(state.skuRows) ? state.skuRows : [];
+    state.sourceRows = Array.isArray(state.sourceRows) ? state.sourceRows : [];
+    state.procurementBatchRows = Array.isArray(state.procurementBatchRows) ? state.procurementBatchRows : [];
     state.inventoryInsertSeq = state.inventoryInsertSeq || 1;
+    state.sourceInsertSeq = state.sourceInsertSeq || 1;
+    state.procurementBatchInsertSeq = state.procurementBatchInsertSeq || 1;
 
     return {
         from(table) {
@@ -227,6 +233,74 @@ function createSupabaseStub(state) {
                     }
 
                     return { data: filteredRows, error: null };
+                }
+
+                if (table === 'shop_inventory_sources') {
+                    if (query.mode === 'insert') {
+                        const payloads = Array.isArray(query.payload) ? query.payload : [query.payload];
+                        const inserted = payloads.map((row) => {
+                            const insertedRow = {
+                                id: row.id || `source_${state.sourceInsertSeq++}`,
+                                created_at: row.created_at || '2026-04-02T00:00:00Z',
+                                updated_at: row.updated_at || '2026-04-02T00:00:00Z',
+                                ...row
+                            };
+                            state.sourceRows.push(insertedRow);
+                            return insertedRow;
+                        });
+                        return { data: inserted, error: null };
+                    }
+
+                    if (query.mode === 'update') {
+                        const rows = applyFilters(state.sourceRows, query.filters);
+                        rows.forEach((row) => {
+                            Object.assign(row, query.payload);
+                        });
+                        return {
+                            data: query.single ? (rows[0] || null) : rows,
+                            error: rows.length ? null : { message: 'Not found' }
+                        };
+                    }
+
+                    const filteredRows = applyLimit(sortRows(applyFilters(state.sourceRows, query.filters), query.order), query.limit);
+                    return {
+                        data: query.single ? (filteredRows[0] || null) : filteredRows,
+                        error: null
+                    };
+                }
+
+                if (table === 'shop_procurement_batches') {
+                    if (query.mode === 'insert') {
+                        const payloads = Array.isArray(query.payload) ? query.payload : [query.payload];
+                        const inserted = payloads.map((row) => {
+                            const insertedRow = {
+                                id: row.id || `proc_batch_${state.procurementBatchInsertSeq++}`,
+                                created_at: row.created_at || '2026-04-02T00:00:00Z',
+                                updated_at: row.updated_at || '2026-04-02T00:00:00Z',
+                                ...row
+                            };
+                            state.procurementBatchRows.push(insertedRow);
+                            return insertedRow;
+                        });
+                        return { data: inserted, error: null };
+                    }
+
+                    if (query.mode === 'update') {
+                        const rows = applyFilters(state.procurementBatchRows, query.filters);
+                        rows.forEach((row) => {
+                            Object.assign(row, query.payload);
+                        });
+                        return {
+                            data: query.single ? (rows[0] || null) : rows,
+                            error: rows.length ? null : { message: 'Not found' }
+                        };
+                    }
+
+                    const filteredRows = applyLimit(sortRows(applyFilters(state.procurementBatchRows, query.filters), query.order), query.limit);
+                    return {
+                        data: query.single ? (filteredRows[0] || null) : filteredRows,
+                        error: null
+                    };
                 }
 
                 throw new Error(`Unexpected table mock request: ${table}`);
@@ -409,6 +483,285 @@ test('shop mutate handler imports inventory into the requested product sku', asy
         );
         assert.equal(state.auditCalls[0]?.details?.sku_id, 'sku_year_1');
         assert.equal(state.auditCalls[0]?.details?.sku_name, '年卡');
+    });
+});
+
+test('shop mutate handler records procurement source batch for inventory import', async () => {
+    await withShopMutateHandler({
+        productRows: [{ id: 'prod_1', stock_count: 0 }],
+        skuRows: [
+            {
+                id: 'sku_default_1',
+                product_id: 'prod_1',
+                sku_name: '默认规格',
+                is_default: true,
+                is_active: true,
+                stock_count: 0
+            }
+        ],
+        inventoryRows: []
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'import_inventory',
+                site: 'cn',
+                productId: 'prod_1',
+                lines: ['source-card-1', 'source-card-2'],
+                importStatus: 'available',
+                batchId: 'batch_source_20260606',
+                procurement: {
+                    sourceName: 'Google Workspace 供应商',
+                    sourceUrl: 'https://supplier.example.com/order/1001',
+                    unitCost: '2.3456',
+                    currency: 'USD',
+                    exchangeRateToCny: '7.12000000',
+                    purchasedAt: '2026-06-06T01:30:00.000Z',
+                    qualityStatus: 'watch',
+                    sourceTags: '低价，备用',
+                    proofUrl: 'https://supplier.example.com/proof/1001',
+                    notes: '首批观察'
+                }
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.imported, 2);
+        assert.equal(payload.sourceBatchId, 'proc_batch_1');
+        assert.equal(state.sourceRows.length, 1);
+        assert.equal(state.sourceRows[0].source_name, 'Google Workspace 供应商');
+        assert.equal(state.sourceRows[0].source_url, 'https://supplier.example.com/order/1001');
+        assert.equal(state.procurementBatchRows.length, 1);
+        assert.equal(state.procurementBatchRows[0].batch_code, 'batch_source_20260606');
+        assert.equal(state.procurementBatchRows[0].source_id, 'source_1');
+        assert.equal(state.procurementBatchRows[0].unit_cost, 2.3456);
+        assert.equal(state.procurementBatchRows[0].currency, 'USD');
+        assert.equal(state.procurementBatchRows[0].unit_cost_cny, 16.7007);
+        assert.equal(state.procurementBatchRows[0].total_cost_cny, 33.4014);
+        assert.equal(state.procurementBatchRows[0].quality_status, 'unverified');
+        assert.equal(state.procurementBatchRows[0].quality_score, 100);
+        assert.equal(state.procurementBatchRows[0].metadata.quality_control_mode, 'auto');
+        assert.deepEqual(state.procurementBatchRows[0].metadata.source_tags, ['低价', '备用']);
+        assert.deepEqual(state.sourceRows[0].metadata.source_tags, ['低价', '备用']);
+        assert.equal(payload.procurementWarning, null);
+        assert.deepEqual(
+            state.inventoryRows.map((row) => ({
+                source_batch_id: row.source_batch_id,
+                purchase_unit_cost: row.purchase_unit_cost,
+                purchase_currency: row.purchase_currency,
+                purchase_exchange_rate_to_cny: row.purchase_exchange_rate_to_cny,
+                purchase_unit_cost_cny: row.purchase_unit_cost_cny
+            })),
+            [
+                {
+                    source_batch_id: 'proc_batch_1',
+                    purchase_unit_cost: 2.3456,
+                    purchase_currency: 'USD',
+                    purchase_exchange_rate_to_cny: 7.12,
+                    purchase_unit_cost_cny: 16.7007
+                },
+                {
+                    source_batch_id: 'proc_batch_1',
+                    purchase_unit_cost: 2.3456,
+                    purchase_currency: 'USD',
+                    purchase_exchange_rate_to_cny: 7.12,
+                    purchase_unit_cost_cny: 16.7007
+                }
+            ]
+        );
+        assert.equal(state.auditCalls[0]?.details?.source_batch_id, 'proc_batch_1');
+        assert.equal(state.auditCalls[0]?.details?.source_name, 'Google Workspace 供应商');
+        assert.equal(state.auditCalls[0]?.details?.unit_cost_cny, 16.7007);
+    });
+});
+
+test('shop mutate handler warns when importing a source previously marked disabled', async () => {
+    await withShopMutateHandler({
+        productRows: [{ id: 'prod_1', stock_count: 0 }],
+        skuRows: [
+            {
+                id: 'sku_default_1',
+                product_id: 'prod_1',
+                sku_name: '默认规格',
+                is_default: true,
+                is_active: true,
+                stock_count: 0
+            }
+        ],
+        sourceRows: [
+            {
+                id: 'source_1',
+                site: 'cn',
+                source_name: '停用过的供应商',
+                source_url: 'https://supplier.example.com',
+                metadata: { source_tags: ['旧标签'] }
+            }
+        ],
+        procurementBatchRows: [
+            {
+                id: 'disabled_batch_1',
+                site: 'cn',
+                batch_code: 'DISABLED-001',
+                source_id: 'source_1',
+                quality_status: 'rejected',
+                quality_score: 42,
+                notes: '售后故障多',
+                metadata: { source_disabled_at: '2026-06-05T10:00:00.000Z' },
+                updated_at: '2026-06-05T10:00:00.000Z'
+            }
+        ],
+        inventoryRows: []
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'import_inventory',
+                site: 'cn',
+                productId: 'prod_1',
+                lines: ['source-card-1'],
+                importStatus: 'available',
+                batchId: 'batch_reimport_20260606',
+                procurement: {
+                    sourceName: '停用过的供应商',
+                    sourceUrl: 'https://supplier.example.com',
+                    unitCost: '3',
+                    sourceTags: '新标签'
+                }
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.procurementWarning?.type, 'source_previously_disabled');
+        assert.equal(payload.procurementWarning?.batchId, 'disabled_batch_1');
+        assert.match(payload.procurementWarning?.message, /曾被标记为“停用”/);
+        assert.equal(state.procurementBatchRows.at(-1).batch_code, 'batch_reimport_20260606');
+        assert.equal(state.procurementBatchRows.at(-1).quality_score, 100);
+        assert.deepEqual(state.sourceRows[0].metadata.source_tags, ['旧标签', '新标签']);
+        assert.equal(state.auditCalls[0]?.details?.source_warning_type, 'source_previously_disabled');
+    });
+});
+
+test('shop mutate handler updates procurement batch quality verification', async () => {
+    await withShopMutateHandler({
+        procurementBatchRows: [
+            {
+                id: 'proc_batch_1',
+                site: 'cn',
+                batch_code: 'batch_source_20260606',
+                source_id: 'source_1',
+                quality_status: 'unverified',
+                quality_score: null,
+                notes: '导入备注',
+                metadata: {}
+            }
+        ],
+        sourceRows: [
+            {
+                id: 'source_1',
+                site: 'cn',
+                source_name: 'Google Workspace 供应商',
+                metadata: {}
+            }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'update_procurement_quality',
+                site: 'cn',
+                procurementBatchId: 'proc_batch_1',
+                qualityStatus: 'accepted',
+                qualityScore: 96,
+                sourceTags: '稳定，高复购',
+                notes: '抽测 3 个账号均可登录'
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(state.procurementBatchRows[0].quality_status, 'accepted');
+        assert.equal(state.procurementBatchRows[0].quality_score, 100);
+        assert.equal(state.procurementBatchRows[0].notes, '抽测 3 个账号均可登录');
+        assert.equal(state.procurementBatchRows[0].metadata.quality_control_mode, 'auto');
+        assert.equal(state.procurementBatchRows[0].metadata.quality_manual_status, 'accepted');
+        assert.equal(state.procurementBatchRows[0].metadata.quality_manual_locked_by, null);
+        assert.deepEqual(state.sourceRows[0].metadata.source_tags, ['稳定', '高复购']);
+        assert.equal(payload.procurementBatch?.quality_status, 'accepted');
+        assert.equal(state.auditCalls[0]?.actionType, 'shop.procurement.quality.update');
+        assert.equal(state.auditCalls[0]?.details?.previous_quality_status, 'unverified');
+        assert.equal(state.auditCalls[0]?.details?.next_quality_status, 'accepted');
+        assert.equal(state.auditCalls[0]?.details?.quality_review_mode, 'auto');
+        assert.deepEqual(state.auditCalls[0]?.details?.source_tags, ['稳定', '高复购']);
+    });
+});
+
+test('shop mutate handler marks disabled sources without overriding automatic score', async () => {
+    await withShopMutateHandler({
+        procurementBatchRows: [
+            {
+                id: 'proc_batch_1',
+                site: 'cn',
+                batch_code: 'batch_source_20260606',
+                source_id: 'source_1',
+                quality_status: 'watch',
+                quality_score: 80,
+                notes: '导入备注',
+                metadata: { quality_control_mode: 'manual', quality_manual_locked_by: 'admin_old' }
+            }
+        ],
+        sourceRows: [
+            {
+                id: 'source_1',
+                site: 'cn',
+                source_name: 'Google Workspace 供应商',
+                metadata: { source_tags: ['旧标签'] }
+            }
+        ]
+    }, async ({ handler, state }) => {
+        const res = createMockResponse();
+
+        await handler({
+            method: 'POST',
+            headers: {},
+            body: {
+                action: 'update_procurement_quality',
+                site: 'cn',
+                procurementBatchId: 'proc_batch_1',
+                qualityStatus: 'rejected',
+                qualityScore: 97,
+                sourceTags: '旧标签，售后风险',
+                notes: '售后故障过多'
+            }
+        }, res);
+
+        const payload = res.json();
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(state.procurementBatchRows[0].quality_status, 'rejected');
+        assert.equal(state.procurementBatchRows[0].quality_score, 80);
+        assert.equal(state.procurementBatchRows[0].metadata.quality_control_mode, 'auto');
+        assert.equal(state.procurementBatchRows[0].metadata.quality_manual_status, 'rejected');
+        assert.equal(state.procurementBatchRows[0].metadata.quality_manual_locked_by, null);
+        assert.equal(state.procurementBatchRows[0].metadata.source_disabled_by, 'admin_1');
+        assert.equal(state.procurementBatchRows[0].metadata.source_disabled_reason, '售后故障过多');
+        assert.deepEqual(state.sourceRows[0].metadata.source_tags, ['旧标签', '售后风险']);
+        assert.equal(state.auditCalls[0]?.details?.quality_review_mode, 'auto');
+        assert.equal(state.auditCalls[0]?.details?.next_quality_control_mode, 'auto');
+        assert.equal(state.auditCalls[0]?.details?.marked_source_disabled, true);
     });
 });
 
