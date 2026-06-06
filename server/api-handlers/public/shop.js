@@ -12,6 +12,9 @@ const {
     applyHotCacheResponseHeaders,
     createHotCache
 } = require('./_hot-cache');
+const {
+    safeSyncOrderProfitLedgerByOrderId
+} = require('../admin/shop/_profit-ledger');
 
 let vercelWaitUntil = null;
 try {
@@ -3940,6 +3943,12 @@ function createShopHandlers({
                     });
 
                     await Promise.all([
+                        (orderId && systemSupabase?.from)
+                            ? safeSyncOrderProfitLedgerByOrderId(systemSupabase, orderId, {
+                                userId: user.id,
+                                reason: 'shop_purchase_success'
+                            })
+                            : Promise.resolve(null),
                         (orderId && systemSupabase?.from)
                             ? (async () => {
                                 try {

@@ -32,11 +32,13 @@ function createMockResponse() {
 
 function createQueryBuilder(state, table) {
     const operations = [];
+    let payload = null;
+    let upsertOptions = null;
 
     function finalize(mode) {
-        state.queryCalls.push({ table, operations: [...operations], mode });
+        state.queryCalls.push({ table, operations: [...operations], mode, payload, upsertOptions });
         if (typeof state.resolveQuery === 'function') {
-            const resolved = state.resolveQuery(table, operations, mode);
+            const resolved = state.resolveQuery(table, operations, mode, payload, upsertOptions, state);
             if (resolved !== undefined) {
                 return Promise.resolve(resolved);
             }
@@ -50,6 +52,12 @@ function createQueryBuilder(state, table) {
         select(columns, options) {
             operations.push({ method: 'select', args: [columns, options] });
             return builder;
+        },
+        upsert(nextPayload, options) {
+            payload = nextPayload;
+            upsertOptions = options;
+            operations.push({ method: 'upsert', args: [nextPayload, options] });
+            return finalize('upsert');
         },
         eq(column, value) {
             operations.push({ method: 'eq', args: [column, value] });
@@ -104,7 +112,8 @@ async function withShopOrderDetailHandler(initialState, callback) {
                             from(table) {
                                 return createQueryBuilder(state, table);
                             }
-                        }
+                        },
+                        user: { id: 'admin_1' }
                     };
                 },
                 sendJson(res, status, payload) {
@@ -133,7 +142,21 @@ async function withShopOrderDetailHandler(initialState, callback) {
 
 test('shop order detail handler returns linked inventory, fulfillment, ticket, and risk context', async () => {
     await withShopOrderDetailHandler({
-        resolveQuery(table, operations) {
+        resolveQuery(table, operations, mode, payload, upsertOptions, state) {
+            if (table === 'shop_order_profit_ledger') {
+                if (mode === 'upsert') {
+                    state.profitLedgerUpsertPayload = payload;
+                    return { data: null, error: null };
+                }
+                return {
+                    data: (state.profitLedgerUpsertPayload || []).map((row, index) => ({
+                        id: `ledger_${index + 1}`,
+                        ...row
+                    })),
+                    error: null
+                };
+            }
+
             if (table === 'shop_tickets') {
                 return {
                     data: [
@@ -220,6 +243,15 @@ test('shop order detail handler returns linked inventory, fulfillment, ticket, a
                         discount_code: 'SPRING',
                         item_count: 2,
                         price_paid: 99,
+                        paid_points_spent: 70,
+                        bonus_points_spent: 29,
+                        points_spend_breakdown: {
+                            status: 'exact',
+                            basis: 'points_balance_deduction',
+                            paid_points: 70,
+                            bonus_points: 29,
+                            untracked_points: 0
+                        },
                         total_price: 99,
                         site: 'cn',
                         created_at: '2026-04-03T02:00:00.000Z',
@@ -259,14 +291,18 @@ test('shop order detail handler returns linked inventory, fulfillment, ticket, a
                             content: 'user-a----pass-a',
                             status: 'sold',
                             buyer_id: 'user_1',
-                            sold_at: '2026-04-03T02:00:10.000Z'
+                            sold_at: '2026-04-03T02:00:10.000Z',
+                            source_batch_id: 'batch_1',
+                            purchase_unit_cost_cny: 12.5
                         },
                         {
                             id: 'inv_2',
                             content: 'user-b----pass-b',
                             status: 'sold',
                             buyer_id: 'user_1',
-                            sold_at: '2026-04-03T02:00:12.000Z'
+                            sold_at: '2026-04-03T02:00:12.000Z',
+                            source_batch_id: 'batch_1',
+                            purchase_unit_cost_cny: 13.25
                         }
                     ],
                     error: null
@@ -349,6 +385,39 @@ test('shop order detail handler returns linked inventory, fulfillment, ticket, a
         assert.equal(payload.order?.linkage_source, 'order_items');
         assert.equal(payload.order?.linked_inventory_items?.length, 2);
         assert.equal(payload.order?.resolved_items?.[0]?.content, 'user-a----pass-a');
+        assert.equal(payload.profit_attribution?.basis, 'paid_balance_cash_revenue');
+        assert.equal(payload.profit_attribution?.paid_points_spent, 70);
+        assert.equal(payload.profit_attribution?.bonus_points_spent, 29);
+        assert.equal(payload.profit_attribution?.non_cash_points, 29);
+        assert.equal(payload.profit_attribution?.point_source_traceability?.status, 'balance_split_only');
+        assert.equal(payload.profit_attribution?.point_source_traceability?.label, '仅余额拆分');
+        assert.equal(payload.profit_attribution?.recognized_revenue_cny, 70);
+        assert.equal(payload.profit_attribution?.purchase_cost_cny, 25.75);
+        assert.equal(payload.profit_attribution?.net_profit_cny, 44.25);
+        assert.equal(payload.profit_attribution?.cost_coverage, 'complete');
+        assert.equal(payload.profit_attribution?.profit_ledger_status, 'settled');
+        assert.equal(payload.profit_attribution?.profit_ledger_source, 'persisted');
+        assert.equal(payload.profit_attribution?.profit_ledger_synced, true);
+        assert.equal(
+            payload.profit_attribution?.profit_ledger_entries?.some((entry) => entry.entry_type === 'revenue_points_paid' && entry.amount_cny === 70),
+            true
+        );
+        assert.equal(
+            payload.profit_attribution?.profit_ledger_entries
+                ?.filter((entry) => entry.entry_type === 'inventory_cost')
+                .reduce((sum, entry) => sum + Number(entry.amount_cny || 0), 0),
+            -25.75
+        );
+        assert.equal(
+            payload.profit_attribution?.profit_ledger_entries?.some((entry) => entry.entry_type === 'revenue_points_bonus' && entry.points_amount === 29),
+            true
+        );
+        assert.equal(
+            state.profitLedgerUpsertPayload.some((entry) => entry.entry_type === 'inventory_cost' && entry.cash_value_cny === -12.5),
+            true
+        );
+        assert.equal(state.profitLedgerUpsertPayload.every((entry) => entry.created_by === 'admin_1'), true);
+        assert.equal(payload.order?.profit_attribution?.item_costs?.[0]?.source_batch_id, 'batch_1');
         assert.equal(payload.fulfillment?.task?.id, 'task_1');
         assert.equal(payload.fulfillment?.case?.status, 'claimed');
         assert.equal(payload.tickets?.total, 2);

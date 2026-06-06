@@ -78,4 +78,19 @@ test('product analytics indicator rails inherit semantic chart colors', () => {
         true,
         'admin studio should cache-bust the product matrix index runtime fix'
     );
+    assert.equal(
+        panelLoaders.includes("renderAnalyticsProductMetricCard('净利润'"),
+        true,
+        'product overview should expose net profit as a first-class operating metric'
+    );
+    assert.equal(
+        panelLoaders.includes('成本覆盖 ${formatAnalyticsProductCostCoverage'),
+        true,
+        'product analytics should show cost coverage next to profit metrics'
+    );
+    assert.equal(
+        html.includes('productProfitAudit=20260606_ADMIN_STUDIO_PRODUCT_PROFIT_AUDIT_1'),
+        true,
+        'admin studio should cache-bust product profit audit runtime updates'
+    );
 });

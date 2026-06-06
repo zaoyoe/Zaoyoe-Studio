@@ -6,6 +6,20 @@ const {
 const {
     getPaymentProviderAdapter
 } = require('../../../../api/_lib/payments/provider-adapters');
+const {
+    loadOrderItemsByOrderIds,
+    loadInventoryRecordsByIds,
+    collectLinkedInventoryIds,
+    buildLinkedInventoryItems
+} = require('../shop/_order-linkage');
+const {
+    buildOrderProfitAttribution,
+    isRefundedOrder
+} = require('../shop/_profit');
+const {
+    loadPointLotConsumptionsByOrderIds,
+    summarizePointLotConsumptions
+} = require('../shop/_point-lots');
 
 const EVENT_OK_RESULTS = new Set([
     'processed_paid',
@@ -805,6 +819,101 @@ function buildOpsAlertSummary(jobs) {
             .filter((item) => item.queue_status === 'delivered' && item.delivered_at)
             .map((item) => item.delivered_at)
             .sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] || null
+    };
+}
+
+function formatShopProfitAuditAmount(value) {
+    const amount = roundNumber(value, 2);
+    return `¥${amount.toLocaleString('zh-CN', {
+        minimumFractionDigits: Math.abs(amount % 1) > 0 ? 2 : 0,
+        maximumFractionDigits: 2
+    })}`;
+}
+
+function formatShopProfitAuditMetric(alert = {}) {
+    const metricLabel = String(alert.metric_label || '').trim();
+    if (metricLabel) return metricLabel;
+
+    const amount = normalizeNumber(alert.amount_cny, 0);
+    const points = normalizeNumber(alert.points, 0);
+    if (points > 0) return `${roundNumber(points, 2).toLocaleString('zh-CN')} 积分`;
+    if (amount > 0) return formatShopProfitAuditAmount(amount);
+    return `${roundNumber(alert.order_count || alert.affected_order_count || 0, 0).toLocaleString('zh-CN')} 笔`;
+}
+
+function buildShopProfitOpsAlertItems(shopProfitSummary = {}, site = '') {
+    const alerts = normalizeJsonObject(shopProfitSummary.shop_profit_audit_alerts);
+    const items = Array.isArray(alerts.items) ? alerts.items.filter(Boolean) : [];
+    const nowIso = new Date().toISOString();
+
+    return items
+        .filter((item) => item.action_required)
+        .map((alert) => {
+            const type = String(alert.type || '').trim().toLowerCase() || 'unknown';
+            const orderCount = roundNumber(alert.order_count || alert.affected_order_count || 0, 0);
+            const metric = formatShopProfitAuditMetric(alert);
+            return {
+                type: 'shop_profit_audit',
+                id: `shop-profit-audit:${type}`,
+                provider: 'shop_profit',
+                provider_order_no: String(alert.case_target_id || type).trim() || type,
+                site: String(site || '').trim().toLowerCase() || null,
+                severity: normalizeShopProfitAuditSeverity(alert.severity || alert.tone),
+                title: String(alert.title || '商城利润审计').trim(),
+                message: String(alert.description || '').trim() || '商城净利润审计发现需要处理的风险项。',
+                created_at: nowIso,
+                queue_status: 'pending',
+                channels: ['shop_profit_audit'],
+                remaining_channels: [],
+                attempt_count: 0,
+                max_attempts: 0,
+                next_retry_at: null,
+                delivered_at: null,
+                last_error: null,
+                ops_status: 'open',
+                ops_resolution: `影响 ${orderCount.toLocaleString('zh-CN')} 笔订单 · ${metric}`,
+                ops_last_action_at: null,
+                ops_available_actions: [],
+                action_label: alert.action_label || null,
+                audit_alert_type: type,
+                audit_metric: metric,
+                affected_order_count: orderCount,
+                amount_cny: roundNumber(alert.amount_cny, 4),
+                points: roundNumber(alert.points, 2),
+                sample_orders: Array.isArray(alert.sample_orders) ? alert.sample_orders.filter(Boolean).slice(0, 4) : []
+            };
+        });
+}
+
+function mergeOpsAlertQueueWithShopProfit(opsAlertJobs = [], shopProfitSummary = {}, site = '') {
+    const jobItems = buildOpsAlertQueueItems(opsAlertJobs);
+    const shopProfitItems = buildShopProfitOpsAlertItems(shopProfitSummary, site);
+    const combinedItems = [...shopProfitItems, ...jobItems].sort((left, right) => {
+        const leftStatusPriority = OPS_ALERT_JOB_STATUS_PRIORITY[left.queue_status] ?? 99;
+        const rightStatusPriority = OPS_ALERT_JOB_STATUS_PRIORITY[right.queue_status] ?? 99;
+        if (leftStatusPriority !== rightStatusPriority) {
+            return leftStatusPriority - rightStatusPriority;
+        }
+
+        const severityWeight = { critical: 3, warning: 2, info: 1 };
+        const severityDiff = (severityWeight[right.severity] || 0) - (severityWeight[left.severity] || 0);
+        if (severityDiff !== 0) return severityDiff;
+
+        return new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime();
+    });
+
+    const jobSummary = buildOpsAlertSummary(opsAlertJobs);
+    return {
+        summary: {
+            ...jobSummary,
+            total: jobSummary.total + shopProfitItems.length,
+            pending: jobSummary.pending + shopProfitItems.length,
+            actionable_count: jobSummary.actionable_count + shopProfitItems.length,
+            shop_profit_audit: shopProfitItems.length,
+            shop_profit_audit_critical: shopProfitItems.filter((item) => item.severity === 'critical').length,
+            shop_profit_audit_warning: shopProfitItems.filter((item) => item.severity === 'warning').length
+        },
+        items: combinedItems
     };
 }
 
@@ -1915,12 +2024,17 @@ function buildExceptionTopics({ orders, events, queryAttempts, sessions }) {
 async function fetchShopOrders(client, sinceIso, untilIso, site) {
     const variants = [
         {
-            select: 'id, user_id, price_paid, snapshot_product_name, refund_status, created_at, site',
+            select: 'id, user_id, product_id, inventory_id, sku_id, price_paid, paid_points_spent, bonus_points_spent, points_spend_breakdown, total_price, discount_amount, discount_refund_amount, snapshot_product_name, refund_status, created_at, site',
             hasSite: true
         },
         {
-            select: 'id, user_id, price_paid, snapshot_product_name, refund_status, created_at',
+            select: 'id, user_id, product_id, inventory_id, sku_id, price_paid, paid_points_spent, bonus_points_spent, points_spend_breakdown, total_price, discount_amount, discount_refund_amount, snapshot_product_name, refund_status, created_at',
             hasSite: false
+        },
+        {
+            select: 'id, user_id, price_paid, snapshot_product_name, refund_status, created_at',
+            hasSite: false,
+            legacy: true
         }
     ];
 
@@ -2065,6 +2179,55 @@ async function fetchPointsBalances(client, site) {
     }
 
     return [];
+}
+
+async function fetchShopProfitLedgerRows(client, sinceIso, untilIso, site) {
+    if (!client) return [];
+
+    try {
+        const rows = await fetchPagedRows(() => {
+            let query = client
+                .from('shop_order_profit_ledger')
+                .select('id, site, order_id, order_item_id, inventory_id, source_batch_id, dedupe_key, entry_type, entry_group, direction, amount, currency, cash_value_cny, points_amount, status, confidence, occurred_at, settled_at, snapshot')
+                .gte('occurred_at', sinceIso)
+                .order('occurred_at', { ascending: false });
+
+            if (untilIso) {
+                query = query.lte('occurred_at', untilIso);
+            }
+            if (site) {
+                query = query.eq('site', site);
+            }
+
+            return query;
+        }, SUMMARY_PAGE_SIZES.heavy, 50);
+
+        return rows.map((row) => ({
+            ...row,
+            site: row.site || 'cn'
+        }));
+    } catch (error) {
+        const text = [
+            error?.message,
+            error?.details,
+            error?.hint,
+            error?.code
+        ].filter(Boolean).join(' ').toLowerCase();
+        if (
+            text.includes('shop_order_profit_ledger')
+            && (
+                text.includes('does not exist')
+                || text.includes('undefined table')
+                || text.includes('could not find')
+                || text.includes('schema cache')
+                || text.includes('42p01')
+                || text.includes('pgrst205')
+            )
+        ) {
+            return [];
+        }
+        throw error;
+    }
 }
 
 function getSessionSortValue(session) {
@@ -2264,8 +2427,8 @@ function buildOverview(orders) {
 
 function buildFinanceSummary(paymentOrders, shopOrders, ledgerRows, balanceRows) {
     const successfulPayments = (paymentOrders || []).filter(isSuccessOrder);
-    const nonRefundedShopOrders = (shopOrders || []).filter((order) => String(order.refund_status || 'none') !== 'refunded');
-    const refundedShopOrders = (shopOrders || []).filter((order) => String(order.refund_status || 'none') === 'refunded');
+    const nonRefundedShopOrders = (shopOrders || []).filter((order) => !isRefundedOrder(order));
+    const refundedShopOrders = (shopOrders || []).filter((order) => isRefundedOrder(order));
 
     const pointsInflow = roundNumber((ledgerRows || [])
         .filter((entry) => normalizeNumber(entry.amount, 0) > 0)
@@ -2289,6 +2452,2342 @@ function buildFinanceSummary(paymentOrders, shopOrders, ledgerRows, balanceRows)
         paid_balance: roundNumber((balanceRows || []).reduce((sum, row) => sum + normalizeNumber(row.paid_balance, 0), 0), 1),
         bonus_balance: roundNumber((balanceRows || []).reduce((sum, row) => sum + normalizeNumber(row.bonus_balance, 0), 0), 1)
     };
+}
+
+function createEmptyShopProfitAdjustmentSummary() {
+    return {
+        status: 'none',
+        item_count: 0,
+        total_amount_cny: 0,
+        total_points: 0,
+        coupon_discount_cny: 0,
+        bonus_points_excluded_cny: 0,
+        untracked_points_estimated_cny: 0,
+        refunded_revenue_reversal_cny: 0,
+        items: []
+    };
+}
+
+function createEmptyShopProfitAdjustmentBreakdown() {
+    return {
+        status: 'ready',
+        item_count: 0,
+        action_required_count: 0,
+        tracked_count: 0,
+        excluded_count: 0,
+        review_count: 0,
+        extension_count: 0,
+        total_amount_cny: 0,
+        total_points: 0,
+        items: []
+    };
+}
+
+function createEmptyShopProfitLedgerPreview() {
+    return {
+        status: 'none',
+        entry_count: 0,
+        order_count: 0,
+        net_amount_cny: 0,
+        revenue_amount_cny: 0,
+        cost_amount_cny: 0,
+        reversal_amount_cny: 0,
+        informational_points: 0,
+        incomplete_entry_count: 0,
+        estimated_entry_count: 0,
+        entries_by_type: [],
+        sample_entries: []
+    };
+}
+
+function createEmptyShopProfitPointSourceCoverage() {
+    return {
+        status: 'none',
+        tone: 'neutral',
+        label: '暂无订单',
+        order_count: 0,
+        source_lot_order_count: 0,
+        exact_order_count: 0,
+        partial_order_count: 0,
+        balance_split_order_count: 0,
+        legacy_untracked_order_count: 0,
+        action_required_order_count: 0,
+        expected_points: 0,
+        source_lot_points: 0,
+        cash_backed_points: 0,
+        non_cash_points: 0,
+        unknown_points: 0,
+        untracked_points: 0,
+        migration_points: 0,
+        migration_order_count: 0,
+        coverage_rate: 0,
+        exact_order_rate: 0,
+        source_type_count: 0,
+        source_types: []
+    };
+}
+
+function createEmptyShopProfitAuditAlerts() {
+    return {
+        status: 'ready',
+        alert_count: 0,
+        critical_count: 0,
+        warning_count: 0,
+        info_count: 0,
+        action_required_count: 0,
+        items: []
+    };
+}
+
+function createEmptyShopProfitReconciliationClosure() {
+    return {
+        status: 'ready',
+        item_count: 0,
+        ready_count: 0,
+        warning_count: 0,
+        critical_count: 0,
+        action_required_count: 0,
+        items: []
+    };
+}
+
+function createEmptyShopSourceProcurementRecommendations() {
+    return {
+        status: 'ready',
+        source_count: 0,
+        action_required_count: 0,
+        pause_count: 0,
+        complete_cost_count: 0,
+        reorder_count: 0,
+        observe_count: 0,
+        items: []
+    };
+}
+
+function createEmptyShopProfitReadinessSummary() {
+    return {
+        status: 'ready',
+        label: '可结算',
+        score: 100,
+        blocker_count: 0,
+        warning_count: 0,
+        review_count: 0,
+        action_required_count: 0,
+        settlement_ready: true,
+        items: []
+    };
+}
+
+function createEmptyShopProfitSummary() {
+    return {
+        basis: 'points_to_cny_parity',
+        currency: 'CNY',
+        order_count: 0,
+        refunded_order_count: 0,
+        gross_points: 0,
+        revenue_points: 0,
+        paid_points_spent: 0,
+        bonus_points_spent: 0,
+        untracked_revenue_points: 0,
+        non_cash_points: 0,
+        discount_points: 0,
+        refunded_points: 0,
+        recognized_revenue_cny: 0,
+        purchase_cost_cny: 0,
+        recognized_cost_cny: 0,
+        net_profit_cny: 0,
+        margin_rate: null,
+        inventory_item_count: 0,
+        costed_item_count: 0,
+        missing_cost_item_count: 0,
+        cost_coverage_rate: 0,
+        cost_coverage_breakdown: {
+            complete: 0,
+            partial: 0,
+            no_cost: 0,
+            no_inventory: 0
+        },
+        reconciliation_status: 'ready',
+        reconciliation_issue_count: 0,
+        reconciliation_affected_order_count: 0,
+        reconciliation_issues: [],
+        order_risk_list: {
+            status: 'ready',
+            order_count: 0,
+            critical_count: 0,
+            warning_count: 0,
+            review_count: 0,
+            items: []
+        },
+        dimension_breakdown: {
+            products: [],
+            skus: [],
+            source_batches: [],
+            sources: []
+        },
+        profit_adjustments: createEmptyShopProfitAdjustmentSummary(),
+        profit_adjustment_breakdown: createEmptyShopProfitAdjustmentBreakdown(),
+        profit_ledger_preview: createEmptyShopProfitLedgerPreview(),
+        point_source_coverage: createEmptyShopProfitPointSourceCoverage(),
+        shop_profit_audit_alerts: createEmptyShopProfitAuditAlerts(),
+        profit_reconciliation_closure: createEmptyShopProfitReconciliationClosure(),
+        source_procurement_recommendations: createEmptyShopSourceProcurementRecommendations(),
+        profit_readiness: createEmptyShopProfitReadinessSummary(),
+        notes: [
+            '优先按订单付费积分确认现金收入；历史未拆分订单仍按 1 积分≈1 元估算。'
+        ]
+    };
+}
+
+const SHOP_PROFIT_RECONCILIATION_ISSUE_META = Object.freeze({
+    negative_profit: Object.freeze({
+        tone: 'critical',
+        title: '负利润订单',
+        description: '确认收入低于采购成本，需要核对售价、成本、优惠和补发记录。'
+    }),
+    missing_cost: Object.freeze({
+        tone: 'warning',
+        title: '采购成本未闭环',
+        description: '关联库存存在缺失采购成本，当前净利润可能被高估。'
+    }),
+    no_inventory: Object.freeze({
+        tone: 'warning',
+        title: '订单未关联库存',
+        description: '订单无法追溯到具体库存，采购成本和货源表现无法归因。'
+    }),
+    untracked_points: Object.freeze({
+        tone: 'warning',
+        title: '积分来源未拆分',
+        description: '历史订单缺少付费/赠送积分来源拆分，现金收入仍按旧口径估算。'
+    }),
+    bonus_points: Object.freeze({
+        tone: 'info',
+        title: '非现金积分消耗',
+        description: '奖励、赠送或活动积分已从现金收入确认中剔除，需纳入营销成本口径。'
+    }),
+    refunded: Object.freeze({
+        tone: 'info',
+        title: '退款订单冲销',
+        description: '退款订单不确认本单收入和成本，需与库存状态、补发和退款流水一起核对。'
+    })
+});
+
+function getShopProfitIssueOrderLabel(order = {}) {
+    const metadata = normalizeJsonObject(order?.metadata);
+    return String(
+        order?.order_no
+        || order?.order_number
+        || order?.order_id
+        || metadata.order_no
+        || metadata.provider_order_no
+        || order?.id
+        || ''
+    ).trim() || '未知订单';
+}
+
+function getShopProfitOrderRiskStatusLabel({ severity = '', missingCostItemCount = 0, coverage = '', traceability = {}, untrackedPoints = 0, adjustments = {} } = {}) {
+    const normalizedSeverity = String(severity || '').trim().toLowerCase();
+    const normalizedCoverage = String(coverage || '').trim().toLowerCase();
+    if (normalizedSeverity === 'critical') {
+        return '负利润待复核';
+    }
+    if (normalizeNumber(missingCostItemCount, 0) > 0) {
+        return '采购成本待补齐';
+    }
+    if (normalizedCoverage === 'no_inventory') {
+        return '库存关联待补齐';
+    }
+    if (Boolean(traceability?.action_required) || normalizeNumber(untrackedPoints || traceability?.untracked_points, 0) > 0) {
+        return '积分来源待补齐';
+    }
+    if (adjustments?.status === 'review_required') {
+        return '利润调整待复核';
+    }
+    if (normalizedSeverity === 'warning') {
+        return '归因信息待补齐';
+    }
+    if (normalizedSeverity === 'review') {
+        return '订单利润待复核';
+    }
+    return '正常';
+}
+
+function buildShopProfitIssueSample(row = {}) {
+    const order = row?.order || {};
+    const attribution = row?.attribution || {};
+    const traceability = normalizeJsonObject(attribution.point_source_traceability);
+
+    return {
+        order_id: String(order?.id || '').trim() || null,
+        order_no: getShopProfitIssueOrderLabel(order),
+        product_name: String(order?.snapshot_product_name || order?.product_name || '').trim() || null,
+        created_at: order?.created_at || null,
+        net_profit_cny: roundNumber(attribution.net_profit_cny, 4),
+        recognized_revenue_cny: roundNumber(attribution.recognized_revenue_cny, 4),
+        recognized_cost_cny: roundNumber(attribution.recognized_cost_cny, 4),
+        missing_cost_item_count: roundNumber(attribution.missing_cost_item_count, 0),
+        cost_coverage: String(attribution.cost_coverage || '').trim().toLowerCase() || null,
+        untracked_revenue_points: roundNumber(attribution.untracked_revenue_points, 2),
+        bonus_points_spent: roundNumber(attribution.bonus_points_spent, 2),
+        point_source_traceability_status: String(traceability.status || '').trim() || null,
+        point_source_traceability_label: String(traceability.label || '').trim() || null,
+        point_source_traceability_tone: String(traceability.tone || '').trim() || null,
+        point_source_traceability_action_required: Boolean(traceability.action_required),
+        refunded: Boolean(attribution.refunded)
+    };
+}
+
+function buildShopProfitReconciliationIssues(shopProfitRows = []) {
+    const buckets = new Map(Object.entries(SHOP_PROFIT_RECONCILIATION_ISSUE_META).map(([type, meta]) => [type, {
+        type,
+        ...meta,
+        count: 0,
+        order_count: 0,
+        amount_cny: 0,
+        points: 0,
+        sample_orders: []
+    }]));
+    const affectedOrderIds = new Set();
+    const sampleLimit = 4;
+
+    function addIssue(type, row, metrics = {}) {
+        const bucket = buckets.get(type);
+        if (!bucket) return;
+
+        bucket.count += Math.max(0, normalizeNumber(metrics.count, 1));
+        bucket.order_count += 1;
+        bucket.amount_cny += Math.max(0, normalizeNumber(metrics.amount_cny, 0));
+        bucket.points += Math.max(0, normalizeNumber(metrics.points, 0));
+
+        const orderId = String(row?.order?.id || '').trim();
+        if (orderId) {
+            affectedOrderIds.add(orderId);
+        }
+
+        if (bucket.sample_orders.length < sampleLimit) {
+            bucket.sample_orders.push(buildShopProfitIssueSample(row));
+        }
+    }
+
+    (Array.isArray(shopProfitRows) ? shopProfitRows : []).forEach((row) => {
+        const attribution = row?.attribution || null;
+        if (!attribution) return;
+
+        const revenueCny = normalizeNumber(attribution.recognized_revenue_cny, 0);
+        const netProfitCny = normalizeNumber(attribution.net_profit_cny, 0);
+        const missingCostItemCount = normalizeNumber(attribution.missing_cost_item_count, 0);
+        const coverage = String(attribution.cost_coverage || '').trim().toLowerCase();
+        const untrackedPoints = normalizeNumber(attribution.untracked_revenue_points, 0);
+        const bonusPoints = normalizeNumber(attribution.bonus_points_spent, 0);
+        const refundedPoints = normalizeNumber(attribution.refunded_points, 0);
+
+        if (!attribution.refunded && netProfitCny < 0) {
+            addIssue('negative_profit', row, {
+                count: 1,
+                amount_cny: Math.abs(netProfitCny)
+            });
+        }
+        if (missingCostItemCount > 0) {
+            addIssue('missing_cost', row, {
+                count: missingCostItemCount,
+                amount_cny: revenueCny
+            });
+        }
+        if (coverage === 'no_inventory') {
+            addIssue('no_inventory', row, {
+                count: 1,
+                amount_cny: revenueCny
+            });
+        }
+        if (untrackedPoints > 0) {
+            addIssue('untracked_points', row, {
+                count: 1,
+                points: untrackedPoints
+            });
+        }
+        if (bonusPoints > 0) {
+            addIssue('bonus_points', row, {
+                count: 1,
+                points: bonusPoints
+            });
+        }
+        if (attribution.refunded) {
+            addIssue('refunded', row, {
+                count: 1,
+                points: refundedPoints
+            });
+        }
+    });
+
+    const order = ['negative_profit', 'missing_cost', 'no_inventory', 'untracked_points', 'bonus_points', 'refunded'];
+    const issues = order
+        .map((type) => buckets.get(type))
+        .filter((issue) => issue && issue.order_count > 0)
+        .map((issue) => ({
+            ...issue,
+            count: roundNumber(issue.count, 2),
+            amount_cny: roundNumber(issue.amount_cny, 4),
+            points: roundNumber(issue.points, 2)
+        }));
+    const hasCritical = issues.some((issue) => issue.tone === 'critical');
+    const hasWarning = issues.some((issue) => issue.tone === 'warning');
+
+    return {
+        status: hasCritical ? 'critical' : (hasWarning ? 'warning' : (issues.length ? 'review' : 'ready')),
+        issue_count: issues.length,
+        affected_order_count: affectedOrderIds.size,
+        issues
+    };
+}
+
+function createShopProfitOrderRiskItem(row = {}) {
+    const order = row?.order || {};
+    const attribution = row?.attribution || {};
+    const traceability = normalizeJsonObject(attribution.point_source_traceability);
+    const adjustments = normalizeJsonObject(attribution.profit_adjustments);
+    const orderId = String(order?.id || '').trim();
+    const netProfitCny = normalizeNumber(attribution.net_profit_cny, 0);
+    const missingCostItemCount = normalizeNumber(attribution.missing_cost_item_count, 0);
+    const coverage = String(attribution.cost_coverage || '').trim().toLowerCase();
+    const untrackedPoints = normalizeNumber(attribution.untracked_revenue_points, 0);
+    const bonusPoints = normalizeNumber(attribution.bonus_points_spent, 0);
+    const refunded = Boolean(attribution.refunded);
+    const reasons = [];
+    let severity = 'ready';
+    let priority = 0;
+
+    function addReason(type, label, tone = 'warning', weight = 10) {
+        reasons.push({ type, label, tone });
+        if (tone === 'critical') {
+            severity = 'critical';
+        } else if (severity !== 'critical' && tone === 'warning') {
+            severity = 'warning';
+        } else if (severity === 'ready') {
+            severity = 'review';
+        }
+        priority = Math.max(priority, weight);
+    }
+
+    if (!refunded && netProfitCny < 0) {
+        addReason('negative_profit', '负利润', 'critical', 100);
+    }
+    if (missingCostItemCount > 0) {
+        addReason('missing_cost', `缺成本 ${roundNumber(missingCostItemCount, 0)} 件`, 'warning', 90);
+    }
+    if (coverage === 'no_inventory') {
+        addReason('no_inventory', '未关联库存', 'warning', 85);
+    }
+    if (Boolean(traceability.action_required) || untrackedPoints > 0) {
+        addReason('point_source_gap', `积分来源需复核 ${roundNumber(untrackedPoints || traceability.untracked_points, 2).toLocaleString('zh-CN')}`, 'warning', 80);
+    }
+    if (adjustments.status === 'review_required') {
+        addReason('adjustment_review', '利润调整需复核', 'warning', 70);
+    }
+    if (bonusPoints > 0) {
+        addReason('non_cash_points', `非现金积分 ${roundNumber(bonusPoints, 2).toLocaleString('zh-CN')}`, 'review', 45);
+    }
+    if (refunded) {
+        addReason('refunded', '退款冲销', 'review', 40);
+    }
+
+    if (!reasons.length || !orderId) {
+        return null;
+    }
+
+    const actionLabel = severity === 'critical'
+        ? '优先核对售价、采购成本和补发记录'
+        : (missingCostItemCount > 0 || coverage === 'no_inventory'
+            ? '补齐库存采购成本或订单库存关联'
+            : (untrackedPoints > 0 || traceability.action_required
+                ? '补齐积分来源批次消耗明细'
+                : '复核优惠、非现金积分或退款调整'));
+
+    return {
+        order_id: orderId,
+        order_no: getShopProfitIssueOrderLabel(order),
+        product_name: String(order?.snapshot_product_name || order?.product_name || '').trim() || null,
+        created_at: order?.created_at || null,
+        severity,
+        tone: severity,
+        priority,
+        status_label: getShopProfitOrderRiskStatusLabel({
+            severity,
+            missingCostItemCount,
+            coverage,
+            traceability,
+            untrackedPoints,
+            adjustments
+        }),
+        reasons,
+        action_label: actionLabel,
+        recognized_revenue_cny: roundNumber(attribution.recognized_revenue_cny, 4),
+        recognized_cost_cny: roundNumber(attribution.recognized_cost_cny, 4),
+        net_profit_cny: roundNumber(netProfitCny, 4),
+        missing_cost_item_count: roundNumber(missingCostItemCount, 0),
+        cost_coverage: coverage || null,
+        paid_points_spent: roundNumber(attribution.paid_points_spent, 2),
+        bonus_points_spent: roundNumber(bonusPoints, 2),
+        untracked_revenue_points: roundNumber(untrackedPoints, 2),
+        point_source_traceability_status: String(traceability.status || '').trim() || null,
+        point_source_traceability_label: String(traceability.label || '').trim() || null,
+        refunded
+    };
+}
+
+function buildShopProfitOrderRiskList(shopProfitRows = []) {
+    const items = (Array.isArray(shopProfitRows) ? shopProfitRows : [])
+        .map(createShopProfitOrderRiskItem)
+        .filter(Boolean)
+        .sort((left, right) => (
+            Number(right.priority || 0) - Number(left.priority || 0)
+            || ({ critical: 3, warning: 2, review: 1, ready: 0 }[right.severity] || 0) - ({ critical: 3, warning: 2, review: 1, ready: 0 }[left.severity] || 0)
+            || Math.abs(Number(right.net_profit_cny || 0)) - Math.abs(Number(left.net_profit_cny || 0))
+            || new Date(right.created_at || 0).getTime() - new Date(left.created_at || 0).getTime()
+        ));
+
+    return {
+        status: items.some((item) => item.severity === 'critical')
+            ? 'critical'
+            : (items.some((item) => item.severity === 'warning') ? 'warning' : (items.length ? 'review' : 'ready')),
+        order_count: items.length,
+        critical_count: items.filter((item) => item.severity === 'critical').length,
+        warning_count: items.filter((item) => item.severity === 'warning').length,
+        review_count: items.filter((item) => item.severity === 'review').length,
+        items: items.slice(0, 12)
+    };
+}
+
+async function loadShopProcurementBatchesByIds(client, batchIds = []) {
+    const ids = [...new Set((Array.isArray(batchIds) ? batchIds : [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean))];
+
+    if (!client || !ids.length) {
+        return new Map();
+    }
+
+    try {
+        const rows = await fetchPagedRows(() => client
+            .from('shop_procurement_batches')
+            .select('id, batch_code, source_id, unit_cost_cny, total_cost_cny, quality_status, quality_score, cost_status')
+            .in('id', ids), SUMMARY_PAGE_SIZES.default, 10);
+
+        return new Map((Array.isArray(rows) ? rows : []).map((row) => [String(row?.id || '').trim(), row]));
+    } catch (error) {
+        if (isMissingColumnError(error) || String(error?.code || '') === '42P01' || String(error?.code || '').toUpperCase() === 'PGRST205') {
+            return new Map();
+        }
+        throw error;
+    }
+}
+
+async function loadShopInventorySourcesByIds(client, sourceIds = []) {
+    const ids = [...new Set((Array.isArray(sourceIds) ? sourceIds : [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean))];
+
+    if (!client || !ids.length) {
+        return new Map();
+    }
+
+    try {
+        const rows = await fetchPagedRows(() => client
+            .from('shop_inventory_sources')
+            .select('id, source_name, source_url, platform, risk_tier, quality_grade')
+            .in('id', ids), SUMMARY_PAGE_SIZES.default, 10);
+
+        return new Map((Array.isArray(rows) ? rows : []).map((row) => [String(row?.id || '').trim(), row]));
+    } catch (error) {
+        if (isMissingColumnError(error) || String(error?.code || '') === '42P01' || String(error?.code || '').toUpperCase() === 'PGRST205') {
+            return new Map();
+        }
+        throw error;
+    }
+}
+
+function enrichShopProfitRowsWithProcurementSources(rows = [], batchesById = new Map(), sourcesById = new Map()) {
+    return (Array.isArray(rows) ? rows : []).map((row) => {
+        const attribution = row?.attribution || {};
+        const itemCosts = Array.isArray(attribution.item_costs) ? attribution.item_costs : [];
+        const enrichedItemCosts = itemCosts.map((item) => {
+            const batchId = String(item?.source_batch_id || '').trim();
+            const batch = batchId ? batchesById.get(batchId) || null : null;
+            const sourceId = String(batch?.source_id || '').trim();
+            const source = sourceId ? sourcesById.get(sourceId) || null : null;
+            return {
+                ...item,
+                source_id: sourceId || null,
+                source_name: source?.source_name || null,
+                source_platform: source?.platform || null,
+                source_risk_tier: source?.risk_tier || null,
+                source_quality_grade: source?.quality_grade || null,
+                procurement_batch_code: batch?.batch_code || null,
+                procurement_quality_status: batch?.quality_status || null,
+                procurement_quality_score: batch?.quality_score ?? null,
+                procurement_cost_status: batch?.cost_status || null
+            };
+        });
+
+        return {
+            ...row,
+            attribution: {
+                ...attribution,
+                item_costs: enrichedItemCosts
+            }
+        };
+    });
+}
+
+function normalizeShopProfitDimensionKey(value, fallback = 'unknown') {
+    const text = String(value || '').trim();
+    return (text || fallback).slice(0, 180).toLowerCase();
+}
+
+function getShopProfitSkuDimensionLabel(primary = {}, fallback = {}) {
+    const skuName = String(primary?.sku_name || primary?.skuName || fallback?.sku_name || fallback?.skuName || '').trim();
+    const skuCode = String(primary?.sku_code || primary?.skuCode || fallback?.sku_code || fallback?.skuCode || '').trim();
+
+    if (skuName && skuCode && !skuName.toLowerCase().includes(skuCode.toLowerCase())) {
+        return `${skuName} (${skuCode})`;
+    }
+    return skuName || (skuCode ? `规格 ${skuCode}` : '未记录规格');
+}
+
+function createShopProfitDimensionAccumulator(type, key, label) {
+    return {
+        type,
+        key,
+        label,
+        order_count: 0,
+        refunded_order_count: 0,
+        negative_profit_order_count: 0,
+        missing_cost_order_count: 0,
+        no_inventory_order_count: 0,
+        inventory_item_count: 0,
+        costed_item_count: 0,
+        missing_cost_item_count: 0,
+        recognized_revenue_cny: 0,
+        recognized_cost_cny: 0,
+        net_profit_cny: 0,
+        bonus_points_spent: 0,
+        untracked_revenue_points: 0,
+        sample_orders: [],
+        _orderIds: new Set(),
+        _refundedOrderIds: new Set(),
+        _negativeOrderIds: new Set(),
+        _missingCostOrderIds: new Set(),
+        _noInventoryOrderIds: new Set()
+    };
+}
+
+function addShopProfitDimensionContribution(map, identity, contribution) {
+    const normalizedKey = normalizeShopProfitDimensionKey(identity?.key, 'unknown');
+    if (!map.has(normalizedKey)) {
+        map.set(normalizedKey, {
+            key: normalizedKey,
+            label: String(identity?.label || '').trim() || '未命名',
+            recognized_revenue_cny: 0,
+            recognized_cost_cny: 0,
+            bonus_points_spent: 0,
+            untracked_revenue_points: 0,
+            inventory_item_count: 0,
+            costed_item_count: 0,
+            missing_cost_item_count: 0,
+            no_inventory: false
+        });
+    }
+
+    const row = map.get(normalizedKey);
+    if (Object.prototype.hasOwnProperty.call(identity || {}, 'source_id')) {
+        row.source_id = identity.source_id || row.source_id || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(identity || {}, 'source_name')) {
+        row.source_name = identity.source_name || row.source_name || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(identity || {}, 'source_platform')) {
+        row.source_platform = identity.source_platform || row.source_platform || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(identity || {}, 'source_risk_tier')) {
+        row.source_risk_tier = identity.source_risk_tier || row.source_risk_tier || null;
+    }
+    if (Object.prototype.hasOwnProperty.call(identity || {}, 'source_quality_grade')) {
+        row.source_quality_grade = identity.source_quality_grade || row.source_quality_grade || null;
+    }
+    row.recognized_revenue_cny += normalizeNumber(contribution.recognized_revenue_cny, 0);
+    row.recognized_cost_cny += normalizeNumber(contribution.recognized_cost_cny, 0);
+    row.bonus_points_spent += normalizeNumber(contribution.bonus_points_spent, 0);
+    row.untracked_revenue_points += normalizeNumber(contribution.untracked_revenue_points, 0);
+    row.inventory_item_count += normalizeNumber(contribution.inventory_item_count, 0);
+    row.costed_item_count += normalizeNumber(contribution.costed_item_count, 0);
+    row.missing_cost_item_count += normalizeNumber(contribution.missing_cost_item_count, 0);
+    row.no_inventory = row.no_inventory || Boolean(contribution.no_inventory);
+}
+
+function buildShopProfitRowDimensionContributions(row = {}) {
+    const order = row?.order || {};
+    const attribution = row?.attribution || {};
+    const itemCosts = Array.isArray(attribution.item_costs) ? attribution.item_costs.filter(Boolean) : [];
+    const productMap = new Map();
+    const skuMap = new Map();
+    const sourceBatchMap = new Map();
+    const sourceMap = new Map();
+    const recognizedRevenueCny = normalizeNumber(attribution.recognized_revenue_cny, 0);
+    const bonusPoints = normalizeNumber(attribution.bonus_points_spent, 0);
+    const untrackedPoints = normalizeNumber(attribution.untracked_revenue_points, 0);
+
+    if (!itemCosts.length) {
+        const productLabel = String(order?.snapshot_product_name || order?.product_name || '').trim() || '未命名商品';
+        const contribution = {
+            recognized_revenue_cny: recognizedRevenueCny,
+            recognized_cost_cny: 0,
+            bonus_points_spent: bonusPoints,
+            untracked_revenue_points: untrackedPoints,
+            inventory_item_count: 0,
+            costed_item_count: 0,
+            missing_cost_item_count: 0,
+            no_inventory: true
+        };
+        const skuId = String(order?.sku_id || '').trim();
+        const skuLabel = getShopProfitSkuDimensionLabel(order);
+        addShopProfitDimensionContribution(productMap, { key: productLabel, label: productLabel }, contribution);
+        addShopProfitDimensionContribution(skuMap, {
+            key: skuId || `unlinked:${productLabel}`,
+            label: skuId ? skuLabel : '未记录规格'
+        }, contribution);
+        addShopProfitDimensionContribution(sourceBatchMap, { key: 'unlinked_inventory', label: '未关联库存' }, contribution);
+        addShopProfitDimensionContribution(sourceMap, { key: 'unlinked_inventory', label: '未归因货源' }, contribution);
+        return {
+            products: [...productMap.values()],
+            skus: [...skuMap.values()],
+            source_batches: [...sourceBatchMap.values()],
+            sources: [...sourceMap.values()]
+        };
+    }
+
+    const itemRevenuePoints = itemCosts.map((item) => Math.max(0, normalizeNumber(item.item_revenue_points, 0)));
+    const totalItemRevenuePoints = itemRevenuePoints.reduce((sum, value) => sum + value, 0);
+    const fallbackShare = itemCosts.length ? 1 / itemCosts.length : 0;
+
+    itemCosts.forEach((item, index) => {
+        const share = totalItemRevenuePoints > 0
+            ? itemRevenuePoints[index] / totalItemRevenuePoints
+            : fallbackShare;
+        const costCny = item.cost_status === 'costed'
+            ? normalizeNumber(item.purchase_unit_cost_cny, 0)
+            : 0;
+        const productLabel = String(item.product_name || order?.snapshot_product_name || '').trim() || '未命名商品';
+        const skuId = String(item.sku_id || order?.sku_id || '').trim();
+        const skuLabel = getShopProfitSkuDimensionLabel(item, order);
+        const sourceBatchId = String(item.source_batch_id || '').trim();
+        const contribution = {
+            recognized_revenue_cny: recognizedRevenueCny * share,
+            recognized_cost_cny: attribution.refunded ? 0 : costCny,
+            bonus_points_spent: bonusPoints * share,
+            untracked_revenue_points: untrackedPoints * share,
+            inventory_item_count: 1,
+            costed_item_count: item.cost_status === 'costed' ? 1 : 0,
+            missing_cost_item_count: item.cost_status === 'costed' ? 0 : 1,
+            no_inventory: false
+        };
+
+        addShopProfitDimensionContribution(productMap, { key: productLabel, label: productLabel }, contribution);
+        addShopProfitDimensionContribution(skuMap, {
+            key: skuId || `unattributed_sku:${productLabel}`,
+            label: skuId ? skuLabel : '未记录规格'
+        }, contribution);
+        addShopProfitDimensionContribution(sourceBatchMap, {
+            key: sourceBatchId || 'unattributed_batch',
+            label: sourceBatchId ? `批次 ${sourceBatchId}` : '未记录批次'
+        }, contribution);
+        const sourceId = String(item.source_id || '').trim();
+        const sourceName = String(item.source_name || '').trim();
+        const sourceLabel = sourceName || (sourceId ? `货源 ${sourceId}` : '未归因货源');
+        addShopProfitDimensionContribution(sourceMap, {
+            key: sourceId || sourceLabel,
+            label: sourceLabel,
+            source_id: sourceId || null,
+            source_name: sourceName || null,
+            source_platform: item.source_platform || null,
+            source_risk_tier: item.source_risk_tier || null,
+            source_quality_grade: item.source_quality_grade || null
+        }, contribution);
+    });
+
+    return {
+        products: [...productMap.values()],
+        skus: [...skuMap.values()],
+        source_batches: [...sourceBatchMap.values()],
+        sources: [...sourceMap.values()]
+    };
+}
+
+function buildShopProfitDimensionSample(row = {}, contribution = {}) {
+    const order = row?.order || {};
+    const netProfitCny = roundNumber(
+        normalizeNumber(contribution.recognized_revenue_cny, 0) - normalizeNumber(contribution.recognized_cost_cny, 0),
+        4
+    );
+
+    return {
+        order_id: String(order?.id || '').trim() || null,
+        order_no: getShopProfitIssueOrderLabel(order),
+        product_name: String(order?.snapshot_product_name || order?.product_name || contribution.label || '').trim() || null,
+        created_at: order?.created_at || null,
+        recognized_revenue_cny: roundNumber(contribution.recognized_revenue_cny, 4),
+        recognized_cost_cny: roundNumber(contribution.recognized_cost_cny, 4),
+        net_profit_cny: netProfitCny,
+        missing_cost_item_count: roundNumber(contribution.missing_cost_item_count, 0),
+        no_inventory: Boolean(contribution.no_inventory)
+    };
+}
+
+function applyShopProfitDimensionContribution(bucket, row = {}, contribution = {}) {
+    const attribution = row?.attribution || {};
+    const orderId = String(row?.order?.id || '').trim() || getShopProfitIssueOrderLabel(row?.order || {});
+    const netProfitCny = normalizeNumber(contribution.recognized_revenue_cny, 0) - normalizeNumber(contribution.recognized_cost_cny, 0);
+
+    if (!bucket._orderIds.has(orderId)) {
+        bucket._orderIds.add(orderId);
+        bucket.order_count += 1;
+    }
+    if (attribution.refunded && !bucket._refundedOrderIds.has(orderId)) {
+        bucket._refundedOrderIds.add(orderId);
+        bucket.refunded_order_count += 1;
+    }
+    if (!attribution.refunded && netProfitCny < 0 && !bucket._negativeOrderIds.has(orderId)) {
+        bucket._negativeOrderIds.add(orderId);
+        bucket.negative_profit_order_count += 1;
+    }
+    if (normalizeNumber(contribution.missing_cost_item_count, 0) > 0 && !bucket._missingCostOrderIds.has(orderId)) {
+        bucket._missingCostOrderIds.add(orderId);
+        bucket.missing_cost_order_count += 1;
+    }
+    if (contribution.no_inventory && !bucket._noInventoryOrderIds.has(orderId)) {
+        bucket._noInventoryOrderIds.add(orderId);
+        bucket.no_inventory_order_count += 1;
+    }
+
+    bucket.inventory_item_count += normalizeNumber(contribution.inventory_item_count, 0);
+    bucket.costed_item_count += normalizeNumber(contribution.costed_item_count, 0);
+    bucket.missing_cost_item_count += normalizeNumber(contribution.missing_cost_item_count, 0);
+    bucket.recognized_revenue_cny += normalizeNumber(contribution.recognized_revenue_cny, 0);
+    bucket.recognized_cost_cny += normalizeNumber(contribution.recognized_cost_cny, 0);
+    bucket.net_profit_cny += netProfitCny;
+    bucket.bonus_points_spent += normalizeNumber(contribution.bonus_points_spent, 0);
+    bucket.untracked_revenue_points += normalizeNumber(contribution.untracked_revenue_points, 0);
+
+    if (bucket.sample_orders.length < 3) {
+        bucket.sample_orders.push(buildShopProfitDimensionSample(row, contribution));
+    }
+}
+
+function serializeShopProfitDimensionBucket(bucket) {
+    const recognizedRevenueCny = roundNumber(bucket.recognized_revenue_cny, 4);
+    const recognizedCostCny = roundNumber(bucket.recognized_cost_cny, 4);
+    const netProfitCny = roundNumber(bucket.net_profit_cny, 4);
+    const riskTone = bucket.negative_profit_order_count > 0
+        ? 'critical'
+        : (bucket.missing_cost_order_count > 0 || bucket.no_inventory_order_count > 0 ? 'warning' : 'ready');
+    const riskLabel = riskTone === 'critical'
+        ? '负利润'
+        : (riskTone === 'warning' ? '需补齐' : '正常');
+
+    return {
+        type: bucket.type,
+        key: bucket.key,
+        label: bucket.label,
+        order_count: bucket.order_count,
+        refunded_order_count: bucket.refunded_order_count,
+        negative_profit_order_count: bucket.negative_profit_order_count,
+        missing_cost_order_count: bucket.missing_cost_order_count,
+        no_inventory_order_count: bucket.no_inventory_order_count,
+        inventory_item_count: roundNumber(bucket.inventory_item_count, 0),
+        costed_item_count: roundNumber(bucket.costed_item_count, 0),
+        missing_cost_item_count: roundNumber(bucket.missing_cost_item_count, 0),
+        recognized_revenue_cny: recognizedRevenueCny,
+        recognized_cost_cny: recognizedCostCny,
+        net_profit_cny: netProfitCny,
+        margin_rate: recognizedRevenueCny > 0 ? roundNumber(netProfitCny / recognizedRevenueCny, 4) : null,
+        cost_coverage_rate: bucket.inventory_item_count > 0
+            ? roundNumber(bucket.costed_item_count / bucket.inventory_item_count, 4)
+            : 0,
+        bonus_points_spent: roundNumber(bucket.bonus_points_spent, 2),
+        untracked_revenue_points: roundNumber(bucket.untracked_revenue_points, 2),
+        risk_tone: riskTone,
+        risk_label: riskLabel,
+        sample_orders: bucket.sample_orders
+    };
+}
+
+function buildShopProfitDimensionBreakdown(shopProfitRows = []) {
+    const productBuckets = new Map();
+    const skuBuckets = new Map();
+    const sourceBatchBuckets = new Map();
+    const sourceBuckets = new Map();
+
+    function getBucket(map, type, key, label) {
+        const normalizedKey = normalizeShopProfitDimensionKey(key, 'unknown');
+        if (!map.has(normalizedKey)) {
+            map.set(normalizedKey, createShopProfitDimensionAccumulator(type, normalizedKey, label));
+        }
+        return map.get(normalizedKey);
+    }
+
+    (Array.isArray(shopProfitRows) ? shopProfitRows : []).forEach((row) => {
+        if (!row?.attribution) return;
+        const rowDimensions = buildShopProfitRowDimensionContributions(row);
+        rowDimensions.products.forEach((contribution) => {
+            const bucket = getBucket(productBuckets, 'product', contribution.key, contribution.label);
+            applyShopProfitDimensionContribution(bucket, row, contribution);
+        });
+        rowDimensions.skus.forEach((contribution) => {
+            const bucket = getBucket(skuBuckets, 'sku', contribution.key, contribution.label);
+            applyShopProfitDimensionContribution(bucket, row, contribution);
+        });
+        rowDimensions.source_batches.forEach((contribution) => {
+            const bucket = getBucket(sourceBatchBuckets, 'source_batch', contribution.key, contribution.label);
+            applyShopProfitDimensionContribution(bucket, row, contribution);
+        });
+        rowDimensions.sources.forEach((contribution) => {
+            const bucket = getBucket(sourceBuckets, 'source', contribution.key, contribution.label);
+            applyShopProfitDimensionContribution(bucket, row, contribution);
+            bucket.source_id = contribution.source_id || null;
+            bucket.source_name = contribution.source_name || contribution.label || '未归因货源';
+            bucket.source_platform = contribution.source_platform || null;
+            bucket.source_risk_tier = contribution.source_risk_tier || null;
+            bucket.source_quality_grade = contribution.source_quality_grade || null;
+        });
+    });
+
+    const sorter = (left, right) => (
+        Number(right.negative_profit_order_count || 0) - Number(left.negative_profit_order_count || 0)
+        || Number(right.missing_cost_order_count || 0) - Number(left.missing_cost_order_count || 0)
+        || Number(right.no_inventory_order_count || 0) - Number(left.no_inventory_order_count || 0)
+        || Number(right.order_count || 0) - Number(left.order_count || 0)
+        || Number(right.recognized_revenue_cny || 0) - Number(left.recognized_revenue_cny || 0)
+        || Number(left.net_profit_cny || 0) - Number(right.net_profit_cny || 0)
+    );
+
+    return {
+        products: [...productBuckets.values()]
+            .map(serializeShopProfitDimensionBucket)
+            .sort(sorter)
+            .slice(0, 8),
+        skus: [...skuBuckets.values()]
+            .map(serializeShopProfitDimensionBucket)
+            .sort(sorter)
+            .slice(0, 8),
+        source_batches: [...sourceBatchBuckets.values()]
+            .map(serializeShopProfitDimensionBucket)
+            .sort(sorter)
+            .slice(0, 8),
+        sources: [...sourceBuckets.values()]
+            .map((bucket) => ({
+                ...serializeShopProfitDimensionBucket(bucket),
+                source_id: bucket.source_id || null,
+                source_name: bucket.source_name || bucket.label,
+                source_platform: bucket.source_platform || null,
+                source_risk_tier: bucket.source_risk_tier || null,
+                source_quality_grade: bucket.source_quality_grade || null,
+                procurement_suggestion: bucket.negative_profit_order_count > 0
+                    ? '暂停复采并核对售价、质量和成本'
+                    : (bucket.missing_cost_order_count > 0 || bucket.no_inventory_order_count > 0
+                        ? '补齐成本和订单关联后再评估复采'
+                        : (bucket.order_count >= 3 && bucket.net_profit_cny > 0 ? '可继续观察复采' : '继续观察'))
+            }))
+            .sort(sorter)
+            .slice(0, 8)
+    };
+}
+
+function createShopSourceProcurementRecommendation(source = {}) {
+    const negativeProfitOrderCount = normalizeNumber(source.negative_profit_order_count, 0);
+    const missingCostOrderCount = normalizeNumber(source.missing_cost_order_count, 0);
+    const noInventoryOrderCount = normalizeNumber(source.no_inventory_order_count, 0);
+    const orderCount = normalizeNumber(source.order_count, 0);
+    const netProfitCny = normalizeNumber(source.net_profit_cny, 0);
+    const marginRate = source.margin_rate === null || source.margin_rate === undefined
+        ? null
+        : normalizeNumber(source.margin_rate, 0);
+    const costCoverageRate = normalizeNumber(source.cost_coverage_rate, 0);
+    const refundedOrderCount = normalizeNumber(source.refunded_order_count, 0);
+    const refundRate = orderCount > 0 ? refundedOrderCount / orderCount : 0;
+    let action_type = 'observe';
+    let severity = 'review';
+    let priority = 20;
+    let action_label = '继续观察表现，等待更多订单样本';
+    let reason_label = '样本较少';
+
+    if (negativeProfitOrderCount > 0 || (orderCount > 0 && netProfitCny < 0)) {
+        action_type = 'pause_reorder';
+        severity = 'critical';
+        priority = 100;
+        action_label = '暂停复采，核对售价、采购成本、质量和售后记录';
+        reason_label = negativeProfitOrderCount > 0 ? '存在负利润订单' : '累计净利润为负';
+    } else if (missingCostOrderCount > 0 || noInventoryOrderCount > 0 || costCoverageRate < 1) {
+        action_type = 'complete_cost';
+        severity = 'warning';
+        priority = 80;
+        action_label = '补齐采购成本和订单库存关联后再评估复采';
+        reason_label = noInventoryOrderCount > 0 ? '存在未关联库存订单' : '成本覆盖未完整';
+    } else if (orderCount >= 3 && netProfitCny > 0 && (marginRate === null || marginRate >= 0.15) && refundRate <= 0.2) {
+        action_type = 'reorder_candidate';
+        severity = 'ready';
+        priority = 45;
+        action_label = '可作为优先复采候选，继续监控退款和售后表现';
+        reason_label = '净利润和成本覆盖表现稳定';
+    }
+
+    return {
+        source_id: source.source_id || null,
+        source_name: source.source_name || source.label || '未归因货源',
+        source_platform: source.source_platform || null,
+        source_risk_tier: source.source_risk_tier || null,
+        source_quality_grade: source.source_quality_grade || null,
+        action_type,
+        severity,
+        priority,
+        action_label,
+        reason_label,
+        order_count: roundNumber(orderCount, 0),
+        refunded_order_count: roundNumber(refundedOrderCount, 0),
+        negative_profit_order_count: roundNumber(negativeProfitOrderCount, 0),
+        missing_cost_order_count: roundNumber(missingCostOrderCount, 0),
+        no_inventory_order_count: roundNumber(noInventoryOrderCount, 0),
+        inventory_item_count: roundNumber(source.inventory_item_count, 0),
+        missing_cost_item_count: roundNumber(source.missing_cost_item_count, 0),
+        recognized_revenue_cny: roundNumber(source.recognized_revenue_cny, 4),
+        recognized_cost_cny: roundNumber(source.recognized_cost_cny, 4),
+        net_profit_cny: roundNumber(netProfitCny, 4),
+        margin_rate: marginRate === null ? null : roundNumber(marginRate, 4),
+        cost_coverage_rate: roundNumber(costCoverageRate, 4),
+        refund_rate: roundNumber(refundRate, 4),
+        sample_orders: Array.isArray(source.sample_orders) ? source.sample_orders.slice(0, 3) : []
+    };
+}
+
+function buildShopSourceProcurementRecommendations(dimensionBreakdown = {}) {
+    const summary = createEmptyShopSourceProcurementRecommendations();
+    const sources = Array.isArray(dimensionBreakdown?.sources) ? dimensionBreakdown.sources.filter(Boolean) : [];
+    const items = sources
+        .map(createShopSourceProcurementRecommendation)
+        .sort((left, right) => (
+            Number(right.priority || 0) - Number(left.priority || 0)
+            || Number(right.order_count || 0) - Number(left.order_count || 0)
+            || Math.abs(Number(right.net_profit_cny || 0)) - Math.abs(Number(left.net_profit_cny || 0))
+            || String(left.source_name || '').localeCompare(String(right.source_name || ''), 'zh-CN')
+        ));
+
+    summary.items = items.slice(0, 10);
+    summary.source_count = sources.length;
+    summary.pause_count = items.filter((item) => item.action_type === 'pause_reorder').length;
+    summary.complete_cost_count = items.filter((item) => item.action_type === 'complete_cost').length;
+    summary.reorder_count = items.filter((item) => item.action_type === 'reorder_candidate').length;
+    summary.observe_count = items.filter((item) => item.action_type === 'observe').length;
+    summary.action_required_count = summary.pause_count + summary.complete_cost_count;
+    summary.status = summary.pause_count > 0
+        ? 'critical'
+        : (summary.complete_cost_count > 0 ? 'warning' : 'ready');
+
+    return summary;
+}
+
+function buildShopProfitAdjustmentSummary(shopProfitRows = []) {
+    const summary = createEmptyShopProfitAdjustmentSummary();
+    const buckets = new Map();
+
+    (Array.isArray(shopProfitRows) ? shopProfitRows : []).forEach((row) => {
+        const attribution = row?.attribution || {};
+        const orderId = String(row?.order?.id || '').trim() || getShopProfitIssueOrderLabel(row?.order || {});
+        const adjustments = attribution?.profit_adjustments || {};
+
+        summary.coupon_discount_cny += normalizeNumber(adjustments.coupon_discount_cny, 0);
+        summary.bonus_points_excluded_cny += normalizeNumber(adjustments.bonus_points_excluded_cny, 0);
+        summary.untracked_points_estimated_cny += normalizeNumber(adjustments.untracked_points_estimated_cny, 0);
+        summary.refunded_revenue_reversal_cny += normalizeNumber(adjustments.refunded_revenue_reversal_cny, 0);
+
+        (Array.isArray(adjustments.items) ? adjustments.items : []).forEach((item) => {
+            const type = String(item?.type || '').trim().toLowerCase();
+            if (!type) return;
+            if (!buckets.has(type)) {
+                buckets.set(type, {
+                    type,
+                    title: String(item?.title || '').trim() || type,
+                    status: String(item?.status || '').trim().toLowerCase() || 'tracked',
+                    tone: String(item?.tone || '').trim().toLowerCase() || 'info',
+                    treatment: String(item?.treatment || '').trim() || null,
+                    description: String(item?.description || '').trim() || null,
+                    amount_cny: 0,
+                    points: 0,
+                    order_count: 0,
+                    affects_net_profit: Boolean(item?.affects_net_profit),
+                    _orderIds: new Set()
+                });
+            }
+
+            const bucket = buckets.get(type);
+            bucket.amount_cny += normalizeNumber(item.amount_cny, 0);
+            bucket.points += normalizeNumber(item.points, 0);
+            bucket.affects_net_profit = bucket.affects_net_profit || Boolean(item?.affects_net_profit);
+            if (orderId && !bucket._orderIds.has(orderId)) {
+                bucket._orderIds.add(orderId);
+                bucket.order_count += 1;
+            }
+            if (String(item?.status || '').trim().toLowerCase() === 'review_required') {
+                bucket.status = 'review_required';
+                bucket.tone = 'warning';
+            }
+        });
+    });
+
+    const order = ['coupon_discount', 'bonus_points_excluded', 'untracked_points_estimated', 'refund_reversal'];
+    summary.items = [...buckets.values()]
+        .map((bucket) => {
+            const { _orderIds, ...item } = bucket;
+            return {
+                ...item,
+                amount_cny: roundNumber(item.amount_cny, 4),
+                points: roundNumber(item.points, 2),
+                order_count: roundNumber(item.order_count, 0)
+            };
+        })
+        .sort((left, right) => {
+            const leftIndex = order.indexOf(left.type);
+            const rightIndex = order.indexOf(right.type);
+            return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex)
+                || Number(right.amount_cny || 0) - Number(left.amount_cny || 0);
+        });
+
+    summary.item_count = summary.items.length;
+    summary.total_amount_cny = roundNumber(summary.items.reduce((sum, item) => sum + normalizeNumber(item.amount_cny, 0), 0), 4);
+    summary.total_points = roundNumber(summary.items.reduce((sum, item) => sum + normalizeNumber(item.points, 0), 0), 2);
+    summary.coupon_discount_cny = roundNumber(summary.coupon_discount_cny, 4);
+    summary.bonus_points_excluded_cny = roundNumber(summary.bonus_points_excluded_cny, 4);
+    summary.untracked_points_estimated_cny = roundNumber(summary.untracked_points_estimated_cny, 4);
+    summary.refunded_revenue_reversal_cny = roundNumber(summary.refunded_revenue_reversal_cny, 4);
+    summary.status = summary.items.some((item) => item.status === 'review_required')
+        ? 'review'
+        : (summary.items.length ? 'tracked' : 'none');
+
+    return summary;
+}
+
+const SHOP_PROFIT_ADJUSTMENT_BREAKDOWN_META = Object.freeze({
+    coupon_discount: Object.freeze({
+        category: 'discount',
+        label: '优惠券/折扣',
+        net_profit_treatment: '已通过实付积分减少收入，不重复扣减',
+        closure_status: 'tracked'
+    }),
+    bonus_points_excluded: Object.freeze({
+        category: 'non_cash_points',
+        label: '非现金积分',
+        net_profit_treatment: '已从现金收入中剔除，后续可转入营销成本',
+        closure_status: 'excluded'
+    }),
+    untracked_points_estimated: Object.freeze({
+        category: 'point_source_gap',
+        label: '历史未拆分积分',
+        net_profit_treatment: '暂按旧口径估算，需补齐积分来源',
+        closure_status: 'review'
+    }),
+    refund_reversal: Object.freeze({
+        category: 'refund',
+        label: '退款冲销',
+        net_profit_treatment: '收入与成本按退款状态冲销',
+        closure_status: 'tracked'
+    }),
+    affiliate_commission: Object.freeze({
+        category: 'affiliate',
+        label: '推广返佣',
+        net_profit_treatment: '预留扩展项，待接入推广返佣分录',
+        closure_status: 'extension'
+    }),
+    manual_adjustment: Object.freeze({
+        category: 'manual',
+        label: '人工调整',
+        net_profit_treatment: '预留扩展项，待接入人工调整分录',
+        closure_status: 'extension'
+    })
+});
+
+function normalizeShopProfitAdjustmentClosureStatus(status = '') {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (normalized === 'review_required' || normalized === 'review') return 'review';
+    if (normalized === 'tracked_revenue_exclusion' || normalized === 'excluded') return 'excluded';
+    if (normalized === 'extension' || normalized === 'pending_extension') return 'extension';
+    return 'tracked';
+}
+
+function buildShopProfitAdjustmentBreakdown(adjustments = {}) {
+    const summary = createEmptyShopProfitAdjustmentBreakdown();
+    const rows = (Array.isArray(adjustments?.items) ? adjustments.items : [])
+        .filter(Boolean)
+        .map((item) => {
+            const type = String(item.type || '').trim().toLowerCase();
+            const meta = SHOP_PROFIT_ADJUSTMENT_BREAKDOWN_META[type] || {};
+            const closureStatus = normalizeShopProfitAdjustmentClosureStatus(meta.closure_status || item.status);
+            return {
+                type,
+                category: meta.category || 'other',
+                label: meta.label || item.title || type || '其它影响项',
+                title: item.title || meta.label || type || '其它影响项',
+                closure_status: closureStatus,
+                action_required: closureStatus === 'review',
+                net_profit_treatment: meta.net_profit_treatment || item.treatment || item.description || '已纳入利润影响项观察。',
+                amount_cny: roundNumber(item.amount_cny, 4),
+                points: roundNumber(item.points, 2),
+                order_count: roundNumber(item.order_count, 0),
+                affects_net_profit: Boolean(item.affects_net_profit),
+                status: item.status || null,
+                tone: closureStatus === 'review' ? 'warning' : (closureStatus === 'extension' ? 'review' : 'info')
+            };
+        });
+
+    ['affiliate_commission', 'manual_adjustment'].forEach((type) => {
+        if (rows.some((item) => item.type === type)) return;
+        const meta = SHOP_PROFIT_ADJUSTMENT_BREAKDOWN_META[type];
+        rows.push({
+            type,
+            category: meta.category,
+            label: meta.label,
+            title: meta.label,
+            closure_status: meta.closure_status,
+            action_required: false,
+            net_profit_treatment: meta.net_profit_treatment,
+            amount_cny: 0,
+            points: 0,
+            order_count: 0,
+            affects_net_profit: false,
+            status: 'pending_extension',
+            tone: 'review'
+        });
+    });
+
+    summary.items = rows;
+    summary.item_count = rows.length;
+    summary.action_required_count = rows.filter((item) => item.action_required).length;
+    summary.tracked_count = rows.filter((item) => item.closure_status === 'tracked').length;
+    summary.excluded_count = rows.filter((item) => item.closure_status === 'excluded').length;
+    summary.review_count = rows.filter((item) => item.closure_status === 'review').length;
+    summary.extension_count = rows.filter((item) => item.closure_status === 'extension').length;
+    summary.total_amount_cny = roundNumber(rows.reduce((sum, item) => sum + normalizeNumber(item.amount_cny, 0), 0), 4);
+    summary.total_points = roundNumber(rows.reduce((sum, item) => sum + normalizeNumber(item.points, 0), 0), 2);
+    summary.status = summary.review_count > 0 ? 'warning' : 'ready';
+
+    return summary;
+}
+
+function buildShopProfitReadinessSummary(summary = {}) {
+    const readiness = createEmptyShopProfitReadinessSummary();
+    const items = [];
+    const closure = normalizeJsonObject(summary.profit_reconciliation_closure);
+    const alerts = normalizeJsonObject(summary.shop_profit_audit_alerts);
+    const risks = normalizeJsonObject(summary.order_risk_list);
+    const procurement = normalizeJsonObject(summary.source_procurement_recommendations);
+    const adjustmentBreakdown = normalizeJsonObject(summary.profit_adjustment_breakdown);
+    const ledgerPreview = normalizeJsonObject(summary.profit_ledger_preview);
+    const costCoverageRate = normalizeNumber(summary.cost_coverage_rate, 0);
+    const pointCoverage = normalizeJsonObject(summary.point_source_coverage);
+
+    function addItem(input = {}) {
+        const severity = String(input.severity || 'ready').trim().toLowerCase();
+        const actionRequired = ['critical', 'warning'].includes(severity) || Boolean(input.action_required);
+        items.push({
+            key: String(input.key || '').trim().toLowerCase() || `item_${items.length + 1}`,
+            label: String(input.label || '').trim() || '审计项',
+            severity,
+            status: severity,
+            action_required: actionRequired,
+            value_label: String(input.value_label || '').trim() || null,
+            action_label: String(input.action_label || '').trim() || null,
+            description: String(input.description || '').trim() || null
+        });
+    }
+
+    if (normalizeNumber(alerts.critical_count, 0) > 0) {
+        addItem({
+            key: 'critical_alerts',
+            label: '高优先级审计告警',
+            severity: 'critical',
+            value_label: `${roundNumber(alerts.critical_count, 0).toLocaleString('zh-CN')} 个`,
+            action_label: '先处理红色审计告警',
+            description: '存在负利润等高风险告警，暂不建议进入结算口径。'
+        });
+    }
+    if (normalizeNumber(closure.action_required_count, 0) > 0) {
+        addItem({
+            key: 'closure_actions',
+            label: '对账闭环待处理',
+            severity: normalizeNumber(closure.critical_count, 0) > 0 ? 'critical' : 'warning',
+            value_label: `${roundNumber(closure.action_required_count, 0).toLocaleString('zh-CN')} 项`,
+            action_label: '按对账闭环链路逐项收口',
+            description: '支付、积分、订单、采购、分录或审计链路仍有待处理项。'
+        });
+    }
+    if (normalizeNumber(risks.critical_count, 0) > 0 || normalizeNumber(risks.warning_count, 0) > 0) {
+        addItem({
+            key: 'risk_orders',
+            label: '风险订单',
+            severity: normalizeNumber(risks.critical_count, 0) > 0 ? 'critical' : 'warning',
+            value_label: `${roundNumber(risks.order_count, 0).toLocaleString('zh-CN')} 笔`,
+            action_label: '先处理风险订单清单',
+            description: '风险订单会影响净利润可信度。'
+        });
+    }
+    if (normalizeNumber(procurement.action_required_count, 0) > 0) {
+        addItem({
+            key: 'procurement_actions',
+            label: '采购建议待处理',
+            severity: normalizeNumber(procurement.pause_count, 0) > 0 ? 'critical' : 'warning',
+            value_label: `${roundNumber(procurement.action_required_count, 0).toLocaleString('zh-CN')} 个货源`,
+            action_label: '处理暂停复采和补齐成本项',
+            description: '货源维度仍有影响复采或成本归因的待处理项。'
+        });
+    }
+    if (normalizeNumber(adjustmentBreakdown.review_count, 0) > 0) {
+        addItem({
+            key: 'adjustment_review',
+            label: '利润影响项需复核',
+            severity: 'warning',
+            value_label: `${roundNumber(adjustmentBreakdown.review_count, 0).toLocaleString('zh-CN')} 项`,
+            action_label: '复核历史未拆分积分或其它影响项',
+            description: '利润影响构成里仍有待复核口径。'
+        });
+    }
+    if (String(ledgerPreview.status || '').trim().toLowerCase() === 'incomplete') {
+        addItem({
+            key: 'ledger_incomplete',
+            label: '利润分录未完整',
+            severity: 'warning',
+            value_label: `${roundNumber(ledgerPreview.incomplete_entry_count, 0).toLocaleString('zh-CN')} 条`,
+            action_label: '补齐利润分录缺口',
+            description: '利润分录存在缺成本或未完整结算项。'
+        });
+    }
+    if (costCoverageRate < 0.9999 && normalizeNumber(summary.inventory_item_count, 0) > 0) {
+        addItem({
+            key: 'cost_coverage',
+            label: '采购成本覆盖不足',
+            severity: 'warning',
+            value_label: `${roundNumber(costCoverageRate * 100, 2).toLocaleString('zh-CN')}%`,
+            action_label: '补齐库存采购成本',
+            description: '成本覆盖不足会高估净利润。'
+        });
+    }
+    if (normalizeNumber(pointCoverage.action_required_order_count, 0) > 0) {
+        addItem({
+            key: 'point_source_gap',
+            label: '积分来源待补齐',
+            severity: 'warning',
+            value_label: `${roundNumber(pointCoverage.action_required_order_count, 0).toLocaleString('zh-CN')} 笔`,
+            action_label: '补齐积分来源批次',
+            description: '积分来源缺口会影响现金/非现金收入归因。'
+        });
+    }
+
+    readiness.items = items.slice(0, 8);
+    readiness.blocker_count = items.filter((item) => item.severity === 'critical').length;
+    readiness.warning_count = items.filter((item) => item.severity === 'warning').length;
+    readiness.review_count = items.filter((item) => item.severity === 'review').length;
+    readiness.action_required_count = items.filter((item) => item.action_required).length;
+    readiness.score = Math.max(0, roundNumber(100 - (readiness.blocker_count * 30) - (readiness.warning_count * 12) - (readiness.review_count * 5), 0));
+    readiness.status = readiness.blocker_count > 0
+        ? 'critical'
+        : (readiness.warning_count > 0 ? 'warning' : 'ready');
+    readiness.label = readiness.status === 'critical'
+        ? '暂不可结算'
+        : (readiness.status === 'warning' ? '待复核后结算' : '可结算');
+    readiness.settlement_ready = readiness.status === 'ready';
+
+    if (!readiness.items.length) {
+        readiness.items = [{
+            key: 'ready',
+            label: '利润对账已闭环',
+            severity: 'ready',
+            status: 'ready',
+            action_required: false,
+            value_label: '0 项待处理',
+            action_label: null,
+            description: '当前支付、积分、订单、采购、分录和告警链路均可进入结算口径。'
+        }];
+    }
+
+    return readiness;
+}
+
+function buildShopProfitLedgerPreview(shopProfitRows = []) {
+    const preview = createEmptyShopProfitLedgerPreview();
+    const typeBuckets = new Map();
+    const orderIds = new Set();
+    const sampleLimit = 8;
+
+    (Array.isArray(shopProfitRows) ? shopProfitRows : []).forEach((row) => {
+        const orderId = String(row?.order?.id || '').trim() || getShopProfitIssueOrderLabel(row?.order || {});
+        const entries = Array.isArray(row?.attribution?.profit_ledger_entries)
+            ? row.attribution.profit_ledger_entries.filter(Boolean)
+            : [];
+
+        if (entries.length && orderId) {
+            orderIds.add(orderId);
+        }
+
+        entries.forEach((entry) => {
+            const type = String(entry?.entry_type || '').trim().toLowerCase();
+            if (!type) return;
+
+            const amountCny = normalizeNumber(entry.amount_cny, 0);
+            const pointsAmount = normalizeNumber(entry.points_amount, 0);
+            const status = String(entry.status || '').trim().toLowerCase();
+            const confidence = String(entry.confidence || '').trim().toLowerCase();
+            const group = String(entry.group || '').trim().toLowerCase();
+
+            preview.entry_count += 1;
+            preview.net_amount_cny += amountCny;
+            if (group === 'revenue') {
+                preview.revenue_amount_cny += Math.max(0, amountCny);
+            } else if (group === 'cost') {
+                preview.cost_amount_cny += Math.abs(Math.min(0, amountCny));
+            } else if (group === 'reversal') {
+                preview.reversal_amount_cny += Math.abs(amountCny);
+            } else {
+                preview.informational_points += Math.max(0, pointsAmount);
+            }
+            if (['incomplete', 'missing', 'review_required'].includes(status) || confidence === 'missing') {
+                preview.incomplete_entry_count += 1;
+            }
+            if (confidence === 'estimated' || status.includes('estimated')) {
+                preview.estimated_entry_count += 1;
+            }
+
+            if (!typeBuckets.has(type)) {
+                typeBuckets.set(type, {
+                    type,
+                    title: String(entry.title || '').trim() || type,
+                    group: group || 'adjustment',
+                    status: status || 'settled',
+                    tone: String(entry.tone || '').trim().toLowerCase() || 'info',
+                    amount_cny: 0,
+                    points_amount: 0,
+                    entry_count: 0,
+                    order_count: 0,
+                    _orderIds: new Set()
+                });
+            }
+
+            const bucket = typeBuckets.get(type);
+            bucket.amount_cny += amountCny;
+            bucket.points_amount += pointsAmount;
+            bucket.entry_count += 1;
+            if (orderId && !bucket._orderIds.has(orderId)) {
+                bucket._orderIds.add(orderId);
+                bucket.order_count += 1;
+            }
+            if (['incomplete', 'missing', 'review_required'].includes(status) || confidence === 'missing') {
+                bucket.status = 'incomplete';
+                bucket.tone = 'warning';
+            } else if (confidence === 'estimated' || status.includes('estimated')) {
+                bucket.status = 'estimated';
+                bucket.tone = bucket.tone === 'warning' ? bucket.tone : 'warning';
+            }
+
+            if (preview.sample_entries.length < sampleLimit && (amountCny !== 0 || ['incomplete', 'estimated'].includes(bucket.status))) {
+                preview.sample_entries.push({
+                    order_id: String(row?.order?.id || '').trim() || null,
+                    order_no: getShopProfitIssueOrderLabel(row?.order || {}),
+                    entry_type: type,
+                    title: bucket.title,
+                    amount_cny: roundNumber(amountCny, 4),
+                    status: status || 'settled',
+                    confidence: confidence || 'exact',
+                    product_name: String(row?.order?.snapshot_product_name || row?.order?.product_name || '').trim() || null,
+                    created_at: row?.order?.created_at || null
+                });
+            }
+        });
+    });
+
+    const typeOrder = [
+        'revenue_points_paid',
+        'revenue_points_untracked',
+        'inventory_cost',
+        'inventory_cost_missing',
+        'refund_reversal',
+        'inventory_cost_reversal',
+        'revenue_points_bonus',
+        'coupon_cost'
+    ];
+    preview.entries_by_type = [...typeBuckets.values()]
+        .map((bucket) => {
+            const { _orderIds, ...item } = bucket;
+            return {
+                ...item,
+                amount_cny: roundNumber(item.amount_cny, 4),
+                points_amount: roundNumber(item.points_amount, 2),
+                entry_count: roundNumber(item.entry_count, 0),
+                order_count: roundNumber(item.order_count, 0)
+            };
+        })
+        .sort((left, right) => {
+            const leftIndex = typeOrder.indexOf(left.type);
+            const rightIndex = typeOrder.indexOf(right.type);
+            return (leftIndex === -1 ? 99 : leftIndex) - (rightIndex === -1 ? 99 : rightIndex)
+                || Math.abs(Number(right.amount_cny || 0)) - Math.abs(Number(left.amount_cny || 0));
+        });
+
+    preview.order_count = orderIds.size;
+    preview.net_amount_cny = roundNumber(preview.net_amount_cny, 4);
+    preview.revenue_amount_cny = roundNumber(preview.revenue_amount_cny, 4);
+    preview.cost_amount_cny = roundNumber(preview.cost_amount_cny, 4);
+    preview.reversal_amount_cny = roundNumber(preview.reversal_amount_cny, 4);
+    preview.informational_points = roundNumber(preview.informational_points, 2);
+    preview.status = preview.incomplete_entry_count > 0
+        ? 'incomplete'
+        : (preview.estimated_entry_count > 0 ? 'estimated' : (preview.entry_count ? 'balanced' : 'none'));
+
+    return preview;
+}
+
+function normalizePersistedShopProfitLedgerEntry(row = {}) {
+    const snapshot = normalizeJsonObject(row.snapshot);
+    return {
+        entry_type: String(row.entry_type || '').trim().toLowerCase(),
+        title: String(snapshot.title || row.entry_type || '').trim(),
+        amount_cny: roundNumber(row.cash_value_cny ?? row.amount, 4),
+        points_amount: row.points_amount === null || row.points_amount === undefined
+            ? null
+            : roundNumber(row.points_amount, 2),
+        status: String(row.status || '').trim().toLowerCase() || 'estimated',
+        confidence: String(row.confidence || '').trim().toLowerCase() || 'exact',
+        group: String(row.entry_group || '').trim().toLowerCase() || 'adjustment',
+        tone: String(snapshot.tone || '').trim().toLowerCase() || (row.status === 'incomplete' ? 'warning' : 'info'),
+        order_id: String(row.order_id || '').trim(),
+        product_name: String(snapshot.product_name || '').trim() || null,
+        created_at: row.occurred_at || null
+    };
+}
+
+function buildPersistedShopProfitLedgerPreview(ledgerRows = []) {
+    const rows = (Array.isArray(ledgerRows) ? ledgerRows : []).map(normalizePersistedShopProfitLedgerEntry).filter((row) => row.entry_type);
+    if (!rows.length) {
+        return null;
+    }
+
+    return buildShopProfitLedgerPreview(rows.map((entry) => ({
+        order: {
+            id: entry.order_id,
+            snapshot_product_name: entry.product_name,
+            created_at: entry.created_at
+        },
+        attribution: {
+            profit_ledger_entries: [entry]
+        }
+    })));
+}
+
+function buildShopProfitPointSourceCoverage(shopProfitRows = []) {
+    const summary = createEmptyShopProfitPointSourceCoverage();
+    const typeBuckets = new Map();
+
+    function ensureTypeBucket(sourceType, sourceLabel = '') {
+        const normalizedType = String(sourceType || '').trim().toLowerCase() || 'unknown';
+        if (!typeBuckets.has(normalizedType)) {
+            typeBuckets.set(normalizedType, {
+                source_type: normalizedType,
+                source_label: String(sourceLabel || '').trim() || normalizedType,
+                points: 0,
+                cash_value_cny: 0,
+                order_count: 0,
+                _orderIds: new Set()
+            });
+        }
+        return typeBuckets.get(normalizedType);
+    }
+
+    (Array.isArray(shopProfitRows) ? shopProfitRows : []).forEach((row) => {
+        const attribution = row?.attribution || {};
+        const traceability = normalizeJsonObject(attribution.point_source_traceability);
+        const expectedPoints = roundNumber(Math.max(0, normalizeNumber(
+            traceability.expected_points,
+            attribution.revenue_points
+        )), 2);
+
+        if (expectedPoints <= 0) {
+            return;
+        }
+
+        const orderId = String(row?.order?.id || '').trim() || getShopProfitIssueOrderLabel(row?.order || {});
+        const status = String(traceability.status || '').trim().toLowerCase();
+        const sourceLotPoints = roundNumber(Math.max(0, normalizeNumber(traceability.source_lot_points, 0)), 2);
+        const cashBackedPoints = roundNumber(Math.max(0, normalizeNumber(traceability.cash_backed_points, 0)), 2);
+        const nonCashPoints = roundNumber(Math.max(0, normalizeNumber(traceability.non_cash_points, 0)), 2);
+        const unknownPoints = roundNumber(Math.max(0, normalizeNumber(traceability.unknown_points, 0)), 2);
+        const untrackedPoints = roundNumber(Math.max(0, normalizeNumber(traceability.untracked_points, 0)), 2);
+        const lotSummary = normalizeJsonObject(attribution.point_lot_consumption_summary);
+        const lotItems = Array.isArray(lotSummary.items) ? lotSummary.items.filter(Boolean) : [];
+
+        summary.order_count += 1;
+        summary.expected_points += expectedPoints;
+        summary.source_lot_points += sourceLotPoints;
+        summary.cash_backed_points += cashBackedPoints;
+        summary.non_cash_points += nonCashPoints;
+        summary.unknown_points += unknownPoints;
+        summary.untracked_points += untrackedPoints;
+
+        if (status === 'source_lot_exact') {
+            summary.source_lot_order_count += 1;
+            summary.exact_order_count += 1;
+        } else if (status === 'partial_lot_gap') {
+            summary.source_lot_order_count += 1;
+            summary.partial_order_count += 1;
+        } else if (status === 'balance_split_only' || status === 'balance_split_gap') {
+            summary.balance_split_order_count += 1;
+            if (status === 'balance_split_gap') {
+                summary.partial_order_count += 1;
+            }
+        } else if (status === 'legacy_untracked') {
+            summary.legacy_untracked_order_count += 1;
+        }
+
+        if (traceability.action_required) {
+            summary.action_required_order_count += 1;
+        }
+
+        if (lotItems.length) {
+            lotItems.forEach((item) => {
+                const bucket = ensureTypeBucket(item.source_type, item.source_label);
+                const points = roundNumber(Math.max(0, normalizeNumber(item.points_amount, 0)), 2);
+                bucket.points += points;
+                bucket.cash_value_cny += normalizeNumber(item.cash_value_cny, 0);
+                if (orderId && !bucket._orderIds.has(orderId)) {
+                    bucket._orderIds.add(orderId);
+                    bucket.order_count += 1;
+                }
+            });
+            return;
+        }
+
+        (Array.isArray(traceability.source_types) ? traceability.source_types : [])
+            .filter(Boolean)
+            .forEach((sourceType) => {
+                const bucket = ensureTypeBucket(sourceType);
+                if (orderId && !bucket._orderIds.has(orderId)) {
+                    bucket._orderIds.add(orderId);
+                    bucket.order_count += 1;
+                }
+            });
+    });
+
+    summary.expected_points = roundNumber(summary.expected_points, 2);
+    summary.source_lot_points = roundNumber(summary.source_lot_points, 2);
+    summary.cash_backed_points = roundNumber(summary.cash_backed_points, 2);
+    summary.non_cash_points = roundNumber(summary.non_cash_points, 2);
+    summary.unknown_points = roundNumber(summary.unknown_points, 2);
+    summary.untracked_points = roundNumber(summary.untracked_points, 2);
+    summary.coverage_rate = summary.expected_points > 0
+        ? roundNumber(summary.source_lot_points / summary.expected_points, 4)
+        : 0;
+    summary.exact_order_rate = summary.order_count > 0
+        ? roundNumber(summary.exact_order_count / summary.order_count, 4)
+        : 0;
+    summary.source_types = [...typeBuckets.values()]
+        .map((bucket) => {
+            const { _orderIds, ...item } = bucket;
+            return {
+                ...item,
+                points: roundNumber(item.points, 2),
+                cash_value_cny: roundNumber(item.cash_value_cny, 4),
+                order_count: roundNumber(item.order_count, 0)
+            };
+        })
+        .sort((left, right) => Number(right.points || 0) - Number(left.points || 0)
+            || Number(right.order_count || 0) - Number(left.order_count || 0)
+            || String(left.source_type || '').localeCompare(String(right.source_type || '')));
+    summary.source_type_count = summary.source_types.length;
+
+    const migrationBucket = summary.source_types.find((item) => item.source_type === 'migration') || null;
+    if (migrationBucket) {
+        summary.migration_points = roundNumber(migrationBucket.points, 2);
+        summary.migration_order_count = roundNumber(migrationBucket.order_count, 0);
+    }
+
+    if (summary.order_count <= 0) {
+        return summary;
+    }
+
+    if (summary.action_required_order_count > 0 || summary.untracked_points > 0 || summary.unknown_points > 0) {
+        summary.status = 'warning';
+        summary.tone = 'warning';
+        summary.label = '需要复核';
+    } else if (summary.exact_order_count === summary.order_count && summary.source_lot_order_count === summary.order_count) {
+        summary.status = 'ready';
+        summary.tone = 'ready';
+        summary.label = '批次完整';
+    } else if (summary.source_lot_order_count > 0) {
+        summary.status = 'improving';
+        summary.tone = 'info';
+        summary.label = '部分批次化';
+    } else if (summary.balance_split_order_count > 0) {
+        summary.status = 'balance_split';
+        summary.tone = 'info';
+        summary.label = '仅余额拆分';
+    } else {
+        summary.status = 'warning';
+        summary.tone = 'warning';
+        summary.label = '历史未拆分';
+    }
+
+    return summary;
+}
+
+const SHOP_PROFIT_AUDIT_ALERT_META = Object.freeze({
+    negative_profit: Object.freeze({
+        priority: 100,
+        action_label: '核对售价、采购成本、优惠和补发记录'
+    }),
+    missing_cost: Object.freeze({
+        priority: 90,
+        action_label: '补齐库存采购成本或采购批次'
+    }),
+    no_inventory: Object.freeze({
+        priority: 85,
+        action_label: '补齐订单与库存的精确关联'
+    }),
+    point_source_coverage: Object.freeze({
+        priority: 80,
+        action_label: '回填历史余额批次或复核来源类型'
+    }),
+    untracked_points: Object.freeze({
+        priority: 75,
+        action_label: '补齐积分来源批次消耗明细'
+    }),
+    profit_ledger_incomplete: Object.freeze({
+        priority: 70,
+        action_label: '补齐分录缺口后再确认净利润'
+    }),
+    profit_adjustments_review: Object.freeze({
+        priority: 60,
+        action_label: '复核优惠、赠送积分和退款调整项'
+    }),
+    bonus_points: Object.freeze({
+        priority: 30,
+        action_label: '确认营销成本归属口径'
+    }),
+    refunded: Object.freeze({
+        priority: 20,
+        action_label: '核对退款流水、库存状态和成本冲销'
+    })
+});
+
+function normalizeShopProfitAuditSeverity(tone = '') {
+    const normalized = String(tone || '').trim().toLowerCase();
+    if (normalized === 'critical') return 'critical';
+    if (normalized === 'warning' || normalized === 'review') return 'warning';
+    return 'info';
+}
+
+function buildShopProfitAuditAlerts(summary = {}) {
+    const alerts = createEmptyShopProfitAuditAlerts();
+    const items = [];
+    const coverage = normalizeJsonObject(summary.point_source_coverage);
+    const ledgerPreview = normalizeJsonObject(summary.profit_ledger_preview);
+    const adjustments = normalizeJsonObject(summary.profit_adjustments);
+
+    function addAlert(input = {}) {
+        const type = String(input.type || '').trim().toLowerCase();
+        if (!type) return;
+        const meta = SHOP_PROFIT_AUDIT_ALERT_META[type] || {};
+        const severity = normalizeShopProfitAuditSeverity(input.severity || input.tone);
+        const actionRequired = severity !== 'info' || Boolean(input.action_required);
+        const orderCount = roundNumber(input.order_count ?? input.affected_order_count ?? 0, 0);
+        const amountCny = roundNumber(input.amount_cny, 4);
+        const points = roundNumber(input.points, 2);
+
+        items.push({
+            id: `shop_profit:${type}`,
+            source: 'shop_profit_audit',
+            type,
+            severity,
+            tone: severity,
+            priority: normalizeNumber(input.priority, meta.priority || 10),
+            title: String(input.title || type).trim(),
+            description: String(input.description || '').trim() || null,
+            action_label: String(input.action_label || meta.action_label || '').trim() || null,
+            action_required: actionRequired,
+            order_count: orderCount,
+            affected_order_count: orderCount,
+            amount_cny: amountCny,
+            points,
+            metric_label: String(input.metric_label || '').trim() || null,
+            sample_orders: Array.isArray(input.sample_orders) ? input.sample_orders.filter(Boolean).slice(0, 4) : [],
+            case_category_key: 'shop_profit_audit',
+            case_target_id: type,
+            alert_type: `shop_profit_${type}`
+        });
+    }
+
+    (Array.isArray(summary.reconciliation_issues) ? summary.reconciliation_issues : [])
+        .filter(Boolean)
+        .forEach((issue) => {
+            addAlert({
+                type: issue.type,
+                tone: issue.tone,
+                title: issue.title,
+                description: issue.description,
+                order_count: issue.order_count,
+                amount_cny: issue.amount_cny,
+                points: issue.points,
+                sample_orders: issue.sample_orders,
+                metric_label: issue.points > 0
+                    ? `${roundNumber(issue.points, 2)} 积分`
+                    : (issue.amount_cny > 0 ? `¥${roundNumber(issue.amount_cny, 2)}` : `${roundNumber(issue.count, 0)} 项`)
+            });
+        });
+
+    if (Number(coverage.order_count || 0) > 0 && Number(coverage.coverage_rate || 0) < 0.9999) {
+        addAlert({
+            type: 'point_source_coverage',
+            severity: Number(coverage.action_required_order_count || 0) > 0 ? 'warning' : 'info',
+            title: '积分批次覆盖不足',
+            description: '部分商城订单尚未匹配到完整积分来源批次，现金/非现金收入归因需要继续复核。',
+            order_count: coverage.action_required_order_count || coverage.order_count || 0,
+            points: coverage.untracked_points || 0,
+            metric_label: `覆盖率 ${roundNumber(Number(coverage.coverage_rate || 0) * 100, 2)}%`
+        });
+    }
+
+    if (String(ledgerPreview.status || '').trim().toLowerCase() === 'incomplete') {
+        addAlert({
+            type: 'profit_ledger_incomplete',
+            severity: 'warning',
+            title: '利润分录待补齐',
+            description: '商城利润分录存在缺成本或未完整结算项，当前净利润仍需复核。',
+            order_count: ledgerPreview.order_count || 0,
+            amount_cny: Math.abs(normalizeNumber(ledgerPreview.net_amount_cny, 0)),
+            metric_label: `${roundNumber(ledgerPreview.incomplete_entry_count, 0)} 条缺口`
+        });
+    } else if (String(ledgerPreview.status || '').trim().toLowerCase() === 'estimated') {
+        addAlert({
+            type: 'profit_ledger_incomplete',
+            severity: 'warning',
+            title: '利润分录含估算',
+            description: '商城利润分录仍包含估算项，建议在结算前确认来源和成本。',
+            order_count: ledgerPreview.order_count || 0,
+            amount_cny: Math.abs(normalizeNumber(ledgerPreview.net_amount_cny, 0)),
+            metric_label: `${roundNumber(ledgerPreview.estimated_entry_count, 0)} 条估算`
+        });
+    }
+
+    if (String(adjustments.status || '').trim().toLowerCase() === 'review') {
+        addAlert({
+            type: 'profit_adjustments_review',
+            severity: 'warning',
+            title: '利润调整项需复核',
+            description: '优惠、赠送积分、未拆分积分或退款调整项需要进入最终净利润口径前复核。',
+            order_count: Math.max(...(Array.isArray(adjustments.items) ? adjustments.items : [])
+                .map((item) => normalizeNumber(item.order_count, 0)), 0),
+            amount_cny: Math.abs(normalizeNumber(adjustments.total_amount_cny, 0)),
+            points: adjustments.total_points || 0,
+            metric_label: `${roundNumber(adjustments.item_count, 0)} 类调整`
+        });
+    }
+
+    items.sort((left, right) => (
+        Number(right.priority || 0) - Number(left.priority || 0)
+        || ({ critical: 3, warning: 2, info: 1 }[right.severity] || 0) - ({ critical: 3, warning: 2, info: 1 }[left.severity] || 0)
+        || Number(right.order_count || 0) - Number(left.order_count || 0)
+    ));
+
+    alerts.items = items.slice(0, 12);
+    alerts.alert_count = alerts.items.length;
+    alerts.critical_count = alerts.items.filter((item) => item.severity === 'critical').length;
+    alerts.warning_count = alerts.items.filter((item) => item.severity === 'warning').length;
+    alerts.info_count = alerts.items.filter((item) => item.severity === 'info').length;
+    alerts.action_required_count = alerts.items.filter((item) => item.action_required).length;
+    alerts.status = alerts.critical_count > 0
+        ? 'critical'
+        : (alerts.warning_count > 0 ? 'warning' : (alerts.info_count > 0 ? 'info' : 'ready'));
+
+    return alerts;
+}
+
+function normalizeShopProfitClosureStatus(status = '') {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (normalized === 'critical') return 'critical';
+    if (normalized === 'warning' || normalized === 'review' || normalized === 'estimated' || normalized === 'incomplete') return 'warning';
+    return 'ready';
+}
+
+function buildShopProfitReconciliationClosure(summary = {}) {
+    const closure = createEmptyShopProfitReconciliationClosure();
+    const items = [];
+    const costBreakdown = normalizeJsonObject(summary.cost_coverage_breakdown);
+    const pointCoverage = normalizeJsonObject(summary.point_source_coverage);
+    const adjustments = normalizeJsonObject(summary.profit_adjustments);
+    const ledgerPreview = normalizeJsonObject(summary.profit_ledger_preview);
+    const alerts = normalizeJsonObject(summary.shop_profit_audit_alerts);
+    const procurementRecommendations = normalizeJsonObject(summary.source_procurement_recommendations);
+    const financeContext = normalizeJsonObject(summary.finance_reconciliation_context);
+    const rechargeOrderCount = normalizeNumber(financeContext.recharge_order_count, 0);
+    const rechargePoints = normalizeNumber(financeContext.recharge_points, 0);
+    const pointsInflow = normalizeNumber(financeContext.points_inflow, 0);
+    const pointsOutflow = normalizeNumber(financeContext.points_outflow, 0);
+    const shopOrderContextCount = normalizeNumber(financeContext.shop_order_count, 0);
+    const refundedShopOrderCount = normalizeNumber(financeContext.refunded_shop_order_count, 0);
+    const shopPointsSpent = normalizeNumber(financeContext.shop_points_spent, 0);
+
+    function addItem(input = {}) {
+        const key = String(input.key || '').trim().toLowerCase();
+        if (!key) return;
+        const status = normalizeShopProfitClosureStatus(input.status);
+        items.push({
+            key,
+            category: String(input.category || 'reconciliation').trim().toLowerCase() || 'reconciliation',
+            label: String(input.label || key).trim(),
+            status,
+            tone: status,
+            value_label: String(input.value_label || '').trim() || null,
+            description: String(input.description || '').trim() || null,
+            action_label: String(input.action_label || '').trim() || null,
+            action_required: status !== 'ready' || Boolean(input.action_required),
+            order_count: roundNumber(input.order_count ?? 0, 0),
+            amount_cny: roundNumber(input.amount_cny ?? 0, 4),
+            points: roundNumber(input.points ?? 0, 2)
+        });
+    }
+
+    const orderCount = normalizeNumber(summary.order_count, 0);
+    const recognizedRevenue = normalizeNumber(summary.recognized_revenue_cny, 0);
+    const paidPoints = normalizeNumber(summary.paid_points_spent, 0);
+    const paymentSettlementStatus = rechargeOrderCount > 0 && rechargePoints <= 0 ? 'warning' : 'ready';
+    addItem({
+        key: 'payment_settlement',
+        category: 'payment',
+        label: '支付到账闭环',
+        status: paymentSettlementStatus,
+        value_label: formatShopProfitAuditAmount(financeContext.recharge_amount || 0),
+        description: `支付成功 ${roundNumber(rechargeOrderCount, 0).toLocaleString('zh-CN')} 笔，充值积分 ${roundNumber(rechargePoints, 2).toLocaleString('zh-CN')}。`,
+        action_label: paymentSettlementStatus === 'warning' ? '核对支付成功订单与积分发放流水' : null,
+        order_count: rechargeOrderCount,
+        amount_cny: financeContext.recharge_amount || 0,
+        points: rechargePoints
+    });
+
+    const pointIssuanceStatus = rechargePoints > 0 && pointsInflow <= 0 ? 'warning' : 'ready';
+    addItem({
+        key: 'point_issuance',
+        category: 'points',
+        label: '积分发放闭环',
+        status: pointIssuanceStatus,
+        value_label: `${roundNumber(pointsInflow || rechargePoints, 2).toLocaleString('zh-CN')} 积分`,
+        description: `积分流入 ${roundNumber(pointsInflow, 2).toLocaleString('zh-CN')}，充值应发 ${roundNumber(rechargePoints, 2).toLocaleString('zh-CN')}。`,
+        action_label: pointIssuanceStatus === 'warning' ? '核对 points_ledger 中的充值入账流水' : null,
+        order_count: rechargeOrderCount,
+        points: pointsInflow || rechargePoints
+    });
+
+    addItem({
+        key: 'cash_revenue',
+        category: 'revenue',
+        label: '现金收入确认',
+        status: orderCount > 0 && paidPoints > 0 && recognizedRevenue <= 0 ? 'warning' : 'ready',
+        value_label: formatShopProfitAuditAmount(recognizedRevenue),
+        description: `按付费积分确认现金收入，已识别 ${roundNumber(paidPoints, 2).toLocaleString('zh-CN')} 付费积分。`,
+        action_label: recognizedRevenue <= 0 && paidPoints > 0 ? '复核付费积分现金价值' : null,
+        order_count: orderCount,
+        amount_cny: recognizedRevenue,
+        points: paidPoints
+    });
+
+    const pointCoverageRate = normalizeNumber(pointCoverage.coverage_rate, 0);
+    const pointCoverageStatus = normalizeNumber(pointCoverage.action_required_order_count, 0) > 0 || pointCoverageRate < 0.9999
+        ? 'warning'
+        : 'ready';
+    addItem({
+        key: 'point_sources',
+        category: 'points',
+        label: '积分来源追踪',
+        status: pointCoverageStatus,
+        value_label: `${roundNumber(pointCoverageRate * 100, 2).toLocaleString('zh-CN')}%`,
+        description: `付费、赠送、迁移期余额按积分批次归因，未追踪 ${roundNumber(pointCoverage.untracked_points, 2).toLocaleString('zh-CN')} 积分。`,
+        action_label: pointCoverageStatus === 'warning' ? '补齐积分来源批次或复核来源类型' : null,
+        order_count: pointCoverage.action_required_order_count || pointCoverage.order_count || 0,
+        points: pointCoverage.untracked_points || 0
+    });
+
+    const pointConsumptionStatus = shopOrderContextCount > 0 && pointsOutflow <= 0 ? 'warning' : 'ready';
+    addItem({
+        key: 'point_consumption',
+        category: 'points',
+        label: '积分消耗闭环',
+        status: pointConsumptionStatus,
+        value_label: `${roundNumber(pointsOutflow || shopPointsSpent, 2).toLocaleString('zh-CN')} 积分`,
+        description: `商城消费 ${roundNumber(shopOrderContextCount, 0).toLocaleString('zh-CN')} 笔，积分流出 ${roundNumber(pointsOutflow, 2).toLocaleString('zh-CN')}。`,
+        action_label: pointConsumptionStatus === 'warning' ? '核对商城订单扣减与积分流水出账' : null,
+        order_count: shopOrderContextCount,
+        points: pointsOutflow || shopPointsSpent
+    });
+
+    const orderLinkStatus = orderCount > 0 && (summary.inventory_item_count <= 0 || costBreakdown.no_inventory > 0) ? 'warning' : 'ready';
+    addItem({
+        key: 'shop_order_linkage',
+        category: 'shop_order',
+        label: '商城订单闭环',
+        status: orderLinkStatus,
+        value_label: `${roundNumber(orderCount, 0).toLocaleString('zh-CN')} 笔`,
+        description: `利润审计订单 ${roundNumber(orderCount, 0).toLocaleString('zh-CN')} 笔，站点商城消费 ${roundNumber(shopOrderContextCount, 0).toLocaleString('zh-CN')} 笔，退款 ${roundNumber(refundedShopOrderCount, 0).toLocaleString('zh-CN')} 笔。`,
+        action_label: orderLinkStatus === 'warning' ? '补齐订单与库存明细关联' : null,
+        order_count: orderCount,
+        points: shopPointsSpent
+    });
+
+    const missingCostCount = normalizeNumber(summary.missing_cost_item_count, 0);
+    const costGapOrders = normalizeNumber(costBreakdown.partial, 0)
+        + normalizeNumber(costBreakdown.no_cost, 0)
+        + normalizeNumber(costBreakdown.no_inventory, 0);
+    const costStatus = missingCostCount > 0 || costGapOrders > 0 ? 'warning' : 'ready';
+    addItem({
+        key: 'inventory_cost',
+        category: 'procurement',
+        label: '采购成本归因',
+        status: costStatus,
+        value_label: `${roundNumber(normalizeNumber(summary.cost_coverage_rate, 0) * 100, 2).toLocaleString('zh-CN')}%`,
+        description: `已成本化 ${roundNumber(summary.costed_item_count, 0).toLocaleString('zh-CN')} 件库存，缺成本 ${roundNumber(missingCostCount, 0).toLocaleString('zh-CN')} 件。`,
+        action_label: costStatus === 'warning' ? '补齐库存采购成本或订单库存关联' : null,
+        order_count: costGapOrders,
+        amount_cny: summary.recognized_cost_cny || 0
+    });
+
+    const procurementStatus = normalizeNumber(procurementRecommendations.pause_count, 0) > 0
+        ? 'critical'
+        : (normalizeNumber(procurementRecommendations.complete_cost_count, 0) > 0 ? 'warning' : 'ready');
+    addItem({
+        key: 'procurement_recommendations',
+        category: 'procurement',
+        label: '采购建议闭环',
+        status: procurementStatus,
+        value_label: `${roundNumber(procurementRecommendations.source_count, 0).toLocaleString('zh-CN')} 个货源`,
+        description: `暂停复采 ${roundNumber(procurementRecommendations.pause_count, 0).toLocaleString('zh-CN')} 个，待补成本 ${roundNumber(procurementRecommendations.complete_cost_count, 0).toLocaleString('zh-CN')} 个。`,
+        action_label: procurementStatus === 'ready' ? null : '按货源采购建议处理复采与成本补齐',
+        order_count: procurementRecommendations.action_required_count || 0
+    });
+
+    const adjustmentStatus = String(adjustments.status || '').trim().toLowerCase() === 'review' ? 'warning' : 'ready';
+    addItem({
+        key: 'profit_adjustments',
+        category: 'adjustment',
+        label: '优惠与退款调整',
+        status: adjustmentStatus,
+        value_label: `${roundNumber(adjustments.item_count, 0).toLocaleString('zh-CN')} 类`,
+        description: '优惠券、赠送积分、未拆分积分和退款冲销已进入净利润调整口径。',
+        action_label: adjustmentStatus === 'warning' ? '复核优惠、赠送积分和退款调整项' : null,
+        order_count: Math.max(...(Array.isArray(adjustments.items) ? adjustments.items : [])
+            .map((item) => normalizeNumber(item.order_count, 0)), 0),
+        amount_cny: adjustments.total_amount_cny || 0,
+        points: adjustments.total_points || 0
+    });
+
+    const ledgerStatus = String(ledgerPreview.status || '').trim().toLowerCase();
+    const ledgerClosureStatus = ['incomplete', 'estimated'].includes(ledgerStatus) || (orderCount > 0 && !ledgerStatus)
+        ? 'warning'
+        : 'ready';
+    addItem({
+        key: 'profit_ledger',
+        category: 'ledger',
+        label: '利润分录闭环',
+        status: ledgerClosureStatus,
+        value_label: `${roundNumber(ledgerPreview.entry_count, 0).toLocaleString('zh-CN')} 条`,
+        description: `利润分录合计 ${formatShopProfitAuditAmount(ledgerPreview.net_amount_cny || 0)}，状态 ${ledgerStatus || '未生成'}。`,
+        action_label: ledgerClosureStatus === 'warning' ? '补齐分录缺口后再确认净利润' : null,
+        order_count: ledgerPreview.order_count || 0,
+        amount_cny: ledgerPreview.net_amount_cny || 0
+    });
+
+    const alertStatus = normalizeNumber(alerts.critical_count, 0) > 0
+        ? 'critical'
+        : (normalizeNumber(alerts.action_required_count, 0) > 0 ? 'warning' : 'ready');
+    addItem({
+        key: 'audit_alerts',
+        category: 'audit',
+        label: '审计告警收口',
+        status: alertStatus,
+        value_label: `${roundNumber(alerts.action_required_count, 0).toLocaleString('zh-CN')} 项待处理`,
+        description: '负利润、缺成本、来源未闭环和分录缺口会汇总为审计告警。',
+        action_label: alertStatus === 'ready' ? null : '按审计告警优先级逐项处理',
+        order_count: summary.reconciliation_affected_order_count || 0
+    });
+
+    closure.items = items;
+    closure.item_count = items.length;
+    closure.ready_count = items.filter((item) => item.status === 'ready').length;
+    closure.warning_count = items.filter((item) => item.status === 'warning').length;
+    closure.critical_count = items.filter((item) => item.status === 'critical').length;
+    closure.action_required_count = items.filter((item) => item.action_required).length;
+    closure.status = closure.critical_count > 0
+        ? 'critical'
+        : (closure.warning_count > 0 ? 'warning' : 'ready');
+
+    return closure;
+}
+
+function summarizeShopProfitAttributions(rows = [], options = {}) {
+    const summary = createEmptyShopProfitSummary();
+    const safeRows = Array.isArray(rows) ? rows.filter((row) => row?.attribution) : [];
+    const persistedLedgerPreview = buildPersistedShopProfitLedgerPreview(options.persistedLedgerRows || []);
+    summary.finance_reconciliation_context = normalizeJsonObject(options.financeSummary || {});
+
+    safeRows.forEach(({ attribution }) => {
+        summary.order_count += 1;
+        summary.refunded_order_count += attribution.refunded ? 1 : 0;
+        summary.gross_points += normalizeNumber(attribution.gross_points, 0);
+        summary.revenue_points += normalizeNumber(attribution.revenue_points, 0);
+        summary.paid_points_spent += normalizeNumber(attribution.paid_points_spent, 0);
+        summary.bonus_points_spent += normalizeNumber(attribution.bonus_points_spent, 0);
+        summary.untracked_revenue_points += normalizeNumber(attribution.untracked_revenue_points, 0);
+        summary.non_cash_points += normalizeNumber(attribution.non_cash_points, 0);
+        summary.discount_points += normalizeNumber(attribution.discount_points, 0);
+        summary.refunded_points += normalizeNumber(attribution.refunded_points, 0);
+        summary.recognized_revenue_cny += normalizeNumber(attribution.recognized_revenue_cny, 0);
+        summary.purchase_cost_cny += normalizeNumber(attribution.purchase_cost_cny, 0);
+        summary.recognized_cost_cny += normalizeNumber(attribution.recognized_cost_cny, 0);
+        summary.net_profit_cny += normalizeNumber(attribution.net_profit_cny, 0);
+        summary.inventory_item_count += normalizeNumber(attribution.inventory_item_count, 0);
+        summary.costed_item_count += normalizeNumber(attribution.costed_item_count, 0);
+        summary.missing_cost_item_count += normalizeNumber(attribution.missing_cost_item_count, 0);
+        const coverage = String(attribution.cost_coverage || '').trim().toLowerCase();
+        if (Object.prototype.hasOwnProperty.call(summary.cost_coverage_breakdown, coverage)) {
+            summary.cost_coverage_breakdown[coverage] += 1;
+        }
+    });
+
+    summary.gross_points = roundNumber(summary.gross_points, 2);
+    summary.revenue_points = roundNumber(summary.revenue_points, 2);
+    summary.paid_points_spent = roundNumber(summary.paid_points_spent, 2);
+    summary.bonus_points_spent = roundNumber(summary.bonus_points_spent, 2);
+    summary.untracked_revenue_points = roundNumber(summary.untracked_revenue_points, 2);
+    summary.non_cash_points = roundNumber(summary.non_cash_points, 2);
+    summary.discount_points = roundNumber(summary.discount_points, 2);
+    summary.refunded_points = roundNumber(summary.refunded_points, 2);
+    summary.recognized_revenue_cny = roundNumber(summary.recognized_revenue_cny, 4);
+    summary.purchase_cost_cny = roundNumber(summary.purchase_cost_cny, 4);
+    summary.recognized_cost_cny = roundNumber(summary.recognized_cost_cny, 4);
+    summary.net_profit_cny = roundNumber(summary.net_profit_cny, 4);
+    summary.margin_rate = summary.recognized_revenue_cny > 0
+        ? roundNumber(summary.net_profit_cny / summary.recognized_revenue_cny, 4)
+        : null;
+    summary.cost_coverage_rate = summary.inventory_item_count > 0
+        ? roundNumber(summary.costed_item_count / summary.inventory_item_count, 4)
+        : 0;
+
+    if (summary.missing_cost_item_count > 0) {
+        summary.notes.push(`有 ${summary.missing_cost_item_count} 个关联库存缺少采购成本，净利润可能被高估。`);
+    }
+    if (summary.untracked_revenue_points > 0) {
+        summary.notes.push(`有 ${summary.untracked_revenue_points.toLocaleString('zh-CN')} 积分来自未拆分历史订单，收入仍按旧口径估算。`);
+    }
+    if (summary.bonus_points_spent > 0) {
+        summary.notes.push(`已剔除 ${summary.bonus_points_spent.toLocaleString('zh-CN')} 奖励/赠送积分对现金收入的直接确认。`);
+    }
+    if (summary.cost_coverage_breakdown.no_inventory > 0) {
+        summary.notes.push(`有 ${summary.cost_coverage_breakdown.no_inventory} 笔订单没有精确关联库存，无法归因采购成本。`);
+    }
+
+    summary.point_source_coverage = buildShopProfitPointSourceCoverage(safeRows);
+    if (summary.point_source_coverage.migration_points > 0) {
+        summary.notes.push(`有 ${summary.point_source_coverage.migration_points.toLocaleString('zh-CN')} 积分来自迁移期余额批次，已按付费/赠送余额属性进入收入归因。`);
+    }
+
+    const reconciliation = buildShopProfitReconciliationIssues(safeRows);
+    summary.reconciliation_status = reconciliation.status;
+    summary.reconciliation_issue_count = reconciliation.issue_count;
+    summary.reconciliation_affected_order_count = reconciliation.affected_order_count;
+    summary.reconciliation_issues = reconciliation.issues;
+    summary.order_risk_list = buildShopProfitOrderRiskList(safeRows);
+    summary.dimension_breakdown = buildShopProfitDimensionBreakdown(safeRows);
+    summary.source_procurement_recommendations = buildShopSourceProcurementRecommendations(summary.dimension_breakdown);
+    summary.profit_adjustments = buildShopProfitAdjustmentSummary(safeRows);
+    summary.profit_adjustment_breakdown = buildShopProfitAdjustmentBreakdown(summary.profit_adjustments);
+    summary.profit_ledger_preview = persistedLedgerPreview || buildShopProfitLedgerPreview(safeRows);
+    summary.profit_ledger_preview.source = persistedLedgerPreview ? 'persisted' : 'preview';
+    summary.shop_profit_audit_alerts = buildShopProfitAuditAlerts(summary);
+    summary.profit_reconciliation_closure = buildShopProfitReconciliationClosure(summary);
+    summary.profit_readiness = buildShopProfitReadinessSummary(summary);
+
+    return summary;
+}
+
+async function loadShopProductSkusByIds(client, skuIds = []) {
+    const ids = [...new Set((Array.isArray(skuIds) ? skuIds : [])
+        .map((value) => String(value || '').trim())
+        .filter(Boolean))];
+
+    if (!client || !ids.length) {
+        return new Map();
+    }
+
+    try {
+        const { data, error } = await client
+            .from('shop_product_skus')
+            .select('id, product_id, sku_name, sku_code, inventory_sku_id')
+            .in('id', ids);
+
+        if (error) {
+            if (isMissingColumnError(error) || String(error?.code || '') === '42P01') {
+                return new Map();
+            }
+            throw error;
+        }
+
+        return new Map((Array.isArray(data) ? data : [])
+            .map((row) => [String(row?.id || '').trim(), row])
+            .filter(([id]) => id));
+    } catch (error) {
+        if (isMissingColumnError(error) || String(error?.code || '') === '42P01') {
+            return new Map();
+        }
+        throw error;
+    }
+}
+
+function enrichShopProfitOrderWithSku(order = {}, skusById = new Map()) {
+    const skuId = String(order?.sku_id || '').trim();
+    if (!skuId) {
+        return order;
+    }
+    const sku = skusById.get(skuId) || null;
+    if (!sku) {
+        return order;
+    }
+    return {
+        ...order,
+        sku_name: sku.sku_name || null,
+        sku_code: sku.sku_code || null,
+        inventory_sku_id: sku.inventory_sku_id || null
+    };
+}
+
+function enrichShopProfitLinkedItemsWithSkus(linkedItems = [], skusById = new Map()) {
+    return (Array.isArray(linkedItems) ? linkedItems : []).map((item) => {
+        const skuId = String(item?.sku_id || '').trim();
+        if (!skuId) {
+            return item;
+        }
+        const sku = skusById.get(skuId) || null;
+        if (!sku) {
+            return item;
+        }
+        return {
+            ...item,
+            sku_name: sku.sku_name || null,
+            sku_code: sku.sku_code || null,
+            inventory_sku_id: sku.inventory_sku_id || null
+        };
+    });
+}
+
+async function buildShopProfitAttributionRows(client, shopOrders = []) {
+    const orders = Array.isArray(shopOrders) ? shopOrders.filter(Boolean) : [];
+    if (!client || !orders.length) {
+        return [];
+    }
+
+    const orderIds = orders.map((order) => String(order?.id || '').trim()).filter(Boolean);
+    const [orderItemsByOrderId, pointLotConsumptionsByOrderId] = await Promise.all([
+        loadOrderItemsByOrderIds(client, orderIds),
+        loadPointLotConsumptionsByOrderIds(client, orderIds)
+    ]);
+    const linkedInventoryIds = orders.flatMap((order) => (
+        collectLinkedInventoryIds(order, orderItemsByOrderId.get(String(order?.id || '').trim()) || [])
+    ));
+    const inventoryRecordsById = await loadInventoryRecordsByIds(client, linkedInventoryIds);
+    const skuIds = [
+        ...orders.map((order) => order?.sku_id),
+        ...[...inventoryRecordsById.values()].map((inventory) => inventory?.sku_id)
+    ];
+    const skusById = await loadShopProductSkusByIds(client, skuIds);
+
+    const baseRows = orders.map((order) => {
+        const orderId = String(order?.id || '').trim();
+        const orderItems = orderItemsByOrderId.get(orderId) || [];
+        const enrichedOrder = enrichShopProfitOrderWithSku(order, skusById);
+        const linkedItems = enrichShopProfitLinkedItemsWithSkus(
+            buildLinkedInventoryItems(enrichedOrder, orderItems, inventoryRecordsById),
+            skusById
+        );
+        const pointLotSummary = summarizePointLotConsumptions(
+            pointLotConsumptionsByOrderId.get(orderId) || [],
+            Number(order?.price_paid || order?.total_price || 0) || 0
+        );
+        return {
+            order: enrichedOrder,
+            attribution: buildOrderProfitAttribution(enrichedOrder, linkedItems, {
+                pointLotSummary
+            })
+        };
+    });
+    const sourceBatchIds = [...new Set(baseRows
+        .flatMap((row) => Array.isArray(row?.attribution?.item_costs) ? row.attribution.item_costs : [])
+        .map((item) => String(item?.source_batch_id || '').trim())
+        .filter(Boolean))];
+    const batchesById = await loadShopProcurementBatchesByIds(client, sourceBatchIds);
+    const sourcesById = await loadShopInventorySourcesByIds(
+        client,
+        [...batchesById.values()].map((batch) => batch?.source_id)
+    );
+
+    return enrichShopProfitRowsWithProcurementSources(baseRows, batchesById, sourcesById);
+}
+
+function buildShopProfitBusinessTrend(shopProfitRows = [], sinceIso, untilIso) {
+    const rangeStart = new Date(sinceIso);
+    const rangeEnd = new Date(untilIso || Date.now());
+
+    if (Number.isNaN(rangeStart.getTime()) || Number.isNaN(rangeEnd.getTime()) || rangeStart.getTime() > rangeEnd.getTime()) {
+        return {
+            key: 'shop_profit',
+            tone: 'profit',
+            metric_kind: 'currency',
+            points: []
+        };
+    }
+
+    const buckets = buildUtcDayBuckets(rangeStart.toISOString(), rangeEnd.toISOString());
+    const bucketMap = new Map(buckets.map((bucket) => [bucket.key, {
+        label: bucket.label,
+        value: 0
+    }]));
+
+    (Array.isArray(shopProfitRows) ? shopProfitRows : []).forEach(({ order, attribution }) => {
+        const createdAt = new Date(order?.created_at);
+        if (Number.isNaN(createdAt.getTime()) || createdAt.getTime() < rangeStart.getTime() || createdAt.getTime() > rangeEnd.getTime()) {
+            return;
+        }
+        const bucket = bucketMap.get(getUtcDayKey(createdAt));
+        if (!bucket) return;
+        bucket.value += normalizeNumber(attribution?.net_profit_cny, 0);
+    });
+
+    return {
+        key: 'shop_profit',
+        tone: 'profit',
+        metric_kind: 'currency',
+        points: buckets.map((bucket) => {
+            const row = bucketMap.get(bucket.key) || { label: bucket.label, value: 0 };
+            return {
+                label: row.label,
+                value: roundNumber(row.value, 4)
+            };
+        })
+    };
+}
+
+function attachShopProfitTrend(trendSeries = [], shopProfitTrend = null) {
+    const normalized = normalizeBusinessBreakdownTrendSeries(trendSeries)
+        .filter((series) => String(series?.key || '').trim().toLowerCase() !== 'shop_profit');
+    if (shopProfitTrend && Array.isArray(shopProfitTrend.points)) {
+        normalized.push(shopProfitTrend);
+    }
+    return normalized;
 }
 
 function buildPointsBreakdown(ledgerRows, trendSeries = []) {
@@ -2540,6 +5039,9 @@ function buildBusinessBreakdown({ paymentOrders, shopOrders, balanceRows, sitewi
     const mockOrders = (paymentOrders || []).filter((order) => order.provider === 'mock');
     const successfulMockOrders = mockOrders.filter(isSuccessOrder);
     const orderCount = (paymentOrders || []).length;
+    const shopProfitSummary = normalizeJsonObject(sitewideSummary?.shop_profit_summary);
+    const shopNetProfitCny = normalizeNumber(shopProfitSummary.net_profit_cny, 0);
+    const shopMissingCostCount = normalizeNumber(shopProfitSummary.missing_cost_item_count, 0);
 
     return [
         {
@@ -2565,6 +5067,17 @@ function buildBusinessBreakdown({ paymentOrders, shopOrders, balanceRows, sitewi
                 : '当前无退款冲销',
             help: '统计商城订单消耗的点数，不含已退款冲销部分。',
             trend: getBusinessBreakdownTrendPoints(trendSeries, 'shop')
+        },
+        {
+            key: 'shop_profit',
+            tone: 'profit',
+            metric_kind: 'currency',
+            title: '商城净利润估算',
+            description: `按采购成本归因 ${normalizeNumber(shopProfitSummary.costed_item_count, 0).toLocaleString('zh-CN')} 件库存，缺成本 ${shopMissingCostCount.toLocaleString('zh-CN')} 件。`,
+            metric: formatBusinessCurrency(shopNetProfitCny),
+            meta: `现金收入 ${formatBusinessCurrency(shopProfitSummary.recognized_revenue_cny)} · 奖励/未拆分 ${roundNumber(normalizeNumber(shopProfitSummary.non_cash_points, 0), 2).toLocaleString('zh-CN')} 积分`,
+            help: '优先按订单付费积分确认现金收入；奖励/赠送积分不直接确认为现金收入，历史未拆分订单按旧口径估算。',
+            trend: getBusinessBreakdownTrendPoints(trendSeries, 'shop_profit')
         },
         {
             key: 'mock',
@@ -2608,6 +5121,9 @@ function buildBusinessBreakdownFromFinanceSummary({ overview, sitewideSummary, t
     const circulatingPoints = roundNumber(summary.circulating_points, 1);
     const paidBalance = roundNumber(summary.paid_balance, 1);
     const bonusBalance = roundNumber(summary.bonus_balance, 1);
+    const shopProfitSummary = normalizeJsonObject(summary.shop_profit_summary);
+    const shopNetProfitCny = normalizeNumber(shopProfitSummary.net_profit_cny, 0);
+    const shopMissingCostCount = normalizeNumber(shopProfitSummary.missing_cost_item_count, 0);
 
     return [
         {
@@ -2633,6 +5149,17 @@ function buildBusinessBreakdownFromFinanceSummary({ overview, sitewideSummary, t
                 : '当前无退款冲销',
             help: '统计商城订单消耗的点数，不含已退款冲销部分。',
             trend: getBusinessBreakdownTrendPoints(trendSeries, 'shop')
+        },
+        {
+            key: 'shop_profit',
+            tone: 'profit',
+            metric_kind: 'currency',
+            title: '商城净利润估算',
+            description: `按采购成本归因 ${normalizeNumber(shopProfitSummary.costed_item_count, 0).toLocaleString('zh-CN')} 件库存，缺成本 ${shopMissingCostCount.toLocaleString('zh-CN')} 件。`,
+            metric: formatBusinessCurrency(shopNetProfitCny),
+            meta: `现金收入 ${formatBusinessCurrency(shopProfitSummary.recognized_revenue_cny)} · 奖励/未拆分 ${roundNumber(normalizeNumber(shopProfitSummary.non_cash_points, 0), 2).toLocaleString('zh-CN')} 积分`,
+            help: '优先按订单付费积分确认现金收入；奖励/赠送积分不直接确认为现金收入，历史未拆分订单按旧口径估算。',
+            trend: getBusinessBreakdownTrendPoints(trendSeries, 'shop_profit')
         },
         {
             key: 'mock',
@@ -2703,6 +5230,7 @@ module.exports = async function handler(req, res) {
         const needsQueries = view === 'ops' || (view === 'overview' && !isOverviewOpsScope);
         const needsFinance = view === 'finance';
         const needsOpsAlerts = view === 'ops' || needsOverviewOpsData;
+        const needsShopProfitOpsAudit = needsOpsAlerts && !isOverviewCoreScope;
         const overviewAggregate = needsOverviewSecondaryData
             ? await fetchPaymentOverviewAggregate(adminSupabase || null, sinceIso, untilIso, trendSinceIso, site)
             : null;
@@ -2717,6 +5245,7 @@ module.exports = async function handler(req, res) {
             && Array.isArray(financeAggregate?.points_breakdown_trend);
         const needsBusinessTrendFallback = needsFinance && (!useFinanceAggregate || !financeAggregateHasBusinessTrend);
         const needsPointsTrendFallback = needsFinance && (!useFinanceAggregate || !financeAggregateHasPointsTrend);
+        const needsShopProfitSummary = needsFinance || needsShopProfitOpsAudit;
         const shouldFetchPointsLedgerTrendRows = needsFinance && (
             (needsBusinessTrendFallback && (useFinanceAggregate || Boolean(untilIso)))
             || (useFinanceAggregate && needsPointsTrendFallback)
@@ -2729,6 +5258,7 @@ module.exports = async function handler(req, res) {
             rawCheckoutSessions,
             rawOpsAlertJobs,
             shopOrders,
+            shopProfitLedgerRows,
             pointsLedgerRows,
             pointsBalanceRows,
             pointsLedgerTrendRows
@@ -2740,7 +5270,8 @@ module.exports = async function handler(req, res) {
             needsQueries && !useOverviewAggregate ? fetchPaymentQueryAttempts(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
             needsSessions && !useOverviewAggregate ? fetchCheckoutSessions(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
             needsOpsAlerts ? fetchOpsAlertJobs(scopedClient, sinceIso, untilIso, view) : Promise.resolve([]),
-            needsBusinessTrendFallback ? fetchShopOrders(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
+            (needsBusinessTrendFallback || needsShopProfitSummary) ? fetchShopOrders(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
+            needsShopProfitSummary ? fetchShopProfitLedgerRows(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
             needsFinance && !useFinanceAggregate ? fetchPointsLedger(scopedClient, sinceIso, untilIso, site) : Promise.resolve([]),
             needsBusinessTrendFallback ? fetchPointsBalances(scopedClient, site) : Promise.resolve([]),
             shouldFetchPointsLedgerTrendRows
@@ -2751,6 +5282,25 @@ module.exports = async function handler(req, res) {
         const checkoutSessions = needsSessions
             ? mergeCheckoutSessionsWithOrderFallback(orderRows || [], rawCheckoutSessions || [])
             : [];
+        const shopProfitRows = needsShopProfitSummary
+            ? await buildShopProfitAttributionRows(scopedClient, shopOrders || [])
+            : [];
+        const financeSummaryBase = needsFinance
+            ? (
+                useFinanceAggregate
+                    ? normalizeJsonObject(financeAggregate?.sitewide_summary)
+                    : buildFinanceSummary(visibleOrders || [], shopOrders || [], pointsLedgerRows || [], pointsBalanceRows || [])
+            )
+            : {};
+        const shopProfitSummary = needsShopProfitSummary
+            ? summarizeShopProfitAttributions(shopProfitRows, {
+                persistedLedgerRows: shopProfitLedgerRows || [],
+                financeSummary: financeSummaryBase
+            })
+            : undefined;
+        const shopProfitTrend = needsShopProfitSummary
+            ? buildShopProfitBusinessTrend(shopProfitRows, sinceIso, untilIso)
+            : null;
         const enrichedOrders = enrichPaymentOrdersWithCheckoutSessions(orderRows || [], checkoutSessions || []);
         const visibleOrders = filterVisiblePaymentOrders(enrichedOrders || []);
         const opsAlertJobs = needsOpsAlerts
@@ -2782,8 +5332,15 @@ module.exports = async function handler(req, res) {
                     : buildSessionSummary(checkoutSessions || [], visibleOrders || [])
             )
             : undefined;
-        const opsAlertSummary = needsOpsAlerts ? buildOpsAlertSummary(opsAlertJobs) : undefined;
-        const opsAlertItems = needsOpsAlerts ? buildOpsAlertQueueItems(opsAlertJobs) : [];
+        const opsAlertPayload = needsOpsAlerts
+            ? mergeOpsAlertQueueWithShopProfit(
+                opsAlertJobs,
+                needsShopProfitOpsAudit ? shopProfitSummary : undefined,
+                site
+            )
+            : { summary: undefined, items: [] };
+        const opsAlertSummary = opsAlertPayload.summary;
+        const opsAlertItems = opsAlertPayload.items;
         const siteOrderIds = useOverviewAggregate
             ? new Set()
             : new Set((visibleOrders || []).map((order) => order.id).filter(Boolean));
@@ -3039,8 +5596,20 @@ module.exports = async function handler(req, res) {
         const sitewide_summary = needsFinance
             ? (
                 useFinanceAggregate
-                    ? normalizeJsonObject(financeAggregate?.sitewide_summary)
-                    : buildFinanceSummary(visibleOrders || [], shopOrders || [], pointsLedgerRows || [], pointsBalanceRows || [])
+                    ? {
+                        ...financeSummaryBase,
+                        shop_profit_summary: shopProfitSummary,
+                        shop_net_profit_cny: shopProfitSummary?.net_profit_cny ?? 0,
+                        shop_purchase_cost_cny: shopProfitSummary?.recognized_cost_cny ?? 0,
+                        shop_revenue_cny: shopProfitSummary?.recognized_revenue_cny ?? 0
+                    }
+                    : {
+                        ...financeSummaryBase,
+                        shop_profit_summary: shopProfitSummary,
+                        shop_net_profit_cny: shopProfitSummary?.net_profit_cny ?? 0,
+                        shop_purchase_cost_cny: shopProfitSummary?.recognized_cost_cny ?? 0,
+                        shop_revenue_cny: shopProfitSummary?.recognized_revenue_cny ?? 0
+                    }
             )
             : undefined;
         const pointsBreakdownTrend = needsFinance
@@ -3063,7 +5632,7 @@ module.exports = async function handler(req, res) {
                     : buildPointsBreakdown(pointsLedgerRows || [], pointsBreakdownTrend)
             )
             : undefined;
-        const businessBreakdownTrend = needsFinance
+        const baseBusinessBreakdownTrend = needsFinance
             ? (
                 useFinanceAggregate && financeAggregateHasBusinessTrend
                     ? normalizeBusinessBreakdownTrendSeries(financeAggregate?.business_breakdown_trend)
@@ -3079,6 +5648,9 @@ module.exports = async function handler(req, res) {
                         untilIso
                     })
             )
+            : undefined;
+        const businessBreakdownTrend = needsFinance
+            ? attachShopProfitTrend(baseBusinessBreakdownTrend || [], shopProfitTrend)
             : undefined;
         const business_breakdown = needsFinance
             ? (

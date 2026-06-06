@@ -251,6 +251,103 @@ test('shop inventory detail handler loads inventory, related order, and sibling 
     });
 });
 
+test('shop inventory detail handler returns procurement batch and source context', async () => {
+    await withShopInventoryDetailHandler({
+        queryResults: {
+            shop_inventory: [
+                {
+                    data: {
+                        id: 'inv_source_1',
+                        product_id: 'prod_1',
+                        buyer_id: null,
+                        content: 'source-account',
+                        status: 'available',
+                        created_at: '2026-06-06T01:00:00.000Z',
+                        source_batch_id: 'proc_batch_1',
+                        purchase_unit_cost_cny: 12.34,
+                        shop_products: { name: 'Premium Account' }
+                    },
+                    error: null
+                }
+            ],
+            shop_orders: [
+                {
+                    data: [],
+                    error: null
+                }
+            ],
+            shop_order_items: [
+                {
+                    data: [],
+                    error: null
+                }
+            ],
+            shop_procurement_batches: [
+                {
+                    data: [
+                        {
+                            id: 'proc_batch_1',
+                            batch_code: 'batch_source_1',
+                            source_id: 'source_1',
+                            unit_cost_cny: 12.34,
+                            quality_status: 'watch',
+                            proof_url: 'https://supplier.example.com/proof/1001',
+                            notes: '首批采购备注：先观察稳定性',
+                            metadata: { source_tags: ['备用'] }
+                        }
+                    ],
+                    error: null
+                }
+            ],
+            shop_inventory_sources: [
+                {
+                    data: [
+                        {
+                            id: 'source_1',
+                            source_name: 'Google Workspace 供应商',
+                            source_url: 'https://supplier.example.com/order/1001',
+                            risk_tier: 'standard',
+                            metadata: { source_tags: ['低价', '高风险'] }
+                        }
+                    ],
+                    error: null
+                }
+            ]
+        }
+    }, async ({ handler, state }) => {
+        const req = {
+            method: 'GET',
+            headers: {},
+            url: '/api/admin/shop/inventory-detail?id=inv_source_1'
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.procurementBatch?.id, 'proc_batch_1');
+        assert.equal(payload.procurementBatch?.unit_cost_cny, 12.34);
+        assert.equal(payload.procurementBatch?.proof_url, 'https://supplier.example.com/proof/1001');
+        assert.equal(payload.procurementBatch?.notes, '首批采购备注：先观察稳定性');
+        assert.deepEqual(payload.procurementBatch?.metadata?.source_tags, ['备用']);
+        assert.equal(payload.inventorySource?.source_name, 'Google Workspace 供应商');
+        assert.equal(payload.inventorySource?.source_url, 'https://supplier.example.com/order/1001');
+        assert.deepEqual(payload.inventorySource?.metadata?.source_tags, ['低价', '高风险']);
+        assert.equal(
+            state.queryCalls.some((entry) => entry.table === 'shop_procurement_batches'),
+            true,
+            'handler should load procurement batch when inventory has source_batch_id'
+        );
+        assert.equal(
+            state.queryCalls.some((entry) => entry.table === 'shop_inventory_sources'),
+            true,
+            'handler should load procurement source when batch has source_id'
+        );
+    });
+});
+
 test('shop inventory detail handler rejects non-GET methods', async () => {
     await withShopInventoryDetailHandler({}, async ({ handler }) => {
         const req = { method: 'POST', headers: {} };

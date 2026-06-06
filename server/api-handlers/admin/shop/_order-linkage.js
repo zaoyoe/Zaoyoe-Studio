@@ -10,7 +10,7 @@ function uniqueNormalized(values = [], maxLength = 200) {
     )];
 }
 
-async function loadInventoryRecordsByIds(supabase, inventoryIds = [], columns = 'id, content, status, buyer_id, sold_at, remark, product_id') {
+async function loadInventoryRecordsByIds(supabase, inventoryIds = [], columns = 'id, content, status, buyer_id, sold_at, remark, product_id, sku_id, source_batch_id, purchase_unit_cost, purchase_currency, purchase_exchange_rate_to_cny, purchase_unit_cost_cny') {
     const ids = uniqueNormalized(inventoryIds, 160);
     if (!ids.length) {
         return new Map();
@@ -83,7 +83,13 @@ function buildLinkedInventoryItems(order = {}, orderItems = [], inventoryRecords
                 status: inventoryRecord?.status || null,
                 buyer_id: inventoryRecord?.buyer_id || null,
                 sold_at: inventoryRecord?.sold_at || null,
-                remark: inventoryRecord?.remark || null
+                remark: inventoryRecord?.remark || null,
+                sku_id: inventoryRecord?.sku_id || null,
+                source_batch_id: inventoryRecord?.source_batch_id || null,
+                purchase_unit_cost: inventoryRecord?.purchase_unit_cost ?? null,
+                purchase_currency: inventoryRecord?.purchase_currency || null,
+                purchase_exchange_rate_to_cny: inventoryRecord?.purchase_exchange_rate_to_cny ?? null,
+                purchase_unit_cost_cny: inventoryRecord?.purchase_unit_cost_cny ?? null
             };
         });
     }
@@ -103,7 +109,13 @@ function buildLinkedInventoryItems(order = {}, orderItems = [], inventoryRecords
         status: inventoryRecord?.status || null,
         buyer_id: inventoryRecord?.buyer_id || null,
         sold_at: inventoryRecord?.sold_at || null,
-        remark: inventoryRecord?.remark || null
+        remark: inventoryRecord?.remark || null,
+        sku_id: inventoryRecord?.sku_id || null,
+        source_batch_id: inventoryRecord?.source_batch_id || null,
+        purchase_unit_cost: inventoryRecord?.purchase_unit_cost ?? null,
+        purchase_currency: inventoryRecord?.purchase_currency || null,
+        purchase_exchange_rate_to_cny: inventoryRecord?.purchase_exchange_rate_to_cny ?? null,
+        purchase_unit_cost_cny: inventoryRecord?.purchase_unit_cost_cny ?? null
     }];
 }
 

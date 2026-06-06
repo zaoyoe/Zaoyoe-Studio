@@ -146,6 +146,7 @@ function createAdminPaymentsRuntime(fetchImpl, options = {}) {
     const elements = {};
     const timingMarks = [];
     const timingMeasures = [];
+    const registeredModules = {};
 
     function registerElement(id, classes = [], dataset = {}) {
         const element = new FakeElement({ id, classes, dataset });
@@ -257,6 +258,14 @@ function createAdminPaymentsRuntime(fetchImpl, options = {}) {
             return 1;
         },
         clearInterval() {},
+        AdminShell: options.captureRegisteredModules ? {
+            registerModule(moduleId, lifecycle = {}) {
+                registeredModules[moduleId] = lifecycle;
+                return () => {
+                    delete registeredModules[moduleId];
+                };
+            }
+        } : null,
         AdminStudioTiming: options.captureTiming ? {
             mark(name, detail = {}) {
                 timingMarks.push({ name, detail: { ...detail } });
@@ -306,6 +315,7 @@ function createAdminPaymentsRuntime(fetchImpl, options = {}) {
     return {
         window,
         elements,
+        registeredModules,
         timingMarks,
         timingMeasures
     };
@@ -326,6 +336,100 @@ async function flushMicrotasks(rounds = 6) {
         await Promise.resolve();
     }
 }
+
+test('payments module activation waits for in-flight init instead of leaving an empty shell', async () => {
+    const fetchCalls = [];
+    let releaseOverviewCore;
+    const overviewCoreDeferred = new Promise((resolve) => {
+        releaseOverviewCore = resolve;
+    });
+
+    const fetchImpl = async (url) => {
+        const parsedUrl = new URL(url, 'https://example.com');
+        const view = parsedUrl.searchParams.get('view') || 'overview';
+        const scope = parsedUrl.searchParams.get('scope') || 'full';
+        fetchCalls.push(`${parsedUrl.pathname}?${parsedUrl.searchParams.toString()}`);
+
+        if (view === 'overview' && scope === 'core') {
+            await overviewCoreDeferred;
+            return createJsonResponse({
+                success: true,
+                overview: {
+                    total_orders: 3,
+                    paid_orders: 2,
+                    paid_rate: 66.67,
+                    total_amount: 128,
+                    total_points: 1280
+                },
+                anomaly_summary: {
+                    review_orders: 1,
+                    failed_orders: 0,
+                    unclaimed_paid_orders: 0
+                },
+                session_summary: {
+                    total_sessions: 0,
+                    match_rate: 0
+                },
+                query_summary: {
+                    total_attempts: 0,
+                    failed_attempts: 0
+                }
+            });
+        }
+
+        if (view === 'overview' && (scope === 'secondary' || scope === 'ops')) {
+            return createJsonResponse({
+                success: true,
+                anomaly_summary: {
+                    review_orders: 1,
+                    failed_orders: 0,
+                    open_cases: 0
+                },
+                provider_stats: [],
+                trend_24h: [],
+                refund_alert_topics: [],
+                refund_alert_items: [],
+                ops_alert_summary: {
+                    total: 0,
+                    pending: 0,
+                    retry: 0,
+                    processing: 0,
+                    dead_letter: 0,
+                    handled: 0,
+                    ignored: 0
+                },
+                ops_alert_items: []
+            });
+        }
+
+        throw new Error(`Unexpected fetch: ${url}`);
+    };
+
+    const { registeredModules, elements } = createAdminPaymentsRuntime(fetchImpl, {
+        captureRegisteredModules: true
+    });
+    assert.equal(typeof registeredModules.payments?.activate, 'function');
+
+    const firstActivation = registeredModules.payments.activate({}, { tab: 'overview', reason: 'sidebar-click' });
+    await flushMicrotasks();
+    const secondActivation = registeredModules.payments.activate({}, { tab: 'overview', reason: 'sidebar-click-again' });
+    await flushMicrotasks();
+
+    assert.equal(
+        fetchCalls.filter((call) => call.includes('view=overview') && call.includes('scope=core')).length,
+        1,
+        'concurrent payments activations should share the same initial overview request'
+    );
+
+    releaseOverviewCore();
+    assert.equal(await firstActivation, true);
+    assert.equal(await secondActivation, true);
+    await flushMicrotasks(10);
+
+    assert.match(elements['paymentsOverviewGrid'].innerHTML, /总订单/);
+    assert.match(elements['paymentsOverviewGrid'].innerHTML, />3</);
+    assert.notEqual(elements['paymentsToolbarMeta'].textContent, '等待载入支付数据');
+});
 
 test('payments ops tab auto-recovers after switching during initial overview load', async () => {
     const fetchCalls = [];

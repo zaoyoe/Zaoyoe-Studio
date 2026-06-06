@@ -111,6 +111,16 @@ test('shop inventory detail handler requires shop.manage permission', async () =
     });
 });
 
+test('shop procurement handler requires shop.manage permission', async () => {
+    await withAdminHandler('../server/api-handlers/admin/shop/procurement.js', async ({ handler, state }) => {
+        const res = createMockResponse();
+        await handler({ method: 'GET', headers: {} }, res);
+
+        assert.equal(res.statusCode, 418);
+        assert.deepEqual(state.requireAdminCalls[0]?.options, { permission: 'shop.manage' });
+    });
+});
+
 test('shop products handler requires shop.manage permission', async () => {
     await withAdminHandler('../server/api-handlers/admin/shop/products.js', async ({ handler, state }) => {
         const res = createMockResponse();

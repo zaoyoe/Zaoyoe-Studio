@@ -2162,6 +2162,14 @@ function bindAdminStudioDelegatedControls() {
             return;
         }
 
+        if (String(actionEl.dataset.adminAction || '').trim() === 'payments-open-shop-order') {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation?.();
+            runAdminStudioShopOrderOpenAction(actionEl);
+            return;
+        }
+
         if (handleOpsAlertMonitorBatchActionElement(actionEl, event)) {
             event.stopImmediatePropagation?.();
             return;
@@ -2170,6 +2178,18 @@ function bindAdminStudioDelegatedControls() {
             event.stopImmediatePropagation?.();
         }
     }, { capture: true });
+
+    function decodeAdminStudioDatasetValue(value = '') {
+        const raw = String(value || '').trim();
+        if (!raw) {
+            return '';
+        }
+        try {
+            return decodeURIComponent(raw);
+        } catch (_) {
+            return raw;
+        }
+    }
 
     async function tryOpenAdminStudioShellContext(moduleName = '', context = {}, options = {}) {
         const normalizedModuleName = String(moduleName || '').trim().toLowerCase();
@@ -2406,6 +2426,100 @@ function bindAdminStudioDelegatedControls() {
             analyticsPromptId: normalizedPromptId
         });
         return switched !== false;
+    }
+
+    async function openAdminStudioShopOrderContext(orderId = '') {
+        const normalizedOrderId = String(orderId || '').replace(/^SHOP_ORDER_/i, '').trim();
+        const emitShopFocusFeedback = (message = '', state = 'saved') => {
+            const normalizedMessage = String(message || '').trim();
+            if (!normalizedMessage) {
+                return null;
+            }
+
+            return dispatchAdminStudioFeedbackSignal({
+                kind: 'module-result',
+                module: 'shop',
+                source: 'payments-shop-profit-risk',
+                state,
+                message: normalizedMessage
+            });
+        };
+
+        if (!normalizedOrderId) {
+            emitShopFocusFeedback('商城订单入口缺少订单 ID，请刷新审计卡片后重试。', 'failed');
+            return false;
+        }
+
+        const context = {
+            source: getAdminStudioActiveModuleId(),
+            entity: 'shop-order',
+            action: 'focus-order',
+            focus: {
+                orderId: normalizedOrderId,
+                order_id: normalizedOrderId
+            },
+            payload: {
+                workspace: 'orders',
+                defaultTab: 'orders',
+                tab: 'orders',
+                openDetails: true,
+                focusTargetId: 'shopOrdersTable',
+                focus_target_id: 'shopOrdersTable'
+            }
+        };
+
+        if (typeof window.openAdminShopShellContext === 'function') {
+            try {
+                const opened = await window.openAdminShopShellContext(context, {
+                    settleMs: 0,
+                    silentDenied: true
+                });
+                if (opened !== false) {
+                    emitShopFocusFeedback(`商城订单 ${normalizedOrderId} 已打开`);
+                    return true;
+                }
+            } catch (error) {
+                console.warn('[AdminStudio] Failed to open shop order through shared helper:', error);
+            }
+        }
+
+        if (await tryOpenAdminStudioShellContext('shop', context)) {
+            emitShopFocusFeedback(`商城订单 ${normalizedOrderId} 已打开`);
+            return true;
+        }
+
+        if (typeof window.ShopAdmin?.openOrderDetailContext === 'function') {
+            await window.ShopAdmin.openOrderDetailContext(normalizedOrderId, {
+                source: 'payments-shop-profit-risk',
+                openDetails: true
+            });
+            emitShopFocusFeedback(`商城订单 ${normalizedOrderId} 已打开`);
+            return true;
+        }
+
+        if (typeof window.ShopAdmin?.focusOrder === 'function') {
+            await window.ShopAdmin.focusOrder(normalizedOrderId, {
+                openDetails: true
+            });
+            emitShopFocusFeedback(`商城订单 ${normalizedOrderId} 已定位`);
+            return true;
+        }
+
+        emitShopFocusFeedback('商城订单详情暂时无法打开，请稍后重试。', 'failed');
+        return false;
+    }
+
+    function runAdminStudioShopOrderOpenAction(actionEl) {
+        return runAdminStudioActionFeedback(actionEl, () => (
+            openAdminStudioShopOrderContext(decodeAdminStudioDatasetValue(actionEl?.dataset?.shopOrderId || ''))
+        ), {
+            loadingText: '打开订单中...',
+            successText: '订单已打开',
+            errorText: '打开失败',
+            errorMessage: '商城订单详情打开失败，请稍后重试。',
+            restoreDelayMs: 900,
+            cleanupDelayMs: 260
+        });
     }
 
     async function openAdminStudioPaymentsFocusContext(action = '', value = '') {
@@ -3834,6 +3948,11 @@ function bindAdminStudioDelegatedControls() {
                 break;
             case 'payments-priority-focus-order':
                 void openAdminStudioPaymentsFocusContext('priority-focus-order', actionEl.dataset.paymentsOrderId);
+                break;
+            case 'payments-open-shop-order':
+                event.preventDefault();
+                event.stopPropagation();
+                runAdminStudioShopOrderOpenAction(actionEl);
                 break;
             case 'payments-priority-focus-topic':
                 void openAdminStudioPaymentsFocusContext('priority-focus-topic', actionEl.dataset.paymentsTopicKey);

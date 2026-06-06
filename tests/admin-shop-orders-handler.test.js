@@ -67,12 +67,42 @@ function createQueryBuilder(state, table, rows = []) {
         to: 99,
         eqFilters: [],
         inFilters: [],
-        orExpression: ''
+        orExpression: '',
+        payload: null,
+        upsertOptions: null
     };
 
     const builder = {
         select() {
             return builder;
+        },
+        upsert(payload, options = {}) {
+            const safePayload = Array.isArray(payload) ? payload : [payload];
+            queryState.payload = safePayload;
+            queryState.upsertOptions = options;
+            state.calls.push({
+                table,
+                mode: 'upsert',
+                payload: safePayload,
+                upsertOptions: options,
+                eqFilters: [],
+                inFilters: [],
+                orExpression: '',
+                range: [0, 0]
+            });
+            state.tables[table] = state.tables[table] || [];
+            safePayload.forEach((row) => {
+                const index = state.tables[table].findIndex((existing) => (
+                    String(existing?.order_id || '') === String(row?.order_id || '')
+                    && String(existing?.dedupe_key || '') === String(row?.dedupe_key || '')
+                ));
+                if (index >= 0) {
+                    state.tables[table][index] = { ...state.tables[table][index], ...row };
+                } else {
+                    state.tables[table].push({ id: `ledger_${state.tables[table].length + 1}`, ...row });
+                }
+            });
+            return Promise.resolve({ data: safePayload, error: null });
         },
         order(column, config = {}) {
             queryState.orderBy = String(column || '');
@@ -160,7 +190,8 @@ async function withShopOrdersHandler(tables = {}, callback) {
     const originalLoad = Module._load;
     const state = {
         calls: [],
-        requireAdminCalls: []
+        requireAdminCalls: [],
+        tables
     };
 
     delete require.cache[handlerPath];
@@ -179,7 +210,8 @@ async function withShopOrdersHandler(tables = {}, callback) {
                     return {
                         supabase: {
                             from(table) {
-                                return createQueryBuilder(state, table, tables[table] || []);
+                                state.tables[table] = state.tables[table] || [];
+                                return createQueryBuilder(state, table, state.tables[table] || []);
                             }
                         },
                         adminSupabase: {
@@ -190,7 +222,8 @@ async function withShopOrdersHandler(tables = {}, callback) {
                                     }
                                 }
                             }
-                        }
+                        },
+                        user: { id: 'admin_1' }
                     };
                 },
                 sendJson(res, status, payload) {
@@ -317,7 +350,16 @@ test('shop orders handler resolves order content through exact order-item linkag
                 snapshot_product_name: 'Linked Account',
                 created_at: '2026-04-06T08:00:00.000Z',
                 total_price: 120,
-                price_paid: 120
+                price_paid: 120,
+                paid_points_spent: 100,
+                bonus_points_spent: 20,
+                points_spend_breakdown: {
+                    status: 'exact',
+                    basis: 'points_balance_deduction',
+                    paid_points: 100,
+                    bonus_points: 20,
+                    untracked_points: 0
+                }
             }
         ],
         shop_order_items: [
@@ -334,7 +376,9 @@ test('shop orders handler resolves order content through exact order-item linkag
             {
                 id: 'inv_linked',
                 content: 'linked@example.com----secret',
-                status: 'sold'
+                status: 'sold',
+                source_batch_id: 'batch_linked',
+                purchase_unit_cost_cny: 42.35
             }
         ],
         profiles: [
@@ -357,6 +401,31 @@ test('shop orders handler resolves order content through exact order-item linkag
         assert.equal(payload.rows[0]?.linkage_source, 'order_items');
         assert.deepEqual(payload.rows[0]?.linked_inventory_ids, ['inv_linked']);
         assert.equal(payload.rows[0]?.resolved_items?.[0]?.content, 'linked@example.com----secret');
+        assert.equal(payload.rows[0]?.profit_attribution?.basis, 'paid_balance_cash_revenue');
+        assert.equal(payload.rows[0]?.profit_attribution?.paid_points_spent, 100);
+        assert.equal(payload.rows[0]?.profit_attribution?.bonus_points_spent, 20);
+        assert.equal(payload.rows[0]?.profit_attribution?.point_source_traceability?.status, 'balance_split_only');
+        assert.equal(payload.rows[0]?.profit_attribution?.point_source_traceability?.label, '仅余额拆分');
+        assert.equal(payload.rows[0]?.profit_attribution?.point_source_traceability?.action_required, false);
+        assert.equal(payload.rows[0]?.profit_attribution?.recognized_revenue_cny, 100);
+        assert.equal(payload.rows[0]?.profit_attribution?.purchase_cost_cny, 42.35);
+        assert.equal(payload.rows[0]?.profit_attribution?.net_profit_cny, 57.65);
+        assert.equal(payload.rows[0]?.profit_attribution?.cost_coverage, 'complete');
+        assert.equal(payload.rows[0]?.profit_attribution?.profit_ledger_status, 'settled');
+        assert.equal(payload.rows[0]?.profit_attribution?.profit_ledger_source, 'persisted');
+        assert.equal(payload.rows[0]?.profit_attribution?.profit_ledger_synced, true);
+        assert.equal(
+            payload.rows[0]?.profit_attribution?.profit_ledger_entries?.some((entry) => entry.entry_type === 'revenue_points_paid' && entry.amount_cny === 100),
+            true
+        );
+        assert.equal(
+            payload.rows[0]?.profit_attribution?.profit_ledger_entries?.some((entry) => entry.entry_type === 'inventory_cost' && entry.amount_cny === -42.35),
+            true
+        );
+        assert.equal(
+            state.calls.some((entry) => entry.table === 'shop_order_profit_ledger' && entry.mode === 'upsert' && entry.payload.some((row) => row.entry_type === 'inventory_cost')),
+            true
+        );
         assert.equal(
             state.calls.some((entry) => entry.table === 'shop_order_items' && entry.inFilters.some(([column]) => column === 'order_id')),
             true,

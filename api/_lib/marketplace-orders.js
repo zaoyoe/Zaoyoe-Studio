@@ -3,6 +3,9 @@ const {
     normalizeMarketplaceChannelsConfig,
     sanitizeText
 } = require('./marketplace-channels');
+const {
+    safeSyncOrderProfitLedgerByOrderId
+} = require('../../server/api-handlers/admin/shop/_profit-ledger');
 
 function normalizeKeyPart(value, fallback = '', maxLength = 80) {
     const normalized = sanitizeText(value, maxLength).toLowerCase();
@@ -355,6 +358,13 @@ async function createMarketplaceShopOrder({
         },
         request: normalized
     });
+
+    if (result?.success === true && result?.data?.order_id && supabase?.from) {
+        await safeSyncOrderProfitLedgerByOrderId(supabase, result.data.order_id, {
+            userId: normalized.user_id || null,
+            reason: 'marketplace_order_success'
+        });
+    }
 
     return {
         request: normalized,

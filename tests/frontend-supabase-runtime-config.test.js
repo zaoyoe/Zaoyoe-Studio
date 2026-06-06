@@ -11348,6 +11348,16 @@ test('shop admin order workflows externalize runtime table-row and modal styling
         assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
     }
 
+    assert.equal(
+        shopSource.includes('order.user_id.substring'),
+        false,
+        'shop orders table should tolerate orders without a user_id instead of crashing during render'
+    );
+    assert.equal(
+        adminStudioSource.includes('ordersNullUser=20260606_ADMIN_SHOP_ORDERS_NULL_USER_1'),
+        true,
+        'admin-studio.html should cache-bust the null-user order list fix'
+    );
     const styleMarkers = [
         '.shop-order-row',
         '.shop-order-row--focused',
@@ -11415,12 +11425,19 @@ test('shop admin inventory workflows externalize runtime table and modal styling
         'shop-inventory-detail-entry',
         'shop-inventory-detail-card-value--status',
         'shop-inventory-copy-feedback',
-        'shop-inventory-selection-toggle-cell'
+        'shop-inventory-selection-toggle-cell',
+        'shop-inventory-product-name'
     ];
 
     for (const marker of runtimeMarkers) {
         assert.equal(shopSource.includes(marker), true, `js/admin-shop.js should contain ${marker}`);
     }
+
+    assert.equal(
+        shopStyles.includes('#shop-view-inventory .shop-table--inventory td:nth-child(2)'),
+        true,
+        'shop inventory desktop table should constrain the product column directly'
+    );
 
     assert.equal(
         shopSource.includes(".rpc('fn_admin_list_inventory'"),

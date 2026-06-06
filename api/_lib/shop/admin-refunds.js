@@ -1,4 +1,7 @@
 const VALID_TARGET_STATUSES = new Set(['frozen', 'available', 'fault', 'reserve']);
+const {
+    safeSyncOrderProfitLedgerByOrderId
+} = require('../../../server/api-handlers/admin/shop/_profit-ledger');
 
 function normalizeText(value) {
     return String(value || '').trim();
@@ -85,11 +88,19 @@ async function applyShopOrderRefund({
         throw createRefundError(data?.message || '退款失败');
     }
 
+    const profitLedgerSync = data?.duplicate === true
+        ? null
+        : await safeSyncOrderProfitLedgerByOrderId(supabase, normalizedOrderId, {
+            userId: adminId,
+            reason: 'shop_refund_success'
+        });
+
     return {
         order,
         orderSite,
         refundedAmount,
         duplicate: data?.duplicate === true,
+        profitLedgerSync,
         result: data
     };
 }

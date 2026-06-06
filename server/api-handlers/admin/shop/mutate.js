@@ -77,6 +77,537 @@ function normalizeNullableNumber(value) {
     return Math.round(parsed * 100) / 100;
 }
 
+function hasOwnValue(source = {}, keys = []) {
+    if (!source || typeof source !== 'object') {
+        return false;
+    }
+
+    return keys.some((key) => {
+        if (!Object.prototype.hasOwnProperty.call(source, key)) {
+            return false;
+        }
+        const value = source[key];
+        if (value === null || value === undefined) {
+            return false;
+        }
+        if (typeof value === 'string') {
+            return value.trim() !== '';
+        }
+        return true;
+    });
+}
+
+function normalizeOptionalDecimal(value, {
+    fieldLabel = '数值',
+    maxDecimals = 4,
+    allowZero = true,
+    fallback = null
+} = {}) {
+    if (value === null || value === undefined || value === '') {
+        return fallback;
+    }
+
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0 || (!allowZero && parsed <= 0)) {
+        throw Object.assign(new Error(`${fieldLabel}必须是${allowZero ? '非负' : '大于 0 的'}数字`), {
+            statusCode: 400,
+            code: 'shop_procurement_number_invalid'
+        });
+    }
+
+    const factor = 10 ** Math.max(0, Math.min(8, Number(maxDecimals) || 0));
+    return Math.round(parsed * factor) / factor;
+}
+
+function normalizeProcurementQualityStatus(value) {
+    const normalized = normalizeText(value, 32).toLowerCase();
+    const allowed = new Set(['unverified', 'accepted', 'watch', 'rejected']);
+    return allowed.has(normalized) ? normalized : 'unverified';
+}
+
+function normalizeProcurementQualityUpdateStatus(value) {
+    const normalized = normalizeText(value, 32).toLowerCase();
+    const allowed = new Set(['unverified', 'accepted', 'watch', 'rejected']);
+    if (!allowed.has(normalized)) {
+        throw Object.assign(new Error('质量状态无效，请选择待验证、稳定、观察或停用。'), {
+            statusCode: 400,
+            code: 'shop_procurement_quality_status_invalid'
+        });
+    }
+    return normalized;
+}
+
+function normalizeProcurementQualityScore(value) {
+    if (value === null || value === undefined || value === '') {
+        return null;
+    }
+
+    const parsed = Number.parseInt(String(value), 10);
+    if (!Number.isFinite(parsed)) {
+        return null;
+    }
+
+    return Math.max(0, Math.min(100, parsed));
+}
+
+function normalizeProcurementMetadata(value) {
+    return value && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
+}
+
+function normalizeProcurementTagList(value) {
+    const rawItems = Array.isArray(value)
+        ? value
+        : String(value || '').split(/[,，;；\n\r\t]+/);
+    const seen = new Set();
+    const tags = [];
+
+    rawItems.forEach((item) => {
+        const tag = normalizeText(item, 32);
+        const key = tag.toLowerCase();
+        if (!tag || seen.has(key)) {
+            return;
+        }
+        seen.add(key);
+        tags.push(tag);
+    });
+
+    return tags.slice(0, 12);
+}
+
+function mergeProcurementTagLists(...values) {
+    return normalizeProcurementTagList(values.flatMap((value) => normalizeProcurementTagList(value)));
+}
+
+function normalizeInventoryProcurementPayload(value = {}) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const nestedSource = source.source && typeof source.source === 'object' && !Array.isArray(source.source)
+        ? source.source
+        : {};
+    const sourceName = normalizeText(
+        source.source_name
+        || source.sourceName
+        || source.name
+        || source.supplier_name
+        || source.supplierName
+        || nestedSource.source_name
+        || nestedSource.sourceName
+        || nestedSource.name,
+        160
+    );
+    const sourceUrl = normalizeText(
+        source.source_url
+        || source.sourceUrl
+        || source.url
+        || source.website
+        || nestedSource.source_url
+        || nestedSource.sourceUrl
+        || nestedSource.url,
+        2000
+    );
+    const notes = normalizeText(source.notes || source.remark || source.purchase_notes || source.purchaseNotes, 4000);
+    const proofUrl = normalizeText(source.proof_url || source.proofUrl || source.receipt_url || source.receiptUrl, 2000);
+    const platform = normalizeText(source.platform || nestedSource.platform, 80);
+    const contactName = normalizeText(source.contact_name || source.contactName || nestedSource.contact_name || nestedSource.contactName, 120);
+    const contactHandle = normalizeText(source.contact_handle || source.contactHandle || nestedSource.contact_handle || nestedSource.contactHandle, 200);
+    const riskTier = normalizeText(source.risk_tier || source.riskTier || nestedSource.risk_tier || nestedSource.riskTier, 32).toLowerCase() || 'standard';
+    const qualityGrade = normalizeText(source.quality_grade || source.qualityGrade || nestedSource.quality_grade || nestedSource.qualityGrade, 32);
+    const currency = normalizeText(source.currency || source.purchase_currency || source.purchaseCurrency, 12).toUpperCase() || 'CNY';
+    const unitCost = normalizeOptionalDecimal(
+        source.unit_cost
+        ?? source.unitCost
+        ?? source.purchase_price
+        ?? source.purchasePrice
+        ?? source.cost
+        ?? source.price,
+        { fieldLabel: '进价', maxDecimals: 4 }
+    );
+    const exchangeRate = normalizeOptionalDecimal(
+        source.exchange_rate_to_cny
+        ?? source.exchangeRateToCny
+        ?? source.exchange_rate
+        ?? source.exchangeRate,
+        { fieldLabel: '汇率', maxDecimals: 8, allowZero: false, fallback: 1 }
+    );
+    const purchasedAt = normalizeIsoDate(source.purchased_at ?? source.purchasedAt ?? source.purchase_time ?? source.purchaseTime);
+    const sourceMetadata = source.metadata && typeof source.metadata === 'object' && !Array.isArray(source.metadata)
+        ? source.metadata
+        : {};
+    const sourceTags = mergeProcurementTagLists(
+        source.source_tags,
+        source.sourceTags,
+        source.tags,
+        nestedSource.source_tags,
+        nestedSource.sourceTags,
+        nestedSource.tags,
+        sourceMetadata.source_tags,
+        sourceMetadata.sourceTags,
+        sourceMetadata.tags
+    );
+    const metadata = {
+        ...sourceMetadata,
+        quality_control_mode: 'auto',
+        quality_score_source: 'auto_default_import',
+        quality_auto_default_score: 100
+    };
+    if (sourceTags.length) {
+        metadata.source_tags = sourceTags;
+    }
+
+    const hasPayload = Boolean(
+        sourceName
+        || sourceUrl
+        || notes
+        || proofUrl
+        || platform
+        || contactName
+        || contactHandle
+        || qualityGrade
+        || sourceTags.length
+        || unitCost !== null
+        || hasOwnValue(source, ['purchased_at', 'purchasedAt', 'purchase_time', 'purchaseTime'])
+    );
+
+    if (!hasPayload) {
+        return null;
+    }
+
+    const unitCostCny = unitCost === null ? null : Math.round(unitCost * exchangeRate * 10000) / 10000;
+
+    return {
+        source_name: sourceName || (sourceUrl ? '未命名货源' : ''),
+        source_url: sourceUrl || null,
+        platform: platform || null,
+        contact_name: contactName || null,
+        contact_handle: contactHandle || null,
+        risk_tier: riskTier || 'standard',
+        quality_grade: qualityGrade || null,
+        notes: notes || null,
+        proof_url: proofUrl || null,
+        unit_cost: unitCost,
+        currency,
+        exchange_rate_to_cny: exchangeRate,
+        unit_cost_cny: unitCostCny,
+        purchased_at: purchasedAt,
+        quality_status: 'unverified',
+        quality_score: 100,
+        cost_status: unitCost === null ? 'missing' : 'actual',
+        metadata
+    };
+}
+
+function isMissingProcurementSchemaError(error = {}) {
+    const text = [
+        error?.message,
+        error?.details,
+        error?.hint,
+        error?.code
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    return text.includes('relation "shop_inventory_sources" does not exist')
+        || text.includes('relation "shop_procurement_batches" does not exist')
+        || text.includes('undefined table')
+        || text.includes("could not find the 'source_batch_id' column")
+        || text.includes("could not find the 'purchase_unit_cost' column")
+        || text.includes('column "source_batch_id"')
+        || text.includes('column "purchase_unit_cost"')
+        || text.includes('schema cache')
+        || text.includes('does not exist');
+}
+
+function createMissingProcurementSchemaError(sourceError = null) {
+    return Object.assign(new Error('货源/采购批次数据库结构尚未部署，请先执行 20260606_add_shop_inventory_procurement_sources.sql 后再导入带货源信息的库存。'), {
+        statusCode: 400,
+        code: 'shop_procurement_schema_missing',
+        details: sourceError?.details || '',
+        hint: sourceError?.hint || ''
+    });
+}
+
+async function selectFirstRow(queryBuilder) {
+    const { data, error } = await queryBuilder.limit(1);
+    if (error) {
+        throw error;
+    }
+    return Array.isArray(data) ? data[0] || null : data || null;
+}
+
+async function mergeInventorySourceMetadata(supabase, existingSource = {}, procurement = {}) {
+    if (!existingSource?.id) {
+        return existingSource || null;
+    }
+
+    const incomingTags = normalizeProcurementTagList(procurement?.metadata?.source_tags);
+    if (!incomingTags.length) {
+        return existingSource;
+    }
+
+    const existingMetadata = normalizeProcurementMetadata(existingSource.metadata);
+    const mergedTags = mergeProcurementTagLists(existingMetadata.source_tags, incomingTags);
+    const existingTags = normalizeProcurementTagList(existingMetadata.source_tags);
+    if (JSON.stringify(existingTags) === JSON.stringify(mergedTags)) {
+        return existingSource;
+    }
+
+    const updatePayload = {
+        metadata: {
+            ...existingMetadata,
+            source_tags: mergedTags
+        },
+        updated_at: new Date().toISOString()
+    };
+
+    const updated = await selectFirstRow(
+        supabase
+            .from('shop_inventory_sources')
+            .update(updatePayload)
+            .eq('id', existingSource.id)
+            .select('*')
+    );
+
+    return updated || {
+        ...existingSource,
+        ...updatePayload
+    };
+}
+
+async function setInventorySourceTags(supabase, sourceId = '', tags = []) {
+    const normalizedSourceId = normalizeText(sourceId, 160);
+    if (!normalizedSourceId) {
+        return null;
+    }
+
+    const existing = await selectFirstRow(
+        supabase
+            .from('shop_inventory_sources')
+            .select('id, metadata')
+            .eq('id', normalizedSourceId)
+    );
+    if (!existing?.id) {
+        return null;
+    }
+
+    const existingMetadata = normalizeProcurementMetadata(existing.metadata);
+    const nextTags = normalizeProcurementTagList(tags);
+    const updated = await selectFirstRow(
+        supabase
+            .from('shop_inventory_sources')
+            .update({
+                metadata: {
+                    ...existingMetadata,
+                    source_tags: nextTags
+                },
+                updated_at: new Date().toISOString()
+            })
+            .eq('id', normalizedSourceId)
+            .select('*')
+    );
+
+    return updated || {
+        ...existing,
+        metadata: {
+            ...existingMetadata,
+            source_tags: nextTags
+        }
+    };
+}
+
+function isPreviouslyDisabledProcurementBatch(batch = {}) {
+    const metadata = normalizeProcurementMetadata(batch.metadata);
+    return normalizeText(batch.quality_status, 32).toLowerCase() === 'rejected'
+        || Boolean(metadata.source_disabled_at)
+        || Boolean(metadata.source_disabled_last_marked_at);
+}
+
+function buildPreviouslyDisabledSourceWarning(source = {}, batch = {}) {
+    const metadata = normalizeProcurementMetadata(batch.metadata);
+    return {
+        type: 'source_previously_disabled',
+        code: 'shop_inventory_source_previously_disabled',
+        message: '该货源曾被标记为“停用”，本次导入已继续保存，请管理员复核后再继续采购。',
+        sourceId: source?.id || batch?.source_id || null,
+        sourceName: source?.source_name || '',
+        sourceUrl: source?.source_url || '',
+        batchId: batch?.id || null,
+        batchCode: batch?.batch_code || null,
+        disabledAt: metadata.source_disabled_last_marked_at
+            || metadata.source_disabled_at
+            || batch?.updated_at
+            || batch?.created_at
+            || null,
+        note: normalizeText(batch?.notes, 500) || null
+    };
+}
+
+async function loadPreviouslyDisabledSourceWarning(supabase, source = {}, procurement = {}, { site = 'cn' } = {}) {
+    if (!source?.id) {
+        return null;
+    }
+
+    const candidateSourceMap = new Map([[source.id, source]]);
+    const sourceName = normalizeText(source.source_name || procurement.source_name, 160);
+    if (sourceName) {
+        const { data: sameNameSources, error: sourceError } = await supabase
+            .from('shop_inventory_sources')
+            .select('id, source_name, source_url, metadata')
+            .eq('site', site)
+            .eq('source_name', sourceName)
+            .limit(20);
+        if (sourceError) {
+            throw sourceError;
+        }
+        (Array.isArray(sameNameSources) ? sameNameSources : []).forEach((candidate) => {
+            if (candidate?.id) {
+                candidateSourceMap.set(candidate.id, {
+                    ...source,
+                    ...candidate
+                });
+            }
+        });
+    }
+
+    const candidateSourceIds = [...candidateSourceMap.keys()].filter(Boolean);
+    if (!candidateSourceIds.length) {
+        return null;
+    }
+
+    const { data: batches, error } = await supabase
+        .from('shop_procurement_batches')
+        .select('id, batch_code, source_id, quality_status, quality_score, notes, metadata, created_at, updated_at')
+        .in('source_id', candidateSourceIds)
+        .order('updated_at', { ascending: false })
+        .limit(20);
+    if (error) {
+        throw error;
+    }
+
+    const disabledBatch = (Array.isArray(batches) ? batches : [])
+        .find((batch) => isPreviouslyDisabledProcurementBatch(batch));
+    if (!disabledBatch) {
+        return null;
+    }
+
+    return buildPreviouslyDisabledSourceWarning(
+        candidateSourceMap.get(disabledBatch.source_id) || source,
+        disabledBatch
+    );
+}
+
+async function resolveInventorySourceRecord(supabase, procurement = {}, { site = 'cn', adminId = null } = {}) {
+    const sourceName = normalizeText(procurement.source_name, 160);
+    const sourceUrl = normalizeText(procurement.source_url, 2000);
+    if (!sourceName && !sourceUrl) {
+        return null;
+    }
+
+    let query = supabase
+        .from('shop_inventory_sources')
+        .select('*')
+        .eq('site', site)
+        .eq('source_name', sourceName || '未命名货源');
+
+    if (sourceUrl) {
+        query = query.eq('source_url', sourceUrl);
+    }
+
+    const existing = await selectFirstRow(query);
+    if (existing?.id) {
+        return mergeInventorySourceMetadata(supabase, existing, procurement);
+    }
+
+    const { data, error } = await supabase
+        .from('shop_inventory_sources')
+        .insert({
+            site,
+            source_name: sourceName || '未命名货源',
+            source_url: sourceUrl || null,
+            platform: procurement.platform || null,
+            contact_name: procurement.contact_name || null,
+            contact_handle: procurement.contact_handle || null,
+            risk_tier: procurement.risk_tier || 'standard',
+            quality_grade: procurement.quality_grade || null,
+            default_currency: procurement.currency || 'CNY',
+            notes: procurement.notes || null,
+            metadata: procurement.metadata || {},
+            created_by: adminId || null
+        })
+        .select('*')
+        .limit(1);
+
+    if (error) {
+        throw error;
+    }
+
+    return Array.isArray(data) ? data[0] || null : null;
+}
+
+async function createProcurementBatchForInventoryImport(supabase, {
+    procurement = null,
+    productId = '',
+    sku = null,
+    batchId = '',
+    importedCount = 0,
+    site = 'cn',
+    adminId = null
+} = {}) {
+    if (!procurement) {
+        return null;
+    }
+
+    try {
+        const source = await resolveInventorySourceRecord(supabase, procurement, { site, adminId });
+        const sourceWarning = await loadPreviouslyDisabledSourceWarning(supabase, source, procurement, { site });
+        const totalCostCny = procurement.unit_cost_cny === null
+            ? null
+            : Math.round(procurement.unit_cost_cny * Math.max(0, Number(importedCount || 0)) * 10000) / 10000;
+        const { data, error } = await supabase
+            .from('shop_procurement_batches')
+            .insert({
+                site,
+                batch_code: batchId,
+                source_id: source?.id || null,
+                product_id: productId || null,
+                sku_id: normalizeText(sku?.id, 160) || null,
+                imported_count: Math.max(0, Number(importedCount || 0) || 0),
+                unit_cost: procurement.unit_cost,
+                currency: procurement.currency || 'CNY',
+                exchange_rate_to_cny: procurement.exchange_rate_to_cny || 1,
+                unit_cost_cny: procurement.unit_cost_cny,
+                total_cost_cny: totalCostCny,
+                purchased_at: procurement.purchased_at,
+                proof_url: procurement.proof_url,
+                quality_status: 'unverified',
+                quality_score: 100,
+                cost_status: procurement.cost_status || 'missing',
+                notes: procurement.notes,
+                metadata: {
+                    ...normalizeProcurementMetadata(procurement.metadata),
+                    quality_control_mode: 'auto',
+                    quality_score_source: 'auto_default_import',
+                    quality_auto_default_score: 100
+                },
+                created_by: adminId || null
+            })
+            .select('*')
+            .limit(1);
+
+        if (error) {
+            throw error;
+        }
+
+        return {
+            source,
+            batch: Array.isArray(data) ? data[0] || null : null,
+            procurement,
+            sourceWarning
+        };
+    } catch (error) {
+        if (isMissingProcurementSchemaError(error)) {
+            throw createMissingProcurementSchemaError(error);
+        }
+        throw error;
+    }
+}
+
 function normalizeSkuQuantityPricingRules(value) {
     let sourceRules = value;
     if (typeof sourceRules === 'string' && sourceRules.trim()) {
@@ -2110,9 +2641,28 @@ module.exports = async (req, res) => {
             const lines = Array.isArray(body.lines) ? body.lines : [];
             const importStatus = String(body.importStatus || 'available').trim() || 'available';
             const batchId = body.batchId ? String(body.batchId) : `batch_${Date.now()}`;
+            let procurement = null;
 
             if (!productId || !lines.length) {
                 return sendJson(res, 400, { success: false, message: 'productId and lines are required' });
+            }
+
+            try {
+                procurement = normalizeInventoryProcurementPayload(
+                    body.procurement
+                    || body.procurementBatch
+                    || body.procurement_batch
+                    || body.inventorySource
+                    || body.inventory_source
+                    || body.source
+                    || {}
+                );
+            } catch (error) {
+                return sendJson(res, Number(error?.statusCode) || 400, {
+                    success: false,
+                    code: error?.code || 'shop_procurement_payload_invalid',
+                    message: error?.message || '货源信息无效'
+                });
             }
 
             let sku = null;
@@ -2142,8 +2692,48 @@ module.exports = async (req, res) => {
                 return sendJson(res, 400, { success: false, message: '没有有效库存数据' });
             }
 
+            let procurementContext = null;
+            try {
+                procurementContext = await createProcurementBatchForInventoryImport(supabase, {
+                    procurement,
+                    productId,
+                    sku,
+                    batchId,
+                    importedCount: inserts.length,
+                    site: writableSite,
+                    adminId: user?.id || null
+                });
+            } catch (error) {
+                return sendJson(res, Number(error?.statusCode) || 400, {
+                    success: false,
+                    code: error?.code || 'shop_procurement_batch_failed',
+                    message: error?.message || '保存货源/采购批次失败',
+                    details: error?.details || '',
+                    hint: error?.hint || ''
+                });
+            }
+
+            if (procurementContext?.batch?.id) {
+                inserts.forEach((entry) => {
+                    entry.source_batch_id = procurementContext.batch.id;
+                    entry.purchase_unit_cost = procurementContext.procurement?.unit_cost;
+                    entry.purchase_currency = procurementContext.procurement?.currency || 'CNY';
+                    entry.purchase_exchange_rate_to_cny = procurementContext.procurement?.exchange_rate_to_cny || 1;
+                    entry.purchase_unit_cost_cny = procurementContext.procurement?.unit_cost_cny;
+                });
+            }
+
             const { error } = await supabase.from('shop_inventory').insert(inserts);
             if (error) {
+                if (procurementContext?.batch?.id && isMissingProcurementSchemaError(error)) {
+                    return sendJson(res, 400, {
+                        success: false,
+                        code: 'shop_procurement_schema_missing',
+                        message: createMissingProcurementSchemaError(error).message,
+                        details: error?.details || '',
+                        hint: error?.hint || ''
+                    });
+                }
                 return sendJson(res, 400, { success: false, message: error.message });
             }
 
@@ -2163,6 +2753,14 @@ module.exports = async (req, res) => {
                     inventory_sku_id: inventorySkuId,
                     sku_name: sku?.sku_name || null,
                     batch_id: batchId,
+                    source_batch_id: procurementContext?.batch?.id || null,
+                    source_id: procurementContext?.source?.id || null,
+                    source_name: procurementContext?.source?.source_name || procurement?.source_name || null,
+                    unit_cost: procurement?.unit_cost ?? null,
+                    currency: procurement?.currency || null,
+                    unit_cost_cny: procurement?.unit_cost_cny ?? null,
+                    source_warning_type: procurementContext?.sourceWarning?.type || null,
+                    source_warning_batch_id: procurementContext?.sourceWarning?.batchId || null,
                     count: inserts.length,
                     import_status: importStatus
                 }
@@ -2174,7 +2772,199 @@ module.exports = async (req, res) => {
                 stockCount,
                 skuId: sku?.id || null,
                 inventorySkuId,
-                skuStockCount
+                skuStockCount,
+                sourceBatchId: procurementContext?.batch?.id || null,
+                procurementBatch: procurementContext?.batch || null,
+                inventorySource: procurementContext?.source || null,
+                procurementWarning: procurementContext?.sourceWarning || null,
+                sourceWarning: procurementContext?.sourceWarning || null
+            });
+        }
+
+        if (action === 'update_procurement_quality') {
+            const procurementBatchId = normalizeText(
+                body.procurementBatchId
+                || body.procurement_batch_id
+                || body.sourceBatchId
+                || body.source_batch_id,
+                160
+            );
+
+            if (!procurementBatchId) {
+                return sendJson(res, 400, {
+                    success: false,
+                    code: 'shop_procurement_batch_id_required',
+                    message: '采购批次 ID 不能为空'
+                });
+            }
+
+            let qualityStatus;
+            try {
+                qualityStatus = normalizeProcurementQualityUpdateStatus(
+                    body.qualityStatus
+                    || body.quality_status
+                    || body.status
+                );
+            } catch (error) {
+                return sendJson(res, Number(error?.statusCode) || 400, {
+                    success: false,
+                    code: error?.code || 'shop_procurement_quality_status_invalid',
+                    message: error?.message || '质量状态无效'
+                });
+            }
+
+            const hasNotes = Object.prototype.hasOwnProperty.call(body, 'notes')
+                || Object.prototype.hasOwnProperty.call(body, 'qualityNotes')
+                || Object.prototype.hasOwnProperty.call(body, 'quality_notes');
+            const qualityNotes = hasNotes
+                ? normalizeText(body.notes ?? body.qualityNotes ?? body.quality_notes, 2000)
+                : null;
+            const qualityReviewMode = 'auto';
+            const hasSourceTags = Object.prototype.hasOwnProperty.call(body, 'sourceTags')
+                || Object.prototype.hasOwnProperty.call(body, 'source_tags')
+                || Object.prototype.hasOwnProperty.call(body, 'tags');
+            const sourceTags = hasSourceTags
+                ? normalizeProcurementTagList(body.sourceTags ?? body.source_tags ?? body.tags)
+                : null;
+
+            let existingBatch = null;
+            try {
+                const { data, error } = await supabase
+                    .from('shop_procurement_batches')
+                    .select('id, site, batch_code, source_id, quality_status, quality_score, notes, metadata')
+                    .eq('id', procurementBatchId)
+                    .single();
+
+                if (error || !data) {
+                    return sendJson(res, 404, {
+                        success: false,
+                        code: 'shop_procurement_batch_not_found',
+                        message: '采购批次不存在'
+                    });
+                }
+                existingBatch = { ...data };
+            } catch (error) {
+                if (isMissingProcurementSchemaError(error)) {
+                    return sendJson(res, 400, {
+                        success: false,
+                        code: 'shop_procurement_schema_missing',
+                        message: createMissingProcurementSchemaError(error).message,
+                        details: error?.details || '',
+                        hint: error?.hint || ''
+                    });
+                }
+                throw error;
+            }
+
+            const existingMetadata = normalizeProcurementMetadata(existingBatch.metadata);
+            const nowIso = new Date().toISOString();
+            const preservedQualityScore = normalizeProcurementQualityScore(existingBatch.quality_score);
+            const nextQualityScore = preservedQualityScore === null ? 100 : preservedQualityScore;
+            const nextMetadata = {
+                ...existingMetadata,
+                quality_control_mode: 'auto',
+                quality_score_source: existingMetadata.quality_score_source || 'auto_performance',
+                quality_manual_status: qualityStatus,
+                quality_manual_status_marked_at: nowIso,
+                quality_manual_status_marked_by: user.id,
+                quality_manual_locked_at: null,
+                quality_manual_locked_by: null
+            };
+            if (qualityStatus === 'rejected') {
+                nextMetadata.source_disabled_at = existingMetadata.source_disabled_at || nowIso;
+                nextMetadata.source_disabled_by = existingMetadata.source_disabled_by || user.id;
+                nextMetadata.source_disabled_last_marked_at = nowIso;
+                nextMetadata.source_disabled_last_marked_by = user.id;
+                nextMetadata.source_disabled_batch_code = existingBatch.batch_code || null;
+                nextMetadata.source_disabled_reason = qualityNotes || existingMetadata.source_disabled_reason || 'admin_marked_rejected';
+            }
+            if (hasSourceTags) {
+                nextMetadata.source_tags = sourceTags;
+            }
+            const updatePayload = {
+                quality_status: qualityStatus,
+                quality_score: nextQualityScore,
+                metadata: nextMetadata,
+                updated_at: nowIso
+            };
+            if (hasNotes) {
+                updatePayload.notes = qualityNotes || existingBatch.notes || null;
+            }
+
+            let updatedBatch = null;
+            try {
+                const { data, error } = await supabase
+                    .from('shop_procurement_batches')
+                    .update(updatePayload)
+                    .eq('id', procurementBatchId)
+                    .select('*')
+                    .single();
+
+                if (error) {
+                    throw error;
+                }
+                updatedBatch = data || {
+                    ...existingBatch,
+                    ...updatePayload
+                };
+            } catch (error) {
+                if (isMissingProcurementSchemaError(error)) {
+                    return sendJson(res, 400, {
+                        success: false,
+                        code: 'shop_procurement_schema_missing',
+                        message: createMissingProcurementSchemaError(error).message,
+                        details: error?.details || '',
+                        hint: error?.hint || ''
+                    });
+                }
+                throw error;
+            }
+
+            let updatedSource = null;
+            if (hasSourceTags && existingBatch.source_id) {
+                try {
+                    updatedSource = await setInventorySourceTags(supabase, existingBatch.source_id, sourceTags);
+                } catch (error) {
+                    if (isMissingProcurementSchemaError(error)) {
+                        return sendJson(res, 400, {
+                            success: false,
+                            code: 'shop_procurement_schema_missing',
+                            message: createMissingProcurementSchemaError(error).message,
+                            details: error?.details || '',
+                            hint: error?.hint || ''
+                        });
+                    }
+                    throw error;
+                }
+            }
+
+            await writeAdminAuditLog({
+                supabase,
+                adminId: user.id,
+                module: 'shop',
+                site: writableSite,
+                actionType: 'shop.procurement.quality.update',
+                details: {
+                    procurement_batch_id: procurementBatchId,
+                    procurement_batch_code: existingBatch.batch_code || null,
+                    batch_site: existingBatch.site || null,
+                    previous_quality_status: existingBatch.quality_status || null,
+                    next_quality_status: qualityStatus,
+                    previous_quality_score: existingBatch.quality_score ?? null,
+                    next_quality_score: nextQualityScore,
+                    quality_review_mode: qualityReviewMode,
+                    previous_quality_control_mode: existingMetadata.quality_control_mode || null,
+                    next_quality_control_mode: nextMetadata.quality_control_mode || null,
+                    marked_source_disabled: qualityStatus === 'rejected',
+                    source_tags: sourceTags,
+                    has_notes: Boolean(qualityNotes)
+                }
+            });
+
+            return sendJson(res, 200, {
+                success: true,
+                procurementBatch: updatedBatch,
+                inventorySource: updatedSource
             });
         }
 

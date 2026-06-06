@@ -3458,18 +3458,53 @@ function renderAnalyticsProductMetricCard(label = '', value = '--', note = '', t
     `;
 }
 
+function formatAnalyticsProductCurrency(value = 0) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return '¥0';
+    }
+    const sign = numeric < 0 ? '-' : '';
+    const rounded = Math.round((Math.abs(numeric) + Number.EPSILON) * 100) / 100;
+    return `${sign}¥${formatNumber(rounded)}`;
+}
+
+function formatAnalyticsProductCostCoverage(value = 0, coverage = '') {
+    const normalizedCoverage = String(coverage || '').trim().toLowerCase();
+    if (normalizedCoverage === 'no_inventory') {
+        return '未关联库存';
+    }
+    if (normalizedCoverage === 'no_cost') {
+        return '未录成本';
+    }
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric <= 0) {
+        return normalizedCoverage === 'partial' ? '部分覆盖' : '0%';
+    }
+    return formatPercent(Math.max(0, Math.min(100, numeric * 100)));
+}
+
+function getAnalyticsProductProfitTone(value = 0, fallback = 'success') {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric) || numeric === 0) {
+        return fallback;
+    }
+    return numeric < 0 ? 'danger' : 'success';
+}
+
 function renderAnalyticsProductOverviewMetricCards(summary = {}) {
     const isOrderlessWindow = Number(summary?.order_count || 0) <= 0;
     if (!isOrderlessWindow) {
         const topProductNote = String(summary?.top_product_name || '').trim()
             ? `Top 商品 ${summary.top_product_name}`
             : '当前窗口暂无成交商品';
+        const profitTone = getAnalyticsProductProfitTone(summary.net_profit_cny, 'warning');
+        const costCoverageLabel = formatAnalyticsProductCostCoverage(summary.cost_coverage_rate || 0, summary.cost_coverage);
 
         return [
             renderAnalyticsProductMetricCard('成交用户', formatNumber(summary.unique_buyer_count || 0), `浏览用户 ${formatNumber(summary.view_user_count || 0)}`, 'default'),
             renderAnalyticsProductMetricCard('商品销量', formatNumber(summary.units_sold || 0), `订单 ${formatNumber(summary.order_count || 0)}`, 'accent'),
             renderAnalyticsProductMetricCard('积分 GMV', formatNumber(summary.gmv_points || 0), topProductNote, 'success'),
-            renderAnalyticsProductMetricCard('客单价', formatNumber(summary.avg_order_value || 0), `在售商品 ${formatNumber(summary.selling_product_count || 0)}`, 'default'),
+            renderAnalyticsProductMetricCard('净利润', formatAnalyticsProductCurrency(summary.net_profit_cny || 0), `现金收入 ${formatAnalyticsProductCurrency(summary.recognized_revenue_cny || 0)} · 成本覆盖 ${costCoverageLabel}`, profitTone),
             renderAnalyticsProductMetricCard('成交转化', formatPercent(summary.purchase_conversion_rate || 0), `退款率 ${formatPercent(summary.refund_rate || 0)}`, 'warning'),
             renderAnalyticsProductMetricCard('交付成功率', formatPercent(summary.delivery_success_rate || 0), `履约风险商品 ${formatNumber(summary.delivery_risk_product_count || 0)}`, 'danger')
         ].join('');
@@ -3981,7 +4016,7 @@ function renderAnalyticsProductCategoryBreakdown(payload = {}) {
             <div class="analytics-product-panel__head">
                 <div>
                     <strong>类目贡献</strong>
-                    <p>按积分 GMV 观察当前窗口的商品结构和类目转化表现</p>
+                    <p>按积分 GMV、净利润和转化表现观察当前窗口的商品结构</p>
                 </div>
                 <span class="analytics-product-panel__meta">${formatNumber(payload?.total_category_count || visibleRows.length || 0)} 个类目</span>
             </div>
@@ -4005,6 +4040,7 @@ function renderAnalyticsProductCategoryBreakdown(payload = {}) {
                                         </div>
                                         <div class="analytics-product-category-row__meta">
                                             <span>GMV ${formatNumber(row.gmv_points || 0)}</span>
+                                            <span>净利 ${formatAnalyticsProductCurrency(row.net_profit_cny || 0)}</span>
                                             <span>占比 ${formatPercent(row.gmv_share_rate || 0)}</span>
                                             <span>商品 ${formatNumber(row.product_count || 0)}</span>
                                             <span>转化 ${formatPercent(row.conversion_rate || 0)}</span>
@@ -4115,7 +4151,7 @@ function renderAnalyticsProductMatrix(payload = {}) {
                                     return `浏览 ${formatNumber(row.view_user_count || 0)}、转化 ${formatPercent(row.conversion_rate || 0)}，当前仍处在高曝光低转化象限。`;
                                 }
                                 if (quadrantKey === 'star') {
-                                    return `浏览 ${formatNumber(row.view_user_count || 0)}、GMV ${formatNumber(row.gmv_points || 0)}，当前已经跑出稳定成交。`;
+                                    return `浏览 ${formatNumber(row.view_user_count || 0)}、GMV ${formatNumber(row.gmv_points || 0)}、净利 ${formatAnalyticsProductCurrency(row.net_profit_cny || 0)}，当前已经跑出稳定成交。`;
                                 }
                                 if (quadrantKey === 'potential') {
                                     return `已经有 ${formatNumber(row.view_user_count || 0)} 个浏览用户，但支付转化还没起量，属于潜力商品。`;
@@ -4164,6 +4200,8 @@ function renderAnalyticsProductMatrix(payload = {}) {
                                         <span>浏览 ${formatNumber(item.view_user_count || 0)}</span>
                                         <span>转化 ${formatPercent(item.conversion_rate || 0)}</span>
                                         <span>GMV ${formatNumber(item.gmv_points || 0)}</span>
+                                        <span>净利 ${formatAnalyticsProductCurrency(item.net_profit_cny || 0)}</span>
+                                        <span>成本覆盖 ${formatAnalyticsProductCostCoverage(item.cost_coverage_rate || 0, item.cost_coverage)}</span>
                                     </div>
                                     ${renderAnalyticsProductInlineGuidance(guidance)}
                                 </div>
@@ -4198,6 +4236,7 @@ function renderAnalyticsProductOverview(summary = {}, trendRows = [], comparison
                     </div>
                     <div class="analytics-product-site-card__metrics">
                         <span>GMV ${formatNumber(siteSummary.gmv_points || 0)}</span>
+                        <span>净利 ${formatAnalyticsProductCurrency(siteSummary.net_profit_cny || 0)}</span>
                         <span>订单 ${formatNumber(siteSummary.order_count || 0)}</span>
                         <span>买家 ${formatNumber(siteSummary.unique_buyer_count || 0)}</span>
                         <span>转化 ${formatPercent(siteSummary.purchase_conversion_rate || 0)}</span>
@@ -4435,7 +4474,7 @@ function renderAnalyticsProductCategoryBreakdownChart(payload = {}) {
                     callbacks: {
                         label(context) {
                             const row = rows[context.dataIndex] || {};
-                            return `${context.label || '未分类'}: GMV ${formatNumber(row.gmv_points || 0)} / 占比 ${formatPercent(row.gmv_share_rate || 0)} / 转化 ${formatPercent(row.conversion_rate || 0)}`;
+                            return `${context.label || '未分类'}: GMV ${formatNumber(row.gmv_points || 0)} / 净利 ${formatAnalyticsProductCurrency(row.net_profit_cny || 0)} / 占比 ${formatPercent(row.gmv_share_rate || 0)} / 转化 ${formatPercent(row.conversion_rate || 0)}`;
                         }
                     }
                 }
@@ -4513,7 +4552,7 @@ function renderAnalyticsProductOperatingMatrixChart(payload = {}) {
                     callbacks: {
                         label(context) {
                             const item = items[context.dataIndex] || {};
-                            return `${item.product_name || '未命名商品'} · ${item.quadrant_label || '经营观察'} · 浏览 ${formatNumber(item.view_user_count || 0)} · 转化 ${formatPercent(item.conversion_rate || 0)} · GMV ${formatNumber(item.gmv_points || 0)}`;
+                            return `${item.product_name || '未命名商品'} · ${item.quadrant_label || '经营观察'} · 浏览 ${formatNumber(item.view_user_count || 0)} · 转化 ${formatPercent(item.conversion_rate || 0)} · GMV ${formatNumber(item.gmv_points || 0)} · 净利 ${formatAnalyticsProductCurrency(item.net_profit_cny || 0)}`;
                         }
                     }
                 }
@@ -5827,6 +5866,8 @@ function renderAnalyticsProductOrderRow(order = {}, context = {}) {
                     <span>${escapeHtml((order.site || 'all').toUpperCase())}</span>
                     <span>${formatNumber(order.quantity || 0)} 件</span>
                     <span>${formatNumber(order.total_points || 0)} 积分</span>
+                    <span>净利 ${formatAnalyticsProductCurrency(order.net_profit_cny || 0)}</span>
+                    <span>成本 ${formatAnalyticsProductCostCoverage(order.cost_coverage_rate || 0, order.cost_coverage)}</span>
                     <span>${escapeHtml(order.delivery_status || 'unknown')}</span>
                     <span>${escapeHtml(order.refund_status || 'none')}</span>
                 </div>
@@ -5838,7 +5879,7 @@ function renderAnalyticsProductOrderRow(order = {}, context = {}) {
                         ${buildAnalyticsOpenUserDetailAttrs(userId, {
                             ...context,
                             signalLabel: context?.signalLabel || '订单用户',
-                            signalValue: `${formatNumber(order.quantity || 0)} 件 / ${formatNumber(order.total_points || 0)} 积分`,
+                            signalValue: `${formatNumber(order.quantity || 0)} 件 / 净利 ${formatAnalyticsProductCurrency(order.net_profit_cny || 0)}`,
                             referenceLabel: context?.referenceLabel || '订单',
                             referenceValue: orderId || '近期订单'
                         })}
@@ -6042,6 +6083,7 @@ function renderAnalyticsProductDetailPanel(payload = {}, options = {}) {
                 ? `购买意图 ${formatNumber(summary.purchase_click_user_count || 0)} 用户`
                 : '当前窗口优先查看趋势、来源归因和库存履约承接'),
         Number(summary.gmv_points || 0) > 0 ? `GMV ${formatNumber(summary.gmv_points || 0)}` : '',
+        Number(summary.profit_attribution_order_count || 0) > 0 ? `净利 ${formatAnalyticsProductCurrency(summary.net_profit_cny || 0)}` : '',
         Number(summary.delivery_risk_count || 0) > 0 ? `履约风险 ${formatNumber(summary.delivery_risk_count || 0)} 单` : ''
     ].filter(Boolean).join(' · ');
     const headerIdentityItems = [
@@ -6071,22 +6113,22 @@ function renderAnalyticsProductDetailPanel(payload = {}, options = {}) {
             tone: 'success'
         },
         {
+            label: '净利润',
+            value: formatAnalyticsProductCurrency(summary.net_profit_cny || 0),
+            note: `现金收入 ${formatAnalyticsProductCurrency(summary.recognized_revenue_cny || 0)}`,
+            tone: getAnalyticsProductProfitTone(summary.net_profit_cny, 'warning')
+        },
+        {
             label: '支付转化',
             value: formatPercent(summary.conversion_rate || 0),
             note: `退款率 ${formatPercent(summary.refund_rate || 0)}`,
             tone: 'warning'
         },
         {
-            label: '发货成功',
-            value: formatPercent(summary.delivery_success_rate || 0),
-            note: `履约风险 ${formatNumber(summary.delivery_risk_count || 0)}`,
-            tone: 'danger'
-        },
-        {
-            label: '库存可用',
-            value: formatNumber(summary.available_inventory_count || 0),
-            note: `故障库存 ${formatNumber(summary.fault_inventory_count || 0)}`,
-            tone: 'default'
+            label: '成本覆盖',
+            value: formatAnalyticsProductCostCoverage(summary.cost_coverage_rate || 0, summary.cost_coverage),
+            note: `缺成本 ${formatNumber(summary.missing_cost_item_count || 0)}`,
+            tone: Number(summary.missing_cost_item_count || 0) > 0 ? 'danger' : 'default'
         }
     ];
     const funnelCard = `
@@ -6116,6 +6158,7 @@ function renderAnalyticsProductDetailPanel(payload = {}, options = {}) {
                         </div>
                         <div class="analytics-product-site-card__metrics">
                             <span>GMV ${formatNumber(snapshot.summary?.gmv_points || 0)}</span>
+                            <span>净利 ${formatAnalyticsProductCurrency(snapshot.summary?.net_profit_cny || 0)}</span>
                             <span>订单 ${formatNumber(snapshot.summary?.order_count || 0)}</span>
                             <span>买家 ${formatNumber(snapshot.summary?.buyer_count || 0)}</span>
                             <span>转化 ${formatPercent(snapshot.summary?.purchase_conversion_rate || 0)}</span>

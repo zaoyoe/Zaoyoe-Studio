@@ -74,7 +74,8 @@ module.exports = async function analyticsProductSummaryBundleHandler(req, res) {
                     orders: dataset.orders,
                     events: dataset.events,
                     startIso: rangeWindow.startIso,
-                    endIso: rangeWindow.endIso
+                    endIso: rangeWindow.endIso,
+                    profitByOrderId: dataset.profitByOrderId
                 }),
                 { source: 'shop_orders + user_events' }
             ),
