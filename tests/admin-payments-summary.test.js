@@ -2089,6 +2089,24 @@ test('payments finance view exposes shop profit reconciliation issue list', asyn
         assert.equal(summary.order_risk_list.items.some((item) => item.order_id === 'shop-profit-missing-cost' && item.status_label === '采购成本待补齐'), true);
         assert.equal(summary.order_risk_list.items.some((item) => item.order_id === 'shop-profit-untracked' && item.reasons.some((reason) => reason.type === 'point_source_gap')), true);
         assert.equal(summary.order_risk_list.items.some((item) => item.order_id === 'shop-profit-untracked' && item.status_label === '积分来源待补齐'), true);
+        const lossRisk = summary.order_risk_list.items.find((item) => item.order_id === 'shop-profit-loss');
+        const missingCostRisk = summary.order_risk_list.items.find((item) => item.order_id === 'shop-profit-missing-cost');
+        const untrackedRisk = summary.order_risk_list.items.find((item) => item.order_id === 'shop-profit-untracked');
+        assert.equal(lossRisk.resolution_plan.status, 'manual_review');
+        assert.equal(lossRisk.resolution_plan.options.some((option) => option.key === 'manual_profit_review'), true);
+        assert.equal(missingCostRisk.resolution_plan.status, 'data_completion');
+        assert.equal(missingCostRisk.resolution_plan.options.some((option) => option.key === 'complete_cost'), true);
+        assert.equal(untrackedRisk.resolution_plan.status, 'historical_estimation');
+        assert.equal(untrackedRisk.resolution_plan.options.some((option) => option.key === 'historical_estimate'), true);
+        assert.equal(summary.historical_order_disposition.status, 'warning');
+        assert.equal(summary.historical_order_disposition.action_required_count, 3);
+        assert.equal(summary.historical_order_disposition.completable_count, 1);
+        assert.equal(summary.historical_order_disposition.estimated_count, 1);
+        assert.equal(summary.historical_order_disposition.lanes.some((lane) => lane.key === 'manual_review' && lane.count === 1), true);
+        assert.equal(
+            summary.shop_profit_audit_alerts.items.some((item) => item.type === 'untracked_points' && item.resolution_plan.status === 'historical_estimation'),
+            true
+        );
         assert.equal(summary.profit_adjustments.status, 'review');
         assert.equal(summary.profit_adjustments.untracked_points_estimated_cny, 30);
         assert.equal(summary.profit_adjustments.items.length, 1);
@@ -3724,9 +3742,9 @@ test('payments runtime summary UI keeps refund anomaly indicators wired in sourc
     assert.match(profitLedgerSource, /shop_order_profit_ledger/);
     assert.match(profitLedgerSource, /onConflict: 'order_id,dedupe_key'/);
     assert.match(adminStudioHtml, /shopProfitSummary=20260606_ADMIN_PAYMENTS_SHOP_PROFIT_SUMMARY_1/);
-    assert.match(adminStudioHtml, /shopProfitAudit=20260606_ADMIN_PAYMENTS_SHOP_PROFIT_AUDIT_5/);
+    assert.match(adminStudioHtml, /shopProfitAudit=20260606_ADMIN_PAYMENTS_SHOP_PROFIT_AUDIT_7/);
     assert.match(adminStudioHtml, /activationRecovery=20260606_ADMIN_PAYMENTS_ACTIVATION_RECOVERY_1/);
-    assert.match(adminStudioHtml, /admin-payments-shop-profit-audit\.css\?v=20260606_ADMIN_PAYMENTS_SHOP_PROFIT_AUDIT_5/);
+    assert.match(adminStudioHtml, /admin-payments-shop-profit-audit\.css\?v=20260606_ADMIN_PAYMENTS_SHOP_PROFIT_AUDIT_7/);
     assert.match(adminStudioSource, /openAdminStudioShopOrderContext/);
     assert.match(adminStudioSource, /runAdminStudioShopOrderOpenAction/);
     assert.match(adminStudioSource, /打开订单中\.\.\./);
@@ -3741,6 +3759,8 @@ test('payments runtime summary UI keeps refund anomaly indicators wired in sourc
     assert.match(shopProfitAuditCss, /payments-shop-profit-audit__alerts/);
     assert.match(shopProfitAuditCss, /payments-shop-profit-audit__closure/);
     assert.match(shopProfitAuditCss, /payments-shop-profit-audit__orders/);
+    assert.match(shopProfitAuditCss, /payments-shop-profit-audit__resolution/);
+    assert.match(shopProfitAuditCss, /payments-shop-profit-audit__history-disposition/);
     assert.match(shopProfitAuditCss, /payments-shop-profit-audit__order-link/);
     assert.match(shopProfitAuditCss, /payments-shop-profit-audit__order-link\[data-action-feedback-state="loading"\]/);
     assert.match(shopProfitAuditCss, /payments-shop-profit-audit__order-link\[data-action-feedback-state="saved"\]/);
@@ -3750,6 +3770,11 @@ test('payments runtime summary UI keeps refund anomaly indicators wired in sourc
     assert.match(shopProfitAuditCss, /payments-shop-profit-audit__adjustment-breakdown/);
     assert.match(shopProfitAuditCss, /payments-shop-profit-audit__ledger/);
     assert.match(shopProfitAuditCss, /html\[data-theme="light"\] #module-payments \.payments-shop-profit-audit/);
+    assert.match(shopProfitAuditCss, /html\[data-theme="light"\] #module-payments \.payments-shop-profit-audit__readiness-item/);
+    assert.match(shopProfitAuditCss, /html\[data-theme="light"\] #module-payments \.payments-shop-profit-audit__procurement-item/);
+    assert.match(shopProfitAuditCss, /html\[data-theme="light"\] #module-payments \.payments-shop-profit-audit__resolution/);
+    assert.match(shopProfitAuditCss, /html\[data-theme="light"\] #module-payments \.payments-shop-profit-audit__history-lane/);
+    assert.match(shopProfitAuditCss, /html\[data-theme="light"\] #module-payments \.payments-shop-profit-audit__adjustment-breakdown-row\.is-info/);
     assert.match(shopProfitLedgerMigration, /CREATE TABLE IF NOT EXISTS public\.shop_order_profit_ledger/);
     assert.match(shopProfitLedgerMigration, /dedupe_key TEXT NOT NULL/);
     assert.match(shopProfitLedgerMigration, /entry_type VARCHAR\(64\) NOT NULL/);

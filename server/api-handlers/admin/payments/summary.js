@@ -2578,6 +2578,18 @@ function createEmptyShopProfitReadinessSummary() {
     };
 }
 
+function createEmptyShopProfitHistoricalDisposition() {
+    return {
+        status: 'ready',
+        label: '历史订单已收口',
+        action_required_count: 0,
+        completable_count: 0,
+        estimated_count: 0,
+        archive_candidate_count: 0,
+        lanes: []
+    };
+}
+
 function createEmptyShopProfitSummary() {
     return {
         basis: 'points_to_cny_parity',
@@ -2611,6 +2623,7 @@ function createEmptyShopProfitSummary() {
         reconciliation_issue_count: 0,
         reconciliation_affected_order_count: 0,
         reconciliation_issues: [],
+        historical_order_disposition: createEmptyShopProfitHistoricalDisposition(),
         order_risk_list: {
             status: 'ready',
             order_count: 0,
@@ -2734,6 +2747,138 @@ function buildShopProfitIssueSample(row = {}) {
         point_source_traceability_tone: String(traceability.tone || '').trim() || null,
         point_source_traceability_action_required: Boolean(traceability.action_required),
         refunded: Boolean(attribution.refunded)
+    };
+}
+
+function createShopProfitResolutionOption(key, label, description, nextState = '') {
+    return {
+        key,
+        label,
+        description,
+        next_state: nextState || null
+    };
+}
+
+function buildShopProfitResolutionPlan({ type = '', severity = '', coverage = '', missingCostItemCount = 0, traceability = {}, untrackedPoints = 0, adjustments = {}, netProfitCny = 0 } = {}) {
+    const normalizedType = String(type || '').trim().toLowerCase();
+    const normalizedCoverage = String(coverage || '').trim().toLowerCase();
+    const traceabilityStatus = String(traceability?.status || '').trim().toLowerCase();
+    const unresolvedPoints = normalizeNumber(untrackedPoints || traceability?.untracked_points, 0);
+    const hasCostGap = normalizeNumber(missingCostItemCount, 0) > 0 || normalizedCoverage === 'no_inventory';
+    const hasPointHistoryGap = unresolvedPoints > 0
+        || Boolean(traceability?.action_required)
+        || ['legacy_untracked', 'balance_split_gap', 'partial_lot_gap'].includes(traceabilityStatus);
+    const hasIrrecoverableHistoryGap = traceabilityStatus === 'legacy_untracked' && unresolvedPoints > 0;
+    const isArchiveCandidate = normalizedCoverage === 'no_inventory' && hasIrrecoverableHistoryGap;
+    const hasAdjustmentGap = String(adjustments?.status || '').trim().toLowerCase() === 'review_required'
+        || normalizedType === 'profit_adjustments_review';
+    const isNegativeProfit = Number(netProfitCny || 0) < 0 || normalizedType === 'negative_profit' || String(severity || '').trim().toLowerCase() === 'critical';
+    const options = [];
+
+    if (hasCostGap) {
+        options.push(createShopProfitResolutionOption(
+            normalizedCoverage === 'no_inventory' ? 'bind_inventory' : 'complete_cost',
+            normalizedCoverage === 'no_inventory' ? '绑定库存/批次' : '补齐采购成本',
+            normalizedCoverage === 'no_inventory'
+                ? '能找到发货库存时先绑定订单与库存，再回算采购成本。'
+                : '能追溯采购记录时补录批次单价、汇率和凭证。',
+            '已补齐'
+        ));
+    }
+
+    if (hasPointHistoryGap) {
+        options.push(createShopProfitResolutionOption(
+            'historical_estimate',
+            '标记历史估算',
+            '无法还原逐笔积分来源但可确认旧口径时，保留估算标记并从精确净利润中单独披露。',
+            '历史估算'
+        ));
+    }
+
+    if (isArchiveCandidate) {
+        options.push(createShopProfitResolutionOption(
+            'historical_untraceable',
+            '历史不可追溯',
+            '库存和积分来源都无法补齐时，归档到历史未归因汇总，不再反复进入新风险队列。',
+            '历史不可追溯'
+        ));
+    }
+
+    if (hasAdjustmentGap) {
+        options.push(createShopProfitResolutionOption(
+            'append_adjustment',
+            '追加调整分录',
+            '优惠、退款、补发或人工调整通过反向/调整分录收口，不覆盖原始利润。',
+            '调整已入账'
+        ));
+    }
+
+    if (isNegativeProfit) {
+        options.unshift(createShopProfitResolutionOption(
+            'manual_profit_review',
+            '逐单复核',
+            '先核对售价、成本、优惠、补发和退款，确认是真亏损还是缺数据造成的假亏损。',
+            '已复核'
+        ));
+    }
+
+    if (!options.length) {
+        options.push(createShopProfitResolutionOption(
+            'monitor',
+            '继续观察',
+            '当前只影响口径展示，后续有新退款、补发或调整时再进入复核。',
+            '观察中'
+        ));
+    }
+
+    let status = 'manual_review';
+    let label = '逐单复核';
+    let tone = isNegativeProfit ? 'critical' : 'review';
+    let primaryAction = isNegativeProfit ? '核对售价、采购成本、优惠和补发记录' : '复核订单利润归因';
+    let description = '按订单查看收入、成本、优惠、退款和积分来源，确认是否需要补录或调整。';
+
+    if (isNegativeProfit) {
+        status = 'manual_review';
+        label = '逐单复核';
+        tone = 'critical';
+        primaryAction = '核对售价、采购成本、优惠和补发记录';
+        description = '负利润订单先确认是真亏损还是缺成本、优惠、退款或补发造成的口径偏差，再决定补齐、估算或归档。';
+    } else if (isArchiveCandidate) {
+        status = 'historical_archive_candidate';
+        label = '历史不可追溯候选';
+        tone = 'warning';
+        primaryAction = '先尝试补齐库存/成本和积分来源，无法追溯时归档到历史未归因汇总';
+        description = '这类旧订单不应永久阻塞新风险处理；能补齐则补齐，不能补齐则以历史不可追溯口径收口。';
+    } else if (hasCostGap) {
+        status = 'data_completion';
+        label = normalizedCoverage === 'no_inventory' ? '补齐库存关联' : '补齐采购成本';
+        tone = 'warning';
+        primaryAction = normalizedCoverage === 'no_inventory' ? '补齐订单与库存/批次关联' : '补齐采购成本或采购批次';
+        description = '优先补齐可追溯的库存和采购信息，补齐后重新生成利润分录。';
+    } else if (hasPointHistoryGap) {
+        status = 'historical_estimation';
+        label = '历史积分估算';
+        tone = 'warning';
+        primaryAction = '补齐积分来源；无法还原时标记历史估算';
+        description = '旧订单缺少积分批次消耗明细时，不按 0 收入处理，保留旧口径估算并单独披露。';
+    } else if (hasAdjustmentGap) {
+        status = 'adjustment_review';
+        label = '调整分录复核';
+        tone = 'warning';
+        primaryAction = '追加优惠、退款、补发或人工调整分录';
+        description = '通过追加分录解释净利润变化，避免覆盖原始订单收入和成本。';
+    }
+
+    return {
+        status,
+        label,
+        tone,
+        primary_action: primaryAction,
+        description,
+        settlement_treatment: status === 'historical_archive_candidate'
+            ? '不进入精确净利润，进入历史未归因金额汇总'
+            : (status === 'historical_estimation' ? '进入估算净利润，需与精确净利润分开展示' : '补齐后进入精确净利润'),
+        options
     };
 }
 
@@ -2901,6 +3046,15 @@ function createShopProfitOrderRiskItem(row = {}) {
             : (untrackedPoints > 0 || traceability.action_required
                 ? '补齐积分来源批次消耗明细'
                 : '复核优惠、非现金积分或退款调整'));
+    const resolutionPlan = buildShopProfitResolutionPlan({
+        severity,
+        coverage,
+        missingCostItemCount,
+        traceability,
+        untrackedPoints,
+        adjustments,
+        netProfitCny
+    });
 
     return {
         order_id: orderId,
@@ -2920,6 +3074,7 @@ function createShopProfitOrderRiskItem(row = {}) {
         }),
         reasons,
         action_label: actionLabel,
+        resolution_plan: resolutionPlan,
         recognized_revenue_cny: roundNumber(attribution.recognized_revenue_cny, 4),
         recognized_cost_cny: roundNumber(attribution.recognized_cost_cny, 4),
         net_profit_cny: roundNumber(netProfitCny, 4),
@@ -2932,6 +3087,73 @@ function createShopProfitOrderRiskItem(row = {}) {
         point_source_traceability_label: String(traceability.label || '').trim() || null,
         refunded
     };
+}
+
+function buildShopProfitHistoricalDisposition(riskItems = []) {
+    const summary = createEmptyShopProfitHistoricalDisposition();
+    const lanes = new Map([
+        ['data_completion', {
+            key: 'data_completion',
+            label: '可补齐',
+            tone: 'warning',
+            count: 0,
+            description: '有库存、采购批次或积分线索的订单，优先补齐后重新结算。',
+            action_label: '补齐成本、库存关联或积分来源'
+        }],
+        ['historical_estimation', {
+            key: 'historical_estimation',
+            label: '历史估算',
+            tone: 'warning',
+            count: 0,
+            description: '只缺旧积分来源拆分但收入口径可确认的订单，保留估算标记单独披露。',
+            action_label: '标记历史估算并分开展示'
+        }],
+        ['historical_archive_candidate', {
+            key: 'historical_archive_candidate',
+            label: '不可追溯归档',
+            tone: 'review',
+            count: 0,
+            description: '库存和积分来源都无法还原的旧订单，进入历史未归因汇总，不继续污染新风险。',
+            action_label: '归档为历史不可追溯'
+        }],
+        ['manual_review', {
+            key: 'manual_review',
+            label: '逐单复核',
+            tone: 'critical',
+            count: 0,
+            description: '负利润或存在退款/补发争议的订单，需要管理员逐单确认。',
+            action_label: '核对售价、成本、优惠和退款'
+        }],
+        ['adjustment_review', {
+            key: 'adjustment_review',
+            label: '调整分录',
+            tone: 'warning',
+            count: 0,
+            description: '优惠、赠送积分、退款、补发或人工调整通过追加分录解释。',
+            action_label: '追加反向或调整分录'
+        }]
+    ]);
+
+    (Array.isArray(riskItems) ? riskItems : []).forEach((item) => {
+        const plan = normalizeJsonObject(item?.resolution_plan);
+        const status = String(plan.status || '').trim().toLowerCase();
+        if (!status) return;
+        const laneKey = lanes.has(status) ? status : (status === 'historical_untraceable' ? 'historical_archive_candidate' : 'manual_review');
+        const lane = lanes.get(laneKey);
+        if (!lane) return;
+        lane.count += 1;
+    });
+
+    summary.lanes = [...lanes.values()].filter((lane) => lane.count > 0);
+    summary.action_required_count = summary.lanes.reduce((total, lane) => total + lane.count, 0);
+    summary.completable_count = normalizeNumber(lanes.get('data_completion')?.count, 0);
+    summary.estimated_count = normalizeNumber(lanes.get('historical_estimation')?.count, 0);
+    summary.archive_candidate_count = normalizeNumber(lanes.get('historical_archive_candidate')?.count, 0);
+    summary.status = summary.archive_candidate_count > 0
+        ? 'review'
+        : (summary.action_required_count > 0 ? 'warning' : 'ready');
+    summary.label = summary.action_required_count > 0 ? '历史风险待收口' : '历史订单已收口';
+    return summary;
 }
 
 function buildShopProfitOrderRiskList(shopProfitRows = []) {
@@ -4220,6 +4442,20 @@ function buildShopProfitAuditAlerts(summary = {}) {
             points,
             metric_label: String(input.metric_label || '').trim() || null,
             sample_orders: Array.isArray(input.sample_orders) ? input.sample_orders.filter(Boolean).slice(0, 4) : [],
+            resolution_plan: buildShopProfitResolutionPlan({
+                type,
+                severity,
+                coverage: type === 'no_inventory' ? 'no_inventory' : '',
+                missingCostItemCount: type === 'missing_cost' ? orderCount || 1 : 0,
+                traceability: {
+                    status: ['point_source_coverage', 'untracked_points'].includes(type) ? 'legacy_untracked' : '',
+                    action_required: ['point_source_coverage', 'untracked_points'].includes(type),
+                    untracked_points: points
+                },
+                untrackedPoints: points,
+                adjustments: type === 'profit_adjustments_review' ? { status: 'review_required' } : {},
+                netProfitCny: type === 'negative_profit' ? -Math.abs(amountCny || 1) : 0
+            }),
             case_category_key: 'shop_profit_audit',
             case_target_id: type,
             alert_type: `shop_profit_${type}`
@@ -4603,6 +4839,7 @@ function summarizeShopProfitAttributions(rows = [], options = {}) {
     summary.reconciliation_affected_order_count = reconciliation.affected_order_count;
     summary.reconciliation_issues = reconciliation.issues;
     summary.order_risk_list = buildShopProfitOrderRiskList(safeRows);
+    summary.historical_order_disposition = buildShopProfitHistoricalDisposition(summary.order_risk_list.items);
     summary.dimension_breakdown = buildShopProfitDimensionBreakdown(safeRows);
     summary.source_procurement_recommendations = buildShopSourceProcurementRecommendations(summary.dimension_breakdown);
     summary.profit_adjustments = buildShopProfitAdjustmentSummary(safeRows);

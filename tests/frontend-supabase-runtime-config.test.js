@@ -8425,6 +8425,16 @@ test('admin studio centralizes module permissions and gates sidebar modules thro
         /js\/admin-studio-bootstrap\.js\?v=20260508_SITE_LAYOUT_BOOTSTRAP_1/,
         'admin-studio.html should load the cache-busted admin studio bootstrap without legacy chat prewarm'
     );
+    assert.equal(
+        adminStudioSource.includes('adminSessionRefresh=20260606_ADMIN_STUDIO_SESSION_REFRESH_1'),
+        true,
+        'admin-studio.html should cache-bust the admin studio session refresh bootstrap'
+    );
+    assert.match(
+        bootstrapSource,
+        /persistSession:\s*true,[\s\S]*autoRefreshToken:\s*true,[\s\S]*detectSessionInUrl:\s*false/,
+        'admin-studio-bootstrap.js should keep the admin Supabase session refreshed while the studio is active'
+    );
     assert.match(
         bootstrapSource,
         /window\.ADMIN_PERMISSION_GROUPS\s*=\s*ADMIN_PERMISSION_GROUPS/,
