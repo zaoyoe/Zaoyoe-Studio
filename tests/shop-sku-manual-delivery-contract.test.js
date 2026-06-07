@@ -116,6 +116,11 @@ test('storefront interaction follows selected SKU manual delivery state', () => 
     );
     assert.match(
         shopSource,
+        /selectPurchaseSku: function[\s\S]*const manualDelivery = this\.isShopSkuManualDelivery\(product, sku\)[\s\S]*if \(Number\(sku\.stock_count \|\| 0\) <= 0 && !manualDelivery\) return;/,
+        'manual-delivery SKUs should remain selectable in the purchase/detail modal even when stock is zero'
+    );
+    assert.match(
+        shopSource,
         /addProductToCart: function[\s\S]*resolveShopProductSelectionManualDelivery\(product, selectedSkuId\)[\s\S]*showManualDeliveryProductToast/,
         'adding to cart should block only the selected manual-delivery SKU'
     );
@@ -123,5 +128,10 @@ test('storefront interaction follows selected SKU manual delivery state', () => 
         shopSource,
         /renderPurchaseSkuPills: function[\s\S]*const manualDelivery = this\.isShopSkuManualDelivery\(product, sku\)[\s\S]*const disabled = stock <= 0 && !manualDelivery/,
         'manual-delivery SKUs should remain selectable even without self-service stock'
+    );
+    assert.match(
+        shopSource,
+        /buildProductCardElement: function[\s\S]*const purchaseDataset = this\.buildProductCardPurchaseDataset\(product, currentPrice\);[\s\S]*const manualDelivery = this\.resolveShopProductSelectionManualDelivery\(product, purchaseDataset\.defaultSkuId \|\| ''\);[\s\S]*el\.dataset\.shopAction = 'buy-product'/,
+        'storefront cards should use selected SKU manual delivery before deciding whether a zero-stock card opens the detail modal'
     );
 });
