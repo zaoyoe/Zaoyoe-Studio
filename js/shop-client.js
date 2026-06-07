@@ -1055,13 +1055,15 @@ const ShopClient = {
         const normalizedSkuId = String(skuId || '').trim();
         const skus = Array.isArray(this.currentPurchase?.productSkus) ? this.currentPurchase.productSkus : [];
         const sku = skus.find((item) => String(item.id || '').trim() === normalizedSkuId);
-        if (!sku || Number(sku.stock_count || 0) <= 0) return;
-
         const product = this.getCachedProductById(this.currentPurchase.productId);
+        if (!sku) return;
+
+        const manualDelivery = this.isShopSkuManualDelivery(product, sku);
+        if (Number(sku.stock_count || 0) <= 0 && !manualDelivery) return;
+
         const productForPricing = { ...(product || {}), selected_sku_id: normalizedSkuId };
         const pricing = this.resolveProductPricing(productForPricing, this.agentPricesCache || {});
         const basePrice = Math.max(0, Number(pricing.currentPrice ?? this.getProductSkuPriceForCurrentSite(sku, product) ?? this.currentPurchase.basePrice) || 0);
-        const manualDelivery = this.isShopSkuManualDelivery(product, sku);
 
         this.currentPurchase.productSkuId = normalizedSkuId;
         this.currentPurchase.productSkuName = this.resolveSkuDisplayName(sku);
@@ -10368,15 +10370,17 @@ const ShopClient = {
                 ? `<img src="${safeIconUrl}" width="40" class="shop-card-thumb" alt="${safeCardImageAlt}" loading="lazy" decoding="async" draggable="false">`
                 : '<i class="fas fa-box shop-card-icon shop-card-icon--fallback" aria-hidden="true"></i>');
 
+        const maxPurchaseQuantity = this.getPurchaseQuantityCapForProduct(product, product.max_purchase_quantity);
+        const purchaseDataset = this.buildProductCardPurchaseDataset(product, currentPrice);
         const rawStockCount = Number(product.stock_count ?? product.stockCount ?? 0);
         const stockCount = Number.isFinite(rawStockCount) ? Math.max(0, Math.trunc(rawStockCount)) : 0;
-        const manualDelivery = this.isShopProductManualDelivery(product);
+        const manualDelivery = this.resolveShopProductSelectionManualDelivery(product, purchaseDataset.defaultSkuId || '');
         const noStock = this.isShopProductSoldOut(product);
         const stockLabel = manualDelivery
             ? (window.i18n?.t('shop.manualDelivery') || '人工发货')
             : (noStock
-            ? (window.i18n?.t('shop.outOfStock') || '售罄')
-            : `${window.i18n?.t('shop.stock') || '库存'}: ${stockCount}`);
+                ? (window.i18n?.t('shop.outOfStock') || '售罄')
+                : `${window.i18n?.t('shop.stock') || '库存'}: ${stockCount}`);
         const cartDisabled = manualDelivery || noStock;
         const stockBadgeClass = manualDelivery ? 'manual-delivery' : (noStock ? 'out-of-stock' : 'in-stock');
         const cartTriggerAriaLabel = manualDelivery
@@ -10384,8 +10388,6 @@ const ShopClient = {
             : (noStock
                 ? (window.i18n?.t('shop.outOfStock') || '售罄')
                 : this.getCartCopy().addLabel);
-        const maxPurchaseQuantity = this.getPurchaseQuantityCapForProduct(product, product.max_purchase_quantity);
-        const purchaseDataset = this.buildProductCardPurchaseDataset(product, currentPrice);
 
         const coverIconMarkup = product.icon_url?.startsWith('fa')
             ? this.renderShopCoverIconMarkup(product.icon_url, safeIconClass)
