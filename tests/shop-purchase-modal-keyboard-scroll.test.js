@@ -80,6 +80,11 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
         true,
         'shop.html should bust storefront styles after moving success guidance into the main modal scroll flow'
     );
+    assert.equal(
+        shopHtml.includes('purchaseMobileOpenViewportStable=20260608_SHOP_PURCHASE_MOBILE_OPEN_VIEWPORT_STABLE_1'),
+        true,
+        'shop.html should bust storefront assets after stabilizing purchase modal opening viewport measurements'
+    );
     assert.match(
         shopHtml,
         /<h3 id="purchaseStageTitle" class="card-title shop-inline-style-attr-6">Product Name<\/h3>/,
@@ -458,8 +463,32 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
 
     assert.match(
         shopClientSource,
-        /capturePurchaseModalOverlayHeight:\s*function \(force = false\) \{[\s\S]*const frame = this\.getPurchaseModalNativeViewportFrame\(\);[\s\S]*const measuredHeight = Math\.max\(0, Math\.round\(frame\.overlayHeight \|\| 0\)\);[\s\S]*const baseHeight = Math\.round\(this\.purchaseModalKeyboardBaseViewportHeight \|\| 0\);[\s\S]*const shouldPreserveForKeyboard = this\.purchaseModalKeyboardDocked \|\| !!this\.getActivePurchaseModalInput\(\);[\s\S]*const shouldPreserveKeyboardBase = overlay\.classList\.contains\('active'\)\s+&& shouldPreserveForKeyboard\s+&& baseHeight > measuredHeight;[\s\S]*const overlayHeight = shouldPreserveKeyboardBase \? baseHeight : measuredHeight;[\s\S]*'--shop-purchase-viewport-top': `\$\{frame\.top\}px`,[\s\S]*'--shop-purchase-viewport-left': `\$\{frame\.left\}px`,[\s\S]*'--shop-purchase-viewport-width': `\$\{frame\.width\}px`,[\s\S]*'--shop-purchase-overlay-height': `\$\{overlayHeight\}px`[\s\S]*if \(shouldPreserveKeyboardBase\) return;/,
-        'purchase modal should preserve the pre-keyboard overlay height only while keyboard-related focus or docking is active'
+        /capturePurchaseModalOverlayHeight:\s*function \(force = false\) \{[\s\S]*const measuredHeight = Math\.max\(0, Math\.round\(frame\.stableHeight \|\| frame\.overlayHeight \|\| 0\)\);[\s\S]*const activeInput = this\.getActivePurchaseModalInput\(\);[\s\S]*const shouldPreserveForKeyboard = this\.purchaseModalKeyboardDocked \|\| !!activeInput;[\s\S]*const isOpeningSettling = overlay\.classList\.contains\('shop-purchase-opening-stable'\);/,
+        'purchase modal should measure against a stable viewport and distinguish opening settle from keyboard docking'
+    );
+
+    assert.match(
+        shopClientSource,
+        /const shouldPreserveStableOpenFrame = overlay\.classList\.contains\('active'\)\s+&& isOpeningSettling\s+&& !shouldPreserveForKeyboard;[\s\S]*const shouldPreserveStableOpenBase = overlay\.classList\.contains\('active'\)\s+&& isOpeningSettling\s+&& !shouldPreserveForKeyboard\s+&& baseHeight > measuredHeight;[\s\S]*const shouldPreserveKeyboardBase = overlay\.classList\.contains\('active'\)\s+&& shouldPreserveForKeyboard\s+&& baseHeight > measuredHeight;[\s\S]*const overlayHeight = \(shouldPreserveKeyboardBase \|\| shouldPreserveStableOpenBase\) \? baseHeight : measuredHeight;/,
+        'purchase modal should preserve opening viewport base height separately from keyboard-related focus or docking'
+    );
+
+    assert.match(
+        shopClientSource,
+        /'--shop-purchase-viewport-top': shouldPreserveStableOpenFrame && previousViewportTop \? previousViewportTop : `\$\{frame\.top\}px`,[\s\S]*'--shop-purchase-viewport-left': shouldPreserveStableOpenFrame && previousViewportLeft \? previousViewportLeft : `\$\{frame\.left\}px`,[\s\S]*'--shop-purchase-viewport-width': shouldPreserveStableOpenFrame && previousViewportWidth \? previousViewportWidth : `\$\{frame\.width\}px`,[\s\S]*'--shop-purchase-overlay-height': `\$\{overlayHeight\}px`[\s\S]*if \(shouldPreserveKeyboardBase \|\| shouldPreserveStableOpenBase\) return;/,
+        'purchase modal should keep the opening viewport frame stable while browser chrome settles'
+    );
+
+    assert.match(
+        shopClientSource,
+        /capturePurchaseModalKeyboardBase:\s*function \(\) \{[\s\S]*const measuredBaseViewportHeight = Math\.max\(0, Math\.round\(frame\.stableHeight \|\| frame\.overlayHeight \|\| frame\.visualBottom \|\| visualHeight \|\| 0\)\);[\s\S]*const isOpeningSettling = overlay\?\.classList\.contains\('shop-purchase-opening-stable'\);[\s\S]*const baseViewportHeight = isOpeningSettling && previousBaseViewportHeight > measuredBaseViewportHeight\s+\? previousBaseViewportHeight\s+: measuredBaseViewportHeight;[\s\S]*'--shop-purchase-viewport-top': isOpeningSettling && previousViewportTop \? previousViewportTop : `\$\{frame\.top\}px`,[\s\S]*'--shop-purchase-overlay-height': `\$\{baseViewportHeight\}px`/,
+        'purchase modal keyboard base capture should not shrink the opening viewport while browser chrome settles'
+    );
+
+    assert.match(
+        shopStyles,
+        /\/\* 20260608_SHOP_PURCHASE_MOBILE_OPEN_VIEWPORT_STABLE_1 \*\/[\s\S]*#shopPurchaseModal \.modal-content \{[\s\S]*max-height:\s*min\(840px,\s*calc\(var\(--shop-purchase-overlay-height, 100dvh\) - 96px - env\(safe-area-inset-top, 0px\) - env\(safe-area-inset-bottom, 0px\)\)\) !important;[\s\S]*@media \(max-width: 768px\) \{[\s\S]*max-height:\s*min\(760px,[\s\S]*@media \(min-width: 901px\) \{[\s\S]*max-height:\s*min\(720px,/,
+        'purchase modal should cap opening height against the stabilized overlay viewport on mobile and desktop'
     );
 
     assert.match(
