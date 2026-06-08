@@ -20951,7 +20951,9 @@ class ChatWidget {
             }
 
             html[data-theme="light"] .chat-window:not(.admin-mode-layout) .message.user {
-                box-shadow: 0 8px 18px rgba(148, 163, 184, 0.08) !important;
+                box-shadow:
+                    0 10px 22px rgba(35, 118, 78, 0.14),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.42) !important;
             }
 
             .chat-window:not(.admin-mode-layout).chat-opening--bootstrap-handoff,
@@ -21266,31 +21268,31 @@ class ChatWidget {
                 -webkit-backdrop-filter: blur(0) saturate(100%) !important;
             }
             
-            /* Narrow desktop: keep the natural desktop pop animation, only tighten size */
+            /* Narrow desktop: keep the same centered user-chat shell as narrow touch viewports. */
             @media (max-width: 700px) and (hover: hover) and (pointer: fine) {
                 .chat-window:not(.admin-mode-layout) {
-                    --chat-user-narrow-top-gap: clamp(18px, 5vh, 40px);
-                    --chat-user-narrow-bottom-gap: 24px;
-                    width: min(380px, calc(100vw - 24px)) !important;
-                    max-width: calc(100vw - 24px) !important;
-                    height: min(600px, calc(100vh - (var(--chat-user-narrow-top-gap) + var(--chat-user-narrow-bottom-gap)))) !important;
-                    max-height: calc(100vh - (var(--chat-user-narrow-top-gap) + var(--chat-user-narrow-bottom-gap))) !important;
-                    top: var(--chat-user-narrow-top-gap) !important;
+                    --chat-base-translate-y: -50%;
+                    --chat-shift-y: 0px;
+                    width: min(460px, max(97vw, calc(100vw - 16px))) !important;
+                    max-width: 97vw !important;
+                    height: 70vh !important;
+                    max-height: 600px !important;
+                    top: 50% !important;
                     left: 50% !important;
                     right: auto !important;
                     bottom: auto !important;
-                    transform: translate3d(-50%, 20px, 0) scale(0.95) !important;
-                    transform-origin: center top !important;
+                    transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px) + 24px), 0) scale(0.94) !important;
+                    transform-origin: center center !important;
                 }
 
                 .chat-window:not(.admin-mode-layout).active {
-                    transform: translate3d(-50%, 0, 0) scale(1) !important;
+                    transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(1) !important;
                 }
 
                 .chat-window:not(.admin-mode-layout).chat-opening--bootstrap-handoff,
                 .chat-window:not(.admin-mode-layout).chat-opening--bootstrap-handoff.active {
-                    transform: translate3d(-50%, 0, 0) scale(1) !important;
-                    transform-origin: center top !important;
+                    transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(1) !important;
+                    transform-origin: center center !important;
                 }
             }
 

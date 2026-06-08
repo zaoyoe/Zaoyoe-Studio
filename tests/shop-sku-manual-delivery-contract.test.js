@@ -131,7 +131,7 @@ test('storefront interaction follows selected SKU manual delivery state', () => 
     );
     assert.match(
         shopSource,
-        /buildProductCardElement: function[\s\S]*const purchaseDataset = this\.buildProductCardPurchaseDataset\(product, currentPrice\);[\s\S]*const manualDelivery = this\.resolveShopProductSelectionManualDelivery\(product, purchaseDataset\.defaultSkuId \|\| ''\);[\s\S]*el\.dataset\.shopAction = 'buy-product'/,
-        'storefront cards should use selected SKU manual delivery before deciding whether a zero-stock card opens the detail modal'
+        /getShopProductCardFulfillmentState: function[\s\S]*const autoStockSku = this\.getPreferredAutoDeliverySkuFromList\(product, skus\);[\s\S]*const manualSku = this\.getPreferredManualDeliverySkuFromList\(product, skus\);[\s\S]*const manualDelivery = hasSkuRows[\s\S]*\(!autoStockSku && Boolean\(manualSku\)\)[\s\S]*const soldOut = hasSkuRows[\s\S]*\(!autoStockSku && !manualSku\)/,
+        'storefront cards should prefer in-stock auto-delivery SKUs, then manual-delivery SKUs, before marking the card sold out'
     );
 });

@@ -297,6 +297,206 @@ test('createAdminStudioSession schedules renewal for a cached admin studio sessi
     }
 });
 
+test('createAdminStudioSession refreshes an expired Supabase session before issuing the admin cookie', async () => {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const expiredToken = `header.${encodeJwtPayload({
+        sub: 'admin-user-1',
+        email: 'admin@example.com',
+        exp: nowSeconds - 60
+    })}.signature`;
+    const freshToken = `header.${encodeJwtPayload({
+        sub: 'admin-user-1',
+        email: 'admin@example.com',
+        exp: nowSeconds + 3600
+    })}.signature`;
+    const sessionStorage = createStorage();
+    const localStorage = createStorage({
+        'sb-demo-auth-token': JSON.stringify({
+            currentSession: {
+                access_token: expiredToken,
+                refresh_token: 'refresh-token-1',
+                expires_at: nowSeconds - 60,
+                user: {
+                    id: 'admin-user-1',
+                    email: 'admin@example.com'
+                }
+            }
+        })
+    });
+    const setSessionCalls = [];
+    const fetchAuthHeaders = [];
+
+    const { api, restore } = loadAdminAccess({
+        sessionStorage,
+        localStorage,
+        atob(value) {
+            return Buffer.from(value, 'base64').toString('binary');
+        },
+        fetch(_input, init = {}) {
+            fetchAuthHeaders.push(init.headers?.Authorization || init.headers?.authorization || '');
+            return Promise.resolve({
+                ok: true,
+                status: 200,
+                async json() {
+                    return {
+                        success: true,
+                        granted: true,
+                        expiresInSeconds: 600
+                    };
+                }
+            });
+        },
+        supabaseClient: {
+            auth: {
+                async getSession() {
+                    return {
+                        data: {
+                            session: null
+                        },
+                        error: new Error('sdk session restore still pending')
+                    };
+                },
+                async setSession(payload) {
+                    setSessionCalls.push(payload);
+                    return {
+                        data: {
+                            session: {
+                                access_token: freshToken,
+                                refresh_token: 'refresh-token-1',
+                                user: {
+                                    id: 'admin-user-1',
+                                    email: 'admin@example.com'
+                                }
+                            }
+                        }
+                    };
+                }
+            }
+        }
+    });
+
+    try {
+        const result = await api.createAdminStudioSession({ userId: 'admin-user-1' });
+
+        assert.equal(result.ok, true);
+        assert.equal(setSessionCalls.length, 1);
+        assert.equal(setSessionCalls[0].refresh_token, 'refresh-token-1');
+        assert.deepEqual(fetchAuthHeaders, [`Bearer ${freshToken}`]);
+        assert.notEqual(sessionStorage.getItem('zaoyoe_admin_studio_session_cache_v1'), null);
+    } finally {
+        restore();
+    }
+});
+
+test('createAdminStudioSession retries with a restored Supabase token when the first bearer is rejected', async () => {
+    const nowSeconds = Math.floor(Date.now() / 1000);
+    const staleToken = `header.${encodeJwtPayload({
+        sub: 'admin-user-1',
+        email: 'admin@example.com',
+        exp: nowSeconds + 3600
+    })}.signature`;
+    const freshToken = `header.${encodeJwtPayload({
+        sub: 'admin-user-1',
+        email: 'admin@example.com',
+        exp: nowSeconds + 7200
+    })}.signature`;
+    const localStorage = createStorage({
+        'sb-demo-auth-token': JSON.stringify({
+            currentSession: {
+                access_token: staleToken,
+                refresh_token: 'refresh-token-2',
+                expires_at: nowSeconds + 3600,
+                user: {
+                    id: 'admin-user-1',
+                    email: 'admin@example.com'
+                }
+            }
+        })
+    });
+    const setSessionCalls = [];
+    const fetchAuthHeaders = [];
+
+    const { api, restore } = loadAdminAccess({
+        localStorage,
+        atob(value) {
+            return Buffer.from(value, 'base64').toString('binary');
+        },
+        fetch(_input, init = {}) {
+            fetchAuthHeaders.push(init.headers?.Authorization || init.headers?.authorization || '');
+            if (fetchAuthHeaders.length === 1) {
+                return Promise.resolve({
+                    ok: false,
+                    status: 401,
+                    async json() {
+                        return {
+                            success: false,
+                            message: 'JWT expired'
+                        };
+                    }
+                });
+            }
+
+            return Promise.resolve({
+                ok: true,
+                status: 200,
+                async json() {
+                    return {
+                        success: true,
+                        granted: true,
+                        expiresInSeconds: 600
+                    };
+                }
+            });
+        },
+        supabaseClient: {
+            auth: {
+                async getSession() {
+                    return {
+                        data: {
+                            session: {
+                                access_token: staleToken,
+                                refresh_token: 'refresh-token-2',
+                                user: {
+                                    id: 'admin-user-1',
+                                    email: 'admin@example.com'
+                                }
+                            }
+                        }
+                    };
+                },
+                async setSession(payload) {
+                    setSessionCalls.push(payload);
+                    return {
+                        data: {
+                            session: {
+                                access_token: freshToken,
+                                refresh_token: 'refresh-token-2',
+                                user: {
+                                    id: 'admin-user-1',
+                                    email: 'admin@example.com'
+                                }
+                            }
+                        }
+                    };
+                }
+            }
+        }
+    });
+
+    try {
+        const result = await api.createAdminStudioSession({ userId: 'admin-user-1' });
+
+        assert.equal(result.ok, true);
+        assert.equal(setSessionCalls.length, 1);
+        assert.deepEqual(fetchAuthHeaders, [
+            `Bearer ${staleToken}`,
+            `Bearer ${freshToken}`
+        ]);
+    } finally {
+        restore();
+    }
+});
+
 test('renewAdminStudioSession preserves an active cache when renewal fails transiently', async () => {
     const now = Date.now();
     const sessionStorage = createStorage({

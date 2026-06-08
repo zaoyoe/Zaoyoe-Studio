@@ -1,7 +1,7 @@
 (function (global) {
     'use strict';
 
-    const CACHE_KEY = 'zaoyoe_site_layouts_v1';
+    const CACHE_KEY = 'zaoyoe_site_layouts_v2_support_channels';
     const INTL_DOMAINS = Object.freeze({
         'zaoyoe.xyz': true,
         'www.zaoyoe.xyz': true

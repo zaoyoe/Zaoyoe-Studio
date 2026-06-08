@@ -293,6 +293,97 @@ test('public shop catalog hides private categories and their products', async ()
     assert.deepEqual(hiddenCategoryRes.json().products, []);
 });
 
+test('public shop catalog hides categories without products priced for the requested site', async () => {
+    const supabase = {
+        from(table) {
+            if (table === 'shop_categories') {
+                return createThenableQuery(() => ({
+                    data: [
+                        { id: 'cat_cn_only', name: 'cn-only-tools', sort_order: 1, is_public: true },
+                        { id: 'cat_intl', name: 'intl-tools', sort_order: 2, is_public: true }
+                    ],
+                    error: null
+                }));
+            }
+
+            if (table === 'shop_product_skus') {
+                return createThenableQuery(() => ({
+                    data: [],
+                    error: null
+                }));
+            }
+
+            assert.equal(table, 'shop_products');
+            return createThenableQuery(() => ({
+                data: [
+                    {
+                        id: 'product-cn-only',
+                        name: 'CN only product',
+                        price_points: 10,
+                        price_points_intl: null,
+                        stock_count: 5,
+                        category: 'cn-only-tools',
+                        display_order: 2,
+                        is_active: true
+                    },
+                    {
+                        id: 'product-intl',
+                        name: 'INTL product',
+                        price_points: 20,
+                        price_points_intl: 2,
+                        stock_count: 5,
+                        category: 'intl-tools',
+                        display_order: 1,
+                        is_active: true
+                    }
+                ],
+                error: null
+            }));
+        }
+    };
+    const handler = createShopHandlers({
+        admin: {
+            getOptionalSupabaseAdmin() {
+                return supabase;
+            },
+            sendJson(res, status, payload) {
+                res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8');
+                res.end(JSON.stringify(payload));
+            }
+        },
+        site: {
+            requireSupportedSite(value) {
+                return String(value || 'cn').trim().toLowerCase() || 'cn';
+            }
+        },
+        env: {
+            SHOP_CATALOG_HOT_CACHE_TTL_MS: '0'
+        }
+    }).catalog;
+
+    const intlRes = createMockResponse();
+    await handler({
+        method: 'GET',
+        url: '/api/shop/catalog?site=intl&refresh=1',
+        headers: {}
+    }, intlRes);
+
+    assert.equal(intlRes.statusCode, 200);
+    assert.deepEqual(intlRes.json().categories.map((category) => category.name), ['intl-tools']);
+    assert.deepEqual(intlRes.json().products.map((product) => product.id), ['product-intl']);
+
+    const cnRes = createMockResponse();
+    await handler({
+        method: 'GET',
+        url: '/api/shop/catalog?site=cn&refresh=2',
+        headers: {}
+    }, cnRes);
+
+    assert.equal(cnRes.statusCode, 200);
+    assert.deepEqual(cnRes.json().categories.map((category) => category.name), ['cn-only-tools', 'intl-tools']);
+    assert.deepEqual(cnRes.json().products.map((product) => product.id), ['product-cn-only', 'product-intl']);
+});
+
 test('public shop catalog hides skus without a price for the requested site', async () => {
     const supabase = {
         from(table) {

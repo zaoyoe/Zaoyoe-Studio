@@ -49,8 +49,9 @@ const HomepageAdmin = (() => {
         ? [...HomepageContract.MANAGED_SECTION_ORDER]
         : ['hero', 'prompts', 'shop', 'gongyi', 'verify', 'guestbook', 'ticker'];
     const HOMEPAGE_OVERVIEW_SECTION = 'overview';
+    const HOMEPAGE_SUPPORT_SECTION = 'support';
     const HOMEPAGE_DEFAULT_SECTION = HOMEPAGE_OVERVIEW_SECTION;
-    const HOMEPAGE_TAB_SECTIONS = Object.freeze([HOMEPAGE_OVERVIEW_SECTION, ...HOMEPAGE_MANAGED_SECTIONS]);
+    const HOMEPAGE_TAB_SECTIONS = Object.freeze([HOMEPAGE_OVERVIEW_SECTION, HOMEPAGE_SUPPORT_SECTION, ...HOMEPAGE_MANAGED_SECTIONS]);
     const HOMEPAGE_SITE_LAYOUT_PAGE_OPTIONS = Object.freeze([
         { key: 'home', label: '首页', path: '/' },
         { key: 'shop', label: '商城', path: '/shop.html' },
@@ -119,6 +120,44 @@ const HomepageAdmin = (() => {
         telegram_group_url: 'https://t.me/+I86eX5sPF1c0OTc1',
         contact_email: 'zaoyoe@gmail.com'
     });
+    const HOMEPAGE_SUPPORT_ACTION_OPTIONS = Object.freeze([
+        { value: 'link', label: '打开链接' },
+        { value: 'email', label: '发送邮件' },
+        { value: 'copy', label: '复制文本' },
+        { value: 'chat', label: '打开客服机器人' },
+        { value: 'detail', label: '打开详情弹窗' }
+    ]);
+    const HOMEPAGE_SUPPORT_ICON_PRESETS = Object.freeze([
+        { value: 'none', label: '无', noIcon: true },
+        { value: 'telegram', label: 'Telegram / TG', iconClass: 'fab fa-telegram' },
+        { value: 'wechat', label: '微信 / WeChat', iconClass: 'fab fa-weixin' },
+        { value: 'qq', label: 'QQ', iconClass: 'fab fa-qq' },
+        { value: 'email', label: '邮箱', iconClass: 'fas fa-envelope' },
+        { value: 'discord', label: 'Discord', iconClass: 'fab fa-discord' },
+        { value: 'whatsapp', label: 'WhatsApp', iconClass: 'fab fa-whatsapp' },
+        { value: 'x', label: 'X / Twitter', iconClass: 'fab fa-twitter' },
+        { value: 'github', label: 'GitHub', iconClass: 'fab fa-github' },
+        { value: 'instagram', label: 'Instagram', iconClass: 'fab fa-instagram' },
+        { value: 'tiktok', label: 'TikTok', iconClass: 'fab fa-tiktok' },
+        { value: 'youtube', label: 'YouTube', iconClass: 'fab fa-youtube' },
+        { value: 'bilibili', label: 'Bilibili', textIcon: 'B' },
+        { value: 'xiaohongshu', label: '小红书 / RED', textIcon: 'RED' },
+        { value: 'weibo', label: '微博', iconClass: 'fab fa-weibo' },
+        { value: 'support_bot', label: '客服机器人', iconClass: 'fas fa-headset' },
+        { value: 'heart', label: '赞助 / 爱心', iconClass: 'fas fa-heart' },
+        { value: 'link', label: '自定义链接', iconClass: 'fas fa-link' }
+    ]);
+    const HOMEPAGE_SUPPORT_ICON_SET = new Set(HOMEPAGE_SUPPORT_ICON_PRESETS.map((option) => option.value));
+    const HOMEPAGE_SUPPORT_ACTION_SET = new Set(HOMEPAGE_SUPPORT_ACTION_OPTIONS.map((option) => option.value));
+    const HOMEPAGE_SUPPORT_PLACEMENTS = Object.freeze([
+        { value: 'nav', label: '桌面导航栏' },
+        { value: 'mobile_nav', label: '移动导航栏' },
+        { value: 'footer_brand', label: '底部左侧图标' },
+        { value: 'footer_resources', label: '底部资源列' },
+        { value: 'footer_about', label: '底部关于列' },
+        { value: 'footer_bottom', label: '底部版权栏' }
+    ]);
+    const HOMEPAGE_SUPPORT_PLACEMENT_SET = new Set(HOMEPAGE_SUPPORT_PLACEMENTS.map((option) => option.value));
 
     function normalizeHomepageSiteLayoutPageKey(value, fallback = 'home') {
         const normalized = String(value || '').trim().toLowerCase();
@@ -145,11 +184,53 @@ const HomepageAdmin = (() => {
         return fallbackValue;
     }
 
-    function normalizeHomepageSiteLayoutEmail(value, fallback) {
+    function normalizeHomepageSiteLayoutEmail(value, fallback = '') {
         const source = String(value || '').trim().slice(0, 320);
         const fallbackValue = String(fallback || '').trim().slice(0, 320);
         if (!source) return fallbackValue;
         return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(source) ? source : fallbackValue;
+    }
+
+    function normalizeHomepageSiteLayoutActionUrl(value, fallback = '') {
+        const source = String(value || '').trim();
+        const fallbackValue = String(fallback || '').trim();
+        if (!source) return fallbackValue;
+
+        if (source.startsWith('/') || source.startsWith('#')) {
+            return source;
+        }
+
+        try {
+            const parsed = new URL(source);
+            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                return parsed.toString();
+            }
+        } catch (_) {
+            return fallbackValue;
+        }
+
+        return fallbackValue;
+    }
+
+    function normalizeHomepageSiteLayoutImageUrl(value, fallback = '') {
+        const source = String(value || '').trim();
+        const fallbackValue = String(fallback || '').trim();
+        if (!source) return fallbackValue;
+
+        if (source.startsWith('/')) {
+            return source;
+        }
+
+        try {
+            const parsed = new URL(source);
+            if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+                return parsed.toString();
+            }
+        } catch (_) {
+            return fallbackValue;
+        }
+
+        return fallbackValue;
     }
 
     function normalizeHomepageSiteLayoutFooterContacts(value, fallback = HOMEPAGE_SITE_LAYOUT_DEFAULT_FOOTER_CONTACTS) {
@@ -168,6 +249,176 @@ const HomepageAdmin = (() => {
         };
     }
 
+    function buildDefaultHomepageSupportChannels(footerContacts = HOMEPAGE_SITE_LAYOUT_DEFAULT_FOOTER_CONTACTS) {
+        const contacts = normalizeHomepageSiteLayoutFooterContacts(footerContacts);
+        return [
+            {
+                id: 'sponsor',
+                name: '赞助支持',
+                short_name: '赞助',
+                description: '跳转到赞助支持页面',
+                icon: 'heart',
+                action: 'link',
+	                target_url: contacts.support_url,
+	                target_email: '',
+	                copy_text: '',
+	                detail_title: '',
+	                detail_body: '',
+	                detail_image_url: '',
+	                detail_copy_label: '',
+	                detail_link_label: '',
+	                enabled: true,
+	                order: 10,
+	                placements: ['footer_resources', 'footer_bottom']
+            },
+            {
+                id: 'telegram',
+                name: 'TG',
+                short_name: 'TG',
+                description: 'Telegram 联系入口',
+                icon: 'telegram',
+                action: 'link',
+	                target_url: contacts.telegram_url,
+	                target_email: '',
+	                copy_text: '',
+	                detail_title: '',
+	                detail_body: '',
+	                detail_image_url: '',
+	                detail_copy_label: '',
+	                detail_link_label: '',
+	                enabled: true,
+	                order: 20,
+	                placements: ['nav', 'mobile_nav', 'footer_brand']
+            },
+            {
+                id: 'telegram_group',
+                name: 'TG群组',
+                short_name: 'TG群组',
+                description: 'Telegram 社群入口',
+                icon: 'telegram',
+                action: 'link',
+	                target_url: contacts.telegram_group_url,
+	                target_email: '',
+	                copy_text: '',
+	                detail_title: '',
+	                detail_body: '',
+	                detail_image_url: '',
+	                detail_copy_label: '',
+	                detail_link_label: '',
+	                enabled: true,
+	                order: 30,
+	                placements: ['nav', 'mobile_nav', 'footer_about']
+            },
+            {
+                id: 'email',
+                name: '邮箱',
+                short_name: '邮箱',
+                description: '公开联系邮箱',
+                icon: 'email',
+                action: 'email',
+	                target_url: '',
+	                target_email: contacts.contact_email,
+	                copy_text: '',
+	                detail_title: '',
+	                detail_body: '',
+	                detail_image_url: '',
+	                detail_copy_label: '',
+	                detail_link_label: '',
+	                enabled: true,
+	                order: 40,
+	                placements: ['footer_about']
+            }
+        ];
+    }
+
+    function normalizeHomepageSupportPlacements(value, fallback = []) {
+        const source = Array.isArray(value) ? value : fallback;
+        return Array.from(new Set(source
+            .map((entry) => String(entry || '').trim().toLowerCase())
+            .filter((entry) => HOMEPAGE_SUPPORT_PLACEMENT_SET.has(entry))));
+    }
+
+    function normalizeHomepageSupportChannel(value, index = 0, fallback = {}) {
+        const source = value && typeof value === 'object' && !Array.isArray(value)
+            ? value
+            : {};
+        const defaults = fallback && typeof fallback === 'object' && !Array.isArray(fallback)
+            ? fallback
+            : {};
+        const action = HOMEPAGE_SUPPORT_ACTION_SET.has(String(source.action || '').trim().toLowerCase())
+            ? String(source.action || '').trim().toLowerCase()
+            : (HOMEPAGE_SUPPORT_ACTION_SET.has(defaults.action) ? defaults.action : 'link');
+        const icon = HOMEPAGE_SUPPORT_ICON_SET.has(String(source.icon || '').trim().toLowerCase())
+            ? String(source.icon || '').trim().toLowerCase()
+            : (HOMEPAGE_SUPPORT_ICON_SET.has(defaults.icon) ? defaults.icon : 'link');
+        const name = String(source.name || defaults.name || `站点入口 ${index + 1}`).trim().slice(0, 120);
+        const shortName = String(source.short_name || source.shortName || defaults.short_name || defaults.shortName || name).trim().slice(0, 80);
+        const rawId = String(source.id || defaults.id || `support-${index + 1}`).trim().toLowerCase();
+        const hasTargetUrl = Object.prototype.hasOwnProperty.call(source, 'target_url')
+            || Object.prototype.hasOwnProperty.call(source, 'url');
+        const hasTargetEmail = Object.prototype.hasOwnProperty.call(source, 'target_email')
+            || Object.prototype.hasOwnProperty.call(source, 'email');
+	        const hasCopyText = Object.prototype.hasOwnProperty.call(source, 'copy_text')
+	            || Object.prototype.hasOwnProperty.call(source, 'copyText');
+	        const hasDetailTitle = Object.prototype.hasOwnProperty.call(source, 'detail_title')
+	            || Object.prototype.hasOwnProperty.call(source, 'detailTitle');
+	        const hasDetailBody = Object.prototype.hasOwnProperty.call(source, 'detail_body')
+	            || Object.prototype.hasOwnProperty.call(source, 'detailBody')
+	            || Object.prototype.hasOwnProperty.call(source, 'content')
+	            || Object.prototype.hasOwnProperty.call(source, 'body');
+	        const hasDetailImageUrl = Object.prototype.hasOwnProperty.call(source, 'detail_image_url')
+	            || Object.prototype.hasOwnProperty.call(source, 'detailImageUrl')
+	            || Object.prototype.hasOwnProperty.call(source, 'qr_code_url')
+	            || Object.prototype.hasOwnProperty.call(source, 'qrCodeUrl');
+	        const hasDetailCopyLabel = Object.prototype.hasOwnProperty.call(source, 'detail_copy_label')
+	            || Object.prototype.hasOwnProperty.call(source, 'detailCopyLabel');
+	        const hasDetailLinkLabel = Object.prototype.hasOwnProperty.call(source, 'detail_link_label')
+	            || Object.prototype.hasOwnProperty.call(source, 'detailLinkLabel');
+
+	        return {
+            id: rawId.replace(/[^a-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || `support-${index + 1}`,
+            name,
+            short_name: shortName || name,
+            description: String(source.description || defaults.description || '').trim().slice(0, 240),
+            icon,
+	            action,
+	            target_url: normalizeHomepageSiteLayoutActionUrl(source.target_url || source.url, hasTargetUrl ? '' : (defaults.target_url || defaults.url || '')),
+	            target_email: normalizeHomepageSiteLayoutEmail(source.target_email || source.email, hasTargetEmail ? '' : (defaults.target_email || defaults.email || '')),
+	            copy_text: String(source.copy_text || source.copyText || (hasCopyText ? '' : (defaults.copy_text || defaults.copyText || ''))).trim().slice(0, 800),
+	            detail_title: String(source.detail_title || source.detailTitle || (hasDetailTitle ? '' : (defaults.detail_title || defaults.detailTitle || ''))).trim().slice(0, 120),
+	            detail_body: String(source.detail_body || source.detailBody || source.content || source.body || (hasDetailBody ? '' : (defaults.detail_body || defaults.detailBody || defaults.content || defaults.body || ''))).trim().slice(0, 1200),
+	            detail_image_url: normalizeHomepageSiteLayoutImageUrl(source.detail_image_url || source.detailImageUrl || source.qr_code_url || source.qrCodeUrl, hasDetailImageUrl ? '' : (defaults.detail_image_url || defaults.detailImageUrl || defaults.qr_code_url || defaults.qrCodeUrl || '')),
+	            detail_copy_label: String(source.detail_copy_label || source.detailCopyLabel || (hasDetailCopyLabel ? '' : (defaults.detail_copy_label || defaults.detailCopyLabel || ''))).trim().slice(0, 80),
+	            detail_link_label: String(source.detail_link_label || source.detailLinkLabel || (hasDetailLinkLabel ? '' : (defaults.detail_link_label || defaults.detailLinkLabel || ''))).trim().slice(0, 80),
+	            enabled: source.enabled !== false,
+            order: Number.isFinite(Number(source.order)) ? Math.max(0, Math.min(999, Math.round(Number(source.order)))) : (Number(defaults.order) || (index + 1) * 10),
+            placements: normalizeHomepageSupportPlacements(source.placements, defaults.placements || [])
+        };
+    }
+
+    function normalizeHomepageSupportChannels(value, footerContacts = HOMEPAGE_SITE_LAYOUT_DEFAULT_FOOTER_CONTACTS) {
+        const defaults = buildDefaultHomepageSupportChannels(footerContacts);
+        const source = Array.isArray(value) ? value : defaults;
+        const seenIds = new Set();
+
+        return source
+            .map((entry, index) => normalizeHomepageSupportChannel(entry, index, defaults[index] || {}))
+            .map((channel, index) => {
+                let id = channel.id || `support-${index + 1}`;
+                let suffix = 2;
+                while (seenIds.has(id)) {
+                    id = `${channel.id || 'support'}-${suffix}`;
+                    suffix += 1;
+                }
+                seenIds.add(id);
+                return {
+                    ...channel,
+                    id
+                };
+            })
+            .sort((a, b) => (a.order - b.order) || a.name.localeCompare(b.name, 'zh-Hans-CN'));
+    }
+
     function buildDefaultHomepageSiteLayout(site = 'cn') {
         const normalizedSite = normalizeHomepageSite(site);
         if (normalizedSite === 'intl') {
@@ -175,14 +426,16 @@ const HomepageAdmin = (() => {
                 root_page_key: 'shop',
                 logo_target_mode: 'follow_root',
                 logo_page_key: 'shop',
-                footer_contacts: normalizeHomepageSiteLayoutFooterContacts()
+                footer_contacts: normalizeHomepageSiteLayoutFooterContacts(),
+                support_channels: normalizeHomepageSupportChannels()
             };
         }
         return {
             root_page_key: 'home',
             logo_target_mode: 'follow_root',
             logo_page_key: 'home',
-            footer_contacts: normalizeHomepageSiteLayoutFooterContacts()
+            footer_contacts: normalizeHomepageSiteLayoutFooterContacts(),
+            support_channels: normalizeHomepageSupportChannels()
         };
     }
 
@@ -200,11 +453,14 @@ const HomepageAdmin = (() => {
             logoTargetMode === 'custom' ? defaults.logo_page_key : rootPageKey
         );
 
+        const footerContacts = normalizeHomepageSiteLayoutFooterContacts(source.footer_contacts, defaults.footer_contacts);
+
         return {
             root_page_key: rootPageKey,
             logo_target_mode: logoTargetMode,
             logo_page_key: logoTargetMode === 'custom' ? logoPageKey : rootPageKey,
-            footer_contacts: normalizeHomepageSiteLayoutFooterContacts(source.footer_contacts, defaults.footer_contacts)
+            footer_contacts: footerContacts,
+            support_channels: normalizeHomepageSupportChannels(source.support_channels, footerContacts)
         };
     }
 
@@ -1763,6 +2019,7 @@ const HomepageAdmin = (() => {
 
     function renderAllSections() {
         renderHomepageOpsShell();
+        renderHomepageSupportChannelsShell();
         HOMEPAGE_MANAGED_SECTIONS.forEach(section => {
             renderSection(section);
         });
@@ -2160,7 +2417,8 @@ const HomepageAdmin = (() => {
             const logoSummary = layout?.logo_target_mode === 'custom'
                 ? `${logoOption.label} · ${logoOption.path}`
                 : `跟随根路径 · ${rootOption.path}`;
-            const footerContacts = normalizeHomepageSiteLayoutFooterContacts(layout?.footer_contacts);
+            const supportChannels = normalizeHomepageSupportChannels(layout?.support_channels, layout?.footer_contacts)
+                .filter((channel) => channel.enabled !== false);
 
             return `
                 <div class="hp-aggregate-site-card">
@@ -2178,12 +2436,8 @@ const HomepageAdmin = (() => {
                             <span class="hp-aggregate-site-card__value">${escapeHomepageHtml(logoSummary)}</span>
                         </div>
                         <div class="hp-aggregate-site-card__line">
-                            <span class="hp-aggregate-site-card__label">支持</span>
-                            <span class="hp-aggregate-site-card__value">${escapeHomepageHtml(footerContacts.support_url)}</span>
-                        </div>
-                        <div class="hp-aggregate-site-card__line">
-                            <span class="hp-aggregate-site-card__label">邮箱</span>
-                            <span class="hp-aggregate-site-card__value">${escapeHomepageHtml(footerContacts.contact_email)}</span>
+                            <span class="hp-aggregate-site-card__label">站点入口</span>
+                            <span class="hp-aggregate-site-card__value">${escapeHomepageHtml(`${supportChannels.length} 个已启用入口`)}</span>
                         </div>
                     </div>
                 </div>
@@ -2196,7 +2450,6 @@ const HomepageAdmin = (() => {
         const layout = getHomepageSiteLayout(site);
         const rootOption = resolveHomepageSiteLayoutPageOption(layout?.root_page_key || 'home');
         const logoOption = resolveHomepageSiteLayoutPageOption(layout?.logo_page_key || rootOption.key);
-        const footerContacts = normalizeHomepageSiteLayoutFooterContacts(layout?.footer_contacts);
         const pageOptions = buildHomepageSiteLayoutSelectOptions();
 
         if (aggregateMode) {
@@ -2235,7 +2488,7 @@ const HomepageAdmin = (() => {
             '    </div>',
             '    <div class="hp-inline-note hp-inline-note--muted">',
             '        <i class="fas fa-address-card"></i>',
-            '        <span>Footer 联系方式按站点独立生效，可分别配置 TG、TG 群组、赞助支持和邮箱，不会串到另一站。</span>',
+            '        <span>导航栏、移动菜单、Footer 文本入口和底部左侧图标，已统一放到「站点入口」标签页维护。</span>',
             '    </div>',
             '    <div class="hp-ops-form-grid hp-ops-form-grid--compact">',
             '        <div class="hp-field">',
@@ -2266,24 +2519,6 @@ const HomepageAdmin = (() => {
             }),
             '        </div>',
             '    </div>',
-            '    <div class="hp-ops-form-grid hp-ops-form-grid--compact">',
-            '        <div class="hp-field">',
-            '            <label>赞助支持链接</label>',
-            `            <input type="url" class="config-input" id="hp-site-layout-support-url" value="${escapeHomepageHtml(footerContacts.support_url)}" placeholder="https://afdian.com/a/zaoyoe">`,
-            '        </div>',
-            '        <div class="hp-field">',
-            '            <label>Footer TG 图标链接</label>',
-            `            <input type="url" class="config-input" id="hp-site-layout-telegram-url" value="${escapeHomepageHtml(footerContacts.telegram_url)}" placeholder="https://t.me/zaoyoe">`,
-            '        </div>',
-            '        <div class="hp-field">',
-            '            <label>TG 群组链接</label>',
-            `            <input type="url" class="config-input" id="hp-site-layout-telegram-group-url" value="${escapeHomepageHtml(footerContacts.telegram_group_url)}" placeholder="https://t.me/+I86eX5sPF1c0OTc1">`,
-            '        </div>',
-            '        <div class="hp-field">',
-            '            <label>联系邮箱</label>',
-            `            <input type="email" class="config-input" id="hp-site-layout-contact-email" value="${escapeHomepageHtml(footerContacts.contact_email)}" placeholder="support@example.com">`,
-            '        </div>',
-            '    </div>',
             '    <div class="hp-ops-metrics">',
             '        <div class="hp-ops-metric">',
             '            <span>当前根入口</span>',
@@ -2298,8 +2533,8 @@ const HomepageAdmin = (() => {
             `            <strong>${layout?.root_page_key === 'home' ? '承担主入口' : '保留但不承接 /'}</strong>`,
             '        </div>',
             '        <div class="hp-ops-metric">',
-            '            <span>联系邮箱</span>',
-            `            <strong>${escapeHomepageHtml(footerContacts.contact_email)}</strong>`,
+            '            <span>站点入口</span>',
+            '            <strong>由站点入口统一维护</strong>',
             '        </div>',
             '    </div>',
             '    <div class="hp-ops-actions">',
@@ -2327,36 +2562,524 @@ const HomepageAdmin = (() => {
         }
 
         const shell = document.getElementById('hp-ops-shell');
+        const currentLayout = getHomepageSiteLayout(site);
         const rootPageKey = normalizeHomepageSiteLayoutPageKey(
             shell?.querySelector('#hp-site-layout-root-page')?.value,
-            getHomepageSiteLayout(site)?.root_page_key || 'home'
+            currentLayout?.root_page_key || 'home'
         );
         const logoTargetMode = HOMEPAGE_SITE_LAYOUT_LOGO_MODES.has(String(shell?.querySelector('#hp-site-layout-logo-mode')?.value || '').trim().toLowerCase())
             ? String(shell?.querySelector('#hp-site-layout-logo-mode')?.value || '').trim().toLowerCase()
             : 'follow_root';
         const logoPageKey = normalizeHomepageSiteLayoutPageKey(
             shell?.querySelector('#hp-site-layout-logo-page')?.value,
-            logoTargetMode === 'custom' ? (getHomepageSiteLayout(site)?.logo_page_key || rootPageKey) : rootPageKey
+            logoTargetMode === 'custom' ? (currentLayout?.logo_page_key || rootPageKey) : rootPageKey
         );
-        const previousFooterContacts = getHomepageSiteLayout(site)?.footer_contacts;
-        const footerContacts = normalizeHomepageSiteLayoutFooterContacts({
-            support_url: shell?.querySelector('#hp-site-layout-support-url')?.value,
-            telegram_url: shell?.querySelector('#hp-site-layout-telegram-url')?.value,
-            telegram_group_url: shell?.querySelector('#hp-site-layout-telegram-group-url')?.value,
-            contact_email: shell?.querySelector('#hp-site-layout-contact-email')?.value
-        }, previousFooterContacts);
+        const footerContacts = normalizeHomepageSiteLayoutFooterContacts(currentLayout?.footer_contacts);
+        const supportChannels = normalizeHomepageSupportChannels(currentLayout?.support_channels, footerContacts);
 
         const result = await saveHomepageSiteLayout(site, {
             root_page_key: rootPageKey,
             logo_target_mode: logoTargetMode,
             logo_page_key: logoTargetMode === 'custom' ? logoPageKey : rootPageKey,
-            footer_contacts: footerContacts
+            footer_contacts: footerContacts,
+            support_channels: supportChannels
         });
         applyHomepageSiteLayoutPayload(result);
         renderAllSections();
         switchSection(currentSection);
         showHomepageActionToast(`${getHomepageSiteLabel(site)} 站点布局已保存`, 'success', {
             source: 'homepage-site-layout'
+        });
+        return true;
+    }
+
+    function getHomepageSupportIconPreset(icon) {
+        return HOMEPAGE_SUPPORT_ICON_PRESETS.find((option) => option.value === String(icon || '').trim().toLowerCase())
+            || HOMEPAGE_SUPPORT_ICON_PRESETS[HOMEPAGE_SUPPORT_ICON_PRESETS.length - 1];
+    }
+
+    function buildHomepageSupportIconMarkup(icon) {
+        const preset = getHomepageSupportIconPreset(icon);
+        if (preset.noIcon) {
+            return `<span class="hp-support-icon-pill__text">无</span>`;
+        }
+        if (preset.textIcon) {
+            return `<span class="hp-support-icon-pill__text">${escapeHomepageHtml(preset.textIcon)}</span>`;
+        }
+        return `<i class="${escapeHomepageHtml(preset.iconClass || 'fas fa-link')}"></i>`;
+    }
+
+    function buildHomepageSupportActionLabel(action) {
+        return HOMEPAGE_SUPPORT_ACTION_OPTIONS.find((option) => option.value === action)?.label || '打开链接';
+    }
+
+    function buildHomepageSupportPlacementLabels(placements = []) {
+        return HOMEPAGE_SUPPORT_PLACEMENTS
+            .filter((placement) => placements.includes(placement.value))
+            .map((placement) => placement.label);
+    }
+
+    function refreshLegacySupportChannelsFromFooterContacts(channels = [], footerContacts = HOMEPAGE_SITE_LAYOUT_DEFAULT_FOOTER_CONTACTS) {
+        const contacts = normalizeHomepageSiteLayoutFooterContacts(footerContacts);
+        return normalizeHomepageSupportChannels(channels, contacts).map((channel) => {
+            if (channel.id === 'sponsor') {
+                return { ...channel, target_url: contacts.support_url };
+            }
+            if (channel.id === 'telegram') {
+                return { ...channel, target_url: contacts.telegram_url };
+            }
+            if (channel.id === 'telegram_group') {
+                return { ...channel, target_url: contacts.telegram_group_url };
+            }
+            if (channel.id === 'email') {
+                return { ...channel, target_email: contacts.contact_email };
+            }
+            return channel;
+        });
+    }
+
+    function deriveHomepageFooterContactsFromSupportChannels(channels = [], fallback = HOMEPAGE_SITE_LAYOUT_DEFAULT_FOOTER_CONTACTS) {
+        const contacts = normalizeHomepageSiteLayoutFooterContacts(fallback);
+        const normalizedChannels = normalizeHomepageSupportChannels(channels, contacts);
+        normalizedChannels.forEach((channel) => {
+            if (channel.id === 'sponsor' && channel.target_url) {
+                contacts.support_url = channel.target_url;
+            } else if (channel.id === 'telegram' && channel.target_url) {
+                contacts.telegram_url = channel.target_url;
+            } else if (channel.id === 'telegram_group' && channel.target_url) {
+                contacts.telegram_group_url = channel.target_url;
+            } else if (channel.id === 'email' && channel.target_email) {
+                contacts.contact_email = channel.target_email;
+            }
+        });
+        return contacts;
+    }
+
+    function buildHomepageSupportChannelCard(channel, index, options = {}) {
+        const readOnly = options.readOnly === true;
+        const placements = Array.isArray(channel.placements) ? channel.placements : [];
+        const placementSummary = buildHomepageSupportPlacementLabels(placements).join('、') || '未放置';
+        const order = Number.isFinite(Number(channel.order)) ? Number(channel.order) : (index + 1) * 10;
+
+        const detailsId = `hp-support-channel-details-${index}`;
+
+        return `
+            <article class="hp-support-channel-card ${channel.enabled === false ? 'is-disabled' : ''}" data-homepage-support-channel-card="${escapeHomepageHtml(String(index))}" data-homepage-support-action-state="${escapeHomepageHtml(channel.action || 'link')}">
+                <div class="hp-support-channel-card__head">
+                    <div class="hp-support-channel-card__title">
+                        <span class="hp-support-icon-pill">${buildHomepageSupportIconMarkup(channel.icon)}</span>
+                        <div>
+                            <strong>${escapeHomepageHtml(channel.name || `站点入口 ${index + 1}`)}</strong>
+                            <span>${escapeHomepageHtml(buildHomepageSupportActionLabel(channel.action))} · ${escapeHomepageHtml(placementSummary)}</span>
+                        </div>
+                    </div>
+                    <div class="hp-support-channel-card__actions">
+                        <button type="button" class="btn-sm btn-secondary hp-support-channel-card__toggle" data-homepage-action="toggle-support-channel-details" data-homepage-index="${escapeHomepageHtml(String(index))}" aria-expanded="false" aria-controls="${escapeHomepageHtml(detailsId)}">
+                            <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                            <span data-homepage-support-toggle-label>展开详情</span>
+                        </button>
+                        <button type="button" class="btn-sm btn-secondary" data-homepage-action="move-support-channel" data-homepage-index="${escapeHomepageHtml(String(index))}" data-homepage-direction="up" ${readOnly || index === 0 ? 'disabled' : ''}>上移</button>
+                        <button type="button" class="btn-sm btn-secondary" data-homepage-action="move-support-channel" data-homepage-index="${escapeHomepageHtml(String(index))}" data-homepage-direction="down" ${readOnly ? 'disabled' : ''}>下移</button>
+                        <button type="button" class="btn-sm btn-secondary" data-homepage-action="duplicate-support-channel" data-homepage-index="${escapeHomepageHtml(String(index))}" ${readOnly ? 'disabled' : ''}>复制</button>
+                        <button type="button" class="btn-sm btn-danger" data-homepage-action="remove-support-channel" data-homepage-index="${escapeHomepageHtml(String(index))}" ${readOnly ? 'disabled' : ''}>删除</button>
+                    </div>
+                </div>
+                <div class="hp-support-channel-card__details" id="${escapeHomepageHtml(detailsId)}" data-homepage-support-details hidden>
+                    <div class="hp-ops-form-grid hp-ops-form-grid--compact hp-support-channel-grid">
+                        <label class="hp-support-enabled-toggle">
+                            <input type="checkbox" data-homepage-support-field="enabled" ${channel.enabled !== false ? 'checked' : ''} ${readOnly ? 'disabled' : ''}>
+                            <span class="hp-support-checkmark" aria-hidden="true"></span>
+                            <span class="hp-support-check-label">启用此通道</span>
+                        </label>
+                        <div class="hp-field">
+                            <label>名称</label>
+                            <input type="text" class="config-input" data-homepage-support-field="name" value="${escapeHomepageHtml(channel.name || '')}" maxlength="120" ${readOnly ? 'disabled' : ''}>
+                        </div>
+                        <div class="hp-field">
+                            <label>短名称</label>
+                            <input type="text" class="config-input" data-homepage-support-field="short_name" value="${escapeHomepageHtml(channel.short_name || '')}" maxlength="80" ${readOnly ? 'disabled' : ''}>
+                        </div>
+                        <div class="hp-field">
+                            <label>图标预设</label>
+                            ${buildHomepageCustomSelect({
+                                id: `hp-support-icon-${index}`,
+                                value: channel.icon || 'link',
+                                options: HOMEPAGE_SUPPORT_ICON_PRESETS.map((option) => ({ value: option.value, label: option.label })),
+                                disabled: readOnly
+                            }).replace('data-homepage-custom-select-value', 'data-homepage-custom-select-value data-homepage-support-field="icon"')}
+                        </div>
+                        <div class="hp-field">
+                            <label>点击动作</label>
+                            ${buildHomepageCustomSelect({
+                                id: `hp-support-action-${index}`,
+                                value: channel.action || 'link',
+                                options: HOMEPAGE_SUPPORT_ACTION_OPTIONS,
+                                disabled: readOnly
+                            }).replace('data-homepage-custom-select-value', 'data-homepage-custom-select-value data-homepage-support-field="action"')}
+                        </div>
+                        <div class="hp-field hp-support-field-wide hp-support-action-field" data-homepage-support-action-field="link detail">
+                            <label>链接</label>
+                            <input type="url" class="config-input" data-homepage-support-field="target_url" value="${escapeHomepageHtml(channel.target_url || '')}" placeholder="https://... / /shop.html" ${readOnly ? 'disabled' : ''}>
+                        </div>
+                        <div class="hp-field hp-support-action-field" data-homepage-support-action-field="email">
+                            <label>邮箱</label>
+                            <input type="email" class="config-input" data-homepage-support-field="target_email" value="${escapeHomepageHtml(channel.target_email || '')}" placeholder="support@example.com" ${readOnly ? 'disabled' : ''}>
+                        </div>
+                        <div class="hp-field hp-support-field-wide hp-support-action-field" data-homepage-support-action-field="copy detail">
+                            <label>复制文本</label>
+                            <input type="text" class="config-input" data-homepage-support-field="copy_text" value="${escapeHomepageHtml(channel.copy_text || '')}" maxlength="800" ${readOnly ? 'disabled' : ''}>
+                        </div>
+                        <div class="hp-support-detail-fields hp-support-action-field hp-field-full" data-homepage-support-action-field="detail">
+                            <div class="hp-support-detail-fields__head">
+                                <strong>详情内容</strong>
+                                <span>可放二维码、联系方式说明和弹窗按钮</span>
+                            </div>
+                            <div class="hp-ops-form-grid hp-ops-form-grid--compact hp-support-detail-grid">
+                                <div class="hp-field">
+                                    <label>弹窗标题</label>
+                                    <input type="text" class="config-input" data-homepage-support-field="detail_title" value="${escapeHomepageHtml(channel.detail_title || '')}" maxlength="120" ${readOnly ? 'disabled' : ''}>
+                                </div>
+                                <div class="hp-field">
+                                    <label>二维码 / 图片 URL</label>
+                                    <input type="url" class="config-input" data-homepage-support-field="detail_image_url" value="${escapeHomepageHtml(channel.detail_image_url || '')}" placeholder="https://... / /assets/..." ${readOnly ? 'disabled' : ''}>
+                                </div>
+                                <div class="hp-field">
+                                    <label>复制按钮文案</label>
+                                    <input type="text" class="config-input" data-homepage-support-field="detail_copy_label" value="${escapeHomepageHtml(channel.detail_copy_label || '')}" maxlength="80" placeholder="复制联系方式" ${readOnly ? 'disabled' : ''}>
+                                </div>
+                                <div class="hp-field">
+                                    <label>链接按钮文案</label>
+                                    <input type="text" class="config-input" data-homepage-support-field="detail_link_label" value="${escapeHomepageHtml(channel.detail_link_label || '')}" maxlength="80" placeholder="打开链接" ${readOnly ? 'disabled' : ''}>
+                                </div>
+                                <div class="hp-field hp-field-full">
+                                    <label>详情正文</label>
+                                    <textarea class="config-input hp-support-detail-textarea" data-homepage-support-field="detail_body" maxlength="1200" rows="4" ${readOnly ? 'disabled' : ''}>${escapeHomepageHtml(channel.detail_body || '')}</textarea>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="hp-field hp-support-field-wide">
+                            <label>说明</label>
+                            <input type="text" class="config-input" data-homepage-support-field="description" value="${escapeHomepageHtml(channel.description || '')}" maxlength="240" placeholder="给管理员识别，也会作为公开链接 title" ${readOnly ? 'disabled' : ''}>
+                        </div>
+                        <input type="hidden" data-homepage-support-field="id" value="${escapeHomepageHtml(channel.id || `support-${index + 1}`)}">
+                        <input type="hidden" data-homepage-support-field="order" value="${escapeHomepageHtml(String(order))}">
+                    </div>
+                    <div class="hp-support-placement-grid">
+                        ${HOMEPAGE_SUPPORT_PLACEMENTS.map((placement) => `
+                            <label class="hp-support-placement">
+                                <input type="checkbox" data-homepage-support-placement value="${escapeHomepageHtml(placement.value)}" ${placements.includes(placement.value) ? 'checked' : ''} ${readOnly ? 'disabled' : ''}>
+                                <span class="hp-support-checkmark" aria-hidden="true"></span>
+                                <span>${escapeHomepageHtml(placement.label)}</span>
+                            </label>
+                        `).join('')}
+                    </div>
+                </div>
+            </article>
+        `;
+    }
+
+    function setHomepageSupportChannelDetailsExpanded(card, expanded) {
+        if (!card?.querySelector) return;
+        const details = card.querySelector('[data-homepage-support-details]');
+        const toggle = card.querySelector('[data-homepage-action="toggle-support-channel-details"]');
+        if (!details || !toggle) return;
+
+        const shouldExpand = expanded === true;
+        if (!shouldExpand) {
+            details.querySelectorAll('[data-homepage-custom-select].is-open').forEach((select) => {
+                closeHomepageCustomSelect(select);
+            });
+        }
+        details.hidden = !shouldExpand;
+        card.classList.toggle('is-expanded', shouldExpand);
+        toggle.setAttribute('aria-expanded', shouldExpand ? 'true' : 'false');
+        const label = toggle.querySelector('[data-homepage-support-toggle-label]');
+        if (label) {
+            label.textContent = shouldExpand ? '收起详情' : '展开详情';
+        }
+    }
+
+    function toggleHomepageSupportChannelDetails(card) {
+        if (!card?.querySelector) return;
+        const details = card.querySelector('[data-homepage-support-details]');
+        setHomepageSupportChannelDetailsExpanded(card, details?.hidden !== false);
+    }
+
+    function syncHomepageSupportChannelActionState(card) {
+        if (!card) return;
+        const action = card.querySelector('[data-homepage-support-field="action"]')?.value || 'link';
+        card.dataset.homepageSupportActionState = HOMEPAGE_SUPPORT_ACTION_SET.has(action) ? action : 'link';
+    }
+
+    function bindHomepageSupportChannelCardControls(root = document) {
+        if (!root?.querySelectorAll) return;
+        root.querySelectorAll('[data-homepage-support-channel-card]').forEach((card) => {
+            syncHomepageSupportChannelActionState(card);
+            card.querySelector('[data-homepage-support-field="action"]')?.addEventListener('change', () => {
+                syncHomepageSupportChannelActionState(card);
+            });
+        });
+    }
+
+    function collectHomepageSupportChannelsFromShell() {
+        const shell = document.getElementById('hp-support-channels-shell');
+        if (!shell) {
+            const layout = getHomepageSiteLayout(currentReadSite);
+            return normalizeHomepageSupportChannels(layout?.support_channels, layout?.footer_contacts);
+        }
+
+        return Array.from(shell.querySelectorAll('[data-homepage-support-channel-card]')).map((card, index) => {
+            const getField = (field) => card.querySelector(`[data-homepage-support-field="${field}"]`)?.value || '';
+            const placements = Array.from(card.querySelectorAll('[data-homepage-support-placement]:checked'))
+                .map((input) => input.value)
+                .filter(Boolean);
+            return normalizeHomepageSupportChannel({
+                id: getField('id') || `support-${index + 1}`,
+                name: getField('name'),
+                short_name: getField('short_name'),
+                description: getField('description'),
+                icon: getField('icon'),
+                action: getField('action'),
+                target_url: getField('target_url'),
+                target_email: getField('target_email'),
+                copy_text: getField('copy_text'),
+                detail_title: getField('detail_title'),
+                detail_body: getField('detail_body'),
+                detail_image_url: getField('detail_image_url'),
+                detail_copy_label: getField('detail_copy_label'),
+                detail_link_label: getField('detail_link_label'),
+                enabled: card.querySelector('[data-homepage-support-field="enabled"]')?.checked !== false,
+                order: (index + 1) * 10,
+                placements
+            }, index);
+        });
+    }
+
+    function reindexHomepageSupportChannelOrders(channels = []) {
+        return (Array.isArray(channels) ? channels : []).map((channel, index) => ({
+            ...channel,
+            order: (index + 1) * 10
+        }));
+    }
+
+    function updateHomepageSupportChannelsDraft(mutator) {
+        const site = normalizeHomepageSite(currentReadSite);
+        if (site === 'all') return;
+        const layout = getHomepageSiteLayout(site);
+        const currentChannels = collectHomepageSupportChannelsFromShell();
+        const mutatedChannels = typeof mutator === 'function' ? mutator(currentChannels) : currentChannels;
+        const nextChannels = normalizeHomepageSupportChannels(
+            reindexHomepageSupportChannelOrders(mutatedChannels),
+            layout?.footer_contacts
+        );
+        siteLayoutConfigBySite[site] = {
+            ...layout,
+            support_channels: nextChannels
+        };
+        renderHomepageSupportChannelsShell();
+    }
+
+    function addHomepageSupportChannel() {
+        updateHomepageSupportChannelsDraft((channels) => [
+            ...channels,
+            normalizeHomepageSupportChannel({
+                id: `custom-${Date.now().toString(36)}`,
+                name: '新站点入口',
+                short_name: '支持',
+                description: '',
+                icon: 'wechat',
+                action: 'detail',
+                target_url: '',
+                copy_text: '',
+                detail_title: '新站点入口',
+                detail_body: '',
+                detail_image_url: '',
+                detail_copy_label: '复制联系方式',
+                detail_link_label: '打开链接',
+                enabled: true,
+                order: (channels.length + 1) * 10,
+                placements: ['nav', 'mobile_nav']
+            }, channels.length)
+        ]);
+    }
+
+    function moveHomepageSupportChannel(index, direction) {
+        const currentIndex = Number(index);
+        if (!Number.isInteger(currentIndex)) return;
+        updateHomepageSupportChannelsDraft((channels) => moveHomepageListItem(channels, currentIndex, direction));
+    }
+
+    function duplicateHomepageSupportChannel(index) {
+        const currentIndex = Number(index);
+        if (!Number.isInteger(currentIndex)) return;
+        updateHomepageSupportChannelsDraft((channels) => {
+            const source = channels[currentIndex];
+            if (!source) return channels;
+            const copy = {
+                ...source,
+                id: `${source.id || 'support'}-copy-${Date.now().toString(36)}`,
+                name: `${source.name || '站点入口'} 副本`,
+                order: (channels.length + 1) * 10
+            };
+            return [
+                ...channels.slice(0, currentIndex + 1),
+                copy,
+                ...channels.slice(currentIndex + 1)
+            ];
+        });
+    }
+
+    function removeHomepageSupportChannel(index) {
+        const currentIndex = Number(index);
+        if (!Number.isInteger(currentIndex)) return;
+        updateHomepageSupportChannelsDraft((channels) => channels.filter((_, itemIndex) => itemIndex !== currentIndex));
+    }
+
+    function buildHomepageSupportAggregateCards() {
+        return ['cn', 'intl'].map((siteKey) => {
+            const layout = getHomepageSiteLayout(siteKey);
+            const channels = normalizeHomepageSupportChannels(layout?.support_channels, layout?.footer_contacts);
+            const enabledCount = channels.filter((channel) => channel.enabled !== false).length;
+            const footerBrandCount = channels.filter((channel) => channel.enabled !== false && channel.placements.includes('footer_brand')).length;
+            const navCount = channels.filter((channel) => channel.enabled !== false && channel.placements.includes('nav')).length;
+            return `
+                <div class="hp-aggregate-site-card">
+                    <div class="hp-aggregate-site-card__header">
+                        <span class="hp-aggregate-site-card__site">${escapeHomepageHtml(getHomepageSiteLabel(siteKey))}</span>
+                        <span class="status-badge active">${escapeHomepageHtml(String(enabledCount))} 个启用</span>
+                    </div>
+                    <div class="hp-aggregate-site-card__lines">
+                        <div class="hp-aggregate-site-card__line">
+                            <span class="hp-aggregate-site-card__label">导航</span>
+                            <span class="hp-aggregate-site-card__value">${escapeHomepageHtml(String(navCount))} 个通道</span>
+                        </div>
+                        <div class="hp-aggregate-site-card__line">
+                            <span class="hp-aggregate-site-card__label">左下角图标</span>
+                            <span class="hp-aggregate-site-card__value">${escapeHomepageHtml(String(footerBrandCount))} 个图标</span>
+                        </div>
+                        <div class="hp-aggregate-site-card__line">
+                            <span class="hp-aggregate-site-card__label">通道</span>
+                            <span class="hp-aggregate-site-card__value">${channels.map((channel) => escapeHomepageHtml(channel.short_name || channel.name)).join('、')}</span>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    }
+
+    function buildHomepageSupportPreview(channels = []) {
+        const enabled = channels.filter((channel) => channel.enabled !== false);
+        return `
+            <div class="hp-support-preview-grid">
+                <div class="hp-support-preview-card">
+                    <span>桌面导航</span>
+                    <strong>${escapeHomepageHtml(enabled.filter((channel) => channel.placements.includes('nav')).map((channel) => channel.short_name || channel.name).join(' / ') || '未配置')}</strong>
+                </div>
+                <div class="hp-support-preview-card">
+                    <span>左下角图标</span>
+                    <div class="hp-support-preview-icons">
+                        ${enabled.filter((channel) => channel.placements.includes('footer_brand')).map((channel) => `
+                            <span class="hp-support-icon-pill">${buildHomepageSupportIconMarkup(channel.icon)}</span>
+                        `).join('') || '<em>未配置</em>'}
+                    </div>
+                </div>
+                <div class="hp-support-preview-card">
+                    <span>Footer 文本入口</span>
+                    <strong>${escapeHomepageHtml(enabled.filter((channel) => channel.placements.some((placement) => ['footer_resources', 'footer_about', 'footer_bottom'].includes(placement))).map((channel) => channel.name).join(' / ') || '未配置')}</strong>
+                </div>
+            </div>
+        `;
+    }
+
+    function renderHomepageSupportChannelsShell() {
+        const host = document.getElementById('hp-support-channels-host');
+        if (!host) return;
+
+        const aggregateMode = isHomepageAggregateMode();
+        const site = normalizeHomepageSite(currentReadSite);
+        const layout = getHomepageSiteLayout(site);
+        const channels = normalizeHomepageSupportChannels(layout?.support_channels, layout?.footer_contacts);
+
+        if (aggregateMode) {
+            host.innerHTML = `
+                <section class="hp-support-shell" id="hp-support-channels-shell">
+                    <div class="hp-ops-card">
+                        <div class="hp-ops-card__head">
+                            <div>
+                                <div class="hp-ops-card__eyebrow">站点入口</div>
+                                <strong>CN / INTL 导航与 Footer 入口对比</strong>
+                            </div>
+                            <span class="status-badge banned">只读对比</span>
+                        </div>
+                        <div class="hp-inline-note hp-inline-note--muted">
+                            <i class="fas fa-circle-info"></i>
+                            <span>切换到具体站点后，可以编辑导航栏、移动菜单、底部左侧图标和 Footer 文本入口。</span>
+                        </div>
+                        <div class="hp-aggregate-readonly-grid">
+                            ${buildHomepageSupportAggregateCards()}
+                        </div>
+                    </div>
+                </section>
+            `;
+            return;
+        }
+
+        host.innerHTML = `
+            <section class="hp-support-shell" id="hp-support-channels-shell">
+                <div class="hp-ops-card">
+                    <div class="hp-ops-card__head">
+                        <div>
+                            <div class="hp-ops-card__eyebrow">站点入口</div>
+                            <strong>${escapeHomepageHtml(getHomepageSiteLabel(site))} 导航与 Footer 入口</strong>
+                        </div>
+                        <span class="status-badge active">运行时生效</span>
+                    </div>
+                    <div class="hp-inline-note hp-inline-note--muted">
+                        <i class="fas fa-wand-magic-sparkles"></i>
+                        <span>入口可同时放到桌面导航、移动菜单、底部左侧图标和 Footer 文本区域。图标预设包含微信 / WeChat、QQ、TG、邮箱等常见入口。</span>
+                    </div>
+                    ${buildHomepageSupportPreview(channels)}
+                    <div class="hp-support-channel-list">
+                        ${channels.map((channel, index) => buildHomepageSupportChannelCard(channel, index)).join('')}
+                    </div>
+                    <div class="hp-ops-actions hp-support-actions">
+                        <button type="button" class="btn-sm btn-secondary" data-homepage-action="add-support-channel"><i class="fas fa-plus"></i> 新增入口</button>
+                        <button type="button" class="btn-sm btn-primary" id="hp-support-save-btn"><i class="fas fa-save"></i> 保存站点入口</button>
+                    </div>
+                </div>
+            </section>
+        `;
+
+	        bindHomepageCustomSelects(host);
+	        bindHomepageSupportChannelCardControls(host);
+	        host.querySelector('#hp-support-save-btn')?.addEventListener('click', (event) => {
+            runHomepageOpsActionButton(event.currentTarget, {
+                busyText: '保存中...',
+                action: () => saveHomepageSupportChannelsForCurrentSite()
+            });
+        });
+    }
+
+    async function saveHomepageSupportChannelsForCurrentSite() {
+        const site = requireWritableHomepageSite({ label: '保存站点入口' });
+        if (!site) {
+            return false;
+        }
+        const layout = getHomepageSiteLayout(site);
+        const supportChannels = collectHomepageSupportChannelsFromShell();
+        const footerContacts = deriveHomepageFooterContactsFromSupportChannels(supportChannels, layout?.footer_contacts);
+        const result = await saveHomepageSiteLayout(site, {
+            root_page_key: layout?.root_page_key || 'home',
+            logo_target_mode: layout?.logo_target_mode === 'custom' ? 'custom' : 'follow_root',
+            logo_page_key: layout?.logo_target_mode === 'custom' ? (layout?.logo_page_key || layout?.root_page_key || 'home') : (layout?.root_page_key || 'home'),
+            footer_contacts: footerContacts,
+            support_channels: supportChannels
+        });
+        applyHomepageSiteLayoutPayload(result);
+        renderAllSections();
+        switchSection(HOMEPAGE_SUPPORT_SECTION);
+        showHomepageActionToast(`${getHomepageSiteLabel(site)} 站点入口已保存`, 'success', {
+            source: 'homepage-support-channels'
         });
         return true;
     }
@@ -3090,6 +3813,10 @@ const HomepageAdmin = (() => {
     function renderCurrentSection() {
         if (currentSection === HOMEPAGE_OVERVIEW_SECTION) {
             renderHomepageOpsShell();
+            return;
+        }
+        if (currentSection === HOMEPAGE_SUPPORT_SECTION) {
+            renderHomepageSupportChannelsShell();
             return;
         }
         renderSection(currentSection);
@@ -5367,6 +6094,21 @@ const HomepageAdmin = (() => {
                         break;
                     case 'remove-guestbook-fallback':
                         removeHomepageGuestbookFallback(actionEl.dataset.homepageIndex);
+                        break;
+                    case 'add-support-channel':
+                        addHomepageSupportChannel();
+                        break;
+                    case 'move-support-channel':
+                        moveHomepageSupportChannel(actionEl.dataset.homepageIndex, actionEl.dataset.homepageDirection);
+                        break;
+                    case 'duplicate-support-channel':
+                        duplicateHomepageSupportChannel(actionEl.dataset.homepageIndex);
+                        break;
+                    case 'remove-support-channel':
+                        removeHomepageSupportChannel(actionEl.dataset.homepageIndex);
+                        break;
+                    case 'toggle-support-channel-details':
+                        toggleHomepageSupportChannelDetails(actionEl.closest('[data-homepage-support-channel-card]'));
                         break;
                     default:
                         break;

@@ -7,7 +7,7 @@
         content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-visual">
     <meta name="theme-color" content="#ffffff">
     <meta name="color-scheme" content="light dark">
-    <script src="./js/site-layout-root-preload.js?v=20260528_GONGYI_SITE_AWARE_1"></script>
+    <script src="./js/site-layout-root-preload.js?v=20260608_SUPPORT_CHANNEL_CLICK_FEEDBACK_3"></script>
     <script src="./js/section-visibility-preload.js?v=20260528_GONGYI_SITE_AWARE_1"></script>
     <script src="/api/runtime/section-visibility-preload"></script>
     <script src="./js/theme-preload.js?v=20260503_MODAL_CHROME_CLOSE_1"></script>
@@ -58,7 +58,7 @@
 
     <!-- Site Config (dual-site detection) -->
     <script src="./js/site-config.js?v=20260528_AVATAR_CANONICAL_CDN_1" defer></script>
-    <script src="./js/site-layout-runtime.js?v=20260529_FOOTER_CONTACT_HOOKS_1" defer></script>
+    <script src="./js/site-layout-runtime.js?v=20260608_SITE_ENTRY_ICONS_1" defer></script>
     <script src="./js/homepage-contract.js?v=20260512_HOMEPAGE_CONTRACT_VERIFY_I18N_1" defer></script>
 
     <!-- Section Visibility (per-site section toggle control) -->
@@ -77,9 +77,9 @@
     <script src="./js/deferred-styles.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1" defer></script>
 
     <!-- Framer Home Styles -->
-    <link rel="stylesheet" href="./css/framer_home_critical.css?v=20260521_HOME_PROMPTS_SHELL_STABLE_2">
+    <link rel="stylesheet" href="./css/framer_home_critical.css?v=20260608_SUPPORT_CHANNEL_CLICK_FEEDBACK_3">
     <link rel="stylesheet" href="./css/home-prompts-skeleton-critical.css?v=20260530_HOME_PROMPTS_SKELETON_GRID_1">
-    <link rel="stylesheet" href="./css/framer_home.css?v=20260530_HOME_PROMPTS_SKELETON_GRID_1&uiTextSelectGuard=20260530_UI_TEXT_SELECT_GUARD_1" media="print" data-deferred-style="1">
+    <link rel="stylesheet" href="./css/framer_home.css?v=20260608_SITE_ENTRY_ICONS_1&uiTextSelectGuard=20260530_UI_TEXT_SELECT_GUARD_1" media="print" data-deferred-style="1">
     <link rel="stylesheet" href="css/section-visibility.css?v=20260324_SECTION_VISIBILITY_RUNTIME_STYLE_1">
     <!-- Core Styles (for modals, profile, etc) -->
     <link rel="stylesheet" href="./verify-widget.css?v=20260415_HOME_VERIFY_DEMO_1" media="print" data-deferred-style="1">
@@ -177,7 +177,7 @@
                     <span data-i18n="nav.support">支持</span>
                     <i class="fas fa-chevron-down"></i>
                 </button>
-                <div class="mobile-submenu" id="support-mobile">
+                <div class="mobile-submenu" id="support-mobile" data-site-layout-support-list="mobile_nav">
                     <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer"
                         data-site-layout-contact="telegram"
                         class="mobile-menu-link">TG</a>
@@ -397,8 +397,8 @@
                         data-i18n="footer.brand.tagline">
                         AI 驱动的创意资源平台
                     </p>
-                    <div class="footer-social">
-                        <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer" title="Telegram"
+                    <div class="footer-social" data-site-layout-support-list="footer_brand">
+                        <a href="https://t.me/zaoyoe" target="_blank" rel="noopener noreferrer"
                             data-site-layout-contact="telegram">
                             <i class="fab fa-telegram"></i>
                         </a>
@@ -419,19 +419,26 @@
                 <!-- Resources -->
                 <div class="footer-col">
                     <h4 data-i18n="footer.resources.title">资源</h4>
-                    <a href="https://afdian.com/a/zaoyoe" target="_blank" rel="noopener noreferrer"
-                        data-site-layout-contact="support"
-                        data-i18n="footer.resources.sponsor">赞助支持</a>
+                    <div class="footer-support-links" data-site-layout-support-list="footer_resources">
+                        <a href="https://afdian.com/a/zaoyoe" target="_blank" rel="noopener noreferrer"
+                            data-site-layout-contact="support"
+                            data-i18n="footer.resources.sponsor">赞助支持</a>
+                    </div>
                     <a href="/privacy.html" data-i18n="footer.resources.privacy">隐私政策</a>
                 </div>
 
                 <!-- Company -->
                 <div class="footer-col">
                     <h4 data-i18n="footer.about.title">关于</h4>
-                    <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer"
-                        data-site-layout-contact="telegram_group"
-                        data-i18n="footer.about.tgGroup">TG群组</a>
-                    <span class="index-footer-email" data-site-layout-contact="email">zaoyoe@gmail.com</span>
+                    <div class="footer-support-links" data-site-layout-support-list="footer_about">
+                        <a href="https://t.me/+I86eX5sPF1c0OTc1" target="_blank" rel="noopener noreferrer"
+                            data-site-layout-contact="telegram_group"
+                            data-i18n="footer.about.tgGroup">TG群组</a>
+                        <a href="mailto:zaoyoe@gmail.com" class="index-footer-email" data-site-layout-contact="email">
+                            <i class="fas fa-envelope" aria-hidden="true"></i>
+                            <span>zaoyoe@gmail.com</span>
+                        </a>
+                    </div>
 
                 </div>
             </div>
@@ -440,9 +447,11 @@
                 <span data-i18n="footer.bottom.copyright">© 早鸟工作室 2026. All rights reserved.</span>
                 <div>
                     <a href="/privacy.html" data-i18n="footer.bottom.privacy">隐私政策</a>
-                    <a href="https://afdian.com/a/zaoyoe" target="_blank" rel="noopener noreferrer"
-                        data-site-layout-contact="support"
-                        data-i18n="footer.bottom.support">支持我们</a>
+                    <span class="footer-bottom-support-links" data-site-layout-support-list="footer_bottom">
+                        <a href="https://afdian.com/a/zaoyoe" target="_blank" rel="noopener noreferrer"
+                            data-site-layout-contact="support"
+                            data-i18n="footer.bottom.support">支持我们</a>
+                    </span>
                 </div>
             </div>
         </footer>
@@ -461,10 +470,10 @@
     <script src="./js/homepage-guestbook-modal-loader.js?v=20260504_HOME_GUESTBOOK_LOADER_KEYBOARD_RETRACT_1&iosChromeKeyboard=20260514_ALL_KEYBOARD_RELEASE_1" defer></script>
 
     <!--  Framer Home Engine -->
-    <script src="./js/framer_home.js?v=20260530_HOME_GONGYI_FATHER_KEY_1&darkHeroBoot=20260518_HOME_DARK_HERO_BOOT_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&promptNoRepaint=20260510_PROMPT_NO_REPAINT_1&categoryPublic=20260530_SHOP_CATEGORY_PUBLIC_VISIBILITY_1&manualDelivery=20260530_SHOP_MANUAL_DELIVERY_1&shopImageCache=20260531_SHOP_PRODUCT_IMAGE_CACHE_1" defer></script>
+    <script src="./js/framer_home.js?v=20260608_SUPPORT_CHANNEL_CLICK_FEEDBACK_3&darkHeroBoot=20260518_HOME_DARK_HERO_BOOT_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&promptNoRepaint=20260510_PROMPT_NO_REPAINT_1&categoryPublic=20260530_SHOP_CATEGORY_PUBLIC_VISIBILITY_1&manualDelivery=20260530_SHOP_MANUAL_DELIVERY_1&shopImageCache=20260531_SHOP_PRODUCT_IMAGE_CACHE_1" defer></script>
 
     <script src="./js/user-event-tracker.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1" defer></script>
-    <script src="./js/wallet-modal-loader.js?v=20260605_AFFILIATE_POSTER_AVATAR_PRIORITY_1&iosChromeKeyboard=20260514_ALL_KEYBOARD_RELEASE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1" defer></script>
+    <script src="./js/wallet-modal-loader.js?v=20260608_ORDER_GUIDANCE_COPY_3&iosChromeKeyboard=20260514_ALL_KEYBOARD_RELEASE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1" defer></script>
 
     <!-- Homepage Bootstrap -->
     <script src="./js/index-home-bootstrap.js?v=20260428_PUBLIC_ASSET_CACHE_SWEEP_1&categoryPublic=20260530_SHOP_CATEGORY_PUBLIC_VISIBILITY_1&manualDelivery=20260530_SHOP_MANUAL_DELIVERY_1&shopImageCache=20260531_SHOP_PRODUCT_IMAGE_CACHE_1&siteScopedSkuPrice=20260604_SHOP_SITE_SCOPED_SKU_PRICE_1" defer></script>
@@ -514,8 +523,8 @@
     <script src="./js/profile-modal-loader.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1" defer></script>
 
     <!-- Chat Widget -->
-    <link rel="stylesheet" href="css/chat-widget.css?v=20260530_SHOP_CHAT_FLOATING_STACK_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1" media="print" data-deferred-style="1" data-deferred-style-mode="manual" data-deferred-style-group="homepage-chat">
-    <script src="js/chat-widget-loader.js?v=20260530_SHOP_CHAT_FLOATING_STACK_3&siteAssetCdn=20260510_SITE_ASSET_CDN_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1" defer></script>
+    <link rel="stylesheet" href="css/chat-widget.css?v=20260608_CHAT_USER_BUBBLE_DARK_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1" media="print" data-deferred-style="1" data-deferred-style-mode="manual" data-deferred-style-group="homepage-chat">
+    <script src="js/chat-widget-loader.js?v=20260608_CHAT_USER_BUBBLE_DARK_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1" defer></script>
 </body>
 
 </html>

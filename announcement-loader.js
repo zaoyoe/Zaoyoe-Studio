@@ -805,6 +805,14 @@
                 animation: fadeIn 0.3s ease;
             }
 
+            body:has(.zaoyoe-announcement-overlay) .framer-nav {
+                z-index: 100100;
+            }
+
+            body:has(.zaoyoe-announcement-overlay) .nav-dropdown-portal {
+                z-index: 100120;
+            }
+
             .zaoyoe-announcement-overlay.announcement-modal-force-hidden,
             .zaoyoe-announcement-banner.announcement-modal-force-hidden,
             .zaoyoe-announcement-toast.announcement-modal-force-hidden {

@@ -4211,6 +4211,9 @@ const FramerHome = {
       let dropdown = document.createElement('div');
       dropdown.className = 'nav-dropdown-portal';
       dropdown.id = `dropdown-${dropdownType}`;
+      if (dropdownType === 'support') {
+        dropdown.dataset.siteLayoutSupportList = 'nav';
+      }
       // Handle custom rendering or standard list (always update content)
       if (data.type === 'custom' && data.render) {
         dropdown.innerHTML = data.render();

@@ -90,6 +90,82 @@
         }
     }
 
+    function isRetriableAdminStudioSessionFailure(session = null) {
+        if (session?.ok) {
+            return false;
+        }
+
+        const status = Number(session?.status || 0);
+        const reason = String(session?.reason || '').trim();
+        return status === 0
+            || status === 401
+            || status === 403
+            || status === 408
+            || status === 429
+            || status >= 500
+            || [
+                'missing_session',
+                'network_error',
+                'request_timeout',
+                'supabase_unavailable'
+            ].includes(reason);
+    }
+
+    function waitForAdminEntryRetryDelay(timeoutMs = 700) {
+        return new Promise((resolve) => {
+            if (typeof globalScope.setTimeout !== 'function') {
+                resolve();
+                return;
+            }
+
+            globalScope.setTimeout(resolve, Math.max(0, Number(timeoutMs) || 0));
+        });
+    }
+
+    async function createEntryAdminStudioSession(access) {
+        let currentAccess = access;
+        let session = await globalScope.AdminAccess.createAdminStudioSession({
+            userId: currentAccess.user.id
+        });
+
+        if (session?.ok || !isRetriableAdminStudioSessionFailure(session)) {
+            return session;
+        }
+
+        setEntryState('pending', {
+            title: '正在同步后台访问凭证',
+            message: '管理员身份已确认，正在重新同步短时访问凭证。'
+        });
+        await waitForAdminEntryRetryDelay();
+
+        try {
+            const refreshedAccess = await globalScope.AdminAccess.getCurrentAdminAccess({
+                forceRefresh: true
+            });
+            if (refreshedAccess?.user && !refreshedAccess.isAdmin) {
+                return {
+                    ok: false,
+                    status: 403,
+                    reason: 'admin_access_revoked',
+                    access: refreshedAccess
+                };
+            }
+
+            if (refreshedAccess?.user && refreshedAccess.isAdmin) {
+                currentAccess = refreshedAccess;
+            }
+        } catch (error) {
+            console.warn('[AdminEntry] Admin access refresh before session retry failed:', error);
+        }
+
+        session = await globalScope.AdminAccess.createAdminStudioSession({
+            userId: currentAccess.user.id,
+            forceRefresh: true,
+            preserveCacheOnFailure: true
+        });
+        return session;
+    }
+
     async function bootAdminEntry() {
         const safeTarget = getSafeTarget();
 
@@ -125,10 +201,16 @@
                 return;
             }
 
-            const session = await globalScope.AdminAccess.createAdminStudioSession({
-                userId: access.user.id
-            });
+            const session = await createEntryAdminStudioSession(access);
             if (!session?.ok) {
+                if (session?.reason === 'admin_access_revoked') {
+                    setEntryState('denied', {
+                        title: '当前账号没有后台权限',
+                        message: '你已经登录，但当前账号并未被授予 Admin Studio 权限，因此无法继续进入后台。'
+                    });
+                    return;
+                }
+
                 setEntryState('error', {
                     title: '后台凭证签发失败',
                     message: '管理员身份已确认，但短时访问凭证下发失败。请稍后刷新重试，或重新回到首页进入后台。'

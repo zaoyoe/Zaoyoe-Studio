@@ -31,7 +31,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /const initialQuantity = Math\.max\(1, Math\.min\(quantityCap[\s\S]*?if \(!manualDelivery\) \{\s+void this\.prefetchDiscountAssetsForProduct\(\{\s+productId,\s+productSkuId: options\?\.productSkuId \|\| options\?\.skuId \|\| '',\s+quantity: initialQuantity,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);\s+\}\s+this\.openPurchaseModal\(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, \{\s+category: productCategory,\s+sourceContext,\s+initialQuantity,\s+productSkuId: options\?\.productSkuId \|\| options\?\.skuId \|\| '',\s+manualDelivery\s+\}\);\s+void this\.refreshCurrentPurchaseGuidance\(productId\);\s+void this\.syncPurchaseAccessAfterOpen\(productId, quantityCap\);/s,
+        /const initialQuantity = Math\.max\(1, Math\.min\(quantityCap[\s\S]*?if \(!manualDelivery && !soldOut\) \{\s+void this\.prefetchDiscountAssetsForProduct\(\{\s+productId,\s+productSkuId: options\?\.productSkuId \|\| options\?\.skuId \|\| '',\s+quantity: initialQuantity,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);\s+\}\s+this\.openPurchaseModal\(productId, productName, productNameEn, price, rules, quantityCap, purchaseNotes, usageInstructions, \{\s+category: productCategory,\s+sourceContext,\s+initialQuantity,\s+productSkuId: options\?\.productSkuId \|\| options\?\.skuId \|\| '',\s+manualDelivery,\s+soldOut\s+\}\);\s+void this\.refreshCurrentPurchaseGuidance\(productId\);\s+void this\.syncPurchaseAccessAfterOpen\(productId, quantityCap\);/s,
         'shop purchase clicks should prefetch discount assets, open the modal immediately, refresh the latest product guidance, and sync purchase access in the background'
     );
     assert.doesNotMatch(
@@ -238,37 +238,37 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     assert.match(
         shopHtmlSource,
         /js\/shop-client\.js\?v=20260520_SHOP_CARD_PROMPT_BREATHE_3/,
-        'shop.html should load the purchase-guidance rich-text runtime with the visible yellow normalization fix'
+        'shop.html should load the purchase-guidance rich-text runtime'
     );
     assert.match(
         shopHtmlSource,
-        /richTextGuidanceColor=20260604_SHOP_RICH_TEXT_GUIDANCE_COLOR_1/,
-        'shop.html should cache-bust storefront rich-text guidance color preservation assets'
+        /guidanceThemeText=20260607_SHOP_GUIDANCE_THEME_TEXT_1/,
+        'shop.html should cache-bust storefront guidance theme text assets'
+    );
+    assert.doesNotMatch(
+        shopClientSource,
+        /allowedColor|prop === 'color'|setAttribute\('color'|shop-rich-color/,
+        'storefront rich-text sanitizer should strip pasted text colors instead of preserving unreadable external styles'
     );
     assert.match(
         shopClientSource,
-        /normalizeRichTextPaletteColors: function \(value\) \{[\s\S]*#f4b400/s,
-        'shop-client.js should normalize legacy pale yellow rich-text colors into a visible gold on light surfaces'
+        /const styledTags = new Set\(\['A', 'B', 'STRONG', 'I', 'EM', 'U', 'DIV', 'P', 'SPAN', 'FONT', 'UL', 'OL', 'LI'\]\);[\s\S]*if \(prop === 'text-align' && allowedTextAlign\.test\(value\)\)[\s\S]*if \(prop === 'font-size' && allowedFontSize\.test\(value\)\)/s,
+        'storefront rich-text sanitizer should still preserve safe structure, alignment, and sizing'
     );
     assert.match(
         shopCssSource,
-        /#shopPurchaseModal #purchaseNotesContent,\s+html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseNotesContent :not\(:where\(\.shop-rich-color, \.shop-rich-color \*, \[style\*="color"\], \[style\*="color"\] \*, \[color\], \[color\] \*\)\),\s+html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseUsageContent,\s+html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseUsageContent :not\(:where\(\.shop-rich-color, \.shop-rich-color \*, \[style\*="color"\], \[style\*="color"\] \*, \[color\], \[color\] \*\)\) \{/s,
-        'light-theme purchase guidance should only force the default copy color onto nodes outside rich-text color runs'
-    );
-    assert.match(
-        shopClientSource,
-        /const richColorClassName = 'shop-rich-color';[\s\S]*child\.classList\.add\(richColorClassName\);[\s\S]*child\.setAttribute\('color', color\);[\s\S]*child\.classList\.add\(richColorClassName\);/s,
-        'storefront rich-text sanitizer should mark safe CSS and font-tag colors so light-theme CSS can preserve them'
-    );
-    assert.match(
-        shopClientSource,
-        /const styledTags = new Set\(\['A', 'B', 'STRONG', 'I', 'EM', 'U', 'DIV', 'P', 'SPAN', 'FONT', 'UL', 'OL', 'LI'\]\);/s,
-        'storefront rich-text sanitizer should allow safe color styles on common inline guidance tags'
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseNotesContent,[\s\S]*#purchaseUsageContent :not\(a\) \{[\s\S]*color: rgba\(23, 32, 51, 0\.74\) !important;[\s\S]*-webkit-text-fill-color: rgba\(23, 32, 51, 0\.74\) !important;/s,
+        'light-theme purchase guidance should force readable theme copy color after stripping pasted colors'
     );
     assert.match(
         shopCssSource,
-        /\.shop-cart-item__panel--notice :where\(\.shop-rich-color, \.shop-rich-color \*, \[style\*="color"\], \[style\*="color"\] \*, \[color\], \[color\] \*\),[\s\S]*#shopPurchaseModal #purchaseUsageContent :where\(\.shop-rich-color, \.shop-rich-color \*, \[style\*="color"\], \[style\*="color"\] \*, \[color\], \[color\] \*\) \{[\s\S]*-webkit-text-fill-color: currentColor !important;/s,
-        'storefront light-theme CSS should let rich-text color runs keep their visible text fill in cart and product guidance panels'
+        /html\[data-theme="dark"\] body\.shop-page #shopPurchaseModal #purchaseNotesContent,[\s\S]*#purchaseUsageContent :not\(a\) \{[\s\S]*color: rgba\(226, 232, 240, 0\.82\) !important;[\s\S]*-webkit-text-fill-color: rgba\(226, 232, 240, 0\.82\) !important;/s,
+        'dark-theme purchase guidance should force readable theme copy color over pasted inline colors'
+    );
+    assert.match(
+        shopCssSource,
+        /html\[data-theme="dark"\] body\.shop-page \.shop-cart-item__panel--notice :not\(a\),[\s\S]*\.shop-cart-item__panel--usage :not\(a\) \{[\s\S]*-webkit-text-fill-color: currentColor !important;[\s\S]*html\[data-theme="dark"\] body\.shop-page \.shop-cart-item__panel--notice a,[\s\S]*color: #93c5fd !important;/s,
+        'dark-theme cart guidance panels should keep copied notes readable while preserving link affordance'
     );
     assert.match(
         shopClientSource,
@@ -281,9 +281,29 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         'purchase modal should expose usage instructions as a folded preview before the checkout dock'
     );
     assert.match(
+        shopHtmlSource,
+        /id="purchaseNotesCard" class="glass-box shop-success-usage-card" hidden>[\s\S]*id="purchaseNotesCopyBtn"[\s\S]*data-shop-guidance-copy="purchase_notes"[\s\S]*id="purchaseNotesContent"[\s\S]*id="purchaseUsageCard" class="glass-box shop-success-usage-card" hidden>[\s\S]*id="purchaseUsageCopyBtn"[\s\S]*data-shop-guidance-copy="usage_instructions"[\s\S]*id="purchaseUsageContent"/s,
+        'purchase modal guidance content cards should expose custom top-right copy buttons for notes and usage instructions'
+    );
+    assert.equal(
+        shopHtmlSource.includes('guidanceCopy=20260608_SHOP_GUIDANCE_COPY_4'),
+        true,
+        'shop.html should cache-bust storefront guidance copy UI assets'
+    );
+    assert.match(
         shopClientSource,
         /this\.renderPurchaseNotes\(\);\s+this\.renderPurchaseUsageInstructions\(\);[\s\S]*this\.setPurchaseStage\(this\.currentPurchase\.stage \|\| 'configure'\);/s,
         'latest guidance refresh should update both purchase notes and usage instructions while the modal is open'
+    );
+    assert.match(
+        shopClientSource,
+        /normalizeGuidanceCopyText: function \(content\)[\s\S]*getPurchaseGuidanceCopyText: function \(kind\)[\s\S]*copyPurchaseGuidance: async function \(kind, triggerButton = null\)/s,
+        'purchase guidance copy buttons should copy normalized guidance text instead of rendered UI text'
+    );
+    assert.match(
+        shopClientSource,
+        /data-shop-success-action="copy-guidance"[\s\S]*class="shop-guidance-panel-content"/s,
+        'success modal guidance panels should render a top-right copy action inside the guidance content box'
     );
     assert.match(
         shopClientSource,
@@ -316,9 +336,14 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         'wide purchase guidance should stop wheel scrolling at the guidance card instead of scrolling the whole left panel'
     );
     assert.match(
+        shopClientSource,
+        /getPurchaseGuidanceScrollElement: function \(guidanceCard\)[\s\S]*querySelector\('#purchaseNotesContent, #purchaseUsageContent'\)[\s\S]*const notesScroll = this\.getPurchaseGuidanceScrollElement\(notesCard\);[\s\S]*bindContainedWheelIsolation\(notesScroll,[\s\S]*const usageScroll = this\.getPurchaseGuidanceScrollElement\(usageCard\);[\s\S]*bindContainedWheelIsolation\(usageScroll,/s,
+        'purchase guidance wheel isolation should bind the scrollable rich-text body so copy buttons stay fixed in the content card'
+    );
+    assert.match(
         shopCssSource,
-        /#shopPurchaseModal \.shop-success-usage-card\s*\{[\s\S]*max-height:\s*var\(--shop-purchase-guidance-card-max, min\(32vh, 220px\)\);[\s\S]*padding-bottom:\s*var\(--shop-purchase-guidance-card-bottom-inset, 30px\) !important;[\s\S]*scroll-padding-bottom:\s*var\(--shop-purchase-guidance-card-bottom-inset, 30px\);/s,
-        'purchase guidance cards should use a dynamic max height and enough bottom scroll padding for long dark-mode content'
+        /#shopPurchaseModal \.shop-success-usage-card\s*\{[\s\S]*max-height:\s*var\(--shop-purchase-guidance-card-max, min\(32vh, 220px\)\);[\s\S]*overflow:\s*hidden;[\s\S]*#shopPurchaseModal #purchaseNotesContent,[\s\S]*#shopPurchaseModal #purchaseUsageContent\s*\{[\s\S]*max-height:\s*calc\(var\(--shop-purchase-guidance-card-max, min\(32vh, 220px\)\) - 30px\);[\s\S]*overflow-y:\s*auto;[\s\S]*padding-bottom:\s*var\(--shop-purchase-guidance-card-bottom-inset, 30px\) !important;[\s\S]*scroll-padding-bottom:\s*var\(--shop-purchase-guidance-card-bottom-inset, 30px\);/s,
+        'purchase guidance cards should keep the copy action fixed while the rich-text body uses dynamic scrolling and bottom padding'
     );
     assert.match(
         shopCssSource,
@@ -354,6 +379,22 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         shopCssSource,
         /#purchaseNotesContent,\s+#purchaseNotesContent \*,\s+#purchaseUsageContent,\s+#purchaseUsageContent \*[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseUsageContent/s,
         'purchase usage instructions should share selectable rich-text and light-theme readability rules'
+    );
+    [
+        '.shop-guidance-copy-btn',
+        '.shop-guidance-panel-copy',
+        '.shop-guidance-panel-content'
+    ].forEach((marker) => {
+        assert.equal(
+            shopCssSource.includes(marker),
+            true,
+            `storefront guidance copy buttons should have custom non-native icon button style marker ${marker}`
+        );
+    });
+    assert.match(
+        shopCssSource,
+        /\.shop-success-item__notes-panel,[\s\S]*\.shop-success-item__usage-panel\s*\{[\s\S]*max-height:\s*min\(34vh, 260px\);[\s\S]*overflow:\s*hidden;[\s\S]*\.shop-guidance-panel-content\s*\{[\s\S]*max-height:\s*calc\(min\(34vh, 260px\) - 18px\);[\s\S]*overflow-y:\s*auto;/s,
+        'success modal guidance panels should keep copy buttons fixed while the inner rich-text body scrolls'
     );
     assert.equal(zhLang.shop.currentSpec, '规格');
     assert.equal(enLang.shop.currentSpec, 'Option');
@@ -500,8 +541,8 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /selectPurchaseSku: function \(skuId = ''\) \{[\s\S]*const cachedDiscountAssetsPayload = this\.readDiscountAssetsCache\(this\.buildCurrentPurchaseDiscountAssetsCacheKey\(\)\);[\s\S]*this\.currentPurchase\.discountAssetsLoading = false;[\s\S]*\} else \{[\s\S]*this\.currentPurchase\.discountAssetsLoading = true;[\s\S]*void this\.refreshPurchaseDiscountAssets\(\{ silent: true, forceLoading: true, clearCurrent: true \}\);/s,
-        'switching specs should reuse loaded coupon cards when available and only show loading for unknown specs'
+        /selectPurchaseSku: function \(skuId = ''\) \{[\s\S]*this\.currentPurchase\.soldOut = !manualDelivery && this\.getShopSkuStockCount\(sku\) <= 0;[\s\S]*const cachedDiscountAssetsPayload = this\.currentPurchase\.soldOut\s+\? null\s+: this\.readDiscountAssetsCache\(this\.buildCurrentPurchaseDiscountAssetsCacheKey\(\)\);[\s\S]*this\.currentPurchase\.discountAssetsLoading = this\.currentPurchase\.soldOut !== true;[\s\S]*if \(manualDelivery \|\| this\.currentPurchase\.soldOut\) \{[\s\S]*this\.currentPurchase\.discountAssetsLoading = false;[\s\S]*void this\.refreshPurchaseDiscountAssets\(\{ silent: true, forceLoading: true, clearCurrent: true \}\);/s,
+        'switching specs should reuse loaded coupon cards when available, show loading only for unknown specs, and stop coupon loading for sold-out specs'
     );
     assert.match(
         shopClientSource,
@@ -641,7 +682,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     assert.match(
         shopClientSource,
         /el\.dataset\.shopAction = 'sold-out-product';[\s\S]*this\.applyShopPurchaseDataset\(el, purchaseDataset\);/s,
-        'sold-out product cards should remain clickable and show a storefront toast instead of doing nothing'
+        'sold-out product cards should remain clickable and keep the purchase dataset for the detail modal'
     );
     assert.match(
         shopClientSource,
@@ -665,18 +706,23 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /setPurchaseStage: function \(stage = 'configure'\)[\s\S]*const isManualDelivery = this\.isShopCurrentPurchaseManualDelivery\(\);[\s\S]*getManualDeliverySupportLabel\(\)[\s\S]*shop-manual-delivery-contact-btn[\s\S]*addToCartBtn\.disabled = isPurchaseProcessing;[\s\S]*nextBtn\.disabled = isPurchaseProcessing \|\| isManualDelivery;/s,
-        'manual delivery purchase modal should turn the secondary action into support while keeping redemption disabled'
+        /setPurchaseStage: function \(stage = 'configure'\)[\s\S]*const isManualDelivery = this\.isShopCurrentPurchaseManualDelivery\(\);[\s\S]*const isSoldOut = this\.isShopCurrentPurchaseSoldOut\(\);[\s\S]*getSoldOutRestockSupportLabel\(\)[\s\S]*shop-sold-out-restock-btn[\s\S]*shop-purchase-sold-out-btn[\s\S]*nextBtn\.disabled = isPurchaseProcessing \|\| isManualDelivery \|\| isSoldOut;/s,
+        'purchase modal should turn manual delivery or sold-out secondary actions into support while keeping redemption disabled'
     );
     assert.match(
         shopClientSource,
-        /openManualDeliverySupport: function \(options = \{\}\)[\s\S]*this\.closePurchaseModal\(\);[\s\S]*ZaoyoeChatWidgetBootstrap\?\.open[\s\S]*chatWidget\?\.openChat[\s\S]*zaoyoe:chat-widget-runtime-pending-open/s,
-        'manual delivery support action should close the product modal and open the public chat widget'
+        /openManualDeliverySupport: function \(options = \{\}\)[\s\S]*this\.closePurchaseModal\(\);[\s\S]*window\.chatWidget\?\.chatWindow && typeof window\.chatWidget\.openChat === 'function'[\s\S]*window\.chatWidget\.openChat\(\)[\s\S]*return;[\s\S]*ZaoyoeChatWidgetBootstrap\?\.open[\s\S]*zaoyoe:chat-widget-runtime-pending-open/s,
+        'manual delivery support action should close the product modal and directly open the ready public chat widget before falling back to bootstrap loading'
     );
     assert.match(
         shopClientSource,
         /purchaseAddToCartBtn'\), 'purchase-add-cart'[\s\S]*this\.isShopCurrentPurchaseManualDelivery\(\)[\s\S]*this\.openManualDeliverySupport\(\{ source: 'purchase_modal_mobile_tap' \}\)[\s\S]*if \(event\.target instanceof Element && event\.target\.closest\('#purchaseAddToCartBtn'\)\)[\s\S]*this\.openManualDeliverySupport\(\{ source: 'purchase_modal_button' \}\)/s,
         'manual delivery secondary action should open support from both touch fallback and modal click paths'
+    );
+    assert.match(
+        shopClientSource,
+        /purchaseAddToCartBtn'\), 'purchase-add-cart'[\s\S]*this\.isShopCurrentPurchaseSoldOut\(\)[\s\S]*this\.openSoldOutRestockSupport\(\{ source: 'purchase_modal_mobile_tap' \}\)[\s\S]*if \(event\.target instanceof Element && event\.target\.closest\('#purchaseAddToCartBtn'\)\)[\s\S]*this\.openSoldOutRestockSupport\(\{ source: 'purchase_modal_button' \}\)/s,
+        'sold-out secondary action should open restock support from both touch fallback and modal click paths'
     );
     assert.equal(
         zhLang.shop.manualDeliveryContactSupport,
@@ -687,6 +733,61 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         enLang.shop.manualDeliveryContactSupport,
         'Contact support',
         'manual delivery support label should have an English storefront copy'
+    );
+    assert.equal(
+        zhLang.shop.soldOutRestockContactSupport,
+        '联系客服补货',
+        'sold-out restock support label should match the requested Chinese storefront copy'
+    );
+    assert.equal(
+        enLang.shop.soldOutRestockContactSupport,
+        'Contact support for restock',
+        'sold-out restock support label should have an English storefront copy'
+    );
+    assert.equal(
+        zhLang.shop.soldOutDiscountUnavailable,
+        '商品售罄后暂不可使用优惠码，联系客服补货后再兑换。',
+        'sold-out purchase modal should explain why coupons are disabled in Chinese'
+    );
+    assert.equal(
+        enLang.shop.soldOutDiscountUnavailable,
+        'Coupons are unavailable while this product is sold out. Contact support for restock.',
+        'sold-out purchase modal should explain why coupons are disabled in English'
+    );
+    assert.match(
+        shopClientSource,
+        /setPurchaseStage: function \(stage = 'configure'\)[\s\S]*const shouldShow = element\.dataset\.purchaseStep === nextStage[\s\S]*&& \(!isUsageStage \|\| hasUsageInstructions\);[\s\S]*this\.syncPurchaseDiscountInteractivity\(\);/s,
+        'sold-out purchase modal should keep the discount stage mounted instead of hiding it during stage sync'
+    );
+    assert.doesNotMatch(
+        shopClientSource,
+        /isDiscountStage[\s\S]*!isSoldOut/,
+        'sold-out purchase modal should not hide the coupon module just because the product is sold out'
+    );
+    assert.match(
+        shopClientSource,
+        /syncPurchaseDiscountInteractivity: function \(\)[\s\S]*classList\.toggle\('is-purchase-sold-out', isSoldOut\)[\s\S]*discountPanel instanceof HTMLDetailsElement[\s\S]*discountPanel\.open = true[\s\S]*classList\.add\('is-expanded'\)[\s\S]*purchaseDiscountCode[\s\S]*discountInput\.disabled = true[\s\S]*soldOutDiscountPlaceholder[\s\S]*applyBtn\.disabled = true[\s\S]*soldOutDisabled/s,
+        'sold-out purchase modal should keep the coupon module visible and expanded while disabling coupon input and verification'
+    );
+    assert.match(
+        shopClientSource,
+        /renderPurchaseDiscountAssets: function \(\)[\s\S]*isShopCurrentPurchaseSoldOut\(\)[\s\S]*shop-discount-assets-empty--sold-out[\s\S]*soldOutDiscountUnavailable[\s\S]*this\.syncPurchaseDiscountInteractivity\(\);/s,
+        'sold-out purchase modal should render a stable sold-out coupon message instead of collapsing the coupon module'
+    );
+    assert.match(
+        shopCssSource,
+        /\.shop-purchase-discount\.is-purchase-sold-out[\s\S]*\.shop-discount-assets-empty--sold-out[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-purchase-discount\.is-purchase-sold-out/s,
+        'sold-out coupon module should have disabled-state styling in dark and light storefront themes'
+    );
+    assert.match(
+        shopHtmlSource,
+        /soldOutDiscountStable=20260607_SHOP_SOLD_OUT_DISCOUNT_STABLE_2/,
+        'shop.html should bust storefront assets after stabilizing the sold-out coupon module'
+    );
+    assert.match(
+        shopHtmlSource,
+        /restockChatDirectOpen=20260607_SHOP_RESTOCK_CHAT_DIRECT_OPEN_1/,
+        'shop.html should bust the shop runtime after making restock support open the ready chat widget directly'
     );
     assert.match(
         shopCssSource,
@@ -705,7 +806,7 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
-        /buyProduct: async function \([\s\S]*const liveProduct = this\.getCachedProductById\(productId\);[\s\S]*const quantityCap = this\.getPurchaseQuantityCapForProduct\(liveProduct, maxPurchaseQuantity\);/s,
+        /buyProduct: async function \([\s\S]*const liveProduct = this\.getCachedProductById\(productId\);[\s\S]*const soldOut = !manualDelivery && \(options\?\.soldOut === true \|\| this\.isShopProductSelectionSoldOut\(liveProduct, requestedSkuId\)\);[\s\S]*const quantityCap = this\.getPurchaseQuantityCapForProduct\(liveProduct, maxPurchaseQuantity, \{\s+skuId: requestedSkuId\s+\}\);/s,
         'opening the purchase modal from a product card should honor the current product stock when computing the quantity cap'
     );
     assert.match(
