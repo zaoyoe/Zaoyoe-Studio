@@ -212,6 +212,37 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
         assert.doesNotMatch(rule, /\bheight\s+\d+ms|\bmax-height\s+\d+ms/, `${label} should not animate height while docking to the keyboard`);
     }
 
+    assert.match(
+        chatWidgetCss,
+        /\.chat-messages\s*\{[\s\S]*?padding-bottom:\s*max\(20px, var\(--chat-messages-bottom-safe-space, 20px\)\);[\s\S]*?scroll-padding-bottom:\s*var\(--chat-messages-bottom-safe-space, 20px\);/,
+        'customer chat messages should reserve a measured composer-safe scroll area'
+    );
+    assert.match(
+        chatWidget,
+        /syncUserMessageViewportPadding\(\) \{[\s\S]*?getBoundingClientRect[\s\S]*?'--chat-messages-bottom-safe-space'/,
+        'customer chat should measure the input module before scrolling messages into view'
+    );
+    assert.doesNotMatch(
+        chatWidget,
+        /keyboardGuard/,
+        'focused customer chat input should not add a fixed bottom spacer that creates a large gap above the composer'
+    );
+    assert.match(
+        chatWidgetCss,
+        /\.chat-window:not\(\.admin-mode-layout\) \.chat-messages::before\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-height:\s*0;/,
+        'short customer chat conversations should bottom-anchor near the input instead of leaving a large composer gap'
+    );
+    assert.match(
+        chatWidget,
+        /this\.appendMessage\(text, this\.getMessageRenderType\(false\), 'text', optimisticCreatedAt, true\);/,
+        'optimistic customer text messages should use the new-message scroll path'
+    );
+    assert.match(
+        chatWidget,
+        /scrollToBottom\(\{ settle = false \} = \{\}\) \{[\s\S]*?scheduleFrame[\s\S]*?setTimeout\(applyBottomScroll, 220\);/,
+        'customer chat should retry bottom scroll after keyboard/composer layout settles'
+    );
+
     assert.match(promptCaretStabilizingRule, /caret-color: transparent !important;/);
     assert.match(promptsCss, /\.prompts-caret-repaint \{[\s\S]*transform: translateZ\(0\);/);
     assert.match(adminChatCss, /\.chat-container\.admin-chat-keyboard-docked/);
@@ -225,7 +256,7 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(guestbookHtml, /homepage-guestbook-modal\.js\?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1/);
     assert.match(adminStudioHtml, /admin-chat\.js\?v=20260514_CHAT_VERIFY_SUBMITTER_IDENTITY_1/);
     assert.match(adminStudioHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
-    assert.match(chatWidgetLoader, /const VERSION = '20260608_CHAT_USER_BUBBLE_DARK_1';/);
+    assert.match(chatWidgetLoader, /const VERSION = '20260609_CHAT_KEYBOARD_GAP_1';/);
     assert.match(
         chatWidgetLoader,
         /@media \(max-width: 700px\) and \(hover: hover\) and \(pointer: fine\) \{[\s\S]*\.chat-window:not\(\.admin-mode-layout\):not\(\[data-chat-widget-bootstrap-shell="1"\]\) \{[\s\S]*--chat-base-translate-y: -50%;[\s\S]*width: min\(460px, max\(97vw, calc\(100vw - 16px\)\)\) !important;[\s\S]*height: 70vh !important;[\s\S]*top: 50% !important;[\s\S]*transform-origin: center center !important;[\s\S]*\.chat-window:not\(\.admin-mode-layout\):not\(\[data-chat-widget-bootstrap-shell="1"\]\)\.active \{[\s\S]*transform: translate3d\(-50%, calc\(var\(--chat-base-translate-y, -50%\) \+ var\(--chat-shift-y, 0px\)\), 0\) scale\(1\) !important;/,

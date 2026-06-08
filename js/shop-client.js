@@ -629,8 +629,6 @@ const ShopClient = {
     gridTransitionActiveUntil: 0,
     mobileProductFocusResizeTimer: null,
     mobileProductFocusResizeBound: false,
-    mobileBrowserChromeInsetBound: false,
-    mobileBrowserChromeInsetRafId: null,
     purchaseGuidanceRequestToken: 0,
     cartAnchorFeedbackTimer: null,
     lastSkeletonCount: SHOP_PRODUCT_SKELETON_COUNT,
@@ -7754,7 +7752,6 @@ const ShopClient = {
         console.log('🛍️ Shop Client Initialized');
         this.bindStaticUiHandlers();
         this.bindMobileProductFocusResize();
-        this.bindMobileBrowserChromeInset();
         this.scheduleDeferredUiBindings();
         this.restoreCartState();
         this.renderCart();
@@ -10574,52 +10571,6 @@ const ShopClient = {
         element.addEventListener('touchcancel', () => {
             touchStart = null;
         }, { passive: true });
-    },
-
-    requestMobileBrowserChromeInsetSync: function () {
-        if (this.mobileBrowserChromeInsetRafId) {
-            cancelAnimationFrame(this.mobileBrowserChromeInsetRafId);
-        }
-
-        this.mobileBrowserChromeInsetRafId = requestAnimationFrame(() => {
-            this.mobileBrowserChromeInsetRafId = null;
-            this.syncMobileBrowserChromeInset();
-        });
-    },
-
-    syncMobileBrowserChromeInset: function () {
-        const root = document.documentElement;
-        const body = document.body;
-        if (!root || !body) return;
-
-        if (!this.isIOSMobileViewport()) {
-            this.setCssVariables(root, { '--shop-mobile-browser-chrome-bottom-gap': '' });
-            this.setCssVariables(body, { '--shop-mobile-browser-chrome-bottom-gap': '' });
-            return;
-        }
-
-        const vv = window.visualViewport;
-        const viewportBottom = Math.round((vv?.offsetTop || 0) + (vv?.height || 0));
-        const layoutHeight = Math.round(window.innerHeight || root.clientHeight || 0);
-        const measuredGap = Math.max(0, layoutHeight - viewportBottom);
-        const chromeGap = Math.max(64, Math.min(112, measuredGap));
-        const value = `${chromeGap}px`;
-
-        this.setCssVariables(root, { '--shop-mobile-browser-chrome-bottom-gap': value });
-        this.setCssVariables(body, { '--shop-mobile-browser-chrome-bottom-gap': value });
-    },
-
-    bindMobileBrowserChromeInset: function () {
-        if (this.mobileBrowserChromeInsetBound) return;
-
-        this.mobileBrowserChromeInsetBound = true;
-        this.syncMobileBrowserChromeInset();
-
-        const scheduleSync = () => this.requestMobileBrowserChromeInsetSync();
-        window.addEventListener('resize', scheduleSync, { passive: true });
-        window.addEventListener('orientationchange', scheduleSync, { passive: true });
-        window.visualViewport?.addEventListener('resize', scheduleSync, { passive: true });
-        window.visualViewport?.addEventListener('scroll', scheduleSync, { passive: true });
     },
 
     buildEmptyStateElement: function () {

@@ -45,6 +45,9 @@ async function insertScopedSystemNotification(client, payload = {}) {
         .insert(legacyPayload);
 }
 
+const CHAT_GUEST_REPLY_POLL_INTERVAL_MS = 2500;
+const CHAT_GUEST_REPLY_POLL_LIMIT = 12;
+
 class ChatWidget {
     constructor() {
         this.isOpen = false;
@@ -128,6 +131,13 @@ class ChatWidget {
         this.engagementFeedInvalidationsRefreshTimer = null;
         this.engagementScheduledRuleRefreshTimer = null;
         this.engagementAuthSubscription = null;
+        this.robotBubblePreviewTimers = new Map();
+        this.robotBubblePreviewHandledUntil = new Map();
+        this.userMessageFallbackPollTimer = null;
+        this.userMessageFallbackPolling = false;
+        this.userMessageFallbackConversationSeen = false;
+        this.userMessageFallbackLastSeenAt = new Date().toISOString();
+        this.userMessageFallbackHandledKeys = new Set();
         this.adminOpsAlertPollTimer = null;
         this.adminSessionSlaTimer = null;
         this.adminSessionQueueView = 'all';
@@ -3036,6 +3046,49 @@ class ChatWidget {
         );
     }
 
+    syncUserMessageViewportPadding() {
+        if (!this.messagesContainer || !this.chatWindow || this.isAdmin) return;
+        if (this.chatWindow.classList.contains('admin-mode-layout')) return;
+
+        const inputArea = this.inputArea || this.chatWindow.querySelector('.chat-input-area');
+        const fallbackPadding = 20;
+        let composerHeight = 0;
+        let bottomSafeSpace = fallbackPadding;
+
+        if (inputArea) {
+            const inputRect = typeof inputArea.getBoundingClientRect === 'function'
+                ? inputArea.getBoundingClientRect()
+                : null;
+            const messagesRect = typeof this.messagesContainer.getBoundingClientRect === 'function'
+                ? this.messagesContainer.getBoundingClientRect()
+                : null;
+
+            composerHeight = Math.max(
+                0,
+                Math.ceil(inputRect?.height || inputArea.offsetHeight || 0)
+            );
+
+            const overlap = inputRect && messagesRect
+                ? Math.max(0, Math.ceil(messagesRect.bottom - inputRect.top))
+                : 0;
+            bottomSafeSpace = Math.max(
+                fallbackPadding,
+                overlap + fallbackPadding
+            );
+        }
+
+        this._setRuntimeStyle(
+            this.messagesContainer,
+            '--chat-messages-bottom-safe-space',
+            `${Math.round(bottomSafeSpace)}px`
+        );
+        this._setRuntimeStyle(
+            this.chatWindow,
+            '--chat-composer-height',
+            composerHeight ? `${Math.round(composerHeight)}px` : null
+        );
+    }
+
     _ensureThemeColorMeta() {
         if (this._themeColorMeta?.isConnected) return this._themeColorMeta;
         let meta = document.querySelector('meta[name="theme-color"]');
@@ -3267,6 +3320,7 @@ class ChatWidget {
             this.syncEngagementNotificationSubscription(user);
             this.syncEngagementDeliverySubscription(user);
             this.syncEngagementUserTagsSubscription(user);
+            this.stopGuestUserMessageFallbackPolling();
             return { user, sessionId: primarySessionId, sessionIds: this.getActiveUserSessionIds() };
         }
 
@@ -3282,6 +3336,7 @@ class ChatWidget {
         this.syncEngagementNotificationSubscription(null);
         this.syncEngagementDeliverySubscription(null);
         this.syncEngagementUserTagsSubscription(null);
+        this.startGuestUserMessageFallbackPolling({ reason: 'guest_session_context' });
         return { user: null, sessionId: guestSessionId, sessionIds: this.getActiveUserSessionIds() };
     }
 
@@ -3962,6 +4017,7 @@ class ChatWidget {
             this.subscribeToMessages();
             this.subscribeToAdminPresence();
             this.loadHistory();
+            this.startGuestUserMessageFallbackPolling({ reason: 'init' });
             this.checkAdminStatus();
             setInterval(() => this.checkAdminStatus(), 60000);
         }
@@ -4234,6 +4290,7 @@ class ChatWidget {
             'engagementConditionEvaluationTimer',
             'engagementTimeTriggerTimer',
             'engagementPendingFlushTimer',
+            'userMessageFallbackPollTimer',
             'adminOpsAlertPollTimer',
             'adminSessionSlaTimer',
             '_adminSessionHydrationTimer',
@@ -5076,6 +5133,94 @@ class ChatWidget {
         return true;
     }
 
+    normalizeRobotBubblePreviewKey(value = '') {
+        return String(value || '').trim().toLowerCase();
+    }
+
+    getSupportReplyPreviewDedupeKey(source = {}) {
+        const row = source && typeof source === 'object' && !Array.isArray(source) ? source : {};
+        const metadata = row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata)
+            ? row.metadata
+            : {};
+        const sourceEventId = String(row.source_event_id || row.sourceEventId || metadata.source_event_id || '').trim();
+        const sessionFromEvent = sourceEventId.match(/^support_reply:([^:]+)/i)?.[1] || '';
+        const sessionId = String(
+            row.session_id
+                || row.sessionId
+                || metadata.session_id
+                || metadata.sessionId
+                || sessionFromEvent
+                || ''
+        ).trim();
+        return sessionId ? `support_reply:${sessionId}` : '';
+    }
+
+    getRobotBubblePreviewDedupeKeys(item = {}) {
+        const normalized = this.normalizeEngagementItem(item);
+        if (!normalized) return [];
+        const metadata = normalized.metadata && typeof normalized.metadata === 'object' && !Array.isArray(normalized.metadata)
+            ? normalized.metadata
+            : {};
+        const triggerType = this.getEngagementBridgeTriggerType(normalized);
+        const category = String(normalized.category || metadata.category || '').trim().toLowerCase();
+        const sourceModule = String(normalized.source_module || metadata.source_module || '').trim().toLowerCase();
+        const sourceEventId = String(normalized.source_event_id || metadata.source_event_id || '').trim();
+        const keys = [];
+
+        if (
+            triggerType === 'support_reply'
+            || triggerType === 'message_replied'
+            || category === 'chat_reply'
+            || sourceModule === 'chat'
+            || /^support_reply:/i.test(sourceEventId)
+        ) {
+            const supportKey = this.getSupportReplyPreviewDedupeKey(normalized);
+            if (supportKey) keys.push(supportKey);
+        }
+        if (sourceEventId) keys.push(`event:${sourceEventId}`);
+
+        return [...new Set(keys.map((key) => this.normalizeRobotBubblePreviewKey(key)).filter(Boolean))];
+    }
+
+    clearRobotBubblePreviewTimer(key = '') {
+        const normalizedKey = this.normalizeRobotBubblePreviewKey(key);
+        if (!normalizedKey || !this.robotBubblePreviewTimers?.has(normalizedKey)) {
+            return false;
+        }
+        window.clearTimeout(this.robotBubblePreviewTimers.get(normalizedKey));
+        this.robotBubblePreviewTimers.delete(normalizedKey);
+        return true;
+    }
+
+    markRobotBubblePreviewHandled(itemOrKey = {}, ttlMs = 2400) {
+        const keys = typeof itemOrKey === 'string'
+            ? [itemOrKey]
+            : this.getRobotBubblePreviewDedupeKeys(itemOrKey);
+        const expiresAt = Date.now() + Math.max(0, Number(ttlMs || 0) || 0);
+        keys.forEach((key) => {
+            const normalizedKey = this.normalizeRobotBubblePreviewKey(key);
+            if (!normalizedKey) return;
+            this.clearRobotBubblePreviewTimer(normalizedKey);
+            this.robotBubblePreviewHandledUntil.set(normalizedKey, expiresAt);
+        });
+    }
+
+    isRobotBubblePreviewHandled(key = '') {
+        const normalizedKey = this.normalizeRobotBubblePreviewKey(key);
+        if (!normalizedKey) return false;
+        const expiresAt = Number(this.robotBubblePreviewHandledUntil?.get(normalizedKey) || 0);
+        if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+            this.robotBubblePreviewHandledUntil?.delete(normalizedKey);
+            return false;
+        }
+        return true;
+    }
+
+    isRobotBubblePreviewDuplicateHandled(item = {}) {
+        return this.getRobotBubblePreviewDedupeKeys(item)
+            .some((key) => this.isRobotBubblePreviewHandled(key));
+    }
+
     async showAutomationForSystemNotification(item = {}) {
         const normalized = this.normalizeEngagementItem(item);
         if (!normalized) return false;
@@ -5102,6 +5247,9 @@ class ChatWidget {
         const normalized = this.normalizeEngagementItem(item);
         if (!normalized) return false;
         if (!this.shouldSurfaceEngagementItem(normalized)) {
+            return false;
+        }
+        if (this.isRobotBubblePreviewDuplicateHandled(normalized)) {
             return false;
         }
         const activeKey = this.engagementActiveItem ? this.getEngagementItemKey(this.engagementActiveItem) : '';
@@ -5456,6 +5604,9 @@ class ChatWidget {
 
         const item = this.normalizeEngagementNotificationRow(row);
         if (!this.shouldSurfaceSystemNotificationBubble(item)) {
+            return;
+        }
+        if (this.isRobotBubblePreviewDuplicateHandled(item)) {
             return;
         }
         const triggerType = this.getSystemNotificationAutomationTriggerType(item);
@@ -8353,6 +8504,7 @@ class ChatWidget {
         const viewKey = this.getEngagementItemKey(normalized);
         const hasSeenInSession = this.engagementViewedKeys.has(viewKey);
         this.engagementActiveItem = normalized;
+        this.markRobotBubblePreviewHandled(normalized);
         this.updateBadge();
         this._pauseFabAmbientMotion(8200, true);
         this.fab.classList.toggle('has-unread', this.unreadCount > 0);
@@ -9035,10 +9187,13 @@ class ChatWidget {
 
     // ===== Notification System =====
 
-    showNotification(message, senderName = null, forceShow = false) {
+    showNotification(message, senderName = null, forceShow = false, options = {}) {
         senderName = senderName || this.t('chat.newMessage', '新消息');
         // Don't show notification if chat is open (unless forceShow is true)
         if (this.isOpen && !forceShow) return;
+
+        const dedupeKey = this.normalizeRobotBubblePreviewKey(options?.dedupeKey || '');
+        const previewDelayMs = Math.max(0, Number(options?.previewDelayMs ?? options?.delayMs ?? 0) || 0);
 
         // Increment unread count
         this.unreadCount++;
@@ -9060,8 +9215,28 @@ class ChatWidget {
             setTimeout(() => this.fab.classList.remove('wiggle'), 500);
         }, 700);
 
-        // Show message preview tooltip
-        this.showMessagePreview(message, senderName);
+        const showPreview = () => {
+            if (dedupeKey) {
+                this.robotBubblePreviewTimers.delete(dedupeKey);
+                if (this.isRobotBubblePreviewHandled(dedupeKey)) {
+                    return;
+                }
+            }
+            if (this.isOpen && !forceShow) {
+                return;
+            }
+            this.showMessagePreview(message, senderName, {
+                ...options,
+                dedupeKey
+            });
+        };
+
+        if (previewDelayMs > 0 && dedupeKey) {
+            this.clearRobotBubblePreviewTimer(dedupeKey);
+            this.robotBubblePreviewTimers.set(dedupeKey, window.setTimeout(showPreview, previewDelayMs));
+        } else {
+            showPreview();
+        }
 
         // Play notification sound (optional - subtle)
         this.playNotificationSound();
@@ -9089,30 +9264,63 @@ class ChatWidget {
         if (preview) preview.remove();
     }
 
-    showMessagePreview(message, senderName) {
+    showMessagePreview(message, senderName, options = {}) {
         // Remove existing preview
         const existingPreview = this.fab.querySelector('.message-preview');
         if (existingPreview) existingPreview.remove();
 
-        // Create preview tooltip
-        const preview = document.createElement('div');
-        preview.className = 'message-preview';
-        preview.innerHTML = `
-            <div class="preview-sender">${senderName}</div>
-            <div class="preview-text">${this.escapeHtml(message.substring(0, 100))}${message.length > 100 ? '...' : ''}</div>
-        `;
-        this.fab.appendChild(preview);
+        const messageText = String(message || '');
+        const title = String(senderName || this.t('chat.newMessage', '新消息')).trim() || this.t('chat.newMessage', '新消息');
+        const actionLabel = String(options?.actionLabel || '查看消息').trim() || '查看消息';
 
-        // Auto-hide after 5 seconds with cute retract animation
+        // Create preview bubble with the same structure as engagement rule bubbles.
+        const preview = document.createElement('div');
+        preview.className = 'message-preview engagement-preview engagement-preview--info';
+        preview.setAttribute('role', 'status');
+        preview.setAttribute('aria-live', 'polite');
+        preview.dataset.engagementPlacement = 'robot_bubble';
+        preview.dataset.engagementTone = 'info';
+        preview.dataset.engagementPage = this.getEngagementPageId();
+        preview.dataset.engagementSource = 'chat_message';
+        preview.innerHTML = `
+            <div class="preview-sender">${this.escapeHtml(title)}</div>
+            <div class="preview-text">${this.escapeHtml(messageText.substring(0, 100))}${messageText.length > 100 ? '...' : ''}</div>
+            <div class="engagement-preview__actions">
+                <button type="button" class="engagement-preview__action">${this.escapeHtml(actionLabel)}</button>
+                <button type="button" class="engagement-preview__close" aria-label="关闭提醒">关闭</button>
+            </div>
+        `;
+
+        const removePreview = () => {
+            if (!preview.parentNode) return;
+            preview.classList.add('hiding');
+            setTimeout(() => {
+                preview.remove();
+                this._scheduleFabAmbientMotion();
+            }, 400);
+        };
+        preview.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const eventTarget = event.target?.nodeType === 1 ? event.target : event.target?.parentElement;
+            if (eventTarget?.closest?.('.engagement-preview__close')) {
+                removePreview();
+                return;
+            }
+            void this.openChat().then(() => this.clearUnread()).catch((error) => {
+                console.error('[ChatWidget] Failed to open chat from message preview:', error);
+            });
+        });
+        this.fab.appendChild(preview);
+        if (options?.dedupeKey) {
+            this.markRobotBubblePreviewHandled(options.dedupeKey, 10000);
+        }
+
+        // Auto-hide after 9 seconds, matching engagement rule bubbles.
         setTimeout(() => {
             if (preview.parentNode) {
-                preview.classList.add('hiding');
-                setTimeout(() => {
-                    preview.remove();
-                    this._scheduleFabAmbientMotion();
-                }, 400);
+                removePreview();
             }
-        }, 5000);
+        }, 9000);
     }
 
     escapeHtml(text) {
@@ -21079,7 +21287,16 @@ class ChatWidget {
             .chat-window:not(.admin-mode-layout) .chat-messages {
                 background: var(--chat-panel-bg, rgba(12, 15, 22, 0.98)) !important;
                 background-image: none !important;
+                padding-bottom: max(20px, var(--chat-messages-bottom-safe-space, 20px)) !important;
+                scroll-padding-bottom: var(--chat-messages-bottom-safe-space, 20px) !important;
                 box-shadow: var(--chat-panel-shadow, inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -12px 24px rgba(0, 0, 0, 0.08)) !important;
+            }
+
+            .chat-window:not(.admin-mode-layout) .chat-messages::before {
+                content: '';
+                flex: 1 1 auto;
+                min-height: 0;
+                pointer-events: none;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input-area {
@@ -21395,6 +21612,7 @@ class ChatWidget {
             /* Enforce instant scrolling for user mode too */
             .chat-window:not(.admin-mode-layout) .chat-messages {
                 scroll-behavior: auto !important;
+                scroll-padding-bottom: var(--chat-messages-bottom-safe-space, 20px) !important;
                 overscroll-behavior-y: contain;
             }
         `;
@@ -21488,6 +21706,7 @@ class ChatWidget {
         this.emojiPicker = this.chatWindow.querySelector('#emojiPicker');
         this.headerActions = this.chatWindow.querySelector('#chatHeaderActions');
         this.headerSupportToggle = this.chatWindow.querySelector('#chatHeaderSupportBtn');
+        this.syncUserMessageViewportPadding();
         this.syncSupportShellState();
         this.scheduleSupportPanelPrewarm();
         this.bindUserEvents();
@@ -22038,6 +22257,10 @@ class ChatWidget {
             this._setChatWindowDockBottom(null);
             this._setChatWindowDockHeight(dockHeight);
             this._setChatTranslateVars('-50%', deltaY);
+            this.syncUserMessageViewportPadding();
+            if (!this.isAdmin && this.isOpen) {
+                this.scrollToBottom({ settle: true });
+            }
             return;
         }
         const dockBottom = Math.max(0, bottomInset);
@@ -22045,6 +22268,10 @@ class ChatWidget {
         this._setChatWindowDockHeight(null);
         this._setChatWindowDockBottom(dockBottom);
         this._setChatTranslateVars('0px', 0);
+        this.syncUserMessageViewportPadding();
+        if (!this.isAdmin && this.isOpen) {
+            this.scrollToBottom({ settle: true });
+        }
     }
 
     _scheduleUndock() {
@@ -22468,6 +22695,10 @@ class ChatWidget {
                     }
                 });
             }
+            this.syncUserMessageViewportPadding();
+            if (!this.isAdmin && this.isOpen) {
+                this.scrollToBottom({ settle: true });
+            }
         }
 
         if (this.overlay) {
@@ -22482,7 +22713,7 @@ class ChatWidget {
         const optimisticCreatedAt = new Date().toISOString();
 
         // Optimistic UI update
-        this.appendMessage(text, this.getMessageRenderType(false), 'text', optimisticCreatedAt);
+        this.appendMessage(text, this.getMessageRenderType(false), 'text', optimisticCreatedAt, true);
         this.input.value = '';
 
         const autoSupportAssistPromise = this.maybeRunAutoSupportAssist(text).catch((error) => {
@@ -22514,6 +22745,10 @@ class ChatWidget {
                 message_type: 'text',
                 created_at: optimisticCreatedAt
             });
+            if (!userId) {
+                this.markGuestUserMessageFallbackConversationSeen(true);
+                this.startGuestUserMessageFallbackPolling({ reason: 'guest_message_sent' });
+            }
         } catch (err) {
             console.error('Error sending message:', err);
             // Could add retry logic or error indicator here
@@ -22585,7 +22820,7 @@ class ChatWidget {
             const optimisticCreatedAt = new Date().toISOString();
 
             // Optimistic UI for Image
-            this.appendMessage(publicUrl, this.getMessageRenderType(false), 'image', optimisticCreatedAt);
+            this.appendMessage(publicUrl, this.getMessageRenderType(false), 'image', optimisticCreatedAt, true);
 
             await this.supabase
                 .from('chat_messages')
@@ -22707,7 +22942,7 @@ class ChatWidget {
 
         // Only scroll for new messages (not history batch loads)
         if (isNewMessage) {
-            this.scrollToBottom();
+            this.scrollToBottom({ settle: true });
         }
     }
 
@@ -22793,6 +23028,171 @@ class ChatWidget {
         return (Array.isArray(data) ? data : []).slice().reverse();
     }
 
+    isGuestUserMessageFallbackEligible() {
+        if (this.isAdmin || this.currentUser?.id || !this.supabase?.from) return false;
+        return this.getActiveUserSessionIds().some((sessionId) => String(sessionId || '').startsWith('guest_'));
+    }
+
+    markGuestUserMessageFallbackConversationSeen(messages = []) {
+        if (Array.isArray(messages) ? messages.length > 0 : Boolean(messages)) {
+            this.userMessageFallbackConversationSeen = true;
+        }
+        return this.userMessageFallbackConversationSeen;
+    }
+
+    hasGuestUserMessageFallbackConversation() {
+        if (this.userMessageFallbackConversationSeen) return true;
+        const sessionIds = this.getActiveUserSessionIds();
+        if (!sessionIds.length) return false;
+        const cacheKey = this.getSessionCacheKey(sessionIds);
+        const cachedMessages = this.userHistoryCache.get(cacheKey) || this.restoreUserHistorySnapshot(sessionIds);
+        return this.markGuestUserMessageFallbackConversationSeen(cachedMessages);
+    }
+
+    startGuestUserMessageFallbackPolling({ reason = 'init' } = {}) {
+        if (!this.isGuestUserMessageFallbackEligible()) {
+            this.stopGuestUserMessageFallbackPolling();
+            return;
+        }
+        if (!this.hasGuestUserMessageFallbackConversation()) return;
+        if (this.userMessageFallbackPollTimer) return;
+
+        this.userMessageFallbackPollTimer = setInterval(() => {
+            void this.pollGuestSupportReplies(reason);
+        }, CHAT_GUEST_REPLY_POLL_INTERVAL_MS);
+    }
+
+    stopGuestUserMessageFallbackPolling() {
+        if (this.userMessageFallbackPollTimer) {
+            clearInterval(this.userMessageFallbackPollTimer);
+            this.userMessageFallbackPollTimer = null;
+        }
+        this.userMessageFallbackPolling = false;
+    }
+
+    async fetchUserAdminMessagesAfter(sessionIds = [], afterCreatedAt = '') {
+        const normalizedSessionIds = [...new Set((Array.isArray(sessionIds) ? sessionIds : []).filter(Boolean))];
+        if (!normalizedSessionIds.length) return [];
+
+        let query = this.supabase
+            .from('chat_messages')
+            .select('session_id, content, is_admin, message_type, created_at')
+            .eq('is_admin', true);
+        query = this.queryForCurrentSite(query, this.getCurrentSite());
+
+        query = normalizedSessionIds.length === 1
+            ? query.eq('session_id', normalizedSessionIds[0])
+            : query.in('session_id', normalizedSessionIds);
+
+        const normalizedAfter = String(afterCreatedAt || '').trim();
+        if (normalizedAfter && Number.isFinite(Date.parse(normalizedAfter))) {
+            query = query.gt('created_at', normalizedAfter);
+        }
+
+        const { data, error } = await query
+            .order('created_at', { ascending: true })
+            .limit(CHAT_GUEST_REPLY_POLL_LIMIT);
+        if (error) throw error;
+        return Array.isArray(data) ? data : [];
+    }
+
+    advanceUserMessageFallbackCursor(messages = []) {
+        const currentCursorTime = Date.parse(this.userMessageFallbackLastSeenAt || '');
+        let latestTime = Number.isFinite(currentCursorTime) ? currentCursorTime : 0;
+        let latestCreatedAt = this.userMessageFallbackLastSeenAt || '';
+
+        (Array.isArray(messages) ? messages : []).forEach((message) => {
+            const createdAt = String(message?.created_at || '').trim();
+            const createdTime = Date.parse(createdAt || '');
+            if (!createdAt || !Number.isFinite(createdTime) || createdTime < latestTime) return;
+            latestTime = createdTime;
+            latestCreatedAt = createdAt;
+        });
+
+        if (latestCreatedAt) {
+            this.userMessageFallbackLastSeenAt = latestCreatedAt;
+        }
+    }
+
+    getSupportReplyDeliveryKey(message = {}) {
+        return this.getUserHistoryMessageSignature(message);
+    }
+
+    markSupportReplyDeliveryHandled(message = {}) {
+        const key = this.getSupportReplyDeliveryKey(message);
+        if (!key) return;
+        this.userMessageFallbackHandledKeys.add(key);
+        while (this.userMessageFallbackHandledKeys.size > 80) {
+            const oldestKey = this.userMessageFallbackHandledKeys.values().next().value;
+            this.userMessageFallbackHandledKeys.delete(oldestKey);
+        }
+    }
+
+    isSupportReplyDeliveryHandled(message = {}) {
+        const key = this.getSupportReplyDeliveryKey(message);
+        return Boolean(key && this.userMessageFallbackHandledKeys.has(key));
+    }
+
+    handleIncomingSupportReply(message = {}, { source = 'realtime' } = {}) {
+        const activeSessionIds = this.getActiveUserSessionIds();
+        const normalizedSessionId = String(message?.session_id || '').trim();
+        if (!normalizedSessionId || !activeSessionIds.includes(normalizedSessionId) || !message?.is_admin) {
+            return false;
+        }
+
+        this.advanceUserMessageFallbackCursor([message]);
+        const alreadyHandled = this.isSupportReplyDeliveryHandled(message);
+        if (alreadyHandled) {
+            return false;
+        }
+
+        const insertedIntoCache = this.upsertUserHistoryCacheEntry(message);
+        if (insertedIntoCache) {
+            this.appendMessage(
+                message.content,
+                this.getMessageRenderType(message.is_admin),
+                message.message_type,
+                message.created_at,
+                true
+            );
+        }
+
+        void this.checkAdminStatus();
+        const messageContent = message.message_type === 'image' ? '📷 发送了一张图片' : message.content;
+        this.showNotification(messageContent, '💬 客服', false, {
+            dedupeKey: this.getSupportReplyPreviewDedupeKey(message),
+            actionLabel: '查看消息'
+        });
+        this.markSupportReplyDeliveryHandled(message);
+        return true;
+    }
+
+    async pollGuestSupportReplies(reason = 'poll') {
+        if (this.userMessageFallbackPolling) return;
+        if (!this.isGuestUserMessageFallbackEligible()) {
+            this.stopGuestUserMessageFallbackPolling();
+            return;
+        }
+
+        this.userMessageFallbackPolling = true;
+        try {
+            const messages = await this.fetchUserAdminMessagesAfter(
+                this.getActiveUserSessionIds(),
+                this.userMessageFallbackLastSeenAt
+            );
+            if (messages.length) {
+                this.advanceUserMessageFallbackCursor(messages);
+                messages.forEach((message) => {
+                    this.handleIncomingSupportReply(message, { source: 'guest_poll', reason });
+                });
+            }
+        } catch (error) {
+            console.warn('[ChatWidget] Guest support reply polling failed:', error?.message || error);
+        } finally {
+            this.userMessageFallbackPolling = false;
+        }
+    }
+
     scheduleUserHistorySync(sessionIds = [], cacheKey = '', requestId = 0) {
         this.clearUserHistorySyncHandle();
 
@@ -22824,6 +23224,8 @@ class ChatWidget {
 
             this.userHistoryCache.set(cacheKey, fullHistory);
             this.persistUserHistorySnapshot(sessionIds, fullHistory);
+            this.markGuestUserMessageFallbackConversationSeen(fullHistory);
+            this.advanceUserMessageFallbackCursor(fullHistory);
 
             if (shouldRenderFullHistory) {
                 this.renderUserHistoryMessages(fullHistory);
@@ -22841,7 +23243,7 @@ class ChatWidget {
         const normalizedSessionId = String(message?.session_id || '').trim();
         const normalizedCreatedAt = String(message?.created_at || '').trim();
         if (!activeSessionIds.includes(normalizedSessionId) || !normalizedCreatedAt) {
-            return;
+            return false;
         }
 
         const cacheKey = this.getSessionCacheKey(activeSessionIds);
@@ -22857,7 +23259,7 @@ class ChatWidget {
             && Boolean(item?.is_admin) === Boolean(message?.is_admin)
         ));
         if (alreadyExists) {
-            return;
+            return false;
         }
 
         const nextMessages = [...(Array.isArray(cachedMessages) ? cachedMessages : []), {
@@ -22870,6 +23272,7 @@ class ChatWidget {
 
         this.userHistoryCache.set(cacheKey, nextMessages);
         this.persistUserHistorySnapshot(activeSessionIds, nextMessages);
+        return true;
     }
 
     escapeHtml(text) {
@@ -22878,8 +23281,33 @@ class ChatWidget {
         return div.innerHTML;
     }
 
-    scrollToBottom() {
-        this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+    scrollToBottom({ settle = false } = {}) {
+        const messagesContainer = this.messagesContainer;
+        if (!messagesContainer) return;
+
+        const applyBottomScroll = () => {
+            if (this.messagesContainer !== messagesContainer) return;
+            this.syncUserMessageViewportPadding();
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        };
+        const scheduleFrame = (callback) => {
+            if (typeof requestAnimationFrame === 'function') {
+                requestAnimationFrame(callback);
+                return;
+            }
+            setTimeout(callback, 0);
+        };
+
+        applyBottomScroll();
+
+        if (!settle) return;
+
+        scheduleFrame(() => {
+            applyBottomScroll();
+            scheduleFrame(applyBottomScroll);
+        });
+        setTimeout(applyBottomScroll, 80);
+        setTimeout(applyBottomScroll, 220);
     }
 
     subscribeToMessages() {
@@ -22898,28 +23326,8 @@ class ChatWidget {
                     filter: this.getCurrentSiteRealtimeFilter()
                 },
                 (payload) => {
-                    const activeSessionIds = this.getActiveUserSessionIds();
-                    if (!activeSessionIds.includes(payload.new.session_id)) {
-                        return;
-                    }
-
-                    // Only append if it's NOT from us (avoid duplicate since we did optimistic UI)
-                    // Or check if is_admin is true
                     if (payload.new.is_admin) {
-                        // Real-time message - animate with isNewMessage=true
-                        this.appendMessage(
-                            payload.new.content,
-                            this.getMessageRenderType(payload.new.is_admin),
-                            payload.new.message_type,
-                            payload.new.created_at,
-                            true
-                        );
-                        this.upsertUserHistoryCacheEntry(payload.new);
-                        void this.checkAdminStatus();
-
-                        // Show cute notification if chat is closed
-                        const messageContent = payload.new.message_type === 'image' ? '📷 发送了一张图片' : payload.new.content;
-                        this.showNotification(messageContent, '💬 客服');
+                        this.handleIncomingSupportReply(payload.new, { source: 'realtime' });
                     }
                 }
             ),
@@ -22947,6 +23355,9 @@ class ChatWidget {
             if (Array.isArray(cachedHistory) && cachedHistory.length) {
                 this.clearUserHistoryLoadFailsafeTimer();
                 this.userHistoryCache.set(cacheKey, cachedHistory);
+                this.markGuestUserMessageFallbackConversationSeen(cachedHistory);
+                this.advanceUserMessageFallbackCursor(cachedHistory);
+                this.startGuestUserMessageFallbackPolling({ reason: 'history_cache' });
                 this.renderUserHistoryMessages(cachedHistory);
                 this._setMessagesContainerMinHeight(null);
                 this.scrollToBottom();
@@ -22976,6 +23387,9 @@ class ChatWidget {
 
             this.userHistoryCache.set(cacheKey, recentHistory);
             this.persistUserHistorySnapshot(sessionIds, recentHistory);
+            this.markGuestUserMessageFallbackConversationSeen(recentHistory);
+            this.advanceUserMessageFallbackCursor(recentHistory);
+            this.startGuestUserMessageFallbackPolling({ reason: 'history_loaded' });
             this.renderUserHistoryMessages(recentHistory);
             this._setMessagesContainerMinHeight(null);
             this.scrollToBottom();

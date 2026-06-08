@@ -488,7 +488,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
             violations.push(`${relativePath} is missing css/chat-widget.css`);
         }
 
-        if (!source.includes('css/chat-widget.css?v=20260608_CHAT_USER_BUBBLE_DARK_1')) {
+        if (!source.includes('css/chat-widget.css?v=20260609_CHAT_KEYBOARD_GAP_1')) {
             violations.push(`${relativePath} should cache-bust the scroll-lock chat widget stylesheet`);
         }
 
@@ -518,7 +518,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260608_CHAT_USER_BUBBLE_DARK_1';",
+        "const VERSION = '20260609_CHAT_KEYBOARD_GAP_1';",
         "const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';",
         'function ensurePlaceholderPlacementStyles() {',
         '/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */',
@@ -547,7 +547,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'body.chat-widget-bootstrap-scroll-locked',
         "const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';",
         "const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';",
-        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260608_CHAT_USER_BUBBLE_DARK_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';",
+        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260609_CHAT_KEYBOARD_GAP_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';",
         "const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';",
         'function getChatWidgetConstructor() {',
         'global.ChatWidget = ChatWidget;',
@@ -1106,6 +1106,14 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         '_setChatWindowDockHeight(heightPx)',
         '_setChatWindowDockBottom(bottomPx)',
         '_setMessagesContainerMinHeight(heightPx)',
+        'syncUserMessageViewportPadding()',
+        "'--chat-messages-bottom-safe-space'",
+        'scrollToBottom({ settle = false } = {})',
+        "this.appendMessage(text, this.getMessageRenderType(false), 'text', optimisticCreatedAt, true);",
+        "this.appendMessage(publicUrl, this.getMessageRenderType(false), 'image', optimisticCreatedAt, true);",
+        ".chat-window:not(.admin-mode-layout) .chat-messages::before",
+        'flex: 1 1 auto;',
+        'setTimeout(applyBottomScroll, 220);',
         '_setSessionItemHidden(item, hidden)',
         '_runChatCloseChromeCleanup()',
         'this._closeChromeCleanupStarted = false;',
@@ -1219,6 +1227,11 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
     for (const marker of removedRuntimeMarkers) {
         assert.equal(chatWidgetSource.includes(marker), false, `js/components/ChatWidget.js should not contain ${marker}`);
     }
+    assert.equal(
+        chatWidgetSource.includes('keyboardGuard'),
+        false,
+        'focused mobile chat input should not add a fixed spacer above the composer'
+    );
     assert.doesNotMatch(
         chatWidgetSource,
         /body\.chat-spotlight-suspended[\s\S]{0,260}opacity:\s*0 !important/,
@@ -1291,6 +1304,9 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         '--chat-mobile-fab-glass-border: rgba(15, 23, 42, 0.065);',
         '--chat-support-primary-bg: rgba(107, 158, 206, 0.82);',
         '/* 20260428_PUBLIC_TOUCH_PAN_LOCK_1 */',
+        'padding-bottom: max(20px, var(--chat-messages-bottom-safe-space, 20px));',
+        'scroll-padding-bottom: var(--chat-messages-bottom-safe-space, 20px);',
+        '.chat-window:not(.admin-mode-layout) .chat-messages::before',
         '.chat-messages.chat-messages--height-locked',
         '.chat-overlay.chat-overlay--frozen',
         '.poetry-nav-container.chat-prompt-spotlight-suspended'
@@ -1387,7 +1403,7 @@ test('public chat and shop scroll panels clamp accidental horizontal pan', () =>
         'long chat messages should wrap instead of widening the chat pane'
     );
     assert.equal(
-        optionalEnhancementsSource.includes('css/chat-widget.css?v=20260608_CHAT_USER_BUBBLE_DARK_1'),
+        optionalEnhancementsSource.includes('css/chat-widget.css?v=20260609_CHAT_KEYBOARD_GAP_1'),
         true,
         'optional guestbook chat loader should request the Safari handoff chat FAB stylesheet'
     );
@@ -2087,7 +2103,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/chat-widget-loader.js?v=20260608_CHAT_USER_BUBBLE_DARK_1'),
+            source.includes('js/chat-widget-loader.js?v=20260609_CHAT_KEYBOARD_GAP_1'),
             true,
             'public entry pages should load the lazy chat widget bootstrap'
         );
