@@ -240,8 +240,8 @@ test('shared public overlays prevent nonessential component text selection', () 
     );
     [
         'css/profile-modal.css?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1',
-        'js/components/WalletModal.js?v=20260605_AFFILIATE_POSTER_AVATAR_PRIORITY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1',
-        'css/wallet.css?v=20260605_AFFILIATE_POSTER_AVATAR_PRIORITY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1'
+        'js/components/WalletModal.js?v=20260608_ORDER_GUIDANCE_COPY_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1',
+        'css/wallet.css?v=20260608_ORDER_GUIDANCE_COPY_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1'
     ].forEach((markerText) => {
         assert.equal(
             profileLoader.includes(markerText) || walletLoader.includes(markerText) || walletModal.includes(markerText),

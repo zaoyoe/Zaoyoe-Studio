@@ -231,8 +231,8 @@ test('wallet order usage instructions render through local sanitizer instead of 
     assert.match(styles, /\.wallet-order-guidance-content\s*\{[\s\S]*overflow-wrap:\s*anywhere;/);
     assert.match(styles, /\.wallet-order-guidance-content\s*\{[\s\S]*word-break:\s*break-word;/);
     assert.match(styles, /20260428_WALLET_ORDER_GUIDANCE_LIGHT_TEXT_1/);
-    assert.match(styles, /html:not\(\[data-theme="dark"\]\) \.wallet-order-guidance-content :not\(a\)[\s\S]*-webkit-text-fill-color:\s*#334155 !important;/);
-    assert.match(styles, /html:not\(\[data-theme="dark"\]\) \.wallet-order-guidance-content a \*[\s\S]*-webkit-text-fill-color:\s*#2563eb !important;/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) \.wallet-order-guidance-content,\s+html:not\(\[data-theme="dark"\]\) \.wallet-order-guidance-content :not\(a\)[\s\S]*-webkit-text-fill-color:\s*rgba\(23, 32, 51, 0\.74\) !important;/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) \.wallet-order-guidance-content a,\s+html:not\(\[data-theme="dark"\]\) \.wallet-order-guidance-content a \*[\s\S]*-webkit-text-fill-color:\s*#31506f !important;/);
 });
 
 test('wallet ledger details map check-in and rewards by reason instead of positive amount as recharge', () => {

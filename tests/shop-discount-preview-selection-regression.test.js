@@ -355,7 +355,7 @@ test('wallet-to-shop product jumps can prefill coupon assets before the live ref
     );
     assert.match(
         shopClientSource,
-        /const hasImmediateVisibleDiscountData = Boolean\(cachedDiscountAssetsPayload\)[\s\S]*prefilledOwnedDiscounts\.some\(\(item\) => item\?\.available !== false\)[\s\S]*discountAssetsLoading: !hasImmediateVisibleDiscountData/s,
+        /const hasImmediateVisibleDiscountData = Boolean\(cachedDiscountAssetsPayload\)[\s\S]*prefilledOwnedDiscounts\.some\(\(item\) => item\?\.available !== false\)[\s\S]*discountAssetsLoading: soldOut \? false : !hasImmediateVisibleDiscountData/s,
         'opening the purchase modal should only skip the loading state when cached or immediately usable coupon data is already available'
     );
     assert.match(
@@ -507,12 +507,12 @@ test('shop product cards prefetch discount assets so direct product opens can re
     );
     assert.match(
         shopClientSource,
-        /const cachedDiscountAssetsPayload = this\.readDiscountAssetsCache\(this\.buildDiscountAssetsCacheKey\(/,
+        /const cachedDiscountAssetsPayload = soldOut \? null : this\.readDiscountAssetsCache\(this\.buildDiscountAssetsCacheKey\(/,
         'opening the purchase modal should consult the warm discount cache before showing a loading placeholder'
     );
     assert.match(
         shopClientSource,
-        /void this\.prefetchDiscountAssetsForProduct\(\{\s+productId,\s+productSkuId: selectedSkuId,\s+quantity: initialQuantity,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);[\s\S]*const cachedDiscountAssetsPayload = this\.readDiscountAssetsCache\(this\.buildDiscountAssetsCacheKey\(\{\s+productId,\s+productSkuId: selectedSkuId,[\s\S]*const hasImmediateVisibleDiscountData = Boolean\(cachedDiscountAssetsPayload\)/s,
+        /if \(!manualDelivery && !soldOut\) \{[\s\S]*void this\.prefetchDiscountAssetsForProduct\(\{\s+productId,\s+productSkuId: selectedSkuId,\s+quantity: initialQuantity,\s+agentId: this\.currentAgentId,\s+site: window\.SiteConfig\?\.site \|\| 'cn'\s+\}\);[\s\S]*\}[\s\S]*const cachedDiscountAssetsPayload = soldOut \? null : this\.readDiscountAssetsCache\(this\.buildDiscountAssetsCacheKey\(\{\s+productId,\s+productSkuId: selectedSkuId,[\s\S]*const hasImmediateVisibleDiscountData = Boolean\(cachedDiscountAssetsPayload\)/s,
         'purchase modal should kick off SKU-specific discount prefetch before opening and still treat cached discount data as immediately renderable'
     );
     assert.match(
@@ -527,7 +527,7 @@ test('switching purchase SKU immediately refreshes coupon availability for that 
 
     assert.match(
         shopClientSource,
-        /selectPurchaseSku: function \(skuId = ''\) \{[\s\S]*const cachedDiscountAssetsPayload = this\.readDiscountAssetsCache\(this\.buildCurrentPurchaseDiscountAssetsCacheKey\(\)\);[\s\S]*if \(cachedDiscountAssetsPayload\) \{[\s\S]*this\.currentPurchase\.availableDiscountAssets = Array\.isArray\(cachedDiscountAssetsPayload\?\.owned_discounts\)[\s\S]*this\.currentPurchase\.discountAssetsLoading = false;[\s\S]*\} else \{[\s\S]*this\.currentPurchase\.availableDiscountAssets = \[\];[\s\S]*this\.currentPurchase\.discountAssetsLoading = true;[\s\S]*if \(cachedDiscountAssetsPayload\) \{[\s\S]*return;[\s\S]*void this\.refreshPurchaseDiscountAssets\(\{ silent: true, forceLoading: true, clearCurrent: true \}\);/s,
+        /selectPurchaseSku: function \(skuId = ''\) \{[\s\S]*const cachedDiscountAssetsPayload = this\.currentPurchase\.soldOut[\s\S]*\? null[\s\S]*: this\.readDiscountAssetsCache\(this\.buildCurrentPurchaseDiscountAssetsCacheKey\(\)\);[\s\S]*if \(cachedDiscountAssetsPayload\) \{[\s\S]*this\.currentPurchase\.availableDiscountAssets = Array\.isArray\(cachedDiscountAssetsPayload\?\.owned_discounts\)[\s\S]*this\.currentPurchase\.discountAssetsLoading = false;[\s\S]*\} else \{[\s\S]*this\.currentPurchase\.availableDiscountAssets = \[\];[\s\S]*this\.currentPurchase\.discountAssetsLoading = this\.currentPurchase\.soldOut !== true;[\s\S]*if \(manualDelivery \|\| this\.currentPurchase\.soldOut\) \{[\s\S]*this\.currentPurchase\.discountAssetsLoading = false;[\s\S]*return;[\s\S]*if \(cachedDiscountAssetsPayload\) \{[\s\S]*return;[\s\S]*void this\.refreshPurchaseDiscountAssets\(\{ silent: true, forceLoading: true, clearCurrent: true \}\);/s,
         'selecting a SKU should reuse already loaded coupon assets for that spec and only sync unknown specs'
     );
     assert.match(
