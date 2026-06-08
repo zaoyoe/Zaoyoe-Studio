@@ -162,6 +162,59 @@ test('shared realtime guard keeps Pro-only subscriptions optional across public 
     }
 });
 
+test('guest customer chat replies keep a session-scoped polling fallback beside realtime', () => {
+    const chatWidget = readRepoFile('js/components/ChatWidget.js');
+    const chatSchema = readRepoFile('supabase/chat_schema.sql');
+
+    for (const marker of [
+        'const CHAT_GUEST_REPLY_POLL_INTERVAL_MS = 2500;',
+        'userMessageFallbackConversationSeen = false;',
+        'userMessageFallbackLastSeenAt = new Date().toISOString();',
+        'markGuestUserMessageFallbackConversationSeen(messages = [])',
+        'hasGuestUserMessageFallbackConversation()',
+        'startGuestUserMessageFallbackPolling({ reason = \'init\' } = {})',
+        'if (!this.hasGuestUserMessageFallbackConversation()) return;',
+        'stopGuestUserMessageFallbackPolling()',
+        'fetchUserAdminMessagesAfter(sessionIds = [], afterCreatedAt = \'\')',
+        ".eq('is_admin', true)",
+        ".gt('created_at', normalizedAfter)",
+        'handleIncomingSupportReply(message = {}, { source = \'realtime\' } = {})',
+        "this.handleIncomingSupportReply(payload.new, { source: 'realtime' });",
+        "this.handleIncomingSupportReply(message, { source: 'guest_poll', reason });",
+        "this.startGuestUserMessageFallbackPolling({ reason: 'init' });",
+        "this.startGuestUserMessageFallbackPolling({ reason: 'guest_message_sent' });",
+        'this.stopGuestUserMessageFallbackPolling();'
+    ]) {
+        assert.equal(chatWidget.includes(marker), true, `ChatWidget.js should contain ${marker}`);
+    }
+
+    assert.match(
+        chatWidget,
+        /isGuestUserMessageFallbackEligible\(\)[\s\S]*startsWith\('guest_'\)/,
+        'guest reply polling should only run for anonymous guest sessions'
+    );
+    assert.match(
+        chatWidget,
+        /fetchUserAdminMessagesAfter[\s\S]*queryForCurrentSite[\s\S]*session_id[\s\S]*order\('created_at', \{ ascending: true \}\)[\s\S]*limit\(CHAT_GUEST_REPLY_POLL_LIMIT\)/,
+        'guest reply polling should keep the same site/session scope as history reads'
+    );
+    assert.match(
+        chatWidget,
+        /handleIncomingSupportReply[\s\S]*upsertUserHistoryCacheEntry\(message\)[\s\S]*showNotification\(messageContent, '💬 客服'/,
+        'fallback replies should reuse the existing cache, append, unread, and notification path'
+    );
+    assert.match(
+        chatWidget,
+        /upsertUserHistoryCacheEntry\(message = \{\}\)[\s\S]*return false;[\s\S]*return true;/,
+        'history cache upserts should report whether the incoming reply was new so fallback and realtime can dedupe'
+    );
+    assert.match(
+        chatSchema,
+        /current_chat_session_id\(\)[\s\S]*x-session-id[\s\S]*Users can read their own chat messages/,
+        'guest chat history remains session-header scoped instead of widening public chat reads'
+    );
+});
+
 test('Admin Studio ops realtime is aggregated and falls back to dashboard refreshes', () => {
     const adminAnalyticsRuntime = readRepoFile('admin-analytics.js');
     const adminAnalyticsLifecycle = readRepoFile('js/admin-analytics-lifecycle.js');

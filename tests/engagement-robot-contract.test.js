@@ -1237,12 +1237,12 @@ test('public robot engagement feed is routed and consumed by ChatWidget', () => 
     assert.match(chatWidget, /this\.initEngagementRuntime\(\);\s*\n\s*\}/);
     assert.doesNotMatch(chatWidget, /initEngagementRuntime\(\) \{\s*if \(this\.isAdmin\) return;/);
     assert.doesNotMatch(chatWidget, /if \(this\.isAdmin \|\| this\.isOpen\) return;/);
-    assert.match(chatWidgetLoader, /20260608_CHAT_USER_BUBBLE_DARK_1/);
-    assert.match(chatWidgetLoader, /ChatWidget\.js\?v=20260608_CHAT_USER_BUBBLE_DARK_1/);
+    assert.match(chatWidgetLoader, /20260609_CHAT_KEYBOARD_GAP_1/);
+    assert.match(chatWidgetLoader, /ChatWidget\.js\?v=20260609_CHAT_KEYBOARD_GAP_1/);
     assert.match(chatWidgetLoader, /scheduleEngagementRuntimeWarm/);
     assert.match(chatWidgetLoader, /ensureChatWidgetReady\(\{ open: false \}\)/);
-    assert.match(indexHtml, /chat-widget-loader\.js\?v=20260608_CHAT_USER_BUBBLE_DARK_1/);
-    assert.match(promptsHtml, /chat-widget-loader\.js\?v=20260608_CHAT_USER_BUBBLE_DARK_1/);
+    assert.match(indexHtml, /chat-widget-loader\.js\?v=20260609_CHAT_KEYBOARD_GAP_1/);
+    assert.match(promptsHtml, /chat-widget-loader\.js\?v=20260609_CHAT_KEYBOARD_GAP_1/);
     assert.match(chatWidget, /renderEngagementContentHtml/);
     assert.match(chatWidget, /engagement-preview__path-link/);
     assert.match(chatWidget, /ZaoyoeWalletModalBootstrap\?\.open/);
@@ -1301,7 +1301,23 @@ test('public robot engagement feed is routed and consumed by ChatWidget', () => 
     assert.match(chatWidgetCss, /--engagement-bubble-mobile-max-width:\s*320px/);
     assert.match(chatWidgetCss, /min-width:\s*min\(var\(--engagement-bubble-desktop-min-width, 220px\),\s*calc\(100vw - 48px\)\)/);
     assert.match(chatWidgetCss, /max-width:\s*min\(var\(--engagement-bubble-desktop-max-width, 380px\),\s*var\(--engagement-bubble-max-width, 520px\),\s*calc\(100vw - 48px\)\)/);
+    assert.match(chatWidgetCss, /--chat-preview-bg:\s*rgba\(255, 255, 255, 0\.78\)/);
+    assert.match(chatWidgetCss, /--chat-preview-filter:\s*blur\(22px\) saturate\(150%\)/);
+    assert.match(chatWidgetCss, /--engagement-bubble-glass-bg:\s*var\(--chat-preview-bg\)/);
+    assert.match(chatWidgetCss, /\.chat-widget-fab \.message-preview \{[\s\S]*background: var\(--chat-preview-bg\);[\s\S]*backdrop-filter: var\(--chat-preview-filter, blur\(22px\) saturate\(150%\)\);[\s\S]*box-shadow: var\(--chat-preview-shadow\);/);
+    assert.match(chatWidgetCss, /body\.shop-page \.chat-widget-fab:has\(\.message-preview\.engagement-preview\),[\s\S]*body\.shop-page \.chat-widget-fab:has\(\.message-preview\.engagement-preview\):active,[\s\S]*\{[\s\S]*background: transparent !important;[\s\S]*backdrop-filter: none !important;[\s\S]*isolation: auto;/);
+    assert.match(chatWidgetCss, /body\.shop-page \.chat-widget-fab:has\(\.message-preview\.engagement-preview\)\.chat-widget-fab--peek \.chat-widget-fab__robot,[\s\S]*body\.shop-page \.chat-widget-fab:has\(\.message-preview\.engagement-preview\)\.chat-widget-fab--peek:active \.chat-widget-fab__robot,[\s\S]*height: 56px !important;[\s\S]*backdrop-filter: var\(--shop-mobile-floating-glass-filter[\s\S]*transform: none !important;[\s\S]*opacity: 1 !important;/);
+    assert.match(chatWidgetLoader, /body\.shop-page \.chat-widget-fab:has\(\.message-preview\.engagement-preview\),[\s\S]*body\.shop-page \.chat-widget-fab:has\(\.message-preview\.engagement-preview\):active,[\s\S]*\{[\s\S]*background: transparent !important;[\s\S]*backdrop-filter: none !important;[\s\S]*isolation: auto;/);
+    assert.match(chatWidgetLoader, /body\.shop-page \.chat-widget-fab:has\(\.message-preview\.engagement-preview\)\.chat-widget-fab--peek \.chat-widget-fab__robot,[\s\S]*body\.shop-page \.chat-widget-fab:has\(\.message-preview\.engagement-preview\)\.chat-widget-fab--peek:active \.chat-widget-fab__robot,[\s\S]*height: 56px !important;[\s\S]*backdrop-filter: var\(--shop-mobile-floating-glass-filter[\s\S]*transform: none !important;[\s\S]*opacity: 1 !important;/);
+    assert.match(chatWidgetCss, /body\.shop-page \.chat-widget-fab:active \.message-preview\.engagement-preview,[\s\S]*background: var\(--chat-preview-bg, rgba\(255, 255, 255, 0\.78\)\) !important;[\s\S]*backdrop-filter: var\(--chat-preview-filter, blur\(22px\) saturate\(150%\)\) !important;[\s\S]*opacity: 1 !important;[\s\S]*filter: none !important;/);
+    assert.match(chatWidgetLoader, /body\.shop-page \.chat-widget-fab:active \.message-preview\.engagement-preview,[\s\S]*background: var\(--chat-preview-bg, rgba\(255, 255, 255, 0\.78\)\) !important;[\s\S]*backdrop-filter: var\(--chat-preview-filter, blur\(22px\) saturate\(150%\)\) !important;[\s\S]*opacity: 1 !important;[\s\S]*filter: none !important;/);
     assert.match(chatWidgetCss, /\.engagement-preview \.preview-text\s*\{[\s\S]*font-size:\s*11\.5px[\s\S]*line-height:\s*1\.44/);
+    assert.match(chatWidget, /showMessagePreview\(message, senderName, options = \{\}\)/);
+    assert.match(chatWidget, /preview\.className = 'message-preview engagement-preview engagement-preview--info'/);
+    assert.match(chatWidget, /preview\.dataset\.engagementSource = 'chat_message'/);
+    assert.match(chatWidget, /<div class="engagement-preview__actions">[\s\S]*class="engagement-preview__action"[\s\S]*class="engagement-preview__close"/);
+    assert.match(chatWidget, /Auto-hide after 9 seconds, matching engagement rule bubbles/);
+    assert.doesNotMatch(chatWidget, /preview\.className = 'message-preview';/);
     assert.match(chatWidget, /source\.max_width_px \|\| source\.maxWidthPx \|\| 520/);
     assert.match(publicHandler, /max_width_px:\s*normalizeInteger\(source\.max_width_px \|\| source\.maxWidthPx, 520/);
     assert.match(chatWidgetCss, /overflow-wrap:\s*anywhere/);
@@ -1415,6 +1431,15 @@ test('customer robot subscribes to personal notifications in realtime', () => {
     assert.match(chatWidget, /getEngagementBridgeTriggerType\(item = \{\}\)/);
     assert.match(chatWidget, /getEngagementBridgeDedupeKey\(item = \{\}\)/);
     assert.match(chatWidget, /handleEngagementNotificationRealtime\(payload = \{\}\)/);
+    assert.match(chatWidget, /robotBubblePreviewTimers = new Map\(\)/);
+    assert.match(chatWidget, /robotBubblePreviewHandledUntil = new Map\(\)/);
+    assert.match(chatWidget, /getSupportReplyPreviewDedupeKey\(source = \{\}\)/);
+    assert.match(chatWidget, /markRobotBubblePreviewHandled\(itemOrKey = \{\}, ttlMs = 2400\)/);
+    assert.match(chatWidget, /isRobotBubblePreviewDuplicateHandled\(item = \{\}\)/);
+    assert.match(chatWidget, /if \(this\.isRobotBubblePreviewDuplicateHandled\(normalized\)\) \{\s*return false;\s*\}\s*const activeKey = this\.engagementActiveItem \? this\.getEngagementItemKey\(this\.engagementActiveItem\) : ''/);
+    assert.match(chatWidget, /if \(this\.isRobotBubblePreviewDuplicateHandled\(item\)\) \{\s*return;\s*\}\s*const triggerType = this\.getSystemNotificationAutomationTriggerType\(item\)/);
+    assert.match(chatWidget, /this\.engagementActiveItem = normalized;\s*this\.markRobotBubblePreviewHandled\(normalized\);/);
+    assert.match(chatWidget, /this\.markRobotBubblePreviewHandled\(options\.dedupeKey, 10000\)/);
     assert.match(chatWidget, /this\.showRealtimeEngagementItem\(item, \{ source:\s*'system_notifications' \}\)/);
     assert.match(chatWidget, /if \(shown\) \{\s*this\.suppressEngagementItem\(item\);\s*return;\s*\}/);
     assert.match(chatWidget, /this\.getEngagementBridgeDedupeKey\(item\)/);
@@ -1422,6 +1447,9 @@ test('customer robot subscribes to personal notifications in realtime', () => {
     assert.match(chatWidget, /if \(nextUserId && nextUserId !== previousUserId\) \{\s*this\.beginEngagementAuthBurst\(10000, 1200\);\s*this\.schedulePendingEngagementFlush\(1400\);/);
     assert.match(chatWidget, /bootstrapEngagementPersonalSubscriptions\(\)/);
     assert.match(chatWidget, /const \[nextItem, \.\.\.backlogItems\] = item;\s*backlogItems\.forEach\(\(entry\) => \{\s*this\.queuePendingEngagementItem\(entry, \{\s*source: 'engagement_feed_backlog',\s*queued: true\s*\}\);/);
+    assert.match(chatWidget, /this\.handleIncomingSupportReply\(payload\.new, \{ source: 'realtime' \}\);/);
+    assert.match(chatWidget, /this\.showNotification\(messageContent, '💬 客服', false, \{\s*dedupeKey: this\.getSupportReplyPreviewDedupeKey\(message\),\s*actionLabel: '查看消息'\s*\}\)/);
+    assert.doesNotMatch(chatWidget, /previewDelayMs: 260/);
 });
 
 test('customer robot reply actions reuse guestbook smart focus on the current guestbook page', () => {

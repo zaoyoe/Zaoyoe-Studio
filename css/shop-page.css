@@ -22,7 +22,6 @@
             --shop-media-accent: #5f8fc7;
             --shop-media-shell-bg: #e8f2ff;
             --shop-skeleton-shell-bg: #f1f7ff;
-            --shop-mobile-browser-chrome-bottom-gap: 0px;
             --app-modal-backdrop: rgba(31, 76, 118, 0.20);
             --app-modal-backdrop-filter: blur(8px) saturate(108%);
             --public-light-modal-backdrop: var(--app-modal-backdrop);
@@ -7125,6 +7124,20 @@ html:not([data-theme="dark"]) body.shop-page .shop-cart-anchor__hint {
         isolation: isolate;
     }
 
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview),
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview):hover,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview):active,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview):focus,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview):focus-visible {
+        border-color: transparent !important;
+        background: transparent !important;
+        background-color: transparent !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        box-shadow: none !important;
+        isolation: auto;
+    }
+
     body.shop-page .shop-cart-anchor {
         left: auto;
         right: 16px;
@@ -7177,6 +7190,29 @@ html:not([data-theme="dark"]) body.shop-page .shop-cart-anchor__hint {
         right: 12px;
         top: 42px;
         opacity: 0.1;
+    }
+
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview).chat-widget-fab--peek .chat-widget-fab__robot,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview).chat-widget-fab--peek:active .chat-widget-fab__robot,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview).chat-widget-fab--peek:focus .chat-widget-fab__robot,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview).chat-widget-fab--peek:focus-visible .chat-widget-fab__robot,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview).chat-widget-fab--peek.chat-widget-fab--ambient-retracted .chat-widget-fab__robot,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview).chat-widget-fab--peek.chat-widget-fab--ambient-retracted:active .chat-widget-fab__robot,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview).chat-widget-fab--peek.chat-widget-fab--ambient-retracted:focus .chat-widget-fab__robot,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview).chat-widget-fab--peek.chat-widget-fab--ambient-retracted:focus-visible .chat-widget-fab__robot {
+        top: 0 !important;
+        height: 56px !important;
+        border: 1px solid var(--shop-mobile-floating-glass-border) !important;
+        border-radius: 18px !important;
+        background: var(--shop-mobile-floating-glass-bg) !important;
+        background-color: var(--shop-mobile-floating-glass-bg) !important;
+        backdrop-filter: var(--shop-mobile-floating-glass-filter) !important;
+        -webkit-backdrop-filter: var(--shop-mobile-floating-glass-filter) !important;
+        box-shadow: var(--shop-mobile-floating-glass-shadow) !important;
+        box-sizing: border-box;
+        transform: none !important;
+        filter: none !important;
+        opacity: 1 !important;
     }
 
     body.shop-page .shop-cart-anchor::before,
@@ -7923,10 +7959,6 @@ html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card--collapsi
 
 @supports (-webkit-touch-callout: none) {
     @media (max-width: 720px) {
-        body.shop-page {
-            --shop-mobile-browser-chrome-bottom-gap: 64px;
-        }
-
         html:not([data-theme="dark"]) body.shop-page .framer-nav {
             background-color: rgba(255, 255, 255, 0.76) !important;
             backdrop-filter: var(--glass-blur, blur(10px)) !important;
@@ -7957,7 +7989,7 @@ html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card--collapsi
         }
 
         body.shop-page .shop-cart-anchor {
-            bottom: calc(env(safe-area-inset-bottom, 0px) + var(--shop-mobile-browser-chrome-bottom-gap, 64px) + 108px);
+            bottom: calc(env(safe-area-inset-bottom, 0px) + 108px);
             backdrop-filter: var(--shop-mobile-floating-glass-filter) !important;
             -webkit-backdrop-filter: var(--shop-mobile-floating-glass-filter) !important;
         }
@@ -7967,7 +7999,7 @@ html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card--collapsi
         }
 
         body.shop-page .chat-widget-fab {
-            bottom: calc(env(safe-area-inset-bottom, 0px) + var(--shop-mobile-browser-chrome-bottom-gap, 64px) + 40px) !important;
+            bottom: calc(env(safe-area-inset-bottom, 0px) + 40px) !important;
         }
 
         html:not([data-theme="dark"]) body.shop-page .shop-cart-anchor,
@@ -8021,6 +8053,20 @@ html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card--collapsi
         transform: none !important;
     }
 
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview),
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview):hover,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview):active,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview):focus,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview):focus-visible {
+        border-color: transparent !important;
+        background: transparent !important;
+        background-color: transparent !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        box-shadow: none !important;
+        isolation: auto;
+    }
+
     body.shop-page .chat-widget-fab.chat-widget-fab--peek .chat-widget-fab__robot,
     body.shop-page .chat-widget-fab.chat-widget-fab--peek.chat-widget-fab--ambient-retracted .chat-widget-fab__robot {
         top: 5px !important;
@@ -8060,6 +8106,29 @@ html:not([data-theme="dark"]) body.shop-page .shop-discount-asset-card--collapsi
     body.shop-page .chat-widget-fab.chat-widget-fab--peek:hover .chat-widget-fab__shadow {
         opacity: 0.1;
         transform: scaleX(0.82);
+    }
+
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview).chat-widget-fab--peek .chat-widget-fab__robot,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview).chat-widget-fab--peek:active .chat-widget-fab__robot,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview).chat-widget-fab--peek:focus .chat-widget-fab__robot,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview).chat-widget-fab--peek:focus-visible .chat-widget-fab__robot,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview).chat-widget-fab--peek.chat-widget-fab--ambient-retracted .chat-widget-fab__robot,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview).chat-widget-fab--peek.chat-widget-fab--ambient-retracted:active .chat-widget-fab__robot,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview).chat-widget-fab--peek.chat-widget-fab--ambient-retracted:focus .chat-widget-fab__robot,
+    body.shop-page .chat-widget-fab:has(.message-preview.engagement-preview).chat-widget-fab--peek.chat-widget-fab--ambient-retracted:focus-visible .chat-widget-fab__robot {
+        top: 0 !important;
+        height: 56px !important;
+        border: 1px solid var(--shop-mobile-floating-glass-border) !important;
+        border-radius: 18px !important;
+        background: var(--shop-mobile-floating-glass-bg) !important;
+        background-color: var(--shop-mobile-floating-glass-bg) !important;
+        backdrop-filter: var(--shop-mobile-floating-glass-filter) !important;
+        -webkit-backdrop-filter: var(--shop-mobile-floating-glass-filter) !important;
+        box-shadow: var(--shop-mobile-floating-glass-shadow) !important;
+        box-sizing: border-box;
+        transform: none !important;
+        filter: none !important;
+        opacity: 1 !important;
     }
 }
 

@@ -210,6 +210,16 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         /css\/shop-page\.css\?v=20260520_SHOP_CARD_PROMPT_BREATHE_3&shopProductSkus=20260523_SHOP_PRODUCT_SKUS_1/,
         'shop.html should bust the shop stylesheet cache after updating purchase guidance light-theme color visibility'
     );
+    assert.equal(
+        shopHtmlSource.includes('shopRobotMobileDock=20260608_SHOP_ROBOT_MOBILE_DOCK_1'),
+        true,
+        'shop.html should bust the shop stylesheet cache after aligning the mobile customer-service robot dock'
+    );
+    assert.equal(
+        shopHtmlSource.includes('shopFloatingMobileDock=20260608_SHOP_FLOATING_MOBILE_DOCK_1'),
+        true,
+        'shop.html should bust shop floating CSS and JS after removing the mobile browser-chrome lift'
+    );
     assert.match(
         shopHtmlSource,
         /<meta name="viewport" content="width=device-width, initial-scale=1\.0, interactive-widget=resizes-visual">[\s\S]*<meta name="theme-color" content="#eef2f7">[\s\S]*<meta name="site-theme-chrome-color" content="#eef2f7" data-light="#eef2f7" data-dark="#000000">[\s\S]*js\/theme-preload\.js\?v=20260503_MODAL_CHROME_CLOSE_1/,
@@ -466,6 +476,16 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopCssSource,
+        /body\.shop-page \.chat-widget-fab:has\(\.message-preview\.engagement-preview\),[\s\S]*body\.shop-page \.chat-widget-fab:has\(\.message-preview\.engagement-preview\):active,[\s\S]*\{[\s\S]*background: transparent !important;[\s\S]*backdrop-filter: none !important;[\s\S]*box-shadow: none !important;/s,
+        'shop robot should keep the outer floating shell transparent while an engagement rule bubble is attached'
+    );
+    assert.match(
+        shopCssSource,
+        /body\.shop-page \.chat-widget-fab:has\(\.message-preview\.engagement-preview\)\.chat-widget-fab--peek \.chat-widget-fab__robot,[\s\S]*body\.shop-page \.chat-widget-fab:has\(\.message-preview\.engagement-preview\)\.chat-widget-fab--peek:active \.chat-widget-fab__robot,[\s\S]*height: 56px !important;[\s\S]*background: var\(--shop-mobile-floating-glass-bg\) !important;[\s\S]*transform: none !important;[\s\S]*opacity: 1 !important;/s,
+        'shop robot engagement rule bubble should not shrink or turn transparent while pressed'
+    );
+    assert.match(
+        shopCssSource,
         /\.shop-cart-anchor__badge \{\s+display: none;\s+\}[\s\S]*\.shop-cart-anchor__badge \{[\s\S]*position: absolute;[\s\S]*min-width: 18px;[\s\S]*background: rgba\(217, 119, 6, 0\.94\);[\s\S]*\.shop-cart-anchor__badge\[hidden\] \{[\s\S]*display: none !important;/s,
         'mobile cart icon should show an elegant count badge'
     );
@@ -481,8 +501,13 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopCssSource,
-        /\.shop-cart-anchor__icon i \{[\s\S]*font-size: 24px;[\s\S]*@supports \(-webkit-touch-callout: none\) \{[\s\S]*body\.shop-page \{[\s\S]*--shop-mobile-browser-chrome-bottom-gap: 64px;[\s\S]*body\.shop-page \.shop-cart-anchor \{[\s\S]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ var\(--shop-mobile-browser-chrome-bottom-gap, 64px\) \+ 108px\);[\s\S]*backdrop-filter: var\(--shop-mobile-floating-glass-filter\) !important;[\s\S]*body\.shop-page \.chat-widget-fab \{[\s\S]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ var\(--shop-mobile-browser-chrome-bottom-gap, 64px\) \+ 40px\) !important;[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-cart-anchor,[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page \.chat-widget-fab \{[\s\S]*background: var\(--shop-mobile-floating-glass-bg\) !important;[\s\S]*box-shadow: var\(--shop-mobile-floating-glass-shadow\) !important;/s,
-        'iOS mobile floating layers should keep the glass containers above the Safari 26 bottom chrome sampling band'
+        /\.shop-cart-anchor__icon i \{[\s\S]*font-size: 24px;[\s\S]*@supports \(-webkit-touch-callout: none\) \{[\s\S]*body\.shop-page \.shop-cart-anchor \{[\s\S]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ 108px\);[\s\S]*backdrop-filter: var\(--shop-mobile-floating-glass-filter\) !important;[\s\S]*body\.shop-page \.chat-widget-fab \{[\s\S]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ 40px\) !important;[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-cart-anchor,[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page \.chat-widget-fab \{[\s\S]*background: var\(--shop-mobile-floating-glass-bg\) !important;[\s\S]*box-shadow: var\(--shop-mobile-floating-glass-shadow\) !important;/s,
+        'iOS mobile shop floating entries should stay in the same lower stack instead of adding browser-chrome lift'
+    );
+    assert.doesNotMatch(
+        shopCssSource,
+        /shop-mobile-browser-chrome-bottom-gap/,
+        'mobile shop floating entries should not keep the browser-chrome bottom-gap variable'
     );
     assert.match(
         shopCssSource,
@@ -524,10 +549,10 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         /lockCartDrawerThemeColor: function \(\) \{[\s\S]*data-shop-cart-theme-restore[\s\S]*metaTheme\.setAttribute\('content', this\.getThemeChromeColor\(\)\);[\s\S]*clearCartDrawerThemeColor: function \(options = \{\}\) \{[\s\S]*metaTheme\.removeAttribute\('content'\);[\s\S]*const restoreDelayMs = Math\.max\(50,[\s\S]*metaTheme\.setAttribute\('content', restoreContent\);[\s\S]*metaTheme\.removeAttribute\('data-shop-cart-theme-restore'\);[\s\S]*forceHideCartDrawerDuringClose: function \(\) \{[\s\S]*document\.body\.classList\.add\('shop-cart-force-hidden'\);[\s\S]*document\.body\.classList\.remove\('shop-cart-force-hidden'\);[\s\S]*setCartOpen: function \(open\) \{[\s\S]*if \(this\.cartOpen && !wasOpen\) \{[\s\S]*this\.releaseCartDrawerForceHidden\(\);[\s\S]*this\.lockCartDrawerThemeColor\(\);[\s\S]*\} else if \(!this\.cartOpen && wasOpen\) \{[\s\S]*this\.forceHideCartDrawerDuringClose\(\);[\s\S]*this\.clearCartDrawerThemeColor\(\{ restoreDelayMs: 320 \}\);/s,
         'cart drawer should use the chat-style immediate theme-color clear and repaint when the drawer closes'
     );
-    assert.match(
+    assert.doesNotMatch(
         shopClientSource,
-        /syncMobileBrowserChromeInset: function \(\) \{[\s\S]*const measuredGap = Math\.max\(0, layoutHeight - viewportBottom\);[\s\S]*const chromeGap = Math\.max\(64, Math\.min\(112, measuredGap\)\);[\s\S]*'--shop-mobile-browser-chrome-bottom-gap': value[\s\S]*bindMobileBrowserChromeInset: function \(\) \{[\s\S]*this\.syncMobileBrowserChromeInset\(\);[\s\S]*window\.visualViewport\?\.addEventListener\('resize', scheduleSync, \{ passive: true \}\);/s,
-        'shop-client.js should keep the mobile floating layer offset aligned with the visual viewport browser chrome inset'
+        /syncMobileBrowserChromeInset|bindMobileBrowserChromeInset|mobileBrowserChromeInset|shop-mobile-browser-chrome-bottom-gap/,
+        'shop-client.js should not dynamically lift mobile floating entries above the shared lower dock'
     );
     assert.match(
         shopClientSource,
