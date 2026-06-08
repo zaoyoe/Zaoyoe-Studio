@@ -225,7 +225,22 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(guestbookHtml, /homepage-guestbook-modal\.js\?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1/);
     assert.match(adminStudioHtml, /admin-chat\.js\?v=20260514_CHAT_VERIFY_SUBMITTER_IDENTITY_1/);
     assert.match(adminStudioHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
-    assert.match(chatWidgetLoader, /const VERSION = '20260530_SHOP_CHAT_FLOATING_STACK_3';/);
+    assert.match(chatWidgetLoader, /const VERSION = '20260608_CHAT_USER_BUBBLE_DARK_1';/);
+    assert.match(
+        chatWidgetLoader,
+        /@media \(max-width: 700px\) and \(hover: hover\) and \(pointer: fine\) \{[\s\S]*\.chat-window:not\(\.admin-mode-layout\):not\(\[data-chat-widget-bootstrap-shell="1"\]\) \{[\s\S]*--chat-base-translate-y: -50%;[\s\S]*width: min\(460px, max\(97vw, calc\(100vw - 16px\)\)\) !important;[\s\S]*height: 70vh !important;[\s\S]*top: 50% !important;[\s\S]*transform-origin: center center !important;[\s\S]*\.chat-window:not\(\.admin-mode-layout\):not\(\[data-chat-widget-bootstrap-shell="1"\]\)\.active \{[\s\S]*transform: translate3d\(-50%, calc\(var\(--chat-base-translate-y, -50%\) \+ var\(--chat-shift-y, 0px\)\), 0\) scale\(1\) !important;/,
+        'critical chat widget CSS should center narrow desktop user windows on the final 460px geometry before runtime styles load'
+    );
+    assert.match(
+        chatWidgetLoader,
+        /@media \(max-width: 700px\) and \(hover: none\), \(max-width: 700px\) and \(pointer: coarse\) \{[\s\S]*\.chat-window:not\(\.admin-mode-layout\):not\(\[data-chat-widget-bootstrap-shell="1"\]\) \{[\s\S]*height: 70vh !important;[\s\S]*transform: translate3d\(-50%, calc\(-50% \+ 24px\), 0\) scale\(0\.94\) !important;/,
+        'critical chat widget CSS should reserve centered 70vh user windows for touch narrow screens'
+    );
+    assert.equal(
+        chatWidgetLoader.includes('@media (max-width: 700px) {\n    .chat-window:not(.admin-mode-layout):not([data-chat-widget-bootstrap-shell="1"])'),
+        false,
+        'critical chat widget CSS should not apply bare mobile user chat geometry to hover-fine narrow desktop windows'
+    );
     assert.match(chatWidgetLoader, /<div class="chat-header-actions">[\s\S]*<button type="button" class="chat-header-mode-switch" tabindex="-1">常用入口<\/button>/);
     assert.match(chatWidgetLoader, /chat-widget-bootstrap-user-input \.chat-widget-bootstrap-user-emoji-btn \{[\s\S]*background: transparent;[\s\S]*box-shadow: none;/);
     assert.match(chatWidgetLoader, /chat-widget-bootstrap-user-input \.chat-send-btn \{[\s\S]*width: auto;[\s\S]*flex: 0 0 auto;/);
@@ -292,7 +307,7 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(chatWidget, /\.chat-overlay\.visible\.chat-overlay--active \{[\s\S]*backdrop-filter: var\(--chat-overlay-filter/);
     assert.match(chatWidget, /\.chat-overlay\.chat-overlay--user \{[\s\S]*backdrop-filter: blur\(0\) saturate\(100%\) !important;/);
     assert.match(chatWidget, /html\[data-theme="light"\] \.chat-window:not\(\.admin-mode-layout\) \{[\s\S]*--chat-panel-shadow: none;[\s\S]*--chat-avatar-bg: rgba\(107, 158, 206, 0\.18\);/);
-    assert.match(chatWidget, /html\[data-theme="light"\] \.chat-window:not\(\.admin-mode-layout\) \.message\.user[\s\S]*box-shadow: 0 8px 18px rgba\(148, 163, 184, 0\.08\) !important;/);
+    assert.match(chatWidget, /html\[data-theme="light"\] \.chat-window:not\(\.admin-mode-layout\) \.message\.user[\s\S]*0 10px 22px rgba\(35, 118, 78, 0\.14\),[\s\S]*inset 0 1px 0 rgba\(255, 255, 255, 0\.42\) !important;/);
     assert.doesNotMatch(chatWidget, /body\.chat-widget-open \.framer-nav/);
     assert.doesNotMatch(chatWidget, /html\.chat-widget-open \{[\s\S]*background-color: #000 !important;/);
     assert.doesNotMatch(chatWidget, /body\.chat-spotlight-suspended[\s\S]{0,260}opacity:\s*0 !important/);
@@ -304,6 +319,21 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(chatWidgetCss, /\.chat-loading-state--user-handoff \{[\s\S]*margin: auto;[\s\S]*color: var\(--chat-accent-blue/);
     assert.match(chatWidgetCss, /\.chat-loading-dots span \{[\s\S]*animation: chat-widget-loading-dots 1\.05s ease-in-out infinite;/);
     assert.doesNotMatch(chatWidgetCss, /\.chat-window:not\(\.admin-mode-layout\) \.chat-input-handoff-skeleton \{/);
+    assert.match(
+        chatWidgetCss,
+        /@media \(max-width: 700px\) and \(hover: hover\) and \(pointer: fine\) \{[\s\S]*\.chat-window:not\(\.admin-mode-layout\) \{[\s\S]*--chat-base-translate-y: -50%;[\s\S]*width: min\(460px, max\(97vw, calc\(100vw - 16px\)\)\) !important;[\s\S]*height: 70vh !important;[\s\S]*top: 50% !important;[\s\S]*transform-origin: center center !important;[\s\S]*\.chat-window:not\(\.admin-mode-layout\)\.active \{[\s\S]*transform: translate3d\(-50%, calc\(var\(--chat-base-translate-y, -50%\) \+ var\(--chat-shift-y, 0px\)\), 0\) scale\(1\) !important;/,
+        'full chat widget CSS should keep the same centered 460px narrow desktop geometry after the deferred stylesheet activates'
+    );
+    assert.match(
+        chatWidgetCss,
+        /@media \(max-width: 480px\) and \(hover: none\), \(max-width: 480px\) and \(pointer: coarse\) \{[\s\S]*\.chat-window \{[\s\S]*width: 100%;[\s\S]*height: 100%;/,
+        'full chat widget CSS should reserve full-height mobile windows for touch narrow screens'
+    );
+    assert.equal(
+        chatWidgetCss.includes('@media (max-width: 480px) {\n    .chat-window {'),
+        false,
+        'full chat widget CSS should not treat hover-fine narrow desktop windows as phone-sized full-height chat windows'
+    );
     assert.match(chatWidgetCss, /html\[data-theme="light"\] \.chat-window:not\(\.admin-mode-layout\) \{[\s\S]*--chat-panel-shadow: none;[\s\S]*--chat-avatar-bg: rgba\(107, 158, 206, 0\.18\);/);
     assert.match(chatWidgetCss, /\.chat-window--bootstrap-adopting-content > \*:not\(\.chat-bootstrap-content-snapshot\)/);
     assert.match(chatWidgetCss, /\.chat-window--bootstrap-adopting-content\.chat-window--bootstrap-content-ready > \*:not\(\.emoji-picker-popover\):not\(\.chat-bootstrap-content-snapshot\)/);
@@ -313,5 +343,5 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(chatWidget, /\.chat-window--bootstrap-adopting-content\.chat-window--bootstrap-content-ready > \*:not\(\.emoji-picker-popover\):not\(\.chat-bootstrap-content-snapshot\)[\s\S]*opacity: 1;[\s\S]*chat-widget-content-settle/);
     assert.match(chatWidgetCss, /\.chat-window--bootstrap-content-ready \.emoji-picker-popover:not\(\.active\) \{[\s\S]*opacity: 0 !important;/);
     assert.match(chatWidgetCss, /@keyframes chat-widget-loading-dots \{[\s\S]*transform: translateY\(-3px\);[\s\S]*opacity: 0\.96;/);
-    assert.match(walletLoader, /const VERSION = '20260605_AFFILIATE_POSTER_AVATAR_PRIORITY_1';/);
+    assert.match(walletLoader, /const VERSION = '20260608_ORDER_GUIDANCE_COPY_3';/);
 });

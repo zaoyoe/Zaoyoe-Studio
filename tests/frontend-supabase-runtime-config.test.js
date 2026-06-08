@@ -488,7 +488,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
             violations.push(`${relativePath} is missing css/chat-widget.css`);
         }
 
-        if (!source.includes('css/chat-widget.css?v=20260530_SHOP_CHAT_FLOATING_STACK_3')) {
+        if (!source.includes('css/chat-widget.css?v=20260608_CHAT_USER_BUBBLE_DARK_1')) {
             violations.push(`${relativePath} should cache-bust the scroll-lock chat widget stylesheet`);
         }
 
@@ -518,7 +518,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260530_SHOP_CHAT_FLOATING_STACK_3';",
+        "const VERSION = '20260608_CHAT_USER_BUBBLE_DARK_1';",
         "const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';",
         'function ensurePlaceholderPlacementStyles() {',
         '/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */',
@@ -547,7 +547,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'body.chat-widget-bootstrap-scroll-locked',
         "const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';",
         "const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';",
-        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';",
+        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260608_CHAT_USER_BUBBLE_DARK_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';",
         "const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';",
         'function getChatWidgetConstructor() {',
         'global.ChatWidget = ChatWidget;',
@@ -557,6 +557,9 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         "loadScript(SUPPORT_CONFIG_SRC),",
         "loadScript(ADMIN_WORKBENCH_SRC),",
         "loadScript(CHAT_WIDGET_SRC)",
+        'function isRuntimeWidgetReadyToOpen(widget = global.chatWidget) {',
+        'function openRuntimeWidgetDirectly(widget = global.chatWidget) {',
+        'const directOpenPromise = openRuntimeWidgetDirectly(global.chatWidget);',
         "typeof widget.openChat === 'function'",
         'waitForWidgetWindowHandoff(widget)',
         "if (shell.dataset.chatWidgetBootstrapAdopted === '1') {",
@@ -711,8 +714,13 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     );
     assert.match(
         chatWidgetLoaderSource,
-        /function requestRuntimePendingOpen\(\) \{[\s\S]*pendingOpen = true;[\s\S]*showBootstrapLoadingShell\(\);[\s\S]*queueRuntimeOpenWhenReady\(global\.chatWidget\);/,
-        'runtime FAB clicks before chat window initialization should still show the bootstrap loading shell'
+        /function requestRuntimePendingOpen\(\) \{[\s\S]*const directOpenPromise = openRuntimeWidgetDirectly\(global\.chatWidget\);[\s\S]*if \(directOpenPromise\) \{[\s\S]*return directOpenPromise;[\s\S]*pendingOpen = true;[\s\S]*showBootstrapLoadingShell\(\);[\s\S]*queueRuntimeOpenWhenReady\(global\.chatWidget\);/,
+        'runtime pending-open requests should directly open a ready real chat window before showing the bootstrap loading shell'
+    );
+    assert.match(
+        chatWidgetLoaderSource,
+        /function ensureChatWidgetReady\(options = \{\}\) \{[\s\S]*const openRequested = options\.open === true;[\s\S]*if \(openRequested\) \{[\s\S]*const directOpenPromise = openRuntimeWidgetDirectly\(global\.chatWidget\);[\s\S]*if \(directOpenPromise\) \{[\s\S]*return directOpenPromise;[\s\S]*pendingOpen = true;[\s\S]*showBootstrapLoadingShell\(\);/,
+        'bootstrap open should bypass the loading shell when the runtime chat window is already ready'
     );
     assert.match(
         chatWidgetLoaderSource,
@@ -986,9 +994,9 @@ test('public pages wire wallet modal through the shared bootstrap loader', () =>
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260605_AFFILIATE_POSTER_AVATAR_PRIORITY_1';",
+        "const VERSION = '20260608_ORDER_GUIDANCE_COPY_3';",
         "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260518_MOBILE_PAY_FAST_CONFIRM_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260605_AFFILIATE_POSTER_AVATAR_PRIORITY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260608_ORDER_GUIDANCE_COPY_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';",
         'function ensureWalletModalReady() {',
         'function warmWalletModal(options = {}) {',
         "function openWalletModal(view = 'balance', context = {}) {",
@@ -1130,6 +1138,7 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         '--chat-panel-shadow: none;',
         '--chat-avatar-bg: rgba(107, 158, 206, 0.18);',
         'html[data-theme="light"] .chat-window:not(.admin-mode-layout) .message.user',
+        '0 10px 22px rgba(35, 118, 78, 0.14),',
         'const openingCleanupDelay = useBootstrapHandoffOpening ? 560 : 440;',
         'const deferFabHide = options.deferFabHide === true;',
         'const immediateStartFrame = options.immediateStartFrame === true;',
@@ -1259,12 +1268,18 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         '.chat-file-input',
         '.session-item.session-item--hidden',
         '.mascot-wrapper--compact',
+        '--chat-user-bubble: #82cfa3;',
+        '--chat-user-text: #0f2a1d;',
+        'box-shadow: 0 10px 22px rgba(69, 163, 112, 0.18);',
         'html[data-theme="light"] {',
         '--chat-shell-bg: rgba(252, 253, 255, 0.98);',
         'html[data-theme="light"] .chat-window:not(.admin-mode-layout) {',
         '--chat-panel-shadow: none;',
         '--chat-avatar-bg: rgba(107, 158, 206, 0.18);',
         'html[data-theme="light"] .chat-window:not(.admin-mode-layout) .message.user',
+        '--chat-user-bubble: #bfe8cf;',
+        '--chat-user-text: #123f2c;',
+        '0 10px 22px rgba(35, 118, 78, 0.14),',
         '--chat-overlay-bg: var(--app-modal-backdrop, rgba(34, 41, 52, 0.48));',
         '--chat-overlay-filter: var(--app-modal-backdrop-filter, blur(6px) saturate(106%));',
         '--chat-mascot-head: #6b9ece;',
@@ -1306,14 +1321,20 @@ test('chat widget runtime renderers externalize hidden, loading, and open-close 
         /@media \(max-width: 480px\) and \(hover: none\) and \(pointer: coarse\) \{[\s\S]*?\.chat-widget-fab\s*\{[\s\S]*?--chat-mobile-fab-glass-bg/,
         'mobile FAB shell should only apply on narrow coarse-touch devices'
     );
-    const desktopNarrowWindowBlock = chatWidgetCss.slice(
-        chatWidgetCss.indexOf('@media (max-width: 480px) {'),
-        chatWidgetCss.indexOf('@media (max-width: 480px) and (hover: none) and (pointer: coarse) {')
-    );
-    assert.equal(
-        desktopNarrowWindowBlock.includes('--chat-mobile-fab-glass-bg'),
-        false,
+    assert.doesNotMatch(
+        chatWidgetCss,
+        /@media \(max-width: 480px\) \{[\s\S]*?\.chat-widget-fab\s*\{[\s\S]*?--chat-mobile-fab-glass-bg/,
         'desktop narrow windows should keep the side-peek FAB instead of the mobile glass shell'
+    );
+    assert.doesNotMatch(
+        chatWidgetCss,
+        /@media \(max-width: 480px\) \{[\s\S]*?\.chat-window\s*\{[\s\S]*?width: 100%;[\s\S]*?height: 100%;/,
+        'desktop narrow windows should keep the narrow desktop chat window instead of the mobile full-height shell'
+    );
+    assert.match(
+        chatWidgetCss,
+        /@media \(max-width: 700px\) and \(hover: hover\) and \(pointer: fine\) \{[\s\S]*?\.chat-window:not\(\.admin-mode-layout\) \{[\s\S]*?--chat-base-translate-y: -50%;[\s\S]*?width: min\(460px, max\(97vw, calc\(100vw - 16px\)\)\) !important;[\s\S]*?height: 70vh !important;[\s\S]*?top: 50% !important;[\s\S]*?transform-origin: center center !important;[\s\S]*?\.chat-window:not\(\.admin-mode-layout\)\.active \{[\s\S]*?transform: translate3d\(-50%, calc\(var\(--chat-base-translate-y, -50%\) \+ var\(--chat-shift-y, 0px\)\), 0\) scale\(1\) !important;/,
+        'full chat widget stylesheet should center narrow desktop user chat geometry with the runtime-injected styles'
     );
 
     const fabPeekRobotRule = chatWidgetCss.match(/\.chat-widget-fab--peek \.chat-widget-fab__robot\s*\{[\s\S]*?\n\}/)?.[0] || '';
@@ -1366,7 +1387,7 @@ test('public chat and shop scroll panels clamp accidental horizontal pan', () =>
         'long chat messages should wrap instead of widening the chat pane'
     );
     assert.equal(
-        optionalEnhancementsSource.includes('css/chat-widget.css?v=20260530_SHOP_CHAT_FLOATING_STACK_3'),
+        optionalEnhancementsSource.includes('css/chat-widget.css?v=20260608_CHAT_USER_BUBBLE_DARK_1'),
         true,
         'optional guestbook chat loader should request the Safari handoff chat FAB stylesheet'
     );
@@ -1403,18 +1424,20 @@ test('public chat and shop scroll panels clamp accidental horizontal pan', () =>
     );
 });
 
-test('user chat widget keeps a top safety gap on narrow desktop windows', () => {
+test('user chat widget centers the narrow desktop customer window', () => {
     const chatWidgetSource = readRepoFile('js/components/ChatWidget.js');
 
     const markers = [
-        '--chat-user-narrow-top-gap: clamp(18px, 5vh, 40px);',
-        '--chat-user-narrow-bottom-gap: 24px;',
-        'height: min(600px, calc(100vh - (var(--chat-user-narrow-top-gap) + var(--chat-user-narrow-bottom-gap)))) !important;',
-        'max-height: calc(100vh - (var(--chat-user-narrow-top-gap) + var(--chat-user-narrow-bottom-gap))) !important;',
-        'top: var(--chat-user-narrow-top-gap) !important;',
-        'transform: translate3d(-50%, 20px, 0) scale(0.95) !important;',
-        'transform-origin: center top !important;',
-        'transform: translate3d(-50%, 0, 0) scale(1) !important;'
+        '--chat-base-translate-y: -50%;',
+        '--chat-shift-y: 0px;',
+        'width: min(460px, max(97vw, calc(100vw - 16px))) !important;',
+        'max-width: 97vw !important;',
+        'height: 70vh !important;',
+        'max-height: 600px !important;',
+        'top: 50% !important;',
+        'transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px) + 24px), 0) scale(0.94) !important;',
+        'transform-origin: center center !important;',
+        'transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(1) !important;'
     ];
 
     for (const marker of markers) {
@@ -1422,8 +1445,16 @@ test('user chat widget keeps a top safety gap on narrow desktop windows', () => 
     }
 
     const removedMarkers = [
+        '--chat-user-narrow-top-gap: clamp(18px, 5vh, 40px);',
+        '--chat-user-narrow-bottom-gap: 24px;',
         'height: min(600px, calc(100vh - 88px)) !important;',
         'max-height: calc(100vh - 88px) !important;',
+        'height: min(600px, calc(100vh - (var(--chat-user-narrow-top-gap) + var(--chat-user-narrow-bottom-gap)))) !important;',
+        'max-height: calc(100vh - (var(--chat-user-narrow-top-gap) + var(--chat-user-narrow-bottom-gap))) !important;',
+        'top: var(--chat-user-narrow-top-gap) !important;',
+        'transform: translate3d(-50%, 20px, 0) scale(0.95) !important;',
+        'transform-origin: center top !important;',
+        'transform: translate3d(-50%, 0, 0) scale(1) !important;',
         'transform: translate3d(-50%, calc(-50% + 20px), 0) scale(0.95) !important;',
         'transform-origin: center center !important;\n                }\n\n                .chat-window:not(.admin-mode-layout).active {\n                    transform: translate3d(-50%, -50%, 0) scale(1) !important;'
     ];
@@ -2056,7 +2087,7 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/chat-widget-loader.js?v=20260530_SHOP_CHAT_FLOATING_STACK_3'),
+            source.includes('js/chat-widget-loader.js?v=20260608_CHAT_USER_BUBBLE_DARK_1'),
             true,
             'public entry pages should load the lazy chat widget bootstrap'
         );
@@ -3609,6 +3640,7 @@ test('shop storefront preserves the initial skeleton layout while first-load dat
 
 test('shop category filters keep live pills mounted during refresh revalidation', () => {
     const shopClientSource = readRepoFile('js/shop-client.js');
+    const shopHtmlSource = readRepoFile('shop.html');
     const loadCategoryStart = shopClientSource.indexOf('loadCategoryFilters: async function');
     const loadCategoryEnd = shopClientSource.indexOf('loadProducts: async function', loadCategoryStart);
     const loadCategoryBlock = shopClientSource.slice(loadCategoryStart, loadCategoryEnd);
@@ -3627,6 +3659,36 @@ test('shop category filters keep live pills mounted during refresh revalidation'
         loadCategoryBlock.includes("container.innerHTML = '';"),
         false,
         'loadCategoryFilters should not clear the category pill container before rebuilding it'
+    );
+    assert.match(
+        shopClientSource,
+        /filterShopCategoriesWithVisibleProducts: function \(categories = \[\], products = \[\]\) \{[\s\S]*visibleCategoryNames[\s\S]*this\.filterPublicShopCategories\(categories\)[\s\S]*visibleCategoryNames\.has\(name\);/,
+        'shop category filters should derive category pills from products visible on the current site'
+    );
+    assert.match(
+        shopClientSource,
+        /normalizePublicShopCatalog: function \(\{ categories = \[\], products = \[\] \} = \{\}\) \{[\s\S]*const visibleProducts = this\.filterProductsForCurrentSite\(publicProducts\);[\s\S]*categories: this\.filterShopCategoriesWithVisibleProducts\(categories, visibleProducts\),[\s\S]*products: visibleProducts/,
+        'normalized shop catalog should hide categories that have no current-site priced products'
+    );
+    assert.match(
+        shopClientSource,
+        /const prefetchedProducts = this\.filterProductsForCurrentSite\(prefetch\.products\);[\s\S]*this\._prefetchedCategories = this\.filterShopCategoriesWithVisibleProducts\(prefetch\.categories, prefetchedProducts\);/,
+        'prefetched shop category pills should be scoped to products visible on the current site'
+    );
+    assert.match(
+        shopClientSource,
+        /refreshStorefrontCatalogFromRealtime: async function \(\) \{[\s\S]*const categories = this\.filterShopCategoriesWithVisibleProducts\([\s\S]*catalog\?\.categories[\s\S]*products[\s\S]*this\.availableCategories = categories;[\s\S]*this\.renderCategoryFilterButtons\(filtersContainer, categories\);/,
+        'realtime catalog refresh should allow empty current-site categories to replace stale category pills'
+    );
+    assert.match(
+        loadCategoryBlock,
+        /let catalogReturnedCategories = false;[\s\S]*catalogReturnedCategories = true;[\s\S]*categories = this\.filterShopCategoriesWithVisibleProducts\(catalog\.categories, catalogProducts\);[\s\S]*\(!categories \|\| categories\.length === 0\) && !catalogReturnedCategories/,
+        'loadCategoryFilters should not fall back to default categories when the API intentionally returns an empty current-site category list'
+    );
+    assert.equal(
+        shopHtmlSource.includes('siteScopedCategoryFilter=20260608_SHOP_SITE_SCOPED_CATEGORY_FILTER_1'),
+        true,
+        'shop.html should cache-bust the site-scoped category filter storefront runtime'
     );
 });
 
@@ -4030,18 +4092,33 @@ test('shop success item delivery content expands with animated panel state', () 
     );
     assert.match(
         shopCssSource,
-        /\.shop-success-item__notes-panel:not\(\[hidden\]\),[\s\S]*?\.shop-success-item__usage-panel:not\(\[hidden\]\)\s*\{[\s\S]*?max-height:\s*none;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*visible;/,
-        'success notes and usage panels should expand as ordinary content so the main success modal scroll area controls long guidance text'
+        /\.shop-success-item__notes-panel:not\(\[hidden\]\),[\s\S]*?\.shop-success-item__usage-panel:not\(\[hidden\]\)\s*\{[\s\S]*?max-height:\s*min\(34vh, 260px\);[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
+        'success notes and usage panels should keep a fixed frame so their copy button remains anchored'
     );
     assert.match(
         shopCssSource,
-        /#shopSuccessModal \.shop-success-item__notes-panel,[\s\S]*?#shopSuccessModal \.shop-success-item__usage-panel\s*\{[\s\S]*?max-height:\s*none;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*visible;[\s\S]*?overscroll-behavior:\s*auto;/,
-        'success notes and usage panels should not trap wheel scrolling inside nested overflow cards'
+        /\.shop-guidance-panel-copy\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*9px;[\s\S]*?right:\s*9px;[\s\S]*?z-index:\s*2;/,
+        'success notes and usage copy buttons should stay pinned to the guidance frame'
     );
     assert.match(
         shopCssSource,
-        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopSuccessModal \.shop-success-item__notes-panel:not\(\[hidden\]\),[\s\S]*?\.shop-success-item__usage-panel:not\(\[hidden\]\)\s*\{[\s\S]*?max-height:\s*none;[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*visible;/,
-        'light success modal should keep notes and usage in the main scroll flow after later shared panel styles cascade'
+        /\.shop-guidance-panel-content\s*\{[\s\S]*?max-height:\s*calc\(min\(34vh, 260px\) - 18px\);[\s\S]*?overflow-y:\s*auto;[\s\S]*?overflow-x:\s*hidden;[\s\S]*?padding-right:\s*38px;/,
+        'success notes and usage body text should scroll inside the content body below the fixed copy button'
+    );
+    assert.match(
+        shopClientSource,
+        /class="shop-guidance-panel-copy shop-guidance-panel-copy--notice"[\s\S]*?<div class="shop-guidance-panel-content">/,
+        'success notes markup should place the copy action above the scrollable guidance body'
+    );
+    assert.match(
+        shopClientSource,
+        /class="shop-guidance-panel-copy shop-guidance-panel-copy--usage"[\s\S]*?<div class="shop-guidance-panel-content">/,
+        'success usage markup should place the copy action above the scrollable guidance body'
+    );
+    assert.match(
+        shopCssSource,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopSuccessModal \.shop-success-item__notes-panel:not\(\[hidden\]\),[\s\S]*?\.shop-success-item__usage-panel:not\(\[hidden\]\)\s*\{[\s\S]*?max-height:\s*min\(34vh, 260px\);[\s\S]*?min-height:\s*0;[\s\S]*?overflow:\s*hidden;/,
+        'light success modal should keep the fixed guidance frame after later shared panel styles cascade'
     );
     assert.match(
         shopClientSource,
@@ -4298,7 +4375,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'index.html should load the latest framer_home stylesheet version'
     );
     assert.equal(
-        homepageSource.includes('./js/framer_home.js?v=20260530_HOME_GONGYI_FATHER_KEY_1'),
+        homepageSource.includes('./js/framer_home.js?v=20260608_SUPPORT_CHANNEL_CLICK_FEEDBACK_3'),
         true,
         'index.html should load the latest framer_home script version'
     );
@@ -4310,8 +4387,8 @@ test('framer home runtime renderers externalize homepage section visibility, tem
             'home-nav subpages should continue to load the shared framer_home stylesheet version'
         );
         assert.equal(
-            source.includes('js/framer-nav-runtime.js?v=20260512_SUPPORT_STATUS_LINK_REMOVED_1')
-                || source.includes('./js/framer-nav-runtime.js?v=20260512_SUPPORT_STATUS_LINK_REMOVED_1'),
+            source.includes('js/framer-nav-runtime.js?v=20260608_SUPPORT_CHANNEL_CLICK_FEEDBACK_3')
+                || source.includes('./js/framer-nav-runtime.js?v=20260608_SUPPORT_CHANNEL_CLICK_FEEDBACK_3'),
             true,
             'home-nav subpages should load the dedicated lightweight nav runtime'
         );
@@ -4324,7 +4401,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
     }
 
     const navRuntimeMarkers = [
-        "const VERSION = '20260512_SUPPORT_STATUS_LINK_REMOVED_1';",
+        "const VERSION = '20260608_SUPPORT_CHANNEL_CLICK_FEEDBACK_3';",
         'function setMobileMenuState(hamburger, mobileMenu, isOpen) {',
         'async function loadNavData() {',
         'function initNavDropdowns() {',
@@ -9475,6 +9552,9 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
         'wallet-modal-actions--toolbar',
         'wallet-order-modal--shop-detail',
         'wallet-order-guidance-toggle',
+        'wallet-order-guidance-copy',
+        'normalizeWalletOrderGuidanceCopyText(content)',
+        'js-wallet-copy-guidance',
         'wallet-order-product-name',
         'content-card--warning',
         'wallet-inline-icon--compact',
@@ -9547,6 +9627,8 @@ test('wallet modal runtime renderers route wallet shell, lists, filters, and ord
         '.wallet-modal-actions--toolbar',
         '.wallet-order-modal--shop-detail',
         '.wallet-order-guidance-toggle',
+        '.wallet-order-guidance-copy',
+        '.wallet-order-guidance-content-body',
         '.wallet-order-product-name',
         '.content-card--warning',
         '.wallet-affiliate-person-row',
@@ -10163,7 +10245,7 @@ test('homepage admin runtime renderers externalize retry, visibility, tab indica
         'async function prefetch() {',
         'await ensureHomepageConfigLoaded();',
         "const HOMEPAGE_OVERVIEW_SECTION = 'overview';",
-        'const HOMEPAGE_TAB_SECTIONS = Object.freeze([HOMEPAGE_OVERVIEW_SECTION, ...HOMEPAGE_MANAGED_SECTIONS]);',
+        'const HOMEPAGE_TAB_SECTIONS = Object.freeze([HOMEPAGE_OVERVIEW_SECTION, HOMEPAGE_SUPPORT_SECTION, ...HOMEPAGE_MANAGED_SECTIONS]);',
         'function normalizeHomepageAdminSection(section, fallback = currentSection || HOMEPAGE_DEFAULT_SECTION) {',
         'function buildHomepageCustomSelect({ id, value = \'\', options = [], placeholder = \'请选择\', disabled = false, className = \'\' } = {}) {',
         'function bindHomepageCustomSelects(root = document) {',
@@ -10261,9 +10343,30 @@ test('homepage admin runtime renderers externalize retry, visibility, tab indica
         'admin-studio.html should expose the homepage overview section view'
     );
     assert.equal(
-        adminStudioSource.indexOf('data-hp-section="overview"') < adminStudioSource.indexOf('data-hp-section="hero"'),
+        adminStudioSource.includes('data-hp-section="support"'),
         true,
-        'admin-studio.html should place the overview tab before hero'
+        'admin-studio.html should expose the homepage site entry tab'
+    );
+    assert.equal(
+        adminStudioSource.includes('站点入口'),
+        true,
+        'admin-studio.html should label the homepage entry editor as site entries'
+    );
+    assert.equal(
+        adminStudioSource.includes('data-hp-view="support"'),
+        true,
+        'admin-studio.html should expose the homepage site entry view'
+    );
+    assert.equal(
+        adminStudioSource.includes('id="hp-support-channels-host"'),
+        true,
+        'admin-studio.html should provide the site entry editor host'
+    );
+    assert.equal(
+        adminStudioSource.indexOf('data-hp-section="overview"') < adminStudioSource.indexOf('data-hp-section="support"')
+            && adminStudioSource.indexOf('data-hp-section="support"') < adminStudioSource.indexOf('data-hp-section="hero"'),
+        true,
+        'admin-studio.html should place site entries between overview and hero'
     );
     assert.equal(
         adminStudioSource.includes('hp-hero-cta'),
@@ -13955,7 +14058,7 @@ test('shared user event tracker wires prompt, verify, and wallet conversion even
     assert.equal(archivedIndexSource.includes('./supabase-guestbook-functions.js?v=20260510_GUESTBOOK_R2_IMAGE_UPLOAD_1'), true, 'index_old.html should load the latest guestbook runtime');
     assert.equal(shopSource.includes('js/shop-client.js?v=20260520_SHOP_CARD_PROMPT_BREATHE_3'), true, 'shop.html should load the latest cart-aware shop runtime');
     assert.equal(archivedIndexSource.includes('./js/shop-client.js?v=20260510_SHOP_REALTIME_FALLBACK_1'), true, 'index_old.html should load the latest asset-aware shop runtime');
-    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260605_AFFILIATE_POSTER_AVATAR_PRIORITY_1'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
+    assert.equal(verifyPageSource.includes('js/wallet-modal-loader.js?v=20260608_ORDER_GUIDANCE_COPY_3'), true, 'verify.html should load the latest lazy wallet modal bootstrap');
 });
 
 test('analytics phase 3 prefers real event rpc v2 for ai summary and conversion funnel', () => {
@@ -16721,6 +16824,23 @@ test('announcement runtime renderers externalize decoration particles and physic
         );
     }
 
+    const baseAnnouncementOverlayRule = announcementSource.match(/\.zaoyoe-announcement-overlay\s*\{[\s\S]*?\n\s*\}/)?.[0] || '';
+    assert.equal(
+        baseAnnouncementOverlayRule.includes('pointer-events'),
+        false,
+        'announcement modal overlay should keep its modal backdrop click behavior'
+    );
+    assert.match(
+        announcementSource,
+        /body:has\(\.zaoyoe-announcement-overlay\) \.framer-nav\s*\{[\s\S]*?z-index:\s*100100;/,
+        'announcement modal should keep the public nav above its backdrop without disabling the backdrop'
+    );
+    assert.match(
+        announcementSource,
+        /body:has\(\.zaoyoe-announcement-overlay\) \.nav-dropdown-portal\s*\{[\s\S]*?z-index:\s*100120;/,
+        'announcement modal should keep nav dropdown portals above the announcement backdrop'
+    );
+
     assert.equal(
         indexSource.includes('./js/engagement-runtime-loader.js?v=20260519_ANNOUNCEMENT_HAIRLINE_1'),
         true,
@@ -17046,7 +17166,7 @@ test('public modal backdrops route through the shared app modal material tokens'
         'profile modal loader should cache-bust the light backdrop material'
     );
     assert.equal(
-        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260605_AFFILIATE_POSTER_AVATAR_PRIORITY_1'),
+        readRepoFile('js/components/WalletModal.js').includes('css/wallet.css?v=20260608_ORDER_GUIDANCE_COPY_3'),
         true,
         'wallet modal loader should cache-bust the latest wallet surface stylesheet'
     );

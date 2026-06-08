@@ -379,6 +379,20 @@ function createShopHandlers({
         );
     }
 
+    function filterShopCategoriesWithVisibleProducts(categories = [], products = []) {
+        const visibleCategoryNames = new Set(
+            (Array.isArray(products) ? products : [])
+                .map((product) => normalizeText(product?.category, 120))
+                .filter(Boolean)
+        );
+
+        return (Array.isArray(categories) ? categories : [])
+            .filter((category) => {
+                const categoryName = normalizeText(category?.name, 120);
+                return categoryName && visibleCategoryNames.has(categoryName);
+            });
+    }
+
     function isShopCatalogProductAvailableForSite(product = {}, currentSite = 'cn') {
         const priceField = currentSite === 'intl' ? 'price_points_intl' : 'price_points';
         const rawValue = product?.[priceField];
@@ -2818,13 +2832,21 @@ function createShopHandlers({
                 const loadStartedAt = Date.now();
                 const cachedResult = await shopCatalogCache.getOrLoad(cacheKey, async () => {
                     const allCategories = await loadShopCategoriesForCatalog(adminSupabase);
-                    const categories = allCategories.filter((category) => isPublicShopCategory(category));
+                    const publicCategories = allCategories.filter((category) => isPublicShopCategory(category));
                     const hiddenCategoryNames = getHiddenShopCategoryNames(allCategories);
                     const products = await loadPublicShopProducts(adminSupabase, {
                         category,
                         currentSite,
                         hiddenCategoryNames
                     });
+                    const categorySourceProducts = category === 'all'
+                        ? products
+                        : await loadPublicShopProducts(adminSupabase, {
+                            category: 'all',
+                            currentSite,
+                            hiddenCategoryNames
+                        });
+                    const categories = filterShopCategoriesWithVisibleProducts(publicCategories, categorySourceProducts);
 
                     return {
                         success: true,

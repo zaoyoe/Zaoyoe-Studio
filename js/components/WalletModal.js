@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260605_AFFILIATE_POSTER_AVATAR_PRIORITY_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';
+    const walletCssHref = 'css/wallet.css?v=20260608_ORDER_GUIDANCE_COPY_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';
     const WALLET_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_TTL_MS = 30000;
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_PREFIX = 'zaoyoe_payment_config_v2';
@@ -13607,7 +13607,10 @@
                             content: usageInstructions
                         }
                         : null
-                ].filter(Boolean);
+                ].filter(Boolean).map((item) => ({
+                    ...item,
+                    copyContent: this.normalizeWalletOrderGuidanceCopyText(item.content)
+                }));
                 const guidanceTogglesMarkup = guidanceItems.length
                     ? `
                             <div class="wallet-order-guidance-toggles" aria-label="${this.escapeAttribute(window.i18n?.t('wallet.orderDetails') || '订单说明')}">
@@ -13625,7 +13628,18 @@
                                 ${guidanceItems.map((item) => `
                                     <section class="wallet-order-guidance-panel js-wallet-guidance-panel" data-wallet-guidance-panel="${this.escapeAttribute(item.key)}" hidden>
                                         <div class="wallet-order-guidance-panel-title">${this.escapeHtml(item.label)}</div>
-                                        <div class="wallet-order-guidance-content">${this.renderStoredWalletOrderRichText(item.content)}</div>
+                                        <div class="wallet-order-guidance-content">
+                                            <button
+                                                class="wallet-order-guidance-copy js-wallet-copy-guidance"
+                                                type="button"
+                                                data-wallet-copy-guidance="${this.escapeAttribute(this.encodeActionValue(item.copyContent))}"
+                                                aria-label="${this.escapeAttribute(`${window.i18n?.t('common.copy') || '复制'}${item.label}`)}"
+                                                title="${this.escapeAttribute(`${window.i18n?.t('common.copy') || '复制'}${item.label}`)}"
+                                            >
+                                                <i class="fas fa-copy" aria-hidden="true"></i>
+                                            </button>
+                                            <div class="wallet-order-guidance-content-body">${this.renderStoredWalletOrderRichText(item.content)}</div>
+                                        </div>
                                     </section>
                                 `).join('')}
                             </div>
@@ -13740,6 +13754,11 @@
                     modal.querySelectorAll('.js-wallet-copy-content').forEach((card) => {
                         card.addEventListener('click', (event) => {
                             this.copyToClipboard(this.decodeActionValue(card.dataset.walletCopyContent), event);
+                        });
+                    });
+                    modal.querySelectorAll('.js-wallet-copy-guidance').forEach((button) => {
+                        button.addEventListener('click', (event) => {
+                            this.copyToClipboard(this.decodeActionValue(button.dataset.walletCopyGuidance), event);
                         });
                     });
                     modal.querySelector('.js-wallet-copy-all')?.addEventListener('click', () => {
@@ -13963,6 +13982,27 @@
             }
 
             return this.sanitizeWalletOrderRichTextHtml(normalized);
+        },
+
+        normalizeWalletOrderGuidanceCopyText(content) {
+            const normalized = String(content ?? '').trim();
+            if (!normalized) return '';
+
+            const template = document.createElement('template');
+            template.innerHTML = this.renderStoredWalletOrderRichText(normalized);
+            template.content.querySelectorAll('br').forEach((node) => {
+                node.replaceWith(document.createTextNode('\n'));
+            });
+            template.content.querySelectorAll('p, div, li').forEach((node) => {
+                node.appendChild(document.createTextNode('\n'));
+            });
+
+            return String(template.content.textContent || '')
+                .replace(/\u00a0/g, ' ')
+                .replace(/[ \t]+\n/g, '\n')
+                .replace(/\n[ \t]+/g, '\n')
+                .replace(/\n{3,}/g, '\n\n')
+                .trim();
         },
 
         /**

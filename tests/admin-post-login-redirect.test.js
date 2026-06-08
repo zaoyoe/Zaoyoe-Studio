@@ -149,6 +149,9 @@ test('admin entry stores a fresh post-login return target when the browser is un
         ${extractFunction(source, 'normalizePostLoginRedirectTarget')}
         ${extractFunction(source, 'buildPostLoginRedirectTarget')}
         ${extractFunction(source, 'persistPendingPostLoginRedirectTarget')}
+        ${extractFunction(source, 'isRetriableAdminStudioSessionFailure')}
+        ${extractFunction(source, 'waitForAdminEntryRetryDelay')}
+        ${extractFunction(source, 'createEntryAdminStudioSession')}
         ${extractFunction(source, 'bootAdminEntry')}
         globalThis.bootAdminEntry = bootAdminEntry;
     `, context);
@@ -162,6 +165,104 @@ test('admin entry stores a fresh post-login return target when the browser is un
     assert.equal(parsedTarget.searchParams.get('next'), '/admin-studio.html');
     assert.equal(gateStates[1].state, 'denied');
     assert.match(gateStates[1].payload.message, /自动返回后台入口/);
+});
+
+test('admin entry retries a transient admin studio session issuing failure before showing the error gate', async () => {
+    const source = readRepoFile('js/admin-entry.js');
+    const gateStates = [];
+    const accessCalls = [];
+    const sessionCalls = [];
+    let replacedTarget = null;
+
+    const context = {
+        URL,
+        Date,
+        console: {
+            warn() {},
+            error() {}
+        },
+        setTimeout(callback) {
+            callback();
+            return 1;
+        },
+        setEntryState(state, payload = {}) {
+            gateStates.push({ state, payload });
+        },
+        location: {
+            href: 'https://www.fatherkey.com/admin-entry.html?next=/admin-studio.html?module=shop',
+            replace(target) {
+                replacedTarget = target;
+            }
+        },
+        localStorage: createStorage(),
+        AdminAccess: {
+            sanitizeAdminStudioTarget(target) {
+                return String(target || '');
+            },
+            async getCurrentAdminAccess(options = {}) {
+                accessCalls.push(options);
+                return {
+                    user: { id: 'admin-user-1', email: 'admin@example.com' },
+                    isAdmin: true,
+                    isSuperAdmin: true,
+                    permissions: ['*']
+                };
+            },
+            async createAdminStudioSession(options = {}) {
+                sessionCalls.push(options);
+                if (sessionCalls.length === 1) {
+                    return {
+                        ok: false,
+                        status: 0,
+                        reason: 'request_timeout'
+                    };
+                }
+
+                return {
+                    ok: true,
+                    status: 200,
+                    payload: {
+                        success: true,
+                        granted: true
+                    }
+                };
+            }
+        }
+    };
+    context.globalScope = context;
+    context.globalThis = context;
+
+    vm.runInNewContext(`
+        const POST_LOGIN_REDIRECT_STORAGE_KEY = 'zaoyoe_post_login_redirect_v1';
+        const POST_LOGIN_REDIRECT_TTL_MS = 15 * 60 * 1000;
+        ${extractFunction(source, 'getSafeTarget')}
+        ${extractFunction(source, 'normalizePostLoginRedirectTarget')}
+        ${extractFunction(source, 'buildPostLoginRedirectTarget')}
+        ${extractFunction(source, 'persistPendingPostLoginRedirectTarget')}
+        ${extractFunction(source, 'isRetriableAdminStudioSessionFailure')}
+        ${extractFunction(source, 'waitForAdminEntryRetryDelay')}
+        ${extractFunction(source, 'createEntryAdminStudioSession')}
+        ${extractFunction(source, 'bootAdminEntry')}
+        globalThis.bootAdminEntry = bootAdminEntry;
+    `, context);
+
+    await context.bootAdminEntry();
+
+    assert.equal(replacedTarget, '/admin-studio.html?module=shop');
+    assert.deepEqual(gateStates.map((entry) => entry.state), ['pending', 'pending']);
+    assert.equal(gateStates[1].payload.title, '正在同步后台访问凭证');
+    assert.deepEqual(JSON.parse(JSON.stringify(accessCalls)), [
+        {},
+        { forceRefresh: true }
+    ]);
+    assert.deepEqual(JSON.parse(JSON.stringify(sessionCalls)), [
+        { userId: 'admin-user-1' },
+        {
+            userId: 'admin-user-1',
+            forceRefresh: true,
+            preserveCacheOnFailure: true
+        }
+    ]);
 });
 
 test('auth callback prefers the pending admin redirect target over the legacy oauth redirect cache', () => {

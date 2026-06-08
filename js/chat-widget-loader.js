@@ -6,11 +6,11 @@
     }
     global.__zaoyoeChatWidgetBootstrapLoaded = true;
 
-    const VERSION = '20260530_SHOP_CHAT_FLOATING_STACK_3';
+    const VERSION = '20260608_CHAT_USER_BUBBLE_DARK_1';
     const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';
     const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';
-    const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';
-    const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=20260530_SHOP_CHAT_FLOATING_STACK_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';
+    const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260608_CHAT_USER_BUBBLE_DARK_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';
+    const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=20260608_CHAT_USER_BUBBLE_DARK_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';
     const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';
     const CHAT_WIDGET_SHELL_MODE_KEY = 'zaoyoe_chat_widget_last_shell_mode_v1';
     const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';
@@ -302,7 +302,34 @@ body.chat-widget-bootstrap-scroll-locked {
     pointer-events: auto;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 700px) and (hover: hover) and (pointer: fine) {
+    .chat-window:not(.admin-mode-layout):not([data-chat-widget-bootstrap-shell="1"]) {
+        --chat-base-translate-y: -50%;
+        --chat-shift-y: 0px;
+        top: 50% !important;
+        left: 50% !important;
+        right: auto !important;
+        bottom: auto !important;
+        width: min(460px, max(97vw, calc(100vw - 16px))) !important;
+        max-width: 97vw !important;
+        height: 70vh !important;
+        max-height: 600px !important;
+        transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px) + 24px), 0) scale(0.94) !important;
+        transform-origin: center center !important;
+    }
+
+    .chat-window:not(.admin-mode-layout):not([data-chat-widget-bootstrap-shell="1"]).active {
+        transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(1) !important;
+    }
+
+    .chat-window:not(.admin-mode-layout):not([data-chat-widget-bootstrap-shell="1"]).chat-opening--bootstrap-handoff,
+    .chat-window:not(.admin-mode-layout):not([data-chat-widget-bootstrap-shell="1"]).chat-opening--bootstrap-handoff.active {
+        transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(1) !important;
+        transform-origin: center center !important;
+    }
+}
+
+@media (max-width: 700px) and (hover: none), (max-width: 700px) and (pointer: coarse) {
     .chat-window:not(.admin-mode-layout):not([data-chat-widget-bootstrap-shell="1"]) {
         top: 50% !important;
         left: 50% !important;
@@ -468,7 +495,7 @@ body.chat-widget-bootstrap-scroll-locked {
     }
 }
 
-/* 20260530_SHOP_CHAT_FLOATING_STACK_3 */
+/* 20260608_CHAT_USER_BUBBLE_DARK_1 */
 @media (max-width: 1180px) and (hover: hover) and (pointer: fine) {
     body.shop-page .chat-widget-fab,
     body.shop-page .chat-widget-fab:hover,
@@ -1485,43 +1512,43 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
 
 @media (max-width: 700px) and (hover: hover) and (pointer: fine) {
     .chat-widget-bootstrap-shell {
-        --chat-user-narrow-top-gap: clamp(18px, 5vh, 40px);
-        --chat-user-narrow-bottom-gap: 24px;
-        top: var(--chat-user-narrow-top-gap);
+        --chat-base-translate-y: -50%;
+        --chat-shift-y: 0px;
+        top: 50%;
         left: 50%;
         right: auto;
         bottom: auto;
-        width: min(var(--chat-bootstrap-shell-width), calc(100vw - 24px));
-        max-width: calc(100vw - 24px);
-        height: min(var(--chat-bootstrap-shell-height), calc(100vh - (var(--chat-user-narrow-top-gap) + var(--chat-user-narrow-bottom-gap))));
-        max-height: calc(100vh - (var(--chat-user-narrow-top-gap) + var(--chat-user-narrow-bottom-gap)));
-        transform: translate3d(-50%, 28px, 0) scale(0.94);
-        transform-origin: center top;
+        width: min(460px, max(97vw, calc(100vw - 16px)));
+        max-width: 97vw;
+        height: 70vh;
+        max-height: 600px;
+        transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px) + 24px), 0) scale(0.94);
+        transform-origin: center center;
     }
 
     .chat-widget-bootstrap-shell.chat-window {
-        top: var(--chat-user-narrow-top-gap) !important;
+        top: 50% !important;
         left: 50% !important;
         right: auto !important;
         bottom: auto !important;
-        width: min(var(--chat-bootstrap-shell-width), calc(100vw - 24px)) !important;
-        max-width: calc(100vw - 24px) !important;
-        height: min(var(--chat-bootstrap-shell-height), calc(100vh - (var(--chat-user-narrow-top-gap) + var(--chat-user-narrow-bottom-gap)))) !important;
-        max-height: calc(100vh - (var(--chat-user-narrow-top-gap) + var(--chat-user-narrow-bottom-gap))) !important;
-        transform: translate3d(-50%, 28px, 0) scale(0.94) !important;
-        transform-origin: center top !important;
+        width: min(460px, max(97vw, calc(100vw - 16px))) !important;
+        max-width: 97vw !important;
+        height: 70vh !important;
+        max-height: 600px !important;
+        transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px) + 24px), 0) scale(0.94) !important;
+        transform-origin: center center !important;
     }
 
     .chat-widget-bootstrap-shell.is-active,
     .chat-widget-bootstrap-shell.is-handoff,
     .chat-widget-bootstrap-shell.is-handoff:not(.is-active) {
-        transform: translate3d(-50%, 0, 0) scale(1);
+        transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(1);
     }
 
     .chat-widget-bootstrap-shell.chat-window.is-active,
     .chat-widget-bootstrap-shell.chat-window.is-handoff,
     .chat-widget-bootstrap-shell.chat-window.is-handoff:not(.is-active) {
-        transform: translate3d(-50%, 0, 0) scale(1) !important;
+        transform: translate3d(-50%, calc(var(--chat-base-translate-y, -50%) + var(--chat-shift-y, 0px)), 0) scale(1) !important;
     }
 }
 
@@ -2357,6 +2384,26 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
         return widgetWarmPromise;
     }
 
+    function isRuntimeWidgetReadyToOpen(widget = global.chatWidget) {
+        return Boolean(widget?.chatWindow && typeof widget.openChat === 'function');
+    }
+
+    function openRuntimeWidgetDirectly(widget = global.chatWidget) {
+        if (!isRuntimeWidgetReadyToOpen(widget)) {
+            return null;
+        }
+
+        pendingOpen = false;
+        return Promise.resolve(widget.openChat())
+            .then((readyWidget) => {
+                const activeWidget = readyWidget || widget;
+                if (activeWidget?.isOpen && typeof activeWidget.clearUnread === 'function') {
+                    activeWidget.clearUnread();
+                }
+                return activeWidget;
+            });
+    }
+
     function openWidgetIfPending() {
         if (!pendingOpen || !global.chatWidget) {
             return;
@@ -2435,6 +2482,14 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
     }
 
     function requestRuntimePendingOpen() {
+        const directOpenPromise = openRuntimeWidgetDirectly(global.chatWidget);
+        if (directOpenPromise) {
+            directOpenPromise.catch((error) => {
+                console.error('[ChatWidgetLoader] Failed to open ready chat widget:', error);
+            });
+            return directOpenPromise;
+        }
+
         pendingOpen = true;
         showBootstrapLoadingShell();
         queueRuntimeOpenWhenReady(global.chatWidget);
@@ -2479,6 +2534,11 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
     function ensureChatWidgetReady(options = {}) {
         const openRequested = options.open === true;
         if (openRequested) {
+            const directOpenPromise = openRuntimeWidgetDirectly(global.chatWidget);
+            if (directOpenPromise) {
+                return directOpenPromise;
+            }
+
             pendingOpen = true;
             showBootstrapLoadingShell();
         }

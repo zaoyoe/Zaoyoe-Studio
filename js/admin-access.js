@@ -133,6 +133,68 @@
         };
     }
 
+    function isJwtExpiringSoon(token = '', skewSeconds = 60) {
+        const payload = decodeJwtPayload(token);
+        const expiresAtSeconds = Number(payload?.exp || 0);
+        if (!Number.isFinite(expiresAtSeconds) || expiresAtSeconds <= 0) {
+            return false;
+        }
+
+        return ((expiresAtSeconds * 1000) - Date.now()) <= Math.max(0, Number(skewSeconds) || 0) * 1000;
+    }
+
+    function normalizeSupabaseSessionRestorePayload(session = null) {
+        const accessToken = String(session?.access_token || '').trim();
+        const refreshToken = String(session?.refresh_token || '').trim();
+        if (!accessToken || !refreshToken) {
+            return null;
+        }
+
+        const payload = decodeJwtPayload(accessToken) || {};
+        const expiresAt = Number(session?.expires_at || payload?.exp || 0);
+        return {
+            access_token: accessToken,
+            refresh_token: refreshToken,
+            expires_at: Number.isFinite(expiresAt) && expiresAt > 0 ? expiresAt : undefined
+        };
+    }
+
+    async function restoreSupabaseSessionFromRefreshToken(supabaseClient = null, sourceSession = null) {
+        const restorePayload = normalizeSupabaseSessionRestorePayload(sourceSession);
+        const authClient = supabaseClient?.auth;
+        if (!restorePayload || !authClient) {
+            return null;
+        }
+
+        const timeoutMs = getAdminAccessTimeout('sessionRestoreMs', DEFAULT_ADMIN_STUDIO_SESSION_TIMEOUT_MS);
+
+        if (typeof authClient.setSession === 'function') {
+            const setSessionResult = await resolveWithTimeout(
+                () => authClient.setSession(restorePayload),
+                timeoutMs,
+                null
+            );
+            if (!setSessionResult?.error && setSessionResult?.data?.session?.access_token) {
+                return setSessionResult.data.session;
+            }
+        }
+
+        if (typeof authClient.refreshSession === 'function') {
+            const refreshResult = await resolveWithTimeout(
+                () => authClient.refreshSession({
+                    refresh_token: restorePayload.refresh_token
+                }),
+                timeoutMs,
+                null
+            );
+            if (!refreshResult?.error && refreshResult?.data?.session?.access_token) {
+                return refreshResult.data.session;
+            }
+        }
+
+        return null;
+    }
+
     async function fetchWithTimeout(input, init = {}, timeoutMs = DEFAULT_ADMIN_ACCESS_REST_TIMEOUT_MS) {
         if (typeof fetch !== 'function') {
             return null;
@@ -889,10 +951,27 @@
         const sessionResult = supabaseClient?.auth?.getSession
             ? await resolveWithTimeout(() => supabaseClient.auth.getSession(), 4000, null)
             : null;
-        const session = sessionResult?.data?.session || null;
+        let session = sessionResult?.data?.session || null;
         const error = sessionResult?.error || null;
-        const accessToken = String(session?.access_token || persistedSession?.access_token || '').trim();
-        if (error || !accessToken) {
+        let accessToken = String(session?.access_token || '').trim();
+        const refreshableSession = session?.refresh_token ? session : persistedSession;
+
+        if ((!accessToken || isJwtExpiringSoon(accessToken)) && refreshableSession?.refresh_token) {
+            const restoredSession = await restoreSupabaseSessionFromRefreshToken(supabaseClient, refreshableSession);
+            if (restoredSession?.access_token) {
+                session = restoredSession;
+                accessToken = String(restoredSession.access_token || '').trim();
+            }
+        }
+
+        if (!accessToken) {
+            const persistedAccessToken = String(persistedSession?.access_token || '').trim();
+            if (persistedAccessToken && (!isJwtExpiringSoon(persistedAccessToken) || !persistedSession?.refresh_token)) {
+                accessToken = persistedAccessToken;
+            }
+        }
+
+        if (!accessToken) {
             if (options.preserveCacheOnFailure !== true) {
                 clearCachedAdminStudioSession();
             }
@@ -905,7 +984,7 @@
         }
 
         const resolvedUserId = explicitUserId || String(session?.user?.id || buildPersistedSessionUser(persistedSession)?.id || '').trim();
-        const sessionRequest = (async () => {
+        const issueAdminStudioSessionWithToken = async (token) => {
             try {
                 const response = await fetchWithTimeout(
                     ADMIN_STUDIO_SESSION_ENDPOINT,
@@ -913,7 +992,7 @@
                         method: 'POST',
                         credentials: 'same-origin',
                         headers: {
-                            Authorization: `Bearer ${accessToken}`,
+                            Authorization: `Bearer ${token}`,
                             'Content-Type': 'application/json'
                         }
                     },
@@ -921,9 +1000,6 @@
                 );
 
                 if (!response) {
-                    if (options.preserveCacheOnFailure !== true) {
-                        clearCachedAdminStudioSession();
-                    }
                     return {
                         ok: false,
                         status: 0,
@@ -938,19 +1014,8 @@
                     payload
                 };
 
-                if (result.ok) {
-                    writeAdminStudioSessionCache(resolvedUserId, payload);
-                } else {
-                    if (options.preserveCacheOnFailure !== true) {
-                        clearCachedAdminStudioSession();
-                    }
-                }
-
                 return result;
             } catch (requestError) {
-                if (options.preserveCacheOnFailure !== true) {
-                    clearCachedAdminStudioSession();
-                }
                 return {
                     ok: false,
                     status: 0,
@@ -958,6 +1023,34 @@
                     error: requestError
                 };
             }
+        };
+
+        const sessionRequest = (async () => {
+            let result = await issueAdminStudioSessionWithToken(accessToken);
+            const shouldRetryWithRestoredSession = !result?.ok
+                && (Number(result?.status || 0) === 401 || Number(result?.status || 0) === 403)
+                && refreshableSession?.refresh_token;
+
+            if (shouldRetryWithRestoredSession) {
+                const restoredSession = await restoreSupabaseSessionFromRefreshToken(supabaseClient, refreshableSession);
+                const restoredToken = String(restoredSession?.access_token || '').trim();
+                if (restoredToken && restoredToken !== accessToken) {
+                    session = restoredSession;
+                    accessToken = restoredToken;
+                    result = await issueAdminStudioSessionWithToken(restoredToken);
+                }
+            }
+
+            if (result?.ok) {
+                writeAdminStudioSessionCache(
+                    resolvedUserId || String(session?.user?.id || buildPersistedSessionUser(persistedSession)?.id || '').trim(),
+                    result.payload
+                );
+            } else if (options.preserveCacheOnFailure !== true) {
+                clearCachedAdminStudioSession();
+            }
+
+            return result;
         })();
 
         if (resolvedUserId && !forceRefresh) {

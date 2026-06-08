@@ -87,7 +87,7 @@ test('admin chat user status uses shared realtime user presence before chat-mess
         'public user presence should persist heartbeat activity through the server RPC'
     );
     assert.equal(
-        adminEntrySource.includes('js/admin-access.js?v=20260606_ADMIN_STUDIO_SESSION_RENEWAL_1'),
+        adminEntrySource.includes('js/admin-access.js?v=20260608_ADMIN_STUDIO_SESSION_REFRESH_RETRY_1'),
         true,
         'admin entry should load the heartbeat-aware admin access runtime'
     );

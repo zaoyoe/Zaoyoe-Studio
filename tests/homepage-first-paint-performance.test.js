@@ -27,7 +27,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'static hero title should render immediately and still be localized by i18n'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260530_HOME_GONGYI_FATHER_KEY_1'),
+        indexSource.includes('./js/framer_home.js?v=20260608_SUPPORT_CHANNEL_CLICK_FEEDBACK_3'),
         true,
         'index.html should cache-bust the first-paint homepage runtime'
     );
@@ -37,7 +37,7 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should cache-bust the prompt no-repaint homepage runtime fix'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home_critical.css?v=20260521_HOME_PROMPTS_SHELL_STABLE_2'),
+        indexSource.includes('./css/framer_home_critical.css?v=20260608_SUPPORT_CHANNEL_CLICK_FEEDBACK_3'),
         true,
         'index.html should load a small blocking homepage critical stylesheet'
     );
@@ -47,16 +47,16 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should load the prompt skeleton geometry before the deferred homepage stylesheet'
     );
     assert.ok(
-        indexSource.indexOf('./css/home-prompts-skeleton-critical.css?v=20260530_HOME_PROMPTS_SKELETON_GRID_1') < indexSource.indexOf('./css/framer_home.css?v=20260530_HOME_PROMPTS_SKELETON_GRID_1'),
+        indexSource.indexOf('./css/home-prompts-skeleton-critical.css?v=20260530_HOME_PROMPTS_SKELETON_GRID_1') < indexSource.indexOf('./css/framer_home.css?v=20260608_SITE_ENTRY_ICONS_1'),
         'prompt skeleton critical CSS should load before the deferred full homepage stylesheet'
     );
     assert.match(
         indexSource,
-        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260530_HOME_PROMPTS_SKELETON_GRID_1&uiTextSelectGuard=20260530_UI_TEXT_SELECT_GUARD_1" media="print" data-deferred-style="1">/,
+        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260608_SITE_ENTRY_ICONS_1&uiTextSelectGuard=20260530_UI_TEXT_SELECT_GUARD_1" media="print" data-deferred-style="1">/,
         'index.html should defer the full homepage stylesheet after the first-paint shell'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home.css?v=20260530_HOME_PROMPTS_SKELETON_GRID_1'),
+        indexSource.includes('./css/framer_home.css?v=20260608_SITE_ENTRY_ICONS_1'),
         true,
         'index.html should keep cache-busting the full static hero stability styles'
     );
@@ -807,12 +807,12 @@ test('homepage shop title paints before delayed product cards', () => {
         'critical CSS should hide pending shop cards before deferred styles finish loading'
     );
     assert.equal(
-        indexSource.includes('./js/framer_home.js?v=20260530_HOME_GONGYI_FATHER_KEY_1'),
+        indexSource.includes('./js/framer_home.js?v=20260608_SUPPORT_CHANNEL_CLICK_FEEDBACK_3'),
         true,
         'index.html should cache-bust the shop title-first homepage runtime'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home.css?v=20260530_HOME_PROMPTS_SKELETON_GRID_1'),
+        indexSource.includes('./css/framer_home.css?v=20260608_SITE_ENTRY_ICONS_1'),
         true,
         'index.html should cache-bust the shop title-first homepage styles'
     );

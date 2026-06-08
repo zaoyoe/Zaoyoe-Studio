@@ -1,7 +1,7 @@
 (function (global) {
     'use strict';
 
-    const VERSION = '20260512_SUPPORT_STATUS_LINK_REMOVED_1';
+    const VERSION = '20260608_SUPPORT_CHANNEL_CLICK_FEEDBACK_3';
     const MOBILE_MENU_LOCK_CLASS = 'mobile-menu-open';
     const runtimeState = {
         cachedData: {
@@ -277,6 +277,9 @@
             const dropdown = document.createElement('div');
             dropdown.className = 'nav-dropdown-portal';
             dropdown.id = `dropdown-${dropdownType}`;
+            if (dropdownType === 'support') {
+                dropdown.dataset.siteLayoutSupportList = 'nav';
+            }
             dropdown.innerHTML = data.type === 'custom' && data.render
                 ? data.render()
                 : data.items.map((item) => `<a href="${data.urlPrefix}${encodeURIComponent(item)}">${item}</a>`).join('');

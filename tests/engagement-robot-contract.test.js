@@ -1237,12 +1237,12 @@ test('public robot engagement feed is routed and consumed by ChatWidget', () => 
     assert.match(chatWidget, /this\.initEngagementRuntime\(\);\s*\n\s*\}/);
     assert.doesNotMatch(chatWidget, /initEngagementRuntime\(\) \{\s*if \(this\.isAdmin\) return;/);
     assert.doesNotMatch(chatWidget, /if \(this\.isAdmin \|\| this\.isOpen\) return;/);
-    assert.match(chatWidgetLoader, /20260516_HOME_AUTH_CHAT_CACHE_BUST_1/);
-    assert.match(chatWidgetLoader, /ChatWidget\.js\?v=20260516_HOME_AUTH_CHAT_CACHE_BUST_1/);
+    assert.match(chatWidgetLoader, /20260608_CHAT_USER_BUBBLE_DARK_1/);
+    assert.match(chatWidgetLoader, /ChatWidget\.js\?v=20260608_CHAT_USER_BUBBLE_DARK_1/);
     assert.match(chatWidgetLoader, /scheduleEngagementRuntimeWarm/);
     assert.match(chatWidgetLoader, /ensureChatWidgetReady\(\{ open: false \}\)/);
-    assert.match(indexHtml, /chat-widget-loader\.js\?v=20260530_SHOP_CHAT_FLOATING_STACK_3/);
-    assert.match(promptsHtml, /chat-widget-loader\.js\?v=20260530_SHOP_CHAT_FLOATING_STACK_3/);
+    assert.match(indexHtml, /chat-widget-loader\.js\?v=20260608_CHAT_USER_BUBBLE_DARK_1/);
+    assert.match(promptsHtml, /chat-widget-loader\.js\?v=20260608_CHAT_USER_BUBBLE_DARK_1/);
     assert.match(chatWidget, /renderEngagementContentHtml/);
     assert.match(chatWidget, /engagement-preview__path-link/);
     assert.match(chatWidget, /ZaoyoeWalletModalBootstrap\?\.open/);
@@ -1809,7 +1809,7 @@ test('shop discount assets can surface as robot engagement bubbles', () => {
     assert.match(shopClient, /shop_product_discount_assets/);
     assert.match(shopClient, /\/shop\.html\?productId=/);
     assert.match(shopClient, /this\.maybeShowShopDiscountEngagement\(\)/);
-    assert.match(shopHtml, /20260605_AFFILIATE_POSTER_AVATAR_PRIORITY_1/);
+    assert.match(shopHtml, /20260608_ORDER_GUIDANCE_COPY_3/);
 });
 
 test('business terminal events automatically maintain engagement user tags', () => {
