@@ -13,6 +13,12 @@
             --font-serif: 'Playfair Display', serif;
             --font-sans: 'Outfit', sans-serif;
             --accent-color: #3b82f6;
+            --shop-category-active-blue: #6b9ece;
+            --shop-category-active-blue-rgb: 107, 158, 206;
+            --shop-sold-out-soft-red: #c95c56;
+            --shop-sold-out-soft-red-deep: #b84c47;
+            --shop-sold-out-soft-red-rgb: 201, 92, 86;
+            --shop-sold-out-soft-red-deep-rgb: 184, 76, 71;
             --shop-media-accent: #5f8fc7;
             --shop-media-shell-bg: #e8f2ff;
             --shop-skeleton-shell-bg: #f1f7ff;
@@ -3355,28 +3361,28 @@
         }
 
         #purchaseAddToCartBtn.shop-sold-out-restock-btn {
-            background: rgba(59, 130, 246, 0.14);
-            color: #dbeafe;
-            border-color: rgba(96, 165, 250, 0.28);
+            background: rgba(var(--shop-category-active-blue-rgb), 0.16);
+            color: #eaf4ff;
+            border-color: rgba(var(--shop-category-active-blue-rgb), 0.38);
             box-shadow:
-                0 12px 24px rgba(37, 99, 235, 0.18),
+                0 12px 24px rgba(var(--shop-category-active-blue-rgb), 0.18),
                 inset 0 1px 0 rgba(255, 255, 255, 0.1);
         }
 
         #purchaseAddToCartBtn.shop-sold-out-restock-btn:hover {
-            background: rgba(59, 130, 246, 0.18);
-            border-color: rgba(147, 197, 253, 0.36);
-            color: #eff6ff;
+            background: rgba(var(--shop-category-active-blue-rgb), 0.22);
+            border-color: rgba(var(--shop-category-active-blue-rgb), 0.52);
+            color: #ffffff;
         }
 
         #nextPurchaseStepBtn.shop-purchase-sold-out-btn,
         #nextPurchaseStepBtn.shop-purchase-sold-out-btn:hover,
         #nextPurchaseStepBtn.shop-purchase-sold-out-btn:active {
-            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            background: linear-gradient(135deg, var(--shop-sold-out-soft-red) 0%, var(--shop-sold-out-soft-red-deep) 100%);
             color: #ffffff;
-            border-color: rgba(248, 113, 113, 0.42);
+            border-color: rgba(var(--shop-sold-out-soft-red-rgb), 0.34);
             box-shadow:
-                0 10px 24px rgba(220, 38, 38, 0.28),
+                0 10px 22px rgba(var(--shop-sold-out-soft-red-deep-rgb), 0.18),
                 inset 0 1px 0 rgba(255, 255, 255, 0.16);
             transform: none;
             filter: none;
@@ -6186,10 +6192,10 @@
                 }
 
                 .shop-main .filter-tab.active {
-                    background: #6b9ece;
-                    border-color: #6b9ece;
+                    background: var(--shop-category-active-blue);
+                    border-color: var(--shop-category-active-blue);
                     color: #fff;
-                    box-shadow: 0 4px 15px rgba(107, 158, 206, 0.3);
+                    box-shadow: 0 4px 15px rgba(var(--shop-category-active-blue-rgb), 0.3);
                 }
 
                 @media (max-width: 980px) {
@@ -6716,28 +6722,28 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal #purchaseBackBtn
 }
 
 html:not([data-theme="dark"]) body.shop-page #purchaseAddToCartBtn.shop-sold-out-restock-btn {
-    background: #eff6ff;
-    color: #1d4ed8;
-    border-color: rgba(37, 99, 235, 0.18);
+    background: rgba(var(--shop-category-active-blue-rgb), 0.11);
+    color: var(--shop-category-active-blue);
+    border-color: rgba(var(--shop-category-active-blue-rgb), 0.36);
     box-shadow:
-        0 10px 22px rgba(37, 99, 235, 0.1),
+        0 10px 22px rgba(var(--shop-category-active-blue-rgb), 0.14),
         inset 0 1px 0 rgba(255, 255, 255, 0.92);
 }
 
 html:not([data-theme="dark"]) body.shop-page #purchaseAddToCartBtn.shop-sold-out-restock-btn:hover {
-    background: #dbeafe;
-    color: #1e40af;
-    border-color: rgba(37, 99, 235, 0.28);
+    background: rgba(var(--shop-category-active-blue-rgb), 0.18);
+    color: #5f8fc7;
+    border-color: var(--shop-category-active-blue);
 }
 
 html:not([data-theme="dark"]) body.shop-page #nextPurchaseStepBtn.shop-purchase-sold-out-btn,
 html:not([data-theme="dark"]) body.shop-page #nextPurchaseStepBtn.shop-purchase-sold-out-btn:hover,
 html:not([data-theme="dark"]) body.shop-page #nextPurchaseStepBtn.shop-purchase-sold-out-btn:active {
-    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    background: linear-gradient(135deg, var(--shop-sold-out-soft-red) 0%, var(--shop-sold-out-soft-red-deep) 100%);
     color: #ffffff;
-    border-color: rgba(220, 38, 38, 0.34);
+    border-color: rgba(var(--shop-sold-out-soft-red-rgb), 0.32);
     box-shadow:
-        0 10px 22px rgba(220, 38, 38, 0.2),
+        0 10px 20px rgba(var(--shop-sold-out-soft-red-deep-rgb), 0.16),
         inset 0 1px 0 rgba(255, 255, 255, 0.18);
     transform: none;
     filter: none;
@@ -9291,5 +9297,22 @@ html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-purchase-d
         min-height: 0;
         margin-top: 0 !important;
         padding-block: 0;
+    }
+}
+
+/* 20260608_SHOP_PURCHASE_MOBILE_OPEN_VIEWPORT_STABLE_1 */
+#shopPurchaseModal .modal-content {
+    max-height: min(840px, calc(var(--shop-purchase-overlay-height, 100dvh) - 96px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))) !important;
+}
+
+@media (max-width: 768px) {
+    #shopPurchaseModal .modal-content {
+        max-height: min(760px, calc(var(--shop-purchase-overlay-height, 100dvh) - 96px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))) !important;
+    }
+}
+
+@media (min-width: 901px) {
+    #shopPurchaseModal .modal-content {
+        max-height: min(720px, calc(var(--shop-purchase-overlay-height, 100dvh) - 72px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))) !important;
     }
 }

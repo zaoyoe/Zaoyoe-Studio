@@ -8907,22 +8907,34 @@ const ShopClient = {
         const { overlay } = this.getPurchaseModalElements();
         if (!overlay) return;
         const frame = this.getPurchaseModalNativeViewportFrame();
-        const measuredHeight = Math.max(0, Math.round(frame.overlayHeight || 0));
+        const measuredHeight = Math.max(0, Math.round(frame.stableHeight || frame.overlayHeight || 0));
 
         if (!measuredHeight) return;
         const baseHeight = Math.round(this.purchaseModalKeyboardBaseViewportHeight || 0);
-        const shouldPreserveForKeyboard = this.purchaseModalKeyboardDocked || !!this.getActivePurchaseModalInput();
+        const activeInput = this.getActivePurchaseModalInput();
+        const shouldPreserveForKeyboard = this.purchaseModalKeyboardDocked || !!activeInput;
+        const isOpeningSettling = overlay.classList.contains('shop-purchase-opening-stable');
+        const shouldPreserveStableOpenFrame = overlay.classList.contains('active')
+            && isOpeningSettling
+            && !shouldPreserveForKeyboard;
+        const shouldPreserveStableOpenBase = overlay.classList.contains('active')
+            && isOpeningSettling
+            && !shouldPreserveForKeyboard
+            && baseHeight > measuredHeight;
         const shouldPreserveKeyboardBase = overlay.classList.contains('active')
             && shouldPreserveForKeyboard
             && baseHeight > measuredHeight;
-        const overlayHeight = shouldPreserveKeyboardBase ? baseHeight : measuredHeight;
+        const overlayHeight = (shouldPreserveKeyboardBase || shouldPreserveStableOpenBase) ? baseHeight : measuredHeight;
+        const previousViewportTop = overlay.style.getPropertyValue('--shop-purchase-viewport-top');
+        const previousViewportLeft = overlay.style.getPropertyValue('--shop-purchase-viewport-left');
+        const previousViewportWidth = overlay.style.getPropertyValue('--shop-purchase-viewport-width');
         this.setCssVariables(overlay, {
-            '--shop-purchase-viewport-top': `${frame.top}px`,
-            '--shop-purchase-viewport-left': `${frame.left}px`,
-            '--shop-purchase-viewport-width': `${frame.width}px`,
+            '--shop-purchase-viewport-top': shouldPreserveStableOpenFrame && previousViewportTop ? previousViewportTop : `${frame.top}px`,
+            '--shop-purchase-viewport-left': shouldPreserveStableOpenFrame && previousViewportLeft ? previousViewportLeft : `${frame.left}px`,
+            '--shop-purchase-viewport-width': shouldPreserveStableOpenFrame && previousViewportWidth ? previousViewportWidth : `${frame.width}px`,
             '--shop-purchase-overlay-height': `${overlayHeight}px`
         });
-        if (shouldPreserveKeyboardBase) return;
+        if (shouldPreserveKeyboardBase || shouldPreserveStableOpenBase) return;
         if (!force && baseHeight === measuredHeight) return;
         this.purchaseModalKeyboardBaseViewportHeight = measuredHeight;
     },
@@ -12233,12 +12245,20 @@ const ShopClient = {
         const { overlay, card } = this.getPurchaseModalElements();
         const frame = this.getPurchaseModalNativeViewportFrame();
         const visualHeight = Math.max(0, Math.round(frame.visualHeight || 0));
-        const baseViewportHeight = Math.max(0, Math.round(frame.overlayHeight || frame.visualBottom || visualHeight || 0));
+        const measuredBaseViewportHeight = Math.max(0, Math.round(frame.stableHeight || frame.overlayHeight || frame.visualBottom || visualHeight || 0));
+        const previousBaseViewportHeight = Math.max(0, Math.round(this.purchaseModalKeyboardBaseViewportHeight || 0));
+        const isOpeningSettling = overlay?.classList.contains('shop-purchase-opening-stable');
+        const baseViewportHeight = isOpeningSettling && previousBaseViewportHeight > measuredBaseViewportHeight
+            ? previousBaseViewportHeight
+            : measuredBaseViewportHeight;
+        const previousViewportTop = overlay?.style.getPropertyValue('--shop-purchase-viewport-top');
+        const previousViewportLeft = overlay?.style.getPropertyValue('--shop-purchase-viewport-left');
+        const previousViewportWidth = overlay?.style.getPropertyValue('--shop-purchase-viewport-width');
         this.purchaseModalKeyboardBaseViewportHeight = baseViewportHeight;
         this.setCssVariables(overlay, {
-            '--shop-purchase-viewport-top': `${frame.top}px`,
-            '--shop-purchase-viewport-left': `${frame.left}px`,
-            '--shop-purchase-viewport-width': `${frame.width}px`,
+            '--shop-purchase-viewport-top': isOpeningSettling && previousViewportTop ? previousViewportTop : `${frame.top}px`,
+            '--shop-purchase-viewport-left': isOpeningSettling && previousViewportLeft ? previousViewportLeft : `${frame.left}px`,
+            '--shop-purchase-viewport-width': isOpeningSettling && previousViewportWidth ? previousViewportWidth : `${frame.width}px`,
             '--shop-purchase-overlay-height': `${baseViewportHeight}px`
         });
         this.purchaseModalKeyboardBaseVisualHeight = Math.max(this.purchaseModalKeyboardBaseVisualHeight || 0, visualHeight);
