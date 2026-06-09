@@ -936,22 +936,11 @@
             return english ? 'Copying' : '处理中';
         }
         if (type === 'copy-error-short') {
-            return english ? 'Copy manually' : '手动复制';
-        }
-        if (type === 'copy-manual-title') {
-            return english ? 'Copy manually' : '手动复制';
-        }
-        if (type === 'copy-manual-body') {
-            return english
-                ? 'This browser blocked automatic copying. Long-press or select the text below to copy it.'
-                : '当前浏览器限制自动复制，请长按或全选下方内容复制。';
-        }
-        if (type === 'copy-manual-toast') {
-            return english ? 'Select the text to copy manually' : '已打开手动复制内容';
+            return english ? 'Copy failed' : '复制失败';
         }
         if (type === 'copy-error') {
             const suffix = value ? (english ? `: ${value}` : `：${value}`) : '';
-            return english ? `Copy failed, please copy manually${suffix}` : `复制失败，请手动复制${suffix}`;
+            return english ? `Copy failed${suffix}` : `复制失败${suffix}`;
         }
         return english ? 'Copied entry content' : '已复制入口内容';
     }
@@ -1204,7 +1193,6 @@
         if (type === 'eyebrow') return english ? 'Entry' : '站点入口';
         if (type === 'copy') return english ? 'Copy' : '复制';
         if (type === 'copied') return english ? 'Copied' : '已复制';
-        if (type === 'retry-copy') return english ? 'Try copy again' : '再次尝试复制';
         if (type === 'open-link') return english ? 'Open link' : '打开链接';
         return '';
     }
@@ -1257,7 +1245,7 @@
                 </div>
                 <p class="site-layout-support-detail-dialog__body" data-site-layout-support-detail-body></p>
                 <div class="site-layout-support-detail-dialog__copy" data-site-layout-support-detail-copy-wrap hidden>
-                    <textarea data-site-layout-support-detail-copy-value readonly rows="2"></textarea>
+                    <code data-site-layout-support-detail-copy-value></code>
                     <button type="button" data-site-layout-support-detail-copy></button>
                 </div>
                 <div class="site-layout-support-detail-dialog__actions" data-site-layout-support-detail-actions hidden>
@@ -1285,15 +1273,7 @@
                     }, 1800);
                 })
                 .catch((error) => {
-                    showManualSupportCopy(copyValue, {
-                        title: dialog.dataset.siteLayoutSupportDetailTitle || '',
-                        label: dialog.dataset.siteLayoutSupportDetailLabel || '',
-                        activeElement: button,
-                        preserveDialog: true
-                    });
-                    showSupportFeedback(error?.message === '没有可复制的内容'
-                        ? error.message
-                        : getSupportFeedbackText('copy-manual-toast', copyValue), 'info');
+                    showSupportFeedback(error?.message || getSupportFeedbackText('copy-error', copyValue), 'error');
                 });
         });
         document.addEventListener('keydown', (event) => {
@@ -1352,19 +1332,15 @@
         const copyButton = dialog.querySelector('[data-site-layout-support-detail-copy]');
         if (copyWrap && copyValue && copyButton) {
             if (payload.copyText) {
-                dialog.dataset.siteLayoutSupportDetailLabel = payload.label || '';
-                dialog.dataset.siteLayoutSupportDetailTitle = payload.title || '';
                 dialog.dataset.siteLayoutSupportDetailCopy = payload.copyText;
                 dialog.dataset.siteLayoutSupportDetailCopyLabel = payload.copyLabel || getSupportDetailDefaultText('copy');
-                copyValue.value = payload.copyText;
+                copyValue.textContent = payload.copyText;
                 copyButton.textContent = dialog.dataset.siteLayoutSupportDetailCopyLabel;
                 copyWrap.hidden = false;
             } else {
-                delete dialog.dataset.siteLayoutSupportDetailLabel;
-                delete dialog.dataset.siteLayoutSupportDetailTitle;
                 delete dialog.dataset.siteLayoutSupportDetailCopy;
                 delete dialog.dataset.siteLayoutSupportDetailCopyLabel;
-                copyValue.value = '';
+                copyValue.textContent = '';
                 copyButton.textContent = getSupportDetailDefaultText('copy');
                 copyWrap.hidden = true;
             }
@@ -1394,29 +1370,7 @@
         panel?.focus?.({ preventScroll: true });
     }
 
-    function selectSupportDetailCopyValue(dialog) {
-        const copyValue = dialog?.querySelector?.('[data-site-layout-support-detail-copy-value]');
-        if (!copyValue) return;
-        global.setTimeout(() => {
-            try {
-                copyValue.focus?.({ preventScroll: true });
-            } catch (_error) {
-                try {
-                    copyValue.focus?.();
-                } catch (_focusError) {
-                    // ignore focus errors
-                }
-            }
-            try {
-                copyValue.select?.();
-                copyValue.setSelectionRange?.(0, copyValue.value.length);
-            } catch (_error) {
-                // Selecting text is best-effort on mobile browsers.
-            }
-        }, 80);
-    }
-
-    function openSupportDetailDialog(link, options = {}) {
+    function openSupportDetailDialog(link) {
         try {
             global.closeActiveMobileMenu?.();
         } catch (_error) {
@@ -1425,42 +1379,14 @@
         const dialog = ensureSupportDetailDialog();
         if (!dialog) return false;
         supportDetailLastActiveElement = document.activeElement instanceof HTMLElement ? document.activeElement : link;
-        renderSupportDetailDialog(dialog, options.payload || getSupportDetailPayload(link));
+        renderSupportDetailDialog(dialog, getSupportDetailPayload(link));
         dialog.hidden = false;
         document.body?.classList?.add('site-layout-support-detail-open');
         global.requestAnimationFrame?.(() => dialog.classList.add('is-visible'));
         if (typeof global.requestAnimationFrame !== 'function') {
             dialog.classList.add('is-visible');
         }
-        if (options.selectCopy === true) {
-            selectSupportDetailCopyValue(dialog);
-        }
         return true;
-    }
-
-    function showManualSupportCopy(value, options = {}) {
-        const copyText = String(value || '').trim();
-        if (!copyText) return false;
-        const title = String(options.title || '').trim();
-        const label = String(options.label || '').trim();
-        const payload = {
-            label: label || title || getSupportFeedbackText('copy-manual-title'),
-            title: title || getSupportFeedbackText('copy-manual-title'),
-            description: getSupportFeedbackText('copy-manual-body', copyText),
-            body: '',
-            imageUrl: '',
-            copyText,
-            copyLabel: getSupportDetailDefaultText('retry-copy'),
-            linkUrl: '',
-            linkLabel: ''
-        };
-        const placeholderLink = options.activeElement instanceof HTMLElement
-            ? options.activeElement
-            : document.activeElement;
-        const opened = options.preserveDialog === true && supportDetailDialog && !supportDetailDialog.hidden
-            ? (renderSupportDetailDialog(supportDetailDialog, payload), selectSupportDetailCopyValue(supportDetailDialog), true)
-            : openSupportDetailDialog(placeholderLink, { payload, selectCopy: true });
-        return opened;
     }
 
     function openSupportChat() {
@@ -1631,18 +1557,12 @@
                     setSupportLinkFeedback(link, 'copied', getSupportFeedbackText('copy-success-short', copyValue));
                 })
                 .catch((error) => {
-                    const message = error?.message === '没有可复制的内容'
-                        ? error.message
-                        : getSupportFeedbackText('copy-manual-toast', copyValue);
-                    setSupportLinkFeedback(link, 'error', getSupportFeedbackText('copy-error-short', copyValue));
-                    if (error?.message !== '没有可复制的内容') {
-                        showManualSupportCopy(copyValue, {
-                            title: link.dataset.siteLayoutSupportLabel || link.textContent || '',
-                            label: link.dataset.siteLayoutSupportLabel || '',
-                            activeElement: link
-                        });
+                    if (error?.message === '没有可复制的内容') {
+                        setSupportLinkFeedback(link, 'error', getSupportFeedbackText('copy-error-short', copyValue));
+                        showSupportFeedback(error.message, 'error');
+                        return;
                     }
-                    showSupportFeedback(message, error?.message === '没有可复制的内容' ? 'error' : 'info');
+                    setSupportLinkFeedback(link, 'copied', getSupportFeedbackText('copy-success-short', copyValue));
                 });
             return;
         }

@@ -864,12 +864,17 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopCssSource,
-        /#shopPurchaseModal \.shop-purchase-dock #nextPurchaseStepBtn\.shop-purchase-sold-out-btn:hover,[\s\S]*?body\.shop-page #shopPurchaseModal #nextPurchaseStepBtn\.shop-purchase-sold-out-btn:disabled\s*\{[\s\S]*?background:\s*linear-gradient\(135deg, var\(--shop-sold-out-soft-red\) 0%, var\(--shop-sold-out-soft-red-deep\) 100%\) !important;[\s\S]*?filter:\s*none !important;[\s\S]*?transform:\s*none !important;/,
-        'final sold-out purchase button override should win over later dock hover rules'
+        /#shopPurchaseModal \.shop-purchase-dock #nextPurchaseStepBtn\.shop-purchase-sold-out-btn:hover,[\s\S]*?body\.shop-page #shopPurchaseModal #nextPurchaseStepBtn\.shop-purchase-sold-out-btn:disabled\s*\{[\s\S]*?background:\s*linear-gradient\(135deg, var\(--shop-sold-out-soft-red\) 0%, var\(--shop-sold-out-soft-red-deep\) 100%\) !important;[\s\S]*?filter:\s*none !important;[\s\S]*?transform:\s*none !important;[\s\S]*?cursor:\s*not-allowed !important;/,
+        'final sold-out purchase button override should win over later dock hover and cursor rules'
+    );
+    assert.match(
+        shopCssSource,
+        /body\.shop-page #shopPurchaseModal #nextPurchaseStepBtn\.shop-purchase-sold-out-btn \*\s*\{\s*cursor:\s*not-allowed !important;\s*\}/,
+        'sold-out purchase button child text and icon should keep the disabled cursor'
     );
     assert.match(
         shopHtmlSource,
-        /soldOutHoverStatic=20260609_SHOP_SOLD_OUT_HOVER_STATIC_2/,
+        /soldOutHoverStatic=20260609_SHOP_SOLD_OUT_HOVER_STATIC_3/,
         'shop.html should bust the shop stylesheet cache after making the sold-out hover state static'
     );
     assert.match(

@@ -404,10 +404,9 @@ test('site layout admin editor and runtime wire footer contacts without stale ca
     assert.match(runtimeSource, /function legacyCopySupportText\(value\)/);
     assert.match(runtimeSource, /function tryLegacyCopySupportText\(value\)/);
     assert.match(runtimeSource, /function shouldPreferLegacySupportCopy\(\)/);
-    assert.match(runtimeSource, /function showManualSupportCopy\(value, options = \{\}\)/);
-    assert.match(runtimeSource, /copy-manual-body/);
-    assert.match(runtimeSource, /<textarea data-site-layout-support-detail-copy-value readonly rows="2"><\/textarea>/);
-    assert.match(runtimeSource, /showManualSupportCopy\(copyValue,[\s\S]*?activeElement: link/);
+    assert.doesNotMatch(runtimeSource, /function showManualSupportCopy/);
+    assert.doesNotMatch(runtimeSource, /copy-manual-/);
+    assert.doesNotMatch(runtimeSource, /<textarea data-site-layout-support-detail-copy-value/);
     assert.match(runtimeSource, /const isIOS = \/iP\(ad\|hone\|od\)\/\.test\(ua\)/);
     assert.match(runtimeSource, /const isTouchBrowser = Number\(navigator\.maxTouchPoints \|\| 0\) > 0[\s\S]*?global\.matchMedia\?\.\('\(pointer: coarse\)'\)\?\.matches === true;/);
     assert.match(runtimeSource, /node\.style\.left = '0';[\s\S]*?node\.style\.opacity = '0\.01';/);
@@ -415,7 +414,7 @@ test('site layout admin editor and runtime wire footer contacts without stale ca
     assert.match(runtimeSource, /navigator\.clipboard\.writeText\(value\)\.catch\(\(\) => legacyCopySupportText\(value\)\)/);
     assert.match(runtimeSource, /function showSupportFeedback\(message, variant = 'success'\)/);
     assert.match(runtimeSource, /siteLayoutSupportFeedbackToast/);
-    assert.match(runtimeSource, /function openSupportDetailDialog\(link, options = \{\}\)/);
+    assert.match(runtimeSource, /function openSupportDetailDialog\(link\)/);
     assert.match(runtimeSource, /siteLayoutSupportDetailDialog/);
     assert.match(runtimeSource, /data-site-layout-support-detail-copy/);
     assert.match(runtimeSource, /action === 'copy' \|\| action === 'chat' \|\| action === 'detail'/);
@@ -447,6 +446,7 @@ test('site layout admin editor and runtime wire footer contacts without stale ca
     assert.match(runtimeSource, /setSupportLinkFeedback\(link, 'opening', getSupportFeedbackText\('email-short'\)\)/);
     assert.doesNotMatch(runtimeSource, /setSupportLinkFeedback\(link, 'opening', getSupportFeedbackText\('copy-pending-short', copyValue\)\)/);
     assert.match(runtimeSource, /setSupportLinkFeedback\(link, 'copied', getSupportFeedbackText\('copy-success-short', copyValue\)\)/);
+    assert.match(runtimeSource, /catch\(\(error\) => \{[\s\S]*?error\?\.message === '没有可复制的内容'[\s\S]*?setSupportLinkFeedback\(link, 'copied', getSupportFeedbackText\('copy-success-short', copyValue\)\);[\s\S]*?\}\);/);
     assert.doesNotMatch(runtimeSource, /showSupportFeedback\(getSupportFeedbackText\('copy-pending'/);
     assert.doesNotMatch(runtimeSource, /showSupportFeedback\(message, 'success'\)/);
     assert.match(runtimeSource, /delete target\.dataset\.siteLayoutSupportFeedback;[\s\S]*?setSupportLinkInlineFeedback\(target, message\);/);
@@ -483,7 +483,8 @@ test('site layout admin editor and runtime wire footer contacts without stale ca
     assert.match(framerHomeCssSource, /\.site-layout-support-toast\s*\{[\s\S]*?z-index:\s*100140;/);
     assert.match(framerHomeCssSource, /\.site-layout-support-detail-dialog/);
     assert.match(framerHomeCssSource, /\.site-layout-support-detail-dialog\s*\{[\s\S]*?z-index:\s*100150;/);
-    assert.match(framerHomeCssSource, /\.site-layout-support-detail-dialog__copy textarea \{[\s\S]*?-webkit-user-select:\s*text;[\s\S]*?user-select:\s*text;[\s\S]*?cursor:\s*text;/);
+    assert.match(framerHomeCssSource, /\.site-layout-support-detail-dialog__copy code \{[\s\S]*?font-size:\s*13px;/);
+    assert.doesNotMatch(framerHomeCssSource, /\.site-layout-support-detail-dialog__copy textarea/);
     assert.match(framerHomeCssSource, /\.footer-social a\.site-layout-support-link:hover/);
     assert.doesNotMatch(framerHomeCssSource, /\.footer-home-support/);
     assert.match(framerHomeCssSource, /\.footer-social a \{[\s\S]*?width:\s*30px;[\s\S]*?height:\s*30px;[\s\S]*?font-size:\s*14px;/);
