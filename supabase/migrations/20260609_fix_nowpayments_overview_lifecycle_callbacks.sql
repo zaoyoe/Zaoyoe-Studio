@@ -1,9 +1,12 @@
+-- Keep NOWPayments normal lifecycle IPNs out of payment anomaly/duplicate callback
+-- aggregates on databases that already applied the April overview summary wrapper.
+
 DO $$
 BEGIN
-    IF to_regprocedure('public.fn_admin_get_payment_overview_summary_base_20260419(timestamp with time zone, timestamp with time zone, timestamp with time zone, character varying)') IS NULL
+    IF to_regprocedure('public.fn_admin_get_payment_overview_summary_base_20260609(timestamp with time zone, timestamp with time zone, timestamp with time zone, character varying)') IS NULL
        AND to_regprocedure('public.fn_admin_get_payment_overview_summary(timestamp with time zone, timestamp with time zone, timestamp with time zone, character varying)') IS NOT NULL THEN
         ALTER FUNCTION public.fn_admin_get_payment_overview_summary(TIMESTAMPTZ, TIMESTAMPTZ, TIMESTAMPTZ, VARCHAR)
-            RENAME TO fn_admin_get_payment_overview_summary_base_20260419;
+            RENAME TO fn_admin_get_payment_overview_summary_base_20260609;
     END IF;
 END $$;
 
@@ -18,7 +21,7 @@ LANGUAGE sql
 SECURITY DEFINER
 RETURN (
     WITH base AS (
-        SELECT public.fn_admin_get_payment_overview_summary_base_20260419(
+        SELECT public.fn_admin_get_payment_overview_summary_base_20260609(
             p_start_at,
             p_end_at,
             p_trend_start_at,

@@ -345,6 +345,123 @@ function pickNowpaymentsTransactionId(payload = {}) {
     );
 }
 
+function normalizeAmount(value, fallback = 0) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? roundCurrencyAmount(parsed) : fallback;
+}
+
+function isPositiveAmount(value) {
+    return Number.isFinite(value) && value > 0;
+}
+
+function amountCoversExpected(expected, actual, epsilon = 0.01) {
+    const normalizedExpected = normalizeAmount(expected, null);
+    const normalizedActual = normalizeAmount(actual, null);
+    if (!isPositiveAmount(normalizedExpected) || !isPositiveAmount(normalizedActual)) {
+        return false;
+    }
+    return normalizedActual + epsilon >= normalizedExpected;
+}
+
+function normalizeCurrencyCode(value = '') {
+    return sanitizeText(value, '', 40).toLowerCase();
+}
+
+function currenciesMatchOrMissing(actualCurrency, expectedCurrency) {
+    const actual = normalizeCurrencyCode(actualCurrency);
+    const expected = normalizeCurrencyCode(expectedCurrency);
+    return !actual || !expected || actual === expected;
+}
+
+function buildNowpaymentsPayAmountCandidates(payload = {}, expectedPayCurrency = '') {
+    const candidates = [];
+    const pushCandidate = (source, amount, currency) => {
+        const normalizedAmount = normalizeAmount(amount, null);
+        if (!isPositiveAmount(normalizedAmount)) return;
+        if (!currenciesMatchOrMissing(currency, expectedPayCurrency)) return;
+        candidates.push({
+            source,
+            amount: normalizedAmount,
+            currency: normalizeCurrencyCode(currency) || normalizeCurrencyCode(expectedPayCurrency) || null
+        });
+    };
+
+    pushCandidate('actually_paid', payload.actually_paid, payload.pay_currency);
+    pushCandidate('pay_amount', payload.pay_amount, payload.pay_currency);
+    pushCandidate('outcome_amount', payload.outcome_amount, payload.outcome_currency || payload.pay_currency);
+
+    return candidates;
+}
+
+function resolveNowpaymentsAmountVerification(metadata = {}, payload = {}) {
+    const expectedPayAmount = normalizeAmount(
+        metadata.pay_amount
+        ?? metadata.pay_amount_text
+        ?? metadata.pay_amount_original
+        ?? metadata.pay_amount_text_original,
+        0
+    );
+    const expectedPriceAmount = normalizeAmount(metadata.price_amount, 0);
+    const webhookPriceAmount = normalizeAmount(payload.price_amount, 0);
+    const expectedPayCurrency = normalizeCurrencyCode(metadata.pay_currency) || 'usdtbsc';
+    const webhookPayCurrency = normalizeCurrencyCode(payload.pay_currency);
+    const expectedPriceCurrency = normalizeCurrencyCode(metadata.price_currency) || 'usd';
+    const webhookPriceCurrency = normalizeCurrencyCode(payload.price_currency);
+    const payCurrencyValid = currenciesMatchOrMissing(webhookPayCurrency, expectedPayCurrency);
+    const priceCurrencyValid = currenciesMatchOrMissing(webhookPriceCurrency, expectedPriceCurrency);
+    const amountCandidates = buildNowpaymentsPayAmountCandidates(payload, expectedPayCurrency);
+    const matchedPayAmount = expectedPayAmount > 0 && payCurrencyValid
+        ? amountCandidates.find((candidate) => amountCoversExpected(expectedPayAmount, candidate.amount, 0.01))
+        : null;
+
+    if (matchedPayAmount) {
+        return {
+            valid: true,
+            strategy: matchedPayAmount.source,
+            expectedAmount: expectedPayAmount,
+            actualAmount: matchedPayAmount.amount,
+            expectedCurrency: expectedPayCurrency,
+            actualCurrency: matchedPayAmount.currency,
+            payCurrencyValid,
+            priceCurrencyValid,
+            expectedPriceAmount,
+            webhookPriceAmount
+        };
+    }
+
+    if (
+        expectedPriceAmount > 0
+        && priceCurrencyValid
+        && amountsMatch(expectedPriceAmount, webhookPriceAmount, 0.01)
+    ) {
+        return {
+            valid: true,
+            strategy: 'price_amount',
+            expectedAmount: expectedPriceAmount,
+            actualAmount: webhookPriceAmount,
+            expectedCurrency: expectedPriceCurrency,
+            actualCurrency: webhookPriceCurrency || expectedPriceCurrency,
+            payCurrencyValid,
+            priceCurrencyValid,
+            expectedPriceAmount,
+            webhookPriceAmount
+        };
+    }
+
+    return {
+        valid: false,
+        strategy: expectedPayAmount > 0 ? 'pay_amount' : 'price_amount',
+        expectedAmount: expectedPayAmount > 0 ? expectedPayAmount : expectedPriceAmount,
+        actualAmount: amountCandidates[0]?.amount || webhookPriceAmount || 0,
+        expectedCurrency: expectedPayAmount > 0 ? expectedPayCurrency : expectedPriceCurrency,
+        actualCurrency: amountCandidates[0]?.currency || webhookPriceCurrency || webhookPayCurrency || null,
+        payCurrencyValid,
+        priceCurrencyValid,
+        expectedPriceAmount,
+        webhookPriceAmount
+    };
+}
+
 async function handleNowpaymentsWebhook({
     req,
     res,
@@ -461,17 +578,15 @@ async function handleNowpaymentsWebhook({
 
         const signatureValid = signatureCheck.valid === true;
         const paymentState = normalizeNowpaymentsPaymentStatus(payload.payment_status);
-        const expectedPriceAmount = roundCurrencyAmount(metadata.price_amount ?? 0);
-        const webhookPriceAmount = roundCurrencyAmount(payload.price_amount ?? 0);
-        const expectedPayCurrency = sanitizeText(metadata.pay_currency, 'usdtbsc', 40).toLowerCase();
-        const webhookPayCurrency = sanitizeText(payload.pay_currency, '', 40).toLowerCase();
-        const expectedPriceCurrency = sanitizeText(metadata.price_currency, 'usd', 20).toLowerCase();
-        const webhookPriceCurrency = sanitizeText(payload.price_currency, '', 20).toLowerCase();
-        const amountValid = expectedPriceAmount > 0
-            ? amountsMatch(expectedPriceAmount, webhookPriceAmount, 0.01)
-            : false;
-        const currencyValid = (!webhookPayCurrency || webhookPayCurrency === expectedPayCurrency)
-            && (!webhookPriceCurrency || webhookPriceCurrency === expectedPriceCurrency);
+        const amountVerification = resolveNowpaymentsAmountVerification(metadata, payload);
+        const expectedPriceAmount = amountVerification.expectedPriceAmount;
+        const webhookPriceAmount = amountVerification.webhookPriceAmount;
+        const expectedPayCurrency = normalizeCurrencyCode(metadata.pay_currency) || 'usdtbsc';
+        const webhookPayCurrency = normalizeCurrencyCode(payload.pay_currency);
+        const expectedPriceCurrency = normalizeCurrencyCode(metadata.price_currency) || 'usd';
+        const webhookPriceCurrency = normalizeCurrencyCode(payload.price_currency);
+        const amountValid = amountVerification.valid === true;
+        const currencyValid = amountVerification.payCurrencyValid && amountVerification.priceCurrencyValid;
         let processingResult = paymentState === 'paid' ? 'pending_review' : `ignored_${paymentState}`;
         let errorMessage = null;
         let responseStatus = 200;
@@ -500,7 +615,7 @@ async function handleNowpaymentsWebhook({
             errorMessage = 'missing_payment_owner';
         } else if (!amountValid) {
             processingResult = 'amount_mismatch';
-            errorMessage = `amount_mismatch_expected_${expectedPriceAmount}_${expectedPriceCurrency}`;
+            errorMessage = `amount_mismatch_expected_${amountVerification.expectedAmount}_${amountVerification.expectedCurrency}`;
         } else if (!currencyValid) {
             processingResult = 'pending_review';
             errorMessage = 'currency_mismatch';
@@ -584,6 +699,15 @@ async function handleNowpaymentsWebhook({
                     actually_paid: roundCurrencyAmount(payload.actually_paid ?? 0) || null,
                     outcome_amount: roundCurrencyAmount(payload.outcome_amount ?? 0) || null,
                     outcome_currency: sanitizeText(payload.outcome_currency, '', 40).toLowerCase() || null,
+                    amount_verification: {
+                        strategy: amountVerification.strategy,
+                        expected_amount: amountVerification.expectedAmount,
+                        actual_amount: amountVerification.actualAmount,
+                        expected_currency: amountVerification.expectedCurrency,
+                        actual_currency: amountVerification.actualCurrency,
+                        expected_price_amount: amountVerification.expectedPriceAmount,
+                        webhook_price_amount: amountVerification.webhookPriceAmount
+                    },
                     webhook_received_at: nowIso
                 })
             };
@@ -699,6 +823,7 @@ module.exports = {
         getRequestHostName,
         isProductionLikeRuntime,
         mergePaymentObjects,
-        readRawRequestBody
+        readRawRequestBody,
+        resolveNowpaymentsAmountVerification
     }
 };

@@ -24,6 +24,7 @@ const {
 const EVENT_OK_RESULTS = new Set([
     'processed_paid',
     'received',
+    'ignored_pending',
     'ignored_non_success_ec',
     'ignored_non_order_event',
     'ignored_non_paid_status',
@@ -1852,6 +1853,9 @@ function buildDuplicateWebhookTopicItems(events) {
     const grouped = new Map();
 
     (events || []).forEach((event) => {
+        if (isBenignNowpaymentsLifecycleEvent(event)) {
+            return;
+        }
         const orderNo = String(event.provider_order_no || '').trim();
         if (!orderNo) return;
         if (!grouped.has(orderNo)) {
@@ -1884,6 +1888,22 @@ function buildDuplicateWebhookTopicItems(events) {
             duplicate_count: row.count
         }))
         .sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
+}
+
+function isBenignNowpaymentsLifecycleEvent(event = {}) {
+    const provider = String(event.provider || '').trim().toLowerCase();
+    if (provider !== 'nowpayments') return false;
+    const eventType = String(event.event_type || '').trim().toLowerCase();
+    if (eventType && eventType !== 'webhook') return false;
+    const responseStatus = Number(event.response_status);
+    if (Number.isFinite(responseStatus) && (responseStatus < 200 || responseStatus >= 300)) {
+        return false;
+    }
+    if (event.signature_valid === false || event.amount_valid === false) {
+        return false;
+    }
+    const result = String(event.processing_result || '').trim().toLowerCase();
+    return result === 'ignored_pending' || result === 'processed_paid' || result === 'received';
 }
 
 function buildQueryFailureTopicItems(rows) {
