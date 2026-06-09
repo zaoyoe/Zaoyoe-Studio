@@ -104,7 +104,7 @@ test('mobile keyboard overlays use the customer-service light-lock dock contract
     assert.match(adminChat, /lockAdminChatKeyboardPage\(\) \{/);
     assert.match(adminChat, /window\.iOSScrollLock\.lockLight\(containerEl \|\| interfaceEl, \{[\s\S]*restoreScrollDuringViewport: true/);
     assert.match(chatWidget, /\.chat-window\.admin-mode-layout\.keyboard-docked,[\s\S]*left: 50% !important;[\s\S]*right: auto !important;[\s\S]*translate3d\(-50%, calc\(var\(--chat-base-translate-y, -50%\) \+ var\(--chat-shift-y, 0px\)\), 0\)/);
-    assert.doesNotMatch(chatWidget, /\.chat-window\.admin-mode-layout\.keyboard-docked,[\s\S]*transform: translate3d\(0,/);
+    assert.doesNotMatch(chatWidget, /\.chat-window\.admin-mode-layout\.keyboard-docked,[^{]*\{[^}]*transform: translate3d\(0,/);
     assert.match(chatWidget, /window\.iOSScrollLock\.lockLight\(this\.chatWindow, \{[\s\S]*restoreScrollDuringViewport: true/);
     assert.match(walletModal, /const targetBottom = Math\.max\(40, keyboardTop - keyboardClearance\);/);
     assert.match(walletModal, /function getWalletModalFocusKeyboardInset\(snapshot = getWalletModalViewportSnapshot\(\)\) \{/);
@@ -227,10 +227,10 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
         /keyboardGuard/,
         'focused customer chat input should not add a fixed bottom spacer that creates a large gap above the composer'
     );
-    assert.match(
+    assert.doesNotMatch(
         chatWidgetCss,
         /\.chat-window:not\(\.admin-mode-layout\) \.chat-messages::before\s*\{[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-height:\s*0;/,
-        'short customer chat conversations should bottom-anchor near the input instead of leaving a large composer gap'
+        'customer chat should not rely on a pseudo spacer that can add a large composer gap during handoff'
     );
     assert.match(
         chatWidget,
@@ -316,7 +316,7 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(chatWidget, /const openingCleanupDelay = useBootstrapHandoffOpening \? 560 : 440;/);
     assert.match(chatWidget, /finishUserHistoryLoadHandoff\(\) \{[\s\S]*!this\.isBootstrapContentSettleInFlight\(\)[\s\S]*this\.scheduleBootstrapAdoptedContentSettle\(\);/);
     assert.match(chatWidget, /isBootstrapContentSettleInFlight\(\) \{/);
-    assert.match(chatWidget, /const contentSettleDelayMs = 420;/);
+    assert.match(chatWidget, /const contentSettleDelayMs = 220;/);
     assert.match(chatWidget, /const shouldUseInitialLoadingHandoff = Boolean\(claimedShell\);[\s\S]*getUserInitialMessagesMarkup\(\{[\s\S]*loading: shouldUseInitialLoadingHandoff/);
     assert.match(chatWidget, /if \(shouldUseInitialLoadingHandoff\) \{[\s\S]*this\.scheduleBootstrapAdoptedContentSettle\(\);/);
     assert.match(chatWidget, /const useBootstrapHistoryHandoff = this\.isBootstrapShellAdopted\(\);[\s\S]*if \(!useBootstrapHistoryHandoff\) \{[\s\S]*this\.ensureSessionLoadingOverlay\(\);[\s\S]*\} else \{[\s\S]*this\.clearSessionLoadingOverlayTimer\(\);[\s\S]*\}/);
@@ -347,7 +347,7 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.doesNotMatch(chatWidget, /meta\.setAttribute\('content', '#000000'\)/);
     assert.match(chatWidget, /chat-window--bootstrap-content-ready \.emoji-picker-popover:not\(\.active\)/);
     assert.match(chatWidgetCss, /\.loading-overlay--user-dots \{[\s\S]*background: var\(--chat-panel-bg/);
-    assert.match(chatWidgetCss, /\.chat-loading-state--user-handoff \{[\s\S]*margin: auto;[\s\S]*color: var\(--chat-accent-blue/);
+    assert.match(chatWidgetCss, /\.chat-loading-state--user-handoff \{[\s\S]*position: absolute;[\s\S]*inset: 0;[\s\S]*pointer-events: none;[\s\S]*color: var\(--chat-accent-blue/);
     assert.match(chatWidgetCss, /\.chat-loading-dots span \{[\s\S]*animation: chat-widget-loading-dots 1\.05s ease-in-out infinite;/);
     assert.doesNotMatch(chatWidgetCss, /\.chat-window:not\(\.admin-mode-layout\) \.chat-input-handoff-skeleton \{/);
     assert.match(
@@ -368,11 +368,11 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(chatWidgetCss, /html\[data-theme="light"\] \.chat-window:not\(\.admin-mode-layout\) \{[\s\S]*--chat-panel-shadow: none;[\s\S]*--chat-avatar-bg: rgba\(107, 158, 206, 0\.18\);/);
     assert.match(chatWidgetCss, /\.chat-window--bootstrap-adopting-content > \*:not\(\.chat-bootstrap-content-snapshot\)/);
     assert.match(chatWidgetCss, /\.chat-window--bootstrap-adopting-content\.chat-window--bootstrap-content-ready > \*:not\(\.emoji-picker-popover\):not\(\.chat-bootstrap-content-snapshot\)/);
-    assert.match(chatWidgetCss, /\.chat-window--bootstrap-adopting-content\.chat-window--bootstrap-content-ready > \*:not\(\.emoji-picker-popover\):not\(\.chat-bootstrap-content-snapshot\) \{[\s\S]*opacity: 1;[\s\S]*chat-widget-content-settle/);
-    assert.match(chatWidgetCss, /\.chat-bootstrap-content-snapshot \{[\s\S]*transition: opacity 300ms/);
-    assert.match(chatWidgetCss, /\.chat-window--bootstrap-content-ready \.chat-bootstrap-content-snapshot \{[\s\S]*opacity: 0;[\s\S]*transition-delay: 80ms;/);
-    assert.match(chatWidget, /\.chat-window--bootstrap-adopting-content\.chat-window--bootstrap-content-ready > \*:not\(\.emoji-picker-popover\):not\(\.chat-bootstrap-content-snapshot\)[\s\S]*opacity: 1;[\s\S]*chat-widget-content-settle/);
+    assert.match(chatWidgetCss, /\.chat-window--bootstrap-adopting-content\.chat-window--bootstrap-content-ready > \*:not\(\.emoji-picker-popover\):not\(\.chat-bootstrap-content-snapshot\) \{[\s\S]*opacity: 1;[\s\S]*animation: none;/);
+    assert.match(chatWidgetCss, /\.chat-bootstrap-content-snapshot \{[\s\S]*transition: opacity 160ms/);
+    assert.match(chatWidgetCss, /\.chat-window--bootstrap-content-ready \.chat-bootstrap-content-snapshot \{[\s\S]*opacity: 0;[\s\S]*transition-delay: 0ms;/);
+    assert.match(chatWidget, /\.chat-window--bootstrap-adopting-content\.chat-window--bootstrap-content-ready > \*:not\(\.emoji-picker-popover\):not\(\.chat-bootstrap-content-snapshot\)[\s\S]*opacity: 1;[\s\S]*animation: none;/);
     assert.match(chatWidgetCss, /\.chat-window--bootstrap-content-ready \.emoji-picker-popover:not\(\.active\) \{[\s\S]*opacity: 0 !important;/);
-    assert.match(chatWidgetCss, /@keyframes chat-widget-loading-dots \{[\s\S]*transform: translateY\(-3px\);[\s\S]*opacity: 0\.96;/);
+    assert.match(chatWidgetCss, /@keyframes chat-widget-loading-dots \{[\s\S]*transform: translate3d\(0, -2px, 0\);[\s\S]*opacity: 0\.96;/);
     assert.match(walletLoader, /const VERSION = '20260608_ORDER_GUIDANCE_COPY_3';/);
 });

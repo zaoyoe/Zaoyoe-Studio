@@ -909,8 +909,23 @@ html[data-theme="light"] .chat-widget-bootstrap-overlay.is-active {
     height: 8px;
     border-radius: 50%;
     flex: 0 0 auto;
+    display: inline-block;
+    background: #ccc;
+    box-shadow: none;
+}
+
+.chat-widget-bootstrap-user-header .status-dot.online {
     background: #4cd964;
     box-shadow: 0 0 8px rgba(76, 217, 100, 0.4);
+}
+
+.chat-widget-bootstrap-user-header .status-dot.away {
+    background: #ffcc00;
+}
+
+.chat-widget-bootstrap-user-header .status-dot.offline {
+    background: #8e8e93;
+    box-shadow: none;
 }
 
 .chat-widget-bootstrap-user-header .status-text {
@@ -925,6 +940,18 @@ html[data-theme="light"] .chat-widget-bootstrap-overlay.is-active {
     justify-content: flex-end;
     flex: 0 0 auto;
     white-space: nowrap;
+}
+
+.chat-widget-bootstrap-user-header .chat-header-mode-switch {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: var(--chat-accent-blue, #6b9ece);
+    font-size: 12px;
+    line-height: 1.2;
+    font-weight: 700;
+    cursor: default;
 }
 
 .chat-widget-bootstrap-user-body.chat-messages {
@@ -1133,6 +1160,7 @@ html[data-theme="light"] .chat-widget-bootstrap-overlay.is-active {
     justify-content: center;
     min-width: 72px;
     min-height: 44px;
+    line-height: 1;
     color: rgba(147, 187, 227, 0.96);
 }
 
@@ -1142,10 +1170,17 @@ html[data-theme="light"] .chat-widget-bootstrap-overlay.is-active {
     justify-content: center;
     min-width: 72px;
     min-height: 44px;
+    line-height: 1;
 }
 
 .chat-loading-state--user-handoff {
-    margin: auto;
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    min-width: 0;
+    min-height: 0;
+    z-index: 6;
+    pointer-events: none;
     color: var(--chat-accent-blue, #6b94c6);
 }
 
@@ -1154,6 +1189,8 @@ html[data-theme="light"] .chat-widget-bootstrap-overlay.is-active {
     align-items: center;
     justify-content: center;
     gap: 8px;
+    height: 24px;
+    line-height: 0;
     flex-shrink: 0;
 }
 
@@ -1163,6 +1200,7 @@ html[data-theme="light"] .chat-widget-bootstrap-overlay.is-active {
     border-radius: 999px;
     background: currentColor;
     opacity: 0.24;
+    will-change: transform, opacity;
     animation: chat-loading-dots 1.05s ease-in-out infinite;
 }
 
@@ -1282,12 +1320,12 @@ html[data-theme="dark"] .chat-widget-bootstrap-admin-loading {
 
 @keyframes chat-loading-dots {
     0%, 80%, 100% {
-        transform: translateY(0);
+        transform: translate3d(0, 2px, 0);
         opacity: 0.24;
     }
 
     40% {
-        transform: translateY(-3px);
+        transform: translate3d(0, -2px, 0);
         opacity: 0.96;
     }
 }
@@ -1530,11 +1568,11 @@ html[data-theme="dark"] .chat-widget-bootstrap-admin-row {
 @keyframes chat-widget-bootstrap-content-settle {
     0% {
         opacity: 1;
-        transform: translateY(4px);
+        transform: none;
     }
     100% {
         opacity: 1;
-        transform: translateY(0);
+        transform: none;
     }
 }
 
@@ -1544,7 +1582,7 @@ html[data-theme="dark"] .chat-widget-bootstrap-admin-row {
 
 .chat-window--bootstrap-adopting-content.chat-window--bootstrap-content-ready > *:not(.emoji-picker-popover):not(.chat-bootstrap-content-snapshot) {
     opacity: 1;
-    animation: chat-widget-bootstrap-content-settle 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: none;
 }
 
 .chat-bootstrap-content-snapshot {
@@ -1559,7 +1597,7 @@ html[data-theme="dark"] .chat-widget-bootstrap-admin-row {
     background: var(--chat-shell-bg, rgba(10, 13, 20, 0.98));
     opacity: 1;
     pointer-events: none;
-    transition: opacity 300ms cubic-bezier(0.22, 1, 0.36, 1);
+    transition: opacity 160ms cubic-bezier(0.22, 1, 0.36, 1);
     contain: paint;
 }
 
@@ -1569,7 +1607,7 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
 
 .chat-window--bootstrap-content-ready .chat-bootstrap-content-snapshot {
     opacity: 0;
-    transition-delay: 80ms;
+    transition-delay: 0ms;
 }
 
 .chat-window--bootstrap-adopting-content .emoji-picker-popover:not(.active),
@@ -1860,8 +1898,8 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
                         <h3>在线客服</h3>
                         <div class="chat-status-row">
                             <div class="chat-status-indicator">
-                                <span class="status-dot online" aria-hidden="true"></span>
-                                <span class="status-text">管理员在线</span>
+                                <span class="status-dot offline" aria-hidden="true"></span>
+                                <span class="status-text">状态确认中...</span>
                             </div>
                             <div class="chat-header-actions">
                                 <button type="button" class="chat-header-mode-switch" tabindex="-1">常用入口</button>

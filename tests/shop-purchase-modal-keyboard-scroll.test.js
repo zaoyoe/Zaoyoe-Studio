@@ -85,6 +85,11 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
         true,
         'shop.html should bust storefront assets after stabilizing purchase modal opening viewport measurements'
     );
+    assert.equal(
+        shopHtml.includes('purchaseNarrowDesktopTitleStagger=20260609_SHOP_PURCHASE_NARROW_DESKTOP_TITLE_STAGGER_1'),
+        true,
+        'shop.html should bust storefront styles after restoring narrow desktop title staggering'
+    );
     assert.match(
         shopHtml,
         /<h3 id="purchaseStageTitle" class="card-title shop-inline-style-attr-6">Product Name<\/h3>/,
@@ -134,6 +139,11 @@ test('shop purchase modal remains scrollable when the mobile keyboard docks it',
         shopStyles,
         /@keyframes shopPurchaseStaggeredRise \{[\s\S]*from \{[\s\S]*opacity: 0;[\s\S]*transform: translate3d\(0, 14px, 0\);[\s\S]*to \{[\s\S]*opacity: 1;[\s\S]*transform: translate3d\(0, 0, 0\);/,
         'purchase modal should keep a named rise keyframe for the staggered entrance'
+    );
+    assert.match(
+        shopStyles,
+        /\/\* 20260609_SHOP_PURCHASE_NARROW_DESKTOP_TITLE_STAGGER_1 \*\/[\s\S]*@media \(max-width: 980px\) and \(hover: hover\) and \(pointer: fine\) \{[\s\S]*#shopPurchaseModal:not\(\.active\) \.modal-content > \.shop-purchase-stage-header\.shop-purchase-stage--opening-stagger,[\s\S]*opacity: 1 !important;[\s\S]*transform: translate3d\(0, 0, 0\) !important;[\s\S]*#shopPurchaseModal \.shop-purchase-stage-header\.shop-purchase-stage--opening-stagger > #purchaseStageTitle,[\s\S]*opacity: 0;[\s\S]*transform: translate3d\(0, 14px, 0\);[\s\S]*#shopPurchaseModal\.active \.shop-purchase-stage-header\.shop-purchase-stage--opening-stagger > #purchaseStageTitle \{[\s\S]*animation: shopPurchaseStaggeredRise 0\.42s cubic-bezier\(0\.22, 1, 0\.36, 1\) both;/,
+        'narrow desktop purchase modal should animate the product title itself so focus and dock stabilizers cannot flatten the rise'
     );
     assert.match(
         shopStyles,

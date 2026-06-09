@@ -1083,6 +1083,7 @@
         "image": "[图片]",
         "newMessage": "新消息",
         "adminOnline": "管理员在线",
+        "adminStatusChecking": "状态确认中...",
         "adminOffline": "管理员离线",
         "minutesAgo": "{minutes}分钟前在线",
         "hoursAgo": "{hours}小时前在线",
