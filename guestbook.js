@@ -1703,12 +1703,13 @@ function focusCommentModalInputWithoutScroll(input) {
 function bindCommentModalInputFocusStabilizer(input) {
     if (!input || input.dataset.commentFocusStabilizerBound === '1') return;
 
-    input.addEventListener('touchstart', (event) => {
+    input.addEventListener('touchstart', () => {
         const { overlay } = getCommentModalElements();
         if (!isCommentModalKeyboardDockEnabled() || !overlay?.classList.contains('active')) return;
-        if (event.cancelable) event.preventDefault();
-        focusCommentModalInputWithoutScroll(input);
-    }, { passive: false });
+        if (document.activeElement !== input) {
+            focusCommentModalInputWithoutScroll(input);
+        }
+    }, { passive: true });
 
     input.dataset.commentFocusStabilizerBound = '1';
 }

@@ -308,6 +308,8 @@ body.prompts-page #modalPromptText,
 body.prompts-page #modalPromptText * {
     -webkit-user-select: text;
     user-select: text;
+    -webkit-touch-callout: default;
+    touch-action: auto;
 }
 
 /* ========================================

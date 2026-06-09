@@ -488,7 +488,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
             violations.push(`${relativePath} is missing css/chat-widget.css`);
         }
 
-        if (!source.includes('css/chat-widget.css?v=20260609_CHAT_KEYBOARD_GAP_1')) {
+        if (!source.includes('css/chat-widget.css?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1')) {
             violations.push(`${relativePath} should cache-bust the scroll-lock chat widget stylesheet`);
         }
 
@@ -518,7 +518,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
     }
 
     const loaderMarkers = [
-        "const VERSION = '20260609_CHAT_KEYBOARD_GAP_1';",
+        "const VERSION = '20260609_CHAT_ADMIN_SEARCH_ZOOM_1';",
         "const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';",
         'function ensurePlaceholderPlacementStyles() {',
         '/* 20260502_CHAT_WIDGET_FAB_NO_POSITION_SLIDE_1 */',
@@ -547,7 +547,7 @@ test('public pages wire the chat widget through the shared bootstrap loader', ()
         'body.chat-widget-bootstrap-scroll-locked',
         "const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';",
         "const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';",
-        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260609_CHAT_KEYBOARD_GAP_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';",
+        "const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';",
         "const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';",
         'function getChatWidgetConstructor() {',
         'global.ChatWidget = ChatWidget;',
@@ -996,7 +996,7 @@ test('public pages wire wallet modal through the shared bootstrap loader', () =>
     const loaderMarkers = [
         "const VERSION = '20260608_ORDER_GUIDANCE_COPY_3';",
         "const POINTS_SERVICE_SRC = 'js/services/PointsService.js?v=20260518_MOBILE_PAY_FAST_CONFIRM_1';",
-        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260608_ORDER_GUIDANCE_COPY_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';",
+        "const WALLET_MODAL_SRC = 'js/components/WalletModal.js?v=20260608_ORDER_GUIDANCE_COPY_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';",
         'function ensureWalletModalReady() {',
         'function warmWalletModal(options = {}) {',
         "function openWalletModal(view = 'balance', context = {}) {",
@@ -1403,7 +1403,7 @@ test('public chat and shop scroll panels clamp accidental horizontal pan', () =>
         'long chat messages should wrap instead of widening the chat pane'
     );
     assert.equal(
-        optionalEnhancementsSource.includes('css/chat-widget.css?v=20260609_CHAT_KEYBOARD_GAP_1'),
+        optionalEnhancementsSource.includes('css/chat-widget.css?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1'),
         true,
         'optional guestbook chat loader should request the Safari handoff chat FAB stylesheet'
     );
@@ -2096,14 +2096,14 @@ test('ops alert inbox cards expose case actions in both admin studio and admin c
         'admin-studio.html should load the latest admin chat case action runtime'
     );
     assert.equal(
-        adminStudioHtml.includes('css/admin-chat.css?v=20260504_USER_ONLINE_GREEN_1'),
+        adminStudioHtml.includes('css/admin-chat.css?v=20260609_ADMIN_CHAT_SEARCH_ZOOM_1'),
         true,
         'admin-studio.html should load the latest admin chat case action stylesheet'
     );
 
     for (const source of publicPages) {
         assert.equal(
-            source.includes('js/chat-widget-loader.js?v=20260609_CHAT_KEYBOARD_GAP_1'),
+            source.includes('js/chat-widget-loader.js?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1'),
             true,
             'public entry pages should load the lazy chat widget bootstrap'
         );
@@ -2275,7 +2275,7 @@ test('public auth entry pages defer profile modal runtime through the shared pro
         "const VERSION = '20260503_PROFILE_MODAL_CHROME_CLOSE_1';",
         "const PROFILE_TEMPLATE_SRC = 'js/profile-modal-template.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1';",
         "const SECURITY_CARDS_SRC = 'security-cards.js?v=20260423_PROFILE_MODAL_SECURITY_INDICATOR_1';",
-        "const PROFILE_MODAL_STYLE_HREF = 'css/profile-modal.css?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';",
+        "const PROFILE_MODAL_STYLE_HREF = 'css/profile-modal.css?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';",
         'function ensureProfileModalStyles() {',
         'return ensureProfileModalStyles().then(() => true);',
         'function ensureProfileModalReady() {',
@@ -2486,7 +2486,7 @@ test('login auth sheet uses natural height while preserving smooth resize transi
         'inject-auth.js should lock sheet body scrolling while the auth sheet height is animating'
     );
     assert.equal(
-        injectSource.includes("const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260512_NAV_AUTH_SESSION_MATCH_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';"),
+        injectSource.includes("const AUTH_SHEET_CSS_HREF = './css/auth-sheet.css?v=20260512_NAV_AUTH_SESSION_MATCH_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';"),
         true,
         'inject-auth.js should cache-bust the auth sheet stylesheet for shop staggered auth entry'
     );
@@ -15917,7 +15917,7 @@ test('admin chat runtime renderers externalize avatar, loading, and panel visibi
     }
 
     const htmlMarkers = [
-        'css/admin-chat.css?v=20260504_USER_ONLINE_GREEN_1',
+        'css/admin-chat.css?v=20260609_ADMIN_CHAT_SEARCH_ZOOM_1',
         'js/admin-chat.js?v=20260514_CHAT_VERIFY_SUBMITTER_IDENTITY_1'
     ];
 

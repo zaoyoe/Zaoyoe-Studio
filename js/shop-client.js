@@ -51,12 +51,12 @@ const SHOP_NON_SELECTABLE_UI_SELECTOR = [
     '#shopPurchaseModal .shop-purchase-discount__feedback',
     '#shopPurchaseModal .shop-purchase-stage-action',
     '#shopPurchaseModal .shop-btn',
-    '#purchaseQuantity',
-    '#purchaseDiscountCode'
+    '#purchaseQuantity'
 ].join(', ');
 const SHOP_SELECTABLE_TEXT_SELECTOR = [
     'textarea',
-    'input:not(#purchaseQuantity):not(#purchaseDiscountCode)',
+    'input:not(#purchaseQuantity)',
+    'select',
     '[contenteditable="true"]',
     '#purchaseNotesContent',
     '#purchaseUsageContent',
@@ -85,8 +85,6 @@ function preventShopImageDrag(event) {
 function preventShopCardTextSelection(event) {
     if (!(event?.target instanceof Element)) return;
 
-    const discountInput = event.target.closest('#purchaseDiscountCode');
-    if (discountInput && discountInput.value) return;
     if (event.target.closest(SHOP_SELECTABLE_TEXT_SELECTOR)) return;
 
     const cardTarget = event.target.closest('.shop-card');
@@ -12021,12 +12019,13 @@ const ShopClient = {
     bindPurchaseModalInputFocusStabilizer: function (input) {
         if (!input || input.dataset.shopFocusStabilizerBound === '1') return;
 
-        input.addEventListener('touchstart', (e) => {
+        input.addEventListener('touchstart', () => {
             if (!this.isPurchaseModalKeyboardDockEnabled()) return;
             this.lockPurchaseModalKeyboardPage();
-            if (e.cancelable) e.preventDefault();
-            this.focusPurchaseModalInputWithoutScroll(input);
-        }, { passive: false });
+            if (document.activeElement !== input) {
+                this.focusPurchaseModalInputWithoutScroll(input);
+            }
+        }, { passive: true });
 
         input.dataset.shopFocusStabilizerBound = '1';
     },

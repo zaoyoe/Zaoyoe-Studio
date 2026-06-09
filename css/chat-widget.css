@@ -1517,6 +1517,13 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
     user-select: text;
 }
 
+.chat-window :where(.chat-input, .chat-support-inline-input) {
+    -webkit-user-select: text;
+    user-select: text;
+    -webkit-touch-callout: default;
+    touch-action: auto;
+}
+
 .chat-window .message--support-assist :where(.chat-support-assist-actions, .chat-support-assist-actions *) {
     -webkit-user-select: none;
     user-select: none;
@@ -2970,7 +2977,7 @@ html[data-theme="light"] .chat-bootstrap-content-snapshot {
     }
 }
 
-/* 20260609_CHAT_KEYBOARD_GAP_1 */
+/* 20260609_CHAT_ADMIN_SEARCH_ZOOM_1 */
 @media (max-width: 1180px) and (hover: hover) and (pointer: fine) {
     body.shop-page .chat-widget-fab,
     body.shop-page .chat-widget-fab:hover,

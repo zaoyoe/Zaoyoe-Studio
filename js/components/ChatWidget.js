@@ -10176,6 +10176,13 @@ class ChatWidget {
             .admin-search input::placeholder {
                 color: rgba(255, 255, 255, 0.4);
             }
+
+            @media (max-width: 768px), (hover: none), (pointer: coarse) {
+                .chat-window.admin-mode-layout .admin-search input,
+                .chat-window.admin-mode-layout .chat-input {
+                    font-size: 16px !important;
+                }
+            }
             
             /* Session List */
             .session-list {
@@ -22161,19 +22168,21 @@ class ChatWidget {
     _bindInputFocusStabilizer(inputEl) {
         if (!inputEl || inputEl.dataset.preventScrollBind === '1') return;
 
-        const handleTouchFocus = (e) => {
+        const handleTouchFocus = () => {
             if (!this.isOpen || !this._isIOSMobile() || !this._isNarrowViewport()) return;
-            if (e.cancelable) e.preventDefault();
+            if (inputEl.disabled || inputEl.readOnly) return;
             if (window.iOSScrollLock && this.chatWindow) {
                 window.iOSScrollLock.lockLight(this.chatWindow, {
                     restoreScrollDuringViewport: true
                 });
             }
-            this._focusInputWithoutScroll(inputEl);
+            if (document.activeElement !== inputEl) {
+                this._focusInputWithoutScroll(inputEl);
+            }
             this._requestViewportSync();
         };
 
-        inputEl.addEventListener('touchstart', handleTouchFocus, { passive: false });
+        inputEl.addEventListener('touchstart', handleTouchFocus, { passive: true });
         inputEl.dataset.preventScrollBind = '1';
     }
 

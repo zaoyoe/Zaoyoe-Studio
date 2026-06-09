@@ -299,6 +299,8 @@ body.auth-sheet-open {
 #loginModal.auth-sheet-overlay :where(input, textarea, select, [contenteditable="true"], [contenteditable="true"] *) {
     -webkit-user-select: text;
     user-select: text;
+    -webkit-touch-callout: default;
+    touch-action: auto;
 }
 
 .auth-sheet-surface {

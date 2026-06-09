@@ -182,6 +182,8 @@ body.wallet-modal-lock {
 .wallet-overlay :where(.wallet-affiliate-link-input) {
     -webkit-user-select: text;
     user-select: text;
+    -webkit-touch-callout: default;
+    touch-action: auto;
 }
 
 .wallet-modal {

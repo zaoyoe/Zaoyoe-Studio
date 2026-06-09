@@ -12,7 +12,7 @@
         },
         {
             id: 'guestbook-modal-runtime',
-            src: `./js/homepage-guestbook-modal.js?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1&iosChromeKeyboard=${IOS_CHROME_KEYBOARD_VERSION}`,
+            src: `./js/homepage-guestbook-modal.js?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1&iosChromeKeyboard=${IOS_CHROME_KEYBOARD_VERSION}&inputPaste=20260609_INPUT_PASTE_1`,
             isReady: () => typeof window.openGuestbookModal === 'function'
                 && window.openGuestbookModal.__homepageGuestbookIntentStub !== true
         }

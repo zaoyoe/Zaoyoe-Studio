@@ -429,17 +429,16 @@
             return;
         }
 
-        input.addEventListener('touchstart', (event) => {
+        input.addEventListener('touchstart', () => {
             const { overlay } = getGuestbookModalElements();
             if (!isGuestbookModalKeyboardDockEnabled() || !overlay?.classList.contains('active')) {
                 return;
             }
             lockGuestbookModalKeyboardPage();
-            if (event.cancelable) {
-                event.preventDefault();
+            if (document.activeElement !== input) {
+                focusGuestbookInputWithoutScroll(input);
             }
-            focusGuestbookInputWithoutScroll(input);
-        }, { passive: false });
+        }, { passive: true });
 
         input.dataset.guestbookFocusStabilizerBound = '1';
     }

@@ -1358,7 +1358,7 @@ let walletWarmPrefetchHandle = null;
 let walletRuntimeWarmHandle = null;
 let profileModalWarmHandle = null;
 let profileModalBootstrapScriptPromise = null;
-const PROFILE_MODAL_BOOTSTRAP_SRC = 'js/profile-modal-loader.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';
+const PROFILE_MODAL_BOOTSTRAP_SRC = 'js/profile-modal-loader.js?v=20260503_PROFILE_MODAL_CHROME_CLOSE_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';
 
 function warmSupabaseAuthWalletRuntime(reason = 'auth-ready') {
     const loader = window.ZaoyoeWalletModalBootstrap;
@@ -5251,9 +5251,6 @@ function bindProfileModalInputBehavior(input) {
         if (isProfileModalIOSMode() && isTap && document.activeElement !== input) {
             const beforeFocusScrollTop = scrollHost ? scrollHost.scrollTop : null;
             const wasDockedBeforeFocus = getProfileModalElements().overlay?.classList.contains('keyboard-docked');
-            if (event.cancelable) {
-                event.preventDefault();
-            }
             markProfileModalFocusTransfer(input);
             profileModalState.focusScrollSuppressUntil = Date.now() + 120;
             try {
@@ -5277,7 +5274,7 @@ function bindProfileModalInputBehavior(input) {
             }
         }
         gesture.mode = 'idle';
-    });
+    }, { passive: true });
 
     input.addEventListener('touchcancel', () => {
         gesture.mode = 'idle';

@@ -106,6 +106,11 @@ test('mobile keyboard overlays use the customer-service light-lock dock contract
     assert.match(chatWidget, /\.chat-window\.admin-mode-layout\.keyboard-docked,[\s\S]*left: 50% !important;[\s\S]*right: auto !important;[\s\S]*translate3d\(-50%, calc\(var\(--chat-base-translate-y, -50%\) \+ var\(--chat-shift-y, 0px\)\), 0\)/);
     assert.doesNotMatch(chatWidget, /\.chat-window\.admin-mode-layout\.keyboard-docked,[^{]*\{[^}]*transform: translate3d\(0,/);
     assert.match(chatWidget, /window\.iOSScrollLock\.lockLight\(this\.chatWindow, \{[\s\S]*restoreScrollDuringViewport: true/);
+    assert.match(
+        chatWidget,
+        /@media \(max-width: 768px\), \(hover: none\), \(pointer: coarse\) \{[\s\S]*\.chat-window\.admin-mode-layout \.admin-search input,[\s\S]*\.chat-window\.admin-mode-layout \.chat-input \{[\s\S]*font-size: 16px !important;/,
+        'mobile admin chat inputs should stay at 16px to avoid iOS Safari focus zoom'
+    );
     assert.match(walletModal, /const targetBottom = Math\.max\(40, keyboardTop - keyboardClearance\);/);
     assert.match(walletModal, /function getWalletModalFocusKeyboardInset\(snapshot = getWalletModalViewportSnapshot\(\)\) \{/);
     assert.match(walletModal, /const effectiveBottomInset = focusDriven[\s\S]*getWalletModalFocusKeyboardInset\(snapshot\)/);
@@ -248,6 +253,11 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(adminChatCss, /\.chat-container\.admin-chat-keyboard-docked/);
     assert.match(adminChatCss, /--admin-chat-keyboard-dock-height/);
     assert.match(adminChatCss, /\.admin-chat-viewport-probe/);
+    assert.match(
+        adminChatCss,
+        /@media \(max-width: 768px\), \(hover: none\), \(pointer: coarse\) \{[\s\S]*#module-chat \.chat-search input,[\s\S]*#module-chat \.chat-input \{[\s\S]*font-size: 16px !important;/,
+        'mobile standalone admin chat inputs should stay at 16px to avoid iOS Safari focus zoom'
+    );
 
     assert.match(shopHtml, /shop-client\.js\?v=20260520_SHOP_CARD_PROMPT_BREATHE_3/);
     assert.match(guestbookHtml, /guestbook\.js\?v=20260507_GUESTBOOK_DEEPLINK_REPLAY_1/);
@@ -256,7 +266,7 @@ test('keyboard dock styles and cache keys are wired for affected public/admin su
     assert.match(guestbookHtml, /homepage-guestbook-modal\.js\?v=20260504_HOME_GUESTBOOK_KEYBOARD_RETRACT_1/);
     assert.match(adminStudioHtml, /admin-chat\.js\?v=20260514_CHAT_VERIFY_SUBMITTER_IDENTITY_1/);
     assert.match(adminStudioHtml, /ios-scroll-lock\.js\?v=20260502_IOS_LIGHT_LOCK_SCROLL_ANCHOR_6/);
-    assert.match(chatWidgetLoader, /const VERSION = '20260609_CHAT_KEYBOARD_GAP_1';/);
+    assert.match(chatWidgetLoader, /const VERSION = '20260609_CHAT_ADMIN_SEARCH_ZOOM_1';/);
     assert.match(
         chatWidgetLoader,
         /@media \(max-width: 700px\) and \(hover: hover\) and \(pointer: fine\) \{[\s\S]*\.chat-window:not\(\.admin-mode-layout\):not\(\[data-chat-widget-bootstrap-shell="1"\]\) \{[\s\S]*--chat-base-translate-y: -50%;[\s\S]*width: min\(460px, max\(97vw, calc\(100vw - 16px\)\)\) !important;[\s\S]*height: 70vh !important;[\s\S]*top: 50% !important;[\s\S]*transform-origin: center center !important;[\s\S]*\.chat-window:not\(\.admin-mode-layout\):not\(\[data-chat-widget-bootstrap-shell="1"\]\)\.active \{[\s\S]*transform: translate3d\(-50%, calc\(var\(--chat-base-translate-y, -50%\) \+ var\(--chat-shift-y, 0px\)\), 0\) scale\(1\) !important;/,
