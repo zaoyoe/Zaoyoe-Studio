@@ -2891,13 +2891,31 @@ body.home-page .framer-footer {
     background: rgba(96, 165, 250, 0.1);
 }
 
-.site-layout-support-detail-dialog__copy code {
+.site-layout-support-detail-dialog__copy code,
+.site-layout-support-detail-dialog__copy textarea {
     min-width: 0;
     flex: 1;
     overflow-wrap: anywhere;
     color: rgba(219, 234, 254, 0.96);
     font-family: var(--font-mono);
-    font-size: 13px;
+    font-size: 16px;
+}
+
+.site-layout-support-detail-dialog__copy textarea {
+    width: 100%;
+    min-height: 44px;
+    max-height: 132px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    outline: none;
+    padding: 4px 0;
+    resize: none;
+    line-height: 1.5;
+    -webkit-text-fill-color: currentColor;
+    -webkit-user-select: text;
+    user-select: text;
+    cursor: text;
 }
 
 .site-layout-support-detail-dialog__copy button,
@@ -6514,7 +6532,9 @@ html[data-theme="light"] .site-layout-support-detail-dialog__copy {
 }
 
 html[data-theme="light"] body.home-page .site-layout-support-detail-dialog__copy code,
-html[data-theme="light"] .site-layout-support-detail-dialog__copy code {
+html[data-theme="light"] body.home-page .site-layout-support-detail-dialog__copy textarea,
+html[data-theme="light"] .site-layout-support-detail-dialog__copy code,
+html[data-theme="light"] .site-layout-support-detail-dialog__copy textarea {
     color: #1d4ed8;
 }
 

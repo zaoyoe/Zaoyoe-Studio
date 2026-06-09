@@ -731,31 +731,158 @@
         bindSupportActionDelegates();
     }
 
+    function restoreSupportCopySelection(selection, ranges, activeElement) {
+        try {
+            if (selection) {
+                selection.removeAllRanges();
+                ranges.forEach((range) => selection.addRange(range));
+            }
+        } catch (_error) {
+            // Restoring the user's prior selection is best-effort only.
+        }
+        try {
+            activeElement?.focus?.({ preventScroll: true });
+        } catch (_error) {
+            try {
+                activeElement?.focus?.();
+            } catch (_focusError) {
+                // ignore focus restoration errors
+            }
+        }
+    }
+
+    function createSupportCopyNode(value, type = 'textarea') {
+        const node = type === 'content'
+            ? document.createElement('span')
+            : document.createElement('textarea');
+        if (type === 'content') {
+            node.textContent = value;
+            node.setAttribute('contenteditable', 'true');
+            node.style.whiteSpace = 'pre';
+            node.style.userSelect = 'text';
+            node.style.webkitUserSelect = 'text';
+        } else {
+            node.value = value;
+            node.setAttribute('readonly', '');
+        }
+        node.setAttribute('aria-hidden', 'true');
+        node.tabIndex = -1;
+        node.style.position = 'fixed';
+        node.style.left = '0';
+        node.style.top = '0';
+        node.style.width = '2px';
+        node.style.height = '2px';
+        node.style.padding = '0';
+        node.style.border = '0';
+        node.style.margin = '0';
+        node.style.outline = '0';
+        node.style.boxShadow = 'none';
+        node.style.background = 'transparent';
+        node.style.color = 'transparent';
+        node.style.caretColor = 'transparent';
+        node.style.opacity = '0.01';
+        node.style.pointerEvents = 'none';
+        node.style.fontSize = '16px';
+        node.style.lineHeight = '1';
+        node.style.zIndex = '2147483647';
+        return node;
+    }
+
+    function tryExecCommandCopyFromNode(node, value) {
+        document.body.appendChild(node);
+        try {
+            node.focus?.({ preventScroll: true });
+        } catch (_error) {
+            try {
+                node.focus?.();
+            } catch (_focusError) {
+                // ignore focus errors and still try selection
+            }
+        }
+
+        if (node.tagName === 'TEXTAREA') {
+            node.select();
+            node.setSelectionRange?.(0, value.length);
+        } else {
+            const selection = global.getSelection?.();
+            const range = document.createRange();
+            range.selectNodeContents(node);
+            selection?.removeAllRanges();
+            selection?.addRange(range);
+        }
+
+        return document.execCommand('copy') === true;
+    }
+
+    function tryLegacyCopySupportText(value) {
+        const body = document.body;
+        if (!body || typeof document.execCommand !== 'function') {
+            throw new Error('复制失败');
+        }
+
+        const activeElement = document.activeElement;
+        const selection = global.getSelection?.();
+        const ranges = selection
+            ? Array.from({ length: selection.rangeCount }, (_item, index) => selection.getRangeAt(index).cloneRange())
+            : [];
+        const nodes = [];
+
+        try {
+            const textarea = createSupportCopyNode(value, 'textarea');
+            nodes.push(textarea);
+            if (tryExecCommandCopyFromNode(textarea, value)) {
+                return true;
+            }
+
+            textarea.remove();
+            const contentNode = createSupportCopyNode(value, 'content');
+            nodes.push(contentNode);
+            if (tryExecCommandCopyFromNode(contentNode, value)) {
+                return true;
+            }
+        } finally {
+            nodes.forEach((node) => node.remove());
+            restoreSupportCopySelection(selection, ranges, activeElement);
+        }
+
+        throw new Error('复制失败');
+    }
+
     function legacyCopySupportText(value) {
         return new Promise((resolve, reject) => {
             try {
-                const input = document.createElement('textarea');
-                input.value = value;
-                input.setAttribute('readonly', '');
-                input.style.position = 'fixed';
-                input.style.left = '-9999px';
-                input.style.top = '0';
-                input.style.opacity = '0';
-                document.body.appendChild(input);
-                input.select();
-                input.setSelectionRange(0, input.value.length);
-                const ok = document.execCommand('copy');
-                input.remove();
-                ok ? resolve() : reject(new Error('复制失败'));
+                tryLegacyCopySupportText(value);
+                resolve();
             } catch (error) {
                 reject(error);
             }
         });
     }
 
+    function shouldPreferLegacySupportCopy() {
+        const ua = String(navigator.userAgent || '');
+        const platform = String(navigator.platform || '');
+        const isIOS = /iP(ad|hone|od)/.test(ua)
+            || (platform === 'MacIntel' && Number(navigator.maxTouchPoints || 0) > 1);
+        const isTouchBrowser = Number(navigator.maxTouchPoints || 0) > 0
+            && global.matchMedia?.('(pointer: coarse)')?.matches === true;
+        return isIOS || isTouchBrowser;
+    }
+
     function copySupportText(text) {
         const value = String(text || '').trim();
         if (!value) return Promise.reject(new Error('没有可复制的内容'));
+        if (shouldPreferLegacySupportCopy()) {
+            try {
+                tryLegacyCopySupportText(value);
+                return Promise.resolve();
+            } catch (legacyError) {
+                if (navigator.clipboard?.writeText) {
+                    return navigator.clipboard.writeText(value).catch(() => Promise.reject(legacyError));
+                }
+                return Promise.reject(legacyError);
+            }
+        }
         if (navigator.clipboard?.writeText) {
             return navigator.clipboard.writeText(value).catch(() => legacyCopySupportText(value));
         }
@@ -810,6 +937,17 @@
         }
         if (type === 'copy-error-short') {
             return english ? 'Copy manually' : '手动复制';
+        }
+        if (type === 'copy-manual-title') {
+            return english ? 'Copy manually' : '手动复制';
+        }
+        if (type === 'copy-manual-body') {
+            return english
+                ? 'This browser blocked automatic copying. Long-press or select the text below to copy it.'
+                : '当前浏览器限制自动复制，请长按或全选下方内容复制。';
+        }
+        if (type === 'copy-manual-toast') {
+            return english ? 'Select the text to copy manually' : '已打开手动复制内容';
         }
         if (type === 'copy-error') {
             const suffix = value ? (english ? `: ${value}` : `：${value}`) : '';
@@ -1066,6 +1204,7 @@
         if (type === 'eyebrow') return english ? 'Entry' : '站点入口';
         if (type === 'copy') return english ? 'Copy' : '复制';
         if (type === 'copied') return english ? 'Copied' : '已复制';
+        if (type === 'retry-copy') return english ? 'Try copy again' : '再次尝试复制';
         if (type === 'open-link') return english ? 'Open link' : '打开链接';
         return '';
     }
@@ -1118,7 +1257,7 @@
                 </div>
                 <p class="site-layout-support-detail-dialog__body" data-site-layout-support-detail-body></p>
                 <div class="site-layout-support-detail-dialog__copy" data-site-layout-support-detail-copy-wrap hidden>
-                    <code data-site-layout-support-detail-copy-value></code>
+                    <textarea data-site-layout-support-detail-copy-value readonly rows="2"></textarea>
                     <button type="button" data-site-layout-support-detail-copy></button>
                 </div>
                 <div class="site-layout-support-detail-dialog__actions" data-site-layout-support-detail-actions hidden>
@@ -1146,7 +1285,15 @@
                     }, 1800);
                 })
                 .catch((error) => {
-                    showSupportFeedback(error?.message || getSupportFeedbackText('copy-error', copyValue), 'error');
+                    showManualSupportCopy(copyValue, {
+                        title: dialog.dataset.siteLayoutSupportDetailTitle || '',
+                        label: dialog.dataset.siteLayoutSupportDetailLabel || '',
+                        activeElement: button,
+                        preserveDialog: true
+                    });
+                    showSupportFeedback(error?.message === '没有可复制的内容'
+                        ? error.message
+                        : getSupportFeedbackText('copy-manual-toast', copyValue), 'info');
                 });
         });
         document.addEventListener('keydown', (event) => {
@@ -1205,15 +1352,19 @@
         const copyButton = dialog.querySelector('[data-site-layout-support-detail-copy]');
         if (copyWrap && copyValue && copyButton) {
             if (payload.copyText) {
+                dialog.dataset.siteLayoutSupportDetailLabel = payload.label || '';
+                dialog.dataset.siteLayoutSupportDetailTitle = payload.title || '';
                 dialog.dataset.siteLayoutSupportDetailCopy = payload.copyText;
                 dialog.dataset.siteLayoutSupportDetailCopyLabel = payload.copyLabel || getSupportDetailDefaultText('copy');
-                copyValue.textContent = payload.copyText;
+                copyValue.value = payload.copyText;
                 copyButton.textContent = dialog.dataset.siteLayoutSupportDetailCopyLabel;
                 copyWrap.hidden = false;
             } else {
+                delete dialog.dataset.siteLayoutSupportDetailLabel;
+                delete dialog.dataset.siteLayoutSupportDetailTitle;
                 delete dialog.dataset.siteLayoutSupportDetailCopy;
                 delete dialog.dataset.siteLayoutSupportDetailCopyLabel;
-                copyValue.textContent = '';
+                copyValue.value = '';
                 copyButton.textContent = getSupportDetailDefaultText('copy');
                 copyWrap.hidden = true;
             }
@@ -1243,7 +1394,29 @@
         panel?.focus?.({ preventScroll: true });
     }
 
-    function openSupportDetailDialog(link) {
+    function selectSupportDetailCopyValue(dialog) {
+        const copyValue = dialog?.querySelector?.('[data-site-layout-support-detail-copy-value]');
+        if (!copyValue) return;
+        global.setTimeout(() => {
+            try {
+                copyValue.focus?.({ preventScroll: true });
+            } catch (_error) {
+                try {
+                    copyValue.focus?.();
+                } catch (_focusError) {
+                    // ignore focus errors
+                }
+            }
+            try {
+                copyValue.select?.();
+                copyValue.setSelectionRange?.(0, copyValue.value.length);
+            } catch (_error) {
+                // Selecting text is best-effort on mobile browsers.
+            }
+        }, 80);
+    }
+
+    function openSupportDetailDialog(link, options = {}) {
         try {
             global.closeActiveMobileMenu?.();
         } catch (_error) {
@@ -1252,14 +1425,42 @@
         const dialog = ensureSupportDetailDialog();
         if (!dialog) return false;
         supportDetailLastActiveElement = document.activeElement instanceof HTMLElement ? document.activeElement : link;
-        renderSupportDetailDialog(dialog, getSupportDetailPayload(link));
+        renderSupportDetailDialog(dialog, options.payload || getSupportDetailPayload(link));
         dialog.hidden = false;
         document.body?.classList?.add('site-layout-support-detail-open');
         global.requestAnimationFrame?.(() => dialog.classList.add('is-visible'));
         if (typeof global.requestAnimationFrame !== 'function') {
             dialog.classList.add('is-visible');
         }
+        if (options.selectCopy === true) {
+            selectSupportDetailCopyValue(dialog);
+        }
         return true;
+    }
+
+    function showManualSupportCopy(value, options = {}) {
+        const copyText = String(value || '').trim();
+        if (!copyText) return false;
+        const title = String(options.title || '').trim();
+        const label = String(options.label || '').trim();
+        const payload = {
+            label: label || title || getSupportFeedbackText('copy-manual-title'),
+            title: title || getSupportFeedbackText('copy-manual-title'),
+            description: getSupportFeedbackText('copy-manual-body', copyText),
+            body: '',
+            imageUrl: '',
+            copyText,
+            copyLabel: getSupportDetailDefaultText('retry-copy'),
+            linkUrl: '',
+            linkLabel: ''
+        };
+        const placeholderLink = options.activeElement instanceof HTMLElement
+            ? options.activeElement
+            : document.activeElement;
+        const opened = options.preserveDialog === true && supportDetailDialog && !supportDetailDialog.hidden
+            ? (renderSupportDetailDialog(supportDetailDialog, payload), selectSupportDetailCopyValue(supportDetailDialog), true)
+            : openSupportDetailDialog(placeholderLink, { payload, selectCopy: true });
+        return opened;
     }
 
     function openSupportChat() {
@@ -1432,9 +1633,16 @@
                 .catch((error) => {
                     const message = error?.message === '没有可复制的内容'
                         ? error.message
-                        : getSupportFeedbackText('copy-error', copyValue);
+                        : getSupportFeedbackText('copy-manual-toast', copyValue);
                     setSupportLinkFeedback(link, 'error', getSupportFeedbackText('copy-error-short', copyValue));
-                    showSupportFeedback(message, 'error');
+                    if (error?.message !== '没有可复制的内容') {
+                        showManualSupportCopy(copyValue, {
+                            title: link.dataset.siteLayoutSupportLabel || link.textContent || '',
+                            label: link.dataset.siteLayoutSupportLabel || '',
+                            activeElement: link
+                        });
+                    }
+                    showSupportFeedback(message, error?.message === '没有可复制的内容' ? 'error' : 'info');
                 });
             return;
         }
