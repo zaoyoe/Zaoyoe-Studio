@@ -4012,8 +4012,8 @@ test('shop purchase quantity focus highlights only the input border in light the
 
     assert.match(
         focusRule,
-        /border-color:\s*rgba\(107,\s*158,\s*206,\s*0\.36\)\s*!important;/,
-        'focused purchase quantity input should keep the blue border highlight'
+        /border-color:\s*rgba\(107,\s*158,\s*206,\s*0\.28\)\s*!important;/,
+        'focused purchase quantity input should keep a soft blue border highlight'
     );
     assert.doesNotMatch(
         focusRule,
@@ -4024,6 +4024,98 @@ test('shop purchase quantity focus highlights only the input border in light the
         focusRule,
         /0\s+4px\s+10px\s+rgba\(15,\s*23,\s*42,\s*0\.035\)/,
         'focused purchase quantity input should keep the same softened elevation as the resting state'
+    );
+});
+
+test('shop cart light theme uses the purchase button visual treatment', () => {
+    const shopCssSource = readRepoFile('css/shop-page.css');
+    const cartItemRule = shopCssSource.match(
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-cart-item\s*\{(?<body>[\s\S]*?)\n\}/
+    )?.groups?.body || '';
+    const secondaryBaseRule = shopCssSource.match(
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopCartContinueBtn,\s*html:not\(\[data-theme="dark"\]\) body\.shop-page #shopCartCheckoutBackBtn\s*\{(?<body>[\s\S]*?)\n\}/
+    )?.groups?.body || '';
+    const secondaryHoverRule = shopCssSource.match(
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopCartContinueBtn:hover:not\(\[disabled\]\),\s*html:not\(\[data-theme="dark"\]\) body\.shop-page #shopCartCheckoutBackBtn:hover:not\(\[disabled\]\)\s*\{(?<body>[\s\S]*?)\n\}/
+    )?.groups?.body || '';
+    const primaryBaseRule = shopCssSource.match(
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopCartCheckoutBtn,\s*html:not\(\[data-theme="dark"\]\) body\.shop-page #shopCartCheckoutConfirmBtn\s*\{(?<body>[\s\S]*?)\n\}/
+    )?.groups?.body || '';
+    const primaryHoverRule = shopCssSource.match(
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopCartCheckoutBtn:hover:not\(\[disabled\]\),\s*html:not\(\[data-theme="dark"\]\) body\.shop-page #shopCartCheckoutConfirmBtn:hover:not\(\[disabled\]\)\s*\{(?<body>[\s\S]*?)\n\}/
+    )?.groups?.body || '';
+
+    assert.match(
+        cartItemRule,
+        /0\s+1px\s+3px\s+rgba\(15,\s*23,\s*42,\s*0\.035\)/,
+        'cart product cards should keep only a very soft light-theme shadow'
+    );
+    assert.doesNotMatch(
+        cartItemRule,
+        /0\s+10px\s+28px\s+rgba\(15,\s*23,\s*42,\s*0\.07\)/,
+        'cart product cards should not keep the old floating card shadow'
+    );
+    assert.match(
+        secondaryBaseRule,
+        /border:\s*1px solid rgba\(49,\s*80,\s*111,\s*0\.14\);[\s\S]*border-radius:\s*999px;[\s\S]*box-shadow:\s*inset 0 1px 0 rgba\(255,\s*255,\s*255,\s*0\.72\);[\s\S]*filter:\s*none;[\s\S]*transform:\s*none;/,
+        'cart secondary actions should match the add-to-cart resting treatment'
+    );
+    assert.match(
+        secondaryHoverRule,
+        /background:\s*var\(--shop-light-soft\);[\s\S]*color:\s*#172033;[\s\S]*border-color:\s*rgba\(49,\s*80,\s*111,\s*0\.22\);[\s\S]*filter:\s*brightness\(0\.995\) saturate\(1\.01\);[\s\S]*transform:\s*none;/,
+        'cart secondary action hover should match the add-to-cart hover treatment'
+    );
+    assert.match(
+        primaryBaseRule,
+        /background:\s*linear-gradient\(135deg,\s*#4ade80 0%,\s*#22c55e 100%\);[\s\S]*border:\s*1px solid rgba\(5,\s*46,\s*22,\s*0\.10\);[\s\S]*border-radius:\s*999px;[\s\S]*0\s+1px\s+2px\s+rgba\(34,\s*197,\s*94,\s*0\.12\)/,
+        'cart primary actions should match the redeem resting treatment'
+    );
+    assert.match(
+        primaryHoverRule,
+        /background:\s*linear-gradient\(135deg,\s*#43d675 0%,\s*#20b957 100%\);[\s\S]*border-color:\s*rgba\(49,\s*80,\s*111,\s*0\.22\);[\s\S]*box-shadow:\s*none !important;[\s\S]*filter:\s*brightness\(0\.995\) saturate\(1\.01\);[\s\S]*transform:\s*none;/,
+        'cart primary action hover should match the redeem hover treatment without the raised top highlight'
+    );
+    assert.doesNotMatch(
+        `${secondaryHoverRule}\n${primaryHoverRule}`,
+        /translateY\(-1px\)|brightness\(1\.(?:03|1)\)|0\s+1[45]px\s+2[46]px/,
+        'cart action hover rules should not keep the old floating or brightened hover treatment'
+    );
+});
+
+test('shop cart guidance pills are outline-only until selected in light theme', () => {
+    const shopCssSource = readRepoFile('css/shop-page.css');
+    const noticeRule = shopCssSource.match(
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-cart-item__pill--notice,[\s\S]*?html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-cart-checkout__item-pill--notice\s*\{(?<body>[\s\S]*?)\n\}/
+    )?.groups?.body || '';
+    const usageRule = shopCssSource.match(
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-cart-item__pill--usage,[\s\S]*?html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-cart-checkout__item-pill--usage\s*\{(?<body>[\s\S]*?)\n\}/
+    )?.groups?.body || '';
+    const activeNoticeRule = shopCssSource.match(
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-cart-item__pill--toggle\.is-active\.shop-cart-item__pill--notice\s*\{(?<body>[\s\S]*?)\n\}/
+    )?.groups?.body || '';
+    const activeUsageRule = shopCssSource.match(
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-cart-item__pill--toggle\.is-active\.shop-cart-item__pill--usage\s*\{(?<body>[\s\S]*?)\n\}/
+    )?.groups?.body || '';
+
+    assert.match(
+        noticeRule,
+        /background:\s*transparent;[\s\S]*border-color:\s*rgba\(245,\s*158,\s*11,\s*0\.18\);[\s\S]*color:\s*#92400e;/,
+        'resting notes pill should show only the amber border and text'
+    );
+    assert.match(
+        usageRule,
+        /background:\s*transparent;[\s\S]*border-color:\s*rgba\(16,\s*185,\s*129,\s*0\.16\);[\s\S]*color:\s*#047857;/,
+        'resting usage pill should show only the green border and text'
+    );
+    assert.match(
+        activeNoticeRule,
+        /background:\s*#fff7ed;[\s\S]*border-color:\s*rgba\(245,\s*158,\s*11,\s*0\.34\);/,
+        'selected notes pill should fill with the amber surface'
+    );
+    assert.match(
+        activeUsageRule,
+        /background:\s*#ecfdf5;[\s\S]*border-color:\s*rgba\(16,\s*185,\s*129,\s*0\.3\);/,
+        'selected usage pill should fill with the green surface'
     );
 });
 
