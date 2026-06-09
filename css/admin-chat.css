@@ -1735,6 +1735,14 @@
     caret-color: #9fcaff;
 }
 
+/* 20260609_ADMIN_CHAT_SEARCH_ZOOM_1 */
+@media (max-width: 768px), (hover: none), (pointer: coarse) {
+    #module-chat .chat-search input,
+    #module-chat .chat-input {
+        font-size: 16px !important;
+    }
+}
+
 .chat-send-btn {
     color: #9fcaff;
     background: none;

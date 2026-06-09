@@ -6,11 +6,11 @@
     }
     global.__zaoyoeChatWidgetBootstrapLoaded = true;
 
-    const VERSION = '20260609_CHAT_KEYBOARD_GAP_1';
+    const VERSION = '20260609_CHAT_ADMIN_SEARCH_ZOOM_1';
     const SUPPORT_CONFIG_SRC = 'js/support-bot-config.js?v=20260330_SUPPORT_FLOW_1';
     const ADMIN_WORKBENCH_SRC = 'js/admin-workbench.js?v=20260421_ADMIN_WORKBENCH_COMMENTS_OPS_ALERTS_HELPERS_P2';
-    const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260609_CHAT_KEYBOARD_GAP_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';
-    const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=20260609_CHAT_KEYBOARD_GAP_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';
+    const CHAT_WIDGET_SRC = 'js/components/ChatWidget.js?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1&siteAssetCdn=20260510_SITE_ASSET_CDN_1';
+    const CHAT_WIDGET_STYLE_SRC = 'css/chat-widget.css?v=20260609_CHAT_ADMIN_SEARCH_ZOOM_1&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';
     const CHAT_WIDGET_CRITICAL_STYLE_ID = 'zaoyoe-chat-widget-fab-placement-guard';
     const CHAT_WIDGET_SHELL_MODE_KEY = 'zaoyoe_chat_widget_last_shell_mode_v1';
     const ADMIN_ACCESS_CACHE_KEY = 'zaoyoe_admin_access_cache_v1';
@@ -555,7 +555,7 @@ body.chat-widget-bootstrap-scroll-locked {
     }
 }
 
-/* 20260609_CHAT_KEYBOARD_GAP_1 */
+/* 20260609_CHAT_ADMIN_SEARCH_ZOOM_1 */
 @media (max-width: 1180px) and (hover: hover) and (pointer: fine) {
     body.shop-page .chat-widget-fab,
     body.shop-page .chat-widget-fab:hover,

@@ -853,12 +853,13 @@ class AdminChat {
             handleViewportChange();
             setTimeout(handleViewportChange, 120);
         };
-        const handleTouchStart = (event) => {
+        const handleTouchStart = () => {
             if (!this.isMobileKeyboardDockEnabled()) return;
-            if (event.cancelable) event.preventDefault();
             this.captureAdminChatKeyboardBase();
             this.lockAdminChatKeyboardPage();
-            this.focusAdminChatInputWithoutScroll(input);
+            if (document.activeElement !== input) {
+                this.focusAdminChatInputWithoutScroll(input);
+            }
             handleViewportChange();
             setTimeout(handleViewportChange, 60);
         };
@@ -869,7 +870,7 @@ class AdminChat {
         window.addEventListener('orientationchange', handleViewportChange, { passive: true });
         input.addEventListener('focus', handleInputFocus);
         input.addEventListener('blur', handleInputBlur);
-        input.addEventListener('touchstart', handleTouchStart, { passive: false });
+        input.addEventListener('touchstart', handleTouchStart, { passive: true });
 
         this._mobileKeyboardDock.cleanup = () => {
             vv.removeEventListener('resize', handleViewportChange);

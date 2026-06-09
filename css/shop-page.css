@@ -277,8 +277,7 @@
         body.shop-page #shopPurchaseModal .shop-purchase-stage-action *,
         body.shop-page #shopPurchaseModal .shop-btn,
         body.shop-page #shopPurchaseModal .shop-btn *,
-        body.shop-page #purchaseQuantity,
-        body.shop-page #purchaseDiscountCode:placeholder-shown {
+        body.shop-page #purchaseQuantity {
             -webkit-user-select: none;
             user-select: none;
         }
@@ -290,9 +289,11 @@
             user-select: none;
         }
 
-        body.shop-page #purchaseDiscountCode:not(:placeholder-shown) {
+        body.shop-page #purchaseDiscountCode {
             -webkit-user-select: text;
             user-select: text;
+            -webkit-touch-callout: default;
+            touch-action: auto;
         }
 
         body.shop-page #shopCartDrawer .shop-cart-item__panel--notice,

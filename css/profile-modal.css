@@ -157,6 +157,8 @@
 #profileModal :where(#profileMobileHeroEmail, #profileMobileHeroId, #profileMobileEmailValue, .profile-mobile-info-value, .profile-mobile-info-value *) {
     -webkit-user-select: text;
     user-select: text;
+    -webkit-touch-callout: default;
+    touch-action: auto;
 }
 
 .profile-modal-file-input {

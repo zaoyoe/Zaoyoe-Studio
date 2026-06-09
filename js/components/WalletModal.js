@@ -14,7 +14,7 @@
     console.log('[WalletModal] ✅ Initializing...');
 
     // Inject CSS if not already present
-    const walletCssHref = 'css/wallet.css?v=20260608_ORDER_GUIDANCE_COPY_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1';
+    const walletCssHref = 'css/wallet.css?v=20260608_ORDER_GUIDANCE_COPY_3&componentSelectGuard=20260530_PUBLIC_COMPONENT_SELECT_GUARD_1&inputPaste=20260609_INPUT_PASTE_1';
     const WALLET_PUBLIC_API_DEFAULT_BASE_URL = 'https://verify-api.fatherkey.com';
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_TTL_MS = 30000;
     const WALLET_PAYMENT_CONFIG_BROWSER_CACHE_PREFIX = 'zaoyoe_payment_config_v2';
@@ -1442,9 +1442,6 @@
             if (isWalletModalIOSMode() && isTap && document.activeElement !== input) {
                 const beforeFocusScrollTop = scrollHost ? scrollHost.scrollTop : null;
                 const wasDockedBeforeFocus = getWalletModalElements().overlay?.classList.contains('keyboard-docked');
-                if (event.cancelable) {
-                    event.preventDefault();
-                }
                 freezeWalletModalPage();
                 markWalletModalFocusTransfer(input);
                 walletModalState.focusScrollSuppressUntil = Date.now() + 120;
@@ -1469,7 +1466,7 @@
                 }
             }
             gesture.mode = 'idle';
-        }, { passive: false });
+        }, { passive: true });
 
         input.addEventListener('touchcancel', () => {
             gesture.mode = 'idle';

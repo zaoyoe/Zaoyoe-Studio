@@ -6838,14 +6838,15 @@ function focusPromptCommentComposerInputWithoutScroll(input) {
 function bindPromptCommentComposerInputFocusStabilizer(input) {
     if (!input || input.dataset.preventScrollBind === '1') return;
 
-    input.addEventListener('touchstart', (e) => {
+    input.addEventListener('touchstart', () => {
         if (!isPromptCommentComposerEnabled()) return;
-        if (e.cancelable) e.preventDefault();
         capturePromptCommentComposerViewportBase();
         lockPromptCommentComposerPage();
-        focusPromptCommentComposerInputWithoutScroll(input);
+        if (document.activeElement !== input) {
+            focusPromptCommentComposerInputWithoutScroll(input);
+        }
         schedulePromptCommentComposerSettleSync();
-    }, { passive: false });
+    }, { passive: true });
 
     input.dataset.preventScrollBind = '1';
 }
@@ -9457,16 +9458,11 @@ document.addEventListener('DOMContentLoaded', () => {
             void submitComment();
         });
 
-        // ── V18 Fix: Prevent iOS Safari from natively scrolling the page when tapping
-        // the comment input. Without e.preventDefault() here, Safari fires a layout
-        // scroll-to-input that fights the JS keyboard docking and causes visible jitter.
+        // Keep the native long-press menu available while clamping Safari's
+        // scroll-to-input jitter during keyboard docking.
         const handleTouchFocus = (e) => {
             if (isPromptModalIOSMobile()) {
-                // Only preventDefault on FIRST tap (when textarea not focused).
-                // If already focused, allow native touch scrolling within textarea.
                 if (document.activeElement !== commentInput) {
-                    if (e.cancelable) e.preventDefault();
-
                     // Continuous scroll clamp to catch Safari's native scroll-to-input
                     const scrollClamp = () => {
                         if (window.scrollY !== 0 || window.scrollX !== 0) {
@@ -9493,7 +9489,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 // else: textarea already focused, allow native scroll
             }
         };
-        commentInput.addEventListener('touchstart', handleTouchFocus, { passive: false });
+        commentInput.addEventListener('touchstart', handleTouchFocus, { passive: true });
 
         commentInput.addEventListener('focus', () => {
             primePromptModalKeyboardDock();

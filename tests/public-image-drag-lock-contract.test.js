@@ -68,7 +68,7 @@ test('public pages prevent image dragging and nonessential text selection', () =
     );
     assert.match(
         shopCss,
-        /body\.shop-page \.framer-nav,[\s\S]*body\.shop-page #shopCategoryFilters,[\s\S]*body\.shop-page \.shop-cart-anchor \*,[\s\S]*body\.shop-page #shopPurchaseModal \.shop-purchase-stage-summary,[\s\S]*body\.shop-page #purchaseDiscountCode:placeholder-shown \{\s+-webkit-user-select: none;\s+user-select: none;\s+\}/
+        /body\.shop-page \.framer-nav,[\s\S]*body\.shop-page #shopCategoryFilters,[\s\S]*body\.shop-page \.shop-cart-anchor \*,[\s\S]*body\.shop-page #shopPurchaseModal \.shop-purchase-stage-summary,[\s\S]*body\.shop-page #purchaseQuantity \{\s+-webkit-user-select: none;\s+user-select: none;\s+\}/
     );
     assert.match(
         shopCss,
@@ -76,7 +76,7 @@ test('public pages prevent image dragging and nonessential text selection', () =
     );
     assert.match(
         shopCss,
-        /body\.shop-page #purchaseDiscountCode:not\(:placeholder-shown\) \{\s+-webkit-user-select: text;\s+user-select: text;\s+\}/
+        /body\.shop-page #purchaseDiscountCode \{\s+-webkit-user-select: text;\s+user-select: text;\s+-webkit-touch-callout: default;\s+touch-action: auto;\s+\}/
     );
     assert.match(
         shopCss,
@@ -98,13 +98,13 @@ test('public pages prevent image dragging and nonessential text selection', () =
         '\'.shop-cart-anchor\'',
         '\'#shopCartDrawer\'',
         '\'#shopPurchaseModal .shop-purchase-stage-summary\'',
-        '\'#purchaseDiscountCode\'',
         'const SHOP_SELECTABLE_TEXT_SELECTOR = [',
+        '\'input:not(#purchaseQuantity)\'',
+        '\'select\'',
         '\'#purchaseNotesContent\'',
         '\'#purchaseUsageContent\'',
         '\'#shopCartDrawer .shop-cart-item__panel--notice\'',
         '\'#shopCartDrawer .shop-cart-item__panel--usage\'',
-        'if (discountInput && discountInput.value) return;',
         'if (event.target.closest(SHOP_SELECTABLE_TEXT_SELECTOR)) return;',
         'event.target.closest(SHOP_NON_SELECTABLE_UI_SELECTOR)'
     ].forEach((marker) => {
@@ -156,7 +156,7 @@ test('public pages prevent image dragging and nonessential text selection', () =
     );
     assert.match(
         promptsCss,
-        /body\.prompts-page input,[\s\S]*body\.prompts-page #modalPromptText \* \{\s+-webkit-user-select: text;\s+user-select: text;\s+\}/
+        /body\.prompts-page input,[\s\S]*body\.prompts-page textarea,[\s\S]*body\.prompts-page select,[\s\S]*body\.prompts-page #modalPromptText \* \{\s+-webkit-user-select: text;\s+user-select: text;\s+-webkit-touch-callout: default;\s+touch-action: auto;\s+\}/
     );
     assert.match(
         promptsRuntime,
