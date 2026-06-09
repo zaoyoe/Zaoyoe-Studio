@@ -61,7 +61,8 @@
         'refund_hupijiao',
         'reconcile_hupijiao_order',
         'refund_zpay',
-        'reconcile_zpay_order'
+        'reconcile_zpay_order',
+        'refund_nowpayments'
     ]);
     const CLEANUP_SCOPE_HTML = '只会清理订单号前缀为 <code>AUTO_CDX_*</code> 或 <code>SMOKE_*</code> 的测试订单，以及邮箱匹配 <code>codex.*@example.com</code> 或 <code>smoke-payment-*@zaoyoe.invalid</code> 的测试账号。';
     const CLEANUP_SCOPE_TEXT = '将删除 AUTO_CDX_* / SMOKE_* 测试订单，以及 codex.*@example.com / smoke-payment-*@zaoyoe.invalid 测试账号。此操作不可撤销，是否继续？';
@@ -221,6 +222,16 @@
         return Number.isFinite(num)
             ? `¥${num.toLocaleString('zh-CN', { minimumFractionDigits: num % 1 ? 2 : 0, maximumFractionDigits: 2 })}`
             : '¥0';
+    }
+
+    function formatPaymentOrderAmount(order, fallbackValue) {
+        const label = String(order?.display_amount_label || order?.amount_label || '').trim();
+        if (label) return label;
+        return formatCurrency(fallbackValue ?? order?.paid_amount ?? order?.expected_amount);
+    }
+
+    function getPaymentOrderSettlementLabel(order) {
+        return String(order?.settlement_amount_label || '').trim();
     }
 
     function formatPoints(value) {
@@ -687,7 +698,7 @@
                     title: String(focusedOrder.provider_order_no || focusedOrder.id || focusedPaymentOrderId).trim() || focusedPaymentOrderId,
                     meta: [
                         String(focusedOrder.package_name || '未匹配套餐').trim() || '未匹配套餐',
-                        formatCurrency(focusedOrder.paid_amount),
+                        formatPaymentOrderAmount(focusedOrder),
                         getStatusLabel(focusedOrder.status),
                         String(focusedOrder.site || 'cn').trim().toUpperCase()
                     ],
@@ -782,7 +793,7 @@
                     title: order?.provider_order_no || order?.package_name || '待审核订单',
                     meta: [
                         order?.package_name || '未匹配套餐',
-                        formatCurrency(order?.paid_amount),
+                        formatPaymentOrderAmount(order),
                         getStatusLabel(order?.status)
                     ],
                     recommendation: '建议动作：先核对套餐映射和支付金额，再决定审核通过或驳回。',
@@ -813,7 +824,7 @@
                     title: order?.provider_order_no || order?.package_name || '失败订单',
                     meta: [
                         order?.package_name || '未匹配套餐',
-                        formatCurrency(order?.paid_amount),
+                        formatPaymentOrderAmount(order),
                         getStatusLabel(order?.status)
                     ],
                     recommendation: '建议动作：先比对支付金额、套餐价格和订单来源，再决定人工放行或拒绝入账。',
@@ -836,7 +847,7 @@
                 })
                 .slice(0, 3)
                 .map((item, index) => {
-                    const recommendedAction = resolveRecommendedAnomalyAction(item, ['refund_zpay', 'refund_hupijiao', 'request_retry', 'mark_handled', 'ignore']);
+                    const recommendedAction = resolveRecommendedAnomalyAction(item, ['refund_zpay', 'refund_hupijiao', 'refund_nowpayments', 'request_retry', 'mark_handled', 'ignore']);
                     return ({
                     rankLabel: `TOP ${index + 1}`,
                     title: item?.title || item?.topic_label || '退款异常',
@@ -1831,8 +1842,10 @@
             reject_amount_mismatch: '拒绝入账',
             refund_hupijiao: '执行退款',
             refund_zpay: '执行退款',
+            refund_nowpayments: '执行退款',
             query_hupijiao_order: '实时查单',
             query_zpay_order: '实时查单',
+            query_nowpayments_order: '实时查单',
             reconcile_hupijiao_order: '人工补单',
             reconcile_zpay_order: '人工补单',
             reconcile_checkout_session: '补回填'
@@ -1844,8 +1857,10 @@
         const map = {
             query_hupijiao_order: '查单',
             query_zpay_order: '查单',
+            query_nowpayments_order: '查单',
             refund_hupijiao: '退款',
-            refund_zpay: '退款'
+            refund_zpay: '退款',
+            refund_nowpayments: '退款'
         };
         const normalizedAction = String(action || '').trim().toLowerCase();
         return map[normalizedAction] || getAnomalyActionLabel(normalizedAction);
@@ -1853,7 +1868,10 @@
 
     function getAnomalyActionPrompt(action) {
         const normalizedAction = String(action || '').trim().toLowerCase();
-        if (normalizedAction === 'refund_hupijiao' || normalizedAction === 'refund_zpay') {
+        if (normalizedAction === 'refund_hupijiao' || normalizedAction === 'refund_zpay' || normalizedAction === 'refund_nowpayments') {
+            if (normalizedAction === 'refund_nowpayments') {
+                return '请填写退款处理备注。NOWPayments 退款会先做官方 Payout 前置条件检查，不会在条件缺失时扣回积分：';
+            }
             return normalizedAction === 'refund_zpay'
                 ? '请填写退款备注，这条备注会进入后台审计记录，并作为退款原因传给易支付：'
                 : '请填写退款备注，这条备注会进入后台审计记录，并作为退款原因传给虎皮椒：';
@@ -6705,6 +6723,7 @@
                 <div class="payments-order-cards">
                     ${pager.pageItems.map((order) => {
                         const isFocusedOrder = matchesFocusedOrder(order);
+                        const settlementLabel = getPaymentOrderSettlementLabel(order);
                         return `
                         <div class="payments-order-card${isFocusedOrder ? ' payments-order-card--focused' : ''}" data-payments-focused-order="${isFocusedOrder ? '1' : '0'}">
                             <div class="payments-order-card-top">
@@ -6722,7 +6741,8 @@
                                 </div>
                                 <div class="payments-order-card-field">
                                     <label>金额</label>
-                                    <strong>${escapeHtml(formatCurrency(order.paid_amount))}</strong>
+                                    <strong>${escapeHtml(formatPaymentOrderAmount(order))}</strong>
+                                    ${settlementLabel ? `<span>${escapeHtml(settlementLabel)}</span>` : ''}
                                 </div>
                                 <div class="payments-order-card-field">
                                     <label>积分</label>
@@ -6777,6 +6797,7 @@
                     <tbody>
                         ${pager.pageItems.map((order) => {
                             const isFocusedOrder = matchesFocusedOrder(order);
+                            const settlementLabel = getPaymentOrderSettlementLabel(order);
                             return `
                             <tr class="${isFocusedOrder ? 'payments-order-row--focused' : ''}" data-payments-focused-order="${isFocusedOrder ? '1' : '0'}">
                                 <td>${renderPaymentsOrderUser(order)}</td>
@@ -6785,7 +6806,10 @@
                                     <div class="payments-order-provider">${escapeHtml(getProviderLabel(order.provider))}</div>
                                 </td>
                                 <td>${escapeHtml(order.package_name || '未匹配套餐')}</td>
-                                <td>${escapeHtml(formatCurrency(order.paid_amount))}</td>
+                                <td>
+                                    ${escapeHtml(formatPaymentOrderAmount(order))}
+                                    ${settlementLabel ? `<div class="payments-order-provider">${escapeHtml(settlementLabel)}</div>` : ''}
+                                </td>
                                 <td>${escapeHtml(formatNumber(order.points_amount))}</td>
                                 <td><span class="payments-status-badge status-${escapeHtml(order.status || 'pending')}">${escapeHtml(getStatusLabel(order.status))}</span></td>
                                 <td>${renderOrderMatchBadge(order)}</td>
@@ -8337,7 +8361,7 @@
         csv += '\n=== 最近订单 ===\n';
         csv += '用户邮箱,订单号,通道,套餐,金额,积分,状态,创建时间\n';
         (bundle.recent_orders || []).forEach((item) => {
-            csv += `${(item.user_email || '').replace(/,/g, '，')},${(item.provider_order_no || '').replace(/,/g, '，')},${getProviderLabel(item.provider)},${(item.package_name || '').replace(/,/g, '，')},${item.paid_amount || 0},${item.points_amount || 0},${getStatusLabel(item.status)},${formatDateTime(item.created_at)}\n`;
+            csv += `${(item.user_email || '').replace(/,/g, '，')},${(item.provider_order_no || '').replace(/,/g, '，')},${getProviderLabel(item.provider)},${(item.package_name || '').replace(/,/g, '，')},${formatPaymentOrderAmount(item).replace(/,/g, '，')},${item.points_amount || 0},${getStatusLabel(item.status)},${formatDateTime(item.created_at)}\n`;
         });
 
         downloadBlob(
@@ -8470,7 +8494,7 @@
                 订单号: item.provider_order_no || '',
                 通道: getProviderLabel(item.provider),
                 套餐: item.package_name || '',
-                金额: item.paid_amount || 0,
+                金额: formatPaymentOrderAmount(item),
                 积分: item.points_amount || 0,
                 状态: getStatusLabel(item.status),
                 创建时间: formatDateTime(item.created_at)

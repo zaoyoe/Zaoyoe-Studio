@@ -4771,10 +4771,87 @@ function formatAdminCurrencyValue(value, fallback = '—') {
     })}`;
 }
 
+function normalizeAdminJsonObject(value) {
+    return value && typeof value === 'object' && !Array.isArray(value)
+        ? value
+        : {};
+}
+
+function formatAdminCurrencyByCode(value, currency = 'CNY', fallback = '—') {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return fallback;
+    const normalizedCurrency = String(currency || '').trim().toUpperCase();
+    const formatted = numericValue.toLocaleString('zh-CN', {
+        minimumFractionDigits: numericValue % 1 ? 2 : 0,
+        maximumFractionDigits: 2
+    });
+
+    if (normalizedCurrency === 'USD') return `$${formatted}`;
+    if (normalizedCurrency === 'CNY') return `¥${formatted}`;
+    return `${formatted} ${normalizedCurrency || 'CNY'}`;
+}
+
+function normalizeAdminNowpaymentsCurrency(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) return '';
+    if (normalized.startsWith('usdt')) return 'USDT';
+    return normalized.toUpperCase();
+}
+
+function firstPositiveAdminNumber(...values) {
+    for (const value of values) {
+        const amount = Number(value);
+        if (Number.isFinite(amount) && amount > 0) {
+            return amount;
+        }
+    }
+    return 0;
+}
+
+function getAdminPaymentDisplayAmount(order = {}) {
+    const provider = String(order.provider || '').trim().toLowerCase();
+    const metadata = normalizeAdminJsonObject(order.provider_metadata);
+
+    if (provider === 'nowpayments') {
+        const priceAmount = firstPositiveAdminNumber(
+            metadata.price_amount,
+            metadata.price_amount_webhook,
+            metadata.amount_verification?.expected_price_amount,
+            metadata.amount_verification?.webhook_price_amount
+        );
+        const priceCurrency = String(metadata.price_currency || 'USD').trim().toUpperCase() || 'USD';
+        if (priceAmount > 0) {
+            return formatAdminCurrencyByCode(priceAmount, priceCurrency);
+        }
+
+        const payAmount = firstPositiveAdminNumber(
+            metadata.actually_paid,
+            metadata.pay_amount,
+            metadata.outcome_amount,
+            metadata.amount_verification?.actual_amount
+        );
+        if (payAmount > 0) {
+            const payCurrency = normalizeAdminNowpaymentsCurrency(
+                metadata.pay_currency
+                || metadata.outcome_currency
+                || metadata.amount_verification?.actual_currency
+            ) || 'USDT';
+            return `${payAmount.toLocaleString('zh-CN', { maximumFractionDigits: 8 })} ${payCurrency}`;
+        }
+    }
+
+    const paidAmount = Number.isFinite(Number(order.paid_amount))
+        ? Number(order.paid_amount)
+        : Number(order.expected_amount || 0);
+    return formatAdminCurrencyValue(paidAmount);
+}
+
 function getAdminPaymentProviderLabel(provider = '') {
     const normalized = String(provider || '').trim().toLowerCase();
     const labels = {
         hupijiao: '虎皮椒',
+        zpay: '易支付',
+        nowpayments: 'NOWPayments',
         stripe: 'Stripe',
         mock: '模拟支付',
         manual: '人工补录'
@@ -7648,9 +7725,7 @@ function renderPaymentItems(data) {
     return data.map((order) => {
         const statusMeta = getAdminPaymentStatusMeta(order.status);
         const statusValue = String(order.status || 'pending').trim().toLowerCase() || 'pending';
-        const paidAmount = Number.isFinite(Number(order.paid_amount))
-            ? Number(order.paid_amount)
-            : Number(order.expected_amount || 0);
+        const paymentAmountLabel = getAdminPaymentDisplayAmount(order);
         const pointsAmount = Number(order.points_amount || 0);
         const toneClass = statusMeta.tone === 'success'
             ? 'users-tab-item-icon-success'
@@ -7672,7 +7747,7 @@ function renderPaymentItems(data) {
                         </div>
                         <div class="users-payment-side">
                             <span class="payments-status-badge status-${escapeHtml(statusValue)}">${escapeHtml(statusMeta.label)}</span>
-                            <div class="users-payment-amount">${escapeHtml(formatAdminCurrencyValue(paidAmount))}</div>
+                            <div class="users-payment-amount">${escapeHtml(paymentAmountLabel)}</div>
                             <div class="users-payment-points">${escapeHtml(formatAdminPointValue(pointsAmount))} 分</div>
                         </div>
                     </div>
@@ -9927,7 +10002,7 @@ async function exportTabData(tabName) {
                     '订单号': r.provider_order_no || '',
                     '通道': getAdminPaymentProviderLabel(r.provider),
                     '套餐': r.package_name || '',
-                    '金额': Number.isFinite(Number(r.paid_amount)) ? Number(r.paid_amount) : Number(r.expected_amount || 0),
+                    '金额': getAdminPaymentDisplayAmount(r),
                     '积分': Number(r.points_amount || 0),
                     '状态': getAdminPaymentStatusMeta(r.status).label,
                     '站点': String(r.site || 'cn').toUpperCase(),
@@ -10219,7 +10294,7 @@ async function fetchUserPaymentOrders(userId) {
     try {
         const { data, error } = await window.supabaseClient
             .from('payment_orders')
-            .select('id, provider, provider_order_no, package_name, paid_amount, expected_amount, points_amount, status, created_at, claimed_at, site')
+            .select('id, provider, provider_order_no, package_name, paid_amount, expected_amount, points_amount, status, created_at, claimed_at, site, provider_metadata')
             .eq('user_id', userId)
             .order('created_at', { ascending: false })
             .limit(30);

@@ -22,6 +22,7 @@ const {
     createNowpaymentsPayment,
     formatNowpaymentsPayAmount,
     normalizeNowpaymentsPaymentStatus,
+    queryNowpaymentsPayment,
     verifyNowpaymentsIpnSignature
 } = require('../api/_lib/payments/nowpayments');
 
@@ -622,4 +623,67 @@ test('nowpayments direct payment creation uses payment endpoint for hosted Chine
     assert.equal(payload.is_fixed_rate, true);
     assert.equal(payload.is_fee_paid_by_user, true);
     assert.equal(result.response.data.pay_address, '0x6776ad44D571c1b24930939F8ba0f0B5601e05d0');
+});
+
+test('nowpayments payment query uses official payment_id endpoint with api key', async () => {
+    let capturedUrl = '';
+    let capturedInit = null;
+    const result = await queryNowpaymentsPayment({
+        channelConfig: {
+            api_base_url: 'https://api.nowpayments.io',
+            pay_currency: 'usdtbsc',
+            price_currency: 'usd',
+            ipn_callback_url: 'https://www.fatherkey.com/api/payments/nowpayments/webhook'
+        },
+        secretValues: {
+            nowpayments_api_key: 'np-api-key',
+            nowpayments_ipn_secret: ''
+        },
+        requestOrigin: 'https://www.fatherkey.com',
+        paymentId: '5731943810'
+    }, {
+        fetchImpl: async (url, init) => {
+            capturedUrl = url;
+            capturedInit = init;
+            return {
+                ok: true,
+                status: 200,
+                statusText: 'OK',
+                text: async () => JSON.stringify({
+                    payment_id: '5731943810',
+                    order_id: 'NP_DIRECT_1',
+                    payment_status: 'finished',
+                    actually_paid: 9.595,
+                    pay_currency: 'usdtbsc'
+                })
+            };
+        }
+    });
+
+    assert.equal(capturedUrl, 'https://api.nowpayments.io/v1/payment/5731943810');
+    assert.equal(capturedInit.method, 'GET');
+    assert.equal(capturedInit.body, undefined);
+    assert.equal(capturedInit.headers['x-api-key'], 'np-api-key');
+    assert.equal(result.response.data.payment_status, 'finished');
+});
+
+test('nowpayments payment query explains payment-not-found responses', async () => {
+    await assert.rejects(() => queryNowpaymentsPayment({
+        channelConfig: {
+            api_base_url: 'https://api.nowpayments.io',
+            ipn_callback_url: 'https://www.fatherkey.com/api/payments/nowpayments/webhook'
+        },
+        secretValues: {
+            nowpayments_api_key: 'np-api-key'
+        },
+        requestOrigin: 'https://www.fatherkey.com',
+        paymentId: 'invoice-is-not-payment-id'
+    }, {
+        fetchImpl: async () => ({
+            ok: false,
+            status: 404,
+            statusText: 'Not Found',
+            text: async () => JSON.stringify({ message: 'Payment not found' })
+        })
+    }), /NOWPayments 未找到 payment_id invoice-is-not-payment-id/);
 });
