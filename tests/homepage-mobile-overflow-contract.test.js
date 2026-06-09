@@ -34,7 +34,7 @@ test('homepage mobile shell prevents document-level horizontal dragging', () => 
     assert.match(mainContentRule, /overflow-x:\s*hidden;/);
     assert.match(
         homepage,
-        /css\/framer_home\.css\?v=20260609_SUPPORT_COPY_MANUAL_1/,
+        /css\/framer_home\.css\?v=20260609_SUPPORT_COPY_CAPSULE_2/,
         'homepage should bust cached framer_home.css after mobile overflow fix'
     );
 });

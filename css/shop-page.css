@@ -9461,8 +9461,16 @@ body.shop-page #shopPurchaseModal #nextPurchaseStepBtn.shop-purchase-sold-out-bt
     filter: none !important;
     transform: none !important;
     transition: none !important;
-    cursor: not-allowed;
+    cursor: not-allowed !important;
     opacity: 1;
+}
+
+html:not([data-theme="dark"]) body.shop-page #shopPurchaseModal .shop-purchase-dock #nextPurchaseStepBtn.shop-purchase-sold-out-btn *,
+body.shop-page #shopPurchaseModal #nextPurchaseStepBtn.shop-purchase-sold-out-btn,
+body.shop-page #shopPurchaseModal #nextPurchaseStepBtn.shop-purchase-sold-out-btn:hover,
+body.shop-page #shopPurchaseModal #nextPurchaseStepBtn.shop-purchase-sold-out-btn:disabled,
+body.shop-page #shopPurchaseModal #nextPurchaseStepBtn.shop-purchase-sold-out-btn * {
+    cursor: not-allowed !important;
 }
 
 @media (max-width: 900px) {
