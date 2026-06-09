@@ -1107,6 +1107,7 @@
         "image": "[Image]",
         "newMessage": "New message",
         "adminOnline": "Admin Online",
+        "adminStatusChecking": "Checking status...",
         "adminOffline": "Admin Offline",
         "minutesAgo": "{minutes} min ago",
         "hoursAgo": "{hours} hr ago",

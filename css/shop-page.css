@@ -3623,10 +3623,11 @@
         }
 
         @media (min-width: 769px) {
+            #shopPurchaseModal.active .modal-content > .shop-purchase-stage-header.shop-purchase-stage--opening-stagger,
             #shopPurchaseModal .shop-purchase-stage-header.shop-purchase-stage--opening-stagger {
-                opacity: 1;
-                transform: translate3d(0, 0, 0);
-                animation: none;
+                opacity: 1 !important;
+                transform: translate3d(0, 0, 0) !important;
+                animation: none !important;
             }
 
             #shopPurchaseModal .shop-purchase-stage-header > #purchaseStageTitle,
@@ -9560,5 +9561,39 @@ body.shop-page #shopPurchaseModal #nextPurchaseStepBtn.shop-purchase-sold-out-bt
 @media (min-width: 901px) {
     #shopPurchaseModal .modal-content {
         max-height: min(720px, calc(var(--shop-purchase-overlay-height, 100dvh) - 72px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))) !important;
+    }
+}
+
+/* 20260609_SHOP_PURCHASE_NARROW_DESKTOP_TITLE_STAGGER_1 */
+@media (max-width: 980px) and (hover: hover) and (pointer: fine) {
+    #shopPurchaseModal:not(.active) .modal-content > .shop-purchase-stage-header.shop-purchase-stage--opening-stagger,
+    #shopPurchaseModal.active .modal-content > .shop-purchase-stage-header.shop-purchase-stage--opening-stagger,
+    #shopPurchaseModal .shop-purchase-stage-header.shop-purchase-stage--opening-stagger {
+        opacity: 1 !important;
+        transform: translate3d(0, 0, 0) !important;
+        animation: none !important;
+    }
+
+    #shopPurchaseModal .shop-purchase-stage-header.shop-purchase-stage--opening-stagger > #purchaseStageTitle,
+    #shopPurchaseModal .shop-purchase-stage-header.shop-purchase-stage--opening-stagger > #modalProductName {
+        opacity: 0;
+        transform: translate3d(0, 14px, 0);
+    }
+
+    #shopPurchaseModal.active .shop-purchase-stage-header.shop-purchase-stage--opening-stagger > #purchaseStageTitle {
+        animation: shopPurchaseStaggeredRise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+        animation-delay: 0.03s !important;
+    }
+
+    #shopPurchaseModal.active .shop-purchase-stage-header.shop-purchase-stage--opening-stagger > #modalProductName {
+        animation: shopPurchaseStaggeredRise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+        animation-delay: 0.09s !important;
+    }
+
+    #shopPurchaseModal.active.shop-purchase-stages-settled .shop-purchase-stage-header > #purchaseStageTitle,
+    #shopPurchaseModal.active.shop-purchase-stages-settled .shop-purchase-stage-header > #modalProductName {
+        animation: none !important;
+        opacity: 1 !important;
+        transform: translate3d(0, 0, 0) !important;
     }
 }

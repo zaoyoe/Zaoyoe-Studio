@@ -4639,7 +4639,7 @@ class ChatWidget {
         this._closeEmojiPicker();
         this._ignoreEmojiClicksUntil = Date.now() + 760;
 
-        const contentSettleDelayMs = 420;
+        const contentSettleDelayMs = 220;
         this._bootstrapContentSettleFrame = requestAnimationFrame(() => {
             this._bootstrapContentSettleFrame = null;
             if (!this.chatWindow) return;
@@ -13166,10 +13166,17 @@ class ChatWidget {
                 justify-content: center;
                 min-width: 72px;
                 min-height: 44px;
+                line-height: 1;
             }
 
             .chat-loading-state--user-handoff {
-                margin: auto;
+                position: absolute;
+                inset: 0;
+                margin: 0;
+                min-width: 0;
+                min-height: 0;
+                z-index: 6;
+                pointer-events: none;
                 color: var(--chat-accent-blue, #6b94c6);
             }
 
@@ -13178,6 +13185,8 @@ class ChatWidget {
                 align-items: center;
                 justify-content: center;
                 gap: 8px;
+                height: 24px;
+                line-height: 0;
                 flex-shrink: 0;
             }
 
@@ -13187,6 +13196,7 @@ class ChatWidget {
                 border-radius: 999px;
                 background: currentColor;
                 opacity: 0.24;
+                will-change: transform, opacity;
                 animation: chat-widget-loading-dots 1.05s ease-in-out infinite;
             }
 
@@ -13204,12 +13214,12 @@ class ChatWidget {
 
             @keyframes chat-widget-loading-dots {
                 0%, 80%, 100% {
-                    transform: translateY(0);
+                    transform: translate3d(0, 2px, 0);
                     opacity: 0.24;
                 }
 
                 40% {
-                    transform: translateY(-3px);
+                    transform: translate3d(0, -2px, 0);
                     opacity: 0.96;
                 }
             }
@@ -21183,7 +21193,7 @@ class ChatWidget {
 
             .chat-window--bootstrap-adopting-content.chat-window--bootstrap-content-ready > *:not(.emoji-picker-popover):not(.chat-bootstrap-content-snapshot) {
                 opacity: 1;
-                animation: chat-widget-content-settle 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+                animation: none;
             }
 
             .chat-bootstrap-content-snapshot {
@@ -21198,7 +21208,7 @@ class ChatWidget {
                 background: var(--chat-shell-bg, rgba(10, 13, 20, 0.98));
                 opacity: 1;
                 pointer-events: none;
-                transition: opacity 300ms cubic-bezier(0.22, 1, 0.36, 1);
+                transition: opacity 160ms cubic-bezier(0.22, 1, 0.36, 1);
                 contain: paint;
             }
 
@@ -21208,7 +21218,7 @@ class ChatWidget {
 
             .chat-window--bootstrap-content-ready .chat-bootstrap-content-snapshot {
                 opacity: 0;
-                transition-delay: 80ms;
+                transition-delay: 0ms;
             }
 
             .chat-window--bootstrap-adopting-content .emoji-picker-popover:not(.active),
@@ -21266,16 +21276,22 @@ class ChatWidget {
             @keyframes chat-widget-content-settle {
                 0% {
                     opacity: 1;
-                    transform: translateY(4px);
+                    transform: none;
                 }
                 100% {
                     opacity: 1;
-                    transform: translateY(0);
+                    transform: none;
                 }
             }
 
             .chat-loading-state--user-handoff {
-                margin: auto;
+                position: absolute;
+                inset: 0;
+                margin: 0;
+                min-width: 0;
+                min-height: 0;
+                z-index: 6;
+                pointer-events: none;
                 color: var(--chat-accent-blue, #6b94c6);
             }
 
@@ -21290,13 +21306,6 @@ class ChatWidget {
                 padding-bottom: max(20px, var(--chat-messages-bottom-safe-space, 20px)) !important;
                 scroll-padding-bottom: var(--chat-messages-bottom-safe-space, 20px) !important;
                 box-shadow: var(--chat-panel-shadow, inset 0 1px 0 rgba(255, 255, 255, 0.04), inset 0 -12px 24px rgba(0, 0, 0, 0.08)) !important;
-            }
-
-            .chat-window:not(.admin-mode-layout) .chat-messages::before {
-                content: '';
-                flex: 1 1 auto;
-                min-height: 0;
-                pointer-events: none;
             }
 
             .chat-window:not(.admin-mode-layout) .chat-input-area {
@@ -21658,8 +21667,8 @@ class ChatWidget {
                         <h3>${this.t('chat.onlineSupport', '在线客服')}</h3>
                         <div class="chat-status-row">
                             <div class="chat-status-indicator">
-                                <span class="status-dot online"></span>
-                                <span class="status-text target-admin-status">${this.t('chat.adminOnline', '管理员在线')}</span>
+                                <span class="status-dot offline"></span>
+                                <span class="status-text target-admin-status">${this.t('chat.adminStatusChecking', '状态确认中...')}</span>
                             </div>
                             <div class="chat-header-actions" id="chatHeaderActions" hidden>
                                 <button type="button" class="chat-header-mode-switch" id="chatHeaderSupportBtn">${this.escapeHtml(this.getSupportEntryLabel())}</button>

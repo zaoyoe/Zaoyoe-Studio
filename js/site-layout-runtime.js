@@ -821,8 +821,17 @@
     function getSupportLinkLabelElement(link) {
         if (!link) return null;
         return Array.from(link.children || []).find((child) => {
-            return child.tagName === 'SPAN' && !child.classList.contains('site-support-icon');
+            return child.tagName === 'SPAN'
+                && !child.classList.contains('site-support-icon')
+                && !child.classList.contains('site-support-inline-feedback');
         }) || null;
+    }
+
+    function shouldUseOverlaySupportFeedback(link) {
+        const placement = String(link?.dataset?.siteLayoutSupportPlacement || '').trim();
+        return placement === 'footer_about'
+            || placement === 'footer_resources'
+            || placement === 'footer_bottom';
     }
 
     function getSupportLinkInlineFeedbackElement(link) {
@@ -851,8 +860,9 @@
         if (!link || !text) return;
         rememberSupportLinkOriginalLabel(link);
         const label = getSupportLinkLabelElement(link);
+        const useOverlayFeedback = shouldUseOverlaySupportFeedback(link);
         link.classList.add('site-layout-support-link--inline-feedback-active');
-        if (label) {
+        if (label && !useOverlayFeedback) {
             label.textContent = text;
         } else {
             let feedback = getSupportLinkInlineFeedbackElement(link);
