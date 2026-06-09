@@ -103,6 +103,7 @@ function createSupabaseStub(state = {}) {
     const anomalyCases = state.anomalyCases || [];
     const paymentEvents = state.paymentEvents || [];
     const pointsLedger = state.pointsLedger || [];
+    const checkoutSessions = state.checkoutSessions || [];
     const adminRoles = state.adminRoles || [];
     const systemConfigs = state.systemConfigs || [];
     const adminSecretStore = state.adminSecretStore || [];
@@ -111,6 +112,7 @@ function createSupabaseStub(state = {}) {
     state.opsAlertJobs = opsAlertJobs;
     state.paymentEvents = paymentEvents;
     state.pointsLedger = pointsLedger;
+    state.checkoutSessions = checkoutSessions;
     state.adminRoles = adminRoles;
     state.systemConfigs = systemConfigs;
     state.adminSecretStore = adminSecretStore;
@@ -264,6 +266,22 @@ function createSupabaseStub(state = {}) {
                     return {
                         data: query.single ? (rows[0] || null) : rows,
                         error: null
+                    };
+                }
+
+                if (table === 'points_ledger' && query.mode === 'select') {
+                    const rows = sortRows(applyFilters(pointsLedger, query.filters), query.order);
+                    return {
+                        data: query.single ? (rows[0] || null) : rows,
+                        error: null
+                    };
+                }
+
+                if (table === 'payment_checkout_sessions' && query.mode === 'select') {
+                    const rows = sortRows(applyFilters(checkoutSessions, query.filters), query.order);
+                    return {
+                        data: query.single ? (rows[0] || null) : rows,
+                        error: rows.length ? null : { message: 'Checkout session not found' }
                     };
                 }
 
@@ -528,6 +546,165 @@ test('approve_review applies review RPC, writes anomaly case, and records audit 
         assert.equal(state.anomalyCases[0].resolution, '人工复核后确认放行');
         assert.equal(state.auditLogs.length, 1);
         assert.equal(state.auditLogs[0].actionType, 'payments.anomaly.action');
+    });
+});
+
+test('approve_review settles nowpayments orders into wallet ledger', async () => {
+    const state = {
+        orders: [
+            {
+                id: 'order-np-review-1',
+                user_id: 'user-nowpayments-1',
+                provider: 'nowpayments',
+                provider_order_no: 'NP_REVIEW_1',
+                checkout_session_id: 'session-np-review-1',
+                package_id: 'pkg-np-review-1',
+                package_name: '进阶',
+                site: 'cn',
+                expected_amount: 0,
+                paid_amount: 0,
+                points_amount: 66,
+                status: 'pending_review',
+                paid_at: null,
+                verified_at: null,
+                claimed_at: null,
+                last_error: 'wrong_asset_confirmed',
+                provider_metadata: {
+                    price_amount: 9.5,
+                    price_currency: 'usd',
+                    pay_amount: 9.595,
+                    pay_currency: 'usdtbsc'
+                }
+            }
+        ],
+        paymentsOrdersModule: {
+            async reconcileCheckoutSessionForPaymentOrder(payload) {
+                state.reconcilePayload = payload;
+                return { sessionId: 'session-np-review-1' };
+            }
+        },
+        discountTriggerLinkageModule: {
+            async maybeIssueRechargeDiscountAssets(payload) {
+                state.discountPayload = payload;
+                return { issued_count: 1 };
+            },
+            async maybeIssueAffiliateDiscountAssetsForRecharge(payload) {
+                state.affiliatePayload = payload;
+                return { issued_count: 1 };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-np-review-1',
+                action: 'approve_review',
+                note: '链上到账确认'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.order.status, 'redeemed');
+        assert.equal(state.metrics.reviewRpcCalls.length, 1);
+        assert.equal(state.metrics.rechargeRpcCalls.length, 1);
+        assert.deepEqual(state.metrics.rechargeRpcCalls[0], {
+            target_user_id: 'user-nowpayments-1',
+            p_paid: 66,
+            p_bonus: 0,
+            p_reason: 'USDT-BEP20充值: 进阶',
+            p_reference_id: 'nowpayments_NP_REVIEW_1',
+            p_site: 'cn'
+        });
+        assert.equal(state.pointsLedger.length, 1);
+        assert.equal(state.pointsLedger[0].reference_id, 'nowpayments_NP_REVIEW_1');
+        assert.equal(state.pointsLedger[0].amount, 66);
+        assert.equal(state.orders[0].status, 'redeemed');
+        assert.equal(state.orders[0].claimed_at.length > 0, true);
+        assert.equal(state.orders[0].provider_metadata.admin_review_settlement_reference_id, 'nowpayments_NP_REVIEW_1');
+        assert.equal(state.reconcilePayload.providerKey, 'nowpayments');
+        assert.equal(state.discountPayload.paymentProvider, 'nowpayments');
+        assert.equal(state.affiliatePayload.rechargeReferenceId, 'nowpayments_NP_REVIEW_1');
+        assert.equal(state.auditLogs[0].details.nowpayments_review_settlement, 'credited');
+        assert.equal(state.auditLogs[0].details.recharge_paid_points, 66);
+    });
+});
+
+test('approve_review skips nowpayments recharge when matching ledger already exists', async () => {
+    const state = {
+        orders: [
+            {
+                id: 'order-np-review-2',
+                user_id: 'user-nowpayments-2',
+                provider: 'nowpayments',
+                provider_order_no: 'NP_REVIEW_2',
+                package_name: '进阶',
+                site: 'cn',
+                expected_amount: 0,
+                paid_amount: 0,
+                points_amount: 66,
+                status: 'pending_review',
+                paid_at: null,
+                verified_at: null,
+                claimed_at: null,
+                provider_metadata: {}
+            }
+        ],
+        pointsLedger: [
+            {
+                id: 'ledger-existing-np-2',
+                user_id: 'user-nowpayments-2',
+                reference_id: 'nowpayments_NP_REVIEW_2',
+                site: 'cn',
+                amount: 66
+            }
+        ],
+        paymentsOrdersModule: {
+            async reconcileCheckoutSessionForPaymentOrder(payload) {
+                state.reconcilePayload = payload;
+                return { sessionId: 'session-existing-np-2' };
+            }
+        },
+        discountTriggerLinkageModule: {
+            async maybeIssueRechargeDiscountAssets() {
+                throw new Error('discounts should not be issued for existing ledger');
+            },
+            async maybeIssueAffiliateDiscountAssetsForRecharge() {
+                throw new Error('affiliate discounts should not be issued for existing ledger');
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-np-review-2',
+                action: 'approve_review',
+                note: '重复审核确认'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.order.status, 'redeemed');
+        assert.equal(state.metrics.rechargeRpcCalls.length, 0);
+        assert.equal(state.pointsLedger.length, 1);
+        assert.equal(state.orders[0].status, 'redeemed');
+        assert.equal(state.auditLogs[0].details.nowpayments_review_settlement, 'existing_ledger');
+        assert.equal(state.auditLogs[0].details.recharge_reference_id, 'nowpayments_NP_REVIEW_2');
     });
 });
 
@@ -913,6 +1090,183 @@ test('query_zpay_order returns live gateway status without mutating anomaly stat
     });
 });
 
+test('query_nowpayments_order returns live payment status by payment id', async () => {
+    const state = {
+        orders: [
+            {
+                id: 'order-np-query-1',
+                user_id: 'user-np-query-1',
+                provider: 'nowpayments',
+                provider_order_no: 'NP_QUERY_1',
+                checkout_session_id: 'session-np-query-1',
+                package_id: 'pkg-np-1',
+                package_name: 'NOWPayments 查询套餐',
+                site: 'cn',
+                expected_amount: 0,
+                paid_amount: null,
+                points_amount: 66,
+                status: 'pending_review',
+                claimed_at: null,
+                paid_at: null,
+                verified_at: null,
+                sign_verified: false,
+                amount_verified: false,
+                created_at: '2026-06-09T10:00:00.000Z',
+                last_error: 'missing_webhook',
+                provider_metadata: {
+                    payment_id: '5731943810',
+                    pay_currency: 'usdtbsc'
+                },
+                raw_payload: {}
+            }
+        ],
+        providerAdaptersModule: {
+            getPaymentProviderAdapter(providerKey) {
+                assert.equal(providerKey, 'nowpayments');
+                return {
+                    async resolveRuntimeContext() {
+                        return { provider: 'nowpayments' };
+                    },
+                    async queryOrder(input) {
+                        assert.equal(input.providerOrderNo, 'NP_QUERY_1');
+                        assert.equal(input.paymentId, '5731943810');
+                        assert.equal(input.metadata.payment_id, '5731943810');
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'NP_QUERY_1',
+                            openOrderId: '5731943810',
+                            paymentId: '5731943810',
+                            status: 'paid',
+                            statusRaw: 'finished',
+                            paidAmount: 9.595,
+                            paidCurrency: 'USDT',
+                            paidAmountLabel: '9.595 USDT',
+                            transactionId: '0xnpqueryhash',
+                            message: 'success'
+                        };
+                    }
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-np-query-1',
+                action: 'query_nowpayments_order'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.reload, false);
+        assert.equal(payload.live_order.status, 'paid');
+        assert.equal(payload.live_order.paidAmount, 9.595);
+        assert.equal(payload.live_order.paymentId, '5731943810');
+        assert.match(payload.message, /NOWPayments实时状态：已支付/);
+        assert.match(payload.message, /9\.595 USDT/);
+        assert.equal(state.anomalyCases.length, 0);
+        assert.equal(state.orders[0].status, 'pending_review');
+        assert.equal(state.paymentEvents.length, 0);
+        assert.equal(state.auditLogs.length, 1);
+        assert.equal(state.auditLogs[0].actionType, 'payments.order.query');
+        assert.equal(state.auditLogs[0].details.query_provider, 'nowpayments');
+        assert.equal(state.auditLogs[0].details.query_paid_amount, 9.595);
+        assert.equal(state.auditLogs[0].details.query_paid_currency, 'USDT');
+    });
+});
+
+test('query_nowpayments_order recovers payment id from checkout session before querying', async () => {
+    const state = {
+        orders: [
+            {
+                id: 'order-np-query-recover-1',
+                user_id: 'user-np-query-recover-1',
+                provider: 'nowpayments',
+                provider_order_no: 'NP_QUERY_RECOVER_1',
+                checkout_session_id: 'session-np-query-recover-1',
+                site: 'cn',
+                expected_amount: 0,
+                paid_amount: 0,
+                points_amount: 66,
+                status: 'redeemed',
+                claimed_at: '2026-06-09T11:00:00.000Z',
+                created_at: '2026-06-09T10:30:00.000Z',
+                provider_metadata: {
+                    purchase_id: 'purchase-is-not-payment-id'
+                },
+                raw_payload: {}
+            }
+        ],
+        checkoutSessions: [
+            {
+                id: 'session-np-query-recover-1',
+                provider_metadata: {
+                    payment_id: '5731943810'
+                }
+            }
+        ],
+        providerAdaptersModule: {
+            getPaymentProviderAdapter(providerKey) {
+                assert.equal(providerKey, 'nowpayments');
+                return {
+                    async resolveRuntimeContext() {
+                        return { provider: 'nowpayments' };
+                    },
+                    async queryOrder(input) {
+                        assert.equal(input.paymentId, '5731943810');
+                        assert.equal(input.metadata.payment_id, '5731943810');
+                        assert.equal(input.metadata.purchase_id, 'purchase-is-not-payment-id');
+                        return {
+                            supported: true,
+                            success: true,
+                            providerOrderNo: 'NP_QUERY_RECOVER_1',
+                            paymentId: '5731943810',
+                            openOrderId: '5731943810',
+                            status: 'paid',
+                            statusRaw: 'finished',
+                            paidAmount: 9.595,
+                            paidCurrency: 'USDT',
+                            paidAmountLabel: '9.595 USDT',
+                            transactionId: '0xrecover',
+                            message: 'success'
+                        };
+                    }
+                };
+            }
+        }
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-np-query-recover-1',
+                action: 'query_nowpayments_order'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(payload.live_order.paymentId, '5731943810');
+        assert.match(payload.message, /9\.595 USDT/);
+        assert.equal(state.auditLogs[0].details.query_provider, 'nowpayments');
+    });
+});
+
 test('query_zpay_order syncs externally refunded orders back to local refunded state', async () => {
     const state = {
         defaultUserBalance: 5,
@@ -1001,6 +1355,62 @@ test('query_zpay_order syncs externally refunded orders back to local refunded s
         assert.equal(state.auditLogs[0].actionType, 'payments.order.query');
         assert.equal(state.auditLogs[0].details.refund_status, 'refunded');
         assert.equal(state.auditLogs[0].details.refund_reclaimed_points, 0.01);
+    });
+});
+
+test('refund_nowpayments blocks before point reclaim when payout prerequisites are missing', async () => {
+    const state = {
+        defaultUserBalance: 66,
+        orders: [
+            {
+                id: 'order-np-refund-blocked-1',
+                user_id: 'user-np-refund-blocked-1',
+                provider: 'nowpayments',
+                provider_order_no: 'NP_REFUND_BLOCKED_1',
+                checkout_session_id: 'session-np-refund-blocked-1',
+                site: 'cn',
+                expected_amount: 0,
+                paid_amount: 0,
+                points_amount: 66,
+                status: 'redeemed',
+                claimed_at: '2026-06-09T10:05:00.000Z',
+                paid_at: '2026-06-09T10:03:00.000Z',
+                verified_at: '2026-06-09T10:04:00.000Z',
+                provider_metadata: {
+                    payment_id: '5731943810',
+                    pay_address: '0xmerchantreceiveaddress',
+                    paid_points: 66,
+                    bonus_points: 0
+                },
+                raw_payload: {}
+            }
+        ]
+    };
+
+    await withPaymentsActionHandler(state, async (handler) => {
+        const req = {
+            method: 'POST',
+            body: {
+                targetType: 'order',
+                targetId: 'order-np-refund-blocked-1',
+                action: 'refund_nowpayments',
+                note: '用户申请退款'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+
+        assert.equal(res.statusCode, 409);
+        assert.equal(payload.success, false);
+        assert.match(payload.message, /NOWPayments 官方退款需要通过 Payout 出款/);
+        assert.match(payload.message, /pay_address 是商户收款地址/);
+        assert.equal(state.metrics.refundReclaimRpcCalls.length, 0);
+        assert.equal(state.pointsLedger.length, 0);
+        assert.equal(state.orders[0].status, 'redeemed');
+        assert.equal(state.paymentEvents.length, 0);
+        assert.equal(state.auditLogs.length, 0);
     });
 });
 

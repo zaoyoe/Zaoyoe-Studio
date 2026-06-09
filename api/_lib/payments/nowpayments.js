@@ -206,6 +206,12 @@ function resolveNowpaymentsPaymentEstimateUrl(apiBaseUrl = '', paymentId = '') {
     );
 }
 
+function resolveNowpaymentsPaymentStatusUrl(apiBaseUrl = '', paymentId = '') {
+    const normalizedPaymentId = encodeURIComponent(String(paymentId || '').trim());
+    if (!normalizedPaymentId) return '';
+    return resolveNowpaymentsEndpointUrl(apiBaseUrl, `/v1/payment/${normalizedPaymentId}`);
+}
+
 function buildNowpaymentsOrderId(checkoutSessionKey = '') {
     const digest = crypto
         .createHash('sha1')
@@ -446,6 +452,49 @@ async function updateNowpaymentsPaymentEstimate(options = {}, dependencies = {})
     };
 }
 
+async function queryNowpaymentsPayment(options = {}, dependencies = {}) {
+    const config = normalizeNowpaymentsConfig(options);
+    if (!config.apiKey) {
+        throw new Error('NOWPayments API Key 未配置，无法查单');
+    }
+
+    const paymentId = sanitizeText(
+        options.paymentId || options.openOrderId || options.providerPaymentId,
+        '',
+        120
+    );
+    const statusUrl = resolveNowpaymentsPaymentStatusUrl(config.apiBaseUrl, paymentId);
+    if (!statusUrl) {
+        throw new Error('NOWPayments payment_id 缺失，无法查单');
+    }
+
+    const response = await requestNowpaymentsJson(statusUrl, {}, {
+        ...dependencies,
+        apiKey: config.apiKey,
+        method: 'GET'
+    });
+
+    if (!response.data || typeof response.data !== 'object') {
+        throw new Error(`NOWPayments 查单返回非 JSON：HTTP ${response.status}`);
+    }
+    if (!response.ok) {
+        if (response.status === 404 || /payment\s+not\s+found/i.test(String(response.data.message || response.data.error || ''))) {
+            throw new Error(`NOWPayments 未找到 payment_id ${paymentId}；请确认订单里保存的是官方 payment_id，且当前 API Key 属于创建该支付单的商户。`);
+        }
+        throw new Error(
+            sanitizeText(response.data.message || response.data.error, '', 240)
+            || `NOWPayments 查单失败：HTTP ${response.status}`
+        );
+    }
+
+    return {
+        config,
+        paymentId,
+        requestPayload: {},
+        response
+    };
+}
+
 module.exports = {
     NOWPAYMENTS_DEFAULT_API_BASE_URL,
     NOWPAYMENTS_DEFAULT_CNY_TO_USD_RATE,
@@ -461,8 +510,10 @@ module.exports = {
     formatNowpaymentsPayAmount,
     normalizeNowpaymentsConfig,
     normalizeNowpaymentsPaymentStatus,
+    queryNowpaymentsPayment,
     requestNowpaymentsJson,
     resolveNowpaymentsPaymentEstimateUrl,
+    resolveNowpaymentsPaymentStatusUrl,
     sortObject,
     updateNowpaymentsPaymentEstimate,
     verifyNowpaymentsIpnSignature

@@ -53,6 +53,8 @@ const VALID_ACTIONS = new Set([
     'refund_zpay',
     'query_zpay_order',
     'reconcile_zpay_order',
+    'refund_nowpayments',
+    'query_nowpayments_order',
     'reconcile_checkout_session'
 ]);
 const NOTE_REQUIRED_ACTIONS = new Set([
@@ -63,7 +65,8 @@ const NOTE_REQUIRED_ACTIONS = new Set([
     'refund_hupijiao',
     'reconcile_hupijiao_order',
     'refund_zpay',
-    'reconcile_zpay_order'
+    'reconcile_zpay_order',
+    'refund_nowpayments'
 ]);
 const ORDER_ONLY_ACTIONS = new Set([
     'query_hupijiao_order',
@@ -72,6 +75,8 @@ const ORDER_ONLY_ACTIONS = new Set([
     'query_zpay_order',
     'reconcile_zpay_order',
     'refund_zpay',
+    'query_nowpayments_order',
+    'refund_nowpayments',
     'reconcile_checkout_session'
 ]);
 const SENSITIVE_REVIEW_ACTIONS = new Set([
@@ -121,6 +126,16 @@ const GATEWAY_PROVIDER_META = Object.freeze({
         paidStatusRaw: 'TRADE_SUCCESS',
         refundStatusRaw: 'REFUNDED',
         pointBreakdown: deriveZpayPointBreakdown
+    }),
+    nowpayments: Object.freeze({
+        key: 'nowpayments',
+        label: 'NOWPayments',
+        queryAction: 'query_nowpayments_order',
+        reconcileAction: '',
+        refundAction: 'refund_nowpayments',
+        paidStatusRaw: 'finished',
+        refundStatusRaw: 'refunded',
+        pointBreakdown: deriveNowpaymentsPointBreakdown
     })
 });
 const GATEWAY_ACTION_PROVIDER_MAP = Object.freeze({
@@ -129,7 +144,9 @@ const GATEWAY_ACTION_PROVIDER_MAP = Object.freeze({
     refund_hupijiao: 'hupijiao',
     query_zpay_order: 'zpay',
     reconcile_zpay_order: 'zpay',
-    refund_zpay: 'zpay'
+    refund_zpay: 'zpay',
+    query_nowpayments_order: 'nowpayments',
+    refund_nowpayments: 'nowpayments'
 });
 const REFUND_ALERT_CONFIG = Object.freeze({
     admin_refund_failed: {
@@ -173,6 +190,16 @@ function mergeJsonObjects(...values) {
     }), {});
 }
 
+function pickNowpaymentsPaymentId(...values) {
+    for (const value of values) {
+        const normalized = normalizeText(value).slice(0, 120);
+        if (!normalized) continue;
+        if (/^np[a-z0-9]+$/i.test(normalized)) continue;
+        return normalized;
+    }
+    return '';
+}
+
 function normalizePointAmount(value, fallback = 0) {
     const numericValue = Number(value);
     if (!Number.isFinite(numericValue)) return fallback;
@@ -189,6 +216,32 @@ function getGatewayProviderKeyForAction(action = '') {
 
 function getGatewayProviderLabel(providerKey = '') {
     return getGatewayProviderMeta(providerKey)?.label || '支付通道';
+}
+
+function isNowpaymentsProvider(target = {}) {
+    return normalizeText(target?.provider).toLowerCase() === 'nowpayments';
+}
+
+function isReviewApprovalAction(action = '') {
+    return action === 'approve_review' || action === 'approve_amount_mismatch';
+}
+
+function deriveNowpaymentsPointBreakdown(paymentOrder = {}) {
+    const metadata = normalizeJsonObject(paymentOrder.provider_metadata);
+    const paidPoints = Number(metadata.paid_points);
+    const bonusPoints = Number(metadata.bonus_points);
+
+    if (Number.isFinite(paidPoints) || Number.isFinite(bonusPoints)) {
+        return {
+            paidPoints: Number.isFinite(paidPoints) ? paidPoints : 0,
+            bonusPoints: Number.isFinite(bonusPoints) ? bonusPoints : 0
+        };
+    }
+
+    return {
+        paidPoints: Number(paymentOrder.points_amount) || 0,
+        bonusPoints: 0
+    };
 }
 
 function getBalanceTotal(balanceData = {}) {
@@ -208,6 +261,7 @@ function mapActionToStatus(action) {
     case 'mark_handled':
     case 'refund_hupijiao':
     case 'refund_zpay':
+    case 'refund_nowpayments':
     case 'reconcile_hupijiao_order':
     case 'reconcile_zpay_order':
     case 'reconcile_checkout_session':
@@ -255,6 +309,7 @@ function getResolutionText(action, note) {
         return '已人工驳回金额异常订单。';
     case 'refund_hupijiao':
     case 'refund_zpay':
+    case 'refund_nowpayments':
         return `已通过后台执行${gatewayLabel}退款。`;
     case 'reconcile_hupijiao_order':
     case 'reconcile_zpay_order':
@@ -480,6 +535,160 @@ function normalizeReviewRpcAction(action) {
     return 'reject';
 }
 
+async function settleApprovedNowpaymentsOrder(supabase, target, note, actorId) {
+    const normalizedUserId = normalizeText(target?.user_id);
+    if (!normalizedUserId) {
+        const error = new Error('NOWPayments 订单尚未绑定用户，不能审核入账');
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const referenceId = buildNowpaymentsRechargeReferenceId(target);
+    if (!referenceId) {
+        const error = new Error('NOWPayments 订单缺少订单号，不能审核入账');
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const site = normalizeText(target.site).toLowerCase() || 'cn';
+    const rechargeBreakdown = deriveNowpaymentsPointBreakdown(target);
+    const paidPoints = normalizePointAmount(rechargeBreakdown.paidPoints, 0);
+    const bonusPoints = normalizePointAmount(rechargeBreakdown.bonusPoints, 0);
+    const totalPoints = normalizePointAmount(paidPoints + bonusPoints, 0);
+    if (!(totalPoints > 0)) {
+        const error = new Error('NOWPayments 订单缺少有效积分，不能审核入账');
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const ledgerAlreadyExists = await hasExistingPositiveLedgerForReference(supabase, {
+        userId: normalizedUserId,
+        referenceId,
+        site
+    });
+    const nowIso = new Date().toISOString();
+    const localPaidAmount = resolveNowpaymentsLocalPaidAmount(target);
+
+    if (!ledgerAlreadyExists) {
+        const { error: rechargeError } = await rechargePointsForPayment({
+            supabase,
+            userId: normalizedUserId,
+            paidPoints,
+            bonusPoints,
+            reason: buildNowpaymentsRechargeReason(target),
+            referenceId,
+            site
+        });
+
+        if (rechargeError) {
+            const error = new Error(rechargeError.message || 'NOWPayments 人工审核入账失败');
+            error.statusCode = 502;
+            throw error;
+        }
+    }
+
+    const providerMetadata = normalizeJsonObject(target.provider_metadata);
+    const nextProviderMetadata = mergeJsonObjects(providerMetadata, {
+        admin_review_settled_at: nowIso,
+        admin_review_settled_by: actorId || null,
+        admin_review_settlement_reference_id: referenceId,
+        admin_review_settlement_note: normalizeText(note) || null,
+        admin_review_settlement_existing_ledger: ledgerAlreadyExists
+    });
+    const updatePayload = {
+        status: 'redeemed',
+        sign_verified: true,
+        amount_verified: true,
+        paid_at: target.paid_at || nowIso,
+        verified_at: target.verified_at || nowIso,
+        claimed_at: target.claimed_at || nowIso,
+        last_error: null,
+        provider_metadata: nextProviderMetadata
+    };
+    if (localPaidAmount && localPaidAmount > 0) {
+        updatePayload.paid_amount = localPaidAmount;
+        updatePayload.expected_amount = roundCurrencyAmount(target.expected_amount) > 0
+            ? roundCurrencyAmount(target.expected_amount)
+            : localPaidAmount;
+    }
+
+    const { data: settledOrder, error: orderUpdateError } = await supabase
+        .from('payment_orders')
+        .update(updatePayload)
+        .eq('id', target.id)
+        .select('*')
+        .single();
+
+    if (orderUpdateError) {
+        const error = new Error(orderUpdateError.message || '更新 NOWPayments 审核入账订单失败');
+        error.statusCode = 500;
+        throw error;
+    }
+
+    let linkedSession = null;
+    try {
+        linkedSession = await reconcileCheckoutSessionForPaymentOrder({
+            supabase,
+            providerKey: 'nowpayments',
+            paymentOrderId: target.id,
+            providerOrderNo: normalizeText(target.provider_order_no || providerMetadata.provider_order_no),
+            userId: normalizedUserId,
+            site,
+            packageId: target.package_id,
+            packageName: target.package_name,
+            expectedAmount: updatePayload.expected_amount ?? target.expected_amount,
+            paidAmount: updatePayload.paid_amount ?? target.paid_amount,
+            pointsAmount: target.points_amount || totalPoints,
+            orderStatus: 'redeemed',
+            linkedBy: 'admin_nowpayments_review',
+            allowHeuristic: true,
+            lookbackMinutes: 1440
+        });
+    } catch (linkError) {
+        console.warn('[admin/payments/actions] failed to reconcile checkout session after NOWPayments review:', linkError.message);
+    }
+
+    let linkedDiscountSummary = null;
+    let linkedAffiliateDiscountSummary = null;
+    if (!ledgerAlreadyExists) {
+        linkedDiscountSummary = await maybeIssueRechargeDiscountAssets({
+            supabase,
+            userId: normalizedUserId,
+            site,
+            paidPoints,
+            bonusPoints,
+            paidAmount: updatePayload.paid_amount ?? target.paid_amount ?? target.expected_amount ?? 0,
+            paymentOrderId: target.id,
+            paymentProvider: 'nowpayments',
+            paymentOrderNo: normalizeText(target.provider_order_no || providerMetadata.provider_order_no)
+        });
+        linkedAffiliateDiscountSummary = await maybeIssueAffiliateDiscountAssetsForRecharge({
+            supabase,
+            site,
+            rechargeReferenceId: referenceId
+        });
+    }
+
+    return {
+        order: settledOrder || {
+            ...target,
+            ...updatePayload
+        },
+        message: ledgerAlreadyExists
+            ? 'NOWPayments 订单已通过审核，检测到已有充值流水，已同步订单为已入账。'
+            : 'NOWPayments 订单已通过审核并同步入账。',
+        auditDetails: {
+            nowpayments_review_settlement: ledgerAlreadyExists ? 'existing_ledger' : 'credited',
+            recharge_reference_id: referenceId,
+            recharge_paid_points: paidPoints,
+            recharge_bonus_points: bonusPoints,
+            checkout_session_id: linkedSession?.sessionId || linkedSession?.id || null,
+            linked_discount_count: normalizePointAmount(linkedDiscountSummary?.issued_count, 0),
+            linked_affiliate_discount_count: normalizePointAmount(linkedAffiliateDiscountSummary?.issued_count, 0)
+        }
+    };
+}
+
 async function applyOrderReviewDecision(supabase, target, action, note, actorId) {
     const status = normalizeText(target.status).toLowerCase();
     const expectsPendingReview = action === 'approve_review' || action === 'reject_review';
@@ -507,7 +716,17 @@ async function applyOrderReviewDecision(supabase, target, action, note, actorId)
         throw reviewError;
     }
 
-    return data;
+    if (isReviewApprovalAction(action) && isNowpaymentsProvider(target)) {
+        const settlement = await settleApprovedNowpaymentsOrder(supabase, target, note, actorId);
+        return {
+            review: data,
+            ...settlement
+        };
+    }
+
+    return {
+        review: data
+    };
 }
 
 async function upsertAnomalyCase(supabase, {
@@ -572,6 +791,62 @@ function buildRechargeReferenceId(providerOrderNo = '', providerKey = 'hupijiao'
     return normalizedProviderOrderNo ? `${meta?.key || 'payment'}_${normalizedProviderOrderNo}` : '';
 }
 
+function buildNowpaymentsRechargeReferenceId(target = {}) {
+    const metadata = normalizeJsonObject(target.provider_metadata);
+    const providerOrderNo = normalizeText(target.provider_order_no || metadata.provider_order_no);
+    return providerOrderNo ? `nowpayments_${providerOrderNo.slice(0, 140)}` : '';
+}
+
+function buildNowpaymentsRechargeReason(target = {}) {
+    const metadata = normalizeJsonObject(target.provider_metadata);
+    if (normalizeText(metadata.charge_type).toLowerCase() === 'custom') {
+        return 'custom_recharge';
+    }
+
+    return `USDT-BEP20充值: ${normalizeText(target.package_name) || normalizeText(target.provider_order_no) || '充值订单'}`;
+}
+
+function resolveNowpaymentsLocalPaidAmount(target = {}) {
+    const metadata = normalizeJsonObject(target.provider_metadata);
+    const candidates = [
+        target.paid_amount,
+        target.expected_amount,
+        metadata.local_amount,
+        metadata.amount_cny
+    ];
+
+    for (const candidate of candidates) {
+        const amount = roundCurrencyAmount(candidate);
+        if (amount > 0) return amount;
+    }
+
+    return null;
+}
+
+async function hasExistingPositiveLedgerForReference(supabase, {
+    userId,
+    referenceId,
+    site = 'cn'
+}) {
+    if (!userId || !referenceId) return false;
+
+    const { data, error } = await supabase
+        .from('points_ledger')
+        .select('id, amount, reference_id, site')
+        .eq('user_id', userId)
+        .eq('reference_id', referenceId)
+        .eq('site', site || 'cn');
+
+    if (error) {
+        const ledgerError = new Error(error.message || '检查充值流水失败');
+        ledgerError.statusCode = 500;
+        throw ledgerError;
+    }
+
+    return (Array.isArray(data) ? data : [])
+        .some((row) => normalizePointAmount(row?.amount, 0) > 0);
+}
+
 function formatAdminCurrencyAmount(value) {
     const amount = roundCurrencyAmount(value);
     const digits = Number.isInteger(amount) ? 0 : 2;
@@ -579,6 +854,30 @@ function formatAdminCurrencyAmount(value) {
         minimumFractionDigits: digits,
         maximumFractionDigits: 2
     })}`;
+}
+
+function normalizeGatewayPaidAmount(providerKey = '', value = null) {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return 0;
+    if (normalizeText(providerKey).toLowerCase() === 'nowpayments') {
+        return Math.round(numericValue * 100000000) / 100000000;
+    }
+    return roundCurrencyAmount(numericValue);
+}
+
+function formatGatewayLivePaidAmount(providerKey = '', liveOrder = {}) {
+    const explicitLabel = normalizeText(liveOrder.paidAmountLabel);
+    if (explicitLabel) return explicitLabel;
+
+    const amount = normalizeGatewayPaidAmount(providerKey, liveOrder.paidAmount);
+    if (!(amount > 0)) return '';
+
+    if (normalizeText(providerKey).toLowerCase() === 'nowpayments') {
+        const currency = normalizeText(liveOrder.paidCurrency).toUpperCase() || 'USDT';
+        return `${amount} ${currency}`;
+    }
+
+    return formatAdminCurrencyAmount(amount);
 }
 
 function getPaymentStatusLabel(status = '') {
@@ -606,8 +905,9 @@ function getGatewayTransactionId(snapshot = {}, liveOrder = {}) {
 
 function buildGatewayLiveOrderMessage(providerKey, liveOrder = {}) {
     const parts = [`${getGatewayProviderLabel(providerKey)}实时状态：${getPaymentStatusLabel(liveOrder.status)}`];
-    if (roundCurrencyAmount(liveOrder.paidAmount) > 0) {
-        parts.push(`实付 ${formatAdminCurrencyAmount(liveOrder.paidAmount)}`);
+    const paidAmountLabel = formatGatewayLivePaidAmount(providerKey, liveOrder);
+    if (paidAmountLabel) {
+        parts.push(`实付 ${paidAmountLabel}`);
     }
     const transactionId = getGatewayTransactionId({}, liveOrder);
     if (transactionId) {
@@ -631,8 +931,11 @@ async function queryGatewayOrder(supabase, target, providerKey, env = process.en
         throw error;
     }
 
-    const snapshot = getGatewayRefundSnapshot(target, meta.key);
-    if (!snapshot.providerOrderNo && !snapshot.openOrderId && !snapshot.tradeNo) {
+    const queryTarget = meta.key === 'nowpayments'
+        ? await recoverNowpaymentsPaymentIdFromCheckoutSession(supabase, target)
+        : target;
+    const snapshot = getGatewayRefundSnapshot(queryTarget, meta.key);
+    if (!snapshot.providerOrderNo && !snapshot.openOrderId && !snapshot.tradeNo && !snapshot.paymentId) {
         const error = new Error(`缺少${meta.label}订单号，暂时无法发起实时查单`);
         error.statusCode = 400;
         throw error;
@@ -655,7 +958,9 @@ async function queryGatewayOrder(supabase, target, providerKey, env = process.en
         runtimeContext,
         providerOrderNo: snapshot.providerOrderNo,
         openOrderId: snapshot.openOrderId,
-        tradeNo: snapshot.tradeNo
+        tradeNo: snapshot.tradeNo,
+        paymentId: snapshot.paymentId,
+        metadata: snapshot.metadata
     });
 
     if (liveOrder?.supported === false) {
@@ -674,14 +979,17 @@ async function queryGatewayOrder(supabase, target, providerKey, env = process.en
         snapshot,
         liveOrder: {
             ...liveOrder,
-            paidAmount: roundCurrencyAmount(liveOrder?.paidAmount)
+            paidAmount: normalizeGatewayPaidAmount(meta.key, liveOrder?.paidAmount)
         }
     };
 }
 
 async function applyGatewayOrderQuery(supabase, target, actorId, env = process.env, providerKey = '') {
     const meta = getGatewayProviderMeta(providerKey);
-    const { snapshot, liveOrder } = await queryGatewayOrder(supabase, target, meta?.key, env);
+    const queryTarget = meta?.key === 'nowpayments'
+        ? await recoverNowpaymentsPaymentIdFromCheckoutSession(supabase, target)
+        : target;
+    const { snapshot, liveOrder } = await queryGatewayOrder(supabase, queryTarget, meta?.key, env);
     const transactionId = getGatewayTransactionId(snapshot, liveOrder);
     const liveStatus = normalizeText(liveOrder.status).toLowerCase();
 
@@ -731,7 +1039,7 @@ async function applyGatewayOrderQuery(supabase, target, actorId, env = process.e
                 }
             }
 
-            const syncedOrder = await syncRefundedPaymentOrder(supabase, target, {
+                const syncedOrder = await syncRefundedPaymentOrder(supabase, queryTarget, {
                 actorId,
                 note: '后台实时查单确认外部已退款，系统自动同步本地状态。',
                 providerOrderNo: liveOrder.providerOrderNo || snapshot.providerOrderNo,
@@ -776,7 +1084,8 @@ async function applyGatewayOrderQuery(supabase, target, actorId, env = process.e
                     query_provider: meta.key,
                     query_status: liveStatus,
                     query_status_raw: normalizeText(liveOrder.statusRaw) || null,
-                    query_paid_amount: roundCurrencyAmount(liveOrder.paidAmount),
+                    query_paid_amount: normalizeGatewayPaidAmount(meta.key, liveOrder.paidAmount),
+                    query_paid_currency: normalizeText(liveOrder.paidCurrency) || null,
                     provider_order_no: liveOrder.providerOrderNo || snapshot.providerOrderNo || null,
                     gateway_open_order_id: liveOrder.openOrderId || snapshot.openOrderId || null,
                     gateway_transaction_id: transactionId,
@@ -799,7 +1108,8 @@ async function applyGatewayOrderQuery(supabase, target, actorId, env = process.e
             query_provider: meta.key,
             query_status: liveStatus || null,
             query_status_raw: normalizeText(liveOrder.statusRaw) || null,
-            query_paid_amount: roundCurrencyAmount(liveOrder.paidAmount),
+            query_paid_amount: normalizeGatewayPaidAmount(meta.key, liveOrder.paidAmount),
+            query_paid_currency: normalizeText(liveOrder.paidCurrency) || null,
             provider_order_no: liveOrder.providerOrderNo || snapshot.providerOrderNo || null,
             gateway_open_order_id: liveOrder.openOrderId || snapshot.openOrderId || null,
             gateway_transaction_id: transactionId,
@@ -1326,10 +1636,56 @@ function getGatewayRefundSnapshot(target = {}, providerKey = '') {
         refundStatus,
         providerOrderNo: normalizeText(target.provider_order_no || metadata.provider_order_no),
         openOrderId: normalizeText(metadata.gateway_open_order_id || metadata.open_order_id),
+        paymentId: pickNowpaymentsPaymentId(
+            metadata.payment_id,
+            metadata.nowpayments_payment_id,
+            metadata.provider_payment_id
+        ),
         tradeNo: normalizeText(metadata.trade_no || metadata.transaction_id),
         credited: status === 'redeemed' || Boolean(normalizeText(target.claimed_at)),
         providerKey: normalizeText(providerKey || target.provider).toLowerCase()
     };
+}
+
+async function recoverNowpaymentsPaymentIdFromCheckoutSession(supabase, target = {}) {
+    const metadata = normalizeJsonObject(target.provider_metadata);
+    if (pickNowpaymentsPaymentId(metadata.payment_id, metadata.nowpayments_payment_id, metadata.provider_payment_id)) {
+        return target;
+    }
+
+    const checkoutSessionId = normalizeText(target.checkout_session_id || metadata.checkout_session_id);
+    if (!checkoutSessionId || !supabase || typeof supabase.from !== 'function') {
+        return target;
+    }
+
+    try {
+        const { data, error } = await supabase
+            .from('payment_checkout_sessions')
+            .select('id, provider_metadata')
+            .eq('id', checkoutSessionId)
+            .single();
+
+        if (error || !data) return target;
+
+        const sessionMetadata = normalizeJsonObject(data.provider_metadata);
+        const recoveredPaymentId = pickNowpaymentsPaymentId(
+            sessionMetadata.payment_id,
+            sessionMetadata.nowpayments_payment_id,
+            normalizeJsonObject(sessionMetadata.summary).payment_id,
+            normalizeJsonObject(sessionMetadata.summary).nowpayments_payment_id
+        );
+        if (!recoveredPaymentId) return target;
+
+        return {
+            ...target,
+            provider_metadata: mergeJsonObjects(metadata, {
+                payment_id: recoveredPaymentId,
+                payment_id_recovered_from: 'checkout_session'
+            })
+        };
+    } catch (_) {
+        return target;
+    }
 }
 
 async function compensateRefundReclaim(supabase, target, reclaimSummary, attemptId, providerKey = '') {
@@ -1626,6 +1982,9 @@ async function syncRefundedPaymentOrder(supabase, target, {
     const nextProviderMetadata = mergeJsonObjects(existingMetadata, {
         provider_order_no: providerOrderNo || existingMetadata.provider_order_no || target.provider_order_no || null,
         gateway_open_order_id: openOrderId || existingMetadata.gateway_open_order_id || null,
+        payment_id: meta?.key === 'nowpayments'
+            ? (normalizeText(openOrderId) || existingMetadata.payment_id || null)
+            : existingMetadata.payment_id,
         transaction_id: normalizeText(tradeNo) || existingMetadata.transaction_id || existingMetadata.trade_no || null,
         trade_no: normalizeText(tradeNo) || existingMetadata.trade_no || existingMetadata.transaction_id || null,
         payment_status: normalizedRefundStatus,
@@ -1683,8 +2042,11 @@ async function applyGatewayRefundDecision(supabase, target, note, actorId, env =
         throw error;
     }
 
-    const snapshot = getGatewayRefundSnapshot(target, meta.key);
-    if (!snapshot.providerOrderNo && !snapshot.openOrderId && !snapshot.tradeNo) {
+    const refundTarget = meta.key === 'nowpayments'
+        ? await recoverNowpaymentsPaymentIdFromCheckoutSession(supabase, target)
+        : target;
+    const snapshot = getGatewayRefundSnapshot(refundTarget, meta.key);
+    if (!snapshot.providerOrderNo && !snapshot.openOrderId && !snapshot.tradeNo && !snapshot.paymentId) {
         const error = new Error(`缺少${meta.label}订单号，暂时无法执行退款`);
         error.statusCode = 400;
         throw error;
@@ -1731,7 +2093,9 @@ async function applyGatewayRefundDecision(supabase, target, note, actorId, env =
             runtimeContext,
             providerOrderNo: snapshot.providerOrderNo,
             openOrderId: snapshot.openOrderId,
-            tradeNo: snapshot.tradeNo
+            tradeNo: snapshot.tradeNo,
+            paymentId: snapshot.paymentId,
+            metadata: snapshot.metadata
         });
 
         if (liveOrder?.supported === false) {
@@ -1791,7 +2155,7 @@ async function applyGatewayRefundDecision(supabase, target, note, actorId, env =
             }
 
             const transactionId = getGatewayTransactionId(snapshot, liveOrder);
-            const syncedOrder = await syncRefundedPaymentOrder(supabase, target, {
+            const syncedOrder = await syncRefundedPaymentOrder(supabase, queryTarget, {
                 actorId,
                 note,
                 providerOrderNo: liveOrder.providerOrderNo || snapshot.providerOrderNo,
@@ -1889,6 +2253,8 @@ async function applyGatewayRefundDecision(supabase, target, note, actorId, env =
             providerOrderNo: snapshot.providerOrderNo,
             openOrderId: snapshot.openOrderId,
             tradeNo: snapshot.tradeNo,
+            paymentId: snapshot.paymentId,
+            metadata: snapshot.metadata,
             reason: note,
             money: refundAmount
         });
@@ -2016,6 +2382,85 @@ async function applyZpayRefundDecision(supabase, target, note, actorId, env = pr
     return applyGatewayRefundDecision(supabase, target, note, actorId, env, 'zpay');
 }
 
+async function applyNowpaymentsOrderQuery(supabase, target, actorId, env = process.env) {
+    return applyGatewayOrderQuery(supabase, target, actorId, env, 'nowpayments');
+}
+
+function getNowpaymentsRefundAddress(metadata = {}) {
+    const candidate = normalizeText(
+        metadata.refund_address
+        || metadata.nowpayments_refund_address
+        || metadata.customer_refund_address
+        || metadata.customer_wallet_address
+        || metadata.payout_address
+    );
+    const merchantPayAddress = normalizeText(metadata.pay_address || metadata.payment_address).toLowerCase();
+    if (candidate && candidate.toLowerCase() !== merchantPayAddress) {
+        return candidate;
+    }
+    return '';
+}
+
+function buildNowpaymentsRefundBlockedMessage(snapshot = {}) {
+    const refundAddress = getNowpaymentsRefundAddress(snapshot.metadata);
+    const addressMessage = refundAddress
+        ? '订单已记录用户退款地址，但当前后台还没有 NOWPayments Payout Bearer/JWT 与 2FA verify 流程。'
+        : '当前订单没有记录用户 USDT-BEP20 退款地址；订单里的 pay_address 是商户收款地址，不能当作用户退款地址。';
+
+    return `NOWPayments 官方退款需要通过 Payout 出款，不是原路退款；${addressMessage}已停止退款且未扣回积分，请先人工核对地址并在 NOWPayments 后台/钱包处理，或先补齐专用退款表单与 2FA 验证流程。`;
+}
+
+async function applyNowpaymentsRefundDecision(supabase, target, note, actorId, env = process.env) {
+    const meta = getGatewayProviderMeta('nowpayments');
+    const provider = normalizeText(target?.provider).toLowerCase();
+    if (provider !== meta.key) {
+        const error = new Error(`仅支持对${meta.label}支付订单执行该退款操作`);
+        error.statusCode = 400;
+        throw error;
+    }
+
+    const refundTarget = await recoverNowpaymentsPaymentIdFromCheckoutSession(supabase, target);
+    const snapshot = getGatewayRefundSnapshot(refundTarget, meta.key);
+    if (!snapshot.providerOrderNo && !snapshot.paymentId) {
+        const error = new Error('缺少 NOWPayments 订单号或 payment_id，暂时无法执行退款');
+        error.statusCode = 400;
+        throw error;
+    }
+
+    if (snapshot.refundStatus === 'refunded') {
+        const error = new Error('该订单已完成退款，无需重复操作');
+        error.statusCode = 409;
+        throw error;
+    }
+
+    if (snapshot.refundStatus === 'refund_pending') {
+        const error = new Error('该订单已有退款请求在处理中，请稍后再查单确认');
+        error.statusCode = 409;
+        throw error;
+    }
+
+    if (!REFUNDABLE_GATEWAY_STATUSES.has(snapshot.status)) {
+        const error = new Error('当前订单状态不允许执行 NOWPayments 退款');
+        error.statusCode = 409;
+        throw error;
+    }
+
+    const error = new Error(buildNowpaymentsRefundBlockedMessage(snapshot));
+    error.statusCode = 409;
+    error.auditDetails = {
+        refund_provider: meta.key,
+        refund_blocked: true,
+        refund_block_reason: 'missing_nowpayments_payout_prerequisites',
+        provider_order_no: snapshot.providerOrderNo || null,
+        payment_id: snapshot.paymentId || null,
+        query_actor_id: actorId || null,
+        note: note || null,
+        env_checked: Boolean(env),
+        supabase_checked: Boolean(supabase)
+    };
+    throw error;
+}
+
 module.exports = async function handler(req, res) {
     if (req.method !== 'POST') {
         res.setHeader('Allow', 'POST');
@@ -2071,14 +2516,30 @@ module.exports = async function handler(req, res) {
             : await fetchAnomalyCase(supabase, targetType, targetId);
         assertActionAllowedForTarget(targetType, action, anomalyCaseRecord);
 
+        let resolvedTarget = target;
+        let resolvedStatus = mapActionToStatus(action);
+        let resolvedResolution = getResolutionText(action, note);
+        let auditDetails = {};
+        let anomalyCase = null;
+        let responseMessage = '';
+
         if (targetType === 'order' && SENSITIVE_REVIEW_ACTIONS.has(action)) {
-            await applyOrderReviewDecision(supabase, target, action, note, user.id);
+            const reviewDecision = await applyOrderReviewDecision(supabase, target, action, note, user.id);
+            resolvedTarget = reviewDecision.order || target;
+            auditDetails = reviewDecision.auditDetails || {};
+            responseMessage = normalizeText(reviewDecision.message);
         }
 
-        if (targetType === 'order' && (action === 'query_hupijiao_order' || action === 'query_zpay_order')) {
+        if (targetType === 'order' && (
+            action === 'query_hupijiao_order'
+            || action === 'query_zpay_order'
+            || action === 'query_nowpayments_order'
+        )) {
             const queryDecision = action === 'query_zpay_order'
                 ? await applyZpayOrderQuery(supabase, target, user.id, process.env)
-                : await applyHupijiaoOrderQuery(supabase, target, user.id, process.env);
+                : (action === 'query_nowpayments_order'
+                    ? await applyNowpaymentsOrderQuery(supabase, target, user.id, process.env)
+                    : await applyHupijiaoOrderQuery(supabase, target, user.id, process.env));
 
             await writeAdminAuditLog({
                 supabase: requestSupabase || supabase,
@@ -2104,17 +2565,16 @@ module.exports = async function handler(req, res) {
             });
         }
 
-        let resolvedTarget = target;
-        let resolvedStatus = mapActionToStatus(action);
-        let resolvedResolution = getResolutionText(action, note);
-        let auditDetails = {};
-        let anomalyCase = null;
-        let responseMessage = '';
-
-        if (targetType === 'order' && (action === 'refund_hupijiao' || action === 'refund_zpay')) {
+        if (targetType === 'order' && (
+            action === 'refund_hupijiao'
+            || action === 'refund_zpay'
+            || action === 'refund_nowpayments'
+        )) {
             const refundDecision = action === 'refund_zpay'
                 ? await applyZpayRefundDecision(supabase, target, note, user.id, process.env)
-                : await applyHupijiaoRefundDecision(supabase, target, note, user.id, process.env);
+                : (action === 'refund_nowpayments'
+                    ? await applyNowpaymentsRefundDecision(supabase, target, note, user.id, process.env)
+                    : await applyHupijiaoRefundDecision(supabase, target, note, user.id, process.env));
             resolvedTarget = refundDecision.order || target;
             resolvedStatus = refundDecision.anomalyStatus || resolvedStatus;
             resolvedResolution = refundDecision.resolution || resolvedResolution;

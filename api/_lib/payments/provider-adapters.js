@@ -30,6 +30,7 @@ const {
     formatNowpaymentsPayAmount,
     normalizeNowpaymentsConfig,
     normalizeNowpaymentsPaymentStatus,
+    queryNowpaymentsPayment,
     updateNowpaymentsPaymentEstimate,
     verifyNowpaymentsIpnSignature
 } = require('./nowpayments');
@@ -182,6 +183,33 @@ function pickFirstCurrencyAmount(...values) {
         if (amount > 0) return amount;
     }
     return null;
+}
+
+function pickFirstPositiveNumber(...values) {
+    for (const value of values) {
+        const amount = Number(value);
+        if (Number.isFinite(amount) && amount > 0) {
+            return Math.round(amount * 100000000) / 100000000;
+        }
+    }
+    return null;
+}
+
+function normalizeNowpaymentsCurrencyLabel(value = '') {
+    const normalized = sanitizeText(value, '', 40).toLowerCase();
+    if (!normalized) return '';
+    if (normalized === 'usdtbsc') return 'USDT';
+    return normalized.toUpperCase();
+}
+
+function pickNowpaymentsPaymentId(...values) {
+    for (const value of values) {
+        const normalized = sanitizeText(value, '', 120);
+        if (!normalized) continue;
+        if (/^np[a-z0-9]+$/i.test(normalized)) continue;
+        return normalized;
+    }
+    return '';
 }
 
 function buildHashedEventKey(provider, keyParts = [], payload = null) {
@@ -781,7 +809,8 @@ const providerRegistry = {
         supports: {
             createCheckout: true,
             webhook: true,
-            queryOrder: false,
+            queryOrder: true,
+            refundOrder: true,
             autoCredit: true
         },
         async resolveRuntimeContext({ supabase, env = process.env, config = null, requestOrigin = '', site = '' } = {}) {
@@ -1040,6 +1069,106 @@ const providerRegistry = {
         },
         normalizeWebhookStatus(payload = {}) {
             return normalizeNowpaymentsPaymentStatus(payload.payment_status);
+        },
+        async queryOrder({
+            runtimeContext,
+            providerOrderNo = '',
+            openOrderId = '',
+            paymentId = '',
+            metadata = {}
+        } = {}) {
+            const integration = runtimeContext?.integration || normalizeNowpaymentsConfig({
+                channelConfig: runtimeContext?.channelConfig || {},
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: runtimeContext?.requestOrigin || ''
+            });
+            if (!integration?.apiKey) {
+                return {
+                    supported: false,
+                    message: 'NOWPayments 查询配置不完整，请先补齐 API Key。'
+                };
+            }
+
+            const providerMetadata = metadata && typeof metadata === 'object' && !Array.isArray(metadata)
+                ? metadata
+                : {};
+            const resolvedPaymentId = pickNowpaymentsPaymentId(
+                paymentId,
+                providerMetadata.payment_id,
+                providerMetadata.nowpayments_payment_id,
+                providerMetadata.provider_payment_id
+            );
+            if (!resolvedPaymentId) {
+                return {
+                    supported: false,
+                    message: 'NOWPayments 查单需要 payment_id；当前订单没有记录 payment_id，无法调用官方查单接口。'
+                };
+            }
+
+            const queryResult = await queryNowpaymentsPayment({
+                channelConfig: runtimeContext?.channelConfig || {},
+                secretValues: runtimeContext?.secretValues || {},
+                requestOrigin: runtimeContext?.requestOrigin || '',
+                paymentId: resolvedPaymentId
+            });
+            const gatewayPayload = queryResult.response?.data || {};
+            const statusRaw = sanitizeText(
+                gatewayPayload.payment_status || gatewayPayload.status,
+                '',
+                64
+            ).toLowerCase();
+            const normalizedStatus = normalizeNowpaymentsPaymentStatus(statusRaw);
+            const responsePaymentId = pickFirstText(
+                gatewayPayload.payment_id,
+                gatewayPayload.id,
+                gatewayPayload.purchase_id,
+                resolvedPaymentId
+            ) || null;
+            const transactionId = pickFirstText(
+                gatewayPayload.outcome_transaction_hash,
+                gatewayPayload.payin_hash,
+                gatewayPayload.transaction_id,
+                gatewayPayload.txid,
+                gatewayPayload.purchase_id
+            ) || null;
+            const paidAmount = pickFirstPositiveNumber(
+                gatewayPayload.actually_paid,
+                gatewayPayload.outcome_amount,
+                gatewayPayload.pay_amount,
+                gatewayPayload.price_amount
+            );
+            const paidCurrency = normalizeNowpaymentsCurrencyLabel(
+                gatewayPayload.actually_paid_currency
+                || gatewayPayload.outcome_currency
+                || gatewayPayload.pay_currency
+                || providerMetadata.pay_currency
+                || integration.payCurrency
+            );
+
+            return {
+                supported: true,
+                success: true,
+                providerOrderNo: sanitizeText(gatewayPayload.order_id || providerOrderNo, '', 120) || null,
+                openOrderId: responsePaymentId,
+                paymentId: responsePaymentId,
+                tradeNo: transactionId,
+                status: normalizedStatus,
+                statusRaw,
+                paidAmount,
+                paidCurrency,
+                paidAmountLabel: paidAmount && paidCurrency ? `${paidAmount} ${paidCurrency}` : '',
+                transactionId,
+                message: 'success',
+                responsePayload: gatewayPayload
+            };
+        },
+        async refundOrder() {
+            return {
+                supported: false,
+                success: false,
+                status: 'blocked',
+                message: 'NOWPayments 官方退款需要通过 Payout 出款，并提供用户退款地址、Payout JWT/Bearer 与 2FA 验证；当前后台未配置这些退款前置条件，已停止退款。'
+            };
         }
     },
     hupijiao: {

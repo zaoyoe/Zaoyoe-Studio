@@ -368,3 +368,77 @@ test('nowpayments webhook settles finished payment using actual USDT amount when
         assert.equal(state.finalizedEvent.amount_valid, true);
     });
 });
+
+test('nowpayments webhook preserves existing payment id when callback omits it', async () => {
+    const payload = {
+        order_id: 'NPUSDT950',
+        invoice_id: 'invoice-1',
+        purchase_id: 'purchase-is-not-payment-id',
+        payment_status: 'confirming',
+        price_amount: 9.41,
+        price_currency: 'usd',
+        pay_amount: 9.5,
+        actually_paid: 9.5,
+        pay_currency: 'usdtbsc',
+        outcome_amount: 9.5,
+        outcome_currency: 'usdtbsc'
+    };
+    const state = {
+        existingPaymentOrder: {
+            id: 'payment-order-nowpayments-preserve-id',
+            user_id: 'user-1',
+            provider: 'nowpayments',
+            provider_order_no: 'NPUSDT950',
+            checkout_session_id: 'checkout-session-1',
+            site: 'cn',
+            expected_amount: 66.66,
+            paid_amount: null,
+            points_amount: 66,
+            status: 'pending',
+            sign_verified: false,
+            amount_verified: false,
+            provider_metadata: {
+                provider_order_no: 'NPUSDT950',
+                payment_id: '5731943810',
+                local_amount: 66.66,
+                price_amount: 9.5,
+                price_currency: 'usd',
+                pay_amount: 9.5,
+                pay_currency: 'usdtbsc',
+                paid_points: 66,
+                bonus_points: 0
+            },
+            raw_payload: {},
+            paid_at: null,
+            claimed_at: null,
+            verified_at: null,
+            last_error: null
+        }
+    };
+
+    await withNowpaymentsWebhookModule(buildDependencyMocks(state), async ({ createNowpaymentsWebhookHandler }) => {
+        const handler = createNowpaymentsWebhookHandler({
+            supabase: createSupabaseMock(state),
+            env: {
+                APP_BASE_URL: 'https://www.fatherkey.com'
+            }
+        });
+        const req = {
+            method: 'POST',
+            headers: {
+                host: 'www.fatherkey.com',
+                'x-forwarded-for': '203.0.113.10',
+                'x-nowpayments-sig': 'expected-signature'
+            },
+            body: payload
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(state.paymentOrderPatch.provider_metadata.payment_id, '5731943810');
+        assert.equal(state.paymentOrderPatch.provider_metadata.purchase_id, 'purchase-is-not-payment-id');
+        assert.equal(state.finalizedEvent.processing_result, 'ignored_confirming');
+    });
+});

@@ -3221,6 +3221,196 @@ test('payments summary exposes zpay query and reconcile actions on recent orders
     });
 });
 
+test('payments summary exposes nowpayments USD display amount for recent orders', async () => {
+    const state = {
+        paymentOrders: [
+            {
+                id: 'order-np-summary-1',
+                provider: 'nowpayments',
+                provider_order_no: 'NP_SUMMARY_1',
+                user_id: 'user-np-summary-1',
+                checkout_session_id: 'session-np-summary-1',
+                site: 'cn',
+                status: 'paid',
+                expected_amount: 0,
+                paid_amount: 0,
+                points_amount: 66,
+                package_name: '进阶',
+                created_at: '2026-06-09T13:32:00.000Z',
+                paid_at: '2026-06-09T13:33:00.000Z',
+                claimed_at: null,
+                verified_at: '2026-06-09T13:33:00.000Z',
+                last_error: null,
+                provider_metadata: {
+                    payment_id: '5731943810',
+                    price_amount: 9.5,
+                    price_currency: 'usd',
+                    actually_paid: 9.595,
+                    pay_currency: 'usdtbsc'
+                }
+            }
+        ],
+        profiles: [
+            {
+                id: 'user-np-summary-1',
+                email: 'nowpayments-summary@example.com'
+            }
+        ],
+        paymentEvents: [],
+        checkoutSessions: [],
+        paymentQueryAttempts: [],
+        paymentAnomalyCases: [],
+        opsAlertJobs: []
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'ops',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const order = Array.isArray(payload.recent_orders) ? payload.recent_orders[0] : null;
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.ok(order);
+        assert.equal(order.provider_order_no, 'NP_SUMMARY_1');
+        assert.equal(order.display_amount_label, '$9.50');
+        assert.equal(order.display_currency, 'USD');
+        assert.equal(order.display_amount_source, 'nowpayments_price_amount');
+        assert.equal(order.settlement_amount_label, '9.595 USDT');
+        assert.equal(order.user_email, 'nowpayments-summary@example.com');
+        assert.deepEqual(order.order_available_actions, [
+            'query_nowpayments_order'
+        ]);
+    });
+});
+
+test('payments summary recovers nowpayments payment id from checkout session for actions', async () => {
+    const state = {
+        paymentOrders: [
+            {
+                id: 'order-np-summary-recover-1',
+                provider: 'nowpayments',
+                provider_order_no: 'NP_SUMMARY_RECOVER_1',
+                user_id: 'user-np-summary-recover-1',
+                checkout_session_id: 'session-np-summary-recover-1',
+                site: 'cn',
+                status: 'redeemed',
+                expected_amount: 0,
+                paid_amount: 0,
+                points_amount: 66,
+                package_name: '进阶',
+                created_at: '2026-06-09T13:32:00.000Z',
+                claimed_at: '2026-06-09T13:33:00.000Z',
+                provider_metadata: {
+                    purchase_id: 'purchase-is-not-payment-id',
+                    actually_paid: 9.595,
+                    pay_currency: 'usdtbsc'
+                }
+            }
+        ],
+        checkoutSessions: [
+            {
+                id: 'session-np-summary-recover-1',
+                payment_order_id: 'order-np-summary-recover-1',
+                session_key: 'session-key-np-summary-recover-1',
+                provider: 'nowpayments',
+                user_id: 'user-np-summary-recover-1',
+                site: 'cn',
+                status: 'redirect_ready',
+                created_at: '2026-06-09T13:31:00.000Z',
+                updated_at: '2026-06-09T13:32:00.000Z',
+                provider_metadata: {
+                    payment_id: '5731943810'
+                }
+            }
+        ],
+        paymentEvents: [],
+        paymentQueryAttempts: [],
+        paymentAnomalyCases: [],
+        opsAlertJobs: []
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'ops',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const order = Array.isArray(payload.recent_orders) ? payload.recent_orders[0] : null;
+
+        assert.equal(res.statusCode, 200);
+        assert.ok(order);
+        assert.equal(order.provider_metadata.payment_id, '5731943810');
+        assert.equal(order.provider_metadata.payment_id_recovered_from, 'checkout_session');
+        assert.deepEqual(order.order_available_actions, [
+            'query_nowpayments_order'
+        ]);
+    });
+});
+
+test('payments summary hides nowpayments actions when only purchase or invoice ids exist', async () => {
+    const state = {
+        paymentOrders: [
+            {
+                id: 'order-np-summary-no-payment-id-1',
+                provider: 'nowpayments',
+                provider_order_no: 'NP_SUMMARY_NO_PAYMENT_ID_1',
+                user_id: 'user-np-summary-no-payment-id-1',
+                checkout_session_id: 'session-np-summary-no-payment-id-1',
+                site: 'cn',
+                status: 'paid',
+                expected_amount: 0,
+                paid_amount: 0,
+                points_amount: 66,
+                package_name: '进阶',
+                created_at: '2026-06-09T13:32:00.000Z',
+                provider_metadata: {
+                    purchase_id: 'purchase-is-not-payment-id',
+                    invoice_id: 'invoice-is-not-payment-id'
+                }
+            }
+        ],
+        paymentEvents: [],
+        checkoutSessions: [],
+        paymentQueryAttempts: [],
+        paymentAnomalyCases: [],
+        opsAlertJobs: []
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'ops',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const order = Array.isArray(payload.recent_orders) ? payload.recent_orders[0] : null;
+
+        assert.equal(res.statusCode, 200);
+        assert.ok(order);
+        assert.deepEqual(order.order_available_actions, []);
+    });
+});
+
 test('payments summary exposes checkout-session backfill action on redeemed unmatched orders', async () => {
     const state = {
         paymentOrders: [

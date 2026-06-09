@@ -687,7 +687,7 @@ async function handleNowpaymentsWebhook({
                 provider_metadata: mergePaymentObjects(existingMetadata, {
                     provider_order_no: orderNo,
                     invoice_id: invoiceId || existingMetadata.invoice_id || null,
-                    payment_id: sanitizeText(payload.payment_id, '', 120) || null,
+                    payment_id: sanitizeText(payload.payment_id, '', 120) || existingMetadata.payment_id || null,
                     parent_payment_id: sanitizeText(payload.parent_payment_id, '', 120) || null,
                     purchase_id: sanitizeText(payload.purchase_id, '', 120) || null,
                     payment_status: paymentState,

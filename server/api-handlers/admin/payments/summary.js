@@ -51,6 +51,13 @@ const GATEWAY_ACTION_META = Object.freeze({
         reconcileAction: 'reconcile_zpay_order',
         refundAction: 'refund_zpay',
         queryMetadataKeys: ['provider_order_no', 'trade_no']
+    }),
+    nowpayments: Object.freeze({
+        key: 'nowpayments',
+        queryAction: 'query_nowpayments_order',
+        reconcileAction: '',
+        refundAction: 'refund_nowpayments',
+        queryMetadataKeys: ['payment_id', 'nowpayments_payment_id', 'provider_payment_id']
     })
 });
 const QUERY_OUTCOME_META = Object.freeze({
@@ -542,12 +549,24 @@ function getGatewayActionMetaFromItem(item) {
     return getGatewayActionMeta(item?.provider);
 }
 
+function pickNowpaymentsPaymentId(...values) {
+    for (const value of values) {
+        const normalized = String(value || '').trim().slice(0, 120);
+        if (!normalized) continue;
+        if (/^np[a-z0-9]+$/i.test(normalized)) continue;
+        return normalized;
+    }
+    return '';
+}
+
 function canRefundGatewayOrder(item, providerKey = '') {
     if (!item) return false;
     if ((item?.type && item.type !== 'order')) return false;
     const meta = getGatewayActionMeta(providerKey);
     if (!meta) return false;
     if (String(item?.provider || '').trim().toLowerCase() !== meta.key) return false;
+    // NOWPayments refunds require a separate payout workflow, so hide the action until that flow exists.
+    if (meta.key === 'nowpayments') return false;
 
     const status = String(item?.status || '').trim().toLowerCase();
     if (!REFUNDABLE_GATEWAY_ORDER_STATUSES.has(status)) return false;
@@ -566,6 +585,14 @@ function canQueryGatewayOrder(item, providerKey = '') {
     if (String(item?.provider || '').trim().toLowerCase() !== meta.key) return false;
 
     const metadata = normalizeJsonObject(item?.provider_metadata);
+    if (meta.key === 'nowpayments') {
+        return Boolean(pickNowpaymentsPaymentId(
+            metadata.payment_id,
+            metadata.nowpayments_payment_id,
+            metadata.provider_payment_id
+        ));
+    }
+
     if (String(item?.provider_order_no || metadata.provider_order_no || '').trim()) {
         return true;
     }
@@ -653,7 +680,13 @@ async function enrichRecentOrdersWithGatewayRefundHints(orders = [], supabase, e
                 runtimeContext,
                 providerOrderNo: String(order?.provider_order_no || metadata.provider_order_no || '').trim(),
                 openOrderId: String(metadata.gateway_open_order_id || metadata.open_order_id || '').trim(),
-                tradeNo: String(metadata.trade_no || metadata.transaction_id || '').trim()
+                tradeNo: String(metadata.trade_no || metadata.transaction_id || '').trim(),
+                paymentId: pickNowpaymentsPaymentId(
+                    metadata.payment_id,
+                    metadata.nowpayments_payment_id,
+                    metadata.provider_payment_id
+                ),
+                metadata
             });
 
             if (liveOrder?.supported === false || liveOrder?.success === false) {
@@ -691,7 +724,7 @@ function getOrderAvailableActions(order) {
         actions.push(meta.queryAction);
     }
     if (canReconcileGatewayOrder(order, meta.key)) {
-        actions.push(meta.reconcileAction);
+        if (meta.reconcileAction) actions.push(meta.reconcileAction);
     }
     if (canReconcileCheckoutSession(order)) {
         actions.push('reconcile_checkout_session');
@@ -954,7 +987,7 @@ function getAnomalyAvailableActions(item, caseStatus) {
     if (item?.type === 'order' && String(item?.status || '').trim().toLowerCase() === 'amount_mismatch') {
         const actions = [];
         if (gatewayMeta && canQueryGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.queryAction);
-        if (gatewayMeta && canReconcileGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.reconcileAction);
+        if (gatewayMeta?.reconcileAction && canReconcileGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.reconcileAction);
         actions.push('approve_amount_mismatch', 'reject_amount_mismatch');
         if (gatewayMeta && canRefundGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.refundAction);
         actions.push('ignore');
@@ -964,7 +997,7 @@ function getAnomalyAvailableActions(item, caseStatus) {
     if (item?.type === 'order' && String(item?.status || '').trim().toLowerCase() === 'pending_review') {
         const actions = [];
         if (gatewayMeta && canQueryGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.queryAction);
-        if (gatewayMeta && canReconcileGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.reconcileAction);
+        if (gatewayMeta?.reconcileAction && canReconcileGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.reconcileAction);
         actions.push('approve_review', 'reject_review');
         if (gatewayMeta && canRefundGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.refundAction);
         actions.push('ignore');
@@ -974,7 +1007,7 @@ function getAnomalyAvailableActions(item, caseStatus) {
     if (gatewayMeta && canRefundGatewayOrder(item, gatewayMeta.key)) {
         const actions = [];
         if (canQueryGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.queryAction);
-        if (canReconcileGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.reconcileAction);
+        if (gatewayMeta.reconcileAction && canReconcileGatewayOrder(item, gatewayMeta.key)) actions.push(gatewayMeta.reconcileAction);
         if (canReconcileCheckoutSession(item)) actions.push('reconcile_checkout_session');
         actions.push(gatewayMeta.refundAction, 'mark_handled', 'ignore', 'request_retry');
         return actions;
@@ -982,7 +1015,7 @@ function getAnomalyAvailableActions(item, caseStatus) {
 
     if (gatewayMeta && canQueryGatewayOrder(item, gatewayMeta.key)) {
         const actions = [gatewayMeta.queryAction];
-        if (canReconcileGatewayOrder(item, gatewayMeta.key)) {
+        if (gatewayMeta.reconcileAction && canReconcileGatewayOrder(item, gatewayMeta.key)) {
             actions.push(gatewayMeta.reconcileAction);
         }
         if (canReconcileCheckoutSession(item)) {
@@ -1272,6 +1305,100 @@ function normalizeNumber(value, fallback = 0) {
 function roundNumber(value, digits = 1) {
     const multiplier = 10 ** digits;
     return Math.round(normalizeNumber(value, 0) * multiplier) / multiplier;
+}
+
+function formatCurrencyNumber(value, currency = 'CNY') {
+    const amount = roundNumber(value, 2);
+    const normalizedCurrency = String(currency || '').trim().toUpperCase();
+    const digits = Math.abs(amount % 1) > 0 ? 2 : 0;
+    const formatted = amount.toLocaleString('zh-CN', {
+        minimumFractionDigits: digits,
+        maximumFractionDigits: 2
+    });
+
+    if (normalizedCurrency === 'USD') return `$${formatted}`;
+    if (normalizedCurrency === 'CNY') return `¥${formatted}`;
+    return `${formatted} ${normalizedCurrency || 'CNY'}`;
+}
+
+function normalizeCurrencyCode(value = '') {
+    return String(value || '').trim().toUpperCase();
+}
+
+function normalizeNowpaymentsDisplayCurrency(value = '') {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (!normalized) return '';
+    if (normalized.startsWith('usdt')) return 'USDT';
+    return normalized.toUpperCase();
+}
+
+function firstPositiveNumber(...values) {
+    for (const value of values) {
+        const amount = normalizeNumber(value, 0);
+        if (amount > 0) return roundNumber(amount, 8);
+    }
+    return 0;
+}
+
+function buildPaymentDisplayAmount(order = {}) {
+    const provider = String(order.provider || '').trim().toLowerCase();
+    const metadata = normalizeJsonObject(order.provider_metadata);
+
+    if (provider === 'nowpayments') {
+        const priceAmount = firstPositiveNumber(
+            metadata.price_amount,
+            metadata.price_amount_webhook,
+            metadata.amount_verification?.expected_price_amount,
+            metadata.amount_verification?.webhook_price_amount
+        );
+        const priceCurrency = normalizeCurrencyCode(metadata.price_currency) || 'USD';
+        const payAmount = firstPositiveNumber(
+            metadata.actually_paid,
+            metadata.pay_amount,
+            metadata.outcome_amount,
+            metadata.amount_verification?.actual_amount
+        );
+        const payCurrency = normalizeNowpaymentsDisplayCurrency(
+            metadata.pay_currency
+            || metadata.outcome_currency
+            || metadata.amount_verification?.actual_currency
+        ) || 'USDT';
+
+        if (priceAmount > 0) {
+            return {
+                amount: roundNumber(priceAmount, 2),
+                currency: priceCurrency,
+                label: formatCurrencyNumber(priceAmount, priceCurrency),
+                source: 'nowpayments_price_amount',
+                settlement_amount: payAmount || null,
+                settlement_currency: payAmount > 0 ? payCurrency : null,
+                settlement_label: payAmount > 0 ? `${roundNumber(payAmount, 8).toLocaleString('zh-CN', { maximumFractionDigits: 8 })} ${payCurrency}` : null
+            };
+        }
+
+        if (payAmount > 0) {
+            return {
+                amount: payAmount,
+                currency: payCurrency,
+                label: `${roundNumber(payAmount, 8).toLocaleString('zh-CN', { maximumFractionDigits: 8 })} ${payCurrency}`,
+                source: 'nowpayments_pay_amount',
+                settlement_amount: payAmount,
+                settlement_currency: payCurrency,
+                settlement_label: `${roundNumber(payAmount, 8).toLocaleString('zh-CN', { maximumFractionDigits: 8 })} ${payCurrency}`
+            };
+        }
+    }
+
+    const localAmount = normalizeNumber(order.paid_amount, normalizeNumber(order.expected_amount, 0));
+    return {
+        amount: roundNumber(localAmount, 2),
+        currency: 'CNY',
+        label: formatCurrencyNumber(localAmount, 'CNY'),
+        source: 'local_amount',
+        settlement_amount: null,
+        settlement_currency: null,
+        settlement_label: null
+    };
 }
 
 function isMissingColumnError(error) {
@@ -2354,6 +2481,30 @@ function enrichPaymentOrdersWithCheckoutSessions(orders, sessions) {
     return (orders || []).map((order) => {
         const metadata = normalizeJsonObject(order.provider_metadata);
         const linkedSession = sessionMap.get(order.id);
+        const linkedSessionMetadata = normalizeJsonObject(linkedSession?.provider_metadata);
+        const recoveredNowpaymentsPaymentId = String(order?.provider || '').trim().toLowerCase() === 'nowpayments'
+            ? pickNowpaymentsPaymentId(
+                metadata.payment_id,
+                metadata.nowpayments_payment_id,
+                metadata.provider_payment_id,
+                linkedSessionMetadata.payment_id,
+                linkedSessionMetadata.nowpayments_payment_id,
+                linkedSessionMetadata.provider_payment_id,
+                normalizeJsonObject(linkedSessionMetadata.summary).payment_id,
+                normalizeJsonObject(linkedSessionMetadata.summary).nowpayments_payment_id
+            )
+            : '';
+        const providerMetadata = recoveredNowpaymentsPaymentId && !pickNowpaymentsPaymentId(
+            metadata.payment_id,
+            metadata.nowpayments_payment_id,
+            metadata.provider_payment_id
+        )
+            ? {
+                ...metadata,
+                payment_id: recoveredNowpaymentsPaymentId,
+                payment_id_recovered_from: 'checkout_session'
+            }
+            : metadata;
         const sessionId = linkedSession?.id || order.checkout_session_id || metadata.checkout_session_id || null;
         const sessionKey = linkedSession?.session_key || metadata.checkout_session_key || null;
         const sessionStatus = linkedSession?.status || metadata.checkout_session_status || null;
@@ -2369,6 +2520,7 @@ function enrichPaymentOrdersWithCheckoutSessions(orders, sessions) {
 
         return {
             ...order,
+            provider_metadata: providerMetadata,
             checkout_session_id: sessionId,
             checkout_session_key: sessionKey,
             checkout_session_status: sessionStatus,
@@ -5642,16 +5794,26 @@ module.exports = async function handler(req, res) {
             : new Map();
         const recentOrders = view === 'ops'
             ? (await enrichRecentOrdersWithGatewayRefundHints(recentOrderCandidates, adminSupabase || scopedClient, process.env))
-                .map((order) => ({
-                    ...order,
-                    user_email: (() => {
+                .map((order) => {
+                    const displayAmount = buildPaymentDisplayAmount(order);
+                    return {
+                        ...order,
+                        display_amount: displayAmount.amount,
+                        display_currency: displayAmount.currency,
+                        display_amount_label: displayAmount.label,
+                        display_amount_source: displayAmount.source,
+                        settlement_amount: displayAmount.settlement_amount,
+                        settlement_currency: displayAmount.settlement_currency,
+                        settlement_amount_label: displayAmount.settlement_label,
+                        user_email: (() => {
                         const userId = String(order?.user_id || '').trim();
                         const profile = userId ? recentProfileMap.get(userId) || null : null;
                         const email = String(profile?.email || '').trim();
                         return email || null;
-                    })(),
-                    order_available_actions: getOrderAvailableActions(order)
-                }))
+                        })(),
+                        order_available_actions: getOrderAvailableActions(order)
+                    };
+                })
             : [];
         const recentCheckoutSessions = view === 'ops'
             ? recentCheckoutSessionCandidates
