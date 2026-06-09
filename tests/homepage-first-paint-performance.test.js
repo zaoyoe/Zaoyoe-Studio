@@ -47,16 +47,16 @@ test('homepage ships a static first-paint hero while runtime data hydrates', () 
         'index.html should load the prompt skeleton geometry before the deferred homepage stylesheet'
     );
     assert.ok(
-        indexSource.indexOf('./css/home-prompts-skeleton-critical.css?v=20260530_HOME_PROMPTS_SKELETON_GRID_1') < indexSource.indexOf('./css/framer_home.css?v=20260609_SUPPORT_COPY_CAPSULE_2'),
+        indexSource.indexOf('./css/home-prompts-skeleton-critical.css?v=20260530_HOME_PROMPTS_SKELETON_GRID_1') < indexSource.indexOf('./css/framer_home.css?v=20260609_SUPPORT_COPY_REAL_CLIPBOARD_1'),
         'prompt skeleton critical CSS should load before the deferred full homepage stylesheet'
     );
     assert.match(
         indexSource,
-        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260609_SUPPORT_COPY_CAPSULE_2&uiTextSelectGuard=20260530_UI_TEXT_SELECT_GUARD_1" media="print" data-deferred-style="1">/,
+        /<link rel="stylesheet" href="\.\/css\/framer_home\.css\?v=20260609_SUPPORT_COPY_REAL_CLIPBOARD_1&uiTextSelectGuard=20260530_UI_TEXT_SELECT_GUARD_1" media="print" data-deferred-style="1">/,
         'index.html should defer the full homepage stylesheet after the first-paint shell'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home.css?v=20260609_SUPPORT_COPY_CAPSULE_2'),
+        indexSource.includes('./css/framer_home.css?v=20260609_SUPPORT_COPY_REAL_CLIPBOARD_1'),
         true,
         'index.html should keep cache-busting the full static hero stability styles'
     );
@@ -812,7 +812,7 @@ test('homepage shop title paints before delayed product cards', () => {
         'index.html should cache-bust the shop title-first homepage runtime'
     );
     assert.equal(
-        indexSource.includes('./css/framer_home.css?v=20260609_SUPPORT_COPY_CAPSULE_2'),
+        indexSource.includes('./css/framer_home.css?v=20260609_SUPPORT_COPY_REAL_CLIPBOARD_1'),
         true,
         'index.html should cache-bust the shop title-first homepage styles'
     );

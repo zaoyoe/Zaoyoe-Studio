@@ -872,19 +872,16 @@
     function copySupportText(text) {
         const value = String(text || '').trim();
         if (!value) return Promise.reject(new Error('没有可复制的内容'));
-        if (shouldPreferLegacySupportCopy()) {
-            try {
-                tryLegacyCopySupportText(value);
-                return Promise.resolve();
-            } catch (legacyError) {
-                if (navigator.clipboard?.writeText) {
-                    return navigator.clipboard.writeText(value).catch(() => Promise.reject(legacyError));
-                }
-                return Promise.reject(legacyError);
-            }
-        }
         if (navigator.clipboard?.writeText) {
-            return navigator.clipboard.writeText(value).catch(() => legacyCopySupportText(value));
+            return navigator.clipboard.writeText(value).catch((clipboardError) => {
+                if (shouldPreferLegacySupportCopy()) {
+                    return Promise.reject(clipboardError);
+                }
+                return legacyCopySupportText(value);
+            });
+        }
+        if (shouldPreferLegacySupportCopy()) {
+            return Promise.reject(new Error('复制失败'));
         }
         return legacyCopySupportText(value);
     }
@@ -1466,7 +1463,7 @@
     }
 
     function shouldHandleSupportActionEarly(action) {
-        return action === 'copy' || action === 'chat' || action === 'detail';
+        return action === 'chat' || action === 'detail';
     }
 
     function wasSupportActionHandledRecently(link) {
@@ -1557,12 +1554,10 @@
                     setSupportLinkFeedback(link, 'copied', getSupportFeedbackText('copy-success-short', copyValue));
                 })
                 .catch((error) => {
+                    setSupportLinkFeedback(link, 'error', getSupportFeedbackText('copy-error-short', copyValue));
                     if (error?.message === '没有可复制的内容') {
-                        setSupportLinkFeedback(link, 'error', getSupportFeedbackText('copy-error-short', copyValue));
                         showSupportFeedback(error.message, 'error');
-                        return;
                     }
-                    setSupportLinkFeedback(link, 'copied', getSupportFeedbackText('copy-success-short', copyValue));
                 });
             return;
         }
