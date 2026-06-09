@@ -4607,6 +4607,12 @@ const ShopClient = {
             ...currentState,
             [normalizedKind]: !currentState[normalizedKind]
         };
+        if (normalizedKind === 'notes' && nextState.notes) {
+            nextState.usage = false;
+        }
+        if (normalizedKind === 'usage' && nextState.usage) {
+            nextState.notes = false;
+        }
 
         if (!nextState.notes && !nextState.usage && !nextState.discounts) {
             delete this.cartItemDisclosureState[normalizedId];
@@ -5908,6 +5914,7 @@ const ShopClient = {
                         ? `<span>${this.escapeHtml(window.i18n?.t('shop.outOfStock') || '售罄')}</span>`
                         : `<span>${this.escapeHtml(copy.nextLabel)}</span>`));
             this.setElementHidden(nextBtn, nextStage !== 'configure');
+            nextBtn.classList.toggle('shop-btn-primary', !isSoldOut);
             nextBtn.classList.toggle('shop-purchase-sold-out-btn', isSoldOut);
             nextBtn.disabled = isPurchaseProcessing || isManualDelivery || isSoldOut;
             nextBtn.setAttribute('aria-disabled', (isManualDelivery || isSoldOut) ? 'true' : 'false');
@@ -9792,6 +9799,22 @@ const ShopClient = {
         if (!panel) return;
 
         const nextExpanded = toggleButton.getAttribute('aria-expanded') !== 'true';
+        if (nextExpanded) {
+            const item = toggleButton.closest('.shop-success-item');
+            if (item) {
+                item.querySelectorAll('[data-shop-success-action="toggle-notes"], [data-shop-success-action="toggle-usage"]').forEach((toggle) => {
+                    if (toggle !== toggleButton) {
+                        toggle.setAttribute('aria-expanded', 'false');
+                        toggle.classList.remove('is-active');
+                    }
+                });
+                item.querySelectorAll('.shop-success-item__notes-panel, .shop-success-item__usage-panel').forEach((candidate) => {
+                    if (candidate !== panel) {
+                        candidate.hidden = true;
+                    }
+                });
+            }
+        }
         toggleButton.setAttribute('aria-expanded', nextExpanded ? 'true' : 'false');
         toggleButton.classList.toggle('is-active', nextExpanded);
         panel.hidden = !nextExpanded;
@@ -14509,6 +14532,15 @@ const ShopClient = {
         const styledTags = new Set(['A', 'B', 'STRONG', 'I', 'EM', 'U', 'DIV', 'P', 'SPAN', 'FONT', 'UL', 'OL', 'LI']);
         const allowedTextAlign = /^(left|center|right|justify)$/i;
         const allowedFontSize = /^([1-7]|\d+(\.\d+)?(px|em|rem|%)|xx-small|x-small|small|medium|large|x-large|xx-large)$/i;
+        const allowedColorValue = /^(#[0-9a-f]{3}(?:[0-9a-f]{3})?|rgba?\(\s*(?:\d{1,3}\s*,\s*){2}\d{1,3}(?:\s*,\s*(?:0|1|0?\.\d+))?\s*\))$/i;
+        const lowContrastYellowPattern = /#ffeb3b|rgb\s*\(\s*255\s*,\s*235\s*,\s*59\s*\)|rgba\s*\(\s*255\s*,\s*235\s*,\s*59\s*,\s*1(?:\.0+)?\s*\)/gi;
+
+        const sanitizeColor = (colorText = '') => {
+            const normalized = String(colorText || '').trim()
+                .replace(/\s*!important$/i, '')
+                .replace(lowContrastYellowPattern, '#f4b400');
+            return allowedColorValue.test(normalized) ? normalized : '';
+        };
 
         const sanitizeStyle = (styleText = '') => {
             const safeRules = [];
@@ -14524,6 +14556,12 @@ const ShopClient = {
                 }
                 if (prop === 'font-size' && allowedFontSize.test(value)) {
                     safeRules.push(`font-size: ${value}`);
+                }
+                if (prop === 'color') {
+                    const safeColor = sanitizeColor(value);
+                    if (safeColor) {
+                        safeRules.push(`color: ${safeColor}`);
+                    }
                 }
             });
 
@@ -14570,8 +14608,13 @@ const ShopClient = {
 
                 if (child.tagName === 'FONT') {
                     const size = (attrs.size || '').trim();
+                    const safeFontColor = sanitizeColor(attrs.color || '');
                     if (allowedFontSize.test(size)) {
                         child.setAttribute('size', size);
+                    }
+                    if (safeFontColor) {
+                        const currentStyle = child.getAttribute('style') || '';
+                        child.setAttribute('style', [currentStyle, `color: ${safeFontColor}`].filter(Boolean).join('; '));
                     }
                 }
 

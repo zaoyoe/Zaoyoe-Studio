@@ -56,6 +56,11 @@ test('wallet shop order detail uses dots loading and explicit product guidance c
     assert.match(script, /tone:\s*'usage'/);
     assert.match(script, /wallet-order-guidance-toggle--\$\{this\.escapeAttribute\(item\.tone \|\| item\.key\)\}/);
     assert.match(script, /wallet-order-guidance-panel js-wallet-guidance-panel/);
+    assert.match(
+        script,
+        /modal\.querySelectorAll\('\.js-wallet-toggle-guidance'\)\.forEach\(\(toggle\) => \{\s+toggle\.setAttribute\('aria-expanded', 'false'\);\s+\}\);[\s\S]*modal\.querySelectorAll\('\.js-wallet-guidance-panel'\)\.forEach\(\(panel\) => \{\s+panel\.hidden = true;\s+\}\);[\s\S]*button\.setAttribute\('aria-expanded', 'true'\);/s,
+        'order detail guidance toggles should close the other guidance panel before opening the selected one'
+    );
     assert.doesNotMatch(script, /product-dot product-dot--info/);
     assert.match(styles, /\.wallet-order-detail-toolbar\s*\{[\s\S]*justify-content:\s*space-between;/);
     assert.match(styles, /\.wallet-modal-actions--toolbar\s*\{[\s\S]*margin-left:\s*auto;/);
@@ -69,13 +74,15 @@ test('wallet shop order detail uses dots loading and explicit product guidance c
     assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
     assert.match(script, /wallet\.submitTicket'[\s\S]*提交工单/);
     assert.match(styles, /\.wallet-order-guidance-toggle\s*\{/);
-    assert.match(styles, /\.wallet-order-guidance-toggle--notice\s*\{[\s\S]*rgba\(255,\s*214,\s*102,\s*0\.12\)/);
-    assert.match(styles, /\.wallet-order-guidance-toggle--usage\s*\{[\s\S]*rgba\(114,\s*229,\s*208,\s*0\.12\)/);
+    assert.match(styles, /\.wallet-order-guidance-toggle--notice\s*\{[\s\S]*background:\s*transparent;[\s\S]*rgba\(255,\s*214,\s*102,\s*0\.18\)/);
+    assert.match(styles, /\.wallet-order-guidance-toggle--usage\s*\{[\s\S]*background:\s*transparent;[\s\S]*rgba\(114,\s*229,\s*208,\s*0\.16\)/);
     assert.match(styles, /\.wallet-order-guidance-toggle--notice\[aria-expanded="true"\]\s*\{[\s\S]*inset 0 0 0 1px rgba\(255,\s*214,\s*102,\s*0\.16\)/);
     assert.match(styles, /\.wallet-order-guidance-toggle--usage\[aria-expanded="true"\]\s*\{[\s\S]*inset 0 0 0 1px rgba\(114,\s*229,\s*208,\s*0\.16\)/);
     assert.match(styles, /\.wallet-order-guidance-toggle--notice:active,[\s\S]*\.wallet-order-guidance-toggle--usage:active\s*\{[\s\S]*scale\(0\.98\)/);
-    assert.match(styles, /html:not\(\[data-theme="dark"\]\) \.wallet-order-guidance-toggle--notice\s*\{[\s\S]*rgba\(245,\s*158,\s*11,\s*0\.08\)/);
-    assert.match(styles, /html:not\(\[data-theme="dark"\]\) \.wallet-order-guidance-toggle--usage\s*\{[\s\S]*rgba\(16,\s*185,\s*129,\s*0\.08\)/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) \.wallet-order-guidance-toggle--notice\s*\{[\s\S]*background:\s*transparent;[\s\S]*rgba\(245,\s*158,\s*11,\s*0\.18\)/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) \.wallet-order-guidance-toggle--usage\s*\{[\s\S]*background:\s*transparent;[\s\S]*rgba\(16,\s*185,\s*129,\s*0\.16\)/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) \.wallet-order-guidance-toggle--notice\[aria-expanded="true"\]\s*\{[\s\S]*background:\s*#fff7ed;[\s\S]*rgba\(245,\s*158,\s*11,\s*0\.34\)/);
+    assert.match(styles, /html:not\(\[data-theme="dark"\]\) \.wallet-order-guidance-toggle--usage\[aria-expanded="true"\]\s*\{[\s\S]*background:\s*#ecfdf5;[\s\S]*rgba\(16,\s*185,\s*129,\s*0\.3\)/);
     assert.match(styles, /\.wallet-order-action-btn:hover,[\s\S]*\.wallet-order-action-btn:focus-visible\s*\{[\s\S]*transform:\s*translateY\(-1px\);/);
     assert.match(styles, /\.wallet-order-action-btn-copy:hover,[\s\S]*\.wallet-order-action-btn-copy:focus-visible\s*\{[\s\S]*rgba\(148,\s*163,\s*184,\s*0\.1\)/);
     assert.match(styles, /\.wallet-order-action-btn-danger:hover,[\s\S]*\.wallet-order-action-btn-danger:focus-visible\s*\{[\s\S]*rgba\(239,\s*68,\s*68,\s*0\.12\)/);

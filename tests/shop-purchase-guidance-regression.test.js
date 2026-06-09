@@ -255,25 +255,48 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         /guidanceThemeText=20260607_SHOP_GUIDANCE_THEME_TEXT_1/,
         'shop.html should cache-bust storefront guidance theme text assets'
     );
-    assert.doesNotMatch(
+    assert.match(
         shopClientSource,
-        /allowedColor|prop === 'color'|setAttribute\('color'|shop-rich-color/,
-        'storefront rich-text sanitizer should strip pasted text colors instead of preserving unreadable external styles'
+        /const allowedColorValue = \/\^\(#[\s\S]*rgba\?[\s\S]*const sanitizeColor = \(colorText = ''\) => \{[\s\S]*lowContrastYellowPattern[\s\S]*allowedColorValue\.test\(normalized\) \? normalized : '';/,
+        'storefront rich-text sanitizer should allow only safe stored admin color values'
     );
     assert.match(
         shopClientSource,
-        /const styledTags = new Set\(\['A', 'B', 'STRONG', 'I', 'EM', 'U', 'DIV', 'P', 'SPAN', 'FONT', 'UL', 'OL', 'LI'\]\);[\s\S]*if \(prop === 'text-align' && allowedTextAlign\.test\(value\)\)[\s\S]*if \(prop === 'font-size' && allowedFontSize\.test\(value\)\)/s,
-        'storefront rich-text sanitizer should still preserve safe structure, alignment, and sizing'
+        /const styledTags = new Set\(\['A', 'B', 'STRONG', 'I', 'EM', 'U', 'DIV', 'P', 'SPAN', 'FONT', 'UL', 'OL', 'LI'\]\);[\s\S]*if \(prop === 'text-align' && allowedTextAlign\.test\(value\)\)[\s\S]*if \(prop === 'font-size' && allowedFontSize\.test\(value\)\)[\s\S]*if \(prop === 'color'\) \{[\s\S]*safeRules\.push\(`color: \$\{safeColor\}`\);/s,
+        'storefront rich-text sanitizer should preserve safe structure, alignment, sizing, and admin text color'
+    );
+    assert.match(
+        shopClientSource,
+        /if \(child\.tagName === 'FONT'\) \{[\s\S]*const safeFontColor = sanitizeColor\(attrs\.color \|\| ''\);[\s\S]*child\.setAttribute\('style', \[currentStyle, `color: \$\{safeFontColor\}`\]\.filter\(Boolean\)\.join\('; '\)\);/s,
+        'storefront rich-text sanitizer should also preserve legacy font color attributes as safe inline color'
+    );
+    assert.match(
+        shopCssSource,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-cart-item__panel--notice,[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-cart-item__panel--usage \{\s*background: #ffffff;\s*border-color: var\(--shop-light-border\);\s*color: #334155;\s*-webkit-text-fill-color: currentColor;\s*\}/,
+        'light-theme cart guidance content panels should use the default white surface instead of notice or usage tinting'
+    );
+    assert.match(
+        shopCssSource,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-cart-item__panel--notice :not\(a\),[\s\S]*\.shop-cart-item__panel--usage :not\(a\) \{\s*-webkit-text-fill-color: currentColor;\s*\}/,
+        'light-theme cart guidance content should let sanitized admin colors control the rendered text color'
+    );
+    const lightCartGuidancePanelRule = shopCssSource.match(
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-cart-item__panel--notice,[\s\S]*?html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-cart-item__panel--usage \{(?<body>[\s\S]*?)\n\}/
+    )?.groups?.body || '';
+    assert.doesNotMatch(
+        lightCartGuidancePanelRule,
+        /#fffbeb|#ecfdf5|#78350f|#064e3b|!important/,
+        'light-theme cart guidance panels should not keep the old yellow/green surfaces or forced text colors'
     );
     assert.match(
         shopCssSource,
         /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopPurchaseModal #purchaseNotesContent,[\s\S]*#purchaseUsageContent :not\(a\) \{[\s\S]*color: rgba\(23, 32, 51, 0\.74\) !important;[\s\S]*-webkit-text-fill-color: rgba\(23, 32, 51, 0\.74\) !important;/s,
-        'light-theme purchase guidance should force readable theme copy color after stripping pasted colors'
+        'light-theme purchase guidance should keep its dedicated readable theme copy color'
     );
     assert.match(
         shopCssSource,
         /html\[data-theme="dark"\] body\.shop-page #shopPurchaseModal #purchaseNotesContent,[\s\S]*#purchaseUsageContent :not\(a\) \{[\s\S]*color: rgba\(226, 232, 240, 0\.82\) !important;[\s\S]*-webkit-text-fill-color: rgba\(226, 232, 240, 0\.82\) !important;/s,
-        'dark-theme purchase guidance should force readable theme copy color over pasted inline colors'
+        'dark-theme purchase guidance should keep its dedicated readable theme copy color'
     );
     assert.match(
         shopCssSource,
@@ -630,6 +653,11 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         'cart guidance pills should expose dedicated toggles for notes and usage instructions'
     );
     assert.match(
+        shopClientSource,
+        /toggleCartItemDisclosure: function \(productId, kind\) \{[\s\S]*if \(normalizedKind === 'notes' && nextState\.notes\) \{\s+nextState\.usage = false;\s+\}[\s\S]*if \(normalizedKind === 'usage' && nextState\.usage\) \{\s+nextState\.notes = false;\s+\}[\s\S]*this\.renderCart\(\);/s,
+        'cart notes and usage disclosure pills should be mutually exclusive when opened'
+    );
+    assert.match(
         publicScrollbarSource,
         /'.shop-cart-drawer__body'[\s\S]*'.shop-cart-item__panel'[\s\S]*target\.classList\.add\(PUBLIC_SCROLLBAR_AUTO_HIDE_NO_GUTTER_CLASS\);/s,
         'cart drawer and disclosure scroll surfaces should opt into no-gutter scrollbar handling'
@@ -736,6 +764,11 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
     );
     assert.match(
         shopClientSource,
+        /nextBtn\.classList\.toggle\('shop-btn-primary', !isSoldOut\);\s+nextBtn\.classList\.toggle\('shop-purchase-sold-out-btn', isSoldOut\);/,
+        'sold-out purchase primary button should leave the green primary button class while keeping its sold-out class'
+    );
+    assert.match(
+        shopClientSource,
         /openManualDeliverySupport: function \(options = \{\}\)[\s\S]*this\.closePurchaseModal\(\);[\s\S]*window\.chatWidget\?\.chatWindow && typeof window\.chatWidget\.openChat === 'function'[\s\S]*window\.chatWidget\.openChat\(\)[\s\S]*return;[\s\S]*ZaoyoeChatWidgetBootstrap\?\.open[\s\S]*zaoyoe:chat-widget-runtime-pending-open/s,
         'manual delivery support action should close the product modal and directly open the ready public chat widget before falling back to bootstrap loading'
     );
@@ -803,6 +836,41 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         shopCssSource,
         /\.shop-purchase-discount\.is-purchase-sold-out[\s\S]*\.shop-discount-assets-empty--sold-out[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page \.shop-purchase-discount\.is-purchase-sold-out/s,
         'sold-out coupon module should have disabled-state styling in dark and light storefront themes'
+    );
+    assert.equal(
+        shopCssSource.includes('.shop-btn-primary:hover:not(:disabled):not([aria-disabled="true"])'),
+        true,
+        'primary shop button hover styling should not apply to disabled or aria-disabled buttons'
+    );
+    assert.match(
+        shopCssSource,
+        /#nextPurchaseStepBtn:hover:not\(:disabled\):not\(\[aria-disabled="true"\]\):not\(\.shop-purchase-sold-out-btn\),\s+#confirmPurchaseBtn:hover:not\(:disabled\):not\(\[aria-disabled="true"\]\)/,
+        'purchase modal primary hover styling should only apply to enabled action buttons'
+    );
+    assert.match(
+        shopCssSource,
+        /#shopPurchaseModal \.shop-purchase-dock #nextPurchaseStepBtn:hover:not\(\.shop-purchase-sold-out-btn\)\s*\{[\s\S]*?background:\s*linear-gradient\(135deg,\s*#43d675 0%,\s*#20b957 100%\);/,
+        'wide dock purchase button hover should exclude the sold-out button before applying the green hover background'
+    );
+    assert.match(
+        shopCssSource,
+        /#nextPurchaseStepBtn\.shop-purchase-sold-out-btn,[\s\S]*?#nextPurchaseStepBtn\.shop-purchase-sold-out-btn:disabled\s*\{[\s\S]*?background:\s*linear-gradient\(135deg, var\(--shop-sold-out-soft-red\) 0%, var\(--shop-sold-out-soft-red-deep\) 100%\);[\s\S]*?filter:\s*none;[\s\S]*?transition:\s*none;/,
+        'sold-out purchase button should keep the same static treatment across hover, active, focus, and disabled states'
+    );
+    assert.match(
+        shopCssSource,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #nextPurchaseStepBtn\.shop-purchase-sold-out-btn,[\s\S]*?html:not\(\[data-theme="dark"\]\) body\.shop-page #nextPurchaseStepBtn\.shop-purchase-sold-out-btn:disabled\s*\{[\s\S]*?background:\s*linear-gradient\(135deg, var\(--shop-sold-out-soft-red\) 0%, var\(--shop-sold-out-soft-red-deep\) 100%\);[\s\S]*?filter:\s*none;[\s\S]*?transition:\s*none;/,
+        'light theme sold-out purchase button should also stay visually unchanged when hovered'
+    );
+    assert.match(
+        shopCssSource,
+        /#shopPurchaseModal \.shop-purchase-dock #nextPurchaseStepBtn\.shop-purchase-sold-out-btn:hover,[\s\S]*?body\.shop-page #shopPurchaseModal #nextPurchaseStepBtn\.shop-purchase-sold-out-btn:disabled\s*\{[\s\S]*?background:\s*linear-gradient\(135deg, var\(--shop-sold-out-soft-red\) 0%, var\(--shop-sold-out-soft-red-deep\) 100%\) !important;[\s\S]*?filter:\s*none !important;[\s\S]*?transform:\s*none !important;/,
+        'final sold-out purchase button override should win over later dock hover rules'
+    );
+    assert.match(
+        shopHtmlSource,
+        /soldOutHoverStatic=20260609_SHOP_SOLD_OUT_HOVER_STATIC_2/,
+        'shop.html should bust the shop stylesheet cache after making the sold-out hover state static'
     );
     assert.match(
         shopHtmlSource,
@@ -873,6 +941,21 @@ test('shop purchase guidance flow refreshes latest notes and versions prefetched
         shopClientSource,
         /toggleSuccessItemDisclosure: function \(toggleButton\)[\s\S]*panel\.hidden = !nextExpanded;[\s\S]*this\.syncSuccessDisclosureScroll\(panel, \{ focusToggle: toggleButton, expanded: nextExpanded \}\);[\s\S]*syncSuccessDisclosureScroll: function \(panel, \{ focusToggle = null, expanded = true \} = \{\}\)[\s\S]*modalScroll\.scrollTo\(\{ top: nextScrollTop, behavior: 'auto' \}\);/s,
         'success modal should jump opened notes or usage panels into view without a smooth-scroll animation fighting user wheel input'
+    );
+    assert.match(
+        shopClientSource,
+        /toggleSuccessItemDisclosure: function \(toggleButton\)[\s\S]*if \(nextExpanded\) \{[\s\S]*querySelectorAll\('\[data-shop-success-action="toggle-notes"\], \[data-shop-success-action="toggle-usage"\]'\)[\s\S]*toggle\.setAttribute\('aria-expanded', 'false'\);[\s\S]*toggle\.classList\.remove\('is-active'\);[\s\S]*querySelectorAll\('\.shop-success-item__notes-panel, \.shop-success-item__usage-panel'\)[\s\S]*candidate\.hidden = true;/s,
+        'success modal notes and usage pills should close the other guidance panel before opening the selected one'
+    );
+    assert.match(
+        shopCssSource,
+        /#shopSuccessModal \.shop-success-item__tag--notice \{[\s\S]*background:\s*transparent;[\s\S]*#shopSuccessModal \.shop-success-item__tag--usage \{[\s\S]*background:\s*transparent;[\s\S]*\.shop-success-item__tag--notice\.is-active \{[\s\S]*background:\s*rgba\(255,\s*214,\s*102,\s*0\.14\);[\s\S]*\.shop-success-item__tag--usage\.is-active \{[\s\S]*background:\s*rgba\(34,\s*197,\s*94,\s*0\.14\);/s,
+        'success modal guidance pills should be outline-only until selected'
+    );
+    assert.match(
+        shopCssSource,
+        /html:not\(\[data-theme="dark"\]\) body\.shop-page #shopSuccessModal \.shop-success-item__tag--notice \{[\s\S]*background:\s*transparent;[\s\S]*color:\s*#92400e;[\s\S]*html:not\(\[data-theme="dark"\]\) body\.shop-page #shopSuccessModal \.shop-success-item__tag--usage \{[\s\S]*background:\s*transparent;[\s\S]*color:\s*#047857;[\s\S]*\.shop-success-item__tag--notice\.is-active \{[\s\S]*background:\s*#fff7ed;[\s\S]*\.shop-success-item__tag--usage\.is-active \{[\s\S]*background:\s*#ecfdf5;/s,
+        'light success modal guidance pills should match the cart outline and selected-fill treatment'
     );
     assert.doesNotMatch(
         shopClientSource,
