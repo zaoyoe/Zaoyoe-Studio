@@ -823,6 +823,70 @@ test('payments overview counts only unarchived duplicate callback topics when ag
     });
 });
 
+test('payments summary ignores normal NOWPayments lifecycle callbacks as duplicate webhook topics', async () => {
+    const state = {
+        paymentEvents: [
+            {
+                id: 'event-np-waiting',
+                provider: 'nowpayments',
+                provider_order_no: 'NP_NORMAL_LIFECYCLE',
+                event_type: 'webhook',
+                signature_valid: true,
+                amount_valid: null,
+                processing_result: 'ignored_pending',
+                response_status: 200,
+                created_at: '2026-03-24T09:00:00.000Z'
+            },
+            {
+                id: 'event-np-confirming',
+                provider: 'nowpayments',
+                provider_order_no: 'NP_NORMAL_LIFECYCLE',
+                event_type: 'webhook',
+                signature_valid: true,
+                amount_valid: null,
+                processing_result: 'ignored_pending',
+                response_status: 200,
+                created_at: '2026-03-24T09:03:00.000Z'
+            },
+            {
+                id: 'event-np-finished',
+                provider: 'nowpayments',
+                provider_order_no: 'NP_NORMAL_LIFECYCLE',
+                event_type: 'webhook',
+                signature_valid: true,
+                amount_valid: true,
+                processing_result: 'processed_paid',
+                response_status: 200,
+                created_at: '2026-03-24T09:06:00.000Z'
+            }
+        ]
+    };
+
+    await withPaymentsSummaryHandler(state, async (handler) => {
+        const req = {
+            method: 'GET',
+            query: {
+                view: 'ops',
+                days: '30'
+            }
+        };
+        const res = createMockResponse();
+
+        await handler(req, res);
+        const payload = res.json();
+        const topicMap = new Map((payload.exception_topics || []).map((topic) => [topic.key, topic]));
+
+        assert.equal(res.statusCode, 200);
+        assert.equal(payload.success, true);
+        assert.equal(topicMap.get('duplicate_webhook')?.count || 0, 0);
+        assert.equal(payload.anomaly_summary.recent_event_anomalies, 0);
+        assert.equal(
+            (payload.exception_topic_items || []).some((item) => item.provider_order_no === 'NP_NORMAL_LIFECYCLE'),
+            false
+        );
+    });
+});
+
 test('payments summary keeps older unarchived refund failures visible even when newer archived history exceeds the topic preview cap', async () => {
     const paymentEvents = [];
     const paymentAnomalyCases = [];
@@ -3608,6 +3672,7 @@ test('payments runtime summary UI keeps refund anomaly indicators wired in sourc
     const adminStudioHtml = fs.readFileSync(path.join(__dirname, '..', 'admin-studio.html'), 'utf8');
     const shopProfitAuditCss = fs.readFileSync(path.join(__dirname, '..', 'css', 'admin-payments-shop-profit-audit.css'), 'utf8');
     const activeOverviewMigration = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20260419_fix_payment_overview_summary_active_anomalies.sql'), 'utf8');
+    const nowpaymentsLifecycleMigration = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20260609_fix_nowpayments_overview_lifecycle_callbacks.sql'), 'utf8');
     const shopProfitLedgerMigration = fs.readFileSync(path.join(__dirname, '..', 'supabase', 'migrations', '20260606_add_shop_order_profit_ledger.sql'), 'utf8');
 
     assert.match(source, /refund_failures/);
@@ -3790,6 +3855,15 @@ test('payments runtime summary UI keeps refund anomaly indicators wired in sourc
     assert.match(summarySource, /order\?\.checkout_session_id \|\| metadata\.checkout_session_id/);
     assert.match(activeOverviewMigration, /duplicate_webhooks/);
     assert.match(activeOverviewMigration, /duplicate_webhook_orders/);
+    for (const overviewMigration of [activeOverviewMigration, nowpaymentsLifecycleMigration]) {
+        assert.match(overviewMigration, /pe\.event_type,/);
+        assert.match(overviewMigration, /pe\.signature_valid,/);
+        assert.match(overviewMigration, /pe\.amount_valid,/);
+        assert.match(overviewMigration, /pe\.response_status,/);
+        assert.match(overviewMigration, /pe\.processing_result,/);
+        assert.match(overviewMigration, /LOWER\(BTRIM\(COALESCE\(event_type, 'webhook'\)\)\) = 'webhook'/);
+        assert.match(overviewMigration, /LOWER\(BTRIM\(COALESCE\(processing_result, ''\)\)\) IN \('ignored_pending', 'processed_paid', 'received'\)/);
+    }
     assert.doesNotMatch(activeOverviewMigration, /'session_anomalies',\s*0/);
     assert.match(adminStudioSource, /payments-focus-ops-alert-queue/);
     assert.doesNotMatch(adminStudioHtml, /paymentsOpsAlertHealthPanel/);

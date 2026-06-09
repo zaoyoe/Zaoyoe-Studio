@@ -268,6 +268,7 @@ event_anomaly_rows AS (
                 AND LOWER(BTRIM(COALESCE(se.processing_result, ''))) NOT IN (
                     'processed_paid',
                     'received',
+                    'ignored_pending',
                     'ignored_non_success_ec',
                     'ignored_non_order_event',
                     'ignored_non_paid_status',
@@ -302,6 +303,14 @@ duplicate_webhooks AS (
         SELECT provider_order_no
         FROM scoped_events
         WHERE NULLIF(BTRIM(COALESCE(provider_order_no, '')), '') IS NOT NULL
+          AND NOT (
+              LOWER(BTRIM(COALESCE(provider, ''))) = 'nowpayments'
+              AND LOWER(BTRIM(COALESCE(event_type, 'webhook'))) = 'webhook'
+              AND (response_status IS NULL OR (response_status >= 200 AND response_status < 300))
+              AND signature_valid IS DISTINCT FROM FALSE
+              AND amount_valid IS DISTINCT FROM FALSE
+              AND LOWER(BTRIM(COALESCE(processing_result, ''))) IN ('ignored_pending', 'processed_paid', 'received')
+          )
         GROUP BY provider_order_no
         HAVING COUNT(*) > 1
     ) duplicates
@@ -512,6 +521,7 @@ event_provider_stats AS (
                     AND LOWER(BTRIM(COALESCE(processing_result, ''))) NOT IN (
                         'processed_paid',
                         'received',
+                        'ignored_pending',
                         'ignored_non_success_ec',
                         'ignored_non_order_event',
                         'ignored_non_paid_status',
