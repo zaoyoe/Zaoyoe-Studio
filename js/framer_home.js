@@ -214,6 +214,112 @@ async function fetchHomepageShopCatalogPayload(site = getHomepageRuntimeSite()) 
   throw lastError || new Error('shop catalog api failed');
 }
 
+function hasHomepageShopCategoryPublicFlag(category = {}) {
+  return category
+    && typeof category === 'object'
+    && Object.prototype.hasOwnProperty.call(category, 'is_public');
+}
+
+function isPublicHomepageShopCategory(category = {}) {
+  if (!hasHomepageShopCategoryPublicFlag(category)) {
+    return true;
+  }
+  if (typeof category.is_public === 'boolean') {
+    return category.is_public;
+  }
+  const normalized = String(category.is_public ?? '').trim().toLowerCase();
+  return !['0', 'false', 'no', 'off', 'hidden', 'private'].includes(normalized);
+}
+
+function normalizeHomepageShopCategoryNames(categories = []) {
+  const names = [];
+  const seen = new Set();
+
+  (Array.isArray(categories) ? categories : []).forEach((category) => {
+    if (category && typeof category === 'object' && !isPublicHomepageShopCategory(category)) {
+      return;
+    }
+    const name = String(
+      category && typeof category === 'object'
+        ? category.name
+        : category
+    ).trim();
+    if (!name || seen.has(name)) return;
+
+    seen.add(name);
+    names.push(name);
+  });
+
+  return names;
+}
+
+function getHomepageShopProductPriceForSite(product = {}, site = getHomepageRuntimeSite()) {
+  const priceField = site === 'intl' ? 'price_points_intl' : 'price_points';
+  const rawValue = product?.[priceField];
+  if (rawValue === null || rawValue === undefined || rawValue === '') {
+    return null;
+  }
+
+  const numericValue = Number(rawValue);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function filterHomepageShopCategoriesWithSiteProducts(categories = [], products = [], site = getHomepageRuntimeSite()) {
+  const visibleCategoryNames = new Set(
+    (Array.isArray(products) ? products : [])
+      .filter((product) => product?.is_active !== false)
+      .filter((product) => getHomepageShopProductPriceForSite(product, site) !== null)
+      .map((product) => String(product?.category || '').trim())
+      .filter(Boolean)
+  );
+
+  return (Array.isArray(categories) ? categories : [])
+    .filter((category) => isPublicHomepageShopCategory(category))
+    .filter((category) => visibleCategoryNames.has(String(category?.name || '').trim()));
+}
+
+async function fetchHomepageShopCategoriesFromCatalog(site = getHomepageRuntimeSite()) {
+  const payload = await fetchHomepageShopCatalogPayload(site);
+  const categories = Array.isArray(payload?.categories)
+    ? payload.categories
+    : (Array.isArray(payload?.data?.categories) ? payload.data.categories : []);
+  return normalizeHomepageShopCategoryNames(categories);
+}
+
+async function fetchHomepageShopCategoriesFromSupabase(site = getHomepageRuntimeSite()) {
+  if (!window.supabaseClient) {
+    const runtimeReady = await waitForHomepageSupabaseClientReady();
+    if (!runtimeReady || !window.supabaseClient) {
+      return [];
+    }
+  }
+
+  const [categoryResult, productResult] = await Promise.all([
+    window.supabaseClient
+      .from('shop_categories')
+      .select('*')
+      .order('sort_order'),
+    window.supabaseClient
+      .from('shop_products')
+      .select('id, category, price_points, price_points_intl, is_active')
+      .eq('is_active', true)
+      .order('display_order', { ascending: false })
+  ]);
+
+  if (categoryResult.error) {
+    throw categoryResult.error;
+  }
+  if (productResult.error) {
+    throw productResult.error;
+  }
+
+  return normalizeHomepageShopCategoryNames(filterHomepageShopCategoriesWithSiteProducts(
+    Array.isArray(categoryResult.data) ? categoryResult.data : [],
+    Array.isArray(productResult.data) ? productResult.data : [],
+    site
+  ));
+}
+
 function getHomepagePrefetchCacheKey(site = getHomepageRuntimeSite()) {
   return `${HOMEPAGE_PREFETCH_CACHE_KEY}_${site}`;
 }
@@ -2922,15 +3028,18 @@ const FramerHome = {
    * Fetch shop categories for nav dropdown (safe fallback)
    */
   async fetchShopCategories() {
+    const site = getHomepageRuntimeSite();
+
     try {
-      const { data } = await window.supabaseClient
-        .from('shop_categories')
-        .select('*')
-        .order('sort_order');
-      return (data || [])
-        .filter(c => c?.is_public !== false)
-        .map(c => c.name);
-    } catch (e) {
+      return await fetchHomepageShopCategoriesFromCatalog(site);
+    } catch (catalogError) {
+      console.warn('Failed to load homepage shop categories from catalog:', catalogError?.message || catalogError);
+    }
+
+    try {
+      return await fetchHomepageShopCategoriesFromSupabase(site);
+    } catch (supabaseError) {
+      console.warn('Failed to load homepage shop categories from Supabase:', supabaseError?.message || supabaseError);
       return [];
     }
   },
@@ -4060,28 +4169,7 @@ const FramerHome = {
         this.cachedData.prompts = [];
       }
 
-      // Load shop categories from the dedicated shop_categories table
-      if (window.supabaseClient) {
-        try {
-          const { data, error } = await window.supabaseClient
-            .from('shop_categories')
-            .select('*')
-            .order('sort_order');
-
-          if (!error && data && data.length > 0) {
-            this.cachedData.shopCategories = data
-              .filter(c => c?.is_public !== false)
-              .map(c => c.name);
-          } else {
-            this.cachedData.shopCategories = [];
-          }
-        } catch (e) {
-          console.warn('Failed to load shop categories for nav:', e);
-          this.cachedData.shopCategories = [];
-        }
-      } else {
-        this.cachedData.shopCategories = [];
-      }
+      this.cachedData.shopCategories = await this.fetchShopCategories();
 
       console.log('📂 Nav data loaded:', {
         promptsCount: this.cachedData.prompts.length,
@@ -4138,11 +4226,10 @@ const FramerHome = {
       return topTags.length > 0 ? topTags : fallbackTags;
     };
 
-    // Get shop categories from dedicated shop_categories table
+    // Get shop categories that have products priced for the active site.
     const getShopCategories = () => {
-      // Use categories fetched from shop_categories table
       const categories = this.cachedData?.shopCategories || [];
-      return categories.length > 0 ? categories : ['全部商品', 'API密钥', '会员服务', '资源包'];
+      return Array.isArray(categories) ? categories : [];
     };
 
     // Dropdown content data

@@ -110,6 +110,36 @@ test('homepage frontend runtime reads and writes site-specific prefetch payloads
     assert.doesNotMatch(guestbookSource, /sessionStorage\.getItem\('homepage_prefetch'\)/);
 });
 
+test('public nav shop dropdown only exposes current-site priced categories', () => {
+    const framerSource = fs.readFileSync(framerHomePath, 'utf8');
+    const framerNavSource = fs.readFileSync(path.resolve(__dirname, '../js/framer-nav-runtime.js'), 'utf8');
+    const indexSource = fs.readFileSync(indexPath, 'utf8');
+    const navSubpageSources = siteLayoutPublicPages
+        .filter((relativePath) => relativePath !== 'index.html')
+        .map((relativePath) => fs.readFileSync(path.resolve(__dirname, '..', relativePath), 'utf8'));
+
+    assert.match(framerNavSource, /function fetchShopNavCategoriesFromCatalog\(site = getCurrentNavSite\(\)\)/);
+    assert.match(framerNavSource, /\/api\/shop\/catalog\?site=\$\{encodeURIComponent\(site\)\}/);
+    assert.match(framerNavSource, /\.select\('id, category, price_points, price_points_intl, is_active'\)/);
+    assert.match(framerNavSource, /getShopNavProductPriceForSite\(product, site\) !== null/);
+    assert.match(framerNavSource, /runtimeState\.cachedData\.shopCategories = await loadShopNavCategories\(\);/);
+    assert.match(framerNavSource, /return Array\.isArray\(categories\) \? categories : \[\];/);
+    assert.doesNotMatch(framerNavSource, /'全部商品', 'API密钥', '会员服务', '资源包'/);
+
+    assert.match(framerSource, /function fetchHomepageShopCategoriesFromCatalog\(site = getHomepageRuntimeSite\(\)\)/);
+    assert.match(framerSource, /function fetchHomepageShopCategoriesFromSupabase\(site = getHomepageRuntimeSite\(\)\)/);
+    assert.match(framerSource, /\.select\('id, category, price_points, price_points_intl, is_active'\)/);
+    assert.match(framerSource, /getHomepageShopProductPriceForSite\(product, site\) !== null/);
+    assert.match(framerSource, /this\.cachedData\.shopCategories = await this\.fetchShopCategories\(\);/);
+    assert.match(framerSource, /return Array\.isArray\(categories\) \? categories : \[\];/);
+    assert.doesNotMatch(framerSource, /'全部商品', 'API密钥', '会员服务', '资源包'/);
+
+    assert.match(indexSource, /js\/framer_home\.js\?v=20260610_SHOP_NAV_SITE_SCOPED_CATEGORY_1/);
+    navSubpageSources.forEach((source) => {
+        assert.match(source, /js\/framer-nav-runtime\.js\?v=20260610_SHOP_NAV_SITE_SCOPED_CATEGORY_1/);
+    });
+});
+
 test('homepage section visibility runtime now derives homepage sections from homepage_config', () => {
     const adminHomepageSource = fs.readFileSync(adminHomepagePath, 'utf8');
     const sectionVisibilitySource = fs.readFileSync(path.resolve(__dirname, '../js/section-visibility.js'), 'utf8');

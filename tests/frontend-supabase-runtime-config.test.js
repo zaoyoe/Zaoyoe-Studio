@@ -4483,7 +4483,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
         'index.html should load the latest framer_home stylesheet version'
     );
     assert.equal(
-        homepageSource.includes('./js/framer_home.js?v=20260608_SUPPORT_CHANNEL_CLICK_FEEDBACK_3'),
+        homepageSource.includes('./js/framer_home.js?v=20260610_SHOP_NAV_SITE_SCOPED_CATEGORY_1'),
         true,
         'index.html should load the latest framer_home script version'
     );
@@ -4495,8 +4495,8 @@ test('framer home runtime renderers externalize homepage section visibility, tem
             'home-nav subpages should continue to load the shared framer_home stylesheet version'
         );
         assert.equal(
-            source.includes('js/framer-nav-runtime.js?v=20260608_SUPPORT_CHANNEL_CLICK_FEEDBACK_3')
-                || source.includes('./js/framer-nav-runtime.js?v=20260608_SUPPORT_CHANNEL_CLICK_FEEDBACK_3'),
+            source.includes('js/framer-nav-runtime.js?v=20260610_SHOP_NAV_SITE_SCOPED_CATEGORY_1')
+                || source.includes('./js/framer-nav-runtime.js?v=20260610_SHOP_NAV_SITE_SCOPED_CATEGORY_1'),
             true,
             'home-nav subpages should load the dedicated lightweight nav runtime'
         );
@@ -4509,7 +4509,7 @@ test('framer home runtime renderers externalize homepage section visibility, tem
     }
 
     const navRuntimeMarkers = [
-        "const VERSION = '20260608_SUPPORT_CHANNEL_CLICK_FEEDBACK_3';",
+        "const VERSION = '20260610_SHOP_NAV_SITE_SCOPED_CATEGORY_1';",
         'function setMobileMenuState(hamburger, mobileMenu, isOpen) {',
         'async function loadNavData() {',
         'function initNavDropdowns() {',
